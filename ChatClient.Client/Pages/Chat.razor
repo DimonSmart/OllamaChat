@@ -1,0 +1,220 @@
+@page "/chat"
+@using Microsoft.AspNetCore.Components
+@using Microsoft.AspNetCore.Components.Web
+@using Microsoft.AspNetCore.Components.Routing
+@using Microsoft.AspNetCore.Components.WebAssembly.Http
+@using Microsoft.JSInterop
+@using System.Collections.ObjectModel
+@using System.Text.Json
+@using System.Net.Http.Json
+@using ChatClient.Shared.Models
+@using Microsoft.Extensions.AI
+@using System.Threading
+@using System.Text
+@implements IAsyncDisposable
+@inject HttpClient Http
+@inject IJSRuntime JSRuntime
+
+<PageTitle>Chat with AI Assistant</PageTitle>
+
+<div class="chat-container">
+    <div class="chat-messages" @ref="messagesElement">
+        @foreach (var message in Messages)
+        {
+            <div class="@(message.Role == ChatRole.User ? "user-message" : "assistant-message") message-container">
+                <div class="message-content">@message.Content</div>
+                <div class="message-time">@message.MsgDateTime.ToString("g")</div>
+            </div>
+        }
+        @if (IsShowingLoader)
+        {
+            <div class="assistant-message message-container">
+                <div class="message-content">
+                    <div class="loading-indicator">
+                        <span class="loading-dot"></span>
+                        <span class="loading-dot"></span>
+                        <span class="loading-dot"></span>
+                    </div>
+                </div>
+            </div>
+        }
+    </div>
+
+    <div class="chat-input-container">
+        <div class="input-group">
+            <textarea @bind="inputText"
+                      @bind:event="oninput"
+                      @onkeydown="OnKeyPress"
+                      class="chat-input form-control"
+                      placeholder="Enter your message (Press Enter to send, Shift + Enter for new line)"
+                      rows="1"
+                      disabled="@isLoading"></textarea>
+            @if (isLoading)
+            {
+                <button @onclick="Cancel" class="btn btn-danger" title="Stop generating">
+                    <i class="bi bi-stop-fill"></i> Stop
+                </button>
+            }
+            else
+            {
+                <button @onclick="SendMessage" class="btn btn-primary" disabled="@(string.IsNullOrWhiteSpace(inputText) || isLoading)">
+                    <i class="bi bi-send-fill"></i> Send
+                </button>
+            }
+        </div>
+    </div>
+</div>
+
+@code {
+    private string inputText = string.Empty;
+    private const string SystemPrompt = "You are a helpful assistant.";
+    private bool isLoading = false;
+    private ElementReference messagesElement;
+    private List<Message> historyMessages = new();
+    private CancellationTokenSource? cts;
+    private Message? currentResponse;
+    private readonly StringBuilder _contentBuffer = new();
+    public List<Message> Messages { get; } = new();
+
+    private bool IsShowingLoader => isLoading && string.IsNullOrEmpty(currentResponse?.Content);
+
+    protected override Task OnInitializedAsync()
+    {
+        Messages.Add(new Message(SystemPrompt, DateTime.Now, ChatRole.System));
+        historyMessages.Add(new Message(SystemPrompt, DateTime.Now, ChatRole.System));
+        return Task.CompletedTask;
+    }
+
+    private async Task SendMessage()
+    {
+        if (string.IsNullOrWhiteSpace(inputText))
+            return;
+
+        string userMessage = inputText.Trim();
+        inputText = string.Empty;
+
+        var userMessageObj = new Message(userMessage, DateTime.Now, ChatRole.User);
+        Messages.Add(userMessageObj);
+        historyMessages.Add(userMessageObj);
+
+        await ScrollToBottom();
+
+        try
+        {
+            isLoading = true;
+            StateHasChanged();
+
+            cts = new CancellationTokenSource();
+            currentResponse = new Message(string.Empty, DateTime.Now, ChatRole.Assistant);
+            Messages.Add(currentResponse);
+
+            var request = new HttpRequestMessage(HttpMethod.Post, "api/chat/stream")
+                {
+                    Content = JsonContent.Create(new AppChatRequest { Messages = historyMessages })
+                };
+            request.SetBrowserResponseStreamingEnabled(true);
+
+            using var response = await Http.SendAsync(
+                request,
+                HttpCompletionOption.ResponseHeadersRead,
+                cts.Token);
+
+            if (!response.IsSuccessStatusCode)
+            {
+                throw new Exception($"Error: {response.StatusCode} - {await response.Content.ReadAsStringAsync()}");
+            }
+
+            using var stream = await response.Content.ReadAsStreamAsync(cts.Token);
+            using var reader = new StreamReader(stream);
+
+            _contentBuffer.Clear();
+            string? line;
+            while ((line = await reader.ReadLineAsync(cts.Token)) != null)
+            {
+                if (string.IsNullOrEmpty(line) || !line.StartsWith("data: ")) continue;
+
+                var jsonData = line.Substring(6);
+                if (jsonData == "[DONE]") break;
+
+                try
+                {
+                    var data = JsonSerializer.Deserialize<StreamResponse>(jsonData);
+                    if (data?.content != null && currentResponse != null && !cts.Token.IsCancellationRequested)
+                    {
+                        _contentBuffer.Append(data.content);
+                        currentResponse.Content += data.content;
+                        await InvokeAsync(StateHasChanged);
+
+                        if (data.content.Contains("\n") || _contentBuffer.Length > 100)
+                        {
+                            await ScrollToBottom();
+                            _contentBuffer.Clear();
+                        }
+                    }
+                }
+                catch (JsonException)
+                {
+                    continue;
+                }
+            }
+
+            if (_contentBuffer.Length > 0)
+            {
+                await ScrollToBottom();
+                _contentBuffer.Clear();
+            }
+
+            historyMessages.Add(currentResponse);
+        }
+        catch (OperationCanceledException)
+        {
+            Messages.Add(new Message("Operation cancelled by user.", DateTime.Now, ChatRole.System));
+        }
+
+        catch (Exception ex)
+        {
+            Messages.Add(new Message($"Error: {ex.Message}", DateTime.Now, ChatRole.System));
+        }
+        finally
+        {
+            isLoading = false;
+            currentResponse = null;
+            StateHasChanged();
+        }
+    }
+
+    private async Task ScrollToBottom()
+    {
+        try
+        {
+            await JSRuntime.InvokeVoidAsync("scrollToBottom", messagesElement);
+        }
+        catch
+        {
+            // Ignore any JavaScript interop errors
+        }
+    }
+
+    private void Cancel()
+    {
+        cts?.Cancel();
+    }
+
+    private async Task OnKeyPress(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter" && !e.ShiftKey)
+        {
+            await SendMessage();
+        }
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        cts?.Dispose();
+    }
+
+    private class StreamResponse
+    {
+        public string? content { get; set; }
+    }
+}
