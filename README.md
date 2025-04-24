@@ -1,0 +1,2 @@
+# OllamaChat
+Ollama chat client
