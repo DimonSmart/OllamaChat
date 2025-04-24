@@ -3,82 +3,80 @@ using Microsoft.SemanticKernel.ChatCompletion;
 using ChatClient.Shared.Models;
 using Microsoft.Extensions.AI;
 
-namespace ChatClient.Api.Controllers
+namespace ChatClient.Api.Controllers;
+
+[ApiController]
+[Route("api/[controller]")]
+public class ChatController : ControllerBase
 {
-    [ApiController]
-    [Route("api/[controller]")]
-    public class ChatController : ControllerBase
+    private readonly IChatCompletionService _chatService;
+    private readonly ILogger<ChatController> _logger;
+
+    private const string ContentTypeEventStream = "text/event-stream";
+    private static readonly IDictionary<ChatRole, Action<ChatHistory, string>> RoleHandlers =
+        new Dictionary<ChatRole, Action<ChatHistory, string>>
+        {
+            { ChatRole.System,    (history, content) => history.AddSystemMessage(content) },
+            { ChatRole.User,      (history, content) => history.AddUserMessage(content) },
+            { ChatRole.Assistant, (history, content) => history.AddAssistantMessage(content) }
+        };
+
+    public ChatController(IChatCompletionService chatService, ILogger<ChatController> logger)
     {
-        private readonly IChatCompletionService _chatService;
-        private readonly ILogger<ChatController> _logger;
+        _chatService = chatService;
+        _logger = logger;
+    }
 
-        public ChatController(IChatCompletionService chatService, ILogger<ChatController> logger)
+    [HttpPost("message")]
+    public async Task<IActionResult> SendMessage([FromBody] AppChatRequest request, CancellationToken cancellationToken)
+    {
+        var chatHistory = BuildChatHistory(request);
+        var response = await _chatService.GetChatMessageContentAsync(chatHistory, cancellationToken: cancellationToken);
+
+        return Ok(new AppChatResponse
         {
-            _chatService = chatService;
-            _logger = logger;
+            Message = new Message(response.Content ?? string.Empty, DateTime.UtcNow, ChatRole.Assistant)
+        });
+    }
+
+    [HttpPost("stream")]
+    public async Task StreamMessage([FromBody] AppChatRequest request, CancellationToken cancellationToken)
+    {
+        SetStreamHeaders();
+        var chatHistory = BuildChatHistory(request);
+
+        await foreach (var content in _chatService.GetStreamingChatMessageContentsAsync(chatHistory, cancellationToken: cancellationToken))
+        {
+            await WriteEventStreamAsync(new { content = content.Content }, cancellationToken);
         }
-        
-        
-        [HttpPost("message")]
-        public async Task<IActionResult> SendMessage([FromBody] AppChatRequest request, CancellationToken cancellationToken)
+    }
+
+    private static ChatHistory BuildChatHistory(AppChatRequest request)
+    {
+        var chatHistory = new ChatHistory();
+
+        foreach (var message in request.Messages)
         {
-            try
+            if (RoleHandlers.TryGetValue(message.Role, out var handler))
             {
-                var chatHistory = new ChatHistory();
-                foreach (var message in request.Messages)
-                {
-                    if (message.Role == ChatRole.System)
-                        chatHistory.AddSystemMessage(message.Content);
-                    else if (message.Role == ChatRole.User)
-                        chatHistory.AddUserMessage(message.Content);
-                    else if (message.Role == ChatRole.Assistant)
-                        chatHistory.AddAssistantMessage(message.Content);
-                }
-
-                var response = await _chatService.GetChatMessageContentAsync(chatHistory, null, null, cancellationToken);
-                return Ok(new AppChatResponse { Message = new Message(response.Content, DateTime.Now, ChatRole.Assistant) });
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Error processing chat message");
-                return StatusCode(500, new { error = ex.Message });
-            }
-        }
-        
-        
-        [HttpPost("stream")]
-        public async Task StreamMessage([FromBody] AppChatRequest request, CancellationToken cancellationToken)
-        {
-            Response.Headers["Content-Type"] = "text/event-stream";
-            Response.Headers["Cache-Control"] = "no-cache";
-            Response.Headers["Connection"] = "keep-alive";
-
-            try
-            {
-                var chatHistory = new ChatHistory();
-                foreach (var message in request.Messages)
-                {
-                    if (message.Role == ChatRole.System)
-                        chatHistory.AddSystemMessage(message.Content);
-                    else if (message.Role == ChatRole.User)
-                        chatHistory.AddUserMessage(message.Content);
-                    else if (message.Role == ChatRole.Assistant)
-                        chatHistory.AddAssistantMessage(message.Content);
-                }
-
-                await foreach (var content in _chatService.GetStreamingChatMessageContentsAsync(chatHistory, null, null, cancellationToken))
-                {
-                    var data = new { content = content.Content };
-                    await Response.WriteAsync($"data: {System.Text.Json.JsonSerializer.Serialize(data)}\n\n");
-                    await Response.Body.FlushAsync(cancellationToken);
-                }
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Error processing streaming chat message");
-                var errorData = new { error = ex.Message };
-                await Response.WriteAsync($"data: {System.Text.Json.JsonSerializer.Serialize(errorData)}\n\n");
+                handler(chatHistory, message.Content);
             }
         }
+
+        return chatHistory;
+    }
+
+    private void SetStreamHeaders()
+    {
+        Response.Headers["Content-Type"] = ContentTypeEventStream;
+        Response.Headers["Cache-Control"] = "no-cache";
+        Response.Headers["Connection"] = "keep-alive";
+    }
+
+    private async Task WriteEventStreamAsync(object data, CancellationToken cancellationToken)
+    {
+        var jsonData = System.Text.Json.JsonSerializer.Serialize(data);
+        await Response.WriteAsync($"data: {jsonData}\n\n", cancellationToken);
+        await Response.Body.FlushAsync(cancellationToken);
     }
 }
