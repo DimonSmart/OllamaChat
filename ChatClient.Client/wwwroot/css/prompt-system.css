@@ -1,0 +1,58 @@
+.chat-container {
+    display: flex;
+    flex-direction: column;
+    height: calc(100vh - 120px);
+    max-width: 1000px;
+    margin: 0 auto;
+    padding: 0 1rem;
+}
+
+.system-prompt-selector {
+    max-width: 800px;
+    margin: 2rem auto;
+    padding: 1.5rem;
+    background-color: #f8f9fa;
+    border-radius: 8px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+}
+
+.loading-prompts {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin: 1rem 0;
+}
+
+.prompt-preview {
+    padding: 1rem;
+    background-color: #fff;
+    border: 1px solid #dee2e6;
+    border-radius: 4px;
+    margin: 1rem 0;
+}
+
+.prompt-content {
+    white-space: pre-wrap;
+    font-family: monospace;
+    padding: 1rem;
+    background-color: #f5f5f5;
+    border-radius: 4px;
+    max-height: 200px;
+    overflow-y: auto;
+}
+
+.system-prompt-actions {
+    margin-top: 1.5rem;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+}
+
+/* Fix for modals */
+.modal {
+    background-color: rgba(0, 0, 0, 0.5);
+}
+
+.modal-backdrop {
+    z-index: -1;
+}
