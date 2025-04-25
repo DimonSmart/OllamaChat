@@ -1,0 +1,16 @@
+[
+  {
+    "Id": "8ded8ce4-944a-4db7-9da4-96fd3ab17638",
+    "Name": "Default Assistant",
+    "Content": "You are a helpful assistant.",
+    "CreatedAt": "2025-04-25T19:44:23.4935728Z",
+    "UpdatedAt": "2025-04-25T19:44:23.4935733Z"
+  },
+  {
+    "Id": "24d79938-c3a3-44ae-86ed-22e4f43d9c35",
+    "Name": "Code Assistant",
+    "Content": "You are a coding assistant. Help the user write and understand code.",
+    "CreatedAt": "2025-04-25T19:44:23.4936811Z",
+    "UpdatedAt": "2025-04-25T19:44:23.4936813Z"
+  }
+]

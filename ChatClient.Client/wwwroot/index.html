@@ -4,10 +4,10 @@
 <head>    <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>ChatClient.Client</title>
-    <base href="/" />
-    <link rel="stylesheet" href="lib/bootstrap/dist/css/bootstrap.min.css" />
+    <base href="/" />    <link rel="stylesheet" href="lib/bootstrap/dist/css/bootstrap.min.css" />
     <link rel="stylesheet" href="css/app.css" />
     <link rel="stylesheet" href="css/chat.css" />
+    <link rel="stylesheet" href="css/prompt-system.css" />
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
     <link rel="icon" type="image/png" href="favicon.png" />
     <link href="ChatClient.Client.styles.css" rel="stylesheet" />
@@ -33,6 +33,16 @@
                 element.scrollTop = element.scrollHeight;
             }
         }
+        
+        // Функция для отладки
+        window.blazorDebug = {
+            log: function(message) {
+                console.log("Blazor Debug:", message);
+            },
+            logError: function(error) {
+                console.error("Blazor Error:", error);
+            }
+        };
     </script>
 </body>
 

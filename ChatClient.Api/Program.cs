@@ -102,6 +102,9 @@ catch (Exception ex)
 // Register KernelService
 builder.Services.AddSingleton<KernelService>();
 
+// Register SystemPromptService
+builder.Services.AddSingleton<ChatClient.Shared.Services.ISystemPromptService, ChatClient.Api.Services.SystemPromptService>();
+
 // Register Kernel as a singleton
 builder.Services.AddSingleton(sp =>
 {

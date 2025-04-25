@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.SemanticKernel.ChatCompletion;
 using ChatClient.Shared.Models;
 using Microsoft.Extensions.AI;
+using ChatClient.Shared.Services;
 
 namespace ChatClient.Api.Controllers;
 
@@ -10,6 +11,7 @@ namespace ChatClient.Api.Controllers;
 public class ChatController : ControllerBase
 {
     private readonly IChatCompletionService _chatService;
+    private readonly ISystemPromptService _systemPromptService;
     private readonly ILogger<ChatController> _logger;
 
     private const string ContentTypeEventStream = "text/event-stream";
@@ -21,16 +23,20 @@ public class ChatController : ControllerBase
             { ChatRole.Assistant, (history, content) => history.AddAssistantMessage(content) }
         };
 
-    public ChatController(IChatCompletionService chatService, ILogger<ChatController> logger)
+    public ChatController(
+        IChatCompletionService chatService,
+        ISystemPromptService systemPromptService,
+        ILogger<ChatController> logger)
     {
         _chatService = chatService;
+        _systemPromptService = systemPromptService;
         _logger = logger;
-    }
-
+    }    
+    
     [HttpPost("message")]
     public async Task<IActionResult> SendMessage([FromBody] AppChatRequest request, CancellationToken cancellationToken)
     {
-        var chatHistory = BuildChatHistory(request);
+        var chatHistory = await BuildChatHistory(request);
         var response = await _chatService.GetChatMessageContentAsync(chatHistory, cancellationToken: cancellationToken);
 
         return Ok(new AppChatResponse
@@ -43,17 +49,28 @@ public class ChatController : ControllerBase
     public async Task StreamMessage([FromBody] AppChatRequest request, CancellationToken cancellationToken)
     {
         SetStreamHeaders();
-        var chatHistory = BuildChatHistory(request);
+        var chatHistory = await BuildChatHistory(request);
 
         await foreach (var content in _chatService.GetStreamingChatMessageContentsAsync(chatHistory, cancellationToken: cancellationToken))
         {
             await WriteEventStreamAsync(new { content = content.Content }, cancellationToken);
         }
     }
-
-    private static ChatHistory BuildChatHistory(AppChatRequest request)
+    
+    private async Task<ChatHistory> BuildChatHistory(AppChatRequest request)
     {
         var chatHistory = new ChatHistory();
+
+        // If a system prompt ID is specified and there's no system message already
+        if (!string.IsNullOrEmpty(request.SystemPromptId) && 
+            !request.Messages.Any(m => m.Role == ChatRole.System))
+        {
+            var systemPrompt = await _systemPromptService.GetPromptByIdAsync(request.SystemPromptId);
+            if (systemPrompt != null)
+            {
+                chatHistory.AddSystemMessage(systemPrompt.Content);
+            }
+        }
 
         foreach (var message in request.Messages)
         {

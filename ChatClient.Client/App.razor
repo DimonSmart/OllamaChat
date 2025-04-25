@@ -1,4 +1,7 @@
-﻿<Router AppAssembly="@typeof(App).Assembly">
+﻿@using Microsoft.AspNetCore.Components.Routing
+@using ChatClient.Client.Layout
+
+<Router AppAssembly="@typeof(App).Assembly">
     <Found Context="routeData">
         <RouteView RouteData="@routeData" DefaultLayout="@typeof(MainLayout)" />
         <FocusOnNavigate RouteData="@routeData" Selector="h1" />
@@ -6,7 +9,30 @@
     <NotFound>
         <PageTitle>Not found</PageTitle>
         <LayoutView Layout="@typeof(MainLayout)">
-            <p role="alert">Sorry, there's nothing at this address.</p>
+            <div class="container mt-4">
+                <div class="alert alert-danger">
+                    <h4>Page not found</h4>
+                    <p role="alert">Sorry, there's nothing at this address. The requested page was not found.</p>
+                    <a href="/" class="btn btn-primary">Go to Home Page</a>
+                </div>
+                <div class="mt-3">
+                    <h5>Available Pages</h5>
+                    <ul>
+                        <li><a href="/">Home</a></li>
+                        <li><a href="/chat">Chat</a></li>
+                        <li><a href="/system-prompts">System Prompts</a></li>
+                        <li><a href="/test">Test Page</a></li>
+                    </ul>
+                </div>
+            </div>
         </LayoutView>
     </NotFound>
 </Router>
+
+@code {
+    protected override void OnInitialized()
+    {
+        Console.WriteLine("App component initialized");
+        base.OnInitialized();
+    }
+}
