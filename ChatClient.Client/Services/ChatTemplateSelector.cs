@@ -13,7 +13,7 @@ public class ChatTemplateSelector
             : AssistantTemplate(message);
     }
 
-    private RenderFragment UserTemplate(Message message) => builder =>
+    private static RenderFragment UserTemplate(Message message) => builder =>
     {
         builder.OpenElement(0, "div");
         builder.AddAttribute(1, "class", "user-message message-container");
