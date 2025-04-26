@@ -157,7 +157,6 @@
     private List<Message> historyMessages = new();
     private CancellationTokenSource? cts;
     private Message? currentResponse;
-    private readonly StringBuilder _contentBuffer = new();
     private List<SystemPrompt> systemPrompts = new();
     private bool showSystemPromptSelector = true;
     private string selectedPromptId = string.Empty;
@@ -313,7 +312,6 @@
             using var stream = await response.Content.ReadAsStreamAsync(cts.Token);
             using var reader = new StreamReader(stream);
 
-            _contentBuffer.Clear();
             string? line;
             while ((line = await reader.ReadLineAsync(cts.Token)) != null)
             {
@@ -327,23 +325,15 @@
                     var data = JsonSerializer.Deserialize<StreamResponse>(jsonData);
                     if (data?.content != null && currentResponse != null && !cts.Token.IsCancellationRequested)
                     {
-                        _contentBuffer.Append(data.content);
                         currentResponse.Content += data.content;
                         await InvokeAsync(StateHasChanged);
                         await ScrollToBottom();
-                        _contentBuffer.Clear();
                     }
                 }
                 catch (JsonException)
                 {
                     continue;
                 }
-            }
-
-            if (_contentBuffer.Length > 0)
-            {
-                await ScrollToBottom();
-                _contentBuffer.Clear();
             }
 
             if (currentResponse != null)
