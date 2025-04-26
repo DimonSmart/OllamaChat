@@ -94,20 +94,28 @@
             @foreach (var message in Messages)
             {
                 <div class="@(message.Role == Microsoft.Extensions.AI.ChatRole.User ? "user-message" : "assistant-message") message-container">
-                    <div class="message-content">@message.Content</div>
-                    <div class="message-time">@message.MsgDateTime.ToString("g")</div>
-                </div>
-            }
-            @if (IsShowingLoader)
-            {
-                <div class="assistant-message message-container">
                     <div class="message-content">
-                        <div class="loading-indicator">
-                            <span class="loading-dot"></span>
-                            <span class="loading-dot"></span>
-                            <span class="loading-dot"></span>
-                        </div>
+                        @if (message == currentResponse && string.IsNullOrEmpty(message.Content))
+                        {
+                            <div class="loading-indicator" aria-label="Loading response...">
+                                <span class="loading-dot"></span>
+                                <span class="loading-dot"></span>
+                                <span class="loading-dot"></span>
+                            </div>
+                        }
+                        else
+                        {
+                            @message.Content
+                            @if (IsStreamingResponse && message == currentResponse)
+                            {
+                                <span class="streaming-indicator"></span>
+                            }
+                        }
                     </div>
+                    @if (!(message == currentResponse && string.IsNullOrEmpty(message.Content)))
+                    {
+                        <div class="message-time">@message.MsgDateTime.ToString("g")</div>
+                    }
                 </div>
             }
         </div>
@@ -158,8 +166,8 @@
     private bool loadingPrompts = true;
 
     public List<Message> Messages { get; } = new();
-
-    private bool IsShowingLoader => isLoading && currentResponse != null && string.IsNullOrEmpty(currentResponse.Content);
+    // Used to show the streaming cursor at the end of message while it's still being received
+    private bool IsStreamingResponse => isLoading && currentResponse != null && !string.IsNullOrEmpty(currentResponse.Content);
 
     protected override async Task OnInitializedAsync()
     {
@@ -272,15 +280,19 @@
         historyMessages.Add(userMessageObj);
 
         await ScrollToBottom();
-
         try
         {
             isLoading = true;
-            StateHasChanged();
 
-            cts = new CancellationTokenSource();
+            // Add the assistant's empty response to show the loading indicator
             currentResponse = new Message(string.Empty, DateTime.Now, Microsoft.Extensions.AI.ChatRole.Assistant);
             Messages.Add(currentResponse);
+
+            // Update UI to show loader and scroll to ensure it's visible
+            await InvokeAsync(StateHasChanged);
+            await ScrollToBottom();
+
+            cts = new CancellationTokenSource();
 
             var request = new HttpRequestMessage(HttpMethod.Post, "api/chat/stream")
                 {
@@ -318,12 +330,8 @@
                         _contentBuffer.Append(data.content);
                         currentResponse.Content += data.content;
                         await InvokeAsync(StateHasChanged);
-
-                        if (data.content.Contains("\n") || _contentBuffer.Length > 100)
-                        {
-                            await ScrollToBottom();
-                            _contentBuffer.Clear();
-                        }
+                        await ScrollToBottom();
+                        _contentBuffer.Clear();
                     }
                 }
                 catch (JsonException)
@@ -357,7 +365,7 @@
         {
             isLoading = false;
             currentResponse = null;
-            StateHasChanged();
+            await InvokeAsync(StateHasChanged);
         }
     }
 
