@@ -18,6 +18,8 @@ public class FunctionsController : ControllerBase
     [HttpGet]
     public ActionResult<IEnumerable<FunctionInfo>> GetAvailableFunctions()
     {
+        // Initialize and load MCP tools
+        _ = _kernelService.CreateKernel();
         var functions = _kernelService.GetAvailableFunctions();
         return Ok(functions);
     }

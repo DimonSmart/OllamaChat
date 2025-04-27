@@ -43,6 +43,21 @@
                 console.error("Blazor Error:", error);
             }
         };
+        
+        // Helper to get all selected values from a multiple select element
+        window.getSelectValues = function (selectElement) {
+            var result = [];
+            if (!selectElement || !selectElement.options) {
+                return result;
+            }
+            for (var i = 0; i < selectElement.options.length; i++) {
+                var opt = selectElement.options[i];
+                if (opt.selected) {
+                    result.push(opt.value);
+                }
+            }
+            return result;
+        };
     </script>
 </body>
 
