@@ -29,7 +29,7 @@ public class ChatController(
         {
             var chatHistory = await BuildChatHistory(request);
 
-            var kernel = kernelService.CreateKernel();
+            var kernel = kernelService.CreateKernel(request.FunctionNames);
 
             var executionSettings = new PromptExecutionSettings
             {
@@ -64,7 +64,7 @@ public class ChatController(
             SetStreamHeaders(Response);
             var chatHistory = await BuildChatHistory(request);
 
-            var kernel = kernelService.CreateKernel();
+            var kernel = kernelService.CreateKernel(request.FunctionNames);
             var executionSettings = new PromptExecutionSettings
             {
                 FunctionChoiceBehavior = FunctionChoiceBehavior.Auto()

@@ -74,6 +74,17 @@
                         <h5>Prompt Preview:</h5>
                         <div class="prompt-content">@prompt?.Content</div>
                     </div>
+
+                    <div class="form-group mb-3">
+                        <label>Select Functions to use:</label>
+                        <select multiple class="form-control" @bind="selectedFunctions">
+                            @foreach (var fn in availableFunctions)
+                            {
+                                <option value="@fn.Name">@fn.Name &ndash; @fn.Description</option>
+                            }
+                        </select>
+                        <small class="form-text text-muted">It is not recommended to select more than 5 functions.</small>
+                    </div>
                 }
 
                 <div class="system-prompt-actions">
@@ -163,6 +174,8 @@
     private SystemPrompt? selectedSystemPrompt;
     private string defaultSystemPromptContent = "You are a helpful assistant.";
     private bool loadingPrompts = true;
+    private List<FunctionInfo> availableFunctions = new();
+    private List<string> selectedFunctions = new();
 
     public List<Message> Messages { get; } = new();
     // Used to show the streaming cursor at the end of message while it's still being received
@@ -171,6 +184,7 @@
     protected override async Task OnInitializedAsync()
     {
         await LoadSystemPrompts();
+        await LoadAvailableFunctions();
     }
 
     private async Task LoadSystemPrompts()
@@ -211,6 +225,24 @@
         {
             loadingPrompts = false;
             StateHasChanged();
+        }
+    }
+
+    private async Task LoadAvailableFunctions()
+    {
+        try
+        {
+            var response = await Http.GetAsync("api/functions");
+            if (response.IsSuccessStatusCode)
+            {
+                var content = await response.Content.ReadAsStringAsync();
+                availableFunctions = JsonSerializer.Deserialize<List<FunctionInfo>>(content,
+                    new JsonSerializerOptions { PropertyNameCaseInsensitive = true }) ?? new List<FunctionInfo>();
+            }
+        }
+        catch
+        {
+            availableFunctions = new List<FunctionInfo>();
         }
     }
 
@@ -295,7 +327,7 @@
 
             var request = new HttpRequestMessage(HttpMethod.Post, "api/chat/stream")
                 {
-                    Content = JsonContent.Create(new AppChatRequest { Messages = historyMessages })
+                    Content = JsonContent.Create(new AppChatRequest { Messages = historyMessages, FunctionNames = selectedFunctions })
                 };
             request.SetBrowserResponseStreamingEnabled(true);
 

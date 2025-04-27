@@ -1,3 +1,4 @@
+using ChatClient.Shared.Models;
 using Microsoft.SemanticKernel;
 using ModelContextProtocol.Client;
 
@@ -13,7 +14,7 @@ public class KernelService(
     private IMcpClient? _mcpClient;
     private IReadOnlyList<McpClientTool>? _mcpTools;
 
-    public Kernel CreateKernel()
+    public Kernel CreateKernel(IEnumerable<string>? functionNames = null)
     {
         var baseUrl = configuration["Ollama:BaseUrl"] ?? "http://localhost:11434";
         var modelId = configuration["Ollama:Model"] ?? "phi4:14b";
@@ -37,7 +38,30 @@ public class KernelService(
 
         var kernel = builder.Build();
 
+        // Load MCP tools
         InitializeMcpIntegrationAsync(kernel).GetAwaiter().GetResult();
+
+        // Register selected MCP tools as kernel functions
+        if (_mcpTools != null && _mcpTools.Count > 0)
+        {
+            var toolsToRegister = (functionNames != null && functionNames.Any())
+                ? _mcpTools.Where(t => functionNames.Contains(t.Name)).ToList()
+                : _mcpTools.ToList();
+            if (toolsToRegister.Any())
+            {
+                var pluginFunctions = toolsToRegister.Select(tool => tool.AsKernelFunction()).ToList();
+                kernel.Plugins.AddFromFunctions("McpTools", pluginFunctions);
+                logger.LogInformation("Registered {Count} MCP tools based on selection", pluginFunctions.Count);
+            }
+            else
+            {
+                logger.LogWarning("No selected MCP tools to register");
+            }
+        }
+        else
+        {
+            logger.LogWarning("No MCP tools loaded to register");
+        }
 
         return kernel;
     }
@@ -48,26 +72,28 @@ public class KernelService(
         {
             _mcpClient = await mcpClientService.CreateMcpClientAsync(kernel);
             _mcpTools = await mcpClientService.GetMcpTools(_mcpClient);
-
             if (_mcpTools.Count > 0)
             {
-                logger.LogInformation("Registering {Count} MCP tools as kernel functions", _mcpTools.Count);
-
-#pragma warning disable SKEXP0001
-                var pluginFunctions = _mcpTools.Select(tool => tool.AsKernelFunction()).ToList();
-                kernel.Plugins.AddFromFunctions("McpTools", pluginFunctions);
-#pragma warning restore SKEXP0001
-
-                logger.LogInformation("MCP tools registered successfully");
+                logger.LogInformation("Loaded {Count} MCP tools", _mcpTools.Count);
             }
             else
             {
-                logger.LogWarning("No MCP tools available to register");
+                logger.LogWarning("No MCP tools available to load");
             }
         }
         catch (Exception ex)
         {
             logger.LogError(ex, "Failed to initialize MCP integration: {Message}", ex.Message);
         }
+    }
+
+    /// <summary>
+    /// Returns the list of available functions registered in the kernel.
+    /// </summary>
+    public IEnumerable<FunctionInfo> GetAvailableFunctions()
+    {
+        return _mcpTools?
+            .Select(tool => new FunctionInfo { Name = tool.Name, Description = tool.Description })
+            ?? Enumerable.Empty<FunctionInfo>();
     }
 }
