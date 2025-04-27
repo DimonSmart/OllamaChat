@@ -1,17 +1,18 @@
 using ChatClient.Shared.Models;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.AI;
+using Microsoft.SemanticKernel;
 using Microsoft.SemanticKernel.ChatCompletion;
 
 namespace ChatClient.Api.Controllers;
 
 [ApiController]
 [Route("api/[controller]")]
-public class ChatController : ControllerBase
+public class ChatController(
+    IChatCompletionService chatService,
+    ILogger<ChatController> logger,
+    Services.KernelService kernelService) : ControllerBase
 {
-    private readonly IChatCompletionService _chatService;
-    private readonly ILogger<ChatController> _logger;
-
     private const string ContentTypeEventStream = "text/event-stream";
     private static readonly IDictionary<ChatRole, Action<ChatHistory, string>> RoleHandlers =
         new Dictionary<ChatRole, Action<ChatHistory, string>>
@@ -21,39 +22,71 @@ public class ChatController : ControllerBase
             { ChatRole.Assistant, (history, content) => history.AddAssistantMessage(content) }
         };
 
-    public ChatController(
-        IChatCompletionService chatService,
-        ILogger<ChatController> logger)
-    {
-        _chatService = chatService;
-        _logger = logger;
-    }
-
     [HttpPost("message")]
     public async Task<IActionResult> SendMessage([FromBody] AppChatRequest request, CancellationToken cancellationToken)
     {
-        var chatHistory = await BuildChatHistory(request);
-        var response = await _chatService.GetChatMessageContentAsync(chatHistory, cancellationToken: cancellationToken);
-
-        return Ok(new AppChatResponse
+        try
         {
-            Message = new Message(response.Content ?? string.Empty, DateTime.UtcNow, ChatRole.Assistant)
-        });
+            var chatHistory = await BuildChatHistory(request);
+
+            var kernel = kernelService.CreateKernel();
+
+            var executionSettings = new PromptExecutionSettings
+            {
+                FunctionChoiceBehavior = FunctionChoiceBehavior.Auto()
+            };
+
+            var response = await chatService.GetChatMessageContentAsync(
+                chatHistory,
+                executionSettings,
+                kernel,
+                cancellationToken: cancellationToken);
+
+            logger.LogInformation("Chat message processed successfully");
+
+            return Ok(new AppChatResponse
+            {
+                Message = new Message(response.Content ?? string.Empty, DateTime.UtcNow, ChatRole.Assistant)
+            });
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Error processing chat message");
+            return StatusCode(500, new { error = "An error occurred processing your request" });
+        }
     }
 
     [HttpPost("stream")]
     public async Task StreamMessage([FromBody] AppChatRequest request, CancellationToken cancellationToken)
     {
-        SetStreamHeaders();
-        var chatHistory = await BuildChatHistory(request);
-
-        await foreach (var content in _chatService.GetStreamingChatMessageContentsAsync(chatHistory, cancellationToken: cancellationToken))
+        try
         {
-            await WriteEventStreamAsync(new { content = content.Content }, cancellationToken);
+            SetStreamHeaders(Response);
+            var chatHistory = await BuildChatHistory(request);
+
+            var kernel = kernelService.CreateKernel();
+            var executionSettings = new PromptExecutionSettings
+            {
+                FunctionChoiceBehavior = FunctionChoiceBehavior.Auto()
+            };
+
+            await foreach (var content in chatService.GetStreamingChatMessageContentsAsync(
+                chatHistory,
+                executionSettings,
+                kernel,
+                cancellationToken: cancellationToken))
+            {
+                await WriteEventStreamAsync(new { content = content.Content }, cancellationToken);
+            }
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Error streaming chat message: {Message}", ex.Message);
+            await WriteEventStreamAsync(new { error = "An error occurred processing your request" }, cancellationToken);
         }
     }
 
-    private async Task<ChatHistory> BuildChatHistory(AppChatRequest request)
+    private static Task<ChatHistory> BuildChatHistory(AppChatRequest request)
     {
         var chatHistory = new ChatHistory();
 
@@ -65,14 +98,14 @@ public class ChatController : ControllerBase
             }
         }
 
-        return chatHistory;
+        return Task.FromResult(chatHistory);
     }
 
-    private void SetStreamHeaders()
+    private static void SetStreamHeaders(HttpResponse response)
     {
-        Response.Headers["Content-Type"] = ContentTypeEventStream;
-        Response.Headers["Cache-Control"] = "no-cache";
-        Response.Headers["Connection"] = "keep-alive";
+        response.Headers.ContentType = ContentTypeEventStream;
+        response.Headers.CacheControl = "no-cache";
+        response.Headers.Connection = "keep-alive";
     }
 
     private async Task WriteEventStreamAsync(object data, CancellationToken cancellationToken)

@@ -2,18 +2,11 @@ using ChatClient.Api;
 using ChatClient.Api.Services;
 using Microsoft.SemanticKernel;
 using Microsoft.SemanticKernel.ChatCompletion;
-using ModelContextProtocol.Client;
-using ModelContextProtocol.Protocol.Transport;
-using System.Diagnostics.CodeAnalysis;
-
-// Suppress the experimental API warning
-[assembly: SuppressMessage("SemanticKernel", "SKEXP0070", Justification = "Using experimental API as required")]
 
 var builder = WebApplication.CreateBuilder(args);
-builder.Services.AddLogging();
-builder.Services.AddHttpClient();
 
-// Create logger factory
+// Add services to the container
+builder.Services.AddHttpClient();
 var loggerFactory = LoggerFactory.Create(logging =>
 {
     logging.AddConsole();
@@ -27,8 +20,8 @@ builder.Services.AddCors(options =>
     options.AddPolicy("AllowBlazorClient", builder =>
     {
         builder.WithOrigins("https://localhost:7190", "http://localhost:5270")
-               .AllowAnyMethod()
-               .AllowAnyHeader();
+              .AllowAnyMethod()
+              .AllowAnyHeader();
     });
 });
 
@@ -37,78 +30,15 @@ builder.Services.AddControllers(options =>
     options.Filters.Add<ApiExceptionFilter>();
 });
 
-// Configure MCP clients
-try
-{
-    var mcpConfigs = builder.Configuration.GetSection("McpServers").Get<List<ChatClient.Api.Models.McpServerConfig>>();
-
-    if (mcpConfigs != null && mcpConfigs.Count > 0)
-    {
-        foreach (var cfg in mcpConfigs)
-        {
-            builder.Services.AddSingleton<IMcpClient>(sp =>
-            {
-                var logger = sp.GetRequiredService<ILogger<Program>>();
-                logger.LogInformation($"Initializing MCP client: {cfg.Name}, command: {cfg.Command}");
-
-                var transport = new StdioClientTransport(
-                    new StdioClientTransportOptions
-                    {
-                        Command = cfg.Command ?? "echo",
-                        Arguments = cfg.Arguments ?? Array.Empty<string>()
-                    },
-                    sp.GetRequiredService<ILoggerFactory>()
-                );
-                return McpClientFactory.CreateAsync(transport).GetAwaiter().GetResult();
-            });
-        }
-    }
-    else
-    {
-        builder.Services.AddSingleton<IMcpClient>(sp =>
-        {
-            var logger = sp.GetRequiredService<ILogger<Program>>();
-            logger.LogWarning("MCP configuration missing, using stub");
-            var transport = new StdioClientTransport(
-                new StdioClientTransportOptions
-                {
-                    Command = "echo",
-                    Arguments = new[] { "MCP client stub" }
-                },
-                sp.GetRequiredService<ILoggerFactory>()
-            );
-            return McpClientFactory.CreateAsync(transport).GetAwaiter().GetResult();
-        });
-    }
-}
-catch (Exception ex)
-{
-    builder.Services.AddSingleton<IMcpClient>(sp =>
-    {
-        var logger = sp.GetRequiredService<ILogger<Program>>();
-        logger.LogError(ex, "Error configuring MCP clients, using stub");
-        var transport = new StdioClientTransport(
-            new StdioClientTransportOptions
-            {
-                Command = "echo",
-                Arguments = new[] { "MCP client stub" }
-            },
-            sp.GetRequiredService<ILoggerFactory>()
-        );
-        return McpClientFactory.CreateAsync(transport).GetAwaiter().GetResult();
-    });
-}
-
-// Register KernelService
-builder.Services.AddSingleton<KernelService>();
-
-// Register SystemPromptService
+// Register services
+builder.Services.AddSingleton<ChatClient.Api.Services.McpClientService>();
+builder.Services.AddSingleton<ChatClient.Api.Services.KernelService>();
 builder.Services.AddSingleton<ChatClient.Shared.Services.ISystemPromptService, ChatClient.Api.Services.SystemPromptService>();
 
 // Register Kernel as a singleton
 builder.Services.AddSingleton(sp =>
 {
-    var kernelService = sp.GetRequiredService<KernelService>();
+    var kernelService = sp.GetRequiredService<ChatClient.Api.Services.KernelService>();
     return kernelService.CreateKernel();
 });
 

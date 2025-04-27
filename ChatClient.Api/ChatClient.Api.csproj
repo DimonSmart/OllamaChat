@@ -1,7 +1,9 @@
-<Project Sdk="Microsoft.NET.Sdk.Web">  <PropertyGroup>
+<Project Sdk="Microsoft.NET.Sdk.Web">
+  <PropertyGroup>
     <TargetFramework>net9.0</TargetFramework>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
+    <OutputType>Exe</OutputType>
     <!-- Use both NoWarn and WarningsNotAsErrors to handle the experimental API warning -->
     <NoWarn>$(NoWarn);SKEXP0070</NoWarn>
     <WarningsNotAsErrors>$(WarningsNotAsErrors);SKEXP0070</WarningsNotAsErrors>
@@ -16,6 +18,11 @@
     <PackageReference Include="ModelContextProtocol" Version="0.1.0-preview.11" />
     <PackageReference Include="ModelContextProtocol-SemanticKernel" Version="0.0.1-preview-09" />
   </ItemGroup>
+
+  <PropertyGroup>
+    <NoWarn>$(NoWarn);SKEXP0070</NoWarn>
+  </PropertyGroup>
+
 
   <ItemGroup>
     <ProjectReference Include="..\ChatClient.Shared\ChatClient.Shared.csproj" />

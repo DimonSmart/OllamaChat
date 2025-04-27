@@ -1,29 +1,24 @@
 using Microsoft.SemanticKernel;
+using ModelContextProtocol.Client;
 
 namespace ChatClient.Api.Services;
 
-public class KernelService
+public class KernelService(
+    IConfiguration configuration,
+    ILoggerFactory loggerFactory,
+    IHttpClientFactory httpClientFactory,
+    McpClientService mcpClientService,
+    ILogger<KernelService> logger)
 {
-    private readonly IConfiguration _configuration;
-    private readonly ILoggerFactory _loggerFactory;
-    private readonly IHttpClientFactory _httpClientFactory;
-
-    public KernelService(
-        IConfiguration configuration,
-        ILoggerFactory loggerFactory,
-        IHttpClientFactory httpClientFactory)
-    {
-        _configuration = configuration;
-        _loggerFactory = loggerFactory;
-        _httpClientFactory = httpClientFactory;
-    }
+    private IMcpClient? _mcpClient;
+    private IReadOnlyList<McpClientTool>? _mcpTools;
 
     public Kernel CreateKernel()
     {
-        var baseUrl = _configuration["Ollama:BaseUrl"] ?? "http://localhost:11434";
-        var modelId = _configuration["Ollama:Model"] ?? "phi4:14b";
+        var baseUrl = configuration["Ollama:BaseUrl"] ?? "http://localhost:11434";
+        var modelId = configuration["Ollama:Model"] ?? "phi4:14b";
 
-        var httpClient = _httpClientFactory.CreateClient("Ollama");
+        var httpClient = httpClientFactory.CreateClient("Ollama");
         httpClient.BaseAddress = new Uri(baseUrl);
         httpClient.Timeout = TimeSpan.FromMinutes(10);
 
@@ -35,10 +30,44 @@ public class KernelService
         );
 
         builder.Services.AddLogging(c => c.AddConsole().SetMinimumLevel(LogLevel.Information));
+        builder.Services.AddSingleton(new PromptExecutionSettings
+        {
+            FunctionChoiceBehavior = FunctionChoiceBehavior.Auto()
+        });
 
         var kernel = builder.Build();
 
-        // Here we will add plugins later
+        InitializeMcpIntegrationAsync(kernel).GetAwaiter().GetResult();
+
         return kernel;
+    }
+
+    private async Task InitializeMcpIntegrationAsync(Kernel kernel)
+    {
+        try
+        {
+            _mcpClient = await mcpClientService.CreateMcpClientAsync(kernel);
+            _mcpTools = await mcpClientService.GetMcpTools(_mcpClient);
+
+            if (_mcpTools.Count > 0)
+            {
+                logger.LogInformation("Registering {Count} MCP tools as kernel functions", _mcpTools.Count);
+
+#pragma warning disable SKEXP0001
+                var pluginFunctions = _mcpTools.Select(tool => tool.AsKernelFunction()).ToList();
+                kernel.Plugins.AddFromFunctions("McpTools", pluginFunctions);
+#pragma warning restore SKEXP0001
+
+                logger.LogInformation("MCP tools registered successfully");
+            }
+            else
+            {
+                logger.LogWarning("No MCP tools available to register");
+            }
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Failed to initialize MCP integration: {Message}", ex.Message);
+        }
     }
 }
