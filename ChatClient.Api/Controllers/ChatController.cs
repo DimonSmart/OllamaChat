@@ -33,7 +33,9 @@ public class ChatController(
 
             var executionSettings = new PromptExecutionSettings
             {
-                FunctionChoiceBehavior = FunctionChoiceBehavior.Auto()
+                FunctionChoiceBehavior = (request.FunctionNames != null && request.FunctionNames.Any())
+                    ? FunctionChoiceBehavior.Auto()
+                    : FunctionChoiceBehavior.None()
             };
 
             var response = await chatService.GetChatMessageContentAsync(
@@ -67,7 +69,9 @@ public class ChatController(
             var kernel = kernelService.CreateKernel(request.FunctionNames);
             var executionSettings = new PromptExecutionSettings
             {
-                FunctionChoiceBehavior = FunctionChoiceBehavior.Auto()
+                FunctionChoiceBehavior = (request.FunctionNames != null && request.FunctionNames.Any())
+                    ? FunctionChoiceBehavior.Auto()
+                    : FunctionChoiceBehavior.None()
             };
 
             await foreach (var content in chatService.GetStreamingChatMessageContentsAsync(
