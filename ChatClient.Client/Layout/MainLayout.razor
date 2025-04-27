@@ -1,26 +1,35 @@
 ﻿@inherits LayoutComponentBase
-<div class="page">
-    <div class="sidebar">
+@using MudBlazor
+
+<MudPopoverProvider />
+
+<MudLayout>
+    <MudDrawer Open="true" ClipMode="DrawerClipMode.Always" Variant="DrawerVariant.Mini">
         <NavMenu />
-    </div>
-
-    <main>
-        <div class="top-row px-4">
-            <a href="/system-prompts" class="btn btn-sm btn-outline-primary">
-                <i class="bi bi-gear"></i> System Prompts
-            </a>
-        </div>
-
-        <article class="content px-4">
+    </MudDrawer>
+    <MudMainContent>
+        <MudAppBar Elevation="0">
+            <MudText Typo="Typo.h6">Ollama Chat</MudText>
+            <MudSpacer />
+            <MudButton Href="/system-prompts" Variant="Variant.Outlined" Color="Color.Primary" Size="Size.Small">
+                <MudIcon Icon="@Icons.Material.Filled.Settings" /> System Prompts
+            </MudButton>
+            <MudSwitch T="bool" @bind-Checked="_isDarkMode" Color="Color.Primary" Class="ms-4" ThumbIconChecked="@Icons.Material.Filled.DarkMode" ThumbIconUnchecked="@Icons.Material.Filled.LightMode" />
+        </MudAppBar>
+        <MudContainer MaxWidth="MaxWidth.Large" Class="mt-4">
             @Body
-        </article>
-        
-        <footer class="footer">
+        </MudContainer>
+        <footer class="footer mt-4">
             <div class="container">
                 <div class="text-center p-3 text-muted">
                     <small>Ollama Chat - Local LLM Chat via Ollama API</small>
                 </div>
             </div>
         </footer>
-    </main>
-</div>
+    </MudMainContent>
+</MudLayout>
+
+@code {
+    private bool _isDarkMode = false;
+    // Можно добавить сохранение/загрузку темы из localStorage при необходимости
+}

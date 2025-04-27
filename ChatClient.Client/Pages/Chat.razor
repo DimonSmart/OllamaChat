@@ -2,13 +2,14 @@
 @using Microsoft.AspNetCore.Components
 @using Microsoft.AspNetCore.Components.Web
 @using Microsoft.AspNetCore.Components.WebAssembly.Http
-@using Microsoft.JSInterop
 @using System.Collections.ObjectModel
 @using System.Text.Json
 @using System.Net.Http.Json
 @using ChatClient.Shared.Models
 @using System.Threading
 @using System.Text
+@using MudBlazor
+@using ChatClient.Client.Pages
 @implements IAsyncDisposable
 @inject HttpClient Http
 @inject IJSRuntime JSRuntime
@@ -21,80 +22,51 @@
     {
         <div class="system-prompt-selector">
             <h3>Choose a System Prompt to start your conversation</h3>
-
             @if (loadingPrompts)
             {
-                <div class="loading-prompts">
-                    <div class="spinner-border text-primary" role="status">
-                        <span class="visually-hidden">Loading...</span>
-                    </div>
-                    <span>Loading system prompts...</span>
-                </div>
-
-                <div class="mt-3">
-                    <div class="alert alert-info">
-                        <p>You can start with a default prompt while we're loading system prompts.</p>
-                    </div>
-                    <div class="system-prompt-actions mt-3">
-                        <button class="btn btn-primary" @onclick="StartChatWithDefault">Start Chat with Default Prompt</button>
-                        <a href="/system-prompts" class="btn btn-outline-secondary ms-2">
-                            Manage System Prompts
-                        </a>
-                    </div>
+                <MudProgressCircular Indeterminate="true" Color="Color.Primary" />
+                <MudText Class="mt-2">Loading system prompts...</MudText>
+                <MudAlert Severity="Severity.Info" Class="mt-3">
+                    You can start with a default prompt while we're loading system prompts.
+                </MudAlert>
+                <div class="system-prompt-actions mt-3">
+                    <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="StartChatWithDefault">Start Chat with Default Prompt</MudButton>
+                    <MudButton Variant="Variant.Outlined" Color="Color.Secondary" Href="/system-prompts" Class="ms-2">Manage System Prompts</MudButton>
                 </div>
             }
             else if (!systemPrompts.Any())
             {
-                <div class="alert alert-warning">
-                    No system prompts found. Using default prompt.
-                </div>
+                <MudAlert Severity="Severity.Warning">No system prompts found. Using default prompt.</MudAlert>
                 <div class="system-prompt-actions mt-3">
-                    <button class="btn btn-primary" @onclick="StartChatWithDefault">Start Chat with Default Prompt</button>
-                    <a href="/system-prompts" class="btn btn-outline-secondary ms-2">
-                        Manage System Prompts
-                    </a>
+                    <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="StartChatWithDefault">Start Chat with Default Prompt</MudButton>
+                    <MudButton Variant="Variant.Outlined" Color="Color.Secondary" Href="/system-prompts" Class="ms-2">Manage System Prompts</MudButton>
                 </div>
             }
             else
             {
-                <div class="form-group mb-3">
-                    <select class="form-control" @bind="selectedPromptId">
-                        <option value="">-- Select a system prompt --</option>
-                        @foreach (var prompt in systemPrompts)
-                        {
-                            <option value="@prompt.Id">@prompt.Name</option>
-                        }
-                    </select>
-                </div>
-
+                <MudSelect T="string" Label="System Prompt" @bind-Value="selectedPromptId" Dense="true" Class="mb-3">
+                    <MudSelectItem T="string" Value="@null">-- Select a system prompt --</MudSelectItem>
+                    @foreach (var prompt in systemPrompts)
+                    {
+                        <MudSelectItem T="string" Value="@prompt.Id">@prompt.Name</MudSelectItem>
+                    }
+                </MudSelect>
                 @if (!string.IsNullOrEmpty(selectedPromptId))
                 {
                     var prompt = systemPrompts.FirstOrDefault(p => p.Id == selectedPromptId);
-                    <div class="prompt-preview mb-3">
-                        <h5>Prompt Preview:</h5>
-                        <div class="prompt-content">@prompt?.Content</div>
-                    </div>
-
-                    <div class="form-group mb-3">
-                        <label>Select Functions to use:</label>
-                        <select multiple class="form-control" @ref="functionsSelect" @onchange="OnFunctionsChanged">
-                            @foreach (var fn in availableFunctions)
-                            {
-                                <option value="@fn.Name">@fn.Name &ndash; @fn.Description</option>
-                            }
-                        </select>
-                        <small class="form-text text-muted">It is not recommended to select more than 5 functions.</small>
-                    </div>
+                    <MudPaper Class="pa-2 mb-3">
+                        <MudText Typo="Typo.subtitle2">Prompt Preview:</MudText>
+                        <MudText>@prompt?.Content</MudText>
+                    </MudPaper>
+                    <MudExpansionPanels>
+                        <MudExpansionPanel Text="Functions" Expanded="@functionsExpanded" ExpandedChanged="@((b) => functionsExpanded = b)">
+                            <FunctionSelector AvailableFunctions="availableFunctions" SelectedFunctions="selectedFunctions" SelectedFunctionsChanged="OnSelectedFunctionsChanged" Expanded="true" />
+                        </MudExpansionPanel>
+                    </MudExpansionPanels>
                 }
-
                 <div class="system-prompt-actions">
-                    <button class="btn btn-primary" @onclick="StartChatWithSelectedPrompt"
-                            disabled="@(string.IsNullOrEmpty(selectedPromptId))">
-                        Start Chat
-                    </button>
-                    <a href="/system-prompts" class="btn btn-outline-secondary ms-2">
-                        Manage System Prompts
-                    </a>
+                    <MudButton Variant="Variant.Filled" Color="Color.Primary" Disabled="@string.IsNullOrEmpty(selectedPromptId)" OnClick="StartChatWithSelectedPrompt">Start Chat</MudButton>
+                    <MudButton Variant="Variant.Outlined" Color="Color.Secondary" Href="/system-prompts" Class="ms-2">Manage System Prompts</MudButton>
                 </div>
             }
         </div>
@@ -104,59 +76,32 @@
         <div class="chat-messages" @ref="messagesElement">
             @foreach (var message in Messages)
             {
-                <div class="@(message.Role == Microsoft.Extensions.AI.ChatRole.User ? "user-message" : "assistant-message") message-container">
-                    <div class="message-content">
-                        @if (message == currentResponse && string.IsNullOrEmpty(message.Content))
-                        {
-                            <div class="loading-indicator" aria-label="Loading response...">
-                                <span class="loading-dot"></span>
-                                <span class="loading-dot"></span>
-                                <span class="loading-dot"></span>
-                            </div>
-                        }
-                        else
-                        {
-                            @message.Content
-                            @if (IsStreamingResponse && message == currentResponse)
-                            {
-                                <span class="streaming-indicator"></span>
-                            }
-                        }
-                    </div>
-                    @if (!(message == currentResponse && string.IsNullOrEmpty(message.Content)))
-                    {
-                        <div class="message-time">@message.MsgDateTime.ToString("g")</div>
-                    }
-                </div>
+                <MudPaper Class="@GetMessageClass(message)">
+                    <MudText>@message.Content</MudText>
+                    <MudText Typo="Typo.caption" Align="Align.Right">@message.MsgDateTime.ToString("g")</MudText>
+                </MudPaper>
             }
         </div>
-
+        <MudExpansionPanels Class="mb-2">
+            <MudExpansionPanel Text="Functions" Expanded="@functionsExpanded" ExpandedChanged="@((b) => functionsExpanded = b)">
+                <FunctionSelector AvailableFunctions="availableFunctions" SelectedFunctions="selectedFunctions" SelectedFunctionsChanged="OnSelectedFunctionsChanged" Expanded="true" />
+            </MudExpansionPanel>
+        </MudExpansionPanels>
         <div class="chat-input-container">
-            <div class="input-group">
-                <textarea @bind="inputText"
-                          @bind:event="oninput"
-                          @onkeydown="OnKeyPress"
-                          class="chat-input form-control"
-                          placeholder="Enter your message (Press Enter to send, Shift + Enter for new line)"
-                          rows="1"
-                          disabled="@isLoading"></textarea>
+            <MudTextField T="string" @bind-Value="inputText" Placeholder="Enter your message (Press Enter to send, Shift + Enter for new line)" Lines="1" Disabled="@isLoading" Class="chat-input mb-2" Immediate="true" OnKeyDown="OnKeyPress" />
+            <MudStack Direction="Row" Spacing="2">
                 @if (isLoading)
                 {
-                    <button @onclick="Cancel" class="btn btn-danger" title="Stop generating">
-                        <i class="bi bi-stop-fill"></i> Stop
-                    </button>
+                    <MudButton OnClick="Cancel" Color="Color.Error" Variant="Variant.Filled"><MudIcon Icon="@Icons.Material.Filled.Stop" /> Stop</MudButton>
                 }
                 else
                 {
-                    <button @onclick="SendMessage" class="btn btn-primary" disabled="@(string.IsNullOrWhiteSpace(inputText) || isLoading)">
-                        <i class="bi bi-send-fill"></i> Send
-                    </button>
-
-                    <button @onclick="RestartChat" class="btn btn-outline-secondary ms-2" title="New chat">
-                        <i class="bi bi-plus-circle"></i> New Chat
-                    </button>
+                    <MudButton OnClick="SendMessage" Color="Color.Primary" Variant="Variant.Filled" Disabled="@IsSendDisabled">
+                        <MudIcon Icon="@Icons.Material.Filled.Send" /> Send
+                    </MudButton>
+                    <MudButton OnClick="RestartChat" Color="Color.Secondary" Variant="Variant.Outlined"><MudIcon Icon="@Icons.Material.Filled.AddCircle" /> New Chat</MudButton>
                 }
-            </div>
+            </MudStack>
         </div>
     }
 </div>
@@ -165,7 +110,6 @@
     private string inputText = string.Empty;
     private bool isLoading = false;
     private ElementReference messagesElement;
-    private ElementReference functionsSelect;
     private List<Message> historyMessages = new();
     private CancellationTokenSource? cts;
     private Message? currentResponse;
@@ -177,10 +121,17 @@
     private bool loadingPrompts = true;
     private List<FunctionInfo> availableFunctions = new();
     private List<string> selectedFunctions = new();
+    private bool functionsExpanded = false;
+
+    private EventCallback<List<string>> OnSelectedFunctionsChanged => EventCallback.Factory.Create<List<string>>(this, (List<string> v) => selectedFunctions = v);
 
     public List<Message> Messages { get; } = new();
-    // Used to show the streaming cursor at the end of message while it's still being received
     private bool IsStreamingResponse => isLoading && currentResponse != null && !string.IsNullOrEmpty(currentResponse.Content);
+
+    private string GetMessageClass(Message message) =>
+        $"{(message.Role == Microsoft.Extensions.AI.ChatRole.User ? "user-message" : "assistant-message")} message-container pa-2 mb-2";
+
+    private bool IsSendDisabled => string.IsNullOrWhiteSpace(inputText) || isLoading;
 
     protected override async Task OnInitializedAsync()
     {
@@ -250,10 +201,10 @@
     private void StartChatWithDefault()
     {
         var defaultPrompt = new SystemPrompt
-            {
-                Name = "Default Assistant",
-                Content = defaultSystemPromptContent
-            };
+        {
+            Name = "Default Assistant",
+            Content = defaultSystemPromptContent
+        };
 
         InitializeChat(defaultPrompt);
     }
@@ -277,7 +228,6 @@
         selectedSystemPrompt = prompt;
         showSystemPromptSelector = false;
 
-        // Initialize the chat with the selected system prompt
         Messages.Clear();
         historyMessages.Clear();
 
@@ -316,20 +266,18 @@
         {
             isLoading = true;
 
-            // Add the assistant's empty response to show the loading indicator
             currentResponse = new Message(string.Empty, DateTime.Now, Microsoft.Extensions.AI.ChatRole.Assistant);
             Messages.Add(currentResponse);
 
-            // Update UI to show loader and scroll to ensure it's visible
             await InvokeAsync(StateHasChanged);
             await ScrollToBottom();
 
             cts = new CancellationTokenSource();
 
             var request = new HttpRequestMessage(HttpMethod.Post, "api/chat/stream")
-                {
-                    Content = JsonContent.Create(new AppChatRequest { Messages = historyMessages, FunctionNames = selectedFunctions })
-                };
+            {
+                Content = JsonContent.Create(new AppChatRequest { Messages = historyMessages, FunctionNames = selectedFunctions })
+            };
             request.SetBrowserResponseStreamingEnabled(true);
 
             using var response = await Http.SendAsync(
@@ -400,7 +348,6 @@
         }
         catch
         {
-            // Ignore any JavaScript interop errors
         }
     }
 
@@ -414,19 +361,6 @@
         if (e.Key == "Enter" && !e.ShiftKey)
         {
             await SendMessage();
-        }
-    }
-
-    private async Task OnFunctionsChanged(ChangeEventArgs e)
-    {
-        try
-        {
-            var values = await JSRuntime.InvokeAsync<string[]>("getSelectValues", functionsSelect);
-            selectedFunctions = values.ToList();
-        }
-        catch
-        {
-            selectedFunctions.Clear();
         }
     }
 

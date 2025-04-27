@@ -1,0 +1,48 @@
+@using ChatClient.Shared.Models
+@using MudBlazor
+
+<MudCollapse Expanded="@Expanded">
+    <MudPaper Class="pa-4">
+        <MudText Typo="Typo.subtitle1">Select Functions to use:</MudText>
+        <MudList T="string" Dense="true">
+            @foreach (var fn in AvailableFunctions)
+            {
+                <MudListItem T="string">
+                    <MudCheckBox T="bool" @bind-Checked="checkedStates[fn.Name]" />
+                    <MudText Class="ms-2">@fn.Name — @fn.Description</MudText>
+                </MudListItem>
+            }
+        </MudList>
+        <MudText Typo="Typo.caption" Color="Color.Secondary">It is not recommended to select more than 5 functions.</MudText>
+    </MudPaper>
+</MudCollapse>
+
+@code {
+    [Parameter] public List<FunctionInfo> AvailableFunctions { get; set; } = new();
+    [Parameter] public List<string> SelectedFunctions { get; set; } = new();
+    [Parameter] public EventCallback<List<string>> SelectedFunctionsChanged { get; set; }
+    [Parameter] public bool Expanded { get; set; }
+    [Parameter] public EventCallback<bool> ExpandedChanged { get; set; }
+
+    private Dictionary<string, bool> checkedStates = new();
+
+    protected override void OnParametersSet()
+    {
+        checkedStates = AvailableFunctions.ToDictionary(f => f.Name, f => SelectedFunctions.Contains(f.Name));
+    }
+
+    private async Task OnFunctionToggled(string name, bool isChecked)
+    {
+        checkedStates[name] = isChecked;
+        if (isChecked)
+        {
+            if (!SelectedFunctions.Contains(name))
+                SelectedFunctions.Add(name);
+        }
+        else
+        {
+            SelectedFunctions.Remove(name);
+        }
+        await SelectedFunctionsChanged.InvokeAsync(SelectedFunctions);
+    }
+}

@@ -2,9 +2,9 @@
 @using ChatClient.Shared.Models
 @using ChatClient.Shared.Services
 @using System.Net.Http.Json
+@using MudBlazor
 @inject HttpClient Http
 @inject NavigationManager NavigationManager
-@inject IJSRuntime JSRuntime
 
 <PageTitle>System Prompts Management</PageTitle>
 
@@ -17,6 +17,11 @@
         </button>
     </div>
     
+    @if (!string.IsNullOrEmpty(errorMessage))
+    {
+        <MudAlert Severity="Severity.Error">@errorMessage</MudAlert>
+    }
+
     @if (loading)
     {
         <div class="d-flex align-items-center mb-3">
@@ -119,6 +124,7 @@
     private bool showDeleteDialog = false;
     private SystemPrompt editingPrompt = new();
     private SystemPrompt? promptToDelete;
+    private string errorMessage = string.Empty;
     
     protected override async Task OnInitializedAsync()
     {
@@ -130,6 +136,7 @@
         try
         {
             loading = true;
+            errorMessage = string.Empty;
             StateHasChanged();
             
             var response = await Http.GetAsync("api/systemprompts");
@@ -140,13 +147,13 @@
             }
             else
             {
-                await JSRuntime.InvokeVoidAsync("console.error", "Failed to load prompts", response.StatusCode);
+                errorMessage = $"Failed to load prompts: {response.StatusCode}";
                 prompts = new List<SystemPrompt>();
             }
         }
         catch (Exception ex)
         {
-            await JSRuntime.InvokeVoidAsync("console.error", "Exception loading prompts", ex.Message);
+            errorMessage = $"Exception loading prompts: {ex.Message}";
             prompts = new List<SystemPrompt>();
         }
         finally
@@ -199,7 +206,7 @@
         }
         catch (Exception ex)
         {
-            await JSRuntime.InvokeVoidAsync("alert", $"Error saving prompt: {ex.Message}");
+            errorMessage = $"Error saving prompt: {ex.Message}";
         }
     }
     
@@ -214,7 +221,7 @@
             }
             catch (Exception ex)
             {
-                await JSRuntime.InvokeVoidAsync("alert", $"Error deleting prompt: {ex.Message}");
+                errorMessage = $"Error deleting prompt: {ex.Message}";
             }
         }
         
