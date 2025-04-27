@@ -44,10 +44,17 @@ public class KernelService(
         // Register selected MCP tools as kernel functions
         if (_mcpTools != null && _mcpTools.Count > 0)
         {
-            var toolsToRegister = (functionNames != null && functionNames.Any())
-                ? _mcpTools.Where(t => functionNames.Contains(t.Name)).ToList()
-                : _mcpTools.ToList();
-            if (toolsToRegister.Any())
+            // If functionNames is null, register all tools; if empty list, register none; otherwise register specified
+            List<McpClientTool> toolsToRegister;
+            if (functionNames == null)
+            {
+                toolsToRegister = _mcpTools.ToList();
+            }
+            else
+            {
+                toolsToRegister = _mcpTools.Where(t => functionNames.Contains(t.Name)).ToList();
+            }
+            if (toolsToRegister.Count > 0)
             {
                 var pluginFunctions = toolsToRegister.Select(tool => tool.AsKernelFunction()).ToList();
                 kernel.Plugins.AddFromFunctions("McpTools", pluginFunctions);
@@ -55,7 +62,7 @@ public class KernelService(
             }
             else
             {
-                logger.LogWarning("No selected MCP tools to register");
+                logger.LogWarning("No MCP tools registered because none were selected");
             }
         }
         else
