@@ -10,123 +10,146 @@
 @using System.Text
 @using MudBlazor
 @using ChatClient.Client.Pages
+@using ChatClient.Client.Services
 @implements IAsyncDisposable
 @inject HttpClient Http
 @inject IJSRuntime JSRuntime
 @inject NavigationManager NavigationManager
+@inject IDialogService DialogService
+@inject ChatService ChatService
+@inject ClientSystemPromptService PromptService
 
 <PageTitle>Chat with AI Assistant</PageTitle>
 
-<div class="chat-container">
-    @if (showSystemPromptSelector)
+<div class="chat-container d-flex flex-column" style="height: calc(100vh - 64px);">
+    @if (isLoadingInitialData)
     {
-        <div class="system-prompt-selector">
-            <h3>Choose a System Prompt to start your conversation</h3>
-            @if (loadingPrompts)
-            {
-                <MudProgressCircular Indeterminate="true" Color="Color.Primary" />
-                <MudText Class="mt-2">Loading system prompts...</MudText>
-                <MudAlert Severity="Severity.Info" Class="mt-3">
-                    You can start with a default prompt while we're loading system prompts.
-                </MudAlert>
-                <div class="system-prompt-actions mt-3">
-                    <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="StartChatWithDefault">Start Chat with Default Prompt</MudButton>
-                    <MudButton Variant="Variant.Outlined" Color="Color.Secondary" Href="/system-prompts" Class="ms-2">Manage System Prompts</MudButton>
-                </div>
-            }
-            else if (!systemPrompts.Any())
-            {
-                <MudAlert Severity="Severity.Warning">No system prompts found. Using default prompt.</MudAlert>
-                <div class="system-prompt-actions mt-3">
-                    <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="StartChatWithDefault">Start Chat with Default Prompt</MudButton>
-                    <MudButton Variant="Variant.Outlined" Color="Color.Secondary" Href="/system-prompts" Class="ms-2">Manage System Prompts</MudButton>
-                </div>
-            }
-            else
-            {
-                <MudSelect T="string" Label="System Prompt" @bind-Value="selectedPromptId" Dense="true" Class="mb-3">
-                    <MudSelectItem T="string" Value="@null">-- Select a system prompt --</MudSelectItem>
-                    @foreach (var prompt in systemPrompts)
-                    {
-                        <MudSelectItem T="string" Value="@prompt.Id">@prompt.Name</MudSelectItem>
-                    }
-                </MudSelect>
-                @if (!string.IsNullOrEmpty(selectedPromptId))
-                {
-                    var prompt = systemPrompts.FirstOrDefault(p => p.Id == selectedPromptId);
-                    <MudPaper Class="pa-2 mb-3">
-                        <MudText Typo="Typo.subtitle2">Prompt Preview:</MudText>
-                        <MudText>@prompt?.Content</MudText>
-                    </MudPaper>
-                    <MudExpansionPanels>
-                        <MudExpansionPanel Text="Functions" Expanded="@functionsExpanded" ExpandedChanged="@((b) => functionsExpanded = b)">
-                            <FunctionSelector AvailableFunctions="availableFunctions" SelectedFunctions="selectedFunctions" SelectedFunctionsChanged="OnSelectedFunctionsChanged" Expanded="true" />
-                        </MudExpansionPanel>
-                    </MudExpansionPanels>
-                }
-                <div class="system-prompt-actions">
-                    <MudButton Variant="Variant.Filled" Color="Color.Primary" Disabled="@string.IsNullOrEmpty(selectedPromptId)" OnClick="StartChatWithSelectedPrompt">Start Chat</MudButton>
-                    <MudButton Variant="Variant.Outlined" Color="Color.Secondary" Href="/system-prompts" Class="ms-2">Manage System Prompts</MudButton>
-                </div>
-            }
-        </div>
+        <MudOverlay Visible="true" DarkBackground="true" Absolute="true">
+            <MudProgressCircular Color="Color.Primary" Indeterminate="true" />
+            <MudText Class="mt-2">Loading chat...</MudText>
+        </MudOverlay>
     }
-    else
+    else if (!chatStarted)
     {
-        <div class="chat-messages" @ref="messagesElement">
-            @foreach (var message in Messages)
-            {
-                <MudPaper Class="@GetMessageClass(message)">
-                    <MudText>@message.Content</MudText>
-                    <MudText Typo="Typo.caption" Align="Align.Right">@message.MsgDateTime.ToString("g")</MudText>
-                </MudPaper>
-            }
-        </div>
-        <MudExpansionPanels Class="mb-2">
-            <MudExpansionPanel Text="Functions" Expanded="@functionsExpanded" ExpandedChanged="@((b) => functionsExpanded = b)">
-                <FunctionSelector AvailableFunctions="availableFunctions" SelectedFunctions="selectedFunctions" SelectedFunctionsChanged="OnSelectedFunctionsChanged" Expanded="true" />
-            </MudExpansionPanel>
-        </MudExpansionPanels>
-        <div class="chat-input-container">
-            <MudTextField T="string" @bind-Value="inputText" Placeholder="Enter your message (Press Enter to send, Shift + Enter for new line)" Lines="1" Disabled="@isLoading" Class="chat-input mb-2" Immediate="true" OnKeyDown="OnKeyPress" />
-            <MudStack Direction="Row" Spacing="2">
-                @if (isLoading)
+        <MudCard Class="ma-auto" Style="max-width: 600px; width: 100%;">
+            <MudCardHeader>
+                <MudText Typo="Typo.h5">Start New Chat</MudText>
+            </MudCardHeader>
+            <MudCardContent>
+                <MudText Typo="Typo.body1" Class="mb-4">Select a system prompt to define your AI assistant's behavior:</MudText>
+                
+                @if (systemPrompts.Count == 0)
                 {
-                    <MudButton OnClick="Cancel" Color="Color.Error" Variant="Variant.Filled"><MudIcon Icon="@Icons.Material.Filled.Stop" /> Stop</MudButton>
+                    <MudProgressCircular Color="Color.Primary" Size="Size.Small" Indeterminate="true" />
+                    <MudText>Loading system prompts...</MudText>
                 }
                 else
                 {
-                    <MudButton OnClick="SendMessage" Color="Color.Primary" Variant="Variant.Filled" Disabled="@IsSendDisabled">
-                        <MudIcon Icon="@Icons.Material.Filled.Send" /> Send
+                    <MudSelect T="SystemPrompt" Label="Select System Prompt" @bind-Value="selectedSystemPrompt" Variant="Variant.Outlined" AnchorOrigin="Origin.BottomCenter" FullWidth="true">
+                        @foreach (var prompt in systemPrompts)
+                        {
+                            <MudSelectItem Value="prompt">@prompt.Name</MudSelectItem>
+                        }
+                    </MudSelect>
+
+                    <MudExpansionPanels Dense="true" Class="mt-4">
+                        <MudExpansionPanel Text="View Prompt Content">
+                            <MudTextField T="string" Value="@(selectedSystemPrompt?.Content ?? "")" 
+                                          Label="Prompt Content" 
+                                          Lines="8"
+                                          ReadOnly="true"
+                                          Variant="Variant.Outlined" 
+                                          Class="mt-2" />
+                        </MudExpansionPanel>
+                    </MudExpansionPanels>
+                    
+                    <MudButton Variant="Variant.Filled" 
+                               Color="Color.Primary" 
+                               FullWidth="true" 
+                               Class="mt-4"
+                               OnClick="StartChat">
+                        Start Chat
                     </MudButton>
-                    <MudButton OnClick="RestartChat" Color="Color.Secondary" Variant="Variant.Outlined"><MudIcon Icon="@Icons.Material.Filled.AddCircle" /> New Chat</MudButton>
+                      <MudButton Href="/system-prompts" 
+                               Variant="Variant.Text" 
+                               Color="Color.Secondary" 
+                               FullWidth="true" 
+                               Class="mt-2">
+                        Manage System Prompts
+                    </MudButton>
                 }
-            </MudStack>
+            </MudCardContent>
+        </MudCard>
+    }
+    else
+    {
+        <div class="chat-messages flex-grow-1 pa-2" style="overflow-y: auto;" @ref="messagesElement">
+            @foreach (var message in ChatService.Messages)
+            {
+                @if (message.Role != Microsoft.Extensions.AI.ChatRole.System) // Don't display system message
+                {
+                    <MudPaper Elevation="2" Class="@GetMessageClass(message)">
+                        <MudText Typo="Typo.body1">@((MarkupString)Markdig.Markdown.ToHtml(message.Content ?? string.Empty))</MudText>
+                        <MudText Typo="Typo.caption" Align="Align.Right" Class="mt-1">@message.MsgDateTime.ToString("g")</MudText>
+                    </MudPaper>
+                }
+            }
+            @if (isLoading)
+            {
+                 <MudPaper Elevation="0" Class="assistant-message message-container pa-2 mb-2 d-flex align-items-center">
+                     <MudProgressCircular Class="mr-2" Size="Size.Small" Indeterminate="true" />
+                     <MudText Typo="Typo.body1"><i>Assistant is typing...</i></MudText>
+                 </MudPaper>
+            }
         </div>
+
+        <MudPaper Elevation="3" Class="pa-2 mt-2">
+            <MudExpansionPanels Dense="true">
+                <MudExpansionPanel Text="Functions" @bind-IsExpanded="@functionsExpanded">
+                    <FunctionSelector AvailableFunctions="availableFunctions" SelectedFunctions="selectedFunctions" SelectedFunctionsChanged="OnSelectedFunctionsChanged" Expanded="true" />
+                </MudExpansionPanel>
+            </MudExpansionPanels>
+            <div class="d-flex flex-column">
+                <MudTextField @bind-Value="inputText"
+                             Label="Type your message"
+                             Variant="Variant.Outlined"
+                             Adornment="Adornment.End"
+                             AdornmentIcon="@Icons.Material.Filled.Send"
+                             OnAdornmentClick="SendMessage"
+                             OnKeyDown="OnKeyPress"
+                             Immediate="true"
+                             Lines="3"
+                             Class="mt-2" />
+                             
+                <MudStack Direction="Row" Spacing="2" Class="mt-2">
+                    @if (isLoading)
+                    {
+                        <MudButton OnClick="Cancel" Color="Color.Error" Variant="Variant.Filled" StartIcon="@Icons.Material.Filled.Stop">Stop</MudButton>
+                    }
+                    else
+                    {
+                        <MudButton OnClick="SendMessage" Color="Color.Primary" Variant="Variant.Filled" Disabled="@IsSendDisabled" StartIcon="@Icons.Material.Filled.Send">Send</MudButton>
+                        <MudButton OnClick="RestartChat" Color="Color.Secondary" Variant="Variant.Outlined" StartIcon="@Icons.Material.Filled.AddCircle">New Chat</MudButton>
+                    }
+                </MudStack>
+            </div>
+        </MudPaper>
     }
 </div>
 
 @code {
     private string inputText = string.Empty;
     private bool isLoading = false;
+    private bool isLoadingInitialData = true;
+    private bool chatStarted = false;
     private ElementReference messagesElement;
-    private List<Message> historyMessages = new();
-    private CancellationTokenSource? cts;
-    private Message? currentResponse;
     private List<SystemPrompt> systemPrompts = new();
-    private bool showSystemPromptSelector = true;
-    private string selectedPromptId = string.Empty;
     private SystemPrompt? selectedSystemPrompt;
-    private string defaultSystemPromptContent = "You are a helpful assistant.";
-    private bool loadingPrompts = true;
     private List<FunctionInfo> availableFunctions = new();
     private List<string> selectedFunctions = new();
     private bool functionsExpanded = false;
 
     private EventCallback<List<string>> OnSelectedFunctionsChanged => EventCallback.Factory.Create<List<string>>(this, (List<string> v) => selectedFunctions = v);
-
-    public List<Message> Messages { get; } = new();
-    private bool IsStreamingResponse => isLoading && currentResponse != null && !string.IsNullOrEmpty(currentResponse.Content);
 
     private string GetMessageClass(Message message) =>
         $"{(message.Role == Microsoft.Extensions.AI.ChatRole.User ? "user-message" : "assistant-message")} message-container pa-2 mb-2";
@@ -135,49 +158,44 @@
 
     protected override async Task OnInitializedAsync()
     {
+        isLoadingInitialData = true;
+        StateHasChanged();
+
+        // Load system prompts and functions
         await LoadSystemPrompts();
         await LoadAvailableFunctions();
+
+        // Set up chat service event handlers
+        ChatService.LoadingStateChanged += OnLoadingStateChanged;
+        ChatService.MessageReceived += OnMessageReceived;
+
+        isLoadingInitialData = false;
+        StateHasChanged();
+    }
+
+    private void OnLoadingStateChanged(bool loading)
+    {
+        isLoading = loading;
+        StateHasChanged();
+    }
+
+    private async void OnMessageReceived()
+    {
+        StateHasChanged();
+        await ScrollToBottom();
     }
 
     private async Task LoadSystemPrompts()
     {
-        try
+        systemPrompts = await PromptService.GetSystemPromptsAsync();
+        
+        if (systemPrompts.Count == 0)
         {
-            loadingPrompts = true;
-            StateHasChanged();
-
-            try
-            {
-                Console.WriteLine("Attempting to load system prompts...");
-                var response = await Http.GetAsync("api/systemprompts");
-
-                Console.WriteLine($"API response status: {response.StatusCode}");
-
-                if (response.IsSuccessStatusCode)
-                {
-                    var content = await response.Content.ReadAsStringAsync();
-                    Console.WriteLine($"API response content: {content}");
-
-                    systemPrompts = JsonSerializer.Deserialize<List<SystemPrompt>>(content,
-                        new JsonSerializerOptions { PropertyNameCaseInsensitive = true }) ?? new List<SystemPrompt>();
-                }
-                else
-                {
-                    Console.WriteLine("API returned an error status code. Using empty prompt list.");
-                    systemPrompts = new List<SystemPrompt>();
-                }
-            }
-            catch (Exception ex)
-            {
-                Console.WriteLine($"Error loading system prompts: {ex}");
-                systemPrompts = new List<SystemPrompt>();
-            }
+            // Add default prompt if no prompts are available
+            systemPrompts.Add(PromptService.GetDefaultSystemPrompt());
         }
-        finally
-        {
-            loadingPrompts = false;
-            StateHasChanged();
-        }
+        
+        selectedSystemPrompt = systemPrompts.FirstOrDefault();
     }
 
     private async Task LoadAvailableFunctions()
@@ -191,153 +209,46 @@
                 availableFunctions = JsonSerializer.Deserialize<List<FunctionInfo>>(content,
                     new JsonSerializerOptions { PropertyNameCaseInsensitive = true }) ?? new List<FunctionInfo>();
             }
+            else
+            {
+                availableFunctions = new List<FunctionInfo>();
+            }
         }
-        catch
+        catch (Exception ex)
         {
+            Console.WriteLine($"Error loading available functions: {ex}");
             availableFunctions = new List<FunctionInfo>();
         }
     }
 
-    private void StartChatWithDefault()
+    private void StartChat()
     {
-        var defaultPrompt = new SystemPrompt
+        if (selectedSystemPrompt == null)
         {
-            Name = "Default Assistant",
-            Content = defaultSystemPromptContent
-        };
-
-        InitializeChat(defaultPrompt);
-    }
-
-    private void StartChatWithSelectedPrompt()
-    {
-        if (string.IsNullOrEmpty(selectedPromptId))
-        {
-            return;
+            selectedSystemPrompt = PromptService.GetDefaultSystemPrompt();
         }
-
-        var selectedPrompt = systemPrompts.FirstOrDefault(p => p.Id == selectedPromptId);
-        if (selectedPrompt != null)
-        {
-            InitializeChat(selectedPrompt);
-        }
-    }
-
-    private void InitializeChat(SystemPrompt prompt)
-    {
-        selectedSystemPrompt = prompt;
-        showSystemPromptSelector = false;
-
-        Messages.Clear();
-        historyMessages.Clear();
-
-        var systemMessage = new Message(prompt.Content, DateTime.Now, Microsoft.Extensions.AI.ChatRole.System);
-        Messages.Add(systemMessage);
-        historyMessages.Add(systemMessage);
-
+        
+        ChatService.InitializeChat(selectedSystemPrompt);
+        chatStarted = true;
         StateHasChanged();
     }
 
     private void RestartChat()
     {
-        Messages.Clear();
-        historyMessages.Clear();
-        inputText = string.Empty;
-        showSystemPromptSelector = true;
-        selectedPromptId = string.Empty;
-        selectedSystemPrompt = null;
+        chatStarted = false;
+        ChatService.ClearChat();
         StateHasChanged();
     }
 
     private async Task SendMessage()
     {
-        if (string.IsNullOrWhiteSpace(inputText))
+        if (string.IsNullOrWhiteSpace(inputText) || isLoading)
             return;
 
         string userMessage = inputText.Trim();
         inputText = string.Empty;
 
-        var userMessageObj = new Message(userMessage, DateTime.Now, Microsoft.Extensions.AI.ChatRole.User);
-        Messages.Add(userMessageObj);
-        historyMessages.Add(userMessageObj);
-
-        await ScrollToBottom();
-        try
-        {
-            isLoading = true;
-
-            currentResponse = new Message(string.Empty, DateTime.Now, Microsoft.Extensions.AI.ChatRole.Assistant);
-            Messages.Add(currentResponse);
-
-            await InvokeAsync(StateHasChanged);
-            await ScrollToBottom();
-
-            cts = new CancellationTokenSource();
-
-            var request = new HttpRequestMessage(HttpMethod.Post, "api/chat/stream")
-            {
-                Content = JsonContent.Create(new AppChatRequest { Messages = historyMessages, FunctionNames = selectedFunctions })
-            };
-            request.SetBrowserResponseStreamingEnabled(true);
-
-            using var response = await Http.SendAsync(
-                request,
-                HttpCompletionOption.ResponseHeadersRead,
-                cts.Token);
-
-            if (!response.IsSuccessStatusCode)
-            {
-                throw new Exception($"Error: {response.StatusCode} - {await response.Content.ReadAsStringAsync()}");
-            }
-
-            using var stream = await response.Content.ReadAsStreamAsync(cts.Token);
-            using var reader = new StreamReader(stream);
-
-            string? line;
-            while ((line = await reader.ReadLineAsync(cts.Token)) != null)
-            {
-                if (string.IsNullOrEmpty(line) || !line.StartsWith("data: ")) continue;
-
-                var jsonData = line.Substring(6);
-                if (jsonData == "[DONE]") break;
-
-                try
-                {
-                    var data = JsonSerializer.Deserialize<StreamResponse>(jsonData);
-                    if (data?.content != null && currentResponse != null && !cts.Token.IsCancellationRequested)
-                    {
-                        currentResponse.Content += data.content;
-                        await InvokeAsync(StateHasChanged);
-                        await ScrollToBottom();
-                    }
-                }
-                catch (JsonException)
-                {
-                    continue;
-                }
-            }
-
-            if (currentResponse != null)
-            {
-                historyMessages.Add(currentResponse);
-            }
-        }
-        catch (OperationCanceledException)
-        {
-            var cancelMessage = new Message("Operation cancelled by user.", DateTime.Now, Microsoft.Extensions.AI.ChatRole.System);
-            Messages.Add(cancelMessage);
-        }
-        catch (Exception ex)
-        {
-            var errorMessage = new Message($"Error: {ex.Message}", DateTime.Now, Microsoft.Extensions.AI.ChatRole.System);
-            Messages.Add(errorMessage);
-        }
-        finally
-        {
-            isLoading = false;
-            currentResponse = null;
-            await InvokeAsync(StateHasChanged);
-        }
+        await ChatService.SendMessageAsync(userMessage, selectedFunctions);
     }
 
     private async Task ScrollToBottom()
@@ -346,14 +257,15 @@
         {
             await JSRuntime.InvokeVoidAsync("scrollToBottom", messagesElement);
         }
-        catch
+        catch (Exception ex)
         {
+            Console.WriteLine($"Error scrolling to bottom: {ex.Message}");
         }
     }
 
     private void Cancel()
     {
-        cts?.Cancel();
+        ChatService.Cancel();
     }
 
     private async Task OnKeyPress(KeyboardEventArgs e)
@@ -366,12 +278,8 @@
 
     public ValueTask DisposeAsync()
     {
-        cts?.Dispose();
+        ChatService.LoadingStateChanged -= OnLoadingStateChanged;
+        ChatService.MessageReceived -= OnMessageReceived;
         return ValueTask.CompletedTask;
-    }
-
-    private class StreamResponse
-    {
-        public string? content { get; set; }
     }
 }
