@@ -45,10 +45,10 @@
                 }
                 else
                 {
-                    <MudSelect T="SystemPrompt" Label="Select System Prompt" @bind-Value="selectedSystemPrompt" Variant="Variant.Outlined" AnchorOrigin="Origin.BottomCenter" FullWidth="true">
+                    <MudSelect T="SystemPrompt" Label="Select System Prompt" @bind-Value="selectedSystemPrompt" Variant="Variant.Outlined" FullWidth="true">
                         @foreach (var prompt in systemPrompts)
                         {
-                            <MudSelectItem Value="prompt">@prompt.Name</MudSelectItem>
+                            <MudSelectItem Value="@prompt">@prompt.Name</MudSelectItem>
                         }
                     </MudSelect>
 
