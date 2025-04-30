@@ -46,7 +46,7 @@
                             <MudSelectItem Value="@prompt">@prompt.Name</MudSelectItem>
                         }
                     </MudSelect>
-                    
+
                     <MudSwitch T="bool" @bind-value="showPromptContent" Color="Color.Primary" Class="mt-4" Style="margin-bottom: 10px;">View Prompt Content</MudSwitch>
                     @if (showPromptContent)
                     {
@@ -85,13 +85,12 @@
                         <MudText Typo="Typo.caption" Align="Align.Right" Class="mt-1">@message.MsgDateTime.ToString("g")</MudText>
                     </MudPaper>
                 }
-            }
-            @if (isLoading)
+            }            @if (isLLMAnswering)
             {
-                 <MudPaper Elevation="0" Class="assistant-message message-container pa-2 mb-2 d-flex align-items-center">
-                     <MudProgressCircular Class="mr-2" Size="Size.Small" Indeterminate="true" />
-                     <MudText Typo="Typo.body1"><i>Assistant is typing...</i></MudText>
-                 </MudPaper>
+                <MudPaper Elevation="0" Class="assistant-message message-container pa-2 mb-2 d-flex align-items-center">
+                    <MudProgressCircular Class="mr-2" Size="Size.Small" Indeterminate="true" />
+                    <MudText Typo="Typo.body1"><i>Assistant is typing...</i></MudText>
+                </MudPaper>
             }
         </div>
 
@@ -103,24 +102,23 @@
             </MudExpansionPanels>
             <div class="d-flex flex-column">
                 <MudTextField @bind-Value="inputText"
-                             Label="Type your message"
-                             Variant="Variant.Outlined"
-                             Adornment="Adornment.End"
-                             AdornmentIcon="@Icons.Material.Filled.Send"
-                             OnAdornmentClick="SendMessage"
-                             OnKeyDown="OnKeyPress"
-                             Immediate="true"
-                             Lines="3"
-                             Class="mt-2" />
-                             
+                              Label="Type your message"
+                              Variant="Variant.Outlined"
+                              Adornment="Adornment.End"
+                              AdornmentIcon="@Icons.Material.Filled.Send"
+                              OnAdornmentClick="SendMessageAsync"
+                              OnKeyDown="OnKeyPress"
+                              Immediate="true"
+                              Lines="3"
+                              Class="mt-2" />
                 <MudStack Direction="Row" Spacing="2" Class="mt-2">
-                    @if (isLoading)
+                    @if (isLLMAnswering)
                     {
                         <MudButton OnClick="Cancel" Color="Color.Error" Variant="Variant.Filled" StartIcon="@Icons.Material.Filled.Stop">Stop</MudButton>
                     }
                     else
                     {
-                        <MudButton OnClick="SendMessage" Color="Color.Primary" Variant="Variant.Filled" Disabled="@IsSendDisabled" StartIcon="@Icons.Material.Filled.Send">Send</MudButton>
+                        <MudButton OnClick="SendMessageAsync" Color="Color.Primary" Variant="Variant.Filled" Disabled="@IsSendDisabled" StartIcon="@Icons.Material.Filled.Send">Send</MudButton>
                         <MudButton OnClick="RestartChat" Color="Color.Secondary" Variant="Variant.Outlined" StartIcon="@Icons.Material.Filled.AddCircle">New Chat</MudButton>
                     }
                 </MudStack>
@@ -131,7 +129,7 @@
 
 @code {
     private string inputText { get; set; } = string.Empty;
-    private bool isLoading { get; set; } = false;
+    private bool isLLMAnswering { get; set; } = false;
     private bool isLoadingInitialData = true;
     private bool chatStarted = false;
     private ElementReference messagesElement;
@@ -148,18 +146,16 @@
     private string GetMessageClass(Message message) =>
         $"{(message.Role == Microsoft.Extensions.AI.ChatRole.User ? "user-message" : "assistant-message")} message-container pa-2 mb-2";
 
-    private bool IsSendDisabled => string.IsNullOrWhiteSpace(inputText) || isLoading;
+    private bool IsSendDisabled => string.IsNullOrWhiteSpace(inputText) || isLLMAnswering;
 
     protected override async Task OnInitializedAsync()
     {
         isLoadingInitialData = true;
         StateHasChanged();
 
-        // Load system prompts and functions
         await LoadSystemPrompts();
         await LoadAvailableFunctions();
 
-        // Set up chat service event handlers
         ChatService.LoadingStateChanged += OnLoadingStateChanged;
         ChatService.MessageReceived += OnMessageReceived;
 
@@ -169,16 +165,16 @@
 
     private void OnLoadingStateChanged(bool loading)
     {
-        isLoading = loading;
+        isLLMAnswering = loading;
         StateHasChanged();
     }
-    
+
     private async void OnMessageReceived()
     {
         StateHasChanged();
         await ScrollToBottom();
     }
-    
+
     private async Task LoadSystemPrompts()
     {
         systemPrompts = await PromptService.GetSystemPromptsAsync();
@@ -215,7 +211,7 @@
         {
             selectedSystemPrompt = PromptService.GetDefaultSystemPrompt();
         }
-        
+
         ChatService.InitializeChat(selectedSystemPrompt);
         chatStarted = true;
         StateHasChanged();
@@ -228,12 +224,12 @@
         StateHasChanged();
     }
 
-    private async Task SendMessage()
+    private async Task SendMessageAsync()
     {
-        if (string.IsNullOrWhiteSpace(inputText) || isLoading)
+        if (string.IsNullOrWhiteSpace(inputText) || isLLMAnswering)
             return;
 
-        string userMessage = inputText.Trim();
+        var userMessage = inputText.Trim();
         inputText = string.Empty;
 
         await ChatService.SendMessageAsync(userMessage, selectedFunctions);
@@ -258,10 +254,7 @@
 
     private async Task OnKeyPress(KeyboardEventArgs e)
     {
-        if (e.Key == "Enter" && !e.ShiftKey)
-        {
-            await SendMessage();
-        }
+        if (e.Key == "Enter" && !e.ShiftKey) await SendMessageAsync();
     }
 
     public ValueTask DisposeAsync()
