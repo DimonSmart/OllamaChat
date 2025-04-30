@@ -99,8 +99,7 @@
                 <MudExpansionPanel Text="Functions" @bind-IsExpanded="@functionsExpanded">
                     <FunctionSelector AvailableFunctions="availableFunctions" SelectedFunctions="selectedFunctions" SelectedFunctionsChanged="OnSelectedFunctionsChanged" Expanded="true" />
                 </MudExpansionPanel>
-            </MudExpansionPanels>
-            <div class="d-flex flex-column">
+            </MudExpansionPanels>            <div class="d-flex flex-column">
                 <MudTextField @bind-Value="inputText"
                               Label="Type your message"
                               Variant="Variant.Outlined"
@@ -108,7 +107,6 @@
                               AdornmentIcon="@Icons.Material.Filled.Send"
                               OnAdornmentClick="SendMessageAsync"
                               OnKeyDown="OnKeyPress"
-                              Immediate="true"
                               Lines="3"
                               Class="mt-2" />
                 <MudStack Direction="Row" Spacing="2" Class="mt-2">
@@ -222,16 +220,18 @@
         chatStarted = false;
         ChatService.ClearChat();
         StateHasChanged();
-    }
-
-    private async Task SendMessageAsync()
+    }    private async Task SendMessageAsync()
     {
         if (string.IsNullOrWhiteSpace(inputText) || isLLMAnswering)
             return;
 
         var userMessage = inputText.Trim();
         inputText = string.Empty;
-
+        
+        // Вызываем StateHasChanged немедленно, чтобы очистить текстовое поле 
+        // до начала обработки сообщения
+        StateHasChanged();
+        
         await ChatService.SendMessageAsync(userMessage, selectedFunctions);
     }
 
