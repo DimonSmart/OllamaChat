@@ -130,8 +130,8 @@
 </div>
 
 @code {
-    private string inputText = string.Empty;
-    private bool isLoading = false;
+    private string inputText { get; set; } = string.Empty;
+    private bool isLoading { get; set; } = false;
     private bool isLoadingInitialData = true;
     private bool chatStarted = false;
     private ElementReference messagesElement;
@@ -144,18 +144,6 @@
     private EventCallback<List<string>> OnSelectedFunctionsChanged => EventCallback.Factory.Create<List<string>>(this, (List<string> v) => selectedFunctions = v);
 
     private bool showPromptContent { get; set; } = false;
-      // Initialize JS debugging
-    protected override async Task OnAfterRenderAsync(bool firstRender)
-    {
-        if (firstRender)
-        {
-            await JSRuntime.InvokeVoidAsync("blazorDebug.log", $"First render, showPromptContent = {showPromptContent}");
-        }
-        else
-        {
-            await JSRuntime.InvokeVoidAsync("blazorDebug.log", $"Re-rendering, showPromptContent = {showPromptContent}");
-        }
-    }
 
     private string GetMessageClass(Message message) =>
         $"{(message.Role == Microsoft.Extensions.AI.ChatRole.User ? "user-message" : "assistant-message")} message-container pa-2 mb-2";
