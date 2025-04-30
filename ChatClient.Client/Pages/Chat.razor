@@ -32,12 +32,7 @@
     else if (!chatStarted)
     {
         <MudCard Class="ma-auto" Style="max-width: 600px; width: 100%;">
-            <MudCardHeader>
-                <MudText Typo="Typo.h5">Start New Chat</MudText>
-            </MudCardHeader>
             <MudCardContent>
-                <MudText Typo="Typo.body1" Class="mb-4">Select a system prompt to define your AI assistant's behavior:</MudText>
-                
                 @if (systemPrompts.Count == 0)
                 {
                     <MudProgressCircular Color="Color.Primary" Size="Size.Small" Indeterminate="true" />
@@ -51,29 +46,26 @@
                             <MudSelectItem Value="@prompt">@prompt.Name</MudSelectItem>
                         }
                     </MudSelect>
-
-                    <MudExpansionPanels Dense="true" Class="mt-4">
-                        <MudExpansionPanel Text="View Prompt Content">
-                            <MudTextField T="string" Value="@(selectedSystemPrompt?.Content ?? "")" 
-                                          Label="Prompt Content" 
-                                          Lines="8"
-                                          ReadOnly="true"
-                                          Variant="Variant.Outlined" 
-                                          Class="mt-2" />
-                        </MudExpansionPanel>
-                    </MudExpansionPanels>
                     
-                    <MudButton Variant="Variant.Filled" 
-                               Color="Color.Primary" 
-                               FullWidth="true" 
+                    <MudSwitch T="bool" @bind-value="showPromptContent" Color="Color.Primary" Class="mt-4" Style="margin-bottom: 10px;">View Prompt Content</MudSwitch>
+                    @if (showPromptContent)
+                    {
+                        <div class="prompt-preview mt-3 pa-3 mb-2">
+                            @(selectedSystemPrompt?.Content ?? string.Empty)
+                        </div>
+                    }
+
+                    <MudButton Variant="Variant.Filled"
+                               Color="Color.Primary"
+                               FullWidth="true"
                                Class="mt-4"
                                OnClick="StartChat">
                         Start Chat
                     </MudButton>
-                      <MudButton Href="/system-prompts" 
-                               Variant="Variant.Text" 
-                               Color="Color.Secondary" 
-                               FullWidth="true" 
+                    <MudButton Href="/system-prompts"
+                               Variant="Variant.Text"
+                               Color="Color.Secondary"
+                               FullWidth="true"
                                Class="mt-2">
                         Manage System Prompts
                     </MudButton>
@@ -151,6 +143,20 @@
 
     private EventCallback<List<string>> OnSelectedFunctionsChanged => EventCallback.Factory.Create<List<string>>(this, (List<string> v) => selectedFunctions = v);
 
+    private bool showPromptContent { get; set; } = false;
+      // Initialize JS debugging
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            await JSRuntime.InvokeVoidAsync("blazorDebug.log", $"First render, showPromptContent = {showPromptContent}");
+        }
+        else
+        {
+            await JSRuntime.InvokeVoidAsync("blazorDebug.log", $"Re-rendering, showPromptContent = {showPromptContent}");
+        }
+    }
+
     private string GetMessageClass(Message message) =>
         $"{(message.Role == Microsoft.Extensions.AI.ChatRole.User ? "user-message" : "assistant-message")} message-container pa-2 mb-2";
 
@@ -178,23 +184,17 @@
         isLoading = loading;
         StateHasChanged();
     }
-
+    
     private async void OnMessageReceived()
     {
         StateHasChanged();
         await ScrollToBottom();
     }
-
+    
     private async Task LoadSystemPrompts()
     {
         systemPrompts = await PromptService.GetSystemPromptsAsync();
-        
-        if (systemPrompts.Count == 0)
-        {
-            // Add default prompt if no prompts are available
-            systemPrompts.Add(PromptService.GetDefaultSystemPrompt());
-        }
-        
+        if (systemPrompts.Count == 0) systemPrompts.Add(PromptService.GetDefaultSystemPrompt());
         selectedSystemPrompt = systemPrompts.FirstOrDefault();
     }
 

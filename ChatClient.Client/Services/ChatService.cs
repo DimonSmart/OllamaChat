@@ -27,13 +27,16 @@ public class ChatService
         _httpClient = httpClient;
     }
 
-    public void InitializeChat(SystemPrompt prompt)
+    public void InitializeChat(SystemPrompt? prompt)
     {
         Messages.Clear();
         HistoryMessages.Clear();
-        
-        var systemMessage = new Message(prompt.Content, DateTime.Now, ChatRole.System);
-        HistoryMessages.Add(systemMessage);
+
+        if (prompt != null)
+        {
+            var systemMessage = new Message(prompt.Content, DateTime.Now, ChatRole.System);
+            HistoryMessages.Add(systemMessage);
+        }
         
         ChatInitialized?.Invoke();
     }
@@ -97,8 +100,8 @@ public class ChatService
             using var reader = new StreamReader(stream);
 
             string? line;
-            StringBuilder messageBuilder = new StringBuilder();
-            bool firstChunkReceived = false;
+            var messageBuilder = new StringBuilder();
+            var firstChunkReceived = false;
             
             while ((line = await reader.ReadLineAsync(_cts.Token)) != null)
             {

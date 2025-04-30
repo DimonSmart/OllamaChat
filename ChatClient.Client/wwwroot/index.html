@@ -40,6 +40,26 @@
             }
         }
 
+        // Debugging function for prompt content visibility
+        window.debugPromptVisibility = function() {
+            const switchElement = document.querySelector(".mud-switch");
+            const previewElement = document.querySelector(".prompt-preview");
+            
+            console.log("Switch element found:", switchElement !== null);
+            console.log("Preview element found:", previewElement !== null);
+            
+            if (previewElement) {
+                const style = window.getComputedStyle(previewElement);
+                console.log("Preview display:", style.display);
+                console.log("Preview visibility:", style.visibility);
+            }
+            
+            return {
+                switchFound: switchElement !== null,
+                previewFound: previewElement !== null
+            };
+        }
+
         // Функция для отладки
         window.blazorDebug = {
             log: function (message) {
