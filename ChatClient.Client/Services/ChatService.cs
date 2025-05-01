@@ -3,7 +3,6 @@ using Microsoft.AspNetCore.Components.WebAssembly.Http;
 using Microsoft.Extensions.AI;
 using System.Collections.ObjectModel;
 using System.Net.Http.Json;
-using System.Text;
 using System.Text.Json;
 
 
@@ -82,8 +81,8 @@ public class ChatService
     {
         Messages.Add(message);
         MessageReceived?.Invoke();
-    }        
-    
+    }
+
     private async Task ProcessStreamingResponseAsync(List<string> functionNames, CancellationToken cancellationToken)
     {
         using var request = CreateHttpRequest(functionNames);
@@ -105,9 +104,9 @@ public class ChatService
         {
             var lineTask = reader.ReadLineAsync(cancellationToken).AsTask();
             var timeoutTask = Task.Delay(50, cancellationToken);
-            
+
             var completedTask = await Task.WhenAny(lineTask, timeoutTask);
-            
+
             if (!lineTask.IsCompleted)
             {
                 await Task.Yield();
@@ -115,7 +114,7 @@ public class ChatService
             }
 
             var line = await lineTask;
-            
+
             // End of stream reached
             if (line == null)
             {
@@ -151,134 +150,6 @@ public class ChatService
         }
     }
 
-
-    private async Task ProcessStreamingResponseAsync1(List<string> functionNames, CancellationToken cancellationToken)
-    {
-        using var request = CreateHttpRequest(functionNames);
-        var tempMsg = new StreamingAppChatMessage(string.Empty, DateTime.Now, ChatRole.Assistant);
-        AddMessage(tempMsg);
-
-        using var response = await _client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
-        if (!response.IsSuccessStatusCode)
-        {
-            HandleSystemMessage($"Error: {response.ReasonPhrase}");
-            return;
-        }
-
-        using var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
-        using var reader = new StreamReader(stream);
-        var sb = new StringBuilder();
-        var buffer = new char[2048];
-
-        while (!cancellationToken.IsCancellationRequested)
-        {
-            int read = await reader.ReadAsync(buffer, 0, buffer.Length);
-            if (read == 0) break; // конец потока
-
-            sb.Append(buffer, 0, read);
-
-            // пока в буфере есть полное событие (разделитель "\n\n")
-            int sep;
-            while ((sep = sb.ToString().IndexOf("\n\n", StringComparison.Ordinal)) != -1)
-            {
-                var evt = sb.ToString(0, sep);
-                sb.Remove(0, sep + 2);
-
-                // каждое событие может состоять из нескольких строк
-                foreach (var line in evt.Split('\n'))
-                {
-                    if (!line.StartsWith("data: ")) continue;
-                    var json = line["data: ".Length..];
-                    if (json == "[DONE]") return;
-
-                    try
-                    {
-                        var chunk = JsonSerializer.Deserialize<StreamResponse>(json)?.Content;
-                        if (chunk != null)
-                        {
-                            tempMsg.Append(chunk);
-                            MessageReceived?.Invoke();
-                        }
-                    }
-                    catch (JsonException)
-                    {
-                        // можно логировать некорректный json, если нужно
-                    }
-                }
-            }
-        }
-    }
-
-
-    private async Task ProcessStreamingResponseAsync2(List<string> fnames, CancellationToken ct)
-    {
-        var req = CreateHttpRequest(fnames);
-        var temp = new StreamingAppChatMessage("", DateTime.Now, ChatRole.Assistant);
-        AddMessage(temp);
-
-        using var resp = await _client.SendAsync(req, HttpCompletionOption.ResponseHeadersRead, ct);
-        if (!resp.IsSuccessStatusCode)
-        {
-            HandleSystemMessage($"Error: {resp.ReasonPhrase}");
-            return;
-        }
-
-        using var stream = await resp.Content.ReadAsStreamAsync(ct);
-        using var reader = new StreamReader(stream);
-        var buffer = new char[4096];
-        var sb = new StringBuilder();
-
-        while (!ct.IsCancellationRequested)
-        {
-            var n = await reader.ReadAsync(buffer, 0, buffer.Length);
-            if (n == 0) break;
-
-            sb.Append(buffer, 0, n);
-
-            while (TryExtractEvent(sb, out var evt))
-            {
-                if (ProcessEvent(evt, temp)) return;
-            }
-        }
-    }
-
-    // returns true if we saw [DONE] and should stop
-    bool ProcessEvent(string evt, StreamingAppChatMessage temp)
-    {
-        foreach (var line in evt.Split('\n'))
-        {
-            if (!line.StartsWith("data: ")) continue;
-            var json = line[6..];
-            if (json == "[DONE]") return true;
-
-            try
-            {
-                var chunk = JsonSerializer.Deserialize<StreamResponse>(json)?.Content;
-                if (chunk is not null)
-                {
-                    temp.Append(chunk);
-                    MessageReceived?.Invoke();
-                }
-            }
-            catch
-            {
-                // malformed JSON — ignore
-            }
-        }
-        return false;
-    }
-
-    // ищет первую пару "\n\n", вынимает блок до неё и удаляет из sb
-    bool TryExtractEvent(StringBuilder sb, out string evt)
-    {
-        evt = null!;
-        var idx = sb.IndexOf("\n\n");
-        if (idx < 0) return false;
-
-        evt = sb.ToString(0, idx);
-        sb.Remove(0, idx + 2);
-        return true;
-    }
 
     private HttpRequestMessage CreateHttpRequest(List<string> functionNames)
     {
@@ -317,27 +188,5 @@ public class ChatService
     {
         [System.Text.Json.Serialization.JsonPropertyName("content")]
         public string? Content { get; set; }
-    }
-}
-
-static class SBExtensions
-{
-    public static int IndexOf(this StringBuilder sb, string pattern)
-    {
-        var len = pattern.Length;
-        for (var i = 0; i + len <= sb.Length; i++)
-        {
-            var ok = true;
-            for (var j = 0; j < len; j++)
-            {
-                if (sb[i + j] != pattern[j])
-                {
-                    ok = false;
-                    break;
-                }
-            }
-            if (ok) return i;
-        }
-        return -1;
     }
 }
