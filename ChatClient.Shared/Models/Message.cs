@@ -22,7 +22,8 @@ public class Message : INotifyPropertyChanged
     }
 
     public DateTime MsgDateTime { get; private set; }
-    public ChatRole Role { get; set; }    public Message(string content, DateTime msgDateTime, ChatRole role)
+    public ChatRole Role { get; set; }
+    public Message(string content, DateTime msgDateTime, ChatRole role)
     {
         _content = content;
         MsgDateTime = msgDateTime;

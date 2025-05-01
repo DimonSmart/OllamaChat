@@ -95,8 +95,8 @@ namespace ChatClient.Client.Services
                 return;
             }
 
-            var assistantMessage = new Message(string.Empty, DateTime.Now, ChatRole.Assistant);
-            AddMessage(assistantMessage);
+            var temporaryMessageWhileReceiving = new Message(string.Empty, DateTime.Now, ChatRole.Assistant);
+            AddMessage(temporaryMessageWhileReceiving);
 
             var builder = new StringBuilder();
             using var stream = await response.Content.ReadAsStreamAsync(token);
@@ -121,7 +121,7 @@ namespace ChatClient.Client.Services
                     if (!string.IsNullOrEmpty(chunk))
                     {
                         builder.Append(chunk);
-                        assistantMessage.Content = builder.ToString();
+                        temporaryMessageWhileReceiving.Content = builder.ToString();
                         MessageReceived?.Invoke();
                     }
                 }
@@ -164,6 +164,7 @@ namespace ChatClient.Client.Services
 
         private class StreamResponse
         {
+            [System.Text.Json.Serialization.JsonPropertyName("content")]
             public string? Content { get; set; }
         }
     }
