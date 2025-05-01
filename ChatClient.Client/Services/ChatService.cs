@@ -85,7 +85,7 @@ namespace ChatClient.Client.Services
             MessageReceived?.Invoke();
         }
 
-        private async Task ProcessStreamingResponseAsync(List<string> functionNames, CancellationToken cancellationToken)
+        private async Task ProcessStreamingResponseAsyncOld(List<string> functionNames, CancellationToken cancellationToken)
         {
             var request = CreateHttpRequest(functionNames);
             var temporaryMessageWhileReceiving = new StreamingAppChatMessage(string.Empty, DateTime.Now, ChatRole.Assistant);
@@ -132,6 +132,55 @@ namespace ChatClient.Client.Services
             }
         }
 
+        private async Task ProcessStreamingResponseAsync(List<string> functionNames, CancellationToken cancellationToken)
+        {
+            var request = CreateHttpRequest(functionNames);
+            var tempMsg = new StreamingAppChatMessage(string.Empty, DateTime.Now, ChatRole.Assistant);
+            AddMessage(tempMsg);
+
+            using var response = await _client
+                .SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken)
+                .ConfigureAwait(false);
+
+            if (!response.IsSuccessStatusCode)
+            {
+                HandleSystemMessage($"Ошибка: {response.ReasonPhrase}");
+                return;
+            }
+
+            using var stream = await response.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
+            using var reader = new StreamReader(stream);
+
+            while (!cancellationToken.IsCancellationRequested &&
+                   (await reader.ReadLineAsync(cancellationToken).ConfigureAwait(false)) is string line)
+            {
+                if (string.IsNullOrEmpty(line) || !line.StartsWith("data: "))
+                    continue;
+
+                var json = line["data: ".Length..];
+                if (json == "[DONE]")
+                    break;
+
+                try
+                {
+                    var chunk = JsonSerializer
+                        .Deserialize<StreamResponse>(json)?
+                        .Content;
+
+                    if (string.IsNullOrEmpty(chunk))
+                        continue;
+
+                    tempMsg.Append(chunk);
+                    MessageReceived?.Invoke();
+                    await Task.Yield();
+                }
+                catch (JsonException)
+                {
+                }
+            }
+        }
+
+
         private HttpRequestMessage CreateHttpRequest(List<string> functionNames)
         {
             var messages = Messages
@@ -170,4 +219,5 @@ namespace ChatClient.Client.Services
             [System.Text.Json.Serialization.JsonPropertyName("content")]
             public string? Content { get; set; }
         }
-    }}
+    }
+}

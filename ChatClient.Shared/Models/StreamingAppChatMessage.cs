@@ -3,20 +3,13 @@ using System.Text;
 
 namespace ChatClient.Shared.Models;
 
-public class StreamingAppChatMessage : IAppChatMessage
+public class StreamingAppChatMessage(string initialContent, DateTime msgDateTime, ChatRole role) : IAppChatMessage
 {
-    private readonly StringBuilder _contentBuilder;
+    private readonly StringBuilder _contentBuilder = new(initialContent);
 
     public string Content => _contentBuilder.ToString();
-    public DateTime MsgDateTime { get; private set; }
-    public ChatRole Role { get; private set; }
-
-    public StreamingAppChatMessage(string initialContent, DateTime msgDateTime, ChatRole role)
-    {
-        _contentBuilder = new StringBuilder(initialContent);
-        MsgDateTime = msgDateTime;
-        Role = role;
-    }
+    public DateTime MsgDateTime { get; private set; } = msgDateTime;
+    public ChatRole Role { get; private set; } = role;
 
     public void Append(string? text)
     {
