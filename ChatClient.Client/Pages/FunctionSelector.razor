@@ -6,9 +6,8 @@
         <MudText Typo="Typo.subtitle1">Select Functions to use:</MudText>
         <MudList T="string" Dense="true">
             @foreach (var fn in AvailableFunctions)
-            {
-                <MudListItem T="string">
-                    <MudCheckBox T="bool" @bind-Checked="checkedStates[fn.Name]" />
+            {                <MudListItem T="string">
+                    <MudCheckBox T="bool" @bind-Checked:get="checkedStates[fn.Name]" @bind-Checked:set="v => { checkedStates[fn.Name] = v; OnFunctionToggled(fn.Name, v); }" />
                     <MudText Class="ms-2">@fn.Name — @fn.Description</MudText>
                 </MudListItem>
             }

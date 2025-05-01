@@ -5,13 +5,17 @@ using Microsoft.Extensions.AI;
 namespace ChatClient.Client.Services;
 
 public class ChatTemplateSelector
-{
-    public RenderFragment SelectTemplate(IAppChatMessage message)
+{    public RenderFragment SelectTemplate(IAppChatMessage message)
     {
-        return message?.Role == ChatRole.User
+        if (message == null)
+            return EmptyTemplate();
+            
+        return message.Role == ChatRole.User
             ? UserTemplate(message)
             : AssistantTemplate(message);
     }
+    
+    private static RenderFragment EmptyTemplate() => _ => { };
 
     private static RenderFragment UserTemplate(IAppChatMessage message) => builder =>
     {

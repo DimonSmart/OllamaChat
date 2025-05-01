@@ -83,7 +83,108 @@ public class ChatService
         MessageReceived?.Invoke();
     }
 
+
     private async Task ProcessStreamingResponseAsync(List<string> functionNames, CancellationToken cancellationToken)
+    {
+        // Счётчики статистики
+        var readCallsCount = 0;
+        var messageEventsCount = 0;
+        var emptyMessagesCount = 0;
+        var jsonParseErrorsCount = 0;
+        var contentChunksCount = 0;
+        var startTime = DateTime.Now;
+
+        using var request = CreateHttpRequest(functionNames);
+        var tempMsg = new StreamingAppChatMessage(string.Empty, DateTime.Now, ChatRole.Assistant);
+        AddMessage(tempMsg);
+
+        using var response = await _client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
+        if (!response.IsSuccessStatusCode)
+        {
+            HandleSystemMessage($"Error: {response.ReasonPhrase}");
+            return;
+        }
+
+        using var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
+        using var reader = new StreamReader(stream);
+
+        Task<string?>? readTask = null;
+        while (!cancellationToken.IsCancellationRequested)
+        {
+            if (readTask == null)
+            {
+                readCallsCount++;
+                readTask = reader.ReadLineAsync(cancellationToken).AsTask();
+            }
+
+            var timeoutTask = Task.Delay(500, cancellationToken);
+            var completed = await Task.WhenAny(readTask, timeoutTask);
+
+            if (!readTask.IsCompleted)
+            {
+                await Task.Yield();
+                continue;
+            }
+
+            var line = await readTask;
+            readTask = null;
+
+            if (line == null) break;
+
+            if (string.IsNullOrWhiteSpace(line))
+            {
+                emptyMessagesCount++;
+                await Task.Yield();
+                MessageReceived?.Invoke();
+                continue;
+            }
+
+            if (!line.StartsWith("data: "))
+            {
+                await Task.Yield();
+                MessageReceived?.Invoke();
+                continue;
+            }
+
+            var payload = line["data: ".Length..];
+            if (payload == "[DONE]")
+                break;
+
+            try
+            {
+                var chunk = JsonSerializer.Deserialize<StreamResponse>(payload)?.Content;
+                if (chunk is not null)
+                {
+                    contentChunksCount++;
+                    tempMsg.Append(chunk);
+                    await Task.Yield();
+                    MessageReceived?.Invoke();
+                    messageEventsCount++;
+                }
+            }
+            catch (JsonException)
+            {
+                jsonParseErrorsCount++;
+            }
+        }
+
+        // Статистика
+        var processingTime = DateTime.Now - startTime;
+        var stats = $"\n\n---\n" +
+                    "Stream statistics:\n" +
+                    $"- Total processing time: {processingTime.TotalSeconds:F2} seconds\n" +
+                    $"- Stream read calls: {readCallsCount}\n" +
+                    $"- Message events fired: {messageEventsCount}\n" +
+                    $"- Content chunks received: {contentChunksCount}\n" +
+                    $"- Empty messages: {emptyMessagesCount}\n" +
+                    $"- JSON parse errors: {jsonParseErrorsCount}";
+
+        tempMsg.Append(stats);
+        MessageReceived?.Invoke();
+    }
+
+
+    private async Task ProcessStreamingResponseAsync3(List<string> functionNames, CancellationToken cancellationToken)
     {
         // Statistics counters
         var readCallsCount = 0;
@@ -112,7 +213,7 @@ public class ChatService
         {
             readCallsCount++;
             var lineTask = reader.ReadLineAsync(cancellationToken).AsTask();
-            var timeoutTask = Task.Delay(100, cancellationToken);
+            var timeoutTask = Task.Delay(50, cancellationToken);
 
             var completedTask = await Task.WhenAny(lineTask, timeoutTask);
 

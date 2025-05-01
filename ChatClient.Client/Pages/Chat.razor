@@ -109,7 +109,7 @@
             <div class="d-flex flex-column">
                 <ChatInput OnSend="SendChatMessageAsync" />
 
-                <MudStack Direction="Row" Spacing="2" Class="mt-2">
+                <MudStack AlignItems="AlignItems.Center" Row="true" Spacing="2" Class="mt-2">
                     @if (isLLMAnswering)
                     {
                         <MudButton OnClick="Cancel"
