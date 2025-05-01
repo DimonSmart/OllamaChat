@@ -75,24 +75,23 @@
     }
     else
     {
-        <div class="chat-messages flex-grow-1 pa-2" style="overflow-y: auto;" @ref="messagesElement">
-            @foreach (var message in ChatService.Messages)
+        <div class="chat-messages flex-grow-1 pa-2" style="overflow-y: auto;" @ref="messagesElement">            @foreach (var message in ChatService.Messages)
             {
                 @if (message.Role != Microsoft.Extensions.AI.ChatRole.System) // Don't display system message
                 {
                     <MudPaper Elevation="2" Class="@GetMessageClass(message)">
-                        <MudText Typo="Typo.body1">@((MarkupString)Markdig.Markdown.ToHtml(message.Content ?? string.Empty))</MudText>
+                        <MudText Typo="Typo.body1">
+                            @((MarkupString)Markdig.Markdown.ToHtml(message.Content ?? string.Empty))                            @if (isLLMAnswering && message == ChatService.Messages.LastOrDefault() && message.Role == Microsoft.Extensions.AI.ChatRole.Assistant)
+                            {
+                                <span class="typing-indicator d-inline-flex align-items-center">
+                                    <MudProgressCircular Size="Size.Small" Indeterminate="true" Class="mr-1" />
+                                    <small><i>typing...</i></small>
+                                </span>
+                            }
+                        </MudText>
                         <MudText Typo="Typo.caption" Align="Align.Right" Class="mt-1">@message.MsgDateTime.ToString("g")</MudText>
                     </MudPaper>
                 }
-            }
-            
-            @if (isLLMAnswering)
-            {
-                <MudPaper Elevation="0" Class="assistant-message message-container pa-2 mb-2 d-flex align-items-center">
-                    <MudProgressCircular Class="mr-2" Size="Size.Small" Indeterminate="true" />
-                    <MudText Typo="Typo.body1"><i>Assistant is typing...</i></MudText>
-                </MudPaper>
             }
         </div>
 
