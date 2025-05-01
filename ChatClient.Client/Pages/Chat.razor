@@ -85,7 +85,9 @@
                         <MudText Typo="Typo.caption" Align="Align.Right" Class="mt-1">@message.MsgDateTime.ToString("g")</MudText>
                     </MudPaper>
                 }
-            }            @if (isLLMAnswering)
+            }
+            
+            @if (isLLMAnswering)
             {
                 <MudPaper Elevation="0" Class="assistant-message message-container pa-2 mb-2 d-flex align-items-center">
                     <MudProgressCircular Class="mr-2" Size="Size.Small" Indeterminate="true" />
