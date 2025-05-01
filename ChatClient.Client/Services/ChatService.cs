@@ -1,192 +1,170 @@
+using ChatClient.Shared.Models;
+using Microsoft.AspNetCore.Components.WebAssembly.Http;
+using Microsoft.Extensions.AI;
 using System.Collections.ObjectModel;
 using System.Net.Http.Json;
 using System.Text;
 using System.Text.Json;
-using ChatClient.Shared.Models;
-using Microsoft.AspNetCore.Components.WebAssembly.Http;
-using Microsoft.Extensions.AI;
 
-namespace ChatClient.Client.Services;
-
-public class ChatService
+namespace ChatClient.Client.Services
 {
-    private readonly HttpClient _httpClient;
-    private CancellationTokenSource? _cts;
-
-    public event Action<bool>? LoadingStateChanged;
-    public event Action? ChatInitialized;
-    public event Action? MessageReceived;
-    public event Action? ErrorOccurred;
-    
-    public bool IsLoading { get; private set; }
-    public ObservableCollection<Message> Messages { get; } = new();
-    public List<Message> HistoryMessages { get; } = new();
-    
-    public ChatService(HttpClient httpClient)
+    public class ChatService
     {
-        _httpClient = httpClient;
-    }
+        private readonly HttpClient _client;
+        private CancellationTokenSource? _cancellationTokenSource;
 
-    public void InitializeChat(SystemPrompt? prompt)
-    {
-        Messages.Clear();
-        HistoryMessages.Clear();
+        public event Action<bool>? LoadingStateChanged;
+        public event Action? ChatInitialized;
+        public event Action? MessageReceived;
+        public event Action? ErrorOccurred;
 
-        if (prompt != null)
+        public bool IsLoading { get; private set; }
+        public ObservableCollection<Message> Messages { get; } = new();
+
+        public ChatService(HttpClient client)
         {
-            var systemMessage = new Message(prompt.Content, DateTime.Now, ChatRole.System);
-            HistoryMessages.Add(systemMessage);
-        }
-        
-        ChatInitialized?.Invoke();
-    }
-    
-    public void ClearChat()
-    {
-        Messages.Clear();
-        HistoryMessages.Clear();
-    }
-    
-    public void Cancel()
-    {
-        _cts?.Cancel();
-        SetLoadingState(false);
-    }
-    
-    public async Task SendMessageAsync(string messageText, List<string> selectedFunctions)
-    {
-        if (string.IsNullOrWhiteSpace(messageText) || IsLoading)
-        {
-            return;
+            _client = client;
         }
 
-        var userMessage = new Message(messageText, DateTime.Now, ChatRole.User);
-        Messages.Add(userMessage);
-        HistoryMessages.Add(userMessage);
-
-        SetLoadingState(true);
-        MessageReceived?.Invoke();
-
-        Message? assistantResponse = null;
-
-        try
+        public void InitializeChat(SystemPrompt? initialPrompt)
         {
-            _cts = new CancellationTokenSource();
-
-            var request = new HttpRequestMessage(HttpMethod.Post, "api/chat/stream")
+            Messages.Clear();
+            if (initialPrompt != null)
             {
-                Content = JsonContent.Create(new AppChatRequest { Messages = HistoryMessages, FunctionNames = selectedFunctions })
-            };
-            request.SetBrowserResponseStreamingEnabled(true);
+                var systemMessage = new Message(initialPrompt.Content, DateTime.Now, ChatRole.System);
+                Messages.Add(systemMessage);
+            }
+            ChatInitialized?.Invoke();
+        }
 
-            using var response = await _httpClient.SendAsync(
-                request,
-                HttpCompletionOption.ResponseHeadersRead,
-                _cts.Token);
+        public void ClearChat()
+        {
+            Messages.Clear();
+        }
 
-            if (!response.IsSuccessStatusCode)
+        public void Cancel()
+        {
+            _cancellationTokenSource?.Cancel();
+            UpdateLoadingState(false);
+        }
+
+        public async Task SendMessageAsync(string text, List<string> selectedFunctions)
+        {
+            if (string.IsNullOrWhiteSpace(text) || IsLoading)
             {
-                var errorContent = await response.Content.ReadAsStringAsync(_cts.Token);
-                Messages.Add(new Message($"Sorry, an error occurred: {response.ReasonPhrase}", DateTime.Now, ChatRole.System));
-                ErrorOccurred?.Invoke();
                 return;
             }
 
-            assistantResponse = new Message(string.Empty, DateTime.Now, ChatRole.Assistant);
-            Messages.Add(assistantResponse);
-            MessageReceived?.Invoke();
+            AddMessage(new Message(text, DateTime.Now, ChatRole.User));
+            UpdateLoadingState(true);
 
-            using var stream = await response.Content.ReadAsStreamAsync(_cts.Token);
+            _cancellationTokenSource = new CancellationTokenSource();
+            try
+            {
+                await ProcessStreamingResponseAsync(selectedFunctions, _cancellationTokenSource.Token);
+            }
+            catch (OperationCanceledException)
+            {
+                HandleSystemMessage("Operation cancelled.");
+            }
+            catch (Exception ex)
+            {
+                HandleSystemMessage($"An error occurred while getting the response: {ex.Message}");
+            }
+            finally
+            {
+                Cleanup();
+            }
+        }
+
+        private void AddMessage(Message message)
+        {
+            Messages.Add(message);
+            MessageReceived?.Invoke();
+        }
+
+        private async Task ProcessStreamingResponseAsync(List<string> functionNames, CancellationToken token)
+        {
+            var request = CreateHttpRequest(functionNames);
+            using var response = await _client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, token);
+
+            if (!response.IsSuccessStatusCode)
+            {
+                var reason = response.ReasonPhrase;
+                HandleSystemMessage($"Sorry, an error occurred: {reason}");
+                return;
+            }
+
+            var assistantMessage = new Message(string.Empty, DateTime.Now, ChatRole.Assistant);
+            AddMessage(assistantMessage);
+
+            var builder = new StringBuilder();
+            using var stream = await response.Content.ReadAsStreamAsync(token);
             using var reader = new StreamReader(stream);
 
-            string? line;
-            var messageBuilder = new StringBuilder();
-            var firstChunkReceived = false;
-            
-            while ((line = await reader.ReadLineAsync(_cts.Token)) != null)
+            while (!token.IsCancellationRequested && (await reader.ReadLineAsync()) is string line)
             {
-                if (string.IsNullOrEmpty(line) || !line.StartsWith("data: ")) continue;
+                if (string.IsNullOrEmpty(line) || !line.StartsWith("data: "))
+                {
+                    continue;
+                }
 
-                var jsonData = line.Substring(6);
-                if (jsonData == "[DONE]") break;
+                var jsonData = line["data: ".Length..];
+                if (jsonData == "[DONE]")
+                {
+                    break;
+                }
 
                 try
                 {
-                    var data = JsonSerializer.Deserialize<StreamResponse>(jsonData);
-                    if (data?.content != null && assistantResponse != null && !_cts.Token.IsCancellationRequested)
+                    var chunk = JsonSerializer.Deserialize<StreamResponse>(jsonData)?.Content;
+                    if (!string.IsNullOrEmpty(chunk))
                     {
-                        if (!firstChunkReceived)
-                        {
-                            SetLoadingState(false);
-                            firstChunkReceived = true;
-                        }
-                        
-                        messageBuilder.Append(data.content);
-                        assistantResponse.Content = messageBuilder.ToString();
+                        builder.Append(chunk);
+                        assistantMessage.Content = builder.ToString();
                         MessageReceived?.Invoke();
                     }
                 }
                 catch (JsonException)
                 {
-                    continue;
+                    // ignore
                 }
             }
-
-            if (!firstChunkReceived)
-            {
-                SetLoadingState(false);
-            }
-
-            if (assistantResponse != null && !string.IsNullOrWhiteSpace(assistantResponse.Content))
-            {
-                HistoryMessages.Add(assistantResponse);
-            }
-            else if (assistantResponse != null)
-            {
-                Messages.Remove(assistantResponse);
-            }
         }
-        catch (OperationCanceledException)
+
+        private HttpRequestMessage CreateHttpRequest(List<string> functionNames)
         {
-            Messages.Add(new Message("Operation cancelled.", DateTime.Now, ChatRole.System));
-            
-            if (assistantResponse != null && !string.IsNullOrWhiteSpace(assistantResponse.Content))
+            var messages = new List<Message>(Messages);
+            var request = new HttpRequestMessage(HttpMethod.Post, "api/chat/stream")
             {
-                HistoryMessages.Add(assistantResponse);
-            }
-            else if (assistantResponse != null)
-            {
-                Messages.Remove(assistantResponse);
-            }
+                Content = JsonContent.Create(new AppChatRequest { Messages = messages, FunctionNames = functionNames })
+            };
+            request.SetBrowserResponseStreamingEnabled(true);
+            return request;
         }
-        catch (Exception ex)
+
+        private void HandleSystemMessage(string text)
         {
-            Messages.Add(new Message($"An error occurred while getting the response: {ex.Message}", DateTime.Now, ChatRole.System));
-            
-            if (assistantResponse != null)
-            {
-                Messages.Remove(assistantResponse);
-            }
-            
+            AddMessage(new Message(text, DateTime.Now, ChatRole.System));
             ErrorOccurred?.Invoke();
         }
-        finally
+
+        private void Cleanup()
         {
-            SetLoadingState(false);
-            _cts?.Dispose();
-            _cts = null;
-            MessageReceived?.Invoke();
+            UpdateLoadingState(false);
+            _cancellationTokenSource?.Dispose();
+            _cancellationTokenSource = null;
         }
-    }
-    
-    private void SetLoadingState(bool loading)
-    {
-        IsLoading = loading;
-        LoadingStateChanged?.Invoke(loading);
-    }
-    
-    private class StreamResponse
-    {
-        public string? content { get; set; }
+
+        private void UpdateLoadingState(bool isLoading)
+        {
+            IsLoading = isLoading;
+            LoadingStateChanged?.Invoke(isLoading);
+        }
+
+        private class StreamResponse
+        {
+            public string? Content { get; set; }
+        }
     }
 }
