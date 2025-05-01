@@ -99,16 +99,15 @@
                 <MudExpansionPanel Text="Functions" @bind-IsExpanded="@functionsExpanded">
                     <FunctionSelector AvailableFunctions="availableFunctions" SelectedFunctions="selectedFunctions" SelectedFunctionsChanged="OnSelectedFunctionsChanged" Expanded="true" />
                 </MudExpansionPanel>
-            </MudExpansionPanels>            <div class="d-flex flex-column">
+            </MudExpansionPanels>
+            <div class="d-flex flex-column">
                 <MudTextField @bind-Value="inputText"
                               Label="Type your message"
                               Variant="Variant.Outlined"
-                              Adornment="Adornment.End"
-                              AdornmentIcon="@Icons.Material.Filled.Send"
-                              OnAdornmentClick="SendMessageAsync"
-                              OnKeyDown="OnKeyPress"
                               Lines="3"
-                              Class="mt-2" />
+                              Class="mt-2"
+                              Immediate="true" />
+
                 <MudStack Direction="Row" Spacing="2" Class="mt-2">
                     @if (isLLMAnswering)
                     {
@@ -116,7 +115,11 @@
                     }
                     else
                     {
-                        <MudButton OnClick="SendMessageAsync" Color="Color.Primary" Variant="Variant.Filled" Disabled="@IsSendDisabled" StartIcon="@Icons.Material.Filled.Send">Send</MudButton>
+                        <MudButton OnClick="SendChatMessageAsync"
+                                   Color="Color.Primary"
+                                   Variant="Variant.Filled"
+                                   Disabled="@IsSendDisabled"
+                                   StartIcon="@Icons.Material.Filled.Send">Send</MudButton>
                         <MudButton OnClick="RestartChat" Color="Color.Secondary" Variant="Variant.Outlined" StartIcon="@Icons.Material.Filled.AddCircle">New Chat</MudButton>
                     }
                 </MudStack>
@@ -220,19 +223,18 @@
         chatStarted = false;
         ChatService.ClearChat();
         StateHasChanged();
-    }    private async Task SendMessageAsync()
+    }
+
+    private async Task SendChatMessageAsync()
     {
         if (string.IsNullOrWhiteSpace(inputText) || isLLMAnswering)
             return;
 
         var userMessage = inputText.Trim();
         inputText = string.Empty;
-        
-        // Вызываем StateHasChanged немедленно, чтобы очистить текстовое поле 
-        // до начала обработки сообщения
-        StateHasChanged();
-        
+
         await ChatService.SendMessageAsync(userMessage, selectedFunctions);
+        await ScrollToBottom();
     }
 
     private async Task ScrollToBottom()
@@ -250,11 +252,6 @@
     private void Cancel()
     {
         ChatService.Cancel();
-    }
-
-    private async Task OnKeyPress(KeyboardEventArgs e)
-    {
-        if (e.Key == "Enter" && !e.ShiftKey) await SendMessageAsync();
     }
 
     public ValueTask DisposeAsync()
