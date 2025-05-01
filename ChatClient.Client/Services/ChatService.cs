@@ -15,7 +15,7 @@ namespace ChatClient.Client.Services
 
         public event Action<bool>? LoadingStateChanged;
         public event Action? ChatInitialized;
-        public event Action? MessageReceived;
+        public event Func<Task>? MessageReceived;
         public event Action? ErrorOccurred;
 
         public bool IsLoading { get; private set; }
@@ -142,7 +142,7 @@ namespace ChatClient.Client.Services
 
             if (!response.IsSuccessStatusCode)
             {
-                HandleSystemMessage($"Ошибка: {response.ReasonPhrase}");
+                HandleSystemMessage($"Error: {response.ReasonPhrase}");
                 return;
             }
 
@@ -152,7 +152,7 @@ namespace ChatClient.Client.Services
             while (!cancellationToken.IsCancellationRequested)
             {
                 var lineTask = reader.ReadLineAsync(cancellationToken).AsTask();
-                await Task.WhenAny(lineTask, Task.Delay(100, cancellationToken));
+                await Task.WhenAny(lineTask, Task.Delay(10, cancellationToken));
                 if (!lineTask.IsCompleted)
                 {
                     await Task.Yield();
@@ -160,7 +160,6 @@ namespace ChatClient.Client.Services
                 }
 
                 var line = await lineTask;
-                if (line is null) break;
 
                 if (string.IsNullOrEmpty(line) || !line.StartsWith("data: "))
                 {
@@ -179,12 +178,8 @@ namespace ChatClient.Client.Services
                         .Deserialize<StreamResponse>(json)?
                         .Content;
 
-                    if (string.IsNullOrEmpty(chunk))
-                    {
-                        continue;
-                    }
-
                     tempMsg.Append(chunk);
+                    await Task.Yield();
                     MessageReceived?.Invoke();
                     await Task.Yield();
                 }

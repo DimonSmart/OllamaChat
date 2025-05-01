@@ -161,7 +161,7 @@
         await LoadAvailableFunctions();
 
         ChatService.LoadingStateChanged += OnLoadingStateChanged;
-        ChatService.MessageReceived += OnMessageReceived;
+        ChatService.MessageReceived +=  OnMessageReceived;
 
         isLoadingInitialData = false;
         StateHasChanged();
@@ -173,7 +173,7 @@
         StateHasChanged();
     }
 
-    private async void OnMessageReceived()
+    private async Task OnMessageReceived()
     {
         StateHasChanged();
         await ScrollToBottom();

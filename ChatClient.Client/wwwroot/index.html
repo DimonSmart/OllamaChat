@@ -39,51 +39,6 @@
                 element.scrollTop = element.scrollHeight;
             }
         }
-
-        // Debugging function for prompt content visibility
-        window.debugPromptVisibility = function() {
-            const switchElement = document.querySelector(".mud-switch");
-            const previewElement = document.querySelector(".prompt-preview");
-            
-            console.log("Switch element found:", switchElement !== null);
-            console.log("Preview element found:", previewElement !== null);
-            
-            if (previewElement) {
-                const style = window.getComputedStyle(previewElement);
-                console.log("Preview display:", style.display);
-                console.log("Preview visibility:", style.visibility);
-            }
-            
-            return {
-                switchFound: switchElement !== null,
-                previewFound: previewElement !== null
-            };
-        }
-
-        // Функция для отладки
-        window.blazorDebug = {
-            log: function (message) {
-                console.log("Blazor Debug:", message);
-            },
-            logError: function (error) {
-                console.error("Blazor Error:", error);
-            }
-        };
-
-        // Helper to get all selected values from a multiple select element
-        window.getSelectValues = function (selectElement) {
-            var result = [];
-            if (!selectElement || !selectElement.options) {
-                return result;
-            }
-            for (var i = 0; i < selectElement.options.length; i++) {
-                var opt = selectElement.options[i];
-                if (opt.selected) {
-                    result.push(opt.value);
-                }
-            }
-            return result;
-        };
     </script>
 </body>
 
