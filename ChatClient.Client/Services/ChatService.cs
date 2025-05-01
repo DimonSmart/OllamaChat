@@ -2,9 +2,7 @@ using ChatClient.Shared.Models;
 using Microsoft.AspNetCore.Components.WebAssembly.Http;
 using Microsoft.Extensions.AI;
 using System.Collections.ObjectModel;
-using System.Linq;
 using System.Net.Http.Json;
-using System.Text;
 using System.Text.Json;
 
 
@@ -151,15 +149,29 @@ namespace ChatClient.Client.Services
             using var stream = await response.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
             using var reader = new StreamReader(stream);
 
-            while (!cancellationToken.IsCancellationRequested &&
-                   (await reader.ReadLineAsync(cancellationToken).ConfigureAwait(false)) is string line)
+            while (!cancellationToken.IsCancellationRequested)
             {
-                if (string.IsNullOrEmpty(line) || !line.StartsWith("data: "))
+                var lineTask = reader.ReadLineAsync(cancellationToken).AsTask();
+                await Task.WhenAny(lineTask, Task.Delay(100, cancellationToken));
+                if (!lineTask.IsCompleted)
+                {
+                    await Task.Yield();
                     continue;
+                }
+
+                var line = await lineTask;
+                if (line is null) break;
+
+                if (string.IsNullOrEmpty(line) || !line.StartsWith("data: "))
+                {
+                    continue;
+                }
 
                 var json = line["data: ".Length..];
                 if (json == "[DONE]")
+                {
                     break;
+                }
 
                 try
                 {
@@ -168,7 +180,9 @@ namespace ChatClient.Client.Services
                         .Content;
 
                     if (string.IsNullOrEmpty(chunk))
+                    {
                         continue;
+                    }
 
                     tempMsg.Append(chunk);
                     MessageReceived?.Invoke();
