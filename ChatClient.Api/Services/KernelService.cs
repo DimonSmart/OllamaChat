@@ -23,7 +23,7 @@ public class KernelService(
         httpClient.BaseAddress = new Uri(baseUrl);
         httpClient.Timeout = TimeSpan.FromMinutes(10);
 
-        var builder = Kernel.CreateBuilder();
+        IKernelBuilder builder = Kernel.CreateBuilder();
         builder.AddOllamaChatCompletion(
             modelId: modelId,
             httpClient: httpClient,

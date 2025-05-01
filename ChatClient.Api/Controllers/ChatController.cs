@@ -22,42 +22,6 @@ public class ChatController(
             { ChatRole.Assistant, (history, content) => history.AddAssistantMessage(content) }
         };
 
-    [HttpPost("message")]
-    public async Task<IActionResult> SendMessage([FromBody] AppChatRequest request, CancellationToken cancellationToken)
-    {
-        try
-        {
-            var chatHistory = await BuildChatHistory(request);
-
-            var kernel = kernelService.CreateKernel(request.FunctionNames);
-
-            var executionSettings = new PromptExecutionSettings
-            {
-                FunctionChoiceBehavior = (request.FunctionNames != null && request.FunctionNames.Any())
-                    ? FunctionChoiceBehavior.Auto()
-                    : FunctionChoiceBehavior.None()
-            };
-
-            var response = await chatService.GetChatMessageContentAsync(
-                chatHistory,
-                executionSettings,
-                kernel,
-                cancellationToken: cancellationToken);
-
-            logger.LogInformation("Chat message processed successfully");
-
-            return Ok(new AppChatResponse
-            {
-                Message = new Shared.Models.AppChatMessage(response.Content ?? string.Empty, DateTime.UtcNow, ChatRole.Assistant)
-            });
-        }
-        catch (Exception ex)
-        {
-            logger.LogError(ex, "Error processing chat message");
-            return StatusCode(500, new { error = "An error occurred processing your request" });
-        }
-    }
-
     [HttpPost("stream")]
     public async Task StreamMessage([FromBody] AppChatRequest request, CancellationToken cancellationToken)
     {
