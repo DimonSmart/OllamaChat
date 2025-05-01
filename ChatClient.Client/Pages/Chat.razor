@@ -1,3 +1,4 @@
+@page "/"
 @page "/chat"
 @using Microsoft.AspNetCore.Components
 @using Microsoft.AspNetCore.Components.Web
@@ -75,13 +76,15 @@
     }
     else
     {
-        <div class="chat-messages flex-grow-1 pa-2" style="overflow-y: auto;" @ref="messagesElement">            @foreach (var message in ChatService.Messages)
+        <div class="chat-messages flex-grow-1 pa-2" style="overflow-y: auto;" @ref="messagesElement">
+            @foreach (var message in ChatService.Messages)
             {
                 @if (message.Role != Microsoft.Extensions.AI.ChatRole.System) // Don't display system message
                 {
                     <MudPaper Elevation="2" Class="@GetMessageClass(message)">
                         <MudText Typo="Typo.body1">
-                            @((MarkupString)Markdig.Markdown.ToHtml(message.Content ?? string.Empty))                            @if (isLLMAnswering && message == ChatService.Messages.LastOrDefault() && message.Role == Microsoft.Extensions.AI.ChatRole.Assistant)
+                            @((MarkupString)Markdig.Markdown.ToHtml(message.Content ?? string.Empty))
+                            @if (isLLMAnswering && message == ChatService.Messages.LastOrDefault() && message.Role == Microsoft.Extensions.AI.ChatRole.Assistant)
                             {
                                 <span class="typing-indicator d-inline-flex align-items-center">
                                     <MudProgressCircular Size="Size.Small" Indeterminate="true" Class="mr-1" />
