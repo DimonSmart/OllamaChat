@@ -129,7 +129,10 @@ public class ChatService
             var line = await readTask;
             readTask = null;
 
-            if (line == null) break;
+            if (line == null)
+            {
+                break;
+            }
 
             if (string.IsNullOrWhiteSpace(line))
             {
@@ -148,7 +151,9 @@ public class ChatService
 
             var payload = line["data: ".Length..];
             if (payload == "[DONE]")
+            {
                 break;
+            }
 
             try
             {
@@ -158,7 +163,9 @@ public class ChatService
                     contentChunksCount++;
                     tempMsg.Append(chunk);
                     await Task.Yield();
-                    MessageReceived?.Invoke();
+                    // MessageReceived?.Invoke();
+                    _ = Task.Run(() => MessageReceived?.Invoke());
+
                     messageEventsCount++;
                 }
             }
@@ -168,7 +175,6 @@ public class ChatService
             }
         }
 
-        // Статистика
         var processingTime = DateTime.Now - startTime;
         var stats = $"\n\n---\n" +
                     "Stream statistics:\n" +

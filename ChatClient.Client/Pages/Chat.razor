@@ -161,7 +161,7 @@
         await LoadAvailableFunctions();
 
         ChatService.LoadingStateChanged += OnLoadingStateChanged;
-        ChatService.MessageReceived += () => InvokeAsync(OnMessageReceived);
+        ChatService.MessageReceived += async () => await InvokeAsync(OnMessageReceived);
 
         isLoadingInitialData = false;
         StateHasChanged();
