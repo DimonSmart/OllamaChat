@@ -85,7 +85,7 @@
                 {
                     <MudPaper Elevation="2" Class="@GetMessageClass(message)">
                         <MudText Typo="Typo.body1">
-                            @((MarkupString)Markdig.Markdown.ToHtml(message.Content ?? string.Empty))
+                            @((MarkupString)message.HtmlContent)
                             @if (isLLMAnswering && message == ChatService.Messages.LastOrDefault() && message.Role == Microsoft.Extensions.AI.ChatRole.Assistant)
                             {
                                 <span class="typing-indicator d-inline-flex align-items-center">

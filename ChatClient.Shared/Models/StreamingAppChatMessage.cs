@@ -1,3 +1,4 @@
+using Markdig;
 using Microsoft.Extensions.AI;
 using System.Text;
 
@@ -10,6 +11,8 @@ public class StreamingAppChatMessage(string initialContent, DateTime msgDateTime
     public string Content => _contentBuilder.ToString();
     public DateTime MsgDateTime { get; private set; } = msgDateTime;
     public ChatRole Role { get; private set; } = role;
+
+    public string HtmlContent => Markdown.ToHtml(Content);
 
     public void Append(string? text)
     {

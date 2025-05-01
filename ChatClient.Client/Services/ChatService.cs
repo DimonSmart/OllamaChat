@@ -81,10 +81,16 @@ public class ChatService
     {
         Messages.Add(message);
         MessageReceived?.Invoke();
-    }
-
-    private async Task ProcessStreamingResponseAsync(List<string> functionNames, CancellationToken cancellationToken)
+    }    private async Task ProcessStreamingResponseAsync(List<string> functionNames, CancellationToken cancellationToken)
     {
+        // Statistics counters
+        int readCallsCount = 0;
+        int messageEventsCount = 0;
+        int emptyMessagesCount = 0;
+        int jsonParseErrorsCount = 0;
+        int contentChunksCount = 0;
+        DateTime startTime = DateTime.Now;
+        
         using var request = CreateHttpRequest(functionNames);
         var tempMsg = new StreamingAppChatMessage(string.Empty, DateTime.Now, ChatRole.Assistant);
         AddMessage(tempMsg);
@@ -102,6 +108,7 @@ public class ChatService
 
         while (!cancellationToken.IsCancellationRequested)
         {
+            readCallsCount++;
             var lineTask = reader.ReadLineAsync(cancellationToken).AsTask();
             var timeoutTask = Task.Delay(50, cancellationToken);
 
@@ -121,7 +128,14 @@ public class ChatService
                 break;
             }
 
-            if (string.IsNullOrEmpty(line) || !line.StartsWith("data: "))
+            if (string.IsNullOrEmpty(line))
+            {
+                emptyMessagesCount++;
+                await Task.Yield();
+                continue;
+            }
+            
+            if (!line.StartsWith("data: "))
             {
                 await Task.Yield();
                 continue;
@@ -139,15 +153,33 @@ public class ChatService
                     .Deserialize<StreamResponse>(json)?
                     .Content;
 
+                contentChunksCount++;
                 tempMsg.Append(chunk);
                 await Task.Yield();
                 MessageReceived?.Invoke();
+                messageEventsCount++;
             }
             catch (JsonException)
             {
-                // Skip JSON parsing errors
+                jsonParseErrorsCount++;
             }
         }
+        
+        // Calculate total time
+        TimeSpan processingTime = DateTime.Now - startTime;
+        
+        // Append statistics to the message
+        string stats = $"\n\n---\n" +
+                       $"Stream statistics:\n" +
+                       $"- Total processing time: {processingTime.TotalSeconds:F2} seconds\n" +
+                       $"- Stream read calls: {readCallsCount}\n" +
+                       $"- Message events fired: {messageEventsCount}\n" +
+                       $"- Content chunks received: {contentChunksCount}\n" +
+                       $"- Empty messages: {emptyMessagesCount}\n" +
+                       $"- JSON parse errors: {jsonParseErrorsCount}";
+                       
+        tempMsg.Append(stats);
+        MessageReceived?.Invoke();
     }
 
 

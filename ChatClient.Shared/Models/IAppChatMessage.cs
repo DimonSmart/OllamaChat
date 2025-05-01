@@ -7,4 +7,5 @@ public interface IAppChatMessage
     string Content { get; }
     DateTime MsgDateTime { get; }
     ChatRole Role { get; }
+    string HtmlContent { get; }
 }
