@@ -1,5 +1,3 @@
-using System;
-using System.IO;
 using Microsoft.Extensions.Configuration;
 
 namespace ChatClient.Shared.Services
@@ -13,7 +11,7 @@ namespace ChatClient.Shared.Services
 
         public PathService(IConfiguration configuration)
         {
-            _baseImagePath = configuration["ImageStorage:BasePath"] 
+            _baseImagePath = configuration["ImageStorage:BasePath"]
                 ?? throw new ArgumentException("Configuration missing ImageStorage:BasePath setting");
         }
 
@@ -54,7 +52,7 @@ namespace ChatClient.Shared.Services
         /// <param name="ticketId">The ID of the ticket</param>
         public void EnsureTicketDirectoryExists(string ticketId)
         {
-            string directoryPath = GetTicketImageDirectoryPath(ticketId);
+            var directoryPath = GetTicketImageDirectoryPath(ticketId);
             if (!Directory.Exists(directoryPath))
             {
                 Directory.CreateDirectory(directoryPath);

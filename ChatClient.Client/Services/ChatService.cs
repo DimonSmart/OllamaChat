@@ -2,9 +2,11 @@ using ChatClient.Shared.Models;
 using Microsoft.AspNetCore.Components.WebAssembly.Http;
 using Microsoft.Extensions.AI;
 using System.Collections.ObjectModel;
+using System.Linq;
 using System.Net.Http.Json;
 using System.Text;
 using System.Text.Json;
+
 
 namespace ChatClient.Client.Services
 {
@@ -19,7 +21,7 @@ namespace ChatClient.Client.Services
         public event Action? ErrorOccurred;
 
         public bool IsLoading { get; private set; }
-        public ObservableCollection<Message> Messages { get; } = new();
+        public ObservableCollection<IAppChatMessage> Messages { get; } = new();
 
         public ChatService(HttpClient client)
         {
@@ -31,7 +33,7 @@ namespace ChatClient.Client.Services
             Messages.Clear();
             if (initialPrompt != null)
             {
-                var systemMessage = new Message(initialPrompt.Content, DateTime.Now, ChatRole.System);
+                var systemMessage = new Shared.Models.AppChatMessage(initialPrompt.Content, DateTime.Now, ChatRole.System);
                 Messages.Add(systemMessage);
             }
             ChatInitialized?.Invoke();
@@ -55,7 +57,7 @@ namespace ChatClient.Client.Services
                 return;
             }
 
-            AddMessage(new Message(text, DateTime.Now, ChatRole.User));
+            AddMessage(new AppChatMessage(text, DateTime.Now, ChatRole.User));
             UpdateLoadingState(true);
 
             _cancellationTokenSource = new CancellationTokenSource();
@@ -77,7 +79,7 @@ namespace ChatClient.Client.Services
             }
         }
 
-        private void AddMessage(Message message)
+        private void AddMessage(IAppChatMessage message)
         {
             Messages.Add(message);
             MessageReceived?.Invoke();
@@ -86,6 +88,9 @@ namespace ChatClient.Client.Services
         private async Task ProcessStreamingResponseAsync(List<string> functionNames, CancellationToken token)
         {
             var request = CreateHttpRequest(functionNames);
+            var temporaryMessageWhileReceiving = new StreamingAppChatMessage(string.Empty, DateTime.Now, ChatRole.Assistant);
+            AddMessage(temporaryMessageWhileReceiving);
+
             using var response = await _client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, token);
 
             if (!response.IsSuccessStatusCode)
@@ -95,10 +100,7 @@ namespace ChatClient.Client.Services
                 return;
             }
 
-            var temporaryMessageWhileReceiving = new Message(string.Empty, DateTime.Now, ChatRole.Assistant);
-            AddMessage(temporaryMessageWhileReceiving);
-
-            var builder = new StringBuilder();
+            //var builder = new StringBuilder();
             using var stream = await response.Content.ReadAsStreamAsync(token);
             using var reader = new StreamReader(stream);
 
@@ -120,8 +122,8 @@ namespace ChatClient.Client.Services
                     var chunk = JsonSerializer.Deserialize<StreamResponse>(jsonData)?.Content;
                     if (!string.IsNullOrEmpty(chunk))
                     {
-                        builder.Append(chunk);
-                        temporaryMessageWhileReceiving.Content = builder.ToString();
+                        //builder.Append(chunk);
+                        temporaryMessageWhileReceiving.Append(chunk);// .Content = builder.ToString();
                         MessageReceived?.Invoke();
                     }
                 }
@@ -134,7 +136,10 @@ namespace ChatClient.Client.Services
 
         private HttpRequestMessage CreateHttpRequest(List<string> functionNames)
         {
-            var messages = new List<Message>(Messages);
+            var messages = Messages
+                .Select(message => new AppChatMessage(message.Content, message.MsgDateTime, message.Role))
+                .ToList();
+
             var request = new HttpRequestMessage(HttpMethod.Post, "api/chat/stream")
             {
                 Content = JsonContent.Create(new AppChatRequest { Messages = messages, FunctionNames = functionNames })
@@ -145,7 +150,7 @@ namespace ChatClient.Client.Services
 
         private void HandleSystemMessage(string text)
         {
-            AddMessage(new Message(text, DateTime.Now, ChatRole.System));
+            AddMessage(new Shared.Models.AppChatMessage(text, DateTime.Now, ChatRole.System));
             ErrorOccurred?.Invoke();
         }
 
@@ -167,5 +172,4 @@ namespace ChatClient.Client.Services
             [System.Text.Json.Serialization.JsonPropertyName("content")]
             public string? Content { get; set; }
         }
-    }
-}
+    }}

@@ -48,7 +48,7 @@ public class ChatController(
 
             return Ok(new AppChatResponse
             {
-                Message = new Message(response.Content ?? string.Empty, DateTime.UtcNow, ChatRole.Assistant)
+                Message = new Shared.Models.AppChatMessage(response.Content ?? string.Empty, DateTime.UtcNow, ChatRole.Assistant)
             });
         }
         catch (Exception ex)

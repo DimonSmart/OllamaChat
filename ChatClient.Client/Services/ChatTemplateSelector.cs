@@ -6,14 +6,14 @@ namespace ChatClient.Client.Services;
 
 public class ChatTemplateSelector
 {
-    public RenderFragment SelectTemplate(Message message)
+    public RenderFragment SelectTemplate(IAppChatMessage message)
     {
         return message?.Role == ChatRole.User
             ? UserTemplate(message)
             : AssistantTemplate(message);
     }
 
-    private static RenderFragment UserTemplate(Message message) => builder =>
+    private static RenderFragment UserTemplate(IAppChatMessage message) => builder =>
     {
         builder.OpenElement(0, "div");
         builder.AddAttribute(1, "class", "user-message message-container");
@@ -31,7 +31,7 @@ public class ChatTemplateSelector
         builder.CloseElement();
     };
 
-    private RenderFragment AssistantTemplate(Message message) => builder =>
+    private RenderFragment AssistantTemplate(IAppChatMessage message) => builder =>
     {
         builder.OpenElement(0, "div");
         builder.AddAttribute(1, "class", "assistant-message message-container");

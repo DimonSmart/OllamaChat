@@ -1,6 +1,5 @@
-﻿namespace ChatClient.Shared.Models;
+using Microsoft.Extensions.AI;
 
-/// <summary>
-/// Сообщение в чате: роль (user/assistant/function) + текст.
-/// </summary>
-public record AppChatMessage(string Role, string Content);
+namespace ChatClient.Shared.Models;
+
+public record AppChatMessage(string Content, DateTime MsgDateTime, ChatRole Role) : IAppChatMessage;

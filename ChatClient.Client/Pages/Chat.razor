@@ -12,6 +12,8 @@
 @using MudBlazor
 @using ChatClient.Client.Pages
 @using ChatClient.Client.Services
+@using ChatClient.Client.Components
+
 @implements IAsyncDisposable
 @inject HttpClient Http
 @inject IJSRuntime JSRuntime
@@ -105,26 +107,26 @@
                 </MudExpansionPanel>
             </MudExpansionPanels>
             <div class="d-flex flex-column">
-                <MudTextField @bind-Value="inputText"
-                              Label="Type your message"
-                              Variant="Variant.Outlined"
-                              Lines="3"
-                              Class="mt-2"
-                              Immediate="true" />
+                <ChatInput OnSend="SendChatMessageAsync" />
 
                 <MudStack Direction="Row" Spacing="2" Class="mt-2">
                     @if (isLLMAnswering)
                     {
-                        <MudButton OnClick="Cancel" Color="Color.Error" Variant="Variant.Filled" StartIcon="@Icons.Material.Filled.Stop">Stop</MudButton>
+                        <MudButton OnClick="Cancel"
+                                   Color="Color.Error"
+                                   Variant="Variant.Filled"
+                                   StartIcon="@Icons.Material.Filled.Stop">
+                            Stop
+                        </MudButton>
                     }
                     else
                     {
-                        <MudButton OnClick="SendChatMessageAsync"
-                                   Color="Color.Primary"
-                                   Variant="Variant.Filled"
-                                   Disabled="@IsSendDisabled"
-                                   StartIcon="@Icons.Material.Filled.Send">Send</MudButton>
-                        <MudButton OnClick="RestartChat" Color="Color.Secondary" Variant="Variant.Outlined" StartIcon="@Icons.Material.Filled.AddCircle">New Chat</MudButton>
+                        <MudButton OnClick="RestartChat"
+                                   Color="Color.Secondary"
+                                   Variant="Variant.Outlined"
+                                   StartIcon="@Icons.Material.Filled.AddCircle">
+                            New Chat
+                        </MudButton>
                     }
                 </MudStack>
             </div>
@@ -133,7 +135,6 @@
 </div>
 
 @code {
-    private string inputText { get; set; } = string.Empty;
     private bool isLLMAnswering { get; set; } = false;
     private bool isLoadingInitialData = true;
     private bool chatStarted = false;
@@ -148,10 +149,8 @@
 
     private bool showPromptContent { get; set; } = false;
 
-    private string GetMessageClass(Message message) =>
+    private string GetMessageClass(IAppChatMessage message) =>
         $"{(message.Role == Microsoft.Extensions.AI.ChatRole.User ? "user-message" : "assistant-message")} message-container pa-2 mb-2";
-
-    private bool IsSendDisabled => string.IsNullOrWhiteSpace(inputText) || isLLMAnswering;
 
     protected override async Task OnInitializedAsync()
     {
@@ -229,15 +228,12 @@
         StateHasChanged();
     }
 
-    private async Task SendChatMessageAsync()
+    private async Task SendChatMessageAsync(string message)
     {
-        if (string.IsNullOrWhiteSpace(inputText) || isLLMAnswering)
+        if (string.IsNullOrWhiteSpace(message) || isLLMAnswering)
             return;
 
-        var userMessage = inputText.Trim();
-        inputText = string.Empty;
-
-        await ChatService.SendMessageAsync(userMessage, selectedFunctions);
+        await ChatService.SendMessageAsync(message.Trim(), selectedFunctions);
         await ScrollToBottom();
     }
 
