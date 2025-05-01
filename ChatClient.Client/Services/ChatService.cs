@@ -85,13 +85,13 @@ namespace ChatClient.Client.Services
             MessageReceived?.Invoke();
         }
 
-        private async Task ProcessStreamingResponseAsync(List<string> functionNames, CancellationToken token)
+        private async Task ProcessStreamingResponseAsync(List<string> functionNames, CancellationToken cancellationToken)
         {
             var request = CreateHttpRequest(functionNames);
             var temporaryMessageWhileReceiving = new StreamingAppChatMessage(string.Empty, DateTime.Now, ChatRole.Assistant);
             AddMessage(temporaryMessageWhileReceiving);
 
-            using var response = await _client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, token);
+            using var response = await _client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
 
             if (!response.IsSuccessStatusCode)
             {
@@ -100,11 +100,10 @@ namespace ChatClient.Client.Services
                 return;
             }
 
-            //var builder = new StringBuilder();
-            using var stream = await response.Content.ReadAsStreamAsync(token);
+            using var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
             using var reader = new StreamReader(stream);
 
-            while (!token.IsCancellationRequested && (await reader.ReadLineAsync()) is string line)
+            while (!cancellationToken.IsCancellationRequested && (await reader.ReadLineAsync(cancellationToken)) is string line)
             {
                 if (string.IsNullOrEmpty(line) || !line.StartsWith("data: "))
                 {
@@ -122,8 +121,7 @@ namespace ChatClient.Client.Services
                     var chunk = JsonSerializer.Deserialize<StreamResponse>(jsonData)?.Content;
                     if (!string.IsNullOrEmpty(chunk))
                     {
-                        //builder.Append(chunk);
-                        temporaryMessageWhileReceiving.Append(chunk);// .Content = builder.ToString();
+                        temporaryMessageWhileReceiving.Append(chunk);
                         MessageReceived?.Invoke();
                     }
                 }
