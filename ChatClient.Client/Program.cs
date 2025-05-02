@@ -1,8 +1,10 @@
 using Microsoft.AspNetCore.Components.Web;
 using Microsoft.AspNetCore.Components.WebAssembly.Hosting;
 using ChatClient.Client;
-using MudBlazor.Services;
 using ChatClient.Client.Services;
+using ChatClient.Shared.Services;
+using MudBlazor;
+using MudBlazor.Services;
 
 var builder = WebAssemblyHostBuilder.CreateDefault(args);
 builder.RootComponents.Add<App>("#app");
@@ -21,6 +23,12 @@ builder.Services.AddScoped(sp => {
 
 builder.Services.AddScoped<ChatService>();
 builder.Services.AddScoped<ClientSystemPromptService>();
-builder.Services.AddMudServices();
+builder.Services.AddScoped<ISystemPromptService, ClientSystemPromptService>();
+builder.Services.AddMudServices(config =>
+{
+    config.SnackbarConfiguration.PositionClass = MudBlazor.Defaults.Classes.Position.TopRight;
+    config.SnackbarConfiguration.ShowCloseIcon = true;
+    config.SnackbarConfiguration.VisibleStateDuration = 5000;
+});
 
 await builder.Build().RunAsync();

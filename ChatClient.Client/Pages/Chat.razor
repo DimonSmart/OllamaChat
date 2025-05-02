@@ -181,7 +181,7 @@
 
     private async Task LoadSystemPrompts()
     {
-        systemPrompts = await PromptService.GetSystemPromptsAsync();
+        systemPrompts = await PromptService.GetAllPromptsAsync();
         if (systemPrompts.Count == 0) systemPrompts.Add(PromptService.GetDefaultSystemPrompt());
         selectedSystemPrompt = systemPrompts.FirstOrDefault();
     }
