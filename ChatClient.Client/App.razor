@@ -2,7 +2,6 @@
 @using ChatClient.Client.Layout
 @using MudBlazor
 
-<MudThemeProvider />
 <Router AppAssembly="@typeof(App).Assembly">
     <Found Context="routeData">
         <RouteView RouteData="@routeData" DefaultLayout="@typeof(MainLayout)" />
@@ -11,7 +10,8 @@
     <NotFound>
         <PageTitle>Not found</PageTitle>
         <LayoutView Layout="@typeof(MainLayout)">
-            <div class="container mt-4">                <MudAlert Severity="Severity.Error">
+            <div class="container mt-4">
+                <MudAlert Severity="Severity.Error">
                     <h4>Page not found</h4>
                     <p role="alert">Sorry, there's nothing at this address. The requested page was not found.</p>
                     <MudButton Href="/" Variant="Variant.Filled" Color="Color.Primary">Go to Chat</MudButton>
