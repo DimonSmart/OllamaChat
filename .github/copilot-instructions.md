@@ -11,3 +11,6 @@
 
 ### JSON Serialization
 - Use `System.Text.Json` for all JSON (de)serialization.
+
+### MudBlazor
+- MudDialog visibility property is "Visible", not IsVisible
