@@ -2,6 +2,8 @@
 @using ChatClient.Shared.Models
 @using ChatClient.Shared.Services
 @using System.Net.Http.Json
+@using MudBlazor
+@using MudBlazor.Services
 @inject ISystemPromptService SystemPromptService
 @inject ISnackbar Snackbar
 
@@ -120,7 +122,7 @@
     </MudPaper>
 </MudContainer>
 
-<MudDialog @bind-Visible="@showDeleteDialog" Options="dialogOptions">
+<MudDialog @bind-Visible="@showDeleteDialog" Options="deleteDialogOptions">
     <TitleContent>
         <MudText Typo="Typo.h6">Confirm Delete</MudText>
     </TitleContent>
@@ -172,19 +174,11 @@
     private string searchString = string.Empty;
     private MudForm? newPromptForm;
     private MudDataGrid<SystemPrompt>? dataGrid;
-
-    private DialogOptions dialogOptions = new()
+    private DialogOptions deleteDialogOptions = new()
         {
             CloseOnEscapeKey = true,
             CloseButton = true,
-            MaxWidth = MaxWidth.ExtraSmall
-        };
-
-    private DialogOptions viewDialogOptions = new()
-        {
-            CloseOnEscapeKey = true,
-            CloseButton = true,
-            MaxWidth = MaxWidth.Medium,
+            MaxWidth = MaxWidth.Large,
             FullWidth = true
         };
 
