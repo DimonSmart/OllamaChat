@@ -74,7 +74,7 @@ public class SystemPromptService : ISystemPromptService
         }
     }
 
-    public async Task<SystemPrompt?> GetPromptByIdAsync(string id)
+    public async Task<SystemPrompt?> GetPromptByIdAsync(Guid id)
     {
         var prompts = await GetAllPromptsAsync();
         return prompts.FirstOrDefault(p => p.Id == id);
@@ -88,11 +88,7 @@ public class SystemPromptService : ISystemPromptService
             
             var prompts = await ReadFromFileAsync();
             
-            // Generate a new ID if not provided
-            if (string.IsNullOrEmpty(prompt.Id))
-            {
-                prompt.Id = Guid.NewGuid().ToString();
-            }
+            if (prompt.Id == null) prompt.Id = Guid.NewGuid();
 
             prompt.CreatedAt = DateTime.UtcNow;
             prompt.UpdatedAt = DateTime.UtcNow;
@@ -145,7 +141,7 @@ public class SystemPromptService : ISystemPromptService
         }
     }
 
-    public async Task DeletePromptAsync(string id)
+    public async Task DeletePromptAsync(Guid id)
     {
         try
         {

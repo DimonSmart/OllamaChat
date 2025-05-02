@@ -16,23 +16,23 @@
     <MudPaper Elevation="3" Class="pa-4 rounded-lg">
         <MudToolBar Dense="true">
             <MudButton Variant="Variant.Filled"
-                       Color="Color.Primary"
-                       StartIcon="@Icons.Material.Filled.Add"
-                       OnClick="AddNewPrompt"
-                       Class="px-4">
+            Color="Color.Primary"
+            StartIcon="@Icons.Material.Filled.Add"
+            OnClick="AddNewPrompt"
+            Class="px-4">
                 Add Prompt
             </MudButton>
             <MudSpacer />
             <MudTextField T="string"
-                          ValueChanged="@(s => OnSearch(s))"
-                          Placeholder="Search prompts..."
-                          Adornment="Adornment.Start"
-                          AdornmentIcon="@Icons.Material.Filled.Search"
-                          IconSize="Size.Medium"
-                          Class="mt-0"
-                          Style="min-width: 300px;"
-                          Immediate="true"
-                          DebounceInterval="300" />
+            ValueChanged="@(s => OnSearch(s))"
+            Placeholder="Search prompts..."
+            Adornment="Adornment.Start"
+            AdornmentIcon="@Icons.Material.Filled.Search"
+            IconSize="Size.Medium"
+            Class="mt-0"
+            Style="min-width: 300px;"
+            Immediate="true"
+            DebounceInterval="300" />
         </MudToolBar>
 
         @if (loading)
@@ -42,28 +42,30 @@
             </div>
         }
         else
-        {
-            <MudDataGrid T="SystemPrompt"
-                         Items="@filteredPrompts"
-                         ReadOnly="false"
-                         EditMode="DataGridEditMode.Form"
-                         EditTrigger="DataGridEditTrigger.Manual"
-                         CommittedItemChanges="CommitItemChanges"
-                         Bordered="true"
-                         Hover="true"
-                         Striped="true"
-                         Dense="false"
-                         FixedHeader="true"
-                         Height="calc(100vh - 300px)"
-                         Class="mt-4">
+        {  
+            <MudDataGrid T="SystemPrompt" @ref="dataGrid"
+            Items="@filteredPrompts"
+            ReadOnly="false"
+            EditMode="DataGridEditMode.Form"
+            EditTrigger="DataGridEditTrigger.Manual"
+            CommittedItemChanges="CommitItemChanges"
+            RowEditPreview="BeforeStartEditing"
+            RowEditCommit="AfterCommitChanges"
+            Bordered="true"
+            Hover="true"
+            Striped="true"
+            Dense="false"
+            FixedHeader="true"
+            Height="calc(100vh - 300px)"
+            Class="mt-4">
                 <Columns>
                     <PropertyColumn Property="x => x.Name" Title="Name" SortBy="x => x.Name">
                         <EditTemplate>
                             <MudTextField @bind-Value="context.Item.Name"
-                                          Required
-                                          Label="Prompt Name"
-                                          Immediate="true"
-                                          Validation="@(new Func<string, string>(ValidateName))" />
+                            Required
+                            Label="Prompt Name"
+                            Immediate="true"
+                            Validation="@(new Func<string, string>(ValidateName))" />
                         </EditTemplate>
                     </PropertyColumn>
                     <PropertyColumn Property="x => x.UpdatedAt" Title="Updated" Format="g" />
@@ -75,32 +77,32 @@
                                     @context.Item.Content?.Substring(0, Math.Min(50, context.Item.Content?.Length ?? 0))@(context.Item.Content?.Length > 50 ? "..." : "")
                                 </MudText>
                                 <MudIconButton Icon="@Icons.Material.Filled.Visibility"
-                                               Size="Size.Small"
-                                               OnClick="() => ViewPromptContent(context.Item)"
-                                               Title="View full content"
-                                               Class="ml-2" />
+                                Size="Size.Small"
+                                OnClick="() => ViewPromptContent(context.Item)"
+                                Title="View full content"
+                                Class="ml-2" />
                             </div>
                         </CellTemplate>
                         <EditTemplate>
                             <MudTextField @bind-Value="context.Item.Content"
-                                          Required
-                                          Label="Prompt Content"
-                                          Lines="8"
-                                          Class="mt-3"
-                                          Immediate="true"
-                                          Validation="@(new Func<string, string>(ValidateContent))"
-                                          Placeholder="Enter your system prompt content here..." />
+                            Required
+                            Label="Prompt Content"
+                            Lines="8"
+                            Class="mt-3"
+                            Immediate="true"
+                            Validation="@(new Func<string, string>(ValidateContent))"
+                            Placeholder="Enter your system prompt content here..." />
                         </EditTemplate>
                     </TemplateColumn>
                     <TemplateColumn CellClass="d-flex justify-end">
                         <CellTemplate>
                             <MudIconButton Icon="@Icons.Material.Filled.Edit"
-                                           Size="Size.Small"
-                                           OnClick="() => StartEditing(context)" />
+                            Size="Size.Small"
+                            OnClick="() => StartEditing(context)" />
                             <MudIconButton Icon="@Icons.Material.Filled.Delete"
-                                           Size="Size.Small"
-                                           Color="Color.Error"
-                                           OnClick="() => ConfirmDelete(context.Item)" />
+                            Size="Size.Small"
+                            Color="Color.Error"
+                            OnClick="() => ConfirmDelete(context.Item)" />
                         </CellTemplate>
                     </TemplateColumn>
                 </Columns>
@@ -145,15 +147,43 @@
     <DialogContent>
         <MudPaper Class="pa-4" Elevation="0">
             <MudTextField T="string"
-                          Value="@promptToView?.Content"
-                          Lines="15"
-                          ReadOnly="true"
-                          FullWidth="true"
-                          Variant="Variant.Outlined" />
+            Value="@promptToView?.Content"
+            Lines="15"
+            ReadOnly="true"
+            FullWidth="true"
+            Variant="Variant.Outlined" />
         </MudPaper>
     </DialogContent>
     <DialogActions>
         <MudButton OnClick="@(() => showViewDialog = false)">Close</MudButton>
+    </DialogActions>
+</MudDialog>
+
+<MudDialog @bind-IsVisible="showNewPromptDialog" Options="editDialogOptions">
+    <TitleContent>
+        <MudText Typo="Typo.h6">Create New Prompt</MudText>
+    </TitleContent>
+    <DialogContent>
+        <MudForm @ref="newPromptForm" Model="@newPrompt">
+            <MudTextField @bind-Value="newPrompt.Name"
+            Label="Prompt Name"
+            Required="true"
+            Immediate="true" 
+            Validation="@(new Func<string, string>(ValidateName))" />
+
+            <MudTextField @bind-Value="newPrompt.Content"
+            Label="Prompt Content"
+            Lines="10"
+            Class="mt-4"
+            Required="true"
+            Immediate="true"
+            Validation="@(new Func<string, string>(ValidateContent))" 
+            Placeholder="Enter your system prompt content here..." />
+        </MudForm>
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="CancelNewPrompt">Cancel</MudButton>
+        <MudButton Color="Color.Primary" OnClick="SaveNewPrompt">Save</MudButton>
     </DialogActions>
 </MudDialog>
 
@@ -163,24 +193,37 @@
     private bool loading = true;
     private SystemPrompt? promptToDelete;
     private SystemPrompt? promptToView;
+    private SystemPrompt newPrompt = new();
     private bool showDeleteDialog = false;
     private bool showViewDialog = false;
+    private bool showNewPromptDialog { get; set; } = false;
     private string searchString = string.Empty;
+    private MudForm? newPromptForm;
+    private CellContext<SystemPrompt>? currentEditContext;
+    private MudDataGrid<SystemPrompt>? dataGrid;
 
     private DialogOptions dialogOptions = new()
-        {
-            CloseOnEscapeKey = true,
-            CloseButton = true,
-            MaxWidth = MaxWidth.ExtraSmall
-        };
+    {
+        CloseOnEscapeKey = true,
+        CloseButton = true,
+        MaxWidth = MaxWidth.ExtraSmall
+    };
 
     private DialogOptions viewDialogOptions = new()
-        {
-            CloseOnEscapeKey = true,
-            CloseButton = true,
-            MaxWidth = MaxWidth.Medium,
-            FullWidth = true
-        };
+    {
+        CloseOnEscapeKey = true,
+        CloseButton = true,
+        MaxWidth = MaxWidth.Medium,
+        FullWidth = true
+    };
+
+    private DialogOptions editDialogOptions = new()
+    {
+        CloseOnEscapeKey = true,
+        CloseButton = true,
+        MaxWidth = MaxWidth.Large,
+        FullWidth = true
+    };
 
     protected override async Task OnInitializedAsync()
     {
@@ -210,15 +253,18 @@
 
     private void AddNewPrompt()
     {
-        var newPrompt = new SystemPrompt
-            {
-                CreatedAt = DateTime.UtcNow,
-                UpdatedAt = DateTime.UtcNow
-            };
+        // Initialize a new prompt
+        newPrompt = new SystemPrompt
+        {
+            Id = null,
+            CreatedAt = DateTime.UtcNow,
+            UpdatedAt = DateTime.UtcNow,
+            Name = "",
+            Content = ""
+        };
 
-        prompts.Insert(0, newPrompt);
-        filteredPrompts = new List<SystemPrompt>(prompts);
-        ApplySearch();
+        // Show the dialog to edit the new prompt immediately
+        showNewPromptDialog = true;
     }
 
     private void OnSearch(string text)
@@ -243,23 +289,20 @@
 
     private async Task CommitItemChanges(SystemPrompt item)
     {
+        if (item == null) return;
+
         try
         {
             item.UpdatedAt = DateTime.UtcNow;
-
-            if (string.IsNullOrEmpty(item.Id) || item.Id == Guid.Empty.ToString())
+            if (item.Id == null)
             {
+                item.Id = Guid.NewGuid();
+
                 var result = await SystemPromptService.CreatePromptAsync(item);
+                var index = prompts.FindIndex(p => p.Id == item.Id);
+                if (index >= 0) prompts[index] = result;
 
-                // Update with the returned item (which will have a server-assigned ID)
-                var index = prompts.FindIndex(p => p.Id == item.Id || (string.IsNullOrEmpty(p.Id) && p.Name == item.Name));
-                if (index >= 0)
-                {
-                    prompts[index] = result;
-                }
-
-                Snackbar.Add("Prompt created successfully", Severity.Success);
-            }
+                Snackbar.Add("Prompt created successfully", Severity.Success);            }
             else
             {
                 await SystemPromptService.UpdatePromptAsync(item);
@@ -267,15 +310,26 @@
             }
 
             await LoadPrompts();
+
+            StateHasChanged();
         }
         catch (Exception ex)
         {
             Snackbar.Add($"Error saving prompt: {ex.Message}", Severity.Error);
+            Console.WriteLine($"Exception saving prompt: {ex}");
         }
-    }
+    }   
+
     private void StartEditing(CellContext<SystemPrompt> context)
     {
         context.Actions.StartEditingItemAsync();
+    }
+
+
+    private void BeforeStartEditing(CellContext<SystemPrompt> context)
+    {
+        // Store the item being edited
+        currentEditContext = context;
     }
 
     private void ConfirmDelete(SystemPrompt prompt)
@@ -292,17 +346,12 @@
 
     private async Task DeletePrompt()
     {
-        if (promptToDelete != null)
-        {
+        if (promptToDelete?.Id == null) return;
             try
             {
-                // Only delete if the prompt has an ID (has been saved to the server)
-                if (!string.IsNullOrEmpty(promptToDelete.Id) && promptToDelete.Id != Guid.Empty.ToString())
-                {
-                    await SystemPromptService.DeletePromptAsync(promptToDelete.Id);
-                    Snackbar.Add("Prompt deleted successfully", Severity.Success);
-                }
-
+                await SystemPromptService.DeletePromptAsync(promptToDelete.Id.Value);
+                Snackbar.Add("Prompt deleted successfully", Severity.Success);
+                
                 // Remove locally even if not stored on server yet
                 prompts.Remove(promptToDelete);
                 ApplySearch();
@@ -311,7 +360,6 @@
             {
                 Snackbar.Add($"Error deleting prompt: {ex.Message}", Severity.Error);
             }
-        }
 
         promptToDelete = null;
         showDeleteDialog = false;
@@ -343,5 +391,47 @@
             return "Content must be at least 10 characters";
 
         return string.Empty;
+    }
+    
+    private void CancelNewPrompt()
+    {
+        // Simply close the dialog without saving
+        showNewPromptDialog = false;
+    }
+
+    private async Task SaveNewPrompt()
+    {
+        // Validate the form first
+        if (newPromptForm != null)
+        {
+            await newPromptForm.Validate();
+            if (newPromptForm.IsValid)
+            {
+                try
+                {
+                    // Save the new prompt to the server
+                    var result = await SystemPromptService.CreatePromptAsync(newPrompt);
+                    
+                    // Close the dialog
+                    showNewPromptDialog = false;
+                    
+                    // Refresh the list of prompts
+                    await LoadPrompts();
+                    
+                    Snackbar.Add("Prompt created successfully", Severity.Success);
+                }
+                catch (Exception ex)
+                {
+                    Snackbar.Add($"Error saving prompt: {ex.Message}", Severity.Error);
+                }
+            }
+        }
+    }
+
+    private void AfterCommitChanges(object item)
+    {
+        // This event occurs after DataGrid commits the edited item
+        // Force refresh of UI state to ensure edit mode is exited
+        StateHasChanged();
     }
 }
