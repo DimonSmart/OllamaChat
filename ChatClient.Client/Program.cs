@@ -26,7 +26,7 @@ builder.Services.AddScoped<ClientSystemPromptService>();
 builder.Services.AddScoped<ISystemPromptService, ClientSystemPromptService>();
 builder.Services.AddMudServices(config =>
 {
-    config.SnackbarConfiguration.PositionClass = MudBlazor.Defaults.Classes.Position.TopRight;
+    config.SnackbarConfiguration.PositionClass = Defaults.Classes.Position.TopRight;
     config.SnackbarConfiguration.ShowCloseIcon = true;
     config.SnackbarConfiguration.VisibleStateDuration = 5000;
 });
