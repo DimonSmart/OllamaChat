@@ -9,5 +9,4 @@ public interface IAppChatMessage
     ChatRole Role { get; }
     string HtmlContent { get; }
     string? Statistics { get; }
-    bool IsStatsVisible { get; set; }
 }

@@ -7,15 +7,11 @@ namespace ChatClient.Shared.Models;
 public class StreamingAppChatMessage(string initialContent, DateTime msgDateTime, ChatRole role) : IAppChatMessage
 {
     private readonly StringBuilder _contentBuilder = new(initialContent);
-
     public string Content => _contentBuilder.ToString();
     public DateTime MsgDateTime { get; private set; } = msgDateTime;
     public ChatRole Role { get; private set; } = role;
-
     public string HtmlContent => Markdown.ToHtml(Content);
-
     public string Statistics { get; private set; } = string.Empty;
-    public bool IsStatsVisible { get; set; }
 
     public void Append(string? text)
     {
