@@ -1,0 +1,18 @@
+{
+  "folders": [
+    {
+      "path": "."
+    }
+  ],
+  "settings": {
+    "copilot.agent.mcp.servers": [
+      {
+        "name": "NuGet MCP",
+        "transport": {
+          "type": "stdio",
+          "command": "E:\\\\MCP\\\\NetMcpServers\\\\artifacts\\\\bin\\\\NuGet\\\\release_net9.0\\\\NuGet.exe"
+        }
+      }
+    ]
+  }
+}

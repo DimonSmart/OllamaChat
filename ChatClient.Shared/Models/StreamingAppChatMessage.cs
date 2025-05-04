@@ -14,8 +14,16 @@ public class StreamingAppChatMessage(string initialContent, DateTime msgDateTime
 
     public string HtmlContent => Markdown.ToHtml(Content);
 
+    public string Statistics { get; private set; } = string.Empty;
+    public bool IsStatsVisible { get; set; }
+
     public void Append(string? text)
     {
         _contentBuilder.Append(text);
+    }
+
+    public void SetStatistics(string stats)
+    {
+        Statistics = stats;
     }
 }

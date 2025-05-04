@@ -31,7 +31,7 @@ public class ChatService
         Messages.Clear();
         if (initialPrompt != null)
         {
-            var systemMessage = new Shared.Models.AppChatMessage(initialPrompt.Content, DateTime.Now, ChatRole.System);
+            var systemMessage = new AppChatMessage(initialPrompt.Content, DateTime.Now, ChatRole.System, string.Empty);
             Messages.Add(systemMessage);
         }
         ChatInitialized?.Invoke();
@@ -55,7 +55,7 @@ public class ChatService
             return;
         }
 
-        AddMessage(new AppChatMessage(text, DateTime.Now, ChatRole.User));
+        AddMessage(new AppChatMessage(text, DateTime.Now, ChatRole.User, string.Empty));
         UpdateLoadingState(true);
 
         _cancellationTokenSource = new CancellationTokenSource();
@@ -80,9 +80,8 @@ public class ChatService
     private void AddMessage(IAppChatMessage message)
     {
         Messages.Add(message);
-        MessageReceived?.Invoke();
+        DebounceMessageReceived();
     }
-
 
     private async Task ProcessStreamingResponseAsync(List<string> functionNames, CancellationToken cancellationToken)
     {
@@ -138,14 +137,14 @@ public class ChatService
             {
                 emptyMessagesCount++;
                 await Task.Yield();
-                MessageReceived?.Invoke();
+                DebounceMessageReceived();
                 continue;
             }
 
             if (!line.StartsWith("data: "))
             {
                 await Task.Yield();
-                MessageReceived?.Invoke();
+                DebounceMessageReceived();
                 continue;
             }
 
@@ -163,9 +162,7 @@ public class ChatService
                     contentChunksCount++;
                     tempMsg.Append(chunk);
                     await Task.Yield();
-                    // MessageReceived?.Invoke();
-                    _ = Task.Run(() => MessageReceived?.Invoke());
-
+                    DebounceMessageReceived();
                     messageEventsCount++;
                 }
             }
@@ -184,113 +181,9 @@ public class ChatService
                     $"- Content chunks received: {contentChunksCount}\n" +
                     $"- Empty messages: {emptyMessagesCount}\n" +
                     $"- JSON parse errors: {jsonParseErrorsCount}";
-
-        tempMsg.Append(stats);
-        MessageReceived?.Invoke();
+        tempMsg.SetStatistics(stats);
+        DebounceMessageReceived();
     }
-
-
-    private async Task ProcessStreamingResponseAsync3(List<string> functionNames, CancellationToken cancellationToken)
-    {
-        // Statistics counters
-        var readCallsCount = 0;
-        var messageEventsCount = 0;
-        var emptyMessagesCount = 0;
-        var jsonParseErrorsCount = 0;
-        var contentChunksCount = 0;
-        var startTime = DateTime.Now;
-
-        using var request = CreateHttpRequest(functionNames);
-        var tempMsg = new StreamingAppChatMessage(string.Empty, DateTime.Now, ChatRole.Assistant);
-        AddMessage(tempMsg);
-
-        using var response = await _client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
-
-        if (!response.IsSuccessStatusCode)
-        {
-            HandleSystemMessage($"Error: {response.ReasonPhrase}");
-            return;
-        }
-
-        using var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
-        using var reader = new StreamReader(stream);
-
-        while (!cancellationToken.IsCancellationRequested)
-        {
-            readCallsCount++;
-            var lineTask = reader.ReadLineAsync(cancellationToken).AsTask();
-            var timeoutTask = Task.Delay(50, cancellationToken);
-
-            var completedTask = await Task.WhenAny(lineTask, timeoutTask);
-
-            if (!lineTask.IsCompleted)
-            {
-                await Task.Yield();
-                continue;
-            }
-
-            var line = await lineTask;
-
-            // End of stream reached
-            if (line == null)
-            {
-                break;
-            }
-
-            if (string.IsNullOrEmpty(line))
-            {
-                emptyMessagesCount++;
-                await Task.Yield();
-                continue;
-            }
-
-            if (!line.StartsWith("data: "))
-            {
-                await Task.Yield();
-                continue;
-            }
-
-            var json = line["data: ".Length..];
-            if (json == "[DONE]")
-            {
-                break;
-            }
-
-            try
-            {
-                var chunk = JsonSerializer
-                    .Deserialize<StreamResponse>(json)?
-                    .Content;
-
-                contentChunksCount++;
-                tempMsg.Append(chunk);
-                await Task.Yield();
-                MessageReceived?.Invoke();
-                messageEventsCount++;
-            }
-            catch (JsonException)
-            {
-                jsonParseErrorsCount++;
-            }
-        }
-
-        // Calculate total time
-        var processingTime = DateTime.Now - startTime;
-
-        // Append statistics to the message
-        var stats = $"\n\n---\n" +
-                       $"Stream statistics:\n" +
-                       $"- Total processing time: {processingTime.TotalSeconds:F2} seconds\n" +
-                       $"- Stream read calls: {readCallsCount}\n" +
-                       $"- Message events fired: {messageEventsCount}\n" +
-                       $"- Content chunks received: {contentChunksCount}\n" +
-                       $"- Empty messages: {emptyMessagesCount}\n" +
-                       $"- JSON parse errors: {jsonParseErrorsCount}";
-
-        tempMsg.Append(stats);
-        MessageReceived?.Invoke();
-    }
-
 
     private HttpRequestMessage CreateHttpRequest(List<string> functionNames)
     {
@@ -308,7 +201,7 @@ public class ChatService
 
     private void HandleSystemMessage(string text)
     {
-        AddMessage(new Shared.Models.AppChatMessage(text, DateTime.Now, ChatRole.System));
+        AddMessage(new AppChatMessage(text, DateTime.Now, ChatRole.System));
         ErrorOccurred?.Invoke();
     }
 
@@ -323,6 +216,31 @@ public class ChatService
     {
         IsLoading = isLoading;
         LoadingStateChanged?.Invoke(isLoading);
+    }
+
+    private readonly SemaphoreSlim _debounceSemaphore = new(1, 1);
+    private bool _pendingUIUpdate = false;
+
+    private void DebounceMessageReceived()
+    {
+        _pendingUIUpdate = true;
+        _ = Task.Run(async () =>
+        {
+            if (!await _debounceSemaphore.WaitAsync(0)) return;
+            try
+            {
+                while (_pendingUIUpdate)
+                {
+                    _pendingUIUpdate = false;
+                    MessageReceived?.Invoke();
+                    await Task.Delay(250); 
+                }
+            }
+            finally
+            {
+                _debounceSemaphore.Release();
+            }
+        });
     }
 
     private class StreamResponse

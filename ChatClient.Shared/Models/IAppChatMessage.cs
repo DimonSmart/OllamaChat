@@ -8,4 +8,6 @@ public interface IAppChatMessage
     DateTime MsgDateTime { get; }
     ChatRole Role { get; }
     string HtmlContent { get; }
+    string? Statistics { get; }
+    bool IsStatsVisible { get; set; }
 }

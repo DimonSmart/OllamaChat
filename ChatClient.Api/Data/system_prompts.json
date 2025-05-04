@@ -8,10 +8,10 @@
   },
   {
     "Id": "24d79938-c3a3-44ae-86ed-22e4f43d9c35",
-    "Name": "Code Assistant",
+    "Name": "C# Code Assistant",
     "Content": "You are a C# coding assistant. Help the user write and understand code.",
     "CreatedAt": "2025-04-25T19:44:23.4936811Z",
-    "UpdatedAt": "2025-05-02T13:32:52.5865274Z"
+    "UpdatedAt": "2025-05-03T21:17:24.6668257Z"
   },
   {
     "Id": "598953dc-2e3c-41af-8623-809f58a62417",

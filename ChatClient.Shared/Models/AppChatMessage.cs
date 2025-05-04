@@ -26,12 +26,17 @@ namespace ChatClient.Shared.Models
         /// </summary>
         public ChatRole Role { get; }
 
-        public AppChatMessage(string content, DateTime msgDateTime, ChatRole role)
+        public string? Statistics { get; }
+
+        public bool IsStatsVisible { get; set; } = false;
+
+        public AppChatMessage(string content, DateTime msgDateTime, ChatRole role, string? statistics = null)
         {
             Content = content ?? string.Empty;
             HtmlContent = Markdown.ToHtml(Content);
             MsgDateTime = msgDateTime;
             Role = role;
+            Statistics = statistics;
         }
     }
 }

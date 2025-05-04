@@ -103,11 +103,11 @@
     animation: blink 1s infinite;
 }
 
-/* Typing indicator */
 .typing-indicator {
-    margin-left: 6px;
-    vertical-align: middle;
     display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    vertical-align: middle;
 }
 
 @keyframes blink {

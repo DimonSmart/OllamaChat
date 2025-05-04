@@ -59,17 +59,17 @@
                     }
 
                     <MudButton Variant="Variant.Filled"
-                               Color="Color.Primary"
-                               FullWidth="true"
-                               Class="mt-4"
-                               OnClick="StartChat">
+                    Color="Color.Primary"
+                    FullWidth="true"
+                    Class="mt-4"
+                    OnClick="StartChat">
                         Start Chat
                     </MudButton>
                     <MudButton Href="/system-prompts"
-                               Variant="Variant.Text"
-                               Color="Color.Secondary"
-                               FullWidth="true"
-                               Class="mt-2">
+                    Variant="Variant.Text"
+                    Color="Color.Secondary"
+                    FullWidth="true"
+                    Class="mt-2">
                         Manage System Prompts
                     </MudButton>
                 }
@@ -83,19 +83,40 @@
             {
                 @if (message.Role != Microsoft.Extensions.AI.ChatRole.System) // Don't display system message
                 {
-                    <MudPaper Elevation="2" Class="@GetMessageClass(message)">
-                        <MudText Typo="Typo.body1">
+                    <MudChat ChatPosition="@(message.Role == Microsoft.Extensions.AI.ChatRole.Assistant ? ChatBubblePosition.Start : ChatBubblePosition.End)">
+                        <MudChatBubble>
                             @((MarkupString)message.HtmlContent)
                             @if (isLLMAnswering && message == ChatService.Messages.LastOrDefault() && message.Role == Microsoft.Extensions.AI.ChatRole.Assistant)
                             {
-                                <span class="typing-indicator d-inline-flex align-items-center">
-                                    <MudProgressCircular Size="Size.Small" Indeterminate="true" Class="mr-1" />
+                                <span class="typing-indicator">
+                                    <MudProgressCircular Size="Size.Small" Indeterminate="true" />
                                     <small><i>typing...</i></small>
                                 </span>
                             }
-                        </MudText>
-                        <MudText Typo="Typo.caption" Align="Align.Right" Class="mt-1">@message.MsgDateTime.ToString("g")</MudText>
-                    </MudPaper>
+                            <MudText Typo="Typo.caption" Align="@(message.Role == Microsoft.Extensions.AI.ChatRole.Assistant ? Align.Left : Align.Right)" Class="mt-1">
+                                @message.MsgDateTime.ToString("g")
+                            </MudText>
+                            @if (!string.IsNullOrEmpty(message.Statistics))
+                            {
+                                <MudIconButton Icon="@Icons.Material.Filled.Add"
+                                               Size="Size.Small"
+                                               Color="Color.Default"
+                                               Class="mt-1"
+                                               OnClick="@(() => message.IsStatsVisible = !message.IsStatsVisible)" />
+
+                                @if (message.IsStatsVisible)
+                                {
+                                    <MudPaper Class="pa-2 mt-1" Elevation="1">
+                                        <MudText Typo="Typo.caption">
+                                            @((MarkupString)message.Statistics)
+                                        </MudText>
+                                    </MudPaper>
+                                }
+                            }
+
+
+                        </MudChatBubble>
+                    </MudChat>
                 }
             }
         </div>
