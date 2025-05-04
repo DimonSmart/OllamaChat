@@ -20,7 +20,7 @@
 @inject IJSRuntime JSRuntime
 @inject NavigationManager NavigationManager
 @inject IDialogService DialogService
-@inject ChatViewModelService ChatService
+@inject IChatViewModelService ChatService
 @inject ClientSystemPromptService PromptService
 
 <PageTitle>Chat with AI Assistant</PageTitle>
@@ -79,15 +79,15 @@
     }
     else
     {
-        <div class="chat-messages flex-grow-1 pa-2" style="overflow-y: auto;" @ref="messagesElement">
-            @foreach (var message in ChatService.Messages)
+        <div class="chat-messages flex-grow-1 pa-2" style="overflow-y: auto;" @ref="messagesElement">            @foreach (var message in ChatService.Messages)
             {
                 @if (message.Role != Microsoft.Extensions.AI.ChatRole.System) // Don't display system message
                 {
-                    <MudChat ChatPosition="@(message.Role == Microsoft.Extensions.AI.ChatRole.Assistant ? ChatBubblePosition.Start : ChatBubblePosition.End)">
+                    <MudChat ChatPosition="@(message.Role == Microsoft.Extensions.AI.ChatRole.Assistant ? ChatBubblePosition.Start : ChatBubblePosition.End)"
+                            @key="message.Id">
                         <MudChatBubble>
                             @((MarkupString)message.HtmlContent)
-                            @if (isLLMAnswering && message == ChatService.Messages.LastOrDefault() && message.Role == Microsoft.Extensions.AI.ChatRole.Assistant)
+                            @if (isLLMAnswering && message == ChatService.Messages[^1] && message.Role == Microsoft.Extensions.AI.ChatRole.Assistant)
                             {
                                 <span class="typing-indicator">
                                     <MudProgressCircular Size="Size.Small" Indeterminate="true" />
@@ -172,9 +172,7 @@
     private bool showPromptContent { get; set; } = false;
 
     private string GetMessageClass(IAppChatMessage message) =>
-        $"{(message.Role == Microsoft.Extensions.AI.ChatRole.User ? "user-message" : "assistant-message")} message-container pa-2 mb-2";
-
-    protected override async Task OnInitializedAsync()
+        $"{(message.Role == Microsoft.Extensions.AI.ChatRole.User ? "user-message" : "assistant-message")} message-container pa-2 mb-2";    protected override async Task OnInitializedAsync()
     {
         isLoadingInitialData = true;
         StateHasChanged();
@@ -183,7 +181,8 @@
         await LoadAvailableFunctions();
 
         ChatService.LoadingStateChanged += OnLoadingStateChanged;
-        ChatService.MessageReceived += async () => await InvokeAsync(OnMessageReceived);
+        ChatService.MessageAdded += async (msg) => await InvokeAsync(() => OnMessageAdded(msg));
+        ChatService.MessageUpdated += (msg) => InvokeAsync(() => OnMessageUpdated(msg));
 
         isLoadingInitialData = false;
         StateHasChanged();
@@ -195,10 +194,16 @@
         StateHasChanged();
     }
 
-    private async Task OnMessageReceived()
+    private async Task OnMessageAdded(ChatMessageViewModel message)
     {
         StateHasChanged();
         await ScrollToBottom();
+    }
+
+    private void OnMessageUpdated(ChatMessageViewModel message)
+    {
+        // Blazor будет эффективно обновлять только измененный компонент благодаря ID
+        StateHasChanged();
     }
 
     private async Task LoadSystemPrompts()

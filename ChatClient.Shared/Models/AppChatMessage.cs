@@ -1,14 +1,17 @@
 using Markdig;
 using Microsoft.Extensions.AI;
 
-namespace ChatClient.Shared.Models;
+namespace ChatClient.Shared.Models;    public class AppChatMessage : IAppChatMessage
+    {
+        /// <summary>
+        /// Unique identifier for the message
+        /// </summary>
+        public Guid Id { get; }
 
-public class AppChatMessage : IAppChatMessage
-{
-    /// <summary>
-    /// The original text of the message (Markdown).
-    /// </summary>
-    public string Content { get; }
+        /// <summary>
+        /// The original text of the message (Markdown).
+        /// </summary>
+        public string Content { get; }
 
     /// <summary>
     /// Cached HTML representation of the content created at initialization.
@@ -28,14 +31,13 @@ public class AppChatMessage : IAppChatMessage
     /// <summary>
     /// Chat statistics (call count, etc
     /// </summary>
-    public string? Statistics { get; }
-
-    public AppChatMessage(string content, DateTime msgDateTime, ChatRole role, string? statistics = null)
-    {
-        Content = content ?? string.Empty;
-        HtmlContent = Markdown.ToHtml(Content);
-        MsgDateTime = msgDateTime;
-        Role = role;
-        Statistics = statistics;
+    public string? Statistics { get; }        public AppChatMessage(string content, DateTime msgDateTime, ChatRole role, string? statistics = null)
+        {
+            Id = Guid.NewGuid();
+            Content = content ?? string.Empty;
+            HtmlContent = Markdown.ToHtml(Content);
+            MsgDateTime = msgDateTime;
+            Role = role;
+            Statistics = statistics;
     }
 }

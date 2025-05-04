@@ -22,7 +22,7 @@ builder.Services.AddScoped(sp => {
 });
 
 builder.Services.AddScoped<ChatService>();
-builder.Services.AddScoped<ChatViewModelService>();
+builder.Services.AddScoped<IChatViewModelService, ChatViewModelService>();
 builder.Services.AddScoped<ClientSystemPromptService>();
 builder.Services.AddScoped<ISystemPromptService, ClientSystemPromptService>();
 builder.Services.AddMudServices(config =>
