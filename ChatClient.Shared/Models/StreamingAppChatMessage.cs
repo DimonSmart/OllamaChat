@@ -11,7 +11,9 @@ public class StreamingAppChatMessage(string initialContent, DateTime msgDateTime
     public DateTime MsgDateTime { get; private set; } = msgDateTime;
     public ChatRole Role { get; private set; } = role;
     public string HtmlContent => Markdown.ToHtml(Content);
-    public string Statistics { get; private set; } = string.Empty;
+    public string? Statistics { get; private set; } = string.Empty;
+
+    public Guid Id { get; private set; } = Guid.NewGuid();
 
     public void Append(string? text)
     {

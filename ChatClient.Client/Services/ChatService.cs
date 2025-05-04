@@ -11,11 +11,9 @@ namespace ChatClient.Client.Services;
 public class ChatService
 {
     private readonly HttpClient _client;
-    private CancellationTokenSource? _cancellationTokenSource;
-
-    public event Action<bool>? LoadingStateChanged;
+    private CancellationTokenSource? _cancellationTokenSource;    public event Action<bool>? LoadingStateChanged;
     public event Action? ChatInitialized;
-    public event Func<Task>? MessageReceived;
+    public event Func<IAppChatMessage, Task>? MessageReceived;
     public event Action? ErrorOccurred;
 
     public bool IsLoading { get; private set; }
@@ -75,17 +73,15 @@ public class ChatService
         {
             Cleanup();
         }
-    }
-
+    }    
     private void AddMessage(IAppChatMessage message)
     {
         Messages.Add(message);
-        DebounceMessageReceived();
+        NotifyMessageReceived(message);
     }
 
     private async Task ProcessStreamingResponseAsync(List<string> functionNames, CancellationToken cancellationToken)
     {
-        // —чЄтчики статистики
         var readCallsCount = 0;
         var messageEventsCount = 0;
         var emptyMessagesCount = 0;
@@ -131,20 +127,18 @@ public class ChatService
             if (line == null)
             {
                 break;
-            }
-
-            if (string.IsNullOrWhiteSpace(line))
+            }            if (string.IsNullOrWhiteSpace(line))
             {
                 emptyMessagesCount++;
                 await Task.Yield();
-                DebounceMessageReceived();
+                NotifyMessageReceived(tempMsg);
                 continue;
             }
 
             if (!line.StartsWith("data: "))
             {
                 await Task.Yield();
-                DebounceMessageReceived();
+                NotifyMessageReceived(tempMsg);
                 continue;
             }
 
@@ -162,7 +156,7 @@ public class ChatService
                     contentChunksCount++;
                     tempMsg.Append(chunk);
                     await Task.Yield();
-                    DebounceMessageReceived();
+                    NotifyMessageReceived(tempMsg);
                     messageEventsCount++;
                 }
             }
@@ -172,8 +166,7 @@ public class ChatService
             }
         }
 
-        var processingTime = DateTime.Now - startTime;
-        var stats = $"\n\n---\n" +
+        var processingTime = DateTime.Now - startTime;        var stats = $"\n\n---\n" +
                     "Stream statistics:\n" +
                     $"- Total processing time: {processingTime.TotalSeconds:F2} seconds\n" +
                     $"- Stream read calls: {readCallsCount}\n" +
@@ -182,7 +175,7 @@ public class ChatService
                     $"- Empty messages: {emptyMessagesCount}\n" +
                     $"- JSON parse errors: {jsonParseErrorsCount}";
         tempMsg.SetStatistics(stats);
-        DebounceMessageReceived();
+        NotifyMessageReceived(tempMsg);
     }
 
     private HttpRequestMessage CreateHttpRequest(List<string> functionNames)
@@ -216,14 +209,15 @@ public class ChatService
     {
         IsLoading = isLoading;
         LoadingStateChanged?.Invoke(isLoading);
-    }
-
+    }    
+    
     private readonly SemaphoreSlim _debounceSemaphore = new(1, 1);
     private bool _pendingUIUpdate = false;
-
-    private void DebounceMessageReceived()
+    private IAppChatMessage? _pendingMessage = null;
+    private void NotifyMessageReceived(IAppChatMessage message)
     {
         _pendingUIUpdate = true;
+        _pendingMessage = message;
         _ = Task.Run(async () =>
         {
             if (!await _debounceSemaphore.WaitAsync(0)) return;
@@ -232,8 +226,11 @@ public class ChatService
                 while (_pendingUIUpdate)
                 {
                     _pendingUIUpdate = false;
-                    MessageReceived?.Invoke();
-                    await Task.Delay(250); 
+                    if (_pendingMessage != null)
+                    {
+                        await (MessageReceived?.Invoke(_pendingMessage) ?? Task.CompletedTask);
+                    }
+                    await Task.Delay(250);
                 }
             }
             finally

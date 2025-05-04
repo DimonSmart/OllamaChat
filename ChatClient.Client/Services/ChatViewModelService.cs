@@ -6,6 +6,7 @@ public class ChatViewModelService : IChatViewModelService
 {
     private readonly ChatService _chatService;
     private readonly List<ViewModels.ChatMessageViewModel> _messages = new();
+    private readonly HashSet<Guid> _processedMessageIds = new();
     private ViewModels.ChatMessageViewModel? _currentStreamingMessage;
 
     public IReadOnlyList<ViewModels.ChatMessageViewModel> Messages => _messages;
@@ -25,12 +26,12 @@ public class ChatViewModelService : IChatViewModelService
         _chatService.ChatInitialized += OnChatInitialized;
         _chatService.MessageReceived += OnMessageReceived;
         _chatService.ErrorOccurred += () => ErrorOccurred?.Invoke();
-    }
-
-    private void OnLoadingStateChanged(bool isLoading)
+    }    private void OnLoadingStateChanged(bool isLoading)
     {
-        if (!isLoading)
+        if (!isLoading && _currentStreamingMessage != null)
         {
+            _currentStreamingMessage.IsStreaming = false;
+            MessageUpdated?.Invoke(_currentStreamingMessage);
             _currentStreamingMessage = null;
         }
         LoadingStateChanged?.Invoke(isLoading);
@@ -39,21 +40,22 @@ public class ChatViewModelService : IChatViewModelService
     private void OnChatInitialized()
     {
         _messages.Clear();
-        _currentStreamingMessage = null;
+        _processedMessageIds.Clear();
+        if (_currentStreamingMessage != null)
+        {
+            _currentStreamingMessage.IsStreaming = false;
+            _currentStreamingMessage = null;
+        }
         ChatInitialized?.Invoke();
     }
-
-    private async Task OnMessageReceived()
+    
+    private async Task OnMessageReceived(IAppChatMessage domainMessage)
     {
-        if (_chatService.Messages.Count == 0)
-            return;
-
-        var latestDomainMessage = _chatService.Messages[^1];
-        
         // If this is a new message (not streaming update)
-        if (_currentStreamingMessage == null || _currentStreamingMessage.Role != latestDomainMessage.Role)
+        if (_currentStreamingMessage == null || _currentStreamingMessage.Id != domainMessage.Id)
         {
-            var newViewModel = ViewModels.ChatMessageViewModel.FromDomainModel(latestDomainMessage);
+            var newViewModel = ViewModels.ChatMessageViewModel.FromDomainModel(domainMessage);
+            newViewModel.IsStreaming = true;
             _messages.Add(newViewModel);
             _currentStreamingMessage = newViewModel;
             MessageAdded?.Invoke(newViewModel);
@@ -61,9 +63,10 @@ public class ChatViewModelService : IChatViewModelService
         // Update existing streaming message
         else
         {
-            _currentStreamingMessage.Content = latestDomainMessage.Content;
-            _currentStreamingMessage.HtmlContent = latestDomainMessage.HtmlContent;
-            _currentStreamingMessage.Statistics = latestDomainMessage.Statistics;            MessageUpdated?.Invoke(_currentStreamingMessage);
+            _currentStreamingMessage.Content = domainMessage.Content;
+            _currentStreamingMessage.HtmlContent = domainMessage.HtmlContent;
+            _currentStreamingMessage.Statistics = domainMessage.Statistics;
+            MessageUpdated?.Invoke(_currentStreamingMessage);
         }
     }
 
@@ -78,28 +81,6 @@ public class ChatViewModelService : IChatViewModelService
     {
         _messages.Clear();
         _currentStreamingMessage = null;
-        _chatService.ClearChat();
-    }
-
-    public void Cancel()
-    {
-        _chatService.Cancel();
-    }
-
-    public Task SendMessageAsync(string text, List<string> selectedFunctions)
-    {
-        return _chatService.SendMessageAsync(text, selectedFunctions);
-    }
-
-    public void InitializeChat(SystemPrompt? initialPrompt)
-    {
-        Messages.Clear();
-        _chatService.InitializeChat(initialPrompt);
-    }
-
-    public void ClearChat()
-    {
-        Messages.Clear();
         _chatService.ClearChat();
     }
 
