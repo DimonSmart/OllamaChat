@@ -99,7 +99,7 @@ public class ChatService : IChatService
 
         using var request = CreateHttpRequest(functionNames);
         var tempMsg = new StreamingAppChatMessage(string.Empty, DateTime.Now, ChatRole.Assistant);
-        AddMessageAsync(tempMsg);
+        await AddMessageAsync(tempMsg);
 
         using var response = await _client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
         if (!response.IsSuccessStatusCode)
