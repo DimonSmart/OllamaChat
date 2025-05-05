@@ -81,43 +81,43 @@
     else
     {
         <div class="chat-messages flex-grow-1 pa-2" style="overflow-y: auto;" @ref="messagesElement">
-
             @foreach (var message in ChatViewModelService.Messages)
             {
-                // Don't display system message
-                @if (message.Role == Microsoft.Extensions.AI.ChatRole.System) return;
-                <MudChat ChatPosition="@(message.Role == Microsoft.Extensions.AI.ChatRole.Assistant ? ChatBubblePosition.Start : ChatBubblePosition.End)">
-                    <MudChatBubble @key="message.Id" >
-                        @((MarkupString)message.HtmlContent)
-                        @if (message.IsAssistantStreaming)
-                        {
-                            <span class="typing-indicator">
-                                <MudProgressCircular Size="Size.Small" Indeterminate="true" />
-                                <small><i>typing...</i></small>
-                            </span>
-                        }
-                        <MudText Typo="Typo.caption" Align="@(message.Role == Microsoft.Extensions.AI.ChatRole.Assistant ? Align.Left : Align.Right)" Class="mt-1">
-                            @message.MsgDateTime.ToString("g")
-                        </MudText>
-                        @if (!string.IsNullOrEmpty(message.Statistics))
-                        {
-                            <MudIconButton Icon="@Icons.Material.Filled.Add"
-                                           Size="Size.Small"
-                                           Color="Color.Default"
-                                           Class="mt-1"
-                                           OnClick="@(() => ToggleStatsVisibility(message))" />
-
-                            @if (message.IsStatsVisible)
+                @if (message.Role != Microsoft.Extensions.AI.ChatRole.System)
+                {
+                    <MudChat ChatPosition="@(message.Role == Microsoft.Extensions.AI.ChatRole.Assistant ? ChatBubblePosition.Start : ChatBubblePosition.End)">
+                        <MudChatBubble @key="message.Id">
+                            @((MarkupString)message.HtmlContent)
+                            @if (message.IsStreaming)
                             {
-                                <MudPaper Class="pa-2 mt-1" Elevation="1">
-                                    <MudText Typo="Typo.caption">
-                                        @((MarkupString)message.Statistics)
-                                    </MudText>
-                                </MudPaper>
+                                <span class="typing-indicator">
+                                    <MudProgressCircular Size="Size.Small" Indeterminate="true" />
+                                    <small><i>typing...</i></small>
+                                </span>
                             }
-                        }
-                    </MudChatBubble>
-                </MudChat>
+                            <MudText Typo="Typo.caption" Align="@(message.Role == Microsoft.Extensions.AI.ChatRole.Assistant ? Align.Left : Align.Right)" Class="mt-1">
+                                @message.MsgDateTime.ToString("g")
+                            </MudText>
+                            @if (!string.IsNullOrEmpty(message.Statistics))
+                            {
+                                <MudIconButton Icon="@Icons.Material.Filled.Add"
+                                               Size="Size.Small"
+                                               Color="Color.Default"
+                                               Class="mt-1"
+                                               OnClick="@(() => ToggleStatsVisibility(message))" />
+
+                                @if (message.IsStatsVisible)
+                                {
+                                    <MudPaper Class="pa-2 mt-1" Elevation="1">
+                                        <MudText Typo="Typo.caption">
+                                            @((MarkupString)message.Statistics)
+                                        </MudText>
+                                    </MudPaper>
+                                }
+                            }
+                        </MudChatBubble>
+                    </MudChat>
+                }
             }
 
         </div>
@@ -179,7 +179,9 @@
     }
 
     private string GetMessageClass(IAppChatMessage message) =>
-        $"{(message.Role == Microsoft.Extensions.AI.ChatRole.User ? "user-message" : "assistant-message")} message-container pa-2 mb-2"; protected override async Task OnInitializedAsync()
+        $"{(message.Role == Microsoft.Extensions.AI.ChatRole.User ? "user-message" : "assistant-message")} message-container pa-2 mb-2";
+
+    protected override async Task OnInitializedAsync()
     {
         isLoadingInitialData = true;
         StateHasChanged();

@@ -1,5 +1,6 @@
 using Markdig;
 using Microsoft.Extensions.AI;
+using System.Text.Json.Serialization;
 
 namespace ChatClient.Shared.Models;
 
@@ -8,32 +9,32 @@ public class AppChatMessage : IAppChatMessage
     /// <summary>
     /// Unique identifier for the message
     /// </summary>
-    public Guid Id { get; }
+    public Guid Id { get; set; }
 
     /// <summary>
     /// The original text of the message (Markdown).
     /// </summary>
-    public string Content { get; }
+    public string Content { get; set; }
 
     /// <summary>
     /// Cached HTML representation of the content created at initialization.
     /// </summary>
-    public string HtmlContent { get; }
+    public string HtmlContent { get; set; }
 
     /// <summary>
     /// The timestamp when the message was created.
     /// </summary>
-    public DateTime MsgDateTime { get; }
+    public DateTime MsgDateTime { get; set; }
 
     /// <summary>
     /// The role of the author (User, Assistant, or System).
     /// </summary>
-    public ChatRole Role { get; }
+    public ChatRole Role { get; set; }
 
     /// <summary>
     /// Chat statistics (call count, etc
     /// </summary>
-    public string? Statistics { get; }
+    public string? Statistics { get; set; }
 
     /// <summary>
     /// Indicates whether this message is currently streaming.
@@ -56,6 +57,34 @@ public class AppChatMessage : IAppChatMessage
     {
         return Id.GetHashCode();
     }
+
+    /// <summary>
+    /// Parameterless constructor for JSON deserialization
+    /// </summary>
+    [JsonConstructor]
+    public AppChatMessage()
+    {
+        Id = Guid.NewGuid();
+        Content = string.Empty;
+        HtmlContent = string.Empty;
+        MsgDateTime = DateTime.UtcNow;
+        Role = ChatRole.User;
+    }
+
+    /// <summary>
+    /// Creates a new AppChatMessage by copying an existing IAppChatMessage, preserving its Id.
+    /// </summary>
+    /// <param name="message">The source message to copy from</param>
+    public AppChatMessage(IAppChatMessage message)
+    {
+        Id = message.Id;
+        Content = message.Content;
+        HtmlContent = Markdown.ToHtml(Content);
+        MsgDateTime = message.MsgDateTime;
+        Role = message.Role;
+        Statistics = message.Statistics;
+    }
+
     public AppChatMessage(string content, DateTime msgDateTime, ChatRole role, string? statistics = null)
     {
         Id = Guid.NewGuid();

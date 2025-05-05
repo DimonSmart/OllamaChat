@@ -12,7 +12,7 @@ public class ChatViewModelService : IChatViewModelService
     public event Action<bool>? LoadingStateChanged;
     public event Action? ChatInitialized;
     public event Action<ViewModels.ChatMessageViewModel>? MessageAdded;
-    public event Action<ViewModels.ChatMessageViewModel>? MessageUpdated;
+    public event Func<ViewModels.ChatMessageViewModel, Task>? MessageUpdated;
     public event Action? ErrorOccurred;
 
     public bool IsLoading => _chatService.IsLoading;
@@ -28,7 +28,7 @@ public class ChatViewModelService : IChatViewModelService
 
     private Task OnMessageAdded(IAppChatMessage domainMessage)
     {
-        var viewModel = ViewModels.ChatMessageViewModel.FromDomainModel(domainMessage);
+        var viewModel = ViewModels.ChatMessageViewModel.CreateFromDomainModel(domainMessage);
         _messages.Add(viewModel);
         MessageAdded?.Invoke(viewModel);
         return Task.CompletedTask;
@@ -51,19 +51,11 @@ public class ChatViewModelService : IChatViewModelService
         _messages.Clear();
         ChatInitialized?.Invoke();
     }
-    private Task OnMessageUpdated(IAppChatMessage domainMessage)
+    private async Task OnMessageUpdated(IAppChatMessage domainMessage)
     {
         var existingMessage = _messages.FirstOrDefault(m => m.Id == domainMessage.Id);
-
-        if (existingMessage == null)
-            return Task.CompletedTask;
-
-        existingMessage.Content = domainMessage.Content;
-        // TODO Move Create HtmlContent Here
-        existingMessage.HtmlContent = domainMessage.HtmlContent;
-        existingMessage.Statistics = domainMessage.Statistics;
-        MessageUpdated?.Invoke(existingMessage);
-
-        return Task.CompletedTask;
-    }// Chat management methods have been removed as they are now handled directly by IChatService
+        if (existingMessage == null) return;
+        existingMessage.UpdateFromDomainModel(domainMessage);
+        await (MessageUpdated?.Invoke(existingMessage) ?? Task.CompletedTask);
+    }
 }

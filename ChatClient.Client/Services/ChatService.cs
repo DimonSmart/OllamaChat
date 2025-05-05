@@ -70,11 +70,11 @@ public class ChatService : IChatService
         }
         catch (OperationCanceledException)
         {
-            HandleSystemMessage("Operation cancelled.");
+            await HandleSystemMessage("Operation cancelled.");
         }
         catch (Exception ex)
         {
-            HandleSystemMessage($"An error occurred while getting the response: {ex.Message}");
+            await HandleSystemMessage($"An error occurred while getting the response: {ex.Message}");
         }
         finally
         {
@@ -104,7 +104,7 @@ public class ChatService : IChatService
         using var response = await _client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
         if (!response.IsSuccessStatusCode)
         {
-            HandleSystemMessage($"Error: {response.ReasonPhrase}");
+            await HandleSystemMessage($"Error: {response.ReasonPhrase}");
             return;
         }
 
@@ -184,7 +184,15 @@ public class ChatService : IChatService
                     $"- Empty messages: {emptyMessagesCount}\n" +
                     $"- JSON parse errors: {jsonParseErrorsCount}";
         tempMsg.SetStatistics(stats);
+
+        // Replace the tempMsg (of type StreamingAppChatMessage) with a new message of type AppChatMessage
+        var index = Messages.IndexOf(tempMsg);
+        if (index == -1) throw new Exception("Invalid state exception");
+        var finalMessage = new AppChatMessage(tempMsg);
+        Messages[index] = finalMessage;
+
         NotifyMessageReceived(tempMsg);
+        //await (MessageUpdated?.Invoke(finalMessage) ?? Task.CompletedTask);
     }
 
     private HttpRequestMessage CreateHttpRequest(List<string> functionNames)
@@ -201,10 +209,9 @@ public class ChatService : IChatService
         return request;
     }
 
-    private void HandleSystemMessage(string text)
+    private async Task HandleSystemMessage(string text)
     {
-        AddMessageAsync(new AppChatMessage(text, DateTime.Now, ChatRole.System));
-        ErrorOccurred?.Invoke();
+        await AddMessageAsync(new AppChatMessage(text, DateTime.Now, ChatRole.System));
     }
 
     private void Cleanup()

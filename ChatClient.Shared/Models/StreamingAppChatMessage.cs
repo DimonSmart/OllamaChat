@@ -1,4 +1,3 @@
-using Markdig;
 using Microsoft.Extensions.AI;
 using System.Text;
 
@@ -10,28 +9,27 @@ public class StreamingAppChatMessage(string initialContent, DateTime msgDateTime
     public string Content => _contentBuilder.ToString();
     public DateTime MsgDateTime { get; private set; } = msgDateTime;
     public ChatRole Role { get; private set; } = role;
-    public string HtmlContent => Markdown.ToHtml(Content);
     public string? Statistics { get; private set; } = string.Empty;
 
     public Guid Id { get; private set; } = Guid.NewGuid();
-    
+
     /// <summary>
     /// Indicates whether this message is currently streaming.
     /// Always true for streaming messages.
     /// </summary>
     public bool IsStreaming => true;
-    
+
     public bool Equals(IAppChatMessage? other)
     {
         if (other is null) return false;
         return Id == other.Id;
     }
-    
+
     public override bool Equals(object? obj)
     {
         return obj is IAppChatMessage other && Equals(other);
     }
-    
+
     public override int GetHashCode()
     {
         return Id.GetHashCode();
@@ -41,7 +39,7 @@ public class StreamingAppChatMessage(string initialContent, DateTime msgDateTime
     {
         _contentBuilder.Append(text);
     }
-
+    
     public void SetStatistics(string stats)
     {
         Statistics = stats;

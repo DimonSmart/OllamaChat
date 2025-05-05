@@ -1,4 +1,5 @@
 using ChatClient.Shared.Models;
+using Markdig;
 using Microsoft.Extensions.AI;
 
 namespace ChatClient.Client.ViewModels;
@@ -14,20 +15,26 @@ public class ChatMessageViewModel
     public bool IsStatsVisible { get; set; }
     public bool IsStreaming { get; set; }
 
-    public bool IsAssistantStreaming => IsStreaming && Role == ChatRole.Assistant;
-
-    public static ChatMessageViewModel FromDomainModel(IAppChatMessage message)
+    private ChatMessageViewModel Populate(IAppChatMessage message)
     {
-        return new ChatMessageViewModel
-        {
-            Id = message.Id,
-            Content = message.Content,
-            HtmlContent = message.HtmlContent,
-            MsgDateTime = message.MsgDateTime,
-            Role = message.Role,
-            Statistics = message.Statistics,
-            IsStatsVisible = false,
-            IsStreaming = message.IsStreaming
-        };
+        Id = message.Id;
+        Content = message.Content;
+        HtmlContent = Markdown.ToHtml(message.Content);
+        MsgDateTime = message.MsgDateTime;
+        Role = message.Role;
+        Statistics = message.Statistics;
+        IsStreaming = message.IsStreaming;
+        return this;
+    }
+
+    public static ChatMessageViewModel CreateFromDomainModel(IAppChatMessage message)
+    {
+        return (new ChatMessageViewModel()).Populate(message);
+      
+    }
+
+    public void UpdateFromDomainModel(IAppChatMessage message)
+    {
+        Populate(message);
     }
 }
