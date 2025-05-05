@@ -190,8 +190,8 @@ public class ChatService : IChatService
         if (index == -1) throw new Exception("Invalid state exception");
         var finalMessage = new AppChatMessage(tempMsg);
         Messages[index] = finalMessage;
-
-        NotifyMessageReceived(tempMsg);
+        _messageDebouncer.ClearDelayedCalls();
+        NotifyMessageReceived(finalMessage);
         //await (MessageUpdated?.Invoke(finalMessage) ?? Task.CompletedTask);
     }
 
