@@ -78,6 +78,8 @@ public class KernelService(
         try
         {
             _mcpClient = await mcpClientService.CreateMcpClientAsync(kernel);
+            if (_mcpClient == null) return;
+
             _mcpTools = await mcpClientService.GetMcpTools(_mcpClient);
             if (_mcpTools.Count > 0)
             {

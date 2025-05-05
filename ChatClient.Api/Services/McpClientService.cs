@@ -19,7 +19,7 @@ public class McpClientService : IAsyncDisposable
         _logger = logger;
     }
 
-    public async Task<IMcpClient> CreateMcpClientAsync(Kernel kernel)
+    public async Task<IMcpClient?> CreateMcpClientAsync(Kernel kernel)
     {
         if (_mcpClient != null)
         {
@@ -31,11 +31,12 @@ public class McpClientService : IAsyncDisposable
         if (mcpServerConfigs.Count == 0)
         {
             _logger.LogWarning("No MCP server configurations found");
-            throw new InvalidOperationException("No MCP server configurations found");
+            return null;
+            // throw new InvalidOperationException("No MCP server configurations found");
         }
 
-        // For now, just connect to the first MCP server
-        var config = mcpServerConfigs[0];
+            // For now, just connect to the first MCP server
+            var config = mcpServerConfigs[0];
         _logger.LogInformation("Creating MCP client for server: {ServerName}", config.Name);
 
         if (string.IsNullOrEmpty(config.Command))
