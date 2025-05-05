@@ -1,3 +1,4 @@
+using ChatClient.Client.Utils;
 using ChatClient.Shared.Models;
 using Microsoft.AspNetCore.Components.WebAssembly.Http;
 using Microsoft.Extensions.AI;
@@ -5,23 +6,25 @@ using System.Collections.ObjectModel;
 using System.Net.Http.Json;
 using System.Text.Json;
 
-
 namespace ChatClient.Client.Services;
 
 public class ChatService
 {
     private readonly HttpClient _client;
-    private CancellationTokenSource? _cancellationTokenSource;    public event Action<bool>? LoadingStateChanged;
+    private CancellationTokenSource? _cancellationTokenSource; public event Action<bool>? LoadingStateChanged;
     public event Action? ChatInitialized;
     public event Func<IAppChatMessage, Task>? MessageReceived;
     public event Action? ErrorOccurred;
 
     public bool IsLoading { get; private set; }
     public ObservableCollection<IAppChatMessage> Messages { get; } = new();
-
     public ChatService(HttpClient client)
     {
         _client = client;
+        _messageDebouncer = new Debouncer<IAppChatMessage>(
+            async message => await (MessageReceived?.Invoke(message) ?? Task.CompletedTask),
+            TimeSpan.FromMilliseconds(250)
+        );
     }
 
     public void InitializeChat(SystemPrompt? initialPrompt)
@@ -73,7 +76,7 @@ public class ChatService
         {
             Cleanup();
         }
-    }    
+    }
     private void AddMessage(IAppChatMessage message)
     {
         Messages.Add(message);
@@ -127,7 +130,8 @@ public class ChatService
             if (line == null)
             {
                 break;
-            }            if (string.IsNullOrWhiteSpace(line))
+            }
+            if (string.IsNullOrWhiteSpace(line))
             {
                 emptyMessagesCount++;
                 await Task.Yield();
@@ -166,7 +170,7 @@ public class ChatService
             }
         }
 
-        var processingTime = DateTime.Now - startTime;        var stats = $"\n\n---\n" +
+        var processingTime = DateTime.Now - startTime; var stats = $"\n\n---\n" +
                     "Stream statistics:\n" +
                     $"- Total processing time: {processingTime.TotalSeconds:F2} seconds\n" +
                     $"- Stream read calls: {readCallsCount}\n" +
@@ -209,35 +213,13 @@ public class ChatService
     {
         IsLoading = isLoading;
         LoadingStateChanged?.Invoke(isLoading);
-    }    
-    
-    private readonly SemaphoreSlim _debounceSemaphore = new(1, 1);
-    private bool _pendingUIUpdate = false;
-    private IAppChatMessage? _pendingMessage = null;
+    }
+
+    private readonly Debouncer<IAppChatMessage> _messageDebouncer;
+
     private void NotifyMessageReceived(IAppChatMessage message)
     {
-        _pendingUIUpdate = true;
-        _pendingMessage = message;
-        _ = Task.Run(async () =>
-        {
-            if (!await _debounceSemaphore.WaitAsync(0)) return;
-            try
-            {
-                while (_pendingUIUpdate)
-                {
-                    _pendingUIUpdate = false;
-                    if (_pendingMessage != null)
-                    {
-                        await (MessageReceived?.Invoke(_pendingMessage) ?? Task.CompletedTask);
-                    }
-                    await Task.Delay(250);
-                }
-            }
-            finally
-            {
-                _debounceSemaphore.Release();
-            }
-        });
+        _messageDebouncer.Enqueue(message);
     }
 
     private class StreamResponse

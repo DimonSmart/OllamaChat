@@ -14,6 +14,22 @@ public class StreamingAppChatMessage(string initialContent, DateTime msgDateTime
     public string? Statistics { get; private set; } = string.Empty;
 
     public Guid Id { get; private set; } = Guid.NewGuid();
+    
+    public bool Equals(IAppChatMessage? other)
+    {
+        if (other is null) return false;
+        return Id == other.Id;
+    }
+    
+    public override bool Equals(object? obj)
+    {
+        return obj is IAppChatMessage other && Equals(other);
+    }
+    
+    public override int GetHashCode()
+    {
+        return Id.GetHashCode();
+    }
 
     public void Append(string? text)
     {

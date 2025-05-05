@@ -60,17 +60,17 @@
                     }
 
                     <MudButton Variant="Variant.Filled"
-                    Color="Color.Primary"
-                    FullWidth="true"
-                    Class="mt-4"
-                    OnClick="StartChat">
+                               Color="Color.Primary"
+                               FullWidth="true"
+                               Class="mt-4"
+                               OnClick="StartChat">
                         Start Chat
                     </MudButton>
                     <MudButton Href="/system-prompts"
-                    Variant="Variant.Text"
-                    Color="Color.Secondary"
-                    FullWidth="true"
-                    Class="mt-2">
+                               Variant="Variant.Text"
+                               Color="Color.Secondary"
+                               FullWidth="true"
+                               Class="mt-2">
                         Manage System Prompts
                     </MudButton>
                 }
@@ -78,14 +78,14 @@
         </MudCard>
     }
     else
-    {        <div class="chat-messages flex-grow-1 pa-2" style="overflow-y: auto;" @ref="messagesElement">
+    {
+        <div class="chat-messages flex-grow-1 pa-2" style="overflow-y: auto;" @ref="messagesElement">
             <MudChat>
-            @foreach (var message in ChatService.Messages)
-            {
-                @if (message.Role != Microsoft.Extensions.AI.ChatRole.System) // Don't display system message
+                @foreach (var message in ChatService.Messages)
                 {
-                    <MudChatBubble @key="message.Id"
-                                  ChatPosition="@(message.Role == Microsoft.Extensions.AI.ChatRole.Assistant ? ChatBubblePosition.Start : ChatBubblePosition.End)">
+                    // Don't display system message
+                    @if (message.Role == Microsoft.Extensions.AI.ChatRole.System) return;
+                    <MudChatBubble @key="message.Id" ChatPosition="@(message.Role == Microsoft.Extensions.AI.ChatRole.Assistant ? ChatBubblePosition.Start : ChatBubblePosition.End)">
                         @((MarkupString)message.HtmlContent)
                         @if (message.IsAssistantStreaming)
                         {
@@ -116,7 +116,6 @@
                         }
                     </MudChatBubble>
                 }
-            }
             </MudChat>
         </div>
 
@@ -165,7 +164,7 @@
     private List<string> selectedFunctions = new();
     private bool functionsExpanded = false;
 
-    private EventCallback<List<string>> OnSelectedFunctionsChanged => EventCallback.Factory.Create<List<string>>(this, (List<string> v) => selectedFunctions = v);    private bool showPromptContent { get; set; } = false;
+    private EventCallback<List<string>> OnSelectedFunctionsChanged => EventCallback.Factory.Create<List<string>>(this, (List<string> v) => selectedFunctions = v); private bool showPromptContent { get; set; } = false;
 
     private readonly EventCallback<ChatMessageViewModel> _messageAddedCallback;
     private readonly EventCallback<ChatMessageViewModel> _messageUpdatedCallback;
@@ -177,7 +176,7 @@
     }
 
     private string GetMessageClass(IAppChatMessage message) =>
-        $"{(message.Role == Microsoft.Extensions.AI.ChatRole.User ? "user-message" : "assistant-message")} message-container pa-2 mb-2";    protected override async Task OnInitializedAsync()
+        $"{(message.Role == Microsoft.Extensions.AI.ChatRole.User ? "user-message" : "assistant-message")} message-container pa-2 mb-2"; protected override async Task OnInitializedAsync()
     {
         isLoadingInitialData = true;
         StateHasChanged();
@@ -267,7 +266,7 @@
 
         await ChatService.SendMessageAsync(message.Trim(), selectedFunctions);
         await ScrollToBottom();
-    }    
+    }
     private async Task ScrollToBottom()
     {
         try
@@ -288,7 +287,8 @@
     private void ToggleStatsVisibility(ChatMessageViewModel message)
     {
         message.IsStatsVisible = !message.IsStatsVisible;
-    }    public ValueTask DisposeAsync()
+    }
+    public ValueTask DisposeAsync()
     {
         ChatService.LoadingStateChanged -= OnLoadingStateChanged;
         ChatService.MessageAdded -= async (msg) => await InvokeAsync(() => OnMessageAdded(msg));

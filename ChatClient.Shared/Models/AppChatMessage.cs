@@ -31,7 +31,23 @@ namespace ChatClient.Shared.Models;    public class AppChatMessage : IAppChatMes
     /// <summary>
     /// Chat statistics (call count, etc
     /// </summary>
-    public string? Statistics { get; }        public AppChatMessage(string content, DateTime msgDateTime, ChatRole role, string? statistics = null)
+    public string? Statistics { get; }
+    
+    public bool Equals(IAppChatMessage? other)
+    {
+        if (other is null) return false;
+        return Id == other.Id;
+    }
+    
+    public override bool Equals(object? obj)
+    {
+        return obj is IAppChatMessage other && Equals(other);
+    }
+    
+    public override int GetHashCode()
+    {
+        return Id.GetHashCode();
+    }public AppChatMessage(string content, DateTime msgDateTime, ChatRole role, string? statistics = null)
         {
             Id = Guid.NewGuid();
             Content = content ?? string.Empty;
