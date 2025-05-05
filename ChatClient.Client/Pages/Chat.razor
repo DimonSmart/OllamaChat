@@ -20,7 +20,8 @@
 @inject IJSRuntime JSRuntime
 @inject NavigationManager NavigationManager
 @inject IDialogService DialogService
-@inject IChatViewModelService ChatService
+@inject IChatViewModelService ChatViewModelService
+@inject IChatService ChatService
 @inject ClientSystemPromptService PromptService
 
 <PageTitle>Chat with AI Assistant</PageTitle>
@@ -80,12 +81,13 @@
     else
     {
         <div class="chat-messages flex-grow-1 pa-2" style="overflow-y: auto;" @ref="messagesElement">
-            <MudChat>
-                @foreach (var message in ChatService.Messages)
-                {
-                    // Don't display system message
-                    @if (message.Role == Microsoft.Extensions.AI.ChatRole.System) return;
-                    <MudChatBubble @key="message.Id" ChatPosition="@(message.Role == Microsoft.Extensions.AI.ChatRole.Assistant ? ChatBubblePosition.Start : ChatBubblePosition.End)">
+
+            @foreach (var message in ChatViewModelService.Messages)
+            {
+                // Don't display system message
+                @if (message.Role == Microsoft.Extensions.AI.ChatRole.System) return;
+                <MudChat ChatPosition="@(message.Role == Microsoft.Extensions.AI.ChatRole.Assistant ? ChatBubblePosition.Start : ChatBubblePosition.End)">
+                    <MudChatBubble @key="message.Id" >
                         @((MarkupString)message.HtmlContent)
                         @if (message.IsAssistantStreaming)
                         {
@@ -115,8 +117,9 @@
                             }
                         }
                     </MudChatBubble>
-                }
-            </MudChat>
+                </MudChat>
+            }
+
         </div>
 
         <MudPaper Elevation="3" Class="pa-2 mt-2">
@@ -185,8 +188,8 @@
         await LoadAvailableFunctions();
 
         ChatService.LoadingStateChanged += OnLoadingStateChanged;
-        ChatService.MessageAdded += async (msg) => await _messageAddedCallback.InvokeAsync(msg);
-        ChatService.MessageUpdated += async (msg) => await _messageUpdatedCallback.InvokeAsync(msg);
+        ChatViewModelService.MessageAdded += async (msg) => await _messageAddedCallback.InvokeAsync(msg);
+        ChatViewModelService.MessageUpdated += async (msg) => await _messageUpdatedCallback.InvokeAsync(msg);
 
         isLoadingInitialData = false;
         StateHasChanged();
@@ -206,7 +209,6 @@
 
     private void OnMessageUpdated(ChatMessageViewModel message)
     {
-        // Blazor будет эффективно обновлять только измененный компонент благодаря ID
         StateHasChanged();
     }
 
@@ -264,7 +266,7 @@
         if (string.IsNullOrWhiteSpace(message) || isLLMAnswering)
             return;
 
-        await ChatService.SendMessageAsync(message.Trim(), selectedFunctions);
+        await ChatService.AddAndAnswerrUserMessageAsync(message.Trim(), selectedFunctions);
         await ScrollToBottom();
     }
     private async Task ScrollToBottom()
@@ -291,8 +293,8 @@
     public ValueTask DisposeAsync()
     {
         ChatService.LoadingStateChanged -= OnLoadingStateChanged;
-        ChatService.MessageAdded -= async (msg) => await InvokeAsync(() => OnMessageAdded(msg));
-        ChatService.MessageUpdated -= (msg) => InvokeAsync(() => OnMessageUpdated(msg));
+        ChatViewModelService.MessageAdded -= async (msg) => await InvokeAsync(() => OnMessageAdded(msg));
+        ChatViewModelService.MessageUpdated -= (msg) => InvokeAsync(() => OnMessageUpdated(msg));
         return ValueTask.CompletedTask;
     }
 }

@@ -15,6 +15,7 @@ public class ChatMessageViewModel
     public bool IsStreaming { get; set; }
 
     public bool IsAssistantStreaming => IsStreaming && Role == ChatRole.Assistant;
+
     public static ChatMessageViewModel FromDomainModel(IAppChatMessage message)
     {
         return new ChatMessageViewModel
@@ -25,7 +26,8 @@ public class ChatMessageViewModel
             MsgDateTime = message.MsgDateTime,
             Role = message.Role,
             Statistics = message.Statistics,
-            IsStatsVisible = false
+            IsStatsVisible = false,
+            IsStreaming = message.IsStreaming
         };
     }
 }

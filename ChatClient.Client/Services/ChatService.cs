@@ -8,12 +8,16 @@ using System.Text.Json;
 
 namespace ChatClient.Client.Services;
 
-public class ChatService
+public class ChatService : IChatService
 {
     private readonly HttpClient _client;
-    private CancellationTokenSource? _cancellationTokenSource; public event Action<bool>? LoadingStateChanged;
+    private CancellationTokenSource? _cancellationTokenSource;
+    private readonly Debouncer<IAppChatMessage> _messageDebouncer;
+
+    public event Action<bool>? LoadingStateChanged;
     public event Action? ChatInitialized;
-    public event Func<IAppChatMessage, Task>? MessageReceived;
+    public event Func<IAppChatMessage, Task>? MessageAdded;
+    public event Func<IAppChatMessage, Task>? MessageUpdated;
     public event Action? ErrorOccurred;
 
     public bool IsLoading { get; private set; }
@@ -22,7 +26,7 @@ public class ChatService
     {
         _client = client;
         _messageDebouncer = new Debouncer<IAppChatMessage>(
-            async message => await (MessageReceived?.Invoke(message) ?? Task.CompletedTask),
+            async message => await (MessageUpdated?.Invoke(message) ?? Task.CompletedTask),
             TimeSpan.FromMilliseconds(250)
         );
     }
@@ -49,14 +53,14 @@ public class ChatService
         UpdateLoadingState(false);
     }
 
-    public async Task SendMessageAsync(string text, List<string> selectedFunctions)
+    public async Task AddAndAnswerrUserMessageAsync(string text, List<string> selectedFunctions)
     {
         if (string.IsNullOrWhiteSpace(text) || IsLoading)
         {
             return;
         }
 
-        AddMessage(new AppChatMessage(text, DateTime.Now, ChatRole.User, string.Empty));
+        await AddMessageAsync(new AppChatMessage(text, DateTime.Now, ChatRole.User, string.Empty));
         UpdateLoadingState(true);
 
         _cancellationTokenSource = new CancellationTokenSource();
@@ -77,10 +81,11 @@ public class ChatService
             Cleanup();
         }
     }
-    private void AddMessage(IAppChatMessage message)
+
+    private async Task AddMessageAsync(IAppChatMessage message)
     {
         Messages.Add(message);
-        NotifyMessageReceived(message);
+        await (MessageAdded?.Invoke(message) ?? Task.CompletedTask);
     }
 
     private async Task ProcessStreamingResponseAsync(List<string> functionNames, CancellationToken cancellationToken)
@@ -94,7 +99,7 @@ public class ChatService
 
         using var request = CreateHttpRequest(functionNames);
         var tempMsg = new StreamingAppChatMessage(string.Empty, DateTime.Now, ChatRole.Assistant);
-        AddMessage(tempMsg);
+        AddMessageAsync(tempMsg);
 
         using var response = await _client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
         if (!response.IsSuccessStatusCode)
@@ -198,7 +203,7 @@ public class ChatService
 
     private void HandleSystemMessage(string text)
     {
-        AddMessage(new AppChatMessage(text, DateTime.Now, ChatRole.System));
+        AddMessageAsync(new AppChatMessage(text, DateTime.Now, ChatRole.System));
         ErrorOccurred?.Invoke();
     }
 
@@ -214,8 +219,6 @@ public class ChatService
         IsLoading = isLoading;
         LoadingStateChanged?.Invoke(isLoading);
     }
-
-    private readonly Debouncer<IAppChatMessage> _messageDebouncer;
 
     private void NotifyMessageReceived(IAppChatMessage message)
     {

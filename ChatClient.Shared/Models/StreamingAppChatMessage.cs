@@ -15,6 +15,12 @@ public class StreamingAppChatMessage(string initialContent, DateTime msgDateTime
 
     public Guid Id { get; private set; } = Guid.NewGuid();
     
+    /// <summary>
+    /// Indicates whether this message is currently streaming.
+    /// Always true for streaming messages.
+    /// </summary>
+    public bool IsStreaming => true;
+    
     public bool Equals(IAppChatMessage? other)
     {
         if (other is null) return false;

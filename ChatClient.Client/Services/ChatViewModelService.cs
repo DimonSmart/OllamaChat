@@ -4,10 +4,8 @@ namespace ChatClient.Client.Services;
 
 public class ChatViewModelService : IChatViewModelService
 {
-    private readonly ChatService _chatService;
+    private readonly IChatService _chatService;
     private readonly List<ViewModels.ChatMessageViewModel> _messages = new();
-    private readonly HashSet<Guid> _processedMessageIds = new();
-    private ViewModels.ChatMessageViewModel? _currentStreamingMessage;
 
     public IReadOnlyList<ViewModels.ChatMessageViewModel> Messages => _messages;
 
@@ -18,79 +16,54 @@ public class ChatViewModelService : IChatViewModelService
     public event Action? ErrorOccurred;
 
     public bool IsLoading => _chatService.IsLoading;
-
-    public ChatViewModelService(ChatService chatService)
+    public ChatViewModelService(IChatService chatService)
     {
         _chatService = chatService;
         _chatService.LoadingStateChanged += OnLoadingStateChanged;
         _chatService.ChatInitialized += OnChatInitialized;
-        _chatService.MessageReceived += OnMessageReceived;
+        _chatService.MessageAdded += OnMessageAdded;
+        _chatService.MessageUpdated += OnMessageUpdated;
         _chatService.ErrorOccurred += () => ErrorOccurred?.Invoke();
-    }    private void OnLoadingStateChanged(bool isLoading)
+    }
+
+    private Task OnMessageAdded(IAppChatMessage domainMessage)
     {
-        if (!isLoading && _currentStreamingMessage != null)
+        var viewModel = ViewModels.ChatMessageViewModel.FromDomainModel(domainMessage);
+        _messages.Add(viewModel);
+        MessageAdded?.Invoke(viewModel);
+        return Task.CompletedTask;
+    }
+
+    private void OnLoadingStateChanged(bool isLoading)
+    {
+        if (!isLoading)
         {
-            _currentStreamingMessage.IsStreaming = false;
-            MessageUpdated?.Invoke(_currentStreamingMessage);
-            _currentStreamingMessage = null;
+            foreach (var message in _messages.Where(m => m.IsStreaming))
+            {
+                message.IsStreaming = false;
+                MessageUpdated?.Invoke(message);
+            }
         }
         LoadingStateChanged?.Invoke(isLoading);
     }
-
     private void OnChatInitialized()
     {
         _messages.Clear();
-        _processedMessageIds.Clear();
-        if (_currentStreamingMessage != null)
-        {
-            _currentStreamingMessage.IsStreaming = false;
-            _currentStreamingMessage = null;
-        }
         ChatInitialized?.Invoke();
     }
-    
-    private async Task OnMessageReceived(IAppChatMessage domainMessage)
+    private Task OnMessageUpdated(IAppChatMessage domainMessage)
     {
-        // If this is a new message (not streaming update)
-        if (_currentStreamingMessage == null || _currentStreamingMessage.Id != domainMessage.Id)
-        {
-            var newViewModel = ViewModels.ChatMessageViewModel.FromDomainModel(domainMessage);
-            newViewModel.IsStreaming = true;
-            _messages.Add(newViewModel);
-            _currentStreamingMessage = newViewModel;
-            MessageAdded?.Invoke(newViewModel);
-        }
-        // Update existing streaming message
-        else
-        {
-            _currentStreamingMessage.Content = domainMessage.Content;
-            _currentStreamingMessage.HtmlContent = domainMessage.HtmlContent;
-            _currentStreamingMessage.Statistics = domainMessage.Statistics;
-            MessageUpdated?.Invoke(_currentStreamingMessage);
-        }
-    }
+        var existingMessage = _messages.FirstOrDefault(m => m.Id == domainMessage.Id);
 
-    public void InitializeChat(SystemPrompt? initialPrompt)
-    {
-        _messages.Clear();
-        _currentStreamingMessage = null;
-        _chatService.InitializeChat(initialPrompt);
-    }
+        if (existingMessage == null)
+            return Task.CompletedTask;
 
-    public void ClearChat()
-    {
-        _messages.Clear();
-        _currentStreamingMessage = null;
-        _chatService.ClearChat();
-    }
+        existingMessage.Content = domainMessage.Content;
+        // TODO Move Create HtmlContent Here
+        existingMessage.HtmlContent = domainMessage.HtmlContent;
+        existingMessage.Statistics = domainMessage.Statistics;
+        MessageUpdated?.Invoke(existingMessage);
 
-    public void Cancel()
-    {
-        _chatService.Cancel();
-    }
-
-    public Task SendMessageAsync(string text, List<string> selectedFunctions)
-    {
-        return _chatService.SendMessageAsync(text, selectedFunctions);
-    }
+        return Task.CompletedTask;
+    }// Chat management methods have been removed as they are now handled directly by IChatService
 }
