@@ -5,10 +5,15 @@ using Microsoft.SemanticKernel.ChatCompletion;
 var builder = WebApplication.CreateBuilder(args);
 
 
-// Configure default HttpClient factory with a named client
+// Configure default HttpClient factory with named clients
 builder.Services.AddHttpClient("DefaultClient", client =>
 {
     client.Timeout = TimeSpan.FromMinutes(10);
+});
+
+builder.Services.AddHttpClient("OllamaClient", client =>
+{
+    client.Timeout = TimeSpan.FromMinutes(2);
 });
 
 var loggerFactory = LoggerFactory.Create(logging =>
@@ -37,6 +42,7 @@ builder.Services.AddControllers(options =>
 // Register services
 builder.Services.AddSingleton<ChatClient.Api.Services.McpClientService>();
 builder.Services.AddSingleton<ChatClient.Api.Services.KernelService>();
+builder.Services.AddSingleton<ChatClient.Api.Services.OllamaService>();
 builder.Services.AddSingleton<ChatClient.Shared.Services.ISystemPromptService, ChatClient.Api.Services.SystemPromptService>();
 
 // Register Kernel as a singleton
@@ -63,10 +69,8 @@ builder.Services.AddControllers().AddJsonOptions(options =>
 
 var app = builder.Build();
 
-// Configure the HTTP request pipeline
 app.UseCors("AllowBlazorClient");
 
-// Map endpoints
 app.MapControllers();
 
 app.MapGet("/", () => "ChatClient API is running! Use /api/chat endpoint for chat communication.");
