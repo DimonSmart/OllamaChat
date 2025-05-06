@@ -6,7 +6,6 @@ namespace ChatClient.Api.Services;
 
 public class KernelService(
     IConfiguration configuration,
-    ILoggerFactory loggerFactory,
     IHttpClientFactory httpClientFactory,
     McpClientService mcpClientService,
     ILogger<KernelService> logger)
@@ -18,10 +17,8 @@ public class KernelService(
     {
         var baseUrl = configuration["Ollama:BaseUrl"] ?? "http://localhost:11434";
         var modelId = configuration["Ollama:Model"] ?? "phi4:14b";
-
-        var httpClient = httpClientFactory.CreateClient("Ollama");
+        var httpClient = httpClientFactory.CreateClient("DefaultClient");
         httpClient.BaseAddress = new Uri(baseUrl);
-        httpClient.Timeout = TimeSpan.FromMinutes(10);
 
         IKernelBuilder builder = Kernel.CreateBuilder();
         builder.AddOllamaChatCompletion(

@@ -4,8 +4,13 @@ using Microsoft.SemanticKernel.ChatCompletion;
 
 var builder = WebApplication.CreateBuilder(args);
 
-// Add services to the container
-builder.Services.AddHttpClient();
+
+// Configure default HttpClient factory with a named client
+builder.Services.AddHttpClient("DefaultClient", client =>
+{
+    client.Timeout = TimeSpan.FromMinutes(10);
+});
+
 var loggerFactory = LoggerFactory.Create(logging =>
 {
     logging.AddConsole();
