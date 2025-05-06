@@ -1,31 +1,24 @@
 ﻿@using Microsoft.AspNetCore.Components.Web
 
-<div class="d-flex flex-column">
-    <MudTextField T="string"
-                  @bind-Value="CurrentText"
-                  DebounceInterval="200"
-                  Lines="3"
-                  Label="Type your message"
-                  Variant="Variant.Outlined"
-                  Class="mt-2"
-                  OnKeyDown="HandleKeyDown" />
-
-    <MudStack AlignItems="AlignItems.Center" Row="true" Spacing="2" Class="mt-2">
-        <MudButton OnClick="SendMessage"
-                   Color="Color.Primary"
-                   Variant="Variant.Filled"
-                   Disabled="@(IsSendDisabled)"
-                   StartIcon="@Icons.Material.Filled.Send">
-            Send
-        </MudButton>
-    </MudStack>
-</div>
+<MudTextField T="string"
+              @bind-Value="CurrentText"
+              DebounceInterval="200"
+              Lines="3"
+              Label="Type your message"
+              Variant="Variant.Outlined"
+              Class="mt-2"
+              Adornment="Adornment.End"
+              AdornmentIcon="@Icons.Material.Filled.Send"
+              AdornmentColor="Color.Primary"
+              OnAdornmentClick="SendMessage"
+              OnKeyDown="HandleKeyDown" />
 
 @code {
     [Parameter] public EventCallback<string> OnSend { get; set; }
     private string CurrentText { get; set; } = string.Empty;
-    private bool IsSendDisabled => string.IsNullOrWhiteSpace(CurrentText);
-
+    private bool IsSending { get; set; } = false;
+    private bool IsTextEntered => !string.IsNullOrWhiteSpace(CurrentText);
+    private bool IsSendDisabled => IsSending || !IsTextEntered;
     private async Task HandleKeyDown(KeyboardEventArgs e)
     {
         if (e.Key == "Enter" && e.CtrlKey && !IsSendDisabled)
@@ -36,11 +29,17 @@
 
     private async Task SendMessage()
     {
-        if (IsSendDisabled)
-            return;
-
-        var textToSend = CurrentText.Trim();
-        CurrentText = string.Empty;
-        await OnSend.InvokeAsync(textToSend);
+        if (IsSendDisabled) return;
+        try
+        {
+            IsSending = true;
+            var textToSend = CurrentText.Trim();
+            CurrentText = string.Empty;
+            await OnSend.InvokeAsync(textToSend);
+        }
+        finally
+        {
+            IsSending = false;
+        }
     }
 }
