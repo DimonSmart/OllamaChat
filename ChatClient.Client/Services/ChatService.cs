@@ -67,11 +67,11 @@ public class ChatService : IChatService
         }
         catch (OperationCanceledException)
         {
-            await HandleSystemMessage("Operation cancelled.");
+            await HandleError("Operation cancelled.");
         }
         catch (Exception ex)
         {
-            await HandleSystemMessage($"An error occurred while getting the response: {ex.Message}");
+            await HandleError($"An error occurred while getting the response: {ex.Message}");
         }
         finally
         {
@@ -105,7 +105,7 @@ public class ChatService : IChatService
         using var response = await _client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
         if (!response.IsSuccessStatusCode)
         {
-            await HandleSystemMessage($"Error: {response.ReasonPhrase}");
+            await HandleError($"Error: {response.ReasonPhrase}");
             return;
         }
 
@@ -153,6 +153,7 @@ public class ChatService : IChatService
             }
 
             var payload = line["data: ".Length..];
+            payload = payload.Trim('\'');
             if (payload == "[DONE]")
             {
                 break;
@@ -160,15 +161,24 @@ public class ChatService : IChatService
 
             try
             {
-                var chunk = JsonSerializer.Deserialize<StreamResponse>(payload)?.Content;
-                if (chunk is not null)
+                var dr = JsonSerializer.Deserialize<StreamResponse>(payload);
+                if (dr?.Content is not null)
                 {
                     contentChunksCount++;
-                    tempMsg.Append(chunk);
+                    tempMsg.Append(dr?.Content);
                     await Task.Yield();
                     messageDebouncer.Enqueue(tempMsg);
                     messageEventsCount++;
                 }
+                if (dr?.Error is not null)
+                {
+                    contentChunksCount++;
+                    tempMsg.Append(dr?.Error);
+                    await Task.Yield();
+                    messageDebouncer.Enqueue(tempMsg);
+                    messageEventsCount++;
+                }
+
             }
             catch (JsonException)
             {
@@ -209,7 +219,7 @@ public class ChatService : IChatService
         return request;
     }
 
-    private async Task HandleSystemMessage(string text)
+    private async Task HandleError(string text)
     {
         await AddMessageAsync(new AppChatMessage(text, DateTime.Now, ChatRole.System));
     }
@@ -231,5 +241,8 @@ public class ChatService : IChatService
     {
         [System.Text.Json.Serialization.JsonPropertyName("content")]
         public string? Content { get; set; }
+
+        [System.Text.Json.Serialization.JsonPropertyName("error")]
+        public string? Error { get; set; }
     }
 }

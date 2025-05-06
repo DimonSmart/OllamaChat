@@ -50,7 +50,7 @@ public class ChatController(
         catch (Exception ex)
         {
             logger.LogError(ex, "Error streaming chat message: {Message}", ex.Message);
-            await WriteEventStreamAsync(new { error = "An error occurred processing your request" }, cancellationToken);
+            await WriteEventStreamAsync(new { error = $"Error: {ex.Message}" }, cancellationToken);
         }
     }
 

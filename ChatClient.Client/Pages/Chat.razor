@@ -125,7 +125,10 @@
         <MudPaper Elevation="3" Class="pa-2 mt-2">
             <MudExpansionPanels Dense="true">
                 <MudExpansionPanel Text="Functions" @bind-IsExpanded="@functionsExpanded">
-                    <FunctionSelector AvailableFunctions="availableFunctions" SelectedFunctions="selectedFunctions" SelectedFunctionsChanged="OnSelectedFunctionsChanged" Expanded="true" />
+                    <FunctionSelector AvailableFunctions="availableFunctions"
+                                      SelectedFunctions="selectedFunctions"
+                                      SelectedFunctionsChanged="OnSelectedFunctionsChanged"
+                                      Expanded="true" />
                 </MudExpansionPanel>
             </MudExpansionPanels>
             <div class="d-flex flex-column">
@@ -167,7 +170,6 @@
     private List<string> selectedFunctions = new();
     private bool functionsExpanded = false;
 
-    private EventCallback<List<string>> OnSelectedFunctionsChanged => EventCallback.Factory.Create<List<string>>(this, (List<string> v) => selectedFunctions = v);
     private bool showPromptContent { get; set; } = false;
 
     private readonly EventCallback<ChatMessageViewModel> _messageAddedCallback;
@@ -213,6 +215,13 @@
     private void OnMessageUpdated(ChatMessageViewModel message)
     {
         StateHasChanged();
+    }
+
+    private Task OnSelectedFunctionsChanged(List<string> functions)
+    {
+        selectedFunctions = functions;
+        StateHasChanged();
+        return Task.CompletedTask;
     }
 
     private async Task LoadSystemPrompts()
