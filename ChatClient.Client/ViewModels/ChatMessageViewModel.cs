@@ -16,6 +16,7 @@ public class ChatMessageViewModel
     public ChatRole Role { get; set; }
     public string? Statistics { get; set; }
     public bool IsStatsVisible { get; set; }
+    public bool IsThoughtsVisible { get; set; }
     public bool IsStreaming { get; set; }
 
     private ChatMessageViewModel Populate(IAppChatMessage message)

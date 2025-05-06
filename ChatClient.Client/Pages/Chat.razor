@@ -98,23 +98,49 @@
                             <MudText Typo="Typo.caption" Align="@(message.Role == Microsoft.Extensions.AI.ChatRole.Assistant ? Align.Left : Align.Right)" Class="mt-1">
                                 @message.MsgDateTime.ToString("g")
                             </MudText>
-                            @if (!string.IsNullOrEmpty(message.Statistics))
-                            {
-                                <MudIconButton Icon="@Icons.Material.Filled.Add"
-                                               Size="Size.Small"
-                                               Color="Color.Default"
-                                               Class="mt-1"
-                                               OnClick="@(() => ToggleStatsVisibility(message))" />
-
-                                @if (message.IsStatsVisible)
+                            <div class="d-flex flex-row gap-1">
+                                @if (!string.IsNullOrEmpty(message.Statistics))
                                 {
-                                    <MudPaper Class="pa-2 mt-1" Elevation="1">
-                                        <MudText Typo="Typo.caption">
-                                            @((MarkupString)message.Statistics)
-                                        </MudText>
-                                    </MudPaper>
+                                    <MudButton Size="Size.Small"
+                                               Variant="Variant.Text"
+                                               Color="Color.Default"
+                                               Class="pa-0 ml-1"
+                                               Style="min-width: auto; font-size: 0.75rem;"
+                                               OnClick="@(() => ToggleStatsVisibility(message))">
+                                        stats
+                                    </MudButton>
+
+                                    @if (message.IsStatsVisible)
+                                    {
+                                        <MudPaper Class="pa-2 mt-1" Elevation="1">
+                                            <MudText Typo="Typo.caption">
+                                                @((MarkupString)message.Statistics)
+                                            </MudText>
+                                        </MudPaper>
+                                    }
                                 }
-                            }
+
+                                @if (!string.IsNullOrEmpty(message.HtmlThink))
+                                {
+                                    <MudButton Size="Size.Small"
+                                               Variant="Variant.Text"
+                                               Color="Color.Default"
+                                               Class="pa-0 ml-1"
+                                               Style="min-width: auto; font-size: 0.75rem;"
+                                               OnClick="@(() => ToggleThoughtsVisibility(message))">
+                                        thoughts
+                                    </MudButton>
+
+                                    @if (message.IsThoughtsVisible)
+                                    {
+                                        <MudPaper Class="pa-2 mt-1" Elevation="1">
+                                            <MudText Typo="Typo.caption">
+                                                @((MarkupString)message.HtmlThink)
+                                            </MudText>
+                                        </MudPaper>
+                                    }
+                                }
+                            </div>
                         </MudChatBubble>
                     </MudChat>
                 }
@@ -297,11 +323,16 @@
     {
         ChatService.Cancel();
     }
-
     private void ToggleStatsVisibility(ChatMessageViewModel message)
     {
         message.IsStatsVisible = !message.IsStatsVisible;
     }
+
+    private void ToggleThoughtsVisibility(ChatMessageViewModel message)
+    {
+        message.IsThoughtsVisible = !message.IsThoughtsVisible;
+    }
+
     public ValueTask DisposeAsync()
     {
         ChatService.LoadingStateChanged -= OnLoadingStateChanged;
