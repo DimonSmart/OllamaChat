@@ -1,5 +1,4 @@
 using ChatClient.Api;
-using ChatClient.Api.Services;
 using Microsoft.SemanticKernel;
 using Microsoft.SemanticKernel.ChatCompletion;
 
