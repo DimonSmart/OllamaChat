@@ -12,7 +12,7 @@ public class ChatService : IChatService
 {
     private readonly HttpClient _client;
     private CancellationTokenSource? _cancellationTokenSource;
-    private readonly Debouncer<IAppChatMessage> _messageDebouncer;
+    // private readonly Debouncer<IAppChatMessage> _messageDebouncer;
 
     public event Action<bool>? LoadingStateChanged;
     public event Action? ChatInitialized;
@@ -25,10 +25,7 @@ public class ChatService : IChatService
     public ChatService(HttpClient client)
     {
         _client = client;
-        _messageDebouncer = new Debouncer<IAppChatMessage>(
-            async message => await (MessageUpdated?.Invoke(message) ?? Task.CompletedTask),
-            TimeSpan.FromMilliseconds(250)
-        );
+
     }
 
     public void InitializeChat(SystemPrompt? initialPrompt)
@@ -97,6 +94,10 @@ public class ChatService : IChatService
         var contentChunksCount = 0;
         var startTime = DateTime.Now;
 
+        using var messageDebouncer = new Debouncer<IAppChatMessage>(
+            async message => await (MessageUpdated?.Invoke(message) ?? Task.CompletedTask),
+            TimeSpan.FromMilliseconds(250));
+
         using var request = CreateHttpRequest(functionNames);
         var tempMsg = new StreamingAppChatMessage(string.Empty, DateTime.Now, ChatRole.Assistant);
         await AddMessageAsync(tempMsg);
@@ -140,14 +141,14 @@ public class ChatService : IChatService
             {
                 emptyMessagesCount++;
                 await Task.Yield();
-                NotifyMessageReceived(tempMsg);
+                messageDebouncer.Enqueue(tempMsg);
                 continue;
             }
 
             if (!line.StartsWith("data: "))
             {
                 await Task.Yield();
-                NotifyMessageReceived(tempMsg);
+                messageDebouncer.Enqueue(tempMsg);
                 continue;
             }
 
@@ -165,7 +166,7 @@ public class ChatService : IChatService
                     contentChunksCount++;
                     tempMsg.Append(chunk);
                     await Task.Yield();
-                    NotifyMessageReceived(tempMsg);
+                    messageDebouncer.Enqueue(tempMsg);
                     messageEventsCount++;
                 }
             }
@@ -190,9 +191,8 @@ public class ChatService : IChatService
         if (index == -1) throw new Exception("Invalid state exception");
         var finalMessage = new AppChatMessage(tempMsg);
         Messages[index] = finalMessage;
-        _messageDebouncer.ClearDelayedCalls();
-        NotifyMessageReceived(finalMessage);
-        //await (MessageUpdated?.Invoke(finalMessage) ?? Task.CompletedTask);
+        messageDebouncer.ClearDelayedCalls();
+        messageDebouncer.Enqueue(finalMessage);
     }
 
     private HttpRequestMessage CreateHttpRequest(List<string> functionNames)
@@ -225,11 +225,6 @@ public class ChatService : IChatService
     {
         IsLoading = isLoading;
         LoadingStateChanged?.Invoke(isLoading);
-    }
-
-    private void NotifyMessageReceived(IAppChatMessage message)
-    {
-        _messageDebouncer.Enqueue(message);
     }
 
     private class StreamResponse

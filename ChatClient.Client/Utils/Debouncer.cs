@@ -28,10 +28,19 @@
             _processingTask = Task.Run(ProcessLoopAsync);
         }
 
+        public Debouncer(Func<Task> handler, TimeSpan interval)
+           : this(_ => handler(), interval, null)
+        {
+        }
+
         public void Enqueue(T item)
         {
-            if (_queue.TryEnqueue(item))
-                _signal.Release();
+            if (_queue.TryEnqueue(item)) _signal.Release();
+        }
+
+        public void Enqueue()
+        {
+            Enqueue(default!);
         }
 
         /// <summary>
