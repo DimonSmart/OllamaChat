@@ -1,4 +1,3 @@
-using Markdig;
 using Microsoft.Extensions.AI;
 using System.Text.Json.Serialization;
 
@@ -15,11 +14,6 @@ public class AppChatMessage : IAppChatMessage
     /// The original text of the message (Markdown).
     /// </summary>
     public string Content { get; set; }
-
-    /// <summary>
-    /// Cached HTML representation of the content created at initialization.
-    /// </summary>
-    public string HtmlContent { get; set; }
 
     /// <summary>
     /// The timestamp when the message was created.
@@ -66,7 +60,6 @@ public class AppChatMessage : IAppChatMessage
     {
         Id = Guid.NewGuid();
         Content = string.Empty;
-        HtmlContent = string.Empty;
         MsgDateTime = DateTime.UtcNow;
         Role = ChatRole.User;
     }
@@ -79,7 +72,6 @@ public class AppChatMessage : IAppChatMessage
     {
         Id = message.Id;
         Content = message.Content;
-        HtmlContent = Markdown.ToHtml(Content);
         MsgDateTime = message.MsgDateTime;
         Role = message.Role;
         Statistics = message.Statistics;
@@ -89,7 +81,6 @@ public class AppChatMessage : IAppChatMessage
     {
         Id = Guid.NewGuid();
         Content = content ?? string.Empty;
-        HtmlContent = Markdown.ToHtml(Content);
         MsgDateTime = msgDateTime;
         Role = role;
         Statistics = statistics;
