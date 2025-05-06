@@ -74,6 +74,8 @@ public class ChatController(
         response.Headers.ContentType = ContentTypeEventStream;
         response.Headers.CacheControl = "no-cache";
         response.Headers.Connection = "keep-alive";
+        response.Headers.KeepAlive = "timeout=600";
+        response.Headers.Append("X-Accel-Buffering", "no");
     }
 
     private async Task WriteEventStreamAsync(object data, CancellationToken cancellationToken)

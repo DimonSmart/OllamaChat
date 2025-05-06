@@ -1,8 +1,8 @@
-using Microsoft.AspNetCore.Components.Web;
-using Microsoft.AspNetCore.Components.WebAssembly.Hosting;
 using ChatClient.Client;
 using ChatClient.Client.Services;
 using ChatClient.Shared.Services;
+using Microsoft.AspNetCore.Components.Web;
+using Microsoft.AspNetCore.Components.WebAssembly.Hosting;
 using MudBlazor;
 using MudBlazor.Services;
 
@@ -15,9 +15,12 @@ builder.Logging.SetMinimumLevel(LogLevel.Warning);
 var apiUrl = new Uri("http://localhost:5149");
 Console.WriteLine($"API URL: {apiUrl}");
 
-builder.Services.AddScoped(sp => {
+builder.Services.AddScoped(sp =>
+{
     var client = new HttpClient { BaseAddress = apiUrl };
     client.DefaultRequestHeaders.Add("X-Client-App", "OllamaChat-Blazor");
+    client.Timeout = TimeSpan.FromMinutes(10);
+    client.DefaultRequestHeaders.Add("Accept", "text/event-stream");
     return client;
 });
 

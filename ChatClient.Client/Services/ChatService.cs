@@ -205,6 +205,9 @@ public class ChatService : IChatService
         messageDebouncer.Enqueue(finalMessage);
     }
 
+
+   
+
     private HttpRequestMessage CreateHttpRequest(List<string> functionNames)
     {
         var messages = Messages
@@ -216,6 +219,9 @@ public class ChatService : IChatService
             Content = JsonContent.Create(new AppChatRequest { Messages = messages, FunctionNames = functionNames })
         };
         request.SetBrowserResponseStreamingEnabled(true);
+        request.Headers.Add("X-Response-Timeout", "600");
+        request.Headers.Add("Keep-Alive", "timeout=600");
+        request.Headers.Add("Transfer-Encoding", "chunked");
         return request;
     }
 
