@@ -167,7 +167,8 @@
     private List<string> selectedFunctions = new();
     private bool functionsExpanded = false;
 
-    private EventCallback<List<string>> OnSelectedFunctionsChanged => EventCallback.Factory.Create<List<string>>(this, (List<string> v) => selectedFunctions = v); private bool showPromptContent { get; set; } = false;
+    private EventCallback<List<string>> OnSelectedFunctionsChanged => EventCallback.Factory.Create<List<string>>(this, (List<string> v) => selectedFunctions = v);
+    private bool showPromptContent { get; set; } = false;
 
     private readonly EventCallback<ChatMessageViewModel> _messageAddedCallback;
     private readonly EventCallback<ChatMessageViewModel> _messageUpdatedCallback;
