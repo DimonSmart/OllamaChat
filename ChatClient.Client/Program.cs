@@ -1,5 +1,6 @@
 using ChatClient.Client;
 using ChatClient.Client.Services;
+using ChatClient.Shared.Models;
 using ChatClient.Shared.Services;
 using Microsoft.AspNetCore.Components.Web;
 using Microsoft.AspNetCore.Components.WebAssembly.Hosting;
@@ -29,6 +30,7 @@ builder.Services.AddScoped<IChatService, ChatService>();
 builder.Services.AddScoped<IChatViewModelService, ChatViewModelService>();
 builder.Services.AddScoped<ClientSystemPromptService>();
 builder.Services.AddScoped<ISystemPromptService, ClientSystemPromptService>();
+builder.Services.AddScoped<IModelsService, ModelsService>();
 builder.Services.AddMudServices(config =>
 {
     config.SnackbarConfiguration.PositionClass = Defaults.Classes.Position.TopRight;
