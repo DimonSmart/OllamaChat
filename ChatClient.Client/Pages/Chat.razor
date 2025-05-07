@@ -23,6 +23,7 @@
 @inject IChatViewModelService ChatViewModelService
 @inject IChatService ChatService
 @inject ClientSystemPromptService PromptService
+@inject IModelsService ModelsService
 
 <PageTitle>Chat with AI Assistant</PageTitle>
 
@@ -147,8 +148,20 @@
             }
 
         </div>
-
         <MudPaper Elevation="3" Class="pa-2 mt-2">
+            <MudSelect T="OllamaModel"
+                       Label="Select Model"
+                       @bind-Value="selectedModel"
+                       Variant="Variant.Outlined"
+                       Dense="true"
+                       Class="mb-2"
+                       AnchorOrigin="Origin.BottomCenter">
+                @foreach (var model in availableModels)
+                {
+                    <MudSelectItem Value="@model">@model.Name</MudSelectItem>
+                }
+            </MudSelect>
+
             <MudExpansionPanels Dense="true">
                 <MudExpansionPanel Text="Functions" @bind-IsExpanded="@functionsExpanded">
                     <FunctionSelector AvailableFunctions="availableFunctions"
@@ -193,8 +206,10 @@
     private List<SystemPrompt> systemPrompts = new();
     private SystemPrompt? selectedSystemPrompt;
     private List<FunctionInfo> availableFunctions = new();
-    private List<string> selectedFunctions = new();
-    private bool functionsExpanded = false;
+    private List<string> selectedFunctions = new(); private bool functionsExpanded = false;
+
+    private List<OllamaModel> availableModels = new();
+    private OllamaModel? selectedModel;
 
     private bool showPromptContent { get; set; } = false;
 
@@ -208,15 +223,14 @@
     }
 
     private string GetMessageClass(IAppChatMessage message) =>
-        $"{(message.Role == Microsoft.Extensions.AI.ChatRole.User ? "user-message" : "assistant-message")} message-container pa-2 mb-2";
-
-    protected override async Task OnInitializedAsync()
+        $"{(message.Role == Microsoft.Extensions.AI.ChatRole.User ? "user-message" : "assistant-message")} message-container pa-2 mb-2"; protected override async Task OnInitializedAsync()
     {
         isLoadingInitialData = true;
         StateHasChanged();
 
         await LoadSystemPrompts();
         await LoadAvailableFunctions();
+        await LoadAvailableModels();
 
         ChatService.LoadingStateChanged += OnLoadingStateChanged;
         ChatViewModelService.MessageAdded += async (msg) => await _messageAddedCallback.InvokeAsync(msg);
@@ -256,7 +270,6 @@
         if (systemPrompts.Count == 0) systemPrompts.Add(PromptService.GetDefaultSystemPrompt());
         selectedSystemPrompt = systemPrompts.FirstOrDefault();
     }
-
     private async Task LoadAvailableFunctions()
     {
         try
@@ -277,6 +290,20 @@
         {
             Console.WriteLine($"Error loading available functions: {ex}");
             availableFunctions = new List<FunctionInfo>();
+        }
+    }
+
+    private async Task LoadAvailableModels()
+    {
+        try
+        {
+            availableModels = await ModelsService.GetModelsAsync();
+            selectedModel = availableModels.FirstOrDefault();
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error loading available models: {ex}");
+            availableModels = new List<OllamaModel>();
         }
     }
 
