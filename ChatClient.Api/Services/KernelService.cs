@@ -13,10 +13,9 @@ public class KernelService(
     private IMcpClient? _mcpClient;
     private IReadOnlyList<McpClientTool>? _mcpTools;
 
-    public Kernel CreateKernel(IEnumerable<string>? functionNames = null)
+    public async Task<Kernel> CreateKernelAsync(string modelId, IEnumerable<string>? functionNames = null)
     {
         var baseUrl = configuration["Ollama:BaseUrl"] ?? "http://localhost:11434";
-        var modelId = configuration["Ollama:Model"] ?? "phi4:14b";
         var httpClient = httpClientFactory.CreateClient("DefaultClient");
         httpClient.BaseAddress = new Uri(baseUrl);
 
@@ -36,7 +35,7 @@ public class KernelService(
         var kernel = builder.Build();
 
         // Load MCP tools
-        InitializeMcpIntegrationAsync(kernel).GetAwaiter().GetResult();
+        await InitializeMcpIntegrationAsync(kernel);
 
         // Register selected MCP tools as kernel functions
         if (_mcpTools != null && _mcpTools.Count > 0)

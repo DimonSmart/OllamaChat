@@ -19,7 +19,6 @@ public class ChatService : IChatService
     public event Func<IAppChatMessage, Task>? MessageAdded;
     public event Func<IAppChatMessage, Task>? MessageUpdated;
     public event Action? ErrorOccurred;
-
     public bool IsLoading { get; private set; }
     public ObservableCollection<IAppChatMessage> Messages { get; } = new();
     public ChatService(HttpClient client)
@@ -49,8 +48,7 @@ public class ChatService : IChatService
         _cancellationTokenSource?.Cancel();
         UpdateLoadingState(false);
     }
-
-    public async Task AddAndAnswerrUserMessageAsync(string text, List<string> selectedFunctions)
+    public async Task AddAndAnswerrUserMessageAsync(string text, List<string> selectedFunctions, string? modelName)
     {
         if (string.IsNullOrWhiteSpace(text) || IsLoading)
         {
@@ -63,7 +61,7 @@ public class ChatService : IChatService
         _cancellationTokenSource = new CancellationTokenSource();
         try
         {
-            await ProcessStreamingResponseAsync(selectedFunctions, _cancellationTokenSource.Token);
+            await ProcessStreamingResponseAsync(selectedFunctions, modelName, _cancellationTokenSource.Token);
         }
         catch (OperationCanceledException)
         {
@@ -84,8 +82,7 @@ public class ChatService : IChatService
         Messages.Add(message);
         await (MessageAdded?.Invoke(message) ?? Task.CompletedTask);
     }
-
-    private async Task ProcessStreamingResponseAsync(List<string> functionNames, CancellationToken cancellationToken)
+    private async Task ProcessStreamingResponseAsync(List<string> functionNames, string? modelName, CancellationToken cancellationToken)
     {
         var readCallsCount = 0;
         var messageEventsCount = 0;
@@ -98,7 +95,7 @@ public class ChatService : IChatService
             async message => await (MessageUpdated?.Invoke(message) ?? Task.CompletedTask),
             TimeSpan.FromMilliseconds(250));
 
-        using var request = CreateHttpRequest(functionNames);
+        using var request = CreateHttpRequest(functionNames, modelName);
         var tempMsg = new StreamingAppChatMessage(string.Empty, DateTime.Now, ChatRole.Assistant);
         await AddMessageAsync(tempMsg);
 
@@ -205,10 +202,7 @@ public class ChatService : IChatService
         messageDebouncer.Enqueue(finalMessage);
     }
 
-
-   
-
-    private HttpRequestMessage CreateHttpRequest(List<string> functionNames)
+    private HttpRequestMessage CreateHttpRequest(List<string> functionNames, string? modelName)
     {
         var messages = Messages
             .Select(message => new AppChatMessage(message.Content, message.MsgDateTime, message.Role))
@@ -216,7 +210,12 @@ public class ChatService : IChatService
 
         var request = new HttpRequestMessage(HttpMethod.Post, "api/chat/stream")
         {
-            Content = JsonContent.Create(new AppChatRequest { Messages = messages, FunctionNames = functionNames })
+            Content = JsonContent.Create(new AppChatRequest
+            {
+                Messages = messages,
+                FunctionNames = functionNames,
+                ModelName = modelName
+            })
         };
         request.SetBrowserResponseStreamingEnabled(true);
         request.Headers.Add("X-Response-Timeout", "600");

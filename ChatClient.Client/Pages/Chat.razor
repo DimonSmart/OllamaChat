@@ -24,6 +24,7 @@
 @inject IChatService ChatService
 @inject ClientSystemPromptService PromptService
 @inject IModelsService ModelsService
+@inject IUserSettingsService UserSettingsService
 
 <PageTitle>Chat with AI Assistant</PageTitle>
 
@@ -148,10 +149,10 @@
             }
 
         </div>
-        <MudPaper Elevation="3" Class="pa-2 mt-2">
-            <div class="d-flex flex-row gap-2 align-center">
+        <MudPaper Elevation="3" Class="pa-2 mt-2">            <div class="d-flex flex-row gap-2 align-center">
                 <MudSelect T="OllamaModel"
-                           @bind-Value="selectedModel"
+                           Value="selectedModel"
+                           ValueChanged="OnModelChanged"
                            Label="Model"
                            Variant="Variant.Filled"
                            Dense="true"
@@ -303,14 +304,23 @@
             Console.WriteLine($"Error loading available functions: {ex}");
             availableFunctions = new List<FunctionInfo>();
         }
-    }
-
-    private async Task LoadAvailableModels()
+    }    private async Task LoadAvailableModels()
     {
         try
         {
             availableModels = await ModelsService.GetModelsAsync();
-            selectedModel = availableModels.FirstOrDefault();
+            
+            // Get user settings to find default model
+            var settings = await UserSettingsService.GetSettingsAsync();
+              if (!string.IsNullOrWhiteSpace(settings.DefaultModelName) && 
+                availableModels.Any(m => m.Name == settings.DefaultModelName))
+            {
+                selectedModel = availableModels.FirstOrDefault(m => m.Name == settings.DefaultModelName);
+            }
+            else
+            {
+                selectedModel = availableModels.FirstOrDefault();
+            }
         }
         catch (Exception ex)
         {
@@ -336,14 +346,12 @@
         chatStarted = false;
         ChatService.ClearChat();
         StateHasChanged();
-    }
-
-    private async Task SendChatMessageAsync(string message)
+    }    private async Task SendChatMessageAsync(string message)
     {
         if (string.IsNullOrWhiteSpace(message) || isLLMAnswering)
             return;
 
-        await ChatService.AddAndAnswerrUserMessageAsync(message.Trim(), selectedFunctions);
+        await ChatService.AddAndAnswerrUserMessageAsync(message.Trim(), selectedFunctions, selectedModel?.Name);
         await ScrollToBottom();
     }
     private async Task ScrollToBottom()
@@ -370,6 +378,10 @@
     private void ToggleThoughtsVisibility(ChatMessageViewModel message)
     {
         message.IsThoughtsVisible = !message.IsThoughtsVisible;
+    }    private void OnModelChanged(OllamaModel model)
+    {
+        selectedModel = model;
+        Console.WriteLine($"Selected model changed to: {model.Name}");
     }
 
     public ValueTask DisposeAsync()

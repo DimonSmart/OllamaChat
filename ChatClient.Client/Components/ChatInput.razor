@@ -1,4 +1,6 @@
 ﻿@using Microsoft.AspNetCore.Components.Web
+@using ChatClient.Shared.Services
+@inject IUserSettingsService UserSettingsService
 
 <MudTextField T="string"
               @bind-Value="CurrentText"
@@ -18,6 +20,16 @@
 @code {
     [Parameter] public EventCallback<string> OnSend { get; set; }
     private string CurrentText { get; set; } = string.Empty;
+    
+    protected override async Task OnInitializedAsync()
+    {
+        await base.OnInitializedAsync();
+        var settings = await UserSettingsService.GetSettingsAsync();
+        if (!string.IsNullOrEmpty(settings.DefaultChatMessage))
+        {
+            CurrentText = settings.DefaultChatMessage;
+        }
+    }
     private bool IsSending { get; set; } = false;
     private bool IsTextEntered => !string.IsNullOrWhiteSpace(CurrentText);
     private bool IsSendDisabled => IsSending || !IsTextEntered;

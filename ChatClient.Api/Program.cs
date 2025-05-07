@@ -44,21 +44,9 @@ builder.Services.AddSingleton<ChatClient.Api.Services.McpClientService>();
 builder.Services.AddSingleton<ChatClient.Api.Services.KernelService>();
 builder.Services.AddSingleton<ChatClient.Api.Services.OllamaService>();
 builder.Services.AddSingleton<ChatClient.Shared.Services.ISystemPromptService, ChatClient.Api.Services.SystemPromptService>();
+builder.Services.AddSingleton<ChatClient.Shared.Services.IUserSettingsService, ChatClient.Api.Services.UserSettingsService>();
 
-// Register Kernel as a singleton
-builder.Services.AddSingleton(sp =>
-{
-    var kernelService = sp.GetRequiredService<ChatClient.Api.Services.KernelService>();
-    return kernelService.CreateKernel();
-});
 
-// Register chat service using the kernel
-builder.Services.AddSingleton<IChatCompletionService>(sp =>
-{
-    var logger = sp.GetRequiredService<ILogger<Program>>();
-    var kernel = sp.GetRequiredService<Kernel>();
-    return kernel.GetRequiredService<IChatCompletionService>();
-});
 
 // Add controllers with JSON options
 builder.Services.AddControllers().AddJsonOptions(options =>

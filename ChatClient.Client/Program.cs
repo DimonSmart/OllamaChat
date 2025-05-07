@@ -30,6 +30,7 @@ builder.Services.AddScoped<IChatService, ChatService>();
 builder.Services.AddScoped<IChatViewModelService, ChatViewModelService>();
 builder.Services.AddScoped<ClientSystemPromptService>();
 builder.Services.AddScoped<ISystemPromptService, ClientSystemPromptService>();
+builder.Services.AddScoped<IUserSettingsService, ClientUserSettingsService>();
 builder.Services.AddScoped<IModelsService, ModelsService>();
 builder.Services.AddMudServices(config =>
 {

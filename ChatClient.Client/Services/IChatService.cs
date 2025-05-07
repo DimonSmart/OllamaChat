@@ -5,15 +5,14 @@ namespace ChatClient.Client.Services;
 public interface IChatService
 {
     bool IsLoading { get; }
-    
+
     event Action<bool>? LoadingStateChanged;
     event Action? ChatInitialized;
     event Func<IAppChatMessage, Task>? MessageAdded;
     event Func<IAppChatMessage, Task>? MessageUpdated;
     event Action? ErrorOccurred;
-    
     void InitializeChat(SystemPrompt? initialPrompt);
     void ClearChat();
     void Cancel();
-    Task AddAndAnswerrUserMessageAsync(string text, List<string> selectedFunctions);
+    Task AddAndAnswerrUserMessageAsync(string text, List<string> selectedFunctions, string? modelName);
 }

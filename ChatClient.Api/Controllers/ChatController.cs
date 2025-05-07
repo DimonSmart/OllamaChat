@@ -1,3 +1,4 @@
+using ChatClient.Api.Services;
 using ChatClient.Shared.Models;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.AI;
@@ -8,18 +9,15 @@ namespace ChatClient.Api.Controllers;
 
 [ApiController]
 [Route("api/[controller]")]
-public class ChatController(
-    IChatCompletionService chatService,
-    ILogger<ChatController> logger,
-    Services.KernelService kernelService) : ControllerBase
+public class ChatController(ILogger<ChatController> logger, KernelService kernelService) : ControllerBase
 {
     private const string ContentTypeEventStream = "text/event-stream";
     private static readonly IDictionary<ChatRole, Action<ChatHistory, string>> RoleHandlers =
         new Dictionary<ChatRole, Action<ChatHistory, string>>
         {
-            { ChatRole.System,    (history, content) => history.AddSystemMessage(content) },
-            { ChatRole.User,      (history, content) => history.AddUserMessage(content) },
-            { ChatRole.Assistant, (history, content) => history.AddAssistantMessage(content) }
+                        { ChatRole.System,    (history, content) => history.AddSystemMessage(content) },
+                        { ChatRole.User,      (history, content) => history.AddUserMessage(content) },
+                        { ChatRole.Assistant, (history, content) => history.AddAssistantMessage(content) }
         };
 
     [HttpPost("stream")]
@@ -29,8 +27,9 @@ public class ChatController(
         {
             SetStreamHeaders(Response);
             var chatHistory = await BuildChatHistory(request);
+            var kernel = await kernelService.CreateKernelAsync(request.ModelName, request.FunctionNames);
+            var chatService = kernel.GetRequiredService<IChatCompletionService>();
 
-            var kernel = kernelService.CreateKernel(request.FunctionNames);
             var executionSettings = new PromptExecutionSettings
             {
                 FunctionChoiceBehavior = (request.FunctionNames != null && request.FunctionNames.Any())
