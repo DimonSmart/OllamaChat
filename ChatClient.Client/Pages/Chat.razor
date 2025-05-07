@@ -149,27 +149,39 @@
 
         </div>
         <MudPaper Elevation="3" Class="pa-2 mt-2">
-            <MudSelect T="OllamaModel"
-                       Label="Select Model"
-                       @bind-Value="selectedModel"
-                       Variant="Variant.Outlined"
-                       Dense="true"
-                       Class="mb-2"
-                       AnchorOrigin="Origin.BottomCenter">
-                @foreach (var model in availableModels)
-                {
-                    <MudSelectItem Value="@model">@model.Name</MudSelectItem>
-                }
-            </MudSelect>
+            <div class="d-flex flex-row gap-2 align-center">
+                <MudSelect T="OllamaModel"
+                           @bind-Value="selectedModel"
+                           Label="Model"
+                           Variant="Variant.Filled"
+                           Dense="true"
+                           Margin="Margin.Dense"
+                           Style="min-width: 150px; flex-grow: 0;">
+                    @foreach (var model in availableModels)
+                    {
+                        <MudSelectItem Value="@model">@model.Name</MudSelectItem>
+                    }
+                </MudSelect>
 
-            <MudExpansionPanels Dense="true">
-                <MudExpansionPanel Text="Functions" @bind-IsExpanded="@functionsExpanded">
-                    <FunctionSelector AvailableFunctions="availableFunctions"
-                                      SelectedFunctions="selectedFunctions"
-                                      SelectedFunctionsChanged="OnSelectedFunctionsChanged"
-                                      Expanded="true" />
-                </MudExpansionPanel>
-            </MudExpansionPanels>
+                <MudButton Variant="Variant.Text"
+                           Color="Color.Primary"
+                           Size="Size.Small"
+                           OnClick="@(() => functionsExpanded = !functionsExpanded)">
+                    Functions
+                </MudButton>
+            </div>
+
+            <MudCollapse Expanded="@functionsExpanded">
+                <MudCard Outlined="true" Class="my-2">
+                    <MudCardContent Class="pa-2">
+                        <FunctionSelector AvailableFunctions="availableFunctions"
+                                          SelectedFunctions="selectedFunctions"
+                                          SelectedFunctionsChanged="OnSelectedFunctionsChanged"
+                                          Expanded="true" />
+                    </MudCardContent>
+                </MudCard>
+            </MudCollapse>
+
             <div class="d-flex flex-column">
                 <ChatInput OnSend="SendChatMessageAsync" />
 
