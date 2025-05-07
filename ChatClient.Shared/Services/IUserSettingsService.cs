@@ -8,7 +8,7 @@ public interface IUserSettingsService
     /// Gets the current user settings
     /// </summary>
     Task<UserSettings> GetSettingsAsync();
-    
+
     /// <summary>
     /// Saves the user settings
     /// </summary>

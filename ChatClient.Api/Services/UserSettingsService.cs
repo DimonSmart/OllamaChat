@@ -17,18 +17,18 @@ public class UserSettingsService : IUserSettingsService
     public UserSettingsService(IConfiguration configuration, ILogger<UserSettingsService> logger)
     {
         _logger = logger;
-        
+
         // Create a directory for user settings if it doesn't exist
         var settingsDir = configuration["UserSettings:Directory"] ?? Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "UserData");
         if (!Directory.Exists(settingsDir))
         {
             Directory.CreateDirectory(settingsDir);
         }
-        
+
         _settingsFilePath = Path.Combine(settingsDir, "user_settings.json");
         _logger.LogInformation("User settings file path: {FilePath}", _settingsFilePath);
     }
-    
+
     public async Task<UserSettings> GetSettingsAsync()
     {
         try
@@ -43,7 +43,7 @@ public class UserSettingsService : IUserSettingsService
 
             var json = await File.ReadAllTextAsync(_settingsFilePath);
             var settings = JsonSerializer.Deserialize<UserSettings>(json, _jsonOptions);
-            
+
             return settings ?? new UserSettings();
         }
         catch (Exception ex)
@@ -52,7 +52,7 @@ public class UserSettingsService : IUserSettingsService
             return new UserSettings();
         }
     }
-    
+
     public async Task SaveSettingsAsync(UserSettings settings)
     {
         try

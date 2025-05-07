@@ -35,8 +35,8 @@ public class McpClientService : IAsyncDisposable
             // throw new InvalidOperationException("No MCP server configurations found");
         }
 
-            // For now, just connect to the first MCP server
-            var config = mcpServerConfigs[0];
+        // For now, just connect to the first MCP server
+        var config = mcpServerConfigs[0];
         _logger.LogInformation("Creating MCP client for server: {ServerName}", config.Name);
 
         if (string.IsNullOrEmpty(config.Command))

@@ -15,14 +15,14 @@ public class SystemPromptService : ISystemPromptService
         var promptsFilePath = configuration["SystemPrompts:FilePath"] ?? "system_prompts.json";
         _filePath = Path.GetFullPath(promptsFilePath);
         _logger = logger;
-        
+
         // Ensure the directory exists
         var directory = Path.GetDirectoryName(_filePath);
         if (!string.IsNullOrEmpty(directory) && !Directory.Exists(directory))
         {
             Directory.CreateDirectory(directory);
         }
-        
+
         // Create default file if it doesn't exist
         if (!File.Exists(_filePath))
         {
@@ -54,7 +54,7 @@ public class SystemPromptService : ISystemPromptService
         try
         {
             await _semaphore.WaitAsync();
-            
+
             if (!File.Exists(_filePath))
             {
                 await CreateDefaultPromptsFile();
@@ -85,17 +85,17 @@ public class SystemPromptService : ISystemPromptService
         try
         {
             await _semaphore.WaitAsync();
-            
+
             var prompts = await ReadFromFileAsync();
-            
+
             if (prompt.Id == null) prompt.Id = Guid.NewGuid();
 
             prompt.CreatedAt = DateTime.UtcNow;
             prompt.UpdatedAt = DateTime.UtcNow;
-            
+
             prompts.Add(prompt);
             await WriteToFileAsync(prompts);
-            
+
             return prompt;
         }
         catch (Exception ex)
@@ -114,10 +114,10 @@ public class SystemPromptService : ISystemPromptService
         try
         {
             await _semaphore.WaitAsync();
-            
+
             var prompts = await ReadFromFileAsync();
             var existingIndex = prompts.FindIndex(p => p.Id == prompt.Id);
-            
+
             if (existingIndex == -1)
             {
                 throw new KeyNotFoundException($"System prompt with ID {prompt.Id} not found");
@@ -125,9 +125,9 @@ public class SystemPromptService : ISystemPromptService
 
             prompt.UpdatedAt = DateTime.UtcNow;
             prompts[existingIndex] = prompt;
-            
+
             await WriteToFileAsync(prompts);
-            
+
             return prompt;
         }
         catch (Exception ex)
@@ -146,10 +146,10 @@ public class SystemPromptService : ISystemPromptService
         try
         {
             await _semaphore.WaitAsync();
-            
+
             var prompts = await ReadFromFileAsync();
             var existingPrompt = prompts.FirstOrDefault(p => p.Id == id);
-            
+
             if (existingPrompt == null)
             {
                 throw new KeyNotFoundException($"System prompt with ID {id} not found");

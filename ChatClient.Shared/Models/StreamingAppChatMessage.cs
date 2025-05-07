@@ -39,7 +39,7 @@ public class StreamingAppChatMessage(string initialContent, DateTime msgDateTime
     {
         _contentBuilder.Append(text);
     }
-    
+
     public void SetStatistics(string stats)
     {
         Statistics = stats;

@@ -9,7 +9,7 @@ public class UserSettings
     /// </summary>
     [JsonPropertyName("defaultModelName")]
     public string DefaultModelName { get; set; } = string.Empty;
-    
+
     /// <summary>
     /// The default message to prepopulate in the chat input
     /// </summary>
