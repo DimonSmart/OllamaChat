@@ -1,6 +1,5 @@
 using ChatClient.Shared.Models;
 using Microsoft.SemanticKernel;
-using ModelContextProtocol.Client;
 
 namespace ChatClient.Api.Services;
 
@@ -10,9 +9,6 @@ public class KernelService(
     McpClientService mcpClientService,
     ILogger<KernelService> logger)
 {
-    private IMcpClient? _mcpClient;
-    private IReadOnlyList<McpClientTool>? _mcpTools;
-
     public async Task<Kernel> CreateKernelAsync(string modelId, IEnumerable<string>? functionNames = null)
     {
         var baseUrl = configuration["Ollama:BaseUrl"] ?? "http://localhost:11434";
@@ -34,71 +30,72 @@ public class KernelService(
 
         var kernel = builder.Build();
 
-        // Load MCP tools
-        await InitializeMcpIntegrationAsync(kernel);
-
         // Register selected MCP tools as kernel functions
-        if (_mcpTools != null && _mcpTools.Count > 0)
+        if (functionNames != null && functionNames.Any())
         {
-            // If functionNames is null, register all tools; if empty list, register none; otherwise register specified
-            List<McpClientTool> toolsToRegister;
-            if (functionNames == null)
-            {
-                toolsToRegister = _mcpTools.ToList();
-            }
-            else
-            {
-                toolsToRegister = _mcpTools.Where(t => functionNames.Contains(t.Name)).ToList();
-            }
-            if (toolsToRegister.Count > 0)
-            {
-                var pluginFunctions = toolsToRegister.Select(tool => tool.AsKernelFunction()).ToList();
-                kernel.Plugins.AddFromFunctions("McpTools", pluginFunctions);
-                logger.LogInformation("Registered {Count} MCP tools based on selection", pluginFunctions.Count);
-            }
-            else
-            {
-                logger.LogWarning("No MCP tools registered because none were selected");
-            }
-        }
-        else
-        {
-            logger.LogWarning("No MCP tools loaded to register");
+            await RegisterMcpToolsAsync(kernel, functionNames);
         }
 
         return kernel;
     }
 
-    private async Task InitializeMcpIntegrationAsync(Kernel kernel)
+    private async Task RegisterMcpToolsAsync(Kernel kernel, IEnumerable<string> functionNames)
     {
         try
         {
-            _mcpClient = await mcpClientService.CreateMcpClientAsync(kernel);
-            if (_mcpClient == null) return;
+            var mcpClient = await mcpClientService.CreateMcpClientAsync();
+            if (mcpClient == null)
+            {
+                logger.LogWarning("MCP client could not be created");
+                return;
+            }
 
-            _mcpTools = await mcpClientService.GetMcpTools(_mcpClient);
-            if (_mcpTools.Count > 0)
+            var mcpTools = await mcpClientService.GetMcpTools(mcpClient);
+            if (mcpTools.Count == 0)
             {
-                logger.LogInformation("Loaded {Count} MCP tools", _mcpTools.Count);
+                logger.LogWarning("No MCP tools available to register");
+                return;
             }
-            else
+
+            var toolsToRegister = mcpTools.Where(t => functionNames.Contains(t.Name)).ToList();
+            if (toolsToRegister.Count == 0)
             {
-                logger.LogWarning("No MCP tools available to load");
+                logger.LogWarning("No MCP tools matched the requested function names");
+                return;
             }
+
+            var pluginFunctions = toolsToRegister.Select(tool => tool.AsKernelFunction()).ToList();
+            kernel.Plugins.AddFromFunctions("McpTools", pluginFunctions);
+            logger.LogInformation("Registered {Count} MCP tools based on selection", pluginFunctions.Count);
         }
         catch (Exception ex)
         {
-            logger.LogError(ex, "Failed to initialize MCP integration: {Message}", ex.Message);
+            logger.LogError(ex, "Failed to register MCP tools: {Message}", ex.Message);
         }
     }
 
     /// <summary>
-    /// Returns the list of available functions registered in the kernel.
+    /// Returns the list of available functions that can be used with the kernel.
     /// </summary>
-    public IEnumerable<FunctionInfo> GetAvailableFunctions()
+    public async Task<IEnumerable<FunctionInfo>> GetAvailableFunctionsAsync()
     {
-        return _mcpTools?
-            .Select(tool => new FunctionInfo { Name = tool.Name, Description = tool.Description })
-            ?? Enumerable.Empty<FunctionInfo>();
+        try
+        {
+            var mcpClient = await mcpClientService.CreateMcpClientAsync();
+            if (mcpClient == null)
+            {
+                return Enumerable.Empty<FunctionInfo>();
+            }
+
+            var mcpTools = await mcpClientService.GetMcpTools(mcpClient);
+
+            return mcpTools
+                .Select(tool => new FunctionInfo { Name = tool.Name, Description = tool.Description });
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Failed to get available functions: {Message}", ex.Message);
+            return Enumerable.Empty<FunctionInfo>();
+        }
     }
 }
