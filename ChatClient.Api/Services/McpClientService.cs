@@ -1,22 +1,14 @@
 using ChatClient.Api.Models;
-using Microsoft.SemanticKernel;
 using ModelContextProtocol.Client;
 using ModelContextProtocol.Protocol.Transport;
 
 namespace ChatClient.Api.Services;
 
-public class McpClientService : IAsyncDisposable
+public class McpClientService(
+    IConfiguration configuration,
+    ILogger<McpClientService> logger) : IAsyncDisposable
 {
-    private readonly IConfiguration _configuration;
-    private readonly ILogger<McpClientService> _logger;
     private IMcpClient? _mcpClient;
-    public McpClientService(
-        IConfiguration configuration,
-        ILogger<McpClientService> logger)
-    {
-        _configuration = configuration;
-        _logger = logger;
-    }
 
     public async Task<IMcpClient?> CreateMcpClientAsync()
     {
@@ -25,17 +17,17 @@ public class McpClientService : IAsyncDisposable
             return _mcpClient;
         }
 
-        var mcpServerConfigs = _configuration.GetSection("McpServers").Get<List<McpServerConfig>>() ?? [];
+        var mcpServerConfigs = configuration.GetSection("McpServers").Get<List<McpServerConfig>>() ?? [];
 
         if (mcpServerConfigs.Count == 0)
         {
-            _logger.LogWarning("No MCP server configurations found");
+            logger.LogWarning("No MCP server configurations found");
             return null;
         }
 
         // For now, just connect to the first MCP server
         var config = mcpServerConfigs[0];
-        _logger.LogInformation("Creating MCP client for server: {ServerName}", config.Name);
+        logger.LogInformation("Creating MCP client for server: {ServerName}", config.Name);
 
         if (string.IsNullOrEmpty(config.Command))
         {
@@ -52,7 +44,7 @@ public class McpClientService : IAsyncDisposable
             clientOptions: null
         );
 
-        _logger.LogInformation("MCP client created successfully for server: {ServerName}", config.Name);
+        logger.LogInformation("MCP client created successfully for server: {ServerName}", config.Name);
         return _mcpClient;
     }
 
@@ -61,12 +53,12 @@ public class McpClientService : IAsyncDisposable
         try
         {
             var tools = await mcpClient.ListToolsAsync();
-            _logger.LogInformation("Retrieved {Count} tools from MCP server", tools.Count);
+            logger.LogInformation("Retrieved {Count} tools from MCP server", tools.Count);
             return tools.ToList();
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Failed to retrieve MCP tools");
+            logger.LogError(ex, "Failed to retrieve MCP tools");
             throw;
         }
     }
