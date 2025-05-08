@@ -1,6 +1,7 @@
 using ChatClient.Api.Models;
 using ModelContextProtocol.Client;
 using ModelContextProtocol.Protocol.Transport;
+using static ChatClient.Api.Models.McpServerConfig.McpServerConnectionType;
 
 namespace ChatClient.Api.Services;
 
@@ -27,14 +28,27 @@ public class McpClientService(
 
         // For now, just connect to the first MCP server
         var config = mcpServerConfigs[0];
-        logger.LogInformation("Creating MCP client for server: {ServerName}", config.Name);
+        logger.LogInformation("Creating MCP client for server: {ServerName} using {ConnectionType} connection", config.Name, config.ConnectionType);
 
+        _mcpClient = config.ConnectionType switch
+        {
+            Network => await CreateNetworkMcpClientAsync(config),
+            Local => await CreateLocalMcpClientAsync(config),
+            _ => throw new InvalidOperationException($"Unsupported connection type: {config.ConnectionType}")
+        };
+
+        logger.LogInformation("MCP client created successfully for server: {ServerName}", config.Name);
+        return _mcpClient;
+    }
+
+    private async Task<IMcpClient> CreateLocalMcpClientAsync(McpServerConfig config)
+    {
         if (string.IsNullOrEmpty(config.Command))
         {
-            throw new InvalidOperationException("MCP server command cannot be null or empty");
+            throw new InvalidOperationException("MCP server command cannot be null or empty for local connection");
         }
 
-        _mcpClient = await McpClientFactory.CreateAsync(
+        return await McpClientFactory.CreateAsync(
             clientTransport: new StdioClientTransport(new StdioClientTransportOptions
             {
                 Name = config.Name,
@@ -43,9 +57,23 @@ public class McpClientService(
             }),
             clientOptions: null
         );
+    }
 
-        logger.LogInformation("MCP client created successfully for server: {ServerName}", config.Name);
-        return _mcpClient;
+    private async Task<IMcpClient> CreateNetworkMcpClientAsync(McpServerConfig config)
+    {
+        if (string.IsNullOrEmpty(config.Host))
+        {
+            throw new InvalidOperationException("Host cannot be null or empty for network connection");
+        }
+
+        var httpTransport = new SseClientTransport(
+           new SseClientTransportOptions
+           {
+               Endpoint = new Uri(config.Host)
+           }
+       );
+
+        return await McpClientFactory.CreateAsync(httpTransport);
     }
 
     public async Task<IReadOnlyList<McpClientTool>> GetMcpTools(IMcpClient mcpClient)
