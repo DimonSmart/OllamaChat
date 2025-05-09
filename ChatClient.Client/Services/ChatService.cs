@@ -8,12 +8,9 @@ using System.Text.Json;
 
 namespace ChatClient.Client.Services;
 
-public class ChatService : IChatService
+public class ChatService(HttpClient client) : IChatService
 {
-    private readonly HttpClient _client;
     private CancellationTokenSource? _cancellationTokenSource;
-    // private readonly Debouncer<IAppChatMessage> _messageDebouncer;
-
     public event Action<bool>? LoadingStateChanged;
     public event Action? ChatInitialized;
     public event Func<IAppChatMessage, Task>? MessageAdded;
@@ -21,11 +18,6 @@ public class ChatService : IChatService
     public event Action? ErrorOccurred;
     public bool IsLoading { get; private set; }
     public ObservableCollection<IAppChatMessage> Messages { get; } = new();
-    public ChatService(HttpClient client)
-    {
-        _client = client;
-
-    }
 
     public void InitializeChat(SystemPrompt? initialPrompt)
     {
@@ -48,12 +40,10 @@ public class ChatService : IChatService
         _cancellationTokenSource?.Cancel();
         UpdateLoadingState(false);
     }
-    public async Task AddAndAnswerrUserMessageAsync(string text, List<string> selectedFunctions, string? modelName)
+
+    public async Task AddUserMessageAndAnswerAsync(string text, IReadOnlyCollection<string> selectedFunctions, string modelName)
     {
-        if (string.IsNullOrWhiteSpace(text) || IsLoading)
-        {
-            return;
-        }
+        if (string.IsNullOrWhiteSpace(text) || IsLoading) return;
 
         await AddMessageAsync(new AppChatMessage(text, DateTime.Now, ChatRole.User, string.Empty));
         UpdateLoadingState(true);
@@ -82,7 +72,8 @@ public class ChatService : IChatService
         Messages.Add(message);
         await (MessageAdded?.Invoke(message) ?? Task.CompletedTask);
     }
-    private async Task ProcessStreamingResponseAsync(List<string> functionNames, string? modelName, CancellationToken cancellationToken)
+
+    private async Task ProcessStreamingResponseAsync(IReadOnlyCollection<string> functionNames, string modelName, CancellationToken cancellationToken)
     {
         var readCallsCount = 0;
         var messageEventsCount = 0;
@@ -99,7 +90,7 @@ public class ChatService : IChatService
         var tempMsg = new StreamingAppChatMessage(string.Empty, DateTime.Now, ChatRole.Assistant);
         await AddMessageAsync(tempMsg);
 
-        using var response = await _client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
+        using var response = await client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
         if (!response.IsSuccessStatusCode)
         {
             await HandleError($"Error: {response.ReasonPhrase}");
@@ -202,7 +193,7 @@ public class ChatService : IChatService
         messageDebouncer.Enqueue(finalMessage);
     }
 
-    private HttpRequestMessage CreateHttpRequest(List<string> functionNames, string? modelName)
+    private HttpRequestMessage CreateHttpRequest(IReadOnlyCollection<string> functionNames, string modelName)
     {
         var messages = Messages
             .Select(message => new AppChatMessage(message.Content, message.MsgDateTime, message.Role))
@@ -213,7 +204,7 @@ public class ChatService : IChatService
             Content = JsonContent.Create(new AppChatRequest
             {
                 Messages = messages,
-                FunctionNames = functionNames,
+                FunctionNames = functionNames.ToList(),
                 ModelName = modelName
             })
         };

@@ -14,5 +14,5 @@ public interface IChatService
     void InitializeChat(SystemPrompt? initialPrompt);
     void ClearChat();
     void Cancel();
-    Task AddAndAnswerrUserMessageAsync(string text, List<string> selectedFunctions, string? modelName);
+    Task AddUserMessageAndAnswerAsync(string text, IReadOnlyCollection<string> selectedFunctions, string modelName);
 }
