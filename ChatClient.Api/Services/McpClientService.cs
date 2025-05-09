@@ -1,3 +1,4 @@
+using Azure.Core.Pipeline;
 using ChatClient.Api.Models;
 using ModelContextProtocol.Client;
 using ModelContextProtocol.Protocol.Transport;
@@ -8,35 +9,52 @@ public class McpClientService(
     IConfiguration configuration,
     ILogger<McpClientService> logger) : IAsyncDisposable
 {
-    private IMcpClient? _mcpClient;
+    private List<IMcpClient>? _mcpClients = null;
 
-    public async Task<IMcpClient?> CreateMcpClientAsync()
+    public async Task<IReadOnlyCollection<IMcpClient>> GetMcpClientsAsync()
     {
-        if (_mcpClient != null)
-        {
-            return _mcpClient;
-        }
+        if (_mcpClients != null) return _mcpClients;
+        _mcpClients = new List<IMcpClient>();
 
         var mcpServerConfigs = configuration.GetSection("McpServers").Get<List<McpServerConfig>>() ?? [];
 
         if (mcpServerConfigs.Count == 0)
         {
             logger.LogWarning("No MCP server configurations found");
-            return null;
+            return _mcpClients;
         }
 
-        // For now, just connect to the first MCP server
-        var config = mcpServerConfigs[0];
-        logger.LogInformation("Creating MCP client for server: {ServerName}", config.Name);
+        foreach (var serverConfig in mcpServerConfigs)
+        {
+            if (string.IsNullOrWhiteSpace(serverConfig.Name))
+            {
+                logger.LogWarning("MCP server name is null or empty");
+                continue;
+            }
 
-        if (!string.IsNullOrWhiteSpace(config.Command)) await CreateLocalMcpClientAsync(config);
-        if (!string.IsNullOrWhiteSpace(config.Url)) await CreateNetworkMcpClientAsync(config);
+            logger.LogInformation("Creating MCP client for server: {ServerName}", serverConfig.Name);
 
-        logger.LogInformation("MCP client created successfully for server: {ServerName}", config.Name);
-        return _mcpClient;
+            if (!string.IsNullOrWhiteSpace(serverConfig.Command)) _mcpClients.Add(await CreateLocalMcpClientAsync(serverConfig));
+            if (!string.IsNullOrWhiteSpace(serverConfig.Url)) await AddNetworkClient(serverConfig);
+
+            logger.LogInformation("MCP client created successfully for server: {ServerName}", serverConfig.Name);
+        }
+        return _mcpClients;
     }
 
-    private async Task<IMcpClient> CreateLocalMcpClientAsync(McpServerConfig config)
+    private async Task AddNetworkClient(McpServerConfig serverConfig)
+    {
+        try
+        {
+            _mcpClients.Add(await CreateNetworkMcpClientAsync(serverConfig));
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Failed to add network client for server: {ServerName}", serverConfig.Name);
+        }
+    }
+
+    private static async Task<IMcpClient> CreateLocalMcpClientAsync(McpServerConfig config)
     {
         if (string.IsNullOrEmpty(config.Command))
         {
@@ -57,17 +75,12 @@ public class McpClientService(
     private async Task<IMcpClient> CreateNetworkMcpClientAsync(McpServerConfig config)
     {
         if (string.IsNullOrEmpty(config.Url))
-        {
             throw new InvalidOperationException("Host cannot be null or empty for network connection");
-        }
 
-        var httpTransport = new SseClientTransport(
-           new SseClientTransportOptions
-           {
-               Endpoint = new Uri(config.Url)
-           }
-       );
+        var httpClient = new HttpClient { BaseAddress = new Uri(config.Url) };
 
+        var httpTransport = new HttpClientTransport(httpClient);
+       
         return await McpClientFactory.CreateAsync(httpTransport);
     }
 
@@ -88,13 +101,24 @@ public class McpClientService(
 
     public async ValueTask DisposeAsync()
     {
-        if (_mcpClient == null)
+        if (_mcpClients == null)
         {
             return;
         }
 
-        await _mcpClient.DisposeAsync();
-        _mcpClient = null;
+        foreach (var mcpClient in _mcpClients)
+        {
+            try
+            {
+                await mcpClient.DisposeAsync();
+            }
+            catch (Exception ex)
+            {
+                logger.LogError(ex, "Failed to dispose MCP client");
+            }
+        }
+
+        _mcpClients = null;
         GC.SuppressFinalize(this);
     }
 }

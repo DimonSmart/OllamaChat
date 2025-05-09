@@ -43,30 +43,32 @@ public class KernelService(
     {
         try
         {
-            var mcpClient = await mcpClientService.CreateMcpClientAsync();
-            if (mcpClient == null)
+            var mcpClients = await mcpClientService.GetMcpClientsAsync();
+            if (mcpClients.Count == 0)
             {
                 logger.LogWarning("MCP client could not be created");
                 return;
             }
 
-            var mcpTools = await mcpClientService.GetMcpTools(mcpClient);
-            if (mcpTools.Count == 0)
+            foreach (var mcpClient in mcpClients)
             {
-                logger.LogWarning("No MCP tools available to register");
-                return;
-            }
+                var mcpTools = await mcpClientService.GetMcpTools(mcpClient);
+                if (mcpTools.Count == 0)
+                {
+                    logger.LogWarning("No MCP tools available to register");
+                    continue;
+                }
 
-            var toolsToRegister = mcpTools.Where(t => functionNames.Contains(t.Name)).ToList();
-            if (toolsToRegister.Count == 0)
-            {
-                logger.LogWarning("No MCP tools matched the requested function names");
-                return;
+                var toolsToRegister = mcpTools.Where(t => functionNames.Contains(t.Name)).ToList();
+                if (toolsToRegister.Count == 0)
+                {
+                    logger.LogWarning("No MCP tools matched the requested function names");
+                    continue;
+                }
+                var pluginFunctions = toolsToRegister.Select(tool => tool.AsKernelFunction()).ToList();
+                kernel.Plugins.AddFromFunctions("McpTools", pluginFunctions);
+                logger.LogInformation("Registered {Count} MCP tools based on selection", pluginFunctions.Count);
             }
-
-            var pluginFunctions = toolsToRegister.Select(tool => tool.AsKernelFunction()).ToList();
-            kernel.Plugins.AddFromFunctions("McpTools", pluginFunctions);
-            logger.LogInformation("Registered {Count} MCP tools based on selection", pluginFunctions.Count);
         }
         catch (Exception ex)
         {
@@ -79,23 +81,27 @@ public class KernelService(
     /// </summary>
     public async Task<IEnumerable<FunctionInfo>> GetAvailableFunctionsAsync()
     {
+        var functions = new List<FunctionInfo>();
+
         try
         {
-            var mcpClient = await mcpClientService.CreateMcpClientAsync();
-            if (mcpClient == null)
-            {
+            var mcpClients = await mcpClientService.GetMcpClientsAsync();
+            if (mcpClients.Count == 0)
                 return Enumerable.Empty<FunctionInfo>();
+
+            foreach (var mcpClient in mcpClients)
+            {
+                var mcpTools = await mcpClientService.GetMcpTools(mcpClient);
+                var toolFuncs = mcpTools.Select(tool => new FunctionInfo { Name = tool.Name, Description = tool.Description });
+                functions.AddRange(toolFuncs);
             }
 
-            var mcpTools = await mcpClientService.GetMcpTools(mcpClient);
-
-            return mcpTools
-                .Select(tool => new FunctionInfo { Name = tool.Name, Description = tool.Description });
+            return functions;
         }
         catch (Exception ex)
         {
             logger.LogError(ex, "Failed to get available functions: {Message}", ex.Message);
-            return Enumerable.Empty<FunctionInfo>();
+            return functions;
         }
     }
 }
