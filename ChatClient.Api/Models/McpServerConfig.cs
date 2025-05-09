@@ -11,6 +11,6 @@ public class McpServerConfig
     public string[]? Arguments { get; set; }
 
     // Network configuration
-    [JsonPropertyName("url")]
-    public string? Url { get; set; }
+    [JsonPropertyName("sse")]
+    public string? Sse { get; set; }
 }

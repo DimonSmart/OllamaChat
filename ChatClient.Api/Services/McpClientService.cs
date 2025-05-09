@@ -1,4 +1,3 @@
-using Azure.Core.Pipeline;
 using ChatClient.Api.Models;
 using ModelContextProtocol.Client;
 using ModelContextProtocol.Protocol.Transport;
@@ -35,18 +34,20 @@ public class McpClientService(
             logger.LogInformation("Creating MCP client for server: {ServerName}", serverConfig.Name);
 
             if (!string.IsNullOrWhiteSpace(serverConfig.Command)) _mcpClients.Add(await CreateLocalMcpClientAsync(serverConfig));
-            if (!string.IsNullOrWhiteSpace(serverConfig.Url)) await AddNetworkClient(serverConfig);
+            if (!string.IsNullOrWhiteSpace(serverConfig.Sse)) await AddSseClient(serverConfig);
 
             logger.LogInformation("MCP client created successfully for server: {ServerName}", serverConfig.Name);
         }
         return _mcpClients;
     }
 
-    private async Task AddNetworkClient(McpServerConfig serverConfig)
+    private async Task AddSseClient(McpServerConfig serverConfig)
     {
         try
         {
-            _mcpClients.Add(await CreateNetworkMcpClientAsync(serverConfig));
+            var httpTransport = new SseClientTransport(new SseClientTransportOptions { Endpoint = new Uri(config.Url) });
+            var client = await McpClientFactory.CreateAsync(httpTransport);
+            _mcpClients.Add(client);
         }
         catch (Exception ex)
         {
@@ -70,18 +71,6 @@ public class McpClientService(
             }),
             clientOptions: null
         );
-    }
-
-    private async Task<IMcpClient> CreateNetworkMcpClientAsync(McpServerConfig config)
-    {
-        if (string.IsNullOrEmpty(config.Url))
-            throw new InvalidOperationException("Host cannot be null or empty for network connection");
-
-        var httpClient = new HttpClient { BaseAddress = new Uri(config.Url) };
-
-        var httpTransport = new HttpClientTransport(httpClient);
-       
-        return await McpClientFactory.CreateAsync(httpTransport);
     }
 
     public async Task<IReadOnlyList<McpClientTool>> GetMcpTools(IMcpClient mcpClient)
