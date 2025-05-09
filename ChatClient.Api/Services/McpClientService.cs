@@ -45,7 +45,7 @@ public class McpClientService(
     {
         try
         {
-            var httpTransport = new SseClientTransport(new SseClientTransportOptions { Endpoint = new Uri(config.Url) });
+            var httpTransport = new SseClientTransport(new SseClientTransportOptions { Endpoint = new Uri(serverConfig.Sse!) });
             var client = await McpClientFactory.CreateAsync(httpTransport);
             _mcpClients.Add(client);
         }
