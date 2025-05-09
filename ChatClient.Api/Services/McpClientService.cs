@@ -1,7 +1,6 @@
 using ChatClient.Api.Models;
 using ModelContextProtocol.Client;
 using ModelContextProtocol.Protocol.Transport;
-using static ChatClient.Api.Models.McpServerConfig.McpServerConnectionType;
 
 namespace ChatClient.Api.Services;
 
@@ -28,14 +27,10 @@ public class McpClientService(
 
         // For now, just connect to the first MCP server
         var config = mcpServerConfigs[0];
-        logger.LogInformation("Creating MCP client for server: {ServerName} using {ConnectionType} connection", config.Name, config.ConnectionType);
+        logger.LogInformation("Creating MCP client for server: {ServerName}", config.Name);
 
-        _mcpClient = config.ConnectionType switch
-        {
-            Network => await CreateNetworkMcpClientAsync(config),
-            Local => await CreateLocalMcpClientAsync(config),
-            _ => throw new InvalidOperationException($"Unsupported connection type: {config.ConnectionType}")
-        };
+        if (!string.IsNullOrWhiteSpace(config.Command)) await CreateLocalMcpClientAsync(config);
+        if (!string.IsNullOrWhiteSpace(config.Url)) await CreateNetworkMcpClientAsync(config);
 
         logger.LogInformation("MCP client created successfully for server: {ServerName}", config.Name);
         return _mcpClient;
@@ -61,7 +56,7 @@ public class McpClientService(
 
     private async Task<IMcpClient> CreateNetworkMcpClientAsync(McpServerConfig config)
     {
-        if (string.IsNullOrEmpty(config.Host))
+        if (string.IsNullOrEmpty(config.Url))
         {
             throw new InvalidOperationException("Host cannot be null or empty for network connection");
         }
@@ -69,7 +64,7 @@ public class McpClientService(
         var httpTransport = new SseClientTransport(
            new SseClientTransportOptions
            {
-               Endpoint = new Uri(config.Host)
+               Endpoint = new Uri(config.Url)
            }
        );
 

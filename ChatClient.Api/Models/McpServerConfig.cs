@@ -1,3 +1,5 @@
+using System.Text.Json.Serialization;
+
 namespace ChatClient.Api.Models;
 
 public class McpServerConfig
@@ -9,14 +11,6 @@ public class McpServerConfig
     public string[]? Arguments { get; set; }
 
     // Network configuration
-    public string? Host { get; set; }
-
-    // Connection type
-    public McpServerConnectionType ConnectionType { get; set; } = McpServerConnectionType.Local;
-
-    public enum McpServerConnectionType
-    {
-        Local,
-        Network
-    }
+    [JsonPropertyName("url")]
+    public string? Url { get; set; }
 }
