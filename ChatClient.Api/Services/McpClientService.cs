@@ -13,7 +13,7 @@ public class McpClientService(
     public async Task<IReadOnlyCollection<IMcpClient>> GetMcpClientsAsync()
     {
         if (_mcpClients != null) return _mcpClients;
-        _mcpClients = new List<IMcpClient>();
+        _mcpClients = [];
 
         var mcpServerConfigs = configuration.GetSection("McpServers").Get<List<McpServerConfig>>() ?? [];
 

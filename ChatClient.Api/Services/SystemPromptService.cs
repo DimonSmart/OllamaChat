@@ -66,7 +66,7 @@ public class SystemPromptService : ISystemPromptService
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error getting system prompts");
-            return new List<SystemPrompt>();
+            return [];
         }
         finally
         {
@@ -173,11 +173,11 @@ public class SystemPromptService : ISystemPromptService
     {
         if (!File.Exists(_filePath))
         {
-            return new List<SystemPrompt>();
+            return [];
         }
 
         var json = await File.ReadAllTextAsync(_filePath);
-        return JsonSerializer.Deserialize<List<SystemPrompt>>(json) ?? new List<SystemPrompt>();
+        return JsonSerializer.Deserialize<List<SystemPrompt>>(json) ?? [];
     }
 
     private async Task WriteToFileAsync(List<SystemPrompt> prompts)

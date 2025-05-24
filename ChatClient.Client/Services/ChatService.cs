@@ -17,7 +17,7 @@ public class ChatService(HttpClient client) : IChatService
     public event Func<IAppChatMessage, Task>? MessageUpdated;
     public event Action? ErrorOccurred;
     public bool IsLoading { get; private set; }
-    public ObservableCollection<IAppChatMessage> Messages { get; } = new();
+    public ObservableCollection<IAppChatMessage> Messages { get; } = [];
 
     public void InitializeChat(SystemPrompt? initialPrompt)
     {

@@ -27,16 +27,16 @@ public class ClientSystemPromptService : ISystemPromptService
             if (response.IsSuccessStatusCode)
             {
                 return await response.Content.ReadFromJsonAsync<List<SystemPrompt>>(_jsonOptions) ??
-                       new List<SystemPrompt>();
+                       [];
             }
 
             Console.WriteLine($"Error loading system prompts: {response.StatusCode}");
-            return new List<SystemPrompt>();
+            return [];
         }
         catch (Exception ex)
         {
             Console.WriteLine($"Exception loading system prompts: {ex}");
-            return new List<SystemPrompt>();
+            return [];
         }
     }
 

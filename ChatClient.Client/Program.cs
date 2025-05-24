@@ -32,6 +32,7 @@ builder.Services.AddScoped<ClientSystemPromptService>();
 builder.Services.AddScoped<ISystemPromptService, ClientSystemPromptService>();
 builder.Services.AddScoped<IUserSettingsService, ClientUserSettingsService>();
 builder.Services.AddScoped<IModelsService, ModelsService>();
+builder.Services.AddScoped<IMcpServerConfigService, ClientMcpServerConfigService>();
 builder.Services.AddMudServices(config =>
 {
     config.SnackbarConfiguration.PositionClass = Defaults.Classes.Position.TopRight;

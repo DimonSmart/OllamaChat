@@ -5,7 +5,7 @@ namespace ChatClient.Client.Services;
 public class ChatViewModelService : IChatViewModelService
 {
     private readonly IChatService _chatService;
-    private readonly List<ViewModels.ChatMessageViewModel> _messages = new();
+    private readonly List<ViewModels.ChatMessageViewModel> _messages = [];
 
     public IReadOnlyList<ViewModels.ChatMessageViewModel> Messages => _messages;
 

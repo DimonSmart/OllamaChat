@@ -22,7 +22,7 @@ public class OllamaService(
             var content = await response.Content.ReadAsStringAsync();
             var ollamaResponse = JsonSerializer.Deserialize<OllamaModelsResponse>(content);
 
-            return ollamaResponse?.Models ?? new List<OllamaModel>();
+            return ollamaResponse?.Models ?? [];
         }
         catch (Exception ex)
         {
