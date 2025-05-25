@@ -1,6 +1,8 @@
+// This is the entry point for the Blazor WebAssembly client application
+// It runs in the browser after the files are delivered by the host API project
+// The code here configures the client-side services and bootstraps the Blazor WebAssembly runtime
 using ChatClient.Client;
 using ChatClient.Client.Services;
-using ChatClient.Shared.Models;
 using ChatClient.Shared.Services;
 using Microsoft.AspNetCore.Components.Web;
 using Microsoft.AspNetCore.Components.WebAssembly.Hosting;
