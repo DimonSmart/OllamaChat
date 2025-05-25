@@ -1,0 +1,20 @@
+{
+  "$schema": "https://aka.ms/winget-manifest.defaultLocale.1.5.0.schema.json",
+  "PackageIdentifier": "YourCompanyName.OllamaChat",
+  "PackageVersion": "1.0.0",
+  "PackageLocale": "en-US",
+  "Publisher": "Your Company Name",
+  "PackageName": "OllamaChat",
+  "License": "MIT",
+  "ShortDescription": "A chat client for Ollama AI models with MCP server integration",
+  "Description": "OllamaChat is a client for interacting with Ollama AI models. It features both a backend that can run local processes for MCP server integration and a web frontend interface.",
+  "Tags": [
+    "ai",
+    "ollama",
+    "chat",
+    "llm",
+    "mcp"
+  ],
+  "ManifestType": "defaultLocale",
+  "ManifestVersion": "1.5.0"
+}

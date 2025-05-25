@@ -15,15 +15,11 @@ builder.RootComponents.Add<HeadOutlet>("head::after");
 
 builder.Logging.SetMinimumLevel(LogLevel.Warning);
 
-// When deployed together with the API, we need to use a relative URL for API calls
-// Base address will be wherever the app is hosted
-var baseAddress = new Uri(builder.HostEnvironment.BaseAddress);
-Console.WriteLine($"Base Address: {baseAddress}");
-
-builder.Services.AddScoped(sp =>
+// Configure HttpClient with base address
+// Since UI and API are now on the same host, we use the base path
+builder.Services.AddScoped(sp => 
 {
-    // Create HttpClient pointing to the same origin
-    var client = new HttpClient { BaseAddress = baseAddress };
+    var client = new HttpClient { BaseAddress = new Uri(builder.HostEnvironment.BaseAddress) };
     client.DefaultRequestHeaders.Add("X-Client-App", "OllamaChat-Blazor");
     client.Timeout = TimeSpan.FromMinutes(10);
     client.DefaultRequestHeaders.Add("Accept", "text/event-stream");
@@ -45,4 +41,5 @@ builder.Services.AddMudServices(config =>
     config.SnackbarConfiguration.VisibleStateDuration = 5000;
 });
 
-await builder.Build().RunAsync();
+var host = builder.Build();
+await host.RunAsync();
