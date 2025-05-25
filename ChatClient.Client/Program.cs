@@ -13,12 +13,15 @@ builder.RootComponents.Add<HeadOutlet>("head::after");
 
 builder.Logging.SetMinimumLevel(LogLevel.Warning);
 
-var apiUrl = new Uri("http://localhost:5149");
-Console.WriteLine($"API URL: {apiUrl}");
+// When deployed together with the API, we need to use a relative URL for API calls
+// Base address will be wherever the app is hosted
+var baseAddress = new Uri(builder.HostEnvironment.BaseAddress);
+Console.WriteLine($"Base Address: {baseAddress}");
 
 builder.Services.AddScoped(sp =>
 {
-    var client = new HttpClient { BaseAddress = apiUrl };
+    // Create HttpClient pointing to the same origin
+    var client = new HttpClient { BaseAddress = baseAddress };
     client.DefaultRequestHeaders.Add("X-Client-App", "OllamaChat-Blazor");
     client.Timeout = TimeSpan.FromMinutes(10);
     client.DefaultRequestHeaders.Add("Accept", "text/event-stream");
