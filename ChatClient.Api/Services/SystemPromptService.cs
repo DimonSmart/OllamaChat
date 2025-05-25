@@ -15,14 +15,14 @@ public class SystemPromptService : ISystemPromptService
         var promptsFilePath = configuration["SystemPrompts:FilePath"] ?? "system_prompts.json";
         _filePath = Path.GetFullPath(promptsFilePath);
         _logger = logger;
-        
+
         // Ensure the directory exists
         var directory = Path.GetDirectoryName(_filePath);
         if (!string.IsNullOrEmpty(directory) && !Directory.Exists(directory))
         {
             Directory.CreateDirectory(directory);
         }
-        
+
         // Create default file if it doesn't exist
         if (!File.Exists(_filePath))
         {
@@ -54,7 +54,7 @@ public class SystemPromptService : ISystemPromptService
         try
         {
             await _semaphore.WaitAsync();
-            
+
             if (!File.Exists(_filePath))
             {
                 await CreateDefaultPromptsFile();
@@ -66,7 +66,7 @@ public class SystemPromptService : ISystemPromptService
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error getting system prompts");
-            return new List<SystemPrompt>();
+            return [];
         }
         finally
         {
@@ -74,7 +74,7 @@ public class SystemPromptService : ISystemPromptService
         }
     }
 
-    public async Task<SystemPrompt?> GetPromptByIdAsync(string id)
+    public async Task<SystemPrompt?> GetPromptByIdAsync(Guid id)
     {
         var prompts = await GetAllPromptsAsync();
         return prompts.FirstOrDefault(p => p.Id == id);
@@ -85,21 +85,17 @@ public class SystemPromptService : ISystemPromptService
         try
         {
             await _semaphore.WaitAsync();
-            
+
             var prompts = await ReadFromFileAsync();
-            
-            // Generate a new ID if not provided
-            if (string.IsNullOrEmpty(prompt.Id))
-            {
-                prompt.Id = Guid.NewGuid().ToString();
-            }
+
+            if (prompt.Id == null) prompt.Id = Guid.NewGuid();
 
             prompt.CreatedAt = DateTime.UtcNow;
             prompt.UpdatedAt = DateTime.UtcNow;
-            
+
             prompts.Add(prompt);
             await WriteToFileAsync(prompts);
-            
+
             return prompt;
         }
         catch (Exception ex)
@@ -118,10 +114,10 @@ public class SystemPromptService : ISystemPromptService
         try
         {
             await _semaphore.WaitAsync();
-            
+
             var prompts = await ReadFromFileAsync();
             var existingIndex = prompts.FindIndex(p => p.Id == prompt.Id);
-            
+
             if (existingIndex == -1)
             {
                 throw new KeyNotFoundException($"System prompt with ID {prompt.Id} not found");
@@ -129,9 +125,9 @@ public class SystemPromptService : ISystemPromptService
 
             prompt.UpdatedAt = DateTime.UtcNow;
             prompts[existingIndex] = prompt;
-            
+
             await WriteToFileAsync(prompts);
-            
+
             return prompt;
         }
         catch (Exception ex)
@@ -145,15 +141,15 @@ public class SystemPromptService : ISystemPromptService
         }
     }
 
-    public async Task DeletePromptAsync(string id)
+    public async Task DeletePromptAsync(Guid id)
     {
         try
         {
             await _semaphore.WaitAsync();
-            
+
             var prompts = await ReadFromFileAsync();
             var existingPrompt = prompts.FirstOrDefault(p => p.Id == id);
-            
+
             if (existingPrompt == null)
             {
                 throw new KeyNotFoundException($"System prompt with ID {id} not found");
@@ -177,11 +173,11 @@ public class SystemPromptService : ISystemPromptService
     {
         if (!File.Exists(_filePath))
         {
-            return new List<SystemPrompt>();
+            return [];
         }
 
         var json = await File.ReadAllTextAsync(_filePath);
-        return JsonSerializer.Deserialize<List<SystemPrompt>>(json) ?? new List<SystemPrompt>();
+        return JsonSerializer.Deserialize<List<SystemPrompt>>(json) ?? [];
     }
 
     private async Task WriteToFileAsync(List<SystemPrompt> prompts)

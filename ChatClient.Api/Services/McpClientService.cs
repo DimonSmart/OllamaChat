@@ -1,49 +1,68 @@
 using ChatClient.Api.Models;
-using Microsoft.SemanticKernel;
 using ModelContextProtocol.Client;
 using ModelContextProtocol.Protocol.Transport;
 
 namespace ChatClient.Api.Services;
 
-public class McpClientService : IAsyncDisposable
+public class McpClientService(
+    IConfiguration configuration,
+    ILogger<McpClientService> logger) : IAsyncDisposable
 {
-    private readonly IConfiguration _configuration;
-    private readonly ILogger<McpClientService> _logger;
-    private IMcpClient? _mcpClient;
+    private List<IMcpClient>? _mcpClients = null;
 
-    public McpClientService(
-        IConfiguration configuration,
-        ILogger<McpClientService> logger)
+    public async Task<IReadOnlyCollection<IMcpClient>> GetMcpClientsAsync()
     {
-        _configuration = configuration;
-        _logger = logger;
-    }
+        if (_mcpClients != null) return _mcpClients;
+        _mcpClients = [];
 
-    public async Task<IMcpClient> CreateMcpClientAsync(Kernel kernel)
-    {
-        if (_mcpClient != null)
-        {
-            return _mcpClient;
-        }
-
-        var mcpServerConfigs = _configuration.GetSection("McpServers").Get<List<McpServerConfig>>() ?? [];
+        var mcpServerConfigs = configuration.GetSection("McpServers").Get<List<McpServerConfig>>() ?? [];
 
         if (mcpServerConfigs.Count == 0)
         {
-            _logger.LogWarning("No MCP server configurations found");
-            throw new InvalidOperationException("No MCP server configurations found");
+            logger.LogWarning("No MCP server configurations found");
+            return _mcpClients;
         }
 
-        // For now, just connect to the first MCP server
-        var config = mcpServerConfigs[0];
-        _logger.LogInformation("Creating MCP client for server: {ServerName}", config.Name);
+        foreach (var serverConfig in mcpServerConfigs)
+        {
+            if (string.IsNullOrWhiteSpace(serverConfig.Name))
+            {
+                logger.LogWarning("MCP server name is null or empty");
+                continue;
+            }
 
+            logger.LogInformation("Creating MCP client for server: {ServerName}", serverConfig.Name);
+
+            if (!string.IsNullOrWhiteSpace(serverConfig.Command)) _mcpClients.Add(await CreateLocalMcpClientAsync(serverConfig));
+            if (!string.IsNullOrWhiteSpace(serverConfig.Sse)) await AddSseClient(serverConfig);
+
+            logger.LogInformation("MCP client created successfully for server: {ServerName}", serverConfig.Name);
+        }
+        return _mcpClients;
+    }
+
+    private async Task AddSseClient(McpServerConfig serverConfig)
+    {
+        try
+        {
+            var httpTransport = new SseClientTransport(new SseClientTransportOptions { Endpoint = new Uri(serverConfig.Sse!) });
+            var client = await McpClientFactory.CreateAsync(httpTransport);
+            _mcpClients.Add(client);
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Failed to add network client for server: {ServerName}", serverConfig.Name);
+        }
+    }
+
+    private static async Task<IMcpClient> CreateLocalMcpClientAsync(McpServerConfig config)
+    {
         if (string.IsNullOrEmpty(config.Command))
         {
-            throw new InvalidOperationException("MCP server command cannot be null or empty");
+            throw new InvalidOperationException("MCP server command cannot be null or empty for local connection");
         }
 
-        _mcpClient = await McpClientFactory.CreateAsync(
+        return await McpClientFactory.CreateAsync(
             clientTransport: new StdioClientTransport(new StdioClientTransportOptions
             {
                 Name = config.Name,
@@ -52,9 +71,6 @@ public class McpClientService : IAsyncDisposable
             }),
             clientOptions: null
         );
-
-        _logger.LogInformation("MCP client created successfully for server: {ServerName}", config.Name);
-        return _mcpClient;
     }
 
     public async Task<IReadOnlyList<McpClientTool>> GetMcpTools(IMcpClient mcpClient)
@@ -62,25 +78,36 @@ public class McpClientService : IAsyncDisposable
         try
         {
             var tools = await mcpClient.ListToolsAsync();
-            _logger.LogInformation("Retrieved {Count} tools from MCP server", tools.Count);
+            logger.LogInformation("Retrieved {Count} tools from MCP server", tools.Count);
             return tools.ToList();
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Failed to retrieve MCP tools");
+            logger.LogError(ex, "Failed to retrieve MCP tools");
             throw;
         }
     }
 
     public async ValueTask DisposeAsync()
     {
-        if (_mcpClient == null)
+        if (_mcpClients == null)
         {
             return;
         }
 
-        await _mcpClient.DisposeAsync();
-        _mcpClient = null;
+        foreach (var mcpClient in _mcpClients)
+        {
+            try
+            {
+                await mcpClient.DisposeAsync();
+            }
+            catch (Exception ex)
+            {
+                logger.LogError(ex, "Failed to dispose MCP client");
+            }
+        }
+
+        _mcpClients = null;
         GC.SuppressFinalize(this);
     }
 }

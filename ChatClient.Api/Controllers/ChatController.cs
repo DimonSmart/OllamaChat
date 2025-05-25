@@ -1,3 +1,4 @@
+using ChatClient.Api.Services;
 using ChatClient.Shared.Models;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.AI;
@@ -8,55 +9,16 @@ namespace ChatClient.Api.Controllers;
 
 [ApiController]
 [Route("api/[controller]")]
-public class ChatController(
-    IChatCompletionService chatService,
-    ILogger<ChatController> logger,
-    Services.KernelService kernelService) : ControllerBase
+public class ChatController(ILogger<ChatController> logger, KernelService kernelService) : ControllerBase
 {
     private const string ContentTypeEventStream = "text/event-stream";
     private static readonly IDictionary<ChatRole, Action<ChatHistory, string>> RoleHandlers =
         new Dictionary<ChatRole, Action<ChatHistory, string>>
         {
-            { ChatRole.System,    (history, content) => history.AddSystemMessage(content) },
-            { ChatRole.User,      (history, content) => history.AddUserMessage(content) },
-            { ChatRole.Assistant, (history, content) => history.AddAssistantMessage(content) }
+                        { ChatRole.System,    (history, content) => history.AddSystemMessage(content) },
+                        { ChatRole.User,      (history, content) => history.AddUserMessage(content) },
+                        { ChatRole.Assistant, (history, content) => history.AddAssistantMessage(content) }
         };
-
-    [HttpPost("message")]
-    public async Task<IActionResult> SendMessage([FromBody] AppChatRequest request, CancellationToken cancellationToken)
-    {
-        try
-        {
-            var chatHistory = await BuildChatHistory(request);
-
-            var kernel = kernelService.CreateKernel(request.FunctionNames);
-
-            var executionSettings = new PromptExecutionSettings
-            {
-                FunctionChoiceBehavior = (request.FunctionNames != null && request.FunctionNames.Any())
-                    ? FunctionChoiceBehavior.Auto()
-                    : FunctionChoiceBehavior.None()
-            };
-
-            var response = await chatService.GetChatMessageContentAsync(
-                chatHistory,
-                executionSettings,
-                kernel,
-                cancellationToken: cancellationToken);
-
-            logger.LogInformation("Chat message processed successfully");
-
-            return Ok(new AppChatResponse
-            {
-                Message = new Message(response.Content ?? string.Empty, DateTime.UtcNow, ChatRole.Assistant)
-            });
-        }
-        catch (Exception ex)
-        {
-            logger.LogError(ex, "Error processing chat message");
-            return StatusCode(500, new { error = "An error occurred processing your request" });
-        }
-    }
 
     [HttpPost("stream")]
     public async Task StreamMessage([FromBody] AppChatRequest request, CancellationToken cancellationToken)
@@ -65,8 +27,9 @@ public class ChatController(
         {
             SetStreamHeaders(Response);
             var chatHistory = await BuildChatHistory(request);
+            var kernel = await kernelService.CreateKernelAsync(request.ModelName, request.FunctionNames);
+            var chatService = kernel.GetRequiredService<IChatCompletionService>();
 
-            var kernel = kernelService.CreateKernel(request.FunctionNames);
             var executionSettings = new PromptExecutionSettings
             {
                 FunctionChoiceBehavior = (request.FunctionNames != null && request.FunctionNames.Any())
@@ -86,7 +49,7 @@ public class ChatController(
         catch (Exception ex)
         {
             logger.LogError(ex, "Error streaming chat message: {Message}", ex.Message);
-            await WriteEventStreamAsync(new { error = "An error occurred processing your request" }, cancellationToken);
+            await WriteEventStreamAsync(new { error = $"Error: {ex.Message}" }, cancellationToken);
         }
     }
 
@@ -110,6 +73,8 @@ public class ChatController(
         response.Headers.ContentType = ContentTypeEventStream;
         response.Headers.CacheControl = "no-cache";
         response.Headers.Connection = "keep-alive";
+        response.Headers.KeepAlive = "timeout=600";
+        response.Headers.Append("X-Accel-Buffering", "no");
     }
 
     private async Task WriteEventStreamAsync(object data, CancellationToken cancellationToken)

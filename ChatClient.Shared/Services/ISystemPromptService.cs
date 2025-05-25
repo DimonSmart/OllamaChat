@@ -5,8 +5,8 @@ namespace ChatClient.Shared.Services;
 public interface ISystemPromptService
 {
     Task<List<SystemPrompt>> GetAllPromptsAsync();
-    Task<SystemPrompt?> GetPromptByIdAsync(string id);
+    Task<SystemPrompt?> GetPromptByIdAsync(Guid id);
     Task<SystemPrompt> CreatePromptAsync(SystemPrompt prompt);
     Task<SystemPrompt> UpdatePromptAsync(SystemPrompt prompt);
-    Task DeletePromptAsync(string id);
+    Task DeletePromptAsync(Guid id);
 }
