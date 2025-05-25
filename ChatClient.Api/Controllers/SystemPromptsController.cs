@@ -33,7 +33,7 @@ public class SystemPromptsController : ControllerBase
     }
 
     [HttpGet("{id}")]
-    public async Task<ActionResult<SystemPrompt>> GetPromptById(string id)
+    public async Task<ActionResult<SystemPrompt>> GetPromptById(Guid id)
     {
         try
         {
@@ -78,7 +78,7 @@ public class SystemPromptsController : ControllerBase
     }
 
     [HttpPut("{id}")]
-    public async Task<ActionResult<SystemPrompt>> UpdatePrompt(string id, [FromBody] SystemPrompt prompt)
+    public async Task<ActionResult<SystemPrompt>> UpdatePrompt(Guid id, [FromBody] SystemPrompt prompt)
     {
         try
         {
@@ -114,7 +114,7 @@ public class SystemPromptsController : ControllerBase
     }
 
     [HttpDelete("{id}")]
-    public async Task<ActionResult> DeletePrompt(string id)
+    public async Task<ActionResult> DeletePrompt(Guid id)
     {
         try
         {

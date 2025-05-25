@@ -103,6 +103,13 @@
     animation: blink 1s infinite;
 }
 
+.typing-indicator {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    vertical-align: middle;
+}
+
 @keyframes blink {
     0%, 100% {
         opacity: 1;

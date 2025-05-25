@@ -1,12 +1,21 @@
 using ChatClient.Api;
-using ChatClient.Api.Services;
 using Microsoft.SemanticKernel;
 using Microsoft.SemanticKernel.ChatCompletion;
 
 var builder = WebApplication.CreateBuilder(args);
 
-// Add services to the container
-builder.Services.AddHttpClient();
+
+// Configure default HttpClient factory with named clients
+builder.Services.AddHttpClient("DefaultClient", client =>
+{
+    client.Timeout = TimeSpan.FromMinutes(10);
+});
+
+builder.Services.AddHttpClient("OllamaClient", client =>
+{
+    client.Timeout = TimeSpan.FromMinutes(2);
+});
+
 var loggerFactory = LoggerFactory.Create(logging =>
 {
     logging.AddConsole();
@@ -33,35 +42,24 @@ builder.Services.AddControllers(options =>
 // Register services
 builder.Services.AddSingleton<ChatClient.Api.Services.McpClientService>();
 builder.Services.AddSingleton<ChatClient.Api.Services.KernelService>();
+builder.Services.AddSingleton<ChatClient.Api.Services.OllamaService>();
 builder.Services.AddSingleton<ChatClient.Shared.Services.ISystemPromptService, ChatClient.Api.Services.SystemPromptService>();
+builder.Services.AddSingleton<ChatClient.Shared.Services.IUserSettingsService, ChatClient.Api.Services.UserSettingsService>();
+builder.Services.AddSingleton<ChatClient.Shared.Services.IMcpServerConfigService, ChatClient.Api.Services.McpServerConfigService>();
 
-// Register Kernel as a singleton
-builder.Services.AddSingleton(sp =>
-{
-    var kernelService = sp.GetRequiredService<ChatClient.Api.Services.KernelService>();
-    return kernelService.CreateKernel();
-});
 
-// Register chat service using the kernel
-builder.Services.AddSingleton<IChatCompletionService>(sp =>
-{
-    var logger = sp.GetRequiredService<ILogger<Program>>();
-    var kernel = sp.GetRequiredService<Kernel>();
-    return kernel.GetRequiredService<IChatCompletionService>();
-});
 
 // Add controllers with JSON options
 builder.Services.AddControllers().AddJsonOptions(options =>
 {
     options.JsonSerializerOptions.PropertyNameCaseInsensitive = true;
+    options.JsonSerializerOptions.PropertyNamingPolicy = System.Text.Json.JsonNamingPolicy.CamelCase;
 });
 
 var app = builder.Build();
 
-// Configure the HTTP request pipeline
 app.UseCors("AllowBlazorClient");
 
-// Map endpoints
 app.MapControllers();
 
 app.MapGet("/", () => "ChatClient API is running! Use /api/chat endpoint for chat communication.");

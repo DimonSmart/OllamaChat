@@ -1,58 +1,58 @@
-.chat-container {
-    display: flex;
-    flex-direction: column;
-    height: calc(100vh - 120px);
-    max-width: 1000px;
-    margin: 0 auto;
-    padding: 0 1rem;
-}
-
 .system-prompt-selector {
     max-width: 800px;
     margin: 2rem auto;
     padding: 1.5rem;
-    background-color: #f8f9fa;
-    border-radius: 8px;
-    box-shadow: 0 2px 8px rgba(0,0,0,0.1);
 }
 
-.loading-prompts {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    margin: 1rem 0;
+.prompt-card {
+    margin-bottom: 1.5rem;
+    transition: all 0.2s ease-in-out;
 }
 
-.prompt-preview {
+.prompt-card:hover {
+    transform: translateY(-3px);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+}
+
+.prompt-header {
     padding: 1rem;
-    background-color: #fff;
-    border: 1px solid #dee2e6;
-    border-radius: 4px;
-    margin: 1rem 0;
+    background-color: #f7fafc;
+    border-bottom: 1px solid #edf2f7;
 }
 
 .prompt-content {
-    white-space: pre-wrap;
-    font-family: monospace;
-    padding: 1rem;
-    background-color: #f5f5f5;
-    border-radius: 4px;
     max-height: 200px;
     overflow-y: auto;
 }
 
-.system-prompt-actions {
+.prompt-footer {
+    border-top: 1px solid #edf2f7;
+    padding: 0.75rem;
+}
+
+.prompt-selector-title {
+    text-align: center;
+    margin-bottom: 2rem;
+    color: #2d3748;
+}
+
+.start-chat-btn {
     margin-top: 1.5rem;
-    display: flex;
-    flex-wrap: wrap;
-    gap: 0.5rem;
 }
 
-/* Fix for modals */
-.modal {
-    background-color: rgba(0, 0, 0, 0.5);
+.management-link {
+    text-align: center;
+    margin-top: 1rem;
 }
 
-.modal-backdrop {
-    z-index: -1;
+/* Improved styling for the prompt content preview */
+.prompt-preview {
+    background-color: #f7fafc;
+    padding: 1rem;
+    border-radius: 0.25rem;
+    font-family: monospace;
+    white-space: pre-wrap;
+    max-height: 150px;
+    overflow-y: auto;
+    border: 1px solid #e2e8f0;
 }

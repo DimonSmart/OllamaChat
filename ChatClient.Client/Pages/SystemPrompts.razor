@@ -1,153 +1,189 @@
-@page "/system-prompts"
+﻿@page "/system-prompts"
 @using ChatClient.Shared.Models
 @using ChatClient.Shared.Services
 @using System.Net.Http.Json
-@inject HttpClient Http
-@inject NavigationManager NavigationManager
-@inject IJSRuntime JSRuntime
+@inject ISystemPromptService SystemPromptService
+@inject ISnackbar Snackbar
 
 <PageTitle>System Prompts Management</PageTitle>
 
-<div class="container">
-    <h1>System Prompts</h1>
-    
-    <div class="mb-3">
-        <button class="btn btn-primary" @onclick="() => AddNewPrompt()">
-            <i class="bi bi-plus-circle"></i> Add New Prompt
-        </button>
-    </div>
-    
-    @if (loading)
-    {
-        <div class="d-flex align-items-center mb-3">
-            <span class="spinner-border spinner-border-sm me-2" role="status"></span>
-            <span>Loading system prompts...</span>
-        </div>
-    }
-    else if (prompts.Count == 0)
-    {
-        <div class="alert alert-info">
-            No system prompts found. Click "Add New Prompt" to create one.
-        </div>
-    }
-    else
-    {
-        <div class="table-responsive">
-            <table class="table table-striped table-hover">
-                <thead>
-                    <tr>
-                        <th>Name</th>
-                        <th>Updated</th>
-                        <th>Actions</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    @foreach (var prompt in prompts)
-                    {
-                        <tr>
-                            <td>@prompt.Name</td>
-                            <td>@prompt.UpdatedAt.ToLocalTime().ToString("g")</td>
-                            <td>
-                                <div class="btn-group">
-                                    <button class="btn btn-sm btn-outline-primary" @onclick="() => EditPrompt(prompt)">Edit</button>
-                                    <button class="btn btn-sm btn-outline-danger" @onclick="() => ConfirmDelete(prompt)">Delete</button>
-                                </div>
-                            </td>
-                        </tr>
-                    }
-                </tbody>
-            </table>
-        </div>
-    }
-    
-    @if (showPromptDialog)
-    {
-        <div class="modal show d-block" tabindex="-1">
-            <div class="modal-dialog">
-                <div class="modal-content">
-                    <div class="modal-header">
-                        <h5 class="modal-title">@(editingPrompt.Id == null ? "Add New Prompt" : "Edit Prompt")</h5>
-                        <button type="button" class="btn-close" @onclick="CloseDialog"></button>
-                    </div>
-                    <div class="modal-body">
-                        <div class="mb-3">
-                            <label class="form-label">Name</label>
-                            <input type="text" class="form-control" @bind="editingPrompt.Name" />
-                        </div>
-                        <div class="mb-3">
-                            <label class="form-label">Content</label>
-                            <textarea class="form-control" rows="8" @bind="editingPrompt.Content"></textarea>
-                        </div>
-                    </div>
-                    <div class="modal-footer">
-                        <button type="button" class="btn btn-secondary" @onclick="CloseDialog">Cancel</button>
-                        <button type="button" class="btn btn-primary" @onclick="SavePrompt">Save</button>
-                    </div>
-                </div>
+<MudContainer MaxWidth="MaxWidth.ExtraLarge" Class="mt-4">
+    <MudPaper Elevation="0" Class="d-flex align-center mb-4">
+        <MudText Typo="Typo.h3">System Prompts</MudText>
+    </MudPaper>
+
+    <MudPaper Elevation="3" Class="pa-4 rounded-lg">
+        <MudToolBar Dense="true">
+            <MudButton Variant="Variant.Filled"
+                       Color="Color.Primary"
+                       StartIcon="@Icons.Material.Filled.Add"
+                       OnClick="AddNewPrompt"
+                       Class="px-4">
+                Add Prompt
+            </MudButton>
+            <MudSpacer />
+            <MudTextField T="string"
+                          ValueChanged="@(s => OnSearch(s))"
+                          Placeholder="Search prompts..."
+                          Adornment="Adornment.Start"
+                          AdornmentIcon="@Icons.Material.Filled.Search"
+                          IconSize="Size.Medium"
+                          Class="mt-0"
+                          Style="min-width: 300px;"
+                          Immediate="true"
+                          DebounceInterval="300" />
+        </MudToolBar>
+
+        @if (loading)
+        {
+            <div class="d-flex justify-center my-4">
+                <MudProgressCircular Color="Color.Primary" Indeterminate="true" />
             </div>
-            <div class="modal-backdrop show"></div>
-        </div>
-    }
-    
-    @if (showDeleteDialog)
-    {
-        <div class="modal show d-block" tabindex="-1">
-            <div class="modal-dialog">
-                <div class="modal-content">
-                    <div class="modal-header">
-                        <h5 class="modal-title">Confirm Delete</h5>
-                        <button type="button" class="btn-close" @onclick="CloseDialog"></button>
-                    </div>
-                    <div class="modal-body">
-                        <p>Are you sure you want to delete the prompt "@promptToDelete?.Name"?</p>
-                    </div>
-                    <div class="modal-footer">
-                        <button type="button" class="btn btn-secondary" @onclick="CloseDialog">Cancel</button>
-                        <button type="button" class="btn btn-danger" @onclick="DeletePrompt">Delete</button>
-                    </div>
-                </div>
-            </div>
-            <div class="modal-backdrop show"></div>
-        </div>
-    }
-</div>
+        }
+        else
+        {
+            <MudDataGrid T="SystemPrompt" @ref="dataGrid"
+                         Items="@filteredPrompts"
+                         ReadOnly="true"
+                         Bordered="true"
+                         Hover="true"
+                         Striped="true"
+                         Dense="true"
+                         FixedHeader="true"
+                         Height="100%"
+                         Class="mt-4">
+                <Columns>
+                    <PropertyColumn Property="x => x.Name" Title="Name" SortBy="x => x.Name" />
+                    <PropertyColumn Property="x => x.UpdatedAt" Title="Updated" Format="g" />
+                    <PropertyColumn Property="x => x.CreatedAt" Title="Created" Format="g" />
+                    <TemplateColumn Title="Content" IsEditable="false">
+                        <CellTemplate>
+                            <div>
+                                <MudText Typo="Typo.body2" Class="mud-text-truncate">
+                                    @context.Item.Content?.Substring(0, Math.Min(50, context.Item.Content?.Length ?? 0))@(context.Item.Content?.Length > 50 ? "..." : "")
+                                </MudText>
+                            </div>
+                        </CellTemplate>
+                    </TemplateColumn>
+                    <TemplateColumn CellClass="d-flex justify-end">
+                        <CellTemplate>
+                            <MudIconButton Icon="@Icons.Material.Filled.Edit"
+                                         Size="Size.Small"
+                                         OnClick="@(() => StartEditing(context.Item))" />
+                            <MudIconButton Icon="@Icons.Material.Filled.Delete"
+                                         Size="Size.Small"
+                                         Color="Color.Error"
+                                         OnClick="() => ConfirmDelete(context.Item)" />
+                        </CellTemplate>
+                    </TemplateColumn>
+                </Columns>
+                <PagerContent>
+                    <MudDataGridPager T="SystemPrompt" PageSizeOptions="new[] { 10, 25, 50, 100 }" />
+                </PagerContent>
+                <NoRecordsContent>
+                    <MudPaper Elevation="0" Class="d-flex flex-column align-center justify-center py-8">
+                        <MudIcon Icon="@Icons.Material.Filled.FormatQuote" Color="Color.Secondary" Size="Size.Large" />
+                        <MudText Typo="Typo.h6" Class="mt-4">system prompts found</MudText>
+                        <MudText Typo="Typo.body2" Class="mud-text-secondary">Click "Add Prompt" to create one.</MudText>
+                    </MudPaper>
+                </NoRecordsContent>
+                <LoadingContent>
+                    <MudPaper Elevation="0" Class="d-flex align-center justify-center pa-8">
+                        <MudProgressCircular Color="Color.Primary" Indeterminate="true" Size="Size.Medium" />
+                        <MudText Typo="Typo.body1" Class="ml-4">Loading prompts...</MudText>
+                    </MudPaper>
+                </LoadingContent>
+            </MudDataGrid>
+        }
+    </MudPaper>
+</MudContainer>
+
+<MudDialog @bind-Visible="@showDeleteDialog" Options="dialogOptions">
+    <TitleContent>
+        <MudText Typo="Typo.h6">Confirm Delete</MudText>
+    </TitleContent>
+    <DialogContent>
+        <MudText>Are you sure you want to delete the prompt "@promptToDelete?.Name"?</MudText>
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="CancelDelete">Cancel</MudButton>
+        <MudButton Color="Color.Error" OnClick="DeletePrompt">Delete</MudButton>
+    </DialogActions>
+</MudDialog>
+
+<MudDialog @bind-Visible="@showEditPromptDialog" Options="editDialogOptions">
+    <TitleContent>
+        <MudText Typo="Typo.h6">@(editingPrompt?.Id == null ? "Create New Prompt" : "Edit Prompt")</MudText>
+    </TitleContent>
+    <DialogContent>
+        <MudForm @ref="editPromptForm" Model="@editingPrompt">
+            <MudTextField @bind-Value="editingPrompt.Name"
+                         Label="Prompt Name"
+                         Required="true"
+                         Immediate="true"
+                         Validation="@(new Func<string, string>(ValidateName))" />
+
+            <MudTextField @bind-Value="editingPrompt.Content"
+                         Label="Prompt Content"
+                         Lines="10"
+                         Class="mt-4"
+                         Required="true"
+                         Immediate="true"
+                         Validation="@(new Func<string, string>(ValidateContent))"
+                         Placeholder="Enter your system prompt content here..." />
+        </MudForm>
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="CancelEdit">Cancel</MudButton>
+        <MudButton Color="Color.Primary" OnClick="SavePrompt">Save</MudButton>
+    </DialogActions>
+</MudDialog>
 
 @code {
     private List<SystemPrompt> prompts = new();
+    private List<SystemPrompt> filteredPrompts = new();
     private bool loading = true;
-    private bool showPromptDialog = false;
-    private bool showDeleteDialog = false;
-    private SystemPrompt editingPrompt = new();
     private SystemPrompt? promptToDelete;
-    
+    private SystemPrompt editingPrompt = new();
+    private bool showDeleteDialog { get; set; } = false;
+    private bool showEditPromptDialog { get; set; } = false;
+    private string searchString = string.Empty;
+    private MudForm? editPromptForm;
+    private MudDataGrid<SystemPrompt>? dataGrid;
+
+    private DialogOptions dialogOptions = new()
+        {
+            CloseOnEscapeKey = true,
+            CloseButton = true,
+            MaxWidth = MaxWidth.ExtraSmall
+        };
+
+    private DialogOptions editDialogOptions = new()
+        {
+            CloseOnEscapeKey = true,
+            CloseButton = true,
+            MaxWidth = MaxWidth.Large,
+            FullWidth = true
+        };
+
     protected override async Task OnInitializedAsync()
     {
         await LoadPrompts();
     }
-    
+
     private async Task LoadPrompts()
     {
         try
         {
             loading = true;
             StateHasChanged();
-            
-            var response = await Http.GetAsync("api/systemprompts");
-            
-            if (response.IsSuccessStatusCode)
-            {
-                prompts = await response.Content.ReadFromJsonAsync<List<SystemPrompt>>() ?? new();
-            }
-            else
-            {
-                await JSRuntime.InvokeVoidAsync("console.error", "Failed to load prompts", response.StatusCode);
-                prompts = new List<SystemPrompt>();
-            }
+
+            prompts = await SystemPromptService.GetAllPromptsAsync() ?? new();
+            filteredPrompts = prompts;
         }
         catch (Exception ex)
         {
-            await JSRuntime.InvokeVoidAsync("console.error", "Exception loading prompts", ex.Message);
-            prompts = new List<SystemPrompt>();
+            Snackbar.Add($"Error loading prompts: {ex.Message}", Severity.Error);
         }
         finally
         {
@@ -155,14 +191,42 @@
             StateHasChanged();
         }
     }
-    
+
     private void AddNewPrompt()
     {
-        editingPrompt = new SystemPrompt();
-        showPromptDialog = true;
+        editingPrompt = new SystemPrompt
+        {
+            Id = null,
+            CreatedAt = DateTime.UtcNow,
+            UpdatedAt = DateTime.UtcNow,
+            Name = "",
+            Content = ""
+        };
+
+        showEditPromptDialog = true;
     }
-    
-    private void EditPrompt(SystemPrompt prompt)
+
+    private void OnSearch(string text)
+    {
+        searchString = text;
+        ApplySearch();
+    }
+
+    private void ApplySearch()
+    {
+        if (string.IsNullOrWhiteSpace(searchString))
+        {
+            filteredPrompts = new List<SystemPrompt>(prompts);
+            return;
+        }
+
+        filteredPrompts = prompts
+            .Where(p => p.Name.Contains(searchString, StringComparison.OrdinalIgnoreCase) ||
+                       p.Content.Contains(searchString, StringComparison.OrdinalIgnoreCase))
+            .ToList();
+    }
+
+    private async Task StartEditing(SystemPrompt prompt)
     {
         editingPrompt = new SystemPrompt
         {
@@ -172,58 +236,100 @@
             CreatedAt = prompt.CreatedAt,
             UpdatedAt = prompt.UpdatedAt
         };
-        showPromptDialog = true;
+        
+        showEditPromptDialog = true;
     }
-    
+
     private void ConfirmDelete(SystemPrompt prompt)
     {
         promptToDelete = prompt;
         showDeleteDialog = true;
+        StateHasChanged();
     }
-    
-    private async Task SavePrompt()
+
+    private void CancelDelete()
     {
+        promptToDelete = null;
+        showDeleteDialog = false;
+    }
+
+    private async Task DeletePrompt()
+    {
+        if (promptToDelete?.Id == null) return;
         try
         {
-            if (string.IsNullOrEmpty(editingPrompt.Id))
-            {
-                await Http.PostAsJsonAsync("api/systemprompts", editingPrompt);
-            }
-            else
-            {
-                await Http.PutAsJsonAsync($"api/systemprompts/{editingPrompt.Id}", editingPrompt);
-            }
-            
-            await LoadPrompts();
-            CloseDialog();
+            await SystemPromptService.DeletePromptAsync(promptToDelete.Id.Value);
+            Snackbar.Add("Prompt deleted successfully", Severity.Success);
+
+            prompts.Remove(promptToDelete);
+            ApplySearch();
         }
         catch (Exception ex)
         {
-            await JSRuntime.InvokeVoidAsync("alert", $"Error saving prompt: {ex.Message}");
+            Snackbar.Add($"Error deleting prompt: {ex.Message}", Severity.Error);
         }
+
+        promptToDelete = null;
+        showDeleteDialog = false;
     }
-    
-    private async Task DeletePrompt()
+
+    private string ValidateName(string name)
     {
-        if (promptToDelete != null)
+        if (string.IsNullOrWhiteSpace(name))
+            return "Name is required";
+
+        if (name.Length < 3)
+            return "Name must be at least 3 characters";
+
+        return string.Empty;
+    }
+
+    private string ValidateContent(string content)
+    {
+        if (string.IsNullOrWhiteSpace(content))
+            return "Content is required";
+
+        if (content.Length < 10)
+            return "Content must be at least 10 characters";
+
+        return string.Empty;
+    }
+
+    private void CancelEdit()
+    {
+        showEditPromptDialog = false;
+    }
+
+    private async Task SavePrompt()
+    {
+        if (editPromptForm == null) return;
+        await editPromptForm.Validate();
+        if (editPromptForm.IsValid)
         {
             try
             {
-                await Http.DeleteAsync($"api/systemprompts/{promptToDelete.Id}");
-                await LoadPrompts();
+                if (editingPrompt.Id == null)
+                {
+                    var result = await SystemPromptService.CreatePromptAsync(editingPrompt);
+                    prompts.Add(result);
+                    Snackbar.Add("Prompt created successfully", Severity.Success);
+                }
+                else
+                {
+                    editingPrompt.UpdatedAt = DateTime.UtcNow;
+                    var result = await SystemPromptService.UpdatePromptAsync(editingPrompt);
+                    var index = prompts.FindIndex(p => p.Id == editingPrompt.Id);
+                    if (index >= 0) prompts[index] = result;
+                    Snackbar.Add("Prompt updated successfully", Severity.Success);
+                }
+
+                showEditPromptDialog = false;
+                ApplySearch();
             }
             catch (Exception ex)
             {
-                await JSRuntime.InvokeVoidAsync("alert", $"Error deleting prompt: {ex.Message}");
+                Snackbar.Add($"Error saving prompt: {ex.Message}", Severity.Error);
             }
         }
-        
-        CloseDialog();
-    }
-    
-    private void CloseDialog()
-    {
-        showPromptDialog = false;
-        showDeleteDialog = false;
     }
 }
