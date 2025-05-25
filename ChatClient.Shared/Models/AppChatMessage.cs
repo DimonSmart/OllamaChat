@@ -18,15 +18,15 @@ public class AppChatMessage : IAppChatMessage
     /// <summary>
     /// The timestamp when the message was created.
     /// </summary>
-    public DateTime MsgDateTime { get; set; }
-
+    public DateTime MsgDateTime { get; set; }    
+    
     /// <summary>
     /// The role of the author (User, Assistant, or System).
     /// </summary>
     public ChatRole Role { get; set; }
-
+    
     /// <summary>
-    /// Chat statistics (call count, etc
+    /// Chat statistics (call count, tokens, etc.)
     /// </summary>
     public string? Statistics { get; set; }
 

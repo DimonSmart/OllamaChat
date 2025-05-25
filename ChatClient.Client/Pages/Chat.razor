@@ -146,10 +146,11 @@
                         </MudChatBubble>
                     </MudChat>
                 }
-            }
-
+            }        
+        
         </div>
-        <MudPaper Elevation="3" Class="pa-2 mt-2">            <div class="d-flex flex-row gap-2 align-center">
+        <MudPaper Elevation="3" Class="pa-2 mt-2">
+            <div class="d-flex flex-row gap-2 align-center">
                 <MudSelect T="OllamaModel"
                            Value="selectedModel"
                            ValueChanged="OnModelChanged"
@@ -215,11 +216,11 @@
     private bool isLLMAnswering { get; set; } = false;
     private bool isLoadingInitialData = true;
     private bool chatStarted = false;
-    private ElementReference messagesElement;
-    private List<SystemPrompt> systemPrompts = new();
+    private ElementReference messagesElement;    private List<SystemPrompt> systemPrompts = new();
     private SystemPrompt? selectedSystemPrompt;
     private List<FunctionInfo> availableFunctions = new();
-    private List<string> selectedFunctions = new(); private bool functionsExpanded = false;
+    private List<string> selectedFunctions = new();
+    private bool functionsExpanded = false;
 
     private List<OllamaModel> availableModels = new();
     private OllamaModel? selectedModel;
@@ -233,10 +234,10 @@
     {
         _messageAddedCallback = EventCallback.Factory.Create<ChatMessageViewModel>(this, OnMessageAdded);
         _messageUpdatedCallback = EventCallback.Factory.Create<ChatMessageViewModel>(this, OnMessageUpdated);
-    }
-
-    private string GetMessageClass(IAppChatMessage message) =>
-        $"{(message.Role == Microsoft.Extensions.AI.ChatRole.User ? "user-message" : "assistant-message")} message-container pa-2 mb-2"; protected override async Task OnInitializedAsync()
+    }    private string GetMessageClass(IAppChatMessage message) =>
+        $"{(message.Role == Microsoft.Extensions.AI.ChatRole.User ? "user-message" : "assistant-message")} message-container pa-2 mb-2";
+        
+    protected override async Task OnInitializedAsync()
     {
         isLoadingInitialData = true;
         StateHasChanged();
@@ -373,12 +374,12 @@
     private void ToggleStatsVisibility(ChatMessageViewModel message)
     {
         message.IsStatsVisible = !message.IsStatsVisible;
-    }
-
-    private void ToggleThoughtsVisibility(ChatMessageViewModel message)
+    }    private void ToggleThoughtsVisibility(ChatMessageViewModel message)
     {
         message.IsThoughtsVisible = !message.IsThoughtsVisible;
-    }    private void OnModelChanged(OllamaModel model)
+    }
+    
+    private void OnModelChanged(OllamaModel model)
     {
         selectedModel = model;
         Console.WriteLine($"Selected model changed to: {model.Name}");
