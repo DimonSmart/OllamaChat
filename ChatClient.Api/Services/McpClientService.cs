@@ -1,11 +1,12 @@
-using ChatClient.Api.Models;
+using ChatClient.Shared.Models;
+using ChatClient.Shared.Services;
 using ModelContextProtocol.Client;
 using ModelContextProtocol.Protocol.Transport;
 
 namespace ChatClient.Api.Services;
 
 public class McpClientService(
-    IConfiguration configuration,
+    IMcpServerConfigService mcpServerConfigService,
     ILogger<McpClientService> logger) : IAsyncDisposable
 {
     private List<IMcpClient>? _mcpClients = null;
@@ -15,7 +16,7 @@ public class McpClientService(
         if (_mcpClients != null) return _mcpClients;
         _mcpClients = [];
 
-        var mcpServerConfigs = configuration.GetSection("McpServers").Get<List<McpServerConfig>>() ?? [];
+        var mcpServerConfigs = await mcpServerConfigService.GetAllServersAsync();
 
         if (mcpServerConfigs.Count == 0)
         {
@@ -47,7 +48,10 @@ public class McpClientService(
         {
             var httpTransport = new SseClientTransport(new SseClientTransportOptions { Endpoint = new Uri(serverConfig.Sse!) });
             var client = await McpClientFactory.CreateAsync(httpTransport);
-            _mcpClients.Add(client);
+            if (_mcpClients != null && client != null)
+            {
+                _mcpClients.Add(client);
+            }
         }
         catch (Exception ex)
         {

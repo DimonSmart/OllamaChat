@@ -1,29 +1,23 @@
 using ChatClient.Api;
 using ChatClient.Api.Services;
+using Microsoft.AspNetCore.Hosting.Server;
+using Microsoft.AspNetCore.Hosting.Server.Features;
+using System.Diagnostics;
 
 var builder = WebApplication.CreateBuilder(args);
 
 // Check if running as an executable (not in development environment)
 var isDevelopment = builder.Environment.IsDevelopment();
 
-// Default ports
-var defaultHttpPort = 5149;
-var defaultHttpsPort = 7184;
-
-// Find available ports if necessary
-var httpPort = PortService.FindAvailablePort(defaultHttpPort);
-var httpsPort = PortService.FindAvailablePort(defaultHttpsPort);
-
-// Store application URLs for later use
-var httpUrl = $"http://localhost:{httpPort}";
-var httpsUrl = $"https://localhost:{httpsPort}";
-
-// Configure web server URLs for the application
-if (!isDevelopment)
+// Configure Kestrel to use dynamic ports (port 0 means "any available port")
+builder.WebHost.ConfigureKestrel(options =>
 {
-    // In production, override URLs with our dynamic ports
-    builder.WebHost.UseUrls(httpUrl, httpsUrl);
-}
+    options.Listen(System.Net.IPAddress.Parse("127.0.0.1"), 0);        // HTTP on any available port
+    options.Listen(System.Net.IPAddress.Parse("127.0.0.1"), 0, listenOptions =>
+    {
+        listenOptions.UseHttps();      // HTTPS on another available port
+    });
+});
 
 // Configure default HttpClient factory with named clients
 builder.Services.AddHttpClient("DefaultClient", client =>
@@ -50,12 +44,12 @@ builder.Services.AddControllers(options =>
 });
 
 // Register services
+builder.Services.AddSingleton<ChatClient.Shared.Services.IMcpServerConfigService, ChatClient.Api.Services.McpServerConfigService>();
 builder.Services.AddSingleton<ChatClient.Api.Services.McpClientService>();
 builder.Services.AddSingleton<ChatClient.Api.Services.KernelService>();
 builder.Services.AddSingleton<ChatClient.Api.Services.OllamaService>();
 builder.Services.AddSingleton<ChatClient.Shared.Services.ISystemPromptService, ChatClient.Api.Services.SystemPromptService>();
 builder.Services.AddSingleton<ChatClient.Shared.Services.IUserSettingsService, ChatClient.Api.Services.UserSettingsService>();
-builder.Services.AddSingleton<ChatClient.Shared.Services.IMcpServerConfigService, ChatClient.Api.Services.McpServerConfigService>();
 
 // Add controllers with JSON options
 builder.Services.AddControllers().AddJsonOptions(options =>
@@ -86,26 +80,53 @@ app.UseBlazorFrameworkFiles();
 app.UseStaticFiles();
 app.UseRouting();
 
-// Map controllers
+// Map controllers and endpoints
 app.MapControllers();
-
-// Map Razor Pages and Blazor WebAssembly
 app.MapRazorPages();
+
+// Ensure all routes not matched will fall back to the index.html file
 app.MapFallbackToFile("index.html");
 
-// Display info about the running application
-app.MapGet("/api", () => $"ChatClient API is running on port {httpPort}! Use /api/chat endpoint for chat communication.");
+// Map a simple API info endpoint
+app.MapGet("/api", () => "ChatClient API is running! Use /api/chat endpoint for chat communication.");
 
-// Prepare browser launch for after app initialization
-if (!isDevelopment)
+// Register callback to run after application is fully initialized
+app.Lifetime.ApplicationStarted.Register(() =>
 {
-    app.Lifetime.ApplicationStarted.Register(() =>
+    try
     {
-        Console.WriteLine("Application fully started, preparing to launch browser...");
-        BrowserLaunchService.DisplayInfoAndLaunchBrowser(httpUrl, httpsUrl);
-    });
-}
+        // Access the server to get the actual assigned addresses
+        var server = app.Services.GetRequiredService<IServer>();
+        var addressesFeature = server.Features.Get<IServerAddressesFeature>();
+        //Debugger.Launch();
+        if (addressesFeature != null && addressesFeature.Addresses.Any())
+        {
+            // Get the actual assigned addresses
+            var httpAddr = addressesFeature.Addresses.First(a => a.StartsWith("http://"));
+            var httpsAddr = addressesFeature.Addresses.First(a => a.StartsWith("https://"));
 
-// Print final startup message
-Console.WriteLine($"Starting web server on {httpUrl} and {httpsUrl}...");
+            // Log the addresses we found
+            Console.WriteLine($"Server listening on: {string.Join(", ", addressesFeature.Addresses)}");
+            
+            // Launch browser with the correct dynamic port
+            Console.WriteLine("Application fully started, launching browser...");
+            BrowserLaunchService.DisplayInfoAndLaunchBrowser(httpAddr, httpsAddr);
+            
+            // Log that wwwroot directory is being served from
+            var env = app.Services.GetService<IWebHostEnvironment>();
+            Console.WriteLine($"Serving static files from: {env?.ContentRootPath}");
+        }
+        else
+        {
+            Console.WriteLine("Warning: No server addresses were found. Browser cannot be launched.");
+        }
+    }
+    catch (Exception ex)
+    {
+        Console.WriteLine($"Error during application startup: {ex.Message}");
+    }
+});
+
+// Print startup message
+Console.WriteLine("Starting web server on dynamic ports...");
 app.Run();

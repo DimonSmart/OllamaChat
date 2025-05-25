@@ -4,19 +4,14 @@
 		<Nullable>enable</Nullable>
 		<ImplicitUsings>enable</ImplicitUsings>
 		<OutputType>Exe</OutputType>
-		<PublishSingleFile>true</PublishSingleFile>
-		<SelfContained>true</SelfContained>
-		<RuntimeIdentifier>win-x64</RuntimeIdentifier>
-		<PublishReadyToRun>true</PublishReadyToRun>
-		<DebugType>embedded</DebugType>
-		<IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
+		<CopyBlazorBuildAssetsToOutputDirectory>true</CopyBlazorBuildAssetsToOutputDirectory>
 		<!-- Use both NoWarn and WarningsNotAsErrors to handle the experimental API warning -->
 		<NoWarn>$(NoWarn);SKEXP0070</NoWarn>
 		<WarningsNotAsErrors>$(WarningsNotAsErrors);SKEXP0070</WarningsNotAsErrors>
 	</PropertyGroup>
 	<ItemGroup>
 		<PackageReference Include="Microsoft.AspNetCore.OpenApi" Version="9.0.4" />
-		<PackageReference Include="Microsoft.AspNetCore.Components.WebAssembly.Server" Version="9.0.4" />
+		<PackageReference Include="Microsoft.AspNetCore.Components.WebAssembly.Server" Version="9.0.5" />
 		<PackageReference Include="Microsoft.Extensions.Http" Version="9.0.4" />
 		<PackageReference Include="Microsoft.SemanticKernel" Version="1.48.0" />
 		<PackageReference Include="Microsoft.SemanticKernel.Abstractions" Version="1.48.0" />
@@ -35,13 +30,5 @@
 		<ProjectReference Include="..\ChatClient.Client\ChatClient.Client.csproj" />
 	</ItemGroup>
 
-	<!-- Copy Blazor client files to wwwroot -->
-	<Target Name="CopyBlazorClientFiles" AfterTargets="Build">
-		<ItemGroup>
-			<ClientFiles Include="..\ChatClient.Client\bin\$(Configuration)\$(TargetFramework)\wwwroot\**\*.*" />
-		</ItemGroup>
-		<Copy SourceFiles="@(ClientFiles)" DestinationFiles="@(ClientFiles->'$(OutputPath)\wwwroot\%(RecursiveDir)%(Filename)%(Extension)')" />
-		<Message Text="Blazor client files copied to API wwwroot folder" Importance="high" />
-	</Target>
-
+	
 </Project>
