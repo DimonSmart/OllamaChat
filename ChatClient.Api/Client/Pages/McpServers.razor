@@ -1,0 +1,432 @@
+@page "/mcp-servers"
+@using ChatClient.Shared.Models
+@using ChatClient.Shared.Services
+@using System.Net.Http.Json
+@inject IMcpServerConfigService McpServerConfigService
+@inject ISnackbar Snackbar
+
+<PageTitle>MCP Servers Management</PageTitle>
+
+<MudContainer MaxWidth="MaxWidth.ExtraLarge" Class="mt-4">
+    <MudPaper Elevation="0" Class="d-flex align-center mb-4">
+        <MudText Typo="Typo.h3">MCP Servers</MudText>
+    </MudPaper>
+
+    <MudPaper Elevation="3" Class="pa-4 rounded-lg">
+        <MudToolBar Dense="true">
+            <MudButton Variant="Variant.Filled"
+                       Color="Color.Primary"
+                       StartIcon="@Icons.Material.Filled.Add"
+                       OnClick="AddNewServer"
+                       Class="px-4">
+                Add Server
+            </MudButton>
+            <MudSpacer />
+            <MudTextField T="string"
+                          ValueChanged="@(s => OnSearch(s))"
+                          Placeholder="Search servers..."
+                          Adornment="Adornment.Start"
+                          AdornmentIcon="@Icons.Material.Filled.Search"
+                          IconSize="Size.Medium"
+                          Class="mt-0"
+                          Style="min-width: 300px;"
+                          Immediate="true"
+                          DebounceInterval="300" />
+        </MudToolBar>
+
+        @if (loading)
+        {
+            <div class="d-flex justify-center my-4">
+                <MudProgressCircular Color="Color.Primary" Indeterminate="true" />
+            </div>
+        }
+        else
+        {
+            <MudDataGrid T="McpServerConfig" @ref="dataGrid"
+                         Items="@filteredServers"
+                         ReadOnly="true"
+                         Bordered="true"
+                         Hover="true"
+                         Striped="true"
+                         Dense="true"
+                         FixedHeader="true"
+                         Height="100%"
+                         Class="mt-4">
+                <Columns>
+                    <PropertyColumn Property="x => x.Name" Title="Name" SortBy="x => x.Name" />
+                    <PropertyColumn Property="x => x.UpdatedAt" Title="Updated" Format="g" />
+                    <PropertyColumn Property="x => x.CreatedAt" Title="Created" Format="g" />
+                    <TemplateColumn Title="Type" isEditable="false">
+                        <CellTemplate>
+                            @{
+                                var server = context.Item;
+                                var type = !string.IsNullOrEmpty(server.Command) ? "Local" : "Remote";
+                            }
+                            <MudChip Size="Size.Small" Color="@(type == "Local" ? Color.Primary : Color.Secondary)">
+                                @type
+                            </MudChip>
+                        </CellTemplate>
+                    </TemplateColumn>
+                    <TemplateColumn Title="Configuration" isEditable="false">
+                        <CellTemplate>
+                            <div>
+                                @{
+                                    var server = context.Item;
+                                    var configText = !string.IsNullOrEmpty(server.Command)
+                                        ? $"Command: {server.Command}"
+                                        : $"SSE: {server.Sse}";
+                                }
+                                <MudText Typo="Typo.body2" Class="mud-text-truncate">
+                                    @configText
+                                </MudText>
+                            </div>
+                        </CellTemplate>
+                    </TemplateColumn>
+                    <TemplateColumn CellClass="d-flex justify-end">
+                        <CellTemplate>
+                            <MudIconButton Icon="@Icons.Material.Filled.Edit"
+                                         Size="Size.Small"
+                                         OnClick="@(() => StartEditing(context.Item))" />
+                            <MudIconButton Icon="@Icons.Material.Filled.Delete"
+                                         Size="Size.Small"
+                                         Color="Color.Error"
+                                         OnClick="() => ConfirmDelete(context.Item)" />
+                        </CellTemplate>
+                    </TemplateColumn>
+                </Columns>
+                <PagerContent>
+                    <MudDataGridPager T="McpServerConfig" PageSizeOptions="new[] { 10, 25, 50, 100 }" />
+                </PagerContent>
+                <NoRecordsContent>
+                    <MudPaper Elevation="0" Class="d-flex flex-column align-center justify-center py-8">
+                        <MudIcon Icon="@Icons.Material.Filled.Link" Color="Color.Secondary" Size="Size.Large" />
+                        <MudText Typo="Typo.h6" Class="mt-4">No MCP servers found</MudText>
+                        <MudText Typo="Typo.body2" Class="mud-text-secondary">Click "Add Server" to create one.</MudText>
+                    </MudPaper>
+                </NoRecordsContent>
+                <LoadingContent>
+                    <MudPaper Elevation="0" Class="d-flex align-center justify-center pa-8">
+                        <MudProgressCircular Color="Color.Primary" Indeterminate="true" Size="Size.Medium" />
+                        <MudText Typo="Typo.body1" Class="ml-4">Loading servers...</MudText>
+                    </MudPaper>
+                </LoadingContent>
+            </MudDataGrid>
+        }
+    </MudPaper>
+</MudContainer>
+
+<MudDialog @bind-Visible="@showDeleteDialog" Options="dialogOptions">
+    <TitleContent>
+        <MudText Typo="Typo.h6">Confirm Delete</MudText>
+    </TitleContent>
+    <DialogContent>
+        <MudText>Are you sure you want to delete the server "@serverToDelete?.Name"?</MudText>
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="CancelDelete">Cancel</MudButton>
+        <MudButton Color="Color.Error" OnClick="DeleteServer">Delete</MudButton>
+    </DialogActions>
+</MudDialog>
+
+<MudDialog @bind-Visible="@showEditServerDialog" Options="editDialogOptions">
+    <TitleContent>
+        <MudText Typo="Typo.h6">@(editingServer?.Id == null ? "Create New Server" : "Edit Server")</MudText>
+    </TitleContent>
+    <DialogContent>
+        <MudForm @ref="editServerForm" Model="@editingServer">
+            <MudTextField @bind-Value="editingServer.Name"
+                         Label="Server Name"
+                         Required="true"
+                         Immediate="true"
+                         Validation="@(new Func<string, string>(ValidateName))" />
+
+            <MudSelect T="string" 
+                      Label="Server Type" 
+                      @bind-Value="serverType" 
+                      Required="true" 
+                      Class="mt-4" 
+                      Immediate="true"
+                      SelectedValuesChanged="OnServerTypeChanged">
+                <MudSelectItem Value="@("local")">Local Command</MudSelectItem>
+                <MudSelectItem Value="@("remote")">Remote SSE</MudSelectItem>
+            </MudSelect>
+
+            @if (serverType == "local")
+            {
+                <MudTextField @bind-Value="editingServer.Command"
+                            Label="Command"
+                            Class="mt-4"
+                            Required="true"
+                            Immediate="true"
+                            Validation="@(new Func<string, string>(ValidateCommand))"
+                            Placeholder="Enter the command to run (e.g. DimonSmart.NugetMcpServer)" />
+
+                <MudTextField @bind-Value="argumentsText"
+                            Label="Arguments (optional)"
+                            Class="mt-4"
+                            Immediate="true"
+                            Placeholder="Enter command arguments, one per line" 
+                            Lines="3" />
+            }
+            else
+            {
+                <MudTextField @bind-Value="editingServer.Sse"
+                           Label="SSE URL"
+                           Class="mt-4"
+                           Required="true"
+                           Immediate="true"
+                           Validation="@(new Func<string, string>(ValidateSse))"
+                           Placeholder="Enter SSE URL (e.g. https://mcp.llmtxt.dev/sse)" />
+            }
+        </MudForm>
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="CancelEdit">Cancel</MudButton>
+        <MudButton Color="Color.Primary" OnClick="SaveServer">Save</MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    private List<McpServerConfig> servers = new();
+    private List<McpServerConfig> filteredServers = new();
+    private bool loading = true;
+    private McpServerConfig? serverToDelete;
+    private McpServerConfig editingServer = new();
+    private bool showDeleteDialog { get; set; } = false;
+    private bool showEditServerDialog { get; set; } = false;
+    private string searchString = string.Empty;
+    private MudForm? editServerForm;
+    private MudDataGrid<McpServerConfig>? dataGrid;
+    private string serverType = "local";
+    private string argumentsText = string.Empty;
+
+    private DialogOptions dialogOptions = new()
+        {
+            CloseOnEscapeKey = true,
+            CloseButton = true,
+            MaxWidth = MaxWidth.ExtraSmall
+        };
+
+    private DialogOptions editDialogOptions = new()
+        {
+            CloseOnEscapeKey = true,
+            CloseButton = true,
+            MaxWidth = MaxWidth.Medium,
+            FullWidth = true
+        };
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadServers();
+    }
+
+    private async Task LoadServers()
+    {
+        try
+        {
+            loading = true;
+            StateHasChanged();
+
+            servers = await McpServerConfigService.GetAllServersAsync() ?? new();
+            filteredServers = servers;
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Error loading MCP servers: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            loading = false;
+            StateHasChanged();
+        }
+    }
+
+    private void OnServerTypeChanged(IEnumerable<string> values)
+    {
+        if (serverType == "local")
+        {
+            editingServer.Sse = null;
+        }
+        else
+        {
+            editingServer.Command = null;
+            editingServer.Arguments = null;
+            argumentsText = string.Empty;
+        }
+    }
+
+    private void AddNewServer()
+    {
+        editingServer = new McpServerConfig
+        {
+            Id = null,
+            CreatedAt = DateTime.UtcNow,
+            UpdatedAt = DateTime.UtcNow,
+            Name = "",
+            Command = ""
+        };
+        
+        serverType = "local";
+        argumentsText = string.Empty;
+        showEditServerDialog = true;
+    }
+
+    private void OnSearch(string text)
+    {
+        searchString = text;
+        ApplySearch();
+    }
+
+    private void ApplySearch()
+    {
+        if (string.IsNullOrWhiteSpace(searchString))
+        {
+            filteredServers = new List<McpServerConfig>(servers);
+            return;
+        }
+
+        filteredServers = servers
+            .Where(s => s.Name.Contains(searchString, StringComparison.OrdinalIgnoreCase) ||
+                       (s.Command != null && s.Command.Contains(searchString, StringComparison.OrdinalIgnoreCase)) ||
+                       (s.Sse != null && s.Sse.Contains(searchString, StringComparison.OrdinalIgnoreCase)))
+            .ToList();
+    }
+
+    private void StartEditing(McpServerConfig server)
+    {
+        editingServer = new McpServerConfig
+        {
+            Id = server.Id,
+            Name = server.Name,
+            Command = server.Command,
+            Arguments = server.Arguments,
+            Sse = server.Sse,
+            CreatedAt = server.CreatedAt,
+            UpdatedAt = server.UpdatedAt
+        };
+        
+        argumentsText = server.Arguments != null 
+            ? string.Join(Environment.NewLine, server.Arguments) 
+            : string.Empty;
+            
+        serverType = !string.IsNullOrEmpty(server.Command) ? "local" : "remote";
+        
+        showEditServerDialog = true;
+    }
+
+    private void ConfirmDelete(McpServerConfig server)
+    {
+        serverToDelete = server;
+        showDeleteDialog = true;
+        StateHasChanged();
+    }
+
+    private void CancelDelete()
+    {
+        serverToDelete = null;
+        showDeleteDialog = false;
+    }
+
+    private async Task DeleteServer()
+    {
+        if (serverToDelete?.Id == null) return;
+        try
+        {
+            await McpServerConfigService.DeleteServerAsync(serverToDelete.Id.Value);
+            Snackbar.Add("Server deleted successfully", Severity.Success);
+
+            servers.Remove(serverToDelete);
+            ApplySearch();
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Error deleting server: {ex.Message}", Severity.Error);
+        }
+
+        serverToDelete = null;
+        showDeleteDialog = false;
+    }
+
+    private string ValidateName(string name)
+    {
+        if (string.IsNullOrWhiteSpace(name))
+            return "Name is required";
+
+        if (name.Length < 3)
+            return "Name must be at least 3 characters";
+
+        return string.Empty;
+    }
+
+    private string ValidateCommand(string command)
+    {
+        if (serverType == "local" && string.IsNullOrWhiteSpace(command))
+            return "Command is required for local servers";
+
+        return string.Empty;
+    }
+
+    private string ValidateSse(string sse)
+    {
+        if (serverType == "remote" && string.IsNullOrWhiteSpace(sse))
+            return "SSE URL is required for remote servers";
+
+        if (serverType == "remote" && !string.IsNullOrWhiteSpace(sse))
+        {
+            if (!Uri.TryCreate(sse, UriKind.Absolute, out var uri) || 
+                (uri.Scheme != "http" && uri.Scheme != "https"))
+                return "Please enter a valid HTTP/HTTPS URL";
+        }
+
+        return string.Empty;
+    }
+
+    private void CancelEdit()
+    {
+        showEditServerDialog = false;
+    }
+
+    private async Task SaveServer()
+    {
+        if (editServerForm == null) return;
+        await editServerForm.Validate();
+        if (editServerForm.IsValid)
+        {
+            try
+            {
+                // Process arguments from text
+                if (serverType == "local" && !string.IsNullOrWhiteSpace(argumentsText))
+                {
+                    var args = argumentsText.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries);
+                    editingServer.Arguments = args.Length > 0 ? args : null;
+                }
+                else
+                {
+                    editingServer.Arguments = null;
+                }
+
+                if (editingServer.Id == null)
+                {
+                    var result = await McpServerConfigService.CreateServerAsync(editingServer);
+                    servers.Add(result);
+                    Snackbar.Add("MCP server created successfully", Severity.Success);
+                }
+                else
+                {
+                    editingServer.UpdatedAt = DateTime.UtcNow;
+                    var result = await McpServerConfigService.UpdateServerAsync(editingServer);
+                    var index = servers.FindIndex(s => s.Id == editingServer.Id);
+                    if (index >= 0) servers[index] = result;
+                    Snackbar.Add("MCP server updated successfully", Severity.Success);
+                }
+
+                showEditServerDialog = false;
+                ApplySearch();
+            }
+            catch (Exception ex)
+            {
+                Snackbar.Add($"Error saving MCP server: {ex.Message}", Severity.Error);
+            }
+        }
+    }
+}

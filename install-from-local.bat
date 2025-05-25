@@ -1,0 +1,1 @@
+powershell -ExecutionPolicy Bypass -File .\install-from-local.ps1

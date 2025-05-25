@@ -1,0 +1,8 @@
+@page "/"
+@namespace ChatClient.Api.Pages
+@addTagHelper *, Microsoft.AspNetCore.Mvc.TagHelpers
+@{
+    Layout = "_Layout";
+}
+
+<component type="typeof(ChatClient.Api.Client.App)" render-mode="ServerPrerendered" />

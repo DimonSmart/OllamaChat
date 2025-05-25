@@ -1,0 +1,132 @@
+@page "/settings"
+@using ChatClient.Api.Client.Services
+@using ChatClient.Shared.Models
+@using ChatClient.Shared.Services
+@using System.Text.Json
+@inject IUserSettingsService UserSettingsService
+@inject IModelsService ModelsService
+@inject ISnackbar Snackbar
+
+<PageTitle>User Settings</PageTitle>
+
+<MudContainer MaxWidth="MaxWidth.Medium" Class="mt-4">
+    <MudPaper Elevation="0" Class="d-flex align-center mb-4">
+        <MudText Typo="Typo.h3">User Settings</MudText>
+    </MudPaper>
+
+    @if (_loading)
+    {
+        <MudProgressCircular Color="Color.Primary" Indeterminate="true" />
+        <MudText Class="ml-2">Loading settings...</MudText>
+    }
+    else
+    {
+        <MudPaper Elevation="3" Class="pa-4 rounded-lg">
+            <MudForm @ref="_form" Model="@_settings">
+                <MudCard Class="mb-4">
+                    <MudCardHeader>
+                        <MudText Typo="Typo.h5">Default Model</MudText>
+                    </MudCardHeader>
+                    <MudCardContent>
+                        <MudSelect T="string" Label="Default Model" @bind-Value="_settings.DefaultModelName"
+                                  Variant="Variant.Outlined" AnchorOrigin="Origin.BottomCenter">
+                            @foreach (var model in _availableModels)
+                            {
+                                <MudSelectItem Value="@model.Name">@model.Name</MudSelectItem>
+                            }
+                        </MudSelect>
+                        <MudText Typo="Typo.caption" Class="mt-2">
+                            This model will be selected by default when starting a new chat.
+                        </MudText>
+                    </MudCardContent>
+                </MudCard>
+
+                <MudCard Class="mb-4">
+                    <MudCardHeader>
+                        <MudText Typo="Typo.h5">Default Chat Message</MudText>
+                    </MudCardHeader>
+                    <MudCardContent>
+                        <MudTextField T="string" Label="Default Chat Message" @bind-Value="_settings.DefaultChatMessage"
+                                     Lines="3" Variant="Variant.Outlined" HelperText="Pre-filled message in the chat input (useful for testing)" />
+                    </MudCardContent>
+                </MudCard>
+
+                <MudButtonGroup Class="mt-4">
+                    <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="SaveSettings">Save Settings</MudButton>
+                    <MudButton Variant="Variant.Outlined" Color="Color.Secondary" OnClick="ResetSettings">Reset</MudButton>
+                </MudButtonGroup>
+            </MudForm>
+        </MudPaper>
+    }
+</MudContainer>
+
+@code {
+    private UserSettings _settings = new();
+    private List<OllamaModel> _availableModels = new();
+    private bool _loading = true;
+    private MudForm? _form;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            _loading = true;
+            await LoadModels();
+            await LoadSettings();
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private async Task LoadModels()
+    {
+        try
+        {
+            _availableModels = await ModelsService.GetModelsAsync();
+            if (_availableModels.Count == 0)
+            {
+                Snackbar.Add("No models available. Settings will be saved but model selection won't take effect.", Severity.Warning);
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.Error.WriteLine($"Error loading models: {ex.Message}");
+            Snackbar.Add("Failed to load available models.", Severity.Error);
+        }
+    }
+
+    private async Task LoadSettings()
+    {
+        try
+        {
+            _settings = await UserSettingsService.GetSettingsAsync();
+        }
+        catch (Exception ex)
+        {
+            Console.Error.WriteLine($"Error loading settings: {ex.Message}");
+            Snackbar.Add("Failed to load settings.", Severity.Error);
+        }
+    }
+
+    private async Task SaveSettings()
+    {
+        try
+        {
+            await UserSettingsService.SaveSettingsAsync(_settings);
+            Snackbar.Add("Settings saved successfully", Severity.Success);
+        }
+        catch (Exception ex)
+        {
+            Console.Error.WriteLine($"Error saving settings: {ex.Message}");
+            Snackbar.Add($"Failed to save settings: {ex.Message}", Severity.Error);
+        }
+    }
+
+    private async Task ResetSettings()
+    {
+        await LoadSettings();
+        Snackbar.Add("Settings reset to last saved values", Severity.Info);
+    }
+}

@@ -1,0 +1,58 @@
+﻿@using Microsoft.AspNetCore.Components.Web
+@using ChatClient.Shared.Services
+@inject IUserSettingsService UserSettingsService
+
+<MudTextField T="string"
+              @bind-Value="CurrentText"
+              DebounceInterval="200"              Lines="3"
+              Label="Type your message"
+              Variant="Variant.Outlined"
+              dense="true"
+              Class="mt-1"
+              Margin="Margin.Dense"
+              Adornment="Adornment.End"
+              AdornmentIcon="@Icons.Material.Filled.Send"
+              AdornmentColor="Color.Primary"
+              OnAdornmentClick="SendMessage"
+              OnKeyDown="HandleKeyDown" />
+
+@code {
+    [Parameter] public EventCallback<string> OnSend { get; set; }
+    private string CurrentText { get; set; } = string.Empty;
+    
+    protected override async Task OnInitializedAsync()
+    {
+        await base.OnInitializedAsync();
+        var settings = await UserSettingsService.GetSettingsAsync();
+        if (!string.IsNullOrEmpty(settings.DefaultChatMessage))
+        {
+            CurrentText = settings.DefaultChatMessage;
+        }
+    }
+    private bool IsSending { get; set; } = false;
+    private bool IsTextEntered => !string.IsNullOrWhiteSpace(CurrentText);
+    private bool IsSendDisabled => IsSending || !IsTextEntered;
+    private async Task HandleKeyDown(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter" && e.CtrlKey && !IsSendDisabled)
+        {
+            await SendMessage();
+        }
+    }
+
+    private async Task SendMessage()
+    {
+        if (IsSendDisabled) return;
+        try
+        {
+            IsSending = true;
+            var textToSend = CurrentText.Trim();
+            CurrentText = string.Empty;
+            await OnSend.InvokeAsync(textToSend);
+        }
+        finally
+        {
+            IsSending = false;
+        }
+    }
+}

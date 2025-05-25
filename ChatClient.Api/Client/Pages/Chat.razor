@@ -1,0 +1,395 @@
+@page "/"
+@page "/chat"
+@using Microsoft.AspNetCore.Components
+@using Microsoft.AspNetCore.Components.Web
+@using System.Collections.ObjectModel
+@using System.Text.Json
+@using System.Net.Http.Json
+@using ChatClient.Shared.Models
+@using System.Threading
+@using System.Text
+@using MudBlazor
+@using ChatClient.Api.Client.Pages
+@using ChatClient.Api.Client.Services
+@using ChatClient.Api.Client.Components
+@using ChatClient.Api.Client.ViewModels
+
+@implements IAsyncDisposable
+@inject HttpClient Http
+@inject IJSRuntime JSRuntime
+@inject NavigationManager NavigationManager
+@inject IDialogService DialogService
+@inject IChatViewModelService ChatViewModelService
+@inject IChatService ChatService
+@inject ClientSystemPromptService PromptService
+@inject IModelsService ModelsService
+@inject IUserSettingsService UserSettingsService
+
+<PageTitle>Chat with AI Assistant</PageTitle>
+
+<div class="chat-container d-flex flex-column" style="height: calc(100vh - 64px);">
+    @if (isLoadingInitialData)
+    {
+        <MudOverlay Visible="true" DarkBackground="true" Absolute="true">
+            <MudProgressCircular Color="Color.Primary" Indeterminate="true" />
+            <MudText Class="mt-2">Loading chat...</MudText>
+        </MudOverlay>
+    }
+    else if (!chatStarted)
+    {
+        <MudCard Class="ma-auto" Style="max-width: 600px; width: 100%;">
+            <MudCardContent>
+                @if (systemPrompts.Count == 0)
+                {
+                    <MudProgressCircular Color="Color.Primary" Size="Size.Small" Indeterminate="true" />
+                    <MudText>Loading system prompts...</MudText>
+                }
+                else
+                {
+                    <MudSelect T="SystemPrompt" Label="Select System Prompt" @bind-Value="selectedSystemPrompt" Variant="Variant.Outlined" FullWidth="true">
+                        @foreach (var prompt in systemPrompts)
+                        {
+                            <MudSelectItem Value="@prompt">@prompt.Name</MudSelectItem>
+                        }
+                    </MudSelect>
+
+                    <MudSwitch T="bool" @bind-value="showPromptContent" Color="Color.Primary" Class="mt-4" Style="margin-bottom: 10px;">View Prompt Content</MudSwitch>
+                    @if (showPromptContent)
+                    {
+                        <div class="prompt-preview mt-3 pa-3 mb-2">
+                            @(selectedSystemPrompt?.Content ?? string.Empty)
+                        </div>
+                    }
+
+                    <MudButton Variant="Variant.Filled"
+                               Color="Color.Primary"
+                               FullWidth="true"
+                               Class="mt-4"
+                               OnClick="StartChat">
+                        Start Chat
+                    </MudButton>
+                    <MudButton Href="/system-prompts"
+                               Variant="Variant.Text"
+                               Color="Color.Secondary"
+                               FullWidth="true"
+                               Class="mt-2">
+                        Manage System Prompts
+                    </MudButton>
+                }
+            </MudCardContent>
+        </MudCard>
+    }
+    else
+    {
+        <div class="chat-messages flex-grow-1 pa-2" style="overflow-y: auto;" @ref="messagesElement">
+            @foreach (var message in ChatViewModelService.Messages)
+            {
+                @if (message.Role != Microsoft.Extensions.AI.ChatRole.System)
+                {
+                    <MudChat ChatPosition="@(message.Role == Microsoft.Extensions.AI.ChatRole.Assistant ? ChatBubblePosition.Start : ChatBubblePosition.End)">
+                        <MudChatBubble @key="message.Id">
+                            @((MarkupString)message.HtmlContent)
+                            @if (message.IsStreaming)
+                            {
+                                <span class="typing-indicator">
+                                    <MudProgressCircular Size="Size.Small" Indeterminate="true" />
+                                    <small><i>typing...</i></small>
+                                </span>
+                            }
+                            <MudText Typo="Typo.caption" Align="@(message.Role == Microsoft.Extensions.AI.ChatRole.Assistant ? Align.Left : Align.Right)" Class="mt-1">
+                                @message.MsgDateTime.ToString("g")
+                            </MudText>
+                            <div class="d-flex flex-row gap-1">
+                                @if (!string.IsNullOrEmpty(message.Statistics))
+                                {
+                                    <MudButton Size="Size.Small"
+                                               Variant="Variant.Text"
+                                               Color="Color.Default"
+                                               Class="pa-0 ml-1"
+                                               Style="min-width: auto; font-size: 0.75rem;"
+                                               OnClick="@(() => ToggleStatsVisibility(message))">
+                                        stats
+                                    </MudButton>
+
+                                    @if (message.IsStatsVisible)
+                                    {
+                                        <MudPaper Class="pa-2 mt-1" Elevation="1">
+                                            <MudText Typo="Typo.caption">
+                                                @((MarkupString)message.Statistics)
+                                            </MudText>
+                                        </MudPaper>
+                                    }
+                                }
+
+                                @if (!string.IsNullOrEmpty(message.HtmlThink))
+                                {
+                                    <MudButton Size="Size.Small"
+                                               Variant="Variant.Text"
+                                               Color="Color.Default"
+                                               Class="pa-0 ml-1"
+                                               Style="min-width: auto; font-size: 0.75rem;"
+                                               OnClick="@(() => ToggleThoughtsVisibility(message))">
+                                        thoughts
+                                    </MudButton>
+
+                                    @if (message.IsThoughtsVisible)
+                                    {
+                                        <MudPaper Class="pa-2 mt-1" Elevation="1">
+                                            <MudText Typo="Typo.caption">
+                                                @((MarkupString)message.HtmlThink)
+                                            </MudText>
+                                        </MudPaper>
+                                    }
+                                }
+                            </div>
+                        </MudChatBubble>
+                    </MudChat>
+                }
+            }        
+        
+        </div>
+        <MudPaper Elevation="3" Class="pa-2 mt-2">
+            <div class="d-flex flex-row gap-2 align-center">
+                <MudSelect T="OllamaModel"
+                           Value="selectedModel"
+                           ValueChanged="OnModelChanged"
+                           Label="Model"
+                           Variant="Variant.Filled"
+                           Dense="true"
+                           Margin="Margin.Dense"
+                           Style="min-width: 150px; flex-grow: 0;">
+                    @foreach (var model in availableModels)
+                    {
+                        <MudSelectItem Value="@model">@model.Name</MudSelectItem>
+                    }
+                </MudSelect>
+
+                <MudButton Variant="Variant.Text"
+                           Color="Color.Primary"
+                           Size="Size.Small"
+                           OnClick="@(() => functionsExpanded = !functionsExpanded)">
+                    Functions
+                </MudButton>
+            </div>
+
+            <MudCollapse Expanded="@functionsExpanded">
+                <MudCard Outlined="true" Class="my-2">
+                    <MudCardContent Class="pa-2">
+                        <FunctionSelector AvailableFunctions="availableFunctions"
+                                          SelectedFunctions="selectedFunctions"
+                                          SelectedFunctionsChanged="OnSelectedFunctionsChanged"
+                                          Expanded="true" />
+                    </MudCardContent>
+                </MudCard>
+            </MudCollapse>
+
+            <div class="d-flex flex-column">
+                <ChatInput OnSend="SendChatMessageAsync" />
+
+                <MudStack AlignItems="AlignItems.Center" Row="true" Spacing="2" Class="mt-2">
+                    @if (isLLMAnswering)
+                    {
+                        <MudButton OnClick="Cancel"
+                                   Color="Color.Error"
+                                   Variant="Variant.Filled"
+                                   StartIcon="@Icons.Material.Filled.Stop">
+                            Stop
+                        </MudButton>
+                    }
+                    else
+                    {
+                        <MudButton OnClick="RestartChat"
+                                   Color="Color.Secondary"
+                                   Variant="Variant.Outlined"
+                                   StartIcon="@Icons.Material.Filled.AddCircle">
+                            New Chat
+                        </MudButton>
+                    }
+                </MudStack>
+            </div>
+        </MudPaper>
+    }
+</div>
+
+@code {
+    private bool isLLMAnswering { get; set; } = false;
+    private bool isLoadingInitialData = true;
+    private bool chatStarted = false;
+    private ElementReference messagesElement;    private List<SystemPrompt> systemPrompts = new();
+    private SystemPrompt? selectedSystemPrompt;
+    private List<FunctionInfo> availableFunctions = new();
+    private List<string> selectedFunctions = new();
+    private bool functionsExpanded = false;
+
+    private List<OllamaModel> availableModels = new();
+    private OllamaModel? selectedModel;
+
+    private bool showPromptContent { get; set; } = false;
+
+    private readonly EventCallback<ChatMessageViewModel> _messageAddedCallback;
+    private readonly EventCallback<ChatMessageViewModel> _messageUpdatedCallback;
+
+    public Chat()
+    {
+        _messageAddedCallback = EventCallback.Factory.Create<ChatMessageViewModel>(this, OnMessageAdded);
+        _messageUpdatedCallback = EventCallback.Factory.Create<ChatMessageViewModel>(this, OnMessageUpdated);
+    }    private string GetMessageClass(IAppChatMessage message) =>
+        $"{(message.Role == Microsoft.Extensions.AI.ChatRole.User ? "user-message" : "assistant-message")} message-container pa-2 mb-2";
+        
+    protected override async Task OnInitializedAsync()
+    {
+        isLoadingInitialData = true;
+        StateHasChanged();
+
+        await LoadSystemPrompts();
+        await LoadAvailableFunctions();
+        await LoadAvailableModels();
+
+        ChatService.LoadingStateChanged += OnLoadingStateChanged;
+        ChatViewModelService.MessageAdded += async (msg) => await _messageAddedCallback.InvokeAsync(msg);
+        ChatViewModelService.MessageUpdated += async (msg) => await _messageUpdatedCallback.InvokeAsync(msg);
+
+        isLoadingInitialData = false;
+        StateHasChanged();
+    }
+
+    private void OnLoadingStateChanged(bool loading)
+    {
+        isLLMAnswering = loading;
+        StateHasChanged();
+    }
+
+    private async Task OnMessageAdded(ChatMessageViewModel message)
+    {
+        StateHasChanged();
+        await ScrollToBottom();
+    }
+
+    private void OnMessageUpdated(ChatMessageViewModel message)
+    {
+        StateHasChanged();
+    }
+
+    private Task OnSelectedFunctionsChanged(List<string> functions)
+    {
+        selectedFunctions = functions;
+        StateHasChanged();
+        return Task.CompletedTask;
+    }
+
+    private async Task LoadSystemPrompts()
+    {
+        systemPrompts = await PromptService.GetAllPromptsAsync();
+        if (systemPrompts.Count == 0) systemPrompts.Add(PromptService.GetDefaultSystemPrompt());
+        selectedSystemPrompt = systemPrompts.FirstOrDefault();
+    }
+    private async Task LoadAvailableFunctions()
+    {
+        try
+        {
+            var response = await Http.GetAsync("api/functions");
+            if (response.IsSuccessStatusCode)
+            {
+                var content = await response.Content.ReadAsStringAsync();
+                availableFunctions = JsonSerializer.Deserialize<List<FunctionInfo>>(content,
+                    new JsonSerializerOptions { PropertyNameCaseInsensitive = true }) ?? new List<FunctionInfo>();
+            }
+            else
+            {
+                availableFunctions = new List<FunctionInfo>();
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error loading available functions: {ex}");
+            availableFunctions = new List<FunctionInfo>();
+        }
+    }    private async Task LoadAvailableModels()
+    {
+        try
+        {
+            availableModels = await ModelsService.GetModelsAsync();
+            
+            // Get user settings to find default model
+            var settings = await UserSettingsService.GetSettingsAsync();
+              if (!string.IsNullOrWhiteSpace(settings.DefaultModelName) && 
+                availableModels.Any(m => m.Name == settings.DefaultModelName))
+            {
+                selectedModel = availableModels.FirstOrDefault(m => m.Name == settings.DefaultModelName);
+            }
+            else
+            {
+                selectedModel = availableModels.FirstOrDefault();
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error loading available models: {ex}");
+            availableModels = new List<OllamaModel>();
+        }
+    }
+
+    private void StartChat()
+    {
+        if (selectedSystemPrompt == null)
+        {
+            selectedSystemPrompt = PromptService.GetDefaultSystemPrompt();
+        }
+
+        ChatService.InitializeChat(selectedSystemPrompt);
+        chatStarted = true;
+        StateHasChanged();
+    }
+
+    private void RestartChat()
+    {
+        chatStarted = false;
+        ChatService.ClearChat();
+        StateHasChanged();
+    }    private async Task SendChatMessageAsync(string message)
+    {
+        if (string.IsNullOrWhiteSpace(message) || isLLMAnswering)
+            return;
+
+        var modelName = selectedModel?.Name ?? "";
+        await ChatService.AddUserMessageAndAnswerAsync(message.Trim(), selectedFunctions, modelName);
+        await ScrollToBottom();
+    }
+    private async Task ScrollToBottom()
+    {
+        try
+        {
+            await JSRuntime.InvokeVoidAsync("scrollToBottom", messagesElement);
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error scrolling to bottom: {ex.Message}");
+        }
+    }
+
+    private void Cancel()
+    {
+        ChatService.Cancel();
+    }
+    private void ToggleStatsVisibility(ChatMessageViewModel message)
+    {
+        message.IsStatsVisible = !message.IsStatsVisible;
+    }    private void ToggleThoughtsVisibility(ChatMessageViewModel message)
+    {
+        message.IsThoughtsVisible = !message.IsThoughtsVisible;
+    }
+    
+    private void OnModelChanged(OllamaModel model)
+    {
+        selectedModel = model;
+        Console.WriteLine($"Selected model changed to: {model.Name}");
+    }
+
+    public ValueTask DisposeAsync()
+    {
+        ChatService.LoadingStateChanged -= OnLoadingStateChanged;
+        ChatViewModelService.MessageAdded -= async (msg) => await InvokeAsync(() => OnMessageAdded(msg));
+        ChatViewModelService.MessageUpdated -= (msg) => InvokeAsync(() => OnMessageUpdated(msg));
+        return ValueTask.CompletedTask;
+    }
+}

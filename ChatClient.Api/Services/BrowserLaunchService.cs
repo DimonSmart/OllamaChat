@@ -11,8 +11,8 @@ namespace ChatClient.Api.Services
         /// <summary>
         /// Display application information in console and launch browser
         /// </summary>
-        /// <param name="httpUrl">HTTP URL to display and open</param>
-        /// <param name="httpsUrl">HTTPS URL to display</param>
+        /// <param name="httpUrl">Full HTTP URL to display and open</param>
+        /// <param name="httpsUrl">Full HTTPS URL to display</param>
         /// <param name="delayMs">Delay in milliseconds before launching browser</param>
         public static void DisplayInfoAndLaunchBrowser(string httpUrl, string httpsUrl, int delayMs = 1500)
         {

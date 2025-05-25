@@ -1,11 +1,13 @@
-using ChatClient.Api.Models;
+using ChatClient.Shared.Models;
+using ChatClient.Shared.Services;
 using ModelContextProtocol.Client;
 using ModelContextProtocol.Protocol.Transport;
+using System.Reflection;
 
 namespace ChatClient.Api.Services;
 
 public class McpClientService(
-    IConfiguration configuration,
+    IMcpServerConfigService mcpServerConfigService,
     ILogger<McpClientService> logger) : IAsyncDisposable
 {
     private List<IMcpClient>? _mcpClients = null;
@@ -15,7 +17,7 @@ public class McpClientService(
         if (_mcpClients != null) return _mcpClients;
         _mcpClients = [];
 
-        var mcpServerConfigs = configuration.GetSection("McpServers").Get<List<McpServerConfig>>() ?? [];
+        var mcpServerConfigs = await mcpServerConfigService.GetAllServersAsync();
 
         if (mcpServerConfigs.Count == 0)
         {
@@ -47,12 +49,15 @@ public class McpClientService(
         {
             var httpTransport = new SseClientTransport(new SseClientTransportOptions { Endpoint = new Uri(serverConfig.Sse!) });
             var client = await McpClientFactory.CreateAsync(httpTransport);
-            _mcpClients.Add(client);
+            if (_mcpClients != null && client != null)
+            {
+                _mcpClients.Add(client);
+            }
         }
         catch (Exception ex)
         {
             logger.LogError(ex, "Failed to add network client for server: {ServerName}", serverConfig.Name);
-        }
+    }
     }
 
     private static async Task<IMcpClient> CreateLocalMcpClientAsync(McpServerConfig config)
@@ -62,12 +67,17 @@ public class McpClientService(
             throw new InvalidOperationException("MCP server command cannot be null or empty for local connection");
         }
 
+        // Use the application's executable directory as working directory instead of Environment.CurrentDirectory
+        // This prevents MCP processes from accidentally changing the main application's working directory
+        var applicationDirectory = Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location)!;
+
         return await McpClientFactory.CreateAsync(
             clientTransport: new StdioClientTransport(new StdioClientTransportOptions
             {
                 Name = config.Name,
                 Command = config.Command,
-                Arguments = config.Arguments ?? []
+                Arguments = config.Arguments ?? [],
+                WorkingDirectory = applicationDirectory // Use fixed application directory
             }),
             clientOptions: null
         );
