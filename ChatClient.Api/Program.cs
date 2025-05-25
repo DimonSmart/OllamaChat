@@ -1,6 +1,4 @@
 using ChatClient.Api;
-using Microsoft.SemanticKernel;
-using Microsoft.SemanticKernel.ChatCompletion;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -23,17 +21,21 @@ var loggerFactory = LoggerFactory.Create(logging =>
 });
 builder.Services.AddSingleton<ILoggerFactory>(loggerFactory);
 
-// Add CORS services
+// Add CORS services (not needed when hosting Blazor client in the same project)
 builder.Services.AddCors(options =>
 {
     options.AddPolicy("AllowBlazorClient", builder =>
     {
-        builder.WithOrigins("https://localhost:7190", "http://localhost:5270")
+        builder.AllowAnyOrigin()
               .AllowAnyMethod()
               .AllowAnyHeader();
     });
 });
 
+// Add Razor Pages and Blazor WebAssembly server-side support
+builder.Services.AddRazorPages();
+
+// Add controllers with API support
 builder.Services.AddControllers(options =>
 {
     options.Filters.Add<ApiExceptionFilter>();
@@ -60,8 +62,18 @@ var app = builder.Build();
 
 app.UseCors("AllowBlazorClient");
 
+// Static files for Blazor client
+app.UseStaticFiles();
+app.UseRouting();
+app.UseBlazorFrameworkFiles(); // Add Blazor framework file middleware
+
+// API endpoints under /api path
 app.MapControllers();
 
-app.MapGet("/", () => "ChatClient API is running! Use /api/chat endpoint for chat communication.");
+// Map Blazor WebAssembly entry point
+app.MapFallbackToFile("index.html");
+
+// Let the API handle root requests as well
+app.MapGet("/api", () => "ChatClient API is running! Use /api/chat endpoint for chat communication.");
 
 app.Run();

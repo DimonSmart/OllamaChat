@@ -1,31 +1,47 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk.Web">
-  <PropertyGroup>
-    <TargetFramework>net9.0</TargetFramework>
-    <Nullable>enable</Nullable>
-    <ImplicitUsings>enable</ImplicitUsings>
-    <OutputType>Exe</OutputType>
-    <!-- Use both NoWarn and WarningsNotAsErrors to handle the experimental API warning -->
-    <NoWarn>$(NoWarn);SKEXP0070</NoWarn>
-    <WarningsNotAsErrors>$(WarningsNotAsErrors);SKEXP0070</WarningsNotAsErrors>
-  </PropertyGroup>
+	<PropertyGroup>
+		<TargetFramework>net9.0</TargetFramework>
+		<Nullable>enable</Nullable>
+		<ImplicitUsings>enable</ImplicitUsings>
+		<OutputType>Exe</OutputType>
+		<PublishSingleFile>true</PublishSingleFile>
+		<SelfContained>true</SelfContained>
+		<RuntimeIdentifier>win-x64</RuntimeIdentifier>
+		<PublishReadyToRun>true</PublishReadyToRun>
+		<DebugType>embedded</DebugType>
+		<IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
+		<!-- Use both NoWarn and WarningsNotAsErrors to handle the experimental API warning -->
+		<NoWarn>$(NoWarn);SKEXP0070</NoWarn>
+		<WarningsNotAsErrors>$(WarningsNotAsErrors);SKEXP0070</WarningsNotAsErrors>
+	</PropertyGroup>
+	<ItemGroup>
+		<PackageReference Include="Microsoft.AspNetCore.OpenApi" Version="9.0.4" />
+		<PackageReference Include="Microsoft.AspNetCore.Components.WebAssembly.Server" Version="9.0.4" />
+		<PackageReference Include="Microsoft.Extensions.Http" Version="9.0.4" />
+		<PackageReference Include="Microsoft.SemanticKernel" Version="1.48.0" />
+		<PackageReference Include="Microsoft.SemanticKernel.Abstractions" Version="1.48.0" />
+		<PackageReference Include="Microsoft.SemanticKernel.Connectors.Ollama" Version="1.48.0-alpha" />
+		<PackageReference Include="Microsoft.SemanticKernel.Plugins.Core" Version="1.48.0-alpha" />
+		<PackageReference Include="ModelContextProtocol" Version="0.1.0-preview.12" />
+		<PackageReference Include="ModelContextProtocol-SemanticKernel" Version="0.0.1-preview-12" />
+		<PackageReference Include="MudBlazor" Version="8.6.0" />
+	</ItemGroup>
 
-  <ItemGroup>
-    <PackageReference Include="Microsoft.AspNetCore.OpenApi" Version="9.0.4" />
-    <PackageReference Include="Microsoft.Extensions.Http" Version="9.0.4" />
-    <PackageReference Include="Microsoft.SemanticKernel" Version="1.48.0" />
-    <PackageReference Include="Microsoft.SemanticKernel.Abstractions" Version="1.48.0" />
-    <PackageReference Include="Microsoft.SemanticKernel.Connectors.Ollama" Version="1.48.0-alpha" />
-    <PackageReference Include="Microsoft.SemanticKernel.Plugins.Core" Version="1.48.0-alpha" />
-    <PackageReference Include="ModelContextProtocol" Version="0.1.0-preview.12" />
-    <PackageReference Include="ModelContextProtocol-SemanticKernel" Version="0.0.1-preview-12" />
-  </ItemGroup>
+	<PropertyGroup>
+		<NoWarn>$(NoWarn);SKEXP0001</NoWarn>
+	</PropertyGroup>
+	<ItemGroup>
+		<ProjectReference Include="..\ChatClient.Shared\ChatClient.Shared.csproj" />
+		<ProjectReference Include="..\ChatClient.Client\ChatClient.Client.csproj" />
+	</ItemGroup>
 
-  <PropertyGroup>
-    <NoWarn>$(NoWarn);SKEXP0001</NoWarn>
-  </PropertyGroup>
-
-  <ItemGroup>
-    <ProjectReference Include="..\ChatClient.Shared\ChatClient.Shared.csproj" />
-  </ItemGroup>
+	<!-- Copy Blazor client files to wwwroot -->
+	<Target Name="CopyBlazorClientFiles" AfterTargets="Build">
+		<ItemGroup>
+			<ClientFiles Include="..\ChatClient.Client\bin\$(Configuration)\$(TargetFramework)\wwwroot\**\*.*" />
+		</ItemGroup>
+		<Copy SourceFiles="@(ClientFiles)" DestinationFiles="@(ClientFiles->'$(OutputPath)\wwwroot\%(RecursiveDir)%(Filename)%(Extension)')" />
+		<Message Text="Blazor client files copied to API wwwroot folder" Importance="high" />
+	</Target>
 
 </Project>
