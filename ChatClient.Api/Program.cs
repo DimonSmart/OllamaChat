@@ -1,7 +1,29 @@
 using ChatClient.Api;
+using ChatClient.Api.Services;
 
 var builder = WebApplication.CreateBuilder(args);
 
+// Check if running as an executable (not in development environment)
+var isDevelopment = builder.Environment.IsDevelopment();
+
+// Default ports
+var defaultHttpPort = 5149;
+var defaultHttpsPort = 7184;
+
+// Find available ports if necessary
+var httpPort = PortService.FindAvailablePort(defaultHttpPort);
+var httpsPort = PortService.FindAvailablePort(defaultHttpsPort);
+
+// Store application URLs for later use
+var httpUrl = $"http://localhost:{httpPort}";
+var httpsUrl = $"https://localhost:{httpsPort}";
+
+// Configure web server URLs for the application
+if (!isDevelopment)
+{
+    // In production, override URLs with our dynamic ports
+    builder.WebHost.UseUrls(httpUrl, httpsUrl);
+}
 
 // Configure default HttpClient factory with named clients
 builder.Services.AddHttpClient("DefaultClient", client =>
@@ -21,20 +43,6 @@ var loggerFactory = LoggerFactory.Create(logging =>
 });
 builder.Services.AddSingleton<ILoggerFactory>(loggerFactory);
 
-// Add CORS services (not needed when hosting Blazor client in the same project)
-builder.Services.AddCors(options =>
-{
-    options.AddPolicy("AllowBlazorClient", builder =>
-    {
-        builder.AllowAnyOrigin()
-              .AllowAnyMethod()
-              .AllowAnyHeader();
-    });
-});
-
-// Add Razor Pages and Blazor WebAssembly server-side support
-builder.Services.AddRazorPages();
-
 // Add controllers with API support
 builder.Services.AddControllers(options =>
 {
@@ -49,8 +57,6 @@ builder.Services.AddSingleton<ChatClient.Shared.Services.ISystemPromptService, C
 builder.Services.AddSingleton<ChatClient.Shared.Services.IUserSettingsService, ChatClient.Api.Services.UserSettingsService>();
 builder.Services.AddSingleton<ChatClient.Shared.Services.IMcpServerConfigService, ChatClient.Api.Services.McpServerConfigService>();
 
-
-
 // Add controllers with JSON options
 builder.Services.AddControllers().AddJsonOptions(options =>
 {
@@ -58,22 +64,48 @@ builder.Services.AddControllers().AddJsonOptions(options =>
     options.JsonSerializerOptions.PropertyNamingPolicy = System.Text.Json.JsonNamingPolicy.CamelCase;
 });
 
+// Configure Blazor WebAssembly hosting
+builder.Services.AddRazorPages();
+builder.Services.AddControllersWithViews();
+
 var app = builder.Build();
 
-app.UseCors("AllowBlazorClient");
+// Setup middleware pipeline
+if (app.Environment.IsDevelopment())
+{
+    app.UseWebAssemblyDebugging();
+}
+else
+{
+    app.UseExceptionHandler("/Error");
+    app.UseHsts();
+}
 
 // Static files for Blazor client
+app.UseBlazorFrameworkFiles();
 app.UseStaticFiles();
 app.UseRouting();
-app.UseBlazorFrameworkFiles(); // Add Blazor framework file middleware
 
-// API endpoints under /api path
+// Map controllers
 app.MapControllers();
 
-// Map Blazor WebAssembly entry point
+// Map Razor Pages and Blazor WebAssembly
+app.MapRazorPages();
 app.MapFallbackToFile("index.html");
 
-// Let the API handle root requests as well
-app.MapGet("/api", () => "ChatClient API is running! Use /api/chat endpoint for chat communication.");
+// Display info about the running application
+app.MapGet("/api", () => $"ChatClient API is running on port {httpPort}! Use /api/chat endpoint for chat communication.");
 
+// Prepare browser launch for after app initialization
+if (!isDevelopment)
+{
+    app.Lifetime.ApplicationStarted.Register(() => 
+    {
+        Console.WriteLine("Application fully started, preparing to launch browser...");
+        BrowserLaunchService.DisplayInfoAndLaunchBrowser(httpUrl, httpsUrl);
+    });
+}
+
+// Print final startup message
+Console.WriteLine($"Starting web server on {httpUrl} and {httpsUrl}...");
 app.Run();

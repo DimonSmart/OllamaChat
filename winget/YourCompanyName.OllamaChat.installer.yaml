@@ -1,0 +1,22 @@
+{
+  "$schema": "https://aka.ms/winget-manifest.installer.1.5.0.schema.json",
+  "PackageIdentifier": "YourCompanyName.OllamaChat",
+  "PackageVersion": "1.0.0",
+  "InstallerType": "zip",
+  "NestedInstallerType": "portable",
+  "NestedInstallerFiles": [
+    {
+      "RelativeFilePath": "ChatClient.Api.exe",
+      "PortableCommandAlias": "ollamachat"
+    }
+  ],
+  "Installers": [
+    {
+      "Architecture": "x64",
+      "InstallerUrl": "https://github.com/yourusername/ollamachat/releases/download/v1.0.0/OllamaChat.zip",
+      "InstallerSha256": "YOUR_SHA256_HASH_AFTER_BUILDING"
+    }
+  ],
+  "ManifestType": "installer",
+  "ManifestVersion": "1.5.0"
+}

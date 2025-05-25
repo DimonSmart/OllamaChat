@@ -71,8 +71,8 @@ public class ChatService(HttpClient client) : IChatService
     {
         Messages.Add(message);
         await (MessageAdded?.Invoke(message) ?? Task.CompletedTask);
-    }
-
+    }    
+    
     private async Task ProcessStreamingResponseAsync(IReadOnlyCollection<string> functionNames, string modelName, CancellationToken cancellationToken)
     {
         var readCallsCount = 0;
@@ -81,19 +81,37 @@ public class ChatService(HttpClient client) : IChatService
         var jsonParseErrorsCount = 0;
         var contentChunksCount = 0;
         var startTime = DateTime.Now;
+        
+        // Log diagnostic information
+        Console.WriteLine($"ChatService using HttpClient with BaseAddress: {client.BaseAddress}");
 
         using var messageDebouncer = new Debouncer<IAppChatMessage>(
             async message => await (MessageUpdated?.Invoke(message) ?? Task.CompletedTask),
             TimeSpan.FromMilliseconds(250));
-
         using var request = CreateHttpRequest(functionNames, modelName);
         var tempMsg = new StreamingAppChatMessage(string.Empty, DateTime.Now, ChatRole.Assistant);
         await AddMessageAsync(tempMsg);
-
-        using var response = await client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
-        if (!response.IsSuccessStatusCode)
+        
+        // Send request with error handling        
+        HttpResponseMessage response;
+        try
         {
-            await HandleError($"Error: {response.ReasonPhrase}");
+            Console.WriteLine($"Sending request to: {request.RequestUri}");
+            response = await client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
+            Console.WriteLine($"Got response with status code: {(int)response.StatusCode} {response.StatusCode}");
+            
+            if (!response.IsSuccessStatusCode)
+            {
+                var errorContent = await response.Content.ReadAsStringAsync(cancellationToken);
+                Console.WriteLine($"Error response content: {errorContent}");
+                await HandleError($"Error {(int)response.StatusCode}: {response.ReasonPhrase}");
+                return;
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Exception while sending request: {ex.Message}");
+            await HandleError($"Exception: {ex.Message}");
             return;
         }
 
@@ -198,8 +216,11 @@ public class ChatService(HttpClient client) : IChatService
         var messages = Messages
             .Select(message => new AppChatMessage(message.Content, message.MsgDateTime, message.Role))
             .ToList();
-
-        var request = new HttpRequestMessage(HttpMethod.Post, "api/chat/stream")
+        // Create API request with absolute URI to ensure it goes to the correct endpoint
+        string requestUrl = "api/chat/stream";
+        Console.WriteLine($"Creating request to URL: {requestUrl}");
+        
+        var request = new HttpRequestMessage(HttpMethod.Post, requestUrl)
         {
             Content = JsonContent.Create(new AppChatRequest
             {
