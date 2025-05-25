@@ -1,6 +1,8 @@
+// This is the entry point for the Blazor WebAssembly client application
+// It runs in the browser after the files are delivered by the host API project
+// The code here configures the client-side services and bootstraps the Blazor WebAssembly runtime
 using ChatClient.Client;
 using ChatClient.Client.Services;
-using ChatClient.Shared.Models;
 using ChatClient.Shared.Services;
 using Microsoft.AspNetCore.Components.Web;
 using Microsoft.AspNetCore.Components.WebAssembly.Hosting;
@@ -13,12 +15,15 @@ builder.RootComponents.Add<HeadOutlet>("head::after");
 
 builder.Logging.SetMinimumLevel(LogLevel.Warning);
 
-var apiUrl = new Uri("http://localhost:5149");
-Console.WriteLine($"API URL: {apiUrl}");
+// When deployed together with the API, we need to use a relative URL for API calls
+// Base address will be wherever the app is hosted
+var baseAddress = new Uri(builder.HostEnvironment.BaseAddress);
+Console.WriteLine($"Base Address: {baseAddress}");
 
 builder.Services.AddScoped(sp =>
 {
-    var client = new HttpClient { BaseAddress = apiUrl };
+    // Create HttpClient pointing to the same origin
+    var client = new HttpClient { BaseAddress = baseAddress };
     client.DefaultRequestHeaders.Add("X-Client-App", "OllamaChat-Blazor");
     client.Timeout = TimeSpan.FromMinutes(10);
     client.DefaultRequestHeaders.Add("Accept", "text/event-stream");
