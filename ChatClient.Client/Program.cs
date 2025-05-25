@@ -17,7 +17,7 @@ builder.Logging.SetMinimumLevel(LogLevel.Warning);
 
 // Configure HttpClient with base address
 // Since UI and API are now on the same host, we use the base path
-builder.Services.AddScoped(sp => 
+builder.Services.AddScoped(sp =>
 {
     var client = new HttpClient { BaseAddress = new Uri(builder.HostEnvironment.BaseAddress) };
     client.DefaultRequestHeaders.Add("X-Client-App", "OllamaChat-Blazor");

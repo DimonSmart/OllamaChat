@@ -25,13 +25,13 @@ namespace ChatClient.Api.Services
             Console.WriteLine("=================================================\n");
 
             // Open browser with a delay to ensure server is ready
-            Task.Run(async () => 
+            Task.Run(async () =>
             {
                 await Task.Delay(delayMs);
                 OpenBrowser(httpUrl);
             });
         }
-        
+
         /// <summary>
         /// Open the default system browser to the specified URL
         /// </summary>
@@ -41,7 +41,7 @@ namespace ChatClient.Api.Services
             try
             {
                 Console.WriteLine($"Opening browser with URL: {url}");
-                
+
                 if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
                 {
                     Process.Start(new ProcessStartInfo(url) { UseShellExecute = true });

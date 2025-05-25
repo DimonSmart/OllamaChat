@@ -99,7 +99,7 @@ app.MapGet("/api", () => $"ChatClient API is running on port {httpPort}! Use /ap
 // Prepare browser launch for after app initialization
 if (!isDevelopment)
 {
-    app.Lifetime.ApplicationStarted.Register(() => 
+    app.Lifetime.ApplicationStarted.Register(() =>
     {
         Console.WriteLine("Application fully started, preparing to launch browser...");
         BrowserLaunchService.DisplayInfoAndLaunchBrowser(httpUrl, httpsUrl);

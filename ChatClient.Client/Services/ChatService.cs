@@ -71,8 +71,8 @@ public class ChatService(HttpClient client) : IChatService
     {
         Messages.Add(message);
         await (MessageAdded?.Invoke(message) ?? Task.CompletedTask);
-    }    
-    
+    }
+
     private async Task ProcessStreamingResponseAsync(IReadOnlyCollection<string> functionNames, string modelName, CancellationToken cancellationToken)
     {
         var readCallsCount = 0;
@@ -81,7 +81,7 @@ public class ChatService(HttpClient client) : IChatService
         var jsonParseErrorsCount = 0;
         var contentChunksCount = 0;
         var startTime = DateTime.Now;
-        
+
         // Log diagnostic information
         Console.WriteLine($"ChatService using HttpClient with BaseAddress: {client.BaseAddress}");
 
@@ -91,7 +91,7 @@ public class ChatService(HttpClient client) : IChatService
         using var request = CreateHttpRequest(functionNames, modelName);
         var tempMsg = new StreamingAppChatMessage(string.Empty, DateTime.Now, ChatRole.Assistant);
         await AddMessageAsync(tempMsg);
-        
+
         // Send request with error handling        
         HttpResponseMessage response;
         try
@@ -99,7 +99,7 @@ public class ChatService(HttpClient client) : IChatService
             Console.WriteLine($"Sending request to: {request.RequestUri}");
             response = await client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
             Console.WriteLine($"Got response with status code: {(int)response.StatusCode} {response.StatusCode}");
-            
+
             if (!response.IsSuccessStatusCode)
             {
                 var errorContent = await response.Content.ReadAsStringAsync(cancellationToken);
@@ -219,7 +219,7 @@ public class ChatService(HttpClient client) : IChatService
         // Create API request with absolute URI to ensure it goes to the correct endpoint
         string requestUrl = "api/chat/stream";
         Console.WriteLine($"Creating request to URL: {requestUrl}");
-        
+
         var request = new HttpRequestMessage(HttpMethod.Post, requestUrl)
         {
             Content = JsonContent.Create(new AppChatRequest
