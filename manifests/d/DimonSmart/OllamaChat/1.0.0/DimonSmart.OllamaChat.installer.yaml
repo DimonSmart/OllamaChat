@@ -12,6 +12,7 @@ ArchiveBinariesDependOnPath: false
 Installers:
 - Architecture: x64
   InstallerUrl: https://github.com/DimonSmart/OllamaChat/releases/download/v1.0.0/ollama-chat-win-x64-1.0.0.zip
-  InstallerSha256: 1FE4190EB4BE7A127224861BDBDDF7BEA9459232507BA436B90CE8ED7F86D844
+  InstallerSha256: 7DCA18E8E2AB0624E19A6584C597F04B78628261AC75B53FCF634F44FE7B32DD
 ManifestType: installer
 ManifestVersion: 1.9.0
+ReleaseDate: 2025-05-28

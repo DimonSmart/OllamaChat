@@ -12,5 +12,8 @@ PackageUrl: https://github.com/DimonSmart/OllamaChat
 License: MIT License
 ShortDescription: C# based Ollama chat with MCP support
 ReleaseNotesUrl: https://github.com/DimonSmart/OllamaChat/releases/tag/v1.0.0
+Documentations:
+- DocumentLabel: Wiki
+  DocumentUrl: https://github.com/DimonSmart/OllamaChat/wiki
 ManifestType: defaultLocale
 ManifestVersion: 1.9.0
