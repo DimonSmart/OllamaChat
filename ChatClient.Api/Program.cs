@@ -3,9 +3,10 @@ using ChatClient.Api.Services;
 using Microsoft.AspNetCore.Hosting.Server;
 using Microsoft.AspNetCore.Hosting.Server.Features;
 using MudBlazor.Services;
-using System.Reflection;
 
-var exeFolder = Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location)!;
+
+// Use AppContext.BaseDirectory for single-file deployment compatibility
+var exeFolder = AppContext.BaseDirectory;
 var webRootPath = Path.Combine(exeFolder, "wwwroot");
 
 Directory.SetCurrentDirectory(exeFolder);
@@ -228,7 +229,7 @@ app.Lifetime.ApplicationStarted.Register(() =>
             Console.WriteLine($"Web root path: {env?.WebRootPath}");
             Console.WriteLine($"[FINAL DIAGNOSTICS] Current directory: {Directory.GetCurrentDirectory()}");
             Console.WriteLine($"[FINAL DIAGNOSTICS] Environment.CurrentDirectory: {Environment.CurrentDirectory}");
-            Console.WriteLine($"[FINAL DIAGNOSTICS] Assembly location: {Assembly.GetExecutingAssembly().Location}");
+            Console.WriteLine($"[FINAL DIAGNOSTICS] AppContext.BaseDirectory: {AppContext.BaseDirectory}");
             Console.WriteLine($"[FINAL DIAGNOSTICS] Process working directory: {Environment.CurrentDirectory}");
             Console.WriteLine($"[FINAL DIAGNOSTICS] Original webRootPath variable: {webRootPath}");
             Console.WriteLine($"[FINAL DIAGNOSTICS] Expected exe folder: {exeFolder}");

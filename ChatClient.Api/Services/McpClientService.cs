@@ -65,11 +65,10 @@ public class McpClientService(
         if (string.IsNullOrEmpty(config.Command))
         {
             throw new InvalidOperationException("MCP server command cannot be null or empty for local connection");
-        }
-
+        }        
         // Use the application's executable directory as working directory instead of Environment.CurrentDirectory
         // This prevents MCP processes from accidentally changing the main application's working directory
-        var applicationDirectory = Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location)!;
+        var applicationDirectory = AppContext.BaseDirectory;
 
         return await McpClientFactory.CreateAsync(
             clientTransport: new StdioClientTransport(new StdioClientTransportOptions
