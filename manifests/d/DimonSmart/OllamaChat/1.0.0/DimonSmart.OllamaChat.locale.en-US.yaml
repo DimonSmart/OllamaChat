@@ -9,11 +9,8 @@ PublisherUrl: https://github.com/DimonSmart
 PublisherSupportUrl: https://github.com/DimonSmart/OllamaChat/issues
 PackageName: DimonSmart.OllamaChat
 PackageUrl: https://github.com/DimonSmart/OllamaChat
-License: Unlicense
-ShortDescription: Local Ollama chat application with MCP servers support
+License: MIT License
+ShortDescription: C# based Ollama chat with MCP support
 ReleaseNotesUrl: https://github.com/DimonSmart/OllamaChat/releases/tag/v1.0.0
-Documentations:
-- DocumentLabel: Wiki
-  DocumentUrl: https://github.com/DimonSmart/OllamaChat/wiki
 ManifestType: defaultLocale
 ManifestVersion: 1.9.0
