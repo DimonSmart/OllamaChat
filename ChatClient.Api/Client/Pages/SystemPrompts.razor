@@ -209,21 +209,21 @@
     {
         searchString = text;
         ApplySearch();
-    }
-
-    private void ApplySearch()
+    }    private void ApplySearch()
     {
         if (string.IsNullOrWhiteSpace(searchString))
         {
             filteredPrompts = new List<SystemPrompt>(prompts);
             return;
         }
-
+        
         filteredPrompts = prompts
             .Where(p => p.Name.Contains(searchString, StringComparison.OrdinalIgnoreCase) ||
                        p.Content.Contains(searchString, StringComparison.OrdinalIgnoreCase))
             .ToList();
-    }    private Task StartEditing(SystemPrompt prompt)
+    }
+    
+    private Task StartEditing(SystemPrompt prompt)
     {
         editingPrompt = new SystemPrompt
         {

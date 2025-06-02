@@ -5,16 +5,21 @@ namespace ChatClient.Api.Client.Services;
 
 public class ChatViewModelService : IChatViewModelService
 {
-    private readonly IChatService _chatService;    private readonly List<ChatMessageViewModel> _messages = [];
+    private readonly IChatService _chatService;
+    private readonly List<ChatMessageViewModel> _messages = [];
 
-    public IReadOnlyList<ChatMessageViewModel> Messages => _messages;    public event Action<bool>? LoadingStateChanged;
+    public IReadOnlyList<ChatMessageViewModel> Messages => _messages;
+    
+    public event Action<bool>? LoadingStateChanged;
     public event Action? ChatInitialized;
     public event Action<ChatMessageViewModel>? MessageAdded;
     public event Func<ChatMessageViewModel, Task>? MessageUpdated;
 
     public bool IsLoading => _chatService.IsLoading;
+    
     public ChatViewModelService(IChatService chatService)
-    {        _chatService = chatService;
+    {
+        _chatService = chatService;
         _chatService.LoadingStateChanged += OnLoadingStateChanged;
         _chatService.ChatInitialized += OnChatInitialized;
         _chatService.MessageAdded += OnMessageAdded;

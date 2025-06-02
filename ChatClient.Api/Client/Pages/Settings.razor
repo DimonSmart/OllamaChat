@@ -40,7 +40,6 @@
                         </MudText>
                     </MudCardContent>
                 </MudCard>
-
                 <MudCard Class="mb-4">
                     <MudCardHeader>
                         <MudText Typo="Typo.h5">Default Chat Message</MudText>
@@ -48,6 +47,16 @@
                     <MudCardContent>
                         <MudTextField T="string" Label="Default Chat Message" @bind-Value="_settings.DefaultChatMessage"
                                      Lines="3" Variant="Variant.Outlined" HelperText="Pre-filled message in the chat input (useful for testing)" />
+                    </MudCardContent>                </MudCard>
+
+                <MudCard Class="mb-4">
+                    <MudCardHeader>
+                        <MudText Typo="Typo.h5">Statistics Settings</MudText>
+                    </MudCardHeader>
+                    <MudCardContent>
+                        <MudSwitch T="bool" @bind-Checked="_settings.ShowTokensPerSecond" Color="Color.Primary">
+                            Show tokens per second in statistics
+                        </MudSwitch>
                     </MudCardContent>
                 </MudCard>
 

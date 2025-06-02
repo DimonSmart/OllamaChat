@@ -108,6 +108,12 @@
     align-items: center;
     gap: 6px;
     vertical-align: middle;
+    font-style: italic;
+    color: rgba(255, 255, 255, 0.8);
+}
+
+.typing-indicator small {
+    font-size: 0.75rem;
 }
 
 @keyframes blink {
