@@ -1,21 +1,12 @@
 using ChatClient.Shared.Models;
-using System.Net.Http.Json;
+using ChatClient.Api.Services;
 
 namespace ChatClient.Api.Client.Services;
 
-public class ModelsService(HttpClient httpClient) : IModelsService
+public class ModelsService(OllamaService ollamaService) : IModelsService
 {
     public async Task<List<OllamaModel>> GetModelsAsync()
     {
-        try
-        {
-            var models = await httpClient.GetFromJsonAsync<List<OllamaModel>>("api/models");
-            return models ?? [];
-        }
-        catch (Exception ex)
-        {
-            Console.Error.WriteLine($"Error fetching models: {ex.Message}");
-            return [];
-        }
+        return await ollamaService.GetModelsAsync();
     }
 }

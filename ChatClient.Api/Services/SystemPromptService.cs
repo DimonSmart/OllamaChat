@@ -186,4 +186,11 @@ public class SystemPromptService : ISystemPromptService
         var json = JsonSerializer.Serialize(prompts, options);
         await File.WriteAllTextAsync(_filePath, json);
     }
+
+    public SystemPrompt GetDefaultSystemPrompt() => new()
+    {
+        Id = Guid.NewGuid(),
+        Name = "Default Assistant",
+        Content = "You are a helpful AI assistant. Please format your responses using Markdown."
+    };
 }

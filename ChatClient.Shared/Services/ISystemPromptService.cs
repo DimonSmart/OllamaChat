@@ -9,4 +9,5 @@ public interface ISystemPromptService
     Task<SystemPrompt> CreatePromptAsync(SystemPrompt prompt);
     Task<SystemPrompt> UpdatePromptAsync(SystemPrompt prompt);
     Task DeletePromptAsync(Guid id);
+    SystemPrompt GetDefaultSystemPrompt();
 }

@@ -79,15 +79,14 @@ public class KernelService(
     /// <summary>
     /// Returns the list of available functions that can be used with the kernel.
     /// </summary>
-    public async Task<IEnumerable<FunctionInfo>> GetAvailableFunctionsAsync()
+    public async Task<IReadOnlyCollection<FunctionInfo>> GetAvailableFunctionsAsync()
     {
         var functions = new List<FunctionInfo>();
 
         try
         {
             var mcpClients = await mcpClientService.GetMcpClientsAsync();
-            if (mcpClients.Count == 0)
-                return Enumerable.Empty<FunctionInfo>();
+            if (mcpClients.Count == 0) return [];
 
             foreach (var mcpClient in mcpClients)
             {
