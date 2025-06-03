@@ -1,3 +1,5 @@
+using ChatClient.Shared.Models;
+using ChatClient.Shared.Services;
 using Microsoft.SemanticKernel;
 using Microsoft.SemanticKernel.ChatCompletion;
 using ModelContextProtocol;
@@ -11,19 +13,22 @@ namespace ChatClient.Api.Services;
 /// </summary>
 public class McpSamplingService(
     KernelService kernelService,
+    IUserSettingsService userSettingsService,
+    OllamaService ollamaService,
     ILogger<McpSamplingService> logger)
-{
-    /// <summary>
-    /// Handles a sampling request from an MCP server.
-    /// </summary>
-    /// <param name="request">The sampling request containing messages and model parameters</param>
-    /// <param name="progress">Progress reporting for long-running operations</param>
-    /// <param name="cancellationToken">Cancellation token</param>
-    /// <returns>The LLM response</returns>
+{    /// <summary>
+     /// Handles a sampling request from an MCP server.
+     /// </summary>
+     /// <param name="request">The sampling request containing messages and model parameters</param>
+     /// <param name="progress">Progress reporting for long-running operations</param>
+     /// <param name="cancellationToken">Cancellation token</param>
+     /// <param name="mcpServerConfig">Configuration of the MCP server making the request (optional)</param>
+     /// <returns>The LLM response</returns>
     public async ValueTask<CreateMessageResult> HandleSamplingRequestAsync(
         CreateMessageRequestParams request,
         IProgress<ProgressNotificationValue> progress,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        McpServerConfig? mcpServerConfig = null)
     {
         try
         {
@@ -35,59 +40,34 @@ public class McpSamplingService(
                 throw new ArgumentException("Sampling request must contain at least one message");
             }
 
-            // Report progress
-            progress?.Report(new ProgressNotificationValue
-            {
-                Progress = 0,
-                Total = 100
-            });            // Use the specified model or fall back to a default
-            var model = request.ModelPreferences?.Hints?.FirstOrDefault()?.Name ?? "llama3.2";
-
-            // Create a basic kernel without MCP tools to avoid circular dependencies
+            progress?.Report(new ProgressNotificationValue { Progress = 0, Total = 100 });
+            
+            var model = await DetermineModelToUseAsync(request.ModelPreferences, mcpServerConfig);
             var kernel = kernelService.CreateBasicKernel(model);
 
-            // Report progress
-            progress?.Report(new ProgressNotificationValue
-            {
-                Progress = 25,
-                Total = 100
-            });
+            progress?.Report(new ProgressNotificationValue { Progress = 25, Total = 100 });
 
-            // Convert MCP messages to chat history
             var chatHistory = ConvertMcpMessagesToChatHistory(request.Messages);
 
-            // Report progress
-            progress?.Report(new ProgressNotificationValue
-            {
-                Progress = 50,
-                Total = 100
-            });
+            progress?.Report(new ProgressNotificationValue { Progress = 50, Total = 100 });
 
             // Execute the LLM request
             var chatCompletionService = kernel.GetRequiredService<IChatCompletionService>();
             var response = await chatCompletionService.GetChatMessageContentAsync(
-                chatHistory,
+                chatHistory: chatHistory,
                 kernel: kernel,
                 cancellationToken: cancellationToken);
 
-            // Report progress
-            progress?.Report(new ProgressNotificationValue
-            {
-                Progress = 90,
-                Total = 100
-            });
+            progress?.Report(new ProgressNotificationValue { Progress = 90, Total = 100 });
 
             var responseText = response.Content ?? string.Empty;
 
             logger.LogInformation("Sampling request completed successfully, response length: {Length}",
                 responseText.Length);
 
-            // Report completion
-            progress?.Report(new ProgressNotificationValue
-            {
-                Progress = 100,
-                Total = 100
-            }); return new CreateMessageResult
+            progress?.Report(new ProgressNotificationValue { Progress = 100, Total = 100 });
+            
+            return new CreateMessageResult
             {
                 Content = new Content
                 {
@@ -96,7 +76,7 @@ public class McpSamplingService(
                 },
                 Model = model,
                 StopReason = "end_turn",
-                Role = Role.Assistant // The LLM response is always from the assistant
+                Role = Role.Assistant
             };
         }
         catch (Exception ex)
@@ -140,7 +120,77 @@ public class McpSamplingService(
 
             chatHistory.Add(new ChatMessageContent(role, content));
         }
-
         return chatHistory;
+    }
+
+    /// <summary>
+    /// Determines which model to use for sampling with simplified logic:
+    /// 1. If MCP server requests a model that doesn't exist - use MCP server configured model
+    /// 2. If not configured in MCP - use user's default model  
+    /// 3. If user default not set - return error
+    /// No hardcoded fallback
+    /// </summary>
+    private async Task<string> DetermineModelToUseAsync(ModelPreferences? modelPreferences, McpServerConfig? mcpServerConfig)
+    {
+        var availableModels = await ollamaService.GetModelsAsync();
+        var availableModelNames = availableModels.Select(m => m.Name).ToHashSet();
+
+        var requestedModel = modelPreferences?.Hints?.FirstOrDefault()?.Name;
+
+        // If MCP server requests a specific model and it exists, use it
+        if (!string.IsNullOrEmpty(requestedModel) && availableModelNames.Contains(requestedModel))
+        {
+            logger.LogInformation("Using requested model for MCP sampling: {ModelName}", requestedModel);
+            return requestedModel;
+        }
+
+        // If requested model doesn't exist or not specified, use MCP server configured model
+        if (!string.IsNullOrEmpty(mcpServerConfig?.SamplingModel))
+        {
+            if (availableModelNames.Contains(mcpServerConfig.SamplingModel))
+            {
+                logger.LogInformation("Using MCP server configured model for sampling: {ModelName} (Server: {ServerName})",
+                    mcpServerConfig.SamplingModel, mcpServerConfig.Name);
+                return mcpServerConfig.SamplingModel;
+            }
+            else
+            {
+                logger.LogWarning("MCP server configured model '{ModelName}' not available for server '{ServerName}'",
+                    mcpServerConfig.SamplingModel, mcpServerConfig.Name);
+            }
+        }
+
+        // Fall back to user's default model
+        var userSettings = await userSettingsService.GetSettingsAsync();
+        if (!string.IsNullOrEmpty(userSettings.DefaultModelName))
+        {
+            if (availableModelNames.Contains(userSettings.DefaultModelName))
+            {
+                logger.LogInformation("Using user's default model for MCP sampling: {ModelName}", userSettings.DefaultModelName);
+                return userSettings.DefaultModelName;
+            }
+            else
+            {
+                logger.LogWarning("User's default model '{ModelName}' not available", userSettings.DefaultModelName);
+            }
+        }
+
+        // No valid model found - return error instead of hardcoded fallback
+        var errorMessage = "No valid model available for sampling. ";
+        if (!string.IsNullOrEmpty(requestedModel))
+        {
+            errorMessage += $"Requested model '{requestedModel}' not found. ";
+        }
+        if (!string.IsNullOrEmpty(mcpServerConfig?.SamplingModel))
+        {
+            errorMessage += $"MCP server model '{mcpServerConfig.SamplingModel}' not found. ";
+        }
+        if (!string.IsNullOrEmpty(userSettings.DefaultModelName))
+        {
+            errorMessage += $"User default model '{userSettings.DefaultModelName}' not found. ";
+        }
+        errorMessage += "Please configure a valid model in MCP server settings or user settings.";
+
+        throw new InvalidOperationException(errorMessage);
     }
 }

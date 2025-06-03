@@ -9,11 +9,12 @@ public class McpServerConfig
 
     // Local process configuration
     public string? Command { get; set; }
-    public string[]? Arguments { get; set; }
-
-    // Network configuration
+    public string[]? Arguments { get; set; }    // Network configuration
     [JsonPropertyName("sse")]
     public string? Sse { get; set; }
+
+    // Sampling configuration
+    public string? SamplingModel { get; set; }
 
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
     public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;

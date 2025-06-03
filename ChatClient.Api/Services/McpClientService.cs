@@ -1,6 +1,5 @@
 using ChatClient.Shared.Models;
 using ChatClient.Shared.Services;
-using ModelContextProtocol;
 using ModelContextProtocol.Client;
 using ModelContextProtocol.Protocol;
 using System.Reflection;
@@ -43,16 +42,17 @@ public class McpClientService(
             logger.LogInformation("MCP client created successfully for server: {ServerName}", serverConfig.Name);
         }
         return _mcpClients;
-    }    
+    }
+
+
     private async Task AddSseClient(McpServerConfig serverConfig)
     {
         try
-        {            
+        {
             var httpTransport = new SseClientTransport(new SseClientTransportOptions { Endpoint = new Uri(serverConfig.Sse!) });
-            
-            // Create client options with sampling capabilities
-            var clientOptions = this.CreateClientOptions();
-            
+
+            var clientOptions = this.CreateClientOptions(serverConfig);
+
             var client = await McpClientFactory.CreateAsync(httpTransport, clientOptions);
             if (_mcpClients != null && client != null)
             {
@@ -63,20 +63,19 @@ public class McpClientService(
         {
             logger.LogError(ex, "Failed to add network client for server: {ServerName}", serverConfig.Name);
         }
-    }    
-    
+    }
     private async Task<IMcpClient> CreateLocalMcpClientAsync(McpServerConfig config)
     {
         if (string.IsNullOrEmpty(config.Command))
         {
             throw new InvalidOperationException("MCP server command cannot be null or empty for local connection");
-        }        
+        }
         // Use the application's executable directory as working directory instead of Environment.CurrentDirectory
         // This prevents MCP processes from accidentally changing the main application's working directory
         var applicationDirectory = AppContext.BaseDirectory;
 
-        // Create client options with sampling capabilities
-        var clientOptions = CreateClientOptions();
+        // Create client options with sampling capabilities specific to this server
+        var clientOptions = CreateClientOptions(config);
 
         return await McpClientFactory.CreateAsync(
             clientTransport: new StdioClientTransport(new StdioClientTransportOptions
@@ -126,10 +125,13 @@ public class McpClientService(
 
         _mcpClients = null;
         GC.SuppressFinalize(this);
-    }    /// <summary>
+    }    
+    
+    
+    /// <summary>
     /// Creates client options that declare sampling capabilities and register the sampling handler
     /// </summary>
-    private McpClientOptions CreateClientOptions()
+    private McpClientOptions CreateClientOptions(McpServerConfig serverConfig)
     {
         return new McpClientOptions
         {
@@ -139,40 +141,30 @@ public class McpClientService(
                 Version = Assembly.GetExecutingAssembly().GetName().Version?.ToString() ?? "1.0.0"
             },
             Capabilities = new ClientCapabilities
-            {                Sampling = new SamplingCapability
+            {
+                Sampling = new SamplingCapability
                 {
-                    SamplingHandler = HandleSamplingRequestAsync
+                    SamplingHandler = async (request, progress, cancellationToken) =>
+                    {
+                        try
+                        {
+                            logger.LogInformation("Handling sampling request with {MessageCount} messages from server: {ServerName}",
+                                request.Messages?.Count ?? 0, serverConfig.Name);
+
+                            var result = await mcpSamplingService.HandleSamplingRequestAsync(request, progress, cancellationToken, serverConfig);
+
+                            logger.LogInformation("Sampling request completed successfully for server: {ServerName}", serverConfig.Name);
+                            return result;
+                        }
+                        catch (Exception ex)
+                        {
+                            logger.LogError(ex, "Failed to handle sampling request from server {ServerName}: {Message}",
+                                serverConfig.Name, ex.Message);
+                            throw;
+                        }
+                    }
                 }
             }
         };
-    }    /// <summary>
-    /// Handles sampling requests from MCP servers by delegating to the sampling service
-    /// </summary>
-    private async ValueTask<CreateMessageResult> HandleSamplingRequestAsync(
-        CreateMessageRequestParams? request, 
-        IProgress<ProgressNotificationValue> progress, 
-        CancellationToken cancellationToken)
-    {
-        try
-        {
-            if (request == null)
-            {
-                throw new ArgumentNullException(nameof(request));
-            }
-
-            logger.LogInformation("Handling sampling request with {MessageCount} messages", 
-                request.Messages?.Count ?? 0);
-
-            // Delegate to the sampling service
-            var result = await mcpSamplingService.HandleSamplingRequestAsync(request, progress, cancellationToken);
-            
-            logger.LogInformation("Sampling request completed successfully");
-            return result;
-        }
-        catch (Exception ex)
-        {
-            logger.LogError(ex, "Failed to handle sampling request: {Message}", ex.Message);
-            throw;
-        }
     }
 }

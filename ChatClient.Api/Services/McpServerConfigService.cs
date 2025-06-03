@@ -28,9 +28,7 @@ public class McpServerConfigService : IMcpServerConfigService
         {
             CreateDefaultServersFile().GetAwaiter().GetResult();
         }
-    }
-
-    private async Task CreateDefaultServersFile()
+    }    private async Task CreateDefaultServersFile()
     {
         var defaultServers = new List<McpServerConfig>
         {
@@ -39,6 +37,7 @@ public class McpServerConfigService : IMcpServerConfigService
                 Id = Guid.NewGuid(),
                 Name = "Time Server",
                 Command = "DimonSmart.NugetMcpServer",
+                SamplingModel = null, // Will use user's default model
                 CreatedAt = DateTime.UtcNow,
                 UpdatedAt = DateTime.UtcNow
             },
@@ -47,6 +46,7 @@ public class McpServerConfigService : IMcpServerConfigService
                 Id = Guid.NewGuid(),
                 Name = "LLM.txt MCP Server",
                 Sse = "https://mcp.llmtxt.dev/sse",
+                SamplingModel = null, // Will use user's default model
                 CreatedAt = DateTime.UtcNow,
                 UpdatedAt = DateTime.UtcNow
             }

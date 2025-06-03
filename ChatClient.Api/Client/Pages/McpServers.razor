@@ -1,7 +1,9 @@
 @page "/mcp-servers"
 @using ChatClient.Shared.Models
 @using ChatClient.Shared.Services
+@using ChatClient.Api.Client.Services
 @inject IMcpServerConfigService McpServerConfigService
+@inject IModelsService ModelsService
 @inject ISnackbar Snackbar
 
 <PageTitle>MCP Servers Management</PageTitle>
@@ -65,8 +67,7 @@
                                 @type
                             </MudChip>
                         </CellTemplate>
-                    </TemplateColumn>
-                    <TemplateColumn Title="Configuration" isEditable="false">
+                    </TemplateColumn>                    <TemplateColumn Title="Configuration" isEditable="false">
                         <CellTemplate>
                             <div>
                                 @{
@@ -78,6 +79,12 @@
                                 <MudText Typo="Typo.body2" Class="mud-text-truncate">
                                     @configText
                                 </MudText>
+                                @if (!string.IsNullOrEmpty(server.SamplingModel))
+                                {
+                                    <MudText Typo="Typo.caption" Class="mud-text-secondary">
+                                        Sampling: @server.SamplingModel
+                                    </MudText>
+                                }
                             </div>
                         </CellTemplate>
                     </TemplateColumn>
@@ -173,10 +180,25 @@
                            Label="SSE URL"
                            Class="mt-4"
                            Required="true"
-                           Immediate="true"
-                           Validation="@(new Func<string, string>(ValidateSse))"
+                           Immediate="true"                           Validation="@(new Func<string, string>(ValidateSse))"
                            Placeholder="Enter SSE URL (e.g. https://mcp.llmtxt.dev/sse)" />
             }
+
+            <MudSelect T="string"
+                      Label="Sampling Model (Optional)"
+                      @bind-Value="editingServer.SamplingModel"
+                      Class="mt-4"
+                      Clearable="true"
+                      Placeholder="Select model for MCP sampling requests">
+                @foreach (var model in availableModels)
+                {
+                    <MudSelectItem Value="@model.Name">@model.Name</MudSelectItem>
+                }
+            </MudSelect>
+            
+            <MudText Typo="Typo.caption" Class="mud-text-secondary mt-1">
+                If not specified, the user's default model will be used for sampling requests from this server.
+            </MudText>
         </MudForm>
     </DialogContent>
     <DialogActions>
@@ -188,6 +210,7 @@
 @code {
     private List<McpServerConfig> servers = new();
     private List<McpServerConfig> filteredServers = new();
+    private List<OllamaModel> availableModels = new();
     private bool loading = true;
     private McpServerConfig? serverToDelete;
     private McpServerConfig editingServer = new();
@@ -212,11 +235,23 @@
             CloseButton = true,
             MaxWidth = MaxWidth.Medium,
             FullWidth = true
-        };
-
-    protected override async Task OnInitializedAsync()
+        };    protected override async Task OnInitializedAsync()
     {
         await LoadServers();
+        await LoadAvailableModels();
+    }
+
+    private async Task LoadAvailableModels()
+    {
+        try
+        {
+            availableModels = await ModelsService.GetModelsAsync();
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Warning: Could not load available models: {ex.Message}", Severity.Warning);
+            availableModels = [];
+        }
     }
 
     private async Task LoadServers()
@@ -289,9 +324,7 @@
                        (s.Command != null && s.Command.Contains(searchString, StringComparison.OrdinalIgnoreCase)) ||
                        (s.Sse != null && s.Sse.Contains(searchString, StringComparison.OrdinalIgnoreCase)))
             .ToList();
-    }
-
-    private void StartEditing(McpServerConfig server)
+    }    private void StartEditing(McpServerConfig server)
     {
         editingServer = new McpServerConfig
         {
@@ -300,6 +333,7 @@
             Command = server.Command,
             Arguments = server.Arguments,
             Sse = server.Sse,
+            SamplingModel = server.SamplingModel,
             CreatedAt = server.CreatedAt,
             UpdatedAt = server.UpdatedAt
         };
