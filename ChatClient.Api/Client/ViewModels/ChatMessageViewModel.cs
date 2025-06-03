@@ -1,6 +1,8 @@
 using ChatClient.Api.Client.Utils;
 using ChatClient.Shared.Models;
+
 using Markdig;
+
 using Microsoft.Extensions.AI;
 
 namespace ChatClient.Api.Client.ViewModels;
@@ -24,7 +26,7 @@ public class ChatMessageViewModel
     {
         Id = message.Id;
         Content = message.Content;
-        MsgDateTime = message.MsgDateTime; 
+        MsgDateTime = message.MsgDateTime;
         Role = message.Role;
         Statistics = message.Statistics;
         IsStreaming = message.IsStreaming;

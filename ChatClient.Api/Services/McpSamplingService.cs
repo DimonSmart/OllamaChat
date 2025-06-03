@@ -1,7 +1,9 @@
 using ChatClient.Shared.Models;
 using ChatClient.Shared.Services;
+
 using Microsoft.SemanticKernel;
 using Microsoft.SemanticKernel.ChatCompletion;
+
 using ModelContextProtocol;
 using ModelContextProtocol.Protocol;
 
@@ -41,7 +43,7 @@ public class McpSamplingService(
             }
 
             progress?.Report(new ProgressNotificationValue { Progress = 0, Total = 100 });
-            
+
             var model = await DetermineModelToUseAsync(request.ModelPreferences, mcpServerConfig);
             var kernel = kernelService.CreateBasicKernel(model);
 
@@ -66,7 +68,7 @@ public class McpSamplingService(
                 responseText.Length);
 
             progress?.Report(new ProgressNotificationValue { Progress = 100, Total = 100 });
-            
+
             return new CreateMessageResult
             {
                 Content = new Content
@@ -89,34 +91,19 @@ public class McpSamplingService(
     /// <summary>
     /// Converts MCP protocol messages to a format suitable for the LLM.
     /// </summary>
-    private static ChatHistory ConvertMcpMessagesToChatHistory(IEnumerable<SamplingMessage> mcpMessages)
+    private static ChatHistory ConvertMcpMessagesToChatHistory(IEnumerable<SamplingMessage> samplingMessage)
     {
         var chatHistory = new ChatHistory();
 
-        foreach (var mcpMessage in mcpMessages)
+        foreach (var mcpMessage in samplingMessage)
         {
             var role = mcpMessage.Role switch
             {
                 Role.User => AuthorRole.User,
                 Role.Assistant => AuthorRole.Assistant,
                 _ => AuthorRole.User // Default to user if unknown role
-            };
-
-            // Handle different content types
-            string content;
-            if (mcpMessage.Content is Content contentObj)
-            {
-                content = contentObj.Text ?? string.Empty;
-            }
-            else if (mcpMessage.Content is IList<Content> contentItems)
-            {
-                // Join multiple content items (text and other types)
-                content = string.Join(" ", contentItems.Where(c => c.Text != null).Select(c => c.Text));
-            }
-            else
-            {
-                content = mcpMessage.Content?.ToString() ?? string.Empty;
-            }
+            };            // Extract content text
+            string content = mcpMessage.Content?.Text ?? string.Empty;
 
             chatHistory.Add(new ChatMessageContent(role, content));
         }

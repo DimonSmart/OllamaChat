@@ -1,5 +1,6 @@
 using ChatClient.Api.Client.Services;
 using ChatClient.Shared.Models;
+
 using Microsoft.Extensions.AI;
 
 namespace ChatClient.Tests;

@@ -1,4 +1,5 @@
 using System.Text.Json;
+
 using ChatClient.Shared.Models;
 using ChatClient.Shared.Services;
 
@@ -28,7 +29,8 @@ public class McpServerConfigService : IMcpServerConfigService
         {
             CreateDefaultServersFile().GetAwaiter().GetResult();
         }
-    }    private async Task CreateDefaultServersFile()
+    }
+    private async Task CreateDefaultServersFile()
     {
         var defaultServers = new List<McpServerConfig>
         {

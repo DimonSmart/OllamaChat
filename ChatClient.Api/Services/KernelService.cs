@@ -1,4 +1,5 @@
 using ChatClient.Shared.Models;
+
 using Microsoft.SemanticKernel;
 
 namespace ChatClient.Api.Services;
@@ -9,7 +10,7 @@ public class KernelService(
     ILogger<KernelService> logger)
 {
     private McpClientService? _mcpClientService;
-    
+
     public void SetMcpClientService(McpClientService mcpClientService)
     {
         _mcpClientService = mcpClientService;
@@ -48,7 +49,8 @@ public class KernelService(
         });
 
         return builder.Build();
-    }    private async Task RegisterMcpToolsAsync(Kernel kernel, IEnumerable<string> functionNames)
+    }
+    private async Task RegisterMcpToolsAsync(Kernel kernel, IEnumerable<string> functionNames)
     {
         if (_mcpClientService == null)
         {

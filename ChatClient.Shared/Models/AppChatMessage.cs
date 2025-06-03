@@ -1,5 +1,6 @@
-using Microsoft.Extensions.AI;
 using System.Text.Json.Serialization;
+
+using Microsoft.Extensions.AI;
 
 namespace ChatClient.Shared.Models;
 
@@ -66,8 +67,8 @@ public class AppChatMessage : IAppChatMessage
         Content = string.Empty;
         MsgDateTime = DateTime.UtcNow;
         Role = ChatRole.User;
-    }    
-        
+    }
+
     /// <summary>
     /// Creates a new AppChatMessage by copying an existing IAppChatMessage, preserving its Id.
     /// </summary>

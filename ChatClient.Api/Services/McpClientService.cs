@@ -1,8 +1,10 @@
+using System.Reflection;
+
 using ChatClient.Shared.Models;
 using ChatClient.Shared.Services;
+
 using ModelContextProtocol.Client;
 using ModelContextProtocol.Protocol;
-using System.Reflection;
 
 namespace ChatClient.Api.Services;
 
@@ -125,9 +127,9 @@ public class McpClientService(
 
         _mcpClients = null;
         GC.SuppressFinalize(this);
-    }    
-    
-    
+    }
+
+
     /// <summary>
     /// Creates client options that declare sampling capabilities and register the sampling handler
     /// </summary>

@@ -1,7 +1,9 @@
 using ChatClient.Api;
 using ChatClient.Api.Services;
+
 using Microsoft.AspNetCore.Hosting.Server;
 using Microsoft.AspNetCore.Hosting.Server.Features;
+
 using MudBlazor.Services;
 
 var builder = WebApplication.CreateBuilder(args);

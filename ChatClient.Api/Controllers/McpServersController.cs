@@ -1,6 +1,7 @@
-using Microsoft.AspNetCore.Mvc;
 using ChatClient.Shared.Models;
 using ChatClient.Shared.Services;
+
+using Microsoft.AspNetCore.Mvc;
 
 namespace ChatClient.Api.Controllers;
 

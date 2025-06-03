@@ -1,5 +1,6 @@
-using Microsoft.Extensions.AI;
 using System.Text;
+
+using Microsoft.Extensions.AI;
 
 namespace ChatClient.Shared.Models;
 

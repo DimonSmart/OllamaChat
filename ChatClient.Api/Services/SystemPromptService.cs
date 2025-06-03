@@ -1,4 +1,5 @@
 using System.Text.Json;
+
 using ChatClient.Shared.Models;
 using ChatClient.Shared.Services;
 
