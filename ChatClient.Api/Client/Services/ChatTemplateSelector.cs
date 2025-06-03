@@ -1,4 +1,5 @@
 using ChatClient.Shared.Models;
+
 using Microsoft.AspNetCore.Components;
 using Microsoft.Extensions.AI;
 

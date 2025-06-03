@@ -1,10 +1,12 @@
-using ChatClient.Shared.Models;
-using Microsoft.Extensions.AI;
 using System.Collections.ObjectModel;
+
 using ChatClient.Api.Services;
+using ChatClient.Shared.Models;
+using ChatClient.Shared.Services;
+
+using Microsoft.Extensions.AI;
 using Microsoft.SemanticKernel;
 using Microsoft.SemanticKernel.ChatCompletion;
-using ChatClient.Shared.Services;
 
 namespace ChatClient.Api.Client.Services;
 
