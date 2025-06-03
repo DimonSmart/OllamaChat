@@ -9,13 +9,14 @@ using ChatClient.Shared.Services;
 namespace ChatClient.Api.Client.Services;
 
 public class ChatService(
-    KernelService kernelService, 
+    KernelService kernelService,
     ILogger<ChatService> logger,
     IUserSettingsService userSettingsService) : IChatService
 {
     private CancellationTokenSource? _cancellationTokenSource;
     private StreamingMessageManager? _streamingManager;
-      public event Action<bool>? LoadingStateChanged;
+    private StreamingAppChatMessage? _currentStreamingMessage;
+    public event Action<bool>? LoadingStateChanged;
     public event Action? ChatInitialized;
     public event Func<IAppChatMessage, Task>? MessageAdded;
     public event Func<IAppChatMessage, Task>? MessageUpdated;
@@ -27,7 +28,7 @@ public class ChatService(
     {
         Messages.Clear();
         _streamingManager = new StreamingMessageManager(MessageUpdated);
-        
+
         if (initialPrompt != null)
         {
             var systemMessage = new AppChatMessage(initialPrompt.Content, DateTime.Now, ChatRole.System, string.Empty);
@@ -40,10 +41,18 @@ public class ChatService(
     {
         Messages.Clear();
     }
-
-    public void Cancel()
+    public async void Cancel()
     {
         _cancellationTokenSource?.Cancel();
+
+        // Handle the current streaming message if it exists
+        if (_streamingManager != null && _currentStreamingMessage != null)
+        {
+            var canceledMessage = _streamingManager.CancelStreaming(_currentStreamingMessage);
+            await ReplaceStreamingMessageWithFinal(_currentStreamingMessage, canceledMessage);
+            _currentStreamingMessage = null;
+        }
+
         UpdateLoadingState(false);
     }
 
@@ -61,7 +70,8 @@ public class ChatService(
         }
         catch (OperationCanceledException)
         {
-            await HandleError("Operation cancelled.");
+            // Cancellation is already handled in Cancel() method
+            // Just ensure cleanup happens
         }
         catch (Exception ex)
         {
@@ -71,25 +81,26 @@ public class ChatService(
         {
             Cleanup();
         }
-    }    
+    }
     private async Task AddMessageAsync(IAppChatMessage message)
     {
         Messages.Add(message);
         await (MessageAdded?.Invoke(message) ?? Task.CompletedTask);
-    }    private async Task ProcessAIResponseAsync(IReadOnlyCollection<string> functionNames, string modelName, CancellationToken cancellationToken)
+    }
+    private async Task ProcessAIResponseAsync(IReadOnlyCollection<string> functionNames, string modelName, CancellationToken cancellationToken)
     {
         var startTime = DateTime.Now;
         logger.LogInformation("Processing AI response with model: {ModelName}", modelName);
-        
+
         if (_streamingManager == null)
         {
             logger.LogError("StreamingMessageManager is not initialized");
             await HandleError("Chat not properly initialized");
             return;
         }
-        
         // Create streaming message
         var streamingMessage = _streamingManager.CreateStreamingMessage();
+        _currentStreamingMessage = streamingMessage;
         await AddMessageAsync(streamingMessage);
 
         // Simple throttling for UI updates - no more than once every 500ms
@@ -100,17 +111,17 @@ public class ChatService(
         try
         {
             var chatHistory = BuildChatHistory();
-              // Create kernel and get chat completion service
+            // Create kernel and get chat completion service
             var kernel = await kernelService.CreateKernelAsync(modelName, functionNames);
             var chatService = kernel.GetRequiredService<IChatCompletionService>();
-            
+
             var executionSettings = new PromptExecutionSettings
             {
                 FunctionChoiceBehavior = (functionNames?.Any() == true)
                     ? FunctionChoiceBehavior.Auto()
                     : FunctionChoiceBehavior.None()
             };
-            
+
             // Streaming response from LLM
             await foreach (var content in chatService.GetStreamingChatMessageContentsAsync(
                 chatHistory,
@@ -118,11 +129,14 @@ public class ChatService(
                 kernel,
                 cancellationToken: cancellationToken))
             {
+                await Task.Yield();
+                cancellationToken.ThrowIfCancellationRequested();
+
                 if (!string.IsNullOrEmpty(content.Content))
                 {
                     streamingMessage.Append(content.Content);
                     approximateTtokenCount++;
-                    
+
                     // Update UI no more than once every 500ms
                     var now = DateTime.Now;
                     if ((now - lastUpdateTime).TotalMilliseconds >= updateIntervalMs)
@@ -131,30 +145,31 @@ public class ChatService(
                         lastUpdateTime = now;
                     }
                 }
-            }            
-            
+                await Task.Yield();
+            }
+
             // Final update immediately after streaming completion
             await (MessageUpdated?.Invoke(streamingMessage) ?? Task.CompletedTask);
-              // Create statistics and complete streaming
+            // Create statistics and complete streaming
             var processingTime = DateTime.Now - startTime;
             var settings = await userSettingsService.GetSettingsAsync();
             var statistics = _streamingManager.BuildStatistics(
-                processingTime, 
-                modelName, 
-                functionNames, 
+                processingTime,
+                modelName,
+                functionNames,
                 settings.ShowTokensPerSecond ? approximateTtokenCount : null);
-            
+
             var finalMessage = _streamingManager.CompleteStreaming(streamingMessage, statistics);
-            
             // Replace streaming message with final message
             await ReplaceStreamingMessageWithFinal(streamingMessage, finalMessage);
+            _currentStreamingMessage = null;
         }
         catch (Exception ex)
         {
             logger.LogError(ex, "Error processing AI response");
-            
             // Remove streaming message on error
             RemoveStreamingMessage(streamingMessage);
+            _currentStreamingMessage = null;
             await HandleError($"Error: {ex.Message}");
         }
     }
@@ -171,18 +186,18 @@ public class ChatService(
 
         foreach (var message in Messages.Where(m => !m.IsStreaming))
         {
-            if (roleHandlers.TryGetValue(message.Role, out var handler))            {
+            if (roleHandlers.TryGetValue(message.Role, out var handler))
+            {
                 handler(chatHistory, message.Content);
             }
         }
-        
+
         return chatHistory;
     }
-    
     private async Task ReplaceStreamingMessageWithFinal(StreamingAppChatMessage streamingMessage, AppChatMessage finalMessage)
     {
         var index = Messages.IndexOf(streamingMessage);
-        
+
         if (index >= 0)
         {
             Messages[index] = finalMessage;
@@ -199,11 +214,11 @@ public class ChatService(
     {
         await AddMessageAsync(new AppChatMessage(text, DateTime.Now, ChatRole.System));
     }
-
     private void Cleanup()
     {
         _cancellationTokenSource?.Dispose();
         _cancellationTokenSource = null;
+        _currentStreamingMessage = null;
         UpdateLoadingState(false);
     }
 

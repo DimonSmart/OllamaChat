@@ -47,11 +47,17 @@ public sealed class Debouncer<T> : IDisposable where T : IEquatable<T>
     /// Clears any pending calls and restarts the processing loop.
     /// </summary>
     public void ClearDelayedCalls()
-    {
+    {        
         // Stop current loop
         _cts.Cancel();
         _signal.Release();
-        try { _processingTask.Wait(); } catch { }
+        try
+        {
+            _processingTask.Wait();
+        }
+        catch
+        {
+        }
 
         // Clear pending items and dispose old resources
         _queue.Clear();
@@ -83,12 +89,17 @@ public sealed class Debouncer<T> : IDisposable where T : IEquatable<T>
             }
         }
     }
-
     public void Dispose()
     {
         _cts.Cancel();
         _signal.Release();
-        try { _processingTask.Wait(); } catch { }
+        try
+        {
+            _processingTask.Wait();
+        }
+        catch
+        {
+        }
         _cts.Dispose();
         _signal.Dispose();
     }

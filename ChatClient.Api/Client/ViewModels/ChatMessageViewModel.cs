@@ -18,15 +18,17 @@ public class ChatMessageViewModel
     public bool IsStatsVisible { get; set; }
     public bool IsThoughtsVisible { get; set; }
     public bool IsStreaming { get; set; }
+    public bool IsCanceled { get; set; }
 
     private ChatMessageViewModel Populate(IAppChatMessage message)
     {
         Id = message.Id;
         Content = message.Content;
-        MsgDateTime = message.MsgDateTime;
+        MsgDateTime = message.MsgDateTime; 
         Role = message.Role;
         Statistics = message.Statistics;
         IsStreaming = message.IsStreaming;
+        IsCanceled = message.IsCanceled;
 
         // Split think and answer
         var (think, answer) = ThoughtParser.SplitThinkAndAnswer(message.Content);

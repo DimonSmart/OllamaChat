@@ -57,7 +57,7 @@ public class McpClientService(
         catch (Exception ex)
         {
             logger.LogError(ex, "Failed to add network client for server: {ServerName}", serverConfig.Name);
-    }
+        }
     }
 
     private static async Task<IMcpClient> CreateLocalMcpClientAsync(McpServerConfig config)
@@ -65,7 +65,7 @@ public class McpClientService(
         if (string.IsNullOrEmpty(config.Command))
         {
             throw new InvalidOperationException("MCP server command cannot be null or empty for local connection");
-        }        
+        }
         // Use the application's executable directory as working directory instead of Environment.CurrentDirectory
         // This prevents MCP processes from accidentally changing the main application's working directory
         var applicationDirectory = AppContext.BaseDirectory;

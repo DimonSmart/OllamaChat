@@ -206,10 +206,12 @@
     }
 
     private void OnSearch(string text)
-    {
+    {        
         searchString = text;
         ApplySearch();
-    }    private void ApplySearch()
+    }
+    
+    private void ApplySearch()
     {
         if (string.IsNullOrWhiteSpace(searchString))
         {

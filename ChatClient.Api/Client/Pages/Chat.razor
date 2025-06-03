@@ -84,9 +84,9 @@
             @foreach (var message in ChatViewModelService.Messages)
             {
                 @if (message.Role != Microsoft.Extensions.AI.ChatRole.System)
-                {
-                    <MudChat ChatPosition="@(message.Role == Microsoft.Extensions.AI.ChatRole.Assistant ? ChatBubblePosition.Start : ChatBubblePosition.End)">
-                        <MudChatBubble @key="message.Id">
+                {                    
+                    <MudChat ChatPosition="@(message.Role == Microsoft.Extensions.AI.ChatRole.Assistant ? ChatBubblePosition.Start : ChatBubblePosition.End)"> 
+                            <MudChatBubble @key="message.Id">
                             @((MarkupString)message.HtmlContent)
                             @if (message.IsStreaming)
                             {
@@ -94,6 +94,18 @@
                                     <MudProgressCircular Size="Size.Small" Indeterminate="true" />
                                     <small><i>typing...</i></small>
                                 </span>
+                            }
+                            @if (message.IsCanceled)
+                            {
+                                <div class="mt-1" style="display: inline-flex;">
+                                    <MudAlert Severity="Severity.Error" 
+                                             Dense="true" 
+                                             Style="padding: 4px 8px; font-size: 0.75rem; border-radius: 16px; display: inline-flex; align-items: center; width: fit-content; min-height: auto;">
+                                        <div style="display: flex; align-items: center; gap: 4px;">
+                                            Canceled
+                                        </div>
+                                    </MudAlert>
+                                </div>
                             }
                             <MudText Typo="Typo.caption" Align="@(message.Role == Microsoft.Extensions.AI.ChatRole.Assistant ? Align.Left : Align.Right)" Class="mt-1">
                                 @message.MsgDateTime.ToString("g")
@@ -139,10 +151,11 @@
                                             </MudText>
                                         </MudPaper>
                                     }
-                                }
-                            </div>
+                                }                            
+                                </div>
                         </MudChatBubble>
-                    </MudChat>                }
+                    </MudChat>
+                }
             }
         
         </div>
@@ -224,7 +237,9 @@
     private List<OllamaModel> availableModels = new();
     private OllamaModel? selectedModel;
 
-    private bool showPromptContent { get; set; } = false;    private readonly EventCallback<ChatMessageViewModel> _messageAddedCallback;
+    private bool showPromptContent { get; set; } = false;
+    
+    private readonly EventCallback<ChatMessageViewModel> _messageAddedCallback;
     private readonly EventCallback<ChatMessageViewModel> _messageUpdatedCallback;
     
     public Chat()
@@ -263,8 +278,7 @@
     {
         StateHasChanged();
         await ScrollToBottom();
-    }
-
+    }    
     private void OnMessageUpdated(ChatMessageViewModel message)
     {
         StateHasChanged();
@@ -275,7 +289,9 @@
         selectedFunctions = functions;
         StateHasChanged();
         return Task.CompletedTask;
-    }    private async Task LoadSystemPrompts()
+    }
+    
+    private async Task LoadSystemPrompts()
     {
         systemPrompts = await PromptService.GetAllPromptsAsync();
         if (systemPrompts.Count == 0) 
@@ -289,12 +305,13 @@
         {
             availableFunctions = (await FunctionsService.GetAvailableFunctionsAsync()).ToList();
         }
-        catch (Exception ex)
+        catch (Exception ex)        
         {
             Console.WriteLine($"Error loading available functions: {ex}");
             availableFunctions = new List<FunctionInfo>();
         }
     }
+    
     private async Task LoadAvailableModels()
     {
         try
@@ -324,12 +341,12 @@
         if (selectedSystemPrompt == null)
         {
             selectedSystemPrompt = PromptService.GetDefaultSystemPrompt();
-        }
-
-        ChatService.InitializeChat(selectedSystemPrompt);
+        }        ChatService.InitializeChat(selectedSystemPrompt);
         chatStarted = true;
         StateHasChanged();
-    }    private void RestartChat()
+    }
+    
+    private void RestartChat()
     {
         chatStarted = false;
         ChatService.ClearChat();
@@ -350,17 +367,19 @@
         try
         {
             await JSRuntime.InvokeVoidAsync("scrollToBottom", messagesElement);
-        }
+        }        
         catch (Exception ex)
         {
             Console.WriteLine($"Error scrolling to bottom: {ex.Message}");
         }
     }
-
+    
     private void Cancel()
     {
         ChatService.Cancel();
-    }    private void ToggleStatsVisibility(ChatMessageViewModel message)
+    }
+    
+    private void ToggleStatsVisibility(ChatMessageViewModel message)
     {
         message.IsStatsVisible = !message.IsStatsVisible;
     }

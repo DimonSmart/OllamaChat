@@ -10,6 +10,7 @@ public class StreamingAppChatMessage(string initialContent, DateTime msgDateTime
     public DateTime MsgDateTime { get; private set; } = msgDateTime;
     public ChatRole Role { get; private set; } = role;
     public string? Statistics { get; private set; } = string.Empty;
+    public bool IsCanceled { get; private set; }
 
     public Guid Id { get; private set; } = Guid.NewGuid();
 
@@ -39,9 +40,13 @@ public class StreamingAppChatMessage(string initialContent, DateTime msgDateTime
     {
         _contentBuilder.Append(text);
     }
-
     public void SetStatistics(string stats)
     {
         Statistics = stats;
+    }
+
+    public void SetCanceled()
+    {
+        IsCanceled = true;
     }
 }

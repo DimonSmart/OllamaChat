@@ -10,4 +10,5 @@ public interface IAppChatMessage : IEquatable<IAppChatMessage>
     ChatRole Role { get; }
     string? Statistics { get; }
     bool IsStreaming { get; }
+    bool IsCanceled { get; }
 }

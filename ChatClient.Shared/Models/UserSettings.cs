@@ -8,13 +8,13 @@ public class UserSettings
     /// The name of the model to use by default
     /// </summary>    [JsonPropertyName("defaultModelName")]
     public string DefaultModelName { get; set; } = string.Empty;
-    
+
     /// <summary>
     /// The default message to prepopulate in the chat input
     /// </summary>
     [JsonPropertyName("defaultChatMessage")]
     public string DefaultChatMessage { get; set; } = string.Empty;
-    
+
     /// <summary>
     /// Whether to show tokens per second in statistics
     /// </summary>
