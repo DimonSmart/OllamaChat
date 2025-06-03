@@ -6,10 +6,29 @@ namespace ChatClient.Api.Services;
 public class KernelService(
     IConfiguration configuration,
     IHttpClientFactory httpClientFactory,
-    McpClientService mcpClientService,
     ILogger<KernelService> logger)
 {
+    private McpClientService? _mcpClientService;
+    
+    public void SetMcpClientService(McpClientService mcpClientService)
+    {
+        _mcpClientService = mcpClientService;
+    }
+
     public async Task<Kernel> CreateKernelAsync(string modelId, IEnumerable<string>? functionNames = null)
+    {
+        var kernel = CreateBasicKernel(modelId);
+
+        // Register selected MCP tools as kernel functions
+        if (functionNames != null && functionNames.Any() && _mcpClientService != null)
+        {
+            await RegisterMcpToolsAsync(kernel, functionNames);
+        }
+
+        return kernel;
+    }
+
+    public Kernel CreateBasicKernel(string modelId)
     {
         var baseUrl = configuration["Ollama:BaseUrl"] ?? "http://localhost:11434";
         var httpClient = httpClientFactory.CreateClient("DefaultClient");
@@ -28,22 +47,18 @@ public class KernelService(
             FunctionChoiceBehavior = FunctionChoiceBehavior.Auto()
         });
 
-        var kernel = builder.Build();
-
-        // Register selected MCP tools as kernel functions
-        if (functionNames != null && functionNames.Any())
+        return builder.Build();
+    }    private async Task RegisterMcpToolsAsync(Kernel kernel, IEnumerable<string> functionNames)
+    {
+        if (_mcpClientService == null)
         {
-            await RegisterMcpToolsAsync(kernel, functionNames);
+            logger.LogWarning("MCP client service not available for registering tools");
+            return;
         }
 
-        return kernel;
-    }
-
-    private async Task RegisterMcpToolsAsync(Kernel kernel, IEnumerable<string> functionNames)
-    {
         try
         {
-            var mcpClients = await mcpClientService.GetMcpClientsAsync();
+            var mcpClients = await _mcpClientService.GetMcpClientsAsync();
             if (mcpClients.Count == 0)
             {
                 logger.LogWarning("MCP client could not be created");
@@ -52,7 +67,7 @@ public class KernelService(
 
             foreach (var mcpClient in mcpClients)
             {
-                var mcpTools = await mcpClientService.GetMcpTools(mcpClient);
+                var mcpTools = await _mcpClientService.GetMcpTools(mcpClient);
                 if (mcpTools.Count == 0)
                 {
                     logger.LogWarning("No MCP tools available to register");
@@ -83,14 +98,20 @@ public class KernelService(
     {
         var functions = new List<FunctionInfo>();
 
+        if (_mcpClientService == null)
+        {
+            logger.LogWarning("MCP client service not available for getting functions");
+            return functions;
+        }
+
         try
         {
-            var mcpClients = await mcpClientService.GetMcpClientsAsync();
+            var mcpClients = await _mcpClientService.GetMcpClientsAsync();
             if (mcpClients.Count == 0) return [];
 
             foreach (var mcpClient in mcpClients)
             {
-                var mcpTools = await mcpClientService.GetMcpTools(mcpClient);
+                var mcpTools = await _mcpClientService.GetMcpTools(mcpClient);
                 var toolFuncs = mcpTools.Select(tool => new FunctionInfo { Name = tool.Name, Description = tool.Description });
                 functions.AddRange(toolFuncs);
             }

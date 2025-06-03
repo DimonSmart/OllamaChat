@@ -15,7 +15,7 @@
 		<PackageReference Include="Microsoft.SemanticKernel.Abstractions" Version="1.48.0" />
 		<PackageReference Include="Microsoft.SemanticKernel.Connectors.Ollama" Version="1.48.0-alpha" />
 		<PackageReference Include="Microsoft.SemanticKernel.Plugins.Core" Version="1.48.0-alpha" />
-		<PackageReference Include="ModelContextProtocol" Version="0.1.0-preview.12" />
+        <PackageReference Include="ModelContextProtocol" Version="0.2.0-preview.2" />
 		<PackageReference Include="ModelContextProtocol-SemanticKernel" Version="0.0.1-preview-12" />
 		<PackageReference Include="MudBlazor" Version="8.6.0" />
 		<PackageReference Include="Markdig" Version="0.41.1" />

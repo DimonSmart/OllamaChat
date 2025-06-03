@@ -41,6 +41,7 @@ builder.Services.AddSingleton<ILoggerFactory>(loggerFactory);
 // Register services
 builder.Services.AddSingleton<ChatClient.Shared.Services.IMcpServerConfigService, ChatClient.Api.Services.McpServerConfigService>();
 builder.Services.AddSingleton<ChatClient.Api.Services.McpClientService>();
+builder.Services.AddSingleton<ChatClient.Api.Services.McpSamplingService>();
 builder.Services.AddSingleton<ChatClient.Api.Services.KernelService>();
 builder.Services.AddSingleton<ChatClient.Api.Services.OllamaService>();
 builder.Services.AddSingleton<ChatClient.Shared.Services.ISystemPromptService, ChatClient.Api.Services.SystemPromptService>();
@@ -67,6 +68,14 @@ builder.Services.AddControllers(options =>
 });
 
 var app = builder.Build();
+
+// Resolve circular dependency by injecting McpClientService into KernelService
+using (var scope = app.Services.CreateScope())
+{
+    var kernelService = scope.ServiceProvider.GetRequiredService<KernelService>();
+    var mcpClientService = scope.ServiceProvider.GetRequiredService<McpClientService>();
+    kernelService.SetMcpClientService(mcpClientService);
+}
 
 // Configure the HTTP request pipeline.
 if (app.Environment.IsDevelopment())
