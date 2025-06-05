@@ -25,7 +25,7 @@ Console.WriteLine($"Web Root: {builder.Environment.WebRootPath}");
 // Configure default HttpClient factory with named clients
 builder.Services.AddHttpClient("DefaultClient", client =>
 {
-    client.Timeout = TimeSpan.FromMinutes(10);
+    client.Timeout = TimeSpan.FromMinutes(20);
 });
 
 builder.Services.AddHttpClient("OllamaClient", client =>
