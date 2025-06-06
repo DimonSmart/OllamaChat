@@ -116,6 +116,26 @@
     font-size: 0.75rem;
 }
 
+/* Think segments styling */
+.think-segment {
+    border-left: 3px solid #6366f1;
+    background-color: #f8fafc;
+    border-radius: 0.375rem;
+    margin-bottom: 0.5rem;
+}
+
+.think-segment:last-child {
+    margin-bottom: 0;
+}
+
+.think-segment-header {
+    background-color: #e0e7ff;
+    padding: 0.25rem 0.5rem;
+    border-radius: 0.375rem 0.375rem 0 0;
+    font-weight: 600;
+    color: #4338ca;
+}
+
 @keyframes blink {
     0%, 100% {
         opacity: 1;
