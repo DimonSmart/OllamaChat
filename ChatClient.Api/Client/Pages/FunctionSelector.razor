@@ -4,15 +4,22 @@
 <MudCollapse Expanded="@Expanded" ExpandedChanged="@(v => ExpandedChanged.InvokeAsync(v))">
     <MudPaper Class="pa-4">
         <MudText Typo="Typo.subtitle1">Select Functions to use:</MudText>
-        <MudList T="string" Dense="true">
+        <div class="d-flex flex-column gap-1">
             @foreach (var fn in AvailableFunctions)
             {
-                <MudListItem>
-                    <MudCheckBox T="Boolean" ValueChanged="@(async (bool v) => await OnFunctionToggled(fn.Name, v))" />
-                    <MudText Class="ms-2">@fn.Name — @fn.Description</MudText>
-                </MudListItem>
+                <div class="d-flex align-center gap-2">
+                    <MudCheckBox T="Boolean"
+                                 ValueChanged="@(async (bool v) => await OnFunctionToggled(fn.Name, v))"
+                                 Value="@internalSelectedFunctions.Contains(fn.Name)"
+                                 Dense="true" />
+                    <div class="flex-grow-1">
+                        <MudText Typo="Typo.body2" Class="mb-0">
+                            <strong>@fn.Name</strong> - @fn.Description
+                        </MudText>
+                    </div>
+                </div>
             }
-        </MudList>
+        </div>
         <MudText Typo="Typo.caption" Color="Color.Secondary">
             It is not recommended to select more than 5 functions.
         </MudText>

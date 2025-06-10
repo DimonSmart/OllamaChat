@@ -110,11 +110,15 @@ public class KernelService(
         {
             var mcpClients = await _mcpClientService.GetMcpClientsAsync();
             if (mcpClients.Count == 0) return [];
-
             foreach (var mcpClient in mcpClients)
             {
                 var mcpTools = await _mcpClientService.GetMcpTools(mcpClient);
-                var toolFuncs = mcpTools.Select(tool => new FunctionInfo { Name = tool.Name, Description = tool.Description });
+                var toolFuncs = mcpTools.Select(tool =>
+                    new FunctionInfo
+                    {
+                        Name = tool.Name,
+                        Description = tool.Description
+                    });
                 functions.AddRange(toolFuncs);
             }
 
