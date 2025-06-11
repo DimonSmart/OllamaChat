@@ -4,6 +4,8 @@ using Markdig;
 
 using Microsoft.Extensions.AI;
 
+using DimonSmart.AiUtils;
+
 namespace ChatClient.Api.Client.ViewModels;
 
 public class ChatMessageViewModel
@@ -20,6 +22,10 @@ public class ChatMessageViewModel
     public bool IsThoughtsVisible { get; set; }
     public bool IsStreaming { get; set; }
     public bool IsCanceled { get; set; }
+
+    private static readonly MarkdownPipeline Pipeline = new MarkdownPipelineBuilder()
+        .UseAdvancedExtensions()
+        .Build();
     private ChatMessageViewModel Populate(IAppChatMessage message)
     {
         Id = message.Id;
@@ -28,16 +34,18 @@ public class ChatMessageViewModel
         Role = message.Role;
         Statistics = message.Statistics;
         IsStreaming = message.IsStreaming;
-        IsCanceled = message.IsCanceled;        // Extract think tags and answer using the DimonSmart.AiUtils parser
-        var result = DimonSmart.AiUtils.ThinkTagParser.ExtractThinkAnswer(message.Content);
-        // Set individual think segments
+        IsCanceled = message.IsCanceled;
+        var result = ThinkTagParser.ExtractThinkAnswer(message.Content);
+        
         ThinkSegments = result.ThoughtSegments;
         HtmlThinkSegments = result.ThoughtSegments
-            .Select(segment => Markdown.ToHtml(segment))
+            .Select(segment => Markdown.ToHtml(segment, Pipeline))
             .ToList()
-            .AsReadOnly();        // Set the cleaned answer content
+            .AsReadOnly();
+
+        // Set the cleaned answer content
         Content = result.Answer;
-        HtmlContent = Markdown.ToHtml(result.Answer);
+        HtmlContent = Markdown.ToHtml(result.Answer, Pipeline);
 
         return this;
     }

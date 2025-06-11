@@ -43,7 +43,8 @@ public class ChatService(
     {
         Messages.Clear();
     }
-    public async void Cancel()
+
+    public async Task CancelAsync()
     {
         _cancellationTokenSource?.Cancel();
 
@@ -108,7 +109,7 @@ public class ChatService(
         // Simple throttling for UI updates - no more than once every 500ms
         var lastUpdateTime = DateTime.MinValue;
         const int updateIntervalMs = 500;
-        var approximateTtokenCount = 0;
+        var approximateTokenCount = 0;
 
         try
         {
@@ -137,7 +138,7 @@ public class ChatService(
                 if (!string.IsNullOrEmpty(content.Content))
                 {
                     streamingMessage.Append(content.Content);
-                    approximateTtokenCount++;
+                    approximateTokenCount++;
 
                     // Update UI no more than once every 500ms
                     var now = DateTime.Now;
@@ -159,7 +160,7 @@ public class ChatService(
                 processingTime,
                 modelName,
                 functionNames,
-                settings.ShowTokensPerSecond ? approximateTtokenCount : null);
+                settings.ShowTokensPerSecond ? approximateTokenCount : null);
 
             var finalMessage = _streamingManager.CompleteStreaming(streamingMessage, statistics);
             // Replace streaming message with final message

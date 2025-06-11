@@ -11,6 +11,6 @@ public interface IChatService
     event Func<IAppChatMessage, Task>? MessageUpdated;
     void InitializeChat(SystemPrompt? initialPrompt);
     void ClearChat();
-    void Cancel();
+    Task CancelAsync();
     Task AddUserMessageAndAnswerAsync(string text, IReadOnlyCollection<string> selectedFunctions, string modelName);
 }

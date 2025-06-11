@@ -58,7 +58,6 @@ builder.Services.AddScoped<ChatClient.Api.Client.Services.IChatViewModelService,
 // Add services to the container.
 builder.Services.AddRazorPages();
 builder.Services.AddServerSideBlazor();
-builder.Services.AddControllers();
 
 // Register MudBlazor services
 builder.Services.AddMudServices();
@@ -71,7 +70,6 @@ builder.Services.AddControllers(options =>
 
 var app = builder.Build();
 
-// Resolve circular dependency by injecting McpClientService into KernelService
 using (var scope = app.Services.CreateScope())
 {
     var kernelService = scope.ServiceProvider.GetRequiredService<KernelService>();
@@ -92,7 +90,6 @@ else
     Console.WriteLine("Production mode enabled");
 }
 
-// Configure static files
 app.UseStaticFiles();
 
 app.UseRouting();
@@ -144,4 +141,4 @@ app.Lifetime.ApplicationStarted.Register(() =>
 });
 
 Console.WriteLine("Starting web server...");
-app.Run();
+await app.RunAsync();
