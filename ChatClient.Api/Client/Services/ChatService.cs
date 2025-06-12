@@ -58,12 +58,12 @@ public class ChatService(
 
         UpdateLoadingState(false);
     }
-
-    public async Task AddUserMessageAndAnswerAsync(string text, IReadOnlyCollection<string> selectedFunctions, string modelName)
+    
+    public async Task AddUserMessageAndAnswerAsync(string text, IReadOnlyCollection<string> selectedFunctions, string modelName, IReadOnlyList<ChatMessageFile>? files = null)
     {
         if (string.IsNullOrWhiteSpace(text) || IsLoading) return;
 
-        await AddMessageAsync(new AppChatMessage(text, DateTime.Now, ChatRole.User, string.Empty));
+        await AddMessageAsync(new AppChatMessage(text, DateTime.Now, ChatRole.User, string.Empty, files));
         UpdateLoadingState(true);
 
         _cancellationTokenSource = new CancellationTokenSource();

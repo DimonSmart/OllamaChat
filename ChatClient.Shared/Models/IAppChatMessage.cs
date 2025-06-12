@@ -11,4 +11,5 @@ public interface IAppChatMessage : IEquatable<IAppChatMessage>
     string? Statistics { get; }
     bool IsStreaming { get; }
     bool IsCanceled { get; }
+    IReadOnlyList<ChatMessageFile> Files { get; }
 }

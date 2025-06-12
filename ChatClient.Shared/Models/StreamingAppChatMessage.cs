@@ -12,6 +12,7 @@ public class StreamingAppChatMessage(string initialContent, DateTime msgDateTime
     public ChatRole Role { get; private set; } = role;
     public string? Statistics { get; private set; } = string.Empty;
     public bool IsCanceled { get; private set; }
+    public IReadOnlyList<ChatMessageFile> Files { get; private set; } = [];
 
     public Guid Id { get; private set; } = Guid.NewGuid();
 

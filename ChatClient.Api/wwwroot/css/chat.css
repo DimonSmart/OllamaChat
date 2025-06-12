@@ -48,11 +48,6 @@
     text-align: right;
 }
 
-.chat-input-container {
-    padding: 1rem;
-    background-color: #fff;
-    border-top: 1px solid #e2e8f0;
-}
 
 .input-group {
     display: flex;
@@ -154,4 +149,18 @@
         transform: scale(1.2);
         opacity: 1;
     }
+}
+
+/* File attachments styling */
+.message-files {
+    margin-bottom: 0.5rem;
+}
+
+.message-files .mud-chip {
+    margin-right: 0.25rem;
+    margin-bottom: 0.25rem;
+}
+
+.message-files .mud-chip-icon {
+    margin-right: 0.25rem;
 }

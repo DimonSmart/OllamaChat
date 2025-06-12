@@ -85,9 +85,27 @@
             @foreach (var message in ChatViewModelService.Messages)
             {
                 @if (message.Role != Microsoft.Extensions.AI.ChatRole.System)
-                {                    
+                {
                     <MudChat ChatPosition="@(message.Role == Microsoft.Extensions.AI.ChatRole.Assistant ? ChatBubblePosition.Start : ChatBubblePosition.End)"> 
                             <MudChatBubble @key="message.Id">
+                            
+                            @* Display attached files if any *@
+                            @if (message.Files.Any())
+                            {
+                                <div class="mb-2">
+                                    @foreach (var file in message.Files)
+                                    {
+                                        <MudChip T="string" 
+                                                 Color="Color.Info" 
+                                                 Size="Size.Small"
+                                                 Class="mb-1 mr-1">
+                                            <MudIcon Icon="@GetFileIcon(file.ContentType)" Class="mr-1" />
+                                            @file.Name (@FormatFileSize(file.Size))
+                                        </MudChip>
+                                    }
+                                </div>
+                            }
+                            
                             @((MarkupString)message.HtmlContent)
                             @if (message.IsStreaming)
                             {
@@ -363,16 +381,17 @@
         ChatService.ClearChat();
         StateHasChanged();
     }
-    
-    private async Task SendChatMessageAsync(string message)
+
+      private async Task SendChatMessageAsync((string text, IReadOnlyList<ChatMessageFile> files) messageData)
     {
-        if (string.IsNullOrWhiteSpace(message) || isLLMAnswering)
+        if (string.IsNullOrWhiteSpace(messageData.text) || isLLMAnswering)
             return;
 
         var modelName = selectedModel?.Name ?? "";
-        await ChatService.AddUserMessageAndAnswerAsync(message.Trim(), selectedFunctions, modelName);
+        await ChatService.AddUserMessageAndAnswerAsync(messageData.text.Trim(), selectedFunctions, modelName, messageData.files);
         await ScrollToBottom();
     }
+
     private async Task ScrollToBottom()
     {
         try
@@ -404,13 +423,38 @@
     {
         selectedModel = model;
         Console.WriteLine($"Selected model changed to: {model.Name}");
-    }
-
+    }    
+    
     public ValueTask DisposeAsync()
     {
         ChatService.LoadingStateChanged -= OnLoadingStateChanged;
         ChatViewModelService.MessageAdded -= async (msg) => await InvokeAsync(() => OnMessageAdded(msg));
         ChatViewModelService.MessageUpdated -= (msg) => InvokeAsync(() => OnMessageUpdated(msg));
         return ValueTask.CompletedTask;
+    }
+    
+    private string GetFileIcon(string contentType)
+    {
+        return contentType.ToLower() switch
+        {
+            var ct when ct.StartsWith("image/") => Icons.Material.Filled.Image,
+            var ct when ct.Contains("pdf") => Icons.Material.Filled.PictureAsPdf,
+            var ct when ct.Contains("text") => Icons.Material.Filled.Description,
+            var ct when ct.Contains("word") || ct.Contains("document") => Icons.Material.Filled.Description,
+            _ => Icons.Material.Filled.AttachFile
+        };
+    }
+
+    private string FormatFileSize(long bytes)
+    {
+        string[] suffixes = ["B", "KB", "MB", "GB"];
+        int counter = 0;
+        decimal number = bytes;
+        while (Math.Round(number / 1024) >= 1)
+        {
+            number /= 1024;
+            counter++;
+        }
+        return $"{number:n1} {suffixes[counter]}";
     }
 }

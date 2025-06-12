@@ -29,11 +29,15 @@ public class AppChatMessage : IAppChatMessage
     /// Chat statistics (call count, tokens, etc.)
     /// </summary>
     public string? Statistics { get; set; }
-
     /// <summary>
     /// Indicates whether this message was canceled by the user.
     /// </summary>
     public bool IsCanceled { get; set; }
+
+    /// <summary>
+    /// Files attached to this message.
+    /// </summary>
+    public IReadOnlyList<ChatMessageFile> Files { get; set; } = [];
 
     /// <summary>
     /// Indicates whether this message is currently streaming.
@@ -67,6 +71,7 @@ public class AppChatMessage : IAppChatMessage
         Content = string.Empty;
         MsgDateTime = DateTime.UtcNow;
         Role = ChatRole.User;
+        Files = [];
     }
 
     /// <summary>
@@ -81,14 +86,16 @@ public class AppChatMessage : IAppChatMessage
         Role = message.Role;
         Statistics = message.Statistics;
         IsCanceled = message.IsCanceled;
+        Files = message.Files;
     }
 
-    public AppChatMessage(string content, DateTime msgDateTime, ChatRole role, string? statistics = null)
+    public AppChatMessage(string content, DateTime msgDateTime, ChatRole role, string? statistics = null, IReadOnlyList<ChatMessageFile>? files = null)
     {
         Id = Guid.NewGuid();
         Content = content ?? string.Empty;
         MsgDateTime = msgDateTime;
         Role = role;
         Statistics = statistics;
+        Files = files ?? [];
     }
 }

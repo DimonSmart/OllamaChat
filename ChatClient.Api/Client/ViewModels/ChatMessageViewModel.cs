@@ -22,6 +22,7 @@ public class ChatMessageViewModel
     public bool IsThoughtsVisible { get; set; }
     public bool IsStreaming { get; set; }
     public bool IsCanceled { get; set; }
+    public IReadOnlyList<ChatMessageFile> Files { get; set; } = [];
 
     private static readonly MarkdownPipeline Pipeline = new MarkdownPipelineBuilder()
         .UseAdvancedExtensions()
@@ -35,6 +36,7 @@ public class ChatMessageViewModel
         Statistics = message.Statistics;
         IsStreaming = message.IsStreaming;
         IsCanceled = message.IsCanceled;
+        Files = message.Files;
         var result = ThinkTagParser.ExtractThinkAnswer(message.Content);
 
         ThinkSegments = result.ThoughtSegments;
