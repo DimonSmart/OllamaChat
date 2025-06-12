@@ -1,10 +1,10 @@
 using ChatClient.Shared.Models;
 
+using DimonSmart.AiUtils;
+
 using Markdig;
 
 using Microsoft.Extensions.AI;
-
-using DimonSmart.AiUtils;
 
 namespace ChatClient.Api.Client.ViewModels;
 
@@ -36,7 +36,7 @@ public class ChatMessageViewModel
         IsStreaming = message.IsStreaming;
         IsCanceled = message.IsCanceled;
         var result = ThinkTagParser.ExtractThinkAnswer(message.Content);
-        
+
         ThinkSegments = result.ThoughtSegments;
         HtmlThinkSegments = result.ThoughtSegments
             .Select(segment => Markdown.ToHtml(segment, Pipeline))

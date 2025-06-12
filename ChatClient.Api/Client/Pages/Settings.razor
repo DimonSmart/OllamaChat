@@ -9,10 +9,8 @@
 
 <PageTitle>User Settings</PageTitle>
 
-<MudContainer MaxWidth="MaxWidth.Medium" Class="mt-4">
-    <MudPaper Elevation="0" Class="d-flex align-center mb-4">
-        <MudText Typo="Typo.h3">User Settings</MudText>
-    </MudPaper>
+<MudContainer MaxWidth="MaxWidth.Medium" Class="mt-3">
+    <MudText Class="page-header">User Settings</MudText>
 
     @if (_loading)
     {
@@ -21,15 +19,15 @@
     }
     else
     {
-        <MudPaper Elevation="3" Class="pa-4 rounded-lg">
+        <MudPaper Elevation="3" Class="pa-3 rounded-lg">
             <MudForm @ref="_form" Model="@_settings">
-                <MudCard Class="mb-4">
-                    <MudCardHeader>
-                        <MudText Typo="Typo.h5">Default Model</MudText>
+                <MudCard Class="mb-4" Elevation="1">
+                    <MudCardHeader Class="pb-2">
+                        <MudText Class="section-header">Default Model</MudText>
                     </MudCardHeader>
-                    <MudCardContent>
+                    <MudCardContent Class="pt-0">
                         <MudSelect T="string" Label="Default Model" @bind-Value="_settings.DefaultModelName"
-                                  Variant="Variant.Outlined" AnchorOrigin="Origin.BottomCenter">
+                                   Variant="Variant.Outlined" AnchorOrigin="Origin.BottomCenter" Dense="true">
                             @foreach (var model in _availableModels)
                             {
                                 <MudSelectItem Value="@model.Name">@model.Name</MudSelectItem>
@@ -40,29 +38,28 @@
                         </MudText>
                     </MudCardContent>
                 </MudCard>
-                <MudCard Class="mb-4">
-                    <MudCardHeader>
-                        <MudText Typo="Typo.h5">Default Chat Message</MudText>
-                        </MudCardHeader>
-                    <MudCardContent>
+                <MudCard Class="mb-4" Elevation="1">
+                    <MudCardHeader Class="pb-2">
+                        <MudText Class="section-header">Default Chat Message</MudText>
+                    </MudCardHeader>
+                    <MudCardContent Class="pt-0">
                         <MudTextField T="string" Label="Default Chat Message" @bind-Value="_settings.DefaultChatMessage"
-                                     Lines="3" Variant="Variant.Outlined" HelperText="Pre-filled message in the chat input (useful for testing)" />
+                                      Lines="3" Variant="Variant.Outlined" HelperText="Pre-filled message in the chat input (useful for testing)" />
                     </MudCardContent>
                 </MudCard>
-                <MudCard Class="mb-4">
-                    <MudCardHeader>
-                        <MudText Typo="Typo.h5">Statistics Settings</MudText>
+                <MudCard Class="mb-4" Elevation="1">
+                    <MudCardHeader Class="pb-2">
+                        <MudText Class="section-header">Statistics Settings</MudText>
                     </MudCardHeader>
-                    <MudCardContent>
+                    <MudCardContent Class="pt-0">
                         <MudSwitch T="bool" @bind-Value="_settings.ShowTokensPerSecond" Color="Color.Primary">
                             Show tokens per second in statistics
                         </MudSwitch>
                     </MudCardContent>
                 </MudCard>
-
                 <MudButtonGroup Class="mt-4">
-                    <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="SaveSettings">Save Settings</MudButton>
-                    <MudButton Variant="Variant.Outlined" Color="Color.Secondary" OnClick="ResetSettings">Reset</MudButton>
+                    <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="SaveSettings" Size="Size.Medium">Save Settings</MudButton>
+                    <MudButton Variant="Variant.Outlined" Color="Color.Secondary" OnClick="ResetSettings" Size="Size.Medium">Reset</MudButton>
                 </MudButtonGroup>
             </MudForm>
         </MudPaper>

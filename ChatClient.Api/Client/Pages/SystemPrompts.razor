@@ -6,18 +6,17 @@
 
 <PageTitle>System Prompts Management</PageTitle>
 
-<MudContainer MaxWidth="MaxWidth.ExtraLarge" Class="mt-4">
-    <MudPaper Elevation="0" Class="d-flex align-center mb-4">
-        <MudText Typo="Typo.h3">System Prompts</MudText>
-    </MudPaper>
+<MudContainer MaxWidth="MaxWidth.ExtraLarge" Class="mt-3">
+    <MudText Class="page-header">System Prompts</MudText>
 
-    <MudPaper Elevation="3" Class="pa-4 rounded-lg">
+    <MudPaper Elevation="3" Class="pa-3 rounded-lg">
         <MudToolBar Dense="true">
             <MudButton Variant="Variant.Filled"
                        Color="Color.Primary"
                        StartIcon="@Icons.Material.Filled.Add"
                        OnClick="AddNewPrompt"
-                       Class="px-4">
+                       Class="px-4"
+                       Size="Size.Small">
                 Add Prompt
             </MudButton>
             <MudSpacer />
@@ -67,12 +66,12 @@
                     <TemplateColumn CellClass="d-flex justify-end">
                         <CellTemplate>
                             <MudIconButton Icon="@Icons.Material.Filled.Edit"
-                                         Size="Size.Small"
-                                         OnClick="@(() => StartEditing(context.Item))" />
+                                           Size="Size.Small"
+                                           OnClick="@(() => StartEditing(context.Item))" />
                             <MudIconButton Icon="@Icons.Material.Filled.Delete"
-                                         Size="Size.Small"
-                                         Color="Color.Error"
-                                         OnClick="() => ConfirmDelete(context.Item)" />
+                                           Size="Size.Small"
+                                           Color="Color.Error"
+                                           OnClick="() => ConfirmDelete(context.Item)" />
                         </CellTemplate>
                     </TemplateColumn>
                 </Columns>
@@ -105,8 +104,8 @@
         <MudText>Are you sure you want to delete the prompt "@promptToDelete?.Name"?</MudText>
     </DialogContent>
     <DialogActions>
-        <MudButton OnClick="CancelDelete">Cancel</MudButton>
-        <MudButton Color="Color.Error" OnClick="DeletePrompt">Delete</MudButton>
+        <MudButton OnClick="CancelDelete" Size="Size.Medium">Cancel</MudButton>
+        <MudButton Color="Color.Error" OnClick="DeletePrompt" Size="Size.Medium">Delete</MudButton>
     </DialogActions>
 </MudDialog>
 
@@ -117,24 +116,24 @@
     <DialogContent>
         <MudForm @ref="editPromptForm" Model="@editingPrompt">
             <MudTextField @bind-Value="editingPrompt.Name"
-                         Label="Prompt Name"
-                         Required="true"
-                         Immediate="true"
-                         Validation="@(new Func<string, string>(ValidateName))" />
+                          Label="Prompt Name"
+                          Required="true"
+                          Immediate="true"
+                          Validation="@(new Func<string, string>(ValidateName))" />
 
             <MudTextField @bind-Value="editingPrompt.Content"
-                         Label="Prompt Content"
-                         Lines="10"
-                         Class="mt-4"
-                         Required="true"
-                         Immediate="true"
-                         Validation="@(new Func<string, string>(ValidateContent))"
-                         Placeholder="Enter your system prompt content here..." />
+                          Label="Prompt Content"
+                          Lines="10"
+                          Class="mt-4"
+                          Required="true"
+                          Immediate="true"
+                          Validation="@(new Func<string, string>(ValidateContent))"
+                          Placeholder="Enter your system prompt content here..." />
         </MudForm>
     </DialogContent>
     <DialogActions>
-        <MudButton OnClick="CancelEdit">Cancel</MudButton>
-        <MudButton Color="Color.Primary" OnClick="SavePrompt">Save</MudButton>
+        <MudButton OnClick="CancelEdit" Size="Size.Medium">Cancel</MudButton>
+        <MudButton Color="Color.Primary" OnClick="SavePrompt" Size="Size.Medium">Save</MudButton>
     </DialogActions>
 </MudDialog>
 
@@ -149,21 +148,20 @@
     private string searchString = string.Empty;
     private MudForm? editPromptForm;
     private MudDataGrid<SystemPrompt>? dataGrid;
-
     private DialogOptions dialogOptions = new()
-        {
-            CloseOnEscapeKey = true,
-            CloseButton = true,
-            MaxWidth = MaxWidth.ExtraSmall
-        };
+    {
+        CloseOnEscapeKey = true,
+        CloseButton = true,
+        MaxWidth = MaxWidth.ExtraSmall
+    };
 
     private DialogOptions editDialogOptions = new()
-        {
-            CloseOnEscapeKey = true,
-            CloseButton = true,
-            MaxWidth = MaxWidth.Large,
-            FullWidth = true
-        };
+    {
+        CloseOnEscapeKey = true,
+        CloseButton = true,
+        MaxWidth = MaxWidth.Medium,
+        FullWidth = true
+    };
 
     protected override async Task OnInitializedAsync()
     {
@@ -206,11 +204,11 @@
     }
 
     private void OnSearch(string text)
-    {        
+    {
         searchString = text;
         ApplySearch();
     }
-    
+
     private void ApplySearch()
     {
         if (string.IsNullOrWhiteSpace(searchString))
@@ -218,13 +216,13 @@
             filteredPrompts = new List<SystemPrompt>(prompts);
             return;
         }
-        
+
         filteredPrompts = prompts
             .Where(p => p.Name.Contains(searchString, StringComparison.OrdinalIgnoreCase) ||
                        p.Content.Contains(searchString, StringComparison.OrdinalIgnoreCase))
             .ToList();
     }
-    
+
     private Task StartEditing(SystemPrompt prompt)
     {
         editingPrompt = new SystemPrompt
@@ -235,7 +233,7 @@
             CreatedAt = prompt.CreatedAt,
             UpdatedAt = prompt.UpdatedAt
         };
-        
+
         showEditPromptDialog = true;
         return Task.CompletedTask;
     }

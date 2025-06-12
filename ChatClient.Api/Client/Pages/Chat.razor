@@ -45,7 +45,7 @@
                 }
                 else
                 {
-                    <MudSelect T="SystemPrompt" Label="Select System Prompt" @bind-Value="selectedSystemPrompt" Variant="Variant.Outlined" FullWidth="true">
+                    <MudSelect T="SystemPrompt" Label="Select System Prompt" @bind-Value="selectedSystemPrompt" Variant="Variant.Outlined" FullWidth="true" Dense="true">
                         @foreach (var prompt in systemPrompts)
                         {
                             <MudSelectItem Value="@prompt">@prompt.Name</MudSelectItem>
@@ -59,11 +59,11 @@
                             @(selectedSystemPrompt?.Content ?? string.Empty)
                         </div>
                     }
-
                     <MudButton Variant="Variant.Filled"
                                Color="Color.Primary"
                                FullWidth="true"
                                Class="mt-4"
+                               Size="Size.Medium"
                                OnClick="StartChat">
                         Start Chat
                     </MudButton>
@@ -71,7 +71,8 @@
                                Variant="Variant.Text"
                                Color="Color.Secondary"
                                FullWidth="true"
-                               Class="mt-2">
+                               Class="mt-2"
+                               Size="Size.Medium">
                         Manage System Prompts
                     </MudButton>
                 }
@@ -184,7 +185,6 @@
                         <MudSelectItem Value="@model">@model.Name</MudSelectItem>
                     }
                 </MudSelect>
-
                 <MudButton Variant="Variant.Text"
                            Color="Color.Primary"
                            Size="Size.Small"
@@ -192,9 +192,8 @@
                     Functions
                 </MudButton>
             </div>
-
             <MudCollapse Expanded="@functionsExpanded">
-                <MudCard Outlined="true" Class="my-2">
+                <MudCard Outlined="true" Class="my-2" Elevation="0">
                     <MudCardContent Class="pa-2">
                         <FunctionSelector AvailableFunctions="availableFunctions"
                                           SelectedFunctions="selectedFunctions"
@@ -213,7 +212,8 @@
                         <MudButton OnClick="Cancel"
                                    Color="Color.Error"
                                    Variant="Variant.Filled"
-                                   StartIcon="@Icons.Material.Filled.Stop">
+                                   StartIcon="@Icons.Material.Filled.Stop"
+                                   Size="Size.Medium">
                             Stop
                         </MudButton>
                     }
@@ -222,7 +222,8 @@
                         <MudButton OnClick="RestartChat"
                                    Color="Color.Secondary"
                                    Variant="Variant.Outlined"
-                                   StartIcon="@Icons.Material.Filled.AddCircle">
+                                   StartIcon="@Icons.Material.Filled.AddCircle"
+                                   Size="Size.Medium">
                             New Chat
                         </MudButton>
                     }

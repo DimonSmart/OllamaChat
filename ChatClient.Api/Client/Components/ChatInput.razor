@@ -8,7 +8,6 @@
               Lines="3"
               Label="Type your message"
               Variant="Variant.Outlined"
-              dense="true"
               Class="mt-1"
               Margin="Margin.Dense"
               Adornment="Adornment.End"
@@ -20,7 +19,7 @@
 @code {
     [Parameter] public EventCallback<string> OnSend { get; set; }
     private string CurrentText { get; set; } = string.Empty;
-    
+
     protected override async Task OnInitializedAsync()
     {
         await base.OnInitializedAsync();
