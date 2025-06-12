@@ -1,29 +1,55 @@
-using System.Text.Json;
-
+#pragma warning disable SKEXP0070
 using ChatClient.Shared.Models;
+
+using Microsoft.SemanticKernel;
+
+using OllamaSharp;
 
 namespace ChatClient.Api.Services;
 
 public class OllamaService(
-    IHttpClientFactory httpClientFactory,
     IConfiguration configuration,
     ILogger<OllamaService> logger)
 {
+    private OllamaApiClient? _ollamaClient;
+
+    private OllamaApiClient GetOllamaClient()
+    {
+        if (_ollamaClient == null)
+        {
+            var baseUrl = configuration["Ollama:BaseUrl"] ?? "http://localhost:11434";
+            _ollamaClient = new OllamaApiClient(new Uri(baseUrl));
+        }
+        return _ollamaClient;
+    }
+
+
+    /// <summary>
+    /// Gets the list of available Ollama models using Semantic Kernel's ListLocalModelsAsync method.
+    /// This approach leverages the same OllamaApiClient instance used by the Kernel for consistency.
+    /// </summary>
+    /// <returns>List of OllamaModel objects with vision capability detection</returns>
     public async Task<List<OllamaModel>> GetModelsAsync()
     {
         try
         {
-            var baseUrl = configuration["Ollama:BaseUrl"]!;
-            var httpClient = httpClientFactory.CreateClient("OllamaClient");
-            httpClient.BaseAddress = new Uri(baseUrl);
+            var ollamaClient = GetOllamaClient();
+            var localModels = await ollamaClient.ListLocalModelsAsync(); var result = new List<OllamaModel>();
+            foreach (var model in localModels)
+            {
+                var ollamaModel = new OllamaModel
+                {
+                    Name = model.Name,
+                    ModifiedAt = model.ModifiedAt.ToString("yyyy-MM-ddTHH:mm:ss.fffZ"),
+                    Size = model.Size,
+                    Digest = model.Digest,
+                    // Detect vision capability based on "clip" family in model details
+                    SupportsImages = model.Details?.Families?.Contains("clip") == true
+                };
+                result.Add(ollamaModel);
+            }
 
-            var response = await httpClient.GetAsync("/api/tags");
-            response.EnsureSuccessStatusCode();
-
-            var content = await response.Content.ReadAsStringAsync();
-            var ollamaResponse = JsonSerializer.Deserialize<OllamaModelsResponse>(content);
-
-            return ollamaResponse?.Models ?? [];
+            return result;
         }
         catch (Exception ex)
         {
@@ -31,4 +57,9 @@ public class OllamaService(
             return [];
         }
     }
+
+    /// <summary>
+    /// Gets the OllamaApiClient for use in other services (e.g., KernelService)
+    /// </summary>
+    public OllamaApiClient GetClient() => GetOllamaClient();
 }

@@ -155,7 +155,7 @@ public class ChatService(
 
             // Final update immediately after streaming completion
             await (MessageUpdated?.Invoke(streamingMessage) ?? Task.CompletedTask);
-            
+
             // Create statistics and complete streaming
             var processingTime = DateTime.Now - startTime;
             var settings = await userSettingsService.GetSettingsAsync();
