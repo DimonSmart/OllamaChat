@@ -2,13 +2,10 @@ using ChatClient.Shared.Models;
 
 using Microsoft.SemanticKernel;
 
-using OllamaSharp;
-
 namespace ChatClient.Api.Services;
 
 public class KernelService(
     IConfiguration configuration,
-    OllamaService ollamaService,
     ILogger<KernelService> logger)
 {
     private McpClientService? _mcpClientService;
@@ -32,10 +29,10 @@ public class KernelService(
     }
     public Kernel CreateBasicKernel(string modelId)
     {
-        var ollamaClient = ollamaService.GetClient();
+        var baseUrl = configuration["Ollama:BaseUrl"] ?? "http://localhost:11434";
 
         IKernelBuilder builder = Kernel.CreateBuilder();
-        builder.AddOllamaTextGeneration(modelId, ollamaClient);
+        builder.AddOllamaChatCompletion(modelId, new Uri(baseUrl));
 
         builder.Services.AddLogging(c => c.AddConsole().SetMinimumLevel(LogLevel.Information));
         builder.Services.AddSingleton(new PromptExecutionSettings
