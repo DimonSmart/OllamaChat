@@ -17,7 +17,6 @@ namespace ChatClient.Api.Services;
 public sealed class OllamaService(
     IConfiguration configuration,
     IUserSettingsService userSettingsService,
-    IHttpClientFactory httpClientFactory,
     ILogger<OllamaService> logger) : IDisposable
 {
     private OllamaApiClient? _ollamaClient;
@@ -90,9 +89,9 @@ public sealed class OllamaService(
             user.OllamaBasicAuthPassword,
             user.IgnoreSslErrors,
             user.HttpTimeoutSeconds);
-    }
-
-    private HttpClient BuildHttpClient(SettingsSnapshot s)
+    }    
+    
+    private static HttpClient BuildHttpClient(SettingsSnapshot s)
     {
         var handler = new HttpClientHandler();
         if (s.IgnoreSslErrors)
@@ -100,31 +99,16 @@ public sealed class OllamaService(
             handler.ServerCertificateCustomValidationCallback = (_, _, _, _) => true;
         }
 
-        var client = httpClientFactory.CreateClient("OllamaClient");
-        client.Timeout = TimeSpan.FromSeconds(s.TimeoutSeconds);
-        client.DefaultRequestHeaders.Clear();
-        client.BaseAddress = new Uri(s.ServerUrl);
+        var client = new HttpClient(handler)
+        {
+            Timeout = TimeSpan.FromSeconds(s.TimeoutSeconds),
+            BaseAddress = new Uri(s.ServerUrl)
+        };
 
         if (!string.IsNullOrWhiteSpace(s.Password))
         {
             var auth = Convert.ToBase64String(Encoding.UTF8.GetBytes($":{s.Password}"));
             client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Basic", auth);
-        }
-
-        // Replace the factory‑created client when we must ignore SSL errors (factory can't set handler).
-        if (s.IgnoreSslErrors)
-        {
-            client = new HttpClient(handler)
-            {
-                Timeout = TimeSpan.FromSeconds(s.TimeoutSeconds),
-                BaseAddress = new Uri(s.ServerUrl)
-            };
-
-            if (!string.IsNullOrWhiteSpace(s.Password))
-            {
-                var auth = Convert.ToBase64String(Encoding.UTF8.GetBytes($":{s.Password}"));
-                client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Basic", auth);
-            }
         }
 
         return client;

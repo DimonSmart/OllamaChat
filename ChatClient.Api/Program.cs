@@ -22,11 +22,6 @@ Console.WriteLine($"Environment: {builder.Environment.EnvironmentName}");
 Console.WriteLine($"Content Root: {builder.Environment.ContentRootPath}");
 Console.WriteLine($"Web Root: {builder.Environment.WebRootPath}");
 
-builder.Services.AddHttpClient("OllamaClient", client =>
-{
-    client.Timeout = TimeSpan.FromMinutes(2);
-});
-
 var loggerFactory = LoggerFactory.Create(logging =>
 {
     logging.AddConsole();
