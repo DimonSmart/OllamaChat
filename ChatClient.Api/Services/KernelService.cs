@@ -1,6 +1,6 @@
+using ChatClient.Shared.Constants;
 using ChatClient.Shared.Models;
 using ChatClient.Shared.Services;
-using ChatClient.Shared.Constants;
 
 using Microsoft.SemanticKernel;
 

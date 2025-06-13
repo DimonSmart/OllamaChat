@@ -58,10 +58,14 @@
                                       Variant="Variant.Outlined"
                                       HelperText="Ollama server URL including protocol and port (e.g., https://my-server:11434)"
                                       Placeholder="@OllamaDefaults.ServerUrl" />
-                        <MudTextField T="string" Label="Basic Auth Password" @bind-Value="_settings.OllamaBasicAuthPassword"
+                                      <MudTextField T="string" Label="Basic Auth Password" @bind-Value="_settings.OllamaBasicAuthPassword"
                                       Variant="Variant.Outlined" InputType="InputType.Password"
                                       HelperText="Password for basic authentication (leave empty if not required)"
                                       Class="mt-3" />
+                        <MudNumericField T="int" Label="HTTP Timeout (seconds)" @bind-Value="_settings.HttpTimeoutSeconds"
+                                         Variant="Variant.Outlined" Min="1" Max="36000"
+                                         HelperText="Timeout for HTTP requests to Ollama server (1-3600 seconds)"
+                                         Class="mt-3" />
                         <MudSwitch T="bool" @bind-Value="_settings.IgnoreSslErrors" Color="Color.Primary" Class="mt-3">
                             Ignore SSL certificate errors (for self-signed certificates)
                         </MudSwitch>

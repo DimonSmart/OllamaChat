@@ -1,4 +1,5 @@
 using System.Text.Json.Serialization;
+
 using ChatClient.Shared.Constants;
 
 namespace ChatClient.Shared.Models;
@@ -40,4 +41,10 @@ public class UserSettings
     /// </summary>
     [JsonPropertyName("ignoreSslErrors")]
     public bool IgnoreSslErrors { get; set; } = false;
+
+    /// <summary>
+    /// HTTP request timeout in seconds for Ollama API calls
+    /// </summary>
+    [JsonPropertyName("httpTimeoutSeconds")]
+    public int HttpTimeoutSeconds { get; set; } = 600;
 }

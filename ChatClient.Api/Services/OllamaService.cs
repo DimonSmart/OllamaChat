@@ -2,9 +2,9 @@
 using System.Net.Http.Headers;
 using System.Text;
 
+using ChatClient.Shared.Constants;
 using ChatClient.Shared.Models;
 using ChatClient.Shared.Services;
-using ChatClient.Shared.Constants;
 
 using OllamaSharp;
 
@@ -75,6 +75,7 @@ public sealed class OllamaService(
             return Array.Empty<OllamaModel>();
         }
     }
+
     #endregion
 
     #region Helpers
@@ -87,7 +88,8 @@ public sealed class OllamaService(
                 ? user.OllamaServerUrl
                 : configuration["Ollama:BaseUrl"] ?? OllamaDefaults.ServerUrl,
             user.OllamaBasicAuthPassword,
-            user.IgnoreSslErrors);
+            user.IgnoreSslErrors,
+            user.HttpTimeoutSeconds);
     }
 
     private HttpClient BuildHttpClient(SettingsSnapshot s)
@@ -99,7 +101,7 @@ public sealed class OllamaService(
         }
 
         var client = httpClientFactory.CreateClient("OllamaClient");
-        client.Timeout = TimeSpan.FromMinutes(2);
+        client.Timeout = TimeSpan.FromSeconds(s.TimeoutSeconds);
         client.DefaultRequestHeaders.Clear();
         client.BaseAddress = new Uri(s.ServerUrl);
 
@@ -114,7 +116,7 @@ public sealed class OllamaService(
         {
             client = new HttpClient(handler)
             {
-                Timeout = TimeSpan.FromMinutes(2),
+                Timeout = TimeSpan.FromSeconds(s.TimeoutSeconds),
                 BaseAddress = new Uri(s.ServerUrl)
             };
 
@@ -127,6 +129,7 @@ public sealed class OllamaService(
 
         return client;
     }
+
     #endregion
 
     public void Dispose()
@@ -136,6 +139,6 @@ public sealed class OllamaService(
     }
 
     #region Nested ‑ simple value object for comparing settings
-    private sealed record SettingsSnapshot(string ServerUrl, string? Password, bool IgnoreSslErrors);
+    private sealed record SettingsSnapshot(string ServerUrl, string? Password, bool IgnoreSslErrors, int TimeoutSeconds);
     #endregion
 }
