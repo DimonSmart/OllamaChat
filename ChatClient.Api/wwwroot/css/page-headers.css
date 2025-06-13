@@ -1,0 +1,13 @@
+/* Unified page header styles */
+.page-header {
+    font-size: 1.5rem;
+    font-weight: 500;
+    margin-bottom: 0.75rem;
+    line-height: 1.2;
+}
+
+.section-header {
+    font-size: 1.1rem;
+    font-weight: 500;
+    line-height: 1.3;
+}

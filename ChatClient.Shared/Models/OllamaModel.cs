@@ -15,4 +15,7 @@ public class OllamaModel
 
     [JsonPropertyName("digest")]
     public string Digest { get; set; } = string.Empty;
+
+    [JsonIgnore]
+    public bool SupportsImages { get; set; }
 }

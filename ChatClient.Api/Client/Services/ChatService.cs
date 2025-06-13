@@ -1,4 +1,4 @@
-using System.Collections.ObjectModel;
+﻿using System.Collections.ObjectModel;
 
 using ChatClient.Api.Services;
 using ChatClient.Shared.Models;
@@ -59,11 +59,11 @@ public class ChatService(
         UpdateLoadingState(false);
     }
 
-    public async Task AddUserMessageAndAnswerAsync(string text, IReadOnlyCollection<string> selectedFunctions, string modelName)
+    public async Task AddUserMessageAndAnswerAsync(string text, IReadOnlyCollection<string> selectedFunctions, string modelName, IReadOnlyList<ChatMessageFile>? files = null)
     {
         if (string.IsNullOrWhiteSpace(text) || IsLoading) return;
 
-        await AddMessageAsync(new AppChatMessage(text, DateTime.Now, ChatRole.User, string.Empty));
+        await AddMessageAsync(new AppChatMessage(text, DateTime.Now, ChatRole.User, string.Empty, files));
         UpdateLoadingState(true);
 
         _cancellationTokenSource = new CancellationTokenSource();
@@ -85,11 +85,13 @@ public class ChatService(
             Cleanup();
         }
     }
+
     private async Task AddMessageAsync(IAppChatMessage message)
     {
         Messages.Add(message);
         await (MessageAdded?.Invoke(message) ?? Task.CompletedTask);
     }
+
     private async Task ProcessAIResponseAsync(IReadOnlyCollection<string> functionNames, string modelName, CancellationToken cancellationToken)
     {
         var startTime = DateTime.Now;
@@ -153,6 +155,7 @@ public class ChatService(
 
             // Final update immediately after streaming completion
             await (MessageUpdated?.Invoke(streamingMessage) ?? Task.CompletedTask);
+
             // Create statistics and complete streaming
             var processingTime = DateTime.Now - startTime;
             var settings = await userSettingsService.GetSettingsAsync();
@@ -176,27 +179,54 @@ public class ChatService(
             await HandleError($"Error: {ex.Message}");
         }
     }
-
     private ChatHistory BuildChatHistory()
     {
-        var chatHistory = new ChatHistory();
-        var roleHandlers = new Dictionary<ChatRole, Action<ChatHistory, string>>
-        {
-            { ChatRole.System, (history, content) => history.AddSystemMessage(content) },
-            { ChatRole.User, (history, content) => history.AddUserMessage(content) },
-            { ChatRole.Assistant, (history, content) => history.AddAssistantMessage(content) }
-        };
+        var history = new ChatHistory();
 
-        foreach (var message in Messages.Where(m => !m.IsStreaming))
+        foreach (var msg in this.Messages.Where(m => !m.IsStreaming))
         {
-            if (roleHandlers.TryGetValue(message.Role, out var handler))
+            var items = new ChatMessageContentItemCollection();
+
+            if (!string.IsNullOrEmpty(msg.Content))
             {
-                handler(chatHistory, message.Content);
+                items.Add(new Microsoft.SemanticKernel.TextContent(msg.Content));
             }
+
+            // Add file attachments
+            foreach (var file in msg.Files)
+            {
+                if (IsImageContentType(file.ContentType))
+                {
+                    items.Add(new Microsoft.SemanticKernel.ImageContent(new BinaryData(file.Data), file.ContentType));
+                }
+                else
+                {
+                    var fileDescription = $"File: {file.Name} ({file.ContentType})";
+                    items.Add(new Microsoft.SemanticKernel.TextContent(fileDescription));
+                }
+            }
+
+            var role = ConvertToAuthorRole(msg.Role);
+            history.Add(new ChatMessageContent(role, items));
         }
 
-        return chatHistory;
+        return history;
     }
+    private static AuthorRole ConvertToAuthorRole(Microsoft.Extensions.AI.ChatRole chatRole)
+    {
+        if (chatRole == Microsoft.Extensions.AI.ChatRole.System)
+            return AuthorRole.System;
+        if (chatRole == Microsoft.Extensions.AI.ChatRole.Assistant)
+            return AuthorRole.Assistant;
+
+        return AuthorRole.User;
+    }
+
+    private static bool IsImageContentType(string contentType)
+    {
+        return contentType.StartsWith("image/", StringComparison.OrdinalIgnoreCase);
+    }
+
     private async Task ReplaceStreamingMessageWithFinal(StreamingAppChatMessage streamingMessage, AppChatMessage finalMessage)
     {
         var index = Messages.IndexOf(streamingMessage);

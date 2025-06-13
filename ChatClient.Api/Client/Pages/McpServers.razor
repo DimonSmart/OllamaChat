@@ -1,25 +1,24 @@
 @page "/mcp-servers"
 @using ChatClient.Shared.Models
 @using ChatClient.Shared.Services
-@using ChatClient.Api.Client.Services
+@using ChatClient.Api.Services
 @inject IMcpServerConfigService McpServerConfigService
-@inject IModelsService ModelsService
+@inject OllamaService OllamaService
 @inject ISnackbar Snackbar
 
 <PageTitle>MCP Servers Management</PageTitle>
 
-<MudContainer MaxWidth="MaxWidth.ExtraLarge" Class="mt-4">
-    <MudPaper Elevation="0" Class="d-flex align-center mb-4">
-        <MudText Typo="Typo.h3">MCP Servers</MudText>
-    </MudPaper>
+<MudContainer MaxWidth="MaxWidth.ExtraLarge" Class="mt-3">
+    <MudText Class="page-header">MCP Servers</MudText>
 
-    <MudPaper Elevation="3" Class="pa-4 rounded-lg">
+    <MudPaper Elevation="3" Class="pa-3 rounded-lg">
         <MudToolBar Dense="true">
             <MudButton Variant="Variant.Filled"
                        Color="Color.Primary"
                        StartIcon="@Icons.Material.Filled.Add"
                        OnClick="AddNewServer"
-                       Class="px-4">
+                       Class="px-4"
+                       Size="Size.Small">
                 Add Server
             </MudButton>
             <MudSpacer />
@@ -129,8 +128,8 @@
         <MudText>Are you sure you want to delete the server "@serverToDelete?.Name"?</MudText>
     </DialogContent>
     <DialogActions>
-        <MudButton OnClick="CancelDelete">Cancel</MudButton>
-        <MudButton Color="Color.Error" OnClick="DeleteServer">Delete</MudButton>
+        <MudButton OnClick="CancelDelete" Size="Size.Medium">Cancel</MudButton>
+        <MudButton Color="Color.Error" OnClick="DeleteServer" Size="Size.Medium">Delete</MudButton>
     </DialogActions>
 </MudDialog>
 
@@ -152,7 +151,8 @@
                       Required="true" 
                       Class="mt-4" 
                       Immediate="true"
-                      SelectedValuesChanged="OnServerTypeChanged">
+                      SelectedValuesChanged="OnServerTypeChanged"
+                      Dense="true">
                 <MudSelectItem Value="@("local")">Local Command</MudSelectItem>
                 <MudSelectItem Value="@("remote")">Remote SSE</MudSelectItem>
             </MudSelect>
@@ -180,7 +180,8 @@
                            Label="SSE URL"
                            Class="mt-4"
                            Required="true"
-                           Immediate="true"                           Validation="@(new Func<string, string>(ValidateSse))"
+                           Immediate="true"
+                           Validation="@(new Func<string, string>(ValidateSse))"
                            Placeholder="Enter SSE URL (e.g. https://mcp.llmtxt.dev/sse)" />
             }
 
@@ -189,7 +190,8 @@
                       @bind-Value="editingServer.SamplingModel"
                       Class="mt-4"
                       Clearable="true"
-                      Placeholder="Select model for MCP sampling requests">
+                      Placeholder="Select model for MCP sampling requests"
+                      Dense="true">
                 @foreach (var model in availableModels)
                 {
                     <MudSelectItem Value="@model.Name">@model.Name</MudSelectItem>
@@ -199,11 +201,10 @@
             <MudText Typo="Typo.caption" Class="mud-text-secondary mt-1">
                 If not specified, the user's default model will be used for sampling requests from this server.
             </MudText>
-        </MudForm>
-    </DialogContent>
+        </MudForm>    </DialogContent>
     <DialogActions>
-        <MudButton OnClick="CancelEdit">Cancel</MudButton>
-        <MudButton Color="Color.Primary" OnClick="SaveServer">Save</MudButton>
+        <MudButton OnClick="CancelEdit" Size="Size.Medium">Cancel</MudButton>
+        <MudButton Color="Color.Primary" OnClick="SaveServer" Size="Size.Medium">Save</MudButton>
     </DialogActions>
 </MudDialog>
 
@@ -239,13 +240,13 @@
     {
         await LoadServers();
         await LoadAvailableModels();
-    }
-
+    }    
+    
     private async Task LoadAvailableModels()
     {
         try
         {
-            availableModels = await ModelsService.GetModelsAsync();
+            availableModels = (await OllamaService.GetModelsAsync()).ToList();
         }
         catch (Exception ex)
         {

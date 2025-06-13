@@ -1,4 +1,5 @@
 using ChatClient.Shared.Models;
+using ChatClient.Shared.Services;
 
 using Microsoft.SemanticKernel;
 
@@ -6,7 +7,7 @@ namespace ChatClient.Api.Services;
 
 public class KernelService(
     IConfiguration configuration,
-    IHttpClientFactory httpClientFactory,
+    IUserSettingsService userSettingsService,
     ILogger<KernelService> logger)
 {
     private McpClientService? _mcpClientService;
@@ -18,7 +19,7 @@ public class KernelService(
 
     public async Task<Kernel> CreateKernelAsync(string modelId, IEnumerable<string>? functionNames = null)
     {
-        var kernel = CreateBasicKernel(modelId);
+        var kernel = await CreateBasicKernelAsync(modelId);
 
         // Register selected MCP tools as kernel functions
         if (functionNames != null && functionNames.Any() && _mcpClientService != null)
@@ -29,18 +30,18 @@ public class KernelService(
         return kernel;
     }
 
-    public Kernel CreateBasicKernel(string modelId)
+    public async Task<Kernel> CreateBasicKernelAsync(string modelId)
     {
-        var baseUrl = configuration["Ollama:BaseUrl"] ?? "http://localhost:11434";
-        var httpClient = httpClientFactory.CreateClient("DefaultClient");
-        httpClient.BaseAddress = new Uri(baseUrl);
+        var settings = await userSettingsService.GetSettingsAsync();
+        var baseUrl = !string.IsNullOrWhiteSpace(settings.OllamaServerUrl)
+            ? settings.OllamaServerUrl
+            : configuration["Ollama:BaseUrl"] ?? "http://localhost:11434";
 
         IKernelBuilder builder = Kernel.CreateBuilder();
-        builder.AddOllamaChatCompletion(
-            modelId: modelId,
-            httpClient: httpClient,
-            serviceId: "ollama"
-        );
+
+        var httpClient = CreateConfiguredHttpClient(settings);
+        builder.AddOllamaChatCompletion(modelId, new Uri(baseUrl));
+        builder.Services.AddSingleton(httpClient);
 
         builder.Services.AddLogging(c => c.AddConsole().SetMinimumLevel(LogLevel.Information));
         builder.Services.AddSingleton(new PromptExecutionSettings
@@ -49,6 +50,29 @@ public class KernelService(
         });
 
         return builder.Build();
+    }
+
+    private static HttpClient CreateConfiguredHttpClient(UserSettings settings)
+    {
+        var handler = new HttpClientHandler();
+
+        if (settings.IgnoreSslErrors)
+        {
+            handler.ServerCertificateCustomValidationCallback = (sender, cert, chain, sslPolicyErrors) => true;
+        }
+
+        var httpClient = new HttpClient(handler)
+        {
+            Timeout = TimeSpan.FromMinutes(2)
+        };
+
+        if (!string.IsNullOrWhiteSpace(settings.OllamaBasicAuthPassword))
+        {
+            var authValue = Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes($":{settings.OllamaBasicAuthPassword}"));
+            httpClient.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Basic", authValue);
+        }
+
+        return httpClient;
     }
     private async Task RegisterMcpToolsAsync(Kernel kernel, IEnumerable<string> functionNames)
     {

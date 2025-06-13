@@ -1,26 +1,65 @@
 ﻿@using Microsoft.AspNetCore.Components.Web
+@using Microsoft.AspNetCore.Components.Forms
 @using ChatClient.Shared.Services
+@using ChatClient.Shared.Models
 @inject IUserSettingsService UserSettingsService
 
-<MudTextField T="string"
-              @bind-Value="CurrentText"
-              DebounceInterval="200"
-              Lines="3"
-              Label="Type your message"
-              Variant="Variant.Outlined"
-              dense="true"
-              Class="mt-1"
-              Margin="Margin.Dense"
-              Adornment="Adornment.End"
-              AdornmentIcon="@Icons.Material.Filled.Send"
-              AdornmentColor="Color.Primary"
-              OnAdornmentClick="SendMessage"
-              OnKeyDown="HandleKeyDown" />
+<MudPaper Class="pa-4" Elevation="2">
+    <div class="d-flex gap-2 align-center">
+        <MudFileUpload T="IReadOnlyList<IBrowserFile>"
+                       FilesChanged="OnFilesChanged"
+                       Multiple="true"
+                       MaximumFileCount="10"
+                       Accept=".pdf,.txt,.doc,.docx,.jpg,.jpeg,.png,.gif,.bmp,.webp">
+            <ActivatorContent>
+                <MudIconButton Icon="@Icons.Material.Filled.AttachFile"
+                               Color="Color.Primary"
+                               Size="Size.Small"
+                               Title="Attach files (max 10)" />
+            </ActivatorContent>
+        </MudFileUpload>
+
+        <MudTextField T="string"
+                      @bind-Value="CurrentText"
+                      DebounceInterval="200"
+                      Lines="3"
+                      Label="Type your message"
+                      Variant="Variant.Outlined"
+                      Class="flex-grow-1"
+                      Margin="Margin.Dense"
+                      Adornment="Adornment.End"
+                      AdornmentIcon="@Icons.Material.Filled.Send"
+                      AdornmentColor="Color.Primary"
+                      OnAdornmentClick="SendMessage"
+                      OnKeyDown="HandleKeyDown" />
+    </div>
+
+    @if (attachedFiles.Count > 0)
+    {
+        <div class="mt-2">
+            <MudText Typo="Typo.caption" Class="mb-1">Attached files (@attachedFiles.Count/10):</MudText>
+            <div class="d-flex flex-wrap gap-1">
+                @foreach (var file in attachedFiles)
+                {
+                    <MudChip T="string"
+                             OnClose="() => RemoveFile(file)"
+                             CloseIcon="@Icons.Material.Filled.Clear"
+                             Color="Color.Info"
+                             Size="Size.Small">
+                        <MudIcon Icon="@GetFileIcon(file.ContentType)" Class="mr-1" />
+                        @file.Name (@FormatFileSize(file.Size))
+                    </MudChip>
+                }
+            </div>
+        </div>
+    }
+</MudPaper>
 
 @code {
-    [Parameter] public EventCallback<string> OnSend { get; set; }
+    [Parameter] public EventCallback<(string text, IReadOnlyList<ChatMessageFile> files)> OnSend { get; set; }
     private string CurrentText { get; set; } = string.Empty;
-    
+    private List<ChatMessageFile> attachedFiles = [];
+
     protected override async Task OnInitializedAsync()
     {
         await base.OnInitializedAsync();
@@ -30,17 +69,19 @@
             CurrentText = settings.DefaultChatMessage;
         }
     }
+
     private bool IsSending { get; set; } = false;
     private bool IsTextEntered => !string.IsNullOrWhiteSpace(CurrentText);
     private bool IsSendDisabled => IsSending || !IsTextEntered;
+
     private async Task HandleKeyDown(KeyboardEventArgs e)
     {
         if (e.Key == "Enter" && e.CtrlKey && !IsSendDisabled)
         {
             await SendMessage();
         }
-    }
-
+    }    
+    
     private async Task SendMessage()
     {
         if (IsSendDisabled) return;
@@ -48,12 +89,81 @@
         {
             IsSending = true;
             var textToSend = CurrentText.Trim();
+            var filesToSend = attachedFiles.ToList();
+
             CurrentText = string.Empty;
-            await OnSend.InvokeAsync(textToSend);
+            attachedFiles.Clear();
+            await OnSend.InvokeAsync((textToSend, filesToSend));
         }
         finally
         {
             IsSending = false;
         }
+    }
+    
+    private async Task OnFilesChanged(IReadOnlyList<IBrowserFile> files)
+    {
+        const int maxFileSize = 10 * 1024 * 1024; // 10MB
+        const int maxFiles = 10;
+
+        if (attachedFiles.Count + files.Count > maxFiles)
+        {
+            return;
+        }
+
+        foreach (var file in files)
+        {
+            if (file.Size > maxFileSize)
+            {
+                // TODO: Show error message for file too large
+                continue;
+            }            try
+            {
+                using var stream = file.OpenReadStream(maxFileSize);
+                var buffer = new byte[file.Size];
+                
+                await stream.ReadExactlyAsync(buffer);
+
+                var chatFile = new ChatMessageFile(file.Name, file.Size, file.ContentType, buffer);
+                attachedFiles.Add(chatFile);
+            }
+            catch
+            {
+                // TODO: Handle file read error
+            }        
+            }
+
+        StateHasChanged();
+    }
+
+    private void RemoveFile(ChatMessageFile file)
+    {
+        attachedFiles.Remove(file);
+        StateHasChanged();
+    }
+
+    private string GetFileIcon(string contentType)
+    {
+        return contentType.ToLower() switch
+        {
+            var ct when ct.StartsWith("image/") => Icons.Material.Filled.Image,
+            var ct when ct.Contains("pdf") => Icons.Material.Filled.PictureAsPdf,
+            var ct when ct.Contains("text") => Icons.Material.Filled.Description,
+            var ct when ct.Contains("word") || ct.Contains("document") => Icons.Material.Filled.Description,
+            _ => Icons.Material.Filled.AttachFile
+        };
+    }
+
+    private string FormatFileSize(long bytes)
+    {
+        string[] suffixes = ["B", "KB", "MB", "GB"];
+        int counter = 0;
+        decimal number = bytes;
+        while (Math.Round(number / 1024) >= 1)
+        {
+            number /= 1024;
+            counter++;
+        }
+        return $"{number:n1} {suffixes[counter]}";
     }
 }

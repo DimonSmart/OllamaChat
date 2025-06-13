@@ -45,7 +45,7 @@ public class McpSamplingService(
             progress?.Report(new ProgressNotificationValue { Progress = 0, Total = 100 });
 
             var model = await DetermineModelToUseAsync(request.ModelPreferences, mcpServerConfig);
-            var kernel = kernelService.CreateBasicKernel(model);
+            var kernel = await kernelService.CreateBasicKernelAsync(model);
 
             progress?.Report(new ProgressNotificationValue { Progress = 25, Total = 100 });
 

@@ -1,18 +1,17 @@
 @page "/settings"
 @using ChatClient.Api.Client.Services
+@using ChatClient.Api.Services
 @using ChatClient.Shared.Models
 @using ChatClient.Shared.Services
 @using System.Text.Json
 @inject IUserSettingsService UserSettingsService
-@inject IModelsService ModelsService
+@inject OllamaService OllamaService
 @inject ISnackbar Snackbar
 
 <PageTitle>User Settings</PageTitle>
 
-<MudContainer MaxWidth="MaxWidth.Medium" Class="mt-4">
-    <MudPaper Elevation="0" Class="d-flex align-center mb-4">
-        <MudText Typo="Typo.h3">User Settings</MudText>
-    </MudPaper>
+<MudContainer MaxWidth="MaxWidth.Medium" Class="mt-3">
+    <MudText Class="page-header">User Settings</MudText>
 
     @if (_loading)
     {
@@ -21,15 +20,15 @@
     }
     else
     {
-        <MudPaper Elevation="3" Class="pa-4 rounded-lg">
+        <MudPaper Elevation="3" Class="pa-3 rounded-lg">
             <MudForm @ref="_form" Model="@_settings">
-                <MudCard Class="mb-4">
-                    <MudCardHeader>
-                        <MudText Typo="Typo.h5">Default Model</MudText>
+                <MudCard Class="mb-4" Elevation="1">
+                    <MudCardHeader Class="pb-2">
+                        <MudText Class="section-header">Default Model</MudText>
                     </MudCardHeader>
-                    <MudCardContent>
+                    <MudCardContent Class="pt-0">
                         <MudSelect T="string" Label="Default Model" @bind-Value="_settings.DefaultModelName"
-                                  Variant="Variant.Outlined" AnchorOrigin="Origin.BottomCenter">
+                                   Variant="Variant.Outlined" AnchorOrigin="Origin.BottomCenter" Dense="true">
                             @foreach (var model in _availableModels)
                             {
                                 <MudSelectItem Value="@model.Name">@model.Name</MudSelectItem>
@@ -40,29 +39,51 @@
                         </MudText>
                     </MudCardContent>
                 </MudCard>
-                <MudCard Class="mb-4">
-                    <MudCardHeader>
-                        <MudText Typo="Typo.h5">Default Chat Message</MudText>
-                        </MudCardHeader>
-                    <MudCardContent>
+                <MudCard Class="mb-4" Elevation="1">
+                    <MudCardHeader Class="pb-2">
+                        <MudText Class="section-header">Default Chat Message</MudText>
+                    </MudCardHeader>
+                    <MudCardContent Class="pt-0">
                         <MudTextField T="string" Label="Default Chat Message" @bind-Value="_settings.DefaultChatMessage"
-                                     Lines="3" Variant="Variant.Outlined" HelperText="Pre-filled message in the chat input (useful for testing)" />
+                                      Lines="3" Variant="Variant.Outlined" HelperText="Pre-filled message in the chat input (useful for testing)" />
                     </MudCardContent>
                 </MudCard>
-                <MudCard Class="mb-4">
-                    <MudCardHeader>
-                        <MudText Typo="Typo.h5">Statistics Settings</MudText>
+                <MudCard Class="mb-4" Elevation="1">
+                    <MudCardHeader Class="pb-2">
+                        <MudText Class="section-header">Ollama Server Settings</MudText>
                     </MudCardHeader>
-                    <MudCardContent>
+                    <MudCardContent Class="pt-0">
+                        <MudTextField T="string" Label="Server URL" @bind-Value="_settings.OllamaServerUrl"
+                                      Variant="Variant.Outlined"
+                                      HelperText="Ollama server URL including protocol and port (e.g., https://my-server:11434)"
+                                      Placeholder="http://localhost:11434" />
+                        <MudTextField T="string" Label="Basic Auth Password" @bind-Value="_settings.OllamaBasicAuthPassword"
+                                      Variant="Variant.Outlined" InputType="InputType.Password"
+                                      HelperText="Password for basic authentication (leave empty if not required)"
+                                      Class="mt-3" />
+                        <MudSwitch T="bool" @bind-Value="_settings.IgnoreSslErrors" Color="Color.Primary" Class="mt-3">
+                            Ignore SSL certificate errors (for self-signed certificates)
+                        </MudSwitch>
+                        <MudAlert Severity="Severity.Warning" Class="mt-3" Visible="@_settings.IgnoreSslErrors">
+                            <MudText Typo="Typo.body2">
+                                Warning: Ignoring SSL certificate errors reduces security. Only enable this for trusted servers with self-signed certificates.
+                            </MudText>
+                        </MudAlert>
+                    </MudCardContent>
+                </MudCard>
+                <MudCard Class="mb-4" Elevation="1">
+                    <MudCardHeader Class="pb-2">
+                        <MudText Class="section-header">Statistics Settings</MudText>
+                    </MudCardHeader>
+                    <MudCardContent Class="pt-0">
                         <MudSwitch T="bool" @bind-Value="_settings.ShowTokensPerSecond" Color="Color.Primary">
                             Show tokens per second in statistics
                         </MudSwitch>
                     </MudCardContent>
                 </MudCard>
-
                 <MudButtonGroup Class="mt-4">
-                    <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="SaveSettings">Save Settings</MudButton>
-                    <MudButton Variant="Variant.Outlined" Color="Color.Secondary" OnClick="ResetSettings">Reset</MudButton>
+                    <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="SaveSettings" Size="Size.Medium">Save Settings</MudButton>
+                    <MudButton Variant="Variant.Outlined" Color="Color.Secondary" OnClick="ResetSettings" Size="Size.Medium">Reset</MudButton>
                 </MudButtonGroup>
             </MudForm>
         </MudPaper>
@@ -87,13 +108,13 @@
         {
             _loading = false;
         }
-    }
-
+    }    
+    
     private async Task LoadModels()
     {
         try
         {
-            _availableModels = await ModelsService.GetModelsAsync();
+            _availableModels = (await OllamaService.GetModelsAsync()).ToList();
             if (_availableModels.Count == 0)
             {
                 Snackbar.Add("No models available. Settings will be saved but model selection won't take effect.", Severity.Warning);

@@ -12,17 +12,18 @@
 @using ChatClient.Api.Client.Services
 @using ChatClient.Api.Client.Components
 @using ChatClient.Api.Client.ViewModels
+@using ChatClient.Api.Services
 
 @implements IAsyncDisposable
-@inject IFunctionsService FunctionsService
+@inject KernelService KernelService
 @inject IJSRuntime JSRuntime
 @inject NavigationManager NavigationManager
 @inject IDialogService DialogService
 @inject IChatViewModelService ChatViewModelService
 @inject IChatService ChatService
 @inject ISystemPromptService PromptService
-@inject IModelsService ModelsService
 @inject IUserSettingsService UserSettingsService
+@inject OllamaService OllamaService
 
 <PageTitle>Chat with AI Assistant</PageTitle>
 
@@ -45,7 +46,7 @@
                 }
                 else
                 {
-                    <MudSelect T="SystemPrompt" Label="Select System Prompt" @bind-Value="selectedSystemPrompt" Variant="Variant.Outlined" FullWidth="true">
+                    <MudSelect T="SystemPrompt" Label="Select System Prompt" @bind-Value="selectedSystemPrompt" Variant="Variant.Outlined" FullWidth="true" Dense="true">
                         @foreach (var prompt in systemPrompts)
                         {
                             <MudSelectItem Value="@prompt">@prompt.Name</MudSelectItem>
@@ -59,11 +60,11 @@
                             @(selectedSystemPrompt?.Content ?? string.Empty)
                         </div>
                     }
-
                     <MudButton Variant="Variant.Filled"
                                Color="Color.Primary"
                                FullWidth="true"
                                Class="mt-4"
+                               Size="Size.Medium"
                                OnClick="StartChat">
                         Start Chat
                     </MudButton>
@@ -71,7 +72,8 @@
                                Variant="Variant.Text"
                                Color="Color.Secondary"
                                FullWidth="true"
-                               Class="mt-2">
+                               Class="mt-2"
+                               Size="Size.Medium">
                         Manage System Prompts
                     </MudButton>
                 }
@@ -84,9 +86,40 @@
             @foreach (var message in ChatViewModelService.Messages)
             {
                 @if (message.Role != Microsoft.Extensions.AI.ChatRole.System)
-                {                    
+                {
                     <MudChat ChatPosition="@(message.Role == Microsoft.Extensions.AI.ChatRole.Assistant ? ChatBubblePosition.Start : ChatBubblePosition.End)"> 
                             <MudChatBubble @key="message.Id">
+                            @if (message.Files.Any())
+                            {
+                                <div class="mb-2">
+                                    @foreach (var file in message.Files)
+                                    {
+                                        @if (IsImageFile(file.ContentType))
+                                        {
+                                            <div class="image-thumbnail">
+                                                <img src="@GetImageDataUrl(file)" 
+                                                     alt="@file.Name" 
+                                                     style="max-width: 150px; max-height: 150px; object-fit: cover;"
+                                                     @onclick="@(() => ShowFullSizeImage(file))" />
+                                                <MudText Typo="Typo.caption" Class="image-caption mt-1 text-center">
+                                                    @file.Name (@FormatFileSize(file.Size))
+                                                </MudText>
+                                            </div>
+                                        }
+                                        else
+                                        {
+                                            <MudChip T="string" 
+                                                     Color="Color.Info" 
+                                                     Size="Size.Small"
+                                                     Class="mb-1 mr-1">
+                                                <MudIcon Icon="@GetFileIcon(file.ContentType)" Class="mr-1" />
+                                                @file.Name (@FormatFileSize(file.Size))
+                                            </MudChip>
+                                        }
+                                    }
+                                </div>
+                            }
+                            
                             @((MarkupString)message.HtmlContent)
                             @if (message.IsStreaming)
                             {
@@ -184,7 +217,6 @@
                         <MudSelectItem Value="@model">@model.Name</MudSelectItem>
                     }
                 </MudSelect>
-
                 <MudButton Variant="Variant.Text"
                            Color="Color.Primary"
                            Size="Size.Small"
@@ -192,9 +224,8 @@
                     Functions
                 </MudButton>
             </div>
-
             <MudCollapse Expanded="@functionsExpanded">
-                <MudCard Outlined="true" Class="my-2">
+                <MudCard Outlined="true" Class="my-2" Elevation="0">
                     <MudCardContent Class="pa-2">
                         <FunctionSelector AvailableFunctions="availableFunctions"
                                           SelectedFunctions="selectedFunctions"
@@ -213,7 +244,8 @@
                         <MudButton OnClick="Cancel"
                                    Color="Color.Error"
                                    Variant="Variant.Filled"
-                                   StartIcon="@Icons.Material.Filled.Stop">
+                                   StartIcon="@Icons.Material.Filled.Stop"
+                                   Size="Size.Medium">
                             Stop
                         </MudButton>
                     }
@@ -222,7 +254,8 @@
                         <MudButton OnClick="RestartChat"
                                    Color="Color.Secondary"
                                    Variant="Variant.Outlined"
-                                   StartIcon="@Icons.Material.Filled.AddCircle">
+                                   StartIcon="@Icons.Material.Filled.AddCircle"
+                                   Size="Size.Medium">
                             New Chat
                         </MudButton>
                     }
@@ -313,7 +346,7 @@
     {
         try
         {
-            availableFunctions = (await FunctionsService.GetAvailableFunctionsAsync()).ToList();
+            availableFunctions = (await KernelService.GetAvailableFunctionsAsync()).ToList();
         }
         catch (Exception ex)        
         {
@@ -326,7 +359,7 @@
     {
         try
         {
-            availableModels = await ModelsService.GetModelsAsync();
+            availableModels = (await OllamaService.GetModelsAsync()).ToList();
               // Get user settings to find default model
             var settings = await UserSettingsService.GetSettingsAsync();
             if (!string.IsNullOrWhiteSpace(settings.DefaultModelName) && 
@@ -362,16 +395,17 @@
         ChatService.ClearChat();
         StateHasChanged();
     }
-    
-    private async Task SendChatMessageAsync(string message)
+
+      private async Task SendChatMessageAsync((string text, IReadOnlyList<ChatMessageFile> files) messageData)
     {
-        if (string.IsNullOrWhiteSpace(message) || isLLMAnswering)
+        if (string.IsNullOrWhiteSpace(messageData.text) || isLLMAnswering)
             return;
 
         var modelName = selectedModel?.Name ?? "";
-        await ChatService.AddUserMessageAndAnswerAsync(message.Trim(), selectedFunctions, modelName);
+        await ChatService.AddUserMessageAndAnswerAsync(messageData.text.Trim(), selectedFunctions, modelName, messageData.files);
         await ScrollToBottom();
     }
+
     private async Task ScrollToBottom()
     {
         try
@@ -403,13 +437,64 @@
     {
         selectedModel = model;
         Console.WriteLine($"Selected model changed to: {model.Name}");
-    }
-
+    }    
+    
     public ValueTask DisposeAsync()
     {
         ChatService.LoadingStateChanged -= OnLoadingStateChanged;
         ChatViewModelService.MessageAdded -= async (msg) => await InvokeAsync(() => OnMessageAdded(msg));
         ChatViewModelService.MessageUpdated -= (msg) => InvokeAsync(() => OnMessageUpdated(msg));
         return ValueTask.CompletedTask;
+    }
+    
+    private string GetFileIcon(string contentType)
+    {
+        return contentType.ToLower() switch
+        {
+            var ct when ct.StartsWith("image/") => Icons.Material.Filled.Image,
+            var ct when ct.Contains("pdf") => Icons.Material.Filled.PictureAsPdf,
+            var ct when ct.Contains("text") => Icons.Material.Filled.Description,
+            var ct when ct.Contains("word") || ct.Contains("document") => Icons.Material.Filled.Description,
+            _ => Icons.Material.Filled.AttachFile
+        };
+    }    
+    
+    private string FormatFileSize(long bytes)
+    {
+        string[] suffixes = ["B", "KB", "MB", "GB"];
+        int counter = 0;
+        decimal number = bytes;
+        while (Math.Round(number / 1024) >= 1)
+        {
+            number /= 1024;
+            counter++;
+        }
+        return $"{number:n1} {suffixes[counter]}";
+    }
+    
+    private bool IsImageFile(string contentType)
+    {
+        return contentType.ToLower().StartsWith("image/");
+    }
+    
+    private string GetImageDataUrl(ChatMessageFile file)
+    {
+        return $"data:{file.ContentType};base64,{Convert.ToBase64String(file.Data)}";
+    }    private async Task ShowFullSizeImage(ChatMessageFile file)
+    {
+        var parameters = new DialogParameters
+        {
+            ["ImageFile"] = file
+        };
+        
+        var options = new DialogOptions
+        {
+            MaxWidth = MaxWidth.Large,
+            FullWidth = true,
+            CloseButton = true,
+            BackdropClick = true
+        };
+        
+        await DialogService.ShowAsync<ImageViewerDialog>("Image Viewer", parameters, options);
     }
 }

@@ -1,0 +1,47 @@
+@using ChatClient.Shared.Models
+@using MudBlazor
+@using Microsoft.AspNetCore.Components
+
+<MudDialog>
+    <TitleContent>
+        <MudText Typo="Typo.h6">@ImageFile.Name</MudText>
+    </TitleContent>
+    <DialogContent>
+        <div class="d-flex justify-center">
+            <img src="@GetImageDataUrl()"
+                 alt="@ImageFile.Name"
+                 style="max-width: 100%; max-height: 70vh; object-fit: contain;" />
+        </div>
+        <MudText Typo="Typo.caption" Class="mt-2 text-center">
+            Size: @FormatFileSize(ImageFile.Size) | Type: @ImageFile.ContentType
+        </MudText>
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="Close">Close</MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] IDialogReference DialogReference { get; set; } = null!;
+    [Parameter] public ChatMessageFile ImageFile { get; set; } = null!;
+
+    private string GetImageDataUrl()
+    {
+        return $"data:{ImageFile.ContentType};base64,{Convert.ToBase64String(ImageFile.Data)}";
+    }
+
+    private string FormatFileSize(long bytes)
+    {
+        string[] suffixes = ["B", "KB", "MB", "GB"];
+        int counter = 0;
+        decimal number = bytes;
+        while (Math.Round(number / 1024) >= 1)
+        {
+            number /= 1024;
+            counter++;
+        }
+        return $"{number:n1} {suffixes[counter]}";
+    }
+
+    private void Close() => DialogReference.Close();
+}
