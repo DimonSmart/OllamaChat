@@ -1,10 +1,11 @@
 @page "/settings"
 @using ChatClient.Api.Client.Services
+@using ChatClient.Api.Services
 @using ChatClient.Shared.Models
 @using ChatClient.Shared.Services
 @using System.Text.Json
 @inject IUserSettingsService UserSettingsService
-@inject IModelsService ModelsService
+@inject OllamaService OllamaService
 @inject ISnackbar Snackbar
 
 <PageTitle>User Settings</PageTitle>
@@ -49,6 +50,29 @@
                 </MudCard>
                 <MudCard Class="mb-4" Elevation="1">
                     <MudCardHeader Class="pb-2">
+                        <MudText Class="section-header">Ollama Server Settings</MudText>
+                    </MudCardHeader>
+                    <MudCardContent Class="pt-0">
+                        <MudTextField T="string" Label="Server URL" @bind-Value="_settings.OllamaServerUrl"
+                                      Variant="Variant.Outlined"
+                                      HelperText="Ollama server URL including protocol and port (e.g., https://my-server:11434)"
+                                      Placeholder="http://localhost:11434" />
+                        <MudTextField T="string" Label="Basic Auth Password" @bind-Value="_settings.OllamaBasicAuthPassword"
+                                      Variant="Variant.Outlined" InputType="InputType.Password"
+                                      HelperText="Password for basic authentication (leave empty if not required)"
+                                      Class="mt-3" />
+                        <MudSwitch T="bool" @bind-Value="_settings.IgnoreSslErrors" Color="Color.Primary" Class="mt-3">
+                            Ignore SSL certificate errors (for self-signed certificates)
+                        </MudSwitch>
+                        <MudAlert Severity="Severity.Warning" Class="mt-3" Visible="@_settings.IgnoreSslErrors">
+                            <MudText Typo="Typo.body2">
+                                Warning: Ignoring SSL certificate errors reduces security. Only enable this for trusted servers with self-signed certificates.
+                            </MudText>
+                        </MudAlert>
+                    </MudCardContent>
+                </MudCard>
+                <MudCard Class="mb-4" Elevation="1">
+                    <MudCardHeader Class="pb-2">
                         <MudText Class="section-header">Statistics Settings</MudText>
                     </MudCardHeader>
                     <MudCardContent Class="pt-0">
@@ -84,13 +108,13 @@
         {
             _loading = false;
         }
-    }
-
+    }    
+    
     private async Task LoadModels()
     {
         try
         {
-            _availableModels = await ModelsService.GetModelsAsync();
+            _availableModels = (await OllamaService.GetModelsAsync()).ToList();
             if (_availableModels.Count == 0)
             {
                 Snackbar.Add("No models available. Settings will be saved but model selection won't take effect.", Severity.Warning);

@@ -12,17 +12,18 @@
 @using ChatClient.Api.Client.Services
 @using ChatClient.Api.Client.Components
 @using ChatClient.Api.Client.ViewModels
+@using ChatClient.Api.Services
 
 @implements IAsyncDisposable
-@inject IFunctionsService FunctionsService
+@inject KernelService KernelService
 @inject IJSRuntime JSRuntime
 @inject NavigationManager NavigationManager
 @inject IDialogService DialogService
 @inject IChatViewModelService ChatViewModelService
 @inject IChatService ChatService
 @inject ISystemPromptService PromptService
-@inject IModelsService ModelsService
 @inject IUserSettingsService UserSettingsService
+@inject OllamaService OllamaService
 
 <PageTitle>Chat with AI Assistant</PageTitle>
 
@@ -345,7 +346,7 @@
     {
         try
         {
-            availableFunctions = (await FunctionsService.GetAvailableFunctionsAsync()).ToList();
+            availableFunctions = (await KernelService.GetAvailableFunctionsAsync()).ToList();
         }
         catch (Exception ex)        
         {
@@ -358,7 +359,7 @@
     {
         try
         {
-            availableModels = await ModelsService.GetModelsAsync();
+            availableModels = (await OllamaService.GetModelsAsync()).ToList();
               // Get user settings to find default model
             var settings = await UserSettingsService.GetSettingsAsync();
             if (!string.IsNullOrWhiteSpace(settings.DefaultModelName) && 

@@ -1,9 +1,9 @@
 @page "/mcp-servers"
 @using ChatClient.Shared.Models
 @using ChatClient.Shared.Services
-@using ChatClient.Api.Client.Services
+@using ChatClient.Api.Services
 @inject IMcpServerConfigService McpServerConfigService
-@inject IModelsService ModelsService
+@inject OllamaService OllamaService
 @inject ISnackbar Snackbar
 
 <PageTitle>MCP Servers Management</PageTitle>
@@ -240,13 +240,13 @@
     {
         await LoadServers();
         await LoadAvailableModels();
-    }
-
+    }    
+    
     private async Task LoadAvailableModels()
     {
         try
         {
-            availableModels = await ModelsService.GetModelsAsync();
+            availableModels = (await OllamaService.GetModelsAsync()).ToList();
         }
         catch (Exception ex)
         {

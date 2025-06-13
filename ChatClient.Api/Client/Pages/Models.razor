@@ -1,8 +1,8 @@
 @page "/models"
 @using ChatClient.Shared.Models
 @using System.Text.Json
-@using ChatClient.Api.Client.Services
-@inject IModelsService ModelsService
+@using ChatClient.Api.Services
+@inject OllamaService OllamaService
 
 <MudContainer Class="mt-3">
     <MudText Class="page-header">Available Models</MudText>
@@ -53,13 +53,13 @@
     private List<OllamaModel> _models = new();
     private bool _loading = true;
     private string? _errorMessage;
-
+    
     protected override async Task OnInitializedAsync()
     {
         try
         {
             _loading = true;
-            _models = await ModelsService.GetModelsAsync();
+            _models = (await OllamaService.GetModelsAsync()).ToList();
             _errorMessage = null;
         }
         catch (Exception ex)

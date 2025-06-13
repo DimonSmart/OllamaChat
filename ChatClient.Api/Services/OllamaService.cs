@@ -1,65 +1,140 @@
-#pragma warning disable SKEXP0070
-using ChatClient.Shared.Models;
+﻿#pragma warning disable SKEXP0070
+using System.Net.Http.Headers;
+using System.Text;
 
-using Microsoft.SemanticKernel;
+using ChatClient.Shared.Models;
+using ChatClient.Shared.Services;
 
 using OllamaSharp;
 
 namespace ChatClient.Api.Services;
 
-public class OllamaService(
+/// <summary>
+/// Lightweight wrapper around <see cref="OllamaApiClient"/> that recreates the underlying client only
+/// when the user‑facing connection settings actually change.
+/// </summary>
+public sealed class OllamaService(
     IConfiguration configuration,
-    ILogger<OllamaService> logger)
+    IUserSettingsService userSettingsService,
+    IHttpClientFactory httpClientFactory,
+    ILogger<OllamaService> logger) : IDisposable
 {
     private OllamaApiClient? _ollamaClient;
+    private HttpClient? _httpClient;
+    private SettingsSnapshot? _cachedSettings;
 
-    private OllamaApiClient GetOllamaClient()
+    /// <summary>
+    /// Returns a cached <see cref="OllamaApiClient"/> instance or rebuilds it when connection settings differ
+    /// from the previous snapshot.
+    /// </summary>
+    private async Task<OllamaApiClient> GetOllamaClientAsync()
     {
-        if (_ollamaClient == null)
+        var current = await GetCurrentSettingsAsync();
+
+        // Re‑create the client only if something important changed.
+        if (_ollamaClient is null || !_cachedSettings!.Equals(current))
         {
-            var baseUrl = configuration["Ollama:BaseUrl"] ?? "http://localhost:11434";
-            _ollamaClient = new OllamaApiClient(new Uri(baseUrl));
+            _ollamaClient?.Dispose();
+            _httpClient?.Dispose();
+
+            _httpClient = BuildHttpClient(current);
+            _ollamaClient = new OllamaApiClient(_httpClient);
+
+            _cachedSettings = current;
         }
+
         return _ollamaClient;
     }
 
-
     /// <summary>
-    /// Gets the list of available Ollama models using Semantic Kernel's ListLocalModelsAsync method.
-    /// This approach leverages the same OllamaApiClient instance used by the Kernel for consistency.
+    /// Public entry point for other services.
     /// </summary>
-    /// <returns>List of OllamaModel objects with vision capability detection</returns>
-    public async Task<List<OllamaModel>> GetModelsAsync()
+    public Task<OllamaApiClient> GetClientAsync() => GetOllamaClientAsync();
+
+    #region Models
+    public async Task<IReadOnlyList<OllamaModel>> GetModelsAsync()
     {
         try
         {
-            var ollamaClient = GetOllamaClient();
-            var localModels = await ollamaClient.ListLocalModelsAsync(); var result = new List<OllamaModel>();
-            foreach (var model in localModels)
-            {
-                var ollamaModel = new OllamaModel
-                {
-                    Name = model.Name,
-                    ModifiedAt = model.ModifiedAt.ToString("yyyy-MM-ddTHH:mm:ss.fffZ"),
-                    Size = model.Size,
-                    Digest = model.Digest,
-                    // Detect vision capability based on "clip" family in model details
-                    SupportsImages = model.Details?.Families?.Contains("clip") == true
-                };
-                result.Add(ollamaModel);
-            }
+            var client = await GetOllamaClientAsync();
+            var models = await client.ListLocalModelsAsync();
 
-            return result;
+            return models.Select(m => new OllamaModel
+            {
+                Name = m.Name,
+                ModifiedAt = m.ModifiedAt.ToString("yyyy-MM-ddTHH:mm:ss.fffZ"),
+                Size = m.Size,
+                Digest = m.Digest,
+                SupportsImages = m.Details?.Families?.Contains("clip") == true
+            }).ToList();
         }
         catch (Exception ex)
         {
             logger.LogError(ex, "Failed to retrieve Ollama models: {Message}", ex.Message);
-            return [];
+            return Array.Empty<OllamaModel>();
         }
     }
+    #endregion
 
-    /// <summary>
-    /// Gets the OllamaApiClient for use in other services (e.g., KernelService)
-    /// </summary>
-    public OllamaApiClient GetClient() => GetOllamaClient();
+    #region Helpers
+    private async Task<SettingsSnapshot> GetCurrentSettingsAsync()
+    {
+        var user = await userSettingsService.GetSettingsAsync();
+
+        return new SettingsSnapshot(
+            !string.IsNullOrWhiteSpace(user.OllamaServerUrl)
+                ? user.OllamaServerUrl
+                : configuration["Ollama:BaseUrl"] ?? "http://localhost:11434",
+            user.OllamaBasicAuthPassword,
+            user.IgnoreSslErrors);
+    }
+
+    private HttpClient BuildHttpClient(SettingsSnapshot s)
+    {
+        var handler = new HttpClientHandler();
+        if (s.IgnoreSslErrors)
+        {
+            handler.ServerCertificateCustomValidationCallback = (_, _, _, _) => true;
+        }
+
+        var client = httpClientFactory.CreateClient("OllamaClient");
+        client.Timeout = TimeSpan.FromMinutes(2);
+        client.DefaultRequestHeaders.Clear();
+        client.BaseAddress = new Uri(s.ServerUrl);
+
+        if (!string.IsNullOrWhiteSpace(s.Password))
+        {
+            var auth = Convert.ToBase64String(Encoding.UTF8.GetBytes($":{s.Password}"));
+            client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Basic", auth);
+        }
+
+        // Replace the factory‑created client when we must ignore SSL errors (factory can't set handler).
+        if (s.IgnoreSslErrors)
+        {
+            client = new HttpClient(handler)
+            {
+                Timeout = TimeSpan.FromMinutes(2),
+                BaseAddress = new Uri(s.ServerUrl)
+            };
+
+            if (!string.IsNullOrWhiteSpace(s.Password))
+            {
+                var auth = Convert.ToBase64String(Encoding.UTF8.GetBytes($":{s.Password}"));
+                client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Basic", auth);
+            }
+        }
+
+        return client;
+    }
+    #endregion
+
+    public void Dispose()
+    {
+        _ollamaClient?.Dispose();
+        _httpClient?.Dispose();
+    }
+
+    #region Nested ‑ simple value object for comparing settings
+    private sealed record SettingsSnapshot(string ServerUrl, string? Password, bool IgnoreSslErrors);
+    #endregion
 }

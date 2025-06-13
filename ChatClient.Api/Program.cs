@@ -22,12 +22,6 @@ Console.WriteLine($"Environment: {builder.Environment.EnvironmentName}");
 Console.WriteLine($"Content Root: {builder.Environment.ContentRootPath}");
 Console.WriteLine($"Web Root: {builder.Environment.WebRootPath}");
 
-// Configure default HttpClient factory with named clients
-builder.Services.AddHttpClient("DefaultClient", client =>
-{
-    client.Timeout = TimeSpan.FromMinutes(20);
-});
-
 builder.Services.AddHttpClient("OllamaClient", client =>
 {
     client.Timeout = TimeSpan.FromMinutes(2);
@@ -50,8 +44,6 @@ builder.Services.AddSingleton<ChatClient.Shared.Services.ISystemPromptService, C
 builder.Services.AddSingleton<ChatClient.Shared.Services.IUserSettingsService, ChatClient.Api.Services.UserSettingsService>();
 
 // Register client services for Blazor components  
-builder.Services.AddScoped<ChatClient.Api.Client.Services.IFunctionsService, ChatClient.Api.Client.Services.FunctionsService>();
-builder.Services.AddScoped<ChatClient.Api.Client.Services.IModelsService, ChatClient.Api.Client.Services.ModelsService>();
 builder.Services.AddScoped<ChatClient.Api.Client.Services.IChatService, ChatClient.Api.Client.Services.ChatService>();
 builder.Services.AddScoped<ChatClient.Api.Client.Services.IChatViewModelService, ChatClient.Api.Client.Services.ChatViewModelService>();
 
