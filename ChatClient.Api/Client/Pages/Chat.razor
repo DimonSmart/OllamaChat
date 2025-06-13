@@ -88,20 +88,33 @@
                 {
                     <MudChat ChatPosition="@(message.Role == Microsoft.Extensions.AI.ChatRole.Assistant ? ChatBubblePosition.Start : ChatBubblePosition.End)"> 
                             <MudChatBubble @key="message.Id">
-                            
-                            @* Display attached files if any *@
                             @if (message.Files.Any())
                             {
                                 <div class="mb-2">
                                     @foreach (var file in message.Files)
                                     {
-                                        <MudChip T="string" 
-                                                 Color="Color.Info" 
-                                                 Size="Size.Small"
-                                                 Class="mb-1 mr-1">
-                                            <MudIcon Icon="@GetFileIcon(file.ContentType)" Class="mr-1" />
-                                            @file.Name (@FormatFileSize(file.Size))
-                                        </MudChip>
+                                        @if (IsImageFile(file.ContentType))
+                                        {
+                                            <div class="image-thumbnail">
+                                                <img src="@GetImageDataUrl(file)" 
+                                                     alt="@file.Name" 
+                                                     style="max-width: 150px; max-height: 150px; object-fit: cover;"
+                                                     @onclick="@(() => ShowFullSizeImage(file))" />
+                                                <MudText Typo="Typo.caption" Class="image-caption mt-1 text-center">
+                                                    @file.Name (@FormatFileSize(file.Size))
+                                                </MudText>
+                                            </div>
+                                        }
+                                        else
+                                        {
+                                            <MudChip T="string" 
+                                                     Color="Color.Info" 
+                                                     Size="Size.Small"
+                                                     Class="mb-1 mr-1">
+                                                <MudIcon Icon="@GetFileIcon(file.ContentType)" Class="mr-1" />
+                                                @file.Name (@FormatFileSize(file.Size))
+                                            </MudChip>
+                                        }
                                     }
                                 </div>
                             }
@@ -443,8 +456,8 @@
             var ct when ct.Contains("word") || ct.Contains("document") => Icons.Material.Filled.Description,
             _ => Icons.Material.Filled.AttachFile
         };
-    }
-
+    }    
+    
     private string FormatFileSize(long bytes)
     {
         string[] suffixes = ["B", "KB", "MB", "GB"];
@@ -456,5 +469,31 @@
             counter++;
         }
         return $"{number:n1} {suffixes[counter]}";
+    }
+    
+    private bool IsImageFile(string contentType)
+    {
+        return contentType.ToLower().StartsWith("image/");
+    }
+    
+    private string GetImageDataUrl(ChatMessageFile file)
+    {
+        return $"data:{file.ContentType};base64,{Convert.ToBase64String(file.Data)}";
+    }    private async Task ShowFullSizeImage(ChatMessageFile file)
+    {
+        var parameters = new DialogParameters
+        {
+            ["ImageFile"] = file
+        };
+        
+        var options = new DialogOptions
+        {
+            MaxWidth = MaxWidth.Large,
+            FullWidth = true,
+            CloseButton = true,
+            BackdropClick = true
+        };
+        
+        await DialogService.ShowAsync<ImageViewerDialog>("Image Viewer", parameters, options);
     }
 }
