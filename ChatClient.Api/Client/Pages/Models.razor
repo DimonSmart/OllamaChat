@@ -17,7 +17,7 @@
         <MudAlert Severity="Severity.Info">No models available. Make sure Ollama is running and has models installed.</MudAlert>
     }
     else
-    {        
+    {
         <MudTable Items="@_models" Hover="true" Striped="true" Dense="true" Class="mb-4" Elevation="2">
             <HeaderContent>
                 <MudTh>Model Name</MudTh>
@@ -27,14 +27,14 @@
             </HeaderContent>
             <RowTemplate>
                 <MudTd DataLabel="Name">@context.Name</MudTd>
-                <MudTd DataLabel="Image Support">
+                <MudTd DataLabel="Image Support" Style="text-align: center;">
                     @if (context.SupportsImages)
                     {
-                        <MudIcon Icon="Icons.Material.Filled.Image" Color="Color.Success" Title="Supports images" />
+                        <span style="color: #4caf50; font-size: 20px; font-weight: bold;" title="Supports images">✓</span>
                     }
                     else
                     {
-                        <MudIcon Icon="Icons.Material.Filled.TextFields" Color="Color.Default" Title="Text only" />
+                        <span style="color: #9e9e9e; font-size: 20px;" title="Text only">−</span>
                     }
                 </MudTd>
                 <MudTd DataLabel="Modified At">@FormatDate(context.ModifiedAt)</MudTd>
