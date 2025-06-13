@@ -3,6 +3,7 @@
 @using ChatClient.Api.Services
 @using ChatClient.Shared.Models
 @using ChatClient.Shared.Services
+@using ChatClient.Shared.Constants
 @using System.Text.Json
 @inject IUserSettingsService UserSettingsService
 @inject OllamaService OllamaService
@@ -56,7 +57,7 @@
                         <MudTextField T="string" Label="Server URL" @bind-Value="_settings.OllamaServerUrl"
                                       Variant="Variant.Outlined"
                                       HelperText="Ollama server URL including protocol and port (e.g., https://my-server:11434)"
-                                      Placeholder="http://localhost:11434" />
+                                      Placeholder="@OllamaDefaults.ServerUrl" />
                         <MudTextField T="string" Label="Basic Auth Password" @bind-Value="_settings.OllamaBasicAuthPassword"
                                       Variant="Variant.Outlined" InputType="InputType.Password"
                                       HelperText="Password for basic authentication (leave empty if not required)"

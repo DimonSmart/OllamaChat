@@ -1,5 +1,6 @@
 using ChatClient.Shared.Models;
 using ChatClient.Shared.Services;
+using ChatClient.Shared.Constants;
 
 using Microsoft.SemanticKernel;
 
@@ -35,7 +36,7 @@ public class KernelService(
         var settings = await userSettingsService.GetSettingsAsync();
         var baseUrl = !string.IsNullOrWhiteSpace(settings.OllamaServerUrl)
             ? settings.OllamaServerUrl
-            : configuration["Ollama:BaseUrl"] ?? "http://localhost:11434";
+            : configuration["Ollama:BaseUrl"] ?? OllamaDefaults.ServerUrl;
 
         IKernelBuilder builder = Kernel.CreateBuilder();
 
