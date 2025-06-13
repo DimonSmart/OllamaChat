@@ -4,6 +4,7 @@ using System.Text;
 
 using ChatClient.Shared.Models;
 using ChatClient.Shared.Services;
+using ChatClient.Shared.Constants;
 
 using OllamaSharp;
 
@@ -84,7 +85,7 @@ public sealed class OllamaService(
         return new SettingsSnapshot(
             !string.IsNullOrWhiteSpace(user.OllamaServerUrl)
                 ? user.OllamaServerUrl
-                : configuration["Ollama:BaseUrl"] ?? "http://localhost:11434",
+                : configuration["Ollama:BaseUrl"] ?? OllamaDefaults.ServerUrl,
             user.OllamaBasicAuthPassword,
             user.IgnoreSslErrors);
     }

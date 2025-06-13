@@ -1,4 +1,5 @@
 using System.Text.Json.Serialization;
+using ChatClient.Shared.Constants;
 
 namespace ChatClient.Shared.Models;
 
@@ -26,7 +27,7 @@ public class UserSettings
     /// Ollama server URL (including protocol and port)
     /// </summary>
     [JsonPropertyName("ollamaServerUrl")]
-    public string OllamaServerUrl { get; set; } = "http://localhost:11434";
+    public string OllamaServerUrl { get; set; } = OllamaDefaults.ServerUrl;
 
     /// <summary>
     /// Basic authentication password for Ollama server
