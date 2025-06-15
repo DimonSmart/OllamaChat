@@ -7,6 +7,7 @@ using ChatClient.Shared.Services;
 using Microsoft.Extensions.AI;
 using Microsoft.SemanticKernel;
 using Microsoft.SemanticKernel.ChatCompletion;
+using OllamaSharp.Models.Exceptions;
 
 namespace ChatClient.Api.Client.Services;
 
@@ -170,6 +171,21 @@ public class ChatService(
             await ReplaceStreamingMessageWithFinal(streamingMessage, finalMessage);
             _currentStreamingMessage = null;
         }
+        catch (ModelDoesNotSupportToolsException ex)
+        {
+            logger.LogWarning(ex, "Model {ModelName} does not support function calling", modelName);
+            RemoveStreamingMessage(streamingMessage);
+            _currentStreamingMessage = null;
+            
+            var errorMessage = functionNames?.Any() == true 
+                ? $"⚠️ The model **{modelName}** does not support function calling. Please either:\n\n" +
+                  "• Switch to a model that supports function calling\n" +
+                  "• Disable all functions for this conversation\n\n" +
+                  "You can see which models support function calling on the Models page."
+                : $"⚠️ The model **{modelName}** does not support the requested functionality.";
+                
+            await HandleError(errorMessage);
+        }
         catch (Exception ex)
         {
             logger.LogError(ex, "Error processing AI response");
@@ -197,7 +213,7 @@ public class ChatService(
             {
                 if (IsImageContentType(file.ContentType))
                 {
-                    items.Add(new Microsoft.SemanticKernel.ImageContent(new BinaryData(file.Data), file.ContentType));
+                    items.Add(new ImageContent(new BinaryData(file.Data), file.ContentType));
                 }
                 else
                 {
@@ -212,11 +228,11 @@ public class ChatService(
 
         return history;
     }
-    private static AuthorRole ConvertToAuthorRole(Microsoft.Extensions.AI.ChatRole chatRole)
+    private static AuthorRole ConvertToAuthorRole(ChatRole chatRole)
     {
-        if (chatRole == Microsoft.Extensions.AI.ChatRole.System)
+        if (chatRole == ChatRole.System)
             return AuthorRole.System;
-        if (chatRole == Microsoft.Extensions.AI.ChatRole.Assistant)
+        if (chatRole == ChatRole.Assistant)
             return AuthorRole.Assistant;
 
         return AuthorRole.User;
@@ -242,10 +258,10 @@ public class ChatService(
     {
         Messages.Remove(streamingMessage);
     }
-
+    
     private async Task HandleError(string text)
     {
-        await AddMessageAsync(new AppChatMessage(text, DateTime.Now, ChatRole.System));
+        await AddMessageAsync(new AppChatMessage(text, DateTime.Now, ChatRole.Assistant, string.Empty));
     }
     private void Cleanup()
     {
