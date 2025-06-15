@@ -16,15 +16,12 @@ namespace ChatClient.Api.Services
         /// <param name="delayMs">Delay in milliseconds before launching browser</param>
         public static void DisplayInfoAndLaunchBrowser(string httpUrl, string httpsUrl, int delayMs = 1500)
         {
-            // Display access information in console
             Console.WriteLine("\n=================================================");
             Console.WriteLine("OllamaChat is now running!");
             Console.WriteLine("Access the application at:");
             Console.WriteLine($"  HTTP:  {httpUrl}");
             Console.WriteLine($"  HTTPS: {httpsUrl}");
             Console.WriteLine("=================================================\n");
-
-            // Open browser with a delay to ensure server is ready
             Task.Run(async () =>
             {
                 await Task.Delay(delayMs);

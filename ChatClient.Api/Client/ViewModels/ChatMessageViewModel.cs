@@ -44,8 +44,6 @@ public class ChatMessageViewModel
             .Select(segment => Markdown.ToHtml(segment, Pipeline))
             .ToList()
             .AsReadOnly();
-
-        // Set the cleaned answer content
         Content = result.Answer;
         HtmlContent = Markdown.ToHtml(result.Answer, Pipeline);
 

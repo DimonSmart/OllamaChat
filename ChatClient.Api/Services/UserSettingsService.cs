@@ -19,7 +19,6 @@ public class UserSettingsService : IUserSettingsService
     {
         _logger = logger;
 
-        // Create a directory for user settings if it doesn't exist
         var settingsDir = configuration["UserSettings:Directory"] ?? Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "UserData");
         if (!Directory.Exists(settingsDir))
         {

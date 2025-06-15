@@ -35,7 +35,8 @@ public sealed class Debouncer<T> : IDisposable where T : IEquatable<T>
 
     public void Enqueue(T item)
     {
-        if (_queue.TryEnqueue(item)) _signal.Release();
+        if (_queue.TryEnqueue(item))
+            _signal.Release();
     }
 
     public void Enqueue()
@@ -48,7 +49,6 @@ public sealed class Debouncer<T> : IDisposable where T : IEquatable<T>
     /// </summary>
     public void ClearDelayedCalls()
     {
-        // Stop current loop
         _cts.Cancel();
         _signal.Release();
         try
@@ -58,13 +58,9 @@ public sealed class Debouncer<T> : IDisposable where T : IEquatable<T>
         catch
         {
         }
-
-        // Clear pending items and dispose old resources
         _queue.Clear();
         _cts.Dispose();
         _signal.Dispose();
-
-        // Restart
         _signal = new SemaphoreSlim(0, int.MaxValue);
         _cts = new CancellationTokenSource();
         _processingTask = Task.Run(ProcessLoopAsync);

@@ -16,15 +16,12 @@ public class McpServerConfigService : IMcpServerConfigService
         var serversFilePath = configuration["McpServers:FilePath"] ?? "Data/mcp_servers.json";
         _filePath = Path.GetFullPath(serversFilePath);
         _logger = logger;
-
-        // Ensure the directory exists
         var directory = Path.GetDirectoryName(_filePath);
         if (!string.IsNullOrEmpty(directory) && !Directory.Exists(directory))
         {
             Directory.CreateDirectory(directory);
         }
 
-        // Create default file if it doesn't exist
         if (!File.Exists(_filePath))
         {
             CreateDefaultServersFile().GetAwaiter().GetResult();
@@ -96,7 +93,8 @@ public class McpServerConfigService : IMcpServerConfigService
 
             var servers = await ReadFromFileAsync();
 
-            if (server.Id == null) server.Id = Guid.NewGuid();
+            if (server.Id == null)
+                server.Id = Guid.NewGuid();
 
             server.CreatedAt = DateTime.UtcNow;
             server.UpdatedAt = DateTime.UtcNow;

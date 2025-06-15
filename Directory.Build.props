@@ -10,4 +10,12 @@
     <FileVersion>$(VersionPrefix).0</FileVersion>
     <InformationalVersion>$(VersionPrefix)$(VersionSuffix)</InformationalVersion>
   </PropertyGroup>
+
+  <PropertyGroup>
+    <!-- Enable code analysis and formatting -->
+    <EnableNETAnalyzers>true</EnableNETAnalyzers>
+    <AnalysisLevel>latest</AnalysisLevel>
+    <EnforceCodeStyleInBuild>true</EnforceCodeStyleInBuild>
+    <TreatWarningsAsErrors>false</TreatWarningsAsErrors>
+  </PropertyGroup>
 </Project>

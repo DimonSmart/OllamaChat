@@ -134,7 +134,8 @@ public class KernelService(
         try
         {
             var mcpClients = await _mcpClientService.GetMcpClientsAsync();
-            if (mcpClients.Count == 0) return [];
+            if (mcpClients.Count == 0)
+                return [];
             foreach (var mcpClient in mcpClients)
             {
                 var mcpTools = await _mcpClientService.GetMcpTools(mcpClient);

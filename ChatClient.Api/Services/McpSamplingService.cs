@@ -52,8 +52,6 @@ public class McpSamplingService(
             var chatHistory = ConvertMcpMessagesToChatHistory(request.Messages);
 
             progress?.Report(new ProgressNotificationValue { Progress = 50, Total = 100 });
-
-            // Execute the LLM request
             var chatCompletionService = kernel.GetRequiredService<IChatCompletionService>();
             var response = await chatCompletionService.GetChatMessageContentAsync(
                 chatHistory: chatHistory,
@@ -102,7 +100,7 @@ public class McpSamplingService(
                 Role.User => AuthorRole.User,
                 Role.Assistant => AuthorRole.Assistant,
                 _ => AuthorRole.User // Default to user if unknown role
-            };            // Extract content text
+            };
             string content = mcpMessage.Content?.Text ?? string.Empty;
 
             chatHistory.Add(new ChatMessageContent(role, content));
@@ -123,15 +121,11 @@ public class McpSamplingService(
         var availableModelNames = availableModels.Select(m => m.Name).ToHashSet();
 
         var requestedModel = modelPreferences?.Hints?.FirstOrDefault()?.Name;
-
-        // If MCP server requests a specific model and it exists, use it
         if (!string.IsNullOrEmpty(requestedModel) && availableModelNames.Contains(requestedModel))
         {
             logger.LogInformation("Using requested model for MCP sampling: {ModelName}", requestedModel);
             return requestedModel;
         }
-
-        // If requested model doesn't exist or not specified, use MCP server configured model
         if (!string.IsNullOrEmpty(mcpServerConfig?.SamplingModel))
         {
             if (availableModelNames.Contains(mcpServerConfig.SamplingModel))
@@ -146,8 +140,6 @@ public class McpSamplingService(
                     mcpServerConfig.SamplingModel, mcpServerConfig.Name);
             }
         }
-
-        // Fall back to user's default model
         var userSettings = await userSettingsService.GetSettingsAsync();
         if (!string.IsNullOrEmpty(userSettings.DefaultModelName))
         {
@@ -161,8 +153,6 @@ public class McpSamplingService(
                 logger.LogWarning("User's default model '{ModelName}' not available", userSettings.DefaultModelName);
             }
         }
-
-        // No valid model found - return error instead of hardcoded fallback
         var errorMessage = "No valid model available for sampling. ";
         if (!string.IsNullOrEmpty(requestedModel))
         {

@@ -17,7 +17,8 @@ public class McpClientService(
 
     public async Task<IReadOnlyCollection<IMcpClient>> GetMcpClientsAsync()
     {
-        if (_mcpClients != null) return _mcpClients;
+        if (_mcpClients != null)
+            return _mcpClients;
         _mcpClients = [];
 
         var mcpServerConfigs = await mcpServerConfigService.GetAllServersAsync();
@@ -38,8 +39,10 @@ public class McpClientService(
 
             logger.LogInformation("Creating MCP client for server: {ServerName}", serverConfig.Name);
 
-            if (!string.IsNullOrWhiteSpace(serverConfig.Command)) _mcpClients.Add(await CreateLocalMcpClientAsync(serverConfig));
-            if (!string.IsNullOrWhiteSpace(serverConfig.Sse)) await AddSseClient(serverConfig);
+            if (!string.IsNullOrWhiteSpace(serverConfig.Command))
+                _mcpClients.Add(await CreateLocalMcpClientAsync(serverConfig));
+            if (!string.IsNullOrWhiteSpace(serverConfig.Sse))
+                await AddSseClient(serverConfig);
 
             logger.LogInformation("MCP client created successfully for server: {ServerName}", serverConfig.Name);
         }
@@ -75,8 +78,6 @@ public class McpClientService(
         // Use the application's executable directory as working directory instead of Environment.CurrentDirectory
         // This prevents MCP processes from accidentally changing the main application's working directory
         var applicationDirectory = AppContext.BaseDirectory;
-
-        // Create client options with sampling capabilities specific to this server
         var clientOptions = CreateClientOptions(config);
 
         return await McpClientFactory.CreateAsync(
@@ -150,18 +151,23 @@ public class McpClientService(
                     {
                         try
                         {
+                            if (request == null)
+                            {
+                                throw new ArgumentNullException(nameof(request), "Sampling request cannot be null");
+                            }
+
                             logger.LogInformation("Handling sampling request with {MessageCount} messages from server: {ServerName}",
-                                request.Messages?.Count ?? 0, serverConfig.Name);
+                                request.Messages?.Count ?? 0, serverConfig?.Name ?? "Unknown");
 
                             var result = await mcpSamplingService.HandleSamplingRequestAsync(request, progress, cancellationToken, serverConfig);
 
-                            logger.LogInformation("Sampling request completed successfully for server: {ServerName}", serverConfig.Name);
+                            logger.LogInformation("Sampling request completed successfully for server: {ServerName}", serverConfig?.Name ?? "Unknown");
                             return result;
                         }
                         catch (Exception ex)
                         {
                             logger.LogError(ex, "Failed to handle sampling request from server {ServerName}: {Message}",
-                                serverConfig.Name, ex.Message);
+                                serverConfig?.Name ?? "Unknown", ex.Message);
                             throw;
                         }
                     }

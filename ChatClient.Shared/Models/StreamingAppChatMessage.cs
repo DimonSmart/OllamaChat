@@ -24,7 +24,8 @@ public class StreamingAppChatMessage(string initialContent, DateTime msgDateTime
 
     public bool Equals(IAppChatMessage? other)
     {
-        if (other is null) return false;
+        if (other is null)
+            return false;
         return Id == other.Id;
     }
 

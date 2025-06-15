@@ -29,7 +29,6 @@ var loggerFactory = LoggerFactory.Create(logging =>
 });
 builder.Services.AddSingleton<ILoggerFactory>(loggerFactory);
 
-// Register services
 builder.Services.AddSingleton<ChatClient.Shared.Services.IMcpServerConfigService, ChatClient.Api.Services.McpServerConfigService>();
 builder.Services.AddSingleton<ChatClient.Api.Services.McpClientService>();
 builder.Services.AddSingleton<ChatClient.Api.Services.McpSamplingService>();
@@ -38,18 +37,14 @@ builder.Services.AddSingleton<ChatClient.Api.Services.OllamaService>();
 builder.Services.AddSingleton<ChatClient.Shared.Services.ISystemPromptService, ChatClient.Api.Services.SystemPromptService>();
 builder.Services.AddSingleton<ChatClient.Shared.Services.IUserSettingsService, ChatClient.Api.Services.UserSettingsService>();
 
-// Register client services for Blazor components  
 builder.Services.AddScoped<ChatClient.Api.Client.Services.IChatService, ChatClient.Api.Client.Services.ChatService>();
 builder.Services.AddScoped<ChatClient.Api.Client.Services.IChatViewModelService, ChatClient.Api.Client.Services.ChatViewModelService>();
 
-// Add services to the container.
 builder.Services.AddRazorPages();
 builder.Services.AddServerSideBlazor();
 
-// Register MudBlazor services
 builder.Services.AddMudServices();
 
-// Register API exception filter
 builder.Services.AddControllers(options =>
 {
     options.Filters.Add<ApiExceptionFilter>();
@@ -64,7 +59,6 @@ using (var scope = app.Services.CreateScope())
     kernelService.SetMcpClientService(mcpClientService);
 }
 
-// Configure the HTTP request pipeline.
 if (app.Environment.IsDevelopment())
 {
     app.UseDeveloperExceptionPage();
@@ -81,16 +75,13 @@ app.UseStaticFiles();
 
 app.UseRouting();
 
-// Map controllers and Blazor components
 app.MapControllers();
 app.MapRazorPages();
 app.MapBlazorHub();
 app.MapFallbackToPage("/_Host");
 
-// Simple API info endpoint
 app.MapGet("/api", () => "ChatClient API is running! Use /api/chat endpoint for chat communication.");
 
-// Register callback to run after application is fully initialized
 app.Lifetime.ApplicationStarted.Register(() =>
 {
     try

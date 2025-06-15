@@ -89,8 +89,8 @@ public sealed class OllamaService(
             user.OllamaBasicAuthPassword,
             user.IgnoreSslErrors,
             user.HttpTimeoutSeconds);
-    }    
-    
+    }
+
     private static HttpClient BuildHttpClient(SettingsSnapshot s)
     {
         var handler = new HttpClientHandler();
@@ -109,7 +109,8 @@ public sealed class OllamaService(
         {
             var auth = Convert.ToBase64String(Encoding.UTF8.GetBytes($":{s.Password}"));
             client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Basic", auth);
-        }        return client;
+        }
+        return client;
     }
 
     /// <summary>
@@ -119,17 +120,17 @@ public sealed class OllamaService(
     {
         // Check if model name contains known function calling capable models
         var modelName = model.Name.ToLowerInvariant();
-        
+
         // Additional check: if model has tool-related capabilities or specific families
         if (model.Details?.Families != null)
         {
             // Some models might have specific families that indicate tool support
             // This is more speculative but can be refined based on actual model data
-            return model.Details.Families.Any(family => 
+            return model.Details.Families.Any(family =>
                 family.ToLowerInvariant().Contains("tool") ||
                 family.ToLowerInvariant().Contains("function"));
         }
-        
+
         return false;
     }
 

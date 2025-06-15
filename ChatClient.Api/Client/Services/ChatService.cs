@@ -7,6 +7,7 @@ using ChatClient.Shared.Services;
 using Microsoft.Extensions.AI;
 using Microsoft.SemanticKernel;
 using Microsoft.SemanticKernel.ChatCompletion;
+
 using OllamaSharp.Models.Exceptions;
 
 namespace ChatClient.Api.Client.Services;
@@ -62,7 +63,8 @@ public class ChatService(
 
     public async Task AddUserMessageAndAnswerAsync(string text, IReadOnlyCollection<string> selectedFunctions, string modelName, IReadOnlyList<ChatMessageFile>? files = null)
     {
-        if (string.IsNullOrWhiteSpace(text) || IsLoading) return;
+        if (string.IsNullOrWhiteSpace(text) || IsLoading)
+            return;
 
         await AddMessageAsync(new AppChatMessage(text, DateTime.Now, ChatRole.User, string.Empty, files));
         UpdateLoadingState(true);
@@ -74,8 +76,6 @@ public class ChatService(
         }
         catch (OperationCanceledException)
         {
-            // Cancellation is already handled in Cancel() method
-            // Just ensure cleanup happens
         }
         catch (Exception ex)
         {
@@ -104,7 +104,6 @@ public class ChatService(
             await HandleError("Chat not properly initialized");
             return;
         }
-        // Create streaming message
         var streamingMessage = _streamingManager.CreateStreamingMessage();
         _currentStreamingMessage = streamingMessage;
         await AddMessageAsync(streamingMessage);
@@ -117,7 +116,6 @@ public class ChatService(
         try
         {
             var chatHistory = BuildChatHistory();
-            // Create kernel and get chat completion service
             var kernel = await kernelService.CreateKernelAsync(modelName, functionNames);
             var chatService = kernel.GetRequiredService<IChatCompletionService>();
 
@@ -127,8 +125,6 @@ public class ChatService(
                     ? FunctionChoiceBehavior.Auto()
                     : FunctionChoiceBehavior.None()
             };
-
-            // Streaming response from LLM
             await foreach (var content in chatService.GetStreamingChatMessageContentsAsync(
                 chatHistory,
                 executionSettings,
@@ -153,8 +149,6 @@ public class ChatService(
                 }
                 await Task.Yield();
             }
-
-            // Final update immediately after streaming completion
             await (MessageUpdated?.Invoke(streamingMessage) ?? Task.CompletedTask);
 
             // Create statistics and complete streaming
@@ -165,9 +159,7 @@ public class ChatService(
                 modelName,
                 functionNames,
                 settings.ShowTokensPerSecond ? approximateTokenCount : null);
-
             var finalMessage = _streamingManager.CompleteStreaming(streamingMessage, statistics);
-            // Replace streaming message with final message
             await ReplaceStreamingMessageWithFinal(streamingMessage, finalMessage);
             _currentStreamingMessage = null;
         }
@@ -176,20 +168,19 @@ public class ChatService(
             logger.LogWarning(ex, "Model {ModelName} does not support function calling", modelName);
             RemoveStreamingMessage(streamingMessage);
             _currentStreamingMessage = null;
-            
-            var errorMessage = functionNames?.Any() == true 
+
+            var errorMessage = functionNames?.Any() == true
                 ? $"⚠️ The model **{modelName}** does not support function calling. Please either:\n\n" +
                   "• Switch to a model that supports function calling\n" +
                   "• Disable all functions for this conversation\n\n" +
                   "You can see which models support function calling on the Models page."
                 : $"⚠️ The model **{modelName}** does not support the requested functionality.";
-                
+
             await HandleError(errorMessage);
         }
         catch (Exception ex)
         {
             logger.LogError(ex, "Error processing AI response");
-            // Remove streaming message on error
             RemoveStreamingMessage(streamingMessage);
             _currentStreamingMessage = null;
             await HandleError($"Error: {ex.Message}");
@@ -207,8 +198,6 @@ public class ChatService(
             {
                 items.Add(new Microsoft.SemanticKernel.TextContent(msg.Content));
             }
-
-            // Add file attachments
             foreach (var file in msg.Files)
             {
                 if (IsImageContentType(file.ContentType))
@@ -258,7 +247,7 @@ public class ChatService(
     {
         Messages.Remove(streamingMessage);
     }
-    
+
     private async Task HandleError(string text)
     {
         await AddMessageAsync(new AppChatMessage(text, DateTime.Now, ChatRole.Assistant, string.Empty));

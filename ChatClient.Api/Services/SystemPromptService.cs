@@ -16,15 +16,12 @@ public class SystemPromptService : ISystemPromptService
         var promptsFilePath = configuration["SystemPrompts:FilePath"] ?? "system_prompts.json";
         _filePath = Path.GetFullPath(promptsFilePath);
         _logger = logger;
-
-        // Ensure the directory exists
         var directory = Path.GetDirectoryName(_filePath);
         if (!string.IsNullOrEmpty(directory) && !Directory.Exists(directory))
         {
             Directory.CreateDirectory(directory);
         }
 
-        // Create default file if it doesn't exist
         if (!File.Exists(_filePath))
         {
             CreateDefaultPromptsFile().GetAwaiter().GetResult();
@@ -89,7 +86,8 @@ public class SystemPromptService : ISystemPromptService
 
             var prompts = await ReadFromFileAsync();
 
-            if (prompt.Id == null) prompt.Id = Guid.NewGuid();
+            if (prompt.Id == null)
+                prompt.Id = Guid.NewGuid();
 
             prompt.CreatedAt = DateTime.UtcNow;
             prompt.UpdatedAt = DateTime.UtcNow;

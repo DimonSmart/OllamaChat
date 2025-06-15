@@ -6,48 +6,22 @@ namespace ChatClient.Shared.Models;
 
 public class AppChatMessage : IAppChatMessage
 {
-    /// <summary>
-    /// Unique identifier for the message
-    /// </summary>
     public Guid Id { get; set; }
-
-    /// <summary>
-    /// The original text of the message (Markdown).
-    /// </summary>
     public string Content { get; set; }
-
-    /// <summary>
-    /// The timestamp when the message was created.
-    /// </summary>
     public DateTime MsgDateTime { get; set; }
-
-    /// <summary>
-    /// The role of the author (User, Assistant, or System).
-    /// </summary>
     public ChatRole Role { get; set; }
-    /// <summary>
-    /// Chat statistics (call count, tokens, etc.)
-    /// </summary>
     public string? Statistics { get; set; }
-    /// <summary>
-    /// Indicates whether this message was canceled by the user.
-    /// </summary>
     public bool IsCanceled { get; set; }
-
-    /// <summary>
-    /// Files attached to this message.
-    /// </summary>
-    public IReadOnlyList<ChatMessageFile> Files { get; set; } = [];
-
-    /// <summary>
-    /// Indicates whether this message is currently streaming.
-    /// Always false for regular messages.
-    /// </summary>
+    public IReadOnlyList<ChatMessageFile> Files { get; set; } = [];    /// <summary>
+                                                                       /// Indicates whether this message is currently streaming.
+                                                                       /// Always false for regular messages.
+                                                                       /// </summary>
     public bool IsStreaming => false;
 
     public bool Equals(IAppChatMessage? other)
     {
-        if (other is null) return false;
+        if (other is null)
+            return false;
         return Id == other.Id;
     }
 
@@ -60,10 +34,6 @@ public class AppChatMessage : IAppChatMessage
     {
         return Id.GetHashCode();
     }
-
-    /// <summary>
-    /// Parameterless constructor for JSON deserialization
-    /// </summary>
     [JsonConstructor]
     public AppChatMessage()
     {
