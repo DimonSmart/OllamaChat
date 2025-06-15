@@ -18,4 +18,7 @@ public class OllamaModel
 
     [JsonIgnore]
     public bool SupportsImages { get; set; }
+
+    [JsonIgnore]
+    public bool SupportsFunctionCalling { get; set; }
 }

@@ -32,7 +32,28 @@
                                    Variant="Variant.Outlined" AnchorOrigin="Origin.BottomCenter" Dense="true">
                             @foreach (var model in _availableModels)
                             {
-                                <MudSelectItem Value="@model.Name">@model.Name</MudSelectItem>
+                                <MudSelectItem Value="@model.Name">
+                                    <div class="d-flex align-center">
+                                        <span>@model.Name</span>
+                                        @if (model.SupportsImages)
+                                        {
+                                            <MudIcon Icon="@Icons.Material.Filled.Image" 
+                                                     Size="Size.Small" 
+                                                     Class="ml-1" 
+                                                     title="Supports images"
+                                                     Style="color: #4caf50;" />
+                                        }                                        
+                                        
+                                        @if (model.SupportsFunctionCalling)
+                                        {
+                                            <MudIcon Icon="@Icons.Material.Filled.Settings" 
+                                                     Size="Size.Small" 
+                                                     Class="ml-1" 
+                                                     title="Function calling support detected (may not be accurate)"
+                                                     Style="color: #2196f3;" />
+                                        }
+                                    </div>
+                                </MudSelectItem>
                             }
                         </MudSelect>
                         <MudText Typo="Typo.caption" Class="mt-2">

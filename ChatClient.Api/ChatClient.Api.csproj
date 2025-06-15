@@ -20,7 +20,6 @@
         <PackageReference Include="MudBlazor" Version="8.6.0" />		
         <PackageReference Include="Markdig" Version="0.41.2" />
         <PackageReference Include="DimonSmart.AiUtils" Version="1.25606.1420" />
-        <PackageReference Include="OllamaSharp" Version="5.1.12" />
     </ItemGroup>
 
     <PropertyGroup>

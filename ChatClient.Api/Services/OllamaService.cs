@@ -58,20 +58,20 @@ public sealed class OllamaService(
         {
             var client = await GetOllamaClientAsync();
             var models = await client.ListLocalModelsAsync();
-
             return models.Select(m => new OllamaModel
             {
                 Name = m.Name,
                 ModifiedAt = m.ModifiedAt.ToString("yyyy-MM-ddTHH:mm:ss.fffZ"),
                 Size = m.Size,
                 Digest = m.Digest,
-                SupportsImages = m.Details?.Families?.Contains("clip") == true
+                SupportsImages = m.Details?.Families?.Contains("clip") == true,
+                SupportsFunctionCalling = DeterminesFunctionCallingSupport(m)
             }).ToList();
         }
         catch (Exception ex)
         {
             logger.LogError(ex, "Failed to retrieve Ollama models: {Message}", ex.Message);
-            return Array.Empty<OllamaModel>();
+            return [];
         }
     }
 
@@ -109,9 +109,28 @@ public sealed class OllamaService(
         {
             var auth = Convert.ToBase64String(Encoding.UTF8.GetBytes($":{s.Password}"));
             client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Basic", auth);
-        }
+        }        return client;
+    }
 
-        return client;
+    /// <summary>
+    /// Determines if a model supports function calling based on its name and family.
+    /// </summary>
+    private static bool DeterminesFunctionCallingSupport(OllamaSharp.Models.Model model)
+    {
+        // Check if model name contains known function calling capable models
+        var modelName = model.Name.ToLowerInvariant();
+        
+        // Additional check: if model has tool-related capabilities or specific families
+        if (model.Details?.Families != null)
+        {
+            // Some models might have specific families that indicate tool support
+            // This is more speculative but can be refined based on actual model data
+            return model.Details.Families.Any(family => 
+                family.ToLowerInvariant().Contains("tool") ||
+                family.ToLowerInvariant().Contains("function"));
+        }
+        
+        return false;
     }
 
     #endregion

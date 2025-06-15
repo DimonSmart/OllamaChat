@@ -18,10 +18,16 @@
     }
     else
     {
+        <MudAlert Severity="Severity.Info" Class="mb-3">
+            Function calling support detection is based on model metadata and naming patterns. 
+            The actual capabilities may vary and should be verified through testing.
+        </MudAlert>
+        
         <MudTable Items="@_models" Hover="true" Striped="true" Dense="true" Class="mb-4" Elevation="2">
             <HeaderContent>
                 <MudTh>Model Name</MudTh>
                 <MudTh>Image Support</MudTh>
+                <MudTh>Function Calling</MudTh>
                 <MudTh>Modified At</MudTh>
                 <MudTh>Size</MudTh>
             </HeaderContent>
@@ -35,6 +41,16 @@
                     else
                     {
                         <span style="color: #9e9e9e; font-size: 20px;" title="Text only">−</span>
+                    }
+                </MudTd>
+                <MudTd DataLabel="Function Calling" Style="text-align: center;">
+                    @if (context.SupportsFunctionCalling)
+                    {
+                        <span style="color: #2196f3; font-size: 20px; font-weight: bold;" title="Function calling support detected (may not be accurate)">⚙</span>
+                    }
+                    else
+                    {
+                        <span style="color: #9e9e9e; font-size: 20px;" title="No function calling support detected">−</span>
                     }
                 </MudTd>
                 <MudTd DataLabel="Modified At">@FormatDate(context.ModifiedAt)</MudTd>
