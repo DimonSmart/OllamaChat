@@ -34,6 +34,7 @@ builder.Services.AddSingleton<ChatClient.Api.Services.McpClientService>();
 builder.Services.AddSingleton<ChatClient.Api.Services.McpSamplingService>();
 builder.Services.AddSingleton<ChatClient.Api.Services.KernelService>();
 builder.Services.AddSingleton<ChatClient.Api.Services.OllamaService>();
+builder.Services.AddScoped<ChatClient.Api.Services.StartupOllamaChecker>();
 builder.Services.AddSingleton<ChatClient.Shared.Services.ISystemPromptService, ChatClient.Api.Services.SystemPromptService>();
 builder.Services.AddSingleton<ChatClient.Shared.Services.IUserSettingsService, ChatClient.Api.Services.UserSettingsService>();
 
@@ -57,6 +58,21 @@ using (var scope = app.Services.CreateScope())
     var kernelService = scope.ServiceProvider.GetRequiredService<KernelService>();
     var mcpClientService = scope.ServiceProvider.GetRequiredService<McpClientService>();
     kernelService.SetMcpClientService(mcpClientService);
+
+    // Check Ollama status at startup
+    var startupChecker = scope.ServiceProvider.GetRequiredService<StartupOllamaChecker>();
+    var ollamaStatus = await startupChecker.CheckOllamaStatusAsync();
+
+    if (!ollamaStatus.IsAvailable)
+    {
+        Console.WriteLine($"Warning: Ollama is not available - {ollamaStatus.ErrorMessage}");
+        Console.WriteLine("The application will start but Ollama functionality will be limited.");
+        Console.WriteLine("Users will be redirected to the setup page when trying to use Ollama features.");
+    }
+    else
+    {
+        Console.WriteLine("Ollama is available and ready.");
+    }
 }
 
 if (app.Environment.IsDevelopment())

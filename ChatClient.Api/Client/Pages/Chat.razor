@@ -27,7 +27,8 @@
 
 <PageTitle>Chat with AI Assistant</PageTitle>
 
-<div class="chat-container d-flex flex-column" style="height: calc(100vh - 64px);">
+<OllamaCheck>
+    <div class="chat-container d-flex flex-column" style="height: calc(100vh - 64px);">
     @if (isLoadingInitialData)
     {
         <MudOverlay Visible="true" DarkBackground="true" Absolute="true">
@@ -293,6 +294,7 @@
         </MudPaper>
     }
 </div>
+</OllamaCheck>
 
 @code {
     private bool isLLMAnswering { get; set; } = false;

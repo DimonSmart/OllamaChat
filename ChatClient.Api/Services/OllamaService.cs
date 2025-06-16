@@ -46,38 +46,21 @@ public sealed class OllamaService(
         return _ollamaClient;
     }
 
-    /// <summary>
-    /// Public entry point for other services.
-    /// </summary>
-    public Task<OllamaApiClient> GetClientAsync() => GetOllamaClientAsync();
-
-    #region Models
     public async Task<IReadOnlyList<OllamaModel>> GetModelsAsync()
     {
-        try
+        var client = await GetOllamaClientAsync();
+        var models = await client.ListLocalModelsAsync();
+        return models.Select(m => new OllamaModel
         {
-            var client = await GetOllamaClientAsync();
-            var models = await client.ListLocalModelsAsync();
-            return models.Select(m => new OllamaModel
-            {
-                Name = m.Name,
-                ModifiedAt = m.ModifiedAt.ToString("yyyy-MM-ddTHH:mm:ss.fffZ"),
-                Size = m.Size,
-                Digest = m.Digest,
-                SupportsImages = m.Details?.Families?.Contains("clip") == true,
-                SupportsFunctionCalling = DeterminesFunctionCallingSupport(m)
-            }).ToList();
-        }
-        catch (Exception ex)
-        {
-            logger.LogError(ex, "Failed to retrieve Ollama models: {Message}", ex.Message);
-            return [];
-        }
+            Name = m.Name,
+            ModifiedAt = m.ModifiedAt.ToString("yyyy-MM-ddTHH:mm:ss.fffZ"),
+            Size = m.Size,
+            Digest = m.Digest,
+            SupportsImages = m.Details?.Families?.Contains("clip") == true,
+            SupportsFunctionCalling = DeterminesFunctionCallingSupport(m)
+        }).ToList();
     }
 
-    #endregion
-
-    #region Helpers
     private async Task<SettingsSnapshot> GetCurrentSettingsAsync()
     {
         var user = await userSettingsService.GetSettingsAsync();
@@ -133,8 +116,6 @@ public sealed class OllamaService(
 
         return false;
     }
-
-    #endregion
 
     public void Dispose()
     {

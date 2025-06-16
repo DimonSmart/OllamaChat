@@ -1,5 +1,6 @@
 @using Microsoft.AspNetCore.Components.Routing
 @using ChatClient.Api.Client.Layout
+@using ChatClient.Api.Client.Components
 @using MudBlazor
 
 <Router AppAssembly="@typeof(App).Assembly">
@@ -22,7 +23,9 @@
                         <MudListItem T="string" Href="/">Home</MudListItem>
                         <MudListItem T="string" Href="/chat">Chat</MudListItem>
                         <MudListItem T="string" Href="/system-prompts">System Prompts</MudListItem>
-                        <MudListItem T="string" Href="/test">Test Page</MudListItem>
+                        <MudListItem T="string" Href="/models">Models</MudListItem>
+                        <MudListItem T="string" Href="/settings">Settings</MudListItem>
+                        <MudListItem T="string" Href="/ollama-setup">Ollama Setup</MudListItem>
                     </MudList>
                 </div>
             </div>

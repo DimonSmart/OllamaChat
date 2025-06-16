@@ -1,0 +1,145 @@
+@page "/ollama-setup"
+@using ChatClient.Shared.Models
+@using ChatClient.Api.Services
+@using MudBlazor
+@inject OllamaService OllamaService
+@inject NavigationManager NavigationManager
+@inject ISnackbar Snackbar
+
+<PageTitle>Ollama Status</PageTitle>
+
+<MudContainer MaxWidth="MaxWidth.Small" Class="mt-3">
+    <MudCard>
+        <MudCardHeader>
+            <CardHeaderContent>
+                <div class="d-flex align-center">
+                    <MudText Typo="Typo.h5">Ollama Status</MudText>
+                    <MudSpacer />
+                    @if (serverStatus != null)
+                    {  
+                        <MudChip T="string" Color="@(serverStatus.IsAvailable ? Color.Success : Color.Error)" 
+                                 Icon="@(serverStatus.IsAvailable ? Icons.Material.Filled.CheckCircle : Icons.Material.Filled.Error)">
+                            @(serverStatus.IsAvailable ? "Available" : "Unavailable")
+                        </MudChip>
+                    }
+                </div>
+            </CardHeaderContent>
+        </MudCardHeader>
+        
+        <MudCardContent>
+            @if (serverStatus == null)
+            {
+                <div class="d-flex align-center">
+                    <MudProgressCircular Size="Size.Small" Indeterminate="true" />
+                    <MudText Class="ml-3">Checking status...</MudText>
+                </div>
+            }
+            else if (serverStatus.IsAvailable)
+            {
+                <MudAlert Severity="Severity.Success" NoIcon="true" Class="mb-3">
+                    <MudText><strong>Ollama is running!</strong></MudText>
+                    @if (modelCount > 0)
+                    {
+                        <MudText>@modelCount model(s) available</MudText>
+                    }
+                    else
+                    {
+                        <MudText>No models installed yet</MudText>
+                    }
+                </MudAlert>
+                
+                @if (modelCount == 0)
+                {
+                    <MudAlert Severity="Severity.Warning" NoIcon="true">
+                        <MudText>Download models to start chatting:</MudText>
+                        <MudPaper Class="pa-2 mt-2" Style="background-color: var(--mud-palette-background-gray);">
+                            <MudText Typo="Typo.body2" Style="font-family: monospace;">ollama pull llama3.2:3b</MudText>
+                        </MudPaper>
+                    </MudAlert>
+                }
+            }
+            else
+            {
+                <MudAlert Severity="Severity.Error" NoIcon="true" Class="mb-3">
+                    <MudText><strong>Ollama is not available</strong></MudText>
+                    @if (!string.IsNullOrEmpty(serverStatus.ErrorMessage))
+                    {
+                        <MudText Typo="Typo.body2">@serverStatus.ErrorMessage</MudText>
+                    }
+                </MudAlert>
+                
+                <MudAlert Severity="Severity.Info" NoIcon="true">
+                    <MudText>If Ollama is installed, start it with:</MudText>
+                    <MudPaper Class="pa-2 mt-2" Style="background-color: var(--mud-palette-background-gray);">
+                        <MudText Typo="Typo.body2" Style="font-family: monospace;">ollama serve</MudText>
+                    </MudPaper>
+                </MudAlert>
+            }
+              <div class="d-flex align-center justify-end mt-3">
+                <MudButton OnClick="RefreshStatus" 
+                          StartIcon="@Icons.Material.Filled.Refresh"
+                          Variant="Variant.Text"
+                          Size="Size.Small"
+                          Disabled="@isRefreshing">
+                    @if (isRefreshing)
+                    {
+                        <MudProgressCircular Size="Size.Small" Indeterminate="true" />
+                        <MudText Class="ml-2">Checking...</MudText>
+                    }
+                    else
+                    {
+                        <MudText>Check Status</MudText>
+                    }
+                </MudButton>
+            </div>
+        </MudCardContent>
+          <MudCardActions>
+            <MudText Typo="Typo.body2" Class="pa-3">
+                Visit <MudLink Href="https://ollama.ai" Target="_blank" Color="Color.Primary">ollama.ai</MudLink> 
+                for downloads and model library.
+            </MudText>
+        </MudCardActions>
+    </MudCard>
+</MudContainer>
+
+@code {
+    private OllamaServerStatus? serverStatus;
+    private int modelCount = 0;
+    private bool isRefreshing = false;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await RefreshStatus();
+    }    private async Task RefreshStatus()
+    {
+        isRefreshing = true;
+        StateHasChanged();
+        
+        try
+        {
+            var models = await OllamaService.GetModelsAsync();
+            modelCount = models.Count;
+            
+            serverStatus = new OllamaServerStatus
+            {
+                IsAvailable = true,
+                ErrorMessage = null
+            };
+            
+            if (modelCount > 0)
+            {
+                Snackbar.Add("Ollama is available and ready!", Severity.Success);
+            }
+        }
+        catch (Exception ex)
+        {
+            serverStatus = OllamaStatusHelper.CreateStatusFromException(ex, "");
+            Snackbar.Add($"Error checking status: {serverStatus.ErrorMessage}", Severity.Error);
+        }
+        finally
+        {
+            isRefreshing = false;
+            StateHasChanged();
+        }
+    }
+}

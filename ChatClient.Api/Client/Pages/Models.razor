@@ -4,7 +4,8 @@
 @using ChatClient.Api.Services
 @inject OllamaService OllamaService
 
-<MudContainer Class="mt-3">
+<OllamaCheck>
+    <MudContainer Class="mt-3">
     <MudText Class="page-header">Available Models</MudText>
 
     @if (_loading)
@@ -57,13 +58,13 @@
                 <MudTd DataLabel="Size">@FormatSize(context.Size)</MudTd>
             </RowTemplate>
         </MudTable>
-    }
-
+    }    
     @if (_errorMessage != null)
     {
         <MudAlert Severity="Severity.Error" Class="mt-2">@_errorMessage</MudAlert>
     }
 </MudContainer>
+</OllamaCheck>
 
 @code {
     private List<OllamaModel> _models = new();
