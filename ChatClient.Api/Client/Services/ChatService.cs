@@ -5,6 +5,7 @@ using ChatClient.Shared.Models;
 using ChatClient.Shared.Services;
 
 using Microsoft.Extensions.AI;
+using Microsoft.Extensions.AI.Agents;
 using Microsoft.SemanticKernel;
 using Microsoft.SemanticKernel.ChatCompletion;
 
@@ -61,7 +62,22 @@ public class ChatService(
         UpdateLoadingState(false);
     }
 
-    public async Task AddUserMessageAndAnswerAsync(string text, IReadOnlyCollection<string> selectedFunctions, string modelName, IReadOnlyList<ChatMessageFile>? files = null)
+    public Task AddUserMessageAndAnswerAsync(
+        string text,
+        IReadOnlyCollection<string> selectedFunctions,
+        string modelName,
+        IReadOnlyList<ChatMessageFile>? files = null,
+        DialogMode mode = DialogMode.Ask)
+    {
+        return AddUserMessageAndAnswerInternalAsync(text, selectedFunctions, modelName, files, mode);
+    }
+
+    private async Task AddUserMessageAndAnswerInternalAsync(
+        string text,
+        IReadOnlyCollection<string> selectedFunctions,
+        string modelName,
+        IReadOnlyList<ChatMessageFile>? files,
+        DialogMode mode)
     {
         if (string.IsNullOrWhiteSpace(text) || IsLoading)
             return;
@@ -72,7 +88,7 @@ public class ChatService(
         _cancellationTokenSource = new CancellationTokenSource();
         try
         {
-            await ProcessAIResponseAsync(selectedFunctions, modelName, _cancellationTokenSource.Token);
+            await ProcessResponseAsync(selectedFunctions, modelName, mode, _cancellationTokenSource.Token);
         }
         catch (OperationCanceledException)
         {
@@ -93,10 +109,14 @@ public class ChatService(
         await (MessageAdded?.Invoke(message) ?? Task.CompletedTask);
     }
 
-    private async Task ProcessAIResponseAsync(IReadOnlyCollection<string> functionNames, string modelName, CancellationToken cancellationToken)
+    private async Task ProcessResponseAsync(
+        IReadOnlyCollection<string> functionNames,
+        string modelName,
+        DialogMode mode,
+        CancellationToken cancellationToken)
     {
         var startTime = DateTime.Now;
-        logger.LogInformation("Processing AI response with model: {ModelName}", modelName);
+        logger.LogInformation("Processing {Mode} response with model: {ModelName}", mode, modelName);
 
         if (_streamingManager == null)
         {
@@ -104,11 +124,11 @@ public class ChatService(
             await HandleError("Chat not properly initialized");
             return;
         }
+
         var streamingMessage = _streamingManager.CreateStreamingMessage();
         _currentStreamingMessage = streamingMessage;
         await AddMessageAsync(streamingMessage);
 
-        // Simple throttling for UI updates - no more than once every 500ms
         var lastUpdateTime = DateTime.MinValue;
         const int updateIntervalMs = 500;
         var approximateTokenCount = 0;
@@ -117,48 +137,72 @@ public class ChatService(
         {
             var chatHistory = BuildChatHistory();
             var kernel = await kernelService.CreateKernelAsync(modelName, functionNames);
-            var chatService = kernel.GetRequiredService<IChatCompletionService>();
 
-            var executionSettings = new PromptExecutionSettings
+            if (mode == DialogMode.Agent)
             {
-                FunctionChoiceBehavior = (functionNames?.Any() == true)
-                    ? FunctionChoiceBehavior.Auto()
-                    : FunctionChoiceBehavior.None()
-            };
-            await foreach (var content in chatService.GetStreamingChatMessageContentsAsync(
-                chatHistory,
-                executionSettings,
-                kernel,
-                cancellationToken: cancellationToken))
-            {
-                await Task.Yield();
-                cancellationToken.ThrowIfCancellationRequested();
+                var agent = new KernelAgentBuilder()
+                    .WithKernel(kernel)
+                    .Build();
 
-                if (!string.IsNullOrEmpty(content.Content))
+                await foreach (var message in agent.InvokeAsync(chatHistory, cancellationToken))
                 {
-                    streamingMessage.Append(content.Content);
-                    approximateTokenCount++;
+                    cancellationToken.ThrowIfCancellationRequested();
 
-                    // Update UI no more than once every 500ms
-                    var now = DateTime.Now;
-                    if ((now - lastUpdateTime).TotalMilliseconds >= updateIntervalMs)
+                    if (message.Role == AuthorRole.Assistant && !string.IsNullOrEmpty(message.Content))
                     {
+                        streamingMessage.Append(message.Content);
                         await (MessageUpdated?.Invoke(streamingMessage) ?? Task.CompletedTask);
-                        lastUpdateTime = now;
                     }
-                }
-                await Task.Yield();
-            }
-            await (MessageUpdated?.Invoke(streamingMessage) ?? Task.CompletedTask);
 
-            // Create statistics and complete streaming
+                    chatHistory.Add(message);
+                }
+            }
+            else
+            {
+                var chatService = kernel.GetRequiredService<IChatCompletionService>();
+
+                var executionSettings = new PromptExecutionSettings
+                {
+                    FunctionChoiceBehavior = (functionNames?.Any() == true)
+                        ? FunctionChoiceBehavior.Auto()
+                        : FunctionChoiceBehavior.None()
+                };
+
+                await foreach (var content in chatService.GetStreamingChatMessageContentsAsync(
+                    chatHistory,
+                    executionSettings,
+                    kernel,
+                    cancellationToken: cancellationToken))
+                {
+                    await Task.Yield();
+                    cancellationToken.ThrowIfCancellationRequested();
+
+                    if (!string.IsNullOrEmpty(content.Content))
+                    {
+                        streamingMessage.Append(content.Content);
+                        approximateTokenCount++;
+
+                        var now = DateTime.Now;
+                        if ((now - lastUpdateTime).TotalMilliseconds >= updateIntervalMs)
+                        {
+                            await (MessageUpdated?.Invoke(streamingMessage) ?? Task.CompletedTask);
+                            lastUpdateTime = now;
+                        }
+                    }
+
+                    await Task.Yield();
+                }
+
+                await (MessageUpdated?.Invoke(streamingMessage) ?? Task.CompletedTask);
+            }
+
             var processingTime = DateTime.Now - startTime;
             var settings = await userSettingsService.GetSettingsAsync();
             var statistics = _streamingManager.BuildStatistics(
                 processingTime,
                 modelName,
                 functionNames,
-                settings.ShowTokensPerSecond ? approximateTokenCount : null);
+                mode == DialogMode.Ask && settings.ShowTokensPerSecond ? approximateTokenCount : null);
             var finalMessage = _streamingManager.CompleteStreaming(streamingMessage, statistics);
             await ReplaceStreamingMessageWithFinal(streamingMessage, finalMessage);
             _currentStreamingMessage = null;
@@ -180,7 +224,7 @@ public class ChatService(
         }
         catch (Exception ex)
         {
-            logger.LogError(ex, "Error processing AI response");
+            logger.LogError(ex, "Error processing response");
             RemoveStreamingMessage(streamingMessage);
             _currentStreamingMessage = null;
             await HandleError($"Error: {ex.Message}");

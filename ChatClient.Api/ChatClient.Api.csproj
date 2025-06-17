@@ -11,6 +11,7 @@
         <PackageReference Include="Microsoft.AspNetCore.OpenApi" Version="9.0.6" />
         <PackageReference Include="Microsoft.Extensions.Http" Version="9.0.6" />
         <PackageReference Include="Microsoft.Extensions.AI" Version="9.6.0" />
+        <PackageReference Include="Microsoft.Extensions.AI.Agents" Version="9.6.0" />
         <PackageReference Include="Microsoft.SemanticKernel" Version="1.56.0" />
         <PackageReference Include="Microsoft.SemanticKernel.Abstractions" Version="1.56.0" />
         <PackageReference Include="Microsoft.SemanticKernel.Connectors.Ollama" Version="1.56.0-alpha" />

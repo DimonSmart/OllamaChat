@@ -433,7 +433,7 @@
             return;
 
         var modelName = selectedModel?.Name ?? "";
-        await ChatService.AddUserMessageAndAnswerAsync(messageData.text.Trim(), selectedFunctions, modelName, messageData.files);
+        await ChatService.AddUserMessageAndAnswerAsync(messageData.text.Trim(), selectedFunctions, modelName, messageData.files, DialogMode.Agent);
         await ScrollToBottom();
     }
 
