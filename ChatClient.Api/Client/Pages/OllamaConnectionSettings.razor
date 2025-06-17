@@ -1,0 +1,186 @@
+@page "/ollama-connection-settings"
+@using ChatClient.Api.Services
+@using ChatClient.Shared.Models
+@using ChatClient.Shared.Services
+@using ChatClient.Shared.Constants
+@inject IUserSettingsService UserSettingsService
+@inject OllamaService OllamaService
+@inject ISnackbar Snackbar
+@inject NavigationManager NavigationManager
+
+<PageTitle>Ollama Connection Settings</PageTitle>
+
+<MudContainer MaxWidth="MaxWidth.Medium" Class="mt-3">
+    <MudText Class="page-header">Ollama Connection Settings</MudText>
+
+    @if (_loading)
+    {
+        <MudProgressCircular Color="Color.Primary" Indeterminate="true" />
+        <MudText Class="ml-2">Loading settings...</MudText>
+    }
+    else
+    {
+        <MudPaper Elevation="3" Class="pa-3 rounded-lg">
+            <MudForm @ref="_form" Model="@_settings">
+                <MudCard Class="mb-4" Elevation="1">
+                    <MudCardHeader Class="pb-2">
+                        <MudText Class="section-header">Server Connection</MudText>
+                    </MudCardHeader>
+                    <MudCardContent Class="pt-0">
+                        <MudTextField T="string" Label="Server URL" @bind-Value="_settings.OllamaServerUrl"
+                                      Variant="Variant.Outlined"
+                                      HelperText="Ollama server URL including protocol and port (e.g., https://my-server:11434)"
+                                      Placeholder="@OllamaDefaults.ServerUrl" />
+
+                        <MudTextField T="string" Label="Basic Auth Password" @bind-Value="_settings.OllamaBasicAuthPassword"
+                                      Variant="Variant.Outlined" InputType="InputType.Password"
+                                      HelperText="Password for basic authentication (leave empty if not required)"
+                                      Class="mt-3" />
+
+                        <MudNumericField T="int" Label="HTTP Timeout (seconds)" @bind-Value="_settings.HttpTimeoutSeconds"
+                                         Variant="Variant.Outlined" Min="1" Max="3600"
+                                         HelperText="Timeout for HTTP requests to Ollama server (1-3600 seconds)"
+                                         Class="mt-3" />
+
+                        <MudSwitch T="bool" @bind-Value="_settings.IgnoreSslErrors" Color="Color.Primary" Class="mt-3">
+                            Ignore SSL certificate errors (for self-signed certificates)
+                        </MudSwitch>
+
+                        <MudAlert Severity="Severity.Warning" Class="mt-3" Visible="@_settings.IgnoreSslErrors">
+                            <MudText Typo="Typo.body2">
+                                Warning: Ignoring SSL certificate errors reduces security. Only enable this for trusted servers with self-signed certificates.
+                            </MudText>
+                        </MudAlert>
+                    </MudCardContent>
+                </MudCard>
+
+                <MudButtonGroup Class="mt-4">
+                    <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="SaveSettings" Size="Size.Medium">
+                        Save Connection Settings
+                    </MudButton>
+                    <MudButton Variant="Variant.Outlined" Color="Color.Secondary" OnClick="ResetSettings" Size="Size.Medium">
+                        Reset
+                    </MudButton>
+                    <MudButton Variant="Variant.Text" Color="Color.Info" OnClick="TestConnection" Size="Size.Medium" Disabled="@_testingConnection">
+                        @if (_testingConnection)
+                        {
+                            <MudProgressCircular Size="Size.Small" Indeterminate="true" />
+                            <MudText Class="ml-2">Testing...</MudText>
+                        }
+                        else
+                        {
+                            <MudText>Test Connection</MudText>
+                        }
+                    </MudButton>
+                </MudButtonGroup>
+
+                @if (_connectionTestResult != null)
+                {
+                    <MudAlert Severity="@(_connectionTestResult.IsSuccess? Severity.Success: Severity.Error)"
+                              Class="mt-3"
+                              CloseIcon="true"
+                              OnCloseClicked="() => _connectionTestResult = null">
+                        <MudText Typo="Typo.body2">
+                            @_connectionTestResult.Message
+                        </MudText>
+                    </MudAlert>
+                }
+            </MudForm>
+        </MudPaper>
+    }
+</MudContainer>
+
+@code {
+    private UserSettings _settings = new();
+    private bool _loading = true;
+    private bool _testingConnection = false;
+    private MudForm? _form;
+    private ConnectionTestResult? _connectionTestResult;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            _loading = true;
+            await LoadSettings();
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private async Task LoadSettings()
+    {
+        try
+        {
+            _settings = await UserSettingsService.GetSettingsAsync();
+        }
+        catch (Exception ex)
+        {
+            Console.Error.WriteLine($"Error loading settings: {ex.Message}");
+            Snackbar.Add("Failed to load settings.", Severity.Error);
+        }
+    }
+
+    private async Task SaveSettings()
+    {
+        try
+        {
+            await UserSettingsService.SaveSettingsAsync(_settings);
+            Snackbar.Add("Connection settings saved successfully", Severity.Success);
+        }
+        catch (Exception ex)
+        {
+            Console.Error.WriteLine($"Error saving settings: {ex.Message}");
+            Snackbar.Add($"Failed to save settings: {ex.Message}", Severity.Error);
+        }
+    }
+
+    private async Task ResetSettings()
+    {
+        await LoadSettings();
+        Snackbar.Add("Settings reset to last saved values", Severity.Info);
+        _connectionTestResult = null;
+    }
+    private async Task TestConnection()
+    {
+        _testingConnection = true;
+        _connectionTestResult = null;
+        StateHasChanged();
+
+        try
+        {
+            // Save current settings temporarily to test them
+            await UserSettingsService.SaveSettingsAsync(_settings);
+
+            // Try to get models to test connection
+            var models = await OllamaService.GetModelsAsync();
+
+            _connectionTestResult = new ConnectionTestResult
+            {
+                IsSuccess = true,
+                Message = $"Connection successful! Found {models.Count} model(s) available."
+            };
+        }
+        catch (Exception ex)
+        {
+            _connectionTestResult = new ConnectionTestResult
+            {
+                IsSuccess = false,
+                Message = $"Connection failed: {ex.Message}"
+            };
+        }
+        finally
+        {
+            _testingConnection = false;
+            StateHasChanged();
+        }
+    }
+
+    private class ConnectionTestResult
+    {
+        public bool IsSuccess { get; set; }
+        public string Message { get; set; } = string.Empty;
+    }
+}

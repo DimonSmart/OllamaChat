@@ -28,12 +28,12 @@ else if (!ollamaAvailable)
                     @errorMessage
                 </MudText>
             }
-
             <MudButtonGroup>
-                <MudButton Href="/ollama-setup"
+                <MudButton Href="https://ollama.com"
+                           Target="_blank"
                            Variant="Variant.Filled" Color="Color.Primary"
-                           StartIcon="@Icons.Material.Filled.Build">
-                    Setup Instructions
+                           StartIcon="@Icons.Material.Filled.OpenInNew">
+                    https://ollama.com
                 </MudButton>
                 <MudButton OnClick="CheckAgain"
                            Variant="Variant.Outlined" Color="Color.Secondary"
@@ -52,7 +52,7 @@ else
 
 @code {
     [Parameter] public RenderFragment? ChildContent { get; set; }
-    
+
     private bool isChecking = true;
     private bool ollamaAvailable = false;
     private string? errorMessage;

@@ -1,0 +1,170 @@
+@page "/app-settings"
+@using ChatClient.Api.Client.Services
+@using ChatClient.Api.Services
+@using ChatClient.Shared.Models
+@using ChatClient.Shared.Services
+@using ChatClient.Shared.Constants
+@using System.Text.Json
+@inject IUserSettingsService UserSettingsService
+@inject OllamaService OllamaService
+@inject ISnackbar Snackbar
+
+<PageTitle>Application Settings</PageTitle>
+
+<OllamaCheck>
+    <MudContainer MaxWidth="MaxWidth.Medium" Class="mt-3">
+        <MudText Class="page-header">Application Settings</MudText>
+
+        @if (_loading)
+        {
+            <MudProgressCircular Color="Color.Primary" Indeterminate="true" />
+            <MudText Class="ml-2">Loading settings...</MudText>
+        }
+        else
+        {
+            <MudPaper Elevation="3" Class="pa-3 rounded-lg">
+                <MudForm @ref="_form" Model="@_settings">
+                    <MudCard Class="mb-4" Elevation="1">
+                        <MudCardHeader Class="pb-2">
+                            <MudText Class="section-header">Default Model</MudText>
+                        </MudCardHeader>
+                        <MudCardContent Class="pt-0">
+                            <MudSelect T="string" Label="Default Model" @bind-Value="_settings.DefaultModelName"
+                                       Variant="Variant.Outlined" AnchorOrigin="Origin.BottomCenter" Dense="true">
+                                @foreach (var model in _availableModels)
+                                {
+                                    <MudSelectItem Value="@model.Name">
+                                        <div class="d-flex align-center">
+                                            <span>@model.Name</span>
+                                            @if (model.SupportsImages)
+                                            {
+                                                <MudIcon Icon="@Icons.Material.Filled.Image"
+                                                         Size="Size.Small"
+                                                         Class="ml-1"
+                                                         title="Supports images"
+                                                         Style="color: #4caf50;" />
+                                            }
+
+                                            @if (model.SupportsFunctionCalling)
+                                            {
+                                                <MudIcon Icon="@Icons.Material.Filled.Settings"
+                                                         Size="Size.Small"
+                                                         Class="ml-1"
+                                                         title="Function calling support detected (may not be accurate)"
+                                                         Style="color: #2196f3;" />
+                                            }
+                                        </div>
+                                    </MudSelectItem>
+                                }
+                            </MudSelect>
+                            <MudText Typo="Typo.caption" Class="mt-2">
+                                This model will be selected by default when starting a new chat.
+                            </MudText>
+                        </MudCardContent>
+                    </MudCard>
+
+                    <MudCard Class="mb-4" Elevation="1">
+                        <MudCardHeader Class="pb-2">
+                            <MudText Class="section-header">Default Chat Message</MudText>
+                        </MudCardHeader>
+                        <MudCardContent Class="pt-0">
+                            <MudTextField T="string" Label="Default Chat Message" @bind-Value="_settings.DefaultChatMessage"
+                                          Lines="3" Variant="Variant.Outlined" HelperText="Pre-filled message in the chat input (useful for testing)" />
+                        </MudCardContent>
+                    </MudCard>
+
+                    <MudCard Class="mb-4" Elevation="1">
+                        <MudCardHeader Class="pb-2">
+                            <MudText Class="section-header">Statistics Settings</MudText>
+                        </MudCardHeader>
+                        <MudCardContent Class="pt-0">
+                            <MudSwitch T="bool" @bind-Value="_settings.ShowTokensPerSecond" Color="Color.Primary">
+                                Show tokens per second in statistics
+                            </MudSwitch>
+                        </MudCardContent>
+                    </MudCard>
+
+                    <MudButtonGroup Class="mt-4">
+                        <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="SaveSettings" Size="Size.Medium">
+                            Save Application Settings
+                        </MudButton>
+                        <MudButton Variant="Variant.Outlined" Color="Color.Secondary" OnClick="ResetSettings" Size="Size.Medium">
+                            Reset
+                        </MudButton>
+                    </MudButtonGroup>
+                </MudForm>
+            </MudPaper>
+        }
+    </MudContainer>
+</OllamaCheck>
+
+@code {
+    private UserSettings _settings = new();
+    private List<OllamaModel> _availableModels = new();
+    private bool _loading = true;
+    private MudForm? _form;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            _loading = true;
+            await LoadModels();
+            await LoadSettings();
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private async Task LoadModels()
+    {
+        try
+        {
+            _availableModels = (await OllamaService.GetModelsAsync()).ToList();
+            if (_availableModels.Count == 0)
+            {
+                Snackbar.Add("No models available. Settings will be saved but model selection won't take effect.", Severity.Warning);
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.Error.WriteLine($"Error loading models: {ex.Message}");
+            Snackbar.Add("Failed to load available models.", Severity.Error);
+        }
+    }
+
+    private async Task LoadSettings()
+    {
+        try
+        {
+            _settings = await UserSettingsService.GetSettingsAsync();
+        }
+        catch (Exception ex)
+        {
+            Console.Error.WriteLine($"Error loading settings: {ex.Message}");
+            Snackbar.Add("Failed to load settings.", Severity.Error);
+        }
+    }
+
+    private async Task SaveSettings()
+    {
+        try
+        {
+            await UserSettingsService.SaveSettingsAsync(_settings);
+            Snackbar.Add("Application settings saved successfully", Severity.Success);
+        }
+        catch (Exception ex)
+        {
+            Console.Error.WriteLine($"Error saving settings: {ex.Message}");
+            Snackbar.Add($"Failed to save settings: {ex.Message}", Severity.Error);
+        }
+    }
+
+    private async Task ResetSettings()
+    {
+        await LoadSettings();
+        Snackbar.Add("Settings reset to last saved values", Severity.Info);
+    }
+}
