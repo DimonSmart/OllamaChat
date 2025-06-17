@@ -18,14 +18,14 @@ public class KernelService(
         _mcpClientService = mcpClientService;
     }
 
-    public async Task<Kernel> CreateKernelAsync(string modelId, IEnumerable<string>? functionNames = null)
+    public async Task<Kernel> CreateKernelAsync(ChatConfiguration chatConfiguration)
     {
-        var kernel = await CreateBasicKernelAsync(modelId);
+        var kernel = await CreateBasicKernelAsync(chatConfiguration.ModelName);
 
         // Register selected MCP tools as kernel functions
-        if (functionNames != null && functionNames.Any() && _mcpClientService != null)
+        if (chatConfiguration.Functions != null && chatConfiguration.Functions.Any() && _mcpClientService != null)
         {
-            await RegisterMcpToolsAsync(kernel, functionNames);
+            await RegisterMcpToolsAsync(kernel, chatConfiguration.Functions);
         }
 
         return kernel;

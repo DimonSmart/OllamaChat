@@ -61,7 +61,7 @@ public class ChatService(
         UpdateLoadingState(false);
     }
 
-    public async Task AddUserMessageAndAnswerAsync(string text, IReadOnlyCollection<string> selectedFunctions, string modelName, IReadOnlyList<ChatMessageFile>? files = null)
+    public async Task AddUserMessageAndAnswerAsync(string text, ChatConfiguration chatConfiguration, IReadOnlyList<ChatMessageFile>? files = null)
     {
         if (string.IsNullOrWhiteSpace(text) || IsLoading)
             return;
@@ -72,7 +72,7 @@ public class ChatService(
         _cancellationTokenSource = new CancellationTokenSource();
         try
         {
-            await ProcessAIResponseAsync(selectedFunctions, modelName, _cancellationTokenSource.Token);
+            await ProcessAIResponseAsync(chatConfiguration, _cancellationTokenSource.Token);
         }
         catch (OperationCanceledException)
         {
@@ -93,10 +93,10 @@ public class ChatService(
         await (MessageAdded?.Invoke(message) ?? Task.CompletedTask);
     }
 
-    private async Task ProcessAIResponseAsync(IReadOnlyCollection<string> functionNames, string modelName, CancellationToken cancellationToken)
+    private async Task ProcessAIResponseAsync(ChatConfiguration chatConfiguration, CancellationToken cancellationToken)
     {
         var startTime = DateTime.Now;
-        logger.LogInformation("Processing AI response with model: {ModelName}", modelName);
+        logger.LogInformation("Processing AI response with model: {ModelName}", chatConfiguration.ModelName);
 
         if (_streamingManager == null)
         {
@@ -116,12 +116,12 @@ public class ChatService(
         try
         {
             var chatHistory = BuildChatHistory();
-            var kernel = await kernelService.CreateKernelAsync(modelName, functionNames);
+            var kernel = await kernelService.CreateKernelAsync(chatConfiguration);
             var chatService = kernel.GetRequiredService<IChatCompletionService>();
 
             var executionSettings = new PromptExecutionSettings
             {
-                FunctionChoiceBehavior = (functionNames?.Any() == true)
+                FunctionChoiceBehavior = chatConfiguration.Functions.Any()
                     ? FunctionChoiceBehavior.Auto()
                     : FunctionChoiceBehavior.None()
             };
@@ -156,8 +156,7 @@ public class ChatService(
             var settings = await userSettingsService.GetSettingsAsync();
             var statistics = _streamingManager.BuildStatistics(
                 processingTime,
-                modelName,
-                functionNames,
+                chatConfiguration,
                 settings.ShowTokensPerSecond ? approximateTokenCount : null);
             var finalMessage = _streamingManager.CompleteStreaming(streamingMessage, statistics);
             await ReplaceStreamingMessageWithFinal(streamingMessage, finalMessage);
@@ -165,16 +164,16 @@ public class ChatService(
         }
         catch (ModelDoesNotSupportToolsException ex)
         {
-            logger.LogWarning(ex, "Model {ModelName} does not support function calling", modelName);
+            logger.LogWarning(ex, "Model {ModelName} does not support function calling", chatConfiguration.ModelName);
             RemoveStreamingMessage(streamingMessage);
             _currentStreamingMessage = null;
 
-            var errorMessage = functionNames?.Any() == true
-                ? $"⚠️ The model **{modelName}** does not support function calling. Please either:\n\n" +
+            var errorMessage = chatConfiguration.Functions.Any()
+                ? $"⚠️ The model **{chatConfiguration.ModelName}** does not support function calling. Please either:\n\n" +
                   "• Switch to a model that supports function calling\n" +
                   "• Disable all functions for this conversation\n\n" +
                   "You can see which models support function calling on the Models page."
-                : $"⚠️ The model **{modelName}** does not support the requested functionality.";
+                : $"⚠️ The model **{chatConfiguration.ModelName}** does not support the requested functionality.";
 
             await HandleError(errorMessage);
         }

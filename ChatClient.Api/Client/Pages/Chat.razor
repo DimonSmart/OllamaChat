@@ -426,14 +426,17 @@
         ChatService.ClearChat();
         StateHasChanged();
     }
-
-      private async Task SendChatMessageAsync((string text, IReadOnlyList<ChatMessageFile> files) messageData)
+    
+    private async Task SendChatMessageAsync((string text, IReadOnlyList<ChatMessageFile> files) messageData)
     {
         if (string.IsNullOrWhiteSpace(messageData.text) || isLLMAnswering)
             return;
 
-        var modelName = selectedModel?.Name ?? "";
-        await ChatService.AddUserMessageAndAnswerAsync(messageData.text.Trim(), selectedFunctions, modelName, messageData.files);
+        var chatConfiguration = new ChatConfiguration(
+            selectedModel?.Name ?? string.Empty, 
+            selectedFunctions);
+        
+        await ChatService.AddUserMessageAndAnswerAsync(messageData.text.Trim(), chatConfiguration, messageData.files);
         await ScrollToBottom();
     }
 
