@@ -245,6 +245,11 @@
                            OnClick="@(() => functionsExpanded = !functionsExpanded)">
                     Functions
                 </MudButton>
+                <MudCheckBox @bind-Value="useAgentMode" 
+                             Label="Agent Mode" 
+                             Color="Color.Primary"
+                             Size="Size.Small"
+                             Class="ml-2" />
             </div>
             <MudCollapse Expanded="@functionsExpanded">
                 <MudCard Outlined="true" Class="my-2" Elevation="0">
@@ -307,6 +312,7 @@
     private List<FunctionInfo> availableFunctions = new();
     private List<string> selectedFunctions = new();
     private bool functionsExpanded = false;
+    private bool useAgentMode = false;
 
     private List<OllamaModel> availableModels = new();
     private OllamaModel? selectedModel;
@@ -426,15 +432,15 @@
         ChatService.ClearChat();
         StateHasChanged();
     }
-    
-    private async Task SendChatMessageAsync((string text, IReadOnlyList<ChatMessageFile> files) messageData)
+      private async Task SendChatMessageAsync((string text, IReadOnlyList<ChatMessageFile> files) messageData)
     {
         if (string.IsNullOrWhiteSpace(messageData.text) || isLLMAnswering)
             return;
 
         var chatConfiguration = new ChatConfiguration(
             selectedModel?.Name ?? string.Empty, 
-            selectedFunctions);
+            selectedFunctions,
+            useAgentMode);
         
         await ChatService.AddUserMessageAndAnswerAsync(messageData.text.Trim(), chatConfiguration, messageData.files);
         await ScrollToBottom();

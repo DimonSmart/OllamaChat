@@ -103,8 +103,9 @@ public class McpClientService(
         catch (Exception ex)
         {
             logger.LogError(ex, "Failed to retrieve MCP tools");
-            throw;
         }
+
+        return [];
     }
 
     public async ValueTask DisposeAsync()

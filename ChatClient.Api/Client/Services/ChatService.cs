@@ -7,6 +7,7 @@ using ChatClient.Shared.Services;
 using Microsoft.Extensions.AI;
 using Microsoft.SemanticKernel;
 using Microsoft.SemanticKernel.ChatCompletion;
+using Microsoft.SemanticKernel.Agents;
 
 using OllamaSharp.Models.Exceptions;
 
@@ -14,11 +15,12 @@ namespace ChatClient.Api.Client.Services;
 
 public class ChatService(
     KernelService kernelService,
+    AgentService agentService,
     ILogger<ChatService> logger,
     IUserSettingsService userSettingsService) : IChatService
 {
     private CancellationTokenSource? _cancellationTokenSource;
-    private StreamingMessageManager? _streamingManager;
+    private StreamingMessageManager _streamingManager = null!;
     private StreamingAppChatMessage? _currentStreamingMessage;
     public event Action<bool>? LoadingStateChanged;
     public event Action? ChatInitialized;
@@ -93,17 +95,40 @@ public class ChatService(
         await (MessageAdded?.Invoke(message) ?? Task.CompletedTask);
     }
 
+    private async Task<IAsyncEnumerable<StreamingChatMessageContent>> GetStreamingContentAsync(
+        ChatConfiguration chatConfiguration,
+        ChatHistory chatHistory,
+        CancellationToken cancellationToken)
+    {
+        if (chatConfiguration.UseAgentMode)
+        {
+            var systemPrompt = Messages.FirstOrDefault(m => m.Role == ChatRole.System)?.Content ?? "You are a helpful AI assistant.";
+            var agent = await agentService.CreateChatAgentAsync(chatConfiguration, systemPrompt);
+            return agentService.GetAgentStreamingResponseAsync(agent, chatHistory, cancellationToken);
+        }
+
+        var kernel = await kernelService.CreateKernelAsync(chatConfiguration);
+        var chatService = kernel.GetRequiredService<IChatCompletionService>();
+        var executionSettings = new PromptExecutionSettings
+        {
+            FunctionChoiceBehavior = chatConfiguration.Functions.Any()
+                ? FunctionChoiceBehavior.Auto()
+                : FunctionChoiceBehavior.None()
+        };
+
+        return chatService.GetStreamingChatMessageContentsAsync(
+            chatHistory,
+            executionSettings,
+            kernel,
+            cancellationToken: cancellationToken);
+    }
+
     private async Task ProcessAIResponseAsync(ChatConfiguration chatConfiguration, CancellationToken cancellationToken)
     {
         var startTime = DateTime.Now;
-        logger.LogInformation("Processing AI response with model: {ModelName}", chatConfiguration.ModelName);
+        var responseType = chatConfiguration.UseAgentMode ? "Agent" : "Ask";
+        logger.LogInformation("Processing {ResponseType} response with model: {ModelName}", responseType, chatConfiguration.ModelName);
 
-        if (_streamingManager == null)
-        {
-            logger.LogError("StreamingMessageManager is not initialized");
-            await HandleError("Chat not properly initialized");
-            return;
-        }
         var streamingMessage = _streamingManager.CreateStreamingMessage();
         _currentStreamingMessage = streamingMessage;
         await AddMessageAsync(streamingMessage);
@@ -116,20 +141,9 @@ public class ChatService(
         try
         {
             var chatHistory = BuildChatHistory();
-            var kernel = await kernelService.CreateKernelAsync(chatConfiguration);
-            var chatService = kernel.GetRequiredService<IChatCompletionService>();
+            var streamingContent = await GetStreamingContentAsync(chatConfiguration, chatHistory, cancellationToken);
 
-            var executionSettings = new PromptExecutionSettings
-            {
-                FunctionChoiceBehavior = chatConfiguration.Functions.Any()
-                    ? FunctionChoiceBehavior.Auto()
-                    : FunctionChoiceBehavior.None()
-            };
-            await foreach (var content in chatService.GetStreamingChatMessageContentsAsync(
-                chatHistory,
-                executionSettings,
-                kernel,
-                cancellationToken: cancellationToken))
+            await foreach (var content in streamingContent)
             {
                 await Task.Yield();
                 cancellationToken.ThrowIfCancellationRequested();
@@ -149,6 +163,7 @@ public class ChatService(
                 }
                 await Task.Yield();
             }
+
             await (MessageUpdated?.Invoke(streamingMessage) ?? Task.CompletedTask);
 
             // Create statistics and complete streaming
@@ -162,7 +177,7 @@ public class ChatService(
             await ReplaceStreamingMessageWithFinal(streamingMessage, finalMessage);
             _currentStreamingMessage = null;
         }
-        catch (ModelDoesNotSupportToolsException ex)
+        catch (ModelDoesNotSupportToolsException ex) when (!chatConfiguration.UseAgentMode)
         {
             logger.LogWarning(ex, "Model {ModelName} does not support function calling", chatConfiguration.ModelName);
             RemoveStreamingMessage(streamingMessage);
@@ -179,12 +194,14 @@ public class ChatService(
         }
         catch (Exception ex)
         {
-            logger.LogError(ex, "Error processing AI response");
+            var errorPrefix = chatConfiguration.UseAgentMode ? "Agent Error" : "Error";
+            logger.LogError(ex, "Error processing {ResponseType} response", responseType);
             RemoveStreamingMessage(streamingMessage);
             _currentStreamingMessage = null;
-            await HandleError($"Error: {ex.Message}");
+            await HandleError($"{errorPrefix}: {ex.Message}");
         }
     }
+
     private ChatHistory BuildChatHistory()
     {
         var history = new ChatHistory();

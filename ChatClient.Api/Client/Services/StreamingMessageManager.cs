@@ -37,9 +37,11 @@ public class StreamingMessageManager
                 await _messageUpdatedCallback(message);
             }
         }
-    }    /// <summary>
-         /// Completes streaming and returns final message
-         /// </summary>
+    }
+
+    /// <summary>
+    // Completes streaming and returns final message
+    // </summary>
     public AppChatMessage CompleteStreaming(StreamingAppChatMessage streamingMessage, string? statistics = null)
     {
         if (!string.IsNullOrEmpty(statistics))

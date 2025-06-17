@@ -97,14 +97,14 @@ public class KernelService(
                 var mcpTools = await _mcpClientService.GetMcpTools(mcpClient);
                 if (mcpTools.Count == 0)
                 {
-                    logger.LogWarning("No MCP tools available to register");
+                    logger.LogWarning($"No MCP tools available to register for server: {mcpClient.ServerInfo.Name} ");
                     continue;
                 }
 
                 var toolsToRegister = mcpTools.Where(t => functionNames.Contains(t.Name)).ToList();
                 if (toolsToRegister.Count == 0)
                 {
-                    logger.LogWarning("No MCP tools matched the requested function names");
+                    logger.LogWarning($"No MCP tools matched the requested function names. In mcp server: {mcpClient.ServerInfo.Name}");
                     continue;
                 }
                 var pluginFunctions = toolsToRegister.Select(tool => tool.AsKernelFunction()).ToList();
