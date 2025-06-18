@@ -73,17 +73,6 @@
                         </MudCardContent>
                     </MudCard>
 
-                    <MudCard Class="mb-4" Elevation="1">
-                        <MudCardHeader Class="pb-2">
-                            <MudText Class="section-header">Statistics Settings</MudText>
-                        </MudCardHeader>
-                        <MudCardContent Class="pt-0">
-                            <MudSwitch T="bool" @bind-Value="_settings.ShowTokensPerSecond" Color="Color.Primary">
-                                Show tokens per second in statistics
-                            </MudSwitch>
-                        </MudCardContent>
-                    </MudCard>
-
                     <MudButtonGroup Class="mt-4">
                         <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="SaveSettings" Size="Size.Medium">
                             Save Application Settings

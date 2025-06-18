@@ -16,8 +16,7 @@ namespace ChatClient.Api.Client.Services;
 public class ChatService(
     KernelService kernelService,
     AgentService agentService,
-    ILogger<ChatService> logger,
-    IUserSettingsService userSettingsService) : IChatService
+    ILogger<ChatService> logger) : IChatService
 {
     private CancellationTokenSource? _cancellationTokenSource;
     private StreamingMessageManager _streamingManager = null!;
@@ -152,7 +151,6 @@ public class ChatService(
                 {
                     streamingMessage.Append(content.Content);
                     approximateTokenCount++;
-
                     // Update UI no more than once every 500ms
                     var now = DateTime.Now;
                     if ((now - lastUpdateTime).TotalMilliseconds >= updateIntervalMs)
@@ -168,11 +166,10 @@ public class ChatService(
 
             // Create statistics and complete streaming
             var processingTime = DateTime.Now - startTime;
-            var settings = await userSettingsService.GetSettingsAsync();
             var statistics = _streamingManager.BuildStatistics(
                 processingTime,
                 chatConfiguration,
-                settings.ShowTokensPerSecond ? approximateTokenCount : null);
+                approximateTokenCount);
             var finalMessage = _streamingManager.CompleteStreaming(streamingMessage, statistics);
             await ReplaceStreamingMessageWithFinal(streamingMessage, finalMessage);
             _currentStreamingMessage = null;

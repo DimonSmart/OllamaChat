@@ -63,15 +63,15 @@ public sealed class OllamaService(
 
     private async Task<SettingsSnapshot> GetCurrentSettingsAsync()
     {
-        var user = await userSettingsService.GetSettingsAsync();
+        var settings = await userSettingsService.GetSettingsAsync();
 
         return new SettingsSnapshot(
-            !string.IsNullOrWhiteSpace(user.OllamaServerUrl)
-                ? user.OllamaServerUrl
+            !string.IsNullOrWhiteSpace(settings.OllamaServerUrl)
+                ? settings.OllamaServerUrl
                 : configuration["Ollama:BaseUrl"] ?? OllamaDefaults.ServerUrl,
-            user.OllamaBasicAuthPassword,
-            user.IgnoreSslErrors,
-            user.HttpTimeoutSeconds);
+            settings.OllamaBasicAuthPassword,
+            settings.IgnoreSslErrors,
+            settings.HttpTimeoutSeconds);
     }
 
     private static HttpClient BuildHttpClient(SettingsSnapshot s)

@@ -12,9 +12,6 @@ public class UserSettings
     [JsonPropertyName("defaultChatMessage")]
     public string DefaultChatMessage { get; set; } = string.Empty;
 
-    [JsonPropertyName("showTokensPerSecond")]
-    public bool ShowTokensPerSecond { get; set; } = true;
-
     /// <summary>
     /// Ollama server URL (including protocol and port)
     /// </summary>
