@@ -34,16 +34,14 @@ public class KernelService(
     public async Task<Kernel> CreateBasicKernelAsync(string modelId)
     {
         var settings = await userSettingsService.GetSettingsAsync();
-        var baseUrl = !string.IsNullOrWhiteSpace(settings.OllamaServerUrl)
-            ? settings.OllamaServerUrl
-            : configuration["Ollama:BaseUrl"] ?? OllamaDefaults.ServerUrl;
+        var baseUrl = !string.IsNullOrWhiteSpace(settings.OllamaServerUrl) ? settings.OllamaServerUrl : OllamaDefaults.ServerUrl;
 
         IKernelBuilder builder = Kernel.CreateBuilder();
 
         var httpClient = CreateConfiguredHttpClient(settings);
-        builder.AddOllamaChatCompletion(modelId, new Uri(baseUrl));
+        httpClient.BaseAddress = new Uri(baseUrl);
+        builder.AddOllamaChatCompletion(modelId: modelId, httpClient: httpClient);
         builder.Services.AddSingleton(httpClient);
-
         builder.Services.AddLogging(c => c.AddConsole().SetMinimumLevel(LogLevel.Information));
         builder.Services.AddSingleton(new PromptExecutionSettings
         {
