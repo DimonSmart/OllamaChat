@@ -254,14 +254,7 @@
             <MudCollapse Expanded="@functionsExpanded">
                 <MudCard Outlined="true" Class="my-2" Elevation="0">
                     <MudCardContent Class="pa-2">
-                        @if (selectedModel != null && !selectedModel.SupportsFunctionCalling && selectedFunctions.Any())
-                        {
-                            <MudAlert Severity="Severity.Warning" Class="mb-2">
-                                The selected model (@selectedModel.Name) does not appear to support function calling. 
-                                Note: Function calling support detection may not be 100% accurate.
-                                Consider switching to a model that supports this feature.
-                            </MudAlert>
-                        }
+                       
                         <FunctionSelector AvailableFunctions="availableFunctions"
                                           SelectedFunctions="selectedFunctions"
                                           SelectedFunctionsChanged="OnSelectedFunctionsChanged"
