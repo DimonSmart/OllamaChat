@@ -80,7 +80,6 @@ public class StreamingMessageManager
             : "N/A";
 
         var statisticsBuilder = new System.Text.StringBuilder();
-        statisticsBuilder.AppendLine("\n\n---");
         statisticsBuilder.AppendLine($"⏱️ Processing time: {processingTime.TotalSeconds:F2} seconds");
         statisticsBuilder.AppendLine($"🤖 Model: {chatConfiguration.ModelName}");
         statisticsBuilder.AppendLine($"🔧 Functions: {functionsText}");
