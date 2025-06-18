@@ -52,7 +52,7 @@ public class KernelService(
 
         return builder.Build();
     }
-
+    
     private static HttpClient CreateConfiguredHttpClient(UserSettings settings)
     {
         var handler = new HttpClientHandler();
@@ -64,7 +64,7 @@ public class KernelService(
 
         var httpClient = new HttpClient(handler)
         {
-            Timeout = TimeSpan.FromMinutes(2)
+            Timeout = TimeSpan.FromSeconds(settings.HttpTimeoutSeconds)
         };
 
         if (!string.IsNullOrWhiteSpace(settings.OllamaBasicAuthPassword))
@@ -75,6 +75,7 @@ public class KernelService(
 
         return httpClient;
     }
+
     private async Task RegisterMcpToolsAsync(Kernel kernel, IEnumerable<string> functionNames)
     {
         if (_mcpClientService == null)
