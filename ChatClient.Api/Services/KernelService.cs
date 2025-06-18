@@ -52,7 +52,8 @@ public class KernelService(
 
         return builder.Build();
     }
-    
+
+
     private static HttpClient CreateConfiguredHttpClient(UserSettings settings)
     {
         var handler = new HttpClientHandler();
