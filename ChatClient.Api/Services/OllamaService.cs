@@ -97,7 +97,7 @@ public sealed class OllamaService(
     }
 
     /// <summary>
-    /// Determines if a model supports function calling based on its name and family.
+    /// Experimental! Determines if a model supports function calling based on its name and family.
     /// </summary>
     private static bool DeterminesFunctionCallingSupport(OllamaSharp.Models.Model model)
     {
