@@ -6,8 +6,8 @@ using ChatClient.Shared.Services;
 
 using Microsoft.Extensions.AI;
 using Microsoft.SemanticKernel;
-using Microsoft.SemanticKernel.ChatCompletion;
 using Microsoft.SemanticKernel.Agents;
+using Microsoft.SemanticKernel.ChatCompletion;
 
 using OllamaSharp.Models.Exceptions;
 
@@ -103,7 +103,7 @@ public class ChatService(
         {
             var systemPrompt = Messages.FirstOrDefault(m => m.Role == ChatRole.System)?.Content ?? "You are a helpful AI assistant.";
             var agent = await agentService.CreateChatAgentAsync(chatConfiguration, systemPrompt);
-            return agentService.GetAgentStreamingResponseAsync(agent, chatHistory, cancellationToken);
+            return agentService.GetAgentStreamingResponseAsync(agent, chatHistory, chatConfiguration, cancellationToken);
         }
 
         var kernel = await kernelService.CreateKernelAsync(chatConfiguration);

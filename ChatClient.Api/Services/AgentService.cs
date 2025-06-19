@@ -13,8 +13,6 @@ public class AgentService(KernelService kernelService, ILogger<AgentService> log
 {
     public async Task<ChatCompletionAgent> CreateChatAgentAsync(ChatConfiguration chatConfiguration, string systemPrompt)
     {
-        logger.LogInformation("Creating chat agent for model: {ModelName}", chatConfiguration.ModelName);
-
         var kernel = await kernelService.CreateKernelAsync(chatConfiguration);
 
         var agent = new ChatCompletionAgent
@@ -34,48 +32,40 @@ public class AgentService(KernelService kernelService, ILogger<AgentService> log
     public async IAsyncEnumerable<StreamingChatMessageContent> GetAgentStreamingResponseAsync(
         ChatCompletionAgent agent,
         ChatHistory chatHistory,
+        ChatConfiguration chatConfiguration,
         [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken = default)
     {
-        logger.LogInformation("Processing streaming response through agent: {AgentName}", agent.Name);
 
-        var agentChat = new AgentGroupChat();
-        agentChat.AddAgent(agent);
+        var chatService = agent.Kernel.GetRequiredService<IChatCompletionService>();
+        var executionSettings = new PromptExecutionSettings
+        {
+            FunctionChoiceBehavior = chatConfiguration.Functions.Any()
+                ? FunctionChoiceBehavior.Auto()
+                : FunctionChoiceBehavior.None()
+        };
+
+        // Build the complete chat history including the agent's instructions as system message
+        var fullChatHistory = new ChatHistory();
+        if (!string.IsNullOrEmpty(agent.Instructions))
+        {
+            fullChatHistory.AddSystemMessage(agent.Instructions);
+        }
 
         foreach (var message in chatHistory.Where(m => m.Role != AuthorRole.System))
         {
-            agentChat.AddChatMessage(message);
+            fullChatHistory.Add(message);
         }
 
-        await foreach (var message in agentChat.InvokeStreamingAsync(cancellationToken))
+        await foreach (var content in chatService.GetStreamingChatMessageContentsAsync(
+            fullChatHistory,
+            executionSettings,
+            agent.Kernel,
+            cancellationToken: cancellationToken))
         {
-            if (message.Content is not null)
+            if (content.Content is not null)
             {
-                yield return new StreamingChatMessageContent(message.Role, message.Content);
+                yield return content;
             }
         }
-    }
-
-    /// <summary>
-    /// Processes message through agent (non-streaming)
-    /// </summary>
-    public async Task<ChatMessageContent> GetAgentResponseAsync(
-        ChatCompletionAgent agent,
-        ChatHistory chatHistory,
-        CancellationToken cancellationToken = default)
-    {
-        logger.LogInformation("Processing response through agent: {AgentName}", agent.Name);
-
-        var agentChat = new AgentGroupChat();
-        agentChat.AddAgent(agent);
-
-        foreach (var message in chatHistory.Where(m => m.Role != AuthorRole.System))
-        {
-            agentChat.AddChatMessage(message);
-        }
-
-        var response = await agentChat.InvokeAsync(cancellationToken).ToListAsync(cancellationToken);
-        var lastMessage = response.LastOrDefault();
-
-        return lastMessage ?? new ChatMessageContent(AuthorRole.Assistant, "No response received from agent");
     }
 }

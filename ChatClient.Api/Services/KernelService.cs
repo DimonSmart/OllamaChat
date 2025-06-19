@@ -37,16 +37,11 @@ public class KernelService(
         var baseUrl = !string.IsNullOrWhiteSpace(settings.OllamaServerUrl) ? settings.OllamaServerUrl : OllamaDefaults.ServerUrl;
 
         IKernelBuilder builder = Kernel.CreateBuilder();
-
         var httpClient = CreateConfiguredHttpClient(settings);
         httpClient.BaseAddress = new Uri(baseUrl);
         builder.AddOllamaChatCompletion(modelId: modelId, httpClient: httpClient);
         builder.Services.AddSingleton(httpClient);
         builder.Services.AddLogging(c => c.AddConsole().SetMinimumLevel(LogLevel.Information));
-        builder.Services.AddSingleton(new PromptExecutionSettings
-        {
-            FunctionChoiceBehavior = FunctionChoiceBehavior.Auto()
-        });
 
         return builder.Build();
     }
