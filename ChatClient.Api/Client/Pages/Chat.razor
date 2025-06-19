@@ -122,7 +122,14 @@
                                     }
                                 </div>
                             }
-                            @((MarkupString)message.HtmlContent)
+                            @if (string.IsNullOrWhiteSpace(message.HtmlContent))
+                            {
+                                <MudText Typo="Typo.body2" Class="mud-text-secondary">...</MudText>
+                            }
+                            else
+                            {
+                                @((MarkupString)message.HtmlContent)
+                            }
                         </MudChatBubble>
                         @if (message.ThinkSegments.Any())
                         {
