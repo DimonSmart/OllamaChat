@@ -80,10 +80,13 @@ public class StreamingMessageManager
             : "N/A";
 
         var statisticsBuilder = new System.Text.StringBuilder();
-        statisticsBuilder.AppendLine($"⏱️ Processing time: {processingTime.TotalSeconds:F2} seconds");
-        statisticsBuilder.AppendLine($"🤖 Model: {chatConfiguration.ModelName}");
-        statisticsBuilder.AppendLine($"🔧 Functions: {functionsText}");
-        statisticsBuilder.AppendLine($"📊 Tokens: {tokenCount} (~{tokensPerSecond} tokens/sec)");
+        statisticsBuilder.Append($"⏱️ {processingTime.TotalSeconds:F1}s");
+        statisticsBuilder.Append($" • 🤖 {chatConfiguration.ModelName}");
+        if (chatConfiguration.Functions.Any())
+        {
+            statisticsBuilder.Append($" • 🔧 {chatConfiguration.Functions.Count} funcs");
+        }
+        statisticsBuilder.Append($" • 📊 {tokenCount} tokens ({tokensPerSecond}/s)");
         return statisticsBuilder.ToString();
     }
 }

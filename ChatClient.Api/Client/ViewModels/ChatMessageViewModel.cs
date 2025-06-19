@@ -18,8 +18,6 @@ public class ChatMessageViewModel
     public DateTime MsgDateTime { get; set; }
     public ChatRole Role { get; set; }
     public string? Statistics { get; set; }
-    public bool IsStatsVisible { get; set; }
-    public bool IsThoughtsVisible { get; set; }
     public bool IsStreaming { get; set; }
     public bool IsCanceled { get; set; }
     public IReadOnlyList<ChatMessageFile> Files { get; set; } = [];

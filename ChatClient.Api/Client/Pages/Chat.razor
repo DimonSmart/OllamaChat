@@ -83,13 +83,15 @@
     }
     else
     {
-        <div class="chat-messages flex-grow-1 pa-2" style="overflow-y: auto;" @ref="messagesElement">
+        <div class="chat-messages" @ref="messagesElement">
             @foreach (var message in ChatViewModelService.Messages)
             {
                 @if (message.Role != Microsoft.Extensions.AI.ChatRole.System)
                 {
-                    <MudChat ChatPosition="@(message.Role == Microsoft.Extensions.AI.ChatRole.Assistant ? ChatBubblePosition.Start : ChatBubblePosition.End)"> 
-                            <MudChatBubble @key="message.Id">
+                    <MudChat ChatPosition="@(message.Role == Microsoft.Extensions.AI.ChatRole.Assistant ? ChatBubblePosition.Start : ChatBubblePosition.End)" @key="message.Id">
+                        <MudChatHeader Time="@message.MsgDateTime.ToString("g")" />
+                        
+                        <MudChatBubble>
                             @if (message.Files.Any())
                             {
                                 <div class="mb-2">
@@ -120,84 +122,90 @@
                                     }
                                 </div>
                             }
-                            
                             @((MarkupString)message.HtmlContent)
-                            @if (message.IsStreaming)
+                        </MudChatBubble>
+                        @if (message.ThinkSegments.Any())
+                        {
+                            var validThoughts = message.ThinkSegments
+                                .Select((segment, index) => new { segment, index, htmlSegment = message.HtmlThinkSegments.ElementAt(index) })
+                                .Where(x => !string.IsNullOrWhiteSpace(x.segment))
+                                .ToList();
+                            
+                            @foreach (var thoughtItem in validThoughts)
                             {
-                                <span class="typing-indicator">
-                                    <MudProgressCircular Size="Size.Small" Indeterminate="true" />
-                                    <small><i>typing...</i></small>
-                                </span>
-                            }
-                            @if (message.IsCanceled)
-                            {
-                                <div class="mt-1" style="display: inline-flex;">
-                                    <MudAlert Severity="Severity.Error" 
-                                             Dense="true" 
-                                             Style="padding: 4px 8px; font-size: 0.75rem; border-radius: 16px; display: inline-flex; align-items: center; width: fit-content; min-height: auto;">
-                                        <div style="display: flex; align-items: center; gap: 4px;">
-                                            Canceled
-                                        </div>
-                                    </MudAlert>
-                                </div>
-                            }
-                            <MudText Typo="Typo.caption" Align="@(message.Role == Microsoft.Extensions.AI.ChatRole.Assistant ? Align.Left : Align.Right)" Class="mt-1">
-                                @message.MsgDateTime.ToString("g")
-                            </MudText>
-                            <div class="d-flex flex-row gap-1">
-                                @if (!string.IsNullOrEmpty(message.Statistics))
+                                var thinkText = thoughtItem.segment;
+                                var segment = thoughtItem.htmlSegment;
+                                var lines = thinkText.Split(['\n', '\r'], StringSplitOptions.RemoveEmptyEntries);
+                                var preview = "";
+                                var hasMore = false;
+                                
+                                if (lines.Length > 2)
                                 {
-                                    <MudButton Size="Size.Small"
-                                               Variant="Variant.Text"
-                                               Color="Color.Default"
-                                               Class="pa-0 ml-1"
-                                               Style="min-width: auto; font-size: 0.75rem;"
-                                               OnClick="@(() => ToggleStatsVisibility(message))">
-                                        stats
-                                    </MudButton>
-
-                                    @if (message.IsStatsVisible)
+                                    preview = string.Join(" ", lines.Take(2));
+                                    hasMore = true;
+                                }
+                                else if (lines.Length > 0)
+                                {
+                                    var combinedText = string.Join(" ", lines);
+                                    if (combinedText.Length > 150)
                                     {
-                                        <MudPaper Class="pa-2 mt-1" Elevation="1">
-                                            <MudText Typo="Typo.caption">
-                                                @((MarkupString)message.Statistics)
-                                            </MudText>
-                                        </MudPaper>
+                                        preview = combinedText[..150];
+                                        hasMore = true;
                                     }
-                                }                                
-                                @if (message.ThinkSegments.Any())
-                                {
-                                    <MudButton Size="Size.Small"
-                                               Variant="Variant.Text"
-                                               Color="Color.Default"
-                                               Class="pa-0 ml-1"
-                                               Style="min-width: auto; font-size: 0.75rem;"
-                                               OnClick="@(() => ToggleThoughtsVisibility(message))">
-                                        thoughts (@message.ThinkSegments.Count)
-                                    </MudButton>                                    
-                                    @if (message.IsThoughtsVisible)
+                                    else
                                     {
-                                        @for (int i = 0; i < message.HtmlThinkSegments.Count; i++)
-                                        {
-                                            var segment = message.HtmlThinkSegments.ElementAt(i);
-                                            <MudPaper Class="pa-2 mt-1 think-segment" Elevation="1">
-                                                @if (message.ThinkSegments.Count > 1)
-                                                {
-                                                    <div class="think-segment-header">
-                                                        <MudText Typo="Typo.overline">
-                                                            Think #@(i + 1)
-                                                        </MudText>
-                                                    </div>
-                                                }
-                                                <MudText Typo="Typo.caption" Class="@(message.ThinkSegments.Count > 1 ? "pt-2" : "")">
-                                                    @((MarkupString)segment)
-                                                </MudText>
-                                            </MudPaper>
-                                        }
+                                        preview = combinedText;
                                     }
                                 }
-                                </div>
-                        </MudChatBubble>
+                                
+                                var thinkId = $"{message.Id}_{thoughtItem.index}";
+                                var isExpanded = ExpandedThoughts.Contains(thinkId);
+
+                                <MudChatBubble Color="Color.Primary">
+                                    <div class="d-flex align-center justify-space-between">
+                                        @if (hasMore)
+                                        {
+                                            <MudIconButton Icon="@(isExpanded ? Icons.Material.Filled.ExpandLess : Icons.Material.Filled.ExpandMore)"
+                                                           Size="Size.Small"
+                                                           OnClick="@(() => ToggleThinkExpansion(thinkId))" />
+                                        }
+                                    </div>
+                                    
+                                    @if (isExpanded || !hasMore)
+                                    {
+                                        @((MarkupString)segment)
+                                    }
+                                    else
+                                    {
+                                        <div @onclick="@(() => ToggleThinkExpansion(thinkId))" style="cursor: pointer;">
+                                            @preview@(hasMore ? "..." : "")
+                                        </div>
+                                    }
+                                </MudChatBubble>
+                            }
+                        }
+
+                        @if (message.IsStreaming || message.IsCanceled || !string.IsNullOrEmpty(message.Statistics))                        {
+                            <MudChatFooter>
+                                @if (message.IsStreaming)
+                                {
+                                    <MudText Typo="Typo.caption" Class="typing-indicator">typing...</MudText>
+                                }
+                                @if (message.IsCanceled)
+                                {
+                                    <MudAlert Severity="Severity.Error" Dense="true" Class="mt-1">
+                                        Canceled
+                                    </MudAlert>                                }
+                                @if (!string.IsNullOrEmpty(message.Statistics))
+                                {
+                                    <div class="mt-1">
+                                        <MudText Typo="Typo.caption" Class="mud-text-secondary">
+                                            @((MarkupString)message.Statistics)
+                                        </MudText>
+                                    </div>
+                                }
+                            </MudChatFooter>
+                        }
                     </MudChat>
                 }
             }
@@ -294,8 +302,7 @@
 </div>
 </OllamaCheck>
 
-@code {
-    private bool isLLMAnswering { get; set; } = false;
+@code {    private bool isLLMAnswering { get; set; } = false;
     private bool isLoadingInitialData = true;
     private bool chatStarted = false;
     private ElementReference messagesElement;
@@ -312,17 +319,16 @@
 
     private bool showPromptContent { get; set; } = false;
     
+    // Track expanded thoughts for individual segments
+    private HashSet<string> ExpandedThoughts { get; set; } = new();
+    
     private readonly EventCallback<ChatMessageViewModel> _messageAddedCallback;
     private readonly EventCallback<ChatMessageViewModel> _messageUpdatedCallback;
     
     public Chat()
     {
-        _messageAddedCallback = EventCallback.Factory.Create<ChatMessageViewModel>(this, OnMessageAdded);
-        _messageUpdatedCallback = EventCallback.Factory.Create<ChatMessageViewModel>(this, OnMessageUpdated);
+        _messageAddedCallback = EventCallback.Factory.Create<ChatMessageViewModel>(this, OnMessageAdded);        _messageUpdatedCallback = EventCallback.Factory.Create<ChatMessageViewModel>(this, OnMessageUpdated);
     }
-    
-    private string GetMessageClass(IAppChatMessage message) =>
-        $"{(message.Role == Microsoft.Extensions.AI.ChatRole.User ? "user-message" : "assistant-message")} message-container pa-2 mb-2";
         
     protected override async Task OnInitializedAsync()
     {
@@ -418,10 +424,10 @@
         chatStarted = true;
         StateHasChanged();
     }
-    
-    private void RestartChat()
+      private void RestartChat()
     {
         chatStarted = false;
+        ExpandedThoughts.Clear();
         ChatService.ClearChat();
         StateHasChanged();
     }
@@ -452,18 +458,20 @@
     }
     
     private void Cancel()
-    {
-        ChatService.CancelAsync();
+    {        ChatService.CancelAsync();
     }
     
-    private void ToggleStatsVisibility(ChatMessageViewModel message)
+    private void ToggleThinkExpansion(string thinkId)
     {
-        message.IsStatsVisible = !message.IsStatsVisible;
-    }
-    
-    private void ToggleThoughtsVisibility(ChatMessageViewModel message)
-    {
-        message.IsThoughtsVisible = !message.IsThoughtsVisible;
+        if (ExpandedThoughts.Contains(thinkId))
+        {
+            ExpandedThoughts.Remove(thinkId);
+        }
+        else
+        {
+            ExpandedThoughts.Add(thinkId);
+        }
+        StateHasChanged();
     }
     
     private void OnModelChanged(OllamaModel model)

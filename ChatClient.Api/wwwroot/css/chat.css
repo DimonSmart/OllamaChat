@@ -15,156 +15,6 @@
     flex-direction: column;
 }
 
-.message-container {
-    max-width: 80%;
-    padding: 0.75rem;
-    margin-bottom: 1rem;
-    border-radius: 0.5rem;
-    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
-}
-
-.user-message {
-    align-self: flex-end;
-    background-color: #f0f4f8;
-    border: 1px solid #dae1e7;
-    color: #2d3748;
-}
-
-.assistant-message {
-    align-self: flex-start;
-    background-color: #3182ce;
-    color: white;
-}
-
-.message-content {
-    white-space: pre-wrap;
-    word-break: break-word;
-}
-
-.message-time {
-    font-size: 0.75rem;
-    opacity: 0.75;
-    margin-top: 0.5rem;
-    text-align: right;
-}
-
-
-.input-group {
-    display: flex;
-    gap: 0.5rem;
-}
-
-.chat-input {
-    flex: 1;
-    resize: none;
-    max-height: 100px;
-    overflow-y: auto;
-}
-
-/* Loading indicator */
-.loading-indicator {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 0.5rem;
-    padding: 0.5rem;
-    min-height: 24px;
-}
-
-.loading-dot {
-    width: 0.75rem;
-    height: 0.75rem;
-    background-color: rgba(255, 255, 255, 0.8);
-    border-radius: 50%;
-    animation: pulse 1.5s infinite ease-in-out;
-}
-
-.loading-dot:nth-child(2) {
-    animation-delay: 0.3s;
-}
-
-.loading-dot:nth-child(3) {
-    animation-delay: 0.6s;
-}
-
-/* Streaming indicator */
-.streaming-indicator {
-    display: inline-block;
-    width: 0.5rem;
-    height: 1.2rem;
-    background-color: #ffffff;
-    margin-left: 0.3rem;
-    margin-bottom: -0.15rem;
-    animation: blink 1s infinite;
-}
-
-.typing-indicator {
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-    vertical-align: middle;
-    font-style: italic;
-    color: rgba(255, 255, 255, 0.8);
-}
-
-.typing-indicator small {
-    font-size: 0.75rem;
-}
-
-/* Think segments styling */
-.think-segment {
-    border-left: 3px solid #6366f1;
-    background-color: #f8fafc;
-    border-radius: 0.375rem;
-    margin-bottom: 0.5rem;
-}
-
-.think-segment:last-child {
-    margin-bottom: 0;
-}
-
-.think-segment-header {
-    background-color: #e0e7ff;
-    padding: 0.25rem 0.5rem;
-    border-radius: 0.375rem 0.375rem 0 0;
-    font-weight: 600;
-    color: #4338ca;
-}
-
-@keyframes blink {
-    0%, 100% {
-        opacity: 1;
-    }
-    50% {
-        opacity: 0;
-    }
-}
-
-@keyframes pulse {
-    0%, 100% {
-        transform: scale(0.8);
-        opacity: 0.5;
-    }
-    50% {
-        transform: scale(1.2);
-        opacity: 1;
-    }
-}
-
-/* File attachments styling */
-.message-files {
-    margin-bottom: 0.5rem;
-}
-
-.message-files .mud-chip {
-    margin-right: 0.25rem;
-    margin-bottom: 0.25rem;
-}
-
-.message-files .mud-chip-icon {
-    margin-right: 0.25rem;
-}
-
 /* Image thumbnail styling */
 .image-thumbnail {
     border-radius: 8px;
@@ -193,4 +43,18 @@
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
+}
+
+/* Blinking animation for typing indicator */
+.typing-indicator {
+    animation: blink 1.5s infinite;
+}
+
+@keyframes blink {
+    0%, 50% {
+        opacity: 1;
+    }
+    51%, 100% {
+        opacity: 0.3;
+    }
 }
