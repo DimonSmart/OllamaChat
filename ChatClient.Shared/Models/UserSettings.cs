@@ -32,4 +32,10 @@ public class UserSettings
     /// </summary>
     [JsonPropertyName("httpTimeoutSeconds")]
     public int HttpTimeoutSeconds { get; set; } = 600;
+
+    /// <summary>
+    /// HTTP request timeout in seconds for MCP sampling requests (typically longer than regular API calls)
+    /// </summary>
+    [JsonPropertyName("mcpSamplingTimeoutSeconds")]
+    public int McpSamplingTimeoutSeconds { get; set; } = 30 * 60;
 }

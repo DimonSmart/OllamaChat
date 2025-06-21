@@ -2,7 +2,6 @@
 
 using ChatClient.Api.Services;
 using ChatClient.Shared.Models;
-using ChatClient.Shared.Services;
 
 using Microsoft.Extensions.AI;
 using Microsoft.SemanticKernel;
@@ -36,7 +35,7 @@ public class ChatService(
 
         if (initialPrompt != null)
         {
-            var systemMessage = new AppChatMessage(initialPrompt.Content, DateTime.Now, ChatRole.System, string.Empty);
+            AppChatMessage systemMessage = new AppChatMessage(initialPrompt.Content, DateTime.Now, ChatRole.System, string.Empty);
             Messages.Add(systemMessage);
         }
         ChatInitialized?.Invoke();
@@ -54,7 +53,7 @@ public class ChatService(
         // Handle the current streaming message if it exists
         if (_streamingManager != null && _currentStreamingMessage != null)
         {
-            var canceledMessage = _streamingManager.CancelStreaming(_currentStreamingMessage);
+            AppChatMessage canceledMessage = _streamingManager.CancelStreaming(_currentStreamingMessage);
             await ReplaceStreamingMessageWithFinal(_currentStreamingMessage, canceledMessage);
             _currentStreamingMessage = null;
         }
@@ -65,7 +64,9 @@ public class ChatService(
     public async Task AddUserMessageAndAnswerAsync(string text, ChatConfiguration chatConfiguration, IReadOnlyList<ChatMessageFile>? files = null)
     {
         if (string.IsNullOrWhiteSpace(text) || IsLoading)
+        {
             return;
+        }
 
         await AddMessageAsync(new AppChatMessage(text, DateTime.Now, ChatRole.User, string.Empty, files));
         UpdateLoadingState(true);
@@ -101,14 +102,14 @@ public class ChatService(
     {
         if (chatConfiguration.UseAgentMode)
         {
-            var systemPrompt = Messages.FirstOrDefault(m => m.Role == ChatRole.System)?.Content ?? "You are a helpful AI assistant.";
-            var agent = await agentService.CreateChatAgentAsync(chatConfiguration, systemPrompt);
+            string systemPrompt = Messages.FirstOrDefault(m => m.Role == ChatRole.System)?.Content ?? "You are a helpful AI assistant.";
+            ChatCompletionAgent agent = await agentService.CreateChatAgentAsync(chatConfiguration, systemPrompt);
             return agentService.GetAgentStreamingResponseAsync(agent, chatHistory, chatConfiguration, cancellationToken);
         }
 
-        var kernel = await kernelService.CreateKernelAsync(chatConfiguration);
-        var chatService = kernel.GetRequiredService<IChatCompletionService>();
-        var executionSettings = new PromptExecutionSettings
+        Kernel kernel = await kernelService.CreateKernelAsync(chatConfiguration);
+        IChatCompletionService chatService = kernel.GetRequiredService<IChatCompletionService>();
+        PromptExecutionSettings executionSettings = new PromptExecutionSettings
         {
             FunctionChoiceBehavior = chatConfiguration.Functions.Any()
                 ? FunctionChoiceBehavior.Auto()
@@ -124,25 +125,25 @@ public class ChatService(
 
     private async Task ProcessAIResponseAsync(ChatConfiguration chatConfiguration, CancellationToken cancellationToken)
     {
-        var startTime = DateTime.Now;
-        var responseType = chatConfiguration.UseAgentMode ? "Agent" : "Ask";
+        DateTime startTime = DateTime.Now;
+        string responseType = chatConfiguration.UseAgentMode ? "Agent" : "Ask";
         logger.LogInformation("Processing {ResponseType} response with model: {ModelName}", responseType, chatConfiguration.ModelName);
 
-        var streamingMessage = _streamingManager.CreateStreamingMessage();
+        StreamingAppChatMessage streamingMessage = _streamingManager.CreateStreamingMessage();
         _currentStreamingMessage = streamingMessage;
         await AddMessageAsync(streamingMessage);
 
         // Simple throttling for UI updates - no more than once every 500ms
-        var lastUpdateTime = DateTime.MinValue;
+        DateTime lastUpdateTime = DateTime.MinValue;
         const int updateIntervalMs = 500;
-        var approximateTokenCount = 0;
+        int approximateTokenCount = 0;
 
         try
         {
-            var chatHistory = BuildChatHistory();
-            var streamingContent = await GetStreamingContentAsync(chatConfiguration, chatHistory, cancellationToken);
+            ChatHistory chatHistory = BuildChatHistory();
+            IAsyncEnumerable<StreamingChatMessageContent> streamingContent = await GetStreamingContentAsync(chatConfiguration, chatHistory, cancellationToken);
 
-            await foreach (var content in streamingContent)
+            await foreach (StreamingChatMessageContent content in streamingContent)
             {
                 await Task.Yield();
                 cancellationToken.ThrowIfCancellationRequested();
@@ -152,7 +153,7 @@ public class ChatService(
                     streamingMessage.Append(content.Content);
                     approximateTokenCount++;
                     // Update UI no more than once every 500ms
-                    var now = DateTime.Now;
+                    DateTime now = DateTime.Now;
                     if ((now - lastUpdateTime).TotalMilliseconds >= updateIntervalMs)
                     {
                         await (MessageUpdated?.Invoke(streamingMessage) ?? Task.CompletedTask);
@@ -165,12 +166,12 @@ public class ChatService(
             await (MessageUpdated?.Invoke(streamingMessage) ?? Task.CompletedTask);
 
             // Create statistics and complete streaming
-            var processingTime = DateTime.Now - startTime;
-            var statistics = _streamingManager.BuildStatistics(
+            TimeSpan processingTime = DateTime.Now - startTime;
+            string statistics = _streamingManager.BuildStatistics(
                 processingTime,
                 chatConfiguration,
                 approximateTokenCount);
-            var finalMessage = _streamingManager.CompleteStreaming(streamingMessage, statistics);
+            AppChatMessage finalMessage = _streamingManager.CompleteStreaming(streamingMessage, statistics);
             await ReplaceStreamingMessageWithFinal(streamingMessage, finalMessage);
             _currentStreamingMessage = null;
         }
@@ -180,7 +181,7 @@ public class ChatService(
             RemoveStreamingMessage(streamingMessage);
             _currentStreamingMessage = null;
 
-            var errorMessage = chatConfiguration.Functions.Any()
+            string errorMessage = chatConfiguration.Functions.Any()
                 ? $"⚠️ The model **{chatConfiguration.ModelName}** does not support function calling. Please either:\n\n" +
                   "• Switch to a model that supports function calling\n" +
                   "• Disable all functions for this conversation\n\n" +
@@ -191,7 +192,7 @@ public class ChatService(
         }
         catch (Exception ex)
         {
-            var errorPrefix = chatConfiguration.UseAgentMode ? "Agent Error" : "Error";
+            string errorPrefix = chatConfiguration.UseAgentMode ? "Agent Error" : "Error";
             logger.LogError(ex, "Error processing {ResponseType} response", responseType);
             RemoveStreamingMessage(streamingMessage);
             _currentStreamingMessage = null;
@@ -201,17 +202,17 @@ public class ChatService(
 
     private ChatHistory BuildChatHistory()
     {
-        var history = new ChatHistory();
+        ChatHistory history = new ChatHistory();
 
-        foreach (var msg in this.Messages.Where(m => !m.IsStreaming))
+        foreach (IAppChatMessage? msg in this.Messages.Where(m => !m.IsStreaming))
         {
-            var items = new ChatMessageContentItemCollection();
+            ChatMessageContentItemCollection items = new ChatMessageContentItemCollection();
 
             if (!string.IsNullOrEmpty(msg.Content))
             {
                 items.Add(new Microsoft.SemanticKernel.TextContent(msg.Content));
             }
-            foreach (var file in msg.Files)
+            foreach (ChatMessageFile file in msg.Files)
             {
                 if (IsImageContentType(file.ContentType))
                 {
@@ -219,12 +220,12 @@ public class ChatService(
                 }
                 else
                 {
-                    var fileDescription = $"File: {file.Name} ({file.ContentType})";
+                    string fileDescription = $"File: {file.Name} ({file.ContentType})";
                     items.Add(new Microsoft.SemanticKernel.TextContent(fileDescription));
                 }
             }
 
-            var role = ConvertToAuthorRole(msg.Role);
+            AuthorRole role = ConvertToAuthorRole(msg.Role);
             history.Add(new ChatMessageContent(role, items));
         }
 
@@ -233,9 +234,14 @@ public class ChatService(
     private static AuthorRole ConvertToAuthorRole(ChatRole chatRole)
     {
         if (chatRole == ChatRole.System)
+        {
             return AuthorRole.System;
+        }
+
         if (chatRole == ChatRole.Assistant)
+        {
             return AuthorRole.Assistant;
+        }
 
         return AuthorRole.User;
     }
@@ -247,7 +253,7 @@ public class ChatService(
 
     private async Task ReplaceStreamingMessageWithFinal(StreamingAppChatMessage streamingMessage, AppChatMessage finalMessage)
     {
-        var index = Messages.IndexOf(streamingMessage);
+        int index = Messages.IndexOf(streamingMessage);
 
         if (index >= 0)
         {

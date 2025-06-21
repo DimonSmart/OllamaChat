@@ -35,11 +35,14 @@
                         <MudTextField T="string" Label="Basic Auth Password" @bind-Value="_settings.OllamaBasicAuthPassword"
                                       Variant="Variant.Outlined" InputType="InputType.Password"
                                       HelperText="Password for basic authentication (leave empty if not required)"
-                                      Class="mt-3" />
-
-                        <MudNumericField T="int" Label="HTTP Timeout (seconds)" @bind-Value="_settings.HttpTimeoutSeconds"
+                                      Class="mt-3" />                        <MudNumericField T="int" Label="HTTP Timeout (seconds)" @bind-Value="_settings.HttpTimeoutSeconds"
                                          Variant="Variant.Outlined" Min="1" Max="3600"
                                          HelperText="Timeout for HTTP requests to Ollama server (1-3600 seconds)"
+                                         Class="mt-3" />
+
+                        <MudNumericField T="int" Label="MCP Sampling Timeout (seconds)" @bind-Value="_settings.McpSamplingTimeoutSeconds"
+                                         Variant="Variant.Outlined" Min="60" Max="7200"
+                                         HelperText="Timeout for MCP sampling requests - typically longer than regular API calls (60-7200 seconds)"
                                          Class="mt-3" />
 
                         <MudSwitch T="bool" @bind-Value="_settings.IgnoreSslErrors" Color="Color.Primary" Class="mt-3">

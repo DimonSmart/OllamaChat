@@ -46,8 +46,21 @@ public class KernelService(
         return builder.Build();
     }
 
+    public async Task<Kernel> CreateMcpSamplingKernelAsync(string modelId)
+    {
+        var settings = await userSettingsService.GetSettingsAsync();
+        var baseUrl = !string.IsNullOrWhiteSpace(settings.OllamaServerUrl) ? settings.OllamaServerUrl : OllamaDefaults.ServerUrl;
 
-    private static HttpClient CreateConfiguredHttpClient(UserSettings settings)
+        IKernelBuilder builder = Kernel.CreateBuilder();
+        var httpClient = CreateConfiguredHttpClient(settings, useMcpSamplingTimeout: true);
+        httpClient.BaseAddress = new Uri(baseUrl);
+        builder.AddOllamaChatCompletion(modelId: modelId, httpClient: httpClient);
+        builder.Services.AddSingleton(httpClient);
+        builder.Services.AddLogging(c => c.AddConsole().SetMinimumLevel(LogLevel.Information));
+
+        return builder.Build();
+    }
+    private static HttpClient CreateConfiguredHttpClient(UserSettings settings, bool useMcpSamplingTimeout = false)
     {
         var handler = new HttpClientHandler();
 
@@ -56,9 +69,10 @@ public class KernelService(
             handler.ServerCertificateCustomValidationCallback = (sender, cert, chain, sslPolicyErrors) => true;
         }
 
+        var timeoutSeconds = useMcpSamplingTimeout ? settings.McpSamplingTimeoutSeconds : settings.HttpTimeoutSeconds;
         var httpClient = new HttpClient(handler)
         {
-            Timeout = TimeSpan.FromSeconds(settings.HttpTimeoutSeconds)
+            Timeout = TimeSpan.FromSeconds(timeoutSeconds)
         };
 
         if (!string.IsNullOrWhiteSpace(settings.OllamaBasicAuthPassword))

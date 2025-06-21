@@ -45,7 +45,7 @@ public class McpSamplingService(
             progress?.Report(new ProgressNotificationValue { Progress = 0, Total = 100 });
 
             var model = await DetermineModelToUseAsync(request.ModelPreferences, mcpServerConfig);
-            var kernel = await kernelService.CreateBasicKernelAsync(model);
+            var kernel = await kernelService.CreateMcpSamplingKernelAsync(model);
 
             progress?.Report(new ProgressNotificationValue { Progress = 25, Total = 100 });
 
@@ -81,7 +81,20 @@ public class McpSamplingService(
         }
         catch (Exception ex)
         {
-            logger.LogError(ex, "Failed to process sampling request: {Message}", ex.Message);
+            if (ex is TaskCanceledException or TimeoutException)
+            {
+                var timeoutSeconds = await GetMcpSamplingTimeoutAsync();
+                logger.LogError(ex, "MCP sampling request timed out after {TimeoutSeconds} seconds. " +
+                    "Consider increasing the MCP sampling timeout in settings if this happens frequently. " +
+                    "Request had {MessageCount} messages for server: {ServerName}",
+                    timeoutSeconds,
+                    request.Messages?.Count ?? 0,
+                    mcpServerConfig?.Name ?? "Unknown");
+            }
+            else
+            {
+                logger.LogError(ex, "Failed to process sampling request: {Message}", ex.Message);
+            }
             throw;
         }
     }
@@ -169,5 +182,11 @@ public class McpSamplingService(
         errorMessage += "Please configure a valid model in MCP server settings or user settings.";
 
         throw new InvalidOperationException(errorMessage);
+    }
+
+    private async Task<int> GetMcpSamplingTimeoutAsync()
+    {
+        var userSettings = await userSettingsService.GetSettingsAsync();
+        return userSettings.McpSamplingTimeoutSeconds;
     }
 }
