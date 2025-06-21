@@ -7,7 +7,6 @@ using Microsoft.SemanticKernel;
 namespace ChatClient.Api.Services;
 
 public class KernelService(
-    IConfiguration configuration,
     IUserSettingsService userSettingsService,
     ILogger<KernelService> logger)
 {
