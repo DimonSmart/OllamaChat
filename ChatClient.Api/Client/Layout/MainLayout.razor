@@ -1,4 +1,5 @@
 ﻿@inherits LayoutComponentBase
+@inject NavigationManager NavigationManager
 
 <MudThemeProvider Theme="@_theme" IsDarkMode="_isDarkMode" />
 <MudDialogProvider />
@@ -18,13 +19,16 @@
     <MudMainContent Class="pt-14 pa-3">
         @Body
     </MudMainContent>
-    <footer class="footer mt-4">
-        <div class="container">
-            <div class="text-center p-3 text-muted">
-                <small>Ollama Chat - Local LLM Chat via Ollama API</small>
+    @if (!IsOnChatPage())
+    {
+        <footer class="footer mt-4">
+            <div class="container">
+                <div class="text-center p-3 text-muted">
+                    <small>Ollama Chat - Local LLM Chat via Ollama API</small>
+                </div>
             </div>
-        </div>
-    </footer>
+        </footer>
+    }
 </MudLayout>
 
 <div id="blazor-error-ui" data-nosnippet>
@@ -58,6 +62,12 @@
     private void DarkModeToggle()
     {
         _isDarkMode = !_isDarkMode;
+    }
+
+    private bool IsOnChatPage()
+    {
+        var currentPath = NavigationManager.ToAbsoluteUri(NavigationManager.Uri).LocalPath;
+        return currentPath == "/" || currentPath == "/chat";
     }
 
     private readonly PaletteLight _lightPalette = new()

@@ -28,7 +28,7 @@
 <PageTitle>Chat with AI Assistant</PageTitle>
 
 <OllamaCheck>
-    <div class="chat-container d-flex flex-column" style="height: calc(100vh - 64px);">
+    <div class="chat-container d-flex flex-column">
     @if (isLoadingInitialData)
     {
         <MudOverlay Visible="true" DarkBackground="true" Absolute="true">
@@ -83,7 +83,7 @@
     }
     else
     {
-        <div class="chat-messages" @ref="messagesElement">
+        <div class="chat-messages-container" @ref="messagesElement">
             @foreach (var message in ChatViewModelService.Messages)
             {
                 @if (message.Role != Microsoft.Extensions.AI.ChatRole.System)
@@ -216,9 +216,11 @@
                     </MudChat>
                 }
             }
+          </div>
         
-        </div>
-        <MudPaper Elevation="3" Class="pa-2 mt-2">
+        <!-- Fixed input panel at bottom -->
+        <div class="chat-input-panel">
+            <MudPaper Elevation="3" Class="pa-2">
             <div class="d-flex flex-row gap-2 align-center">
                 <MudSelect T="OllamaModel"
                            Value="selectedModel"
@@ -302,9 +304,10 @@
                             New Chat
                         </MudButton>
                     }
-                </MudStack>
-            </div>
+                </MudStack>            
+                </div>
         </MudPaper>
+        </div>
     }
 </div>
 </OllamaCheck>
