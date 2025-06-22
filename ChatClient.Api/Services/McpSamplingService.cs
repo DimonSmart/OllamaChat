@@ -6,6 +6,7 @@ using Microsoft.SemanticKernel.ChatCompletion;
 
 using ModelContextProtocol;
 using ModelContextProtocol.Protocol;
+using OllamaSharp.Models.Exceptions;
 
 namespace ChatClient.Api.Services;
 
@@ -32,6 +33,7 @@ public class McpSamplingService(
         CancellationToken cancellationToken,
         McpServerConfig? mcpServerConfig = null)
     {
+        string? model = null;
         try
         {
             logger.LogInformation("Processing sampling request with {MessageCount} messages",
@@ -44,7 +46,7 @@ public class McpSamplingService(
 
             progress?.Report(new ProgressNotificationValue { Progress = 0, Total = 100 });
 
-            var model = await DetermineModelToUseAsync(request.ModelPreferences, mcpServerConfig);
+            model = await DetermineModelToUseAsync(request.ModelPreferences, mcpServerConfig);
             var kernel = await kernelService.CreateMcpSamplingKernelAsync(model);
 
             progress?.Report(new ProgressNotificationValue { Progress = 25, Total = 100 });
@@ -78,6 +80,15 @@ public class McpSamplingService(
                 StopReason = "end_turn",
                 Role = Role.Assistant
             };
+        }
+        catch (ModelDoesNotSupportToolsException ex)
+        {
+            logger.LogWarning(ex, "Model {ModelName} does not support tools/function calling for MCP sampling request from server: {ServerName}",
+                model, mcpServerConfig?.Name ?? "Unknown");
+            throw new InvalidOperationException(
+                $"The model '{model}' does not support function calling/tools. " +
+                "MCP sampling requires a model that supports tool use. " +
+                "Please configure a different model in the MCP server settings or user settings.", ex);
         }
         catch (Exception ex)
         {

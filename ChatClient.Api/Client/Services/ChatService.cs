@@ -175,7 +175,7 @@ public class ChatService(
             await ReplaceStreamingMessageWithFinal(streamingMessage, finalMessage);
             _currentStreamingMessage = null;
         }
-        catch (ModelDoesNotSupportToolsException ex) when (!chatConfiguration.UseAgentMode)
+        catch (ModelDoesNotSupportToolsException ex)
         {
             logger.LogWarning(ex, "Model {ModelName} does not support function calling", chatConfiguration.ModelName);
             RemoveStreamingMessage(streamingMessage);
