@@ -73,6 +73,20 @@
                         </MudCardContent>
                     </MudCard>
 
+                    <MudCard Class="mb-4" Elevation="1">
+                        <MudCardHeader Class="pb-2">
+                            <MudText Class="section-header">Chat Participants</MudText>
+                        </MudCardHeader>
+                        <MudCardContent Class="pt-0">
+                            <MudTextField T="string" Label="User Name" @bind-Value="_settings.UserName"
+                                          Variant="Variant.Outlined" Class="mb-3"
+                                          HelperText="Display name for user messages (leave empty to hide avatar)" />
+                            <MudTextField T="string" Label="Agent Name" @bind-Value="_settings.AgentName"
+                                          Variant="Variant.Outlined"
+                                          HelperText="Display name for AI assistant messages (leave empty to hide avatar)" />
+                        </MudCardContent>
+                    </MudCard>
+
                     <MudButtonGroup Class="mt-4">
                         <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="SaveSettings" Size="Size.Medium">
                             Save Application Settings

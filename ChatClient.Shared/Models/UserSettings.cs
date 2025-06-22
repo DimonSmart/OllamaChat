@@ -12,6 +12,12 @@ public class UserSettings
     [JsonPropertyName("defaultChatMessage")]
     public string DefaultChatMessage { get; set; } = string.Empty;
 
+    [JsonPropertyName("userName")]
+    public string UserName { get; set; } = string.Empty;
+
+    [JsonPropertyName("agentName")]
+    public string AgentName { get; set; } = string.Empty;
+
     /// <summary>
     /// Ollama server URL (including protocol and port)
     /// </summary>

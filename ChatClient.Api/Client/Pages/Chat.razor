@@ -85,11 +85,24 @@
     {
         <div class="chat-messages-container" @ref="messagesElement">
             @foreach (var message in ChatViewModelService.Messages)
-            {
+            {                
                 @if (message.Role != Microsoft.Extensions.AI.ChatRole.System)
                 {
                     <MudChat ChatPosition="@(message.Role == Microsoft.Extensions.AI.ChatRole.Assistant ? ChatBubblePosition.Start : ChatBubblePosition.End)" @key="message.Id">
-                        <MudChatHeader Time="@message.MsgDateTime.ToString("g")" />
+                         <MudChatHeader Time="@message.MsgDateTime.ToString("g")" />
+
+                        @{
+                            var displayName = message.Role == Microsoft.Extensions.AI.ChatRole.Assistant ? userSettings.AgentName : userSettings.UserName;
+                            var avatarText = GetAvatarText(displayName);
+                        }
+
+                            @if (!string.IsNullOrEmpty(avatarText))
+                        {
+                            <MudAvatar Color="@(message.Role == Microsoft.Extensions.AI.ChatRole.Assistant ? Color.Primary : Color.Secondary)">
+                                @avatarText
+                            </MudAvatar>
+                        }
+                        
                         
                         <MudChatBubble>
                             @if (message.Files.Any())
@@ -312,11 +325,12 @@
 </div>
 </OllamaCheck>
 
-@code {    private bool isLLMAnswering { get; set; } = false;
+@code {
+    private bool isLLMAnswering { get; set; } = false;
     private bool isLoadingInitialData = true;
     private bool chatStarted = false;
     private ElementReference messagesElement;
-    
+
     private List<SystemPrompt> systemPrompts = new();
     private SystemPrompt? selectedSystemPrompt;
     private List<FunctionInfo> availableFunctions = new();
@@ -328,18 +342,20 @@
     private OllamaModel? selectedModel;
 
     private bool showPromptContent { get; set; } = false;
-    
+
     // Track expanded thoughts for individual segments
     private HashSet<string> ExpandedThoughts { get; set; } = new();
-    
+
+    private UserSettings userSettings = new();
+
     private readonly EventCallback<ChatMessageViewModel> _messageAddedCallback;
     private readonly EventCallback<ChatMessageViewModel> _messageUpdatedCallback;
-    
+
     public Chat()
     {
         _messageAddedCallback = EventCallback.Factory.Create<ChatMessageViewModel>(this, OnMessageAdded);        _messageUpdatedCallback = EventCallback.Factory.Create<ChatMessageViewModel>(this, OnMessageUpdated);
     }
-        
+
     protected override async Task OnInitializedAsync()
     {
         isLoadingInitialData = true;
@@ -348,6 +364,7 @@
         await LoadSystemPrompts();
         await LoadAvailableFunctions();
         await LoadAvailableModels();
+        await LoadUserSettings();
 
         ChatService.LoadingStateChanged += OnLoadingStateChanged;
         ChatViewModelService.MessageAdded += async (msg) => await _messageAddedCallback.InvokeAsync(msg);
@@ -379,7 +396,7 @@
         StateHasChanged();
         return Task.CompletedTask;
     }
-    
+
     private async Task LoadSystemPrompts()
     {
         systemPrompts = await PromptService.GetAllPromptsAsync();
@@ -387,7 +404,12 @@
             systemPrompts.Add(PromptService.GetDefaultSystemPrompt());
         selectedSystemPrompt = systemPrompts.FirstOrDefault();
     }
-    
+
+    private async Task LoadUserSettings()
+    {
+            userSettings = await UserSettingsService.GetSettingsAsync();
+    }
+
     private async Task LoadAvailableFunctions()
     {
         try
@@ -400,13 +422,13 @@
             availableFunctions = new List<FunctionInfo>();
         }
     }
-    
+
     private async Task LoadAvailableModels()
     {
         try
         {
             availableModels = (await OllamaService.GetModelsAsync()).ToList();
-              // Get user settings to find default model
+            // Get user settings to find default model
             var settings = await UserSettingsService.GetSettingsAsync();
             if (!string.IsNullOrWhiteSpace(settings.DefaultModelName) && 
                 availableModels.Any(m => m.Name == settings.DefaultModelName))
@@ -434,14 +456,14 @@
         chatStarted = true;
         StateHasChanged();
     }
-      private void RestartChat()
+    private void RestartChat()
     {
         chatStarted = false;
         ExpandedThoughts.Clear();
         ChatService.ClearChat();
         StateHasChanged();
     }
-      private async Task SendChatMessageAsync((string text, IReadOnlyList<ChatMessageFile> files) messageData)
+    private async Task SendChatMessageAsync((string text, IReadOnlyList<ChatMessageFile> files) messageData)
     {
         if (string.IsNullOrWhiteSpace(messageData.text) || isLLMAnswering)
             return;
@@ -450,7 +472,7 @@
             selectedModel?.Name ?? string.Empty, 
             selectedFunctions,
             useAgentMode);
-        
+
         await ChatService.AddUserMessageAndAnswerAsync(messageData.text.Trim(), chatConfiguration, messageData.files);
         await ScrollToBottom();
     }
@@ -466,11 +488,11 @@
             Console.WriteLine($"Error scrolling to bottom: {ex.Message}");
         }
     }
-    
+
     private void Cancel()
     {        ChatService.CancelAsync();
     }
-    
+
     private void ToggleThinkExpansion(string thinkId)
     {
         if (ExpandedThoughts.Contains(thinkId))
@@ -483,13 +505,13 @@
         }
         StateHasChanged();
     }
-    
+
     private void OnModelChanged(OllamaModel model)
     {
         selectedModel = model;
         Console.WriteLine($"Selected model changed to: {model.Name}");
     }    
-    
+
     public ValueTask DisposeAsync()
     {
         ChatService.LoadingStateChanged -= OnLoadingStateChanged;
@@ -497,7 +519,7 @@
         ChatViewModelService.MessageUpdated -= (msg) => InvokeAsync(() => OnMessageUpdated(msg));
         return ValueTask.CompletedTask;
     }
-    
+
     private string GetFileIcon(string contentType)
     {
         return contentType.ToLower() switch
@@ -509,7 +531,7 @@
             _ => Icons.Material.Filled.AttachFile
         };
     }    
-    
+
     private string FormatFileSize(long bytes)
     {
         string[] suffixes = ["B", "KB", "MB", "GB"];
@@ -522,12 +544,12 @@
         }
         return $"{number:n1} {suffixes[counter]}";
     }
-    
+
     private bool IsImageFile(string contentType)
     {
         return contentType.ToLower().StartsWith("image/");
     }
-    
+
     private string GetImageDataUrl(ChatMessageFile file)
     {
         return $"data:{file.ContentType};base64,{Convert.ToBase64String(file.Data)}";
@@ -537,7 +559,7 @@
         {
             ["ImageFile"] = file
         };
-        
+
         var options = new DialogOptions
         {
             MaxWidth = MaxWidth.Large,
@@ -545,7 +567,15 @@
             CloseButton = true,
             BackdropClick = true
         };
-        
+
         await DialogService.ShowAsync<ImageViewerDialog>("Image Viewer", parameters, options);
+    }
+
+    private string GetAvatarText(string? name)
+    {
+        if (string.IsNullOrWhiteSpace(name))
+            return string.Empty;
+
+        return name;
     }
 }
