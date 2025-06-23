@@ -4,7 +4,7 @@ namespace ChatClient.Api.Services;
 
 public static class OllamaStatusHelper
 {
-    public static OllamaServerStatus CreateStatusFromException(Exception ex, string serverUrl)
+    public static OllamaServerStatus CreateStatusFromException(Exception ex)
     {
         var userFriendlyMessage = ex switch
         {

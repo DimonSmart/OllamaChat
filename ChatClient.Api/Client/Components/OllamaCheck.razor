@@ -82,7 +82,7 @@ else
         catch (Exception ex)
         {
             ollamaAvailable = false;
-            var status = OllamaStatusHelper.CreateStatusFromException(ex, "");
+            var status = OllamaStatusHelper.CreateStatusFromException(ex);
             errorMessage = status.ErrorMessage;
             Logger.LogWarning(ex, "Ollama not available for page access: {ErrorMessage}", errorMessage);
         }

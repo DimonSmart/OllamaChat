@@ -20,7 +20,7 @@ public class StartupOllamaChecker(OllamaService ollamaService, ILogger<StartupOl
         catch (Exception ex)
         {
             logger.LogWarning(ex, "Ollama is not available: {Message}", ex.Message);
-            return OllamaStatusHelper.CreateStatusFromException(ex, "");
+            return OllamaStatusHelper.CreateStatusFromException(ex);
         }
     }
 }

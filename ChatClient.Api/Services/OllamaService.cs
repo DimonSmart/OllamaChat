@@ -16,8 +16,7 @@ namespace ChatClient.Api.Services;
 /// </summary>
 public sealed class OllamaService(
     IConfiguration configuration,
-    IUserSettingsService userSettingsService,
-    ILogger<OllamaService> logger) : IDisposable
+    IUserSettingsService userSettingsService) : IDisposable
 {
     private OllamaApiClient? _ollamaClient;
     private HttpClient? _httpClient;
@@ -101,9 +100,6 @@ public sealed class OllamaService(
     /// </summary>
     private static bool DeterminesFunctionCallingSupport(OllamaSharp.Models.Model model)
     {
-        // Check if model name contains known function calling capable models
-        var modelName = model.Name.ToLowerInvariant();
-
         // Additional check: if model has tool-related capabilities or specific families
         if (model.Details?.Families != null)
         {

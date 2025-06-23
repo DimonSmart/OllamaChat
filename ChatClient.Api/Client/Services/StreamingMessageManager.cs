@@ -24,20 +24,7 @@ public class StreamingMessageManager
         return new StreamingAppChatMessage(string.Empty, DateTime.Now, ChatRole.Assistant);
     }
 
-    /// <summary>
-    /// Updates streaming message content
-    /// </summary>
-    public async Task UpdateStreamingContentAsync(StreamingAppChatMessage message, string content)
-    {
-        if (!string.IsNullOrEmpty(content))
-        {
-            message.Append(content);
-            if (_messageUpdatedCallback != null)
-            {
-                await _messageUpdatedCallback(message);
-            }
-        }
-    }
+
 
     /// <summary>
     // Completes streaming and returns final message
@@ -72,9 +59,6 @@ public class StreamingMessageManager
     /// </summary>
     public string BuildStatistics(TimeSpan processingTime, ChatConfiguration chatConfiguration, int tokenCount)
     {
-        var functionsText = chatConfiguration.Functions.Any()
-            ? string.Join(", ", chatConfiguration.Functions)
-            : "None";
         var tokensPerSecond = processingTime.TotalSeconds > 0
             ? (tokenCount / processingTime.TotalSeconds).ToString("F1")
             : "N/A";

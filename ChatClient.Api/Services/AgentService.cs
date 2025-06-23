@@ -9,7 +9,7 @@ using Microsoft.SemanticKernel.ChatCompletion;
 
 namespace ChatClient.Api.Services;
 
-public class AgentService(KernelService kernelService, ILogger<AgentService> logger)
+public class AgentService(KernelService kernelService)
 {
     public async Task<ChatCompletionAgent> CreateChatAgentAsync(ChatConfiguration chatConfiguration, string systemPrompt)
     {

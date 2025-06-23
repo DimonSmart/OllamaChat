@@ -6,6 +6,7 @@ using Microsoft.SemanticKernel.ChatCompletion;
 
 using ModelContextProtocol;
 using ModelContextProtocol.Protocol;
+
 using OllamaSharp.Models.Exceptions;
 
 namespace ChatClient.Api.Services;
@@ -19,14 +20,15 @@ public class McpSamplingService(
     IUserSettingsService userSettingsService,
     OllamaService ollamaService,
     ILogger<McpSamplingService> logger)
-{    /// <summary>
-     /// Handles a sampling request from an MCP server.
-     /// </summary>
-     /// <param name="request">The sampling request containing messages and model parameters</param>
-     /// <param name="progress">Progress reporting for long-running operations</param>
-     /// <param name="cancellationToken">Cancellation token</param>
-     /// <param name="mcpServerConfig">Configuration of the MCP server making the request (optional)</param>
-     /// <returns>The LLM response</returns>
+{
+    /// <summary>
+    /// Handles a sampling request from an MCP server.
+    /// </summary>
+    /// <param name="request">The sampling request containing messages and model parameters</param>
+    /// <param name="progress">Progress reporting for long-running operations</param>
+    /// <param name="cancellationToken">Cancellation token</param>
+    /// <param name="mcpServerConfig">Configuration of the MCP server making the request (optional)</param>
+    /// <returns>The LLM response</returns>
     public async ValueTask<CreateMessageResult> HandleSamplingRequestAsync(
         CreateMessageRequestParams request,
         IProgress<ProgressNotificationValue> progress,
