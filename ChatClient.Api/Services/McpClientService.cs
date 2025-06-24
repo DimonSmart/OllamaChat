@@ -18,8 +18,7 @@ public class McpClientService(
 
     public async Task<IReadOnlyCollection<IMcpClient>> GetMcpClientsAsync()
     {
-        if (_mcpClients != null)
-            return _mcpClients;
+        if (_mcpClients != null) return _mcpClients;
         _mcpClients = [];
 
         var mcpServerConfigs = await mcpServerConfigService.GetAllServersAsync();

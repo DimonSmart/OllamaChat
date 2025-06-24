@@ -1,6 +1,8 @@
 using ChatClient.Shared.Models;
 using ChatClient.Shared.Services;
 
+using DimonSmart.AiUtils;
+
 using Microsoft.SemanticKernel;
 using Microsoft.SemanticKernel.ChatCompletion;
 
@@ -64,8 +66,7 @@ public class McpSamplingService(
                 cancellationToken: cancellationToken);
 
             progress?.Report(new ProgressNotificationValue { Progress = 90, Total = 100 });
-
-            var responseText = response.Content ?? string.Empty;
+            var responseText = ThinkTagParser.ExtractThinkAnswer(response.Content ?? string.Empty).Answer;
 
             logger.LogInformation("Sampling request completed successfully, response length: {Length}", responseText.Length);
 
