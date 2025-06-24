@@ -19,7 +19,7 @@
         <PackageReference Include="Microsoft.SemanticKernel.Agents.Core" Version="1.57.0" />
         <PackageReference Include="ModelContextProtocol" Version="0.2.0-preview.2" />
         <PackageReference Include="ModelContextProtocol-SemanticKernel" Version="0.0.1-preview-12" />
-        <PackageReference Include="MudBlazor" Version="8.6.0" />		
+        <PackageReference Include="MudBlazor" Version="8.8.0" />		
         <PackageReference Include="Markdig" Version="0.41.2" />
         <PackageReference Include="DimonSmart.AiUtils" Version="1.25606.1420" />
     </ItemGroup>
