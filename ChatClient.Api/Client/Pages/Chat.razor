@@ -389,6 +389,7 @@
     private async Task LoadUserSettings()
     {
             userSettings = await UserSettingsService.GetSettingsAsync();
+            useAgentMode = userSettings.DefaultUseAgentMode;
     }
 
     private async Task LoadAvailableFunctions()

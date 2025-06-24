@@ -44,4 +44,10 @@ public class UserSettings
     /// </summary>
     [JsonPropertyName("mcpSamplingTimeoutSeconds")]
     public int McpSamplingTimeoutSeconds { get; set; } = 30 * 60;
+
+    /// <summary>
+    /// Default mode for new chats: true for Agent mode, false for Ask mode
+    /// </summary>
+    [JsonPropertyName("defaultUseAgentMode")]
+    public bool DefaultUseAgentMode { get; set; } = false;
 }
