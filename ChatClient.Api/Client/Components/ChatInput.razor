@@ -2,10 +2,11 @@
 @using Microsoft.AspNetCore.Components.Forms
 @using ChatClient.Shared.Services
 @using ChatClient.Shared.Models
+@using MudBlazor
 @inject IUserSettingsService UserSettingsService
 
-<MudPaper Class="pa-4" Elevation="2">
-    <div class="d-flex gap-2 align-center">
+<MudPaper Class="pa-2" Elevation="2">
+    <div class="d-flex gap-1 align-center">
         <MudFileUpload T="IReadOnlyList<IBrowserFile>"
                        FilesChanged="OnFilesChanged"
                        Multiple="true"
@@ -15,7 +16,7 @@
                 <MudIconButton Icon="@Icons.Material.Filled.AttachFile"
                                Color="Color.Primary"
                                Size="Size.Small"
-                               Title="Attach files (max 10)" />
+                               Tooltip="Attach files (max 10)" />
             </ActivatorContent>
         </MudFileUpload>
 
@@ -28,15 +29,17 @@
                       Class="flex-grow-1"
                       Margin="Margin.Dense"
                       Adornment="Adornment.End"
-                      AdornmentIcon="@Icons.Material.Filled.Send"
-                      AdornmentColor="Color.Primary"
-                      OnAdornmentClick="SendMessage"
-                      OnKeyDown="HandleKeyDown" />
+                      AdornmentIcon="@(ShowStopButton ? Icons.Material.Filled.Stop : Icons.Material.Filled.Send)"
+                      AdornmentColor="@(ShowStopButton ? Color.Error : Color.Primary)"
+                      OnAdornmentClick="HandleAdornmentClick"
+                      OnKeyDown="HandleKeyDown"
+                      ShrinkLabel="true"
+                      title="@(ShowStopButton ? "Stop generation" : "Send message (Ctrl+Enter)")" />
     </div>
 
     @if (attachedFiles.Count > 0)
     {
-        <div class="mt-2">
+        <div class="mt-1">
             <MudText Typo="Typo.caption" Class="mb-1">Attached files (@attachedFiles.Count/10):</MudText>
             <div class="d-flex flex-wrap gap-1">
                 @foreach (var file in attachedFiles)
@@ -57,6 +60,9 @@
 
 @code {
     [Parameter] public EventCallback<(string text, IReadOnlyList<ChatMessageFile> files)> OnSend { get; set; }
+    [Parameter] public bool ShowStopButton { get; set; } = false;
+    [Parameter] public EventCallback OnStopClick { get; set; }
+    
     private string CurrentText { get; set; } = string.Empty;
     private List<ChatMessageFile> attachedFiles = [];
 
@@ -117,7 +123,8 @@
             {
                 // TODO: Show error message for file too large
                 continue;
-            }            try
+            }
+            try
             {
                 using var stream = file.OpenReadStream(maxFileSize);
                 var buffer = new byte[file.Size];
@@ -131,7 +138,7 @@
             {
                 // TODO: Handle file read error
             }        
-            }
+        }
 
         StateHasChanged();
     }
@@ -165,5 +172,17 @@
             counter++;
         }
         return $"{number:n1} {suffixes[counter]}";
+    }
+
+    private async Task HandleAdornmentClick()
+    {
+        if (ShowStopButton)
+        {
+            await OnStopClick.InvokeAsync();
+        }
+        else
+        {
+            await SendMessage();
+        }
     }
 }

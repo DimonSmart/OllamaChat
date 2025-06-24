@@ -232,20 +232,17 @@
         
         <!-- Fixed input panel at bottom -->
         <div class="chat-input-panel">
-            <MudPaper Elevation="3" Class="pa-2">
-            <div class="d-flex flex-row gap-2 align-center">
+            <div class="d-flex flex-row gap-1 align-center">
                 <MudSelect T="OllamaModel"
                            Value="selectedModel"
                            ValueChanged="OnModelChanged"
                            Label="Model"
                            Variant="Variant.Filled"
                            Dense="true"
-                           Margin="Margin.Dense"
-                           Style="min-width: 150px; flex-grow: 0;">
+                           Margin="Margin.Dense">
                     @foreach (var model in availableModels)
                     {
                         <MudSelectItem Value="@model">
-                            <div class="d-flex align-center">
                                 <span>@model.Name</span>
                                 @if (model.SupportsImages)
                                 {
@@ -264,7 +261,6 @@
                                              title="Function calling support detected (may not be accurate)"
                                              Style="color: #2196f3;" />
                                 }
-                            </div>
                         </MudSelectItem>
                     }
                 </MudSelect>
@@ -275,50 +271,36 @@
                     Functions
                 </MudButton>
                 <MudCheckBox @bind-Value="useAgentMode" 
-                             Label="Agent Mode" 
+                             Label="Agent" 
                              Color="Color.Primary"
                              Size="Size.Small"
+                             Dense="true"
                              Class="ml-2" />
             </div>
-            <MudCollapse Expanded="@functionsExpanded">
-                <MudCard Outlined="true" Class="my-2" Elevation="0">
-                    <MudCardContent Class="pa-2">
-                       
-                        <FunctionSelector AvailableFunctions="availableFunctions"
-                                          SelectedFunctions="selectedFunctions"
-                                          SelectedFunctionsChanged="OnSelectedFunctionsChanged"
-                                          Expanded="true" />
-                    </MudCardContent>
-                </MudCard>
-            </MudCollapse>
+          
+            <FunctionSelector AvailableFunctions="availableFunctions"
+                              SelectedFunctions="selectedFunctions"
+                              SelectedFunctionsChanged="OnSelectedFunctionsChanged"
+                              Expanded="@functionsExpanded" />
 
             <div class="d-flex flex-column">
-                <ChatInput OnSend="SendChatMessageAsync" />
+                <ChatInput OnSend="SendChatMessageAsync" 
+                          ShowStopButton="isLLMAnswering" 
+                          OnStopClick="Cancel" />
 
-                <MudStack AlignItems="AlignItems.Center" Row="true" Spacing="2" Class="mt-2">
-                    @if (isLLMAnswering)
-                    {
-                        <MudButton OnClick="Cancel"
-                                   Color="Color.Error"
-                                   Variant="Variant.Filled"
-                                   StartIcon="@Icons.Material.Filled.Stop"
-                                   Size="Size.Medium">
-                            Stop
-                        </MudButton>
-                    }
-                    else
-                    {
+                @if (!isLLMAnswering)
+                {
+                    <MudStack AlignItems="AlignItems.Center" Row="true" Spacing="2" Class="mt-1">
                         <MudButton OnClick="RestartChat"
                                    Color="Color.Secondary"
                                    Variant="Variant.Outlined"
                                    StartIcon="@Icons.Material.Filled.AddCircle"
-                                   Size="Size.Medium">
+                                   Size="Size.Small">
                             New Chat
                         </MudButton>
-                    }
-                </MudStack>            
-                </div>
-        </MudPaper>
+                    </MudStack>
+                }
+            </div>
         </div>
     }
 </div>
