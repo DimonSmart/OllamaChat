@@ -11,6 +11,7 @@ namespace ChatClient.Api.Services;
 public class McpClientService(
     IMcpServerConfigService mcpServerConfigService,
     McpSamplingService mcpSamplingService,
+    IUserSettingsService userSettingsService,
     ILogger<McpClientService> logger) : IAsyncDisposable
 {
     private List<IMcpClient>? _mcpClients = null;
@@ -55,9 +56,7 @@ public class McpClientService(
         try
         {
             var httpTransport = new SseClientTransport(new SseClientTransportOptions { Endpoint = new Uri(serverConfig.Sse!) });
-
-            var clientOptions = this.CreateClientOptions(serverConfig);
-
+            var clientOptions = await CreateClientOptionsAsync(serverConfig);
             var client = await McpClientFactory.CreateAsync(httpTransport, clientOptions);
             if (_mcpClients != null && client != null)
             {
@@ -69,16 +68,18 @@ public class McpClientService(
             logger.LogError(ex, "Failed to add network client for server: {ServerName}", serverConfig.Name);
         }
     }
+
     private async Task<IMcpClient> CreateLocalMcpClientAsync(McpServerConfig config)
     {
         if (string.IsNullOrEmpty(config.Command))
         {
             throw new InvalidOperationException("MCP server command cannot be null or empty for local connection");
         }
+
         // Use the application's executable directory as working directory instead of Environment.CurrentDirectory
         // This prevents MCP processes from accidentally changing the main application's working directory
         var applicationDirectory = AppContext.BaseDirectory;
-        var clientOptions = CreateClientOptions(config);
+        var clientOptions = await CreateClientOptionsAsync(config);
 
         return await McpClientFactory.CreateAsync(
             clientTransport: new StdioClientTransport(new StdioClientTransportOptions
@@ -135,8 +136,9 @@ public class McpClientService(
     /// <summary>
     /// Creates client options that declare sampling capabilities and register the sampling handler
     /// </summary>
-    private McpClientOptions CreateClientOptions(McpServerConfig serverConfig)
+    private async Task<McpClientOptions> CreateClientOptionsAsync(McpServerConfig serverConfig)
     {
+        var settings = await userSettingsService.GetSettingsAsync();
         return new McpClientOptions
         {
             ClientInfo = new Implementation
@@ -160,7 +162,7 @@ public class McpClientService(
                             logger.LogInformation("Handling sampling request with {MessageCount} messages from server: {ServerName}",
                                 request.Messages?.Count ?? 0, serverConfig?.Name ?? "Unknown");
 
-                            var result = await mcpSamplingService.HandleSamplingRequestAsync(request, progress, cancellationToken, serverConfig);
+                            var result = await mcpSamplingService.HandleSamplingRequestAsync(request, progress, cancellationToken, userSettingsService, serverConfig);
 
                             logger.LogInformation("Sampling request completed successfully for server: {ServerName}", serverConfig?.Name ?? "Unknown");
                             return result;

@@ -33,13 +33,13 @@ public class McpSamplingService(
         CreateMessageRequestParams request,
         IProgress<ProgressNotificationValue> progress,
         CancellationToken cancellationToken,
+        IUserSettingsService userSettingsService,
         McpServerConfig? mcpServerConfig = null)
     {
         string? model = null;
         try
         {
-            logger.LogInformation("Processing sampling request with {MessageCount} messages",
-                request.Messages?.Count ?? 0);
+            logger.LogInformation("Processing sampling request with {MessageCount} messages", request.Messages?.Count ?? 0);
 
             if (request.Messages == null || request.Messages.Count == 0)
             {
@@ -49,7 +49,8 @@ public class McpSamplingService(
             progress?.Report(new ProgressNotificationValue { Progress = 0, Total = 100 });
 
             model = await DetermineModelToUseAsync(request.ModelPreferences, mcpServerConfig);
-            var kernel = await kernelService.CreateMcpSamplingKernelAsync(model);
+            var settings = await userSettingsService.GetSettingsAsync();
+            var kernel = await kernelService.CreateBasicKernelAsync(model, TimeSpan.FromSeconds(settings.McpSamplingTimeoutSeconds));
 
             progress?.Report(new ProgressNotificationValue { Progress = 25, Total = 100 });
 
@@ -66,8 +67,7 @@ public class McpSamplingService(
 
             var responseText = response.Content ?? string.Empty;
 
-            logger.LogInformation("Sampling request completed successfully, response length: {Length}",
-                responseText.Length);
+            logger.LogInformation("Sampling request completed successfully, response length: {Length}", responseText.Length);
 
             progress?.Report(new ProgressNotificationValue { Progress = 100, Total = 100 });
 
