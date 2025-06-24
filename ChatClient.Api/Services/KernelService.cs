@@ -19,7 +19,6 @@ public class KernelService(
 
     public async Task<Kernel> CreateKernelAsync(ChatConfiguration chatConfiguration)
     {
-        // var timeoutSeconds = useMcpSamplingTimeout ? settings.McpSamplingTimeoutSeconds : settings.HttpTimeoutSeconds;
         var settings = await userSettingsService.GetSettingsAsync();
         var kernel = await CreateBasicKernelAsync(chatConfiguration.ModelName, TimeSpan.FromSeconds(settings.HttpTimeoutSeconds));
 

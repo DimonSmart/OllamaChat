@@ -31,26 +31,18 @@ public class UserSettingsService : IUserSettingsService
 
     public async Task<UserSettings> GetSettingsAsync()
     {
-        try
+        if (!File.Exists(_settingsFilePath))
         {
-            if (!File.Exists(_settingsFilePath))
-            {
-                _logger.LogInformation("Settings file not found. Creating a new one with default settings");
-                var defaultSettings = new UserSettings();
-                await SaveSettingsAsync(defaultSettings);
-                return defaultSettings;
-            }
-
-            var json = await File.ReadAllTextAsync(_settingsFilePath);
-            var settings = JsonSerializer.Deserialize<UserSettings>(json, _jsonOptions);
-
-            return settings ?? new UserSettings();
+            _logger.LogInformation("Settings file not found. Creating a new one with default settings");
+            var defaultSettings = new UserSettings();
+            await SaveSettingsAsync(defaultSettings);
+            return defaultSettings;
         }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Error reading user settings");
-            return new UserSettings();
-        }
+
+        var json = await File.ReadAllTextAsync(_settingsFilePath);
+        var settings = JsonSerializer.Deserialize<UserSettings>(json, _jsonOptions);
+
+        return settings ?? new UserSettings();
     }
 
     public async Task SaveSettingsAsync(UserSettings settings)
