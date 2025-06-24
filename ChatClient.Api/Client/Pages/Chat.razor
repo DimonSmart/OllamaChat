@@ -134,14 +134,7 @@
                                     }
                                 </div>
                             }
-                            @if (string.IsNullOrWhiteSpace(message.HtmlContent))
-                            {
-                                <MudText Typo="Typo.body2" Class="mud-text-secondary">...</MudText>
-                            }
-                            else
-                            {
-                                @((MarkupString)message.HtmlContent)
-                            }
+                            @((MarkupString)message.HtmlContent)
                         </MudChatBubble>
                         @if (message.ThinkSegments.Any())
                         {
@@ -152,59 +145,27 @@
                             
                             @foreach (var thoughtItem in validThoughts)
                             {
-                                var thinkText = thoughtItem.segment;
                                 var segment = thoughtItem.htmlSegment;
-                                var lines = thinkText.Split(['\n', '\r'], StringSplitOptions.RemoveEmptyEntries);
-                                var preview = "";
-                                var hasMore = false;
-                                
-                                if (lines.Length > 2)
-                                {
-                                    preview = string.Join(" ", lines.Take(2));
-                                    hasMore = true;
-                                }
-                                else if (lines.Length > 0)
-                                {
-                                    var combinedText = string.Join(" ", lines);
-                                    if (combinedText.Length > 150)
-                                    {
-                                        preview = combinedText[..150];
-                                        hasMore = true;
-                                    }
-                                    else
-                                    {
-                                        preview = combinedText;
-                                    }
-                                }
-                                
                                 var thinkId = $"{message.Id}_{thoughtItem.index}";
                                 var isExpanded = ExpandedThoughts.Contains(thinkId);
 
-                                <MudChatBubble Color="Color.Primary">
+                                <MudChatBubble>
                                     <div class="d-flex align-center justify-space-between">
-                                        @if (hasMore)
-                                        {
-                                            <MudIconButton Icon="@(isExpanded ? Icons.Material.Filled.ExpandLess : Icons.Material.Filled.ExpandMore)"
-                                                           Size="Size.Small"
-                                                           OnClick="@(() => ToggleThinkExpansion(thinkId))" />
-                                        }
+                                        <MudIconButton Icon="@(isExpanded ? Icons.Material.Filled.ExpandLess : Icons.Material.Filled.ExpandMore)"
+                                                       Size="Size.Small"
+                                                       OnClick="@(() => ToggleThinkExpansion(thinkId))" />
                                     </div>
                                     
-                                    @if (isExpanded || !hasMore)
-                                    {
-                                        @((MarkupString)segment)
-                                    }
-                                    else
-                                    {
-                                        <div @onclick="@(() => ToggleThinkExpansion(thinkId))" style="cursor: pointer;">
-                                            @preview@(hasMore ? "..." : "")
-                                        </div>
-                                    }
+                                    <div class="@(isExpanded ? "think-content-expanded" : "think-content-collapsed")"
+                                         @onclick="@(() => ToggleThinkExpansion(thinkId))">
+                                        <MudText Typo="Typo.caption" Class="think-text">@((MarkupString)segment)</MudText>
+                                    </div>
                                 </MudChatBubble>
                             }
                         }
 
-                        @if (message.IsStreaming || message.IsCanceled || !string.IsNullOrEmpty(message.Statistics))                        {
+                        @if (message.IsStreaming || message.IsCanceled || !string.IsNullOrEmpty(message.Statistics))
+                        {
                             <MudChatFooter>
                                 @if (message.IsStreaming)
                                 {

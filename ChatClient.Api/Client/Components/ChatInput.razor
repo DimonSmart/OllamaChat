@@ -9,14 +9,14 @@
     <div class="d-flex gap-1 align-center">
         <MudFileUpload T="IReadOnlyList<IBrowserFile>"
                        FilesChanged="OnFilesChanged"
-                       Multiple="true"
+                       multiple="true"
                        MaximumFileCount="10"
                        Accept=".pdf,.txt,.doc,.docx,.jpg,.jpeg,.png,.gif,.bmp,.webp">
             <ActivatorContent>
                 <MudIconButton Icon="@Icons.Material.Filled.AttachFile"
                                Color="Color.Primary"
                                Size="Size.Small"
-                               Tooltip="Attach files (max 10)" />
+                               tooltip="Attach files (max 10)" />
             </ActivatorContent>
         </MudFileUpload>
 

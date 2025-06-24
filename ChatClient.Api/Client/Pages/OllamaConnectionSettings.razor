@@ -49,7 +49,7 @@
                             Ignore SSL certificate errors (for self-signed certificates)
                         </MudSwitch>
 
-                        <MudAlert Severity="Severity.Warning" Class="mt-3" Visible="@_settings.IgnoreSslErrors">
+                        <MudAlert Severity="Severity.Warning" Class="mt-3" visible="@_settings.IgnoreSslErrors">
                             <MudText Typo="Typo.body2">
                                 Warning: Ignoring SSL certificate errors reduces security. Only enable this for trusted servers with self-signed certificates.
                             </MudText>
@@ -82,7 +82,7 @@
                     <MudAlert Severity="@(_connectionTestResult.IsSuccess? Severity.Success: Severity.Error)"
                               Class="mt-3"
                               CloseIcon="true"
-                              OnCloseClicked="() => _connectionTestResult = null">
+                              onclose="() => _connectionTestResult = null">
                         <MudText Typo="Typo.body2">
                             @_connectionTestResult.Message
                         </MudText>
