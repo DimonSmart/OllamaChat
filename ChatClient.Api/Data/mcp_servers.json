@@ -7,16 +7,6 @@
     "sse": null,
     "SamplingModel": null,
     "CreatedAt": "2025-05-24T00:00:00Z",
-    "UpdatedAt": "2025-05-24T00:00:00Z"
-  },
-  {
-    "Id": "8a1b22e0-1c57-4d77-a777-123456789abc",
-    "Name": "LLM.txt MCP Server",
-    "Command": null,
-    "Arguments": null,
-    "sse": "https://mcp.llmtxt.dev/sse",
-    "SamplingModel": null,
-    "CreatedAt": "2025-05-24T00:00:00Z",
-    "UpdatedAt": "2025-05-24T00:00:00Z"
+    "UpdatedAt": "2025-06-01T23:42:25.155509Z"
   }
 ]

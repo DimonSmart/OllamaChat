@@ -92,7 +92,9 @@
                          <MudChatHeader Time="@message.MsgDateTime.ToString("g")" />
 
                         @{
-                            var displayName = message.Role == Microsoft.Extensions.AI.ChatRole.Assistant ? userSettings.AgentName : userSettings.UserName;
+                            var displayName = message.Role == Microsoft.Extensions.AI.ChatRole.Assistant 
+                                ? GetAgentDisplayName() 
+                                : userSettings.UserName;
                             var avatarText = GetAvatarText(displayName);
                         }
 
@@ -513,6 +515,11 @@
 
         await DialogService.ShowAsync<ImageViewerDialog>("Image Viewer", parameters, options);
     }
+
+    private string GetAgentDisplayName() =>
+    !string.IsNullOrWhiteSpace(ChatService.CurrentSystemPrompt?.AgentName)
+        ? ChatService.CurrentSystemPrompt.AgentName
+        : userSettings.AgentName;
 
     private string GetAvatarText(string? name)
     {

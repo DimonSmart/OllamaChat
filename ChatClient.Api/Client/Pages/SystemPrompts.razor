@@ -52,6 +52,22 @@
                          Class="mt-4">
                 <Columns>
                     <PropertyColumn Property="x => x.Name" Title="Name" SortBy="x => x.Name" />
+                    <TemplateColumn Title="Agent Name" isEditable="false">
+                        <CellTemplate>
+                            <div>
+                                @if (!string.IsNullOrWhiteSpace(context.Item.AgentName))
+                                {
+                                    <MudChip T="string" Color="Color.Primary" Size="Size.Small">
+                                        @context.Item.AgentName
+                                    </MudChip>
+                                }
+                                else
+                                {
+                                    <MudText Typo="Typo.caption" Class="mud-text-secondary">Default</MudText>
+                                }
+                            </div>
+                        </CellTemplate>
+                    </TemplateColumn>
                     <PropertyColumn Property="x => x.UpdatedAt" Title="Updated" Format="g" />
                     <PropertyColumn Property="x => x.CreatedAt" Title="Created" Format="g" />
                     <TemplateColumn Title="Content" isEditable="false">
@@ -120,6 +136,13 @@
                           Required="true"
                           Immediate="true"
                           Validation="@(new Func<string, string>(ValidateName))" />
+
+            <MudTextField @bind-Value="editingPrompt.AgentName"
+                          Label="Agent Name (Optional)"
+                          Class="mt-4"
+                          Immediate="true"
+                          HelperText="Custom agent name for this prompt. If empty, uses global agent name from settings."
+                          Placeholder="Enter custom agent name..." />
 
             <MudTextField @bind-Value="editingPrompt.Content"
                           Label="Prompt Content"
@@ -230,6 +253,7 @@
             Id = prompt.Id,
             Name = prompt.Name,
             Content = prompt.Content,
+            AgentName = prompt.AgentName,
             CreatedAt = prompt.CreatedAt,
             UpdatedAt = prompt.UpdatedAt
         };

@@ -20,6 +20,7 @@ public class ChatService(
     private CancellationTokenSource? _cancellationTokenSource;
     private StreamingMessageManager _streamingManager = null!;
     private StreamingAppChatMessage? _currentStreamingMessage;
+    private SystemPrompt? _currentSystemPrompt;
     public event Action<bool>? LoadingStateChanged;
     public event Action? ChatInitialized;
     public event Func<IAppChatMessage, Task>? MessageAdded;
@@ -27,11 +28,13 @@ public class ChatService(
 
     public bool IsLoading { get; private set; }
     public ObservableCollection<IAppChatMessage> Messages { get; } = [];
+    public SystemPrompt? CurrentSystemPrompt => _currentSystemPrompt;
 
     public void InitializeChat(SystemPrompt? initialPrompt)
     {
         Messages.Clear();
         _streamingManager = new StreamingMessageManager(MessageUpdated);
+        _currentSystemPrompt = initialPrompt;
 
         if (initialPrompt != null)
         {
@@ -44,6 +47,7 @@ public class ChatService(
     public void ClearChat()
     {
         Messages.Clear();
+        _currentSystemPrompt = null;
     }
 
     public async Task CancelAsync()
