@@ -121,6 +121,12 @@
 }
 
 /* Compact thought and MCP call displays */
+.mud-chat-bubble.think-line,
+.mud-chat-bubble.mcp-call {
+    padding: 0.25rem 0.5rem;
+    min-height: auto;
+}
+
 .think-line,
 .mcp-call {
     font-size: 0.75rem;

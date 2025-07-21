@@ -1,7 +1,7 @@
 @using Microsoft.AspNetCore.Components
 @using MudBlazor
 
-<div class="think-line @(isExpanded ? "expanded" : "collapsed")" @onclick="Toggle">
+<MudChatBubble Class="@($"think-line {(isExpanded ? "expanded" : "collapsed")}")" OnClick="Toggle">
     @if (isExpanded)
     {
         <MudText Typo="Typo.caption" Class="mud-text-secondary" Style="font-style: italic;">
@@ -14,7 +14,7 @@
             @Truncate(PlainText, 100)
         </MudText>
     }
-</div>
+</MudChatBubble>
 
 @code {
     [Parameter] public string PlainText { get; set; } = string.Empty;
