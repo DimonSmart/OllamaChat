@@ -102,8 +102,9 @@ public class KernelService(
                     continue;
                 }
                 var pluginFunctions = toolsToRegister.Select(tool => tool.AsKernelFunction()).ToList();
-                kernel.Plugins.AddFromFunctions("McpTools", pluginFunctions);
-                logger.LogInformation("Registered {Count} MCP tools based on selection", pluginFunctions.Count);
+                var pluginName = mcpClient.ServerInfo.Name ?? "McpServer";
+                kernel.Plugins.AddFromFunctions(pluginName, pluginFunctions);
+                logger.LogInformation("Registered {Count} MCP tools for server {Server}", pluginFunctions.Count, pluginName);
             }
         }
         catch (Exception ex)

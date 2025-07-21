@@ -166,6 +166,16 @@
                             }
                         }
 
+                        @if (message.HtmlFunctionCalls.Any())
+                        {
+                            foreach (var callSegment in message.HtmlFunctionCalls)
+                            {
+                                <MudChatBubble>
+                                    <MudText Typo="Typo.caption" Class="think-text">@((MarkupString)callSegment)</MudText>
+                                </MudChatBubble>
+                            }
+                        }
+
                         @if (message.IsStreaming || message.IsCanceled || !string.IsNullOrEmpty(message.Statistics))
                         {
                             <MudChatFooter>

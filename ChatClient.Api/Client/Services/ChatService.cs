@@ -3,6 +3,8 @@
 using ChatClient.Api.Services;
 using ChatClient.Shared.Models;
 
+using System.Linq;
+
 using Microsoft.Extensions.AI;
 using Microsoft.SemanticKernel;
 using Microsoft.SemanticKernel.Agents;
@@ -99,7 +101,7 @@ public class ChatService(
         await (MessageAdded?.Invoke(message) ?? Task.CompletedTask);
     }
 
-    private async Task<IAsyncEnumerable<StreamingChatMessageContent>> GetStreamingContentAsync(
+    private async Task<(IAsyncEnumerable<StreamingChatMessageContent> Stream, Kernel Kernel)> GetStreamingContentAsync(
         ChatConfiguration chatConfiguration,
         ChatHistory chatHistory,
         CancellationToken cancellationToken)
@@ -108,7 +110,7 @@ public class ChatService(
         {
             string systemPrompt = Messages.FirstOrDefault(m => m.Role == ChatRole.System)?.Content ?? "You are a helpful AI assistant.";
             ChatCompletionAgent agent = await agentService.CreateChatAgentAsync(chatConfiguration, systemPrompt);
-            return agentService.GetAgentStreamingResponseAsync(agent, chatHistory, chatConfiguration, cancellationToken);
+            return (agentService.GetAgentStreamingResponseAsync(agent, chatHistory, chatConfiguration, cancellationToken), agent.Kernel);
         }
 
         Kernel kernel = await kernelService.CreateKernelAsync(chatConfiguration);
@@ -120,11 +122,11 @@ public class ChatService(
                 : FunctionChoiceBehavior.None()
         };
 
-        return chatService.GetStreamingChatMessageContentsAsync(
+        return (chatService.GetStreamingChatMessageContentsAsync(
             chatHistory,
             executionSettings,
             kernel,
-            cancellationToken: cancellationToken);
+            cancellationToken: cancellationToken), kernel);
     }
 
     private async Task ProcessAIResponseAsync(ChatConfiguration chatConfiguration, CancellationToken cancellationToken)
@@ -133,7 +135,8 @@ public class ChatService(
         string responseType = chatConfiguration.UseAgentMode ? "Agent" : "Ask";
         logger.LogInformation("Processing {ResponseType} response with model: {ModelName}", responseType, chatConfiguration.ModelName);
 
-        StreamingAppChatMessage streamingMessage = _streamingManager.CreateStreamingMessage();
+        List<FunctionCallRecord> functionCalls = [];
+        StreamingAppChatMessage streamingMessage = _streamingManager.CreateStreamingMessage(functionCalls);
         _currentStreamingMessage = streamingMessage;
         await AddMessageAsync(streamingMessage);
 
@@ -145,12 +148,18 @@ public class ChatService(
         try
         {
             ChatHistory chatHistory = BuildChatHistory();
-            IAsyncEnumerable<StreamingChatMessageContent> streamingContent = await GetStreamingContentAsync(chatConfiguration, chatHistory, cancellationToken);
+            var (streamingContent, kernel) = await GetStreamingContentAsync(chatConfiguration, chatHistory, cancellationToken);
 
-            await foreach (StreamingChatMessageContent content in streamingContent)
+            FunctionCallRecordingFilter trackingFilter = new(functionCalls);
+
+            try
             {
-                await Task.Yield();
-                cancellationToken.ThrowIfCancellationRequested();
+                kernel.FunctionInvocationFilters.Add(trackingFilter);
+
+                await foreach (StreamingChatMessageContent content in streamingContent)
+                {
+                    await Task.Yield();
+                    cancellationToken.ThrowIfCancellationRequested();
 
                 if (!string.IsNullOrEmpty(content.Content))
                 {
@@ -165,6 +174,12 @@ public class ChatService(
                     }
                 }
                 await Task.Yield();
+                }
+
+            }
+            finally
+            {
+                kernel.FunctionInvocationFilters.Remove(trackingFilter);
             }
 
             await (MessageUpdated?.Invoke(streamingMessage) ?? Task.CompletedTask);
@@ -174,7 +189,8 @@ public class ChatService(
             string statistics = _streamingManager.BuildStatistics(
                 processingTime,
                 chatConfiguration,
-                approximateTokenCount);
+                approximateTokenCount,
+                functionCalls.Select(fc => fc.Server).Distinct());
             AppChatMessage finalMessage = _streamingManager.CompleteStreaming(streamingMessage, statistics);
             await ReplaceStreamingMessageWithFinal(streamingMessage, finalMessage);
             _currentStreamingMessage = null;
@@ -287,5 +303,25 @@ public class ChatService(
     {
         IsLoading = isLoading;
         LoadingStateChanged?.Invoke(isLoading);
+    }
+}
+
+/// <summary>
+/// Filter for tracking invoked MCP servers during a chat session.
+/// </summary>
+file sealed class FunctionCallRecordingFilter(List<FunctionCallRecord> records) : IFunctionInvocationFilter
+{
+    private readonly List<FunctionCallRecord> _records = records;
+
+    public async Task OnFunctionInvocationAsync(Microsoft.SemanticKernel.FunctionInvocationContext context, Func<Microsoft.SemanticKernel.FunctionInvocationContext, Task> next)
+    {
+        string request = string.Join(", ", context.Arguments.Select(a => $"{a.Key}: {a.Value}"));
+        await next(context);
+
+        var res = context.Result?.GetValue<object>();
+
+        string response = context.Result?.GetValue<object>().ToString() ?? context.Result?.ToString() ?? string.Empty;
+        string server = context.Function.PluginName ?? "McpServer";
+        _records.Add(new FunctionCallRecord(server, request, response));
     }
 }

@@ -1,4 +1,5 @@
 using ChatClient.Shared.Models;
+using System.Collections.Generic;
 
 using Microsoft.Extensions.AI;
 
@@ -19,9 +20,9 @@ public class StreamingMessageManager
     /// <summary>
     /// Creates a new streaming message
     /// </summary>
-    public StreamingAppChatMessage CreateStreamingMessage()
+    public StreamingAppChatMessage CreateStreamingMessage(List<FunctionCallRecord>? functionCalls = null)
     {
-        return new StreamingAppChatMessage(string.Empty, DateTime.Now, ChatRole.Assistant);
+        return new StreamingAppChatMessage(string.Empty, DateTime.Now, ChatRole.Assistant, functionCalls);
     }
 
 
@@ -35,7 +36,7 @@ public class StreamingMessageManager
         {
             streamingMessage.SetStatistics(statistics);
         }
-        var finalMessage = new AppChatMessage(streamingMessage.Content, streamingMessage.MsgDateTime, ChatRole.Assistant, streamingMessage.Statistics);
+        var finalMessage = new AppChatMessage(streamingMessage.Content, streamingMessage.MsgDateTime, ChatRole.Assistant, streamingMessage.Statistics, streamingMessage.Files, streamingMessage.FunctionCalls);
         finalMessage.Id = streamingMessage.Id; // Preserve the original ID
         finalMessage.IsCanceled = streamingMessage.IsCanceled;
         return finalMessage;
@@ -48,7 +49,7 @@ public class StreamingMessageManager
     {
         streamingMessage.SetCanceled();
 
-        var finalMessage = new AppChatMessage(streamingMessage.Content, streamingMessage.MsgDateTime, ChatRole.Assistant, streamingMessage.Statistics);
+        var finalMessage = new AppChatMessage(streamingMessage.Content, streamingMessage.MsgDateTime, ChatRole.Assistant, streamingMessage.Statistics, streamingMessage.Files, streamingMessage.FunctionCalls);
         finalMessage.Id = streamingMessage.Id; // Preserve the original ID
         finalMessage.IsCanceled = true;
         return finalMessage;
@@ -57,7 +58,7 @@ public class StreamingMessageManager
     /// <summary>
     /// Creates statistics for message with additional metrics.
     /// </summary>
-    public string BuildStatistics(TimeSpan processingTime, ChatConfiguration chatConfiguration, int tokenCount)
+    public string BuildStatistics(TimeSpan processingTime, ChatConfiguration chatConfiguration, int tokenCount, IEnumerable<string>? invokedServers = null)
     {
         var tokensPerSecond = processingTime.TotalSeconds > 0
             ? (tokenCount / processingTime.TotalSeconds).ToString("F1")
@@ -69,6 +70,10 @@ public class StreamingMessageManager
         if (chatConfiguration.Functions.Any())
         {
             statisticsBuilder.Append($" • 🔧 {chatConfiguration.Functions.Count} funcs");
+        }
+        if (invokedServers != null && invokedServers.Any())
+        {
+            statisticsBuilder.Append($" • 🌐 {string.Join(", ", invokedServers)}");
         }
         statisticsBuilder.Append($" • 📊 {tokenCount} tokens ({tokensPerSecond}/s)");
         return statisticsBuilder.ToString();

@@ -1,10 +1,11 @@
 using System.Text;
+using System.Collections.Generic;
 
 using Microsoft.Extensions.AI;
 
 namespace ChatClient.Shared.Models;
 
-public class StreamingAppChatMessage(string initialContent, DateTime msgDateTime, ChatRole role) : IAppChatMessage
+public class StreamingAppChatMessage(string initialContent, DateTime msgDateTime, ChatRole role, List<FunctionCallRecord>? functionCalls = null) : IAppChatMessage
 {
     private readonly StringBuilder _contentBuilder = new(initialContent);
     public string Content => _contentBuilder.ToString();
@@ -13,6 +14,8 @@ public class StreamingAppChatMessage(string initialContent, DateTime msgDateTime
     public string? Statistics { get; private set; } = string.Empty;
     public bool IsCanceled { get; private set; }
     public IReadOnlyList<ChatMessageFile> Files { get; private set; } = [];
+    private readonly List<FunctionCallRecord> _functionCalls = functionCalls ?? [];
+    public IReadOnlyCollection<FunctionCallRecord> FunctionCalls => _functionCalls.AsReadOnly();
 
     public Guid Id { get; private set; } = Guid.NewGuid();
 
@@ -46,6 +49,11 @@ public class StreamingAppChatMessage(string initialContent, DateTime msgDateTime
     public void SetStatistics(string stats)
     {
         Statistics = stats;
+    }
+
+    public void AddFunctionCall(FunctionCallRecord record)
+    {
+        _functionCalls.Add(record);
     }
 
     public void SetCanceled()

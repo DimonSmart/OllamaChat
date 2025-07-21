@@ -1,6 +1,7 @@
 using System.Text.Json.Serialization;
 
 using Microsoft.Extensions.AI;
+using System.Collections.Generic;
 
 namespace ChatClient.Shared.Models;
 
@@ -12,7 +13,9 @@ public class AppChatMessage : IAppChatMessage
     public ChatRole Role { get; set; }
     public string? Statistics { get; set; }
     public bool IsCanceled { get; set; }
-    public IReadOnlyList<ChatMessageFile> Files { get; set; } = [];    /// <summary>
+    public IReadOnlyList<ChatMessageFile> Files { get; set; } = [];
+    public IReadOnlyCollection<FunctionCallRecord> FunctionCalls { get; set; } = [];
+    /// <summary>
                                                                        /// Indicates whether this message is currently streaming.
                                                                        /// Always false for regular messages.
                                                                        /// </summary>
@@ -57,9 +60,10 @@ public class AppChatMessage : IAppChatMessage
         Statistics = message.Statistics;
         IsCanceled = message.IsCanceled;
         Files = message.Files;
+        FunctionCalls = message.FunctionCalls;
     }
 
-    public AppChatMessage(string content, DateTime msgDateTime, ChatRole role, string? statistics = null, IReadOnlyList<ChatMessageFile>? files = null)
+    public AppChatMessage(string content, DateTime msgDateTime, ChatRole role, string? statistics = null, IReadOnlyList<ChatMessageFile>? files = null, IReadOnlyCollection<FunctionCallRecord>? functionCalls = null)
     {
         Id = Guid.NewGuid();
         Content = content ?? string.Empty;
@@ -67,5 +71,6 @@ public class AppChatMessage : IAppChatMessage
         Role = role;
         Statistics = statistics;
         Files = files ?? [];
+        FunctionCalls = functionCalls ?? [];
     }
 }

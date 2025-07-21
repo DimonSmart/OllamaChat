@@ -5,6 +5,9 @@ using DimonSmart.AiUtils;
 using Markdig;
 
 using Microsoft.Extensions.AI;
+using System.Collections.Generic;
+using System.Linq;
+using System.Text;
 
 namespace ChatClient.Api.Client.ViewModels;
 
@@ -15,6 +18,8 @@ public class ChatMessageViewModel
     public string HtmlContent { get; set; } = string.Empty;
     public IReadOnlyCollection<string> ThinkSegments { get; set; } = [];
     public IReadOnlyCollection<string> HtmlThinkSegments { get; set; } = [];
+    public IReadOnlyCollection<FunctionCallRecord> FunctionCalls { get; set; } = [];
+    public IReadOnlyCollection<string> HtmlFunctionCalls { get; set; } = [];
     public DateTime MsgDateTime { get; set; }
     public ChatRole Role { get; set; }
     public string? Statistics { get; set; }
@@ -35,6 +40,7 @@ public class ChatMessageViewModel
         IsStreaming = message.IsStreaming;
         IsCanceled = message.IsCanceled;
         Files = message.Files;
+        FunctionCalls = message.FunctionCalls;
         var result = ThinkTagParser.ExtractThinkAnswer(message.Content);
 
         ThinkSegments = result.ThoughtSegments;
@@ -44,6 +50,27 @@ public class ChatMessageViewModel
             .AsReadOnly();
         Content = result.Answer;
         HtmlContent = Markdown.ToHtml(result.Answer, Pipeline);
+
+        HtmlFunctionCalls = FunctionCalls
+            .Select(call =>
+            {
+                var sb = new System.Text.StringBuilder();
+                if (!string.IsNullOrEmpty(call.Server))
+                {
+                    sb.AppendLine($"**{call.Server}**  ");
+                }
+                sb.AppendLine("**Request:**");
+                sb.AppendLine("```");
+                sb.AppendLine(call.Request);
+                sb.AppendLine("```");
+                sb.AppendLine("**Response:**");
+                sb.AppendLine("```");
+                sb.AppendLine(call.Response);
+                sb.AppendLine("```");
+                return Markdown.ToHtml(sb.ToString(), Pipeline);
+            })
+            .ToList()
+            .AsReadOnly();
 
         return this;
     }
