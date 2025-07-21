@@ -1,0 +1,29 @@
+@using Microsoft.AspNetCore.Components
+@using MudBlazor
+
+<div class="think-line @(isExpanded ? "expanded" : "collapsed")" @onclick="Toggle">
+    @if (isExpanded)
+    {
+        <MudText Typo="Typo.caption" Class="mud-text-secondary" Style="font-style: italic;">
+            @((MarkupString)HtmlText)
+        </MudText>
+    }
+    else
+    {
+        <MudText Typo="Typo.caption" Class="mud-text-secondary" Style="font-style: italic;">
+            @Truncate(PlainText, 100)
+        </MudText>
+    }
+</div>
+
+@code {
+    [Parameter] public string PlainText { get; set; } = string.Empty;
+    [Parameter] public string HtmlText { get; set; } = string.Empty;
+
+    private bool isExpanded;
+
+    private void Toggle() => isExpanded = !isExpanded;
+
+    private static string Truncate(string text, int length)
+        => text.Length <= length ? text : text.Substring(0, length) + "...";
+}

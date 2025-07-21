@@ -1,3 +1,7 @@
+using System.Collections.Generic;
+using System.Linq;
+using System.Text;
+
 using ChatClient.Shared.Models;
 
 using DimonSmart.AiUtils;
@@ -5,9 +9,6 @@ using DimonSmart.AiUtils;
 using Markdig;
 
 using Microsoft.Extensions.AI;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
 
 namespace ChatClient.Api.Client.ViewModels;
 
@@ -55,9 +56,20 @@ public class ChatMessageViewModel
             .Select(call =>
             {
                 var sb = new System.Text.StringBuilder();
-                if (!string.IsNullOrEmpty(call.Server))
+                if (!string.IsNullOrEmpty(call.Server) || !string.IsNullOrEmpty(call.Function))
                 {
-                    sb.AppendLine($"**{call.Server}**  ");
+                    sb.Append("**");
+                    if (!string.IsNullOrEmpty(call.Server))
+                    {
+                        sb.Append(call.Server);
+                    }
+                    if (!string.IsNullOrEmpty(call.Function))
+                    {
+                        if (!string.IsNullOrEmpty(call.Server))
+                            sb.Append('.');
+                        sb.Append(call.Function);
+                    }
+                    sb.AppendLine("**  ");
                 }
                 sb.AppendLine("**Request:**");
                 sb.AppendLine("```");

@@ -119,3 +119,37 @@
     color: var(--mud-palette-text-secondary);
     margin: 0;
 }
+
+/* Compact thought and MCP call displays */
+.think-line,
+.mcp-call {
+    font-size: 0.75rem;
+    color: var(--mud-palette-text-secondary);
+    cursor: pointer;
+    font-style: italic;
+    margin: 0.25rem 0;
+}
+
+.think-line.collapsed,
+.mcp-call.collapsed {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.mcp-call-pre {
+    background-color: var(--mud-palette-background-grey, #f5f5f5);
+    padding: 0.25rem;
+    border-radius: 4px;
+    font-size: 0.75rem;
+    white-space: pre-wrap;
+    overflow-x: auto;
+}
+.mcp-call-label {
+    font-size: 0.75rem;
+    font-style: italic;
+    margin-top: 0.25rem;
+}
+.mcp-call-header {
+    margin-bottom: 0.25rem;
+}
