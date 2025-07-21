@@ -2,7 +2,7 @@
 @using MudBlazor
 @using ChatClient.Shared.Models
 
-<div class="mcp-call @(isExpanded ? "expanded" : "collapsed")" @onclick="Toggle">
+<MudChatBubble Class="@($"mcp-call {(isExpanded ? "expanded" : "collapsed")}")" OnClick="Toggle">
     @if (isExpanded)
     {
         <MudText Typo="Typo.caption" Class="mud-text-secondary mcp-call-header">
@@ -25,7 +25,7 @@
             @CollapsedLine
         </MudText>
     }
-</div>
+</MudChatBubble>
 
 @code {
     [Parameter] public FunctionCallRecord Call { get; set; } = new("", "", "", "");
