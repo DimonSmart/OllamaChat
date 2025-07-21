@@ -141,38 +141,21 @@
                         @if (message.ThinkSegments.Any())
                         {
                             var validThoughts = message.ThinkSegments
-                                .Select((segment, index) => new { segment, index, htmlSegment = message.HtmlThinkSegments.ElementAt(index) })
+                                .Select((segment, index) => new { segment, html = message.HtmlThinkSegments.ElementAt(index) })
                                 .Where(x => !string.IsNullOrWhiteSpace(x.segment))
                                 .ToList();
-                            
-                            @foreach (var thoughtItem in validThoughts)
-                            {
-                                var segment = thoughtItem.htmlSegment;
-                                var thinkId = $"{message.Id}_{thoughtItem.index}";
-                                var isExpanded = ExpandedThoughts.Contains(thinkId);
 
-                                <MudChatBubble>
-                                    <div class="d-flex align-center justify-space-between">
-                                        <MudIconButton Icon="@(isExpanded ? Icons.Material.Filled.ExpandLess : Icons.Material.Filled.ExpandMore)"
-                                                       Size="Size.Small"
-                                                       OnClick="@(() => ToggleThinkExpansion(thinkId))" />
-                                    </div>
-                                    
-                                    <div class="@(isExpanded ? "think-content-expanded" : "think-content-collapsed")"
-                                         @onclick="@(() => ToggleThinkExpansion(thinkId))">
-                                        <MudText Typo="Typo.caption" Class="think-text">@((MarkupString)segment)</MudText>
-                                    </div>
-                                </MudChatBubble>
+                            foreach (var thought in validThoughts)
+                            {
+                                <ThoughtDisplay PlainText="@thought.segment" HtmlText="@thought.html" />
                             }
                         }
 
-                        @if (message.HtmlFunctionCalls.Any())
+                        @if (message.FunctionCalls.Any())
                         {
-                            foreach (var callSegment in message.HtmlFunctionCalls)
+                            foreach (var call in message.FunctionCalls)
                             {
-                                <MudChatBubble>
-                                    <MudText Typo="Typo.caption" Class="think-text">@((MarkupString)callSegment)</MudText>
-                                </MudChatBubble>
+                                <McpCallDisplay Call="@call" />
                             }
                         }
 
@@ -297,8 +280,6 @@
 
     private bool showPromptContent { get; set; } = false;
 
-    // Track expanded thoughts for individual segments
-    private HashSet<string> ExpandedThoughts { get; set; } = new();
 
     private UserSettings userSettings = new();
 
@@ -414,7 +395,6 @@
     private void RestartChat()
     {
         chatStarted = false;
-        ExpandedThoughts.Clear();
         ChatService.ClearChat();
         StateHasChanged();
     }
@@ -446,19 +426,6 @@
 
     private void Cancel()
     {        ChatService.CancelAsync();
-    }
-
-    private void ToggleThinkExpansion(string thinkId)
-    {
-        if (ExpandedThoughts.Contains(thinkId))
-        {
-            ExpandedThoughts.Remove(thinkId);
-        }
-        else
-        {
-            ExpandedThoughts.Add(thinkId);
-        }
-        StateHasChanged();
     }
 
     private void OnModelChanged(OllamaModel model)

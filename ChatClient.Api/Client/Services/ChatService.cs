@@ -1,9 +1,8 @@
 ﻿using System.Collections.ObjectModel;
+using System.Linq;
 
 using ChatClient.Api.Services;
 using ChatClient.Shared.Models;
-
-using System.Linq;
 
 using Microsoft.Extensions.AI;
 using Microsoft.SemanticKernel;
@@ -161,19 +160,19 @@ public class ChatService(
                     await Task.Yield();
                     cancellationToken.ThrowIfCancellationRequested();
 
-                if (!string.IsNullOrEmpty(content.Content))
-                {
-                    streamingMessage.Append(content.Content);
-                    approximateTokenCount++;
-                    // Update UI no more than once every 500ms
-                    DateTime now = DateTime.Now;
-                    if ((now - lastUpdateTime).TotalMilliseconds >= updateIntervalMs)
+                    if (!string.IsNullOrEmpty(content.Content))
                     {
-                        await (MessageUpdated?.Invoke(streamingMessage) ?? Task.CompletedTask);
-                        lastUpdateTime = now;
+                        streamingMessage.Append(content.Content);
+                        approximateTokenCount++;
+                        // Update UI no more than once every 500ms
+                        DateTime now = DateTime.Now;
+                        if ((now - lastUpdateTime).TotalMilliseconds >= updateIntervalMs)
+                        {
+                            await (MessageUpdated?.Invoke(streamingMessage) ?? Task.CompletedTask);
+                            lastUpdateTime = now;
+                        }
                     }
-                }
-                await Task.Yield();
+                    await Task.Yield();
                 }
 
             }
@@ -318,10 +317,9 @@ file sealed class FunctionCallRecordingFilter(List<FunctionCallRecord> records) 
         string request = string.Join(", ", context.Arguments.Select(a => $"{a.Key}: {a.Value}"));
         await next(context);
 
-        var res = context.Result?.GetValue<object>();
-
         string response = context.Result?.GetValue<object>().ToString() ?? context.Result?.ToString() ?? string.Empty;
         string server = context.Function.PluginName ?? "McpServer";
-        _records.Add(new FunctionCallRecord(server, request, response));
+        string function = context.Function.Name;
+        _records.Add(new FunctionCallRecord(server, function, request, response));
     }
 }
