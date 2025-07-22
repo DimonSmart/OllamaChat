@@ -79,6 +79,17 @@
     animation: blink 1.5s infinite;
 }
 
+/* Delete button style */
+.delete-button {
+    cursor: pointer;
+    margin-left: 0.25rem;
+    color: red;
+}
+.delete-button.disabled {
+    color: gray;
+    cursor: default;
+}
+
 @keyframes blink {
     0%, 50% {
         opacity: 1;

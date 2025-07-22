@@ -9,4 +9,5 @@ public interface IChatViewModelService
     event Action? ChatInitialized;
     event Action<ChatMessageViewModel>? MessageAdded;
     event Func<ChatMessageViewModel, Task>? MessageUpdated;
+    event Action<ChatMessageViewModel>? MessageDeleted;
 }
