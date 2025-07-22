@@ -28,7 +28,7 @@
 <PageTitle>Chat with AI Assistant</PageTitle>
 
 <OllamaCheck>
-    <div class="chat-container d-flex flex-column">
+    <MudStack Class="chat-container" Direction="Direction.Column">
     @if (isLoadingInitialData)
     {
         <MudOverlay Visible="true" DarkBackground="true" Absolute="true">
@@ -188,7 +188,7 @@
         
         <!-- Fixed input panel at bottom -->
         <div class="chat-input-panel">
-            <div class="d-flex flex-row gap-1 align-center">
+            <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="1">
                 <MudSelect T="OllamaModel"
                            Value="selectedModel"
                            ValueChanged="OnModelChanged"
@@ -232,14 +232,14 @@
                              Size="Size.Small"
                              Dense="true"
                              Class="ml-2" />
-            </div>
+            </MudStack>
           
             <FunctionSelector AvailableFunctions="availableFunctions"
                               SelectedFunctions="selectedFunctions"
                               SelectedFunctionsChanged="OnSelectedFunctionsChanged"
                               Expanded="@functionsExpanded" />
 
-            <div class="d-flex flex-column">
+            <MudStack Direction="Direction.Column">
                 <ChatInput OnSend="SendChatMessageAsync" 
                           ShowStopButton="isLLMAnswering" 
                           OnStopClick="Cancel" />
@@ -256,10 +256,10 @@
                         </MudButton>
                     </MudStack>
                 }
-            </div>
+            </MudStack>
         </div>
     }
-</div>
+</MudStack>
 </OllamaCheck>
 
 @code {
