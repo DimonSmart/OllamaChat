@@ -154,9 +154,10 @@ public class ChatService(
             try
             {
                 kernel.FunctionInvocationFilters.Add(trackingFilter);
-
-                await foreach (StreamingChatMessageContent content in streamingContent)
+                StreamingChatMessageContent? current = null;
+                await foreach (var content in streamingContent)
                 {
+                    current = content;
                     await Task.Yield();
                     cancellationToken.ThrowIfCancellationRequested();
 
@@ -174,6 +175,8 @@ public class ChatService(
                     }
                     await Task.Yield();
                 }
+
+                var lastMessage = current;
 
             }
             finally
