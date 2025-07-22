@@ -16,7 +16,7 @@ namespace ChatClient.Api.Client.Services;
 public class ChatService(
     KernelService kernelService,
     AgentService agentService,
-    ChatHistoryBuilder historyBuilder,
+    IChatHistoryBuilder historyBuilder,
     ILogger<ChatService> logger) : IChatService
 {
     private CancellationTokenSource? _cancellationTokenSource;
@@ -126,13 +126,20 @@ public class ChatService(
                 string systemPrompt = Messages.FirstOrDefault(m => m.Role == ChatRole.System)?.Content ?? "You are a helpful AI assistant.";
                 ChatCompletionAgent agent = await agentService.CreateChatAgentAsync(chatConfiguration, systemPrompt);
                 kernel = agent.Kernel;
-                ChatHistory history = await historyBuilder.BuildForAgentAsync(historyBuilder.BuildBaseHistory(Messages), agent.Instructions ?? string.Empty, kernel, cancellationToken);
+
+                var agentMessages = Messages.Where(m => m.Role != ChatRole.System).ToList();
+                if (!string.IsNullOrWhiteSpace(agent.Instructions))
+                {
+                    agentMessages.Insert(0, new AppChatMessage(agent.Instructions, DateTime.Now, ChatRole.System));
+                }
+
+                ChatHistory history = await historyBuilder.BuildChatHistoryAsync(agentMessages, kernel, cancellationToken);
                 streamingContent = agentService.GetAgentStreamingResponseAsync(agent, history, chatConfiguration, cancellationToken);
             }
             else
             {
                 kernel = await kernelService.CreateKernelAsync(chatConfiguration);
-                var history = await historyBuilder.BuildForChatAsync(Messages, kernel, cancellationToken);
+                var history = await historyBuilder.BuildChatHistoryAsync(Messages, kernel, cancellationToken);
                 var chatService = kernel.GetRequiredService<IChatCompletionService>();
                 var executionSettings = new PromptExecutionSettings
                 {
