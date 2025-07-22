@@ -7,7 +7,12 @@ using Microsoft.SemanticKernel.ChatCompletion;
 
 namespace ChatClient.Api.Services;
 
-public class ChatHistoryBuilder(IUserSettingsService settingsService)
+public interface IChatHistoryBuilder
+{
+    Task<ChatHistory> BuildChatHistoryAsync(IEnumerable<IAppChatMessage> messages, Kernel kernel, CancellationToken cancellationToken);
+}
+
+public class ChatHistoryBuilder(IUserSettingsService settingsService) : IChatHistoryBuilder
 {
     public ChatHistory BuildBaseHistory(IEnumerable<IAppChatMessage> messages)
     {
@@ -51,23 +56,9 @@ public class ChatHistoryBuilder(IUserSettingsService settingsService)
         return history;
     }
 
-    public async Task<ChatHistory> BuildForChatAsync(IEnumerable<IAppChatMessage> messages, Kernel kernel, CancellationToken cancellationToken)
+    public async Task<ChatHistory> BuildChatHistoryAsync(IEnumerable<IAppChatMessage> messages, Kernel kernel, CancellationToken cancellationToken)
     {
         var history = BuildBaseHistory(messages);
-        return await ApplyHistoryModeAsync(history, kernel, cancellationToken);
-    }
-
-    public async Task<ChatHistory> BuildForAgentAsync(ChatHistory baseHistory, string instructions, Kernel kernel, CancellationToken cancellationToken)
-    {
-        var history = new ChatHistory();
-        if (!string.IsNullOrWhiteSpace(instructions))
-        {
-            history.AddSystemMessage(instructions);
-        }
-        foreach (var message in baseHistory.Where(m => m.Role != AuthorRole.System))
-        {
-            history.Add(message);
-        }
         return await ApplyHistoryModeAsync(history, kernel, cancellationToken);
     }
 
