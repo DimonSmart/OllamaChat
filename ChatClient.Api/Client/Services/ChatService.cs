@@ -104,7 +104,6 @@ public class ChatService(
 
     private async Task ProcessAIResponseAsync(ChatConfiguration chatConfiguration, CancellationToken cancellationToken)
     {
-        DateTime startTime = DateTime.Now;
         string responseType = chatConfiguration.UseAgentMode ? "Agent" : "Ask";
         logger.LogInformation("Processing {ResponseType} response with model: {ModelName}", responseType, chatConfiguration.ModelName);
 
@@ -114,9 +113,9 @@ public class ChatService(
         await AddMessageAsync(streamingMessage);
 
         // Simple throttling for UI updates - no more than once every 500ms
-        DateTime lastUpdateTime = DateTime.MinValue;
+        var lastUpdateTime = DateTime.MinValue;
         const int updateIntervalMs = 500;
-        int approximateTokenCount = 0;
+        var approximateTokenCount = 0;
 
         try
         {
@@ -127,15 +126,15 @@ public class ChatService(
                 string systemPrompt = Messages.FirstOrDefault(m => m.Role == ChatRole.System)?.Content ?? "You are a helpful AI assistant.";
                 ChatCompletionAgent agent = await agentService.CreateChatAgentAsync(chatConfiguration, systemPrompt);
                 kernel = agent.Kernel;
-                ChatHistory history = await historyBuilder.BuildForAgentAsync(historyBuilder.BuildBaseHistory(this.Messages), agent.Instructions ?? string.Empty, kernel, cancellationToken);
+                ChatHistory history = await historyBuilder.BuildForAgentAsync(historyBuilder.BuildBaseHistory(Messages), agent.Instructions ?? string.Empty, kernel, cancellationToken);
                 streamingContent = agentService.GetAgentStreamingResponseAsync(agent, history, chatConfiguration, cancellationToken);
             }
             else
             {
                 kernel = await kernelService.CreateKernelAsync(chatConfiguration);
-                ChatHistory history = await historyBuilder.BuildForChatAsync(this.Messages, kernel, cancellationToken);
-                IChatCompletionService chatService = kernel.GetRequiredService<IChatCompletionService>();
-                PromptExecutionSettings executionSettings = new PromptExecutionSettings
+                var history = await historyBuilder.BuildForChatAsync(Messages, kernel, cancellationToken);
+                var chatService = kernel.GetRequiredService<IChatCompletionService>();
+                var executionSettings = new PromptExecutionSettings
                 {
                     FunctionChoiceBehavior = chatConfiguration.Functions.Any()
                         ? FunctionChoiceBehavior.Auto()
@@ -148,7 +147,7 @@ public class ChatService(
                     cancellationToken: cancellationToken);
             }
 
-            FunctionCallRecordingFilter trackingFilter = new(functionCalls);
+            var trackingFilter = new FunctionCallRecordingFilter(functionCalls);
 
             string? doneReason = null;
             try
@@ -186,6 +185,7 @@ public class ChatService(
 
             await (MessageUpdated?.Invoke(streamingMessage) ?? Task.CompletedTask);
 
+            DateTime startTime = DateTime.Now;
             // Create statistics and complete streaming
             TimeSpan processingTime = DateTime.Now - startTime;
             string statistics = _streamingManager.BuildStatistics(
