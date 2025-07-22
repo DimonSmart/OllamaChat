@@ -11,6 +11,8 @@ using Microsoft.SemanticKernel.ChatCompletion;
 
 using OllamaSharp.Models.Exceptions;
 
+using static MudBlazor.CategoryTypes;
+
 namespace ChatClient.Api.Client.Services;
 
 public class ChatService(
@@ -119,38 +121,18 @@ public class ChatService(
         try
         {
             var kernel = await kernelService.CreateKernelAsync(chatConfiguration);
-
-            IAsyncEnumerable<StreamingChatMessageContent> streamingContent;
-            if (chatConfiguration.UseAgentMode)
+            var history = await historyBuilder.BuildChatHistoryAsync(Messages, kernel, cancellationToken);
+            var chatService = kernel.GetRequiredService<IChatCompletionService>();
+            var promptExecutionSettings = new PromptExecutionSettings
             {
-                string systemPrompt = Messages.FirstOrDefault(m => m.Role == ChatRole.System)?.Content ?? "You are a helpful AI assistant.";
-                ChatCompletionAgent agent = AgentService.CreateChatAgent(kernel, systemPrompt);
-                // var agentMessages = Messages.Where(m => m.Role != ChatRole.System).ToList();
-                // if (!string.IsNullOrWhiteSpace(agent.Instructions))
-                // {
-                //     agentMessages.Insert(0, new AppChatMessage(agent.Instructions, DateTime.Now, ChatRole.System));
-                // }
-
-                var history = await historyBuilder.BuildChatHistoryAsync(Messages, kernel, cancellationToken);
-                streamingContent = AgentService.GetAgentStreamingResponseAsync(agent, history, chatConfiguration, cancellationToken);
-            }
-            else
-            {
-                var history = await historyBuilder.BuildChatHistoryAsync(Messages, kernel, cancellationToken);
-                var chatService = kernel.GetRequiredService<IChatCompletionService>();
-                var executionSettings = new PromptExecutionSettings
-                {
-                    FunctionChoiceBehavior = chatConfiguration.Functions.Any()
+                FunctionChoiceBehavior = chatConfiguration.Functions.Count != 0
                         ? FunctionChoiceBehavior.Auto()
                         : FunctionChoiceBehavior.None()
-                };
-                streamingContent = chatService.GetStreamingChatMessageContentsAsync(
-                    history,
-                    executionSettings,
-                    kernel,
-                    cancellationToken: cancellationToken);
-            }
+            };
 
+            var streamingContent = chatConfiguration.UseAgentMode
+                ? AgentService.GetAgentStreamingResponseAsync(history, promptExecutionSettings, kernel, cancellationToken)
+                : chatService.GetStreamingChatMessageContentsAsync(history, promptExecutionSettings, kernel, cancellationToken);
             var trackingFilter = new FunctionCallRecordingFilter(functionCalls);
 
             string? doneReason = null;
@@ -189,15 +171,15 @@ public class ChatService(
 
             await (MessageUpdated?.Invoke(streamingMessage) ?? Task.CompletedTask);
 
-            DateTime startTime = DateTime.Now;
+            var startTime = DateTime.Now;
             // Create statistics and complete streaming
             TimeSpan processingTime = DateTime.Now - startTime;
-            string statistics = _streamingManager.BuildStatistics(
+            var statistics = _streamingManager.BuildStatistics(
                 processingTime,
                 chatConfiguration,
                 approximateTokenCount,
                 functionCalls.Select(fc => fc.Server).Distinct());
-            AppChatMessage finalMessage = _streamingManager.CompleteStreaming(streamingMessage, statistics);
+            var finalMessage = _streamingManager.CompleteStreaming(streamingMessage, statistics);
             await ReplaceStreamingMessageWithFinal(streamingMessage, finalMessage);
             _currentStreamingMessage = null;
         }
@@ -274,7 +256,7 @@ file sealed class FunctionCallRecordingFilter(List<FunctionCallRecord> records) 
         string request = string.Join(", ", context.Arguments.Select(a => $"{a.Key}: {a.Value}"));
         await next(context);
 
-        string response = context.Result?.GetValue<object>().ToString() ?? context.Result?.ToString() ?? string.Empty;
+        string response = context.Result?.GetValue<object>()?.ToString() ?? context.Result?.ToString() ?? string.Empty;
         string server = context.Function.PluginName ?? "McpServer";
         string function = context.Function.Name;
         _records.Add(new FunctionCallRecord(server, function, request, response));
