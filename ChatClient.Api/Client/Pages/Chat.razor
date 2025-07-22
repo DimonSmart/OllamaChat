@@ -89,7 +89,13 @@
                 @if (message.Role != Microsoft.Extensions.AI.ChatRole.System)
                 {
                     <MudChat Dense="true" ChatPosition="@(message.Role == Microsoft.Extensions.AI.ChatRole.Assistant ? ChatBubblePosition.Start : ChatBubblePosition.End)" @key="message.Id">
-                         <MudChatHeader Time="@message.MsgDateTime.ToString("g")" />
+                         <MudChatHeader>
+                             <time>@message.MsgDateTime.ToString("g")</time>
+                             @if (!isLLMAnswering)
+                             {
+                                 <span class="delete-button" title="Delete" @onclick="(() => DeleteMessage(message))">❌</span>
+                             }
+                         </MudChatHeader>
 
                         @{
                             var displayName = message.Role == Microsoft.Extensions.AI.ChatRole.Assistant 
@@ -304,6 +310,7 @@
         ChatService.LoadingStateChanged += OnLoadingStateChanged;
         ChatViewModelService.MessageAdded += async (msg) => await _messageAddedCallback.InvokeAsync(msg);
         ChatViewModelService.MessageUpdated += async (msg) => await _messageUpdatedCallback.InvokeAsync(msg);
+        ChatViewModelService.MessageDeleted += OnMessageDeleted;
 
         isLoadingInitialData = false;
         StateHasChanged();
@@ -321,6 +328,11 @@
         await ScrollToBottom();
     }    
     private void OnMessageUpdated(ChatMessageViewModel message)
+    {
+        StateHasChanged();
+    }
+
+    private void OnMessageDeleted(ChatMessageViewModel message)
     {
         StateHasChanged();
     }
@@ -432,13 +444,22 @@
     {
         selectedModel = model;
         Console.WriteLine($"Selected model changed to: {model.Name}");
-    }    
+    }
+
+    private async Task DeleteMessage(ChatMessageViewModel message)
+    {
+        if (isLLMAnswering)
+            return;
+
+        await ChatService.DeleteMessageAsync(message.Id);
+    }
 
     public ValueTask DisposeAsync()
     {
         ChatService.LoadingStateChanged -= OnLoadingStateChanged;
         ChatViewModelService.MessageAdded -= async (msg) => await InvokeAsync(() => OnMessageAdded(msg));
         ChatViewModelService.MessageUpdated -= (msg) => InvokeAsync(() => OnMessageUpdated(msg));
+        ChatViewModelService.MessageDeleted -= OnMessageDeleted;
         return ValueTask.CompletedTask;
     }
 

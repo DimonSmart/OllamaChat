@@ -14,6 +14,7 @@ public class ChatViewModelService : IChatViewModelService
     public event Action? ChatInitialized;
     public event Action<ChatMessageViewModel>? MessageAdded;
     public event Func<ChatMessageViewModel, Task>? MessageUpdated;
+    public event Action<ChatMessageViewModel>? MessageDeleted;
 
     public bool IsLoading => _chatService.IsLoading;
 
@@ -24,6 +25,7 @@ public class ChatViewModelService : IChatViewModelService
         _chatService.ChatInitialized += OnChatInitialized;
         _chatService.MessageAdded += OnMessageAdded;
         _chatService.MessageUpdated += OnMessageUpdated;
+        _chatService.MessageDeleted += OnMessageDeleted;
     }
 
     private Task OnMessageAdded(IAppChatMessage domainMessage)
@@ -62,5 +64,16 @@ public class ChatViewModelService : IChatViewModelService
         existingMessage.UpdateFromDomainModel(domainMessage);
 
         await (MessageUpdated?.Invoke(existingMessage) ?? Task.CompletedTask);
+    }
+
+    private Task OnMessageDeleted(Guid id)
+    {
+        var message = _messages.FirstOrDefault(m => m.Id == id);
+        if (message != null)
+        {
+            _messages.Remove(message);
+            MessageDeleted?.Invoke(message);
+        }
+        return Task.CompletedTask;
     }
 }

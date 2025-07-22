@@ -28,6 +28,7 @@ public class ChatService(
     public event Action? ChatInitialized;
     public event Func<IAppChatMessage, Task>? MessageAdded;
     public event Func<IAppChatMessage, Task>? MessageUpdated;
+    public event Func<Guid, Task>? MessageDeleted;
 
     public bool IsLoading { get; private set; }
     public ObservableCollection<IAppChatMessage> Messages { get; } = [];
@@ -241,6 +242,19 @@ public class ChatService(
     {
         IsLoading = isLoading;
         LoadingStateChanged?.Invoke(isLoading);
+    }
+
+    public async Task DeleteMessageAsync(Guid id)
+    {
+        if (IsLoading)
+            return;
+
+        var message = Messages.FirstOrDefault(m => m.Id == id);
+        if (message == null)
+            return;
+
+        Messages.Remove(message);
+        await (MessageDeleted?.Invoke(id) ?? Task.CompletedTask);
     }
 }
 
