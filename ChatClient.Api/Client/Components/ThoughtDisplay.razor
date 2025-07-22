@@ -11,7 +11,7 @@
     else
     {
         <MudText Typo="Typo.caption" Class="mud-text-secondary" Style="font-style: italic;">
-            @Truncate(PlainText, 100)
+            @ThoughtIcon @Truncate(PlainText, 100)
         </MudText>
     }
 </MudChatBubble>
@@ -21,6 +21,8 @@
     [Parameter] public string HtmlText { get; set; } = string.Empty;
 
     private bool isExpanded;
+
+    private const string ThoughtIcon = "\uD83D\uDCAD"; // 💭
 
     private void Toggle() => isExpanded = !isExpanded;
 
