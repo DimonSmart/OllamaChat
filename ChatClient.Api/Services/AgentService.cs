@@ -56,6 +56,12 @@ public class AgentService(KernelService kernelService)
             fullChatHistory.Add(message);
         }
 
+        // DEMO CODE
+        // var historyReducer = new ChatHistoryTruncationReducer(5, 8);
+        // var sumReducer = new ChatHistorySummarizationReducer(chatService, 5, 8);
+        // var reducer = sumReducer;
+        // var reducedHistory = new ChatHistory(await reducer.ReduceAsync(fullChatHistory, cancellationToken) ?? []);
+
         await foreach (var content in chatService.GetStreamingChatMessageContentsAsync(
             fullChatHistory,
             executionSettings,
