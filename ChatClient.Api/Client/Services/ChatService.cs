@@ -15,7 +15,6 @@ namespace ChatClient.Api.Client.Services;
 
 public class ChatService(
     KernelService kernelService,
-    AgentService agentService,
     IChatHistoryBuilder historyBuilder,
     ILogger<ChatService> logger) : IChatService
 {
@@ -119,26 +118,24 @@ public class ChatService(
 
         try
         {
-            Kernel kernel;
+            var kernel = await kernelService.CreateKernelAsync(chatConfiguration);
+
             IAsyncEnumerable<StreamingChatMessageContent> streamingContent;
             if (chatConfiguration.UseAgentMode)
             {
                 string systemPrompt = Messages.FirstOrDefault(m => m.Role == ChatRole.System)?.Content ?? "You are a helpful AI assistant.";
-                ChatCompletionAgent agent = await agentService.CreateChatAgentAsync(chatConfiguration, systemPrompt);
-                kernel = agent.Kernel;
+                ChatCompletionAgent agent = AgentService.CreateChatAgent(kernel, systemPrompt);
+                // var agentMessages = Messages.Where(m => m.Role != ChatRole.System).ToList();
+                // if (!string.IsNullOrWhiteSpace(agent.Instructions))
+                // {
+                //     agentMessages.Insert(0, new AppChatMessage(agent.Instructions, DateTime.Now, ChatRole.System));
+                // }
 
-                var agentMessages = Messages.Where(m => m.Role != ChatRole.System).ToList();
-                if (!string.IsNullOrWhiteSpace(agent.Instructions))
-                {
-                    agentMessages.Insert(0, new AppChatMessage(agent.Instructions, DateTime.Now, ChatRole.System));
-                }
-
-                ChatHistory history = await historyBuilder.BuildChatHistoryAsync(agentMessages, kernel, cancellationToken);
-                streamingContent = agentService.GetAgentStreamingResponseAsync(agent, history, chatConfiguration, cancellationToken);
+                var history = await historyBuilder.BuildChatHistoryAsync(Messages, kernel, cancellationToken);
+                streamingContent = AgentService.GetAgentStreamingResponseAsync(agent, history, chatConfiguration, cancellationToken);
             }
             else
             {
-                kernel = await kernelService.CreateKernelAsync(chatConfiguration);
                 var history = await historyBuilder.BuildChatHistoryAsync(Messages, kernel, cancellationToken);
                 var chatService = kernel.GetRequiredService<IChatCompletionService>();
                 var executionSettings = new PromptExecutionSettings

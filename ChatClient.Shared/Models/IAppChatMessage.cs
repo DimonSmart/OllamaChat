@@ -1,5 +1,4 @@
 using Microsoft.Extensions.AI;
-using System.Collections.Generic;
 
 namespace ChatClient.Shared.Models;
 

@@ -1,7 +1,6 @@
 using System.Text.Json.Serialization;
 
 using Microsoft.Extensions.AI;
-using System.Collections.Generic;
 
 namespace ChatClient.Shared.Models;
 
@@ -15,10 +14,6 @@ public class AppChatMessage : IAppChatMessage
     public bool IsCanceled { get; set; }
     public IReadOnlyList<ChatMessageFile> Files { get; set; } = [];
     public IReadOnlyCollection<FunctionCallRecord> FunctionCalls { get; set; } = [];
-    /// <summary>
-                                                                       /// Indicates whether this message is currently streaming.
-                                                                       /// Always false for regular messages.
-                                                                       /// </summary>
     public bool IsStreaming => false;
 
     public bool Equals(IAppChatMessage? other)

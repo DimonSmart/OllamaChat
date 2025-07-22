@@ -9,12 +9,10 @@ using Microsoft.SemanticKernel.ChatCompletion;
 
 namespace ChatClient.Api.Services;
 
-public class AgentService(KernelService kernelService)
+public static class AgentService
 {
-    public async Task<ChatCompletionAgent> CreateChatAgentAsync(ChatConfiguration chatConfiguration, string systemPrompt)
+    public static ChatCompletionAgent CreateChatAgent(Kernel kernel, string systemPrompt)
     {
-        var kernel = await kernelService.CreateKernelAsync(chatConfiguration);
-
         var agent = new ChatCompletionAgent
         {
             Kernel = kernel,
@@ -29,7 +27,7 @@ public class AgentService(KernelService kernelService)
     /// <summary>
     /// Processes message through agent and returns streaming response
     /// </summary>
-    public async IAsyncEnumerable<StreamingChatMessageContent> GetAgentStreamingResponseAsync(
+    public static async IAsyncEnumerable<StreamingChatMessageContent> GetAgentStreamingResponseAsync(
         ChatCompletionAgent agent,
         ChatHistory chatHistory,
         ChatConfiguration chatConfiguration,
@@ -43,8 +41,6 @@ public class AgentService(KernelService kernelService)
                 ? FunctionChoiceBehavior.Auto()
                 : FunctionChoiceBehavior.None()
         };
-
-        // chatHistory already contains the agent instructions and has history mode applied
 
         await foreach (var content in chatService.GetStreamingChatMessageContentsAsync(
             chatHistory,
