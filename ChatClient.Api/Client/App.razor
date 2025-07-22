@@ -11,13 +11,13 @@
     <NotFound>
         <PageTitle>Not found</PageTitle>
         <LayoutView Layout="@typeof(MainLayout)">
-            <div class="container mt-4">
+            <MudContainer Class="mt-4">
                 <MudAlert Severity="Severity.Error">
                     <h4>Page not found</h4>
                     <p role="alert">Sorry, there's nothing at this address. The requested page was not found.</p>
                     <MudButton Href="/" Variant="Variant.Filled" Color="Color.Primary">Go to Chat</MudButton>
                 </MudAlert>
-                <div class="mt-3">
+                <MudStack Class="mt-3">
                     <h5>Available Pages</h5>
                     <MudList T="string">
                         <MudListItem T="string" Href="/">Home</MudListItem>
@@ -27,8 +27,8 @@
                         <MudListItem T="string" Href="/ollama-connection-settings">Ollama Connection Settings</MudListItem>
                         <MudListItem T="string" Href="/app-settings">Application Settings</MudListItem>
                     </MudList>
-                </div>
-            </div>
+                </MudStack>
+            </MudContainer>
         </LayoutView>
     </NotFound>
 </Router>

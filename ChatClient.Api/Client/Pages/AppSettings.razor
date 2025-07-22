@@ -34,7 +34,7 @@
                                 @foreach (var model in _availableModels)
                                 {
                                     <MudSelectItem Value="@model.Name">
-                                        <div class="d-flex align-center">
+                                        <MudStack Row="true" AlignItems="AlignItems.Center">
                                             <span>@model.Name</span>
                                             @if (model.SupportsImages)
                                             {
@@ -53,7 +53,7 @@
                                                          title="Function calling support detected (may not be accurate)"
                                                          Style="color: #2196f3;" />
                                             }
-                                        </div>
+                                        </MudStack>
                                     </MudSelectItem>
                                 }
                             </MudSelect>

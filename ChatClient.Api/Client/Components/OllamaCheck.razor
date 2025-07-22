@@ -7,16 +7,16 @@
 
 @if (isChecking)
 {
-    <div class="d-flex justify-center align-center" style="height: 50vh;">
+    <MudStack Justify="Justify.Center" AlignItems="AlignItems.Center" Style="height: 50vh;">
         <div class="text-center">
             <MudProgressCircular Size="Size.Large" Indeterminate="true" />
             <MudText Typo="Typo.h6" Class="mt-4">Checking Ollama status...</MudText>
         </div>
-    </div>
+    </MudStack>
 }
 else if (!ollamaAvailable)
 {
-    <div class="d-flex justify-center align-center" style="height: 50vh;">
+    <MudStack Justify="Justify.Center" AlignItems="AlignItems.Center" Style="height: 50vh;">
         <div class="text-center">
             <MudIcon Icon="@Icons.Material.Filled.Warning" Size="Size.Large" Color="Color.Warning" />
             <MudText Typo="Typo.h6" Class="mt-2 mb-3">Ollama Server Required</MudText>
@@ -43,7 +43,7 @@ else if (!ollamaAvailable)
                 </MudButton>
             </MudButtonGroup>
         </div>
-    </div>
+    </MudStack>
 }
 else
 {

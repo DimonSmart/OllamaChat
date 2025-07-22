@@ -6,7 +6,7 @@
 @inject IUserSettingsService UserSettingsService
 
 <MudPaper Class="pa-2" Elevation="2">
-    <div class="d-flex gap-1 align-center">
+    <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="1">
         <MudFileUpload T="IReadOnlyList<IBrowserFile>"
                        FilesChanged="OnFilesChanged"
                        multiple="true"
@@ -26,7 +26,7 @@
                       Lines="3"
                       Label="Type your message"
                       Variant="Variant.Outlined"
-                      Class="flex-grow-1"
+                      Style="flex-grow:1"
                       Margin="Margin.Dense"
                       Adornment="Adornment.End"
                       AdornmentIcon="@(ShowStopButton ? Icons.Material.Filled.Stop : Icons.Material.Filled.Send)"
@@ -35,13 +35,13 @@
                       OnKeyDown="HandleKeyDown"
                       ShrinkLabel="true"
                       title="@(ShowStopButton ? "Stop generation" : "Send message (Ctrl+Enter)")" />
-    </div>
+    </MudStack>
 
     @if (attachedFiles.Count > 0)
     {
         <div class="mt-1">
             <MudText Typo="Typo.caption" Class="mb-1">Attached files (@attachedFiles.Count/10):</MudText>
-            <div class="d-flex flex-wrap gap-1">
+            <MudStack Row="true" Spacing="1" Class="flex-wrap">
                 @foreach (var file in attachedFiles)
                 {
                     <MudChip T="string"
@@ -53,7 +53,7 @@
                         @file.Name (@FormatFileSize(file.Size))
                     </MudChip>
                 }
-            </div>
+            </MudStack>
         </div>
     }
 </MudPaper>
