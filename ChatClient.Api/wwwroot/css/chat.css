@@ -83,7 +83,7 @@
 .delete-button {
     cursor: pointer;
     margin-left: 0.25rem;
-    color: red;
+    color: var(--mud-palette-text-secondary);
 }
 .delete-button.disabled {
     color: gray;
