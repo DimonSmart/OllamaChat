@@ -50,4 +50,10 @@ public class UserSettings
     /// </summary>
     [JsonPropertyName("defaultUseAgentMode")]
     public bool DefaultUseAgentMode { get; set; } = false;
+
+    /// <summary>
+    /// Defines how chat history should be prepared before sending to the LLM
+    /// </summary>
+    [JsonPropertyName("chatHistoryMode")]
+    public ChatHistoryMode ChatHistoryMode { get; set; } = ChatHistoryMode.None;
 }

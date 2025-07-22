@@ -9,7 +9,7 @@ using Microsoft.SemanticKernel.ChatCompletion;
 
 namespace ChatClient.Api.Services;
 
-public class AgentService(KernelService kernelService)
+public class AgentService(KernelService kernelService, ChatHistoryBuilder historyBuilder)
 {
     public async Task<ChatCompletionAgent> CreateChatAgentAsync(ChatConfiguration chatConfiguration, string systemPrompt)
     {
@@ -44,23 +44,9 @@ public class AgentService(KernelService kernelService)
                 : FunctionChoiceBehavior.None()
         };
 
-        // Build the complete chat history including the agent's instructions as system message
-        var fullChatHistory = new ChatHistory();
-        if (!string.IsNullOrEmpty(agent.Instructions))
-        {
-            fullChatHistory.AddSystemMessage(agent.Instructions);
-        }
+        // Build the complete chat history including the agent's instructions and apply history mode
+        var fullChatHistory = await historyBuilder.BuildForAgentAsync(chatHistory, agent.Instructions ?? string.Empty, agent.Kernel, cancellationToken);
 
-        foreach (var message in chatHistory.Where(m => m.Role != AuthorRole.System))
-        {
-            fullChatHistory.Add(message);
-        }
-
-        // DEMO CODE
-        // var historyReducer = new ChatHistoryTruncationReducer(5, 8);
-        // var sumReducer = new ChatHistorySummarizationReducer(chatService, 5, 8);
-        // var reducer = sumReducer;
-        // var reducedHistory = new ChatHistory(await reducer.ReduceAsync(fullChatHistory, cancellationToken) ?? []);
 
         await foreach (var content in chatService.GetStreamingChatMessageContentsAsync(
             fullChatHistory,

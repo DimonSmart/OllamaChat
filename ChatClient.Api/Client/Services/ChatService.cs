@@ -3,9 +3,8 @@
 using ChatClient.Api.Services;
 using ChatClient.Shared.Models;
 
-using DimonSmart.AiUtils;
-
 using Microsoft.Extensions.AI;
+
 using Microsoft.SemanticKernel;
 using Microsoft.SemanticKernel.Agents;
 using Microsoft.SemanticKernel.ChatCompletion;
@@ -17,6 +16,7 @@ namespace ChatClient.Api.Client.Services;
 public class ChatService(
     KernelService kernelService,
     AgentService agentService,
+    ChatHistoryBuilder historyBuilder,
     ILogger<ChatService> logger) : IChatService
 {
     private CancellationTokenSource? _cancellationTokenSource;
@@ -101,33 +101,6 @@ public class ChatService(
         await (MessageAdded?.Invoke(message) ?? Task.CompletedTask);
     }
 
-    private async Task<(IAsyncEnumerable<StreamingChatMessageContent> Stream, Kernel Kernel)> GetStreamingContentAsync(
-        ChatConfiguration chatConfiguration,
-        ChatHistory chatHistory,
-        CancellationToken cancellationToken)
-    {
-        if (chatConfiguration.UseAgentMode)
-        {
-            string systemPrompt = Messages.FirstOrDefault(m => m.Role == ChatRole.System)?.Content ?? "You are a helpful AI assistant.";
-            ChatCompletionAgent agent = await agentService.CreateChatAgentAsync(chatConfiguration, systemPrompt);
-            return (agentService.GetAgentStreamingResponseAsync(agent, chatHistory, chatConfiguration, cancellationToken), agent.Kernel);
-        }
-
-        Kernel kernel = await kernelService.CreateKernelAsync(chatConfiguration);
-        IChatCompletionService chatService = kernel.GetRequiredService<IChatCompletionService>();
-        PromptExecutionSettings executionSettings = new PromptExecutionSettings
-        {
-            FunctionChoiceBehavior = chatConfiguration.Functions.Any()
-                ? FunctionChoiceBehavior.Auto()
-                : FunctionChoiceBehavior.None()
-        };
-
-        return (chatService.GetStreamingChatMessageContentsAsync(
-            chatHistory,
-            executionSettings,
-            kernel,
-            cancellationToken: cancellationToken), kernel);
-    }
 
     private async Task ProcessAIResponseAsync(ChatConfiguration chatConfiguration, CancellationToken cancellationToken)
     {
@@ -147,8 +120,33 @@ public class ChatService(
 
         try
         {
-            ChatHistory chatHistory = BuildChatHistory();
-            var (streamingContent, kernel) = await GetStreamingContentAsync(chatConfiguration, chatHistory, cancellationToken);
+            Kernel kernel;
+            IAsyncEnumerable<StreamingChatMessageContent> streamingContent;
+            if (chatConfiguration.UseAgentMode)
+            {
+                string systemPrompt = Messages.FirstOrDefault(m => m.Role == ChatRole.System)?.Content ?? "You are a helpful AI assistant.";
+                ChatCompletionAgent agent = await agentService.CreateChatAgentAsync(chatConfiguration, systemPrompt);
+                kernel = agent.Kernel;
+                ChatHistory history = await historyBuilder.BuildForAgentAsync(historyBuilder.BuildBaseHistory(this.Messages), agent.Instructions ?? string.Empty, kernel, cancellationToken);
+                streamingContent = agentService.GetAgentStreamingResponseAsync(agent, history, chatConfiguration, cancellationToken);
+            }
+            else
+            {
+                kernel = await kernelService.CreateKernelAsync(chatConfiguration);
+                ChatHistory history = await historyBuilder.BuildForChatAsync(this.Messages, kernel, cancellationToken);
+                IChatCompletionService chatService = kernel.GetRequiredService<IChatCompletionService>();
+                PromptExecutionSettings executionSettings = new PromptExecutionSettings
+                {
+                    FunctionChoiceBehavior = chatConfiguration.Functions.Any()
+                        ? FunctionChoiceBehavior.Auto()
+                        : FunctionChoiceBehavior.None()
+                };
+                streamingContent = chatService.GetStreamingChatMessageContentsAsync(
+                    history,
+                    executionSettings,
+                    kernel,
+                    cancellationToken: cancellationToken);
+            }
 
             FunctionCallRecordingFilter trackingFilter = new(functionCalls);
 
@@ -224,58 +222,6 @@ public class ChatService(
         }
     }
 
-    private ChatHistory BuildChatHistory()
-    {
-        ChatHistory history = new ChatHistory();
-
-        foreach (IAppChatMessage? msg in this.Messages.Where(m => !m.IsStreaming))
-        {
-            ChatMessageContentItemCollection items = new ChatMessageContentItemCollection();
-
-            if (!string.IsNullOrEmpty(msg.Content))
-            {
-                var answer = ThinkTagParser.ExtractThinkAnswer(msg.Content).Answer;
-                items.Add(new Microsoft.SemanticKernel.TextContent(answer));
-            }
-
-            foreach (ChatMessageFile file in msg.Files)
-            {
-                if (IsImageContentType(file.ContentType))
-                {
-                    items.Add(new ImageContent(new BinaryData(file.Data), file.ContentType));
-                }
-                else
-                {
-                    string fileDescription = $"File: {file.Name} ({file.ContentType})";
-                    items.Add(new Microsoft.SemanticKernel.TextContent(fileDescription));
-                }
-            }
-
-            AuthorRole role = ConvertToAuthorRole(msg.Role);
-            history.Add(new ChatMessageContent(role, items));
-        }
-
-        return history;
-    }
-    private static AuthorRole ConvertToAuthorRole(ChatRole chatRole)
-    {
-        if (chatRole == ChatRole.System)
-        {
-            return AuthorRole.System;
-        }
-
-        if (chatRole == ChatRole.Assistant)
-        {
-            return AuthorRole.Assistant;
-        }
-
-        return AuthorRole.User;
-    }
-
-    private static bool IsImageContentType(string contentType)
-    {
-        return contentType.StartsWith("image/", StringComparison.OrdinalIgnoreCase);
-    }
 
     private async Task ReplaceStreamingMessageWithFinal(StreamingAppChatMessage streamingMessage, AppChatMessage finalMessage)
     {

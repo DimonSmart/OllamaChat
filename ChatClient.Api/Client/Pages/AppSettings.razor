@@ -65,6 +65,22 @@
 
                     <MudCard Class="mb-4" Elevation="1">
                         <MudCardHeader Class="pb-2">
+                            <MudText Class="section-header">Chat History Mode</MudText>
+                        </MudCardHeader>
+                        <MudCardContent Class="pt-0">
+                            <MudSelect T="ChatHistoryMode" Label="History Processing" @bind-Value="_settings.ChatHistoryMode" Variant="Variant.Outlined" Dense="true">
+                                <MudSelectItem Value="@ChatHistoryMode.None">None</MudSelectItem>
+                                <MudSelectItem Value="@ChatHistoryMode.Truncate">Truncate</MudSelectItem>
+                                <MudSelectItem Value="@ChatHistoryMode.Summarize">Summarize</MudSelectItem>
+                            </MudSelect>
+                            <MudText Typo="Typo.caption" Class="mt-2">
+                                Determines how message history is prepared before sending to the model.
+                            </MudText>
+                        </MudCardContent>
+                    </MudCard>
+
+                    <MudCard Class="mb-4" Elevation="1">
+                        <MudCardHeader Class="pb-2">
                             <MudText Class="section-header">Default Chat Message</MudText>
                         </MudCardHeader>
                         <MudCardContent Class="pt-0">
