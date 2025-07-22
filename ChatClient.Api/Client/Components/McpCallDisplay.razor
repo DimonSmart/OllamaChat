@@ -22,7 +22,7 @@
     else
     {
         <MudText Typo="Typo.caption" Class="mud-text-secondary" Style="font-style: italic;">
-            @CollapsedLine
+            @CallIcon @CollapsedLine
         </MudText>
     }
 </MudChatBubble>
@@ -31,6 +31,8 @@
     [Parameter] public FunctionCallRecord Call { get; set; } = new("", "", "", "");
 
     private bool isExpanded;
+
+    private const string CallIcon = "\uD83D\uDEE0"; // 🛠
 
     private void Toggle() => isExpanded = !isExpanded;
 
