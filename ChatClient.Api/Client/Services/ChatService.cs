@@ -1,5 +1,4 @@
 ﻿using System.Collections.ObjectModel;
-using System.Linq;
 
 using ChatClient.Api.Services;
 using ChatClient.Shared.Models;
@@ -151,13 +150,12 @@ public class ChatService(
 
             FunctionCallRecordingFilter trackingFilter = new(functionCalls);
 
+            string? doneReason = null;
             try
             {
                 kernel.FunctionInvocationFilters.Add(trackingFilter);
-                StreamingChatMessageContent? current = null;
                 await foreach (var content in streamingContent)
                 {
-                    current = content;
                     await Task.Yield();
                     cancellationToken.ThrowIfCancellationRequested();
 
@@ -173,10 +171,12 @@ public class ChatService(
                             lastUpdateTime = now;
                         }
                     }
+
+                    if (content.InnerContent is OllamaSharp.Models.Chat.ChatDoneResponseStream done && done.Done)
+                        doneReason = done.DoneReason;
+
                     await Task.Yield();
                 }
-
-                var lastMessage = current;
 
             }
             finally
