@@ -3,6 +3,8 @@
 using ChatClient.Api.Services;
 using ChatClient.Shared.Models;
 
+using DimonSmart.AiUtils;
+
 using Microsoft.Extensions.AI;
 using Microsoft.SemanticKernel;
 using Microsoft.SemanticKernel.Agents;
@@ -232,8 +234,10 @@ public class ChatService(
 
             if (!string.IsNullOrEmpty(msg.Content))
             {
-                items.Add(new Microsoft.SemanticKernel.TextContent(msg.Content));
+                var answer = ThinkTagParser.ExtractThinkAnswer(msg.Content).Answer;
+                items.Add(new Microsoft.SemanticKernel.TextContent(answer));
             }
+
             foreach (ChatMessageFile file in msg.Files)
             {
                 if (IsImageContentType(file.ContentType))
