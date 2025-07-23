@@ -1,5 +1,7 @@
 ﻿@inherits LayoutComponentBase
+@implements IAsyncDisposable
 @inject NavigationManager NavigationManager
+@inject IChatService ChatService
 
 <MudThemeProvider Theme="@_theme" IsDarkMode="_isDarkMode" />
 <MudDialogProvider />
@@ -9,6 +11,15 @@
     <MudAppBar Elevation="1" Dense="true">
         <MudIconButton Icon="@Icons.Material.Filled.Menu" Color="Color.Inherit" Edge="Edge.Start" OnClick="@((e) => DrawerToggle())" Size="Size.Medium" />
         <MudText Typo="Typo.h6" Class="ml-3">Ollama chat with MCP</MudText>
+        @if (!isLLMAnswering)
+        {
+            <MudButton OnClick="NewChat"
+                       Color="Color.Secondary"
+                       Variant="Variant.Outlined"
+                       StartIcon="@Icons.Material.Filled.AddCircle"
+                       Size="Size.Small"
+                       Class="ml-4">New Chat</MudButton>
+        }
         <MudSpacer />
         <MudIconButton Icon="@(DarkLightModeButtonIcon)" Color="Color.Inherit" OnClick="@DarkModeToggle" Size="Size.Medium" />
         <MudIconButton Icon="@Icons.Material.Filled.MoreVert" Color="Color.Inherit" Edge="Edge.End" Size="Size.Medium" />
@@ -40,11 +51,15 @@
 @code {
     private bool _drawerOpen = true;
     private bool _isDarkMode = true;
+    private bool isLLMAnswering;
     private MudTheme? _theme = null;
 
     protected override void OnInitialized()
     {
         base.OnInitialized();
+
+        ChatService.LoadingStateChanged += OnLoadingStateChanged;
+        isLLMAnswering = ChatService.IsLoading;
 
         _theme = new()
         {
@@ -64,10 +79,22 @@
         _isDarkMode = !_isDarkMode;
     }
 
+    private void OnLoadingStateChanged(bool loading)
+    {
+        isLLMAnswering = loading;
+        InvokeAsync(StateHasChanged);
+    }
+
     private bool IsOnChatPage()
     {
         var currentPath = NavigationManager.ToAbsoluteUri(NavigationManager.Uri).LocalPath;
         return currentPath == "/" || currentPath == "/chat";
+    }
+
+    private void NewChat()
+    {
+        ChatService.ClearChat();
+        NavigationManager.NavigateTo("/chat", true);
     }
 
     private readonly PaletteLight _lightPalette = new()
@@ -114,4 +141,10 @@
         true => Icons.Material.Rounded.AutoMode,
         false => Icons.Material.Outlined.DarkMode,
     };
+
+    public ValueTask DisposeAsync()
+    {
+        ChatService.LoadingStateChanged -= OnLoadingStateChanged;
+        return ValueTask.CompletedTask;
+    }
 }
