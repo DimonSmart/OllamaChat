@@ -61,7 +61,7 @@ public class McpFunctionIndexServiceRealOllamaTests
         var result = await indexService.SelectRelevantFunctionsAsync("How does a transistor work?", 2);
 
         Assert.Equal(2, result.Count);
-        Assert.Contains("TransTool1", result);
-        Assert.Contains("TransTool2", result);
+        Assert.Contains("srv:TransTool1", result);
+        Assert.Contains("srv:TransTool2", result);
     }
 }
