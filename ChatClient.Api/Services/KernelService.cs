@@ -107,7 +107,9 @@ public class KernelService(
                     continue;
                 }
 
-                var toolsToRegister = mcpTools.Where(t => functionNames.Contains(t.Name)).ToList();
+                var toolsToRegister = mcpTools
+                    .Where(t => functionNames.Contains($"{mcpClient.ServerInfo.Name}:{t.Name}"))
+                    .ToList();
                 if (toolsToRegister.Count == 0)
                 {
                     logger.LogWarning($"No MCP tools matched the requested function names. In mcp server: {mcpClient.ServerInfo.Name}");
@@ -149,7 +151,9 @@ public class KernelService(
                 var toolFuncs = mcpTools.Select(tool =>
                     new FunctionInfo
                     {
-                        Name = tool.Name,
+                        Name = $"{mcpClient.ServerInfo.Name}:{tool.Name}",
+                        ServerName = mcpClient.ServerInfo.Name ?? string.Empty,
+                        DisplayName = tool.Name,
                         Description = tool.Description
                     });
                 functions.AddRange(toolFuncs);

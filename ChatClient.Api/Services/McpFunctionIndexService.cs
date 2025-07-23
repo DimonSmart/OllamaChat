@@ -70,7 +70,7 @@ public class McpFunctionIndexService
         await BuildIndexAsync(cancellationToken);
         var queryEmbedding = await _ollamaService.GenerateEmbeddingAsync(query, _modelId, cancellationToken);
         return _index
-            .Select(kvp => new { Name = kvp.Key.Split(':').Last(), Score = Dot(queryEmbedding.AsSpan(), kvp.Value) })
+            .Select(kvp => new { Name = kvp.Key, Score = Dot(queryEmbedding.AsSpan(), kvp.Value) })
             .OrderByDescending(e => e.Score)
             .Take(topK)
             .Select(e => e.Name)

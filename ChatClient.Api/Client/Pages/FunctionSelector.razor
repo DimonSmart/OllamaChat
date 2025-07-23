@@ -8,22 +8,34 @@
                      Color="Color.Primary" Label="Auto-select relevant functions" />
         <MudNumericField T="int" @bind-Value="AutoSelectCount" Class="mt-2" Min="1" Max="10"
                          Disabled="!AutoSelectFunctions" Variant="Variant.Outlined" Label="Function count" />
-        <MudStack Spacing="1" Class="mt-2">
-            @foreach (var fn in AvailableFunctions)
+        <MudExpansionPanels Class="mt-2">
+            @foreach (var group in AvailableFunctions.GroupBy(f => f.ServerName))
             {
-                <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2">
-                    <MudCheckBox T="Boolean"
-                                 ValueChanged="@(async (bool v) => await OnFunctionToggled(fn.Name, v))"
-                                 Value="@internalSelectedFunctions.Contains(fn.Name)"
-                                 Dense="true" Disabled="@AutoSelectFunctions" />
-                    <div style="flex-grow:1">
-                        <MudText Typo="Typo.body2" Class="mb-0">
-                            <strong>@fn.Name</strong> - @fn.Description
-                        </MudText>
-                    </div>
-                </MudStack>
+                <MudExpansionPanel Text="@group.Key">
+                    <MudStack Spacing="1">
+                        <MudCheckBox T="bool" Label="Select All"
+                                     ValueChanged="@(async (bool v) => await OnServerToggled(group.Key, v))"
+                                     Value="@serverSelections.GetValueOrDefault(group.Key)"
+                                     Dense="true" Disabled="@AutoSelectFunctions" />
+
+                        @foreach (var fn in group)
+                        {
+                            <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2" Class="ml-4">
+                                <MudCheckBox T="bool"
+                                             ValueChanged="@(async (bool v) => await OnFunctionToggled(fn, v))"
+                                             Value="@internalSelectedFunctions.Contains(fn.Name)"
+                                             Dense="true" Disabled="@AutoSelectFunctions" />
+                                <div style="flex-grow:1">
+                                    <MudText Typo="Typo.body2" Class="mb-0">
+                                        <strong>@fn.DisplayName</strong> - @fn.Description
+                                    </MudText>
+                                </div>
+                            </MudStack>
+                        }
+                    </MudStack>
+                </MudExpansionPanel>
             }
-        </MudStack>
+        </MudExpansionPanels>
         <MudText Typo="Typo.caption" Color="Color.Secondary">
             It is not recommended to select more than 5 functions.
         </MudText>
@@ -42,23 +54,48 @@
     [Parameter] public EventCallback<int> AutoSelectCountChanged { get; set; }
 
     private HashSet<string> internalSelectedFunctions = new();
+    private Dictionary<string, bool> serverSelections = new();
 
     protected override void OnParametersSet()
     {
         internalSelectedFunctions = new HashSet<string>(SelectedFunctions);
+        serverSelections = AvailableFunctions
+            .GroupBy(f => f.ServerName)
+            .ToDictionary(g => g.Key, g => g.All(f => internalSelectedFunctions.Contains(f.Name)));
     }
 
-    private async Task OnFunctionToggled(string name, bool isChecked)
+    private async Task OnServerToggled(string serverName, bool isChecked)
     {
+        var serverFunctions = AvailableFunctions.Where(f => f.ServerName == serverName).Select(f => f.Name);
         if (isChecked)
         {
-            if (!internalSelectedFunctions.Contains(name))
-                internalSelectedFunctions.Add(name);
+            foreach (var fn in serverFunctions)
+                internalSelectedFunctions.Add(fn);
         }
         else
         {
-            internalSelectedFunctions.Remove(name);
+            foreach (var fn in serverFunctions)
+                internalSelectedFunctions.Remove(fn);
         }
+        serverSelections[serverName] = isChecked;
+        await SelectedFunctionsChanged.InvokeAsync(internalSelectedFunctions.ToList());
+    }
+
+    private async Task OnFunctionToggled(FunctionInfo fn, bool isChecked)
+    {
+        if (isChecked)
+        {
+            if (!internalSelectedFunctions.Contains(fn.Name))
+                internalSelectedFunctions.Add(fn.Name);
+        }
+        else
+        {
+            internalSelectedFunctions.Remove(fn.Name);
+        }
+
+        serverSelections[fn.ServerName] = AvailableFunctions
+            .Where(f => f.ServerName == fn.ServerName)
+            .All(f => internalSelectedFunctions.Contains(f.Name));
 
         await SelectedFunctionsChanged.InvokeAsync(internalSelectedFunctions.ToList());
     }
