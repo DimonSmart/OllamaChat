@@ -243,7 +243,11 @@
             <FunctionSelector AvailableFunctions="availableFunctions"
                               SelectedFunctions="selectedFunctions"
                               SelectedFunctionsChanged="OnSelectedFunctionsChanged"
-                              Expanded="@functionsExpanded" />
+                              Expanded="@functionsExpanded"
+                              AutoSelectFunctions="autoSelectFunctions"
+                              AutoSelectFunctionsChanged="@(v => autoSelectFunctions = v)"
+                              AutoSelectCount="autoSelectCount"
+                              AutoSelectCountChanged="@(v => autoSelectCount = v)" />
 
             <MudStack Direction="Direction.Column">
                 <ChatInput OnSend="SendChatMessageAsync" 
@@ -280,6 +284,8 @@
     private List<string> selectedFunctions = new();
     private bool functionsExpanded = false;
     private bool useAgentMode = false;
+    private bool autoSelectFunctions = false;
+    private int autoSelectCount = 3;
 
     private List<OllamaModel> availableModels = new();
     private OllamaModel? selectedModel;
@@ -354,8 +360,12 @@
 
     private async Task LoadUserSettings()
     {
-            userSettings = await UserSettingsService.GetSettingsAsync();
-            useAgentMode = userSettings.DefaultUseAgentMode;
+        userSettings = await UserSettingsService.GetSettingsAsync();
+        useAgentMode = userSettings.DefaultUseAgentMode;
+        autoSelectFunctions = userSettings.DefaultAutoSelectCount > 0;
+        autoSelectCount = userSettings.DefaultAutoSelectCount > 0
+            ? userSettings.DefaultAutoSelectCount
+            : 3;
     }
 
     private async Task LoadAvailableFunctions()
@@ -416,9 +426,11 @@
             return;
 
         var chatConfiguration = new ChatConfiguration(
-            selectedModel?.Name ?? string.Empty, 
+            selectedModel?.Name ?? string.Empty,
             selectedFunctions,
-            useAgentMode);
+            useAgentMode,
+            autoSelectFunctions,
+            autoSelectCount);
 
         await ChatService.AddUserMessageAndAnswerAsync(messageData.text.Trim(), chatConfiguration, messageData.files);
         await ScrollToBottom();

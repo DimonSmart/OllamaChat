@@ -52,6 +52,13 @@ public class UserSettings
     public bool DefaultUseAgentMode { get; set; } = false;
 
     /// <summary>
+    /// Number of functions to auto-select for new chats. Set to 0 to disable
+    /// auto-selection.
+    /// </summary>
+    [JsonPropertyName("defaultAutoSelectCount")]
+    public int DefaultAutoSelectCount { get; set; } = 0;
+
+    /// <summary>
     /// Defines how chat history should be prepared before sending to the LLM
     /// </summary>
     [JsonPropertyName("chatHistoryMode")]

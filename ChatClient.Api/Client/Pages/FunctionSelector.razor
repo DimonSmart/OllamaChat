@@ -4,14 +4,18 @@
 <MudCollapse Expanded="@Expanded" ExpandedChanged="@(v => ExpandedChanged.InvokeAsync(v))">
     <MudPaper Class="pa-4">
         <MudText Typo="Typo.subtitle1">Select Functions to use:</MudText>
-        <MudStack Spacing="1">
+        <MudCheckBox T="bool" @bind-Value="AutoSelectFunctions" Class="mt-2"
+                     Color="Color.Primary" Label="Auto-select relevant functions" />
+        <MudNumericField T="int" @bind-Value="AutoSelectCount" Class="mt-2" Min="1" Max="10"
+                         Disabled="!AutoSelectFunctions" Variant="Variant.Outlined" Label="Function count" />
+        <MudStack Spacing="1" Class="mt-2">
             @foreach (var fn in AvailableFunctions)
             {
                 <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2">
                     <MudCheckBox T="Boolean"
                                  ValueChanged="@(async (bool v) => await OnFunctionToggled(fn.Name, v))"
                                  Value="@internalSelectedFunctions.Contains(fn.Name)"
-                                 Dense="true" />
+                                 Dense="true" Disabled="@AutoSelectFunctions" />
                     <div style="flex-grow:1">
                         <MudText Typo="Typo.body2" Class="mb-0">
                             <strong>@fn.Name</strong> - @fn.Description
@@ -32,6 +36,10 @@
     [Parameter] public EventCallback<List<string>> SelectedFunctionsChanged { get; set; }
     [Parameter] public bool Expanded { get; set; }
     [Parameter] public EventCallback<bool> ExpandedChanged { get; set; }
+    [Parameter] public bool AutoSelectFunctions { get; set; }
+    [Parameter] public EventCallback<bool> AutoSelectFunctionsChanged { get; set; }
+    [Parameter] public int AutoSelectCount { get; set; }
+    [Parameter] public EventCallback<int> AutoSelectCountChanged { get; set; }
 
     private HashSet<string> internalSelectedFunctions = new();
 
