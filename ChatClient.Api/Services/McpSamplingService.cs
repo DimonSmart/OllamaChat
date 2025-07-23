@@ -21,7 +21,7 @@ namespace ChatClient.Api.Services;
 public class McpSamplingService(
     IServiceProvider serviceProvider,
     IUserSettingsService userSettingsService,
-    OllamaService ollamaService,
+    IOllamaClientService ollamaService,
     ILogger<McpSamplingService> logger)
 {
     private readonly IServiceProvider _serviceProvider = serviceProvider;
