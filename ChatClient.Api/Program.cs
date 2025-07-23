@@ -30,12 +30,10 @@ var loggerFactory = LoggerFactory.Create(logging =>
 builder.Services.AddSingleton<ILoggerFactory>(loggerFactory);
 
 builder.Services.AddSingleton<ChatClient.Shared.Services.IMcpServerConfigService, ChatClient.Api.Services.McpServerConfigService>();
-builder.Services.AddSingleton<ChatClient.Api.Services.McpClientService>();
-builder.Services.AddSingleton<ChatClient.Api.Services.IMcpClientService>(sp => sp.GetRequiredService<ChatClient.Api.Services.McpClientService>());
+builder.Services.AddSingleton<ChatClient.Api.Services.IMcpClientService, ChatClient.Api.Services.McpClientService>();
 builder.Services.AddSingleton<ChatClient.Api.Services.McpSamplingService>();
 builder.Services.AddSingleton<ChatClient.Api.Services.KernelService>();
-builder.Services.AddSingleton<ChatClient.Api.Services.OllamaService>();
-builder.Services.AddSingleton<ChatClient.Api.Services.IOllamaEmbeddingService>(sp => sp.GetRequiredService<ChatClient.Api.Services.OllamaService>());
+builder.Services.AddSingleton<ChatClient.Api.Services.IOllamaService, ChatClient.Api.Services.OllamaService>();
 builder.Services.AddSingleton<ChatClient.Api.Services.McpFunctionIndexService>();
 builder.Services.AddSingleton<ChatClient.Api.Services.IChatHistoryBuilder, ChatClient.Api.Services.ChatHistoryBuilder>();
 builder.Services.AddScoped<ChatClient.Api.Services.StartupOllamaChecker>();
