@@ -23,31 +23,65 @@ public class McpFunctionIndexServiceTests
 
     private sealed class FakeEmbeddingService : IOllamaEmbeddingService
     {
-        private readonly Dictionary<string, float[]> _vectors;
-        public FakeEmbeddingService(Dictionary<string, float[]> vectors) => _vectors = vectors;
+        // Very naive embedding based on keyword counts so the test simulates
+        // real embedding behavior without external dependencies.
+        private static readonly string[] TransistorKeywords = new[] { "transistor", "semiconductor" };
+        private static readonly string[] CookingKeywords = new[] { "recipe", "cook", "bake", "pasta", "chocolate", "onions", "chicken", "dish", "oven" };
+
         public Task<float[]> GenerateEmbeddingAsync(string input, string modelId, CancellationToken cancellationToken = default)
-            => Task.FromResult(_vectors[input]);
+        {
+            float tCount = CountKeywords(input, TransistorKeywords);
+            float cCount = CountKeywords(input, CookingKeywords);
+            return Task.FromResult(new[] { tCount, cCount });
+        }
+
+        private static int CountKeywords(string input, IEnumerable<string> keywords)
+        {
+            var count = 0;
+            foreach (var word in keywords)
+            {
+                if (input.Contains(word, StringComparison.OrdinalIgnoreCase))
+                {
+                    count++;
+                }
+            }
+            return count;
+        }
     }
 
     [Fact]
-    public async Task SelectRelevantFunctions_ReturnsBestMatch()
+    public async Task SelectRelevantFunctions_FindsTransistorEntries()
     {
-        var embeddings = new Dictionary<string, float[]>
+        var lines = new List<(string Name, string Text)>
         {
-            ["Tool1. first"] = new[] {1f, 0f},
-            ["Tool2. second"] = new[] {0f, 1f},
-            ["query"] = new[] {0.9f, 0.1f}
+            ("TransTool1", "Transistors are semiconductor devices used to amplify signals."),
+            ("TransTool2", "A transistor can act as a switch in electronic circuits."),
+            ("CookTool1", "To bake a cake, start by preheating your oven."),
+            ("CookTool2", "This recipe uses fresh tomatoes and basil."),
+            ("CookTool3", "Heat oil in a pan and add chopped onions."),
+            ("CookTool4", "Add the pasta and cook until al dente."),
+            ("CookTool5", "Mix chocolate with butter to make a rich frosting."),
+            ("CookTool6", "Grill the chicken for 10 minutes on each side."),
+            ("CookTool7", "Stir frequently to avoid burning."),
+            ("CookTool8", "Serve the dish with a sprinkle of parsley."),
         };
-        var indexService = new McpFunctionIndexService(new DummyMcpClientService(), new FakeEmbeddingService(embeddings), NullLogger<McpFunctionIndexService>.Instance);
 
-        // Pre-populate the index via reflection
+        var embeddingService = new FakeEmbeddingService();
+        var indexService = new McpFunctionIndexService(new DummyMcpClientService(), embeddingService, NullLogger<McpFunctionIndexService>.Instance);
+
+        // Populate the internal index with embeddings for the lines above
         var indexField = typeof(McpFunctionIndexService).GetField("_index", BindingFlags.NonPublic | BindingFlags.Instance)!;
         var dict = (ConcurrentDictionary<string, float[]>)indexField.GetValue(indexService)!;
-        dict["srv:Tool1"] = embeddings["Tool1. first"];
-        dict["srv:Tool2"] = embeddings["Tool2. second"];
+        foreach (var (name, text) in lines)
+        {
+            var embedding = await embeddingService.GenerateEmbeddingAsync(text, "model");
+            dict[$"srv:{name}"] = embedding;
+        }
 
-        var result = await indexService.SelectRelevantFunctionsAsync("query", 1);
-        Assert.Single(result);
-        Assert.Equal("Tool1", result[0]);
+        var result = await indexService.SelectRelevantFunctionsAsync("How does a transistor work?", 2);
+
+        Assert.Equal(2, result.Count);
+        Assert.Contains("TransTool1", result);
+        Assert.Contains("TransTool2", result);
     }
 }
