@@ -2,11 +2,13 @@
 @implements IAsyncDisposable
 @inject NavigationManager NavigationManager
 @inject IChatService ChatService
+@inject IUserSettingsService UserSettingsService
 
 <MudThemeProvider Theme="@_theme" IsDarkMode="_isDarkMode" />
 <MudDialogProvider />
 <MudSnackbarProvider />
 <MudPopoverProvider />
+<CascadingValue Value="@useAgentMode">
 <MudLayout>
     <MudAppBar Elevation="1" Dense="true">
         <MudIconButton Icon="@Icons.Material.Filled.Menu" Color="Color.Inherit" Edge="Edge.Start" OnClick="@((e) => DrawerToggle())" Size="Size.Medium" />
@@ -19,6 +21,12 @@
                        StartIcon="@Icons.Material.Filled.AddCircle"
                        Size="Size.Small"
                        Class="ml-4">New Chat</MudButton>
+            <MudCheckBox @bind-Value="useAgentMode"
+                         Label="Agent"
+                         Color="Color.Primary"
+                         Size="Size.Small"
+                         Dense="true"
+                         Class="ml-4" />
         }
         <MudSpacer />
         <MudIconButton Icon="@(DarkLightModeButtonIcon)" Color="Color.Inherit" OnClick="@DarkModeToggle" Size="Size.Medium" />
@@ -41,6 +49,7 @@
         </footer>
     }
 </MudLayout>
+</CascadingValue>
 
 <div id="blazor-error-ui" data-nosnippet>
     An unhandled error has occurred.
@@ -52,14 +61,18 @@
     private bool _drawerOpen = true;
     private bool _isDarkMode = true;
     private bool isLLMAnswering;
+    private bool useAgentMode = false;
     private MudTheme? _theme = null;
 
-    protected override void OnInitialized()
+    protected override async Task OnInitializedAsync()
     {
-        base.OnInitialized();
+        await base.OnInitializedAsync();
 
         ChatService.LoadingStateChanged += OnLoadingStateChanged;
         isLLMAnswering = ChatService.IsLoading;
+
+        var settings = await UserSettingsService.GetSettingsAsync();
+        useAgentMode = settings.DefaultUseAgentMode;
 
         _theme = new()
         {
