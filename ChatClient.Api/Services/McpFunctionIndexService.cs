@@ -8,13 +8,13 @@ namespace ChatClient.Api.Services;
 public class McpFunctionIndexService
 {
     private readonly IMcpClientService _clientService;
-    private readonly IOllamaService _ollamaService;
+    private readonly IOllamaClientService _ollamaService;
     private readonly ILogger<McpFunctionIndexService> _logger;
     private readonly string _modelId = "nomic-embed-text";
     private readonly ConcurrentDictionary<string, float[]> _index = new();
     private readonly SemaphoreSlim _buildLock = new(1, 1);
 
-    public McpFunctionIndexService(IMcpClientService clientService, IOllamaService ollamaService, ILogger<McpFunctionIndexService> logger)
+    public McpFunctionIndexService(IMcpClientService clientService, IOllamaClientService ollamaService, ILogger<McpFunctionIndexService> logger)
     {
         _clientService = clientService;
         _ollamaService = ollamaService;

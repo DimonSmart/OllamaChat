@@ -19,7 +19,7 @@ namespace ChatClient.Api.Services;
 /// </summary>
 public sealed class OllamaService(
     IConfiguration configuration,
-    IUserSettingsService userSettingsService) : IOllamaService, IDisposable
+    IUserSettingsService userSettingsService) : IOllamaClientService, IDisposable
 {
     private OllamaApiClient? _ollamaClient;
     private HttpClient? _httpClient;

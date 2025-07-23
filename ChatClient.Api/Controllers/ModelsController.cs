@@ -7,7 +7,7 @@ namespace ChatClient.Api.Controllers;
 
 [ApiController]
 [Route("api/[controller]")]
-public class ModelsController(IOllamaService ollamaService, ILogger<ModelsController> logger) : ControllerBase
+public class ModelsController(IOllamaClientService ollamaService, ILogger<ModelsController> logger) : ControllerBase
 {
     [HttpGet]
     public async Task<ActionResult<IEnumerable<OllamaModel>>> GetModels()

@@ -2,7 +2,7 @@ using ChatClient.Shared.Models;
 
 namespace ChatClient.Api.Services;
 
-public class StartupOllamaChecker(IOllamaService ollamaService, ILogger<StartupOllamaChecker> logger)
+public class StartupOllamaChecker(IOllamaClientService ollamaService, ILogger<StartupOllamaChecker> logger)
 {
     public async Task<OllamaServerStatus> CheckOllamaStatusAsync()
     {
