@@ -2,6 +2,9 @@ using System.Collections.Concurrent;
 using System.Linq;
 
 using ChatClient.Shared.Models;
+using ChatClient.Shared.Services;
+using Microsoft.Extensions.Configuration;
+using System.Net;
 
 namespace ChatClient.Api.Services;
 
@@ -9,15 +12,24 @@ public class McpFunctionIndexService
 {
     private readonly IMcpClientService _clientService;
     private readonly IOllamaClientService _ollamaService;
+    private readonly IConfiguration _configuration;
+    private readonly IUserSettingsService _userSettingsService;
     private readonly ILogger<McpFunctionIndexService> _logger;
-    private readonly string _modelId = "nomic-embed-text";
+    private string _modelId = "nomic-embed-text";
     private readonly ConcurrentDictionary<string, float[]> _index = new();
     private readonly SemaphoreSlim _buildLock = new(1, 1);
 
-    public McpFunctionIndexService(IMcpClientService clientService, IOllamaClientService ollamaService, ILogger<McpFunctionIndexService> logger)
+    public McpFunctionIndexService(
+        IMcpClientService clientService,
+        IOllamaClientService ollamaService,
+        IConfiguration configuration,
+        IUserSettingsService userSettingsService,
+        ILogger<McpFunctionIndexService> logger)
     {
         _clientService = clientService;
         _ollamaService = ollamaService;
+        _configuration = configuration;
+        _userSettingsService = userSettingsService;
         _logger = logger;
     }
 
@@ -36,6 +48,8 @@ public class McpFunctionIndexService
                 return;
             }
 
+            _modelId = await DetermineModelIdAsync();
+
             var clients = await _clientService.GetMcpClientsAsync();
             foreach (var client in clients)
             {
@@ -47,6 +61,11 @@ public class McpFunctionIndexService
                     {
                         var embedding = await _ollamaService.GenerateEmbeddingAsync(text, _modelId, cancellationToken);
                         _index[$"{client.ServerInfo.Name}:{tool.Name}"] = embedding;
+                    }
+                    catch (HttpRequestException ex) when (ex.StatusCode == HttpStatusCode.NotFound)
+                    {
+                        _logger.LogError("Embedding model '{Model}' not found. Skipping MCP function indexing.", _modelId);
+                        return;
                     }
                     catch (Exception ex)
                     {
@@ -63,6 +82,17 @@ public class McpFunctionIndexService
         {
             _buildLock.Release();
         }
+    }
+
+    private async Task<string> DetermineModelIdAsync()
+    {
+        var settings = await _userSettingsService.GetSettingsAsync();
+        if (!string.IsNullOrWhiteSpace(settings.EmbeddingModelName))
+        {
+            return settings.EmbeddingModelName;
+        }
+
+        return _configuration["Ollama:EmbeddingModel"] ?? "nomic-embed-text";
     }
 
     public async Task<IReadOnlyList<string>> SelectRelevantFunctionsAsync(string query, int topK, CancellationToken cancellationToken = default)
