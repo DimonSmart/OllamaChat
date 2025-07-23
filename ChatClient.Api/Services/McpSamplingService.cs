@@ -5,6 +5,7 @@ using DimonSmart.AiUtils;
 
 using Microsoft.SemanticKernel;
 using Microsoft.SemanticKernel.ChatCompletion;
+using Microsoft.Extensions.DependencyInjection;
 
 using ModelContextProtocol;
 using ModelContextProtocol.Protocol;
@@ -18,11 +19,12 @@ namespace ChatClient.Api.Services;
 /// Sampling allows MCP servers to request the client to perform LLM inference.
 /// </summary>
 public class McpSamplingService(
-    KernelService kernelService,
+    IServiceProvider serviceProvider,
     IUserSettingsService userSettingsService,
     OllamaService ollamaService,
     ILogger<McpSamplingService> logger)
 {
+    private readonly IServiceProvider _serviceProvider = serviceProvider;
     /// <summary>
     /// Handles a sampling request from an MCP server.
     /// </summary>
@@ -52,6 +54,7 @@ public class McpSamplingService(
 
             model = await DetermineModelToUseAsync(request.ModelPreferences, mcpServerConfig);
             var settings = await userSettingsService.GetSettingsAsync();
+            var kernelService = _serviceProvider.GetRequiredService<KernelService>();
             var kernel = await kernelService.CreateBasicKernelAsync(model, TimeSpan.FromSeconds(settings.McpSamplingTimeoutSeconds));
 
             progress?.Report(new ProgressNotificationValue { Progress = 25, Total = 100 });
