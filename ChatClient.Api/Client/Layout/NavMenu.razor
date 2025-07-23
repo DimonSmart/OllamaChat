@@ -1,8 +1,16 @@
-﻿<MudNavMenu>
-    <MudNavLink Href="/" Match="NavLinkMatch.All" Icon="@Icons.Material.Filled.Chat">Chat</MudNavLink>
-    <MudNavLink Href="system-prompts" Match="NavLinkMatch.Prefix" Icon="@Icons.Material.Filled.List">System Prompts</MudNavLink>
-    <MudNavLink Href="mcp-servers" Match="NavLinkMatch.Prefix" Icon="@Icons.Material.Filled.Link">MCP Servers</MudNavLink>
-    <MudNavLink Href="models" Match="NavLinkMatch.Prefix" Icon="@Icons.Material.Filled.Memory">Models</MudNavLink>
-    <MudNavLink Href="ollama-connection-settings" Match="NavLinkMatch.Prefix" Icon="@Icons.Material.Filled.Link">Ollama Connection</MudNavLink>
-    <MudNavLink Href="app-settings" Match="NavLinkMatch.Prefix" Icon="@Icons.Material.Filled.Tune">App Settings</MudNavLink>
-</MudNavMenu>
+﻿<div class="nav-wrapper">
+    <MudNavMenu Class="nav-scrollable">
+        <MudNavLink Href="/" Match="NavLinkMatch.All" Icon="@Icons.Material.Filled.Chat">Chat</MudNavLink>
+        <MudNavLink Href="system-prompts" Match="NavLinkMatch.Prefix" Icon="@Icons.Material.Filled.List">System Prompts</MudNavLink>
+        <MudNavLink Href="mcp-servers" Match="NavLinkMatch.Prefix" Icon="@Icons.Material.Filled.Link">MCP Servers</MudNavLink>
+        <MudNavLink Href="models" Match="NavLinkMatch.Prefix" Icon="@Icons.Material.Filled.Memory">Models</MudNavLink>
+        <MudNavLink Href="ollama-connection-settings" Match="NavLinkMatch.Prefix" Icon="@Icons.Material.Filled.Link">Ollama Connection</MudNavLink>
+        <MudNavLink Href="app-settings" Match="NavLinkMatch.Prefix" Icon="@Icons.Material.Filled.Tune">App Settings</MudNavLink>
+    </MudNavMenu>
+    <MudPaper Class="quick-settings pa-4" Elevation="0">
+        <MudText Typo="Typo.subtitle2" Class="mb-2">Quick Settings</MudText>
+        <MudCheckBox T="bool" Label="Setting A" />
+        <MudCheckBox T="bool" Label="Setting B" />
+        <MudCheckBox T="bool" Label="Setting C" />
+    </MudPaper>
+</div>
