@@ -10,9 +10,9 @@ public class KernelService(
     IUserSettingsService userSettingsService,
     ILogger<KernelService> logger)
 {
-    private McpClientService? _mcpClientService;
+    private IMcpClientService? _mcpClientService;
 
-    public void SetMcpClientService(McpClientService mcpClientService)
+    public void SetMcpClientService(IMcpClientService mcpClientService)
     {
         _mcpClientService = mcpClientService;
     }

@@ -31,9 +31,12 @@ builder.Services.AddSingleton<ILoggerFactory>(loggerFactory);
 
 builder.Services.AddSingleton<ChatClient.Shared.Services.IMcpServerConfigService, ChatClient.Api.Services.McpServerConfigService>();
 builder.Services.AddSingleton<ChatClient.Api.Services.McpClientService>();
+builder.Services.AddSingleton<ChatClient.Api.Services.IMcpClientService>(sp => sp.GetRequiredService<ChatClient.Api.Services.McpClientService>());
 builder.Services.AddSingleton<ChatClient.Api.Services.McpSamplingService>();
 builder.Services.AddSingleton<ChatClient.Api.Services.KernelService>();
 builder.Services.AddSingleton<ChatClient.Api.Services.OllamaService>();
+builder.Services.AddSingleton<ChatClient.Api.Services.IOllamaEmbeddingService>(sp => sp.GetRequiredService<ChatClient.Api.Services.OllamaService>());
+builder.Services.AddSingleton<ChatClient.Api.Services.McpFunctionIndexService>();
 builder.Services.AddSingleton<ChatClient.Api.Services.IChatHistoryBuilder, ChatClient.Api.Services.ChatHistoryBuilder>();
 builder.Services.AddScoped<ChatClient.Api.Services.StartupOllamaChecker>();
 builder.Services.AddSingleton<ChatClient.Shared.Services.ISystemPromptService, ChatClient.Api.Services.SystemPromptService>();
@@ -57,8 +60,10 @@ var app = builder.Build();
 using (var scope = app.Services.CreateScope())
 {
     var kernelService = scope.ServiceProvider.GetRequiredService<KernelService>();
-    var mcpClientService = scope.ServiceProvider.GetRequiredService<McpClientService>();
+    var mcpClientService = scope.ServiceProvider.GetRequiredService<IMcpClientService>();
     kernelService.SetMcpClientService(mcpClientService);
+    var indexService = scope.ServiceProvider.GetRequiredService<McpFunctionIndexService>();
+    await indexService.BuildIndexAsync();
 
     // Check Ollama status at startup
     var startupChecker = scope.ServiceProvider.GetRequiredService<StartupOllamaChecker>();
