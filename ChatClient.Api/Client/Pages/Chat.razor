@@ -254,18 +254,7 @@
                           ShowStopButton="isLLMAnswering" 
                           OnStopClick="Cancel" />
 
-                @if (!isLLMAnswering)
-                {
-                    <MudStack AlignItems="AlignItems.Center" Row="true" Spacing="2" Class="mt-1">
-                        <MudButton OnClick="RestartChat"
-                                   Color="Color.Secondary"
-                                   Variant="Variant.Outlined"
-                                   StartIcon="@Icons.Material.Filled.AddCircle"
-                                   Size="Size.Small">
-                            New Chat
-                        </MudButton>
-                    </MudStack>
-                }
+                @* "New Chat" button moved to top navigation *@
             </MudStack>
         </div>
     }
@@ -412,12 +401,6 @@
             selectedSystemPrompt = PromptService.GetDefaultSystemPrompt();
         }        ChatService.InitializeChat(selectedSystemPrompt);
         chatStarted = true;
-        StateHasChanged();
-    }
-    private void RestartChat()
-    {
-        chatStarted = false;
-        ChatService.ClearChat();
         StateHasChanged();
     }
     private async Task SendChatMessageAsync((string text, IReadOnlyList<ChatMessageFile> files) messageData)
