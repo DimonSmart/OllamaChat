@@ -12,7 +12,7 @@ public class McpClientService(
     IMcpServerConfigService mcpServerConfigService,
     McpSamplingService mcpSamplingService,
     IUserSettingsService userSettingsService,
-    ILogger<McpClientService> logger) : IAsyncDisposable
+    ILogger<McpClientService> logger) : IMcpClientService
 {
     private List<IMcpClient>? _mcpClients = null;
 

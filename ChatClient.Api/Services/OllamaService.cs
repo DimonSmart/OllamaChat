@@ -7,6 +7,9 @@ using ChatClient.Shared.Models;
 using ChatClient.Shared.Services;
 
 using OllamaSharp;
+using OllamaSharp.Models;
+using System.Linq;
+using System.Collections.Generic;
 
 namespace ChatClient.Api.Services;
 
@@ -16,7 +19,7 @@ namespace ChatClient.Api.Services;
 /// </summary>
 public sealed class OllamaService(
     IConfiguration configuration,
-    IUserSettingsService userSettingsService) : IDisposable
+    IUserSettingsService userSettingsService) : IOllamaEmbeddingService, IDisposable
 {
     private OllamaApiClient? _ollamaClient;
     private HttpClient? _httpClient;
@@ -45,6 +48,11 @@ public sealed class OllamaService(
         return _ollamaClient;
     }
 
+    /// <summary>
+    /// Provides the underlying <see cref="OllamaApiClient"/> instance for direct API calls.
+    /// </summary>
+    public Task<OllamaApiClient> GetClientAsync() => GetOllamaClientAsync();
+
     public async Task<IReadOnlyList<OllamaModel>> GetModelsAsync()
     {
         var client = await GetOllamaClientAsync();
@@ -58,6 +66,14 @@ public sealed class OllamaService(
             SupportsImages = m.Details?.Families?.Contains("clip") == true,
             SupportsFunctionCalling = DeterminesFunctionCallingSupport(m)
         }).ToList();
+    }
+
+    public async Task<float[]> GenerateEmbeddingAsync(string input, string modelId, CancellationToken cancellationToken = default)
+    {
+        var client = await GetOllamaClientAsync();
+        var request = new EmbedRequest { Model = modelId, Input = new List<string> { input } };
+        var response = await client.EmbedAsync(request, cancellationToken);
+        return response.Embeddings.First();
     }
 
     private async Task<SettingsSnapshot> GetCurrentSettingsAsync()
