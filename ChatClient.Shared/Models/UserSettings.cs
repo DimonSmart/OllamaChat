@@ -63,4 +63,10 @@ public class UserSettings
     /// </summary>
     [JsonPropertyName("chatHistoryMode")]
     public ChatHistoryMode ChatHistoryMode { get; set; } = ChatHistoryMode.None;
+
+    /// <summary>
+    /// Embedding model used for building the function index
+    /// </summary>
+    [JsonPropertyName("embeddingModelName")]
+    public string EmbeddingModelName { get; set; } = string.Empty;
 }

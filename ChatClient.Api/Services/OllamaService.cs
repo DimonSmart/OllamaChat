@@ -72,8 +72,15 @@ public sealed class OllamaService(
     {
         var client = await GetOllamaClientAsync();
         var request = new EmbedRequest { Model = modelId, Input = new List<string> { input } };
-        var response = await client.EmbedAsync(request, cancellationToken);
-        return response.Embeddings.First();
+        try
+        {
+            var response = await client.EmbedAsync(request, cancellationToken);
+            return response.Embeddings.First();
+        }
+        catch (HttpRequestException ex) when (ex.StatusCode == System.Net.HttpStatusCode.NotFound)
+        {
+            throw new InvalidOperationException($"Embedding model '{modelId}' not found on Ollama server.", ex);
+        }
     }
 
     private async Task<SettingsSnapshot> GetCurrentSettingsAsync()

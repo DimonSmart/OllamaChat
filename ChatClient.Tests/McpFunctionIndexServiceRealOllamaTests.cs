@@ -47,8 +47,9 @@ public class McpFunctionIndexServiceRealOllamaTests
         };
 
         var configuration = new ConfigurationBuilder().Build();
-        using var embeddingService = new OllamaService(configuration, new DummyUserSettingsService());
-        var indexService = new McpFunctionIndexService(new DummyMcpClientService(), embeddingService, NullLogger<McpFunctionIndexService>.Instance);
+        var userSettings = new DummyUserSettingsService();
+        using var embeddingService = new OllamaService(configuration, userSettings);
+        var indexService = new McpFunctionIndexService(new DummyMcpClientService(), embeddingService, configuration, userSettings, NullLogger<McpFunctionIndexService>.Instance);
 
         var indexField = typeof(McpFunctionIndexService).GetField("_index", BindingFlags.NonPublic | BindingFlags.Instance)!;
         var dict = (ConcurrentDictionary<string, float[]>)indexField.GetValue(indexService)!;
