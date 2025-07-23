@@ -1,5 +1,6 @@
-using ChatClient.Shared.Models;
 using System.Collections.Generic;
+
+using ChatClient.Shared.Models;
 
 using Microsoft.Extensions.AI;
 
@@ -67,7 +68,11 @@ public class StreamingMessageManager
         var statisticsBuilder = new System.Text.StringBuilder();
         statisticsBuilder.Append($"⏱️ {processingTime.TotalSeconds:F1}s");
         statisticsBuilder.Append($" • 🤖 {chatConfiguration.ModelName}");
-        if (chatConfiguration.Functions.Any())
+        if (chatConfiguration.AutoSelectFunctions && chatConfiguration.AutoSelectCount > 0)
+        {
+            statisticsBuilder.Append($" • 🔧 auto {chatConfiguration.AutoSelectCount}");
+        }
+        else if (chatConfiguration.Functions.Any())
         {
             statisticsBuilder.Append($" • 🔧 {chatConfiguration.Functions.Count} funcs");
         }

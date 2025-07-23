@@ -107,15 +107,28 @@
                         <MudCardHeader Class="pb-2">
                             <MudText Class="section-header">Default Chat Mode</MudText>
                         </MudCardHeader>
-                        <MudCardContent Class="pt-0">
-                            <MudCheckBox @bind-Value="_settings.DefaultUseAgentMode" 
-                                         Label="Agent Mode by Default" 
-                                         Color="Color.Primary" />
-                            <MudText Typo="Typo.caption" Class="mt-2">
-                                When enabled, new chats will start in Agent mode instead of Ask mode.
-                            </MudText>
-                        </MudCardContent>
-                    </MudCard>
+                    <MudCardContent Class="pt-0">
+                        <MudCheckBox @bind-Value="_settings.DefaultUseAgentMode"
+                                     Label="Agent Mode by Default"
+                                     Color="Color.Primary" />
+                        <MudText Typo="Typo.caption" Class="mt-2">
+                            When enabled, new chats will start in Agent mode instead of Ask mode.
+                        </MudText>
+                    </MudCardContent>
+                </MudCard>
+
+                <MudCard Class="mb-4" Elevation="1">
+                    <MudCardHeader Class="pb-2">
+                        <MudText Class="section-header">Function Auto-Selection</MudText>
+                    </MudCardHeader>
+                    <MudCardContent Class="pt-0">
+                        <MudNumericField T="int" @bind-Value="_settings.DefaultAutoSelectCount" Min="0" Max="10"
+                                         Variant="Variant.Outlined" Class="mt-2" Label="Auto-select Count" />
+                        <MudText Typo="Typo.caption" Class="mt-2">
+                            Number of functions to auto-select for new chats. Set to 0 to disable auto-selection.
+                        </MudText>
+                    </MudCardContent>
+                </MudCard>
 
                     <MudButtonGroup Class="mt-4">
                         <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="SaveSettings" Size="Size.Medium">

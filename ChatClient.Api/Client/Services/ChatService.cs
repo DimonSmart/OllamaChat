@@ -76,13 +76,14 @@ public class ChatService(
             return;
         }
 
-        await AddMessageAsync(new AppChatMessage(text, DateTime.Now, ChatRole.User, string.Empty, files));
+        var trimmedText = text.Trim();
+        await AddMessageAsync(new AppChatMessage(trimmedText, DateTime.Now, ChatRole.User, string.Empty, files));
         UpdateLoadingState(true);
 
         _cancellationTokenSource = new CancellationTokenSource();
         try
         {
-            await ProcessAIResponseAsync(chatConfiguration, _cancellationTokenSource.Token);
+            await ProcessAIResponseAsync(chatConfiguration, trimmedText, _cancellationTokenSource.Token);
         }
         catch (OperationCanceledException)
         {
@@ -104,7 +105,7 @@ public class ChatService(
     }
 
 
-    private async Task ProcessAIResponseAsync(ChatConfiguration chatConfiguration, CancellationToken cancellationToken)
+    private async Task ProcessAIResponseAsync(ChatConfiguration chatConfiguration, string userMessage, CancellationToken cancellationToken)
     {
         string responseType = chatConfiguration.UseAgentMode ? "Agent" : "Ask";
         logger.LogInformation("Processing {ResponseType} response with model: {ModelName}", responseType, chatConfiguration.ModelName);
@@ -121,12 +122,15 @@ public class ChatService(
 
         try
         {
-            var kernel = await kernelService.CreateKernelAsync(chatConfiguration);
+            var kernel = await kernelService.CreateKernelAsync(
+                chatConfiguration,
+                chatConfiguration.AutoSelectFunctions ? userMessage : null,
+                chatConfiguration.AutoSelectFunctions ? chatConfiguration.AutoSelectCount : null);
             var history = await historyBuilder.BuildChatHistoryAsync(Messages, kernel, cancellationToken);
             var chatService = kernel.GetRequiredService<IChatCompletionService>();
             var promptExecutionSettings = new PromptExecutionSettings
             {
-                FunctionChoiceBehavior = chatConfiguration.Functions.Count != 0
+                FunctionChoiceBehavior = chatConfiguration.AutoSelectFunctions || chatConfiguration.Functions.Count != 0
                         ? FunctionChoiceBehavior.Auto()
                         : FunctionChoiceBehavior.None()
             };
