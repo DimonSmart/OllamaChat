@@ -232,12 +232,6 @@
                            OnClick="@(() => functionsExpanded = !functionsExpanded)">
                     Functions
                 </MudButton>
-                <MudCheckBox @bind-Value="useAgentMode" 
-                             Label="Agent" 
-                             Color="Color.Primary"
-                             Size="Size.Small"
-                             Dense="true"
-                             Class="ml-2" />
             </MudStack>
           
             <FunctionSelector AvailableFunctions="availableFunctions"
@@ -272,9 +266,11 @@
     private List<FunctionInfo> availableFunctions = new();
     private List<string> selectedFunctions = new();
     private bool functionsExpanded = false;
-    private bool useAgentMode = false;
     private bool autoSelectFunctions = false;
     private int autoSelectCount = 3;
+
+    [CascadingParameter]
+    public bool UseAgentMode { get; set; }
 
     private List<OllamaModel> availableModels = new();
     private OllamaModel? selectedModel;
@@ -350,7 +346,6 @@
     private async Task LoadUserSettings()
     {
         userSettings = await UserSettingsService.GetSettingsAsync();
-        useAgentMode = userSettings.DefaultUseAgentMode;
         autoSelectFunctions = userSettings.DefaultAutoSelectCount > 0;
         autoSelectCount = userSettings.DefaultAutoSelectCount > 0
             ? userSettings.DefaultAutoSelectCount
@@ -411,7 +406,7 @@
         var chatConfiguration = new ChatConfiguration(
             selectedModel?.Name ?? string.Empty,
             selectedFunctions,
-            useAgentMode,
+            UseAgentMode,
             autoSelectFunctions,
             autoSelectCount);
 
