@@ -8,7 +8,6 @@
 @using System.Threading
 @using System.Text
 @using MudBlazor
-@using ChatClient.Api.Client.Pages
 @using ChatClient.Api.Client.Services
 @using ChatClient.Api.Client.Components
 @using ChatClient.Api.Client.ViewModels
@@ -226,22 +225,7 @@
                         </MudSelectItem>
                     }
                 </MudSelect>
-                <MudButton Variant="Variant.Text"
-                           Color="Color.Primary"
-                           Size="Size.Small"
-                           OnClick="@(() => functionsExpanded = !functionsExpanded)">
-                    Functions
-                </MudButton>
             </MudStack>
-          
-            <FunctionSelector AvailableFunctions="availableFunctions"
-                              SelectedFunctions="selectedFunctions"
-                              SelectedFunctionsChanged="OnSelectedFunctionsChanged"
-                              Expanded="@functionsExpanded"
-                              AutoSelectFunctions="autoSelectFunctions"
-                              AutoSelectFunctionsChanged="@(v => autoSelectFunctions = v)"
-                              AutoSelectCount="autoSelectCount"
-                              AutoSelectCountChanged="@(v => autoSelectCount = v)" />
 
             <MudStack Direction="Direction.Column">
                 <ChatInput OnSend="SendChatMessageAsync" 
@@ -263,11 +247,12 @@
 
     private List<SystemPrompt> systemPrompts = new();
     private SystemPrompt? selectedSystemPrompt;
-    private List<FunctionInfo> availableFunctions = new();
-    private List<string> selectedFunctions = new();
-    private bool functionsExpanded = false;
-    private bool autoSelectFunctions = false;
-    private int autoSelectCount = 3;
+    [CascadingParameter]
+    public List<string> SelectedFunctions { get; set; } = new();
+    [CascadingParameter]
+    public bool AutoSelectFunctions { get; set; }
+    [CascadingParameter]
+    public int AutoSelectCount { get; set; }
 
     [CascadingParameter]
     public bool UseAgentMode { get; set; }
@@ -294,7 +279,6 @@
         StateHasChanged();
 
         await LoadSystemPrompts();
-        await LoadAvailableFunctions();
         await LoadAvailableModels();
         await LoadUserSettings();
 
@@ -328,12 +312,6 @@
         StateHasChanged();
     }
 
-    private Task OnSelectedFunctionsChanged(List<string> functions)
-    {
-        selectedFunctions = functions;
-        StateHasChanged();
-        return Task.CompletedTask;
-    }
 
     private async Task LoadSystemPrompts()
     {
@@ -346,23 +324,10 @@
     private async Task LoadUserSettings()
     {
         userSettings = await UserSettingsService.GetSettingsAsync();
-        autoSelectFunctions = userSettings.DefaultAutoSelectCount > 0;
-        autoSelectCount = userSettings.DefaultAutoSelectCount > 0
+        AutoSelectFunctions = userSettings.DefaultAutoSelectCount > 0;
+        AutoSelectCount = userSettings.DefaultAutoSelectCount > 0
             ? userSettings.DefaultAutoSelectCount
             : 3;
-    }
-
-    private async Task LoadAvailableFunctions()
-    {
-        try
-        {
-            availableFunctions = (await KernelService.GetAvailableFunctionsAsync()).ToList();
-        }
-        catch (Exception ex)        
-        {
-            Console.WriteLine($"Error loading available functions: {ex}");
-            availableFunctions = new List<FunctionInfo>();
-        }
     }
 
     private async Task LoadAvailableModels()
@@ -405,10 +370,10 @@
 
         var chatConfiguration = new ChatConfiguration(
             selectedModel?.Name ?? string.Empty,
-            selectedFunctions,
+            SelectedFunctions,
             UseAgentMode,
-            autoSelectFunctions,
-            autoSelectCount);
+            AutoSelectFunctions,
+            AutoSelectCount);
 
         await ChatService.AddUserMessageAndAnswerAsync(messageData.text.Trim(), chatConfiguration, messageData.files);
         await ScrollToBottom();

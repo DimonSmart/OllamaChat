@@ -3,11 +3,20 @@
 @inject NavigationManager NavigationManager
 @inject IChatService ChatService
 @inject IUserSettingsService UserSettingsService
+@inject KernelService KernelService
+@inject IDialogService DialogService
+@using ChatClient.Shared.Models
+@using ChatClient.Api.Client.Pages
+@using System.Collections.Generic
+@using ChatClient.Api.Services
 
 <MudThemeProvider Theme="@_theme" IsDarkMode="_isDarkMode" />
 <MudDialogProvider />
 <MudSnackbarProvider />
 <MudPopoverProvider />
+<CascadingValue Value="@selectedFunctions">
+<CascadingValue Value="@autoSelectFunctions">
+<CascadingValue Value="@autoSelectCount">
 <CascadingValue Value="@useAgentMode">
 <MudLayout>
     <MudAppBar Elevation="1" Dense="true">
@@ -27,6 +36,11 @@
                          Size="Size.Small"
                          Dense="true"
                          Class="ml-4" />
+            <MudButton OnClick="OpenFunctionsDialog"
+                       Color="Color.Primary"
+                       Variant="Variant.Text"
+                       Size="Size.Small"
+                       Class="ml-4">Functions</MudButton>
         }
         <MudSpacer />
         <MudIconButton Icon="@(DarkLightModeButtonIcon)" Color="Color.Inherit" OnClick="@DarkModeToggle" Size="Size.Medium" />
@@ -50,6 +64,9 @@
     }
 </MudLayout>
 </CascadingValue>
+</CascadingValue>
+</CascadingValue>
+</CascadingValue>
 
 <div id="blazor-error-ui" data-nosnippet>
     An unhandled error has occurred.
@@ -62,6 +79,10 @@
     private bool _isDarkMode = true;
     private bool isLLMAnswering;
     private bool useAgentMode = false;
+    private List<FunctionInfo> availableFunctions = new();
+    private List<string> selectedFunctions = new();
+    private bool autoSelectFunctions = false;
+    private int autoSelectCount = 3;
     private MudTheme? _theme = null;
 
     protected override async Task OnInitializedAsync()
@@ -73,6 +94,20 @@
 
         var settings = await UserSettingsService.GetSettingsAsync();
         useAgentMode = settings.DefaultUseAgentMode;
+        autoSelectFunctions = settings.DefaultAutoSelectCount > 0;
+        autoSelectCount = settings.DefaultAutoSelectCount > 0
+            ? settings.DefaultAutoSelectCount
+            : 3;
+
+        try
+        {
+            availableFunctions = (await KernelService.GetAvailableFunctionsAsync()).ToList();
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error loading available functions: {ex}");
+            availableFunctions = new List<FunctionInfo>();
+        }
 
         _theme = new()
         {
@@ -108,6 +143,37 @@
     {
         ChatService.ClearChat();
         NavigationManager.NavigateTo("/chat", true);
+    }
+
+    private async Task OpenFunctionsDialog()
+    {
+        var parameters = new DialogParameters
+        {
+            ["AvailableFunctions"] = availableFunctions,
+            ["SelectedFunctions"] = selectedFunctions,
+            ["SelectedFunctionsChanged"] = EventCallback.Factory.Create<List<string>>(this, OnSelectedFunctionsChanged),
+            ["Expanded"] = true,
+            ["AutoSelectFunctions"] = autoSelectFunctions,
+            ["AutoSelectFunctionsChanged"] = EventCallback.Factory.Create<bool>(this, v => { autoSelectFunctions = v; StateHasChanged(); }),
+            ["AutoSelectCount"] = autoSelectCount,
+            ["AutoSelectCountChanged"] = EventCallback.Factory.Create<int>(this, v => { autoSelectCount = v; StateHasChanged(); })
+        };
+
+        var options = new DialogOptions
+        {
+            CloseButton = true,
+            MaxWidth = MaxWidth.Small,
+            FullWidth = true
+        };
+
+        await DialogService.ShowAsync<FunctionSelector>("Functions", parameters, options);
+    }
+
+    private Task OnSelectedFunctionsChanged(List<string> functions)
+    {
+        selectedFunctions = functions;
+        StateHasChanged();
+        return Task.CompletedTask;
     }
 
     private readonly PaletteLight _lightPalette = new()
