@@ -4,9 +4,9 @@
 <MudCollapse Expanded="@Expanded" ExpandedChanged="@(v => ExpandedChanged.InvokeAsync(v))">
     <MudPaper Class="pa-4">
         <MudText Typo="Typo.subtitle1">Select Functions to use:</MudText>
-        <MudCheckBox T="bool" @bind-Value="AutoSelectFunctions" Class="mt-2"
+        <MudCheckBox T="bool" Checked="@AutoSelectFunctions" CheckedChanged="OnAutoSelectFunctionsChanged" Class="mt-2"
                      Color="Color.Primary" Label="Auto-select relevant functions" />
-        <MudNumericField T="int" @bind-Value="AutoSelectCount" Class="mt-2" Min="1" Max="10"
+        <MudNumericField T="int" Value="@AutoSelectCount" ValueChanged="OnAutoSelectCountChanged" Class="mt-2" Min="1" Max="10"
                          Disabled="!AutoSelectFunctions" Variant="Variant.Outlined" Label="Function count"
                          Immediate="true" />
         <MudExpansionPanels Class="mt-2">
@@ -99,5 +99,17 @@
             .All(f => internalSelectedFunctions.Contains(f.Name));
 
         await SelectedFunctionsChanged.InvokeAsync(internalSelectedFunctions.ToList());
+    }
+
+    private async Task OnAutoSelectFunctionsChanged(bool value)
+    {
+        AutoSelectFunctions = value;
+        await AutoSelectFunctionsChanged.InvokeAsync(value);
+    }
+
+    private async Task OnAutoSelectCountChanged(int value)
+    {
+        AutoSelectCount = value;
+        await AutoSelectCountChanged.InvokeAsync(value);
     }
 }
