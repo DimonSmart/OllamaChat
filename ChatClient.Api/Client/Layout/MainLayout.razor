@@ -154,9 +154,17 @@
             ["SelectedFunctionsChanged"] = EventCallback.Factory.Create<List<string>>(this, OnSelectedFunctionsChanged),
             ["Expanded"] = true,
             ["AutoSelectFunctions"] = autoSelectFunctions,
-            ["AutoSelectFunctionsChanged"] = EventCallback.Factory.Create<bool>(this, v => { autoSelectFunctions = v; StateHasChanged(); }),
+            ["AutoSelectFunctionsChanged"] = EventCallback.Factory.Create<bool>(this, async v =>
+            {
+                autoSelectFunctions = v;
+                await InvokeAsync(StateHasChanged);
+            }),
             ["AutoSelectCount"] = autoSelectCount,
-            ["AutoSelectCountChanged"] = EventCallback.Factory.Create<int>(this, v => { autoSelectCount = v; StateHasChanged(); })
+            ["AutoSelectCountChanged"] = EventCallback.Factory.Create<int>(this, async v =>
+            {
+                autoSelectCount = v;
+                await InvokeAsync(StateHasChanged);
+            })
         };
 
         var options = new DialogOptions
