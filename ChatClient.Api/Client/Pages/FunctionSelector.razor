@@ -104,12 +104,14 @@
     private async Task OnAutoSelectFunctionsChanged(bool value)
     {
         AutoSelectFunctions = value;
+        StateHasChanged();
         await AutoSelectFunctionsChanged.InvokeAsync(value);
     }
 
     private async Task OnAutoSelectCountChanged(int value)
     {
         AutoSelectCount = value;
+        StateHasChanged();
         await AutoSelectCountChanged.InvokeAsync(value);
     }
 }
