@@ -197,8 +197,11 @@
 
     private void NewChat()
     {
-        ChatService.ClearChat();
-        NavigationManager.NavigateTo("/chat", true);
+        ChatService.InitializeChat(ChatService.CurrentSystemPrompt);
+        if (!IsOnChatPage())
+        {
+            NavigationManager.NavigateTo("/chat");
+        }
     }
 
     private async Task OpenFunctionsDialog()
