@@ -22,7 +22,6 @@
 @inject IChatService ChatService
 @inject ISystemPromptService PromptService
 @inject IUserSettingsService UserSettingsService
-@inject IOllamaClientService OllamaService
 
 <PageTitle>Chat with AI Assistant</PageTitle>
 
@@ -193,43 +192,9 @@
         
         <!-- Fixed input panel at bottom -->
         <div class="chat-input-panel">
-            <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="1">
-                <MudSelect T="OllamaModel"
-                           Value="selectedModel"
-                           ValueChanged="OnModelChanged"
-                           Label="Model"
-                           Variant="Variant.Filled"
-                           Dense="true"
-                           Margin="Margin.Dense">
-                    @foreach (var model in availableModels)
-                    {
-                        <MudSelectItem Value="@model">
-                                <span>@model.Name</span>
-                                @if (model.SupportsImages)
-                                {
-                                    <MudIcon Icon="@Icons.Material.Filled.Image" 
-                                             Size="Size.Small" 
-                                             Class="ml-1" 
-                                             title="Supports images"
-                                             Style="color: #4caf50;" />
-                                }
-                                
-                                @if (model.SupportsFunctionCalling)
-                                {
-                                    <MudIcon Icon="@Icons.Material.Filled.Settings" 
-                                             Size="Size.Small" 
-                                             Class="ml-1" 
-                                             title="Function calling support detected (may not be accurate)"
-                                             Style="color: #2196f3;" />
-                                }
-                        </MudSelectItem>
-                    }
-                </MudSelect>
-            </MudStack>
-
             <MudStack Direction="Direction.Column">
-                <ChatInput OnSend="SendChatMessageAsync" 
-                          ShowStopButton="isLLMAnswering" 
+                <ChatInput OnSend="SendChatMessageAsync"
+                          ShowStopButton="isLLMAnswering"
                           OnStopClick="Cancel" />
             </MudStack>
         </div>
@@ -254,9 +219,8 @@
 
     [CascadingParameter]
     public bool UseAgentMode { get; set; }
-
-    private List<OllamaModel> availableModels = new();
-    private OllamaModel? selectedModel;
+    [CascadingParameter]
+    public OllamaModel? SelectedModel { get; set; }
 
     private bool showPromptContent { get; set; } = false;
 
@@ -277,7 +241,6 @@
         StateHasChanged();
 
         await LoadSystemPrompts();
-        await LoadAvailableModels();
         await LoadUserSettings();
 
         ChatService.LoadingStateChanged += OnLoadingStateChanged;
@@ -328,29 +291,6 @@
             : 3;
     }
 
-    private async Task LoadAvailableModels()
-    {
-        try
-        {
-            availableModels = (await OllamaService.GetModelsAsync()).ToList();
-            // Get user settings to find default model
-            var settings = await UserSettingsService.GetSettingsAsync();
-            if (!string.IsNullOrWhiteSpace(settings.DefaultModelName) && 
-                availableModels.Any(m => m.Name == settings.DefaultModelName))
-            {
-                selectedModel = availableModels.FirstOrDefault(m => m.Name == settings.DefaultModelName);
-            }
-            else
-            {
-                selectedModel = availableModels.FirstOrDefault();
-            }
-        }
-        catch (Exception ex)
-        {
-            Console.WriteLine($"Error loading available models: {ex}");
-            availableModels = new List<OllamaModel>();
-        }
-    }
 
     private void StartChat()
     {
@@ -367,7 +307,7 @@
             return;
 
         var chatConfiguration = new ChatConfiguration(
-            selectedModel?.Name ?? string.Empty,
+            SelectedModel?.Name ?? string.Empty,
             SelectedFunctions,
             UseAgentMode,
             AutoSelectFunctions,
@@ -391,12 +331,6 @@
 
     private void Cancel()
     {        ChatService.CancelAsync();
-    }
-
-    private void OnModelChanged(OllamaModel model)
-    {
-        selectedModel = model;
-        Console.WriteLine($"Selected model changed to: {model.Name}");
     }
 
     private async Task DeleteMessage(ChatMessageViewModel message)

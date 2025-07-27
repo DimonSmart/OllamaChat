@@ -5,6 +5,7 @@
 @inject IUserSettingsService UserSettingsService
 @inject KernelService KernelService
 @inject IDialogService DialogService
+@inject IOllamaClientService OllamaService
 @using ChatClient.Shared.Models
 @using ChatClient.Api.Client.Pages
 @using System.Collections.Generic
@@ -18,6 +19,7 @@
 <CascadingValue Value="@autoSelectFunctions">
 <CascadingValue Value="@autoSelectCount">
 <CascadingValue Value="@useAgentMode">
+<CascadingValue Value="@selectedModel">
 <MudLayout>
     <MudAppBar Elevation="1" Dense="true">
         <MudIconButton Icon="@Icons.Material.Filled.Menu" Color="Color.Inherit" Edge="Edge.Start" OnClick="@((e) => DrawerToggle())" Size="Size.Medium" />
@@ -30,17 +32,49 @@
                        StartIcon="@Icons.Material.Filled.AddCircle"
                        Size="Size.Small"
                        Class="ml-4">New Chat</MudButton>
-            <MudCheckBox @bind-Value="useAgentMode"
+           <MudCheckBox @bind-Value="useAgentMode"
                          Label="Agent"
                          Color="Color.Primary"
                          Size="Size.Small"
                          Dense="true"
                          Class="ml-4" />
-            <MudButton OnClick="OpenFunctionsDialog"
-                       Color="Color.Primary"
-                       Variant="Variant.Text"
-                       Size="Size.Small"
-                       Class="ml-4">Functions</MudButton>
+           <MudButton OnClick="OpenFunctionsDialog"
+                      Color="Color.Primary"
+                      Variant="Variant.Text"
+                      Size="Size.Small"
+                      Class="ml-4">Functions</MudButton>
+            <MudSelect T="OllamaModel"
+                       Value="selectedModel"
+                       ValueChanged="OnModelChanged"
+                       Label="Model"
+                       Variant="Variant.Filled"
+                       Dense="true"
+                       Margin="Margin.Dense"
+                       Class="ml-4"
+                       Style="min-width: 150px;">
+                @foreach (var model in availableModels)
+                {
+                    <MudSelectItem Value="@model">
+                        <span>@model.Name</span>
+                        @if (model.SupportsImages)
+                        {
+                            <MudIcon Icon="@Icons.Material.Filled.Image"
+                                     Size="Size.Small"
+                                     Class="ml-1"
+                                     title="Supports images"
+                                     Style="color: #4caf50;" />
+                        }
+                        @if (model.SupportsFunctionCalling)
+                        {
+                            <MudIcon Icon="@Icons.Material.Filled.Settings"
+                                     Size="Size.Small"
+                                     Class="ml-1"
+                                     title="Function calling support detected (may not be accurate)"
+                                     Style="color: #2196f3;" />
+                        }
+                    </MudSelectItem>
+                }
+            </MudSelect>
         }
         <MudSpacer />
         <MudIconButton Icon="@(DarkLightModeButtonIcon)" Color="Color.Inherit" OnClick="@DarkModeToggle" Size="Size.Medium" />
@@ -67,6 +101,7 @@
 </CascadingValue>
 </CascadingValue>
 </CascadingValue>
+</CascadingValue>
 
 <div id="blazor-error-ui" data-nosnippet>
     An unhandled error has occurred.
@@ -83,6 +118,8 @@
     private List<string> selectedFunctions = new();
     private bool autoSelectFunctions = false;
     private int autoSelectCount = 3;
+    private List<OllamaModel> availableModels = new();
+    private OllamaModel? selectedModel;
     private MudTheme? _theme = null;
 
     protected override async Task OnInitializedAsync()
@@ -107,6 +144,25 @@
         {
             Console.WriteLine($"Error loading available functions: {ex}");
             availableFunctions = new List<FunctionInfo>();
+        }
+
+        try
+        {
+            availableModels = (await OllamaService.GetModelsAsync()).ToList();
+            if (!string.IsNullOrWhiteSpace(settings.DefaultModelName) &&
+                availableModels.Any(m => m.Name == settings.DefaultModelName))
+            {
+                selectedModel = availableModels.FirstOrDefault(m => m.Name == settings.DefaultModelName);
+            }
+            else
+            {
+                selectedModel = availableModels.FirstOrDefault();
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error loading available models: {ex}");
+            availableModels = new List<OllamaModel>();
         }
 
         _theme = new()
@@ -172,6 +228,12 @@
         selectedFunctions = functions;
         StateHasChanged();
         return Task.CompletedTask;
+    }
+
+    private void OnModelChanged(OllamaModel model)
+    {
+        selectedModel = model;
+        StateHasChanged();
     }
 
     private readonly PaletteLight _lightPalette = new()
