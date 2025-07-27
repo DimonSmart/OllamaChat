@@ -21,4 +21,6 @@ public class OllamaModel
 
     [JsonIgnore]
     public bool SupportsFunctionCalling { get; set; }
+
+    public override string ToString() => Name;
 }
