@@ -1,4 +1,6 @@
 ﻿#pragma warning disable SKEXP0070
+using System.Collections.Generic;
+using System.Linq;
 using System.Net.Http.Headers;
 using System.Text;
 
@@ -8,8 +10,6 @@ using ChatClient.Shared.Services;
 
 using OllamaSharp;
 using OllamaSharp.Models;
-using System.Linq;
-using System.Collections.Generic;
 
 namespace ChatClient.Api.Services;
 
@@ -65,7 +65,9 @@ public sealed class OllamaService(
             Digest = m.Digest,
             SupportsImages = m.Details?.Families?.Contains("clip") == true,
             SupportsFunctionCalling = DeterminesFunctionCallingSupport(m)
-        }).ToList();
+        })
+        .OrderBy(m => m.Name)
+        .ToList();
     }
 
     public async Task<float[]> GenerateEmbeddingAsync(string input, string modelId, CancellationToken cancellationToken = default)
