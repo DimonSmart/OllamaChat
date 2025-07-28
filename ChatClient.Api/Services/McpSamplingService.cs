@@ -77,13 +77,12 @@ public class McpSamplingService(
 
             return new CreateMessageResult
             {
-                Content = new Content
+                Content = new TextContentBlock
                 {
-                    Type = "text",
                     Text = responseText
                 },
-                Model = model,
-                StopReason = "end_turn",
+                Model = model!,
+                StopReason = "endTurn",
                 Role = Role.Assistant
             };
         }
@@ -131,7 +130,12 @@ public class McpSamplingService(
                 Role.Assistant => AuthorRole.Assistant,
                 _ => AuthorRole.User // Default to user if unknown role
             };
-            string content = mcpMessage.Content?.Text ?? string.Empty;
+
+            string content = mcpMessage.Content switch
+            {
+                TextContentBlock tb => tb.Text,
+                _ => string.Empty
+            };
 
             chatHistory.Add(new ChatMessageContent(role, content));
         }
