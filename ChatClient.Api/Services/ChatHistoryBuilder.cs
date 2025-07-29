@@ -71,10 +71,12 @@ public class ChatHistoryBuilder(IUserSettingsService settingsService) : IChatHis
         {
             case ChatHistoryMode.Truncate:
                 var trunc = new ChatHistoryTruncationReducer(5, 8);
-                return new ChatHistory(await trunc.ReduceAsync(history, cancellationToken) ?? []);
+                var truncated = await trunc.ReduceAsync(history, cancellationToken);
+                return truncated is not null ? new ChatHistory(truncated) : history;
             case ChatHistoryMode.Summarize:
                 var sum = new ChatHistorySummarizationReducer(chatService, 5, 8);
-                return new ChatHistory(await sum.ReduceAsync(history, cancellationToken) ?? []);
+                var summarized = await sum.ReduceAsync(history, cancellationToken);
+                return summarized is not null ? new ChatHistory(summarized) : history;
             default:
                 return history;
         }
