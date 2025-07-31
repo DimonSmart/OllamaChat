@@ -40,6 +40,9 @@ builder.Services.AddScoped<ChatClient.Api.Services.StartupOllamaChecker>();
 builder.Services.AddSingleton<ChatClient.Shared.Services.ISystemPromptService, ChatClient.Api.Services.SystemPromptService>();
 builder.Services.AddSingleton<ChatClient.Shared.Services.IUserSettingsService, ChatClient.Api.Services.UserSettingsService>();
 
+builder.Services.AddScoped<ChatClient.Shared.Agents.IAgent>(sp => new ChatClient.Api.Services.KernelAgent("Default"));
+builder.Services.AddScoped<ChatClient.Shared.Agents.IAgentCoordinator, ChatClient.Api.Services.DefaultAgentCoordinator>();
+
 builder.Services.AddScoped<ChatClient.Api.Client.Services.IChatService, ChatClient.Api.Client.Services.ChatService>();
 builder.Services.AddScoped<ChatClient.Api.Client.Services.IChatViewModelService, ChatClient.Api.Client.Services.ChatViewModelService>();
 
