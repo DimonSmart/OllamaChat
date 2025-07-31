@@ -49,6 +49,9 @@
                 element.scrollTop = element.scrollHeight;
             }
         }
+        window.copyText = function (text) {
+            navigator.clipboard.writeText(text);
+        }
     </script>
 </body>
 </html>
