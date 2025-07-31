@@ -15,6 +15,7 @@ namespace ChatClient.Api.Client.ViewModels;
 public class ChatMessageViewModel
 {
     public Guid Id { get; set; }
+    public string RawContent { get; set; } = string.Empty;
     public string Content { get; set; } = string.Empty;
     public string HtmlContent { get; set; } = string.Empty;
     public IReadOnlyCollection<string> ThinkSegments { get; set; } = [];
@@ -35,7 +36,7 @@ public class ChatMessageViewModel
     private ChatMessageViewModel Populate(IAppChatMessage message)
     {
         Id = message.Id;
-        Content = message.Content;
+        RawContent = message.Content;
         MsgDateTime = message.MsgDateTime;
         Role = message.Role;
         Statistics = message.Statistics;

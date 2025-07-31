@@ -90,6 +90,13 @@
     cursor: default;
 }
 
+/* Copy button style */
+.copy-button {
+    cursor: pointer;
+    margin-left: 0.25rem;
+    color: var(--mud-palette-text-secondary);
+}
+
 @keyframes blink {
     0%, 50% {
         opacity: 1;
