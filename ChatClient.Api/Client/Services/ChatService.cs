@@ -1,12 +1,12 @@
 ﻿using System.Collections.ObjectModel;
 
 using ChatClient.Api.Services;
+using ChatClient.Shared.Agents;
 using ChatClient.Shared.Models;
 
 using Microsoft.Extensions.AI;
 
 using Microsoft.SemanticKernel;
-using Microsoft.SemanticKernel.Agents;
 using Microsoft.SemanticKernel.ChatCompletion;
 
 using OllamaSharp.Models.Exceptions;
@@ -18,6 +18,7 @@ namespace ChatClient.Api.Client.Services;
 public class ChatService(
     KernelService kernelService,
     IChatHistoryBuilder historyBuilder,
+    IAgentCoordinator agentCoordinator,
     ILogger<ChatService> logger) : IChatService
 {
     private CancellationTokenSource? _cancellationTokenSource;
@@ -136,7 +137,7 @@ public class ChatService(
             };
 
             var streamingContent = chatConfiguration.UseAgentMode
-                ? AgentService.GetAgentStreamingResponseAsync(history, promptExecutionSettings, kernel, cancellationToken)
+                ? agentCoordinator.GetNextAgent().GetResponseAsync(history, promptExecutionSettings, kernel, cancellationToken)
                 : chatService.GetStreamingChatMessageContentsAsync(history, promptExecutionSettings, kernel, cancellationToken);
             var trackingFilter = new FunctionCallRecordingFilter(functionCalls);
 
