@@ -7,6 +7,7 @@
 @using ChatClient.Shared.Models
 @using System.Threading
 @using System.Text
+@using System.Linq
 @using MudBlazor
 @using ChatClient.Api.Client.Services
 @using ChatClient.Api.Client.Components
@@ -91,6 +92,8 @@
                              <time>@message.MsgDateTime.ToString("g")</time>
                              @if (!isLLMAnswering)
                              {
+                                <span class="copy-button" title="Copy answer" @onclick="(() => CopyVisibleMessage(message))">📋</span>
+                                <span class="copy-button" title="Copy raw" @onclick="(() => CopyRawMessage(message))">🚪</span>
                                 <span class="delete-button" title="Delete" @onclick="(() => DeleteMessage(message))">🗑</span>
                              }
                          </MudChatHeader>
@@ -346,6 +349,19 @@
             return;
 
         await ChatService.DeleteMessageAsync(message.Id);
+    }
+
+    private async Task CopyVisibleMessage(ChatMessageViewModel message)
+    {
+        await JSRuntime.InvokeVoidAsync("copyText", message.Content);
+    }
+
+    private async Task CopyRawMessage(ChatMessageViewModel message)
+    {
+        if (!string.IsNullOrEmpty(message.RawContent))
+        {
+            await JSRuntime.InvokeVoidAsync("copyText", message.RawContent);
+        }
     }
 
     public ValueTask DisposeAsync()
