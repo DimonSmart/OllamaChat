@@ -30,6 +30,7 @@ public class ChatMessageViewModel
 
     private static readonly MarkdownPipeline Pipeline = new MarkdownPipelineBuilder()
         .UseAdvancedExtensions()
+        .UseMathematics()
         .Build();
     private ChatMessageViewModel Populate(IAppChatMessage message)
     {
