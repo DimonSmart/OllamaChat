@@ -15,11 +15,11 @@
 <MudDialogProvider />
 <MudSnackbarProvider />
 <MudPopoverProvider />
-<CascadingValue Value="@selectedFunctions">
-<CascadingValue Value="@autoSelectFunctions">
-<CascadingValue Value="@autoSelectCount">
-<CascadingValue Value="@useAgentMode">
-<CascadingValue Value="@selectedModel">
+<CascadingValue Value="@selectedFunctions" Name="SelectedFunctions">
+<CascadingValue Value="@autoSelectFunctions" Name="AutoSelectFunctions">
+<CascadingValue Value="@autoSelectCount" Name="AutoSelectCount">
+<CascadingValue Value="@useAgentMode" Name="UseAgentMode">
+<CascadingValue Value="@selectedModel" Name="SelectedModel">
 <MudLayout>
     <MudAppBar Elevation="1" Dense="true">
         <MudIconButton Icon="@Icons.Material.Filled.Menu" Color="Color.Inherit" Edge="Edge.Start" OnClick="@((e) => DrawerToggle())" Size="Size.Medium" />

@@ -213,16 +213,16 @@
 
     private List<SystemPrompt> systemPrompts = new();
     private SystemPrompt? selectedSystemPrompt;
-    [CascadingParameter]
+    [CascadingParameter(Name = "SelectedFunctions")]
     public List<string> SelectedFunctions { get; set; } = new();
-    [CascadingParameter]
+    [CascadingParameter(Name = "AutoSelectFunctions")]
     public bool AutoSelectFunctions { get; set; }
-    [CascadingParameter]
+    [CascadingParameter(Name = "AutoSelectCount")]
     public int AutoSelectCount { get; set; }
 
-    [CascadingParameter]
+    [CascadingParameter(Name = "UseAgentMode")]
     public bool UseAgentMode { get; set; }
-    [CascadingParameter]
+    [CascadingParameter(Name = "SelectedModel")]
     public OllamaModel? SelectedModel { get; set; }
 
     private bool showPromptContent { get; set; } = false;
