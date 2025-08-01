@@ -4,8 +4,10 @@
 <MudCollapse Expanded="@Expanded" ExpandedChanged="@(v => ExpandedChanged.InvokeAsync(v))">
     <MudPaper Class="pa-4">
         <MudText Typo="Typo.subtitle1">Select Functions to use:</MudText>
-        <MudCheckBox T="bool" Value="@AutoSelectFunctions" ValueChanged="OnAutoSelectFunctionsChanged" Class="mt-2"
+
+        <MudCheckBox T="bool" Dense="true" Value="@AutoSelectFunctions" ValueChanged="OnAutoSelectFunctionsChanged" Class="mt-2"
                      Color="Color.Primary" Label="Auto-select relevant functions" />
+
         <MudNumericField T="int" Value="@AutoSelectCount" ValueChanged="OnAutoSelectCountChanged" Class="mt-2" Min="1" Max="10"
                          Disabled="!AutoSelectFunctions" Variant="Variant.Outlined" Label="Function count"
                          Immediate="true" />

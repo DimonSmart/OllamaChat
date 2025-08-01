@@ -1,17 +1,11 @@
 ﻿using System.Collections.ObjectModel;
-
 using ChatClient.Api.Services;
 using ChatClient.Shared.Agents;
 using ChatClient.Shared.Models;
-
 using Microsoft.Extensions.AI;
-
 using Microsoft.SemanticKernel;
 using Microsoft.SemanticKernel.ChatCompletion;
-
 using OllamaSharp.Models.Exceptions;
-
-using static MudBlazor.CategoryTypes;
 
 namespace ChatClient.Api.Client.Services;
 
