@@ -2,6 +2,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Text;
 
+using ChatClient.Api.Client.MarkdownExtensions;
 using ChatClient.Shared.Models;
 
 using DimonSmart.AiUtils;
@@ -32,6 +33,7 @@ public class ChatMessageViewModel
     private static readonly MarkdownPipeline Pipeline = new MarkdownPipelineBuilder()
         .UseAdvancedExtensions()
         .UseMathematics()
+        .UseSlashParensMath()
         .Build();
     private ChatMessageViewModel Populate(IAppChatMessage message)
     {
