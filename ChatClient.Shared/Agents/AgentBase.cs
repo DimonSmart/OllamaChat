@@ -6,14 +6,14 @@ using Microsoft.SemanticKernel.ChatCompletion;
 
 public abstract class AgentBase : IAgent
 {
-    protected AgentBase(string name, SystemPrompt? prompt = null)
+    protected AgentBase(string name, SystemPrompt? agentDescription = null)
     {
         Name = name;
-        SystemPrompt = prompt;
+        AgentDescription = agentDescription;
     }
 
     public string Name { get; }
-    public SystemPrompt? SystemPrompt { get; protected set; }
+    public SystemPrompt? AgentDescription { get; protected set; }
 
     public abstract IAsyncEnumerable<StreamingChatMessageContent> GetResponseAsync(
         ChatHistory chatHistory,

@@ -197,7 +197,7 @@
 
     private void NewChat()
     {
-        ChatService.InitializeChat(ChatService.CurrentSystemPrompt);
+        ChatService.InitializeChat(ChatService.AgentDescriptions);
         if (!IsOnChatPage())
         {
             NavigationManager.NavigateTo("/chat");

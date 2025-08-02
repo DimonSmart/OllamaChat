@@ -7,7 +7,7 @@ using Microsoft.SemanticKernel.ChatCompletion;
 public interface IAgent
 {
     string Name { get; }
-    SystemPrompt? SystemPrompt { get; }
+    SystemPrompt? AgentDescription { get; }
     IAsyncEnumerable<StreamingChatMessageContent> GetResponseAsync(
         ChatHistory chatHistory,
         PromptExecutionSettings promptExecutionSettings,
