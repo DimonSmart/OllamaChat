@@ -26,6 +26,10 @@ public class SystemPromptService : ISystemPromptService
         {
             CreateDefaultPromptsFile().GetAwaiter().GetResult();
         }
+        else
+        {
+            MigratePromptFile().GetAwaiter().GetResult();
+        }
     }
 
     private async Task CreateDefaultPromptsFile()
@@ -45,6 +49,16 @@ public class SystemPromptService : ISystemPromptService
         };
 
         await WriteToFileAsync(defaultPrompts);
+    }
+
+    private async Task MigratePromptFile()
+    {
+        var json = await File.ReadAllTextAsync(_filePath);
+        if (!json.Contains("ModelName"))
+        {
+            var prompts = JsonSerializer.Deserialize<List<SystemPrompt>>(json) ?? [];
+            await WriteToFileAsync(prompts);
+        }
     }
 
     public async Task<List<SystemPrompt>> GetAllPromptsAsync()
