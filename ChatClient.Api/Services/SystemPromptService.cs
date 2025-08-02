@@ -24,15 +24,11 @@ public class SystemPromptService : ISystemPromptService
 
         if (!File.Exists(_filePath))
         {
-            CreateDefaultPromptsFile().GetAwaiter().GetResult();
-        }
-        else
-        {
-            MigratePromptFile().GetAwaiter().GetResult();
+            CreateDefaultPromptsFile();
         }
     }
 
-    private async Task CreateDefaultPromptsFile()
+    private void CreateDefaultPromptsFile()
     {
         var defaultPrompts = new List<SystemPrompt>
         {
@@ -48,18 +44,9 @@ public class SystemPromptService : ISystemPromptService
             }
         };
 
-        await WriteToFileAsync(defaultPrompts);
+        WriteToFile(defaultPrompts);
     }
 
-    private async Task MigratePromptFile()
-    {
-        var json = await File.ReadAllTextAsync(_filePath);
-        if (!json.Contains("ModelName"))
-        {
-            var prompts = JsonSerializer.Deserialize<List<SystemPrompt>>(json) ?? [];
-            await WriteToFileAsync(prompts);
-        }
-    }
 
     public async Task<List<SystemPrompt>> GetAllPromptsAsync()
     {
@@ -69,7 +56,7 @@ public class SystemPromptService : ISystemPromptService
 
             if (!File.Exists(_filePath))
             {
-                await CreateDefaultPromptsFile();
+                CreateDefaultPromptsFile();
                 return await ReadFromFileAsync();
             }
 
@@ -198,6 +185,13 @@ public class SystemPromptService : ISystemPromptService
         var options = new JsonSerializerOptions { WriteIndented = true };
         var json = JsonSerializer.Serialize(prompts, options);
         await File.WriteAllTextAsync(_filePath, json);
+    }
+
+    private void WriteToFile(List<SystemPrompt> prompts)
+    {
+        var options = new JsonSerializerOptions { WriteIndented = true };
+        var json = JsonSerializer.Serialize(prompts, options);
+        File.WriteAllText(_filePath, json);
     }
 
     public SystemPrompt GetDefaultSystemPrompt() => new()
