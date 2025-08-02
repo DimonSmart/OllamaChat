@@ -21,7 +21,7 @@
 @inject IDialogService DialogService
 @inject IChatViewModelService ChatViewModelService
 @inject IChatService ChatService
-@inject ISystemPromptService PromptService
+@inject ISystemPromptService AgentService
 @inject IUserSettingsService UserSettingsService
 
 <PageTitle>Chat with AI Assistant</PageTitle>
@@ -39,25 +39,25 @@
     {
         <MudCard Class="ma-auto" Style="max-width: 600px; width: 100%;">
             <MudCardContent>
-                @if (systemPrompts.Count == 0)
+                @if (agents.Count == 0)
                 {
                     <MudProgressCircular Color="Color.Primary" Size="Size.Small" Indeterminate="true" />
                     <MudText>Loading agents...</MudText>
                 }
                 else
                 {
-                    <MudSelect T="SystemPrompt" Label="Select Agent" @bind-Value="selectedSystemPrompt" Variant="Variant.Outlined" FullWidth="true" Dense="true">
-                        @foreach (var prompt in systemPrompts)
+                    <MudSelect T="SystemPrompt" Label="Select Agent" @bind-Value="selectedAgent" Variant="Variant.Outlined" FullWidth="true" Dense="true">
+                        @foreach (var agent in agents)
                         {
-                            <MudSelectItem Value="@prompt">@prompt.Name</MudSelectItem>
+                            <MudSelectItem Value="@agent">@agent.Name</MudSelectItem>
                         }
                     </MudSelect>
 
-                    <MudSwitch T="bool" @bind-value="showPromptContent" Color="Color.Primary" Class="mt-4" Style="margin-bottom: 10px;">View Agent Prompt</MudSwitch>
-                    @if (showPromptContent)
+                    <MudSwitch T="bool" @bind-value="showAgentPrompt" Color="Color.Primary" Class="mt-4" Style="margin-bottom: 10px;">View Agent Prompt</MudSwitch>
+                    @if (showAgentPrompt)
                     {
                         <div class="prompt-preview mt-3 pa-3 mb-2">
-                            @(selectedSystemPrompt?.Content ?? string.Empty)
+                            @(selectedAgent?.Content ?? string.Empty)
                         </div>
                     }
                     <MudButton Variant="Variant.Filled"
@@ -211,8 +211,8 @@
     private bool chatStarted = false;
     private ElementReference messagesElement;
 
-    private List<SystemPrompt> systemPrompts = new();
-    private SystemPrompt? selectedSystemPrompt;
+    private List<SystemPrompt> agents = new();
+    private SystemPrompt? selectedAgent;
     [CascadingParameter(Name = "SelectedFunctions")]
     public List<string> SelectedFunctions { get; set; } = new();
     [CascadingParameter(Name = "AutoSelectFunctions")]
@@ -225,7 +225,7 @@
     [CascadingParameter(Name = "SelectedModel")]
     public OllamaModel? SelectedModel { get; set; }
 
-    private bool showPromptContent { get; set; } = false;
+    private bool showAgentPrompt { get; set; } = false;
 
 
     private UserSettings userSettings = new();
@@ -243,7 +243,7 @@
         isLoadingInitialData = true;
         StateHasChanged();
 
-        await LoadSystemPrompts();
+        await LoadAgents();
         await LoadUserSettings();
 
         ChatService.LoadingStateChanged += OnLoadingStateChanged;
@@ -284,12 +284,12 @@
     }
 
 
-    private async Task LoadSystemPrompts()
+    private async Task LoadAgents()
     {
-        systemPrompts = await PromptService.GetAllPromptsAsync();
-        if (systemPrompts.Count == 0) 
-            systemPrompts.Add(PromptService.GetDefaultSystemPrompt());
-        selectedSystemPrompt = systemPrompts.FirstOrDefault();
+        agents = await AgentService.GetAllPromptsAsync();
+        if (agents.Count == 0)
+            agents.Add(AgentService.GetDefaultSystemPrompt());
+        selectedAgent = agents.FirstOrDefault();
     }
 
     private async Task LoadUserSettings()
@@ -304,10 +304,12 @@
 
     private void StartChat()
     {
-        if (selectedSystemPrompt == null)
+        if (selectedAgent == null)
         {
-            selectedSystemPrompt = PromptService.GetDefaultSystemPrompt();
-        }        ChatService.InitializeChat(selectedSystemPrompt);
+            selectedAgent = AgentService.GetDefaultSystemPrompt();
+        }
+        var agentsToInitialize = selectedAgent != null ? new[] { selectedAgent } : null;
+        ChatService.InitializeChat(agentsToInitialize);
         chatStarted = true;
         StateHasChanged();
     }
@@ -425,10 +427,13 @@
         await DialogService.ShowAsync<ImageViewerDialog>("Image Viewer", parameters, options);
     }
 
-    private string GetAgentDisplayName() =>
-    !string.IsNullOrWhiteSpace(ChatService.CurrentSystemPrompt?.AgentName)
-        ? ChatService.CurrentSystemPrompt.AgentName
-        : userSettings.AgentName;
+    private string GetAgentDisplayName()
+    {
+        var agentName = ChatService.AgentDescriptions.FirstOrDefault()?.AgentName;
+        return !string.IsNullOrWhiteSpace(agentName)
+            ? agentName
+            : userSettings.AgentName;
+    }
 
     private string GetAvatarText(string? name)
     {

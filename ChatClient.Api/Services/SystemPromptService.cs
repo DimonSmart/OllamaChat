@@ -24,13 +24,13 @@ public class SystemPromptService : ISystemPromptService
 
         if (!File.Exists(_filePath))
         {
-            CreateDefaultPromptsFile();
+            CreateDefaultAgentsFile();
         }
     }
 
-    private void CreateDefaultPromptsFile()
+    private void CreateDefaultAgentsFile()
     {
-        var defaultPrompts = new List<SystemPrompt>
+        var defaultAgents = new List<SystemPrompt>
         {
             new SystemPrompt
             {
@@ -44,7 +44,7 @@ public class SystemPromptService : ISystemPromptService
             }
         };
 
-        WriteToFile(defaultPrompts);
+        WriteToFile(defaultAgents);
     }
 
 
@@ -56,7 +56,7 @@ public class SystemPromptService : ISystemPromptService
 
             if (!File.Exists(_filePath))
             {
-                CreateDefaultPromptsFile();
+                CreateDefaultAgentsFile();
                 return await ReadFromFileAsync();
             }
 
@@ -75,8 +75,8 @@ public class SystemPromptService : ISystemPromptService
 
     public async Task<SystemPrompt?> GetPromptByIdAsync(Guid id)
     {
-        var prompts = await GetAllPromptsAsync();
-        return prompts.FirstOrDefault(p => p.Id == id);
+        var agents = await GetAllPromptsAsync();
+        return agents.FirstOrDefault(p => p.Id == id);
     }
 
     public async Task<SystemPrompt> CreatePromptAsync(SystemPrompt prompt)
@@ -85,7 +85,7 @@ public class SystemPromptService : ISystemPromptService
         {
             await _semaphore.WaitAsync();
 
-            var prompts = await ReadFromFileAsync();
+            var agents = await ReadFromFileAsync();
 
             if (prompt.Id == null)
                 prompt.Id = Guid.NewGuid();
@@ -93,8 +93,8 @@ public class SystemPromptService : ISystemPromptService
             prompt.CreatedAt = DateTime.UtcNow;
             prompt.UpdatedAt = DateTime.UtcNow;
 
-            prompts.Add(prompt);
-            await WriteToFileAsync(prompts);
+            agents.Add(prompt);
+            await WriteToFileAsync(agents);
 
             return prompt;
         }
@@ -115,8 +115,8 @@ public class SystemPromptService : ISystemPromptService
         {
             await _semaphore.WaitAsync();
 
-            var prompts = await ReadFromFileAsync();
-            var existingIndex = prompts.FindIndex(p => p.Id == prompt.Id);
+            var agents = await ReadFromFileAsync();
+            var existingIndex = agents.FindIndex(p => p.Id == prompt.Id);
 
             if (existingIndex == -1)
             {
@@ -124,9 +124,9 @@ public class SystemPromptService : ISystemPromptService
             }
 
             prompt.UpdatedAt = DateTime.UtcNow;
-            prompts[existingIndex] = prompt;
+            agents[existingIndex] = prompt;
 
-            await WriteToFileAsync(prompts);
+            await WriteToFileAsync(agents);
 
             return prompt;
         }
@@ -147,16 +147,16 @@ public class SystemPromptService : ISystemPromptService
         {
             await _semaphore.WaitAsync();
 
-            var prompts = await ReadFromFileAsync();
-            var existingPrompt = prompts.FirstOrDefault(p => p.Id == id);
+            var agents = await ReadFromFileAsync();
+            var existingAgent = agents.FirstOrDefault(p => p.Id == id);
 
-            if (existingPrompt == null)
+            if (existingAgent == null)
             {
                 throw new KeyNotFoundException($"Agent with ID {id} not found");
             }
 
-            prompts.Remove(existingPrompt);
-            await WriteToFileAsync(prompts);
+            agents.Remove(existingAgent);
+            await WriteToFileAsync(agents);
         }
         catch (Exception ex)
         {
@@ -180,20 +180,20 @@ public class SystemPromptService : ISystemPromptService
         return JsonSerializer.Deserialize<List<SystemPrompt>>(json) ?? [];
     }
 
-    private static string SerializePrompts(List<SystemPrompt> prompts)
+    private static string SerializeAgents(List<SystemPrompt> agents)
     {
         var options = new JsonSerializerOptions { WriteIndented = true };
-        return JsonSerializer.Serialize(prompts, options);
+        return JsonSerializer.Serialize(agents, options);
     }
 
-    private async Task WriteToFileAsync(List<SystemPrompt> prompts)
+    private async Task WriteToFileAsync(List<SystemPrompt> agents)
     {
-        await File.WriteAllTextAsync(_filePath, SerializePrompts(prompts));
+        await File.WriteAllTextAsync(_filePath, SerializeAgents(agents));
     }
 
-    private void WriteToFile(List<SystemPrompt> prompts)
+    private void WriteToFile(List<SystemPrompt> agents)
     {
-        File.WriteAllText(_filePath, SerializePrompts(prompts));
+        File.WriteAllText(_filePath, SerializeAgents(agents));
     }
 
     public SystemPrompt GetDefaultSystemPrompt() => new()

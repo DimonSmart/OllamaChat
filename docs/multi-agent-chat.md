@@ -15,15 +15,15 @@ This document outlines a proposal to extend **OllamaChat** with multi-agent conv
 4. Provide an extensible coordination layer so the manager agent can decide which agent responds next.
 
 ## Step-by-Step Plan
-### 1. Extend prompt model and storage
+### 1. Extend prompt model and storage ✅
 - Add a `ModelName` property to `SystemPrompt`. Update serialization and `SystemPromptService` CRUD logic to persist this value.
 - Migrate existing prompt files so older entries default to `null`/empty `ModelName`.
 
-### 2. Update system prompt editor
+### 2. Update system prompt editor ✅
 - In `SystemPrompts.razor`, fetch available models (via `IOllamaClientService`) and present a dropdown when editing/creating prompts.
 - Allow leaving the selection blank to fall back to the chat's main model.
 
-### 3. Treat prompts as agents
+### 3. Treat prompts as agents ✅
 - When initializing a chat, create a `KernelAgent` instance for each selected prompt, passing along its model preference.
 - Modify `ChatService` and `IChatService` to manage a list of active agents instead of a single prompt.
 

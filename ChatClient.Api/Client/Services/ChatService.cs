@@ -1,4 +1,6 @@
 ﻿using System.Collections.ObjectModel;
+using System.Collections.Generic;
+using System.Linq;
 using ChatClient.Api.Services;
 using ChatClient.Shared.Agents;
 using ChatClient.Shared.Models;
@@ -18,7 +20,9 @@ public class ChatService(
     private CancellationTokenSource? _cancellationTokenSource;
     private StreamingMessageManager _streamingManager = null!;
     private StreamingAppChatMessage? _currentStreamingMessage;
-    private SystemPrompt? _currentSystemPrompt;
+    private List<SystemPrompt> _agentDescriptions = [];
+    private List<IAgent> _activeAgents = [];
+    private IAgentCoordinator _agentCoordinator = agentCoordinator;
     public event Action<bool>? LoadingStateChanged;
     public event Action? ChatInitialized;
     public event Func<IAppChatMessage, Task>? MessageAdded;
@@ -27,26 +31,38 @@ public class ChatService(
 
     public bool IsLoading { get; private set; }
     public ObservableCollection<IAppChatMessage> Messages { get; } = [];
-    public SystemPrompt? CurrentSystemPrompt => _currentSystemPrompt;
+    public IReadOnlyList<SystemPrompt> AgentDescriptions => _agentDescriptions;
+    public IReadOnlyList<IAgent> ActiveAgents => _activeAgents;
 
-    public void InitializeChat(SystemPrompt? initialPrompt)
+    public void InitializeChat(IEnumerable<SystemPrompt>? initialAgents)
     {
         Messages.Clear();
         _streamingManager = new StreamingMessageManager(MessageUpdated);
-        _currentSystemPrompt = initialPrompt;
+        _agentDescriptions = initialAgents?.ToList() ?? [];
+        _activeAgents = [];
 
-        if (initialPrompt != null)
+        foreach (var agent in _agentDescriptions)
         {
-            AppChatMessage systemMessage = new AppChatMessage(initialPrompt.Content, DateTime.Now, ChatRole.System, string.Empty);
+            AppChatMessage systemMessage = new AppChatMessage(agent.Content, DateTime.Now, ChatRole.System, string.Empty);
             Messages.Add(systemMessage);
+
+            string agentName = !string.IsNullOrWhiteSpace(agent.AgentName) ? agent.AgentName : agent.Name;
+            _activeAgents.Add(new KernelAgent(agentName, agent));
         }
+
+        if (_activeAgents.Count > 0)
+        {
+            _agentCoordinator = new DefaultAgentCoordinator(_activeAgents[0]);
+        }
+
         ChatInitialized?.Invoke();
     }
 
     public void ClearChat()
     {
         Messages.Clear();
-        _currentSystemPrompt = null;
+        _agentDescriptions.Clear();
+        _activeAgents.Clear();
     }
 
     public async Task CancelAsync()
@@ -131,7 +147,7 @@ public class ChatService(
             };
 
             var streamingContent = chatConfiguration.UseAgentMode
-                ? agentCoordinator.GetNextAgent().GetResponseAsync(history, promptExecutionSettings, kernel, cancellationToken)
+                ? _agentCoordinator.GetNextAgent().GetResponseAsync(history, promptExecutionSettings, kernel, cancellationToken)
                 : chatService.GetStreamingChatMessageContentsAsync(history, promptExecutionSettings, kernel, cancellationToken);
             var trackingFilter = new FunctionCallRecordingFilter(functionCalls);
 

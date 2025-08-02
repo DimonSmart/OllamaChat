@@ -2,7 +2,7 @@
 @using ChatClient.Shared.Models
 @using ChatClient.Shared.Services
 @using ChatClient.Api.Services
-@inject ISystemPromptService SystemPromptService
+@inject ISystemPromptService AgentService
 @inject ISnackbar Snackbar
 @inject IOllamaClientService OllamaService
 
@@ -16,7 +16,7 @@
             <MudButton Variant="Variant.Filled"
                        Color="Color.Primary"
                        StartIcon="@Icons.Material.Filled.Add"
-                       OnClick="AddNewPrompt"
+                       OnClick="AddNewAgent"
                        Class="px-4"
                        Size="Size.Small">
                 Add Agent
@@ -43,7 +43,7 @@
         else
         {
             <MudDataGrid T="SystemPrompt" @ref="dataGrid"
-                         Items="@filteredPrompts"
+                         Items="@filteredAgents"
                          ReadOnly="true"
                          Bordered="true"
                          Hover="true"
@@ -101,11 +101,11 @@
                         <CellTemplate>
                             <MudIconButton Icon="@Icons.Material.Filled.Edit"
                                            Size="Size.Small"
-                                           OnClick="@(() => StartEditing(context.Item))" />
+                                           OnClick="@(() => StartEditingAgent(context.Item))" />
                             <MudIconButton Icon="@Icons.Material.Filled.Delete"
                                            Size="Size.Small"
                                            Color="Color.Error"
-                                           OnClick="() => ConfirmDelete(context.Item)" />
+                                           OnClick="() => ConfirmDeleteAgent(context.Item)" />
                         </CellTemplate>
                     </TemplateColumn>
                 </Columns>
@@ -139,34 +139,34 @@
         <MudText Typo="Typo.h6">Confirm Delete</MudText>
     </TitleContent>
     <DialogContent>
-        <MudText>Are you sure you want to delete the agent "@promptToDelete?.Name"?</MudText>
+        <MudText>Are you sure you want to delete the agent "@agentToDelete?.Name"?</MudText>
     </DialogContent>
     <DialogActions>
         <MudButton OnClick="CancelDelete" Size="Size.Medium">Cancel</MudButton>
-        <MudButton Color="Color.Error" OnClick="DeletePrompt" Size="Size.Medium">Delete</MudButton>
+        <MudButton Color="Color.Error" OnClick="DeleteAgent" Size="Size.Medium">Delete</MudButton>
     </DialogActions>
 </MudDialog>
 
-<MudDialog @bind-Visible="@showEditPromptDialog" Options="editDialogOptions">
+<MudDialog @bind-Visible="@showEditAgentDialog" Options="editDialogOptions">
     <TitleContent>
-        <MudText Typo="Typo.h6">@(editingPrompt?.Id == null ? "Create New Agent" : "Edit Agent")</MudText>
+        <MudText Typo="Typo.h6">@(editingAgent?.Id == null ? "Create New Agent" : "Edit Agent")</MudText>
     </TitleContent>
     <DialogContent>
-        <MudForm @ref="editPromptForm" Model="@editingPrompt">
-            <MudTextField @bind-Value="editingPrompt.Name"
+        <MudForm @ref="editAgentForm" Model="@editingAgent">
+            <MudTextField @bind-Value="editingAgent.Name"
                           Label="Agent Name"
                           Required="true"
                           Immediate="true"
                           Validation="@(new Func<string, string>(ValidateName))" />
 
-            <MudTextField @bind-Value="editingPrompt.AgentName"
+            <MudTextField @bind-Value="editingAgent.AgentName"
                           Label="Display Name (Optional)"
                           Class="mt-4"
                           Immediate="true"
                           HelperText="Custom display name for this agent. If empty, uses global agent name from settings."
                           Placeholder="Enter display name..." />
 
-            <MudSelect T="string" @bind-Value="editingPrompt.ModelName" Label="Model (Optional)" Class="mt-4" Dense="true" Clearable="true">
+            <MudSelect T="string" @bind-Value="editingAgent.ModelName" Label="Model (Optional)" Class="mt-4" Dense="true" Clearable="true">
                 @foreach (var model in availableModels)
                 {
                     <MudSelectItem Value="@model.Name">@model.Name</MudSelectItem>
@@ -174,7 +174,7 @@
             </MudSelect>
             <MudText Typo="Typo.caption">Leave blank to use chat's default model.</MudText>
 
-            <MudTextField @bind-Value="editingPrompt.Content"
+            <MudTextField @bind-Value="editingAgent.Content"
                           Label="Agent Prompt"
                           Lines="10"
                           Class="mt-4"
@@ -186,20 +186,20 @@
     </DialogContent>
     <DialogActions>
         <MudButton OnClick="CancelEdit" Size="Size.Medium">Cancel</MudButton>
-        <MudButton Color="Color.Primary" OnClick="SavePrompt" Size="Size.Medium">Save</MudButton>
+        <MudButton Color="Color.Primary" OnClick="SaveAgent" Size="Size.Medium">Save</MudButton>
     </DialogActions>
 </MudDialog>
 
 @code {
-    private List<SystemPrompt> prompts = new();
-    private List<SystemPrompt> filteredPrompts = new();
+    private List<SystemPrompt> agents = new();
+    private List<SystemPrompt> filteredAgents = new();
     private bool loading = true;
-    private SystemPrompt? promptToDelete;
-    private SystemPrompt editingPrompt = new();
+    private SystemPrompt? agentToDelete;
+    private SystemPrompt editingAgent = new();
     private bool showDeleteDialog { get; set; } = false;
-    private bool showEditPromptDialog { get; set; } = false;
+    private bool showEditAgentDialog { get; set; } = false;
     private string searchString = string.Empty;
-    private MudForm? editPromptForm;
+    private MudForm? editAgentForm;
     private MudDataGrid<SystemPrompt>? dataGrid;
     private List<OllamaModel> availableModels = new();
     private DialogOptions dialogOptions = new()
@@ -219,19 +219,19 @@
 
     protected override async Task OnInitializedAsync()
     {
-        await LoadPrompts();
+        await LoadAgents();
         await LoadAvailableModels();
     }
 
-    private async Task LoadPrompts()
+    private async Task LoadAgents()
     {
         try
         {
             loading = true;
             StateHasChanged();
 
-            prompts = await SystemPromptService.GetAllPromptsAsync() ?? new();
-            filteredPrompts = prompts;
+            agents = await AgentService.GetAllPromptsAsync() ?? new();
+            filteredAgents = agents;
         }
         catch (Exception ex)
         {
@@ -257,9 +257,9 @@
         }
     }
 
-    private void AddNewPrompt()
+    private void AddNewAgent()
     {
-        editingPrompt = new SystemPrompt
+        editingAgent = new SystemPrompt
         {
             Id = null,
             CreatedAt = DateTime.UtcNow,
@@ -269,7 +269,7 @@
             ModelName = null,
         };
 
-        showEditPromptDialog = true;
+        showEditAgentDialog = true;
     }
 
     private void OnSearch(string text)
@@ -282,55 +282,55 @@
     {
         if (string.IsNullOrWhiteSpace(searchString))
         {
-            filteredPrompts = new List<SystemPrompt>(prompts);
+            filteredAgents = new List<SystemPrompt>(agents);
             return;
         }
 
-        filteredPrompts = prompts
+        filteredAgents = agents
             .Where(p => p.Name.Contains(searchString, StringComparison.OrdinalIgnoreCase) ||
                        p.Content.Contains(searchString, StringComparison.OrdinalIgnoreCase))
             .ToList();
     }
 
-    private Task StartEditing(SystemPrompt prompt)
+    private Task StartEditingAgent(SystemPrompt agent)
     {
-        editingPrompt = new SystemPrompt
+        editingAgent = new SystemPrompt
         {
-            Id = prompt.Id,
-            Name = prompt.Name,
-            Content = prompt.Content,
-            AgentName = prompt.AgentName,
-            ModelName = prompt.ModelName,
-            CreatedAt = prompt.CreatedAt,
-            UpdatedAt = prompt.UpdatedAt
+            Id = agent.Id,
+            Name = agent.Name,
+            Content = agent.Content,
+            AgentName = agent.AgentName,
+            ModelName = agent.ModelName,
+            CreatedAt = agent.CreatedAt,
+            UpdatedAt = agent.UpdatedAt
         };
 
-        showEditPromptDialog = true;
+        showEditAgentDialog = true;
         return Task.CompletedTask;
     }
 
-    private void ConfirmDelete(SystemPrompt prompt)
+    private void ConfirmDeleteAgent(SystemPrompt agent)
     {
-        promptToDelete = prompt;
+        agentToDelete = agent;
         showDeleteDialog = true;
         StateHasChanged();
     }
 
     private void CancelDelete()
     {
-        promptToDelete = null;
+        agentToDelete = null;
         showDeleteDialog = false;
     }
 
-    private async Task DeletePrompt()
+    private async Task DeleteAgent()
     {
-        if (promptToDelete?.Id == null) return;
+        if (agentToDelete?.Id == null) return;
         try
         {
-            await SystemPromptService.DeletePromptAsync(promptToDelete.Id.Value);
+            await AgentService.DeletePromptAsync(agentToDelete.Id.Value);
             Snackbar.Add("Agent deleted successfully", Severity.Success);
 
-            prompts.Remove(promptToDelete);
+            agents.Remove(agentToDelete);
             ApplySearch();
         }
         catch (Exception ex)
@@ -338,7 +338,7 @@
             Snackbar.Add($"Error deleting agent: {ex.Message}", Severity.Error);
         }
 
-        promptToDelete = null;
+        agentToDelete = null;
         showDeleteDialog = false;
     }
 
@@ -366,33 +366,32 @@
 
     private void CancelEdit()
     {
-        showEditPromptDialog = false;
+        showEditAgentDialog = false;
     }
-
-    private async Task SavePrompt()
+    private async Task SaveAgent()
     {
-        if (editPromptForm == null) return;
-        await editPromptForm.Validate();
-        if (editPromptForm.IsValid)
+        if (editAgentForm == null) return;
+        await editAgentForm.Validate();
+        if (editAgentForm.IsValid)
         {
             try
             {
-                if (editingPrompt.Id == null)
+                if (editingAgent.Id == null)
                 {
-                    var result = await SystemPromptService.CreatePromptAsync(editingPrompt);
-                    prompts.Add(result);
+                    var result = await AgentService.CreatePromptAsync(editingAgent);
+                    agents.Add(result);
                     Snackbar.Add("Agent created successfully", Severity.Success);
                 }
                 else
                 {
-                    editingPrompt.UpdatedAt = DateTime.UtcNow;
-                    var result = await SystemPromptService.UpdatePromptAsync(editingPrompt);
-                    var index = prompts.FindIndex(p => p.Id == editingPrompt.Id);
-                    if (index >= 0) prompts[index] = result;
+                    editingAgent.UpdatedAt = DateTime.UtcNow;
+                    var result = await AgentService.UpdatePromptAsync(editingAgent);
+                    var index = agents.FindIndex(p => p.Id == editingAgent.Id);
+                    if (index >= 0) agents[index] = result;
                     Snackbar.Add("Agent updated successfully", Severity.Success);
                 }
 
-                showEditPromptDialog = false;
+                showEditAgentDialog = false;
                 ApplySearch();
             }
             catch (Exception ex)

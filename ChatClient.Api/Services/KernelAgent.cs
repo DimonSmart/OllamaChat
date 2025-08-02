@@ -8,7 +8,7 @@ namespace ChatClient.Api.Services;
 /// <summary>
 /// Default agent implementation that proxies chat completion requests to the kernel.
 /// </summary>
-public class KernelAgent(string name, SystemPrompt? prompt = null) : AgentBase(name, prompt)
+public class KernelAgent(string name, SystemPrompt? agentDescription = null) : AgentBase(name, agentDescription)
 {
     public override async IAsyncEnumerable<StreamingChatMessageContent> GetResponseAsync(
         ChatHistory chatHistory,
