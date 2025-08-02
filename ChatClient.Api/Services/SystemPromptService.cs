@@ -180,18 +180,20 @@ public class SystemPromptService : ISystemPromptService
         return JsonSerializer.Deserialize<List<SystemPrompt>>(json) ?? [];
     }
 
-    private async Task WriteToFileAsync(List<SystemPrompt> prompts)
+    private static string SerializePrompts(List<SystemPrompt> prompts)
     {
         var options = new JsonSerializerOptions { WriteIndented = true };
-        var json = JsonSerializer.Serialize(prompts, options);
-        await File.WriteAllTextAsync(_filePath, json);
+        return JsonSerializer.Serialize(prompts, options);
+    }
+
+    private async Task WriteToFileAsync(List<SystemPrompt> prompts)
+    {
+        await File.WriteAllTextAsync(_filePath, SerializePrompts(prompts));
     }
 
     private void WriteToFile(List<SystemPrompt> prompts)
     {
-        var options = new JsonSerializerOptions { WriteIndented = true };
-        var json = JsonSerializer.Serialize(prompts, options);
-        File.WriteAllText(_filePath, json);
+        File.WriteAllText(_filePath, SerializePrompts(prompts));
     }
 
     public SystemPrompt GetDefaultSystemPrompt() => new()
