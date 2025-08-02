@@ -64,7 +64,7 @@ public class SystemPromptService : ISystemPromptService
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error getting system prompts");
+            _logger.LogError(ex, "Error getting agents");
             return [];
         }
         finally
@@ -100,7 +100,7 @@ public class SystemPromptService : ISystemPromptService
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error creating system prompt");
+            _logger.LogError(ex, "Error creating agent");
             throw;
         }
         finally
@@ -120,7 +120,7 @@ public class SystemPromptService : ISystemPromptService
 
             if (existingIndex == -1)
             {
-                throw new KeyNotFoundException($"System prompt with ID {prompt.Id} not found");
+                throw new KeyNotFoundException($"Agent with ID {prompt.Id} not found");
             }
 
             prompt.UpdatedAt = DateTime.UtcNow;
@@ -132,7 +132,7 @@ public class SystemPromptService : ISystemPromptService
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error updating system prompt");
+            _logger.LogError(ex, "Error updating agent");
             throw;
         }
         finally
@@ -152,7 +152,7 @@ public class SystemPromptService : ISystemPromptService
 
             if (existingPrompt == null)
             {
-                throw new KeyNotFoundException($"System prompt with ID {id} not found");
+                throw new KeyNotFoundException($"Agent with ID {id} not found");
             }
 
             prompts.Remove(existingPrompt);
@@ -160,7 +160,7 @@ public class SystemPromptService : ISystemPromptService
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error deleting system prompt");
+            _logger.LogError(ex, "Error deleting agent");
             throw;
         }
         finally

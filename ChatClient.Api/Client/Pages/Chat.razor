@@ -42,18 +42,18 @@
                 @if (systemPrompts.Count == 0)
                 {
                     <MudProgressCircular Color="Color.Primary" Size="Size.Small" Indeterminate="true" />
-                    <MudText>Loading system prompts...</MudText>
+                    <MudText>Loading agents...</MudText>
                 }
                 else
                 {
-                    <MudSelect T="SystemPrompt" Label="Select System Prompt" @bind-Value="selectedSystemPrompt" Variant="Variant.Outlined" FullWidth="true" Dense="true">
+                    <MudSelect T="SystemPrompt" Label="Select Agent" @bind-Value="selectedSystemPrompt" Variant="Variant.Outlined" FullWidth="true" Dense="true">
                         @foreach (var prompt in systemPrompts)
                         {
                             <MudSelectItem Value="@prompt">@prompt.Name</MudSelectItem>
                         }
                     </MudSelect>
 
-                    <MudSwitch T="bool" @bind-value="showPromptContent" Color="Color.Primary" Class="mt-4" Style="margin-bottom: 10px;">View Prompt Content</MudSwitch>
+                    <MudSwitch T="bool" @bind-value="showPromptContent" Color="Color.Primary" Class="mt-4" Style="margin-bottom: 10px;">View Agent Prompt</MudSwitch>
                     @if (showPromptContent)
                     {
                         <div class="prompt-preview mt-3 pa-3 mb-2">
@@ -74,7 +74,7 @@
                                FullWidth="true"
                                Class="mt-2"
                                Size="Size.Medium">
-                        Manage System Prompts
+                        Manage Agents
                     </MudButton>
                 }
             </MudCardContent>

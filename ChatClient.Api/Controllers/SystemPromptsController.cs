@@ -28,8 +28,8 @@ public class SystemPromptsController : ControllerBase
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error retrieving all system prompts");
-            return StatusCode(500, "An error occurred while retrieving system prompts");
+            _logger.LogError(ex, "Error retrieving all agents");
+            return StatusCode(500, "An error occurred while retrieving agents");
         }
     }
 
@@ -41,15 +41,15 @@ public class SystemPromptsController : ControllerBase
             var prompt = await _systemPromptService.GetPromptByIdAsync(id);
             if (prompt == null)
             {
-                return NotFound($"System prompt with ID {id} not found");
+                return NotFound($"Agent with ID {id} not found");
             }
 
             return Ok(prompt);
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error retrieving system prompt with ID {Id}", id);
-            return StatusCode(500, "An error occurred while retrieving the system prompt");
+            _logger.LogError(ex, "Error retrieving agent with ID {Id}", id);
+            return StatusCode(500, "An error occurred while retrieving the agent");
         }
     }
 
@@ -60,12 +60,12 @@ public class SystemPromptsController : ControllerBase
         {
             if (string.IsNullOrWhiteSpace(prompt.Name))
             {
-                return BadRequest("Prompt name is required");
+                return BadRequest("Agent name is required");
             }
 
             if (string.IsNullOrWhiteSpace(prompt.Content))
             {
-                return BadRequest("Prompt content is required");
+                return BadRequest("Agent prompt content is required");
             }
 
             var createdPrompt = await _systemPromptService.CreatePromptAsync(prompt);
@@ -73,8 +73,8 @@ public class SystemPromptsController : ControllerBase
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error creating system prompt");
-            return StatusCode(500, "An error occurred while creating the system prompt");
+            _logger.LogError(ex, "Error creating agent");
+            return StatusCode(500, "An error occurred while creating the agent");
         }
     }
 
@@ -90,18 +90,18 @@ public class SystemPromptsController : ControllerBase
 
             if (string.IsNullOrWhiteSpace(prompt.Name))
             {
-                return BadRequest("Prompt name is required");
+                return BadRequest("Agent name is required");
             }
 
             if (string.IsNullOrWhiteSpace(prompt.Content))
             {
-                return BadRequest("Prompt content is required");
+                return BadRequest("Agent prompt content is required");
             }
 
             var existingPrompt = await _systemPromptService.GetPromptByIdAsync(id);
             if (existingPrompt == null)
             {
-                return NotFound($"System prompt with ID {id} not found");
+                return NotFound($"Agent with ID {id} not found");
             }
 
             var updatedPrompt = await _systemPromptService.UpdatePromptAsync(prompt);
@@ -109,8 +109,8 @@ public class SystemPromptsController : ControllerBase
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error updating system prompt with ID {Id}", id);
-            return StatusCode(500, "An error occurred while updating the system prompt");
+            _logger.LogError(ex, "Error updating agent with ID {Id}", id);
+            return StatusCode(500, "An error occurred while updating the agent");
         }
     }
 
@@ -122,7 +122,7 @@ public class SystemPromptsController : ControllerBase
             var existingPrompt = await _systemPromptService.GetPromptByIdAsync(id);
             if (existingPrompt == null)
             {
-                return NotFound($"System prompt with ID {id} not found");
+                return NotFound($"Agent with ID {id} not found");
             }
 
             await _systemPromptService.DeletePromptAsync(id);
@@ -130,8 +130,8 @@ public class SystemPromptsController : ControllerBase
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error deleting system prompt with ID {Id}", id);
-            return StatusCode(500, "An error occurred while deleting the system prompt");
+            _logger.LogError(ex, "Error deleting agent with ID {Id}", id);
+            return StatusCode(500, "An error occurred while deleting the agent");
         }
     }
 }
