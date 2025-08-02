@@ -2,7 +2,7 @@
 using System.Collections.Generic;
 using System.Linq;
 using ChatClient.Api.Services;
-using ChatClient.Shared.Agents;
+using ChatClient.Shared.LlmAgents;
 using ChatClient.Shared.Models;
 using Microsoft.Extensions.AI;
 using Microsoft.SemanticKernel;
@@ -14,16 +14,16 @@ namespace ChatClient.Api.Client.Services;
 public class ChatService(
     KernelService kernelService,
     IChatHistoryBuilder historyBuilder,
-    IAgentCoordinator agentCoordinator,
+    ILlmAgentCoordinator llmAgentCoordinator,
     ILogger<ChatService> logger) : IChatService
 {
     private CancellationTokenSource? _cancellationTokenSource;
     private StreamingMessageManager _streamingManager = null!;
     private StreamingAppChatMessage? _currentStreamingMessage;
     private List<SystemPrompt> _agentDescriptions = [];
-    private List<IAgent> _activeAgents = [];
-    private IAgent? _managerAgent;
-    private IAgentCoordinator _agentCoordinator = agentCoordinator;
+    private List<ILlmAgent> _llmAgents = [];
+    private ILlmAgent? _managerLlmAgent;
+    private ILlmAgentCoordinator _llmAgentCoordinator = llmAgentCoordinator;
     public event Action<bool>? LoadingStateChanged;
     public event Action? ChatInitialized;
     public event Func<IAppChatMessage, Task>? MessageAdded;
@@ -33,21 +33,26 @@ public class ChatService(
     public bool IsLoading { get; private set; }
     public ObservableCollection<IAppChatMessage> Messages { get; } = [];
     public IReadOnlyList<SystemPrompt> AgentDescriptions => _agentDescriptions;
-    public IReadOnlyList<IAgent> ActiveAgents => _activeAgents;
+    public IReadOnlyList<ILlmAgent> ActiveLlmAgents => _llmAgents;
 
-    public void InitializeChat(IEnumerable<SystemPrompt>? initialAgents)
+    public void InitializeChat(IEnumerable<SystemPrompt> initialAgents)
     {
+        if (initialAgents is null)
+        {
+            throw new ArgumentNullException(nameof(initialAgents));
+        }
+
+        var agentsList = initialAgents.ToList();
+        if (agentsList.Count == 0)
+        {
+            throw new ArgumentException("At least one agent must be selected.", nameof(initialAgents));
+        }
+
         Messages.Clear();
         _streamingManager = new StreamingMessageManager(MessageUpdated);
-        _agentDescriptions = initialAgents?.ToList() ?? [];
-        _activeAgents = [];
-        _managerAgent = null;
-
-        if (_agentDescriptions.Count == 0)
-        {
-            ChatInitialized?.Invoke();
-            return;
-        }
+        _agentDescriptions = agentsList;
+        _llmAgents = [];
+        _managerLlmAgent = null;
 
         int startIndex = 0;
         if (_agentDescriptions.Count > 1)
@@ -55,7 +60,7 @@ public class ChatService(
             var managerPrompt = _agentDescriptions[0];
             Messages.Add(new AppChatMessage(managerPrompt.Content, DateTime.Now, ChatRole.System, string.Empty));
             string managerName = !string.IsNullOrWhiteSpace(managerPrompt.AgentName) ? managerPrompt.AgentName : managerPrompt.Name;
-            _managerAgent = new ManagerAgent(managerName, managerPrompt);
+            _managerLlmAgent = new ManagerLlmAgent(managerName, managerPrompt);
             startIndex = 1;
         }
 
@@ -66,17 +71,12 @@ public class ChatService(
             Messages.Add(systemMessage);
 
             string agentName = !string.IsNullOrWhiteSpace(agent.AgentName) ? agent.AgentName : agent.Name;
-            _activeAgents.Add(new KernelAgent(agentName, agent));
+            _llmAgents.Add(new KernelLlmAgent(agentName, agent));
         }
 
-        if (_managerAgent is not null && _activeAgents.Count > 0)
-        {
-            _agentCoordinator = new MultiAgentCoordinator(_managerAgent, _activeAgents);
-        }
-        else if (_activeAgents.Count > 0)
-        {
-            _agentCoordinator = new DefaultAgentCoordinator(_activeAgents[0]);
-        }
+        _llmAgentCoordinator = _managerLlmAgent is not null
+            ? new MultiLlmAgentCoordinator(_managerLlmAgent, _llmAgents)
+            : new DefaultLlmAgentCoordinator(_llmAgents[0]);
 
         ChatInitialized?.Invoke();
     }
@@ -85,7 +85,7 @@ public class ChatService(
     {
         Messages.Clear();
         _agentDescriptions.Clear();
-        _activeAgents.Clear();
+        _llmAgents.Clear();
     }
 
     public async Task CancelAsync()
@@ -125,7 +125,7 @@ public class ChatService(
                 cycleCount++;
                 if (!chatConfiguration.AutoContinue)
                     break;
-                if (!_agentCoordinator.ShouldContinueConversation(cycleCount))
+                if (!_llmAgentCoordinator.ShouldContinueConversation(cycleCount))
                     break;
                 if (_cancellationTokenSource.IsCancellationRequested)
                     break;
@@ -156,11 +156,13 @@ public class ChatService(
 
     private async Task ProcessAIResponseAsync(ChatConfiguration chatConfiguration, string userMessage, CancellationToken cancellationToken)
     {
-        string responseType = chatConfiguration.UseAgentMode ? "Agent" : "Ask";
+        string responseType = chatConfiguration.UseAgentResponses ? "Agent" : "Ask";
         logger.LogInformation("Processing {ResponseType} response with model: {ModelName}", responseType, chatConfiguration.ModelName);
 
         List<FunctionCallRecord> functionCalls = [];
-        StreamingAppChatMessage streamingMessage = _streamingManager.CreateStreamingMessage(functionCalls);
+        ILlmAgent currentAgent = _llmAgentCoordinator.GetNextAgent();
+        string? agentName = chatConfiguration.UseAgentResponses ? currentAgent.Name : null;
+        StreamingAppChatMessage streamingMessage = _streamingManager.CreateStreamingMessage(functionCalls, agentName);
         _currentStreamingMessage = streamingMessage;
         await AddMessageAsync(streamingMessage);
 
@@ -184,8 +186,8 @@ public class ChatService(
                         : FunctionChoiceBehavior.None()
             };
 
-            var streamingContent = chatConfiguration.UseAgentMode
-                ? _agentCoordinator.GetNextAgent().GetResponseAsync(history, promptExecutionSettings, kernel, cancellationToken)
+            var streamingContent = chatConfiguration.UseAgentResponses
+                ? currentAgent.GetResponseAsync(history, promptExecutionSettings, kernel, cancellationToken)
                 : chatService.GetStreamingChatMessageContentsAsync(history, promptExecutionSettings, kernel, cancellationToken);
             var trackingFilter = new FunctionCallRecordingFilter(functionCalls);
 
@@ -254,7 +256,7 @@ public class ChatService(
         }
         catch (Exception ex)
         {
-            string errorPrefix = chatConfiguration.UseAgentMode ? "Agent Error" : "Error";
+            string errorPrefix = chatConfiguration.UseAgentResponses ? "Agent Error" : "Error";
             logger.LogError(ex, "Error processing {ResponseType} response", responseType);
             RemoveStreamingMessage(streamingMessage);
             _currentStreamingMessage = null;

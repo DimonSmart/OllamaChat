@@ -8,6 +8,7 @@ public interface IAppChatMessage : IEquatable<IAppChatMessage>
     string Content { get; }
     DateTime MsgDateTime { get; }
     ChatRole Role { get; }
+    string? AgentName { get; }
     string? Statistics { get; }
     bool IsStreaming { get; }
     bool IsCanceled { get; }

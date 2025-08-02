@@ -1,15 +1,15 @@
-using ChatClient.Shared.Agents;
+using ChatClient.Shared.LlmAgents;
 
 namespace ChatClient.Api.Services;
 
 /// <summary>
 /// Basic agent coordinator that always returns a single agent instance.
 /// </summary>
-public class DefaultAgentCoordinator(IAgent agent) : IAgentCoordinator
+public class DefaultLlmAgentCoordinator(ILlmAgent agent) : ILlmAgentCoordinator
 {
-    private readonly IAgent _agent = agent;
+    private readonly ILlmAgent _agent = agent;
 
-    public IAgent GetNextAgent() => _agent;
+    public ILlmAgent GetNextAgent() => _agent;
 
     public bool ShouldContinueConversation(int cycleCount) => false;
 }

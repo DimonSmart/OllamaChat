@@ -1,8 +1,8 @@
-namespace ChatClient.Shared.Agents;
+namespace ChatClient.Shared.LlmAgents;
 
-public interface IAgentCoordinator
+public interface ILlmAgentCoordinator
 {
-    IAgent GetNextAgent();
+    ILlmAgent GetNextAgent();
 
     /// <summary>
     /// Determines if agents should continue exchanging messages without user input.

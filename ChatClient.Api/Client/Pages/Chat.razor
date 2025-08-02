@@ -226,8 +226,8 @@
     [CascadingParameter(Name = "AutoSelectCount")]
     public int AutoSelectCount { get; set; }
 
-    [CascadingParameter(Name = "UseAgentMode")]
-    public bool UseAgentMode { get; set; }
+    [CascadingParameter(Name = "UseAgentResponses")]
+    public bool UseAgentResponses { get; set; }
     [CascadingParameter(Name = "AutoContinue")]
     public bool AutoContinue { get; set; }
     [CascadingParameter(Name = "SelectedModel")]
@@ -312,8 +312,10 @@
 
     private void StartChat()
     {
-        IEnumerable<SystemPrompt>? agentsToInitialize = selectedAgents.Any() ? selectedAgents : null;
-        ChatService.InitializeChat(agentsToInitialize);
+        if (selectedAgents.Count == 0)
+            return;
+
+        ChatService.InitializeChat(selectedAgents);
         chatStarted = true;
         StateHasChanged();
     }
@@ -325,7 +327,7 @@
         var chatConfiguration = new ChatConfiguration(
             SelectedModel?.Name ?? string.Empty,
             SelectedFunctions,
-            UseAgentMode,
+            UseAgentResponses,
             AutoSelectFunctions,
             AutoSelectCount,
             AutoContinue);

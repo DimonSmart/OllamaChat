@@ -21,9 +21,9 @@ public class StreamingMessageManager
     /// <summary>
     /// Creates a new streaming message
     /// </summary>
-    public StreamingAppChatMessage CreateStreamingMessage(List<FunctionCallRecord>? functionCalls = null)
+    public StreamingAppChatMessage CreateStreamingMessage(List<FunctionCallRecord>? functionCalls = null, string? agentName = null)
     {
-        return new StreamingAppChatMessage(string.Empty, DateTime.Now, ChatRole.Assistant, functionCalls);
+        return new StreamingAppChatMessage(string.Empty, DateTime.Now, ChatRole.Assistant, functionCalls, agentName);
     }
 
 
@@ -37,7 +37,7 @@ public class StreamingMessageManager
         {
             streamingMessage.SetStatistics(statistics);
         }
-        var finalMessage = new AppChatMessage(streamingMessage.Content, streamingMessage.MsgDateTime, ChatRole.Assistant, streamingMessage.Statistics, streamingMessage.Files, streamingMessage.FunctionCalls);
+        var finalMessage = new AppChatMessage(streamingMessage.Content, streamingMessage.MsgDateTime, ChatRole.Assistant, streamingMessage.Statistics, streamingMessage.Files, streamingMessage.FunctionCalls, streamingMessage.AgentName);
         finalMessage.Id = streamingMessage.Id; // Preserve the original ID
         finalMessage.IsCanceled = streamingMessage.IsCanceled;
         return finalMessage;
@@ -50,7 +50,7 @@ public class StreamingMessageManager
     {
         streamingMessage.SetCanceled();
 
-        var finalMessage = new AppChatMessage(streamingMessage.Content, streamingMessage.MsgDateTime, ChatRole.Assistant, streamingMessage.Statistics, streamingMessage.Files, streamingMessage.FunctionCalls);
+        var finalMessage = new AppChatMessage(streamingMessage.Content, streamingMessage.MsgDateTime, ChatRole.Assistant, streamingMessage.Statistics, streamingMessage.Files, streamingMessage.FunctionCalls, streamingMessage.AgentName);
         finalMessage.Id = streamingMessage.Id; // Preserve the original ID
         finalMessage.IsCanceled = true;
         return finalMessage;

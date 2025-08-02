@@ -5,7 +5,7 @@ using Microsoft.Extensions.AI;
 
 namespace ChatClient.Shared.Models;
 
-public class StreamingAppChatMessage(string initialContent, DateTime msgDateTime, ChatRole role, List<FunctionCallRecord>? functionCalls = null) : IAppChatMessage
+public class StreamingAppChatMessage(string initialContent, DateTime msgDateTime, ChatRole role, List<FunctionCallRecord>? functionCalls = null, string? agentName = null) : IAppChatMessage
 {
     private readonly StringBuilder _contentBuilder = new(initialContent);
     public string Content => _contentBuilder.ToString();
@@ -16,6 +16,7 @@ public class StreamingAppChatMessage(string initialContent, DateTime msgDateTime
     public IReadOnlyList<ChatMessageFile> Files { get; private set; } = [];
     private readonly List<FunctionCallRecord> _functionCalls = functionCalls ?? [];
     public IReadOnlyCollection<FunctionCallRecord> FunctionCalls => _functionCalls.AsReadOnly();
+    public string? AgentName { get; private set; } = agentName;
 
     public Guid Id { get; private set; } = Guid.NewGuid();
 

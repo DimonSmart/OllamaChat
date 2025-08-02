@@ -1,12 +1,13 @@
-namespace ChatClient.Shared.Agents;
+namespace ChatClient.Shared.LlmAgents;
 
 using ChatClient.Shared.Models;
+
 using Microsoft.SemanticKernel;
 using Microsoft.SemanticKernel.ChatCompletion;
 
-public abstract class AgentBase : IAgent
+public abstract class LlmAgentBase : ILlmAgent
 {
-    protected AgentBase(string name, SystemPrompt? agentDescription = null)
+    protected LlmAgentBase(string name, SystemPrompt? agentDescription = null)
     {
         Name = name;
         AgentDescription = agentDescription;

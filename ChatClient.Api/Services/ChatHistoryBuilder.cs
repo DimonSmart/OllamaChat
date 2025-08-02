@@ -52,7 +52,9 @@ public class ChatHistoryBuilder(IUserSettingsService settingsService) : IChatHis
             {
                 role = AuthorRole.User;
             }
-            history.Add(new ChatMessageContent(role, items));
+            // Semantic Kernel's ChatMessageContent accepts an optional name parameter
+            // that we use to preserve the agent identity for each message.
+            history.Add(new ChatMessageContent(role, items, msg.AgentName));
         }
         return history;
     }

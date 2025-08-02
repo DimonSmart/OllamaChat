@@ -34,4 +34,15 @@ public class StreamingMessageManagerTests
         Assert.Equal("Hello", finalMessage.Content);
         Assert.Equal("stats", finalMessage.Statistics);
     }
+
+    [Fact]
+    public void CompleteStreaming_PreservesAgentName()
+    {
+        var manager = new StreamingMessageManager(null);
+        var streamingMessage = new StreamingAppChatMessage("Hello", DateTime.Now, ChatRole.Assistant, agentName: "Agent1");
+
+        var finalMessage = manager.CompleteStreaming(streamingMessage);
+
+        Assert.Equal("Agent1", finalMessage.AgentName);
+    }
 }
