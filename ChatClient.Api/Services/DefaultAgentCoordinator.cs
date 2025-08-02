@@ -10,4 +10,6 @@ public class DefaultAgentCoordinator(IAgent agent) : IAgentCoordinator
     private readonly IAgent _agent = agent;
 
     public IAgent GetNextAgent() => _agent;
+
+    public bool ShouldContinueConversation(int cycleCount) => false;
 }

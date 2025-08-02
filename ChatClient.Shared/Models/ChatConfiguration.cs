@@ -5,4 +5,5 @@ public record ChatConfiguration(
     IReadOnlyCollection<string> Functions,
     bool UseAgentMode,
     bool AutoSelectFunctions = false,
-    int AutoSelectCount = 0);
+    int AutoSelectCount = 0,
+    bool AutoContinue = false);
