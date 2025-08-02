@@ -1,13 +1,14 @@
 using System.Collections.Generic;
 using System;
 using System.Linq;
-using System.Text;
+using System.Net.Http;
 using ChatClient.Api.Services;
 using ChatClient.Shared.LlmAgents;
 using ChatClient.Shared.Models;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.SemanticKernel;
 using Microsoft.SemanticKernel.ChatCompletion;
+using Microsoft.SemanticKernel.Connectors.Ollama;
 
 namespace ChatClient.Tests;
 
@@ -49,67 +50,13 @@ public class SingleRoundCoordinatorIntegrationTests
         }
     }
 
-    private class TestTranslationChatService : IChatCompletionService
-    {
-        public IReadOnlyDictionary<string, object> Attributes { get; } = new Dictionary<string, object>();
-
-        public Task<IReadOnlyList<ChatMessageContent>> GetChatMessageContentsAsync(
-            ChatHistory chatHistory,
-            PromptExecutionSettings? promptExecutionSettings = null,
-            Kernel? kernel = null,
-            CancellationToken cancellationToken = default)
-        {
-            var text = Translate(chatHistory);
-            var items = new ChatMessageContentItemCollection();
-            items.Add(new Microsoft.SemanticKernel.TextContent(text));
-            ChatMessageContent message = new ChatMessageContent(AuthorRole.Assistant, items);
-            IReadOnlyList<ChatMessageContent> list = new[] { message };
-            return Task.FromResult(list);
-        }
-
-        public async IAsyncEnumerable<StreamingChatMessageContent> GetStreamingChatMessageContentsAsync(
-            ChatHistory chatHistory,
-            PromptExecutionSettings? promptExecutionSettings = null,
-            Kernel? kernel = null,
-            [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken = default)
-        {
-            var text = Translate(chatHistory);
-            yield return new StreamingChatMessageContent(AuthorRole.Assistant, text, null, 0, null, Encoding.UTF8, null);
-            await Task.CompletedTask;
-        }
-
-        private static string GetText(ChatMessageContent message) =>
-            string.Concat(message.Items.OfType<Microsoft.SemanticKernel.TextContent>().Select(t => t.Text));
-
-        private static bool IsRussian(string text) =>
-            text.Any(c => c >= 'а' && c <= 'я' || c >= 'А' && c <= 'Я');
-
-        private static string Translate(ChatHistory chatHistory)
-        {
-            var system = GetText(chatHistory[0]);
-            var last = GetText(chatHistory[^1]);
-
-            if (system.Contains("English to Russian", StringComparison.OrdinalIgnoreCase))
-            {
-                return last.Equals("hello", StringComparison.OrdinalIgnoreCase) ? "привет" : last;
-            }
-            if (system.Contains("Russian to French", StringComparison.OrdinalIgnoreCase))
-            {
-                return last == "привет" ? "bonjour" : last;
-            }
-            if (system.Contains("Russian to English", StringComparison.OrdinalIgnoreCase))
-            {
-                return IsRussian(last) ? (last == "привет" ? "hello" : last) : string.Empty;
-            }
-            return string.Empty;
-        }
-    }
-
-    [Fact]
+    [Fact(Skip = "Requires running Ollama server with 'llama3' model. Run manually.")]
     public async Task Agents_translate_through_single_round()
     {
         var builder = Kernel.CreateBuilder();
-        builder.Services.AddSingleton<IChatCompletionService, TestTranslationChatService>();
+        var httpClient = new HttpClient { BaseAddress = new Uri("http://localhost:11434") };
+        builder.AddOllamaChatCompletion(modelId: "llama3", httpClient: httpClient);
+        builder.Services.AddSingleton(httpClient);
         var kernel = builder.Build();
 
         var prompt1 = new SystemPrompt { Name = "e2r", Content = "Translate the last message from English to Russian", AgentName = "A1" };
@@ -144,6 +91,6 @@ public class SingleRoundCoordinatorIntegrationTests
 
         var last = history[^1];
         var lastText = string.Concat(last.Items.OfType<Microsoft.SemanticKernel.TextContent>().Select(t => t.Text));
-        Assert.Equal("bonjour", lastText);
+        Assert.Contains("bonjour", lastText, StringComparison.OrdinalIgnoreCase);
     }
 }
