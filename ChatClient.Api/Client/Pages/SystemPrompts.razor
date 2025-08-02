@@ -6,10 +6,10 @@
 @inject ISnackbar Snackbar
 @inject IOllamaClientService OllamaService
 
-<PageTitle>System Prompts Management</PageTitle>
+<PageTitle>Agents Management</PageTitle>
 
 <MudContainer MaxWidth="MaxWidth.ExtraLarge" Class="mt-3">
-    <MudText Class="page-header">System Prompts</MudText>
+    <MudText Class="page-header">Agents</MudText>
 
     <MudPaper Elevation="3" Class="pa-3 rounded-lg">
         <MudToolBar Dense="true">
@@ -19,12 +19,12 @@
                        OnClick="AddNewPrompt"
                        Class="px-4"
                        Size="Size.Small">
-                Add Prompt
+                Add Agent
             </MudButton>
             <MudSpacer />
             <MudTextField T="string"
                           ValueChanged="@(s => OnSearch(s))"
-                          Placeholder="Search prompts..."
+                          Placeholder="Search agents..."
                           Adornment="Adornment.Start"
                           AdornmentIcon="@Icons.Material.Filled.Search"
                           IconSize="Size.Medium"
@@ -54,13 +54,29 @@
                          Class="mt-4">
                 <Columns>
                     <PropertyColumn Property="x => x.Name" Title="Name" SortBy="x => x.Name" />
-                    <TemplateColumn Title="Agent Name" isEditable="false">
+                    <TemplateColumn Title="Display Name" isEditable="false">
                         <CellTemplate>
                             <div>
                                 @if (!string.IsNullOrWhiteSpace(context.Item.AgentName))
                                 {
                                     <MudChip T="string" Color="Color.Primary" Size="Size.Small">
                                         @context.Item.AgentName
+                                    </MudChip>
+                                }
+                                else
+                                {
+                                    <MudText Typo="Typo.caption" Class="mud-text-secondary">Default</MudText>
+                                }
+                            </div>
+                        </CellTemplate>
+                    </TemplateColumn>
+                    <TemplateColumn Title="Model" isEditable="false">
+                        <CellTemplate>
+                            <div>
+                                @if (!string.IsNullOrWhiteSpace(context.Item.ModelName))
+                                {
+                                    <MudChip T="string" Color="Color.Secondary" Size="Size.Small">
+                                        @context.Item.ModelName
                                     </MudChip>
                                 }
                                 else
@@ -100,8 +116,8 @@
                     <MudPaper Elevation="0">
                         <MudStack AlignItems="AlignItems.Center" Justify="Justify.Center" Direction="Direction.Column" Class="py-8">
                             <MudIcon Icon="@Icons.Material.Filled.FormatQuote" Color="Color.Secondary" Size="Size.Large" />
-                            <MudText Typo="Typo.h6" Class="mt-4">system prompts found</MudText>
-                            <MudText Typo="Typo.body2" Class="mud-text-secondary">Click "Add Prompt" to create one.</MudText>
+                            <MudText Typo="Typo.h6" Class="mt-4">No agents found</MudText>
+                            <MudText Typo="Typo.body2" Class="mud-text-secondary">Click "Add Agent" to create one.</MudText>
                         </MudStack>
                     </MudPaper>
                 </NoRecordsContent>
@@ -109,7 +125,7 @@
                     <MudPaper Elevation="0">
                         <MudStack AlignItems="AlignItems.Center" Justify="Justify.Center" Class="pa-8">
                             <MudProgressCircular Color="Color.Primary" Indeterminate="true" Size="Size.Medium" />
-                            <MudText Typo="Typo.body1" Class="ml-4">Loading prompts...</MudText>
+                            <MudText Typo="Typo.body1" Class="ml-4">Loading agents...</MudText>
                         </MudStack>
                     </MudPaper>
                 </LoadingContent>
@@ -123,7 +139,7 @@
         <MudText Typo="Typo.h6">Confirm Delete</MudText>
     </TitleContent>
     <DialogContent>
-        <MudText>Are you sure you want to delete the prompt "@promptToDelete?.Name"?</MudText>
+        <MudText>Are you sure you want to delete the agent "@promptToDelete?.Name"?</MudText>
     </DialogContent>
     <DialogActions>
         <MudButton OnClick="CancelDelete" Size="Size.Medium">Cancel</MudButton>
@@ -133,22 +149,22 @@
 
 <MudDialog @bind-Visible="@showEditPromptDialog" Options="editDialogOptions">
     <TitleContent>
-        <MudText Typo="Typo.h6">@(editingPrompt?.Id == null ? "Create New Prompt" : "Edit Prompt")</MudText>
+        <MudText Typo="Typo.h6">@(editingPrompt?.Id == null ? "Create New Agent" : "Edit Agent")</MudText>
     </TitleContent>
     <DialogContent>
         <MudForm @ref="editPromptForm" Model="@editingPrompt">
             <MudTextField @bind-Value="editingPrompt.Name"
-                          Label="Prompt Name"
+                          Label="Agent Name"
                           Required="true"
                           Immediate="true"
                           Validation="@(new Func<string, string>(ValidateName))" />
 
             <MudTextField @bind-Value="editingPrompt.AgentName"
-                          Label="Agent Name (Optional)"
+                          Label="Display Name (Optional)"
                           Class="mt-4"
                           Immediate="true"
-                          HelperText="Custom agent name for this prompt. If empty, uses global agent name from settings."
-                          Placeholder="Enter custom agent name..." />
+                          HelperText="Custom display name for this agent. If empty, uses global agent name from settings."
+                          Placeholder="Enter display name..." />
 
             <MudSelect T="string" @bind-Value="editingPrompt.ModelName" Label="Model (Optional)" Class="mt-4" Dense="true" Clearable="true">
                 @foreach (var model in availableModels)
@@ -159,13 +175,13 @@
             <MudText Typo="Typo.caption">Leave blank to use chat's default model.</MudText>
 
             <MudTextField @bind-Value="editingPrompt.Content"
-                          Label="Prompt Content"
+                          Label="Agent Prompt"
                           Lines="10"
                           Class="mt-4"
                           Required="true"
                           Immediate="true"
                           Validation="@(new Func<string, string>(ValidateContent))"
-                          Placeholder="Enter your system prompt content here..." />
+                          Placeholder="Enter agent prompt content here..." />
         </MudForm>
     </DialogContent>
     <DialogActions>
@@ -219,7 +235,7 @@
         }
         catch (Exception ex)
         {
-            Snackbar.Add($"Error loading prompts: {ex.Message}", Severity.Error);
+            Snackbar.Add($"Error loading agents: {ex.Message}", Severity.Error);
         }
         finally
         {
@@ -312,14 +328,14 @@
         try
         {
             await SystemPromptService.DeletePromptAsync(promptToDelete.Id.Value);
-            Snackbar.Add("Prompt deleted successfully", Severity.Success);
+            Snackbar.Add("Agent deleted successfully", Severity.Success);
 
             prompts.Remove(promptToDelete);
             ApplySearch();
         }
         catch (Exception ex)
         {
-            Snackbar.Add($"Error deleting prompt: {ex.Message}", Severity.Error);
+            Snackbar.Add($"Error deleting agent: {ex.Message}", Severity.Error);
         }
 
         promptToDelete = null;
@@ -365,7 +381,7 @@
                 {
                     var result = await SystemPromptService.CreatePromptAsync(editingPrompt);
                     prompts.Add(result);
-                    Snackbar.Add("Prompt created successfully", Severity.Success);
+                    Snackbar.Add("Agent created successfully", Severity.Success);
                 }
                 else
                 {
@@ -373,7 +389,7 @@
                     var result = await SystemPromptService.UpdatePromptAsync(editingPrompt);
                     var index = prompts.FindIndex(p => p.Id == editingPrompt.Id);
                     if (index >= 0) prompts[index] = result;
-                    Snackbar.Add("Prompt updated successfully", Severity.Success);
+                    Snackbar.Add("Agent updated successfully", Severity.Success);
                 }
 
                 showEditPromptDialog = false;
@@ -381,7 +397,7 @@
             }
             catch (Exception ex)
             {
-                Snackbar.Add($"Error saving prompt: {ex.Message}", Severity.Error);
+                Snackbar.Add($"Error saving agent: {ex.Message}", Severity.Error);
             }
         }
     }
