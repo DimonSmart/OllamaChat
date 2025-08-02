@@ -22,6 +22,7 @@ public class ChatService(
     private StreamingAppChatMessage? _currentStreamingMessage;
     private List<SystemPrompt> _agentDescriptions = [];
     private List<IAgent> _activeAgents = [];
+    private IAgent? _managerAgent;
     private IAgentCoordinator _agentCoordinator = agentCoordinator;
     public event Action<bool>? LoadingStateChanged;
     public event Action? ChatInitialized;
@@ -40,9 +41,27 @@ public class ChatService(
         _streamingManager = new StreamingMessageManager(MessageUpdated);
         _agentDescriptions = initialAgents?.ToList() ?? [];
         _activeAgents = [];
+        _managerAgent = null;
 
-        foreach (var agent in _agentDescriptions)
+        if (_agentDescriptions.Count == 0)
         {
+            ChatInitialized?.Invoke();
+            return;
+        }
+
+        int startIndex = 0;
+        if (_agentDescriptions.Count > 1)
+        {
+            var managerPrompt = _agentDescriptions[0];
+            Messages.Add(new AppChatMessage(managerPrompt.Content, DateTime.Now, ChatRole.System, string.Empty));
+            string managerName = !string.IsNullOrWhiteSpace(managerPrompt.AgentName) ? managerPrompt.AgentName : managerPrompt.Name;
+            _managerAgent = new ManagerAgent(managerName, managerPrompt);
+            startIndex = 1;
+        }
+
+        for (int i = startIndex; i < _agentDescriptions.Count; i++)
+        {
+            var agent = _agentDescriptions[i];
             AppChatMessage systemMessage = new AppChatMessage(agent.Content, DateTime.Now, ChatRole.System, string.Empty);
             Messages.Add(systemMessage);
 
@@ -50,7 +69,11 @@ public class ChatService(
             _activeAgents.Add(new KernelAgent(agentName, agent));
         }
 
-        if (_activeAgents.Count > 0)
+        if (_managerAgent is not null && _activeAgents.Count > 0)
+        {
+            _agentCoordinator = new MultiAgentCoordinator(_managerAgent, _activeAgents);
+        }
+        else if (_activeAgents.Count > 0)
         {
             _agentCoordinator = new DefaultAgentCoordinator(_activeAgents[0]);
         }
@@ -94,7 +117,22 @@ public class ChatService(
         _cancellationTokenSource = new CancellationTokenSource();
         try
         {
-            await ProcessAIResponseAsync(chatConfiguration, trimmedText, _cancellationTokenSource.Token);
+            string currentInput = trimmedText;
+            int cycleCount = 0;
+            while (true)
+            {
+                await ProcessAIResponseAsync(chatConfiguration, currentInput, _cancellationTokenSource.Token);
+                cycleCount++;
+                if (!chatConfiguration.AutoContinue)
+                    break;
+                if (!_agentCoordinator.ShouldContinueConversation(cycleCount))
+                    break;
+                if (_cancellationTokenSource.IsCancellationRequested)
+                    break;
+                if (Messages.LastOrDefault() is not AppChatMessage lastMessage)
+                    break;
+                currentInput = lastMessage.Content;
+            }
         }
         catch (OperationCanceledException)
         {

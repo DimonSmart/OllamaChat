@@ -222,6 +222,8 @@
 
     [CascadingParameter(Name = "UseAgentMode")]
     public bool UseAgentMode { get; set; }
+    [CascadingParameter(Name = "AutoContinue")]
+    public bool AutoContinue { get; set; }
     [CascadingParameter(Name = "SelectedModel")]
     public OllamaModel? SelectedModel { get; set; }
 
@@ -323,7 +325,8 @@
             SelectedFunctions,
             UseAgentMode,
             AutoSelectFunctions,
-            AutoSelectCount);
+            AutoSelectCount,
+            AutoContinue);
 
         await ChatService.AddUserMessageAndAnswerAsync(messageData.text.Trim(), chatConfiguration, messageData.files);
         await ScrollToBottom();
