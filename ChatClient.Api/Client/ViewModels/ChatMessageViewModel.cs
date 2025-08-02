@@ -29,6 +29,7 @@ public class ChatMessageViewModel
     public bool IsStreaming { get; set; }
     public bool IsCanceled { get; set; }
     public IReadOnlyList<ChatMessageFile> Files { get; set; } = [];
+    public string? AgentName { get; set; }
 
     private static readonly MarkdownPipeline Pipeline = new MarkdownPipelineBuilder()
         .UseAdvancedExtensions()
@@ -41,6 +42,7 @@ public class ChatMessageViewModel
         RawContent = message.Content;
         MsgDateTime = message.MsgDateTime;
         Role = message.Role;
+        AgentName = message.AgentName;
         Statistics = message.Statistics;
         IsStreaming = message.IsStreaming;
         IsCanceled = message.IsCanceled;

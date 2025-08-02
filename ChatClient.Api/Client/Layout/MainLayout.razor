@@ -18,7 +18,7 @@
 <CascadingValue Value="@selectedFunctions" Name="SelectedFunctions">
 <CascadingValue Value="@autoSelectFunctions" Name="AutoSelectFunctions">
 <CascadingValue Value="@autoSelectCount" Name="AutoSelectCount">
-<CascadingValue Value="@useAgentMode" Name="UseAgentMode">
+<CascadingValue Value="@useAgentResponses" Name="UseAgentResponses">
 <CascadingValue Value="@autoContinue" Name="AutoContinue">
 <CascadingValue Value="@selectedModel" Name="SelectedModel">
 <MudLayout>
@@ -33,7 +33,7 @@
                        StartIcon="@Icons.Material.Filled.AddCircle"
                        Size="Size.Small"
                        Class="ml-4">New Chat</MudButton>
-           <MudCheckBox @bind-Value="useAgentMode"
+           <MudCheckBox @bind-Value="useAgentResponses"
                          Label="Agent"
                          Color="Color.Primary"
                          Size="Size.Small"
@@ -121,7 +121,7 @@
     private bool _drawerOpen = true;
     private bool _isDarkMode = true;
     private bool isLLMAnswering;
-    private bool useAgentMode = false;
+    private bool useAgentResponses = false;
     private bool autoContinue = false;
     private List<FunctionInfo> availableFunctions = new();
     private List<string> selectedFunctions = new();
@@ -139,7 +139,7 @@
         isLLMAnswering = ChatService.IsLoading;
 
         var settings = await UserSettingsService.GetSettingsAsync();
-        useAgentMode = settings.DefaultUseAgentMode;
+        useAgentResponses = settings.DefaultUseAgentResponses;
         autoSelectFunctions = settings.DefaultAutoSelectCount > 0;
         autoSelectCount = settings.DefaultAutoSelectCount > 0
             ? settings.DefaultAutoSelectCount
@@ -206,6 +206,11 @@
 
     private void NewChat()
     {
+        if (ChatService.AgentDescriptions.Count == 0)
+        {
+            return;
+        }
+
         ChatService.InitializeChat(ChatService.AgentDescriptions);
         if (!IsOnChatPage())
         {

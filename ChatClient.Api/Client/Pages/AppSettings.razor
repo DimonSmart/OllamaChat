@@ -108,11 +108,11 @@
                             <MudText Class="section-header">Default Chat Mode</MudText>
                         </MudCardHeader>
                     <MudCardContent Class="pt-0">
-                        <MudCheckBox @bind-Value="_settings.DefaultUseAgentMode"
-                                     Label="Agent Mode by Default"
+                        <MudCheckBox @bind-Value="_settings.DefaultUseAgentResponses"
+                                     Label="Agent Responses by Default"
                                      Color="Color.Primary" />
                         <MudText Typo="Typo.caption" Class="mt-2">
-                            When enabled, new chats will start in Agent mode instead of Ask mode.
+                            When enabled, new chats will start with agent responses instead of standard responses.
                         </MudText>
                     </MudCardContent>
                 </MudCard>

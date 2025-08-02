@@ -1,7 +1,7 @@
 using System.Collections.Generic;
 using System.Linq;
 
-using ChatClient.Shared.Agents;
+using ChatClient.Shared.LlmAgents;
 
 namespace ChatClient.Api.Services;
 
@@ -9,14 +9,14 @@ namespace ChatClient.Api.Services;
 /// Coordinates multiple worker agents using a simple round-robin policy.
 /// A manager agent is retained for future, more advanced coordination logic.
 /// </summary>
-public class MultiAgentCoordinator : IAgentCoordinator
+public class MultiLlmAgentCoordinator : ILlmAgentCoordinator
 {
-    private readonly IAgent _managerAgent;
-    private readonly IReadOnlyList<IAgent> _workerAgents;
+    private readonly ILlmAgent _managerAgent;
+    private readonly IReadOnlyList<ILlmAgent> _workerAgents;
     private int _currentIndex;
     private readonly int _maxCyclesWithoutUser;
 
-    public MultiAgentCoordinator(IAgent managerAgent, IEnumerable<IAgent> workerAgents, int maxCyclesWithoutUser = 5)
+    public MultiLlmAgentCoordinator(ILlmAgent managerAgent, IEnumerable<ILlmAgent> workerAgents, int maxCyclesWithoutUser = 5)
     {
         _managerAgent = managerAgent;
         _workerAgents = workerAgents.ToList();
@@ -24,7 +24,7 @@ public class MultiAgentCoordinator : IAgentCoordinator
         _maxCyclesWithoutUser = maxCyclesWithoutUser;
     }
 
-    public IAgent GetNextAgent()
+    public ILlmAgent GetNextAgent()
     {
         if (_workerAgents.Count == 0)
         {

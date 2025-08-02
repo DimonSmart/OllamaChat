@@ -10,6 +10,7 @@ public class AppChatMessage : IAppChatMessage
     public string Content { get; set; }
     public DateTime MsgDateTime { get; set; }
     public ChatRole Role { get; set; }
+    public string? AgentName { get; set; }
     public string? Statistics { get; set; }
     public bool IsCanceled { get; set; }
     public IReadOnlyList<ChatMessageFile> Files { get; set; } = [];
@@ -52,18 +53,20 @@ public class AppChatMessage : IAppChatMessage
         Content = message.Content;
         MsgDateTime = message.MsgDateTime;
         Role = message.Role;
+        AgentName = message.AgentName;
         Statistics = message.Statistics;
         IsCanceled = message.IsCanceled;
         Files = message.Files;
         FunctionCalls = message.FunctionCalls;
     }
 
-    public AppChatMessage(string content, DateTime msgDateTime, ChatRole role, string? statistics = null, IReadOnlyList<ChatMessageFile>? files = null, IReadOnlyCollection<FunctionCallRecord>? functionCalls = null)
+    public AppChatMessage(string content, DateTime msgDateTime, ChatRole role, string? statistics = null, IReadOnlyList<ChatMessageFile>? files = null, IReadOnlyCollection<FunctionCallRecord>? functionCalls = null, string? agentName = null)
     {
         Id = Guid.NewGuid();
         Content = content ?? string.Empty;
         MsgDateTime = msgDateTime;
         Role = role;
+        AgentName = agentName;
         Statistics = statistics;
         Files = files ?? [];
         FunctionCalls = functionCalls ?? [];
