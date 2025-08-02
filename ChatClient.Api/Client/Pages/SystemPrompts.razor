@@ -1,8 +1,10 @@
 ﻿@page "/system-prompts"
 @using ChatClient.Shared.Models
 @using ChatClient.Shared.Services
+@using ChatClient.Api.Services
 @inject ISystemPromptService SystemPromptService
 @inject ISnackbar Snackbar
+@inject IOllamaClientService OllamaService
 
 <PageTitle>System Prompts Management</PageTitle>
 
@@ -148,6 +150,14 @@
                           HelperText="Custom agent name for this prompt. If empty, uses global agent name from settings."
                           Placeholder="Enter custom agent name..." />
 
+            <MudSelect T="string" @bind-Value="editingPrompt.ModelName" Label="Model (Optional)" Class="mt-4" Dense="true" Clearable="true">
+                @foreach (var model in availableModels)
+                {
+                    <MudSelectItem Value="@model.Name">@model.Name</MudSelectItem>
+                }
+            </MudSelect>
+            <MudText Typo="Typo.caption">Leave blank to use chat's default model.</MudText>
+
             <MudTextField @bind-Value="editingPrompt.Content"
                           Label="Prompt Content"
                           Lines="10"
@@ -175,6 +185,7 @@
     private string searchString = string.Empty;
     private MudForm? editPromptForm;
     private MudDataGrid<SystemPrompt>? dataGrid;
+    private List<OllamaModel> availableModels = new();
     private DialogOptions dialogOptions = new()
     {
         CloseOnEscapeKey = true,
@@ -193,6 +204,7 @@
     protected override async Task OnInitializedAsync()
     {
         await LoadPrompts();
+        await LoadAvailableModels();
     }
 
     private async Task LoadPrompts()
@@ -216,6 +228,19 @@
         }
     }
 
+    private async Task LoadAvailableModels()
+    {
+        try
+        {
+            availableModels = (await OllamaService.GetModelsAsync()).ToList();
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Error loading models: {ex.Message}", Severity.Error);
+            availableModels = new();
+        }
+    }
+
     private void AddNewPrompt()
     {
         editingPrompt = new SystemPrompt
@@ -224,7 +249,8 @@
             CreatedAt = DateTime.UtcNow,
             UpdatedAt = DateTime.UtcNow,
             Name = "",
-            Content = ""
+            Content = "",
+            ModelName = null,
         };
 
         showEditPromptDialog = true;
@@ -258,6 +284,7 @@
             Name = prompt.Name,
             Content = prompt.Content,
             AgentName = prompt.AgentName,
+            ModelName = prompt.ModelName,
             CreatedAt = prompt.CreatedAt,
             UpdatedAt = prompt.UpdatedAt
         };
