@@ -2,6 +2,7 @@ using System.Collections.Generic;
 using System;
 using System.Linq;
 using System.Net.Http;
+using System.Text;
 using ChatClient.Api.Services;
 using ChatClient.Shared.LlmAgents;
 using ChatClient.Shared.Models;
@@ -42,10 +43,7 @@ public class SingleRoundCoordinatorIntegrationTests
             var chatService = kernel.GetRequiredService<IChatCompletionService>();
             await foreach (var content in chatService.GetStreamingChatMessageContentsAsync(fullHistory, promptExecutionSettings, kernel, cancellationToken))
             {
-                if (content.Content is not null)
-                {
-                    yield return content;
-                }
+                yield return content;
             }
         }
     }
@@ -77,15 +75,16 @@ public class SingleRoundCoordinatorIntegrationTests
         while (coordinator.ShouldContinueConversation(cycleCount))
         {
             var agent = coordinator.GetNextAgent();
+            var responseBuilder = new StringBuilder();
             await foreach (var content in agent.GetResponseAsync(history, settings, kernel))
             {
-                if (content.Content is not null)
-                {
-                    var items = new ChatMessageContentItemCollection();
-                    items.Add(new Microsoft.SemanticKernel.TextContent(content.Content));
-                    history.Add(new ChatMessageContent(AuthorRole.Assistant, items, agent.Name));
-                }
+                responseBuilder.Append(content.Content);
             }
+
+            var items = new ChatMessageContentItemCollection();
+            items.Add(new Microsoft.SemanticKernel.TextContent(responseBuilder.ToString()));
+            history.Add(new ChatMessageContent(AuthorRole.Assistant, items, agent.Name));
+
             cycleCount++;
         }
 
