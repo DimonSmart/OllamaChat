@@ -184,6 +184,7 @@ public class ChatService(
                             _agents.Add(new ChatCompletionAgent
                             {
                                 Name = !string.IsNullOrWhiteSpace(desc.AgentName) ? desc.AgentName : desc.Name,
+                                Description = desc.Name,
                                 Instructions = desc.Content,
                                 Kernel = kernel
                             });
