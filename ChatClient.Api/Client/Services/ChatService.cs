@@ -2,28 +2,27 @@
 using System.Collections.Generic;
 using System.Linq;
 using ChatClient.Api.Services;
-using ChatClient.Shared.LlmAgents;
 using ChatClient.Shared.Models;
 using Microsoft.Extensions.AI;
 using Microsoft.SemanticKernel;
+using Microsoft.SemanticKernel.Agents;
 using Microsoft.SemanticKernel.ChatCompletion;
 using OllamaSharp.Models.Exceptions;
+#pragma warning disable SKEXP0110
 
 namespace ChatClient.Api.Client.Services;
 
 public class ChatService(
     KernelService kernelService,
     IChatHistoryBuilder historyBuilder,
-    ILlmAgentCoordinator llmAgentCoordinator,
     ILogger<ChatService> logger) : IChatService
 {
     private CancellationTokenSource? _cancellationTokenSource;
     private StreamingMessageManager _streamingManager = null!;
     private StreamingAppChatMessage? _currentStreamingMessage;
     private List<SystemPrompt> _agentDescriptions = [];
-    private List<ILlmAgent> _llmAgents = [];
-    private ILlmAgent? _managerLlmAgent;
-    private ILlmAgentCoordinator _llmAgentCoordinator = llmAgentCoordinator;
+    private AgentGroupChat _groupChat = new();
+    private ChatCompletionAgentCoordinator? _agentCoordinator;
     public event Action<bool>? LoadingStateChanged;
     public event Action? ChatInitialized;
     public event Func<IAppChatMessage, Task>? MessageAdded;
@@ -33,7 +32,6 @@ public class ChatService(
     public bool IsLoading { get; private set; }
     public ObservableCollection<IAppChatMessage> Messages { get; } = [];
     public IReadOnlyList<SystemPrompt> AgentDescriptions => _agentDescriptions;
-    public IReadOnlyList<ILlmAgent> ActiveLlmAgents => _llmAgents;
 
     public void InitializeChat(IEnumerable<SystemPrompt> initialAgents)
     {
@@ -51,32 +49,14 @@ public class ChatService(
         Messages.Clear();
         _streamingManager = new StreamingMessageManager(MessageUpdated);
         _agentDescriptions = agentsList;
-        _llmAgents = [];
-        _managerLlmAgent = null;
+        _groupChat = new AgentGroupChat();
+        _agentCoordinator = new ChatCompletionAgentCoordinator(_agentDescriptions);
 
-        int startIndex = 0;
-        if (_agentDescriptions.Count > 1)
+        foreach (var agent in _agentDescriptions)
         {
-            var managerPrompt = _agentDescriptions[0];
-            Messages.Add(new AppChatMessage(managerPrompt.Content, DateTime.Now, ChatRole.System, string.Empty));
-            string managerName = !string.IsNullOrWhiteSpace(managerPrompt.AgentName) ? managerPrompt.AgentName : managerPrompt.Name;
-            _managerLlmAgent = new ManagerLlmAgent(managerName, managerPrompt);
-            startIndex = 1;
-        }
-
-        for (int i = startIndex; i < _agentDescriptions.Count; i++)
-        {
-            var agent = _agentDescriptions[i];
-            AppChatMessage systemMessage = new AppChatMessage(agent.Content, DateTime.Now, ChatRole.System, string.Empty);
+            var systemMessage = new AppChatMessage(agent.Content, DateTime.Now, ChatRole.System, string.Empty);
             Messages.Add(systemMessage);
-
-            string agentName = !string.IsNullOrWhiteSpace(agent.AgentName) ? agent.AgentName : agent.Name;
-            _llmAgents.Add(new KernelLlmAgent(agentName, agent));
         }
-
-        _llmAgentCoordinator = _managerLlmAgent is not null
-            ? new MultiLlmAgentCoordinator(_managerLlmAgent, _llmAgents)
-            : new DefaultLlmAgentCoordinator(_llmAgents[0]);
 
         ChatInitialized?.Invoke();
     }
@@ -85,7 +65,8 @@ public class ChatService(
     {
         Messages.Clear();
         _agentDescriptions.Clear();
-        _llmAgents.Clear();
+        _groupChat = new AgentGroupChat();
+        _agentCoordinator = null;
     }
 
     public async Task CancelAsync()
@@ -112,6 +93,7 @@ public class ChatService(
 
         var trimmedText = text.Trim();
         await AddMessageAsync(new AppChatMessage(trimmedText, DateTime.Now, ChatRole.User, string.Empty, files));
+        _groupChat?.AddChatMessage(new ChatMessageContent(AuthorRole.User, trimmedText));
         UpdateLoadingState(true);
 
         _cancellationTokenSource = new CancellationTokenSource();
@@ -125,7 +107,9 @@ public class ChatService(
                 cycleCount++;
                 if (!chatConfiguration.AutoContinue)
                     break;
-                if (!_llmAgentCoordinator.ShouldContinueConversation(cycleCount))
+                if (!chatConfiguration.UseAgentResponses)
+                    break;
+                if (_agentCoordinator is null || !_agentCoordinator.ShouldContinueConversation(cycleCount))
                     break;
                 if (_cancellationTokenSource.IsCancellationRequested)
                     break;
@@ -147,11 +131,11 @@ public class ChatService(
         }
     }
 
-    private async Task AddMessageAsync(IAppChatMessage message)
-    {
-        Messages.Add(message);
-        await (MessageAdded?.Invoke(message) ?? Task.CompletedTask);
-    }
+  private async Task AddMessageAsync(IAppChatMessage message)
+  {
+      Messages.Add(message);
+      await (MessageAdded?.Invoke(message) ?? Task.CompletedTask);
+  }
 
 
     private async Task ProcessAIResponseAsync(ChatConfiguration chatConfiguration, string userMessage, CancellationToken cancellationToken)
@@ -160,16 +144,18 @@ public class ChatService(
         logger.LogInformation("Processing {ResponseType} response with model: {ModelName}", responseType, chatConfiguration.ModelName);
 
         List<FunctionCallRecord> functionCalls = [];
-        ILlmAgent currentAgent = _llmAgentCoordinator.GetNextAgent();
-        string? agentName = chatConfiguration.UseAgentResponses ? currentAgent.Name : null;
+        var agentPrompt = chatConfiguration.UseAgentResponses ? _agentCoordinator?.GetNextAgentPrompt() : null;
+        string? agentName = chatConfiguration.UseAgentResponses
+            ? (!string.IsNullOrWhiteSpace(agentPrompt?.AgentName) ? agentPrompt?.AgentName : agentPrompt?.Name)
+            : null;
         StreamingAppChatMessage streamingMessage = _streamingManager.CreateStreamingMessage(functionCalls, agentName);
         _currentStreamingMessage = streamingMessage;
         await AddMessageAsync(streamingMessage);
 
-        // Simple throttling for UI updates - no more than once every 500ms
         var lastUpdateTime = DateTime.MinValue;
         const int updateIntervalMs = 500;
         var approximateTokenCount = 0;
+        var startTime = DateTime.Now;
 
         try
         {
@@ -177,48 +163,71 @@ public class ChatService(
                 chatConfiguration,
                 chatConfiguration.AutoSelectFunctions ? userMessage : null,
                 chatConfiguration.AutoSelectFunctions ? chatConfiguration.AutoSelectCount : null);
-            var history = await historyBuilder.BuildChatHistoryAsync(Messages, kernel, cancellationToken);
-            var chatService = kernel.GetRequiredService<IChatCompletionService>();
+
             var promptExecutionSettings = new PromptExecutionSettings
             {
                 FunctionChoiceBehavior = chatConfiguration.AutoSelectFunctions || chatConfiguration.Functions.Count != 0
                         ? FunctionChoiceBehavior.Auto()
-                        : FunctionChoiceBehavior.None()
+                        : FunctionChoiceBehavior.None(),
             };
 
-            var streamingContent = chatConfiguration.UseAgentResponses
-                ? currentAgent.GetResponseAsync(history, promptExecutionSettings, kernel, cancellationToken)
-                : chatService.GetStreamingChatMessageContentsAsync(history, promptExecutionSettings, kernel, cancellationToken);
             var trackingFilter = new FunctionCallRecordingFilter(functionCalls);
 
-            string? doneReason = null;
             try
             {
                 kernel.FunctionInvocationFilters.Add(trackingFilter);
-                await foreach (var content in streamingContent)
-                {
-                    await Task.Yield();
-                    cancellationToken.ThrowIfCancellationRequested();
 
-                    if (!string.IsNullOrEmpty(content.Content))
+                if (chatConfiguration.UseAgentResponses && agentPrompt != null)
+                {
+                    var agent = new ChatCompletionAgent
                     {
-                        streamingMessage.Append(content.Content);
-                        approximateTokenCount++;
-                        // Update UI no more than once every 500ms
-                        DateTime now = DateTime.Now;
-                        if ((now - lastUpdateTime).TotalMilliseconds >= updateIntervalMs)
+                        Name = agentName ?? string.Empty,
+                        Instructions = agentPrompt.Content,
+                        Kernel = kernel,
+                    };
+
+                    await foreach (var content in _groupChat.InvokeAsync(agent, cancellationToken))
+                    {
+                        await Task.Yield();
+                        cancellationToken.ThrowIfCancellationRequested();
+
+                        if (!string.IsNullOrEmpty(content.Content))
                         {
-                            await (MessageUpdated?.Invoke(streamingMessage) ?? Task.CompletedTask);
-                            lastUpdateTime = now;
+                            streamingMessage.Append(content.Content);
+                            approximateTokenCount++;
+                            DateTime now = DateTime.Now;
+                            if ((now - lastUpdateTime).TotalMilliseconds >= updateIntervalMs)
+                            {
+                                await (MessageUpdated?.Invoke(streamingMessage) ?? Task.CompletedTask);
+                                lastUpdateTime = now;
+                            }
                         }
                     }
 
-                    if (content.InnerContent is OllamaSharp.Models.Chat.ChatDoneResponseStream done && done.Done)
-                        doneReason = done.DoneReason;
-
-                    await Task.Yield();
+                    _groupChat.AddChatMessage(new ChatMessageContent(AuthorRole.Assistant, streamingMessage.Content, agent.Name));
                 }
+                else
+                {
+                    var history = await historyBuilder.BuildChatHistoryAsync(Messages, kernel, cancellationToken);
+                    var chatService = kernel.GetRequiredService<IChatCompletionService>();
+                    await foreach (var content in chatService.GetStreamingChatMessageContentsAsync(history, promptExecutionSettings, kernel, cancellationToken))
+                    {
+                        await Task.Yield();
+                        cancellationToken.ThrowIfCancellationRequested();
 
+                        if (!string.IsNullOrEmpty(content.Content))
+                        {
+                            streamingMessage.Append(content.Content);
+                            approximateTokenCount++;
+                            DateTime now = DateTime.Now;
+                            if ((now - lastUpdateTime).TotalMilliseconds >= updateIntervalMs)
+                            {
+                                await (MessageUpdated?.Invoke(streamingMessage) ?? Task.CompletedTask);
+                                lastUpdateTime = now;
+                            }
+                        }
+                    }
+                }
             }
             finally
             {
@@ -227,8 +236,6 @@ public class ChatService(
 
             await (MessageUpdated?.Invoke(streamingMessage) ?? Task.CompletedTask);
 
-            var startTime = DateTime.Now;
-            // Create statistics and complete streaming
             TimeSpan processingTime = DateTime.Now - startTime;
             var statistics = _streamingManager.BuildStatistics(
                 processingTime,
@@ -263,6 +270,7 @@ public class ChatService(
             await HandleError($"{errorPrefix}: {ex.Message}");
         }
     }
+
 
 
     private async Task ReplaceStreamingMessageWithFinal(StreamingAppChatMessage streamingMessage, AppChatMessage finalMessage)
@@ -312,6 +320,7 @@ public class ChatService(
         await (MessageDeleted?.Invoke(id) ?? Task.CompletedTask);
     }
 }
+#pragma warning restore SKEXP0110
 
 /// <summary>
 /// Filter for tracking invoked MCP servers during a chat session.
