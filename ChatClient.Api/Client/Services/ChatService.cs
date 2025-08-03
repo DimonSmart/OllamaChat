@@ -174,9 +174,9 @@ public class ChatService(
 
                 if (chatConfiguration.UseAgentResponses && _runtime != null)
                 {
-                    if (_chatOrchestration == null)
+                    if (_chatOrchestration == null || _groupChatManager.MaximumInvocationCount != chatConfiguration.MaximumInvocationCount)
                     {
-                        _groupChatManager = new RoundRobinGroupChatManager { MaximumInvocationCount = chatConfiguration.AutoContinue ? 5 : 1 };
+                        _groupChatManager = new RoundRobinGroupChatManager { MaximumInvocationCount = chatConfiguration.MaximumInvocationCount };
 
                         _agents.Clear();
                         foreach (var desc in _agentDescriptions)

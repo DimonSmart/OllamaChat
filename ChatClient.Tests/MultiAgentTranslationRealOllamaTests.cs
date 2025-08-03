@@ -56,9 +56,8 @@ public class MultiAgentTranslationRealOllamaTests
         var result = await chatOrchestration.InvokeAsync("Привет, как дела?", runtime);
         await result.GetValueAsync(TimeSpan.FromSeconds(30));
 
-        foreach (var message in history)
-        {
-            Console.WriteLine($"{message.Role} ({message.AuthorName}): {message.Content}");
-        }
+        Assert.Equal(2, history.Count);
+        Assert.Contains("Hello", history[0].Content, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("Hola", history[1].Content, StringComparison.OrdinalIgnoreCase);
     }
 }

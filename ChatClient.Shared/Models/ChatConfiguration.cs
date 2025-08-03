@@ -6,4 +6,4 @@ public record ChatConfiguration(
     bool UseAgentResponses,
     bool AutoSelectFunctions = false,
     int AutoSelectCount = 0,
-    bool AutoContinue = false);
+    int MaximumInvocationCount = 1);
