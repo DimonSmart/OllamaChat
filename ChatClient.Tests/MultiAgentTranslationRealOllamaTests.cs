@@ -2,14 +2,18 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.SemanticKernel;
 using Microsoft.SemanticKernel.Agents;
+using Microsoft.SemanticKernel.Agents.Orchestration;
+using Microsoft.SemanticKernel.Agents.Orchestration.GroupChat;
+using Microsoft.SemanticKernel.Agents.Runtime.InProcess;
 using Microsoft.SemanticKernel.ChatCompletion;
 #pragma warning disable SKEXP0110
+#pragma warning disable SKEXP0001
 
 namespace ChatClient.Tests;
 
 public class MultiAgentTranslationRealOllamaTests
 {
-    [Fact()] //Skip = "Requires running Ollama server with an English-capable model (e.g. 'llama3.1'). Run manually.")]
+    [Fact(Skip = "Requires running Ollama server with an English-capable model (e.g. 'llama3.1'). Run manually.")]
     public async Task TwoTranslatorAgents_ChainOfTranslationTranslate()
     {
         var httpClient = new HttpClient { BaseAddress = new Uri("http://localhost:11434") };
@@ -32,25 +36,29 @@ public class MultiAgentTranslationRealOllamaTests
             Kernel = kernel
         };
 
-        // Теперь агенты явно добавлены в чат:
-        var chat = new AgentGroupChat(ruToEn, enToEs);
-        chat.AddChatMessage(new ChatMessageContent(AuthorRole.User, "Привет, как дела?"));
+        List<ChatMessageContent> history = [];
 
-        // Вручную ограничиваем количество ходов:
-        int turns = 0;
-        int maxTurns = 2;
-
-        await foreach (var message in chat.InvokeAsync(CancellationToken.None))
+        var chatOrchestration = new GroupChatOrchestration(
+            new RoundRobinGroupChatManager { MaximumInvocationCount = 2 },
+            ruToEn,
+            enToEs)
         {
-#pragma warning disable SKEXP0001 // Type is for evaluation purposes only and is subject to change or removal in future updates. Suppress this diagnostic to proceed.
+            ResponseCallback = message =>
+            {
+                history.Add(message);
+                return ValueTask.CompletedTask;
+            }
+        };
+
+        await using var runtime = new InProcessRuntime();
+        await runtime.StartAsync();
+
+        var result = await chatOrchestration.InvokeAsync("Привет, как дела?", runtime);
+        await result.GetValueAsync(TimeSpan.FromSeconds(30));
+
+        foreach (var message in history)
+        {
             Console.WriteLine($"{message.Role} ({message.AuthorName}): {message.Content}");
-#pragma warning restore SKEXP0001 // Type is for evaluation purposes only and is subject to change or removal in future updates. Suppress this diagnostic to proceed.
-
-            turns++;
-            if (turns >= maxTurns)
-                break;
         }
-
-
     }
 }

@@ -6,6 +6,9 @@ using ChatClient.Shared.Models;
 using Microsoft.Extensions.AI;
 using Microsoft.SemanticKernel;
 using Microsoft.SemanticKernel.Agents;
+using Microsoft.SemanticKernel.Agents.Orchestration;
+using Microsoft.SemanticKernel.Agents.Orchestration.GroupChat;
+using Microsoft.SemanticKernel.Agents.Runtime.InProcess;
 using Microsoft.SemanticKernel.ChatCompletion;
 using OllamaSharp.Models.Exceptions;
 #pragma warning disable SKEXP0110
@@ -21,8 +24,10 @@ public class ChatService(
     private StreamingMessageManager _streamingManager = null!;
     private StreamingAppChatMessage? _currentStreamingMessage;
     private List<SystemPrompt> _agentDescriptions = [];
-    private AgentGroupChat _groupChat = new();
-    private ChatCompletionAgentCoordinator? _agentCoordinator;
+    private readonly List<ChatCompletionAgent> _agents = [];
+    private RoundRobinGroupChatManager _groupChatManager = new();
+    private GroupChatOrchestration? _chatOrchestration;
+    private InProcessRuntime? _runtime;
     public event Action<bool>? LoadingStateChanged;
     public event Action? ChatInitialized;
     public event Func<IAppChatMessage, Task>? MessageAdded;
@@ -49,14 +54,16 @@ public class ChatService(
         Messages.Clear();
         _streamingManager = new StreamingMessageManager(MessageUpdated);
         _agentDescriptions = agentsList;
-        _groupChat = new AgentGroupChat();
-        _agentCoordinator = new ChatCompletionAgentCoordinator(_agentDescriptions);
+        _agents.Clear();
 
         foreach (var agent in _agentDescriptions)
         {
             var systemMessage = new AppChatMessage(agent.Content, DateTime.Now, ChatRole.System, string.Empty);
             Messages.Add(systemMessage);
         }
+
+        _groupChatManager = new RoundRobinGroupChatManager();
+        _chatOrchestration = null;
 
         ChatInitialized?.Invoke();
     }
@@ -65,8 +72,9 @@ public class ChatService(
     {
         Messages.Clear();
         _agentDescriptions.Clear();
-        _groupChat = new AgentGroupChat();
-        _agentCoordinator = null;
+        _agents.Clear();
+        _chatOrchestration = null;
+        _runtime = null;
     }
 
     public async Task CancelAsync()
@@ -93,30 +101,17 @@ public class ChatService(
 
         var trimmedText = text.Trim();
         await AddMessageAsync(new AppChatMessage(trimmedText, DateTime.Now, ChatRole.User, string.Empty, files));
-        _groupChat?.AddChatMessage(new ChatMessageContent(AuthorRole.User, trimmedText));
         UpdateLoadingState(true);
 
         _cancellationTokenSource = new CancellationTokenSource();
         try
         {
-            string currentInput = trimmedText;
-            int cycleCount = 0;
-            while (true)
+            if (chatConfiguration.UseAgentResponses && _runtime is null)
             {
-                await ProcessAIResponseAsync(chatConfiguration, currentInput, _cancellationTokenSource.Token);
-                cycleCount++;
-                if (!chatConfiguration.AutoContinue)
-                    break;
-                if (!chatConfiguration.UseAgentResponses)
-                    break;
-                if (_agentCoordinator is null || !_agentCoordinator.ShouldContinueConversation(cycleCount))
-                    break;
-                if (_cancellationTokenSource.IsCancellationRequested)
-                    break;
-                if (Messages.LastOrDefault() is not AppChatMessage lastMessage)
-                    break;
-                currentInput = lastMessage.Content;
+                _runtime = new InProcessRuntime();
+                await _runtime.StartAsync();
             }
+            await ProcessAIResponseAsync(chatConfiguration, trimmedText, _cancellationTokenSource.Token);
         }
         catch (OperationCanceledException)
         {
@@ -144,18 +139,18 @@ public class ChatService(
         logger.LogInformation("Processing {ResponseType} response with model: {ModelName}", responseType, chatConfiguration.ModelName);
 
         List<FunctionCallRecord> functionCalls = [];
-        var agentPrompt = chatConfiguration.UseAgentResponses ? _agentCoordinator?.GetNextAgentPrompt() : null;
-        string? agentName = chatConfiguration.UseAgentResponses
-            ? (!string.IsNullOrWhiteSpace(agentPrompt?.AgentName) ? agentPrompt?.AgentName : agentPrompt?.Name)
-            : null;
-        StreamingAppChatMessage streamingMessage = _streamingManager.CreateStreamingMessage(functionCalls, agentName);
-        _currentStreamingMessage = streamingMessage;
-        await AddMessageAsync(streamingMessage);
-
         var lastUpdateTime = DateTime.MinValue;
         const int updateIntervalMs = 500;
         var approximateTokenCount = 0;
         var startTime = DateTime.Now;
+
+        StreamingAppChatMessage? streamingMessage = null;
+        if (!chatConfiguration.UseAgentResponses)
+        {
+            streamingMessage = _streamingManager.CreateStreamingMessage(functionCalls, null);
+            _currentStreamingMessage = streamingMessage;
+            await AddMessageAsync(streamingMessage);
+        }
 
         try
         {
@@ -177,36 +172,47 @@ public class ChatService(
             {
                 kernel.FunctionInvocationFilters.Add(trackingFilter);
 
-                if (chatConfiguration.UseAgentResponses && agentPrompt != null)
+                if (chatConfiguration.UseAgentResponses && _runtime != null)
                 {
-                    var agent = new ChatCompletionAgent
+                    if (_chatOrchestration == null)
                     {
-                        Name = agentName ?? string.Empty,
-                        Instructions = agentPrompt.Content,
-                        Kernel = kernel,
-                    };
+                        _groupChatManager = new RoundRobinGroupChatManager { MaximumInvocationCount = chatConfiguration.AutoContinue ? 5 : 1 };
 
-                    await foreach (var content in _groupChat.InvokeAsync(agent, cancellationToken))
-                    {
-                        await Task.Yield();
-                        cancellationToken.ThrowIfCancellationRequested();
-
-                        if (!string.IsNullOrEmpty(content.Content))
+                        _agents.Clear();
+                        foreach (var desc in _agentDescriptions)
                         {
-                            streamingMessage.Append(content.Content);
-                            approximateTokenCount++;
-                            DateTime now = DateTime.Now;
-                            if ((now - lastUpdateTime).TotalMilliseconds >= updateIntervalMs)
+                            _agents.Add(new ChatCompletionAgent
                             {
-                                await (MessageUpdated?.Invoke(streamingMessage) ?? Task.CompletedTask);
-                                lastUpdateTime = now;
-                            }
+                                Name = !string.IsNullOrWhiteSpace(desc.AgentName) ? desc.AgentName : desc.Name,
+                                Instructions = desc.Content,
+                                Kernel = kernel
+                            });
                         }
+
+                        _chatOrchestration = new GroupChatOrchestration(_groupChatManager, _agents.ToArray())
+                        {
+                            ResponseCallback = message =>
+                            {
+                                ChatRole role = ChatRole.Assistant;
+                                if (message.Role == AuthorRole.System)
+                                {
+                                    role = ChatRole.System;
+                                }
+                                else if (message.Role == AuthorRole.User)
+                                {
+                                    role = ChatRole.User;
+                                }
+
+                                var appMessage = new AppChatMessage(message.Content ?? string.Empty, DateTime.Now, role, message.AuthorName ?? string.Empty);
+                                return new ValueTask(AddMessageAsync(appMessage));
+                            }
+                        };
                     }
 
-                    _groupChat.AddChatMessage(new ChatMessageContent(AuthorRole.Assistant, streamingMessage.Content, agent.Name));
+                    var invokeResult = await _chatOrchestration.InvokeAsync(userMessage, _runtime, cancellationToken);
+                    await invokeResult.GetValueAsync(TimeSpan.FromSeconds(30));
                 }
-                else
+                else if (streamingMessage != null)
                 {
                     var history = await historyBuilder.BuildChatHistoryAsync(Messages, kernel, cancellationToken);
                     var chatService = kernel.GetRequiredService<IChatCompletionService>();
@@ -234,23 +240,29 @@ public class ChatService(
                 kernel.FunctionInvocationFilters.Remove(trackingFilter);
             }
 
-            await (MessageUpdated?.Invoke(streamingMessage) ?? Task.CompletedTask);
+            if (streamingMessage != null)
+            {
+                await (MessageUpdated?.Invoke(streamingMessage) ?? Task.CompletedTask);
 
-            TimeSpan processingTime = DateTime.Now - startTime;
-            var statistics = _streamingManager.BuildStatistics(
-                processingTime,
-                chatConfiguration,
-                approximateTokenCount,
-                functionCalls.Select(fc => fc.Server).Distinct());
-            var finalMessage = _streamingManager.CompleteStreaming(streamingMessage, statistics);
-            await ReplaceStreamingMessageWithFinal(streamingMessage, finalMessage);
-            _currentStreamingMessage = null;
+                TimeSpan processingTime = DateTime.Now - startTime;
+                var statistics = _streamingManager.BuildStatistics(
+                    processingTime,
+                    chatConfiguration,
+                    approximateTokenCount,
+                    functionCalls.Select(fc => fc.Server).Distinct());
+                var finalMessage = _streamingManager.CompleteStreaming(streamingMessage, statistics);
+                await ReplaceStreamingMessageWithFinal(streamingMessage, finalMessage);
+                _currentStreamingMessage = null;
+            }
         }
         catch (ModelDoesNotSupportToolsException ex)
         {
             logger.LogWarning(ex, "Model {ModelName} does not support function calling", chatConfiguration.ModelName);
-            RemoveStreamingMessage(streamingMessage);
-            _currentStreamingMessage = null;
+            if (streamingMessage != null)
+            {
+                RemoveStreamingMessage(streamingMessage);
+                _currentStreamingMessage = null;
+            }
 
             string errorMessage = chatConfiguration.Functions.Any()
                 ? $"⚠️ The model **{chatConfiguration.ModelName}** does not support function calling. Please either:\n\n" +
@@ -265,8 +277,11 @@ public class ChatService(
         {
             string errorPrefix = chatConfiguration.UseAgentResponses ? "Agent Error" : "Error";
             logger.LogError(ex, "Error processing {ResponseType} response", responseType);
-            RemoveStreamingMessage(streamingMessage);
-            _currentStreamingMessage = null;
+            if (streamingMessage != null)
+            {
+                RemoveStreamingMessage(streamingMessage);
+                _currentStreamingMessage = null;
+            }
             await HandleError($"{errorPrefix}: {ex.Message}");
         }
     }
