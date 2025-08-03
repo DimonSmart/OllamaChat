@@ -25,6 +25,7 @@ public class MultiAgentTranslationRealOllamaTests
         var ruToEn = new ChatCompletionAgent
         {
             Name = "ru_to_en",
+            Description = "Russian to English translator",
             Instructions = "Translate the last message from Russian to English. Only reply with the English translation. If the last message isn't Russian, reply with nothing.",
             Kernel = kernel
         };
@@ -32,6 +33,7 @@ public class MultiAgentTranslationRealOllamaTests
         var enToEs = new ChatCompletionAgent
         {
             Name = "en_to_es",
+            Description = "English to Spanish translator",
             Instructions = "Translate the last message from English to Spanish. Only reply with the Spanish translation. If the last message isn't English, reply with 'OK'.",
             Kernel = kernel
         };
