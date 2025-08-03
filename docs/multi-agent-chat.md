@@ -8,6 +8,7 @@ multi-agent conversations. Every selected system prompt becomes a
 var ruToEn = new ChatCompletionAgent
 {
     Name = "ru_to_en",
+    Description = "Russian to English translator",
     Kernel = kernel,
     Instructions = "If last message is Russian, translate it to English."
 };
@@ -15,6 +16,7 @@ var ruToEn = new ChatCompletionAgent
 var enToEs = new ChatCompletionAgent
 {
     Name = "en_to_es",
+    Description = "English to Spanish translator",
     Kernel = kernel,
     Instructions = "If last message is English, translate it to Spanish."
 };

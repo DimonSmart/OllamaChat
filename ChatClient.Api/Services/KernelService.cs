@@ -9,7 +9,8 @@ namespace ChatClient.Api.Services;
 public class KernelService(
     IUserSettingsService userSettingsService,
     McpFunctionIndexService indexService,
-    ILogger<KernelService> logger)
+    ILogger<KernelService> logger,
+    IServiceProvider serviceProvider)
 {
     private readonly McpFunctionIndexService _indexService = indexService;
     private IMcpClientService? _mcpClientService;
@@ -58,7 +59,7 @@ public class KernelService(
         return builder.Build();
     }
 
-    private static HttpClient CreateConfiguredHttpClient(UserSettings settings, TimeSpan timeout)
+    private HttpClient CreateConfiguredHttpClient(UserSettings settings, TimeSpan timeout)
     {
         var handler = new HttpClientHandler();
 
@@ -67,7 +68,13 @@ public class KernelService(
             handler.ServerCertificateCustomValidationCallback = (sender, cert, chain, sslPolicyErrors) => true;
         }
 
-        var httpClient = new HttpClient(handler)
+        // Create logging handler and chain it with the base handler
+        var loggingHandler = new HttpLoggingHandler(serviceProvider.GetRequiredService<ILogger<HttpLoggingHandler>>())
+        {
+            InnerHandler = handler
+        };
+
+        var httpClient = new HttpClient(loggingHandler)
         {
             Timeout = timeout
         };
