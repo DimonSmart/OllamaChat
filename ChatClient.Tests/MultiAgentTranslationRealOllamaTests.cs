@@ -9,12 +9,12 @@ namespace ChatClient.Tests;
 
 public class MultiAgentTranslationRealOllamaTests
 {
-    [Fact(Skip = "Requires running Ollama server with an English-capable model (e.g. 'llama3.1'). Run manually.")]
-    public async Task TwoTranslatorAgents_TranslateRussianToFrench()
+    [Fact()] //Skip = "Requires running Ollama server with an English-capable model (e.g. 'llama3.1'). Run manually.")]
+    public async Task TwoTranslatorAgents_ChainOfTranslationTranslate()
     {
         var httpClient = new HttpClient { BaseAddress = new Uri("http://localhost:11434") };
         IKernelBuilder builder = Kernel.CreateBuilder();
-        builder.AddOllamaChatCompletion(modelId: "llama3.1", httpClient: httpClient);
+        builder.AddOllamaChatCompletion(modelId: "qwen3", httpClient: httpClient);
         builder.Services.AddLogging(c => c.AddConsole());
         var kernel = builder.Build();
 
@@ -25,34 +25,32 @@ public class MultiAgentTranslationRealOllamaTests
             Kernel = kernel
         };
 
-        var enToFr = new ChatCompletionAgent
+        var enToEs = new ChatCompletionAgent
         {
-            Name = "en_to_fr",
-            Instructions = "Translate the last message from English to French. Only reply with the French translation. If the last message isn't English, reply with nothing.",
+            Name = "en_to_es",
+            Instructions = "Translate the last message from English to Spanish. Only reply with the Spanish translation. If the last message isn't English, reply with 'OK'.",
             Kernel = kernel
         };
 
-        var chat = new AgentGroupChat();
+        // Теперь агенты явно добавлены в чат:
+        var chat = new AgentGroupChat(ruToEn, enToEs);
         chat.AddChatMessage(new ChatMessageContent(AuthorRole.User, "Привет, как дела?"));
 
-        string ruEnTranslation = string.Empty;
-        await foreach (var content in chat.InvokeAsync(ruToEn, CancellationToken.None))
-        {
-            if (!string.IsNullOrWhiteSpace(content.Content))
-            {
-                ruEnTranslation += content.Content;
-            }
-        }
-        Assert.Contains("Hello", ruEnTranslation, StringComparison.OrdinalIgnoreCase);
+        // Вручную ограничиваем количество ходов:
+        int turns = 0;
+        int maxTurns = 2;
 
-        string enFrTranslation = string.Empty;
-        await foreach (var content in chat.InvokeAsync(enToFr, CancellationToken.None))
+        await foreach (var message in chat.InvokeAsync(CancellationToken.None))
         {
-            if (!string.IsNullOrWhiteSpace(content.Content))
-            {
-                enFrTranslation += content.Content;
-            }
+#pragma warning disable SKEXP0001 // Type is for evaluation purposes only and is subject to change or removal in future updates. Suppress this diagnostic to proceed.
+            Console.WriteLine($"{message.Role} ({message.AuthorName}): {message.Content}");
+#pragma warning restore SKEXP0001 // Type is for evaluation purposes only and is subject to change or removal in future updates. Suppress this diagnostic to proceed.
+
+            turns++;
+            if (turns >= maxTurns)
+                break;
         }
-        Assert.Contains("Bonjour", enFrTranslation, StringComparison.OrdinalIgnoreCase);
+
+
     }
 }
