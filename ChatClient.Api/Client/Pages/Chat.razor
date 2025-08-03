@@ -105,8 +105,8 @@
                          </MudChatHeader>
 
                         @{
-                            var displayName = message.Role == Microsoft.Extensions.AI.ChatRole.Assistant 
-                                ? GetAgentDisplayName() 
+                            var displayName = message.Role == Microsoft.Extensions.AI.ChatRole.Assistant
+                                ? (message.AgentName ?? string.Empty)
                                 : userSettings.UserName;
                             var avatarText = GetAvatarText(displayName);
                         }
@@ -228,8 +228,8 @@
 
     [CascadingParameter(Name = "UseAgentResponses")]
     public bool UseAgentResponses { get; set; }
-    [CascadingParameter(Name = "AutoContinue")]
-    public bool AutoContinue { get; set; }
+    [CascadingParameter(Name = "MaximumInvocationCount")]
+    public int MaximumInvocationCount { get; set; }
     [CascadingParameter(Name = "SelectedModel")]
     public OllamaModel? SelectedModel { get; set; }
 
@@ -330,7 +330,7 @@
             UseAgentResponses,
             AutoSelectFunctions,
             AutoSelectCount,
-            AutoContinue);
+            MaximumInvocationCount);
 
         await ChatService.AddUserMessageAndAnswerAsync(messageData.text.Trim(), chatConfiguration, messageData.files);
         await ScrollToBottom();
@@ -432,14 +432,6 @@
         };
 
         await DialogService.ShowAsync<ImageViewerDialog>("Image Viewer", parameters, options);
-    }
-
-    private string GetAgentDisplayName()
-    {
-        var agentName = ChatService.AgentDescriptions.FirstOrDefault()?.AgentName;
-        return !string.IsNullOrWhiteSpace(agentName)
-            ? agentName
-            : userSettings.AgentName;
     }
 
     private string GetAvatarText(string? name)

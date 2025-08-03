@@ -1,60 +1,40 @@
-# Multi-Agent Chat Implementation Plan
+# Multi-Agent Chat
 
-## Overview
-This document outlines a proposal to extend **OllamaChat** with multi-agent conversations. Users will be able to compose a set of agents, give a dedicated prompt to a *manager* agent, and chat with all participants in a single conversation. Each agent is defined by a system prompt and may optionally target a specific model. If no model is specified, the chat's primary model is used.
+OllamaChat now relies on Semantic Kernel's built-in **GroupChatOrchestration** for
+multi-agent conversations. Every selected system prompt becomes a
+`ChatCompletionAgent`, and a `RoundRobinGroupChatManager` rotates agents in turn.
 
-## Current State
-- `SystemPrompt` entries persist name, content, `AgentName`, and optional `ModelName` for each agent.
-- The system prompt editor (`SystemPrompts.razor`) lets users edit content, agent name, and choose an optional model.
-- Chats can initialize multiple `KernelLlmAgent` instances, and a `ManagerLlmAgent` with a `MultiLlmAgentCoordinator` currently rotates responses in a round-robin fashion.
-- An `AutoContinue` toggle allows agents to keep responding without additional user input until the coordinator stops the loop.
+```csharp
+var ruToEn = new ChatCompletionAgent
+{
+    Name = "ru_to_en",
+    Kernel = kernel,
+    Instructions = "If last message is Russian, translate it to English."
+};
 
-## Design Goals
-1. Let users create agents by pairing a system prompt with an optional model.
-2. Allow selecting any number of agents plus one manager agent before starting a chat.
-3. Display messages from multiple agents within the conversation UI, preserving compatibility with the existing single-agent flow.
-4. Provide an extensible coordination layer so the manager agent can decide which agent responds next.
+var enToEs = new ChatCompletionAgent
+{
+    Name = "en_to_es",
+    Kernel = kernel,
+    Instructions = "If last message is English, translate it to Spanish."
+};
 
-## Step-by-Step Plan
-### 1. Extend prompt model and storage ✅
-- Add a `ModelName` property to `SystemPrompt`. Update serialization and `SystemPromptService` CRUD logic to persist this value.
-- Migrate existing prompt files so older entries default to `null`/empty `ModelName`.
+var orchestrator = new GroupChatOrchestration(
+    new RoundRobinGroupChatManager { MaximumInvocationCount = 2 },
+    ruToEn, enToEs);
 
-### 2. Update system prompt editor ✅
-- In `SystemPrompts.razor`, fetch available models (via `IOllamaClientService`) and present a dropdown when editing/creating prompts.
-- Allow leaving the selection blank to fall back to the chat's main model.
+await using var runtime = new InProcessRuntime();
+await runtime.StartAsync();
+var result = await orchestrator.InvokeAsync("Привет", runtime);
+string final = await result.GetValueAsync();
+```
 
-### 3. Treat prompts as agents ✅
-- When initializing a chat, create a `KernelLlmAgent` instance for each selected prompt, passing along its model preference.
-- Modify `ChatService` and `IChatService` to manage a list of active LLM agents instead of a single prompt.
+`MaximumInvocationCount` controls how many times agents are invoked. Set it to a
+value greater than `1` to let agents auto‑continue without additional user
+messages.
 
-### 4. Manager agent and coordination ✅
-- Introduce a `ManagerLlmAgent` derived from `LlmAgentBase`. It receives the user's message and decides which agent should answer.
-- Implement a `MultiLlmAgentCoordinator` that holds the manager and worker agents. It exposes `GetNextAgent()` by consulting the manager's response or, for now, a simple round-robin policy.
-
-### 5. Automatic agent continuation ✅
-- Add an `AutoContinue` toggle allowing agents to converse without additional user messages.
-- Extend `ILlmAgentCoordinator` with `ShouldContinueConversation` so it can stop the dialog after a defined number of cycles.
-
-### 6. Multi-agent chat UI
-- Extend the chat-start screen to allow selection of multiple agents plus a manager prompt.
-- During conversation, display messages with each agent's name/Avatar to distinguish speakers.
-- Ensure a fallback to existing single-agent UI when only one agent is chosen.
-
-### 7. Service and history updates ✅
-- Adjust `ChatHistoryBuilder` to track messages from multiple agents; include agent names when constructing `ChatHistory` entries.
-- Ensure streaming responses and cancellation flow handle multiple simultaneous agent operations gracefully.
-
-### 8. Testing
-- Add unit tests verifying that `SystemPromptService` correctly stores and retrieves `ModelName`.
-- Add tests for `MultiLlmAgentCoordinator` to confirm agent rotation/selection logic.
-
-### 9. Documentation and examples
-- Create user-facing docs demonstrating how to create agents, assign models, and start a multi-agent chat.
-- Provide sample prompts and configurations to help users bootstrap their own agent sets.
-
-## Future Enhancements
-- Persist per-agent conversation state or memory.
-- Allow agents to reference each other's outputs and chain reasoning.
-- Support importing/exporting agent configurations.
+The chat UI records agent names from `ChatCompletionAgent.Name` so each message
+shows the speaker. No custom coordinator or manual history management is
+required—the orchestrator's `ResponseCallback` adds messages to the chat
+history directly.
 

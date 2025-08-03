@@ -19,7 +19,7 @@
 <CascadingValue Value="@autoSelectFunctions" Name="AutoSelectFunctions">
 <CascadingValue Value="@autoSelectCount" Name="AutoSelectCount">
 <CascadingValue Value="@useAgentResponses" Name="UseAgentResponses">
-<CascadingValue Value="@autoContinue" Name="AutoContinue">
+<CascadingValue Value="@maximumInvocationCount" Name="MaximumInvocationCount">
 <CascadingValue Value="@selectedModel" Name="SelectedModel">
 <MudLayout>
     <MudAppBar Elevation="1" Dense="true">
@@ -39,12 +39,14 @@
                          Size="Size.Small"
                          Dense="true"
                          Class="ml-4" />
-           <MudCheckBox @bind-Value="autoContinue"
-                         Label="Auto"
-                         Color="Color.Primary"
-                         Size="Size.Small"
-                         Dense="true"
-                         Class="ml-2" />
+           <MudNumericField T="int"
+                           @bind-Value="maximumInvocationCount"
+                           Min="1"
+                           Label="Rounds"
+                           Variant="Variant.Filled"
+                           Margin="Margin.Dense"
+                           Class="ml-2"
+                           Style="width: 100px;" />
            <MudButton OnClick="OpenFunctionsDialog"
                       Color="Color.Primary"
                       Variant="Variant.Text"
@@ -122,7 +124,7 @@
     private bool _isDarkMode = true;
     private bool isLLMAnswering;
     private bool useAgentResponses = false;
-    private bool autoContinue = false;
+    private int maximumInvocationCount = 1;
     private List<FunctionInfo> availableFunctions = new();
     private List<string> selectedFunctions = new();
     private bool autoSelectFunctions = false;
