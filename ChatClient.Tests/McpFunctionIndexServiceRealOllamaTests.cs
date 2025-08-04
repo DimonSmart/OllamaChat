@@ -6,6 +6,8 @@ using ChatClient.Shared.Models;
 using ChatClient.Shared.Services;
 
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 
 using ModelContextProtocol.Client;
@@ -48,7 +50,18 @@ public class McpFunctionIndexServiceRealOllamaTests
 
         var configuration = new ConfigurationBuilder().Build();
         var userSettings = new DummyUserSettingsService();
-        using var embeddingService = new OllamaService(configuration, userSettings);
+        
+        // Set up service provider for dependencies
+        var services = new ServiceCollection();
+        services.AddLogging(builder => builder.AddConsole());
+        var serviceProvider = services.BuildServiceProvider();
+        
+        using var embeddingService = new OllamaService(
+            configuration, 
+            userSettings, 
+            NullLogger<OllamaService>.Instance,
+            serviceProvider);
+            
         var indexService = new McpFunctionIndexService(new DummyMcpClientService(), embeddingService, configuration, userSettings, NullLogger<McpFunctionIndexService>.Instance);
 
         var indexField = typeof(McpFunctionIndexService).GetField("_index", BindingFlags.NonPublic | BindingFlags.Instance)!;

@@ -1,11 +1,11 @@
+using ChatClient.Api.Services;
+
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.SemanticKernel;
 using Microsoft.SemanticKernel.Agents;
-using Microsoft.SemanticKernel.Agents.Orchestration;
 using Microsoft.SemanticKernel.Agents.Orchestration.GroupChat;
 using Microsoft.SemanticKernel.Agents.Runtime.InProcess;
-using Microsoft.SemanticKernel.ChatCompletion;
 #pragma warning disable SKEXP0110
 #pragma warning disable SKEXP0001
 
@@ -13,40 +13,92 @@ namespace ChatClient.Tests;
 
 public class MultiAgentTranslationRealOllamaTests
 {
-    [Fact(Skip = "Requires running Ollama server with an English-capable model (e.g. 'llama3.1'). Run manually.")]
+    [Fact(Timeout = 240000)]
     public async Task TwoTranslatorAgents_ChainOfTranslationTranslate()
     {
-        var httpClient = new HttpClient { BaseAddress = new Uri("http://localhost:11434") };
+        // Set up logging for HttpClient
+        var services = new ServiceCollection();
+        services.AddLogging(builder => builder.AddConsole().SetMinimumLevel(LogLevel.Debug));
+        var serviceProvider = services.BuildServiceProvider();
+        var loggerFactory = serviceProvider.GetRequiredService<ILoggerFactory>();
+
+        var handler = new HttpClientHandler();
+        var loggingHandler = new HttpLoggingHandler(loggerFactory.CreateLogger<HttpLoggingHandler>())
+        {
+            InnerHandler = handler
+        };
+
+        var httpClient = new HttpClient(loggingHandler)
+        {
+            BaseAddress = new Uri("http://localhost:11434"),
+            Timeout = TimeSpan.FromMinutes(100)
+        };
+
         IKernelBuilder builder = Kernel.CreateBuilder();
-        builder.AddOllamaChatCompletion(modelId: "qwen3", httpClient: httpClient);
+        builder.AddOllamaChatCompletion(modelId: "phi4:latest", httpClient: httpClient);
         builder.Services.AddLogging(c => c.AddConsole());
         var kernel = builder.Build();
 
-        var ruToEn = new ChatCompletionAgent
+        var recipe_creator = new ChatCompletionAgent
         {
-            Name = "ru_to_en",
-            Description = "Russian to English translator",
-            Instructions = "Translate the last message from Russian to English. Only reply with the English translation. If the last message isn't Russian, reply with nothing.",
+            Name = "recipe_creator",
+            Description = "Recipe creator",
+            Instructions = """
+            You are professional Chef.
+            Create simple recepy based on initial user input            
+            """,
             Kernel = kernel
         };
 
-        var enToEs = new ChatCompletionAgent
+        var ingredients_extractor = new ChatCompletionAgent
         {
-            Name = "en_to_es",
-            Description = "English to Spanish translator",
-            Instructions = "Translate the last message from English to Spanish. Only reply with the Spanish translation. If the last message isn't English, reply with 'OK'.",
+            Name = "shopping_list_creater",
+            Description = "Shopping list creator",
+            Instructions = """
+You are a chef assistant. You will be given a recipe in markdown form.
+Extract the ingredients and output a numbered list, one ingredient per line, preserving quantity/optionality if present.
+Example input:
+**Simple Scrambled Eggs with Herbs**
+### Ingredients:
+- 4 large eggs
+- Salt, to taste
+- Black pepper, to taste
+- 1 tablespoon milk or cream (optional)
+- 2 tablespoons butter
+- Fresh herbs (such as chives, parsley, and/or dill), chopped
+
+Example output:
+1. 4 large eggs
+2. Salt, to taste
+3. Black pepper, to taste
+4. 1 tablespoon milk or cream (optional)
+5. 2 tablespoons butter
+6. Fresh herbs (chives/parsley/dill), chopped
+
+If you cannot extract ingredients, explain why in one sentence.
+""",
+            Kernel = kernel
+        };
+
+        var upperCaser = new ChatCompletionAgent
+        {
+            Name = "upper_case_maker",
+            Description = "Make message uppercase",
+            Instructions = "You are a formatter. Take all previous messages in order, join them into one long string, make it UPPERCASE, and output only that. If there are no previous messages, output exactly: NO CONTENT. Do not add anything else. If the text is too long, keep as much of the most recent part as fits.",
             Kernel = kernel
         };
 
         List<ChatMessageContent> history = [];
 
         var chatOrchestration = new GroupChatOrchestration(
-            new RoundRobinGroupChatManager { MaximumInvocationCount = 2 },
-            ruToEn,
-            enToEs)
+            new RoundRobinGroupChatManager { MaximumInvocationCount = 3 },
+            recipe_creator,
+            ingredients_extractor,
+            upperCaser)
         {
             ResponseCallback = message =>
             {
+                Console.WriteLine($"Agent response: {message.Role.Label ?? "unknown"} / {message.Content}");
                 history.Add(message);
                 return ValueTask.CompletedTask;
             }
@@ -55,10 +107,10 @@ public class MultiAgentTranslationRealOllamaTests
         await using var runtime = new InProcessRuntime();
         await runtime.StartAsync();
 
-        var result = await chatOrchestration.InvokeAsync("Привет, как дела?", runtime);
-        await result.GetValueAsync(TimeSpan.FromSeconds(30));
+        var result = await chatOrchestration.InvokeAsync("Eggs for breakfast", runtime);
+        await result.GetValueAsync(TimeSpan.FromMinutes(10));
 
-        Assert.Equal(2, history.Count);
+        Assert.Equal(3, history.Count);
         Assert.Contains("Hello", history[0].Content, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("Hola", history[1].Content, StringComparison.OrdinalIgnoreCase);
     }

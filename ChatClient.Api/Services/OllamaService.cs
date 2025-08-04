@@ -19,7 +19,9 @@ namespace ChatClient.Api.Services;
 /// </summary>
 public sealed class OllamaService(
     IConfiguration configuration,
-    IUserSettingsService userSettingsService) : IOllamaClientService, IDisposable
+    IUserSettingsService userSettingsService,
+    ILogger<OllamaService> logger,
+    IServiceProvider serviceProvider) : IOllamaClientService, IDisposable
 {
     private OllamaApiClient? _ollamaClient;
     private HttpClient? _httpClient;
@@ -98,7 +100,7 @@ public sealed class OllamaService(
             settings.HttpTimeoutSeconds);
     }
 
-    private static HttpClient BuildHttpClient(SettingsSnapshot s)
+    private HttpClient BuildHttpClient(SettingsSnapshot s)
     {
         var handler = new HttpClientHandler();
         if (s.IgnoreSslErrors)
@@ -106,7 +108,13 @@ public sealed class OllamaService(
             handler.ServerCertificateCustomValidationCallback = (_, _, _, _) => true;
         }
 
-        var client = new HttpClient(handler)
+        // Create logging handler and chain it with the base handler
+        var loggingHandler = new HttpLoggingHandler(serviceProvider.GetRequiredService<ILogger<HttpLoggingHandler>>())
+        {
+            InnerHandler = handler
+        };
+
+        var client = new HttpClient(loggingHandler)
         {
             Timeout = TimeSpan.FromSeconds(s.TimeoutSeconds),
             BaseAddress = new Uri(s.ServerUrl)
