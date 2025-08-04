@@ -6,10 +6,49 @@ using Microsoft.SemanticKernel;
 using Microsoft.SemanticKernel.Agents;
 using Microsoft.SemanticKernel.Agents.Orchestration.GroupChat;
 using Microsoft.SemanticKernel.Agents.Runtime.InProcess;
+using Microsoft.SemanticKernel.ChatCompletion;
+using System.Linq;
 #pragma warning disable SKEXP0110
 #pragma warning disable SKEXP0001
 
 namespace ChatClient.Tests;
+
+public enum HistoryMode
+{
+    FullHistory,
+    LastMessage
+}
+
+public class ContextInjectorFilter(HistoryMode mode) : IPromptRenderFilter
+{
+    private readonly HistoryMode _mode = mode;
+
+    public async Task OnPromptRenderAsync(
+        PromptRenderContext context,
+        Func<PromptRenderContext, Task> next)
+    {
+        context.Arguments.TryGetValue("history", out object? rawHistory);
+
+        string contextText = string.Empty;
+
+        if (rawHistory is IReadOnlyList<ChatMessageContent> list && list.Count > 0)
+        {
+            if (_mode == HistoryMode.FullHistory)
+            {
+                contextText = string.Join("\n", list.Select(m => $"[{m.Role.Label}] {m.Content?.Trim()}"));
+            }
+            else
+            {
+                var last = list.Last();
+                contextText = $"[{last.Role.Label}] {last.Content?.Trim()}";
+            }
+        }
+
+        context.Arguments["promptContext"] = contextText;
+
+        await next(context);
+    }
+}
 
 public class MultiAgentTranslationRealOllamaTests
 {
@@ -37,6 +76,7 @@ public class MultiAgentTranslationRealOllamaTests
         IKernelBuilder builder = Kernel.CreateBuilder();
         builder.AddOllamaChatCompletion(modelId: "phi4:latest", httpClient: httpClient);
         builder.Services.AddLogging(c => c.AddConsole());
+        builder.Services.AddSingleton<IPromptRenderFilter>(new ContextInjectorFilter(HistoryMode.LastMessage));
         var kernel = builder.Build();
 
         var recipe_creator = new ChatCompletionAgent
@@ -44,9 +84,12 @@ public class MultiAgentTranslationRealOllamaTests
             Name = "recipe_creator",
             Description = "Recipe creator",
             Instructions = """
-            You are professional Chef.
-            Create simple recepy based on initial user input            
-            """,
+You are a professional chef.
+Here is the previous context:
+{{promptContext}}
+
+Create a simple recipe for: {{input}}
+""",
             Kernel = kernel
         };
 
@@ -55,26 +98,11 @@ public class MultiAgentTranslationRealOllamaTests
             Name = "shopping_list_creater",
             Description = "Shopping list creator",
             Instructions = """
-You are a chef assistant. You will be given a recipe in markdown form.
+You are a chef assistant.
+Here is the previous message:
+{{promptContext}}
+
 Extract the ingredients and output a numbered list, one ingredient per line, preserving quantity/optionality if present.
-Example input:
-**Simple Scrambled Eggs with Herbs**
-### Ingredients:
-- 4 large eggs
-- Salt, to taste
-- Black pepper, to taste
-- 1 tablespoon milk or cream (optional)
-- 2 tablespoons butter
-- Fresh herbs (such as chives, parsley, and/or dill), chopped
-
-Example output:
-1. 4 large eggs
-2. Salt, to taste
-3. Black pepper, to taste
-4. 1 tablespoon milk or cream (optional)
-5. 2 tablespoons butter
-6. Fresh herbs (chives/parsley/dill), chopped
-
 If you cannot extract ingredients, explain why in one sentence.
 """,
             Kernel = kernel
@@ -84,7 +112,13 @@ If you cannot extract ingredients, explain why in one sentence.
         {
             Name = "upper_case_maker",
             Description = "Make message uppercase",
-            Instructions = "You are a formatter. Take all previous messages in order, join them into one long string, make it UPPERCASE, and output only that. If there are no previous messages, output exactly: NO CONTENT. Do not add anything else. If the text is too long, keep as much of the most recent part as fits.",
+            Instructions = """
+You are a formatter.
+Here is the previous message:
+{{promptContext}}
+
+Return it in uppercase, preserving line breaks.
+""",
             Kernel = kernel
         };
 
@@ -92,14 +126,17 @@ If you cannot extract ingredients, explain why in one sentence.
 
         var chatOrchestration = new GroupChatOrchestration(
             new RoundRobinGroupChatManager { MaximumInvocationCount = 3 },
-             recipe_creator,
+            recipe_creator,
             ingredients_extractor,
             upperCaser)
         {
             ResponseCallback = message =>
             {
                 Console.WriteLine($"Agent response: {message.Role.Label ?? "unknown"} / {message.Content}");
-                history.Add(message);
+                if (message.Role == AuthorRole.Assistant)
+                {
+                    history.Add(message);
+                }
                 return ValueTask.CompletedTask;
             }
         };
@@ -110,8 +147,10 @@ If you cannot extract ingredients, explain why in one sentence.
         var result = await chatOrchestration.InvokeAsync("Eggs for breakfast", runtime);
         await result.GetValueAsync(TimeSpan.FromMinutes(20));
 
-        Assert.Equal(6, history.Count);
+        Assert.Equal(3, history.Count);
         Assert.Contains("Egg", history[0].Content, StringComparison.OrdinalIgnoreCase);
-        Assert.Contains("Egg", history[1].Content, StringComparison.OrdinalIgnoreCase);
+        Assert.NotNull(history[1].Content);
+        Assert.Contains("1", history[1].Content);
+        Assert.Equal(history[1].Content!.ToUpperInvariant().Trim(), history[2].Content!.Trim());
     }
 }
