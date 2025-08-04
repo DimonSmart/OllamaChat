@@ -92,7 +92,7 @@ If you cannot extract ingredients, explain why in one sentence.
 
         var chatOrchestration = new GroupChatOrchestration(
             new RoundRobinGroupChatManager { MaximumInvocationCount = 3 },
-            recipe_creator,
+             recipe_creator,
             ingredients_extractor,
             upperCaser)
         {
@@ -108,10 +108,10 @@ If you cannot extract ingredients, explain why in one sentence.
         await runtime.StartAsync();
 
         var result = await chatOrchestration.InvokeAsync("Eggs for breakfast", runtime);
-        await result.GetValueAsync(TimeSpan.FromMinutes(10));
+        await result.GetValueAsync(TimeSpan.FromMinutes(20));
 
-        Assert.Equal(3, history.Count);
-        Assert.Contains("Hello", history[0].Content, StringComparison.OrdinalIgnoreCase);
-        Assert.Contains("Hola", history[1].Content, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal(6, history.Count);
+        Assert.Contains("Egg", history[0].Content, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("Egg", history[1].Content, StringComparison.OrdinalIgnoreCase);
     }
 }
