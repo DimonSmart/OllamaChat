@@ -61,7 +61,13 @@ public class HttpLoggingHandler : DelegatingHandler
             }
         }
 
-        _logger.LogDebug("{RequestInfo}", requestInfo.ToString());
+        // Log the entire request information as a single message instead of
+        // using a structured logging placeholder. Using a placeholder caused
+        // some loggers to output the literal template name rather than the
+        // formatted text, giving the impression that variable substitution was
+        // not working. Emitting the string directly ensures the request details
+        // appear exactly as expected in the logs.
+        _logger.LogDebug(requestInfo.ToString());
     }
 
     private async Task LogResponseAsync(HttpResponseMessage response)
@@ -100,6 +106,8 @@ public class HttpLoggingHandler : DelegatingHandler
             }
         }
 
-        _logger.LogDebug("{ResponseInfo}", responseInfo.ToString());
+        // See comment above: write the response information directly to avoid
+        // placeholder substitution issues in log output.
+        _logger.LogDebug(responseInfo.ToString());
     }
 }
