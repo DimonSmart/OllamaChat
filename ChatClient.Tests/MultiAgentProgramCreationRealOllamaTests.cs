@@ -1,4 +1,3 @@
-using System.Linq;
 using System.Net.Http.Headers;
 using System.Text;
 
@@ -18,54 +17,6 @@ using Microsoft.SemanticKernel.ChatCompletion;
 
 namespace ChatClient.Tests;
 
-public enum HistoryMode
-{
-    FullHistory,
-    LastMessage
-}
-
-public class ContextInjectorFilter(HistoryMode mode) : IPromptRenderFilter
-{
-    private readonly HistoryMode _mode = mode;
-
-    public async Task OnPromptRenderAsync(
-        PromptRenderContext context,
-        Func<PromptRenderContext, Task> next)
-    {
-        context.Arguments.TryGetValue("history", out object? rawHistory);
-
-        string contextText = string.Empty;
-
-        if (rawHistory is IReadOnlyList<ChatMessageContent> list && list.Count > 0)
-        {
-            if (_mode == HistoryMode.FullHistory)
-            {
-                contextText = string.Join("\n", list.Select(m => $"[{m.Role.Label}] {m.Content?.Trim()}"));
-            }
-            else
-            {
-                var last = list.Last();
-                contextText = $"[{last.Role.Label}] {last.Content?.Trim()}";
-            }
-        }
-
-        context.Arguments["promptContext"] = contextText;
-
-        await next(context);
-
-        if (context is not null)
-        {
-            var rendered = context.RenderedPrompt;
-            if (!string.IsNullOrEmpty(rendered))
-            {
-                rendered = rendered.Replace("{{promptContext}}", contextText)
-                                     .Replace("{{$promptContext}}", contextText);
-                context.RenderedPrompt = rendered;
-            }
-        }
-    }
-}
-
 public class MultiAgentProgramCreationRealOllamaTests
 {
     [Fact()] //Skip = "Requires running Ollama server with 'phi4:latest' model.")]
@@ -79,9 +30,8 @@ public class MultiAgentProgramCreationRealOllamaTests
 
         IKernelBuilder builder = Kernel.CreateBuilder();
         var httpClient = GetHttpClient(loggerFactory);
-        builder.AddOllamaChatCompletion(modelId: "phi4:latest", httpClient: httpClient);
+        builder.AddOllamaChatCompletion(modelId: "mistral-small3.2:latest", httpClient: httpClient); //"phi4:latest" "gemma3"
         builder.Services.AddLogging(c => c.AddConsole());
-        builder.Services.AddSingleton<IPromptRenderFilter>(new ContextInjectorFilter(HistoryMode.LastMessage));
         var kernel = builder.Build();
 
         var programManager = new ChatCompletionAgent
@@ -89,11 +39,7 @@ public class MultiAgentProgramCreationRealOllamaTests
             Name = "program_manager",
             Description = "Program manager",
             Instructions = """
-You are a program manager.
-Here is the previous context:
-{{$promptContext}}
-
-Take the user's requirement and create a plan.
+You are a program manager which will take the requirement and create a plan for creating app. Program Manager understands the user requirements and form the detail documents with requirements and costing.
 """,
             Kernel = kernel
         };
@@ -103,11 +49,7 @@ Take the user's requirement and create a plan.
             Name = "software_engineer",
             Description = "Software engineer",
             Instructions = """
-You are a software engineer.
-Here is the previous context:
-{{$promptContext}}
-
-Create the HTML and JavaScript code that satisfies the plan.
+You are Software Engieer, and your goal is create web app using HTML and JavaScript by taking into consideration all the requirements given by Program Manager.
 """,
             Kernel = kernel
         };
@@ -117,11 +59,9 @@ Create the HTML and JavaScript code that satisfies the plan.
             Name = "project_manager",
             Description = "Project manager",
             Instructions = """
-You are a project manager.
-Here is the previous context:
-{{$promptContext}}
-
-Review the work and respond with 'approve' when the requirements are met.
+You are manager which will review software engineer code, and make sure all client requirements are completed.
+You are the guardian of quality, ensuring the final product meets all specifications and receives the green light for release.
+Once all client requirements are completed, you can approve the request by just responding "approve"
 """,
             Kernel = kernel
         };
