@@ -5,109 +5,107 @@ namespace ChatClient.Api.Services;
 /// <summary>
 /// HTTP message handler that logs request and response bodies
 /// </summary>
-public class HttpLoggingHandler : DelegatingHandler
+public class HttpLoggingHandler(ILogger<HttpLoggingHandler> logger) : DelegatingHandler
 {
-    private readonly ILogger<HttpLoggingHandler> _logger;
-
-    public HttpLoggingHandler(ILogger<HttpLoggingHandler> logger)
-    {
-        _logger = logger;
-    }
+    private const int MaxBodyChars = 32_768;
 
     protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
     {
-        await LogRequestAsync(request);
+        await LogRequestAsync(request, cancellationToken);
 
         var response = await base.SendAsync(request, cancellationToken);
 
-        await LogResponseAsync(response);
+        await LogResponseAsync(response, cancellationToken);
 
         return response;
     }
 
-    private async Task LogRequestAsync(HttpRequestMessage request)
+    private async Task LogRequestAsync(HttpRequestMessage request, CancellationToken ct)
     {
-        if (!_logger.IsEnabled(LogLevel.Debug))
+        if (!logger.IsEnabled(LogLevel.Debug))
             return;
 
-        var requestInfo = new StringBuilder();
-        requestInfo.AppendLine($"HTTP Request: {request.Method} {request.RequestUri}");
+        var sb = new StringBuilder();
+        sb.AppendLine($"HTTP Request: {request.Method} {request.RequestUri}");
 
         if (request.Headers.Any())
         {
-            requestInfo.AppendLine("Headers:");
+            sb.AppendLine("Headers:");
             foreach (var header in request.Headers)
-            {
-                requestInfo.AppendLine($"  {header.Key}: {string.Join(", ", header.Value)}");
-            }
+                sb.AppendLine($"  {header.Key}: {string.Join(", ", header.Value)}");
         }
 
         if (request.Content != null)
         {
+            try
+            { await request.Content.LoadIntoBufferAsync(); }
+            catch { /* ignore */ }
+
             if (request.Content.Headers.Any())
             {
-                requestInfo.AppendLine("Content Headers:");
+                sb.AppendLine("Content Headers:");
                 foreach (var header in request.Content.Headers)
-                {
-                    requestInfo.AppendLine($"  {header.Key}: {string.Join(", ", header.Value)}");
-                }
+                    sb.AppendLine($"  {header.Key}: {string.Join(", ", header.Value)}");
             }
 
-            var content = await request.Content.ReadAsStringAsync();
+            var content = await SafeReadAsStringAsync(request.Content, ct);
             if (!string.IsNullOrEmpty(content))
             {
-                requestInfo.AppendLine("Body:");
-                requestInfo.AppendLine(content);
+                sb.AppendLine("Body:");
+                sb.AppendLine(Truncate(content, MaxBodyChars));
             }
         }
 
-        // Log the entire request information as a single message instead of
-        // using a structured logging placeholder. Using a placeholder caused
-        // some loggers to output the literal template name rather than the
-        // formatted text, giving the impression that variable substitution was
-        // not working. Emitting the string directly ensures the request details
-        // appear exactly as expected in the logs.
-        _logger.LogDebug(requestInfo.ToString());
+        logger.LogDebug(sb.ToString());
     }
 
-    private async Task LogResponseAsync(HttpResponseMessage response)
+    private async Task LogResponseAsync(HttpResponseMessage response, CancellationToken ct)
     {
-        if (!_logger.IsEnabled(LogLevel.Debug))
+        if (!logger.IsEnabled(LogLevel.Debug))
             return;
 
-        var responseInfo = new StringBuilder();
-        responseInfo.AppendLine($"HTTP Response: {(int)response.StatusCode} {response.StatusCode}");
+        var sb = new StringBuilder();
+        sb.AppendLine($"HTTP Response: {(int)response.StatusCode} {response.StatusCode}");
 
         if (response.Headers.Any())
         {
-            responseInfo.AppendLine("Headers:");
+            sb.AppendLine("Headers:");
             foreach (var header in response.Headers)
-            {
-                responseInfo.AppendLine($"  {header.Key}: {string.Join(", ", header.Value)}");
-            }
+                sb.AppendLine($"  {header.Key}: {string.Join(", ", header.Value)}");
         }
 
         if (response.Content != null)
         {
             if (response.Content.Headers.Any())
             {
-                responseInfo.AppendLine("Content Headers:");
+                sb.AppendLine("Content Headers:");
                 foreach (var header in response.Content.Headers)
-                {
-                    responseInfo.AppendLine($"  {header.Key}: {string.Join(", ", header.Value)}");
-                }
+                    sb.AppendLine($"  {header.Key}: {string.Join(", ", header.Value)}");
             }
 
-            var content = await response.Content.ReadAsStringAsync();
+            var content = await SafeReadAsStringAsync(response.Content, ct);
             if (!string.IsNullOrEmpty(content))
             {
-                responseInfo.AppendLine("Body:");
-                responseInfo.AppendLine(content);
+                sb.AppendLine("Body:");
+                sb.AppendLine(Truncate(content, MaxBodyChars));
             }
         }
 
-        // See comment above: write the response information directly to avoid
-        // placeholder substitution issues in log output.
-        _logger.LogDebug(responseInfo.ToString());
+        logger.LogDebug(sb.ToString());
     }
+
+    private static async Task<string?> SafeReadAsStringAsync(HttpContent content, CancellationToken ct)
+    {
+        try
+        {
+            return await content.ReadAsStringAsync(ct);
+        }
+        catch
+        {
+            return "<unreadable body>";
+        }
+    }
+
+    private static string Truncate(string value, int max)
+        => value.Length <= max ? value : value.Substring(0, max) + "… [truncated]";
 }

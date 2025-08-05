@@ -1,0 +1,217 @@
+﻿phi4:latest : 0
+phi4:latest : 1
+phi4:latest : 2
+phi4:latest : 3
+phi4:latest : 4
+phi4:latest : 5
+phi4:latest : 6
+phi4:latest : 7
+phi4:latest : 8
+phi4:latest : 9
+mistral-small3.2:latest : 0
+mistral-small3.2:latest : 1
+mistral-small3.2:latest : 2
+mistral-small3.2:latest : 3
+mistral-small3.2:latest : 4
+mistral-small3.2:latest : 5
+mistral-small3.2:latest : 6
+mistral-small3.2:latest : 7
+mistral-small3.2:latest : 8
+mistral-small3.2:latest : 9
+devstral:latest : 0
+devstral:latest : 1
+devstral:latest : 2
+devstral:latest : 3
+devstral:latest : 4
+devstral:latest : 5
+devstral:latest : 6
+devstral:latest : 7
+devstral:latest : 8
+devstral:latest : 9
+qwen2.5vl:7b : 0
+qwen2.5vl:7b : 1
+qwen2.5vl:7b : 2
+qwen2.5vl:7b : 3
+qwen2.5vl:7b : 4
+qwen2.5vl:7b : 5
+qwen2.5vl:7b : 6
+qwen2.5vl:7b : 7
+qwen2.5vl:7b : 8
+qwen2.5vl:7b : 9
+deepseek-r1:8b : 0
+deepseek-r1:8b : 1
+deepseek-r1:8b : 2
+deepseek-r1:8b : 3
+deepseek-r1:8b : 4
+deepseek-r1:8b : 5
+deepseek-r1:8b : 6
+deepseek-r1:8b : 7
+deepseek-r1:8b : 8
+deepseek-r1:8b : 9
+llava:7b : 0
+llava:7b : 1
+llava:7b : 2
+llava:7b : 3
+llava:7b : 4
+llava:7b : 5
+llava:7b : 6
+llava:7b : 7
+llava:7b : 8
+llava:7b : 9
+gemma3:12b : 0
+gemma3:12b : 1
+gemma3:12b : 2
+gemma3:12b : 3
+gemma3:12b : 4
+gemma3:12b : 5
+gemma3:12b : 6
+gemma3:12b : 7
+gemma3:12b : 8
+gemma3:12b : 9
+llama3.3:70b-instruct-q2_K : 0
+Ошибка на итерации 0 для модели llama3.3:70b-instruct-q2_K: Response status code does not indicate success: 500 (Internal Server Error).
+gemma3:latest : 0
+gemma3:latest : 1
+gemma3:latest : 2
+gemma3:latest : 3
+gemma3:latest : 4
+gemma3:latest : 5
+gemma3:latest : 6
+gemma3:latest : 7
+gemma3:latest : 8
+gemma3:latest : 9
+deepseek-r1:14b : 0
+deepseek-r1:14b : 1
+deepseek-r1:14b : 2
+deepseek-r1:14b : 3
+deepseek-r1:14b : 4
+deepseek-r1:14b : 5
+deepseek-r1:14b : 6
+deepseek-r1:14b : 7
+deepseek-r1:14b : 8
+deepseek-r1:14b : 9
+qwen3:latest : 0
+qwen3:latest : 1
+qwen3:latest : 2
+qwen3:latest : 3
+qwen3:latest : 4
+qwen3:latest : 5
+qwen3:latest : 6
+qwen3:latest : 7
+qwen3:latest : 8
+qwen3:latest : 9
+phi4-mini:latest : 0
+phi4-mini:latest : 1
+phi4-mini:latest : 2
+phi4-mini:latest : 3
+phi4-mini:latest : 4
+phi4-mini:latest : 5
+phi4-mini:latest : 6
+phi4-mini:latest : 7
+phi4-mini:latest : 8
+phi4-mini:latest : 9
+magistral:latest : 0
+magistral:latest : 1
+magistral:latest : 2
+magistral:latest : 3
+magistral:latest : 4
+magistral:latest : 5
+magistral:latest : 6
+magistral:latest : 7
+magistral:latest : 8
+magistral:latest : 9
+qwq:latest : 0
+qwq:latest : 1
+qwq:latest : 2
+qwq:latest : 3
+qwq:latest : 4
+qwq:latest : 5
+qwq:latest : 6
+qwq:latest : 7
+qwq:latest : 8
+qwq:latest : 9
+Модель                    Сниппет (<=40)                                Повторы   Среднее ms
+------------------------------------------------------------------------------------------
+phi4:latest               I Approve.  The slogan captures the esse...         1      26753.8
+phi4:latest               I Approve  **Comment:** This slogan capt...         1      30013.6
+phi4:latest               I Approve.  This slogan captures the ess...         1      20651.1
+phi4:latest               I Approve.  This slogan captures the ess...         1      21713.9
+phi4:latest               I Approve  The slogan effectively captur...         1      48839.9
+phi4:latest               I Approve  This slogan effectively captu...         1      26526.5
+phi4:latest               I Approve  Comment: This slogan effectiv...         1      20184.1
+phi4:latest               I Approve  This slogan effectively captu...         1      40504.9
+phi4:latest               I Approve.  However, if I were to sugges...         1      26158.0
+phi4:latest               I Approve  This slogan captures the esse...         1      17235.0
+mistral-small3.2:latest   - I Approve                                         5      16820.0
+mistral-small3.2:latest   - I Approve  Comment: This slogan is con...         1      73940.2
+mistral-small3.2:latest   - I Approve  Comment: This slogan is con...         1      66974.7
+mistral-small3.2:latest   - I Approve  Comment: This slogan is con...         1      64180.1
+mistral-small3.2:latest   - I Approve  Comment: This slogan captur...         1      31613.1
+mistral-small3.2:latest   - I Approve  Comment: This slogan captur...         1      36490.7
+devstral:latest           <empty>                                            10      12675.3
+qwen2.5vl:7b              addCriterion: The slogan "Charge More, S...         1      45210.4
+qwen2.5vl:7b              addCriterion: The slogan "Charge More, S...         9      16274.5
+deepseek-r1:8b            This captures the dual benefit of afford...         1     106439.3
+deepseek-r1:8b            - This captures the dual benefit of affo...         1     134465.3
+deepseek-r1:8b            It’s simple but effective.  But wait, le...         1      77573.8
+deepseek-r1:8b            – Ogilvy would be proud. The idea here i...         1      95643.8
+deepseek-r1:8b            - This catchy phrase emphasizes the dual...         1      28327.1
+deepseek-r1:8b            But let's think deeper. This captures th...         1      77973.2
+deepseek-r1:8b            It's catchy because it plays on the idea...         1      52472.4
+deepseek-r1:8b            – This is catchy because it speaks to th...         1      61972.2
+deepseek-r1:8b            - This captures the affordability angle ...         1      83283.8
+deepseek-r1:8b            This captures the dual benefit of afford...         1      63553.0
+llava:7b                  "Electrify Your Adventure."  "Power Up Y...         1      31975.9
+llava:7b                  The last assistant text is: "We are the ...         1      31567.3
+llava:7b                  <empty>                                             2        538.8
+llava:7b                  I Approve                                           1       1802.5
+llava:7b                  I do not approve of the last assistant t...         1       6331.0
+llava:7b                  This slogan for the new electric SUV pla...         1      23010.2
+llava:7b                  If the last assistant text is acceptable...         1      40803.2
+llava:7b                  *I Approve*                                         1       2273.1
+llava:7b                  "I Approve"                                         1       2250.3
+gemma3:12b                <empty>                                             8       5842.2
+gemma3:12b                I Approve                                           2       1996.3
+gemma3:latest             Comment: Not approved.   This is…fine. U...         1      51790.3
+gemma3:latest             ---  **Comment:**  Honestly, that’s… ped...         1      30015.7
+gemma3:latest             **Comment:**  Right, let’s be brutally h...         1      32358.1
+gemma3:latest             **Comment:**  Let’s be honest, a slogan ...         1      38425.5
+gemma3:latest             ---  **Comment:**  Let's be frank – we n...         1      42280.3
+gemma3:latest             Comment:  Now, listen. We’re not selling...         1      34042.7
+gemma3:latest             **Comment:**  Not approved.   This is......         1      35461.9
+gemma3:latest             ---  **Comment:**  Not approved.  While ...         1      35514.1
+gemma3:latest             Now, let's be frank. That’s… serviceable...         1      38746.7
+gemma3:latest             ---  **Comment:**  Honestly, that's… ped...         1      40167.0
+deepseek-r1:14b           Hmm, I like the contrast between chargin...         1     366590.8
+deepseek-r1:14b           Okay, so I need to figure out if the slo...         1     108420.4
+deepseek-r1:14b           Okay, let's see. I'm supposed to determi...         1     344577.0
+deepseek-r1:14b           Hmm, I need to determine if "Charge More...         1     184742.0
+deepseek-r1:14b           Okay, so I'm trying to figure out if the...         1     290937.1
+deepseek-r1:14b           Okay, let's see. I need to figure out if...         1     263000.5
+deepseek-r1:14b           Hmm, this slogan has some potential but ...         1     308289.7
+deepseek-r1:14b           To the moon! 🚀  </think>  I Approve                1       6079.2
+deepseek-r1:14b           Hmm, let's break this down.  First, "Cha...         1     138587.4
+deepseek-r1:14b           Alright, I'm trying to figure out whethe...         1     250701.6
+qwen3:latest              – "Drive the Future, Pay Less Today." – ...         1      75046.2
+qwen3:latest              – A catchy and memorable slogan that hig...         1      23362.4
+qwen3:latest              I Approve </think>  "Charge More, Spend ...         2       4901.2
+qwen3:latest              – David Ogilvy </think>  I Approve  Comm...         1      17340.9
+qwen3:latest              – A fun and affordable electric SUV that...         1      26617.8
+qwen3:latest              – A catchy and concise slogan that empha...         1      34985.6
+qwen3:latest              – Affordable electric SUV that's fun to ...         1       4989.9
+qwen3:latest              I Approve  The slogan captures the essen...         1      36240.4
+qwen3:latest              – A catchy and concise slogan that empha...         1      31816.4
+phi4-mini:latest          or  "I'm Electrified by Adventure – Save...         1      43508.4
+phi4-mini:latest          Or simply:  "Play Drive – Eco-Friendly T...         1      19075.8
+phi4-mini:latest          Comment: The revised phrase maintains th...         1      14977.5
+phi4-mini:latest          Comment: The suggestion "Charge More, Sp...         1      20270.8
+phi4-mini:latest          Comment: The proposed slogan encapsulate...         1      11751.1
+phi4-mini:latest          This concise adage captures the dual ben...         1       7251.1
+phi4-mini:latest          Comment: The phrase "Charge More," impli...         1      52302.5
+phi4-mini:latest          Or  "This isn't just an EV; it's your es...         1      23659.2
+phi4-mini:latest          Comment: While this phrase suggests savi...         1       9372.7
+phi4-mini:latest          This straightforward tagline conveys the...         1      26047.4
+magistral:latest          <empty>                                             8      13127.3
+magistral:latest          - I Approve Comment: This slogan emphasi...         1      41543.0
+magistral:latest          - I Approve  Comment: This slogan commun...         1      40801.1
+qwq:latest                <empty>                                            10      17604.4
