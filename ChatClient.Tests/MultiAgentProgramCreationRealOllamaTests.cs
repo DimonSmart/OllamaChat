@@ -1,4 +1,9 @@
+using System.Linq;
+using System.Net.Http.Headers;
+using System.Text;
+
 using ChatClient.Api.Services;
+using ChatClient.Shared.Models;
 
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
@@ -7,7 +12,6 @@ using Microsoft.SemanticKernel.Agents;
 using Microsoft.SemanticKernel.Agents.Orchestration.GroupChat;
 using Microsoft.SemanticKernel.Agents.Runtime.InProcess;
 using Microsoft.SemanticKernel.ChatCompletion;
-using System.Linq;
 
 #pragma warning disable SKEXP0110
 #pragma warning disable SKEXP0001
@@ -64,11 +68,18 @@ public class ContextInjectorFilter(HistoryMode mode) : IPromptRenderFilter
 
 public class MultiAgentProgramCreationRealOllamaTests
 {
-    [Fact(Skip = "Requires running Ollama server with 'phi4:latest' model.")]
+    [Fact()] //Skip = "Requires running Ollama server with 'phi4:latest' model.")]
     public async Task ProgramManagerSoftwareEngineerProjectManager_CreateCalculatorApp()
     {
+        var services = new ServiceCollection();
+        services.AddLogging(builder => builder.AddConsole().SetMinimumLevel(LogLevel.Debug));
+        var serviceProvider = services.BuildServiceProvider();
+        ILoggerFactory loggerFactory = serviceProvider.GetRequiredService<ILoggerFactory>();
+
+
         IKernelBuilder builder = Kernel.CreateBuilder();
-        builder.AddOllamaChatCompletion(modelId: "phi4:latest");
+        var httpClient = GetHttpClient(loggerFactory);
+        builder.AddOllamaChatCompletion(modelId: "phi4:latest", httpClient: httpClient);
         builder.Services.AddLogging(c => c.AddConsole());
         builder.Services.AddSingleton<IPromptRenderFilter>(new ContextInjectorFilter(HistoryMode.LastMessage));
         var kernel = builder.Build();
@@ -143,6 +154,28 @@ Review the work and respond with 'approve' when the requirements are met.
 
         Assert.NotEmpty(history);
         Assert.Contains("approve", history.Last().Content!, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static HttpClient GetHttpClient(ILoggerFactory loggerFactory)
+    {
+        var handler = new HttpClientHandler();
+
+        handler.ServerCertificateCustomValidationCallback = (sender, cert, chain, sslPolicyErrors) => true;
+        var loggingHandler = new HttpLoggingHandler(loggerFactory.CreateLogger<HttpLoggingHandler>())
+        {
+            InnerHandler = handler
+        };
+
+        var httpClient = new HttpClient(loggingHandler)
+        {
+            BaseAddress = new Uri("https://92.127.231.222:8043"),
+            Timeout = TimeSpan.FromMinutes(100)
+        };
+
+        var authValue = Convert.ToBase64String(Encoding.UTF8.GetBytes($":Codex"));
+        httpClient.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Basic", authValue);
+
+        return httpClient;
     }
 }
 
