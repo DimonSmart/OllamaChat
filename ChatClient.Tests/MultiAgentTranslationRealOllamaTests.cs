@@ -8,6 +8,8 @@ using Microsoft.SemanticKernel.Agents.Orchestration.GroupChat;
 using Microsoft.SemanticKernel.Agents.Runtime.InProcess;
 using Microsoft.SemanticKernel.ChatCompletion;
 using System.Linq;
+using System.Net.Http.Headers;
+using System.Text;
 #pragma warning disable SKEXP0110
 #pragma warning disable SKEXP0001
 
@@ -74,7 +76,11 @@ public class MultiAgentTranslationRealOllamaTests
         var serviceProvider = services.BuildServiceProvider();
         var loggerFactory = serviceProvider.GetRequiredService<ILoggerFactory>();
 
-        var handler = new HttpClientHandler();
+        // TEMPORARY: use remote test server with self-signed certificate and basic auth. Remove after testing.
+        var handler = new HttpClientHandler
+        {
+            ServerCertificateCustomValidationCallback = HttpClientHandler.DangerousAcceptAnyServerCertificateValidator
+        };
         var loggingHandler = new HttpLoggingHandler(loggerFactory.CreateLogger<HttpLoggingHandler>())
         {
             InnerHandler = handler
@@ -82,9 +88,12 @@ public class MultiAgentTranslationRealOllamaTests
 
         var httpClient = new HttpClient(loggingHandler)
         {
-            BaseAddress = new Uri("http://localhost:11434"),
+            BaseAddress = new Uri("https://92.127.231.222:8043"),
             Timeout = TimeSpan.FromMinutes(100)
         };
+        httpClient.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue(
+            "Basic",
+            Convert.ToBase64String(Encoding.UTF8.GetBytes(":Codex")));
 
         IKernelBuilder builder = Kernel.CreateBuilder();
         builder.AddOllamaChatCompletion(modelId: "phi4:latest", httpClient: httpClient);
