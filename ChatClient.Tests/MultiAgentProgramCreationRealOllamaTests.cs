@@ -8,6 +8,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.SemanticKernel;
 using Microsoft.SemanticKernel.Agents;
+using Microsoft.SemanticKernel.Agents.Orchestration;
 using Microsoft.SemanticKernel.Agents.Orchestration.GroupChat;
 using Microsoft.SemanticKernel.Agents.Runtime.InProcess;
 using Microsoft.SemanticKernel.ChatCompletion;
@@ -19,14 +20,13 @@ namespace ChatClient.Tests;
 
 public class MultiAgentProgramCreationRealOllamaTests
 {
-    [Fact()] //Skip = "Requires running Ollama server with 'phi4:latest' model.")]
-    public async Task ProgramManagerSoftwareEngineerProjectManager_CreateCalculatorApp()
+    [Fact] //Skip = "Requires running Ollama server with 'phi4:latest' model.")]
+    public async Task CopyWriterReviewer_CreateSlogan()
     {
         var services = new ServiceCollection();
         services.AddLogging(builder => builder.AddConsole().SetMinimumLevel(LogLevel.Debug));
         var serviceProvider = services.BuildServiceProvider();
         ILoggerFactory loggerFactory = serviceProvider.GetRequiredService<ILoggerFactory>();
-
 
         IKernelBuilder builder = Kernel.CreateBuilder();
         var httpClient = GetHttpClient(loggerFactory);
@@ -34,34 +34,30 @@ public class MultiAgentProgramCreationRealOllamaTests
         builder.Services.AddLogging(c => c.AddConsole());
         var kernel = builder.Build();
 
-        var programManager = new ChatCompletionAgent
+        var writer = new ChatCompletionAgent
         {
-            Name = "program_manager",
-            Description = "Program manager",
+            Name = "copy_writer",
+            Description = "A copy writer",
             Instructions = """
-You are a program manager which will take the requirement and create a plan for creating app. Program Manager understands the user requirements and form the detail documents with requirements and costing.
+You are a copywriter with ten years of experience and are known for brevity and a dry humor.
+The goal is to refine and decide on the single best copy as an expert in the field.
+Only provide a single proposal per response.
+You're laser focused on the goal at hand.
+Don't waste time with chit chat.
+Consider suggestions when refining an idea.
 """,
             Kernel = kernel
         };
 
-        var softwareEngineer = new ChatCompletionAgent
+        var reviewer = new ChatCompletionAgent
         {
-            Name = "software_engineer",
-            Description = "Software engineer",
+            Name = "reviewer",
+            Description = "An editor",
             Instructions = """
-You are Software Engieer, and your goal is create web app using HTML and JavaScript by taking into consideration all the requirements given by Program Manager.
-""",
-            Kernel = kernel
-        };
-
-        var projectManager = new ChatCompletionAgent
-        {
-            Name = "project_manager",
-            Description = "Project manager",
-            Instructions = """
-You are manager which will review software engineer code, and make sure all client requirements are completed.
-You are the guardian of quality, ensuring the final product meets all specifications and receives the green light for release.
-Once all client requirements are completed, you can approve the request by just responding "approve"
+You are an art director who has opinions about copywriting born of a love for David Ogilvy.
+The goal is to determine if the given copy is acceptable to print.
+If so, state: "I Approve".
+If not, provide insight on how to refine suggested copy without example.
 """,
             Kernel = kernel
         };
@@ -69,10 +65,12 @@ Once all client requirements are completed, you can approve the request by just 
         List<ChatMessageContent> history = [];
 
         var chatOrchestration = new GroupChatOrchestration(
-            new RoundRobinGroupChatManager { MaximumInvocationCount = 6 },
-            programManager,
-            softwareEngineer,
-            projectManager)
+            new AuthorCriticManager(writer.Name!, reviewer.Name!)
+            {
+                MaximumInvocationCount = 5
+            },
+            writer,
+            reviewer)
         {
             ResponseCallback = message =>
             {
@@ -88,12 +86,35 @@ Once all client requirements are completed, you can approve the request by just 
         await runtime.StartAsync();
 
         var result = await chatOrchestration.InvokeAsync(
-            "I want to develop app which will provide me calculator. Keep it very simple. And get final approval from manager.",
+            "Create a slogan for a new electric SUV that is affordable and fun to drive.",
             runtime);
         await result.GetValueAsync(TimeSpan.FromMinutes(20));
 
         Assert.NotEmpty(history);
-        Assert.Contains("approve", history.Last().Content!, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("I Approve", history.Last().Content!, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private sealed class AuthorCriticManager(string authorName, string criticName) : RoundRobinGroupChatManager
+    {
+        public override ValueTask<GroupChatManagerResult<string>> FilterResults(ChatHistory history, CancellationToken cancellationToken = default)
+        {
+            ChatMessageContent finalResult = history.Last(message => message.AuthorName == authorName);
+            return ValueTask.FromResult(new GroupChatManagerResult<string>($"{finalResult}") { Reason = "The approved copy." });
+        }
+
+        public override async ValueTask<GroupChatManagerResult<bool>> ShouldTerminate(ChatHistory history, CancellationToken cancellationToken = default)
+        {
+            GroupChatManagerResult<bool> result = await base.ShouldTerminate(history, cancellationToken);
+            if (!result.Value)
+            {
+                ChatMessageContent? lastMessage = history.LastOrDefault();
+                if (lastMessage is not null && lastMessage.AuthorName == criticName && $"{lastMessage}".Contains("I Approve", StringComparison.OrdinalIgnoreCase))
+                {
+                    result = new GroupChatManagerResult<bool>(true) { Reason = "The reviewer has approved the copy." };
+                }
+            }
+            return result;
+        }
     }
 
     private static HttpClient GetHttpClient(ILoggerFactory loggerFactory)
