@@ -47,6 +47,19 @@ public class ContextInjectorFilter(HistoryMode mode) : IPromptRenderFilter
         context.Arguments["promptContext"] = contextText;
 
         await next(context);
+
+        if (context is not null)
+        {
+            // Fallback substitution in case the prompt renderer didn't replace placeholders
+            // Use both {{promptContext}} and {{$promptContext}} syntaxes
+            var rendered = context.RenderedPrompt;
+            if (!string.IsNullOrEmpty(rendered))
+            {
+                rendered = rendered.Replace("{{promptContext}}", contextText)
+                                     .Replace("{{$promptContext}}", contextText);
+                context.RenderedPrompt = rendered;
+            }
+        }
     }
 }
 
@@ -86,9 +99,9 @@ public class MultiAgentTranslationRealOllamaTests
             Instructions = """
 You are a professional chef.
 Here is the previous context:
-{{promptContext}}
+{{$promptContext}}
 
-Create a simple recipe for: {{input}}
+Create a simple recipe for: {{$input}}
 """,
             Kernel = kernel
         };
@@ -100,7 +113,7 @@ Create a simple recipe for: {{input}}
             Instructions = """
 You are a chef assistant.
 Here is the previous message:
-{{promptContext}}
+{{$promptContext}}
 
 Extract the ingredients and output a numbered list, one ingredient per line, preserving quantity/optionality if present.
 If you cannot extract ingredients, explain why in one sentence.
@@ -115,7 +128,7 @@ If you cannot extract ingredients, explain why in one sentence.
             Instructions = """
 You are a formatter.
 Here is the previous message:
-{{promptContext}}
+{{$promptContext}}
 
 Return it in uppercase, preserving line breaks.
 """,
