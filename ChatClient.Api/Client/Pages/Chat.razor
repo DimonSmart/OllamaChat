@@ -238,13 +238,9 @@
 
     private UserSettings userSettings = new();
 
-    private readonly EventCallback<ChatMessageViewModel> _messageAddedCallback;
-    private readonly EventCallback<ChatMessageViewModel> _messageUpdatedCallback;
-
-    public Chat()
-    {
-        _messageAddedCallback = EventCallback.Factory.Create<ChatMessageViewModel>(this, OnMessageAdded);        _messageUpdatedCallback = EventCallback.Factory.Create<ChatMessageViewModel>(this, OnMessageUpdated);
-    }
+    private Func<ChatMessageViewModel, Task>? _messageAddedHandler;
+    private Func<ChatMessageViewModel, Task>? _messageUpdatedHandler;
+    private Func<ChatMessageViewModel, Task>? _messageDeletedHandler;
 
     protected override async Task OnInitializedAsync()
     {
@@ -256,9 +252,12 @@
 
         ChatService.LoadingStateChanged += OnLoadingStateChanged;
         ChatViewModelService.ChatInitialized += OnChatInitialized;
-        ChatViewModelService.MessageAdded += async (msg) => await _messageAddedCallback.InvokeAsync(msg);
-        ChatViewModelService.MessageUpdated += async (msg) => await _messageUpdatedCallback.InvokeAsync(msg);
-        ChatViewModelService.MessageDeleted += OnMessageDeleted;
+        _messageAddedHandler = msg => InvokeAsync(() => OnMessageAdded(msg));
+        _messageUpdatedHandler = msg => InvokeAsync(() => OnMessageUpdated(msg));
+        _messageDeletedHandler = msg => InvokeAsync(() => OnMessageDeleted(msg));
+        ChatViewModelService.MessageAdded += _messageAddedHandler;
+        ChatViewModelService.MessageUpdated += _messageUpdatedHandler;
+        ChatViewModelService.MessageDeleted += _messageDeletedHandler;
 
         isLoadingInitialData = false;
         StateHasChanged();
@@ -377,9 +376,12 @@
     {
         ChatService.LoadingStateChanged -= OnLoadingStateChanged;
         ChatViewModelService.ChatInitialized -= OnChatInitialized;
-        ChatViewModelService.MessageAdded -= async (msg) => await InvokeAsync(() => OnMessageAdded(msg));
-        ChatViewModelService.MessageUpdated -= (msg) => InvokeAsync(() => OnMessageUpdated(msg));
-        ChatViewModelService.MessageDeleted -= OnMessageDeleted;
+        if (_messageAddedHandler != null)
+            ChatViewModelService.MessageAdded -= _messageAddedHandler;
+        if (_messageUpdatedHandler != null)
+            ChatViewModelService.MessageUpdated -= _messageUpdatedHandler;
+        if (_messageDeletedHandler != null)
+            ChatViewModelService.MessageDeleted -= _messageDeletedHandler;
         return ValueTask.CompletedTask;
     }
 

@@ -7,7 +7,7 @@ public interface IChatViewModelService
     bool IsLoading { get; }
     event Action<bool>? LoadingStateChanged;
     event Action? ChatInitialized;
-    event Action<ChatMessageViewModel>? MessageAdded;
+    event Func<ChatMessageViewModel, Task>? MessageAdded;
     event Func<ChatMessageViewModel, Task>? MessageUpdated;
-    event Action<ChatMessageViewModel>? MessageDeleted;
+    event Func<ChatMessageViewModel, Task>? MessageDeleted;
 }
