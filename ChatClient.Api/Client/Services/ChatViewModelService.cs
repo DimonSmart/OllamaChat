@@ -12,38 +12,37 @@ public class ChatViewModelService : IChatViewModelService
 
     public event Action<bool>? LoadingStateChanged;
     public event Action? ChatInitialized;
-    public event Action<ChatMessageViewModel>? MessageAdded;
+    public event Func<ChatMessageViewModel, Task>? MessageAdded;
     public event Func<ChatMessageViewModel, Task>? MessageUpdated;
-    public event Action<ChatMessageViewModel>? MessageDeleted;
+    public event Func<ChatMessageViewModel, Task>? MessageDeleted;
 
     public bool IsLoading => _chatService.IsLoading;
 
     public ChatViewModelService(IChatService chatService)
     {
         _chatService = chatService;
-        _chatService.LoadingStateChanged += OnLoadingStateChanged;
+        _chatService.LoadingStateChanged += async isLoading => await OnLoadingStateChanged(isLoading);
         _chatService.ChatInitialized += OnChatInitialized;
         _chatService.MessageAdded += OnMessageAdded;
         _chatService.MessageUpdated += OnMessageUpdated;
         _chatService.MessageDeleted += OnMessageDeleted;
     }
 
-    private Task OnMessageAdded(IAppChatMessage domainMessage)
+    private async Task OnMessageAdded(IAppChatMessage domainMessage)
     {
         var viewModel = ChatMessageViewModel.CreateFromDomainModel(domainMessage);
         _messages.Add(viewModel);
-        MessageAdded?.Invoke(viewModel);
-        return Task.CompletedTask;
+        await (MessageAdded?.Invoke(viewModel) ?? Task.CompletedTask);
     }
 
-    private void OnLoadingStateChanged(bool isLoading)
+    private async Task OnLoadingStateChanged(bool isLoading)
     {
         if (!isLoading)
         {
             foreach (var message in _messages.Where(m => m.IsStreaming))
             {
                 message.IsStreaming = false;
-                MessageUpdated?.Invoke(message);
+                await (MessageUpdated?.Invoke(message) ?? Task.CompletedTask);
             }
         }
         LoadingStateChanged?.Invoke(isLoading);
@@ -66,14 +65,13 @@ public class ChatViewModelService : IChatViewModelService
         await (MessageUpdated?.Invoke(existingMessage) ?? Task.CompletedTask);
     }
 
-    private Task OnMessageDeleted(Guid id)
+    private async Task OnMessageDeleted(Guid id)
     {
         var message = _messages.FirstOrDefault(m => m.Id == id);
         if (message != null)
         {
             _messages.Remove(message);
-            MessageDeleted?.Invoke(message);
+            await (MessageDeleted?.Invoke(message) ?? Task.CompletedTask);
         }
-        return Task.CompletedTask;
     }
 }
