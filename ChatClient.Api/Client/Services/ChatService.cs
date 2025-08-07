@@ -106,7 +106,7 @@ public class ChatService(
         _cancellationTokenSource = new CancellationTokenSource();
         try
         {
-            if (chatConfiguration.UseAgentResponses && _runtime is null)
+            if (_runtime is null)
             {
                 _runtime = new InProcessRuntime();
                 await _runtime.StartAsync();
@@ -135,8 +135,7 @@ public class ChatService(
 
     private async Task ProcessAIResponseAsync(ChatConfiguration chatConfiguration, string userMessage, CancellationToken cancellationToken)
     {
-        string responseType = chatConfiguration.UseAgentResponses ? "Agent" : "Ask";
-        logger.LogInformation("Processing {ResponseType} response with model: {ModelName}", responseType, chatConfiguration.ModelName);
+        logger.LogInformation("Processing response with model: {ModelName}", chatConfiguration.ModelName);
 
         List<FunctionCallRecord> functionCalls = [];
         var lastUpdateTime = DateTime.MinValue;
@@ -144,8 +143,9 @@ public class ChatService(
         var approximateTokenCount = 0;
         var startTime = DateTime.Now;
 
+        bool singleAgent = _agentDescriptions.Count == 1;
         StreamingAppChatMessage? streamingMessage = null;
-        if (!chatConfiguration.UseAgentResponses)
+        if (singleAgent)
         {
             streamingMessage = _streamingManager.CreateStreamingMessage(functionCalls, null);
             _currentStreamingMessage = streamingMessage;
@@ -172,7 +172,7 @@ public class ChatService(
             {
                 kernel.FunctionInvocationFilters.Add(trackingFilter);
 
-                if (chatConfiguration.UseAgentResponses && _runtime != null)
+                if (_runtime != null)
                 {
                     if (_chatOrchestration == null || _groupChatManager.MaximumInvocationCount != chatConfiguration.MaximumInvocationCount)
                     {
@@ -194,6 +194,23 @@ public class ChatService(
                         {
                             ResponseCallback = message =>
                             {
+                                if (singleAgent && streamingMessage != null)
+                                {
+                                    if (!string.IsNullOrEmpty(message.Content))
+                                    {
+                                        streamingMessage.Append(message.Content);
+                                        approximateTokenCount++;
+                                        DateTime now = DateTime.Now;
+                                        if ((now - lastUpdateTime).TotalMilliseconds >= updateIntervalMs)
+                                        {
+                                            lastUpdateTime = now;
+                                            return new ValueTask(MessageUpdated?.Invoke(streamingMessage) ?? Task.CompletedTask);
+                                        }
+                                    }
+
+                                    return ValueTask.CompletedTask;
+                                }
+
                                 ChatRole role = ChatRole.Assistant;
                                 if (message.Role == AuthorRole.System)
                                 {
@@ -212,28 +229,6 @@ public class ChatService(
 
                     var invokeResult = await _chatOrchestration.InvokeAsync(userMessage, _runtime, cancellationToken);
                     await invokeResult.GetValueAsync(TimeSpan.FromSeconds(30));
-                }
-                else if (streamingMessage != null)
-                {
-                    var history = await historyBuilder.BuildChatHistoryAsync(Messages, kernel, cancellationToken);
-                    var chatService = kernel.GetRequiredService<IChatCompletionService>();
-                    await foreach (var content in chatService.GetStreamingChatMessageContentsAsync(history, promptExecutionSettings, kernel, cancellationToken))
-                    {
-                        await Task.Yield();
-                        cancellationToken.ThrowIfCancellationRequested();
-
-                        if (!string.IsNullOrEmpty(content.Content))
-                        {
-                            streamingMessage.Append(content.Content);
-                            approximateTokenCount++;
-                            DateTime now = DateTime.Now;
-                            if ((now - lastUpdateTime).TotalMilliseconds >= updateIntervalMs)
-                            {
-                                await (MessageUpdated?.Invoke(streamingMessage) ?? Task.CompletedTask);
-                                lastUpdateTime = now;
-                            }
-                        }
-                    }
                 }
             }
             finally
@@ -276,8 +271,8 @@ public class ChatService(
         }
         catch (Exception ex)
         {
-            string errorPrefix = chatConfiguration.UseAgentResponses ? "Agent Error" : "Error";
-            logger.LogError(ex, "Error processing {ResponseType} response", responseType);
+            const string errorPrefix = "Agent Error";
+            logger.LogError(ex, "Error processing response");
             if (streamingMessage != null)
             {
                 RemoveStreamingMessage(streamingMessage);

@@ -1,8 +1,10 @@
 # Multi-Agent Chat
 
 OllamaChat now relies on Semantic Kernel's built-in **GroupChatOrchestration** for
-multi-agent conversations. Every selected system prompt becomes a
-`ChatCompletionAgent`, and a `RoundRobinGroupChatManager` rotates agents in turn.
+all conversations. Every selected system prompt becomes a `ChatCompletionAgent`,
+and a `RoundRobinGroupChatManager` rotates agents in turn. When only one agent is
+chosen, the orchestrator streams tokens through its `ResponseCallback`, so the
+client never talks to `IChatCompletionService` directly.
 
 ```csharp
 var ruToEn = new ChatCompletionAgent
