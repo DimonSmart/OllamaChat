@@ -256,8 +256,6 @@
 
     private List<AgentDescription> agents = new();
     private List<AgentDescription> selectedAgents { get; set; } = new();
-    public bool AutoSelectFunctions { get; set; }
-    public int AutoSelectCount { get; set; }
 
     [CascadingParameter(Name = "UseAgentResponses")]
     public bool UseAgentResponses { get; set; }
@@ -344,10 +342,6 @@
     private async Task LoadUserSettings()
     {
         userSettings = await UserSettingsService.GetSettingsAsync();
-        AutoSelectFunctions = userSettings.DefaultAutoSelectCount > 0;
-        AutoSelectCount = userSettings.DefaultAutoSelectCount > 0
-            ? userSettings.DefaultAutoSelectCount
-            : 3;
         stopAgentName = userSettings.StopAgentName;
         stopPhrase = userSettings.StopPhrase;
     }
@@ -390,8 +384,6 @@
             SelectedModel?.Name ?? string.Empty,
             allFunctions,
             UseAgentResponses,
-            AutoSelectFunctions,
-            AutoSelectCount,
             maximumInvocationCount,
             stopAgentName,
             stopPhrase);

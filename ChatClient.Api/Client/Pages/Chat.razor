@@ -216,8 +216,6 @@
 
     private List<AgentDescription> agents = new();
     private AgentDescription? selectedAgent { get; set; }
-    public bool AutoSelectFunctions { get; set; }
-    public int AutoSelectCount { get; set; }
 
     [CascadingParameter(Name = "UseAgentResponses")]
     public bool UseAgentResponses { get; set; }
@@ -293,10 +291,6 @@
     private async Task LoadUserSettings()
     {
         userSettings = await UserSettingsService.GetSettingsAsync();
-        AutoSelectFunctions = userSettings.DefaultAutoSelectCount > 0;
-        AutoSelectCount = userSettings.DefaultAutoSelectCount > 0
-            ? userSettings.DefaultAutoSelectCount
-            : 3;
     }
 
 
@@ -318,12 +312,7 @@
         var chatConfiguration = new ChatConfiguration(
             SelectedModel?.Name ?? string.Empty,
             functions,
-            UseAgentResponses,
-            AutoSelectFunctions,
-            AutoSelectCount,
-            1,
-            string.Empty,
-            string.Empty);
+            UseAgentResponses);
 
         await ChatService.AddUserMessageAndAnswerAsync(messageData.text.Trim(), chatConfiguration, messageData.files);
         await ScrollToBottom();
