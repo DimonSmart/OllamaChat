@@ -211,7 +211,7 @@
     private bool IsOnChatPage()
     {
         var currentPath = NavigationManager.ToAbsoluteUri(NavigationManager.Uri).LocalPath;
-        return currentPath == "/" || currentPath == "/chat";
+        return currentPath == "/" || currentPath == "/chat" || currentPath == "/multi-agent-chat";
     }
 
     private void NewChat()
