@@ -22,12 +22,28 @@ public class ChatService(
 {
     private CancellationTokenSource? _cancellationTokenSource;
     private StreamingMessageManager _streamingManager = null!;
-    private StreamingAppChatMessage? _currentStreamingMessage;
+    private readonly Dictionary<string, StreamState> _activeStreams = new();
     private List<SystemPrompt> _agentDescriptions = [];
     private readonly List<ChatCompletionAgent> _agents = [];
     private RoundRobinGroupChatManager _groupChatManager = new();
     private GroupChatOrchestration? _chatOrchestration;
     private InProcessRuntime? _runtime;
+
+    private sealed class StreamState
+    {
+        public StreamingAppChatMessage Message { get; }
+        public int ApproximateTokenCount { get; set; }
+        public DateTime StartTime { get; set; }
+        public int FunctionCallStartIndex { get; set; }
+
+        public StreamState(StreamingAppChatMessage message, int functionCallStartIndex)
+        {
+            Message = message;
+            StartTime = DateTime.Now;
+            FunctionCallStartIndex = functionCallStartIndex;
+            ApproximateTokenCount = 0;
+        }
+    }
     public event Action<bool>? LoadingStateChanged;
     public event Action? ChatInitialized;
     public event Func<IAppChatMessage, Task>? MessageAdded;
@@ -52,6 +68,7 @@ public class ChatService(
         }
 
         Messages.Clear();
+        _activeStreams.Clear();
         _streamingManager = new StreamingMessageManager(MessageUpdated);
         _agentDescriptions = agentsList;
         _agents.Clear();
@@ -75,18 +92,21 @@ public class ChatService(
         _agents.Clear();
         _chatOrchestration = null;
         _runtime = null;
+        _activeStreams.Clear();
     }
 
     public async Task CancelAsync()
     {
         _cancellationTokenSource?.Cancel();
 
-        // Handle the current streaming message if it exists
-        if (_streamingManager != null && _currentStreamingMessage != null)
+        if (_streamingManager != null && _activeStreams.Any())
         {
-            AppChatMessage canceledMessage = _streamingManager.CancelStreaming(_currentStreamingMessage);
-            await ReplaceStreamingMessageWithFinal(_currentStreamingMessage, canceledMessage);
-            _currentStreamingMessage = null;
+            foreach (var state in _activeStreams.Values.ToList())
+            {
+                AppChatMessage canceledMessage = _streamingManager.CancelStreaming(state.Message);
+                await ReplaceStreamingMessageWithFinal(state.Message, canceledMessage);
+            }
+            _activeStreams.Clear();
         }
 
         UpdateLoadingState(false);
@@ -138,55 +158,8 @@ public class ChatService(
         logger.LogInformation("Processing response with model: {ModelName}", chatConfiguration.ModelName);
 
         List<FunctionCallRecord> functionCalls = [];
-        var lastUpdateTime = DateTime.MinValue;
         const int updateIntervalMs = 500;
-        var approximateTokenCount = 0;
-        var startTime = DateTime.Now;
-        StreamingAppChatMessage? streamingMessage = null;
-        string? currentAgent = null;
-        int functionCallStartIndex = 0;
-
-        async ValueTask FinalizeStreamingMessageAsync()
-        {
-            if (streamingMessage != null && !streamingMessage.IsCanceled)
-            {
-                await (MessageUpdated?.Invoke(streamingMessage) ?? Task.CompletedTask);
-
-                var messageFunctionCalls = functionCalls.Skip(functionCallStartIndex).ToList();
-                foreach (var fc in messageFunctionCalls)
-                {
-                    streamingMessage.AddFunctionCall(fc);
-                }
-
-                TimeSpan processingTime = DateTime.Now - startTime;
-                var statistics = _streamingManager.BuildStatistics(
-                    processingTime,
-                    chatConfiguration,
-                    approximateTokenCount,
-                    messageFunctionCalls.Select(fc => fc.Server).Distinct());
-
-                var finalMessage = _streamingManager.CompleteStreaming(streamingMessage, statistics);
-                await ReplaceStreamingMessageWithFinal(streamingMessage, finalMessage);
-            }
-
-            streamingMessage = null;
-            _currentStreamingMessage = null;
-            currentAgent = null;
-            approximateTokenCount = 0;
-            startTime = DateTime.Now;
-            functionCallStartIndex = functionCalls.Count;
-        }
-
-        async ValueTask StartStreamingMessageAsync(string agentName)
-        {
-            streamingMessage = _streamingManager.CreateStreamingMessage(null, agentName);
-            _currentStreamingMessage = streamingMessage;
-            currentAgent = agentName;
-            functionCallStartIndex = functionCalls.Count;
-            approximateTokenCount = 0;
-            startTime = DateTime.Now;
-            await AddMessageAsync(streamingMessage);
-        }
+        Dictionary<string, DateTime> lastUpdateTimes = new();
 
         try
         {
@@ -230,7 +203,6 @@ public class ChatService(
                             {
                                 if (message.Role != AuthorRole.Assistant)
                                 {
-                                    await FinalizeStreamingMessageAsync();
                                     ChatRole role = ChatRole.Assistant;
                                     if (message.Role == AuthorRole.System)
                                     {
@@ -247,23 +219,26 @@ public class ChatService(
                                 }
 
                                 var agentName = message.AuthorName ?? string.Empty;
-                                if (streamingMessage == null || agentName != currentAgent)
+                                if (!_activeStreams.TryGetValue(agentName, out var state))
                                 {
-                                    await FinalizeStreamingMessageAsync();
-                                    await StartStreamingMessageAsync(agentName);
+                                    var stream = _streamingManager.CreateStreamingMessage(null, agentName);
+                                    state = new StreamState(stream, functionCalls.Count);
+                                    _activeStreams[agentName] = state;
+                                    lastUpdateTimes[agentName] = DateTime.MinValue;
+                                    await AddMessageAsync(stream);
                                 }
 
-                                if (!string.IsNullOrEmpty(message.Content) && streamingMessage != null)
+                                if (!string.IsNullOrEmpty(message.Content))
                                 {
-                                    streamingMessage.Append(message.Content);
-                                    approximateTokenCount++;
+                                    state.Message.Append(message.Content);
+                                    state.ApproximateTokenCount++;
                                     DateTime now = DateTime.Now;
-                                    if ((now - lastUpdateTime).TotalMilliseconds >= updateIntervalMs)
+                                    if ((now - lastUpdateTimes[agentName]).TotalMilliseconds >= updateIntervalMs)
                                     {
-                                        lastUpdateTime = now;
+                                        lastUpdateTimes[agentName] = now;
                                         if (MessageUpdated != null)
                                         {
-                                            await MessageUpdated(streamingMessage);
+                                            await MessageUpdated(state.Message);
                                         }
                                     }
 
@@ -296,13 +271,11 @@ public class ChatService(
         catch (ModelDoesNotSupportToolsException ex)
         {
             logger.LogWarning(ex, "Model {ModelName} does not support function calling", chatConfiguration.ModelName);
-            if (streamingMessage != null)
+            foreach (var state in _activeStreams.Values.ToList())
             {
-                RemoveStreamingMessage(streamingMessage);
-                streamingMessage = null;
-                _currentStreamingMessage = null;
-                currentAgent = null;
+                RemoveStreamingMessage(state.Message);
             }
+            _activeStreams.Clear();
 
             string errorMessage = chatConfiguration.Functions.Any()
                 ? $"⚠️ The model **{chatConfiguration.ModelName}** does not support function calling. Please either:\n\n" +
@@ -317,18 +290,37 @@ public class ChatService(
         {
             const string errorPrefix = "Agent Error";
             logger.LogError(ex, "Error processing response");
-            if (streamingMessage != null)
+            foreach (var state in _activeStreams.Values.ToList())
             {
-                RemoveStreamingMessage(streamingMessage);
-                streamingMessage = null;
-                _currentStreamingMessage = null;
-                currentAgent = null;
+                RemoveStreamingMessage(state.Message);
             }
+            _activeStreams.Clear();
             await HandleError($"{errorPrefix}: {ex.Message}");
         }
         finally
         {
-            await FinalizeStreamingMessageAsync();
+            foreach (var kvp in _activeStreams.ToList())
+            {
+                var state = kvp.Value;
+                await (MessageUpdated?.Invoke(state.Message) ?? Task.CompletedTask);
+
+                var messageFunctionCalls = functionCalls.Skip(state.FunctionCallStartIndex).ToList();
+                foreach (var fc in messageFunctionCalls)
+                {
+                    state.Message.AddFunctionCall(fc);
+                }
+
+                TimeSpan processingTime = DateTime.Now - state.StartTime;
+                var statistics = _streamingManager.BuildStatistics(
+                    processingTime,
+                    chatConfiguration,
+                    state.ApproximateTokenCount,
+                    messageFunctionCalls.Select(fc => fc.Server).Distinct());
+
+                var finalMessage = _streamingManager.CompleteStreaming(state.Message, statistics);
+                await ReplaceStreamingMessageWithFinal(state.Message, finalMessage);
+                _activeStreams.Remove(kvp.Key);
+            }
         }
     }
 
@@ -358,7 +350,6 @@ public class ChatService(
     {
         _cancellationTokenSource?.Dispose();
         _cancellationTokenSource = null;
-        _currentStreamingMessage = null;
         UpdateLoadingState(false);
     }
 
