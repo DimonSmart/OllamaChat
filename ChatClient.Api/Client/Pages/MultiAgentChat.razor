@@ -14,10 +14,8 @@
 @using ChatClient.Api.Client.Services
 @using ChatClient.Api.Client.Components
 @using ChatClient.Api.Client.ViewModels
-@using ChatClient.Api.Services
 
 @implements IAsyncDisposable
-@inject KernelService KernelService
 @inject IJSRuntime JSRuntime
 @inject NavigationManager NavigationManager
 @inject IDialogService DialogService
@@ -72,27 +70,6 @@
                     <MudNumericField T="int" @bind-Value="maximumInvocationCount" Min="1" Label="Rounds" Variant="Variant.Outlined" FullWidth="true" Class="mt-4" />
                     <MudTextField T="string" @bind-Value="stopAgentName" Label="Stop Agent" Variant="Variant.Outlined" FullWidth="true" Class="mt-4" />
                     <MudTextField T="string" @bind-Value="stopPhrase" Label="Stop Phrase" Variant="Variant.Outlined" FullWidth="true" Class="mt-4" />
-
-                    @if (selectedAgents.Any())
-                    {
-                        @foreach (var agent in selectedAgents)
-                        {
-                            <MudSelect T="string"
-                                       Label="@($"{agent.Name} Functions")"
-                                       SelectedValues="agent.Functions"
-                                       SelectedValuesChanged="funcs => agent.Functions = funcs.ToList()"
-                                       MultiSelection="true"
-                                       Variant="Variant.Outlined"
-                                       FullWidth="true"
-                                       Dense="true"
-                                       Class="mt-4">
-                                @foreach (var fn in availableFunctionNames)
-                                {
-                                    <MudSelectItem Value="@fn">@fn</MudSelectItem>
-                                }
-                            </MudSelect>
-                        }
-                    }
 
                     <MudButton Variant="Variant.Filled"
                                Color="Color.Primary"
@@ -269,7 +246,6 @@
     private string stopPhrase = string.Empty;
 
     private UserSettings userSettings = new();
-    private List<string> availableFunctionNames = new();
     private Dictionary<string, AgentStatistics> agentStatistics = new();
 
     private Func<ChatMessageViewModel, Task>? _messageAddedHandler;
@@ -283,7 +259,6 @@
 
         await LoadAgents();
         await LoadUserSettings();
-        await LoadAvailableFunctions();
 
         ChatService.LoadingStateChanged += OnLoadingStateChanged;
         ChatViewModelService.ChatInitialized += OnChatInitialized;
@@ -345,21 +320,6 @@
         stopAgentName = userSettings.StopAgentName;
         stopPhrase = userSettings.StopPhrase;
     }
-
-    private async Task LoadAvailableFunctions()
-    {
-        try
-        {
-            availableFunctionNames = (await KernelService.GetAvailableFunctionsAsync())
-                .Select(f => f.Name)
-                .ToList();
-        }
-        catch
-        {
-            availableFunctionNames = new List<string>();
-        }
-    }
-
 
     private void StartChat()
     {
