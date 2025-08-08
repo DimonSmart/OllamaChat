@@ -176,7 +176,10 @@ public class ChatService(
                 {
                     if (_chatOrchestration == null || _groupChatManager.MaximumInvocationCount != chatConfiguration.MaximumInvocationCount)
                     {
-                        _groupChatManager = new RoundRobinGroupChatManager { MaximumInvocationCount = chatConfiguration.MaximumInvocationCount };
+                        _groupChatManager = new ReasonableRoundRobinGroupChatManager(chatConfiguration.StopAgentName, chatConfiguration.StopPhrase)
+                        {
+                            MaximumInvocationCount = chatConfiguration.MaximumInvocationCount
+                        };
 
                         _agents.Clear();
                         foreach (var desc in _agentDescriptions)
