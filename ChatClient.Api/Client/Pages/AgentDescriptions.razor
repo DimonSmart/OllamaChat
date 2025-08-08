@@ -180,8 +180,6 @@
                                    SelectedFunctions="@editingAgent.Functions"
                                    SelectedFunctionsChanged="@(v => editingAgent.Functions = v)"
                                    @bind-Expanded="functionsExpanded"
-                                   AutoSelectFunctions="@editingAgent.AutoSelectFunctions"
-                                   AutoSelectFunctionsChanged="@(v => editingAgent.AutoSelectFunctions = v)"
                                    AutoSelectCount="@editingAgent.AutoSelectCount"
                                    AutoSelectCountChanged="@(v => editingAgent.AutoSelectCount = v)" />
             </div>
@@ -295,7 +293,6 @@
             Content = "",
             ModelName = null,
             Functions = new(),
-            AutoSelectFunctions = false,
             AutoSelectCount = 0
         };
 
@@ -334,7 +331,6 @@
             CreatedAt = agent.CreatedAt,
             UpdatedAt = agent.UpdatedAt,
             Functions = new List<string>(agent.Functions),
-            AutoSelectFunctions = agent.AutoSelectFunctions,
             AutoSelectCount = agent.AutoSelectCount
         };
 
