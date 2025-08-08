@@ -29,7 +29,7 @@ public class AgentDescriptionServiceTests
                 Name = "Test",
                 Content = "Test content",
                 ModelName = "test-model",
-                Functions = ["fn1", "fn2"],
+                Functions = ["srv:fn1", "srv:fn2"],
                 AutoSelectFunctions = true,
                 AutoSelectCount = 3
             };
@@ -41,7 +41,7 @@ public class AgentDescriptionServiceTests
 
             Assert.NotNull(retrieved);
             Assert.Equal("test-model", retrieved!.ModelName);
-            Assert.Equal(["fn1", "fn2"], retrieved.Functions);
+            Assert.Equal(["srv:fn1", "srv:fn2"], retrieved.Functions);
             Assert.True(retrieved.AutoSelectFunctions);
             Assert.Equal(3, retrieved.AutoSelectCount);
         }

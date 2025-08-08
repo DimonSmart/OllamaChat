@@ -92,11 +92,7 @@ public class StreamingMessageManager
         var statisticsBuilder = new System.Text.StringBuilder();
         statisticsBuilder.Append($"⏱️ {processingTime.TotalSeconds:F1}s");
         statisticsBuilder.Append($" • 🤖 {chatConfiguration.ModelName}");
-        if (chatConfiguration.AutoSelectFunctions && chatConfiguration.AutoSelectCount > 0)
-        {
-            statisticsBuilder.Append($" • 🔧 auto {chatConfiguration.AutoSelectCount}");
-        }
-        else if (chatConfiguration.Functions.Any())
+        if (chatConfiguration.Functions.Any())
         {
             statisticsBuilder.Append($" • 🔧 {chatConfiguration.Functions.Count} funcs");
         }
