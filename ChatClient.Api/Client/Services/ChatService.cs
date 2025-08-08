@@ -25,7 +25,7 @@ public class ChatService(
     private readonly Dictionary<string, StreamState> _activeStreams = new();
     private List<AgentDescription> _agentDescriptions = [];
     private readonly List<ChatCompletionAgent> _agents = [];
-    private RoundRobinGroupChatManager _groupChatManager = new();
+    private ReasonableRoundRobinGroupChatManager _groupChatManager = new(string.Empty, string.Empty);
     private GroupChatOrchestration? _chatOrchestration;
     private InProcessRuntime? _runtime;
 
@@ -79,7 +79,7 @@ public class ChatService(
             Messages.Add(systemMessage);
         }
 
-        _groupChatManager = new RoundRobinGroupChatManager();
+        _groupChatManager = new ReasonableRoundRobinGroupChatManager(string.Empty, string.Empty);
         _chatOrchestration = null;
 
         ChatInitialized?.Invoke();
@@ -170,97 +170,86 @@ public class ChatService(
             {
                 if (_runtime != null)
                 {
-                    if (_chatOrchestration == null || _groupChatManager.MaximumInvocationCount != chatConfiguration.MaximumInvocationCount)
+                    _groupChatManager = new ReasonableRoundRobinGroupChatManager(chatConfiguration.StopAgentName, chatConfiguration.StopPhrase)
                     {
-                        _groupChatManager = new ReasonableRoundRobinGroupChatManager(chatConfiguration.StopAgentName, chatConfiguration.StopPhrase)
-                        {
-                            MaximumInvocationCount = chatConfiguration.MaximumInvocationCount
-                        };
+                        MaximumInvocationCount = chatConfiguration.MaximumInvocationCount
+                    };
 
-                        _agents.Clear();
-                        foreach (var desc in _agentDescriptions)
-                        {
-                            var agentKernel = await kernelService.CreateKernelAsync(
-                                chatConfiguration with
-                                {
-                                    Functions = desc.Functions,
-                                    ModelName = string.IsNullOrWhiteSpace(desc.ModelName)
-                                        ? chatConfiguration.ModelName
-                                        : desc.ModelName
-                                },
-                                desc.AutoSelectFunctions ? userMessage : null,
-                                desc.AutoSelectFunctions ? desc.AutoSelectCount : null);
-
-                            agentKernel.FunctionInvocationFilters.Add(trackingFilter);
-                            kernels.Add(agentKernel);
-
-                            _agents.Add(new ChatCompletionAgent
+                    _agents.Clear();
+                    foreach (var desc in _agentDescriptions)
+                    {
+                        var agentKernel = await kernelService.CreateKernelAsync(
+                            chatConfiguration with
                             {
-                                Name = !string.IsNullOrWhiteSpace(desc.AgentName) ? desc.AgentName : desc.Name,
-                                Description = desc.Name,
-                                Instructions = desc.Content,
-                                Kernel = agentKernel
-                            });
-                        }
+                                Functions = desc.Functions,
+                                ModelName = string.IsNullOrWhiteSpace(desc.ModelName)
+                                    ? chatConfiguration.ModelName
+                                    : desc.ModelName
+                            },
+                            desc.AutoSelectFunctions ? userMessage : null,
+                            desc.AutoSelectFunctions ? desc.AutoSelectCount : null);
 
-                        _chatOrchestration = new GroupChatOrchestration(_groupChatManager, _agents.ToArray())
+                        agentKernel.FunctionInvocationFilters.Add(trackingFilter);
+                        kernels.Add(agentKernel);
+
+                        _agents.Add(new ChatCompletionAgent
                         {
-                            ResponseCallback = async message =>
+                            Name = !string.IsNullOrWhiteSpace(desc.AgentName) ? desc.AgentName : desc.Name,
+                            Description = desc.Name,
+                            Instructions = desc.Content,
+                            Kernel = agentKernel
+                        });
+                    }
+
+                    _chatOrchestration = new GroupChatOrchestration(_groupChatManager, _agents.ToArray())
+                    {
+                        ResponseCallback = async message =>
+                        {
+                            if (message.Role != AuthorRole.Assistant)
                             {
-                                if (message.Role != AuthorRole.Assistant)
+                                ChatRole role = ChatRole.Assistant;
+                                if (message.Role == AuthorRole.System)
                                 {
-                                    ChatRole role = ChatRole.Assistant;
-                                    if (message.Role == AuthorRole.System)
-                                    {
-                                        role = ChatRole.System;
-                                    }
-                                    else if (message.Role == AuthorRole.User)
-                                    {
-                                        role = ChatRole.User;
-                                    }
-
-                                    var appMessage = new AppChatMessage(message.Content ?? string.Empty, DateTime.Now, role, message.AuthorName ?? string.Empty);
-                                    await AddMessageAsync(appMessage);
-                                    return;
+                                    role = ChatRole.System;
+                                }
+                                else if (message.Role == AuthorRole.User)
+                                {
+                                    role = ChatRole.User;
                                 }
 
-                                var agentName = message.AuthorName ?? string.Empty;
-                                if (!_activeStreams.TryGetValue(agentName, out var state))
-                                {
-                                    var stream = _streamingManager.CreateStreamingMessage(null, agentName);
-                                    state = new StreamState(stream, functionCalls.Count);
-                                    _activeStreams[agentName] = state;
-                                    lastUpdateTimes[agentName] = DateTime.MinValue;
-                                    await AddMessageAsync(stream);
-                                }
-
-                                if (!string.IsNullOrEmpty(message.Content))
-                                {
-                                    state.Message.Append(message.Content);
-                                    state.ApproximateTokenCount++;
-                                    DateTime now = DateTime.Now;
-                                    if ((now - lastUpdateTimes[agentName]).TotalMilliseconds >= updateIntervalMs)
-                                    {
-                                        lastUpdateTimes[agentName] = now;
-                                        if (MessageUpdated != null)
-                                        {
-                                            await MessageUpdated(state.Message);
-                                        }
-                                    }
-
-                                    logger.LogTrace("Agent {Agent}: {Token}", agentName, message.Content);
-                                }
+                                var appMessage = new AppChatMessage(message.Content ?? string.Empty, DateTime.Now, role, message.AuthorName ?? string.Empty);
+                                await AddMessageAsync(appMessage);
+                                return;
                             }
-                        };
-                    }
-                    else
-                    {
-                        foreach (var agent in _agents)
-                        {
-                            agent.Kernel.FunctionInvocationFilters.Add(trackingFilter);
-                            kernels.Add(agent.Kernel);
+
+                            var agentName = message.AuthorName ?? string.Empty;
+                            if (!_activeStreams.TryGetValue(agentName, out var state))
+                            {
+                                var stream = _streamingManager.CreateStreamingMessage(null, agentName);
+                                state = new StreamState(stream, functionCalls.Count);
+                                _activeStreams[agentName] = state;
+                                lastUpdateTimes[agentName] = DateTime.MinValue;
+                                await AddMessageAsync(stream);
+                            }
+
+                            if (!string.IsNullOrEmpty(message.Content))
+                            {
+                                state.Message.Append(message.Content);
+                                state.ApproximateTokenCount++;
+                                DateTime now = DateTime.Now;
+                                if ((now - lastUpdateTimes[agentName]).TotalMilliseconds >= updateIntervalMs)
+                                {
+                                    lastUpdateTimes[agentName] = now;
+                                    if (MessageUpdated != null)
+                                    {
+                                        await MessageUpdated(state.Message);
+                                    }
+                                }
+
+                                logger.LogTrace("Agent {Agent}: {Token}", agentName, message.Content);
+                            }
                         }
-                    }
+                    };
 
                     var invokeResult = await _chatOrchestration.InvokeAsync(userMessage, _runtime, cancellationToken);
                     await invokeResult.GetValueAsync(TimeSpan.FromSeconds(30));
