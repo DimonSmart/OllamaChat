@@ -142,13 +142,49 @@ public class ChatService(
         const int updateIntervalMs = 500;
         var approximateTokenCount = 0;
         var startTime = DateTime.Now;
-
-        bool singleAgent = _agentDescriptions.Count == 1;
         StreamingAppChatMessage? streamingMessage = null;
-        if (singleAgent)
+        string? currentAgent = null;
+        int functionCallStartIndex = 0;
+
+        async ValueTask FinalizeStreamingMessageAsync()
         {
-            streamingMessage = _streamingManager.CreateStreamingMessage(functionCalls, null);
+            if (streamingMessage != null && !streamingMessage.IsCanceled)
+            {
+                await (MessageUpdated?.Invoke(streamingMessage) ?? Task.CompletedTask);
+
+                var messageFunctionCalls = functionCalls.Skip(functionCallStartIndex).ToList();
+                foreach (var fc in messageFunctionCalls)
+                {
+                    streamingMessage.AddFunctionCall(fc);
+                }
+
+                TimeSpan processingTime = DateTime.Now - startTime;
+                var statistics = _streamingManager.BuildStatistics(
+                    processingTime,
+                    chatConfiguration,
+                    approximateTokenCount,
+                    messageFunctionCalls.Select(fc => fc.Server).Distinct());
+
+                var finalMessage = _streamingManager.CompleteStreaming(streamingMessage, statistics);
+                await ReplaceStreamingMessageWithFinal(streamingMessage, finalMessage);
+            }
+
+            streamingMessage = null;
+            _currentStreamingMessage = null;
+            currentAgent = null;
+            approximateTokenCount = 0;
+            startTime = DateTime.Now;
+            functionCallStartIndex = functionCalls.Count;
+        }
+
+        async ValueTask StartStreamingMessageAsync(string agentName)
+        {
+            streamingMessage = _streamingManager.CreateStreamingMessage(null, agentName);
             _currentStreamingMessage = streamingMessage;
+            currentAgent = agentName;
+            functionCallStartIndex = functionCalls.Count;
+            approximateTokenCount = 0;
+            startTime = DateTime.Now;
             await AddMessageAsync(streamingMessage);
         }
 
@@ -190,37 +226,49 @@ public class ChatService(
 
                         _chatOrchestration = new GroupChatOrchestration(_groupChatManager, _agents.ToArray())
                         {
-                            ResponseCallback = message =>
+                            ResponseCallback = async message =>
                             {
-                                if (singleAgent && streamingMessage != null)
+                                if (message.Role != AuthorRole.Assistant)
                                 {
-                                    if (!string.IsNullOrEmpty(message.Content))
+                                    await FinalizeStreamingMessageAsync();
+                                    ChatRole role = ChatRole.Assistant;
+                                    if (message.Role == AuthorRole.System)
                                     {
-                                        streamingMessage.Append(message.Content);
-                                        approximateTokenCount++;
-                                        DateTime now = DateTime.Now;
-                                        if ((now - lastUpdateTime).TotalMilliseconds >= updateIntervalMs)
+                                        role = ChatRole.System;
+                                    }
+                                    else if (message.Role == AuthorRole.User)
+                                    {
+                                        role = ChatRole.User;
+                                    }
+
+                                    var appMessage = new AppChatMessage(message.Content ?? string.Empty, DateTime.Now, role, message.AuthorName ?? string.Empty);
+                                    await AddMessageAsync(appMessage);
+                                    return;
+                                }
+
+                                var agentName = message.AuthorName ?? string.Empty;
+                                if (streamingMessage == null || agentName != currentAgent)
+                                {
+                                    await FinalizeStreamingMessageAsync();
+                                    await StartStreamingMessageAsync(agentName);
+                                }
+
+                                if (!string.IsNullOrEmpty(message.Content) && streamingMessage != null)
+                                {
+                                    streamingMessage.Append(message.Content);
+                                    approximateTokenCount++;
+                                    DateTime now = DateTime.Now;
+                                    if ((now - lastUpdateTime).TotalMilliseconds >= updateIntervalMs)
+                                    {
+                                        lastUpdateTime = now;
+                                        if (MessageUpdated != null)
                                         {
-                                            lastUpdateTime = now;
-                                            return new ValueTask(MessageUpdated?.Invoke(streamingMessage) ?? Task.CompletedTask);
+                                            await MessageUpdated(streamingMessage);
                                         }
                                     }
 
-                                    return ValueTask.CompletedTask;
+                                    logger.LogTrace("Agent {Agent}: {Token}", agentName, message.Content);
                                 }
-
-                                ChatRole role = ChatRole.Assistant;
-                                if (message.Role == AuthorRole.System)
-                                {
-                                    role = ChatRole.System;
-                                }
-                                else if (message.Role == AuthorRole.User)
-                                {
-                                    role = ChatRole.User;
-                                }
-
-                                var appMessage = new AppChatMessage(message.Content ?? string.Empty, DateTime.Now, role, message.AuthorName ?? string.Empty);
-                                return new ValueTask(AddMessageAsync(appMessage));
                             }
                         };
                     }
@@ -244,21 +292,6 @@ public class ChatService(
                     kernel.FunctionInvocationFilters.Remove(trackingFilter);
                 }
             }
-
-            if (streamingMessage != null)
-            {
-                await (MessageUpdated?.Invoke(streamingMessage) ?? Task.CompletedTask);
-
-                TimeSpan processingTime = DateTime.Now - startTime;
-                var statistics = _streamingManager.BuildStatistics(
-                    processingTime,
-                    chatConfiguration,
-                    approximateTokenCount,
-                    functionCalls.Select(fc => fc.Server).Distinct());
-                var finalMessage = _streamingManager.CompleteStreaming(streamingMessage, statistics);
-                await ReplaceStreamingMessageWithFinal(streamingMessage, finalMessage);
-                _currentStreamingMessage = null;
-            }
         }
         catch (ModelDoesNotSupportToolsException ex)
         {
@@ -266,7 +299,9 @@ public class ChatService(
             if (streamingMessage != null)
             {
                 RemoveStreamingMessage(streamingMessage);
+                streamingMessage = null;
                 _currentStreamingMessage = null;
+                currentAgent = null;
             }
 
             string errorMessage = chatConfiguration.Functions.Any()
@@ -285,9 +320,15 @@ public class ChatService(
             if (streamingMessage != null)
             {
                 RemoveStreamingMessage(streamingMessage);
+                streamingMessage = null;
                 _currentStreamingMessage = null;
+                currentAgent = null;
             }
             await HandleError($"{errorPrefix}: {ex.Message}");
+        }
+        finally
+        {
+            await FinalizeStreamingMessageAsync();
         }
     }
 
