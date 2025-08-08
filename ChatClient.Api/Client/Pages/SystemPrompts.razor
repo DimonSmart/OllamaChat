@@ -267,6 +267,7 @@
             Name = "",
             Content = "",
             ModelName = null,
+            Functions = new()
         };
 
         showEditAgentDialog = true;
@@ -302,7 +303,8 @@
             AgentName = agent.AgentName,
             ModelName = agent.ModelName,
             CreatedAt = agent.CreatedAt,
-            UpdatedAt = agent.UpdatedAt
+            UpdatedAt = agent.UpdatedAt,
+            Functions = new List<string>(agent.Functions)
         };
 
         showEditAgentDialog = true;

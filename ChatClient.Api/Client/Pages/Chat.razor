@@ -3,6 +3,7 @@
 @using Microsoft.AspNetCore.Components
 @using Microsoft.AspNetCore.Components.Web
 @using System.Collections.ObjectModel
+@using System.Collections.Generic
 @using System.Text.Json
 @using ChatClient.Shared.Models
 @using System.Threading
@@ -15,7 +16,6 @@
 @using ChatClient.Api.Services
 
 @implements IAsyncDisposable
-@inject KernelService KernelService
 @inject IJSRuntime JSRuntime
 @inject NavigationManager NavigationManager
 @inject IDialogService DialogService
@@ -216,11 +216,7 @@
 
     private List<SystemPrompt> agents = new();
     private SystemPrompt? selectedAgent { get; set; }
-    [CascadingParameter(Name = "SelectedFunctions")]
-    public List<string> SelectedFunctions { get; set; } = new();
-    [CascadingParameter(Name = "AutoSelectFunctions")]
     public bool AutoSelectFunctions { get; set; }
-    [CascadingParameter(Name = "AutoSelectCount")]
     public int AutoSelectCount { get; set; }
 
     [CascadingParameter(Name = "UseAgentResponses")]
@@ -318,9 +314,10 @@
         if (string.IsNullOrWhiteSpace(messageData.text) || isLLMAnswering)
             return;
 
+        var functions = selectedAgent?.Functions ?? new List<string>();
         var chatConfiguration = new ChatConfiguration(
             SelectedModel?.Name ?? string.Empty,
-            SelectedFunctions,
+            functions,
             UseAgentResponses,
             AutoSelectFunctions,
             AutoSelectCount,

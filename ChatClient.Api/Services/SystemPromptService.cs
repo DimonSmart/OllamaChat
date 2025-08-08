@@ -92,6 +92,7 @@ public class SystemPromptService : ISystemPromptService
 
             prompt.CreatedAt = DateTime.UtcNow;
             prompt.UpdatedAt = DateTime.UtcNow;
+            prompt.Functions ??= new();
 
             agents.Add(prompt);
             await WriteToFileAsync(agents);
@@ -124,6 +125,7 @@ public class SystemPromptService : ISystemPromptService
             }
 
             prompt.UpdatedAt = DateTime.UtcNow;
+            prompt.Functions ??= new();
             agents[existingIndex] = prompt;
 
             await WriteToFileAsync(agents);
@@ -177,7 +179,14 @@ public class SystemPromptService : ISystemPromptService
         }
 
         var json = await File.ReadAllTextAsync(_filePath);
-        return JsonSerializer.Deserialize<List<SystemPrompt>>(json) ?? [];
+        var agents = JsonSerializer.Deserialize<List<SystemPrompt>>(json) ?? [];
+
+        foreach (var agent in agents)
+        {
+            agent.Functions ??= new();
+        }
+
+        return agents;
     }
 
     private static string SerializeAgents(List<SystemPrompt> agents)
