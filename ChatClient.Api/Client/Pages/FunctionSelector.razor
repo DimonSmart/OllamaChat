@@ -2,43 +2,47 @@
 @using MudBlazor
 
 <MudCollapse Expanded="@Expanded" ExpandedChanged="@(v => ExpandedChanged.InvokeAsync(v))">
-    <MudPaper Class="pa-4">
-        <MudText Typo="Typo.subtitle1">Select Functions to use:</MudText>
+    <MudCard Outlined="true" Class="pa-4">
+        <MudCardHeader Class="pb-2">
+            <CardHeaderContent>
+                <MudText Typo="Typo.h6">Function Settings</MudText>
+            </CardHeaderContent>
+        </MudCardHeader>
+        <MudCardContent Class="pt-0">
+            <MudNumericField T="int" Value="@AutoSelectCount" ValueChanged="OnAutoSelectCountChanged" Class="mt-2" Min="0" Max="10"
+                             Variant="Variant.Outlined" Label="Auto-select count" Immediate="true" 
+                             Style="max-width: 200px;"
+                             title="Set auto-select count to 0 to choose functions manually. It is not recommended to select more than 5 functions." />
+            <MudExpansionPanels Class="mt-2">
+                @foreach (var group in AvailableFunctions.GroupBy(f => f.ServerName))
+                {
+                    <MudExpansionPanel Text="@group.Key">
+                        <MudStack Spacing="1">
+                            <MudCheckBox T="bool" Label="Select All"
+                                         ValueChanged="@(async (bool v) => await OnServerToggled(group.Key, v))"
+                                         Value="@serverSelections.GetValueOrDefault(group.Key)"
+                                         Dense="true" Disabled="@(AutoSelectCount > 0)" />
 
-        <MudNumericField T="int" Value="@AutoSelectCount" ValueChanged="OnAutoSelectCountChanged" Class="mt-2" Min="0" Max="10"
-                         Variant="Variant.Outlined" Label="Auto-select count" Immediate="true" />
-        <MudExpansionPanels Class="mt-2">
-            @foreach (var group in AvailableFunctions.GroupBy(f => f.ServerName))
-            {
-                <MudExpansionPanel Text="@group.Key">
-                    <MudStack Spacing="1">
-                        <MudCheckBox T="bool" Label="Select All"
-                                     ValueChanged="@(async (bool v) => await OnServerToggled(group.Key, v))"
-                                     Value="@serverSelections.GetValueOrDefault(group.Key)"
-                                     Dense="true" Disabled="@(AutoSelectCount > 0)" />
-
-                        @foreach (var fn in group)
-                        {
-                            <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2" Class="ml-4">
-                                <MudCheckBox T="bool"
-                                             ValueChanged="@(async (bool v) => await OnFunctionToggled(fn, v))"
-                                             Value="@internalSelectedFunctions.Contains(fn.Name)"
-                                             Dense="true" Disabled="@(AutoSelectCount > 0)" />
-                                <div style="flex-grow:1">
-                                    <MudText Typo="Typo.body2" Class="mb-0">
-                                        <strong>@fn.DisplayName</strong> - @fn.Description
-                                    </MudText>
-                                </div>
-                            </MudStack>
-                        }
-                    </MudStack>
-                </MudExpansionPanel>
-            }
-        </MudExpansionPanels>
-        <MudText Typo="Typo.caption" Color="Color.Secondary">
-            Set auto-select count to 0 to choose functions manually. It is not recommended to select more than 5 functions.
-        </MudText>
-    </MudPaper>
+                            @foreach (var fn in group)
+                            {
+                                <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2" Class="ml-4">
+                                    <MudCheckBox T="bool"
+                                                 ValueChanged="@(async (bool v) => await OnFunctionToggled(fn, v))"
+                                                 Value="@internalSelectedFunctions.Contains(fn.Name)"
+                                                 Dense="true" Disabled="@(AutoSelectCount > 0)" />
+                                    <div style="flex-grow:1">
+                                        <MudText Typo="Typo.body2" Class="mb-0">
+                                            <strong>@fn.DisplayName</strong> - @fn.Description
+                                        </MudText>
+                                    </div>
+                                </MudStack>
+                            }
+                        </MudStack>
+                    </MudExpansionPanel>
+                }
+            </MudExpansionPanels>
+        </MudCardContent>
+    </MudCard>
 </MudCollapse>
 
 @code {

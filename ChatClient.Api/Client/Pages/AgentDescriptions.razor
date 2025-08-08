@@ -7,10 +7,10 @@
 @inject IOllamaClientService OllamaService
 @inject KernelService KernelService
 
-<PageTitle>Agents Management</PageTitle>
+<PageTitle>Agent Descriptions Management</PageTitle>
 
 <MudContainer MaxWidth="MaxWidth.ExtraLarge" Class="mt-3">
-    <MudText Class="page-header">Agents</MudText>
+    <MudText Class="page-header">Agent Descriptions</MudText>
 
     <MudPaper Elevation="3" Class="pa-3 rounded-lg">
         <MudToolBar Dense="true">
@@ -20,12 +20,12 @@
                        OnClick="AddNewAgent"
                        Class="px-4"
                        Size="Size.Small">
-                Add Agent
+                Add Agent Description
             </MudButton>
             <MudSpacer />
             <MudTextField T="string"
                           ValueChanged="@(s => OnSearch(s))"
-                          Placeholder="Search agents..."
+                          Placeholder="Search agent descriptions..."
                           Adornment="Adornment.Start"
                           AdornmentIcon="@Icons.Material.Filled.Search"
                           IconSize="Size.Medium"
@@ -87,6 +87,29 @@
                             </div>
                         </CellTemplate>
                     </TemplateColumn>
+                    <TemplateColumn Title="Functions" isEditable="false" CellStyle="text-align:center; width:80px;">
+                        <CellTemplate>
+                            @{
+                                var functionSettings = GetFunctionSettings(context.Item);
+                                var displayText = functionSettings.GetDisplayText();
+                                var tooltipText = functionSettings.GetTooltipText();
+                                var isAutoSelect = functionSettings.IsAutoSelectEnabled;
+                                var hasManualFunctions = functionSettings.HasManualFunctions;
+                            }
+                            @if (isAutoSelect)
+                            {
+                                <span title="@tooltipText">@displayText</span>
+                            }
+                            else if (hasManualFunctions)
+                            {
+                                <span style="color: #4caf50; font-size: 18px; font-weight: bold;" title="@tooltipText">@displayText</span>
+                            }
+                            else
+                            {
+                                <span style="color: #9e9e9e; font-size: 18px;" title="@tooltipText">@displayText</span>
+                            }
+                        </CellTemplate>
+                    </TemplateColumn>
                     <PropertyColumn Property="x => x.UpdatedAt" Title="Updated" Format="g" />
                     <PropertyColumn Property="x => x.CreatedAt" Title="Created" Format="g" />
                     <TemplateColumn Title="Content" isEditable="false">
@@ -117,8 +140,8 @@
                     <MudPaper Elevation="0">
                         <MudStack AlignItems="AlignItems.Center" Justify="Justify.Center" Direction="Direction.Column" Class="py-8">
                             <MudIcon Icon="@Icons.Material.Filled.FormatQuote" Color="Color.Secondary" Size="Size.Large" />
-                            <MudText Typo="Typo.h6" Class="mt-4">No agents found</MudText>
-                            <MudText Typo="Typo.body2" Class="mud-text-secondary">Click "Add Agent" to create one.</MudText>
+                            <MudText Typo="Typo.h6" Class="mt-4">No agent descriptions found</MudText>
+                            <MudText Typo="Typo.body2" Class="mud-text-secondary">Click "Add Agent Description" to create one.</MudText>
                         </MudStack>
                     </MudPaper>
                 </NoRecordsContent>
@@ -126,7 +149,7 @@
                     <MudPaper Elevation="0">
                         <MudStack AlignItems="AlignItems.Center" Justify="Justify.Center" Class="pa-8">
                             <MudProgressCircular Color="Color.Primary" Indeterminate="true" Size="Size.Medium" />
-                            <MudText Typo="Typo.body1" Class="ml-4">Loading agents...</MudText>
+                            <MudText Typo="Typo.body1" Class="ml-4">Loading agent descriptions...</MudText>
                         </MudStack>
                     </MudPaper>
                 </LoadingContent>
@@ -140,7 +163,7 @@
         <MudText Typo="Typo.h6">Confirm Delete</MudText>
     </TitleContent>
     <DialogContent>
-        <MudText>Are you sure you want to delete the agent "@agentToDelete?.Name"?</MudText>
+        <MudText>Are you sure you want to delete the agent description "@agentToDelete?.Name"?</MudText>
     </DialogContent>
     <DialogActions>
         <MudButton OnClick="CancelDelete" Size="Size.Medium">Cancel</MudButton>
@@ -150,7 +173,7 @@
 
 <MudDialog @bind-Visible="@showEditAgentDialog" Options="editDialogOptions">
     <TitleContent>
-        <MudText Typo="Typo.h6">@(editingAgent?.Id == null ? "Create New Agent" : "Edit Agent")</MudText>
+        <MudText Typo="Typo.h6">@(editingAgent?.Id == null ? "Create New Agent Description" : "Edit Agent Description")</MudText>
     </TitleContent>
     <DialogContent>
         <MudForm @ref="editAgentForm" Model="@editingAgent">
@@ -178,10 +201,11 @@
             <div class="mt-4">
                 <FunctionSelector AvailableFunctions="@availableFunctions"
                                    SelectedFunctions="@editingAgent.Functions"
-                                   SelectedFunctionsChanged="@(v => editingAgent.Functions = v)"
-                                   @bind-Expanded="functionsExpanded"
+                                   SelectedFunctionsChanged="@OnFunctionsChanged"
+                                   Expanded="true"
+                                   ExpandedChanged="@(v => functionsExpanded = v)"
                                    AutoSelectCount="@editingAgent.AutoSelectCount"
-                                   AutoSelectCountChanged="@(v => editingAgent.AutoSelectCount = v)" />
+                                   AutoSelectCountChanged="@OnAutoSelectCountChanged" />
             </div>
 
             <MudTextField @bind-Value="editingAgent.Content"
@@ -292,8 +316,13 @@
             Name = "",
             Content = "",
             ModelName = null,
-            Functions = new(),
-            AutoSelectCount = 0
+            Functions = [],
+            AutoSelectCount = 0,
+            FunctionSettings = new FunctionSettings
+            {
+                AutoSelectCount = 0,
+                SelectedFunctions = []
+            }
         };
 
         showEditAgentDialog = true;
@@ -331,7 +360,12 @@
             CreatedAt = agent.CreatedAt,
             UpdatedAt = agent.UpdatedAt,
             Functions = new List<string>(agent.Functions),
-            AutoSelectCount = agent.AutoSelectCount
+            AutoSelectCount = agent.AutoSelectCount,
+            FunctionSettings = new FunctionSettings
+            {
+                AutoSelectCount = agent.AutoSelectCount,
+                SelectedFunctions = new List<string>(agent.Functions)
+            }
         };
 
         showEditAgentDialog = true;
@@ -393,6 +427,32 @@
         return string.Empty;
     }
 
+    private FunctionSettings GetFunctionSettings(AgentDescription agent)
+    {
+        // For backward compatibility, use the new FunctionSettings if available,
+        // otherwise create from legacy properties
+        if (agent.FunctionSettings?.HasFunctions == true)
+            return agent.FunctionSettings;
+
+        return new FunctionSettings
+        {
+            AutoSelectCount = agent.AutoSelectCount,
+            SelectedFunctions = agent.Functions ?? []
+        };
+    }
+
+    private void OnFunctionsChanged(List<string> functions)
+    {
+        editingAgent.Functions = functions;
+        editingAgent.FunctionSettings.SelectedFunctions = new List<string>(functions);
+    }
+
+    private void OnAutoSelectCountChanged(int count)
+    {
+        editingAgent.AutoSelectCount = count;
+        editingAgent.FunctionSettings.AutoSelectCount = count;
+    }
+
     private void CancelEdit()
     {
         showEditAgentDialog = false;
@@ -405,11 +465,15 @@
         {
             try
             {
+                // Ensure legacy properties are synchronized with FunctionSettings
+                editingAgent.Functions = editingAgent.FunctionSettings.SelectedFunctions;
+                editingAgent.AutoSelectCount = editingAgent.FunctionSettings.AutoSelectCount;
+
                 if (editingAgent.Id == null)
                 {
                     var result = await AgentService.CreateAsync(editingAgent);
                     agents.Add(result);
-                    Snackbar.Add("Agent created successfully", Severity.Success);
+                    Snackbar.Add("Agent description created successfully", Severity.Success);
                 }
                 else
                 {
@@ -417,7 +481,7 @@
                     var result = await AgentService.UpdateAsync(editingAgent);
                     var index = agents.FindIndex(p => p.Id == editingAgent.Id);
                     if (index >= 0) agents[index] = result;
-                    Snackbar.Add("Agent updated successfully", Severity.Success);
+                    Snackbar.Add("Agent description updated successfully", Severity.Success);
                 }
 
                 showEditAgentDialog = false;
