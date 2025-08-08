@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using System.Threading.Tasks;
 
 using ChatClient.Shared.Models;
 
@@ -12,6 +13,7 @@ namespace ChatClient.Api.Client.Services;
 public class StreamingMessageManager
 {
     private readonly Func<IAppChatMessage, Task>? _messageUpdatedCallback;
+    private readonly Dictionary<Guid, StreamingAppChatMessage> _activeMessages = new();
 
     public StreamingMessageManager(Func<IAppChatMessage, Task>? messageUpdatedCallback)
     {
@@ -19,24 +21,45 @@ public class StreamingMessageManager
     }
 
     /// <summary>
-    /// Creates a new streaming message
+    /// Creates a new streaming message and registers it for tracking
     /// </summary>
     public StreamingAppChatMessage CreateStreamingMessage(List<FunctionCallRecord>? functionCalls = null, string? agentName = null)
     {
-        return new StreamingAppChatMessage(string.Empty, DateTime.Now, ChatRole.Assistant, functionCalls, agentName);
+        var message = new StreamingAppChatMessage(string.Empty, DateTime.Now, ChatRole.Assistant, functionCalls, agentName);
+        _activeMessages[message.Id] = message;
+        return message;
     }
 
+    /// <summary>
+    /// Appends content to an active streaming message and triggers update callback
+    /// </summary>
+    public async Task AppendToMessageAsync(Guid messageId, string? content)
+    {
+        if (string.IsNullOrEmpty(content))
+        {
+            return;
+        }
 
+        if (_activeMessages.TryGetValue(messageId, out var message))
+        {
+            message.Append(content);
+            if (_messageUpdatedCallback != null)
+            {
+                await _messageUpdatedCallback(message);
+            }
+        }
+    }
 
     /// <summary>
-    // Completes streaming and returns final message
-    // </summary>
+    /// Completes streaming and returns final message
+    /// </summary>
     public AppChatMessage CompleteStreaming(StreamingAppChatMessage streamingMessage, string? statistics = null)
     {
         if (!string.IsNullOrEmpty(statistics))
         {
             streamingMessage.SetStatistics(statistics);
         }
+        _activeMessages.Remove(streamingMessage.Id);
         var finalMessage = new AppChatMessage(streamingMessage.Content, streamingMessage.MsgDateTime, ChatRole.Assistant, streamingMessage.Statistics, streamingMessage.Files, streamingMessage.FunctionCalls, streamingMessage.AgentName);
         finalMessage.Id = streamingMessage.Id; // Preserve the original ID
         finalMessage.IsCanceled = streamingMessage.IsCanceled;
@@ -49,6 +72,7 @@ public class StreamingMessageManager
     public AppChatMessage CancelStreaming(StreamingAppChatMessage streamingMessage)
     {
         streamingMessage.SetCanceled();
+        _activeMessages.Remove(streamingMessage.Id);
 
         var finalMessage = new AppChatMessage(streamingMessage.Content, streamingMessage.MsgDateTime, ChatRole.Assistant, streamingMessage.Statistics, streamingMessage.Files, streamingMessage.FunctionCalls, streamingMessage.AgentName);
         finalMessage.Id = streamingMessage.Id; // Preserve the original ID
