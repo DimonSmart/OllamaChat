@@ -186,8 +186,8 @@ public class ChatService(
                                     ? chatConfiguration.ModelName
                                     : desc.ModelName
                             },
-                            desc.AutoSelectFunctions ? userMessage : null,
-                            desc.AutoSelectFunctions ? desc.AutoSelectCount : null);
+                            desc.AutoSelectCount > 0 ? userMessage : null,
+                            desc.AutoSelectCount > 0 ? desc.AutoSelectCount : null);
 
                         agentKernel.FunctionInvocationFilters.Add(trackingFilter);
                         kernels.Add(agentKernel);

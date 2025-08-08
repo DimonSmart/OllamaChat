@@ -10,7 +10,6 @@ public class AgentDescription
     public string? AgentName { get; set; }
     public string? ModelName { get; set; }
     public List<string> Functions { get; set; } = new();
-    public bool AutoSelectFunctions { get; set; }
     public int AutoSelectCount { get; set; }
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
     public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;

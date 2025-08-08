@@ -8,7 +8,7 @@ namespace ChatClient.Tests;
 public class AgentDescriptionServiceTests
 {
     [Fact]
-    public async Task CreatePrompt_PersistsModelNameAndFunctions()
+    public async Task CreatePrompt_PersistsModelNameFunctionsAndAutoSelectCount()
     {
         var tempFile = Path.GetTempFileName();
         File.WriteAllText(tempFile, "[]");
@@ -30,7 +30,6 @@ public class AgentDescriptionServiceTests
                 Content = "Test content",
                 ModelName = "test-model",
                 Functions = ["srv:fn1", "srv:fn2"],
-                AutoSelectFunctions = true,
                 AutoSelectCount = 3
             };
 
@@ -42,7 +41,6 @@ public class AgentDescriptionServiceTests
             Assert.NotNull(retrieved);
             Assert.Equal("test-model", retrieved!.ModelName);
             Assert.Equal(["srv:fn1", "srv:fn2"], retrieved.Functions);
-            Assert.True(retrieved.AutoSelectFunctions);
             Assert.Equal(3, retrieved.AutoSelectCount);
         }
         finally

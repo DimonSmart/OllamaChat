@@ -5,12 +5,8 @@
     <MudPaper Class="pa-4">
         <MudText Typo="Typo.subtitle1">Select Functions to use:</MudText>
 
-        <MudCheckBox T="bool" Dense="true" Value="@AutoSelectFunctions" ValueChanged="OnAutoSelectFunctionsChanged" Class="mt-2"
-                     Color="Color.Primary" Label="Auto-select relevant functions" />
-
-        <MudNumericField T="int" Value="@AutoSelectCount" ValueChanged="OnAutoSelectCountChanged" Class="mt-2" Min="1" Max="10"
-                         Disabled="!AutoSelectFunctions" Variant="Variant.Outlined" Label="Function count"
-                         Immediate="true" />
+        <MudNumericField T="int" Value="@AutoSelectCount" ValueChanged="OnAutoSelectCountChanged" Class="mt-2" Min="0" Max="10"
+                         Variant="Variant.Outlined" Label="Auto-select count" Immediate="true" />
         <MudExpansionPanels Class="mt-2">
             @foreach (var group in AvailableFunctions.GroupBy(f => f.ServerName))
             {
@@ -19,7 +15,7 @@
                         <MudCheckBox T="bool" Label="Select All"
                                      ValueChanged="@(async (bool v) => await OnServerToggled(group.Key, v))"
                                      Value="@serverSelections.GetValueOrDefault(group.Key)"
-                                     Dense="true" Disabled="@AutoSelectFunctions" />
+                                     Dense="true" Disabled="@(AutoSelectCount > 0)" />
 
                         @foreach (var fn in group)
                         {
@@ -27,7 +23,7 @@
                                 <MudCheckBox T="bool"
                                              ValueChanged="@(async (bool v) => await OnFunctionToggled(fn, v))"
                                              Value="@internalSelectedFunctions.Contains(fn.Name)"
-                                             Dense="true" Disabled="@AutoSelectFunctions" />
+                                             Dense="true" Disabled="@(AutoSelectCount > 0)" />
                                 <div style="flex-grow:1">
                                     <MudText Typo="Typo.body2" Class="mb-0">
                                         <strong>@fn.DisplayName</strong> - @fn.Description
@@ -40,7 +36,7 @@
             }
         </MudExpansionPanels>
         <MudText Typo="Typo.caption" Color="Color.Secondary">
-            It is not recommended to select more than 5 functions.
+            Set auto-select count to 0 to choose functions manually. It is not recommended to select more than 5 functions.
         </MudText>
     </MudPaper>
 </MudCollapse>
@@ -51,8 +47,6 @@
     [Parameter] public EventCallback<List<string>> SelectedFunctionsChanged { get; set; }
     [Parameter] public bool Expanded { get; set; }
     [Parameter] public EventCallback<bool> ExpandedChanged { get; set; }
-    [Parameter] public bool AutoSelectFunctions { get; set; }
-    [Parameter] public EventCallback<bool> AutoSelectFunctionsChanged { get; set; }
     [Parameter] public int AutoSelectCount { get; set; }
     [Parameter] public EventCallback<int> AutoSelectCountChanged { get; set; }
 
@@ -101,13 +95,6 @@
             .All(f => internalSelectedFunctions.Contains(f.Name));
 
         await SelectedFunctionsChanged.InvokeAsync(internalSelectedFunctions.ToList());
-    }
-
-    private async Task OnAutoSelectFunctionsChanged(bool value)
-    {
-        AutoSelectFunctions = value;
-        StateHasChanged();
-        await AutoSelectFunctionsChanged.InvokeAsync(value);
     }
 
     private async Task OnAutoSelectCountChanged(int value)
