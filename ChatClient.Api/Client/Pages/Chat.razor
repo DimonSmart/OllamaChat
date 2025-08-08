@@ -232,6 +232,10 @@
     public int MaximumInvocationCount { get; set; }
     [CascadingParameter(Name = "SelectedModel")]
     public OllamaModel? SelectedModel { get; set; }
+    [CascadingParameter(Name = "StopAgentName")]
+    public string StopAgentName { get; set; } = string.Empty;
+    [CascadingParameter(Name = "StopPhrase")]
+    public string StopPhrase { get; set; } = string.Empty;
 
     private bool showAgentPrompt { get; set; } = false;
 
@@ -329,7 +333,9 @@
             UseAgentResponses,
             AutoSelectFunctions,
             AutoSelectCount,
-            MaximumInvocationCount);
+            MaximumInvocationCount,
+            StopAgentName,
+            StopPhrase);
 
         await ChatService.AddUserMessageAndAnswerAsync(messageData.text.Trim(), chatConfiguration, messageData.files);
         await ScrollToBottom();

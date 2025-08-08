@@ -6,4 +6,6 @@ public record ChatConfiguration(
     bool UseAgentResponses,
     bool AutoSelectFunctions = false,
     int AutoSelectCount = 0,
-    int MaximumInvocationCount = 1);
+    int MaximumInvocationCount = 1,
+    string StopAgentName = "",
+    string StopPhrase = "");

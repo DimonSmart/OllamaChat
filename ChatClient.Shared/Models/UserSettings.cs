@@ -69,4 +69,10 @@ public class UserSettings
     /// </summary>
     [JsonPropertyName("embeddingModelName")]
     public string EmbeddingModelName { get; set; } = string.Empty;
+
+    [JsonPropertyName("stopAgentName")]
+    public string StopAgentName { get; set; } = string.Empty;
+
+    [JsonPropertyName("stopPhrase")]
+    public string StopPhrase { get; set; } = string.Empty;
 }
