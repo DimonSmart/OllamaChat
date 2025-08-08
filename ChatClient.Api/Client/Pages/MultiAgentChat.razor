@@ -23,7 +23,7 @@
 @inject IDialogService DialogService
 @inject IChatViewModelService ChatViewModelService
 @inject IChatService ChatService
-@inject ISystemPromptService AgentService
+@inject IAgentDescriptionService AgentService
 @inject IUserSettingsService UserSettingsService
 
 <PageTitle>Chat with AI Assistant</PageTitle>
@@ -48,17 +48,17 @@
                 }
                 else
                 {
-                    <MudSelect T="SystemPrompt" Label="Select Agents" SelectedValues="selectedAgents" SelectedValuesChanged="@(items => selectedAgents = items.ToList())" MultiSelection="true" Variant="Variant.Outlined" FullWidth="true" Dense="true">
+                    <MudSelect T="AgentDescription" Label="Select Agents" SelectedValues="selectedAgents" SelectedValuesChanged="@(items => selectedAgents = items.ToList())" MultiSelection="true" Variant="Variant.Outlined" FullWidth="true" Dense="true">
                         @foreach (var agent in agents)
                         {
                             <MudSelectItem Value="@agent">@agent.Name</MudSelectItem>
                         }
                     </MudSelect>
 
-                    <MudSwitch T="bool" @bind-value="showAgentPrompt" Color="Color.Primary" Class="mt-4" Style="margin-bottom: 10px;">View Agent Prompt</MudSwitch>
-                    @if (showAgentPrompt && selectedAgents.Any())
+                    <MudSwitch T="bool" @bind-value="showAgentDescription" Color="Color.Primary" Class="mt-4" Style="margin-bottom: 10px;">View Agent Description</MudSwitch>
+                    @if (showAgentDescription && selectedAgents.Any())
                     {
-                        <div class="prompt-preview mt-3 pa-3 mb-2">
+                        <div class="agent-description-preview mt-3 pa-3 mb-2">
                             @foreach (var agent in selectedAgents)
                             {
                                 <div class="mb-2">
@@ -102,7 +102,7 @@
                                OnClick="StartChat">
                         Start Chat
                     </MudButton>
-                    <MudButton Href="/system-prompts"
+                    <MudButton Href="/agent-descriptions"
                                Variant="Variant.Text"
                                Color="Color.Secondary"
                                FullWidth="true"
@@ -254,8 +254,8 @@
     private bool chatStarted = false;
     private ElementReference messagesElement;
 
-    private List<SystemPrompt> agents = new();
-    private List<SystemPrompt> selectedAgents { get; set; } = new();
+    private List<AgentDescription> agents = new();
+    private List<AgentDescription> selectedAgents { get; set; } = new();
     public bool AutoSelectFunctions { get; set; }
     public int AutoSelectCount { get; set; }
 
@@ -264,7 +264,7 @@
     [CascadingParameter(Name = "SelectedModel")]
     public OllamaModel? SelectedModel { get; set; }
 
-    private bool showAgentPrompt { get; set; } = false;
+    private bool showAgentDescription { get; set; } = false;
 
     private int maximumInvocationCount = 1;
     private string stopAgentName = string.Empty;
@@ -335,10 +335,10 @@
 
     private async Task LoadAgents()
     {
-        agents = await AgentService.GetAllPromptsAsync();
+        agents = await AgentService.GetAllAsync();
         if (agents.Count == 0)
-            agents.Add(AgentService.GetDefaultSystemPrompt());
-        selectedAgents = new List<SystemPrompt>();
+            agents.Add(AgentService.GetDefaultAgentDescription());
+        selectedAgents = new List<AgentDescription>();
     }
 
     private async Task LoadUserSettings()

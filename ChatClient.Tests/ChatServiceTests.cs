@@ -35,7 +35,7 @@ public class ChatServiceTests
             historyBuilder: new DummyHistoryBuilder(),
             logger: new LoggerFactory().CreateLogger<ChatService>());
 
-        var prompt = new SystemPrompt { Name = "Agent", Content = "Hello" };
+        var prompt = new AgentDescription { Name = "Agent", Content = "Hello" };
         chatService.InitializeChat([prompt]);
 
         Assert.Single(chatService.Messages);

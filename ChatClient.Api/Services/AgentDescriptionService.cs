@@ -5,15 +5,15 @@ using ChatClient.Shared.Services;
 
 namespace ChatClient.Api.Services;
 
-public class SystemPromptService : ISystemPromptService
+public class AgentDescriptionService : IAgentDescriptionService
 {
     private readonly string _filePath;
-    private readonly ILogger<SystemPromptService> _logger;
+    private readonly ILogger<AgentDescriptionService> _logger;
     private readonly SemaphoreSlim _semaphore = new(1, 1);
 
-    public SystemPromptService(IConfiguration configuration, ILogger<SystemPromptService> logger)
+    public AgentDescriptionService(IConfiguration configuration, ILogger<AgentDescriptionService> logger)
     {
-        var promptsFilePath = configuration["SystemPrompts:FilePath"] ?? "system_prompts.json";
+        var promptsFilePath = configuration["AgentDescriptions:FilePath"] ?? "agent_descriptions.json";
         _filePath = Path.GetFullPath(promptsFilePath);
         _logger = logger;
         var directory = Path.GetDirectoryName(_filePath);
@@ -30,14 +30,14 @@ public class SystemPromptService : ISystemPromptService
 
     private void CreateDefaultAgentsFile()
     {
-        var defaultAgents = new List<SystemPrompt>
+        var defaultAgents = new List<AgentDescription>
         {
-            new SystemPrompt
+            new AgentDescription
             {
                 Name = "Default Assistant",
                 Content = "You are a helpful assistant."
             },
-            new SystemPrompt
+            new AgentDescription
             {
                 Name = "Code Assistant",
                 Content = "You are a coding assistant. Help the user write and understand code."
@@ -48,7 +48,7 @@ public class SystemPromptService : ISystemPromptService
     }
 
 
-    public async Task<List<SystemPrompt>> GetAllPromptsAsync()
+    public async Task<List<AgentDescription>> GetAllAsync()
     {
         try
         {
@@ -73,13 +73,13 @@ public class SystemPromptService : ISystemPromptService
         }
     }
 
-    public async Task<SystemPrompt?> GetPromptByIdAsync(Guid id)
+    public async Task<AgentDescription?> GetByIdAsync(Guid id)
     {
-        var agents = await GetAllPromptsAsync();
+        var agents = await GetAllAsync();
         return agents.FirstOrDefault(p => p.Id == id);
     }
 
-    public async Task<SystemPrompt> CreatePromptAsync(SystemPrompt prompt)
+    public async Task<AgentDescription> CreateAsync(AgentDescription prompt)
     {
         try
         {
@@ -110,7 +110,7 @@ public class SystemPromptService : ISystemPromptService
         }
     }
 
-    public async Task<SystemPrompt> UpdatePromptAsync(SystemPrompt prompt)
+    public async Task<AgentDescription> UpdateAsync(AgentDescription prompt)
     {
         try
         {
@@ -143,7 +143,7 @@ public class SystemPromptService : ISystemPromptService
         }
     }
 
-    public async Task DeletePromptAsync(Guid id)
+    public async Task DeleteAsync(Guid id)
     {
         try
         {
@@ -171,7 +171,7 @@ public class SystemPromptService : ISystemPromptService
         }
     }
 
-    private async Task<List<SystemPrompt>> ReadFromFileAsync()
+    private async Task<List<AgentDescription>> ReadFromFileAsync()
     {
         if (!File.Exists(_filePath))
         {
@@ -179,7 +179,7 @@ public class SystemPromptService : ISystemPromptService
         }
 
         var json = await File.ReadAllTextAsync(_filePath);
-        var agents = JsonSerializer.Deserialize<List<SystemPrompt>>(json) ?? [];
+        var agents = JsonSerializer.Deserialize<List<AgentDescription>>(json) ?? [];
 
         foreach (var agent in agents)
         {
@@ -189,23 +189,23 @@ public class SystemPromptService : ISystemPromptService
         return agents;
     }
 
-    private static string SerializeAgents(List<SystemPrompt> agents)
+    private static string SerializeAgents(List<AgentDescription> agents)
     {
         var options = new JsonSerializerOptions { WriteIndented = true };
         return JsonSerializer.Serialize(agents, options);
     }
 
-    private async Task WriteToFileAsync(List<SystemPrompt> agents)
+    private async Task WriteToFileAsync(List<AgentDescription> agents)
     {
         await File.WriteAllTextAsync(_filePath, SerializeAgents(agents));
     }
 
-    private void WriteToFile(List<SystemPrompt> agents)
+    private void WriteToFile(List<AgentDescription> agents)
     {
         File.WriteAllText(_filePath, SerializeAgents(agents));
     }
 
-    public SystemPrompt GetDefaultSystemPrompt() => new()
+    public AgentDescription GetDefaultAgentDescription() => new()
     {
         Id = Guid.NewGuid(),
         Name = "Default Assistant",

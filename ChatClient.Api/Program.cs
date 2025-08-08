@@ -37,7 +37,7 @@ builder.Services.AddSingleton<ChatClient.Api.Services.IOllamaClientService, Chat
 builder.Services.AddSingleton<ChatClient.Api.Services.McpFunctionIndexService>();
 builder.Services.AddSingleton<ChatClient.Api.Services.IChatHistoryBuilder, ChatClient.Api.Services.ChatHistoryBuilder>();
 builder.Services.AddScoped<ChatClient.Api.Services.StartupOllamaChecker>();
-builder.Services.AddSingleton<ChatClient.Shared.Services.ISystemPromptService, ChatClient.Api.Services.SystemPromptService>();
+builder.Services.AddSingleton<ChatClient.Shared.Services.IAgentDescriptionService, ChatClient.Api.Services.AgentDescriptionService>();
 builder.Services.AddSingleton<ChatClient.Shared.Services.IUserSettingsService, ChatClient.Api.Services.UserSettingsService>();
 
 

@@ -1,8 +1,8 @@
-﻿@page "/system-prompts"
+﻿@page "/agent-descriptions"
 @using ChatClient.Shared.Models
 @using ChatClient.Shared.Services
 @using ChatClient.Api.Services
-@inject ISystemPromptService AgentService
+@inject IAgentDescriptionService AgentService
 @inject ISnackbar Snackbar
 @inject IOllamaClientService OllamaService
 @inject KernelService KernelService
@@ -43,7 +43,7 @@
         }
         else
         {
-            <MudDataGrid T="SystemPrompt" @ref="dataGrid"
+            <MudDataGrid T="AgentDescription" @ref="dataGrid"
                          Items="@filteredAgents"
                          ReadOnly="true"
                          Bordered="true"
@@ -111,7 +111,7 @@
                     </TemplateColumn>
                 </Columns>
                 <PagerContent>
-                    <MudDataGridPager T="SystemPrompt" PageSizeOptions="new[] { 10, 25, 50, 100 }" />
+                    <MudDataGridPager T="AgentDescription" PageSizeOptions="new[] { 10, 25, 50, 100 }" />
                 </PagerContent>
                 <NoRecordsContent>
                     <MudPaper Elevation="0">
@@ -187,13 +187,13 @@
             </div>
 
             <MudTextField @bind-Value="editingAgent.Content"
-                          Label="Agent Prompt"
+                          Label="Agent Description"
                           Lines="10"
                           Class="mt-4"
                           Required="true"
                           Immediate="true"
                           Validation="@(new Func<string, string>(ValidateContent))"
-                          Placeholder="Enter agent prompt content here..." />
+                          Placeholder="Enter agent description here..." />
         </MudForm>
     </DialogContent>
     <DialogActions>
@@ -203,16 +203,16 @@
 </MudDialog>
 
 @code {
-    private List<SystemPrompt> agents = new();
-    private List<SystemPrompt> filteredAgents = new();
+    private List<AgentDescription> agents = new();
+    private List<AgentDescription> filteredAgents = new();
     private bool loading = true;
-    private SystemPrompt? agentToDelete;
-    private SystemPrompt editingAgent = new();
+    private AgentDescription? agentToDelete;
+    private AgentDescription editingAgent = new();
     private bool showDeleteDialog { get; set; } = false;
     private bool showEditAgentDialog { get; set; } = false;
     private string searchString = string.Empty;
     private MudForm? editAgentForm;
-    private MudDataGrid<SystemPrompt>? dataGrid;
+    private MudDataGrid<AgentDescription>? dataGrid;
     private List<OllamaModel> availableModels = new();
     private List<FunctionInfo> availableFunctions = new();
     private bool functionsExpanded;
@@ -245,7 +245,7 @@
             loading = true;
             StateHasChanged();
 
-            agents = await AgentService.GetAllPromptsAsync() ?? new();
+            agents = await AgentService.GetAllAsync() ?? new();
             filteredAgents = agents;
         }
         catch (Exception ex)
@@ -286,7 +286,7 @@
 
     private void AddNewAgent()
     {
-        editingAgent = new SystemPrompt
+        editingAgent = new AgentDescription
         {
             Id = null,
             CreatedAt = DateTime.UtcNow,
@@ -312,7 +312,7 @@
     {
         if (string.IsNullOrWhiteSpace(searchString))
         {
-            filteredAgents = new List<SystemPrompt>(agents);
+            filteredAgents = new List<AgentDescription>(agents);
             return;
         }
 
@@ -322,9 +322,9 @@
             .ToList();
     }
 
-    private Task StartEditingAgent(SystemPrompt agent)
+    private Task StartEditingAgent(AgentDescription agent)
     {
-        editingAgent = new SystemPrompt
+        editingAgent = new AgentDescription
         {
             Id = agent.Id,
             Name = agent.Name,
@@ -342,7 +342,7 @@
         return Task.CompletedTask;
     }
 
-    private void ConfirmDeleteAgent(SystemPrompt agent)
+    private void ConfirmDeleteAgent(AgentDescription agent)
     {
         agentToDelete = agent;
         showDeleteDialog = true;
@@ -360,7 +360,7 @@
         if (agentToDelete?.Id == null) return;
         try
         {
-            await AgentService.DeletePromptAsync(agentToDelete.Id.Value);
+            await AgentService.DeleteAsync(agentToDelete.Id.Value);
             Snackbar.Add("Agent deleted successfully", Severity.Success);
 
             agents.Remove(agentToDelete);
@@ -411,14 +411,14 @@
             {
                 if (editingAgent.Id == null)
                 {
-                    var result = await AgentService.CreatePromptAsync(editingAgent);
+                    var result = await AgentService.CreateAsync(editingAgent);
                     agents.Add(result);
                     Snackbar.Add("Agent created successfully", Severity.Success);
                 }
                 else
                 {
                     editingAgent.UpdatedAt = DateTime.UtcNow;
-                    var result = await AgentService.UpdatePromptAsync(editingAgent);
+                    var result = await AgentService.UpdateAsync(editingAgent);
                     var index = agents.FindIndex(p => p.Id == editingAgent.Id);
                     if (index >= 0) agents[index] = result;
                     Snackbar.Add("Agent updated successfully", Severity.Success);

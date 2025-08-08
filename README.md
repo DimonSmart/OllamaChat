@@ -15,6 +15,6 @@ var result = await orchestrator.InvokeAsync("Hello", runtime);
 string final = await result.GetValueAsync();
 ```
 
-Each agent is a `ChatCompletionAgent` with its own system prompt. The round‑robin
+Each agent is a `ChatCompletionAgent` with its own agent description. The round‑robin
 manager automatically rotates agents and stops after the specified number of
 rounds.

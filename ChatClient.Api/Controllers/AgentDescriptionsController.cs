@@ -7,23 +7,23 @@ namespace ChatClient.Api.Controllers;
 
 [ApiController]
 [Route("api/[controller]")]
-public class SystemPromptsController : ControllerBase
+public class AgentDescriptionsController : ControllerBase
 {
-    private readonly ISystemPromptService _agentService;
-    private readonly ILogger<SystemPromptsController> _logger;
+    private readonly IAgentDescriptionService _agentService;
+    private readonly ILogger<AgentDescriptionsController> _logger;
 
-    public SystemPromptsController(ISystemPromptService agentService, ILogger<SystemPromptsController> logger)
+    public AgentDescriptionsController(IAgentDescriptionService agentService, ILogger<AgentDescriptionsController> logger)
     {
         _agentService = agentService;
         _logger = logger;
     }
 
     [HttpGet]
-    public async Task<ActionResult<IEnumerable<SystemPrompt>>> GetAgents()
+    public async Task<ActionResult<IEnumerable<AgentDescription>>> GetAgents()
     {
         try
         {
-            var agents = await _agentService.GetAllPromptsAsync();
+            var agents = await _agentService.GetAllAsync();
             return Ok(agents);
         }
         catch (Exception ex)
@@ -34,11 +34,11 @@ public class SystemPromptsController : ControllerBase
     }
 
     [HttpGet("{id}")]
-    public async Task<ActionResult<SystemPrompt>> GetAgentById(Guid id)
+    public async Task<ActionResult<AgentDescription>> GetAgentById(Guid id)
     {
         try
         {
-            var agent = await _agentService.GetPromptByIdAsync(id);
+            var agent = await _agentService.GetByIdAsync(id);
             if (agent == null)
             {
                 return NotFound($"Agent with ID {id} not found");
@@ -54,7 +54,7 @@ public class SystemPromptsController : ControllerBase
     }
 
     [HttpPost]
-    public async Task<ActionResult<SystemPrompt>> CreateAgent([FromBody] SystemPrompt agent)
+    public async Task<ActionResult<AgentDescription>> CreateAgent([FromBody] AgentDescription agent)
     {
         try
         {
@@ -65,10 +65,10 @@ public class SystemPromptsController : ControllerBase
 
             if (string.IsNullOrWhiteSpace(agent.Content))
             {
-                return BadRequest("Agent prompt content is required");
+                return BadRequest("Agent description content is required");
             }
 
-            var createdAgent = await _agentService.CreatePromptAsync(agent);
+            var createdAgent = await _agentService.CreateAsync(agent);
             return CreatedAtAction(nameof(GetAgentById), new { id = createdAgent.Id }, createdAgent);
         }
         catch (Exception ex)
@@ -79,7 +79,7 @@ public class SystemPromptsController : ControllerBase
     }
 
     [HttpPut("{id}")]
-    public async Task<ActionResult<SystemPrompt>> UpdateAgent(Guid id, [FromBody] SystemPrompt agent)
+    public async Task<ActionResult<AgentDescription>> UpdateAgent(Guid id, [FromBody] AgentDescription agent)
     {
         try
         {
@@ -95,16 +95,16 @@ public class SystemPromptsController : ControllerBase
 
             if (string.IsNullOrWhiteSpace(agent.Content))
             {
-                return BadRequest("Agent prompt content is required");
+                return BadRequest("Agent description content is required");
             }
 
-            var existingAgent = await _agentService.GetPromptByIdAsync(id);
+            var existingAgent = await _agentService.GetByIdAsync(id);
             if (existingAgent == null)
             {
                 return NotFound($"Agent with ID {id} not found");
             }
 
-            var updatedAgent = await _agentService.UpdatePromptAsync(agent);
+            var updatedAgent = await _agentService.UpdateAsync(agent);
             return Ok(updatedAgent);
         }
         catch (Exception ex)
@@ -119,13 +119,13 @@ public class SystemPromptsController : ControllerBase
     {
         try
         {
-            var existingAgent = await _agentService.GetPromptByIdAsync(id);
+            var existingAgent = await _agentService.GetByIdAsync(id);
             if (existingAgent == null)
             {
                 return NotFound($"Agent with ID {id} not found");
             }
 
-            await _agentService.DeletePromptAsync(id);
+            await _agentService.DeleteAsync(id);
             return NoContent();
         }
         catch (Exception ex)

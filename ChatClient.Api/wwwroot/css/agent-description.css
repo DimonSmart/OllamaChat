@@ -1,4 +1,4 @@
-.system-prompt-selector {
+.agent-description-selector {
     max-width: 800px;
     margin: 2rem auto;
     padding: 1.5rem;
@@ -45,8 +45,8 @@
     margin-top: 1rem;
 }
 
-/* Improved styling for the prompt content preview */
-.prompt-preview {
+/* Improved styling for the agent description preview */
+.agent-description-preview {
     background-color: #f7fafc;
     padding: 1rem;
     border-radius: 0.25rem;

@@ -5,7 +5,7 @@ using Microsoft.Extensions.Logging;
 
 namespace ChatClient.Tests;
 
-public class SystemPromptServiceTests
+public class AgentDescriptionServiceTests
 {
     [Fact]
     public async Task CreatePrompt_PersistsModelNameAndFunctions()
@@ -17,14 +17,14 @@ public class SystemPromptServiceTests
             var config = new ConfigurationBuilder()
                 .AddInMemoryCollection(new Dictionary<string, string?>
                 {
-                    ["SystemPrompts:FilePath"] = tempFile
+                    ["AgentDescriptions:FilePath"] = tempFile
                 })
                 .Build();
 
-            var logger = new LoggerFactory().CreateLogger<SystemPromptService>();
-            var service = new SystemPromptService(config, logger);
+            var logger = new LoggerFactory().CreateLogger<AgentDescriptionService>();
+            var service = new AgentDescriptionService(config, logger);
 
-            var prompt = new SystemPrompt
+            var prompt = new AgentDescription
             {
                 Name = "Test",
                 Content = "Test content",
@@ -34,10 +34,10 @@ public class SystemPromptServiceTests
                 AutoSelectCount = 3
             };
 
-            var created = await service.CreatePromptAsync(prompt);
+            var created = await service.CreateAsync(prompt);
 
-            var serviceReloaded = new SystemPromptService(config, logger);
-            var retrieved = await serviceReloaded.GetPromptByIdAsync(created.Id!.Value);
+            var serviceReloaded = new AgentDescriptionService(config, logger);
+            var retrieved = await serviceReloaded.GetByIdAsync(created.Id!.Value);
 
             Assert.NotNull(retrieved);
             Assert.Equal("test-model", retrieved!.ModelName);

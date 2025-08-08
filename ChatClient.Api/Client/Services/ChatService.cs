@@ -23,7 +23,7 @@ public class ChatService(
     private CancellationTokenSource? _cancellationTokenSource;
     private StreamingMessageManager _streamingManager = null!;
     private readonly Dictionary<string, StreamState> _activeStreams = new();
-    private List<SystemPrompt> _agentDescriptions = [];
+    private List<AgentDescription> _agentDescriptions = [];
     private readonly List<ChatCompletionAgent> _agents = [];
     private RoundRobinGroupChatManager _groupChatManager = new();
     private GroupChatOrchestration? _chatOrchestration;
@@ -52,9 +52,9 @@ public class ChatService(
 
     public bool IsLoading { get; private set; }
     public ObservableCollection<IAppChatMessage> Messages { get; } = [];
-    public IReadOnlyList<SystemPrompt> AgentDescriptions => _agentDescriptions;
+    public IReadOnlyList<AgentDescription> AgentDescriptions => _agentDescriptions;
 
-    public void InitializeChat(IEnumerable<SystemPrompt> initialAgents)
+    public void InitializeChat(IEnumerable<AgentDescription> initialAgents)
     {
         if (initialAgents is null)
         {

@@ -2,7 +2,7 @@ using System.Collections.Generic;
 
 namespace ChatClient.Shared.Models;
 
-public class SystemPrompt
+public class AgentDescription
 {
     public Guid? Id { get; set; }
     public string Name { get; set; } = string.Empty;
