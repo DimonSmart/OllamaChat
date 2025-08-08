@@ -8,7 +8,7 @@ namespace ChatClient.Tests;
 public class SystemPromptServiceTests
 {
     [Fact]
-    public async Task CreatePrompt_PersistsModelName()
+    public async Task CreatePrompt_PersistsModelNameAndFunctions()
     {
         var tempFile = Path.GetTempFileName();
         File.WriteAllText(tempFile, "[]");
@@ -28,7 +28,8 @@ public class SystemPromptServiceTests
             {
                 Name = "Test",
                 Content = "Test content",
-                ModelName = "test-model"
+                ModelName = "test-model",
+                Functions = ["fn1", "fn2"]
             };
 
             var created = await service.CreatePromptAsync(prompt);
@@ -38,6 +39,7 @@ public class SystemPromptServiceTests
 
             Assert.NotNull(retrieved);
             Assert.Equal("test-model", retrieved!.ModelName);
+            Assert.Equal(["fn1", "fn2"], retrieved.Functions);
         }
         finally
         {

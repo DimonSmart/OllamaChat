@@ -154,24 +154,11 @@ public class ChatService(
 
         try
         {
-            var kernel = await kernelService.CreateKernelAsync(
-                chatConfiguration,
-                chatConfiguration.AutoSelectFunctions ? userMessage : null,
-                chatConfiguration.AutoSelectFunctions ? chatConfiguration.AutoSelectCount : null);
-
-            var promptExecutionSettings = new PromptExecutionSettings
-            {
-                FunctionChoiceBehavior = chatConfiguration.AutoSelectFunctions || chatConfiguration.Functions.Count != 0
-                        ? FunctionChoiceBehavior.Auto()
-                        : FunctionChoiceBehavior.None(),
-            };
-
             var trackingFilter = new FunctionCallRecordingFilter(functionCalls);
+            List<Kernel> kernels = new();
 
             try
             {
-                kernel.FunctionInvocationFilters.Add(trackingFilter);
-
                 if (_runtime != null)
                 {
                     if (_chatOrchestration == null || _groupChatManager.MaximumInvocationCount != chatConfiguration.MaximumInvocationCount)
@@ -184,12 +171,20 @@ public class ChatService(
                         _agents.Clear();
                         foreach (var desc in _agentDescriptions)
                         {
+                            var agentKernel = await kernelService.CreateKernelAsync(
+                                chatConfiguration with { Functions = desc.Functions },
+                                chatConfiguration.AutoSelectFunctions ? userMessage : null,
+                                chatConfiguration.AutoSelectFunctions ? chatConfiguration.AutoSelectCount : null);
+
+                            agentKernel.FunctionInvocationFilters.Add(trackingFilter);
+                            kernels.Add(agentKernel);
+
                             _agents.Add(new ChatCompletionAgent
                             {
                                 Name = !string.IsNullOrWhiteSpace(desc.AgentName) ? desc.AgentName : desc.Name,
                                 Description = desc.Name,
                                 Instructions = desc.Content,
-                                Kernel = kernel
+                                Kernel = agentKernel
                             });
                         }
 
@@ -229,6 +224,14 @@ public class ChatService(
                             }
                         };
                     }
+                    else
+                    {
+                        foreach (var agent in _agents)
+                        {
+                            agent.Kernel.FunctionInvocationFilters.Add(trackingFilter);
+                            kernels.Add(agent.Kernel);
+                        }
+                    }
 
                     var invokeResult = await _chatOrchestration.InvokeAsync(userMessage, _runtime, cancellationToken);
                     await invokeResult.GetValueAsync(TimeSpan.FromSeconds(30));
@@ -236,7 +239,10 @@ public class ChatService(
             }
             finally
             {
-                kernel.FunctionInvocationFilters.Remove(trackingFilter);
+                foreach (var kernel in kernels)
+                {
+                    kernel.FunctionInvocationFilters.Remove(trackingFilter);
+                }
             }
 
             if (streamingMessage != null)

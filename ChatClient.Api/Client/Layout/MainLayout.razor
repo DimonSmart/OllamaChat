@@ -3,8 +3,6 @@
 @inject NavigationManager NavigationManager
 @inject IChatService ChatService
 @inject IUserSettingsService UserSettingsService
-@inject KernelService KernelService
-@inject IDialogService DialogService
 @inject IOllamaClientService OllamaService
 @using ChatClient.Shared.Models
 @using ChatClient.Api.Client.Pages
@@ -15,9 +13,6 @@
 <MudDialogProvider />
 <MudSnackbarProvider />
 <MudPopoverProvider />
-<CascadingValue Value="@selectedFunctions" Name="SelectedFunctions">
-<CascadingValue Value="@autoSelectFunctions" Name="AutoSelectFunctions">
-<CascadingValue Value="@autoSelectCount" Name="AutoSelectCount">
 <CascadingValue Value="@useAgentResponses" Name="UseAgentResponses">
 <CascadingValue Value="@maximumInvocationCount" Name="MaximumInvocationCount">
 <CascadingValue Value="@selectedModel" Name="SelectedModel">
@@ -49,11 +44,6 @@
                            Margin="Margin.Dense"
                            Class="ml-2"
                            Style="width: 100px;" />
-           <MudButton OnClick="OpenFunctionsDialog"
-                      Color="Color.Primary"
-                      Variant="Variant.Text"
-                      Size="Size.Small"
-                      Class="ml-4">Functions</MudButton>
             <MudSelect T="OllamaModel"
                        Value="selectedModel"
                        ValueChanged="OnModelChanged"
@@ -113,9 +103,6 @@
 </CascadingValue>
 </CascadingValue>
 </CascadingValue>
-</CascadingValue>
-</CascadingValue>
-</CascadingValue>
 
 <div id="blazor-error-ui" data-nosnippet>
     An unhandled error has occurred.
@@ -129,10 +116,6 @@
     private bool isLLMAnswering;
     private bool useAgentResponses = false;
     private int maximumInvocationCount = 1;
-    private List<FunctionInfo> availableFunctions = new();
-    private List<string> selectedFunctions = new();
-    private bool autoSelectFunctions = false;
-    private int autoSelectCount = 3;
     private List<OllamaModel> availableModels = new();
     private OllamaModel? selectedModel;
     private string stopAgentName = string.Empty;
@@ -148,22 +131,8 @@
 
         var settings = await UserSettingsService.GetSettingsAsync();
         useAgentResponses = settings.DefaultUseAgentResponses;
-        autoSelectFunctions = settings.DefaultAutoSelectCount > 0;
-        autoSelectCount = settings.DefaultAutoSelectCount > 0
-            ? settings.DefaultAutoSelectCount
-            : 3;
         stopAgentName = settings.StopAgentName;
         stopPhrase = settings.StopPhrase;
-
-        try
-        {
-            availableFunctions = (await KernelService.GetAvailableFunctionsAsync()).ToList();
-        }
-        catch (Exception ex)
-        {
-            Console.WriteLine($"Error loading available functions: {ex}");
-            availableFunctions = new List<FunctionInfo>();
-        }
 
         try
         {
@@ -228,34 +197,7 @@
         }
     }
 
-    private async Task OpenFunctionsDialog()
-    {
-        var parameters = new DialogParameters
-        {
-            ["AvailableFunctions"] = availableFunctions,
-            ["SelectedFunctions"] = selectedFunctions,
-            ["SelectedFunctionsChanged"] = EventCallback.Factory.Create<List<string>>(this, OnSelectedFunctionsChanged),
-            ["Expanded"] = true,
-            ["AutoSelectFunctions"] = autoSelectFunctions,
-            ["AutoSelectFunctionsChanged"] = EventCallback.Factory.Create<bool>(this, v => { autoSelectFunctions = v; InvokeAsync(StateHasChanged); }),
-            ["AutoSelectCount"] = autoSelectCount,
-            ["AutoSelectCountChanged"] = EventCallback.Factory.Create<int>(this, v => { autoSelectCount = v; InvokeAsync(StateHasChanged); })
-        };
-
-        await DialogService.ShowAsync<FunctionSelector>("Functions", parameters, new DialogOptions
-        {
-            CloseButton = true,
-            MaxWidth = MaxWidth.Small,
-            FullWidth = true
-        });
-    }
-
-    private Task OnSelectedFunctionsChanged(List<string> functions)
-    {
-        selectedFunctions = functions;
-        StateHasChanged();
-        return Task.CompletedTask;
-    }
+    
 
     private void OnModelChanged(OllamaModel model)
     {
