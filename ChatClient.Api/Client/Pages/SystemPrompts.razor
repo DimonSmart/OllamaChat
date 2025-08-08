@@ -5,6 +5,7 @@
 @inject ISystemPromptService AgentService
 @inject ISnackbar Snackbar
 @inject IOllamaClientService OllamaService
+@inject KernelService KernelService
 
 <PageTitle>Agents Management</PageTitle>
 
@@ -174,6 +175,17 @@
             </MudSelect>
             <MudText Typo="Typo.caption">Leave blank to use chat's default model.</MudText>
 
+            <div class="mt-4">
+                <FunctionSelector AvailableFunctions="@availableFunctions"
+                                   SelectedFunctions="@editingAgent.Functions"
+                                   SelectedFunctionsChanged="@(v => editingAgent.Functions = v)"
+                                   @bind-Expanded="functionsExpanded"
+                                   AutoSelectFunctions="@editingAgent.AutoSelectFunctions"
+                                   AutoSelectFunctionsChanged="@(v => editingAgent.AutoSelectFunctions = v)"
+                                   AutoSelectCount="@editingAgent.AutoSelectCount"
+                                   AutoSelectCountChanged="@(v => editingAgent.AutoSelectCount = v)" />
+            </div>
+
             <MudTextField @bind-Value="editingAgent.Content"
                           Label="Agent Prompt"
                           Lines="10"
@@ -202,6 +214,8 @@
     private MudForm? editAgentForm;
     private MudDataGrid<SystemPrompt>? dataGrid;
     private List<OllamaModel> availableModels = new();
+    private List<FunctionInfo> availableFunctions = new();
+    private bool functionsExpanded;
     private DialogOptions dialogOptions = new()
     {
         CloseOnEscapeKey = true,
@@ -221,6 +235,7 @@
     {
         await LoadAgents();
         await LoadAvailableModels();
+        await LoadAvailableFunctions();
     }
 
     private async Task LoadAgents()
@@ -257,6 +272,18 @@
         }
     }
 
+    private async Task LoadAvailableFunctions()
+    {
+        try
+        {
+            availableFunctions = (await KernelService.GetAvailableFunctionsAsync()).ToList();
+        }
+        catch
+        {
+            availableFunctions = new();
+        }
+    }
+
     private void AddNewAgent()
     {
         editingAgent = new SystemPrompt
@@ -267,7 +294,9 @@
             Name = "",
             Content = "",
             ModelName = null,
-            Functions = new()
+            Functions = new(),
+            AutoSelectFunctions = false,
+            AutoSelectCount = 0
         };
 
         showEditAgentDialog = true;
@@ -304,7 +333,9 @@
             ModelName = agent.ModelName,
             CreatedAt = agent.CreatedAt,
             UpdatedAt = agent.UpdatedAt,
-            Functions = new List<string>(agent.Functions)
+            Functions = new List<string>(agent.Functions),
+            AutoSelectFunctions = agent.AutoSelectFunctions,
+            AutoSelectCount = agent.AutoSelectCount
         };
 
         showEditAgentDialog = true;

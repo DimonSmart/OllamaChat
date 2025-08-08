@@ -29,7 +29,9 @@ public class SystemPromptServiceTests
                 Name = "Test",
                 Content = "Test content",
                 ModelName = "test-model",
-                Functions = ["fn1", "fn2"]
+                Functions = ["fn1", "fn2"],
+                AutoSelectFunctions = true,
+                AutoSelectCount = 3
             };
 
             var created = await service.CreatePromptAsync(prompt);
@@ -40,6 +42,8 @@ public class SystemPromptServiceTests
             Assert.NotNull(retrieved);
             Assert.Equal("test-model", retrieved!.ModelName);
             Assert.Equal(["fn1", "fn2"], retrieved.Functions);
+            Assert.True(retrieved.AutoSelectFunctions);
+            Assert.Equal(3, retrieved.AutoSelectCount);
         }
         finally
         {
