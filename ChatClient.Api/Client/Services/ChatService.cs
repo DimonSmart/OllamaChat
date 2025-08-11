@@ -200,13 +200,19 @@ public class ChatService(
         var trackingFilter = new FunctionCallRecordingFilter(functionCalls);
         var agents = await CreateAgents(chatConfiguration, userMessage, trackingFilter);
         var groupChatManager = CreateGroupChatManager(chatConfiguration);
-    var chatOrchestration = CreateChatOrchestration(groupChatManager, agents, functionCalls, debouncers, chatConfiguration);
+        var chatOrchestration = CreateChatOrchestration(groupChatManager, agents, functionCalls, debouncers, chatConfiguration);
 
         try
         {
             var invokeResult = await chatOrchestration.InvokeAsync(userMessage, runtime, cancellationToken);
-            await invokeResult.GetValueAsync(TimeSpan.FromSeconds(30));
+            var xxx = await invokeResult.GetValueAsync(cancellationToken: cancellationToken);
+
         }
+        catch (Exception ex)
+        {
+            logger.LogError(ex.Message);
+        }
+
         finally
         {
             RemoveTrackingFilters(agents, trackingFilter);

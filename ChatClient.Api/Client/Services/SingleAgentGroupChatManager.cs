@@ -1,8 +1,3 @@
-using System;
-using System.Linq;
-using System.Threading;
-using System.Threading.Tasks;
-
 using Microsoft.SemanticKernel.Agents.Orchestration.GroupChat;
 using Microsoft.SemanticKernel.ChatCompletion;
 
@@ -28,12 +23,17 @@ internal sealed class SingleAgentGroupChatManager : RoundRobinGroupChatManager
         ChatHistory history,
         CancellationToken cancellationToken = default)
     {
-        // Always terminate after first response for single agent scenarios
+        if (InvocationCount > 0)
+        {
+            return new ValueTask<GroupChatManagerResult<bool>>(
+                new GroupChatManagerResult<bool>(true)
+                {
+                    Reason = "Single agent completed response"
+                });
+        }
+
         return new ValueTask<GroupChatManagerResult<bool>>(
-            new GroupChatManagerResult<bool>(true)
-            {
-                Reason = "Single agent completed response"
-            });
+            new GroupChatManagerResult<bool>(false));
     }
 }
 
