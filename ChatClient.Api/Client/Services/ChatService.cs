@@ -169,6 +169,9 @@ public class ChatService(
         var functionCalls = new List<FunctionCallRecord>();
         var debouncers = new Dictionary<string, StreamingDebouncer>();
 
+        // Стриминговое сообщение будет создано динамически для каждого агента при первом ответе
+        // Нет зависимости от количества агентов
+
         try
         {
             await ProcessWithRuntime(chatConfiguration, userMessage, functionCalls, debouncers, cancellationToken);
@@ -293,7 +296,12 @@ public class ChatService(
         List<FunctionCallRecord> functionCalls,
         Dictionary<string, StreamingDebouncer> debouncers)
     {
-        var agentName = message.AuthorName ?? string.Empty;
+        // Ensure we always have a valid agent name, especially for single agent scenarios
+        var agentName = message.AuthorName;
+        if (string.IsNullOrWhiteSpace(agentName))
+        {
+            agentName = _agentDescriptions.FirstOrDefault()?.Name ?? "Assistant";
+        }
 
         if (!_activeStreams.TryGetValue(agentName, out var state))
         {
