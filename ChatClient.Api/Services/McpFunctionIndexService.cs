@@ -1,10 +1,11 @@
 using System.Collections.Concurrent;
 using System.Linq;
+using System.Net;
 
 using ChatClient.Shared.Models;
 using ChatClient.Shared.Services;
+
 using Microsoft.Extensions.Configuration;
-using System.Net;
 
 namespace ChatClient.Api.Services;
 

@@ -1,5 +1,6 @@
 using System;
 using System.Linq;
+
 using Microsoft.SemanticKernel.Agents.Orchestration.GroupChat;
 using Microsoft.SemanticKernel.ChatCompletion;
 

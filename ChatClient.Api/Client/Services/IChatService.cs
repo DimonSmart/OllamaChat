@@ -1,5 +1,6 @@
-using ChatClient.Shared.Models;
 using System.Collections.Generic;
+
+using ChatClient.Shared.Models;
 
 namespace ChatClient.Api.Client.Services;
 

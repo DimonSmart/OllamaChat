@@ -308,11 +308,14 @@
         if (string.IsNullOrWhiteSpace(messageData.text) || isLLMAnswering)
             return;
 
-        var functions = selectedAgent?.Functions ?? new List<string>();
+        var functions = selectedAgent?.Functions ?? [];
         var chatConfiguration = new ChatConfiguration(
             SelectedModel?.Name ?? string.Empty,
             functions,
-            UseAgentResponses);
+            UseAgentResponses,
+            1, // Single agent - always 1 invocation
+            string.Empty, // No stop agent for single agent
+            string.Empty); // No stop phrase for single agent
 
         await ChatService.AddUserMessageAndAnswerAsync(messageData.text.Trim(), chatConfiguration, messageData.files);
         await ScrollToBottom();

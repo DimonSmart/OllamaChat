@@ -1,5 +1,6 @@
-using ModelContextProtocol.Client;
 using ChatClient.Shared.Models;
+
+using ModelContextProtocol.Client;
 
 namespace ChatClient.Api.Services;
 

@@ -1,10 +1,11 @@
 using ChatClient.Api.Client.Services;
 using ChatClient.Api.Services;
 using ChatClient.Shared.Models;
+
+using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Logging;
 using Microsoft.SemanticKernel;
 using Microsoft.SemanticKernel.ChatCompletion;
-using Microsoft.Extensions.AI;
 
 namespace ChatClient.Tests;
 
@@ -21,7 +22,6 @@ public class ChatServiceTests
     {
         var chatService = new ChatService(
             kernelService: null!,
-            historyBuilder: new DummyHistoryBuilder(),
             logger: new LoggerFactory().CreateLogger<ChatService>());
 
         Assert.Throws<ArgumentException>(() => chatService.InitializeChat([]));
@@ -32,7 +32,6 @@ public class ChatServiceTests
     {
         var chatService = new ChatService(
             kernelService: null!,
-            historyBuilder: new DummyHistoryBuilder(),
             logger: new LoggerFactory().CreateLogger<ChatService>());
 
         var prompt = new AgentDescription { Name = "Agent", Content = "Hello" };

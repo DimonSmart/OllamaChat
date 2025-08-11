@@ -50,18 +50,18 @@ public class McpFunctionIndexServiceRealOllamaTests
 
         var configuration = new ConfigurationBuilder().Build();
         var userSettings = new DummyUserSettingsService();
-        
+
         // Set up service provider for dependencies
         var services = new ServiceCollection();
         services.AddLogging(builder => builder.AddConsole());
         var serviceProvider = services.BuildServiceProvider();
-        
+
         using var embeddingService = new OllamaService(
-            configuration, 
-            userSettings, 
+            configuration,
+            userSettings,
             NullLogger<OllamaService>.Instance,
             serviceProvider);
-            
+
         var indexService = new McpFunctionIndexService(new DummyMcpClientService(), embeddingService, configuration, userSettings, NullLogger<McpFunctionIndexService>.Instance);
 
         var indexField = typeof(McpFunctionIndexService).GetField("_index", BindingFlags.NonPublic | BindingFlags.Instance)!;

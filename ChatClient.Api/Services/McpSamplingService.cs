@@ -3,9 +3,9 @@ using ChatClient.Shared.Services;
 
 using DimonSmart.AiUtils;
 
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.SemanticKernel;
 using Microsoft.SemanticKernel.ChatCompletion;
-using Microsoft.Extensions.DependencyInjection;
 
 using ModelContextProtocol;
 using ModelContextProtocol.Protocol;

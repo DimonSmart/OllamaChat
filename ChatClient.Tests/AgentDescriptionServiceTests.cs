@@ -1,5 +1,6 @@
 using ChatClient.Api.Services;
 using ChatClient.Shared.Models;
+
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 

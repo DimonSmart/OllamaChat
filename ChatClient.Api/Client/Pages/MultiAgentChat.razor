@@ -340,11 +340,14 @@
             .Distinct()
             .ToList();
 
+        // Automatically set invocation count: 1 for single agent, user-defined for multiple agents
+        var invocationCount = selectedAgents.Count == 1 ? 1 : maximumInvocationCount;
+
         var chatConfiguration = new ChatConfiguration(
             SelectedModel?.Name ?? string.Empty,
             allFunctions,
             UseAgentResponses,
-            maximumInvocationCount,
+            invocationCount,
             stopAgentName,
             stopPhrase);
 

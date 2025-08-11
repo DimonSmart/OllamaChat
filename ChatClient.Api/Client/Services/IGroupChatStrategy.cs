@@ -1,5 +1,6 @@
 using System.Threading;
 using System.Threading.Tasks;
+
 using Microsoft.SemanticKernel.Agents.Orchestration.GroupChat;
 using Microsoft.SemanticKernel.ChatCompletion;
 
