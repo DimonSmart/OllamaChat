@@ -200,7 +200,7 @@ public class ChatService(
         var trackingFilter = new FunctionCallRecordingFilter(functionCalls);
         var agents = await CreateAgents(chatConfiguration, userMessage, trackingFilter);
         var groupChatManager = CreateGroupChatManager(chatConfiguration);
-        var chatOrchestration = CreateChatOrchestration(groupChatManager, agents, functionCalls, debouncers);
+    var chatOrchestration = CreateChatOrchestration(groupChatManager, agents, functionCalls, debouncers, chatConfiguration);
 
         try
         {
@@ -261,10 +261,12 @@ public class ChatService(
         RoundRobinGroupChatManager groupChatManager,
         List<ChatCompletionAgent> agents,
         List<FunctionCallRecord> functionCalls,
-        Dictionary<string, StreamingDebouncer> debouncers)
+        Dictionary<string, StreamingDebouncer> debouncers,
+        ChatConfiguration chatConfiguration)
     {
         return new GroupChatOrchestration(groupChatManager, agents.ToArray())
         {
+            // Стандартный колбэк для финальных сообщений
             ResponseCallback = async message =>
             {
                 if (message.Role != AuthorRole.Assistant)
@@ -272,8 +274,23 @@ public class ChatService(
                     await HandleNonAssistantMessage(message);
                     return;
                 }
-
                 await HandleAssistantMessage(message, functionCalls, debouncers);
+            },
+            // Новый стриминговый колбэк для инкрементальных токенов
+            StreamingResponseCallback = async (streamingContent, isFinal) =>
+            {
+                var agentName = streamingContent.AuthorName;
+                if (string.IsNullOrWhiteSpace(agentName))
+                    agentName = _agentDescriptions.FirstOrDefault()?.Name ?? "Assistant";
+
+                if (!_activeStreams.TryGetValue(agentName, out var state))
+                    state = await CreateStreamingState(agentName, functionCalls, debouncers);
+
+                if (!string.IsNullOrEmpty(streamingContent.Content))
+                    UpdateStreamingMessage(state, streamingContent.Content, agentName, debouncers);
+
+                if (isFinal)
+                    await CompleteStreamingMessage(state, functionCalls, chatConfiguration);
             }
         };
     }
