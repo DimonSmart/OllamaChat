@@ -58,12 +58,11 @@ internal sealed class SingleAgentGroupChatManager : RoundRobinGroupChatManager
 ```
 
 ### `StreamingDebouncer`
-Умный дебаунсер для стриминга:
+Простой дебаунсер для стриминга:
 ```csharp
-public sealed class StreamingDebouncer : IDisposable
+public sealed class StreamingDebouncer
 {
-    public void TriggerUpdate()        // Первое обновление - немедленно
-    public async Task FlushAsync()     // Принудительное финальное обновление
+    public Task TriggerAsync(bool forceRender = false);
 }
 ```
 

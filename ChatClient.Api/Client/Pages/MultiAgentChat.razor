@@ -296,13 +296,7 @@
             UpdateAgentStatistics(message.AgentName!, message.Statistics!);
         }
 
-        if (forceRender)
-        {
-            return _renderDebouncer.FlushAsync();
-        }
-
-        _renderDebouncer.TriggerUpdate();
-        return Task.CompletedTask;
+        return _renderDebouncer.TriggerAsync(forceRender);
     }
 
     private void OnMessageDeleted(ChatMessageViewModel message)
@@ -414,7 +408,6 @@
             ChatViewModelService.MessageUpdated -= _messageUpdatedHandler;
         if (_messageDeletedHandler != null)
             ChatViewModelService.MessageDeleted -= _messageDeletedHandler;
-        _renderDebouncer.Dispose();
         return ValueTask.CompletedTask;
     }
 
