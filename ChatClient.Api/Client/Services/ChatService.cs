@@ -268,17 +268,7 @@ public class ChatService(
     {
         return new GroupChatOrchestration(groupChatManager, agents.ToArray())
         {
-            // Стандартный колбэк для финальных сообщений
-            ResponseCallback = async message =>
-            {
-                if (message.Role != AuthorRole.Assistant)
-                {
-                    await HandleNonAssistantMessage(message);
-                    return;
-                }
-                await HandleAssistantMessage(message, functionCalls);
-            },
-            // Новый стриминговый колбэк для инкрементальных токенов
+            // Стриминговый колбэк для инкрементальных токенов
             StreamingResponseCallback = async (streamingContent, isFinal) =>
             {
                 var agentName = streamingContent.AuthorName;
@@ -292,44 +282,12 @@ public class ChatService(
                     await UpdateStreamingMessage(state, streamingContent.Content);
 
                 if (isFinal)
+                {
                     await CompleteStreamingMessage(state, functionCalls, chatConfiguration);
+                    _activeStreams.Remove(agentName);
+                }
             }
         };
-    }
-
-    private async Task HandleNonAssistantMessage(ChatMessageContent message)
-    {
-        var role = message.Role switch
-        {
-            var r when r == AuthorRole.System => ChatRole.System,
-            var r when r == AuthorRole.User => ChatRole.User,
-            _ => ChatRole.Assistant
-        };
-
-        var appMessage = new AppChatMessage(message.Content ?? string.Empty, DateTime.Now, role, message.AuthorName ?? string.Empty);
-        await AddMessageAsync(appMessage);
-    }
-
-    private async Task HandleAssistantMessage(
-        ChatMessageContent message,
-        List<FunctionCallRecord> functionCalls)
-    {
-        // Ensure we always have a valid agent name, especially for single agent scenarios
-        var agentName = message.AuthorName;
-        if (string.IsNullOrWhiteSpace(agentName))
-        {
-            agentName = _agentDescriptions.FirstOrDefault()?.Name ?? "Assistant";
-        }
-
-        if (!_activeStreams.TryGetValue(agentName, out var state))
-        {
-            state = await CreateStreamingState(agentName, functionCalls);
-        }
-
-        if (!string.IsNullOrEmpty(message.Content))
-        {
-            await UpdateStreamingMessage(state, message.Content);
-        }
     }
 
     private async Task<StreamState> CreateStreamingState(
