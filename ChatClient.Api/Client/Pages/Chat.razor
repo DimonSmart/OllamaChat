@@ -219,8 +219,6 @@
     private List<AgentDescription> agents = new();
     private AgentDescription? selectedAgent { get; set; }
 
-    [CascadingParameter(Name = "UseAgentResponses")]
-    public bool UseAgentResponses { get; set; }
     [CascadingParameter(Name = "SelectedModel")]
     public OllamaModel? SelectedModel { get; set; }
 
@@ -317,7 +315,6 @@
         var chatConfiguration = new ChatConfiguration(
             SelectedModel?.Name ?? string.Empty,
             functions,
-            UseAgentResponses,
             1, // Single agent - always 1 invocation
             string.Empty, // No stop agent for single agent
             string.Empty); // No stop phrase for single agent

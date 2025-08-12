@@ -46,12 +46,6 @@ public class UserSettings
     public int McpSamplingTimeoutSeconds { get; set; } = 30 * 60;
 
     /// <summary>
-    /// Default response mode for new chats: true for Agent responses, false for standard responses
-    /// </summary>
-    [JsonPropertyName("defaultUseAgentResponses")]
-    public bool DefaultUseAgentResponses { get; set; } = false;
-
-    /// <summary>
     /// Number of functions to auto-select for new chats. Set to 0 to disable
     /// auto-selection.
     /// </summary>

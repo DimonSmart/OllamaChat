@@ -236,8 +236,6 @@
     private List<AgentDescription> agents = new();
     private List<AgentDescription> selectedAgents { get; set; } = new();
 
-    [CascadingParameter(Name = "UseAgentResponses")]
-    public bool UseAgentResponses { get; set; }
     [CascadingParameter(Name = "SelectedModel")]
     public OllamaModel? SelectedModel { get; set; }
 
@@ -352,7 +350,6 @@
         var chatConfiguration = new ChatConfiguration(
             SelectedModel?.Name ?? string.Empty,
             allFunctions,
-            UseAgentResponses,
             invocationCount,
             stopAgentName,
             stopPhrase);
