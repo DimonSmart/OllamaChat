@@ -13,7 +13,6 @@
 <MudDialogProvider />
 <MudSnackbarProvider />
 <MudPopoverProvider />
-<CascadingValue Value="@useAgentResponses" Name="UseAgentResponses">
 <CascadingValue Value="@maximumInvocationCount" Name="MaximumInvocationCount">
 <CascadingValue Value="@selectedModel" Name="SelectedModel">
 <CascadingValue Value="@stopAgentName" Name="StopAgentName">
@@ -30,12 +29,6 @@
                        StartIcon="@Icons.Material.Filled.AddCircle"
                        Size="Size.Small"
                        Class="ml-4">New Chat</MudButton>
-           <MudCheckBox @bind-Value="useAgentResponses"
-                         Label="Agent"
-                         Color="Color.Primary"
-                         Size="Size.Small"
-                         Dense="true"
-                         Class="ml-4" />
            <MudNumericField T="int"
                            @bind-Value="maximumInvocationCount"
                            Min="1"
@@ -102,7 +95,6 @@
 </CascadingValue>
 </CascadingValue>
 </CascadingValue>
-</CascadingValue>
 
 <div id="blazor-error-ui" data-nosnippet>
     An unhandled error has occurred.
@@ -114,7 +106,6 @@
     private bool _drawerOpen = true;
     private bool _isDarkMode = true;
     private bool isLLMAnswering;
-    private bool useAgentResponses = false;
     private int maximumInvocationCount = 1;
     private List<OllamaModel> availableModels = new();
     private OllamaModel? selectedModel;
@@ -130,7 +121,6 @@
         isLLMAnswering = ChatService.IsAnswering;
 
         var settings = await UserSettingsService.GetSettingsAsync();
-        useAgentResponses = settings.DefaultUseAgentResponses;
         stopAgentName = settings.StopAgentName;
         stopPhrase = settings.StopPhrase;
 
