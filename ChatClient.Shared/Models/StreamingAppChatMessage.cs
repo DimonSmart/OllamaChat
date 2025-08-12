@@ -50,6 +50,16 @@ public class StreamingAppChatMessage(string initialContent, DateTime msgDateTime
     {
         _contentBuilder.Append(text);
     }
+
+    public void ResetContent()
+    {
+        _contentBuilder.Clear();
+    }
+
+    public void SetAgentName(string? name)
+    {
+        AgentName = name;
+    }
     public void SetStatistics(string stats)
     {
         Statistics = stats;
