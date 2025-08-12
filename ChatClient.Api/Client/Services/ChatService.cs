@@ -220,13 +220,13 @@ public class ChatService(
             var agentKernel = await kernelService.CreateKernelAsync(
                 chatConfiguration with
                 {
-                    Functions = desc.Functions,
+                    Functions = desc.FunctionSettings.SelectedFunctions,
                     ModelName = string.IsNullOrWhiteSpace(desc.ModelName)
                         ? chatConfiguration.ModelName
                         : desc.ModelName
                 },
-                desc.AutoSelectCount > 0 ? userMessage : null,
-                desc.AutoSelectCount > 0 ? desc.AutoSelectCount : null);
+                desc.FunctionSettings.AutoSelectCount > 0 ? userMessage : null,
+                desc.FunctionSettings.AutoSelectCount > 0 ? desc.FunctionSettings.AutoSelectCount : null);
 
             agentKernel.FunctionInvocationFilters.Add(trackingFilter);
 

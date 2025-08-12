@@ -298,10 +298,13 @@
 
     private void StartChat()
     {
-        if (selectedAgent == null)
-            return;
+        var agents = selectedAgent != null ? new[] { selectedAgent } : Array.Empty<AgentDescription>();
+        if (agents.Length != 1)
+        {
+            throw new InvalidOperationException("Single-agent chat requires exactly one agent.");
+        }
 
-        ChatService.InitializeChat(new[] { selectedAgent });
+        ChatService.InitializeChat(agents);
         chatStarted = true;
         StateHasChanged();
     }
@@ -311,7 +314,7 @@
         if (string.IsNullOrWhiteSpace(messageData.text) || isLLMAnswering) return;
         if (selectedAgent == null) return;
 
-        var functions = selectedAgent.Functions ?? [];
+        var functions = selectedAgent.FunctionSettings.SelectedFunctions ?? [];
         var chatConfiguration = new ChatConfiguration(SelectedModel?.Name, functions);
 
         await ChatService.GenerateAnswerAsync(messageData.text.Trim(), chatConfiguration, messageData.files);

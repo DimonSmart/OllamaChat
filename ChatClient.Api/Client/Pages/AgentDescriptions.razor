@@ -199,13 +199,11 @@
             <MudText Typo="Typo.caption">Leave blank to use chat's default model.</MudText>
 
             <div class="mt-4">
-                <FunctionSelector AvailableFunctions="@availableFunctions"
-                                   SelectedFunctions="@editingAgent.Functions"
-                                   SelectedFunctionsChanged="@OnFunctionsChanged"
-                                   Expanded="true"
-                                   ExpandedChanged="@(v => functionsExpanded = v)"
-                                   AutoSelectCount="@editingAgent.AutoSelectCount"
-                                   AutoSelectCountChanged="@OnAutoSelectCountChanged" />
+                <FunctionSettingsSelector AvailableFunctions="@availableFunctions"
+                                          FunctionSettings="@editingAgent.FunctionSettings"
+                                          FunctionSettingsChanged="@OnFunctionSettingsChanged"
+                                          Expanded="true"
+                                          ExpandedChanged="@(v => functionsExpanded = v)" />
             </div>
 
             <MudTextField @bind-Value="editingAgent.Content"
@@ -316,8 +314,6 @@
             Name = "",
             Content = "",
             ModelName = null,
-            Functions = [],
-            AutoSelectCount = 0,
             FunctionSettings = new FunctionSettings
             {
                 AutoSelectCount = 0,
@@ -359,12 +355,10 @@
             ModelName = agent.ModelName,
             CreatedAt = agent.CreatedAt,
             UpdatedAt = agent.UpdatedAt,
-            Functions = new List<string>(agent.Functions),
-            AutoSelectCount = agent.AutoSelectCount,
             FunctionSettings = new FunctionSettings
             {
-                AutoSelectCount = agent.AutoSelectCount,
-                SelectedFunctions = new List<string>(agent.Functions)
+                AutoSelectCount = agent.FunctionSettings.AutoSelectCount,
+                SelectedFunctions = new List<string>(agent.FunctionSettings.SelectedFunctions)
             }
         };
 
@@ -428,29 +422,11 @@
     }
 
     private FunctionSettings GetFunctionSettings(AgentDescription agent)
-    {
-        // For backward compatibility, use the new FunctionSettings if available,
-        // otherwise create from legacy properties
-        if (agent.FunctionSettings?.HasFunctions == true)
-            return agent.FunctionSettings;
+        => agent.FunctionSettings;
 
-        return new FunctionSettings
-        {
-            AutoSelectCount = agent.AutoSelectCount,
-            SelectedFunctions = agent.Functions ?? []
-        };
-    }
-
-    private void OnFunctionsChanged(List<string> functions)
+    private void OnFunctionSettingsChanged(FunctionSettings settings)
     {
-        editingAgent.Functions = functions;
-        editingAgent.FunctionSettings.SelectedFunctions = new List<string>(functions);
-    }
-
-    private void OnAutoSelectCountChanged(int count)
-    {
-        editingAgent.AutoSelectCount = count;
-        editingAgent.FunctionSettings.AutoSelectCount = count;
+        editingAgent.FunctionSettings = settings;
     }
 
     private void CancelEdit()
@@ -465,10 +441,6 @@
         {
             try
             {
-                // Ensure legacy properties are synchronized with FunctionSettings
-                editingAgent.Functions = editingAgent.FunctionSettings.SelectedFunctions;
-                editingAgent.AutoSelectCount = editingAgent.FunctionSettings.AutoSelectCount;
-
                 if (editingAgent.Id == null)
                 {
                     var result = await AgentService.CreateAsync(editingAgent);
