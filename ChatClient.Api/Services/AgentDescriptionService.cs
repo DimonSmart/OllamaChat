@@ -92,7 +92,6 @@ public class AgentDescriptionService : IAgentDescriptionService
 
             prompt.CreatedAt = DateTime.UtcNow;
             prompt.UpdatedAt = DateTime.UtcNow;
-            prompt.Functions ??= new();
 
             agents.Add(prompt);
             await WriteToFileAsync(agents);
@@ -125,7 +124,6 @@ public class AgentDescriptionService : IAgentDescriptionService
             }
 
             prompt.UpdatedAt = DateTime.UtcNow;
-            prompt.Functions ??= new();
             agents[existingIndex] = prompt;
 
             await WriteToFileAsync(agents);
@@ -180,11 +178,6 @@ public class AgentDescriptionService : IAgentDescriptionService
 
         var json = await File.ReadAllTextAsync(_filePath);
         var agents = JsonSerializer.Deserialize<List<AgentDescription>>(json) ?? [];
-
-        foreach (var agent in agents)
-        {
-            agent.Functions ??= new();
-        }
 
         return agents;
     }

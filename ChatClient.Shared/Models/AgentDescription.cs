@@ -8,11 +8,6 @@ public class AgentDescription
     public string? AgentName { get; set; }
     public string? ModelName { get; set; }
 
-    // Legacy properties for backward compatibility
-    public List<string> Functions { get; set; } = [];
-    public int AutoSelectCount { get; set; }
-
-    // New unified function settings
     public FunctionSettings FunctionSettings { get; set; } = new();
 
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;

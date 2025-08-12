@@ -30,8 +30,11 @@ public class AgentDescriptionServiceTests
                 Name = "Test",
                 Content = "Test content",
                 ModelName = "test-model",
-                Functions = ["srv:fn1", "srv:fn2"],
-                AutoSelectCount = 3
+                FunctionSettings = new FunctionSettings
+                {
+                    SelectedFunctions = ["srv:fn1", "srv:fn2"],
+                    AutoSelectCount = 3
+                }
             };
 
             var created = await service.CreateAsync(prompt);
@@ -41,8 +44,8 @@ public class AgentDescriptionServiceTests
 
             Assert.NotNull(retrieved);
             Assert.Equal("test-model", retrieved!.ModelName);
-            Assert.Equal(["srv:fn1", "srv:fn2"], retrieved.Functions);
-            Assert.Equal(3, retrieved.AutoSelectCount);
+            Assert.Equal(["srv:fn1", "srv:fn2"], retrieved.FunctionSettings.SelectedFunctions);
+            Assert.Equal(3, retrieved.FunctionSettings.AutoSelectCount);
         }
         finally
         {
