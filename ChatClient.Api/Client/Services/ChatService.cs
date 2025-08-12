@@ -235,7 +235,11 @@ public class ChatService(
                 Name = !string.IsNullOrWhiteSpace(desc.ShortName) ? desc.ShortName : desc.AgentName,
                 Description = desc.AgentName,
                 Instructions = desc.Content,
-                Kernel = agentKernel
+                Kernel = agentKernel,
+                Arguments = new KernelArguments(new PromptExecutionSettings
+                {
+                    FunctionChoiceBehavior = FunctionChoiceBehavior.Auto(autoInvoke: true)
+                })
             });
         }
 
