@@ -27,7 +27,7 @@ public class AgentDescriptionServiceTests
 
             var prompt = new AgentDescription
             {
-                Name = "Test",
+                AgentName = "Test",
                 Content = "Test content",
                 ModelName = "test-model",
                 FunctionSettings = new FunctionSettings

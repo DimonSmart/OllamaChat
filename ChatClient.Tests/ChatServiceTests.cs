@@ -34,7 +34,7 @@ public class ChatServiceTests
             kernelService: null!,
             logger: new LoggerFactory().CreateLogger<ChatService>());
 
-        var prompt = new AgentDescription { Name = "Agent", Content = "Hello" };
+        var prompt = new AgentDescription { AgentName = "Agent", Content = "Hello" };
         chatService.InitializeChat([prompt]);
 
         Assert.Single(chatService.Messages);

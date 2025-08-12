@@ -54,14 +54,14 @@
                          Height="100%"
                          Class="mt-4">
                 <Columns>
-                    <PropertyColumn Property="x => x.Name" Title="Name" SortBy="x => x.Name" />
-                    <TemplateColumn Title="Display Name" isEditable="false">
+                    <PropertyColumn Property="x => x.AgentName" Title="Name" SortBy="x => x.AgentName" />
+                    <TemplateColumn Title="Short Name" isEditable="false">
                         <CellTemplate>
                             <div>
-                                @if (!string.IsNullOrWhiteSpace(context.Item.AgentName))
+                                @if (!string.IsNullOrWhiteSpace(context.Item.ShortName))
                                 {
                                     <MudChip T="string" Color="Color.Primary" Size="Size.Small">
-                                        @context.Item.AgentName
+                                        @context.Item.ShortName
                                     </MudChip>
                                 }
                                 else
@@ -163,7 +163,7 @@
         <MudText Typo="Typo.h6">Confirm Delete</MudText>
     </TitleContent>
     <DialogContent>
-        <MudText>Are you sure you want to delete the agent description "@agentToDelete?.Name"?</MudText>
+        <MudText>Are you sure you want to delete the agent description "@agentToDelete?.AgentName"?</MudText>
     </DialogContent>
     <DialogActions>
         <MudButton OnClick="CancelDelete" Size="Size.Medium">Cancel</MudButton>
@@ -177,18 +177,18 @@
     </TitleContent>
     <DialogContent>
         <MudForm @ref="editAgentForm" Model="@editingAgent">
-            <MudTextField @bind-Value="editingAgent.Name"
+            <MudTextField @bind-Value="editingAgent.AgentName"
                           Label="Agent Name"
                           Required="true"
                           Immediate="true"
                           Validation="@(new Func<string, string>(ValidateName))" />
 
-            <MudTextField @bind-Value="editingAgent.AgentName"
-                          Label="Display Name (Optional)"
+            <MudTextField @bind-Value="editingAgent.ShortName"
+                          Label="Short Name (Optional)"
                           Class="mt-4"
                           Immediate="true"
-                          HelperText="Custom display name for this agent. If empty, uses global agent name from settings."
-                          Placeholder="Enter display name..." />
+                          HelperText="Custom short name for this agent. If empty, uses global agent name from settings."
+                          Placeholder="Enter short name..." />
 
             <MudSelect T="string" @bind-Value="editingAgent.ModelName" Label="Model (Optional)" Class="mt-4" Dense="true" Clearable="true">
                 @foreach (var model in availableModels)
@@ -311,8 +311,9 @@
             Id = null,
             CreatedAt = DateTime.UtcNow,
             UpdatedAt = DateTime.UtcNow,
-            Name = "",
+            AgentName = "",
             Content = "",
+            ShortName = null,
             ModelName = null,
             FunctionSettings = new FunctionSettings
             {
@@ -339,7 +340,7 @@
         }
 
         filteredAgents = agents
-            .Where(p => p.Name.Contains(searchString, StringComparison.OrdinalIgnoreCase) ||
+            .Where(p => p.AgentName.Contains(searchString, StringComparison.OrdinalIgnoreCase) ||
                        p.Content.Contains(searchString, StringComparison.OrdinalIgnoreCase))
             .ToList();
     }
@@ -349,9 +350,9 @@
         editingAgent = new AgentDescription
         {
             Id = agent.Id,
-            Name = agent.Name,
-            Content = agent.Content,
             AgentName = agent.AgentName,
+            Content = agent.Content,
+            ShortName = agent.ShortName,
             ModelName = agent.ModelName,
             CreatedAt = agent.CreatedAt,
             UpdatedAt = agent.UpdatedAt,

@@ -34,12 +34,12 @@ public class AgentDescriptionService : IAgentDescriptionService
         {
             new AgentDescription
             {
-                Name = "Default Assistant",
+                AgentName = "Default Assistant",
                 Content = "You are a helpful assistant."
             },
             new AgentDescription
             {
-                Name = "Code Assistant",
+                AgentName = "Code Assistant",
                 Content = "You are a coding assistant. Help the user write and understand code."
             }
         };
@@ -201,7 +201,7 @@ public class AgentDescriptionService : IAgentDescriptionService
     public AgentDescription GetDefaultAgentDescription() => new()
     {
         Id = Guid.NewGuid(),
-        Name = "Default Assistant",
+        AgentName = "Default Assistant",
         Content = "You are a helpful AI assistant. Please format your responses using Markdown."
     };
 }

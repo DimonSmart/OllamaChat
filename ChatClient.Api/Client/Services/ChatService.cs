@@ -116,10 +116,10 @@ public class ChatService(
         await AddMessageAsync(new AppChatMessage(trimmedText, DateTime.Now, ChatRole.User, string.Empty, files));
 
         // Display a temporary placeholder while waiting for the first agent token
-        var defaultAgentName = _agentDescriptions.FirstOrDefault()?.AgentName
-            ?? _agentDescriptions.FirstOrDefault()?.Name
+        var defaultShortName = _agentDescriptions.FirstOrDefault()?.ShortName
+            ?? _agentDescriptions.FirstOrDefault()?.AgentName
             ?? string.Empty;
-        var placeholder = _streamingManager.CreateStreamingMessage(agentName: defaultAgentName);
+        var placeholder = _streamingManager.CreateStreamingMessage(agentName: defaultShortName);
         placeholder.Append("...");
         _activeStreams[PlaceholderAgent] = placeholder;
         await AddMessageAsync(placeholder);
@@ -232,8 +232,8 @@ public class ChatService(
 
             agents.Add(new ChatCompletionAgent
             {
-                Name = !string.IsNullOrWhiteSpace(desc.AgentName) ? desc.AgentName : desc.Name,
-                Description = desc.Name,
+                Name = !string.IsNullOrWhiteSpace(desc.ShortName) ? desc.ShortName : desc.AgentName,
+                Description = desc.AgentName,
                 Instructions = desc.Content,
                 Kernel = agentKernel
             });
@@ -269,7 +269,7 @@ public class ChatService(
             {
                 var agentName = streamingContent.AuthorName;
                 if (string.IsNullOrWhiteSpace(agentName))
-                    agentName = _agentDescriptions.FirstOrDefault()?.Name ?? "Assistant";
+                    agentName = _agentDescriptions.FirstOrDefault()?.AgentName ?? "Assistant";
 
                 if (!_activeStreams.TryGetValue(agentName, out var message))
                 {

@@ -3,9 +3,9 @@ namespace ChatClient.Shared.Models;
 public class AgentDescription
 {
     public Guid? Id { get; set; }
-    public string Name { get; set; } = string.Empty;
+    public string AgentName { get; set; } = string.Empty;
     public string Content { get; set; } = string.Empty;
-    public string? AgentName { get; set; }
+    public string? ShortName { get; set; }
     public string? ModelName { get; set; }
 
     public FunctionSettings FunctionSettings { get; set; } = new();
@@ -13,5 +13,5 @@ public class AgentDescription
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
     public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
 
-    public override string ToString() => Name;
+    public override string ToString() => AgentName;
 }
