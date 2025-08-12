@@ -12,10 +12,10 @@ namespace ChatClient.Api.Client.Services;
 /// </summary>
 public class StreamingMessageManager
 {
-    private readonly Func<IAppChatMessage, Task>? _messageUpdatedCallback;
+    private readonly Func<IAppChatMessage, bool, Task>? _messageUpdatedCallback;
     private readonly Dictionary<Guid, StreamingAppChatMessage> _activeMessages = new();
 
-    public StreamingMessageManager(Func<IAppChatMessage, Task>? messageUpdatedCallback)
+    public StreamingMessageManager(Func<IAppChatMessage, bool, Task>? messageUpdatedCallback)
     {
         _messageUpdatedCallback = messageUpdatedCallback;
     }
@@ -45,7 +45,7 @@ public class StreamingMessageManager
             message.Append(content);
             if (_messageUpdatedCallback != null)
             {
-                await _messageUpdatedCallback(message);
+                await _messageUpdatedCallback(message, false);
             }
         }
     }

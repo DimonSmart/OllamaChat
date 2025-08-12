@@ -13,7 +13,7 @@ public class ChatViewModelService : IChatViewModelService
     public event Action<bool>? LoadingStateChanged;
     public event Action? ChatInitialized;
     public event Func<ChatMessageViewModel, Task>? MessageAdded;
-    public event Func<ChatMessageViewModel, Task>? MessageUpdated;
+    public event Func<ChatMessageViewModel, bool, Task>? MessageUpdated;
     public event Func<ChatMessageViewModel, Task>? MessageDeleted;
 
     public bool IsLoading => _chatService.IsLoading;
@@ -42,7 +42,7 @@ public class ChatViewModelService : IChatViewModelService
             foreach (var message in _messages.Where(m => m.IsStreaming))
             {
                 message.IsStreaming = false;
-                await (MessageUpdated?.Invoke(message) ?? Task.CompletedTask);
+                await (MessageUpdated?.Invoke(message, true) ?? Task.CompletedTask);
             }
         }
         LoadingStateChanged?.Invoke(isLoading);
@@ -52,7 +52,7 @@ public class ChatViewModelService : IChatViewModelService
         _messages.Clear();
         ChatInitialized?.Invoke();
     }
-    private async Task OnMessageUpdated(IAppChatMessage domainMessage)
+    private async Task OnMessageUpdated(IAppChatMessage domainMessage, bool forceRender)
     {
         var existingMessage = _messages.FirstOrDefault(m => m.Id == domainMessage.Id);
         if (existingMessage == null)
@@ -62,7 +62,7 @@ public class ChatViewModelService : IChatViewModelService
 
         existingMessage.UpdateFromDomainModel(domainMessage);
 
-        await (MessageUpdated?.Invoke(existingMessage) ?? Task.CompletedTask);
+        await (MessageUpdated?.Invoke(existingMessage, forceRender) ?? Task.CompletedTask);
     }
 
     private async Task OnMessageDeleted(Guid id)

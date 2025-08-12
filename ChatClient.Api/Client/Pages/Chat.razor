@@ -209,6 +209,8 @@
 </OllamaCheck>
 
 @code {
+    private const int UpdateIntervalMs = 500;
+
     private bool isLLMAnswering { get; set; } = false;
     private bool isLoadingInitialData = true;
     private bool chatStarted = false;
@@ -227,8 +229,10 @@
 
     private UserSettings userSettings = new();
 
+    private StreamingDebouncer _renderDebouncer = null!;
+
     private Func<ChatMessageViewModel, Task>? _messageAddedHandler;
-    private Func<ChatMessageViewModel, Task>? _messageUpdatedHandler;
+    private Func<ChatMessageViewModel, bool, Task>? _messageUpdatedHandler;
     private Func<ChatMessageViewModel, Task>? _messageDeletedHandler;
 
     protected override async Task OnInitializedAsync()
@@ -241,8 +245,9 @@
 
         ChatService.LoadingStateChanged += OnLoadingStateChanged;
         ChatViewModelService.ChatInitialized += OnChatInitialized;
+        _renderDebouncer = new StreamingDebouncer(UpdateIntervalMs, () => InvokeAsync(StateHasChanged));
         _messageAddedHandler = msg => InvokeAsync(() => OnMessageAdded(msg));
-        _messageUpdatedHandler = msg => InvokeAsync(() => OnMessageUpdated(msg));
+        _messageUpdatedHandler = (msg, force) => InvokeAsync(() => OnMessageUpdated(msg, force));
         _messageDeletedHandler = msg => InvokeAsync(() => OnMessageDeleted(msg));
         ChatViewModelService.MessageAdded += _messageAddedHandler;
         ChatViewModelService.MessageUpdated += _messageUpdatedHandler;
@@ -263,9 +268,15 @@
         StateHasChanged();
         await ScrollToBottom();
     }    
-    private void OnMessageUpdated(ChatMessageViewModel message)
+    private Task OnMessageUpdated(ChatMessageViewModel message, bool forceRender)
     {
-        StateHasChanged();
+        if (forceRender)
+        {
+            return _renderDebouncer.FlushAsync();
+        }
+
+        _renderDebouncer.TriggerUpdate();
+        return Task.CompletedTask;
     }
 
     private void OnMessageDeleted(ChatMessageViewModel message)
@@ -368,6 +379,7 @@
             ChatViewModelService.MessageUpdated -= _messageUpdatedHandler;
         if (_messageDeletedHandler != null)
             ChatViewModelService.MessageDeleted -= _messageDeletedHandler;
+        _renderDebouncer.Dispose();
         return ValueTask.CompletedTask;
     }
 

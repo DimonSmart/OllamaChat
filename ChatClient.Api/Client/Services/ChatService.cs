@@ -22,8 +22,6 @@ public class ChatService(
     KernelService kernelService,
     ILogger<ChatService> logger) : IChatService
 {
-    private const int UpdateIntervalMs = 500;
-
     private CancellationTokenSource? _cancellationTokenSource;
     private StreamingMessageManager _streamingManager = null!;
     private readonly Dictionary<string, StreamState> _activeStreams = new();
@@ -64,7 +62,7 @@ public class ChatService(
     public event Action<bool>? LoadingStateChanged;
     public event Action? ChatInitialized;
     public event Func<IAppChatMessage, Task>? MessageAdded;
-    public event Func<IAppChatMessage, Task>? MessageUpdated;
+    public event Func<IAppChatMessage, bool, Task>? MessageUpdated;
     public event Func<Guid, Task>? MessageDeleted;
 
     public bool IsLoading { get; private set; }
@@ -167,14 +165,13 @@ public class ChatService(
         logger.LogInformation("Processing response with model: {ModelName}", chatConfiguration.ModelName);
 
         var functionCalls = new List<FunctionCallRecord>();
-        var debouncers = new Dictionary<string, StreamingDebouncer>();
 
         // Стриминговое сообщение будет создано динамически для каждого агента при первом ответе
         // Нет зависимости от количества агентов
 
         try
         {
-            await ProcessWithRuntime(chatConfiguration, userMessage, functionCalls, debouncers, cancellationToken);
+            await ProcessWithRuntime(chatConfiguration, userMessage, functionCalls, cancellationToken);
         }
         catch (ModelDoesNotSupportToolsException ex)
         {
@@ -186,12 +183,12 @@ public class ChatService(
         }
         finally
         {
-            await FinalizeProcessing(functionCalls, debouncers, chatConfiguration);
+            await FinalizeProcessing(functionCalls, chatConfiguration);
         }
     }
 
     private async Task ProcessWithRuntime(ChatConfiguration chatConfiguration, string userMessage,
-        List<FunctionCallRecord> functionCalls, Dictionary<string, StreamingDebouncer> debouncers,
+        List<FunctionCallRecord> functionCalls,
         CancellationToken cancellationToken)
     {
         var runtime = new InProcessRuntime();
@@ -200,7 +197,7 @@ public class ChatService(
         var trackingFilter = new FunctionCallRecordingFilter(functionCalls);
         var agents = await CreateAgents(chatConfiguration, userMessage, trackingFilter);
         var groupChatManager = CreateGroupChatManager(chatConfiguration);
-        var chatOrchestration = CreateChatOrchestration(groupChatManager, agents, functionCalls, debouncers, chatConfiguration);
+        var chatOrchestration = CreateChatOrchestration(groupChatManager, agents, functionCalls, chatConfiguration);
 
         try
         {
@@ -267,7 +264,6 @@ public class ChatService(
         RoundRobinGroupChatManager groupChatManager,
         List<ChatCompletionAgent> agents,
         List<FunctionCallRecord> functionCalls,
-        Dictionary<string, StreamingDebouncer> debouncers,
         ChatConfiguration chatConfiguration)
     {
         return new GroupChatOrchestration(groupChatManager, agents.ToArray())
@@ -280,7 +276,7 @@ public class ChatService(
                     await HandleNonAssistantMessage(message);
                     return;
                 }
-                await HandleAssistantMessage(message, functionCalls, debouncers);
+                await HandleAssistantMessage(message, functionCalls);
             },
             // Новый стриминговый колбэк для инкрементальных токенов
             StreamingResponseCallback = async (streamingContent, isFinal) =>
@@ -290,10 +286,10 @@ public class ChatService(
                     agentName = _agentDescriptions.FirstOrDefault()?.Name ?? "Assistant";
 
                 if (!_activeStreams.TryGetValue(agentName, out var state))
-                    state = await CreateStreamingState(agentName, functionCalls, debouncers);
+                    state = await CreateStreamingState(agentName, functionCalls);
 
                 if (!string.IsNullOrEmpty(streamingContent.Content))
-                    UpdateStreamingMessage(state, streamingContent.Content, agentName, debouncers);
+                    await UpdateStreamingMessage(state, streamingContent.Content);
 
                 if (isFinal)
                     await CompleteStreamingMessage(state, functionCalls, chatConfiguration);
@@ -316,8 +312,7 @@ public class ChatService(
 
     private async Task HandleAssistantMessage(
         ChatMessageContent message,
-        List<FunctionCallRecord> functionCalls,
-        Dictionary<string, StreamingDebouncer> debouncers)
+        List<FunctionCallRecord> functionCalls)
     {
         // Ensure we always have a valid agent name, especially for single agent scenarios
         var agentName = message.AuthorName;
@@ -328,47 +323,36 @@ public class ChatService(
 
         if (!_activeStreams.TryGetValue(agentName, out var state))
         {
-            state = await CreateStreamingState(agentName, functionCalls, debouncers);
+            state = await CreateStreamingState(agentName, functionCalls);
         }
 
         if (!string.IsNullOrEmpty(message.Content))
         {
-            UpdateStreamingMessage(state, message.Content, agentName, debouncers);
+            await UpdateStreamingMessage(state, message.Content);
         }
     }
 
     private async Task<StreamState> CreateStreamingState(
         string agentName,
-        List<FunctionCallRecord> functionCalls,
-        Dictionary<string, StreamingDebouncer> debouncers)
+        List<FunctionCallRecord> functionCalls)
     {
         var stream = _streamingManager.CreateStreamingMessage(null, agentName);
         var state = new StreamState(stream, functionCalls.Count);
         _activeStreams[agentName] = state;
 
-        debouncers[agentName] = new StreamingDebouncer(UpdateIntervalMs, async () =>
-        {
-            if (MessageUpdated != null)
-                await MessageUpdated(state.Message);
-        });
-
         await AddMessageAsync(stream);
         return state;
     }
 
-    private void UpdateStreamingMessage(
+    private async Task UpdateStreamingMessage(
         StreamState state,
-        string content,
-        string agentName,
-        Dictionary<string, StreamingDebouncer> debouncers)
+        string content)
     {
         state.Message.Append(content);
         state.ApproximateTokenCount++;
 
-        if (debouncers.TryGetValue(agentName, out var debouncer))
-        {
-            debouncer.TriggerUpdate();
-        }
+        if (MessageUpdated != null)
+            await MessageUpdated(state.Message, false);
     }
 
     private static void RemoveTrackingFilters(List<ChatCompletionAgent> agents, FunctionCallRecordingFilter trackingFilter)
@@ -414,20 +398,9 @@ public class ChatService(
 
     private async Task FinalizeProcessing(
         List<FunctionCallRecord> functionCalls,
-        Dictionary<string, StreamingDebouncer> debouncers,
         ChatConfiguration chatConfiguration)
     {
-        await FlushDebouncers(debouncers);
         await CompleteActiveStreams(functionCalls, chatConfiguration);
-    }
-
-    private static async Task FlushDebouncers(Dictionary<string, StreamingDebouncer> debouncers)
-    {
-        foreach (var debouncer in debouncers.Values)
-        {
-            await debouncer.FlushAsync();
-            debouncer.Dispose();
-        }
     }
 
     private async Task CompleteActiveStreams(List<FunctionCallRecord> functionCalls, ChatConfiguration chatConfiguration)
@@ -444,8 +417,6 @@ public class ChatService(
         List<FunctionCallRecord> functionCalls,
         ChatConfiguration chatConfiguration)
     {
-        await (MessageUpdated?.Invoke(state.Message) ?? Task.CompletedTask);
-
         var messageFunctionCalls = functionCalls.Skip(state.FunctionCallStartIndex).ToList();
         foreach (var fc in messageFunctionCalls)
         {
@@ -473,7 +444,7 @@ public class ChatService(
         if (index >= 0)
         {
             Messages[index] = finalMessage;
-            await (MessageUpdated?.Invoke(finalMessage) ?? Task.CompletedTask);
+            await (MessageUpdated?.Invoke(finalMessage, true) ?? Task.CompletedTask);
         }
     }
 
