@@ -49,7 +49,7 @@
                     <MudSelect T="AgentDescription" Label="Select Agents" SelectedValues="selectedAgents" SelectedValuesChanged="@(items => selectedAgents = items.ToList())" MultiSelection="true" Variant="Variant.Outlined" FullWidth="true" Dense="true">
                         @foreach (var agent in agents)
                         {
-                            <MudSelectItem Value="@agent">@agent.Name</MudSelectItem>
+                            <MudSelectItem Value="@agent">@agent.AgentName</MudSelectItem>
                         }
                     </MudSelect>
 
@@ -60,7 +60,7 @@
                             @foreach (var agent in selectedAgents)
                             {
                                 <div class="mb-2">
-                                    <strong>@agent.Name</strong>
+                                    <strong>@agent.AgentName</strong>
                                     <div>@(agent.Content ?? string.Empty)</div>
                                 </div>
                             }

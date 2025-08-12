@@ -49,7 +49,7 @@
                     <MudSelect T="AgentDescription" Label="Select Agent" @bind-Value="selectedAgent" Variant="Variant.Outlined" FullWidth="true" Dense="true">
                         @foreach (var agent in agents)
                         {
-                            <MudSelectItem Value="@agent">@agent.Name</MudSelectItem>
+                            <MudSelectItem Value="@agent">@agent.AgentName</MudSelectItem>
                         }
                     </MudSelect>
 
@@ -58,7 +58,7 @@
                     {
                         <div class="agent-description-preview mt-3 pa-3 mb-2">
                             <div class="mb-2">
-                                <strong>@selectedAgent.Name</strong>
+                                <strong>@selectedAgent.AgentName</strong>
                                 <div>@(selectedAgent.Content ?? string.Empty)</div>
                             </div>
                         </div>

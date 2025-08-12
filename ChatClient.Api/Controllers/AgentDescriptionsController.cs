@@ -58,7 +58,7 @@ public class AgentDescriptionsController : ControllerBase
     {
         try
         {
-            if (string.IsNullOrWhiteSpace(agent.Name))
+            if (string.IsNullOrWhiteSpace(agent.AgentName))
             {
                 return BadRequest("Agent name is required");
             }
@@ -88,7 +88,7 @@ public class AgentDescriptionsController : ControllerBase
                 return BadRequest("ID in URL does not match ID in request body");
             }
 
-            if (string.IsNullOrWhiteSpace(agent.Name))
+            if (string.IsNullOrWhiteSpace(agent.AgentName))
             {
                 return BadRequest("Agent name is required");
             }
