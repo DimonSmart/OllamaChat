@@ -18,7 +18,7 @@ public class ChatViewModelServiceTests
         public event Action<bool>? LoadingStateChanged;
         public event Action? ChatInitialized;
         public event Func<IAppChatMessage, Task>? MessageAdded;
-        public event Func<IAppChatMessage, Task>? MessageUpdated;
+        public event Func<IAppChatMessage, bool, Task>? MessageUpdated;
         public event Func<Guid, Task>? MessageDeleted;
 
         public void InitializeChat(IEnumerable<AgentDescription> initialAgents) { }
@@ -28,7 +28,7 @@ public class ChatViewModelServiceTests
         public Task DeleteMessageAsync(Guid id) => Task.CompletedTask;
 
         public Task RaiseMessageAdded(IAppChatMessage message) => MessageAdded?.Invoke(message) ?? Task.CompletedTask;
-        public Task RaiseMessageUpdated(IAppChatMessage message) => MessageUpdated?.Invoke(message) ?? Task.CompletedTask;
+        public Task RaiseMessageUpdated(IAppChatMessage message, bool forceRender = false) => MessageUpdated?.Invoke(message, forceRender) ?? Task.CompletedTask;
         public Task RaiseMessageDeleted(Guid id) => MessageDeleted?.Invoke(id) ?? Task.CompletedTask;
     }
 
@@ -40,7 +40,7 @@ public class ChatViewModelServiceTests
         var log = new List<string>();
 
         vmService.MessageAdded += async vm => { log.Add("added-start"); await Task.Delay(10); log.Add("added-end"); };
-        vmService.MessageUpdated += async vm => { log.Add("updated-start"); await Task.Delay(10); log.Add("updated-end"); };
+        vmService.MessageUpdated += async (vm, _) => { log.Add("updated-start"); await Task.Delay(10); log.Add("updated-end"); };
         vmService.MessageDeleted += async vm => { log.Add("deleted-start"); await Task.Delay(10); log.Add("deleted-end"); };
 
         var msg = new AppChatMessage("hello", DateTime.UtcNow, ChatRole.User);
@@ -79,7 +79,7 @@ public class ChatViewModelServiceTests
         var vmService = new ChatViewModelService(chatService);
         var msg = new AppChatMessage("hi", DateTime.UtcNow, ChatRole.User);
         await chatService.RaiseMessageAdded(msg);
-        vmService.MessageUpdated += vm => throw new InvalidOperationException("boom");
+        vmService.MessageUpdated += (vm, _) => throw new InvalidOperationException("boom");
         var updated = new AppChatMessage(msg) { Content = "new" };
         await Assert.ThrowsAsync<InvalidOperationException>(() => chatService.RaiseMessageUpdated(updated));
     }

@@ -11,7 +11,7 @@ public interface IChatService
     event Action<bool>? LoadingStateChanged;
     event Action? ChatInitialized;
     event Func<IAppChatMessage, Task>? MessageAdded;
-    event Func<IAppChatMessage, Task>? MessageUpdated;
+    event Func<IAppChatMessage, bool, Task>? MessageUpdated;
     event Func<Guid, Task>? MessageDeleted;
     void InitializeChat(IEnumerable<AgentDescription> initialAgents);
     void ClearChat();

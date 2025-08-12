@@ -8,6 +8,6 @@ public interface IChatViewModelService
     event Action<bool>? LoadingStateChanged;
     event Action? ChatInitialized;
     event Func<ChatMessageViewModel, Task>? MessageAdded;
-    event Func<ChatMessageViewModel, Task>? MessageUpdated;
+    event Func<ChatMessageViewModel, bool, Task>? MessageUpdated;
     event Func<ChatMessageViewModel, Task>? MessageDeleted;
 }

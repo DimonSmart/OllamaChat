@@ -52,7 +52,7 @@ public class StreamingMessageManagerTests
     public async Task AppendToMessageAsync_MultipleStreams_UpdatesCorrectly()
     {
         List<IAppChatMessage> updated = [];
-        var manager = new StreamingMessageManager(msg =>
+        var manager = new StreamingMessageManager((msg, _) =>
         {
             updated.Add(msg);
             return Task.CompletedTask;
