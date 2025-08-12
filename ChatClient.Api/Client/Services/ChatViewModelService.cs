@@ -47,11 +47,13 @@ public class ChatViewModelService : IChatViewModelService
         }
         AnsweringStateChanged?.Invoke(isAnswering);
     }
+
     private void OnChatReset()
     {
         _messages.Clear();
         ChatReset?.Invoke();
     }
+
     private async Task OnMessageUpdated(IAppChatMessage domainMessage, bool forceRender)
     {
         var existingMessage = _messages.FirstOrDefault(m => m.Id == domainMessage.Id);
@@ -68,10 +70,9 @@ public class ChatViewModelService : IChatViewModelService
     private async Task OnMessageDeleted(Guid id)
     {
         var message = _messages.FirstOrDefault(m => m.Id == id);
-        if (message != null)
-        {
-            _messages.Remove(message);
-            await (MessageDeleted?.Invoke(message) ?? Task.CompletedTask);
-        }
+        if (message == null)
+            return;
+        _messages.Remove(message);
+        await (MessageDeleted?.Invoke(message) ?? Task.CompletedTask);
     }
 }
