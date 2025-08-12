@@ -15,7 +15,7 @@ namespace ChatClient.Tests;
 
 public class MultiAgentTests
 {
-    [Fact()] //Skip = "Requires running Ollama server with 'phi4:latest' model.")]
+    [Fact(Skip = "Requires running Ollama server with 'phi4:latest' model.")]
     public async Task CopyWriterReviewer_CreateSlogan()
     {
         var services = new ServiceCollection();

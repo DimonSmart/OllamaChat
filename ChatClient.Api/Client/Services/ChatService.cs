@@ -24,24 +24,8 @@ public class ChatService(
 {
     private CancellationTokenSource? _cancellationTokenSource;
     private StreamingMessageManager _streamingManager = null!;
-    private readonly Dictionary<string, StreamState> _activeStreams = new();
+    private readonly Dictionary<string, StreamingAppChatMessage> _activeStreams = new();
     private List<AgentDescription> _agentDescriptions = [];
-
-    private sealed class StreamState
-    {
-        public StreamingAppChatMessage Message { get; }
-        public int ApproximateTokenCount { get; set; }
-        public DateTime StartTime { get; set; }
-        public int FunctionCallStartIndex { get; set; }
-
-        public StreamState(StreamingAppChatMessage message, int functionCallStartIndex)
-        {
-            Message = message;
-            StartTime = DateTime.Now;
-            FunctionCallStartIndex = functionCallStartIndex;
-            ApproximateTokenCount = 0;
-        }
-    }
 
     private sealed class FunctionCallRecordingFilter(List<FunctionCallRecord> records) : IFunctionInvocationFilter
     {
@@ -117,10 +101,10 @@ public class ChatService(
 
     private async Task CancelActiveStreams()
     {
-        foreach (var state in _activeStreams.Values.ToList())
+        foreach (var message in _activeStreams.Values.ToList())
         {
-            AppChatMessage canceledMessage = _streamingManager.CancelStreaming(state.Message);
-            await ReplaceStreamingMessageWithFinal(state.Message, canceledMessage);
+            AppChatMessage canceledMessage = _streamingManager.CancelStreaming(message);
+            await ReplaceStreamingMessageWithFinal(message, canceledMessage);
         }
         _activeStreams.Clear();
     }
@@ -275,42 +259,42 @@ public class ChatService(
                 if (string.IsNullOrWhiteSpace(agentName))
                     agentName = _agentDescriptions.FirstOrDefault()?.Name ?? "Assistant";
 
-                if (!_activeStreams.TryGetValue(agentName, out var state))
-                    state = await CreateStreamingState(agentName, functionCalls);
+                if (!_activeStreams.TryGetValue(agentName, out var message))
+                    message = await CreateStreamingState(agentName, functionCalls);
 
                 if (!string.IsNullOrEmpty(streamingContent.Content))
-                    await UpdateStreamingMessage(state, streamingContent.Content);
+                    await UpdateStreamingMessage(message, streamingContent.Content);
 
                 if (isFinal)
                 {
-                    await CompleteStreamingMessage(state, functionCalls, chatConfiguration);
+                    await CompleteStreamingMessage(message, functionCalls, chatConfiguration);
                     _activeStreams.Remove(agentName);
                 }
             }
         };
     }
 
-    private async Task<StreamState> CreateStreamingState(
+    private async Task<StreamingAppChatMessage> CreateStreamingState(
         string agentName,
         List<FunctionCallRecord> functionCalls)
     {
         var stream = _streamingManager.CreateStreamingMessage(null, agentName);
-        var state = new StreamState(stream, functionCalls.Count);
-        _activeStreams[agentName] = state;
+        stream.FunctionCallStartIndex = functionCalls.Count;
+        _activeStreams[agentName] = stream;
 
         await AddMessageAsync(stream);
-        return state;
+        return stream;
     }
 
     private async Task UpdateStreamingMessage(
-        StreamState state,
+        StreamingAppChatMessage message,
         string content)
     {
-        state.Message.Append(content);
-        state.ApproximateTokenCount++;
+        message.Append(content);
+        message.ApproximateTokenCount++;
 
         if (MessageUpdated != null)
-            await MessageUpdated(state.Message, false);
+            await MessageUpdated(message, false);
     }
 
     private static void RemoveTrackingFilters(List<ChatCompletionAgent> agents, FunctionCallRecordingFilter trackingFilter)
@@ -347,9 +331,9 @@ public class ChatService(
 
     private void ClearActiveStreams()
     {
-        foreach (var state in _activeStreams.Values.ToList())
+        foreach (var message in _activeStreams.Values.ToList())
         {
-            RemoveStreamingMessage(state.Message);
+            RemoveStreamingMessage(message);
         }
         _activeStreams.Clear();
     }
@@ -371,26 +355,26 @@ public class ChatService(
     }
 
     private async Task CompleteStreamingMessage(
-        StreamState state,
+        StreamingAppChatMessage message,
         List<FunctionCallRecord> functionCalls,
         ChatConfiguration chatConfiguration)
     {
-        var messageFunctionCalls = functionCalls.Skip(state.FunctionCallStartIndex).ToList();
+        var messageFunctionCalls = functionCalls.Skip(message.FunctionCallStartIndex).ToList();
         foreach (var fc in messageFunctionCalls)
         {
-            state.Message.AddFunctionCall(fc);
+            message.AddFunctionCall(fc);
         }
 
-        TimeSpan processingTime = DateTime.Now - state.StartTime;
+        TimeSpan processingTime = DateTime.Now - message.MsgDateTime;
 
         var statistics = _streamingManager.BuildStatistics(
             processingTime,
             chatConfiguration,
-            state.ApproximateTokenCount,
+            message.ApproximateTokenCount,
             messageFunctionCalls.Select(fc => fc.Server).Distinct());
 
-        var finalMessage = _streamingManager.CompleteStreaming(state.Message, statistics);
-        await ReplaceStreamingMessageWithFinal(state.Message, finalMessage);
+        var finalMessage = _streamingManager.CompleteStreaming(message, statistics);
+        await ReplaceStreamingMessageWithFinal(message, finalMessage);
     }
 
 
