@@ -21,6 +21,7 @@ public class ChatService(
     private CancellationTokenSource? _cancellationTokenSource;
     private StreamingMessageManager _streamingManager = null!;
     private readonly Dictionary<string, StreamingAppChatMessage> _activeStreams = new();
+    private const string PlaceholderAgent = "__placeholder__";
     private List<AgentDescription> _agentDescriptions = [];
 
     private sealed class FunctionCallRecordingFilter(List<FunctionCallRecord> records) : IFunctionInvocationFilter
@@ -113,6 +114,13 @@ public class ChatService(
 
         var trimmedText = text.Trim();
         await AddMessageAsync(new AppChatMessage(trimmedText, DateTime.Now, ChatRole.User, string.Empty, files));
+
+        // Display a temporary placeholder while waiting for the first agent token
+        var placeholder = _streamingManager.CreateStreamingMessage();
+        placeholder.Append("...");
+        _activeStreams[PlaceholderAgent] = placeholder;
+        await AddMessageAsync(placeholder);
+
         UpdateAnsweringState(true);
 
         _cancellationTokenSource = new CancellationTokenSource();
@@ -257,7 +265,21 @@ public class ChatService(
                     agentName = _agentDescriptions.FirstOrDefault()?.Name ?? "Assistant";
 
                 if (!_activeStreams.TryGetValue(agentName, out var message))
-                    message = await CreateStreamingState(agentName, functionCalls);
+                {
+                    if (_activeStreams.TryGetValue(PlaceholderAgent, out var placeholder))
+                    {
+                        _activeStreams.Remove(PlaceholderAgent);
+                        placeholder.SetAgentName(agentName);
+                        placeholder.ResetContent();
+                        placeholder.FunctionCallStartIndex = functionCalls.Count;
+                        _activeStreams[agentName] = placeholder;
+                        message = placeholder;
+                    }
+                    else
+                    {
+                        message = await CreateStreamingState(agentName, functionCalls);
+                    }
+                }
 
                 if (!string.IsNullOrEmpty(streamingContent.Content))
                     await UpdateStreamingMessage(message, streamingContent.Content);
