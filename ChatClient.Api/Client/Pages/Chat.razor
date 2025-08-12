@@ -296,7 +296,6 @@
         userSettings = await UserSettingsService.GetSettingsAsync();
     }
 
-
     private void StartChat()
     {
         if (selectedAgent == null)
@@ -306,18 +305,14 @@
         chatStarted = true;
         StateHasChanged();
     }
+
     private async Task SendChatMessageAsync((string text, IReadOnlyList<ChatMessageFile> files) messageData)
     {
-        if (string.IsNullOrWhiteSpace(messageData.text) || isLLMAnswering)
-            return;
+        if (string.IsNullOrWhiteSpace(messageData.text) || isLLMAnswering) return;
+        if (selectedAgent == null) return;
 
-        var functions = selectedAgent?.Functions ?? [];
-        var chatConfiguration = new ChatConfiguration(
-            SelectedModel?.Name ?? string.Empty,
-            functions,
-            1, // Single agent - always 1 invocation
-            string.Empty, // No stop agent for single agent
-            string.Empty); // No stop phrase for single agent
+        var functions = selectedAgent.Functions ?? [];
+        var chatConfiguration = new ChatConfiguration(SelectedModel?.Name, functions);
 
         await ChatService.GenerateAnswerAsync(messageData.text.Trim(), chatConfiguration, messageData.files);
         await ScrollToBottom();

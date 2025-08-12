@@ -246,10 +246,14 @@ public class ChatService(
     {
         return _agentDescriptions.Count == 1
             ? new RoundRobinGroupChatManager() { MaximumInvocationCount = 1 }
-            : new ReasonableRoundRobinGroupChatManager(chatConfiguration.StopAgentName, chatConfiguration.StopPhrase)
-            {
-                MaximumInvocationCount = chatConfiguration.MaximumInvocationCount
-            };
+            : new RoundRobinGroupChatManager() { MaximumInvocationCount = 1 };
+
+
+
+        //    new ReasonableRoundRobinGroupChatManager(chatConfiguration.StopAgentName, chatConfiguration.StopPhrase)
+        //    {
+        //        MaximumInvocationCount = chatConfiguration.MaximumInvocationCount
+        //    };
     }
 
     private GroupChatOrchestration CreateChatOrchestration(

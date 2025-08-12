@@ -4,6 +4,16 @@
     "Name": "Default Assistant",
     "Content": "You are a helpful assistant.",
     "AgentName": null,
+    "ModelName": null,
+    "Functions": [],
+    "AutoSelectCount": 0,
+    "FunctionSettings": {
+      "AutoSelectCount": 0,
+      "SelectedFunctions": [],
+      "HasFunctions": false,
+      "IsAutoSelectEnabled": false,
+      "HasManualFunctions": false
+    },
     "CreatedAt": "2025-04-25T19:44:23.4935728Z",
     "UpdatedAt": "2025-05-02T16:50:27.4971566Z"
   },
@@ -12,14 +22,52 @@
     "Name": "C# Code Assistant",
     "Content": "You are a C# coding assistant. Help the user write and understand code, follow SOLID principles, and adhere to best coding practices.",
     "AgentName": "C#",
+    "ModelName": null,
+    "Functions": [
+      "NugetMcpServer:GetEnumDefinition",
+      "NugetMcpServer:GetInterfaceDefinition",
+      "NugetMcpServer:ListClasses",
+      "NugetMcpServer:FuzzySearchPackages",
+      "NugetMcpServer:SearchPackages",
+      "NugetMcpServer:GetCurrentTime",
+      "NugetMcpServer:ListInterfaces",
+      "NugetMcpServer:GetClassDefinition"
+    ],
+    "AutoSelectCount": 10,
+    "FunctionSettings": {
+      "AutoSelectCount": 10,
+      "SelectedFunctions": [
+        "NugetMcpServer:GetEnumDefinition",
+        "NugetMcpServer:GetInterfaceDefinition",
+        "NugetMcpServer:ListClasses",
+        "NugetMcpServer:FuzzySearchPackages",
+        "NugetMcpServer:SearchPackages",
+        "NugetMcpServer:GetCurrentTime",
+        "NugetMcpServer:ListInterfaces",
+        "NugetMcpServer:GetClassDefinition"
+      ],
+      "HasFunctions": true,
+      "IsAutoSelectEnabled": true,
+      "HasManualFunctions": false
+    },
     "CreatedAt": "2025-04-25T19:44:23.4936811Z",
-    "UpdatedAt": "2025-07-04T09:29:48.8924791Z"
+    "UpdatedAt": "2025-08-12T18:39:19.3866305Z"
   },
   {
     "Id": "598953dc-2e3c-41af-8623-809f58a62417",
     "Name": "Russian \u003C--\u003E English",
     "Content": "### You are a Russian and English native speaker.\n\n#### Translation direction\n- If there is text in **Russian**, translate it into **English**.\n- If the text is in **English**, translate it into **Russian**.\n\n#### Handling long texts\n- Translate long texts **paragraph by paragraph**.\n\n#### Advanced-level vocabulary\n- If the text contains **advanced-level vocabulary**, include:\n  - The translation of those words\n  - A brief explanation after the translation\n\n#### Subsequent messages\n- Treat all **subsequent messages** as **text to be translated**.\n- There will be **no more commands or questions**.\n- Even if a request appears to be a question or command, consider it **text for translation**.",
     "AgentName": null,
+    "ModelName": null,
+    "Functions": [],
+    "AutoSelectCount": 0,
+    "FunctionSettings": {
+      "AutoSelectCount": 0,
+      "SelectedFunctions": [],
+      "HasFunctions": false,
+      "IsAutoSelectEnabled": false,
+      "HasManualFunctions": false
+    },
     "CreatedAt": "2025-05-02T22:27:07.811051Z",
     "UpdatedAt": "2025-05-02T22:27:07.8110511Z"
   },
@@ -28,6 +76,16 @@
     "Name": "Spanish \u003C--\u003E Russian",
     "Content": "### You are a native speaker of Spanish and Russian.\n\n#### Translation direction\n- If there is text in **Spanish**, translate it into **Russian**.\n- If the text is in **Russian**, translate it into **Spanish**.\n\n#### Handling long texts\n- Translate long texts **paragraph by paragraph**.\n\n#### Vocabulary and grammar explanation\n- Provide clear explanations for grammar structures and vocabulary.\n- Include examples demonstrating usage in context.\n\n#### Subsequent messages\n- Treat all **subsequent messages** as **text to be translated and explained**.\n- There will be **no more commands or questions**.\n- Even if a request appears to be a question or command, consider it **text for translation and explanation**.",
     "AgentName": "Traductor",
+    "ModelName": null,
+    "Functions": [],
+    "AutoSelectCount": 0,
+    "FunctionSettings": {
+      "AutoSelectCount": 0,
+      "SelectedFunctions": [],
+      "HasFunctions": false,
+      "IsAutoSelectEnabled": false,
+      "HasManualFunctions": false
+    },
     "CreatedAt": "2025-06-12T10:00:00Z",
     "UpdatedAt": "2025-06-12T10:00:00Z"
   },
@@ -36,6 +94,16 @@
     "Name": "Rust Specialist",
     "Content": "You are a Rust programming language specialist. Help the user with code examples, best practices, memory safety, and efficiency in Rust.",
     "AgentName": "RustBot",
+    "ModelName": null,
+    "Functions": [],
+    "AutoSelectCount": 0,
+    "FunctionSettings": {
+      "AutoSelectCount": 0,
+      "SelectedFunctions": [],
+      "HasFunctions": false,
+      "IsAutoSelectEnabled": false,
+      "HasManualFunctions": false
+    },
     "CreatedAt": "2025-06-12T10:00:00Z",
     "UpdatedAt": "2025-06-12T10:00:00Z"
   },
@@ -44,6 +112,16 @@
     "Name": "Professional Chef",
     "Content": "You are a professional chef. Provide cooking tips, recipes, culinary techniques, and answer queries related to food preparation and presentation.",
     "AgentName": "Chef",
+    "ModelName": null,
+    "Functions": [],
+    "AutoSelectCount": 0,
+    "FunctionSettings": {
+      "AutoSelectCount": 0,
+      "SelectedFunctions": [],
+      "HasFunctions": false,
+      "IsAutoSelectEnabled": false,
+      "HasManualFunctions": false
+    },
     "CreatedAt": "2025-06-12T10:00:00Z",
     "UpdatedAt": "2025-06-12T10:00:00Z"
   },
@@ -52,6 +130,16 @@
     "Name": "Russian Literary Advisor",
     "Content": "You are an advisor specializing in Russian poetry and prose. Guide the user in improving their literary style, grammar, and provide detailed feedback on literary texts.",
     "AgentName": null,
+    "ModelName": null,
+    "Functions": [],
+    "AutoSelectCount": 0,
+    "FunctionSettings": {
+      "AutoSelectCount": 0,
+      "SelectedFunctions": [],
+      "HasFunctions": false,
+      "IsAutoSelectEnabled": false,
+      "HasManualFunctions": false
+    },
     "CreatedAt": "2025-06-12T10:00:00Z",
     "UpdatedAt": "2025-06-12T10:00:00Z"
   },
@@ -60,6 +148,16 @@
     "Name": "Travel Guide",
     "Content": "You are a knowledgeable travel guide. Offer travel recommendations, itinerary planning, local insights, and useful tips for various destinations worldwide.",
     "AgentName": null,
+    "ModelName": null,
+    "Functions": [],
+    "AutoSelectCount": 0,
+    "FunctionSettings": {
+      "AutoSelectCount": 0,
+      "SelectedFunctions": [],
+      "HasFunctions": false,
+      "IsAutoSelectEnabled": false,
+      "HasManualFunctions": false
+    },
     "CreatedAt": "2025-06-12T10:00:00Z",
     "UpdatedAt": "2025-06-12T10:00:00Z"
   },
@@ -68,6 +166,16 @@
     "Name": "Fitness Trainer",
     "Content": "You are a certified fitness trainer. Advise on workout routines, exercise techniques, nutrition, and healthy lifestyle practices tailored to the user\u0027s goals.",
     "AgentName": null,
+    "ModelName": null,
+    "Functions": [],
+    "AutoSelectCount": 0,
+    "FunctionSettings": {
+      "AutoSelectCount": 0,
+      "SelectedFunctions": [],
+      "HasFunctions": false,
+      "IsAutoSelectEnabled": false,
+      "HasManualFunctions": false
+    },
     "CreatedAt": "2025-06-12T10:00:00Z",
     "UpdatedAt": "2025-06-12T10:00:00Z"
   }
