@@ -116,7 +116,10 @@ public class ChatService(
         await AddMessageAsync(new AppChatMessage(trimmedText, DateTime.Now, ChatRole.User, string.Empty, files));
 
         // Display a temporary placeholder while waiting for the first agent token
-        var placeholder = _streamingManager.CreateStreamingMessage();
+        var defaultAgentName = _agentDescriptions.FirstOrDefault()?.AgentName
+            ?? _agentDescriptions.FirstOrDefault()?.Name
+            ?? string.Empty;
+        var placeholder = _streamingManager.CreateStreamingMessage(agentName: defaultAgentName);
         placeholder.Append("...");
         _activeStreams[PlaceholderAgent] = placeholder;
         await AddMessageAsync(placeholder);
