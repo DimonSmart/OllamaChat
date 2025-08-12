@@ -43,13 +43,13 @@ public class ChatService(
         }
     }
 
-    public event Action<bool>? LoadingStateChanged;
-    public event Action? ChatInitialized;
+    public event Action<bool>? AnsweringStateChanged;
+    public event Action? ChatReset;
     public event Func<IAppChatMessage, Task>? MessageAdded;
     public event Func<IAppChatMessage, bool, Task>? MessageUpdated;
     public event Func<Guid, Task>? MessageDeleted;
 
-    public bool IsLoading { get; private set; }
+    public bool IsAnswering { get; private set; }
     public ObservableCollection<IAppChatMessage> Messages { get; } = [];
     public IReadOnlyList<AgentDescription> AgentDescriptions => _agentDescriptions;
 
@@ -68,7 +68,7 @@ public class ChatService(
         _agentDescriptions = agentsList;
 
         AddSystemMessages();
-        ChatInitialized?.Invoke();
+        ChatReset?.Invoke();
     }
 
     private void AddSystemMessages()
@@ -80,11 +80,12 @@ public class ChatService(
         }
     }
 
-    public void ClearChat()
+    public void ResetChat()
     {
         Messages.Clear();
         _agentDescriptions.Clear();
         _activeStreams.Clear();
+        ChatReset?.Invoke();
     }
 
     public async Task CancelAsync()
@@ -96,7 +97,7 @@ public class ChatService(
             await CancelActiveStreams();
         }
 
-        UpdateLoadingState(false);
+        UpdateAnsweringState(false);
     }
 
     private async Task CancelActiveStreams()
@@ -109,14 +110,14 @@ public class ChatService(
         _activeStreams.Clear();
     }
 
-    public async Task AddUserMessageAndAnswerAsync(string text, ChatConfiguration chatConfiguration, IReadOnlyList<ChatMessageFile>? files = null)
+    public async Task GenerateAnswerAsync(string text, ChatConfiguration chatConfiguration, IReadOnlyList<ChatMessageFile>? files = null)
     {
-        if (string.IsNullOrWhiteSpace(text) || IsLoading)
+        if (string.IsNullOrWhiteSpace(text) || IsAnswering)
             return;
 
         var trimmedText = text.Trim();
         await AddMessageAsync(new AppChatMessage(trimmedText, DateTime.Now, ChatRole.User, string.Empty, files));
-        UpdateLoadingState(true);
+        UpdateAnsweringState(true);
 
         _cancellationTokenSource = new CancellationTokenSource();
         try
@@ -403,18 +404,18 @@ public class ChatService(
     {
         _cancellationTokenSource?.Dispose();
         _cancellationTokenSource = null;
-        UpdateLoadingState(false);
+        UpdateAnsweringState(false);
     }
 
-    private void UpdateLoadingState(bool isLoading)
+    private void UpdateAnsweringState(bool isAnswering)
     {
-        IsLoading = isLoading;
-        LoadingStateChanged?.Invoke(isLoading);
+        IsAnswering = isAnswering;
+        AnsweringStateChanged?.Invoke(isAnswering);
     }
 
     public async Task DeleteMessageAsync(Guid id)
     {
-        if (IsLoading)
+        if (IsAnswering)
             return;
 
         var message = Messages.FirstOrDefault(m => m.Id == id);

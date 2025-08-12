@@ -126,8 +126,8 @@
     {
         await base.OnInitializedAsync();
 
-        ChatService.LoadingStateChanged += OnLoadingStateChanged;
-        isLLMAnswering = ChatService.IsLoading;
+        ChatService.AnsweringStateChanged += OnAnsweringStateChanged;
+        isLLMAnswering = ChatService.IsAnswering;
 
         var settings = await UserSettingsService.GetSettingsAsync();
         useAgentResponses = settings.DefaultUseAgentResponses;
@@ -171,9 +171,9 @@
         _isDarkMode = !_isDarkMode;
     }
 
-    private void OnLoadingStateChanged(bool loading)
+    private void OnAnsweringStateChanged(bool answering)
     {
-        isLLMAnswering = loading;
+        isLLMAnswering = answering;
         InvokeAsync(StateHasChanged);
     }
 
@@ -252,7 +252,7 @@
 
     public ValueTask DisposeAsync()
     {
-        ChatService.LoadingStateChanged -= OnLoadingStateChanged;
+        ChatService.AnsweringStateChanged -= OnAnsweringStateChanged;
         return ValueTask.CompletedTask;
     }
 }

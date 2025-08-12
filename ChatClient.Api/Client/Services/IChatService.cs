@@ -6,16 +6,16 @@ namespace ChatClient.Api.Client.Services;
 
 public interface IChatService
 {
-    bool IsLoading { get; }
+    bool IsAnswering { get; }
     IReadOnlyList<AgentDescription> AgentDescriptions { get; }
-    event Action<bool>? LoadingStateChanged;
-    event Action? ChatInitialized;
+    event Action<bool>? AnsweringStateChanged;
+    event Action? ChatReset;
     event Func<IAppChatMessage, Task>? MessageAdded;
     event Func<IAppChatMessage, bool, Task>? MessageUpdated;
     event Func<Guid, Task>? MessageDeleted;
     void InitializeChat(IEnumerable<AgentDescription> initialAgents);
-    void ClearChat();
+    void ResetChat();
     Task CancelAsync();
-    Task AddUserMessageAndAnswerAsync(string text, ChatConfiguration chatConfiguration, IReadOnlyList<ChatMessageFile> files);
+    Task GenerateAnswerAsync(string text, ChatConfiguration chatConfiguration, IReadOnlyList<ChatMessageFile> files);
     Task DeleteMessageAsync(Guid id);
 }

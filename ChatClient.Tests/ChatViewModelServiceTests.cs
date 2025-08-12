@@ -13,18 +13,18 @@ public class ChatViewModelServiceTests
 {
     private class StubChatService : IChatService
     {
-        public bool IsLoading => false;
+        public bool IsAnswering => false;
         public IReadOnlyList<AgentDescription> AgentDescriptions { get; } = [];
-        public event Action<bool>? LoadingStateChanged;
-        public event Action? ChatInitialized;
+        public event Action<bool>? AnsweringStateChanged;
+        public event Action? ChatReset;
         public event Func<IAppChatMessage, Task>? MessageAdded;
         public event Func<IAppChatMessage, bool, Task>? MessageUpdated;
         public event Func<Guid, Task>? MessageDeleted;
 
         public void InitializeChat(IEnumerable<AgentDescription> initialAgents) { }
-        public void ClearChat() { }
+        public void ResetChat() { }
         public Task CancelAsync() => Task.CompletedTask;
-        public Task AddUserMessageAndAnswerAsync(string text, ChatConfiguration chatConfiguration, IReadOnlyList<ChatMessageFile> files) => Task.CompletedTask;
+        public Task GenerateAnswerAsync(string text, ChatConfiguration chatConfiguration, IReadOnlyList<ChatMessageFile> files) => Task.CompletedTask;
         public Task DeleteMessageAsync(Guid id) => Task.CompletedTask;
 
         public Task RaiseMessageAdded(IAppChatMessage message) => MessageAdded?.Invoke(message) ?? Task.CompletedTask;
