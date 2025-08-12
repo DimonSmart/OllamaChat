@@ -10,19 +10,19 @@ public class ChatViewModelService : IChatViewModelService
 
     public IReadOnlyList<ChatMessageViewModel> Messages => _messages;
 
-    public event Action<bool>? LoadingStateChanged;
-    public event Action? ChatInitialized;
+    public event Action<bool>? AnsweringStateChanged;
+    public event Action? ChatReset;
     public event Func<ChatMessageViewModel, Task>? MessageAdded;
     public event Func<ChatMessageViewModel, bool, Task>? MessageUpdated;
     public event Func<ChatMessageViewModel, Task>? MessageDeleted;
 
-    public bool IsLoading => _chatService.IsLoading;
+    public bool IsAnswering => _chatService.IsAnswering;
 
     public ChatViewModelService(IChatService chatService)
     {
         _chatService = chatService;
-        _chatService.LoadingStateChanged += async isLoading => await OnLoadingStateChanged(isLoading);
-        _chatService.ChatInitialized += OnChatInitialized;
+        _chatService.AnsweringStateChanged += async isAnswering => await OnAnsweringStateChanged(isAnswering);
+        _chatService.ChatReset += OnChatReset;
         _chatService.MessageAdded += OnMessageAdded;
         _chatService.MessageUpdated += OnMessageUpdated;
         _chatService.MessageDeleted += OnMessageDeleted;
@@ -35,9 +35,9 @@ public class ChatViewModelService : IChatViewModelService
         await (MessageAdded?.Invoke(viewModel) ?? Task.CompletedTask);
     }
 
-    private async Task OnLoadingStateChanged(bool isLoading)
+    private async Task OnAnsweringStateChanged(bool isAnswering)
     {
-        if (!isLoading)
+        if (!isAnswering)
         {
             foreach (var message in _messages.Where(m => m.IsStreaming))
             {
@@ -45,12 +45,12 @@ public class ChatViewModelService : IChatViewModelService
                 await (MessageUpdated?.Invoke(message, true) ?? Task.CompletedTask);
             }
         }
-        LoadingStateChanged?.Invoke(isLoading);
+        AnsweringStateChanged?.Invoke(isAnswering);
     }
-    private void OnChatInitialized()
+    private void OnChatReset()
     {
         _messages.Clear();
-        ChatInitialized?.Invoke();
+        ChatReset?.Invoke();
     }
     private async Task OnMessageUpdated(IAppChatMessage domainMessage, bool forceRender)
     {

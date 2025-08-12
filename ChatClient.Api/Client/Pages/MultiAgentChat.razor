@@ -264,8 +264,8 @@
         await LoadAgents();
         await LoadUserSettings();
 
-        ChatService.LoadingStateChanged += OnLoadingStateChanged;
-        ChatViewModelService.ChatInitialized += OnChatInitialized;
+        ChatService.AnsweringStateChanged += OnAnsweringStateChanged;
+        ChatViewModelService.ChatReset += OnChatReset;
         _renderDebouncer = new StreamingDebouncer(UpdateIntervalMs, () => InvokeAsync(StateHasChanged));
         _messageAddedHandler = msg => InvokeAsync(() => OnMessageAdded(msg));
         _messageUpdatedHandler = (msg, force) => InvokeAsync(() => OnMessageUpdated(msg, force));
@@ -278,9 +278,9 @@
         StateHasChanged();
     }
 
-    private void OnLoadingStateChanged(bool loading)
+    private void OnAnsweringStateChanged(bool answering)
     {
-        isLLMAnswering = loading;
+        isLLMAnswering = answering;
         StateHasChanged();
     }
 
@@ -304,7 +304,7 @@
         StateHasChanged();
     }
 
-    private void OnChatInitialized()
+    private void OnChatReset()
     {
         chatStarted = true;
         agentStatistics.Clear();
@@ -357,7 +357,7 @@
             stopAgentName,
             stopPhrase);
 
-        await ChatService.AddUserMessageAndAnswerAsync(messageData.text.Trim(), chatConfiguration, messageData.files);
+        await ChatService.GenerateAnswerAsync(messageData.text.Trim(), chatConfiguration, messageData.files);
         await ScrollToBottom();
     }
 
@@ -400,8 +400,8 @@
 
     public ValueTask DisposeAsync()
     {
-        ChatService.LoadingStateChanged -= OnLoadingStateChanged;
-        ChatViewModelService.ChatInitialized -= OnChatInitialized;
+        ChatService.AnsweringStateChanged -= OnAnsweringStateChanged;
+        ChatViewModelService.ChatReset -= OnChatReset;
         if (_messageAddedHandler != null)
             ChatViewModelService.MessageAdded -= _messageAddedHandler;
         if (_messageUpdatedHandler != null)

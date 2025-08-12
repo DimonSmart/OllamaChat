@@ -4,9 +4,9 @@ namespace ChatClient.Api.Client.Services;
 public interface IChatViewModelService
 {
     IReadOnlyList<ChatMessageViewModel> Messages { get; }
-    bool IsLoading { get; }
-    event Action<bool>? LoadingStateChanged;
-    event Action? ChatInitialized;
+    bool IsAnswering { get; }
+    event Action<bool>? AnsweringStateChanged;
+    event Action? ChatReset;
     event Func<ChatMessageViewModel, Task>? MessageAdded;
     event Func<ChatMessageViewModel, bool, Task>? MessageUpdated;
     event Func<ChatMessageViewModel, Task>? MessageDeleted;
