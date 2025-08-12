@@ -61,7 +61,7 @@ public class ChatService(
 
         Messages.Clear();
         _activeStreams.Clear();
-        _streamingManager = new StreamingMessageManager(MessageUpdated);
+        _streamingManager = new StreamingMessageManager();
         _agentDescriptions = agentsList;
 
         AddSystemMessages();
