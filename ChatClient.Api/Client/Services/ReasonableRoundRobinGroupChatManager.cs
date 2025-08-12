@@ -11,12 +11,6 @@ internal sealed class ReasonableRoundRobinGroupChatManager(
 {
     private readonly StopPhraseEvaluator _stopEvaluator = new(stopAgentName, stopPhrase);
 
-    public new ValueTask<GroupChatManagerResult<string>> SelectNextAgent(
-        ChatHistory history,
-        GroupChatTeam team,
-        CancellationToken cancellationToken = default)
-        => base.SelectNextAgent(history, team, cancellationToken);
-
     public override async ValueTask<GroupChatManagerResult<bool>> ShouldTerminate(
         ChatHistory history,
         CancellationToken cancellationToken = default)

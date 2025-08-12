@@ -234,7 +234,7 @@ public class ChatService(
     private RoundRobinGroupChatManager CreateGroupChatManager(ChatConfiguration chatConfiguration)
     {
         return _agentDescriptions.Count == 1
-            ? new SingleAgentGroupChatManager()
+            ? new RoundRobinGroupChatManager() { MaximumInvocationCount = 1 }
             : new ReasonableRoundRobinGroupChatManager(chatConfiguration.StopAgentName, chatConfiguration.StopPhrase)
             {
                 MaximumInvocationCount = chatConfiguration.MaximumInvocationCount
