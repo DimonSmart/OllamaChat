@@ -19,7 +19,6 @@ public class StreamingAppChatMessage(string initialContent, DateTime msgDateTime
     public string? AgentName { get; private set; } = agentName;
 
     public int ApproximateTokenCount { get; set; }
-    public int FunctionCallStartIndex { get; set; }
 
     public Guid Id { get; private set; } = Guid.NewGuid();
 
