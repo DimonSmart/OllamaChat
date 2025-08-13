@@ -141,28 +141,24 @@ public class ChatService(
 
         using var trackingScope = CreateTrackingScope();
 
-        var trimmedText = text.Trim();
-        await AddMessageAsync(new AppChatMessage(trimmedText, DateTime.Now, ChatRole.User, string.Empty, files));
+        await AddMessageAsync(new AppChatMessage(text, DateTime.Now, ChatRole.User, string.Empty, files));
 
-        // Display a temporary placeholder while waiting for the first agent token
-        var defaultShortName = _agentDescriptions.FirstOrDefault()?.ShortName
-            ?? _agentDescriptions.FirstOrDefault()?.AgentName
-            ?? string.Empty;
-        var placeholder = _streamingManager.CreateStreamingMessage(agentName: defaultShortName);
-        placeholder.Append("...");
-        _activeStreams[PlaceholderAgent] = placeholder;
-        await AddMessageAsync(placeholder);
+        await AddMessageAsync(_activeStreams[PlaceholderAgent] = CreateInitialPlaceholderMessage());
 
         UpdateAnsweringState(true);
 
         _cancellationTokenSource = new CancellationTokenSource();
         try
         {
-            await ProcessAIResponseAsync(chatConfiguration, trimmedText, _cancellationTokenSource.Token);
+            await ProcessWithRuntime(chatConfiguration, text, _cancellationTokenSource.Token);
         }
         catch (OperationCanceledException)
         {
             // Expected when cancellation is requested
+        }
+        catch (ModelDoesNotSupportToolsException ex)
+        {
+            await HandleModelNotSupportingTools(ex, chatConfiguration);
         }
         catch (Exception ex)
         {
@@ -171,33 +167,25 @@ public class ChatService(
         finally
         {
             CleanupWithoutTrackingFilters();
+            await FinalizeProcessing(chatConfiguration);
         }
+    }
+
+    private StreamingAppChatMessage CreateInitialPlaceholderMessage()
+    {
+        // Display a temporary placeholder while waiting for the first agent token
+        var defaultShortName = _agentDescriptions.FirstOrDefault()?.ShortName
+            ?? _agentDescriptions.FirstOrDefault()?.AgentName
+            ?? string.Empty;
+        var placeholder = _streamingManager.CreateStreamingMessage(agentName: defaultShortName);
+        placeholder.Append("...");
+        return placeholder;
     }
 
     private async Task AddMessageAsync(IAppChatMessage message)
     {
         Messages.Add(message);
         await (MessageAdded?.Invoke(message) ?? Task.CompletedTask);
-    }
-
-    private async Task ProcessAIResponseAsync(ChatConfiguration chatConfiguration, string userMessage, CancellationToken cancellationToken)
-    {
-        try
-        {
-            await ProcessWithRuntime(chatConfiguration, userMessage, cancellationToken);
-        }
-        catch (ModelDoesNotSupportToolsException ex)
-        {
-            await HandleModelNotSupportingTools(ex, chatConfiguration);
-        }
-        catch (Exception ex)
-        {
-            await HandleGeneralError(ex);
-        }
-        finally
-        {
-            await FinalizeProcessing(chatConfiguration);
-        }
     }
 
     private async Task ProcessWithRuntime(ChatConfiguration chatConfiguration, string userMessage,
@@ -274,13 +262,6 @@ public class ChatService(
         return _agentDescriptions.Count == 1
             ? new RoundRobinGroupChatManager() { MaximumInvocationCount = 1 }
             : new RoundRobinGroupChatManager() { MaximumInvocationCount = 1 };
-
-
-
-        //    new ReasonableRoundRobinGroupChatManager(chatConfiguration.StopAgentName, chatConfiguration.StopPhrase)
-        //    {
-        //        MaximumInvocationCount = chatConfiguration.MaximumInvocationCount
-        //    };
     }
 
     private GroupChatOrchestration CreateChatOrchestration(
@@ -371,14 +352,6 @@ public class ChatService(
             : $"⚠️ The model **{chatConfiguration.ModelName}** does not support the requested functionality.";
 
         await HandleError(errorMessage);
-    }
-
-    private async Task HandleGeneralError(Exception ex)
-    {
-        const string errorPrefix = "Agent Error";
-        logger.LogError(ex, "Error processing response");
-        ClearActiveStreams();
-        await HandleError($"{errorPrefix}: {ex.Message}");
     }
 
     private void ClearActiveStreams()
