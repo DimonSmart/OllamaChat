@@ -35,10 +35,10 @@ public class KernelService(
         return [];
     }
 
-    public async Task<Kernel> CreateKernelAsync(ChatConfiguration chatConfiguration, IEnumerable<string>? functionsToRegister = null)
+    public async Task<Kernel> CreateKernelAsync(string modelName, IEnumerable<string>? functionsToRegister)
     {
         var settings = await userSettingsService.GetSettingsAsync();
-        var kernel = await CreateBasicKernelAsync(chatConfiguration.ModelName, TimeSpan.FromSeconds(settings.HttpTimeoutSeconds));
+        var kernel = await CreateBasicKernelAsync(modelName, TimeSpan.FromSeconds(settings.HttpTimeoutSeconds));
 
         if (functionsToRegister != null && functionsToRegister.Any() && _mcpClientService != null)
         {

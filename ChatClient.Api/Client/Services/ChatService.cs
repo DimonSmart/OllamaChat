@@ -124,11 +124,9 @@ public class ChatService(
             var groupChatManager = CreateGroupChatManager(chatConfiguration);
             var chatOrchestration = CreateChatOrchestration(groupChatManager, agents, chatConfiguration);
 
-
             var invokeResult = await chatOrchestration.InvokeAsync(text, runtime, _cancellationTokenSource.Token);
             var xxx = await invokeResult.GetValueAsync(cancellationToken: _cancellationTokenSource.Token);
             RemoveTrackingFilters(agents);
-
         }
         catch (OperationCanceledException)
         {
@@ -144,7 +142,6 @@ public class ChatService(
         }
         finally
         {
-            
             CleanupWithoutTrackingFilters();
             await FinalizeProcessing(chatConfiguration);
         }
@@ -174,17 +171,10 @@ public class ChatService(
         foreach (var desc in _agentDescriptions)
         {
             var functionsToRegister = await kernelService.GetFunctionsToRegisterAsync(desc.FunctionSettings, userMessage);
+            var modelName = string.IsNullOrWhiteSpace(desc.ModelName) ? chatConfiguration.ModelName : desc.ModelName;
+            var agentKernel = await kernelService.CreateKernelAsync(modelName, functionsToRegister);
 
-            var agentKernel = await kernelService.CreateKernelAsync(
-                chatConfiguration with
-                {
-                    Functions = functionsToRegister,
-                    ModelName = string.IsNullOrWhiteSpace(desc.ModelName)
-                        ? chatConfiguration.ModelName
-                        : desc.ModelName
-                },
-                functionsToRegister);
-
+            // TODO Add function into AgentDescription to get Agent name for UI
             var agentName = !string.IsNullOrWhiteSpace(desc.ShortName) ? desc.ShortName : desc.AgentName;
 
             var trackingFilter = new FunctionCallRecordingFilter();
