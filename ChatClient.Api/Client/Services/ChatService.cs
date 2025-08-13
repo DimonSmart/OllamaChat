@@ -26,6 +26,21 @@ public class ChatService(
 
     private readonly Dictionary<string, FunctionCallRecordingFilter> _trackingFilters = new();
 
+    private sealed class TrackingFiltersScope : IDisposable
+    {
+        private readonly Action _onDispose;
+
+        public TrackingFiltersScope(Action onDispose)
+        {
+            _onDispose = onDispose;
+        }
+
+        public void Dispose()
+        {
+            _onDispose();
+        }
+    }
+
     private sealed class FunctionCallRecordingFilter : IFunctionInvocationFilter
     {
         private readonly List<FunctionCallRecord> _records = [];
@@ -54,6 +69,12 @@ public class ChatService(
 
     public bool IsAnswering { get; private set; }
     public ObservableCollection<IAppChatMessage> Messages { get; } = [];
+
+    private TrackingFiltersScope CreateTrackingScope()
+    {
+        ClearTrackingFilters();
+        return new TrackingFiltersScope(ClearTrackingFilters);
+    }
     public IReadOnlyList<AgentDescription> AgentDescriptions => _agentDescriptions;
 
     public void InitializeChat(IEnumerable<AgentDescription> initialAgents)
@@ -118,7 +139,7 @@ public class ChatService(
         if (string.IsNullOrWhiteSpace(text) || IsAnswering)
             return;
 
-        ClearTrackingFilters();
+        using var trackingScope = CreateTrackingScope();
 
         var trimmedText = text.Trim();
         await AddMessageAsync(new AppChatMessage(trimmedText, DateTime.Now, ChatRole.User, string.Empty, files));
@@ -149,7 +170,7 @@ public class ChatService(
         }
         finally
         {
-            Cleanup();
+            CleanupWithoutTrackingFilters();
         }
     }
 
@@ -159,14 +180,8 @@ public class ChatService(
         await (MessageAdded?.Invoke(message) ?? Task.CompletedTask);
     }
 
-
     private async Task ProcessAIResponseAsync(ChatConfiguration chatConfiguration, string userMessage, CancellationToken cancellationToken)
     {
-        logger.LogInformation("Processing response with model: {ModelName}", chatConfiguration.ModelName);
-
-        // Стриминговое сообщение будет создано динамически для каждого агента при первом ответе
-        // Нет зависимости от количества агентов
-
         try
         {
             await ProcessWithRuntime(chatConfiguration, userMessage, cancellationToken);
@@ -188,6 +203,7 @@ public class ChatService(
     private async Task ProcessWithRuntime(ChatConfiguration chatConfiguration, string userMessage,
         CancellationToken cancellationToken)
     {
+        logger.LogInformation("Processing response with configuration: {chatConfiguration}", chatConfiguration);
         var runtime = new InProcessRuntime();
         await runtime.StartAsync();
 
@@ -336,7 +352,7 @@ public class ChatService(
     {
         foreach (var agent in agents)
         {
-            if (_trackingFilters.TryGetValue(agent.Name, out var filter))
+            if (!string.IsNullOrEmpty(agent.Name) && _trackingFilters.TryGetValue(agent.Name, out var filter))
                 agent.Kernel.FunctionInvocationFilters.Remove(filter);
         }
     }
@@ -445,11 +461,11 @@ public class ChatService(
             filter.Clear();
         _trackingFilters.Clear();
     }
-    private void Cleanup()
+
+    private void CleanupWithoutTrackingFilters()
     {
         _cancellationTokenSource?.Dispose();
         _cancellationTokenSource = null;
-        ClearTrackingFilters();
         UpdateAnsweringState(false);
     }
 
