@@ -320,7 +320,7 @@ public class ChatService(
             {
                 message.AddFunctionCall(fc);
             }
-            filter.Records.Clear();
+            filter.Clear();
         }
 
         TimeSpan processingTime = DateTime.Now - message.MsgDateTime;
