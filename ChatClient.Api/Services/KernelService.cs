@@ -20,21 +20,25 @@ public class KernelService(
         _mcpClientService = mcpClientService;
     }
 
-    public async Task<Kernel> CreateKernelAsync(ChatConfiguration chatConfiguration, string? userQuery = null, int? autoSelectCount = null)
+    public async Task<IReadOnlyCollection<string>> GetFunctionsToRegisterAsync(FunctionSettings functionSettings, string? userQuery)
+    {
+        if (functionSettings.AutoSelectCount > 0 && !string.IsNullOrWhiteSpace(userQuery))
+        {
+            return await _indexService.SelectRelevantFunctionsAsync(userQuery, functionSettings.AutoSelectCount);
+        }
+
+        if (functionSettings.SelectedFunctions.Any())
+        {
+            return functionSettings.SelectedFunctions;
+        }
+
+        return [];
+    }
+
+    public async Task<Kernel> CreateKernelAsync(ChatConfiguration chatConfiguration, IEnumerable<string>? functionsToRegister = null)
     {
         var settings = await userSettingsService.GetSettingsAsync();
         var kernel = await CreateBasicKernelAsync(chatConfiguration.ModelName, TimeSpan.FromSeconds(settings.HttpTimeoutSeconds));
-
-        // Register selected MCP tools as kernel functions
-        IEnumerable<string>? functionsToRegister = null;
-        if (!string.IsNullOrWhiteSpace(userQuery) && autoSelectCount.HasValue && autoSelectCount.Value > 0)
-        {
-            functionsToRegister = await _indexService.SelectRelevantFunctionsAsync(userQuery, autoSelectCount.Value);
-        }
-        else if (chatConfiguration.Functions != null && chatConfiguration.Functions.Any())
-        {
-            functionsToRegister = chatConfiguration.Functions;
-        }
 
         if (functionsToRegister != null && functionsToRegister.Any() && _mcpClientService != null)
         {

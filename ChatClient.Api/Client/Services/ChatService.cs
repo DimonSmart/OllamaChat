@@ -173,16 +173,17 @@ public class ChatService(
 
         foreach (var desc in _agentDescriptions)
         {
+            var functionsToRegister = await kernelService.GetFunctionsToRegisterAsync(desc.FunctionSettings, userMessage);
+
             var agentKernel = await kernelService.CreateKernelAsync(
                 chatConfiguration with
                 {
-                    Functions = desc.FunctionSettings.SelectedFunctions,
+                    Functions = functionsToRegister,
                     ModelName = string.IsNullOrWhiteSpace(desc.ModelName)
                         ? chatConfiguration.ModelName
                         : desc.ModelName
                 },
-                desc.FunctionSettings.AutoSelectCount > 0 ? userMessage : null,
-                desc.FunctionSettings.AutoSelectCount > 0 ? desc.FunctionSettings.AutoSelectCount : null);
+                functionsToRegister);
 
             var agentName = !string.IsNullOrWhiteSpace(desc.ShortName) ? desc.ShortName : desc.AgentName;
 
