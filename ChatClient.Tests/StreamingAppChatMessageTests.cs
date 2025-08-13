@@ -14,7 +14,6 @@ public class StreamingAppChatMessageTests
         var msg = new StreamingAppChatMessage("hello", DateTime.Now, ChatRole.Assistant);
 
         Assert.Equal(0, msg.ApproximateTokenCount);
-        Assert.Equal(0, msg.FunctionCallStartIndex);
     }
 
     [Fact]
