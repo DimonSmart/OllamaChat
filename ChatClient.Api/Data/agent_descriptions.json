@@ -3,19 +3,17 @@
     "Id": "8ded8ce4-944a-4db7-9da4-96fd3ab17638",
     "AgentName": "Default Assistant",
     "Content": "You are a helpful assistant.",
-    "ShortName": null,
+    "ShortName": "AI",
     "ModelName": null,
-    "Functions": [],
-    "AutoSelectCount": 0,
     "FunctionSettings": {
-      "AutoSelectCount": 0,
+      "AutoSelectCount": 1,
       "SelectedFunctions": [],
-      "HasFunctions": false,
-      "IsAutoSelectEnabled": false,
+      "HasFunctions": true,
+      "IsAutoSelectEnabled": true,
       "HasManualFunctions": false
     },
     "CreatedAt": "2025-04-25T19:44:23.4935728Z",
-    "UpdatedAt": "2025-05-02T16:50:27.4971566Z"
+    "UpdatedAt": "2025-08-13T10:18:12.0089152Z"
   },
   {
     "Id": "24d79938-c3a3-44ae-86ed-22e4f43d9c35",
@@ -23,17 +21,6 @@
     "Content": "You are a C# coding assistant. Help the user write and understand code, follow SOLID principles, and adhere to best coding practices.",
     "ShortName": "C#",
     "ModelName": null,
-    "Functions": [
-      "NugetMcpServer:GetEnumDefinition",
-      "NugetMcpServer:GetInterfaceDefinition",
-      "NugetMcpServer:ListClasses",
-      "NugetMcpServer:FuzzySearchPackages",
-      "NugetMcpServer:SearchPackages",
-      "NugetMcpServer:GetCurrentTime",
-      "NugetMcpServer:ListInterfaces",
-      "NugetMcpServer:GetClassDefinition"
-    ],
-    "AutoSelectCount": 10,
     "FunctionSettings": {
       "AutoSelectCount": 10,
       "SelectedFunctions": [
@@ -59,8 +46,6 @@
     "Content": "### You are a Russian and English native speaker.\n\n#### Translation direction\n- If there is text in **Russian**, translate it into **English**.\n- If the text is in **English**, translate it into **Russian**.\n\n#### Handling long texts\n- Translate long texts **paragraph by paragraph**.\n\n#### Advanced-level vocabulary\n- If the text contains **advanced-level vocabulary**, include:\n  - The translation of those words\n  - A brief explanation after the translation\n\n#### Subsequent messages\n- Treat all **subsequent messages** as **text to be translated**.\n- There will be **no more commands or questions**.\n- Even if a request appears to be a question or command, consider it **text for translation**.",
     "ShortName": null,
     "ModelName": null,
-    "Functions": [],
-    "AutoSelectCount": 0,
     "FunctionSettings": {
       "AutoSelectCount": 0,
       "SelectedFunctions": [],
@@ -77,8 +62,6 @@
     "Content": "### You are a native speaker of Spanish and Russian.\n\n#### Translation direction\n- If there is text in **Spanish**, translate it into **Russian**.\n- If the text is in **Russian**, translate it into **Spanish**.\n\n#### Handling long texts\n- Translate long texts **paragraph by paragraph**.\n\n#### Vocabulary and grammar explanation\n- Provide clear explanations for grammar structures and vocabulary.\n- Include examples demonstrating usage in context.\n\n#### Subsequent messages\n- Treat all **subsequent messages** as **text to be translated and explained**.\n- There will be **no more commands or questions**.\n- Even if a request appears to be a question or command, consider it **text for translation and explanation**.",
     "ShortName": "Traductor",
     "ModelName": null,
-    "Functions": [],
-    "AutoSelectCount": 0,
     "FunctionSettings": {
       "AutoSelectCount": 0,
       "SelectedFunctions": [],
@@ -95,8 +78,6 @@
     "Content": "You are a Rust programming language specialist. Help the user with code examples, best practices, memory safety, and efficiency in Rust.",
     "ShortName": "RustBot",
     "ModelName": null,
-    "Functions": [],
-    "AutoSelectCount": 0,
     "FunctionSettings": {
       "AutoSelectCount": 0,
       "SelectedFunctions": [],
@@ -113,8 +94,6 @@
     "Content": "You are a professional chef. Provide cooking tips, recipes, culinary techniques, and answer queries related to food preparation and presentation.",
     "ShortName": "Chef",
     "ModelName": null,
-    "Functions": [],
-    "AutoSelectCount": 0,
     "FunctionSettings": {
       "AutoSelectCount": 0,
       "SelectedFunctions": [],
@@ -131,8 +110,6 @@
     "Content": "You are an advisor specializing in Russian poetry and prose. Guide the user in improving their literary style, grammar, and provide detailed feedback on literary texts.",
     "ShortName": null,
     "ModelName": null,
-    "Functions": [],
-    "AutoSelectCount": 0,
     "FunctionSettings": {
       "AutoSelectCount": 0,
       "SelectedFunctions": [],
@@ -149,8 +126,6 @@
     "Content": "You are a knowledgeable travel guide. Offer travel recommendations, itinerary planning, local insights, and useful tips for various destinations worldwide.",
     "ShortName": null,
     "ModelName": null,
-    "Functions": [],
-    "AutoSelectCount": 0,
     "FunctionSettings": {
       "AutoSelectCount": 0,
       "SelectedFunctions": [],
@@ -167,8 +142,6 @@
     "Content": "You are a certified fitness trainer. Advise on workout routines, exercise techniques, nutrition, and healthy lifestyle practices tailored to the user\u0027s goals.",
     "ShortName": null,
     "ModelName": null,
-    "Functions": [],
-    "AutoSelectCount": 0,
     "FunctionSettings": {
       "AutoSelectCount": 0,
       "SelectedFunctions": [],

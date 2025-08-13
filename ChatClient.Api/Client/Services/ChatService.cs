@@ -23,8 +23,7 @@ public class ChatService(
     private readonly Dictionary<string, StreamingAppChatMessage> _activeStreams = new();
     private const string PlaceholderAgent = "__placeholder__";
     private List<AgentDescription> _agentDescriptions = [];
-
-   // private readonly Dictionary<string, FunctionCallRecordingFilter> _trackingFilters = new();
+    private readonly Dictionary<string, FunctionCallRecordingFilter> _trackingFilters = new();
 
     public event Action<bool>? AnsweringStateChanged;
     public event Action? ChatReset;
@@ -114,9 +113,22 @@ public class ChatService(
         UpdateAnsweringState(true);
 
         _cancellationTokenSource = new CancellationTokenSource();
+
         try
         {
-            await ProcessWithRuntime(chatConfiguration, text, _cancellationTokenSource.Token);
+            logger.LogInformation("Processing response with configuration: {chatConfiguration}", chatConfiguration);
+            var runtime = new InProcessRuntime();
+            await runtime.StartAsync(_cancellationTokenSource.Token);
+
+            var agents = await CreateAgents(chatConfiguration, text);
+            var groupChatManager = CreateGroupChatManager(chatConfiguration);
+            var chatOrchestration = CreateChatOrchestration(groupChatManager, agents, chatConfiguration);
+
+
+            var invokeResult = await chatOrchestration.InvokeAsync(text, runtime, _cancellationTokenSource.Token);
+            var xxx = await invokeResult.GetValueAsync(cancellationToken: _cancellationTokenSource.Token);
+            RemoveTrackingFilters(agents);
+
         }
         catch (OperationCanceledException)
         {
@@ -132,6 +144,7 @@ public class ChatService(
         }
         finally
         {
+            
             CleanupWithoutTrackingFilters();
             await FinalizeProcessing(chatConfiguration);
         }
@@ -152,33 +165,6 @@ public class ChatService(
     {
         Messages.Add(message);
         await (MessageAdded?.Invoke(message) ?? Task.CompletedTask);
-    }
-
-    private async Task ProcessWithRuntime(ChatConfiguration chatConfiguration, string userMessage, CancellationToken cancellationToken)
-    {
-        logger.LogInformation("Processing response with configuration: {chatConfiguration}", chatConfiguration);
-        var runtime = new InProcessRuntime();
-        await runtime.StartAsync(cancellationToken);
-
-        var agents = await CreateAgents(chatConfiguration, userMessage);
-        var groupChatManager = CreateGroupChatManager(chatConfiguration);
-        var chatOrchestration = CreateChatOrchestration(groupChatManager, agents, chatConfiguration);
-
-        try
-        {
-            var invokeResult = await chatOrchestration.InvokeAsync(userMessage, runtime, cancellationToken);
-            var xxx = await invokeResult.GetValueAsync(cancellationToken: cancellationToken);
-
-        }
-        catch (Exception ex)
-        {
-            logger.LogError(ex.Message);
-        }
-
-        finally
-        {
-            RemoveTrackingFilters(agents);
-        }
     }
 
     private async Task<List<ChatCompletionAgent>> CreateAgents(ChatConfiguration chatConfiguration, string userMessage)
