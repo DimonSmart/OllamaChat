@@ -24,42 +24,7 @@ public class ChatService(
     private const string PlaceholderAgent = "__placeholder__";
     private List<AgentDescription> _agentDescriptions = [];
 
-    private readonly Dictionary<string, FunctionCallRecordingFilter> _trackingFilters = new();
-
-    private sealed class TrackingFiltersScope : IDisposable
-    {
-        private readonly Action _onDispose;
-
-        public TrackingFiltersScope(Action onDispose)
-        {
-            _onDispose = onDispose;
-        }
-
-        public void Dispose()
-        {
-            _onDispose();
-        }
-    }
-
-    private sealed class FunctionCallRecordingFilter : IFunctionInvocationFilter
-    {
-        private readonly List<FunctionCallRecord> _records = [];
-
-        public IReadOnlyList<FunctionCallRecord> Records => _records;
-
-        public void Clear() => _records.Clear();
-
-        public async Task OnFunctionInvocationAsync(Microsoft.SemanticKernel.FunctionInvocationContext context, Func<Microsoft.SemanticKernel.FunctionInvocationContext, Task> next)
-        {
-            string request = string.Join(", ", context.Arguments.Select(a => $"{a.Key}: {a.Value}"));
-            await next(context);
-
-            string response = context.Result?.GetValue<object>()?.ToString() ?? context.Result?.ToString() ?? string.Empty;
-            string server = context.Function.PluginName ?? "McpServer";
-            string function = context.Function.Name;
-            _records.Add(new FunctionCallRecord(server, function, request, response));
-        }
-    }
+   // private readonly Dictionary<string, FunctionCallRecordingFilter> _trackingFilters = new();
 
     public event Action<bool>? AnsweringStateChanged;
     public event Action? ChatReset;
@@ -75,6 +40,7 @@ public class ChatService(
         ClearTrackingFilters();
         return new TrackingFiltersScope(ClearTrackingFilters);
     }
+
     public IReadOnlyList<AgentDescription> AgentDescriptions => _agentDescriptions;
 
     public void InitializeChat(IEnumerable<AgentDescription> initialAgents)
@@ -188,12 +154,11 @@ public class ChatService(
         await (MessageAdded?.Invoke(message) ?? Task.CompletedTask);
     }
 
-    private async Task ProcessWithRuntime(ChatConfiguration chatConfiguration, string userMessage,
-        CancellationToken cancellationToken)
+    private async Task ProcessWithRuntime(ChatConfiguration chatConfiguration, string userMessage, CancellationToken cancellationToken)
     {
         logger.LogInformation("Processing response with configuration: {chatConfiguration}", chatConfiguration);
         var runtime = new InProcessRuntime();
-        await runtime.StartAsync();
+        await runtime.StartAsync(cancellationToken);
 
         var agents = await CreateAgents(chatConfiguration, userMessage);
         var groupChatManager = CreateGroupChatManager(chatConfiguration);
@@ -216,9 +181,7 @@ public class ChatService(
         }
     }
 
-    private async Task<List<ChatCompletionAgent>> CreateAgents(
-        ChatConfiguration chatConfiguration,
-        string userMessage)
+    private async Task<List<ChatCompletionAgent>> CreateAgents(ChatConfiguration chatConfiguration, string userMessage)
     {
         var agents = new List<ChatCompletionAgent>();
 
