@@ -29,7 +29,7 @@ public class ChatServiceTests
     }
 
     [Fact]
-    public void InitializeChat_SingleAgent_AddsSystemMessage()
+    public void InitializeChat_SingleAgent_NoSystemMessage()
     {
         var chatService = new ChatService(
             kernelService: null!,
@@ -39,8 +39,6 @@ public class ChatServiceTests
         var prompt = new AgentDescription { AgentName = "Agent", Content = "Hello" };
         chatService.InitializeChat([prompt]);
 
-        Assert.Single(chatService.Messages);
-        Assert.Equal(ChatRole.System, chatService.Messages[0].Role);
-        Assert.Equal("Hello", chatService.Messages[0].Content);
+        Assert.Empty(chatService.Messages);
     }
 }

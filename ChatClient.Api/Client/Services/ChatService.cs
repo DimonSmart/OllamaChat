@@ -56,17 +56,7 @@ public class ChatService(
         _streamingManager = new StreamingMessageManager();
         _agentDescriptions = agents;
 
-        AddSystemMessages();
         ChatReset?.Invoke();
-    }
-
-    private void AddSystemMessages()
-    {
-        foreach (var agent in _agentDescriptions)
-        {
-            var systemMessage = new AppChatMessage(agent.Content, DateTime.Now, ChatRole.System, string.Empty);
-            Messages.Add(systemMessage);
-        }
     }
 
     public void ResetChat()
