@@ -1,10 +1,8 @@
 using System.Text;
+using Microsoft.Extensions.Logging;
 
 namespace ChatClient.Api.Services;
 
-/// <summary>
-/// HTTP message handler that logs request and response bodies
-/// </summary>
 public class HttpLoggingHandler(ILogger<HttpLoggingHandler> logger) : DelegatingHandler
 {
     private const int MaxBodyChars = 32_768;
@@ -22,7 +20,7 @@ public class HttpLoggingHandler(ILogger<HttpLoggingHandler> logger) : Delegating
 
     private async Task LogRequestAsync(HttpRequestMessage request, CancellationToken ct)
     {
-        if (!logger.IsEnabled(LogLevel.Debug))
+        if (!logger.IsEnabled(LogLevel.Information))
             return;
 
         var sb = new StringBuilder();
@@ -39,7 +37,7 @@ public class HttpLoggingHandler(ILogger<HttpLoggingHandler> logger) : Delegating
         {
             try
             { await request.Content.LoadIntoBufferAsync(); }
-            catch { /* ignore */ }
+            catch { }
 
             if (request.Content.Headers.Any())
             {
@@ -56,12 +54,12 @@ public class HttpLoggingHandler(ILogger<HttpLoggingHandler> logger) : Delegating
             }
         }
 
-        logger.LogDebug(sb.ToString());
+        logger.LogInformation(sb.ToString());
     }
 
     private async Task LogResponseAsync(HttpResponseMessage response, CancellationToken ct)
     {
-        if (!logger.IsEnabled(LogLevel.Debug))
+        if (!logger.IsEnabled(LogLevel.Information))
             return;
 
         var sb = new StringBuilder();
@@ -91,7 +89,7 @@ public class HttpLoggingHandler(ILogger<HttpLoggingHandler> logger) : Delegating
             }
         }
 
-        logger.LogDebug(sb.ToString());
+        logger.LogInformation(sb.ToString());
     }
 
     private static async Task<string?> SafeReadAsStringAsync(HttpContent content, CancellationToken ct)
@@ -107,5 +105,5 @@ public class HttpLoggingHandler(ILogger<HttpLoggingHandler> logger) : Delegating
     }
 
     private static string Truncate(string value, int max)
-        => value.Length <= max ? value : value.Substring(0, max) + "… [truncated]";
+        => value.Length <= max ? value : value.Substring(0, max) + " [truncated]";
 }

@@ -217,6 +217,7 @@ public class ChatService(
 
                 if (!_activeStreams.TryGetValue(agentName, out var message))
                 {
+                    logger.LogInformation("Agent {AgentName} started responding", agentName);
                     if (_activeStreams.TryGetValue(PlaceholderAgent, out var placeholder))
                     {
                         _activeStreams.Remove(PlaceholderAgent);
