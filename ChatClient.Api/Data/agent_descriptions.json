@@ -151,5 +151,21 @@
     },
     "CreatedAt": "2025-06-12T10:00:00Z",
     "UpdatedAt": "2025-06-12T10:00:00Z"
+  },
+  {
+    "Id": "c1ff52ba-c206-4377-acfa-a025f940642c",
+    "AgentName": "Image description expert",
+    "Content": "You are expert in image description. If you asked about image try to understand the main idea of the images and describe only valuable objects (if not asked about small details).",
+    "ShortName": "Img",
+    "ModelName": "llava:7b",
+    "FunctionSettings": {
+      "AutoSelectCount": 0,
+      "SelectedFunctions": [],
+      "HasFunctions": false,
+      "IsAutoSelectEnabled": false,
+      "HasManualFunctions": false
+    },
+    "CreatedAt": "2025-08-14T09:26:09.414484Z",
+    "UpdatedAt": "2025-08-14T09:26:09.4144842Z"
   }
 ]
