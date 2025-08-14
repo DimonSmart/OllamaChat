@@ -147,10 +147,14 @@ public class ChatService(
     private StreamingAppChatMessage CreateInitialPlaceholderMessage()
     {
         // Display a temporary placeholder while waiting for the first agent token
-        var defaultShortName = _agentDescriptions.FirstOrDefault()?.ShortName
-            ?? _agentDescriptions.FirstOrDefault()?.AgentName
-            ?? string.Empty;
-        var placeholder = _streamingManager.CreateStreamingMessage(agentName: defaultShortName);
+        var placeholder = _streamingManager.CreateStreamingMessage(agentName: "?");
+        placeholder.Append("...");
+        return placeholder;
+    }
+
+    private StreamingAppChatMessage CreateNextAgentPlaceholder()
+    {
+        var placeholder = _streamingManager.CreateStreamingMessage(agentName: "?");
         placeholder.Append("...");
         return placeholder;
     }
@@ -234,6 +238,13 @@ public class ChatService(
                 {
                     await CompleteStreamingMessage(message, chatConfiguration, trackingScope);
                     _activeStreams.Remove(agentName);
+
+                    if (_agentDescriptions.Count > 1)
+                    {
+                        var placeholder = CreateNextAgentPlaceholder();
+                        _activeStreams[PlaceholderAgent] = placeholder;
+                        await AddMessageAsync(placeholder);
+                    }
                 }
             }
         };
@@ -289,6 +300,7 @@ public class ChatService(
         ChatConfiguration chatConfiguration,
         TrackingFiltersScope trackingScope)
     {
+        RemoveDanglingPlaceholder();
         await CompleteActiveStreams(chatConfiguration, trackingScope);
     }
 
@@ -328,6 +340,15 @@ public class ChatService(
 
         var finalMessage = _streamingManager.CompleteStreaming(message, statistics);
         await ReplaceStreamingMessageWithFinal(message, finalMessage);
+    }
+
+    private void RemoveDanglingPlaceholder()
+    {
+        if (_activeStreams.TryGetValue(PlaceholderAgent, out var placeholder) && placeholder.AgentName == "?")
+        {
+            RemoveStreamingMessage(placeholder);
+            _activeStreams.Remove(PlaceholderAgent);
+        }
     }
 
 
