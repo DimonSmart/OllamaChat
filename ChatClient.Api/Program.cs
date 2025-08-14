@@ -59,22 +59,21 @@ using (var scope = app.Services.CreateScope())
     var kernelService = scope.ServiceProvider.GetRequiredService<KernelService>();
     var mcpClientService = scope.ServiceProvider.GetRequiredService<IMcpClientService>();
     kernelService.SetMcpClientService(mcpClientService);
-    var indexService = scope.ServiceProvider.GetRequiredService<McpFunctionIndexService>();
-    await indexService.BuildIndexAsync();
 
-    // Check Ollama status at startup
     var startupChecker = scope.ServiceProvider.GetRequiredService<StartupOllamaChecker>();
     var ollamaStatus = await startupChecker.CheckOllamaStatusAsync();
 
-    if (!ollamaStatus.IsAvailable)
+    if (ollamaStatus.IsAvailable)
+    {
+        var indexService = scope.ServiceProvider.GetRequiredService<McpFunctionIndexService>();
+        await indexService.BuildIndexAsync();
+        Console.WriteLine("Ollama is available and ready.");
+    }
+    else
     {
         Console.WriteLine($"Warning: Ollama is not available - {ollamaStatus.ErrorMessage}");
         Console.WriteLine("The application will start but Ollama functionality will be limited.");
         Console.WriteLine("Users will be redirected to the setup page when trying to use Ollama features.");
-    }
-    else
-    {
-        Console.WriteLine("Ollama is available and ready.");
     }
 }
 

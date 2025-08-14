@@ -51,6 +51,16 @@ public class McpFunctionIndexService
 
             _modelId = await DetermineModelIdAsync();
 
+            try
+            {
+                await _ollamaService.GetModelsAsync();
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Ollama is not available. Skipping MCP function indexing.");
+                return;
+            }
+
             var clients = await _clientService.GetMcpClientsAsync();
             foreach (var client in clients)
             {
