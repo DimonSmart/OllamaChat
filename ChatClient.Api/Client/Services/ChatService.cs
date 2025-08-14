@@ -7,7 +7,9 @@ using Microsoft.Extensions.AI;
 using Microsoft.SemanticKernel;
 using Microsoft.SemanticKernel.Agents;
 using Microsoft.SemanticKernel.Agents.Orchestration.GroupChat;
+using Microsoft.SemanticKernel.Agents.Orchestration.Transforms;
 using Microsoft.SemanticKernel.Agents.Runtime.InProcess;
+using Microsoft.SemanticKernel.ChatCompletion;
 
 using OllamaSharp.Models.Exceptions;
 #pragma warning disable SKEXP0110
@@ -16,7 +18,8 @@ namespace ChatClient.Api.Client.Services;
 
 public class ChatService(
     KernelService kernelService,
-    ILogger<ChatService> logger) : IChatService
+    ILogger<ChatService> logger,
+    IChatHistoryBuilder chatHistoryBuilder) : IChatService
 {
     private CancellationTokenSource? _cancellationTokenSource;
     private StreamingMessageManager _streamingManager = null!;
@@ -101,8 +104,8 @@ public class ChatService(
     {
         if (string.IsNullOrWhiteSpace(text) || IsAnswering)
             return;
-
-        await AddMessageAsync(new AppChatMessage(text, DateTime.Now, ChatRole.User, string.Empty, files));
+        var userMessage = new AppChatMessage(text, DateTime.Now, ChatRole.User, string.Empty, files);
+        await AddMessageAsync(userMessage);
 
         await AddMessageAsync(_activeStreams[PlaceholderAgent] = CreateInitialPlaceholderMessage());
 
@@ -115,15 +118,25 @@ public class ChatService(
         try
         {
             logger.LogInformation("Processing response with configuration: {chatConfiguration}", chatConfiguration);
+
             var runtime = new InProcessRuntime();
             await runtime.StartAsync(_cancellationTokenSource.Token);
 
             var agents = await CreateAgents(chatConfiguration, text, trackingScope);
             var groupChatManager = CreateGroupChatManager(chatConfiguration);
-            var chatOrchestration = CreateChatOrchestration(groupChatManager, agents, chatConfiguration, trackingScope);
 
-            var invokeResult = await chatOrchestration.InvokeAsync(text, runtime, _cancellationTokenSource.Token);
-            var xxx = await invokeResult.GetValueAsync(cancellationToken: _cancellationTokenSource.Token);
+            OrchestrationInputTransform<string> inputTransform = async (_, ct) =>
+                await chatHistoryBuilder.BuildChatHistoryAsync(Messages, agents[0].Kernel, ct);
+
+            var chatOrchestration = CreateChatOrchestration(
+                groupChatManager,
+                agents,
+                chatConfiguration,
+                trackingScope,
+                inputTransform);
+
+            var invokeResult = await chatOrchestration.InvokeAsync(string.Empty, runtime, _cancellationTokenSource.Token);
+            var _ = await invokeResult.GetValueAsync(cancellationToken: _cancellationTokenSource.Token);
         }
         catch (OperationCanceledException)
         {
@@ -196,19 +209,19 @@ public class ChatService(
 
     private RoundRobinGroupChatManager CreateGroupChatManager(ChatConfiguration chatConfiguration)
     {
-        return _agentDescriptions.Count == 1
-            ? new RoundRobinGroupChatManager() { MaximumInvocationCount = 1 }
-            : new RoundRobinGroupChatManager() { MaximumInvocationCount = 1 };
+        return new RoundRobinGroupChatManager { MaximumInvocationCount = 1 };
     }
 
     private GroupChatOrchestration CreateChatOrchestration(
         RoundRobinGroupChatManager groupChatManager,
         List<ChatCompletionAgent> agents,
         ChatConfiguration chatConfiguration,
-        TrackingFiltersScope trackingScope)
+        TrackingFiltersScope trackingScope,
+        OrchestrationInputTransform<string> inputTransform)
     {
         return new GroupChatOrchestration(groupChatManager, agents.ToArray())
         {
+            InputTransform = inputTransform,
             // Стриминговый колбэк для инкрементальных токенов
             StreamingResponseCallback = async (streamingContent, isFinal) =>
             {

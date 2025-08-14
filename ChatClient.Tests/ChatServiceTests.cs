@@ -22,7 +22,8 @@ public class ChatServiceTests
     {
         var chatService = new ChatService(
             kernelService: null!,
-            logger: new LoggerFactory().CreateLogger<ChatService>());
+            logger: new LoggerFactory().CreateLogger<ChatService>(),
+            chatHistoryBuilder: new DummyHistoryBuilder());
 
         Assert.Throws<ArgumentException>(() => chatService.InitializeChat([]));
     }
@@ -32,7 +33,8 @@ public class ChatServiceTests
     {
         var chatService = new ChatService(
             kernelService: null!,
-            logger: new LoggerFactory().CreateLogger<ChatService>());
+            logger: new LoggerFactory().CreateLogger<ChatService>(),
+            chatHistoryBuilder: new DummyHistoryBuilder());
 
         var prompt = new AgentDescription { AgentName = "Agent", Content = "Hello" };
         chatService.InitializeChat([prompt]);
