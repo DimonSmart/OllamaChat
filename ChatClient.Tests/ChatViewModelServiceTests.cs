@@ -15,14 +15,14 @@ public class ChatViewModelServiceTests
     private class StubChatService : IChatService
     {
         public bool IsAnswering => false;
-        public IReadOnlyList<AgentDescription> AgentDescriptions { get; } = [];
+        public IReadOnlyCollection<AgentDescription> AgentDescriptions { get; } = [];
         public event Action<bool>? AnsweringStateChanged;
         public event Action? ChatReset;
         public event Func<IAppChatMessage, Task>? MessageAdded;
         public event Func<IAppChatMessage, bool, Task>? MessageUpdated;
         public event Func<Guid, Task>? MessageDeleted;
 
-        public void InitializeChat(IEnumerable<AgentDescription> initialAgents) { }
+        public void InitializeChat(IReadOnlyCollection<AgentDescription> initialAgents) { }
         public void ResetChat() { }
         public Task CancelAsync() => Task.CompletedTask;
 #pragma warning disable SKEXP0110

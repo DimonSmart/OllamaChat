@@ -7,7 +7,7 @@ namespace ChatClient.Api.Client.Services;
 public interface IChatService
 {
     bool IsAnswering { get; }
-    IReadOnlyList<AgentDescription> AgentDescriptions { get; }
+    IReadOnlyCollection<AgentDescription> AgentDescriptions { get; }
 
     event Action<bool>? AnsweringStateChanged;
     event Action? ChatReset;
@@ -15,7 +15,7 @@ public interface IChatService
     event Func<IAppChatMessage, bool, Task>? MessageUpdated;
     event Func<Guid, Task>? MessageDeleted;
 
-    void InitializeChat(IEnumerable<AgentDescription> initialAgents);
+    void InitializeChat(IReadOnlyCollection<AgentDescription> initialAgents);
     void ResetChat();
     Task CancelAsync();
     Task GenerateAnswerAsync(string text, ChatConfiguration chatConfiguration, GroupChatManager groupChatManager, IReadOnlyList<ChatMessageFile> files);

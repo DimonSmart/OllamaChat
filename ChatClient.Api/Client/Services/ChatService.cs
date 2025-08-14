@@ -25,7 +25,7 @@ public class ChatService(
     private StreamingMessageManager _streamingManager = null!;
     private readonly Dictionary<string, StreamingAppChatMessage> _activeStreams = new();
     private const string PlaceholderAgent = "__placeholder__";
-    private List<AgentDescription> _agentDescriptions = [];
+    private IReadOnlyCollection<AgentDescription> _agentDescriptions = [];
 
     public event Action<bool>? AnsweringStateChanged;
     public event Action? ChatReset;
@@ -41,21 +41,20 @@ public class ChatService(
         return new TrackingFiltersScope();
     }
 
-    public IReadOnlyList<AgentDescription> AgentDescriptions => _agentDescriptions;
+    public IReadOnlyCollection<AgentDescription> AgentDescriptions => _agentDescriptions;
 
-    public void InitializeChat(IEnumerable<AgentDescription> initialAgents)
+    public void InitializeChat(IReadOnlyCollection<AgentDescription> agents)
     {
-        if (initialAgents is null)
-            throw new ArgumentNullException(nameof(initialAgents));
+        if (agents is null)
+            throw new ArgumentNullException(nameof(agents));
 
-        var agentsList = initialAgents.ToList();
-        if (agentsList.Count == 0)
-            throw new ArgumentException("At least one agent must be selected.", nameof(initialAgents));
+        if (agents.Count == 0)
+            throw new ArgumentException("At least one agent must be selected.", nameof(agents));
 
         Messages.Clear();
         _activeStreams.Clear();
         _streamingManager = new StreamingMessageManager();
-        _agentDescriptions = agentsList;
+        _agentDescriptions = agents;
 
         AddSystemMessages();
         ChatReset?.Invoke();
@@ -73,7 +72,6 @@ public class ChatService(
     public void ResetChat()
     {
         Messages.Clear();
-        _agentDescriptions.Clear();
         _activeStreams.Clear();
         ChatReset?.Invoke();
     }
