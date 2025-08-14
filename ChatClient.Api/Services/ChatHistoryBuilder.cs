@@ -3,8 +3,10 @@ using ChatClient.Shared.Services;
 
 using DimonSmart.AiUtils;
 
+using Microsoft.Extensions.Logging;
 using Microsoft.SemanticKernel;
 using Microsoft.SemanticKernel.ChatCompletion;
+using System.Linq;
 
 namespace ChatClient.Api.Services;
 
@@ -13,7 +15,7 @@ public interface IChatHistoryBuilder
     Task<ChatHistory> BuildChatHistoryAsync(IEnumerable<IAppChatMessage> messages, Kernel kernel, CancellationToken cancellationToken);
 }
 
-public class ChatHistoryBuilder(IUserSettingsService settingsService) : IChatHistoryBuilder
+public class ChatHistoryBuilder(IUserSettingsService settingsService, ILogger<ChatHistoryBuilder> logger) : IChatHistoryBuilder
 {
     public ChatHistory BuildBaseHistory(IEnumerable<IAppChatMessage> messages)
     {
@@ -62,7 +64,9 @@ public class ChatHistoryBuilder(IUserSettingsService settingsService) : IChatHis
     public async Task<ChatHistory> BuildChatHistoryAsync(IEnumerable<IAppChatMessage> messages, Kernel kernel, CancellationToken cancellationToken)
     {
         var history = BuildBaseHistory(messages);
-        return await ApplyHistoryModeAsync(history, kernel, cancellationToken);
+        history = await ApplyHistoryModeAsync(history, kernel, cancellationToken);
+        logger.LogInformation("Chat history:\n{History}", FormatHistory(history));
+        return history;
     }
 
     private async Task<ChatHistory> ApplyHistoryModeAsync(ChatHistory history, Kernel kernel, CancellationToken cancellationToken)
@@ -83,4 +87,11 @@ public class ChatHistoryBuilder(IUserSettingsService settingsService) : IChatHis
                 return history;
         }
     }
+
+    private static string FormatHistory(ChatHistory history) => string.Join("\n",
+        history.Select(m =>
+        {
+            var text = string.Join(" ", m.Items.OfType<TextContent>().Select(t => t.Text));
+            return $"{m.Role} ({m.AuthorName}): {text}";
+        }));
 }
