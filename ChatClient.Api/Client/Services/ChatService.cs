@@ -100,7 +100,7 @@ public class ChatService(
         _activeStreams.Clear();
     }
 
-    public async Task GenerateAnswerAsync(string text, ChatConfiguration chatConfiguration, IReadOnlyList<ChatMessageFile>? files = null)
+    public async Task GenerateAnswerAsync(string text, ChatConfiguration chatConfiguration, GroupChatManager groupChatManager, IReadOnlyList<ChatMessageFile>? files = null)
     {
         if (string.IsNullOrWhiteSpace(text) || IsAnswering)
             return;
@@ -123,7 +123,6 @@ public class ChatService(
             await runtime.StartAsync(_cancellationTokenSource.Token);
 
             var agents = await CreateAgents(chatConfiguration, text, trackingScope);
-            var groupChatManager = CreateGroupChatManager(chatConfiguration);
 
             OrchestrationInputTransform<string> inputTransform = async (_, ct) =>
                 await chatHistoryBuilder.BuildChatHistoryAsync(Messages, agents[0].Kernel, ct);
@@ -207,13 +206,8 @@ public class ChatService(
         return agents;
     }
 
-    private RoundRobinGroupChatManager CreateGroupChatManager(ChatConfiguration chatConfiguration)
-    {
-        return new RoundRobinGroupChatManager { MaximumInvocationCount = 1 };
-    }
-
     private GroupChatOrchestration CreateChatOrchestration(
-        RoundRobinGroupChatManager groupChatManager,
+        GroupChatManager groupChatManager,
         List<ChatCompletionAgent> agents,
         ChatConfiguration chatConfiguration,
         TrackingFiltersScope trackingScope,

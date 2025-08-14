@@ -6,6 +6,7 @@
 @using System.Collections.Generic
 @using System.Text.Json
 @using ChatClient.Shared.Models
+@using ChatClient.Shared.Models.StopAgents
 @using System.Threading
 @using System.Text
 @using System.Linq
@@ -23,6 +24,7 @@
 @inject IChatService ChatService
 @inject IAgentDescriptionService AgentService
 @inject IUserSettingsService UserSettingsService
+@inject IStopAgentFactory StopAgentFactory
 
 <PageTitle>Chat with AI Assistant</PageTitle>
 
@@ -316,8 +318,9 @@
 
         var functions = selectedAgent.FunctionSettings.SelectedFunctions ?? [];
         var chatConfiguration = new ChatConfiguration(SelectedModel?.Name, functions);
-
-        await ChatService.GenerateAnswerAsync(messageData.text.Trim(), chatConfiguration, messageData.files);
+        var options = new RoundRobinStopAgentOptions { Rounds = 1 };
+        var groupChatManager = StopAgentFactory.Create("RoundRobin", options);
+        await ChatService.GenerateAnswerAsync(messageData.text.Trim(), chatConfiguration, groupChatManager, messageData.files);
         await ScrollToBottom();
     }
 

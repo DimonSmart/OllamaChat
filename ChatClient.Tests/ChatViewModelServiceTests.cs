@@ -6,6 +6,7 @@ using ChatClient.Api.Client.Services;
 using ChatClient.Shared.Models;
 
 using Microsoft.Extensions.AI;
+using Microsoft.SemanticKernel.Agents.Orchestration.GroupChat;
 
 namespace ChatClient.Tests;
 
@@ -24,7 +25,9 @@ public class ChatViewModelServiceTests
         public void InitializeChat(IEnumerable<AgentDescription> initialAgents) { }
         public void ResetChat() { }
         public Task CancelAsync() => Task.CompletedTask;
-        public Task GenerateAnswerAsync(string text, ChatConfiguration chatConfiguration, IReadOnlyList<ChatMessageFile> files) => Task.CompletedTask;
+#pragma warning disable SKEXP0110
+        public Task GenerateAnswerAsync(string text, ChatConfiguration chatConfiguration, GroupChatManager groupChatManager, IReadOnlyList<ChatMessageFile> files) => Task.CompletedTask;
+#pragma warning restore SKEXP0110
         public Task DeleteMessageAsync(Guid id) => Task.CompletedTask;
 
         public Task RaiseMessageAdded(IAppChatMessage message) => MessageAdded?.Invoke(message) ?? Task.CompletedTask;

@@ -1,0 +1,25 @@
+@using MudBlazor
+@using ChatClient.Shared.Models.StopAgents
+
+<MudNumericField T="int"
+                 Value="Options.Rounds"
+                 ValueChanged="OnRoundsChanged"
+                 Min="1"
+                 Label="Rounds"
+                 Variant="Variant.Outlined"
+                 FullWidth="true"
+                 Class="mt-4" />
+
+@code {
+    [Parameter]
+    public RoundRobinStopAgentOptions Options { get; set; } = new();
+
+    [Parameter]
+    public EventCallback<RoundRobinStopAgentOptions> OptionsChanged { get; set; }
+
+    private async Task OnRoundsChanged(int value)
+    {
+        Options.Rounds = value;
+        await OptionsChanged.InvokeAsync(Options);
+    }
+}
