@@ -66,7 +66,4 @@ public class UserSettings
 
     [JsonPropertyName("stopAgentName")]
     public string StopAgentName { get; set; } = string.Empty;
-
-    [JsonPropertyName("stopPhrase")]
-    public string StopPhrase { get; set; } = string.Empty;
 }

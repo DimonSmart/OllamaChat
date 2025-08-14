@@ -14,8 +14,6 @@
 <MudSnackbarProvider />
 <MudPopoverProvider />
 <CascadingValue Value="@selectedModel" Name="SelectedModel">
-<CascadingValue Value="@stopAgentName" Name="StopAgentName">
-<CascadingValue Value="@stopPhrase" Name="StopPhrase">
 <MudLayout>
     <MudAppBar Elevation="1" Dense="true">
         <MudIconButton Icon="@Icons.Material.Filled.Menu" Color="Color.Inherit" Edge="Edge.Start" OnClick="@((e) => DrawerToggle())" Size="Size.Medium" />
@@ -83,8 +81,6 @@
     }
 </MudLayout>
 </CascadingValue>
-</CascadingValue>
-</CascadingValue>
 
 <div id="blazor-error-ui" data-nosnippet>
     An unhandled error has occurred.
@@ -98,8 +94,6 @@
     private bool isLLMAnswering;
     private List<OllamaModel> availableModels = new();
     private OllamaModel? selectedModel;
-    private string stopAgentName = string.Empty;
-    private string stopPhrase = string.Empty;
     private MudTheme? _theme = null;
 
     protected override async Task OnInitializedAsync()
@@ -110,8 +104,6 @@
         isLLMAnswering = ChatService.IsAnswering;
 
         var settings = await UserSettingsService.GetSettingsAsync();
-        stopAgentName = settings.StopAgentName;
-        stopPhrase = settings.StopPhrase;
 
         try
         {
