@@ -103,11 +103,11 @@
                     <MudChat Dense="true" ChatPosition="@(message.Role == Microsoft.Extensions.AI.ChatRole.Assistant ? ChatBubblePosition.Start : ChatBubblePosition.End)" @key="message.Id">
                          <MudChatHeader>
                              <time>@message.MsgDateTime.ToString("g")</time>
+                             <span class="copy-button" title="Copy answer" @onclick="(() => CopyVisibleMessage(message))">📋</span>
+                             <span class="copy-button" title="Copy raw" @onclick="(() => CopyRawMessage(message))">🚪</span>
                              @if (!isLLMAnswering)
                              {
-                                <span class="copy-button" title="Copy answer" @onclick="(() => CopyVisibleMessage(message))">📋</span>
-                                <span class="copy-button" title="Copy raw" @onclick="(() => CopyRawMessage(message))">🚪</span>
-                                <span class="delete-button" title="Delete" @onclick="(() => DeleteMessage(message))">🗑</span>
+                                 <span class="delete-button" title="Delete" @onclick="(() => DeleteMessage(message))">🗑</span>
                              }
                          </MudChatHeader>
 
