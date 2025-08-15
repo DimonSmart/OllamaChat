@@ -65,6 +65,7 @@ public class ChatHistoryBuilder(IUserSettingsService settingsService, ILogger<Ch
     {
         var history = BuildBaseHistory(messages);
         history = await ApplyHistoryModeAsync(history, kernel, cancellationToken);
+        EnsureLastUserMessage(history);
         logger.LogInformation("Chat history:\n{History}", FormatHistory(history));
         return history;
     }
@@ -72,7 +73,6 @@ public class ChatHistoryBuilder(IUserSettingsService settingsService, ILogger<Ch
     private async Task<ChatHistory> ApplyHistoryModeAsync(ChatHistory history, Kernel kernel, CancellationToken cancellationToken)
     {
         var settings = await settingsService.GetSettingsAsync();
-        var chatService = kernel.GetRequiredService<IChatCompletionService>();
         switch (settings.ChatHistoryMode)
         {
             case ChatHistoryMode.Truncate:
@@ -80,12 +80,23 @@ public class ChatHistoryBuilder(IUserSettingsService settingsService, ILogger<Ch
                 var truncated = await trunc.ReduceAsync(history, cancellationToken);
                 return truncated is not null ? new ChatHistory(truncated) : history;
             case ChatHistoryMode.Summarize:
+                var chatService = kernel.GetRequiredService<IChatCompletionService>();
                 var sum = new ChatHistorySummarizationReducer(chatService, 5, 8);
                 var summarized = await sum.ReduceAsync(history, cancellationToken);
                 return summarized is not null ? new ChatHistory(summarized) : history;
             default:
                 return history;
         }
+    }
+
+    private static void EnsureLastUserMessage(ChatHistory history)
+    {
+        if (history.Count == 0)
+            return;
+        var last = history[^1];
+        if (last.Role == AuthorRole.User)
+            return;
+        history[^1] = new ChatMessageContent(AuthorRole.User, last.Items, last.AuthorName);
     }
 
     private static string FormatHistory(ChatHistory history) => string.Join("\n",
