@@ -15,7 +15,7 @@ internal class StopAgentFactory : IStopAgentFactory
     private static GroupChatManager CreateRoundRobin(RoundRobinStopAgentOptions? opts)
     {
         var rounds = opts?.Rounds ?? 1;
-        return new RoundRobinGroupChatManager { MaximumInvocationCount = rounds };
+        return new BridgingRoundRobinManager { MaximumInvocationCount = rounds };
     }
 }
 #pragma warning restore SKEXP0110
