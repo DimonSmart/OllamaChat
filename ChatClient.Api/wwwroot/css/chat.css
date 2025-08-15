@@ -5,6 +5,12 @@
     position: relative;
 }
 
+.chat-actions {
+    display: flex;
+    justify-content: flex-end;
+    padding: 0.5rem;
+}
+
 .chat-messages-container {
     padding: 1rem;
     display: flex;

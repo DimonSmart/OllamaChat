@@ -25,6 +25,7 @@
 @inject IAgentDescriptionService AgentService
 @inject IUserSettingsService UserSettingsService
 @inject IStopAgentFactory StopAgentFactory
+@inject IEnumerable<IChatFormatter> ChatFormatters
 
 <PageTitle>Chat with AI Assistant</PageTitle>
 
@@ -87,9 +88,16 @@
     }
     else
     {
+        <div class="chat-actions">
+            <MudMenu Icon="@Icons.Material.Filled.ContentCopy" AnchorOrigin="Origin.TopRight" TransformOrigin="Origin.TopRight">
+                <MudMenuItem OnClick="@(() => CopyChatAsync(ChatFormat.Text))">Copy as Text</MudMenuItem>
+                <MudMenuItem OnClick="@(() => CopyChatAsync(ChatFormat.Markdown))">Copy as Markdown</MudMenuItem>
+                <MudMenuItem OnClick="@(() => CopyChatAsync(ChatFormat.Html))">Copy as HTML</MudMenuItem>
+            </MudMenu>
+        </div>
         <div class="chat-messages-container" @ref="messagesElement">
             @foreach (var message in ChatViewModelService.Messages)
-            {                
+            {
                 @if (message.Role != Microsoft.Extensions.AI.ChatRole.System)
                 {
                     <MudChat Dense="true" ChatPosition="@(message.Role == Microsoft.Extensions.AI.ChatRole.Assistant ? ChatBubblePosition.Start : ChatBubblePosition.End)" @key="message.Id">
@@ -359,6 +367,14 @@
         {
             await JSRuntime.InvokeVoidAsync("copyText", message.RawContent);
         }
+    }
+
+    private async Task CopyChatAsync(ChatFormat format)
+    {
+        var formatter = ChatFormatters.FirstOrDefault(f => f.FormatType == format);
+        if (formatter is null) return;
+        var text = formatter.Format(ChatViewModelService.Messages);
+        await JSRuntime.InvokeVoidAsync("copyText", text);
     }
 
     public ValueTask DisposeAsync()

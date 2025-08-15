@@ -1,5 +1,6 @@
 using ChatClient.Api;
 using ChatClient.Api.Services;
+using ChatClient.Api.Client.Services;
 
 using Microsoft.AspNetCore.Hosting.Server;
 using Microsoft.AspNetCore.Hosting.Server.Features;
@@ -42,6 +43,9 @@ builder.Services.AddSingleton<ChatClient.Shared.Services.IUserSettingsService, C
 builder.Services.AddScoped<ChatClient.Api.Client.Services.IChatService, ChatClient.Api.Client.Services.ChatService>();
 builder.Services.AddScoped<ChatClient.Api.Client.Services.IChatViewModelService, ChatClient.Api.Client.Services.ChatViewModelService>();
 builder.Services.AddSingleton<ChatClient.Api.Client.Services.IStopAgentFactory, ChatClient.Api.Client.Services.StopAgentFactory>();
+builder.Services.AddSingleton<IChatFormatter, TextChatFormatter>();
+builder.Services.AddSingleton<IChatFormatter, MarkdownChatFormatter>();
+builder.Services.AddSingleton<IChatFormatter, HtmlChatFormatter>();
 
 builder.Services.AddRazorPages();
 builder.Services.AddServerSideBlazor();
