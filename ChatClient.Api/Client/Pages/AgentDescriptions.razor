@@ -198,6 +198,11 @@
             </MudSelect>
             <MudText Typo="Typo.caption">Leave blank to use chat's default model.</MudText>
 
+            <MudNumericField T="double?" @bind-Value="editingAgent.Temperature" Label="Temperature (Optional)" Class="mt-4" Immediate="true" Min="0" Max="2" Step="0.1" />
+
+            <MudNumericField T="double?" @bind-Value="editingAgent.RepeatPenalty" Label="Repeat Penalty (Optional)" Class="mt-4" Immediate="true" Min="0" Max="2" Step="0.1" />
+            <MudText Typo="Typo.caption">Leave blank to use chat defaults.</MudText>
+
             <div class="mt-4">
                 <FunctionSettingsSelector AvailableFunctions="@availableFunctions"
                                           FunctionSettings="@editingAgent.FunctionSettings"
@@ -315,6 +320,8 @@
             Content = "",
             ShortName = null,
             ModelName = null,
+            Temperature = null,
+            RepeatPenalty = null,
             FunctionSettings = new FunctionSettings
             {
                 AutoSelectCount = 0,
@@ -354,6 +361,8 @@
             Content = agent.Content,
             ShortName = agent.ShortName,
             ModelName = agent.ModelName,
+            Temperature = agent.Temperature,
+            RepeatPenalty = agent.RepeatPenalty,
             CreatedAt = agent.CreatedAt,
             UpdatedAt = agent.UpdatedAt,
             FunctionSettings = new FunctionSettings
