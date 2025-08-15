@@ -1,9 +1,4 @@
-using System.Collections.Generic;
-using System.Linq;
-using System.Threading;
-using System.Threading.Tasks;
 using Microsoft.SemanticKernel;
-using Microsoft.SemanticKernel.Agents;
 using Microsoft.SemanticKernel.Agents.Orchestration.GroupChat;
 using Microsoft.SemanticKernel.ChatCompletion;
 
@@ -12,24 +7,27 @@ namespace ChatClient.Api.Client.Services;
 #pragma warning disable SKEXP0110
 public sealed class BridgingRoundRobinManager : RoundRobinGroupChatManager
 {
-    private readonly HashSet<ChatMessageContent> _bridgedMessages = new();
+    private ChatMessageContent? _fixedAgentMessage = null;
+    private AuthorRole _fixedMessageRole = AuthorRole.Assistant;
 
     public override ValueTask<GroupChatManagerResult<string>> SelectNextAgent(
         ChatHistory history,
         GroupChatTeam team,
         CancellationToken cancellationToken = default)
     {
-        var last = history.LastOrDefault();
-        if (last is not null
-            && last.Role == AuthorRole.Assistant
-            && !_bridgedMessages.Contains(last))
+        if (_fixedAgentMessage != null)
         {
-            var text = string.Join("", last.Items.OfType<TextContent>().Select(t => t.Text));
-            if (!string.IsNullOrWhiteSpace(text))
-            {
-                history.AddUserMessage(text);
-                _bridgedMessages.Add(last);
-            }
+            _fixedAgentMessage.Role = _fixedMessageRole;
+        }
+
+        ChatMessageContent? last = history.LastOrDefault();
+        if (last is not null
+            && last.Role == AuthorRole.Assistant)
+        {
+            _fixedAgentMessage = last;
+            _fixedMessageRole = last.Role;
+
+            last.Role = AuthorRole.User;
         }
 
         return base.SelectNextAgent(history, team, cancellationToken);
