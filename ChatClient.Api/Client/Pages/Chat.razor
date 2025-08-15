@@ -310,9 +310,10 @@
     {
         var agents = selectedAgent != null ? new[] { selectedAgent } : Array.Empty<AgentDescription>();
         if (agents.Length != 1)
-        {
             throw new InvalidOperationException("Single-agent chat requires exactly one agent.");
-        }
+
+        if (string.IsNullOrWhiteSpace(agents[0].ModelName))
+            agents[0].ModelName = SelectedModel?.Name;
 
         ChatService.InitializeChat(agents);
         chatStarted = true;

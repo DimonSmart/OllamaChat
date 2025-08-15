@@ -55,7 +55,7 @@ public class StreamingMessageManager
     /// <summary>
     /// Creates statistics for message with additional metrics.
     /// </summary>
-    public string BuildStatistics(TimeSpan processingTime, ChatConfiguration chatConfiguration, int tokenCount, IEnumerable<string>? invokedServers = null)
+    public string BuildStatistics(TimeSpan processingTime, string modelName, int tokenCount, int functionCount, IEnumerable<string>? invokedServers = null)
     {
         var tokensPerSecond = processingTime.TotalSeconds > 0
             ? (tokenCount / processingTime.TotalSeconds).ToString("F1")
@@ -63,10 +63,10 @@ public class StreamingMessageManager
 
         var statisticsBuilder = new System.Text.StringBuilder();
         statisticsBuilder.Append($"⏱️ {processingTime.TotalSeconds:F1}s");
-        statisticsBuilder.Append($" • 🤖 {chatConfiguration.ModelName}");
-        if (chatConfiguration.Functions.Any())
+        statisticsBuilder.Append($" • 🤖 {modelName}");
+        if (functionCount > 0)
         {
-            statisticsBuilder.Append($" • 🔧 {chatConfiguration.Functions.Count} funcs");
+            statisticsBuilder.Append($" • 🔧 {functionCount} funcs");
         }
         if (invokedServers != null && invokedServers.Any())
         {
