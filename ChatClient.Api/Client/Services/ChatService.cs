@@ -25,7 +25,7 @@ public class ChatService(
     private StreamingMessageManager _streamingManager = null!;
     private readonly Dictionary<string, StreamingAppChatMessage> _activeStreams = new();
     private const string PlaceholderAgent = "__placeholder__";
-    private IReadOnlyCollection<AgentDescription> _agentDescriptions = [];
+    private Dictionary<string, AgentDescription> _agentsByName = new();
 
     public event Action<bool>? AnsweringStateChanged;
     public event Action? ChatReset;
@@ -41,7 +41,7 @@ public class ChatService(
         return new TrackingFiltersScope();
     }
 
-    public IReadOnlyCollection<AgentDescription> AgentDescriptions => _agentDescriptions;
+    public IReadOnlyCollection<AgentDescription> AgentDescriptions => _agentsByName.Values;
 
     public void InitializeChat(IReadOnlyCollection<AgentDescription> agents)
     {
@@ -54,7 +54,12 @@ public class ChatService(
         Messages.Clear();
         _activeStreams.Clear();
         _streamingManager = new StreamingMessageManager();
-        _agentDescriptions = agents;
+
+        // Create lookup dictionary for agent names
+        _agentsByName = agents.ToDictionary(
+            desc => !string.IsNullOrWhiteSpace(desc.ShortName) ? desc.ShortName : desc.AgentName,
+            desc => desc,
+            StringComparer.OrdinalIgnoreCase);
 
         ChatReset?.Invoke();
     }
@@ -170,7 +175,7 @@ public class ChatService(
     {
         var agents = new List<ChatCompletionAgent>();
 
-        foreach (var desc in _agentDescriptions)
+        foreach (var desc in _agentsByName.Values)
         {
             var functionsToRegister = await kernelService.GetFunctionsToRegisterAsync(desc.FunctionSettings, userMessage);
             var modelName = desc.ModelName ?? throw new InvalidOperationException("Agent model name is not set.");
@@ -228,7 +233,7 @@ public class ChatService(
             {
                 var agentName = streamingContent.AuthorName;
                 if (string.IsNullOrWhiteSpace(agentName))
-                    agentName = _agentDescriptions.FirstOrDefault()?.AgentName ?? "Assistant";
+                    agentName = _agentsByName.Values.FirstOrDefault()?.AgentName ?? "Assistant";
 
                 if (!_activeStreams.TryGetValue(agentName, out var message))
                 {
@@ -255,7 +260,7 @@ public class ChatService(
                     await CompleteStreamingMessage(message, functionCount, trackingScope);
                     _activeStreams.Remove(agentName);
 
-                    if (_agentDescriptions.Count > 1)
+                    if (_agentsByName.Count > 1)
                     {
                         var placeholder = CreateNextAgentPlaceholder();
                         _activeStreams[PlaceholderAgent] = placeholder;
@@ -348,10 +353,9 @@ public class ChatService(
 
         TimeSpan processingTime = DateTime.Now - message.MsgDateTime;
 
-        var modelName = _agentDescriptions
-            .FirstOrDefault(a => string.Equals(a.ShortName, message.AgentName, StringComparison.OrdinalIgnoreCase) ||
-                                 string.Equals(a.AgentName, message.AgentName, StringComparison.OrdinalIgnoreCase))?
-            .ModelName ?? string.Empty;
+        var modelName = !string.IsNullOrEmpty(message.AgentName) && _agentsByName.TryGetValue(message.AgentName, out var agentDesc)
+            ? agentDesc.ModelName ?? string.Empty
+            : string.Empty;
 
         var statistics = _streamingManager.BuildStatistics(
             processingTime,
