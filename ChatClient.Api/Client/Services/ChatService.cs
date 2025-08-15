@@ -182,16 +182,30 @@ public class ChatService(
             agentKernel.FunctionInvocationFilters.Add(trackingFilter);
             trackingScope.Register(agentName, trackingFilter, () => agentKernel.FunctionInvocationFilters.Remove(trackingFilter));
 
+            var settings = new PromptExecutionSettings
+            {
+                FunctionChoiceBehavior = FunctionChoiceBehavior.Auto(autoInvoke: true)
+            };
+
+            if (desc.Temperature.HasValue)
+            {
+                settings.ExtensionData ??= new Dictionary<string, object>();
+                settings.ExtensionData["temperature"] = desc.Temperature.Value;
+            }
+
+            if (desc.RepeatPenalty.HasValue)
+            {
+                settings.ExtensionData ??= new Dictionary<string, object>();
+                settings.ExtensionData["repeat_penalty"] = desc.RepeatPenalty.Value;
+            }
+
             agents.Add(new ChatCompletionAgent
             {
                 Name = agentName,
                 Description = desc.AgentName,
                 Instructions = desc.Content,
                 Kernel = agentKernel,
-                Arguments = new KernelArguments(new PromptExecutionSettings
-                {
-                    FunctionChoiceBehavior = FunctionChoiceBehavior.Auto(autoInvoke: true)
-                })
+                Arguments = new KernelArguments(settings)
             });
         }
 

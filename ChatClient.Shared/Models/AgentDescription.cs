@@ -7,6 +7,8 @@ public class AgentDescription
     public string Content { get; set; } = string.Empty;
     public string? ShortName { get; set; }
     public string? ModelName { get; set; }
+    public double? Temperature { get; set; }
+    public double? RepeatPenalty { get; set; }
 
     public FunctionSettings FunctionSettings { get; set; } = new();
 
