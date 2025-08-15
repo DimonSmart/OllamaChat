@@ -1,5 +1,5 @@
-﻿using System.Collections.ObjectModel;
-
+using System;
+using System.Collections.ObjectModel;
 using ChatClient.Api.Services;
 using ChatClient.Shared.Models;
 
@@ -102,6 +102,7 @@ public class ChatService(
         UpdateAnsweringState(true);
 
         _cancellationTokenSource = new CancellationTokenSource();
+        var functionCount = chatConfiguration.Functions.Count;
 
         try
         {
@@ -110,7 +111,7 @@ public class ChatService(
             var runtime = new InProcessRuntime();
             await runtime.StartAsync(_cancellationTokenSource.Token);
 
-            var agents = await CreateAgents(chatConfiguration, text, trackingScope);
+            var agents = await CreateAgents(text, trackingScope);
 
             OrchestrationInputTransform<string> inputTransform = async (_, ct) =>
                 await chatHistoryBuilder.BuildChatHistoryAsync(Messages, agents[0].Kernel, ct);
@@ -118,7 +119,7 @@ public class ChatService(
             var chatOrchestration = CreateChatOrchestration(
                 groupChatManager,
                 agents,
-                chatConfiguration,
+                functionCount,
                 trackingScope,
                 inputTransform);
 
@@ -140,7 +141,7 @@ public class ChatService(
         finally
         {
             CleanupWithoutTrackingFilters();
-            await FinalizeProcessing(chatConfiguration, trackingScope);
+            await FinalizeProcessing(functionCount, trackingScope);
         }
     }
 
@@ -165,14 +166,14 @@ public class ChatService(
         await (MessageAdded?.Invoke(message) ?? Task.CompletedTask);
     }
 
-    private async Task<List<ChatCompletionAgent>> CreateAgents(ChatConfiguration chatConfiguration, string userMessage, TrackingFiltersScope trackingScope)
+    private async Task<List<ChatCompletionAgent>> CreateAgents(string userMessage, TrackingFiltersScope trackingScope)
     {
         var agents = new List<ChatCompletionAgent>();
 
         foreach (var desc in _agentDescriptions)
         {
             var functionsToRegister = await kernelService.GetFunctionsToRegisterAsync(desc.FunctionSettings, userMessage);
-            var modelName = string.IsNullOrWhiteSpace(desc.ModelName) ? chatConfiguration.ModelName : desc.ModelName;
+            var modelName = desc.ModelName ?? throw new InvalidOperationException("Agent model name is not set.");
             var agentKernel = await kernelService.CreateKernelAsync(modelName, functionsToRegister);
 
             // TODO Add function into AgentDescription to get Agent name for UI
@@ -215,7 +216,7 @@ public class ChatService(
     private GroupChatOrchestration CreateChatOrchestration(
         GroupChatManager groupChatManager,
         List<ChatCompletionAgent> agents,
-        ChatConfiguration chatConfiguration,
+        int functionCount,
         TrackingFiltersScope trackingScope,
         OrchestrationInputTransform<string> inputTransform)
     {
@@ -251,7 +252,7 @@ public class ChatService(
 
                 if (isFinal)
                 {
-                    await CompleteStreamingMessage(message, chatConfiguration, trackingScope);
+                    await CompleteStreamingMessage(message, functionCount, trackingScope);
                     _activeStreams.Remove(agentName);
 
                     if (_agentDescriptions.Count > 1)
@@ -312,25 +313,25 @@ public class ChatService(
     }
 
     private async Task FinalizeProcessing(
-        ChatConfiguration chatConfiguration,
+        int functionCount,
         TrackingFiltersScope trackingScope)
     {
         RemoveDanglingPlaceholder();
-        await CompleteActiveStreams(chatConfiguration, trackingScope);
+        await CompleteActiveStreams(functionCount, trackingScope);
     }
-
-    private async Task CompleteActiveStreams(ChatConfiguration chatConfiguration, TrackingFiltersScope trackingScope)
+    
+    private async Task CompleteActiveStreams(int functionCount, TrackingFiltersScope trackingScope)
     {
         foreach (var kvp in _activeStreams.ToList())
         {
-            await CompleteStreamingMessage(kvp.Value, chatConfiguration, trackingScope);
+            await CompleteStreamingMessage(kvp.Value, functionCount, trackingScope);
             _activeStreams.Remove(kvp.Key);
         }
     }
 
     private async Task CompleteStreamingMessage(
         StreamingAppChatMessage message,
-        ChatConfiguration chatConfiguration,
+        int functionCount,
         TrackingFiltersScope trackingScope)
     {
         var messageFunctionCalls = new List<FunctionCallRecord>();
@@ -347,10 +348,16 @@ public class ChatService(
 
         TimeSpan processingTime = DateTime.Now - message.MsgDateTime;
 
+        var modelName = _agentDescriptions
+            .FirstOrDefault(a => string.Equals(a.ShortName, message.AgentName, StringComparison.OrdinalIgnoreCase) ||
+                                 string.Equals(a.AgentName, message.AgentName, StringComparison.OrdinalIgnoreCase))?
+            .ModelName ?? string.Empty;
+
         var statistics = _streamingManager.BuildStatistics(
             processingTime,
-            chatConfiguration,
+            modelName,
             message.ApproximateTokenCount,
+            functionCount,
             messageFunctionCalls.Select(fc => fc.Server).Distinct());
 
         var finalMessage = _streamingManager.CompleteStreaming(message, statistics);

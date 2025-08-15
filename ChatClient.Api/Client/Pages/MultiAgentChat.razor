@@ -341,6 +341,10 @@
         if (selectedAgents.Count == 0)
             return;
 
+        foreach (var agent in selectedAgents)
+            if (string.IsNullOrWhiteSpace(agent.ModelName))
+                agent.ModelName = SelectedModel?.Name;
+
         ChatService.InitializeChat(selectedAgents);
         chatStarted = true;
         StateHasChanged();
