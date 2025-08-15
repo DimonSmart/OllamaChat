@@ -6,7 +6,7 @@ supports multi‑agent conversations through the `GroupChatOrchestration` API.
 
 ```csharp
 var orchestrator = new GroupChatOrchestration(
-    new RoundRobinGroupChatManager { MaximumInvocationCount = 2 },
+    new BridgingRoundRobinManager { MaximumInvocationCount = 2 },
     agent1, agent2);
 
 await using var runtime = new InProcessRuntime();
