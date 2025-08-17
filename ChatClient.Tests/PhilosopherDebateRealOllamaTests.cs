@@ -1,5 +1,6 @@
 using System.Text.Json;
 
+using ChatClient.Api.Client.Services;
 using ChatClient.Api.Services;
 using ChatClient.Shared.Models;
 
@@ -45,7 +46,8 @@ public class PhilosopherDebateRealOllamaTests
             Name = "Kant",
             Description = "Immanuel Kant",
             Instructions = kantDesc.Content,
-            Kernel = kernel
+            Kernel = kernel,
+            HistoryReducer = new ForceLastUserReducer()
         };
 
         ChatCompletionAgent bentham = new()
@@ -53,7 +55,8 @@ public class PhilosopherDebateRealOllamaTests
             Name = "Bentham",
             Description = "Jeremy Bentham",
             Instructions = benthamDesc.Content,
-            Kernel = kernel
+            Kernel = kernel,
+            HistoryReducer = new ForceLastUserReducer()
         };
 
         List<ChatMessageContent> history = [];
@@ -63,45 +66,11 @@ public class PhilosopherDebateRealOllamaTests
         GroupChatOrchestration chat = new(
             new RoundRobinGroupChatManager
             {
-                MaximumInvocationCount = 2  // Только 2 итерации для быстрой проверки
+                MaximumInvocationCount = 2
             },
             kant,
             bentham)
         {
-            // InputTransform для обеспечения чередования user/assistant ролей
-            InputTransform = (input, ct) =>
-            {
-                testLogger.LogInformation("=== InputTransform called ===");
-                testLogger.LogInformation("Original input has {Count} messages", input.Count());
-
-                ChatHistory chatHistory = new();
-
-                // Добавляем изначальный пользовательский вопрос
-                chatHistory.AddUserMessage("Is it morally acceptable to lie to save a life?");
-                testLogger.LogInformation("Added initial user question");
-
-                // Обрабатываем историю с принудительным чередованием ролей
-                List<ChatMessageContent> filteredHistory = history.Where(m => !string.IsNullOrWhiteSpace(m.Content)).ToList();
-                testLogger.LogInformation("Processing {Count} filtered history messages", filteredHistory.Count);
-
-                for (int i = 0; i < filteredHistory.Count; i++)
-                {
-                    ChatMessageContent msg = filteredHistory[i];
-
-                    // Добавляем assistant message
-                    chatHistory.AddAssistantMessage(msg.Content ?? "");
-                    testLogger.LogInformation("Added assistant message {Index}: {Content}", i, msg.Content?.Take(50));
-
-                    // КРИТИЧНО: Всегда добавляем user сообщение после assistant
-                    chatHistory.AddUserMessage("Continue the discussion.");
-                    testLogger.LogInformation("Added user continuation after message {Index}", i);
-                }
-
-                testLogger.LogInformation("Final history: {Count} messages, last role: {Role}",
-                    chatHistory.Count, chatHistory.Count > 0 ? chatHistory[^1].Role.Label : "None");
-
-                return ValueTask.FromResult((IEnumerable<ChatMessageContent>)chatHistory);
-            },
             ResponseCallback = message =>
             {
                 responseCount++;
@@ -112,7 +81,6 @@ public class PhilosopherDebateRealOllamaTests
                 {
                     emptyResponseCount++;
                     testLogger.LogWarning("Empty response #{EmptyCount} detected from {AuthorName}! Skipping...", emptyResponseCount, message.AuthorName);
-                    // Не добавляем пустые ответы в историю
                     return ValueTask.CompletedTask;
                 }
 
@@ -145,7 +113,7 @@ public class PhilosopherDebateRealOllamaTests
         string currentDir = Directory.GetCurrentDirectory();
         Console.WriteLine($"Current directory: {currentDir}");
 
-        // Попробуем несколько вариантов путей
+        // Try multiple path options
         string[] possiblePaths = new[]
         {
             Path.Combine("ChatClient.Api", "Data", "agent_descriptions.json"),
