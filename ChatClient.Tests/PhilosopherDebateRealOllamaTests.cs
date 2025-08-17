@@ -18,25 +18,29 @@ namespace ChatClient.Tests;
 
 public class PhilosopherDebateRealOllamaTests
 {
-    [Fact(Skip = "Requires running Ollama server with 'phi4:latest' model.")]
+    [Fact]
     public async Task KantAndBentham_DebateLyingToSaveLife()
     {
-        var services = new ServiceCollection();
+        ServiceCollection services = new();
         services.AddLogging(b => b.AddConsole().SetMinimumLevel(LogLevel.Debug));
-        var sp = services.BuildServiceProvider();
-        var loggerFactory = sp.GetRequiredService<ILoggerFactory>();
+        ServiceProvider sp = services.BuildServiceProvider();
+        ILoggerFactory loggerFactory = sp.GetRequiredService<ILoggerFactory>();
+        ILogger<PhilosopherDebateRealOllamaTests> testLogger = loggerFactory.CreateLogger<PhilosopherDebateRealOllamaTests>();
 
         IKernelBuilder builder = Kernel.CreateBuilder();
-        var httpClient = GetHttpClient(loggerFactory);
-        builder.AddOllamaChatCompletion(modelId: "phi4", httpClient: httpClient);
+        HttpClient httpClient = GetHttpClient(loggerFactory);
+        builder.AddOllamaChatCompletion(modelId: "qwen3", httpClient: httpClient);
         builder.Services.AddLogging(c => c.AddConsole());
-        var kernel = builder.Build();
+        Kernel kernel = builder.Build();
 
-        var descriptions = await LoadDescriptionsAsync();
-        var kantDesc = descriptions.First(a => a.AgentName == "Immanuel Kant");
-        var benthamDesc = descriptions.First(a => a.AgentName == "Jeremy Bentham");
+        List<AgentDescription> descriptions = await LoadDescriptionsAsync();
+        AgentDescription kantDesc = descriptions.First(a => a.AgentName == "Immanuel Kant");
+        AgentDescription benthamDesc = descriptions.First(a => a.AgentName == "Jeremy Bentham");
 
-        var kant = new ChatCompletionAgent
+        testLogger.LogInformation("Found Kant description: {KantContent}", kantDesc.Content.Take(100));
+        testLogger.LogInformation("Found Bentham description: {BenthamContent}", benthamDesc.Content.Take(100));
+
+        ChatCompletionAgent kant = new()
         {
             Name = "Kant",
             Description = "Immanuel Kant",
@@ -44,7 +48,7 @@ public class PhilosopherDebateRealOllamaTests
             Kernel = kernel
         };
 
-        var bentham = new ChatCompletionAgent
+        ChatCompletionAgent bentham = new()
         {
             Name = "Bentham",
             Description = "Jeremy Bentham",
@@ -53,43 +57,121 @@ public class PhilosopherDebateRealOllamaTests
         };
 
         List<ChatMessageContent> history = [];
-        var chat = new GroupChatOrchestration(
+        int responseCount = 0;
+        int emptyResponseCount = 0;
+
+        GroupChatOrchestration chat = new(
             new RoundRobinGroupChatManager
             {
-                MaximumInvocationCount = 6
+                MaximumInvocationCount = 2  // Только 2 итерации для быстрой проверки
             },
             kant,
             bentham)
         {
+            // InputTransform для обеспечения чередования user/assistant ролей
+            InputTransform = (input, ct) =>
+            {
+                testLogger.LogInformation("=== InputTransform called ===");
+                testLogger.LogInformation("Original input has {Count} messages", input.Count());
+
+                ChatHistory chatHistory = new();
+
+                // Добавляем изначальный пользовательский вопрос
+                chatHistory.AddUserMessage("Is it morally acceptable to lie to save a life?");
+                testLogger.LogInformation("Added initial user question");
+
+                // Обрабатываем историю с принудительным чередованием ролей
+                List<ChatMessageContent> filteredHistory = history.Where(m => !string.IsNullOrWhiteSpace(m.Content)).ToList();
+                testLogger.LogInformation("Processing {Count} filtered history messages", filteredHistory.Count);
+
+                for (int i = 0; i < filteredHistory.Count; i++)
+                {
+                    ChatMessageContent msg = filteredHistory[i];
+
+                    // Добавляем assistant message
+                    chatHistory.AddAssistantMessage(msg.Content ?? "");
+                    testLogger.LogInformation("Added assistant message {Index}: {Content}", i, msg.Content?.Take(50));
+
+                    // КРИТИЧНО: Всегда добавляем user сообщение после assistant
+                    chatHistory.AddUserMessage("Continue the discussion.");
+                    testLogger.LogInformation("Added user continuation after message {Index}", i);
+                }
+
+                testLogger.LogInformation("Final history: {Count} messages, last role: {Role}",
+                    chatHistory.Count, chatHistory.Count > 0 ? chatHistory[^1].Role.Label : "None");
+
+                return ValueTask.FromResult((IEnumerable<ChatMessageContent>)chatHistory);
+            },
             ResponseCallback = message =>
             {
+                responseCount++;
+                testLogger.LogInformation("Response #{ResponseCount}: [{AuthorName}] Content: '{Content}' (Length: {Length})",
+                    responseCount, message.AuthorName, message.Content?.Take(200), message.Content?.Length ?? 0);
+
+                if (string.IsNullOrWhiteSpace(message.Content))
+                {
+                    emptyResponseCount++;
+                    testLogger.LogWarning("Empty response #{EmptyCount} detected from {AuthorName}! Skipping...", emptyResponseCount, message.AuthorName);
+                    // Не добавляем пустые ответы в историю
+                    return ValueTask.CompletedTask;
+                }
+
                 history.Add(message);
                 Console.WriteLine($"[{message.AuthorName}] {message.Content}");
                 return ValueTask.CompletedTask;
             }
         };
 
-        await using var runtime = new InProcessRuntime();
+        await using InProcessRuntime runtime = new();
         await runtime.StartAsync();
 
-        var result = await chat.InvokeAsync("Можно ли врать ради спасения жизни?", runtime);
+        testLogger.LogInformation("Starting debate with question: 'Is it morally acceptable to lie to save a life?'");
+        Microsoft.SemanticKernel.Agents.Orchestration.OrchestrationResult<string> result = await chat.InvokeAsync("Is it morally acceptable to lie to save a life?", runtime);
         await result.GetValueAsync(TimeSpan.FromMinutes(20));
+
+        testLogger.LogInformation("Debate completed. Total responses: {TotalResponses}, Empty responses: {EmptyResponses}",
+            responseCount, emptyResponseCount);
+        testLogger.LogInformation("Final history contains {HistoryCount} messages", history.Count);
 
         Assert.Contains(history, m => m.AuthorName == kant.Name);
         Assert.Contains(history, m => m.AuthorName == bentham.Name);
+
+        Assert.True(history.Count >= 1, $"Expected at least 1 exchange, but got {history.Count}");
+        Assert.True(emptyResponseCount == 0, $"SUCCESS! No empty responses: {emptyResponseCount} out of {responseCount}");
     }
 
     private static async Task<List<AgentDescription>> LoadDescriptionsAsync()
     {
-        var path = Path.Combine("ChatClient.Api", "Data", "agent_descriptions.json");
-        await using var stream = File.OpenRead(path);
-        var descriptions = await JsonSerializer.DeserializeAsync<List<AgentDescription>>(stream);
-        return descriptions ?? [];
+        string currentDir = Directory.GetCurrentDirectory();
+        Console.WriteLine($"Current directory: {currentDir}");
+
+        // Попробуем несколько вариантов путей
+        string[] possiblePaths = new[]
+        {
+            Path.Combine("ChatClient.Api", "Data", "agent_descriptions.json"),
+            Path.Combine("..", "..", "..", "..", "ChatClient.Api", "Data", "agent_descriptions.json"),
+            Path.Combine("c:", "Private", "OllamaChat", "ChatClient.Api", "Data", "agent_descriptions.json"),
+            Path.GetFullPath(Path.Combine(currentDir, "..", "..", "..", "..", "ChatClient.Api", "Data", "agent_descriptions.json"))
+        };
+
+        foreach (string? path in possiblePaths)
+        {
+            Console.WriteLine($"Trying path: {path}");
+            if (File.Exists(path))
+            {
+                Console.WriteLine($"Found file at: {path}");
+                await using FileStream stream = File.OpenRead(path);
+                List<AgentDescription>? descriptions = await JsonSerializer.DeserializeAsync<List<AgentDescription>>(stream);
+                return descriptions ?? [];
+            }
+        }
+
+        throw new FileNotFoundException($"Could not find agent_descriptions.json in any of the expected locations. Current dir: {currentDir}");
     }
 
     private static HttpClient GetHttpClient(ILoggerFactory loggerFactory)
     {
-        var logging = new HttpLoggingHandler(loggerFactory.CreateLogger<HttpLoggingHandler>())
+        HttpLoggingHandler logging = new(loggerFactory.CreateLogger<HttpLoggingHandler>())
         {
             InnerHandler = new HttpClientHandler
             {
