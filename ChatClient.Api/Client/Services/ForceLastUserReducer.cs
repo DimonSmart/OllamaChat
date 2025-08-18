@@ -1,9 +1,5 @@
-using System.Collections.Generic;
-using System.Threading;
-using System.Threading.Tasks;
-using Microsoft.SemanticKernel.Agents;
-using Microsoft.SemanticKernel.ChatCompletion;
 using Microsoft.SemanticKernel;
+using Microsoft.SemanticKernel.ChatCompletion;
 
 namespace ChatClient.Api.Client.Services;
 
@@ -14,10 +10,12 @@ public sealed class ForceLastUserReducer : IChatHistoryReducer
         CancellationToken cancellationToken = default)
     {
         if (source.Count == 0)
+        {
             return Task.FromResult<IEnumerable<ChatMessageContent>?>(source);
+        }
 
-        var list = new List<ChatMessageContent>(source);
-        var last = list[^1];
+        List<ChatMessageContent> list = new(source);
+        ChatMessageContent last = list[^1];
 
         if (last.Role != AuthorRole.User)
         {

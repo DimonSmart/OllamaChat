@@ -52,7 +52,7 @@ public class PhilosopherDebateTests
         };
 
         GroupChatOrchestration chat = new(
-            new RoundRobinGroupChatManager { MaximumInvocationCount = 2 },
+            new RoundRobinGroupChatManager { MaximumInvocationCount = 8 },
             kant,
             bentham);
 
@@ -62,7 +62,7 @@ public class PhilosopherDebateTests
         var result = await chat.InvokeAsync("Is it morally acceptable to lie to save a life?", runtime);
         await result.GetValueAsync(TimeSpan.FromSeconds(10));
 
-        Assert.Equal(2, handler.ObservedRoles.Count);
+        Assert.Equal(8, handler.ObservedRoles.Count);
         Assert.All(handler.ObservedRoles, r => Assert.Equal("user", r));
     }
 
