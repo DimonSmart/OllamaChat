@@ -7,6 +7,7 @@ using Microsoft.Extensions.Logging;
 using Microsoft.SemanticKernel;
 using Microsoft.SemanticKernel.ChatCompletion;
 using System.Linq;
+using ChatClient.Api.Client.Services;
 
 namespace ChatClient.Api.Services;
 
@@ -64,7 +65,9 @@ public class ChatHistoryBuilder(IUserSettingsService settingsService, ILogger<Ch
     public async Task<ChatHistory> BuildChatHistoryAsync(IEnumerable<IAppChatMessage> messages, Kernel kernel, CancellationToken cancellationToken)
     {
         var history = BuildBaseHistory(messages);
-        // Temporarily disabled!!! 
+        var reduced = await new ForceLastUserReducer().ReduceAsync(history, cancellationToken) ?? history;
+        history = reduced is ChatHistory h ? h : new ChatHistory(reduced);
+        // Temporarily disabled!!!
         // history = await ApplyHistoryModeAsync(history, kernel, cancellationToken);
         // logger.LogInformation("Chat history:\n{History}", FormatHistory(history));
         return history;
