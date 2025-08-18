@@ -1,8 +1,11 @@
 using ChatClient.Shared.Constants;
 using ChatClient.Shared.Models;
 using ChatClient.Shared.Services;
+using ChatClient.Api.Client.Services;
 
 using Microsoft.SemanticKernel;
+using Microsoft.SemanticKernel.ChatCompletion;
+using Microsoft.SemanticKernel.Connectors.Ollama;
 
 namespace ChatClient.Api.Services;
 
@@ -56,7 +59,11 @@ public class KernelService(
         IKernelBuilder builder = Kernel.CreateBuilder();
         var httpClient = CreateConfiguredHttpClient(settings, timeout);
         httpClient.BaseAddress = new Uri(baseUrl);
-        builder.AddOllamaChatCompletion(modelId: modelId, httpClient: httpClient);
+        builder.Services.AddSingleton<IChatCompletionService>(_ =>
+        {
+            var inner = new OllamaChatCompletionService(modelId, httpClient: httpClient);
+            return new ForceLastUserChatCompletionService(inner, new ForceLastUserReducer());
+        });
         builder.Services.AddSingleton(httpClient);
         builder.Services.AddLogging(c => c.AddConsole().SetMinimumLevel(LogLevel.Information));
 
