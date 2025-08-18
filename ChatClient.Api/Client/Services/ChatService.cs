@@ -241,11 +241,24 @@ public class ChatService(
                     logger.LogInformation("Agent {AgentName} started responding", agentName);
                     if (_activeStreams.TryGetValue(PlaceholderAgent, out var placeholder))
                     {
+                        logger.LogDebug("Replacing placeholder with agent {AgentName}, placeholder content length: {ContentLength}", 
+                                       agentName, placeholder.Content.Length);
+                        
                         _activeStreams.Remove(PlaceholderAgent);
                         placeholder.SetAgentName(agentName);
                         placeholder.ResetContent();
                         _activeStreams[agentName] = placeholder;
                         message = placeholder;
+                        
+                        logger.LogDebug("Placeholder replaced with agent {AgentName}, new content length: {ContentLength}", 
+                                       agentName, placeholder.Content.Length);
+                        
+                        // Force an update after agent name change to ensure UI sees the change
+                        if (MessageUpdated != null)
+                        {
+                            logger.LogDebug("Sending forced update for agent name change: {AgentName}", agentName);
+                            await MessageUpdated(message, false);
+                        }
                     }
                     else
                     {
@@ -286,11 +299,24 @@ public class ChatService(
         StreamingAppChatMessage message,
         string content)
     {
+        logger.LogDebug("UpdateStreamingMessage called for agent {AgentName} with content: {Content}", 
+                       message.AgentName, content);
+        
         message.Append(content);
         message.ApproximateTokenCount++;
 
         if (MessageUpdated != null)
+        {
+            logger.LogDebug("Invoking MessageUpdated event for agent {AgentName}, content length: {ContentLength}", 
+                           message.AgentName, message.Content.Length);
             await MessageUpdated(message, false);
+            logger.LogDebug("MessageUpdated event completed for agent {AgentName}", message.AgentName);
+        }
+        else
+        {
+            logger.LogWarning("MessageUpdated event is null - streaming updates not being propagated for agent {AgentName}", 
+                             message.AgentName);
+        }
     }
 
     private async Task HandleModelNotSupportingTools(ModelDoesNotSupportToolsException ex, ChatConfiguration chatConfiguration)

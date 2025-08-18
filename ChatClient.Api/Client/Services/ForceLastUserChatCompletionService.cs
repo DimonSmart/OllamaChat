@@ -17,19 +17,5 @@ public sealed class ForceLastUserChatCompletionService(IChatCompletionService in
         var history = reduced is ChatHistory h ? h : new ChatHistory(reduced);
         return await inner.GetChatMessageContentsAsync(history, executionSettings, kernel, cancellationToken);
     }
-
-    public async IAsyncEnumerable<StreamingChatMessageContent> GetStreamingChatMessageContentsAsync(
-        ChatHistory chatHistory,
-        PromptExecutionSettings? executionSettings = null,
-        Kernel? kernel = null,
-        [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken = default)
-    {
-        var reduced = await reducer.ReduceAsync(chatHistory, cancellationToken) ?? chatHistory;
-        var history = reduced is ChatHistory h ? h : new ChatHistory(reduced);
-        await foreach (var item in inner.GetStreamingChatMessageContentsAsync(history, executionSettings, kernel, cancellationToken))
-        {
-            yield return item;
-        }
-    }
 }
 
