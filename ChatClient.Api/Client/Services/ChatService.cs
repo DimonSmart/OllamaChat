@@ -174,7 +174,6 @@ public class ChatService(
     private async Task<List<ChatCompletionAgent>> CreateAgents(string userMessage, TrackingFiltersScope trackingScope)
     {
         var agents = new List<ChatCompletionAgent>();
-        var reducer = new ForceLastUserReducer();
 
         foreach (var desc in _agentsByName.Values)
         {
@@ -213,7 +212,7 @@ public class ChatService(
                 Instructions = desc.Content,
                 Kernel = agentKernel,
                 Arguments = new KernelArguments(settings),
-                HistoryReducer = reducer
+                HistoryReducer = new ForceLastUserReducer()
             });
         }
 
