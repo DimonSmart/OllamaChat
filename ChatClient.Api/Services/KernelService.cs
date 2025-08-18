@@ -61,8 +61,7 @@ public class KernelService(
         httpClient.BaseAddress = new Uri(baseUrl);
         builder.Services.AddSingleton<IChatCompletionService>(_ =>
         {
-            var inner = new OllamaChatCompletionService(modelId, httpClient: httpClient);
-            return new ForceLastUserChatCompletionService(inner, new ForceLastUserReducer());
+            return new OllamaChatCompletionService(modelId, httpClient: httpClient);
         });
         builder.Services.AddSingleton(httpClient);
         builder.Services.AddLogging(c => c.AddConsole().SetMinimumLevel(LogLevel.Information));

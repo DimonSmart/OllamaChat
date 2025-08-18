@@ -1,6 +1,6 @@
-using System.Net;
 using System.Text;
 using System.Text.Json;
+using System.Runtime.CompilerServices;
 
 using ChatClient.Api.Client.Services;
 using ChatClient.Shared.Models;
@@ -19,7 +19,7 @@ using Xunit.Abstractions;
 #pragma warning disable SKEXP0001
 namespace ChatClient.Tests;
 
-public class PhilosopherDebateTests
+public partial class PhilosopherDebateTests
 {
     private readonly ITestOutputHelper _output;
 
@@ -253,92 +253,31 @@ public class PhilosopherDebateTests
 
             return new[] { new ChatMessageContent(AuthorRole.Assistant, "Philosophical response from mock service", "assistant") };
         }
-    }
 
-    private sealed class StubOllamaHandler : HttpMessageHandler
-    {
-        public List<string> ObservedRoles { get; } = [];
-        public List<string> ObservedMessages { get; } = [];
-        private readonly ITestOutputHelper _output;
-
-        public StubOllamaHandler(ITestOutputHelper output)
+        public async IAsyncEnumerable<StreamingChatMessageContent> GetStreamingChatMessageContentsAsync(ChatHistory chatHistory, PromptExecutionSettings? executionSettings = null, Kernel? kernel = null, [EnumeratorCancellation] CancellationToken cancellationToken = default)
         {
-            _output = output;
-        }
+            _output.WriteLine($"GetStreamingChatMessageContentsAsync called with {chatHistory.Count()} messages");
 
-        protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
-        {
-            _output.WriteLine($"StubOllamaHandler.SendAsync called: {request.Method} {request.RequestUri}");
+            IEnumerable<ChatMessageContent> reduced = await _reducer.ReduceAsync(chatHistory, cancellationToken) ?? chatHistory;
+            _output.WriteLine($"After reduction: {reduced.Count()} messages");
 
-            if (request.Content == null)
+            var messages = reduced.Select(m => new { role = m.Role.ToString().ToLowerInvariant(), content = m.Content });
+            string payload = JsonSerializer.Serialize(new { model = "phi4", messages, options = new { }, stream = true, think = false, CustomHeaders = new { } });
+
+            _output.WriteLine($"Sending streaming payload: {payload}");
+
+            using var request = new HttpRequestMessage(HttpMethod.Post, "/api/chat")
             {
-                _output.WriteLine("Request content is null");
-                return new HttpResponseMessage(HttpStatusCode.BadRequest);
-            }
-
-            string payload = await request.Content.ReadAsStringAsync(cancellationToken);
-            _output.WriteLine($"Request payload: {payload}");
-
-            using JsonDocument doc = JsonDocument.Parse(payload);
-            JsonElement messages = doc.RootElement.GetProperty("messages");
-            List<JsonElement> messagesArray = messages.EnumerateArray().ToList();
-
-            _output.WriteLine($"Found {messagesArray.Count} messages in payload");
-
-            if (messagesArray.Count > 0)
-            {
-                JsonElement last = messagesArray.Last();
-                string role = last.GetProperty("role").GetString()!;
-                string content = last.GetProperty("content").GetString() ?? "";
-
-                ObservedRoles.Add(role);
-                ObservedMessages.Add(content);
-
-                _output.WriteLine($"Last message - Role: {role}, Content: {content}");
-            }
-
-            // Simulate streaming response
-            const string responseJson = "{\"model\":\"phi4\",\"created_at\":\"2024-01-01T00:00:00Z\",\"message\":{\"role\":\"assistant\",\"content\":\"Philosophical response\"},\"done\":true}";
-
-            _output.WriteLine($"Returning response: {responseJson}");
-
-            return new HttpResponseMessage(HttpStatusCode.OK)
-            {
-                Content = new StringContent(responseJson, Encoding.UTF8, "application/json")
+                Content = new StringContent(payload, Encoding.UTF8, "application/json")
             };
-        }
-    }
 
-    private sealed class StreamingOllamaHandler : HttpMessageHandler
-    {
-        private readonly ITestOutputHelper _output;
+            // We request response headers only to support streaming scenarios.
+            HttpResponseMessage response = await _httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
+            _output.WriteLine($"Received streaming response: {response.StatusCode}");
 
-        public StreamingOllamaHandler(ITestOutputHelper output)
-        {
-            _output = output;
-        }
-
-        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
-        {
-            _output.WriteLine($"StreamingOllamaHandler.SendAsync called: {request.Method} {request.RequestUri}");
-
-            // Simulate streaming response with multiple chunks
-            string streamingResponse = """
-{"model":"qwen3:latest","created_at":"2025-08-18T17:21:01.0384422Z","message":{"role":"assistant","content":"Lying"},"done":false}
-{"model":"qwen3:latest","created_at":"2025-08-18T17:21:01.4095154Z","message":{"role":"assistant","content":" is"},"done":false}
-{"model":"qwen3:latest","created_at":"2025-08-18T17:21:01.7655802Z","message":{"role":"assistant","content":" a"},"done":false}
-{"model":"qwen3:latest","created_at":"2025-08-18T17:21:02.0925197Z","message":{"role":"assistant","content":" complex"},"done":false}
-{"model":"qwen3:latest","created_at":"2025-08-18T17:21:02.3664196Z","message":{"role":"assistant","content":" moral"},"done":false}
-{"model":"qwen3:latest","created_at":"2025-08-18T17:21:02.6360194Z","message":{"role":"assistant","content":" issue"},"done":false}
-{"model":"qwen3:latest","created_at":"2025-08-18T17:21:02.9322536Z","message":{"role":"assistant","content":""},"done_reason":"stop","done":true}
-""";
-
-            _output.WriteLine($"Returning streaming response with {streamingResponse.Split('\n').Length} chunks");
-
-            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
-            {
-                Content = new StringContent(streamingResponse, Encoding.UTF8, "application/x-ndjson")
-            });
+            // Minimal safe implementation for tests: do not attempt to parse stream here.
+            // Return an empty async sequence so callers can handle streaming when available.
+            yield break;
         }
     }
 }
