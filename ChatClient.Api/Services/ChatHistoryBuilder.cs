@@ -64,9 +64,9 @@ public class ChatHistoryBuilder(IUserSettingsService settingsService, ILogger<Ch
     public async Task<ChatHistory> BuildChatHistoryAsync(IEnumerable<IAppChatMessage> messages, Kernel kernel, CancellationToken cancellationToken)
     {
         var history = BuildBaseHistory(messages);
-        history = await ApplyHistoryModeAsync(history, kernel, cancellationToken);
-        EnsureLastUserMessage(history);
-        logger.LogInformation("Chat history:\n{History}", FormatHistory(history));
+        // Temporarily disabled!!! 
+        // history = await ApplyHistoryModeAsync(history, kernel, cancellationToken);
+        // logger.LogInformation("Chat history:\n{History}", FormatHistory(history));
         return history;
     }
 
@@ -87,16 +87,6 @@ public class ChatHistoryBuilder(IUserSettingsService settingsService, ILogger<Ch
             default:
                 return history;
         }
-    }
-
-    private static void EnsureLastUserMessage(ChatHistory history)
-    {
-        if (history.Count == 0)
-            return;
-        var last = history[^1];
-        if (last.Role == AuthorRole.User)
-            return;
-        history[^1] = new ChatMessageContent(AuthorRole.User, last.Items, last.AuthorName);
     }
 
     private static string FormatHistory(ChatHistory history) => string.Join("\n",
