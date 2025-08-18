@@ -1,7 +1,9 @@
+using System.Net;
+using System.Net.Http;
+using System.Text;
 using System.Text.Json;
 
 using ChatClient.Api.Client.Services;
-using ChatClient.Api.Services;
 using ChatClient.Shared.Models;
 
 using Microsoft.Extensions.DependencyInjection;
@@ -20,7 +22,9 @@ public class PhilosopherDebateTests
     [Fact]
     public async Task KantAndBentham_DebateLyingToSaveLife()
     {
-        var service = new SequentialResponseChatCompletionService();
+        var handler = new StubOllamaHandler();
+        var httpClient = new HttpClient(handler) { BaseAddress = new Uri("http://localhost") };
+        var service = new HttpChatCompletionService(httpClient);
         IKernelBuilder builder = Kernel.CreateBuilder();
         builder.Services.AddSingleton<IChatCompletionService>(service);
         Kernel kernel = builder.Build();
@@ -58,8 +62,8 @@ public class PhilosopherDebateTests
         var result = await chat.InvokeAsync("Is it morally acceptable to lie to save a life?", runtime);
         await result.GetValueAsync(TimeSpan.FromSeconds(10));
 
-        Assert.Equal(2, service.ObservedRoles.Count);
-        Assert.All(service.ObservedRoles, r => Assert.Equal(AuthorRole.User, r));
+        Assert.Equal(2, handler.ObservedRoles.Count);
+        Assert.All(handler.ObservedRoles, r => Assert.Equal("user", r));
     }
 
     private static async Task<List<AgentDescription>> LoadDescriptionsAsync()
@@ -86,24 +90,23 @@ public class PhilosopherDebateTests
         throw new FileNotFoundException($"Could not find agent_descriptions.json in any of the expected locations. Current dir: {currentDir}");
     }
 
-    private sealed class SequentialResponseChatCompletionService : IChatCompletionService
+    private sealed class HttpChatCompletionService(HttpClient httpClient) : IChatCompletionService
     {
-        private int _counter;
-        public List<AuthorRole> ObservedRoles { get; } = [];
+        private readonly HttpClient _httpClient = httpClient;
         private readonly ForceLastUserReducer _reducer = new();
         public IReadOnlyDictionary<string, object?> Attributes { get; } = new Dictionary<string, object?>();
 
-        public Task<IReadOnlyList<ChatMessageContent>> GetChatMessageContentsAsync(
+        public async Task<IReadOnlyList<ChatMessageContent>> GetChatMessageContentsAsync(
             ChatHistory chatHistory,
             PromptExecutionSettings? executionSettings = null,
             Kernel? kernel = null,
             CancellationToken cancellationToken = default)
         {
-            var reduced = _reducer.ReduceAsync(chatHistory, cancellationToken).Result ?? chatHistory;
-            ObservedRoles.Add(reduced.Last().Role);
-            _counter++;
-            ChatMessageContent message = new(AuthorRole.Assistant, _counter.ToString(), "assistant");
-            return Task.FromResult<IReadOnlyList<ChatMessageContent>>([message]);
+            var reduced = await _reducer.ReduceAsync(chatHistory, cancellationToken) ?? chatHistory;
+            var messages = reduced.Select(m => new { role = m.Role.ToString().ToLowerInvariant(), content = m.Content });
+            var payload = JsonSerializer.Serialize(new { model = "phi4", messages, options = new { }, stream = false, think = false, CustomHeaders = new { } });
+            await _httpClient.PostAsync("/api/chat", new StringContent(payload, Encoding.UTF8, "application/json"), cancellationToken);
+            return new[] { new ChatMessageContent(AuthorRole.Assistant, "ok", "assistant") };
         }
 
         public IAsyncEnumerable<StreamingChatMessageContent> GetStreamingChatMessageContentsAsync(
@@ -112,14 +115,7 @@ public class PhilosopherDebateTests
             Kernel? kernel = null,
             CancellationToken cancellationToken = default)
         {
-            var reduced = _reducer.ReduceAsync(chatHistory, cancellationToken).Result ?? chatHistory;
-            ObservedRoles.Add(reduced.Last().Role);
-            _counter++;
-            StreamingChatMessageContent content = new(AuthorRole.Assistant, _counter.ToString())
-            {
-                AuthorName = "assistant"
-            };
-
+            StreamingChatMessageContent content = new(AuthorRole.Assistant, "ok") { AuthorName = "assistant" };
             return Stream(content);
         }
 
@@ -127,6 +123,26 @@ public class PhilosopherDebateTests
         {
             yield return content;
             await Task.CompletedTask;
+        }
+    }
+
+    private sealed class StubOllamaHandler : HttpMessageHandler
+    {
+        public List<string> ObservedRoles { get; } = [];
+
+        protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            var payload = await request.Content.ReadAsStringAsync(cancellationToken);
+            using var doc = JsonDocument.Parse(payload);
+            var messages = doc.RootElement.GetProperty("messages");
+            var last = messages.EnumerateArray().Last();
+            ObservedRoles.Add(last.GetProperty("role").GetString()!);
+
+            const string responseJson = "{\"model\":\"phi4\",\"created_at\":\"2024-01-01T00:00:00Z\",\"message\":{\"role\":\"assistant\",\"content\":\"ok\"},\"done\":true}";
+            return new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent(responseJson, Encoding.UTF8, "application/json")
+            };
         }
     }
 }
