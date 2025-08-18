@@ -21,13 +21,7 @@ public sealed class ForceLastUserReducer : IChatHistoryReducer
 
         if (last.Role != AuthorRole.User)
         {
-            var items = new ChatMessageContentItemCollection();
-            foreach (var item in last.Items)
-                items.Add(item);
-
-            var replaced = new ChatMessageContent(AuthorRole.User, items, "user");
-
-            list[^1] = replaced;
+            list[^1] = new ChatMessageContent(AuthorRole.User, last.Content, "user");
         }
 
         return Task.FromResult<IEnumerable<ChatMessageContent>?>(list);
