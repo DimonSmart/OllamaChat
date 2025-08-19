@@ -87,8 +87,15 @@ public class ChatService(
     {
         foreach (var message in _activeStreams.Values.ToList())
         {
-            AppChatMessage canceledMessage = _streamingManager.CancelStreaming(message);
-            await ReplaceStreamingMessageWithFinal(message, canceledMessage);
+            if (message.AgentName == "?")
+            {
+                await (MessageDeleted?.Invoke(message.Id) ?? Task.CompletedTask);
+                continue;
+            }
+
+            var canceled = _streamingManager.CancelStreaming(message);
+            Messages.Add(canceled);
+            await (MessageUpdated?.Invoke(canceled, true) ?? Task.CompletedTask);
         }
         _activeStreams.Clear();
     }
@@ -100,7 +107,8 @@ public class ChatService(
         var userMessage = new AppChatMessage(text, DateTime.Now, ChatRole.User, string.Empty, files);
         await AddMessageAsync(userMessage);
 
-        await AddMessageAsync(_activeStreams[PlaceholderAgent] = CreateInitialPlaceholderMessage());
+        var placeholder = _activeStreams[PlaceholderAgent] = CreateInitialPlaceholderMessage();
+        await NotifyMessageAddedAsync(placeholder);
 
         using var trackingScope = CreateTrackingScope();
 
@@ -170,6 +178,9 @@ public class ChatService(
         Messages.Add(message);
         await (MessageAdded?.Invoke(message) ?? Task.CompletedTask);
     }
+
+    private Task NotifyMessageAddedAsync(IAppChatMessage message) =>
+        MessageAdded?.Invoke(message) ?? Task.CompletedTask;
 
     private async Task<List<ChatCompletionAgent>> CreateAgents(string userMessage, TrackingFiltersScope trackingScope)
     {
@@ -271,14 +282,16 @@ public class ChatService(
 
                 if (isFinal)
                 {
-                    await CompleteStreamingMessage(message, functionCount, trackingScope);
+                    var final = CompleteStreamingMessage(message, functionCount, trackingScope);
+                    Messages.Add(final);
+                    await (MessageUpdated?.Invoke(final, true) ?? Task.CompletedTask);
                     _activeStreams.Remove(agentName);
 
                     if (_agentsByName.Count > 1)
                     {
-                        var placeholder = CreateNextAgentPlaceholder();
-                        _activeStreams[PlaceholderAgent] = placeholder;
-                        await AddMessageAsync(placeholder);
+                        var next = CreateNextAgentPlaceholder();
+                        _activeStreams[PlaceholderAgent] = next;
+                        await NotifyMessageAddedAsync(next);
                     }
                 }
             }
@@ -291,7 +304,7 @@ public class ChatService(
         var stream = _streamingManager.CreateStreamingMessage(null, agentName);
         _activeStreams[agentName] = stream;
 
-        await AddMessageAsync(stream);
+        await NotifyMessageAddedAsync(stream);
         return stream;
     }
 
@@ -323,7 +336,7 @@ public class ChatService(
     {
         logger.LogWarning(ex, "Model {ModelName} does not support function calling", chatConfiguration.ModelName);
 
-        ClearActiveStreams();
+        await ClearActiveStreams();
 
         string errorMessage = chatConfiguration.Functions.Any()
             ? $"⚠️ The model **{chatConfiguration.ModelName}** does not support function calling. Please either:\n\n" +
@@ -335,11 +348,11 @@ public class ChatService(
         await HandleError(errorMessage);
     }
 
-    private void ClearActiveStreams()
+    private async Task ClearActiveStreams()
     {
         foreach (var message in _activeStreams.Values.ToList())
         {
-            RemoveStreamingMessage(message);
+            await (MessageDeleted?.Invoke(message.Id) ?? Task.CompletedTask);
         }
         _activeStreams.Clear();
     }
@@ -348,7 +361,7 @@ public class ChatService(
         int functionCount,
         TrackingFiltersScope trackingScope)
     {
-        RemoveDanglingPlaceholder();
+        await RemoveDanglingPlaceholderAsync();
         await CompleteActiveStreams(functionCount, trackingScope);
     }
     
@@ -356,12 +369,21 @@ public class ChatService(
     {
         foreach (var kvp in _activeStreams.ToList())
         {
-            await CompleteStreamingMessage(kvp.Value, functionCount, trackingScope);
+            if (kvp.Value.AgentName == "?")
+            {
+                await (MessageDeleted?.Invoke(kvp.Value.Id) ?? Task.CompletedTask);
+            }
+            else
+            {
+                var final = CompleteStreamingMessage(kvp.Value, functionCount, trackingScope);
+                Messages.Add(final);
+                await (MessageUpdated?.Invoke(final, true) ?? Task.CompletedTask);
+            }
             _activeStreams.Remove(kvp.Key);
         }
     }
 
-    private async Task CompleteStreamingMessage(
+    private AppChatMessage CompleteStreamingMessage(
         StreamingAppChatMessage message,
         int functionCount,
         TrackingFiltersScope trackingScope)
@@ -378,7 +400,7 @@ public class ChatService(
             filter.Clear();
         }
 
-        TimeSpan processingTime = DateTime.Now - message.MsgDateTime;
+        var processingTime = DateTime.Now - message.MsgDateTime;
 
         var modelName = !string.IsNullOrEmpty(message.AgentName) && _agentsByName.TryGetValue(message.AgentName, out var agentDesc)
             ? agentDesc.ModelName ?? string.Empty
@@ -391,35 +413,16 @@ public class ChatService(
             functionCount,
             messageFunctionCalls.Select(fc => fc.Server).Distinct());
 
-        var finalMessage = _streamingManager.CompleteStreaming(message, statistics);
-        await ReplaceStreamingMessageWithFinal(message, finalMessage);
+        return _streamingManager.CompleteStreaming(message, statistics);
     }
 
-    private void RemoveDanglingPlaceholder()
+    private async Task RemoveDanglingPlaceholderAsync()
     {
         if (_activeStreams.TryGetValue(PlaceholderAgent, out var placeholder) && placeholder.AgentName == "?")
         {
-            RemoveStreamingMessage(placeholder);
             _activeStreams.Remove(PlaceholderAgent);
+            await (MessageDeleted?.Invoke(placeholder.Id) ?? Task.CompletedTask);
         }
-    }
-
-
-
-    private async Task ReplaceStreamingMessageWithFinal(StreamingAppChatMessage streamingMessage, AppChatMessage finalMessage)
-    {
-        int index = Messages.IndexOf(streamingMessage);
-
-        if (index >= 0)
-        {
-            Messages[index] = finalMessage;
-            await (MessageUpdated?.Invoke(finalMessage, true) ?? Task.CompletedTask);
-        }
-    }
-
-    private void RemoveStreamingMessage(StreamingAppChatMessage streamingMessage)
-    {
-        Messages.Remove(streamingMessage);
     }
 
     private async Task HandleError(string text)
