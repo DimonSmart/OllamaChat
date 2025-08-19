@@ -97,15 +97,6 @@
             </MudMenu>
         </div>
         <div class="chat-messages-container" @ref="messagesElement">
-            @if (agentStatistics.Any())
-            {
-                <MudPaper Class="pa-2 mb-2">
-                    @foreach (var stat in agentStatistics)
-                    {
-                        <MudText Typo="Typo.caption">@stat.Key: ⏱️ @stat.Value.TotalTime.TotalSeconds:F1s • 📊 @stat.Value.TokenCount tokens</MudText>
-                    }
-                </MudPaper>
-            }
             @foreach (var message in ChatViewModelService.Messages)
             {
                 @if (message.Role != Microsoft.Extensions.AI.ChatRole.System)
@@ -249,7 +240,6 @@
     private string stopAgentName = RoundRobinStopAgent;
 
     private UserSettings userSettings = new();
-    private Dictionary<string, AgentStatistics> agentStatistics = new();
 
     private StreamingDebouncer _renderDebouncer = null!;
 
@@ -292,11 +282,6 @@
     }    
     private Task OnMessageUpdated(ChatMessageViewModel message, bool forceRender)
     {
-        if (!message.IsStreaming && !message.IsCanceled && !string.IsNullOrEmpty(message.AgentName) && !string.IsNullOrEmpty(message.Statistics))
-        {
-            UpdateAgentStatistics(message.AgentName!, message.Statistics!);
-        }
-
         return _renderDebouncer.TriggerAsync(forceRender);
     }
 
@@ -308,10 +293,8 @@
     private void OnChatReset()
     {
         chatStarted = true;
-        agentStatistics.Clear();
         StateHasChanged();
     }
-
 
     private async Task LoadAgents()
     {
@@ -494,39 +477,5 @@
             return string.Empty;
 
         return name;
-    }
-
-    private void UpdateAgentStatistics(string agentName, string statistics)
-    {
-        double seconds = 0;
-        var timeMatch = Regex.Match(statistics, "⏱️\\s*([0-9]+(?:\\.[0-9]+)?)s");
-        if (timeMatch.Success)
-        {
-            double.TryParse(timeMatch.Groups[1].Value, NumberStyles.Float, CultureInfo.InvariantCulture, out seconds);
-        }
-
-        int tokens = 0;
-        var tokenMatch = Regex.Match(statistics, "📊\\s*([0-9]+) tokens");
-        if (tokenMatch.Success)
-        {
-            int.TryParse(tokenMatch.Groups[1].Value, NumberStyles.Integer, CultureInfo.InvariantCulture, out tokens);
-        }
-
-        if (!agentStatistics.TryGetValue(agentName, out var stats))
-        {
-            stats = new AgentStatistics();
-            agentStatistics[agentName] = stats;
-        }
-
-        stats.TotalTime += TimeSpan.FromSeconds(seconds);
-        stats.TokenCount += tokens;
-        stats.Messages++;
-    }
-
-    private sealed class AgentStatistics
-    {
-        public TimeSpan TotalTime { get; set; }
-        public int TokenCount { get; set; }
-        public int Messages { get; set; }
     }
 }
