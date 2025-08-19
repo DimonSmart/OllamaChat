@@ -64,6 +64,7 @@
     [Parameter] public EventCallback<(string text, IReadOnlyList<ChatMessageFile> files)> OnSend { get; set; }
     [Parameter] public bool ShowStopButton { get; set; } = false;
     [Parameter] public EventCallback OnStopClick { get; set; }
+    [Parameter] public bool IsMultiAgent { get; set; } = false;
     
     private string CurrentText { get; set; } = string.Empty;
     private List<ChatMessageFile> attachedFiles = [];
@@ -72,9 +73,10 @@
     {
         await base.OnInitializedAsync();
         var settings = await UserSettingsService.GetSettingsAsync();
-        if (!string.IsNullOrEmpty(settings.DefaultChatMessage))
+        var defaultMessage = IsMultiAgent ? settings.DefaultMultiAgentChatMessage : settings.DefaultChatMessage;
+        if (!string.IsNullOrEmpty(defaultMessage))
         {
-            CurrentText = settings.DefaultChatMessage;
+            CurrentText = defaultMessage;
         }
     }
 

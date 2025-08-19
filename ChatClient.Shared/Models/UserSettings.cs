@@ -1,4 +1,5 @@
 using System.Text.Json.Serialization;
+using System.Collections.Generic;
 
 using ChatClient.Shared.Constants;
 
@@ -11,6 +12,9 @@ public class UserSettings
 
     [JsonPropertyName("defaultChatMessage")]
     public string DefaultChatMessage { get; set; } = string.Empty;
+
+    [JsonPropertyName("defaultMultiAgentChatMessage")]
+    public string DefaultMultiAgentChatMessage { get; set; } = string.Empty;
 
     [JsonPropertyName("userName")]
     public string UserName { get; set; } = string.Empty;
@@ -66,4 +70,10 @@ public class UserSettings
 
     [JsonPropertyName("stopAgentName")]
     public string StopAgentName { get; set; } = string.Empty;
+
+    [JsonPropertyName("multiAgentSelectedAgents")]
+    public List<string> MultiAgentSelectedAgents { get; set; } = [];
+
+    [JsonPropertyName("multiAgentRounds")]
+    public int MultiAgentRounds { get; set; } = 1;
 }

@@ -91,6 +91,16 @@
 
                     <MudCard Class="mb-4" Elevation="1">
                         <MudCardHeader Class="pb-2">
+                            <MudText Class="section-header">Default Multiagent Chat Message</MudText>
+                        </MudCardHeader>
+                        <MudCardContent Class="pt-0">
+                            <MudTextField T="string" Label="Default Multiagent Chat Message" @bind-Value="_settings.DefaultMultiAgentChatMessage"
+                                          Lines="3" Variant="Variant.Outlined" HelperText="Pre-filled message in the multiagent chat input" />
+                        </MudCardContent>
+                    </MudCard>
+
+                    <MudCard Class="mb-4" Elevation="1">
+                        <MudCardHeader Class="pb-2">
                             <MudText Class="section-header">Chat Participants</MudText>
                         </MudCardHeader>
                         <MudCardContent Class="pt-0">
