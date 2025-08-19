@@ -10,27 +10,32 @@ public sealed class BridgingRoundRobinManager : RoundRobinGroupChatManager
     private ChatMessageContent? _fixedAgentMessage = null;
     private AuthorRole _fixedMessageRole = AuthorRole.Assistant;
 
-    public override ValueTask<GroupChatManagerResult<string>> SelectNextAgent(
+    public override async ValueTask<GroupChatManagerResult<string>> SelectNextAgent(
         ChatHistory history,
         GroupChatTeam team,
         CancellationToken cancellationToken = default)
     {
-        if (_fixedAgentMessage != null)
+        // 0) Откат предыдущей временной подмены роли (если была)
+        if (_fixedAgentMessage is not null)
         {
             _fixedAgentMessage.Role = _fixedMessageRole;
+            _fixedAgentMessage = null;
         }
 
+        // 1) Кто следующий — пусть решит базовый round-robin
+        GroupChatManagerResult<string> result = await base.SelectNextAgent(history, team, cancellationToken);
+
+
+        // 3) Подменяем роль последнего сообщения на User перед вызовом LLM
         ChatMessageContent? last = history.LastOrDefault();
-        if (last is not null
-            && last.Role == AuthorRole.Assistant)
+        if (last is not null && last.Role == AuthorRole.Assistant)
         {
             _fixedAgentMessage = last;
             _fixedMessageRole = last.Role;
-
             last.Role = AuthorRole.User;
         }
 
-        return base.SelectNextAgent(history, team, cancellationToken);
+        return result;
     }
 }
 #pragma warning restore SKEXP0110
