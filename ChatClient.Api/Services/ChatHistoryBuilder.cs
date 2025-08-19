@@ -21,7 +21,7 @@ public class ChatHistoryBuilder(IUserSettingsService settingsService, ILogger<Ch
     public ChatHistory BuildBaseHistory(IEnumerable<IAppChatMessage> messages)
     {
         var history = new ChatHistory();
-        foreach (var msg in messages.Where(m => !m.IsStreaming))
+        foreach (var msg in messages)
         {
             var items = new ChatMessageContentItemCollection();
             if (!string.IsNullOrEmpty(msg.Content))
