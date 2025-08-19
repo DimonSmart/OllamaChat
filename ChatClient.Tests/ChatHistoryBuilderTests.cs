@@ -46,4 +46,20 @@ public class ChatHistoryBuilderTests
             .ToList();
         Assert.Equal(new[] { "first", "second", "third" }, texts);
     }
+
+    [Fact]
+    public void BuildBaseHistory_IncludesStreamingMessage()
+    {
+        var builder = new ChatHistoryBuilder(new DummySettingsService(), new LoggerFactory().CreateLogger<ChatHistoryBuilder>());
+        var messages = new List<IAppChatMessage>
+        {
+            new AppChatMessage("hi", DateTime.UtcNow, ChatRole.User),
+            new StreamingAppChatMessage("partial", DateTime.UtcNow, ChatRole.Assistant)
+        };
+        var history = builder.BuildBaseHistory(messages);
+        var texts = history
+            .Select(m => string.Join(string.Empty, m.Items.OfType<Microsoft.SemanticKernel.TextContent>().Select(t => t.Text)))
+            .ToList();
+        Assert.Equal(new[] { "hi", "partial" }, texts);
+    }
 }
