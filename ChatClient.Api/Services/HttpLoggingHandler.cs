@@ -1,3 +1,4 @@
+using System;
 using System.Text;
 using Microsoft.Extensions.Logging;
 
@@ -81,11 +82,19 @@ public class HttpLoggingHandler(ILogger<HttpLoggingHandler> logger) : Delegating
                     sb.AppendLine($"  {header.Key}: {string.Join(", ", header.Value)}");
             }
 
-            var content = await SafeReadAsStringAsync(response.Content, ct);
-            if (!string.IsNullOrEmpty(content))
+            var mediaType = response.Content.Headers.ContentType?.MediaType;
+            if (string.Equals(mediaType, "application/x-ndjson", StringComparison.OrdinalIgnoreCase))
             {
-                sb.AppendLine("Body:");
-                sb.AppendLine(Truncate(content, MaxBodyChars));
+                sb.AppendLine("Body: <streaming content>");
+            }
+            else
+            {
+                var content = await SafeReadAsStringAsync(response.Content, ct);
+                if (!string.IsNullOrEmpty(content))
+                {
+                    sb.AppendLine("Body:");
+                    sb.AppendLine(Truncate(content, MaxBodyChars));
+                }
             }
         }
 
