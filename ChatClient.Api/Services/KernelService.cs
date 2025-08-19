@@ -3,6 +3,7 @@ using ChatClient.Shared.Models;
 using ChatClient.Shared.Services;
 using ChatClient.Api.Client.Services;
 
+using Microsoft.Extensions.Logging;
 using Microsoft.SemanticKernel;
 using Microsoft.SemanticKernel.ChatCompletion;
 using Microsoft.SemanticKernel.Connectors.Ollama;
@@ -38,10 +39,10 @@ public class KernelService(
         return [];
     }
 
-    public async Task<Kernel> CreateKernelAsync(string modelName, IEnumerable<string>? functionsToRegister)
+    public async Task<Kernel> CreateKernelAsync(string modelName, IEnumerable<string>? functionsToRegister, string agentName)
     {
         var settings = await userSettingsService.GetSettingsAsync();
-        var kernel = await CreateBasicKernelAsync(modelName, TimeSpan.FromSeconds(settings.HttpTimeoutSeconds));
+        var kernel = await CreateBasicKernelAsync(modelName, TimeSpan.FromSeconds(settings.HttpTimeoutSeconds), agentName);
 
         if (functionsToRegister != null && functionsToRegister.Any() && _mcpClientService != null)
         {
@@ -51,7 +52,7 @@ public class KernelService(
         return kernel;
     }
 
-    public async Task<Kernel> CreateBasicKernelAsync(string modelId, TimeSpan timeout)
+    public async Task<Kernel> CreateBasicKernelAsync(string modelId, TimeSpan timeout, string? agentName = null)
     {
         var settings = await userSettingsService.GetSettingsAsync();
         var baseUrl = !string.IsNullOrWhiteSpace(settings.OllamaServerUrl) ? settings.OllamaServerUrl : OllamaDefaults.ServerUrl;
@@ -59,6 +60,8 @@ public class KernelService(
         IKernelBuilder builder = Kernel.CreateBuilder();
         var httpClient = CreateConfiguredHttpClient(settings, timeout);
         httpClient.BaseAddress = new Uri(baseUrl);
+        if (!string.IsNullOrEmpty(agentName))
+            httpClient.DefaultRequestHeaders.Add("X-Agent-Name", agentName);
         builder.Services.AddSingleton<IChatCompletionService>(_ =>
         {
             return new OllamaChatCompletionService(modelId, httpClient: httpClient);

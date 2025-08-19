@@ -1,5 +1,6 @@
 using System;
 using System.Text;
+using System.Linq;
 using Microsoft.Extensions.Logging;
 
 namespace ChatClient.Api.Services;
@@ -23,6 +24,9 @@ public class HttpLoggingHandler(ILogger<HttpLoggingHandler> logger) : Delegating
     {
         if (!logger.IsEnabled(LogLevel.Information))
             return;
+
+        if (request.Headers.TryGetValues("X-Agent-Name", out var agentValues))
+            logger.LogInformation("Agent {AgentName} started responding", agentValues.First());
 
         var sb = new StringBuilder();
         sb.AppendLine($"HTTP Request: {request.Method} {request.RequestUri}");
