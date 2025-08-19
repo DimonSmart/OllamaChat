@@ -190,7 +190,7 @@ public class ChatService(
         {
             var functionsToRegister = await kernelService.GetFunctionsToRegisterAsync(desc.FunctionSettings, userMessage);
             var modelName = desc.ModelName ?? throw new InvalidOperationException("Agent model name is not set.");
-            var agentKernel = await kernelService.CreateKernelAsync(modelName, functionsToRegister);
+            var agentKernel = await kernelService.CreateKernelAsync(modelName, functionsToRegister, desc.AgentName);
 
             // TODO Add function into AgentDescription to get Agent name for UI
             var agentName = !string.IsNullOrWhiteSpace(desc.ShortName) ? desc.ShortName : desc.AgentName;
@@ -249,7 +249,6 @@ public class ChatService(
 
                 if (!_activeStreams.TryGetValue(agentName, out var message))
                 {
-                    logger.LogInformation("Agent {AgentName} started responding", agentName);
                     if (_activeStreams.TryGetValue(PlaceholderAgent, out var placeholder))
                     {
                         logger.LogDebug("Replacing placeholder with agent {AgentName}, placeholder content length: {ContentLength}", 
