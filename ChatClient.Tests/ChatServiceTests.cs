@@ -23,7 +23,8 @@ public class ChatServiceTests
         var chatService = new ChatService(
             kernelService: null!,
             logger: new LoggerFactory().CreateLogger<ChatService>(),
-            chatHistoryBuilder: new DummyHistoryBuilder());
+            chatHistoryBuilder: new DummyHistoryBuilder(),
+            reducer: new ForceLastUserReducer());
 
         Assert.Throws<ArgumentException>(() => chatService.InitializeChat([]));
     }
@@ -34,7 +35,8 @@ public class ChatServiceTests
         var chatService = new ChatService(
             kernelService: null!,
             logger: new LoggerFactory().CreateLogger<ChatService>(),
-            chatHistoryBuilder: new DummyHistoryBuilder());
+            chatHistoryBuilder: new DummyHistoryBuilder(),
+            reducer: new ForceLastUserReducer());
 
         var prompt = new AgentDescription { AgentName = "Agent", Content = "Hello" };
         chatService.InitializeChat([prompt]);

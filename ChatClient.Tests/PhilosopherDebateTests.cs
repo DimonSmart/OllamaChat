@@ -2,6 +2,7 @@ using System.Text;
 using System.Text.Json;
 using System.Runtime.CompilerServices;
 using System.IO;
+using System.Linq;
 
 using ChatClient.Api.Client.Services;
 using ChatClient.Shared.Models;
@@ -39,10 +40,12 @@ public partial class PhilosopherDebateTests
 
         StubOllamaHandler handler = new(_output);
         HttpClient httpClient = new(handler) { BaseAddress = new Uri("http://localhost") };
+        var reducer = new ForceLastUserReducer(loggerFactory.CreateLogger<ForceLastUserReducer>());
         HttpChatCompletionService service = new(httpClient, _output);
+        var wrappedService = new ForceLastUserChatCompletionService(service, reducer);
 
         IKernelBuilder builder = Kernel.CreateBuilder();
-        builder.Services.AddSingleton<IChatCompletionService>(service);
+        builder.Services.AddSingleton<IChatCompletionService>(wrappedService);
         builder.Services.AddSingleton(loggerFactory);
         builder.Services.AddLogging();
         Kernel kernel = builder.Build();
@@ -58,7 +61,7 @@ public partial class PhilosopherDebateTests
             Description = "Immanuel Kant",
             Instructions = kantDesc.Content,
             Kernel = kernel,
-            HistoryReducer = new ForceLastUserReducer()
+            HistoryReducer = reducer
         };
 
         _output.WriteLine("Creating Bentham agent...");
@@ -68,7 +71,7 @@ public partial class PhilosopherDebateTests
             Description = "Jeremy Bentham",
             Instructions = benthamDesc.Content,
             Kernel = kernel,
-            HistoryReducer = new ForceLastUserReducer()
+            HistoryReducer = reducer
         };
 
         _output.WriteLine("Creating group chat orchestration...");
@@ -221,7 +224,6 @@ public partial class PhilosopherDebateTests
     private sealed class HttpChatCompletionService : IChatCompletionService
     {
         private readonly HttpClient _httpClient;
-        private readonly ForceLastUserReducer _reducer = new();
         private readonly ITestOutputHelper _output;
 
         public HttpChatCompletionService(HttpClient httpClient, ITestOutputHelper output)
@@ -240,10 +242,8 @@ public partial class PhilosopherDebateTests
         {
             _output.WriteLine($"GetChatMessageContentsAsync called with {chatHistory.Count()} messages");
 
-            IEnumerable<ChatMessageContent> reduced = await _reducer.ReduceAsync(chatHistory, cancellationToken) ?? chatHistory;
-            _output.WriteLine($"After reduction: {reduced.Count()} messages");
-
-            var messages = reduced.Select(m => new { role = m.Role.ToString().ToLowerInvariant(), content = m.Content });
+            _output.WriteLine($"Processing history: {chatHistory.Count()} messages");
+            var messages = chatHistory.Select(m => new { role = m.Role.ToString().ToLowerInvariant(), content = m.Content });
             string payload = JsonSerializer.Serialize(new { model = "phi4", messages, options = new { }, stream = false, think = false, CustomHeaders = new { } });
 
             _output.WriteLine($"Sending payload: {payload}");
@@ -259,10 +259,8 @@ public partial class PhilosopherDebateTests
         {
             _output.WriteLine($"GetStreamingChatMessageContentsAsync called with {chatHistory.Count()} messages");
 
-            IEnumerable<ChatMessageContent> reduced = await _reducer.ReduceAsync(chatHistory, cancellationToken) ?? chatHistory;
-            _output.WriteLine($"After reduction: {reduced.Count()} messages");
-
-            var messages = reduced.Select(m => new { role = m.Role.ToString().ToLowerInvariant(), content = m.Content });
+            _output.WriteLine($"Processing history: {chatHistory.Count()} messages");
+            var messages = chatHistory.Select(m => new { role = m.Role.ToString().ToLowerInvariant(), content = m.Content });
             string payload = JsonSerializer.Serialize(new { model = "phi4", messages, options = new { }, stream = true, think = false, CustomHeaders = new { } });
 
             _output.WriteLine($"Sending streaming payload: {payload}");

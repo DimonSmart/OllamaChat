@@ -62,12 +62,12 @@ public class KernelService(
         httpClient.BaseAddress = new Uri(baseUrl);
         if (!string.IsNullOrEmpty(agentName))
             httpClient.DefaultRequestHeaders.Add("X-Agent-Name", agentName);
-        builder.Services.AddSingleton<IChatCompletionService>(_ =>
-        {
-            return new OllamaChatCompletionService(modelId, httpClient: httpClient);
-        });
         builder.Services.AddSingleton(httpClient);
         builder.Services.AddLogging(c => c.AddConsole().SetMinimumLevel(LogLevel.Information));
+        builder.Services.AddSingleton<IChatCompletionService>(_ =>
+            new ForceLastUserChatCompletionService(
+                new OllamaChatCompletionService(modelId, httpClient: httpClient),
+                serviceProvider.GetRequiredService<ForceLastUserReducer>()));
 
         return builder.Build();
     }
