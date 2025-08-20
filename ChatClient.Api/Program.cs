@@ -7,7 +7,16 @@ using Microsoft.AspNetCore.Hosting.Server.Features;
 
 using MudBlazor.Services;
 
+using Serilog;
+
+Log.Logger = new LoggerConfiguration()
+    .WriteTo.Console()
+    .WriteTo.File("Logs/ollamachat-.log", rollingInterval: RollingInterval.Day, fileSizeLimitBytes: 10_000_000, rollOnFileSizeLimit: true, retainedFileCountLimit: 5)
+    .WriteTo.Debug()
+    .CreateLogger();
+
 var builder = WebApplication.CreateBuilder(args);
+builder.Host.UseSerilog();
 
 // For single-file deployment compatibility only in production
 if (builder.Environment.IsProduction())
@@ -22,13 +31,6 @@ if (builder.Environment.IsProduction())
 Console.WriteLine($"Environment: {builder.Environment.EnvironmentName}");
 Console.WriteLine($"Content Root: {builder.Environment.ContentRootPath}");
 Console.WriteLine($"Web Root: {builder.Environment.WebRootPath}");
-
-var loggerFactory = LoggerFactory.Create(logging =>
-{
-    logging.AddConsole();
-    logging.AddDebug();
-});
-builder.Services.AddSingleton<ILoggerFactory>(loggerFactory);
 
 builder.Services.AddSingleton<ChatClient.Shared.Services.IMcpServerConfigService, ChatClient.Api.Services.McpServerConfigService>();
 builder.Services.AddSingleton<ChatClient.Api.Services.IMcpClientService, ChatClient.Api.Services.McpClientService>();
