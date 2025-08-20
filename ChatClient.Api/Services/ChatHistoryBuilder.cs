@@ -16,7 +16,10 @@ public interface IChatHistoryBuilder
     Task<ChatHistory> BuildChatHistoryAsync(IEnumerable<IAppChatMessage> messages, Kernel kernel, CancellationToken cancellationToken);
 }
 
-public class ChatHistoryBuilder(IUserSettingsService settingsService, ILogger<ChatHistoryBuilder> logger) : IChatHistoryBuilder
+public class ChatHistoryBuilder(
+    IUserSettingsService settingsService,
+    ILogger<ChatHistoryBuilder> logger,
+    ForceLastUserReducer reducer) : IChatHistoryBuilder
 {
     public ChatHistory BuildBaseHistory(IEnumerable<IAppChatMessage> messages)
     {
@@ -70,7 +73,7 @@ public class ChatHistoryBuilder(IUserSettingsService settingsService, ILogger<Ch
         var initialRole = history.LastOrDefault()?.Role;
         logger.LogDebug("Initial history last role: {Role}", initialRole);
 
-        var reduced = await new ForceLastUserReducer().ReduceAsync(history, cancellationToken) ?? history;
+        var reduced = await reducer.ReduceAsync(history, cancellationToken) ?? history;
         history = reduced is ChatHistory h ? h : new ChatHistory(reduced);
         var finalRole = history.LastOrDefault()?.Role;
         logger.LogDebug("Final history last role: {Role}", finalRole);

@@ -19,13 +19,15 @@ namespace ChatClient.Api.Client.Services;
 public class ChatService(
     KernelService kernelService,
     ILogger<ChatService> logger,
-    IChatHistoryBuilder chatHistoryBuilder) : IChatService
+    IChatHistoryBuilder chatHistoryBuilder,
+    ForceLastUserReducer reducer) : IChatService
 {
     private CancellationTokenSource? _cancellationTokenSource;
     private StreamingMessageManager _streamingManager = null!;
     private readonly Dictionary<string, StreamingAppChatMessage> _activeStreams = new();
     private const string PlaceholderAgent = "__placeholder__";
     private Dictionary<string, AgentDescription> _agentsByName = new();
+    private readonly ForceLastUserReducer _reducer = reducer;
 
     public event Action<bool>? AnsweringStateChanged;
     public event Action? ChatReset;
@@ -229,7 +231,7 @@ public class ChatService(
                 Instructions = desc.Content,
                 Kernel = agentKernel,
                 Arguments = new KernelArguments(settings),
-                HistoryReducer = new ForceLastUserReducer()
+                HistoryReducer = _reducer
             });
         }
 
