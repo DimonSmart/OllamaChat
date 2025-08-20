@@ -1,6 +1,7 @@
 using System.Text;
 using System.Text.Json;
 using System.Runtime.CompilerServices;
+using System.IO;
 
 using ChatClient.Api.Client.Services;
 using ChatClient.Shared.Models;
@@ -271,13 +272,28 @@ public partial class PhilosopherDebateTests
                 Content = new StringContent(payload, Encoding.UTF8, "application/json")
             };
 
-            // We request response headers only to support streaming scenarios.
             HttpResponseMessage response = await _httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
             _output.WriteLine($"Received streaming response: {response.StatusCode}");
 
-            // Minimal safe implementation for tests: do not attempt to parse stream here.
-            // Return an empty async sequence so callers can handle streaming when available.
-            yield break;
+            await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
+            using var reader = new StreamReader(stream, Encoding.UTF8);
+
+            string? line;
+            while ((line = await reader.ReadLineAsync()) != null)
+            {
+                if (string.IsNullOrWhiteSpace(line))
+                    continue;
+
+                var chunk = JsonSerializer.Deserialize<OllamaChunk>(line);
+                if (chunk?.Message?.Content is { Length: > 0 } text)
+                    yield return new StreamingChatMessageContent(AuthorRole.Assistant, text, chunk.Message.Role ?? "assistant");
+
+                if (chunk?.Done == true)
+                    break;
+            }
         }
+
+        private sealed record OllamaChunk(OllamaMessage? Message, bool Done);
+        private sealed record OllamaMessage(string? Role, string? Content);
     }
 }
