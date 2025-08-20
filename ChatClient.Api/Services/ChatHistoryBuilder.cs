@@ -64,12 +64,22 @@ public class ChatHistoryBuilder(IUserSettingsService settingsService, ILogger<Ch
 
     public async Task<ChatHistory> BuildChatHistoryAsync(IEnumerable<IAppChatMessage> messages, Kernel kernel, CancellationToken cancellationToken)
     {
-        var history = BuildBaseHistory(messages);
+        var messageList = messages.ToList();
+        logger.LogInformation("Building chat history from {MessageCount} messages", messageList.Count);
+        var history = BuildBaseHistory(messageList);
+        var initialRole = history.LastOrDefault()?.Role;
+        logger.LogDebug("Initial history last role: {Role}", initialRole);
+
         var reduced = await new ForceLastUserReducer().ReduceAsync(history, cancellationToken) ?? history;
         history = reduced is ChatHistory h ? h : new ChatHistory(reduced);
+        var finalRole = history.LastOrDefault()?.Role;
+        logger.LogDebug("Final history last role: {Role}", finalRole);
+        if (finalRole != AuthorRole.User)
+            logger.LogWarning("Final history last role is {Role}, expected User", finalRole);
+
+        logger.LogDebug("Chat history:\n{History}", FormatHistory(history));
         // Temporarily disabled!!!
         // history = await ApplyHistoryModeAsync(history, kernel, cancellationToken);
-        // logger.LogInformation("Chat history:\n{History}", FormatHistory(history));
         return history;
     }
 

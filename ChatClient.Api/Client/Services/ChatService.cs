@@ -45,6 +45,7 @@ public class ChatService(
 
     public void InitializeChat(IReadOnlyCollection<AgentDescription> agents)
     {
+        logger.LogInformation("Initializing chat with {AgentCount} agents", agents?.Count);
         if (agents is null)
             throw new ArgumentNullException(nameof(agents));
 
@@ -66,6 +67,7 @@ public class ChatService(
 
     public void ResetChat()
     {
+        logger.LogInformation("Resetting chat");
         Messages.Clear();
         _activeStreams.Clear();
         ChatReset?.Invoke();
@@ -73,6 +75,7 @@ public class ChatService(
 
     public async Task CancelAsync()
     {
+        logger.LogInformation("Cancellation requested");
         _cancellationTokenSource?.Cancel();
 
         if (_streamingManager != null && _activeStreams.Any())
@@ -102,6 +105,7 @@ public class ChatService(
 
     public async Task GenerateAnswerAsync(string text, ChatConfiguration chatConfiguration, GroupChatManager groupChatManager, IReadOnlyList<ChatMessageFile>? files = null)
     {
+        logger.LogInformation("GenerateAnswerAsync called with text length {Length}", text?.Length);
         if (string.IsNullOrWhiteSpace(text) || IsAnswering)
             return;
         var userMessage = new AppChatMessage(text, DateTime.Now, ChatRole.User, string.Empty, files);
@@ -184,6 +188,7 @@ public class ChatService(
 
     private async Task<List<ChatCompletionAgent>> CreateAgents(string userMessage, TrackingFiltersScope trackingScope)
     {
+        logger.LogInformation("Creating {AgentCount} agents", _agentsByName.Count);
         var agents = new List<ChatCompletionAgent>();
 
         foreach (var desc in _agentsByName.Values)
@@ -199,6 +204,7 @@ public class ChatService(
             agentKernel.FunctionInvocationFilters.Add(trackingFilter);
             trackingScope.Register(agentName, trackingFilter, () => agentKernel.FunctionInvocationFilters.Remove(trackingFilter));
 
+            logger.LogDebug("Configuring agent {AgentName} with model {ModelName}", agentName, modelName);
             var settings = new PromptExecutionSettings
             {
                 FunctionChoiceBehavior = FunctionChoiceBehavior.Auto(autoInvoke: true)
@@ -444,6 +450,7 @@ public class ChatService(
 
     public async Task DeleteMessageAsync(Guid id)
     {
+        logger.LogInformation("Deleting message {MessageId}", id);
         if (IsAnswering)
             return;
 
