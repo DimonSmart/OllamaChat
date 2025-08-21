@@ -25,10 +25,7 @@
             <MudPaper Elevation="3" Class="pa-3 rounded-lg">
                 <MudForm @ref="_form" Model="@_settings">
                     <MudCard Class="mb-4" Elevation="1">
-                        <MudCardHeader Class="pb-2">
-                            <MudText Class="section-header">Default Model</MudText>
-                        </MudCardHeader>
-                        <MudCardContent Class="pt-0">
+                        <MudCardContent>
                             <MudSelect T="string" Label="Default Model" @bind-Value="_settings.DefaultModelName"
                                        Variant="Variant.Outlined" AnchorOrigin="Origin.BottomCenter" Dense="true">
                                 @foreach (var model in _availableModels)
@@ -80,20 +77,14 @@
                     </MudCard>
 
                     <MudCard Class="mb-4" Elevation="1">
-                        <MudCardHeader Class="pb-2">
-                            <MudText Class="section-header">Default Chat Message</MudText>
-                        </MudCardHeader>
-                        <MudCardContent Class="pt-0">
+                        <MudCardContent>
                             <MudTextField T="string" Label="Default Chat Message" @bind-Value="_settings.DefaultChatMessage"
                                           Lines="3" Variant="Variant.Outlined" HelperText="Pre-filled message in the chat input (useful for testing)" />
                         </MudCardContent>
                     </MudCard>
 
                     <MudCard Class="mb-4" Elevation="1">
-                        <MudCardHeader Class="pb-2">
-                            <MudText Class="section-header">Default Multiagent Chat Message</MudText>
-                        </MudCardHeader>
-                        <MudCardContent Class="pt-0">
+                        <MudCardContent>
                             <MudTextField T="string" Label="Default Multiagent Chat Message" @bind-Value="_settings.DefaultMultiAgentChatMessage"
                                           Lines="3" Variant="Variant.Outlined" HelperText="Pre-filled message in the multiagent chat input" />
                         </MudCardContent>
