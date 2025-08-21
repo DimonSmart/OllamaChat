@@ -56,15 +56,27 @@
                         }
                     </MudSelect>
 
-                    <MudSelect T="string" Label="Stop Agent" @bind-Value="stopAgentName" Variant="Variant.Outlined" FullWidth="true" Class="mt-4" Dense="true">
+                    <MudSelect T="string"
+                               Label="Stop Agent"
+                               Value="stopAgentName"
+                               ValueChanged="OnStopAgentChanged"
+                               Variant="Variant.Outlined"
+                               FullWidth="true"
+                               Class="mt-4"
+                               Dense="true">
                         @foreach (var agent in stopAgents)
                         {
                             <MudSelectItem Value="@agent">@agent</MudSelectItem>
                         }
                     </MudSelect>
-                    @if (stopAgentName == RoundRobinStopAgent)
+                    @switch (stopAgentName)
                     {
-                        <RoundRobinStopAgentParameters @bind-Options="roundRobinOptions" />
+                        case RoundRobinStopAgent:
+                            <RoundRobinStopAgentParameters @ref="stopAgentParametersComponent" Options="stopAgentOptions" />
+                            break;
+                        case RoundRobinSummaryStopAgent:
+                            <RoundRobinSummaryStopAgentParameters @ref="stopAgentParametersComponent" Options="stopAgentOptions" Agents="selectedAgents" />
+                            break;
                     }
 
                     <MudButton Variant="Variant.Filled"
@@ -235,8 +247,10 @@
     public OllamaModel? SelectedModel { get; set; }
 
     private const string RoundRobinStopAgent = "RoundRobin";
-    private List<string> stopAgents = new() { RoundRobinStopAgent };
-    private RoundRobinStopAgentOptions roundRobinOptions = new();
+    private const string RoundRobinSummaryStopAgent = "RoundRobinWithSummary";
+    private List<string> stopAgents = new();
+    private IStopAgentParameters<IStopAgentOptions>? stopAgentParametersComponent;
+    private IStopAgentOptions stopAgentOptions = new RoundRobinStopAgentOptions();
     private string stopAgentName = RoundRobinStopAgent;
 
     private UserSettings userSettings = new();
@@ -249,6 +263,8 @@
 
     protected override async Task OnInitializedAsync()
     {
+        stopAgents = new() { RoundRobinStopAgent, RoundRobinSummaryStopAgent };
+
         isLoadingInitialData = true;
         StateHasChanged();
 
@@ -296,6 +312,17 @@
         StateHasChanged();
     }
 
+    private void OnStopAgentChanged(string name)
+    {
+        stopAgentName = name;
+        stopAgentOptions = name switch
+        {
+            RoundRobinStopAgent => new RoundRobinStopAgentOptions(),
+            RoundRobinSummaryStopAgent => new RoundRobinSummaryStopAgentOptions(),
+            _ => new RoundRobinStopAgentOptions()
+        };
+    }
+
     private async Task LoadAgents()
     {
         agents = await AgentService.GetAllAsync();
@@ -311,8 +338,23 @@
             ? RoundRobinStopAgent
             : userSettings.StopAgentName;
 
-        if (userSettings.MultiAgentRounds > 0)
-            roundRobinOptions.Rounds = userSettings.MultiAgentRounds;
+        stopAgentOptions = stopAgentName switch
+        {
+            RoundRobinStopAgent => new RoundRobinStopAgentOptions(),
+            RoundRobinSummaryStopAgent => new RoundRobinSummaryStopAgentOptions(),
+            _ => new RoundRobinStopAgentOptions()
+        };
+
+        if (userSettings.StopAgentOptions.HasValue)
+        {
+            var element = userSettings.StopAgentOptions.Value;
+            stopAgentOptions = stopAgentName switch
+            {
+                RoundRobinStopAgent => element.Deserialize<RoundRobinStopAgentOptions>() ?? new RoundRobinStopAgentOptions(),
+                RoundRobinSummaryStopAgent => element.Deserialize<RoundRobinSummaryStopAgentOptions>() ?? new RoundRobinSummaryStopAgentOptions(),
+                _ => new RoundRobinStopAgentOptions()
+            };
+        }
 
         if (userSettings.MultiAgentSelectedAgents?.Count > 0)
         {
@@ -335,7 +377,10 @@
 
         userSettings.StopAgentName = stopAgentName;
         userSettings.MultiAgentSelectedAgents = selectedAgents.Select(a => a.AgentName).ToList();
-        userSettings.MultiAgentRounds = roundRobinOptions.Rounds;
+        var opts = stopAgentParametersComponent?.GetOptions();
+        userSettings.StopAgentOptions = opts is null
+            ? null
+            : JsonSerializer.SerializeToElement(opts, opts.GetType());
         await UserSettingsService.SaveSettingsAsync(userSettings);
 
         ChatService.InitializeChat(selectedAgents);
@@ -352,11 +397,21 @@
             .Distinct()
             .ToList();
 
-        var rounds = selectedAgents.Count == 1 ? 1 : roundRobinOptions.Rounds;
-
-        var chatConfiguration = new ChatConfiguration(SelectedModel?.Name, allFunctions);
-        var options = new RoundRobinStopAgentOptions { Rounds = rounds };
+        var options = stopAgentParametersComponent?.GetOptions();
+        if (selectedAgents.Count == 1)
+        {
+            switch (options)
+            {
+                case RoundRobinStopAgentOptions rr:
+                    rr.Rounds = 1;
+                    break;
+                case RoundRobinSummaryStopAgentOptions rs:
+                    rs.Rounds = 1;
+                    break;
+            }
+        }
         var groupChatManager = StopAgentFactory.Create(stopAgentName, options);
+        var chatConfiguration = new ChatConfiguration(SelectedModel?.Name, allFunctions);
 
         await ChatService.GenerateAnswerAsync(messageData.text.Trim(), chatConfiguration, groupChatManager, messageData.files);
         await ScrollToBottom();

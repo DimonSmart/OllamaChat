@@ -1,0 +1,49 @@
+@using MudBlazor
+@using ChatClient.Shared.Models.StopAgents
+@using ChatClient.Shared.Models
+@implements IStopAgentParameters<RoundRobinSummaryStopAgentOptions>
+
+<MudNumericField T="int"
+                 Value="TypedOptions.Rounds"
+                 ValueChanged="OnRoundsChanged"
+                 Min="1"
+                 Label="Rounds"
+                 Variant="Variant.Outlined"
+                 FullWidth="true"
+                 Class="mt-4" />
+
+<MudSelect T="string"
+           Label="Summary Agent"
+           Value="TypedOptions.SummaryAgent"
+           ValueChanged="OnSummaryAgentChanged"
+           Variant="Variant.Outlined"
+           FullWidth="true"
+           Dense="true"
+           Class="mt-4">
+    @foreach (var agent in Agents)
+    {
+        <MudSelectItem Value="@agent.AgentName">@agent.AgentName</MudSelectItem>
+    }
+</MudSelect>
+
+@code {
+    [Parameter]
+    public IStopAgentOptions Options { get; set; } = new RoundRobinSummaryStopAgentOptions();
+
+    [Parameter]
+    public IReadOnlyList<AgentDescription> Agents { get; set; } = Array.Empty<AgentDescription>();
+
+    private RoundRobinSummaryStopAgentOptions TypedOptions => (RoundRobinSummaryStopAgentOptions)Options;
+
+    public RoundRobinSummaryStopAgentOptions GetOptions() => TypedOptions;
+
+    private void OnRoundsChanged(int value)
+    {
+        TypedOptions.Rounds = value;
+    }
+
+    private void OnSummaryAgentChanged(string value)
+    {
+        TypedOptions.SummaryAgent = value;
+    }
+}
