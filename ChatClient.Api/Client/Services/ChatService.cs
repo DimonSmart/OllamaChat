@@ -133,7 +133,34 @@ public class ChatService(
             var agents = await CreateAgents(text, trackingScope);
 
             OrchestrationInputTransform<string> inputTransform = async (_, ct) =>
-                await chatHistoryBuilder.BuildChatHistoryAsync(Messages, agents[0].Kernel, ct);
+            {
+                // Filter out streaming placeholders and empty messages before building history
+                var filteredMessages = Messages.Where(msg =>
+                {
+                    // Skip streaming messages that are placeholders
+                    if (msg.IsStreaming)
+                    {
+                        logger.LogDebug("Filtering out streaming message: {AgentName}", msg.AgentName);
+                        return false;
+                    }
+                    
+                    // Skip empty assistant messages without agent name - these are internal SK placeholders
+                    if (msg.Role == Microsoft.Extensions.AI.ChatRole.Assistant && 
+                        string.IsNullOrEmpty(msg.Content) && 
+                        string.IsNullOrEmpty(msg.AgentName))
+                    {
+                        logger.LogDebug("Filtering out empty assistant message without agent name");
+                        return false;
+                    }
+                    
+                    return true;
+                }).ToList();
+                
+                logger.LogDebug("InputTransform: filtered {OriginalCount} messages to {FilteredCount} messages", 
+                    Messages.Count, filteredMessages.Count);
+                
+                return await chatHistoryBuilder.BuildChatHistoryAsync(filteredMessages, agents[0].Kernel, ct);
+            };
 
             var chatOrchestration = CreateChatOrchestration(
                 groupChatManager,
