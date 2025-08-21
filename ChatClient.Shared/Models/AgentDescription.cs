@@ -1,3 +1,5 @@
+using System.Text.Json.Serialization;
+
 namespace ChatClient.Shared.Models;
 
 public class AgentDescription
@@ -9,6 +11,9 @@ public class AgentDescription
     public string? ModelName { get; set; }
     public double? Temperature { get; set; }
     public double? RepeatPenalty { get; set; }
+
+    [JsonIgnore]
+    public string AgentId => string.IsNullOrWhiteSpace(ShortName) ? AgentName : ShortName;
 
     public FunctionSettings FunctionSettings { get; set; } = new();
 

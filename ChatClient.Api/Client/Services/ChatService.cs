@@ -61,7 +61,7 @@ public class ChatService(
 
         // Create lookup dictionary for agent names
         _agentsByName = agents.ToDictionary(
-            desc => !string.IsNullOrWhiteSpace(desc.ShortName) ? desc.ShortName : desc.AgentName,
+            desc => desc.AgentId,
             desc => desc,
             StringComparer.OrdinalIgnoreCase);
 
@@ -227,8 +227,7 @@ public class ChatService(
             var modelName = desc.ModelName ?? throw new InvalidOperationException("Agent model name is not set.");
             var agentKernel = await kernelService.CreateKernelAsync(modelName, functionsToRegister, desc.AgentName);
 
-            // TODO Add function into AgentDescription to get Agent name for UI
-            var agentName = !string.IsNullOrWhiteSpace(desc.ShortName) ? desc.ShortName : desc.AgentName;
+            var agentName = desc.AgentId;
 
             var trackingFilter = new FunctionCallRecordingFilter();
             agentKernel.FunctionInvocationFilters.Add(trackingFilter);
