@@ -1,8 +1,11 @@
+using System.Linq;
+
 using ChatClient.Api.Client.Services;
+
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.SemanticKernel;
 using Microsoft.SemanticKernel.ChatCompletion;
-using System.Linq;
+
 using Xunit;
 
 namespace ChatClient.Tests;
