@@ -61,9 +61,6 @@
                     </MudCard>
 
                     <MudCard Class="mb-4" Elevation="1">
-                        <MudCardHeader Class="pb-2">
-                            <MudText Class="section-header">Chat History Mode</MudText>
-                        </MudCardHeader>
                         <MudCardContent Class="pt-0">
                             <MudSelect T="ChatHistoryMode" Label="History Processing" @bind-Value="_settings.ChatHistoryMode" Variant="Variant.Outlined" Dense="true">
                                 <MudSelectItem Value="@ChatHistoryMode.None">None</MudSelectItem>
