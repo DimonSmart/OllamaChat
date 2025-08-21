@@ -16,8 +16,10 @@ public class ChatViewModelServiceTests
     {
         public bool IsAnswering => false;
         public IReadOnlyCollection<AgentDescription> AgentDescriptions { get; } = [];
+#pragma warning disable CS0067
         public event Action<bool>? AnsweringStateChanged;
         public event Action? ChatReset;
+#pragma warning restore CS0067
         public event Func<IAppChatMessage, Task>? MessageAdded;
         public event Func<IAppChatMessage, bool, Task>? MessageUpdated;
         public event Func<Guid, Task>? MessageDeleted;

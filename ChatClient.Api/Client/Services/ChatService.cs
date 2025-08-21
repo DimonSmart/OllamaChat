@@ -1,5 +1,6 @@
 using System;
 using System.Collections.ObjectModel;
+
 using ChatClient.Api.Services;
 using ChatClient.Shared.Models;
 
@@ -143,22 +144,22 @@ public class ChatService(
                         logger.LogDebug("Filtering out streaming message: {AgentName}", msg.AgentName);
                         return false;
                     }
-                    
+
                     // Skip empty assistant messages without agent name - these are internal SK placeholders
-                    if (msg.Role == Microsoft.Extensions.AI.ChatRole.Assistant && 
-                        string.IsNullOrEmpty(msg.Content) && 
+                    if (msg.Role == Microsoft.Extensions.AI.ChatRole.Assistant &&
+                        string.IsNullOrEmpty(msg.Content) &&
                         string.IsNullOrEmpty(msg.AgentName))
                     {
                         logger.LogDebug("Filtering out empty assistant message without agent name");
                         return false;
                     }
-                    
+
                     return true;
                 }).ToList();
-                
-                logger.LogDebug("InputTransform: filtered {OriginalCount} messages to {FilteredCount} messages", 
+
+                logger.LogDebug("InputTransform: filtered {OriginalCount} messages to {FilteredCount} messages",
                     Messages.Count, filteredMessages.Count);
-                
+
                 return await chatHistoryBuilder.BuildChatHistoryAsync(filteredMessages, agents[0].Kernel, ct);
             };
 
@@ -275,7 +276,7 @@ public class ChatService(
         return new GroupChatOrchestration(groupChatManager, agents.ToArray())
         {
             InputTransform = inputTransform,
-            // Стриминговый колбэк для инкрементальных токенов
+            // Streaming callback for incremental tokens
             StreamingResponseCallback = async (streamingContent, isFinal) =>
             {
                 var agentName = streamingContent.AuthorName;
@@ -286,18 +287,18 @@ public class ChatService(
                 {
                     if (_activeStreams.TryGetValue(PlaceholderAgent, out var placeholder))
                     {
-                        logger.LogDebug("Replacing placeholder with agent {AgentName}, placeholder content length: {ContentLength}", 
+                        logger.LogDebug("Replacing placeholder with agent {AgentName}, placeholder content length: {ContentLength}",
                                        agentName, placeholder.Content.Length);
-                        
+
                         _activeStreams.Remove(PlaceholderAgent);
                         placeholder.SetAgentName(agentName);
                         placeholder.ResetContent();
                         _activeStreams[agentName] = placeholder;
                         message = placeholder;
-                        
-                        logger.LogDebug("Placeholder replaced with agent {AgentName}, new content length: {ContentLength}", 
+
+                        logger.LogDebug("Placeholder replaced with agent {AgentName}, new content length: {ContentLength}",
                                        agentName, placeholder.Content.Length);
-                        
+
                         // Force an update after agent name change to ensure UI sees the change
                         if (MessageUpdated != null)
                         {
@@ -346,22 +347,22 @@ public class ChatService(
         StreamingAppChatMessage message,
         string content)
     {
-        logger.LogDebug("UpdateStreamingMessage called for agent {AgentName} with content: {Content}", 
+        logger.LogDebug("UpdateStreamingMessage called for agent {AgentName} with content: {Content}",
                        message.AgentName, content);
-        
+
         message.Append(content);
         message.ApproximateTokenCount++;
 
         if (MessageUpdated != null)
         {
-            logger.LogDebug("Invoking MessageUpdated event for agent {AgentName}, content length: {ContentLength}", 
+            logger.LogDebug("Invoking MessageUpdated event for agent {AgentName}, content length: {ContentLength}",
                            message.AgentName, message.Content.Length);
             await MessageUpdated(message, false);
             logger.LogDebug("MessageUpdated event completed for agent {AgentName}", message.AgentName);
         }
         else
         {
-            logger.LogWarning("MessageUpdated event is null - streaming updates not being propagated for agent {AgentName}", 
+            logger.LogWarning("MessageUpdated event is null - streaming updates not being propagated for agent {AgentName}",
                              message.AgentName);
         }
     }
@@ -398,7 +399,7 @@ public class ChatService(
         await RemoveDanglingPlaceholderAsync();
         await CompleteActiveStreams(functionCount, trackingScope);
     }
-    
+
     private async Task CompleteActiveStreams(int functionCount, TrackingFiltersScope trackingScope)
     {
         foreach (var kvp in _activeStreams.ToList())

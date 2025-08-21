@@ -30,7 +30,7 @@
 <PageTitle>Chat with AI Assistant</PageTitle>
 
 <OllamaCheck>
-    <MudStack Class="chat-container" Direction="Direction.Column">
+    <MudStack Class="chat-container">
     @if (isLoadingInitialData)
     {
         <MudOverlay Visible="true" DarkBackground="true" Absolute="true">
@@ -198,7 +198,7 @@
         
         <!-- Fixed input panel at bottom -->
         <div class="chat-input-panel">
-            <MudStack Direction="Direction.Column">
+            <MudStack>
                 <ChatInput OnSend="SendChatMessageAsync"
                           ShowStopButton="isLLMAnswering"
                           OnStopClick="Cancel" />
