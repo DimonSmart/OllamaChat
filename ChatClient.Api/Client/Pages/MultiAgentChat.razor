@@ -392,15 +392,46 @@
 
         var agentsForChat = selectedAgents.ToList();
         var manager = StopAgentFactory.Create(stopAgentName, stopAgentOptions);
+        
+        // Validate that all required agents are available
         if (manager is IGroupChatAgentProvider provider)
         {
+            var missingAgents = new List<string>();
             foreach (var agentId in provider.GetRequiredAgents())
             {
+                // Skip empty agent IDs
+                if (string.IsNullOrWhiteSpace(agentId))
+                {
+                    Console.WriteLine($"Warning: Empty agent ID found in required agents for {stopAgentName}");
+                    continue;
+                }
+
                 var agent = agents.FirstOrDefault(a => a.AgentId == agentId);
-                if (agent is not null && agentsForChat.All(a => a.AgentId != agent.AgentId))
+                if (agent is null)
+                {
+                    missingAgents.Add(agentId);
+                    Console.WriteLine($"Error: Required agent '{agentId}' not found in available agents");
+                }
+                else if (agentsForChat.All(a => a.AgentId != agent.AgentId))
+                {
                     agentsForChat.Add(agent);
+                    Console.WriteLine($"Added required agent: {agent.AgentName} ({agent.AgentId})");
+                }
+            }
+
+            // If there are missing agents, show error and don't start chat
+            if (missingAgents.Count > 0)
+            {
+                var missingAgentNames = string.Join(", ", missingAgents);
+                await DialogService.ShowMessageBox(
+                    "Missing Required Agents",
+                    $"The following agents are required for the '{stopAgentName}' strategy but are not available: {missingAgentNames}. " +
+                    "Please either select a different strategy or ensure all required agents are available.",
+                    yesText: "OK");
+                return;
             }
         }
+        
         ChatService.InitializeChat(agentsForChat);
         chatStarted = true;
         StateHasChanged();

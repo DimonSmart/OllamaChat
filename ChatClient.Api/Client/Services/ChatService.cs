@@ -131,7 +131,7 @@ public class ChatService(
             var runtime = new InProcessRuntime();
             await runtime.StartAsync(_cancellationTokenSource.Token);
 
-            var agents = await CreateAgents(text, trackingScope);
+            var agents = await CreateAgents(text, trackingScope, chatConfiguration);
 
             OrchestrationInputTransform<string> inputTransform = async (_, ct) =>
             {
@@ -216,7 +216,7 @@ public class ChatService(
     private Task NotifyMessageAddedAsync(IAppChatMessage message) =>
         MessageAdded?.Invoke(message) ?? Task.CompletedTask;
 
-    private async Task<List<ChatCompletionAgent>> CreateAgents(string userMessage, TrackingFiltersScope trackingScope)
+    private async Task<List<ChatCompletionAgent>> CreateAgents(string userMessage, TrackingFiltersScope trackingScope, ChatConfiguration chatConfiguration)
     {
         logger.LogInformation("Creating {AgentCount} agents", _agentsByName.Count);
         var agents = new List<ChatCompletionAgent>();
@@ -224,7 +224,7 @@ public class ChatService(
         foreach (var desc in _agentsByName.Values)
         {
             var functionsToRegister = await kernelService.GetFunctionsToRegisterAsync(desc.FunctionSettings, userMessage);
-            var modelName = desc.ModelName ?? throw new InvalidOperationException("Agent model name is not set.");
+            var modelName = desc.ModelName ?? chatConfiguration.ModelName ?? throw new InvalidOperationException($"Agent '{desc.AgentName}' model name is not set and no default model is configured.");
             var agentKernel = await kernelService.CreateKernelAsync(modelName, functionsToRegister, desc.AgentName);
 
             var agentName = desc.AgentId;

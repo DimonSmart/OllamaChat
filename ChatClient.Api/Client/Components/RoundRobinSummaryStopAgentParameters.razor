@@ -19,15 +19,60 @@
            Variant="Variant.Outlined"
            FullWidth="true"
            Dense="true"
-           Class="mt-4">
+           Class="mt-4"
+           Placeholder="Select an agent to provide summary..."
+           Required="true"
+           RequiredError="Summary agent is required for this strategy">
     @foreach (var agent in Context.Agents)
     {
         <MudSelectItem Value="@agent.AgentId">@agent.AgentName</MudSelectItem>
     }
 </MudSelect>
 
+@if (string.IsNullOrWhiteSpace(TypedOptions.SummaryAgent))
+{
+    <MudAlert Severity="Severity.Warning" Class="mt-2">
+        <strong>Summary Agent Required:</strong> Please select an agent that will provide a summary of the conversation.
+        This agent will be automatically included in the chat if not already selected.
+    </MudAlert>
+}
+else
+{
+    var selectedAgent = Context.Agents.FirstOrDefault(a => a.AgentId == TypedOptions.SummaryAgent);
+    if (selectedAgent != null)
+    {
+        <MudAlert Severity="Severity.Info" Class="mt-2">
+            <strong>Selected Summary Agent:</strong> @selectedAgent.AgentName will provide summaries after @TypedOptions.Rounds round(s) of conversation.
+        </MudAlert>
+    }
+    else
+    {
+        <MudAlert Severity="Severity.Error" Class="mt-2">
+            <strong>Invalid Agent Selected:</strong> The selected summary agent is not available. Please select a different agent.
+        </MudAlert>
+    }
+}
+
 @code {
     private RoundRobinSummaryStopAgentOptions TypedOptions => (RoundRobinSummaryStopAgentOptions)Context.Options;
+
+    protected override void OnInitialized()
+    {
+        // If no summary agent is selected and we have agents available, select the first suitable one
+        if (string.IsNullOrWhiteSpace(TypedOptions.SummaryAgent) && Context.Agents.Any())
+        {
+            // Try to find a referee-type agent first
+            var refereeAgent = Context.Agents.FirstOrDefault(a => 
+                a.AgentName.Contains("Referee", StringComparison.OrdinalIgnoreCase) ||
+                a.AgentName.Contains("Judge", StringComparison.OrdinalIgnoreCase) ||
+                a.AgentName.Contains("Moderator", StringComparison.OrdinalIgnoreCase));
+            
+            if (refereeAgent != null)
+            {
+                TypedOptions.SummaryAgent = refereeAgent.AgentId;
+            }
+        }
+    }
 
     private void OnRoundsChanged(int value)
     {
