@@ -1,6 +1,6 @@
 @using MudBlazor
 @using ChatClient.Shared.Models.StopAgents
-@implements IStopAgentParameters<RoundRobinStopAgentOptions>
+@inherits StopAgentParametersBase
 
 <MudNumericField T="int"
                  Value="TypedOptions.Rounds"
@@ -12,12 +12,7 @@
                  Class="mt-4" />
 
 @code {
-    [Parameter]
-    public IStopAgentOptions Options { get; set; } = new RoundRobinStopAgentOptions();
-
-    private RoundRobinStopAgentOptions TypedOptions => (RoundRobinStopAgentOptions)Options;
-
-    public RoundRobinStopAgentOptions GetOptions() => TypedOptions;
+    private RoundRobinStopAgentOptions TypedOptions => (RoundRobinStopAgentOptions)Context.Options;
 
     private void OnRoundsChanged(int value)
     {
