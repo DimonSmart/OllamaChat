@@ -3,6 +3,7 @@
 @using Microsoft.AspNetCore.Components.Web
 @using System.Collections.ObjectModel
 @using System.Collections.Generic
+@using System.Collections.Immutable
 @using System.Text.Json
 @using ChatClient.Shared.Models
 @using ChatClient.Shared.Models.StopAgents
@@ -69,14 +70,13 @@
                             <MudSelectItem Value="@agent">@agent</MudSelectItem>
                         }
                     </MudSelect>
-                    @switch (stopAgentName)
+                    @if (editorType is not null)
                     {
-                        case RoundRobinStopAgent:
-                            <RoundRobinStopAgentParameters @ref="stopAgentParametersComponent" Options="stopAgentOptions" />
-                            break;
-                        case RoundRobinSummaryStopAgent:
-                            <RoundRobinSummaryStopAgentParameters @ref="stopAgentParametersComponent" Options="stopAgentOptions" Agents="agents" />
-                            break;
+                        <DynamicComponent Type="editorType" Parameters="editorParams" />
+                    }
+                    else
+                    {
+                        <em>Editor for '@stopAgentOptions.GetType().Name' not found</em>
                     }
 
                     <MudButton Variant="Variant.Filled"
@@ -249,9 +249,19 @@
     private const string RoundRobinStopAgent = "RoundRobin";
     private const string RoundRobinSummaryStopAgent = "RoundRobinWithSummary";
     private List<string> stopAgents = new();
-    private IStopAgentParameters<IStopAgentOptions>? stopAgentParametersComponent;
     private IStopAgentOptions stopAgentOptions = new RoundRobinStopAgentOptions();
     private string stopAgentName = RoundRobinStopAgent;
+
+    private static readonly IReadOnlyDictionary<Type, Type> Editors = new Dictionary<Type, Type>
+    {
+        { typeof(RoundRobinStopAgentOptions), typeof(RoundRobinStopAgentParameters) },
+        { typeof(RoundRobinSummaryStopAgentOptions), typeof(RoundRobinSummaryStopAgentParameters) },
+    }.ToImmutableDictionary();
+
+    private Type? editorType => Editors.TryGetValue(stopAgentOptions.GetType(), out var t) ? t : null;
+
+    private Dictionary<string, object?> editorParams =>
+        new() { ["Context"] = new StopAgentEditorContext(stopAgentOptions, agents) };
 
     private UserSettings userSettings = new();
 
@@ -377,10 +387,7 @@
 
         userSettings.StopAgentName = stopAgentName;
         userSettings.MultiAgentSelectedAgents = selectedAgents.Select(a => a.AgentName).ToList();
-        var opts = stopAgentParametersComponent?.GetOptions();
-        userSettings.StopAgentOptions = opts is null
-            ? null
-            : JsonSerializer.SerializeToElement(opts, opts.GetType());
+        userSettings.StopAgentOptions = JsonSerializer.SerializeToElement(stopAgentOptions, stopAgentOptions.GetType());
         await UserSettingsService.SaveSettingsAsync(userSettings);
 
         ChatService.InitializeChat(selectedAgents);
@@ -397,7 +404,7 @@
             .Distinct()
             .ToList();
 
-        var options = stopAgentParametersComponent?.GetOptions();
+        var options = stopAgentOptions;
         if (selectedAgents.Count == 1)
         {
             switch (options)
