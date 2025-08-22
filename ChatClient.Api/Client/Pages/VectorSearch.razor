@@ -1,0 +1,71 @@
+@page "/vector-search"
+@using ChatClient.Api.Services
+@using System.Linq
+
+<PageTitle>Vector Search</PageTitle>
+
+<OllamaCheck>
+    <MudContainer MaxWidth="MaxWidth.Small" Class="pa-4">
+        <MudStack Spacing="2">
+            <MudSelect T="AgentDescription"
+                       Label="Select Agent"
+                       @bind-Value="selectedAgent"
+                       Variant="Variant.Outlined"
+                       Dense="true"
+                       FullWidth="true">
+                @foreach (var agent in agents)
+                {
+                    <MudSelectItem Value="@agent">@agent.AgentName</MudSelectItem>
+                }
+            </MudSelect>
+
+            <ChatInput OnSend="SearchAsync" />
+
+            @if (results.Count > 0)
+            {
+                <MudList T="RagSearchResult" Dense="true" Class="mt-4">
+                    @foreach (var item in results)
+                    {
+                        <MudListItem T="RagSearchResult">
+                            <MudText Typo="Typo.subtitle2">@item.FileName</MudText>
+                            <MudText Typo="Typo.body2">@item.Content</MudText>
+                        </MudListItem>
+                    }
+                </MudList>
+            }
+        </MudStack>
+    </MudContainer>
+</OllamaCheck>
+
+@code {
+    private List<AgentDescription> agents = [];
+    private AgentDescription? selectedAgent;
+    private List<RagSearchResult> results = [];
+    private string embeddingModel = string.Empty;
+
+    [Inject] private IAgentDescriptionService AgentService { get; set; } = default!;
+    [Inject] private IOllamaClientService OllamaService { get; set; } = default!;
+    [Inject] private IRagVectorSearchService VectorSearchService { get; set; } = default!;
+    [Inject] private IUserSettingsService UserSettingsService { get; set; } = default!;
+    [Inject] private IConfiguration Configuration { get; set; } = default!;
+
+    protected override async Task OnInitializedAsync()
+    {
+        agents = await AgentService.GetAllAsync();
+        var settings = await UserSettingsService.GetSettingsAsync();
+        embeddingModel = string.IsNullOrWhiteSpace(settings.EmbeddingModelName)
+            ? Configuration["Ollama:EmbeddingModel"] ?? "nomic-embed-text"
+            : settings.EmbeddingModelName;
+    }
+
+    private async Task SearchAsync((string text, IReadOnlyList<AppChatMessageFile> _) data)
+    {
+        if (selectedAgent is null) return;
+        var text = data.text.Trim();
+        if (string.IsNullOrWhiteSpace(text)) return;
+
+        var embedding = await OllamaService.GenerateEmbeddingAsync(text, embeddingModel);
+        var found = await VectorSearchService.SearchAsync(selectedAgent.Id, new ReadOnlyMemory<float>(embedding));
+        results = found.ToList();
+    }
+}

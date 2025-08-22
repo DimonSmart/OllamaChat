@@ -13,7 +13,7 @@ public class AppChatMessage : IAppChatMessage
     public string? AgentName { get; set; }
     public string? Statistics { get; set; }
     public bool IsCanceled { get; set; }
-    public IReadOnlyList<ChatMessageFile> Files { get; set; } = [];
+    public IReadOnlyList<AppChatMessageFile> Files { get; set; } = [];
     public IReadOnlyCollection<FunctionCallRecord> FunctionCalls { get; set; } = [];
     public bool IsStreaming => false;
 
@@ -60,7 +60,7 @@ public class AppChatMessage : IAppChatMessage
         FunctionCalls = message.FunctionCalls;
     }
 
-    public AppChatMessage(string content, DateTime msgDateTime, ChatRole role, string? statistics = null, IReadOnlyList<ChatMessageFile>? files = null, IReadOnlyCollection<FunctionCallRecord>? functionCalls = null, string? agentName = null)
+    public AppChatMessage(string content, DateTime msgDateTime, ChatRole role, string? statistics = null, IReadOnlyList<AppChatMessageFile>? files = null, IReadOnlyCollection<FunctionCallRecord>? functionCalls = null, string? agentName = null)
     {
         Id = Guid.NewGuid();
         Content = content ?? string.Empty;

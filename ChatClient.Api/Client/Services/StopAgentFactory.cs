@@ -1,4 +1,5 @@
 using ChatClient.Shared.Models.StopAgents;
+
 using Microsoft.SemanticKernel.Agents.Orchestration.GroupChat;
 
 namespace ChatClient.Api.Client.Services;
@@ -14,7 +15,8 @@ internal class StopAgentFactory : IStopAgentFactory
 
     public GroupChatManager Create(string name, IStopAgentOptions? options = null)
     {
-        if (_factories.TryGetValue(name, out var factory)) return factory(options);
+        if (_factories.TryGetValue(name, out var factory))
+            return factory(options);
         return CreateRoundRobin(options as RoundRobinStopAgentOptions);
     }
 
@@ -28,7 +30,7 @@ internal class StopAgentFactory : IStopAgentFactory
     {
         var rounds = opts?.Rounds ?? 1;
         var agent = opts?.SummaryAgent ?? string.Empty;
-        
+
         // Validate that summary agent is specified
         if (string.IsNullOrWhiteSpace(agent))
         {
@@ -37,7 +39,7 @@ internal class StopAgentFactory : IStopAgentFactory
                 "Please select a summary agent in the configuration.",
                 nameof(opts));
         }
-        
+
         return new RoundRobinSummaryGroupChatManager(agent) { MaximumInvocationCount = rounds };
     }
 }

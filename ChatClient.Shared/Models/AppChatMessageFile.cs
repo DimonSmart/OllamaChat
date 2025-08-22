@@ -2,7 +2,7 @@ using System.Text.Json.Serialization;
 
 namespace ChatClient.Shared.Models;
 
-public class ChatMessageFile
+public class AppChatMessageFile
 {
     public Guid Id { get; set; }
     public string Name { get; set; } = string.Empty;
@@ -11,12 +11,12 @@ public class ChatMessageFile
     public byte[] Data { get; set; } = [];
 
     [JsonConstructor]
-    public ChatMessageFile()
+    public AppChatMessageFile()
     {
         Id = Guid.NewGuid();
     }
 
-    public ChatMessageFile(string name, long size, string contentType, byte[] data)
+    public AppChatMessageFile(string name, long size, string contentType, byte[] data)
     {
         Id = Guid.NewGuid();
         Name = name;

@@ -1,11 +1,18 @@
 ﻿@page "/agent-descriptions"
+@using System
+@using System.IO
+@using System.Linq
 @using ChatClient.Shared.Models
 @using ChatClient.Shared.Services
 @using ChatClient.Api.Services
+@using Microsoft.AspNetCore.Components.Forms
+@using Microsoft.AspNetCore.Http
 @inject IAgentDescriptionService AgentService
 @inject ISnackbar Snackbar
 @inject IOllamaClientService OllamaService
 @inject KernelService KernelService
+@inject IRagFileService RagFileService
+@inject IFileConverter FileConverter
 
 <PageTitle>Agent Descriptions Management</PageTitle>
 
@@ -87,6 +94,11 @@
                             </div>
                         </CellTemplate>
                     </TemplateColumn>
+                    <TemplateColumn Title="RAG Files" isEditable="false" CellStyle="text-align:center; width:80px;">
+                        <CellTemplate>
+                            @(ragCounts.TryGetValue(context.Item.Id, out var count) ? count : 0)
+                        </CellTemplate>
+                    </TemplateColumn>
                     <TemplateColumn Title="Functions" isEditable="false" CellStyle="text-align:center; width:80px;">
                         <CellTemplate>
                             @{
@@ -125,7 +137,7 @@
                         <CellTemplate>
                             <MudIconButton Icon="@Icons.Material.Filled.Edit"
                                            Size="Size.Small"
-                                           OnClick="@(() => StartEditingAgent(context.Item))" />
+                                           OnClick="@(async () => await StartEditingAgent(context.Item))" />
                             <MudIconButton Icon="@Icons.Material.Filled.Delete"
                                            Size="Size.Small"
                                            Color="Color.Error"
@@ -173,7 +185,7 @@
 
 <MudDialog @bind-Visible="@showEditAgentDialog" Options="editDialogOptions">
     <TitleContent>
-        <MudText Typo="Typo.h6">@(editingAgent?.Id == null ? "Create New Agent Description" : "Edit Agent Description")</MudText>
+        <MudText Typo="Typo.h6">@(editingAgent?.Id == Guid.Empty ? "Create New Agent Description" : "Edit Agent Description")</MudText>
     </TitleContent>
     <DialogContent>
         <MudForm @ref="editAgentForm" Model="@editingAgent">
@@ -219,6 +231,46 @@
                           Immediate="true"
                           Validation="@(new Func<string, string>(ValidateContent))"
                           Placeholder="Enter agent description here..." />
+
+            @if (editingAgent.Id != Guid.Empty)
+            {
+                <MudDivider Class="my-4" />
+                <MudText Typo="Typo.subtitle1" Class="mb-2">RAG Files</MudText>
+                <div class="rag-drop-wrapper mt-2">
+                    <MudFileUpload T="IReadOnlyList<IBrowserFile>"
+                                   OnFilesChanged="UploadFiles"
+                                   Hidden="false"
+                                   InputClass="rag-drop-input" />
+                    <div class="rag-drop-overlay">
+                        <MudText Typo="Typo.body2" Class="mud-text-secondary">Drag and drop files here or click to browse</MudText>
+                    </div>
+                </div>
+                <MudTable Items="@ragFiles" Dense="true" Bordered="true" Class="mt-2">
+                    <HeaderContent>
+                        <MudTh>File</MudTh>
+                        <MudTh>Size</MudTh>
+                        <MudTh>Index</MudTh>
+                        <MudTh></MudTh>
+                    </HeaderContent>
+                    <RowTemplate>
+                        <MudTd DataLabel="File">@context.FileName</MudTd>
+                        <MudTd DataLabel="Size">@FormatSize(context.Size)</MudTd>
+                        <MudTd DataLabel="Index">
+                            <MudIcon Icon="@(context.HasIndex ? Icons.Material.Filled.Check : Icons.Material.Filled.Close)"
+                                     Color="@(context.HasIndex ? Color.Success : Color.Error)" />
+                        </MudTd>
+                        <MudTd>
+                            <MudIconButton Icon="@Icons.Material.Filled.Delete"
+                                           Color="Color.Error"
+                                           Size="Size.Small"
+                                           OnClick="@(() => DeleteFile(context.FileName))" />
+                        </MudTd>
+                    </RowTemplate>
+                    <NoRecordsContent>
+                        <MudText Typo="Typo.body2" Class="mud-text-secondary pa-2">No files</MudText>
+                    </NoRecordsContent>
+                </MudTable>
+            }
         </MudForm>
     </DialogContent>
     <DialogActions>
@@ -233,14 +285,16 @@
     private bool loading = true;
     private AgentDescription? agentToDelete;
     private AgentDescription editingAgent = new();
-    private bool showDeleteDialog { get; set; } = false;
-    private bool showEditAgentDialog { get; set; } = false;
+    private bool showDeleteDialog { get; set; }
+    private bool showEditAgentDialog { get; set; }
     private string searchString = string.Empty;
     private MudForm? editAgentForm;
     private MudDataGrid<AgentDescription>? dataGrid;
     private List<OllamaModel> availableModels = new();
     private List<FunctionInfo> availableFunctions = new();
     private bool functionsExpanded;
+    private Dictionary<Guid, int> ragCounts = new();
+    private List<RagFile> ragFiles = new();
     private DialogOptions dialogOptions = new()
     {
         CloseOnEscapeKey = true,
@@ -272,6 +326,14 @@
 
             agents = await AgentService.GetAllAsync() ?? new();
             filteredAgents = agents;
+
+            ragCounts.Clear();
+            var tasks = agents.Select(async a =>
+            {
+                var files = await RagFileService.GetFilesAsync(a.Id);
+                ragCounts[a.Id] = files.Count;
+            });
+            await Task.WhenAll(tasks);
         }
         catch (Exception ex)
         {
@@ -313,7 +375,7 @@
     {
         editingAgent = new AgentDescription
         {
-            Id = null,
+            Id = Guid.Empty,
             CreatedAt = DateTime.UtcNow,
             UpdatedAt = DateTime.UtcNow,
             AgentName = "",
@@ -328,7 +390,7 @@
                 SelectedFunctions = []
             }
         };
-
+        ragFiles = new();
         showEditAgentDialog = true;
     }
 
@@ -352,7 +414,66 @@
             .ToList();
     }
 
-    private Task StartEditingAgent(AgentDescription agent)
+    private async Task LoadRagFiles(Guid id)
+    {
+        ragFiles = await RagFileService.GetFilesAsync(id);
+        ragCounts[id] = ragFiles.Count;
+    }
+
+    private async Task UploadFiles(InputFileChangeEventArgs e)
+    {
+        if (editingAgent.Id == Guid.Empty) return;
+
+        foreach (var file in e.GetMultipleFiles())
+        {
+            try
+            {
+                await using var ms = new MemoryStream();
+                await file.OpenReadStream().CopyToAsync(ms);
+                ms.Position = 0;
+                var formFile = new FormFile(ms, 0, ms.Length, file.Name, file.Name)
+                {
+                    Headers = new HeaderDictionary(),
+                    ContentType = file.ContentType
+                };
+                var content = await FileConverter.ConvertToTextAsync(formFile);
+                await RagFileService.AddOrUpdateFileAsync(editingAgent.Id, new RagFile { FileName = file.Name, Content = content });
+            }
+            catch (Exception ex)
+            {
+                Snackbar.Add($"Error adding file: {ex.Message}", Severity.Error);
+            }
+        }
+
+        await LoadRagFiles(editingAgent.Id);
+    }
+
+    private async Task DeleteFile(string fileName)
+    {
+        if (editingAgent.Id == Guid.Empty) return;
+
+        try
+        {
+            await RagFileService.DeleteFileAsync(editingAgent.Id, fileName);
+            await LoadRagFiles(editingAgent.Id);
+            Snackbar.Add("File deleted", Severity.Success);
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Error deleting file: {ex.Message}", Severity.Error);
+        }
+    }
+
+    private static string FormatSize(long bytes)
+    {
+        const long kb = 1024;
+        const long mb = kb * 1024;
+        if (bytes >= mb) return $"{bytes / (double)mb:0.##} MB";
+        if (bytes >= kb) return $"{bytes / (double)kb:0.##} KB";
+        return $"{bytes} B";
+    }
+
+    private async Task StartEditingAgent(AgentDescription agent)
     {
         editingAgent = new AgentDescription
         {
@@ -372,8 +493,8 @@
             }
         };
 
+        await LoadRagFiles(agent.Id);
         showEditAgentDialog = true;
-        return Task.CompletedTask;
     }
 
     private void ConfirmDeleteAgent(AgentDescription agent)
@@ -391,13 +512,14 @@
 
     private async Task DeleteAgent()
     {
-        if (agentToDelete?.Id == null) return;
+        if (agentToDelete is null || agentToDelete.Id == Guid.Empty) return;
         try
         {
-            await AgentService.DeleteAsync(agentToDelete.Id.Value);
+            await AgentService.DeleteAsync(agentToDelete.Id);
             Snackbar.Add("Agent deleted successfully", Severity.Success);
 
             agents.Remove(agentToDelete);
+            ragCounts.Remove(agentToDelete.Id);
             ApplySearch();
         }
         catch (Exception ex)
@@ -451,10 +573,11 @@
         {
             try
             {
-                if (editingAgent.Id == null)
+                if (editingAgent.Id == Guid.Empty)
                 {
                     var result = await AgentService.CreateAsync(editingAgent);
                     agents.Add(result);
+                    ragCounts[result.Id] = ragFiles.Count;
                     Snackbar.Add("Agent description created successfully", Severity.Success);
                 }
                 else
@@ -463,6 +586,7 @@
                     var result = await AgentService.UpdateAsync(editingAgent);
                     var index = agents.FindIndex(p => p.Id == editingAgent.Id);
                     if (index >= 0) agents[index] = result;
+                    ragCounts[result.Id] = ragFiles.Count;
                     Snackbar.Add("Agent description updated successfully", Severity.Success);
                 }
 

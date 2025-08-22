@@ -4,7 +4,8 @@ namespace ChatClient.Shared.Models;
 
 public class AgentDescription
 {
-    public Guid? Id { get; set; }
+    /// <summary>Internal identifier not displayed in UI.</summary>
+    public Guid Id { get; set; }
     public string AgentName { get; set; } = string.Empty;
     public string Content { get; set; } = string.Empty;
     public string? ShortName { get; set; }

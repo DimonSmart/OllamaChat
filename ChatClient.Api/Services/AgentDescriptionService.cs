@@ -87,7 +87,7 @@ public class AgentDescriptionService : IAgentDescriptionService
 
             var agents = await ReadFromFileAsync();
 
-            if (prompt.Id == null)
+            if (prompt.Id == Guid.Empty)
                 prompt.Id = Guid.NewGuid();
 
             prompt.CreatedAt = DateTime.UtcNow;
@@ -178,6 +178,16 @@ public class AgentDescriptionService : IAgentDescriptionService
 
         var json = await File.ReadAllTextAsync(_filePath);
         var agents = JsonSerializer.Deserialize<List<AgentDescription>>(json) ?? [];
+
+        var updated = false;
+        foreach (var agent in agents.Where(a => a.Id == Guid.Empty))
+        {
+            agent.Id = Guid.NewGuid();
+            updated = true;
+        }
+
+        if (updated)
+            await WriteToFileAsync(agents);
 
         return agents;
     }

@@ -8,11 +8,11 @@ using Microsoft.Extensions.AI;
 namespace ChatClient.Api.Client.Services;
 
 /// <summary>
-/// Class for managing streaming message state in chat
+/// Manages streaming message state in chat.
 /// </summary>
-public class StreamingMessageManager
+public class AppStreamingMessageManager
 {
-    public StreamingMessageManager()
+    public AppStreamingMessageManager()
     {
     }
 

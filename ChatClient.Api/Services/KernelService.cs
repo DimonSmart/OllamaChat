@@ -1,7 +1,7 @@
+using ChatClient.Api.Client.Services;
 using ChatClient.Shared.Constants;
 using ChatClient.Shared.Models;
 using ChatClient.Shared.Services;
-using ChatClient.Api.Client.Services;
 
 using Microsoft.Extensions.Logging;
 using Microsoft.SemanticKernel;
@@ -59,6 +59,7 @@ public class KernelService(
         return kernel;
     }
 
+    [Obsolete]
     public async Task<Kernel> CreateBasicKernelAsync(string modelId, TimeSpan timeout, string? agentName = null)
     {
         var settings = await userSettingsService.GetSettingsAsync();
@@ -72,9 +73,9 @@ public class KernelService(
         builder.Services.AddSingleton(httpClient);
         builder.Services.AddLogging(c => c.AddConsole().SetMinimumLevel(LogLevel.Information));
         builder.Services.AddSingleton<IChatCompletionService>(_ =>
-            new ForceLastUserChatCompletionService(
+            new AppForceLastUserChatCompletionService(
                 new OllamaChatCompletionService(modelId, httpClient: httpClient),
-                serviceProvider.GetRequiredService<ForceLastUserReducer>()));
+                serviceProvider.GetRequiredService<AppForceLastUserReducer>()));
 
         return builder.Build();
     }

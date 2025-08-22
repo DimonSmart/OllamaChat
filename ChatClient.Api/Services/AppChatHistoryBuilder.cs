@@ -1,3 +1,6 @@
+using System.Linq;
+
+using ChatClient.Api.Client.Services;
 using ChatClient.Shared.Models;
 using ChatClient.Shared.Services;
 
@@ -6,20 +9,18 @@ using DimonSmart.AiUtils;
 using Microsoft.Extensions.Logging;
 using Microsoft.SemanticKernel;
 using Microsoft.SemanticKernel.ChatCompletion;
-using System.Linq;
-using ChatClient.Api.Client.Services;
 
 namespace ChatClient.Api.Services;
 
-public interface IChatHistoryBuilder
+public interface IAppChatHistoryBuilder
 {
     Task<ChatHistory> BuildChatHistoryAsync(IEnumerable<IAppChatMessage> messages, Kernel kernel, CancellationToken cancellationToken);
 }
 
-public class ChatHistoryBuilder(
+public class AppChatHistoryBuilder(
     IUserSettingsService settingsService,
-    ILogger<ChatHistoryBuilder> logger,
-    ForceLastUserReducer reducer) : IChatHistoryBuilder
+    ILogger<AppChatHistoryBuilder> logger,
+    AppForceLastUserReducer reducer) : IAppChatHistoryBuilder
 {
     public ChatHistory BuildBaseHistory(IEnumerable<IAppChatMessage> messages)
     {
@@ -91,11 +92,11 @@ public class ChatHistoryBuilder(
         var settings = await settingsService.GetSettingsAsync();
         switch (settings.ChatHistoryMode)
         {
-            case ChatHistoryMode.Truncate:
+            case AppChatHistoryMode.Truncate:
                 var trunc = new ChatHistoryTruncationReducer(5, 8);
                 var truncated = await trunc.ReduceAsync(history, cancellationToken);
                 return truncated is not null ? new ChatHistory(truncated) : history;
-            case ChatHistoryMode.Summarize:
+            case AppChatHistoryMode.Summarize:
                 var chatService = kernel.GetRequiredService<IChatCompletionService>();
                 var sum = new ChatHistorySummarizationReducer(chatService, 5, 8);
                 var summarized = await sum.ReduceAsync(history, cancellationToken);

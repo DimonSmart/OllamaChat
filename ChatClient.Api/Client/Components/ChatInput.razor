@@ -61,13 +61,13 @@
 </MudPaper>
 
 @code {
-    [Parameter] public EventCallback<(string text, IReadOnlyList<ChatMessageFile> files)> OnSend { get; set; }
+    [Parameter] public EventCallback<(string text, IReadOnlyList<AppChatMessageFile> files)> OnSend { get; set; }
     [Parameter] public bool ShowStopButton { get; set; } = false;
     [Parameter] public EventCallback OnStopClick { get; set; }
     [Parameter] public bool IsMultiAgent { get; set; } = false;
     
     private string CurrentText { get; set; } = string.Empty;
-    private List<ChatMessageFile> attachedFiles = [];
+    private List<AppChatMessageFile> attachedFiles = [];
 
     protected override async Task OnInitializedAsync()
     {
@@ -135,7 +135,7 @@
                 
                 await stream.ReadExactlyAsync(buffer);
 
-                var chatFile = new ChatMessageFile(file.Name, file.Size, file.ContentType, buffer);
+                var chatFile = new AppChatMessageFile(file.Name, file.Size, file.ContentType, buffer);
                 attachedFiles.Add(chatFile);
             }
             catch
@@ -147,7 +147,7 @@
         StateHasChanged();
     }
 
-    private void RemoveFile(ChatMessageFile file)
+    private void RemoveFile(AppChatMessageFile file)
     {
         attachedFiles.Remove(file);
         StateHasChanged();

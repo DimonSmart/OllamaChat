@@ -40,7 +40,7 @@ public class AgentDescriptionServiceTests
             var created = await service.CreateAsync(prompt);
 
             var serviceReloaded = new AgentDescriptionService(config, logger);
-            var retrieved = await serviceReloaded.GetByIdAsync(created.Id!.Value);
+            var retrieved = await serviceReloaded.GetByIdAsync(created.Id);
 
             Assert.NotNull(retrieved);
             Assert.Equal("test-model", retrieved!.ModelName);

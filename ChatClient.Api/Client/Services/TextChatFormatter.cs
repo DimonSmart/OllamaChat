@@ -11,7 +11,7 @@ public class TextChatFormatter : IChatFormatter
 {
     public ChatFormat FormatType => ChatFormat.Text;
 
-    public string Format(IEnumerable<ChatMessageViewModel> messages)
+    public string Format(IEnumerable<AppChatMessageViewModel> messages)
     {
         var sb = new StringBuilder();
         foreach (var msg in messages)
