@@ -45,6 +45,9 @@ builder.Services.AddSingleton<ChatClient.Shared.Services.IAgentDescriptionServic
 builder.Services.AddSingleton<ChatClient.Shared.Services.IUserSettingsService, ChatClient.Api.Services.UserSettingsService>();
 builder.Services.AddSingleton<ChatClient.Shared.Services.IRagFileService, ChatClient.Api.Services.RagFileService>();
 builder.Services.AddSingleton<ChatClient.Shared.Services.IRagVectorIndexService, ChatClient.Api.Services.RagVectorIndexService>();
+builder.Services.AddSingleton<ChatClient.Api.Services.RagVectorIndexBackgroundService>();
+builder.Services.AddSingleton<ChatClient.Shared.Services.IRagVectorIndexBackgroundService>(sp => sp.GetRequiredService<ChatClient.Api.Services.RagVectorIndexBackgroundService>());
+builder.Services.AddHostedService(sp => sp.GetRequiredService<ChatClient.Api.Services.RagVectorIndexBackgroundService>());
 builder.Services.AddSingleton<ChatClient.Api.Services.IFileConverter, ChatClient.Api.Services.NoOpFileConverter>();
 builder.Services.AddScoped<ChatClient.Api.Client.Services.IAppChatService, ChatClient.Api.Client.Services.AppChatService>();
 builder.Services.AddScoped<ChatClient.Api.Client.Services.IChatViewModelService, ChatClient.Api.Client.Services.ChatViewModelService>();
