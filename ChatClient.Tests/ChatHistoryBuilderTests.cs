@@ -1,13 +1,14 @@
-using ChatClient.Api.Services;
+using System.Linq;
+
 using ChatClient.Api.Client.Services;
+using ChatClient.Api.Services;
 using ChatClient.Shared.Models;
 using ChatClient.Shared.Services;
 
-using System.Linq;
+using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Logging;
 using Microsoft.SemanticKernel;
 using Microsoft.SemanticKernel.ChatCompletion;
-using Microsoft.Extensions.AI;
 
 public class ChatHistoryBuilderTests
 {

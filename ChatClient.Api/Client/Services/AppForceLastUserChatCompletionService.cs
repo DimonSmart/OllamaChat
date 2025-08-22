@@ -1,4 +1,5 @@
 using System.Runtime.CompilerServices;
+
 using Microsoft.SemanticKernel;
 using Microsoft.SemanticKernel.ChatCompletion;
 

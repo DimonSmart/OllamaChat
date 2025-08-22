@@ -1,6 +1,7 @@
+using System.Collections.Generic;
+
 using Microsoft.SemanticKernel.Agents.Orchestration.GroupChat;
 using Microsoft.SemanticKernel.ChatCompletion;
-using System.Collections.Generic;
 
 namespace ChatClient.Api.Client.Services;
 
@@ -22,8 +23,10 @@ public sealed class RoundRobinSummaryGroupChatManager(string summaryAgentName) :
         CancellationToken cancellationToken = default)
     {
         var baseResult = await base.ShouldTerminate(history, cancellationToken);
-        if (_summaryDone) return baseResult;
-        if (!baseResult.Value) return baseResult;
+        if (_summaryDone)
+            return baseResult;
+        if (!baseResult.Value)
+            return baseResult;
         if (!_summaryPending)
         {
             _summaryPending = true;

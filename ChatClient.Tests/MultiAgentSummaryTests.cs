@@ -1,9 +1,9 @@
-using System.Text;
-using System.Text.Json;
-using System.Runtime.CompilerServices;
 using System.IO;
 using System.Linq;
 using System.Net;
+using System.Runtime.CompilerServices;
+using System.Text;
+using System.Text.Json;
 
 using ChatClient.Api.Client.Services;
 using ChatClient.Shared.Models;
@@ -93,7 +93,7 @@ public class MultiAgentSummaryTests
 
         // Test RoundRobinSummaryGroupChatManager
         _output.WriteLine($"Creating RoundRobinSummaryGroupChatManager with summary agent: {refereeDesc.AgentId}");
-        
+
         var summaryOptions = new RoundRobinSummaryStopAgentOptions
         {
             Rounds = 2,
@@ -171,7 +171,7 @@ public class MultiAgentSummaryTests
         // Assert
         Assert.NotNull(manager);
         Assert.Equal(rounds, manager.MaximumInvocationCount);
-        
+
         var requiredAgents = manager.GetRequiredAgents().ToList();
         Assert.Single(requiredAgents);
         Assert.Equal(summaryAgentName, requiredAgents.First());

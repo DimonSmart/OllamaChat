@@ -1,14 +1,16 @@
 #pragma warning disable SKEXP0110
 
-using Microsoft.Extensions.Logging;
-using Microsoft.SemanticKernel.Agents.Orchestration.GroupChat;
 using ChatClient.Api.Client.Services;
 using ChatClient.Api.Services;
 using ChatClient.Shared.Models;
-using Xunit.Abstractions;
+
 using Microsoft.Extensions.AI;
+using Microsoft.Extensions.Logging;
 using Microsoft.SemanticKernel;
+using Microsoft.SemanticKernel.Agents.Orchestration.GroupChat;
 using Microsoft.SemanticKernel.ChatCompletion;
+
+using Xunit.Abstractions;
 
 namespace ChatClient.Tests;
 

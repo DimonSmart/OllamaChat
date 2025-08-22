@@ -1,6 +1,6 @@
 using ChatClient.Api;
-using ChatClient.Api.Services;
 using ChatClient.Api.Client.Services;
+using ChatClient.Api.Services;
 
 using Microsoft.AspNetCore.Hosting.Server;
 using Microsoft.AspNetCore.Hosting.Server.Features;

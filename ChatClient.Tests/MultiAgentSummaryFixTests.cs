@@ -1,9 +1,11 @@
 #pragma warning disable SKEXP0110
 
 using System.Text.Json;
+
 using ChatClient.Api.Client.Services;
 using ChatClient.Shared.Models;
 using ChatClient.Shared.Models.StopAgents;
+
 using Xunit.Abstractions;
 
 namespace ChatClient.Tests;
@@ -29,9 +31,9 @@ public class MultiAgentSummaryFixTests
         };
 
         // Act & Assert
-        var exception = Assert.Throws<ArgumentException>(() => 
+        var exception = Assert.Throws<ArgumentException>(() =>
             factory.Create("RoundRobinWithSummary", options));
-        
+
         _output.WriteLine($"Exception message: {exception.Message}");
         Assert.Contains("Summary agent is required", exception.Message);
         Assert.Contains("RoundRobinWithSummary", exception.Message);
@@ -49,9 +51,9 @@ public class MultiAgentSummaryFixTests
         };
 
         // Act & Assert
-        var exception = Assert.Throws<ArgumentException>(() => 
+        var exception = Assert.Throws<ArgumentException>(() =>
             factory.Create("RoundRobinWithSummary", options));
-        
+
         _output.WriteLine($"Exception message: {exception.Message}");
         Assert.Contains("Summary agent is required", exception.Message);
     }
@@ -85,7 +87,7 @@ public class MultiAgentSummaryFixTests
     public void ValidateAgentsForChat_WithMissingAgent_ShouldDetect()
     {
         // This simulates the validation logic we added to MultiAgentChat.razor
-        
+
         // Arrange
         var availableAgents = new List<AgentDescription>
         {
@@ -122,16 +124,16 @@ public class MultiAgentSummaryFixTests
         // Assert
         Assert.Single(missingAgents);
         Assert.Equal("𝐀𝐑", missingAgents.First());
-        
+
         _output.WriteLine($"✅ Successfully detected missing agent: {missingAgents.First()}");
         _output.WriteLine("This validation prevents the runtime exception!");
     }
 
-    [Fact] 
+    [Fact]
     public void ValidateAgentsForChat_WithAllAgentsAvailable_ShouldPass()
     {
         // This simulates successful validation
-        
+
         // Arrange
         var availableAgents = new List<AgentDescription>
         {
@@ -151,7 +153,7 @@ public class MultiAgentSummaryFixTests
         // Act
         var missingAgents = new List<string>();
         var foundAgents = new List<AgentDescription>();
-        
+
         if (manager is IGroupChatAgentProvider provider)
         {
             foreach (var agentId in provider.GetRequiredAgents())
@@ -175,7 +177,7 @@ public class MultiAgentSummaryFixTests
         Assert.Empty(missingAgents);
         Assert.Single(foundAgents);
         Assert.Equal("𝐀𝐑", foundAgents.First().AgentId);
-        
+
         _output.WriteLine($"✅ All required agents found: {string.Join(", ", foundAgents.Select(a => a.AgentName))}");
     }
 
@@ -190,7 +192,8 @@ public class MultiAgentSummaryFixTests
 
         public Microsoft.SemanticKernel.Agents.Orchestration.GroupChat.GroupChatManager Create(string name, IStopAgentOptions? options = null)
         {
-            if (_factories.TryGetValue(name, out var factory)) return factory(options);
+            if (_factories.TryGetValue(name, out var factory))
+                return factory(options);
             return CreateRoundRobin(options as RoundRobinStopAgentOptions);
         }
 
@@ -204,7 +207,7 @@ public class MultiAgentSummaryFixTests
         {
             var rounds = opts?.Rounds ?? 1;
             var agent = opts?.SummaryAgent ?? string.Empty;
-            
+
             // Validate that summary agent is specified
             if (string.IsNullOrWhiteSpace(agent))
             {
@@ -213,7 +216,7 @@ public class MultiAgentSummaryFixTests
                     "Please select a summary agent in the configuration.",
                     nameof(opts));
             }
-            
+
             return new RoundRobinSummaryGroupChatManager(agent) { MaximumInvocationCount = rounds };
         }
     }

@@ -1,4 +1,5 @@
 using ChatClient.Shared.Models;
+
 #pragma warning disable SKEXP0110
 using Microsoft.SemanticKernel.Agents.Orchestration.GroupChat;
 

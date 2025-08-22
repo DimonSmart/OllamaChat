@@ -1,9 +1,9 @@
-using System.Text;
-using System.Text.Json;
-using System.Runtime.CompilerServices;
 using System.IO;
 using System.Linq;
 using System.Net;
+using System.Runtime.CompilerServices;
+using System.Text;
+using System.Text.Json;
 
 using ChatClient.Api.Client.Services;
 using ChatClient.Shared.Models;
@@ -55,7 +55,7 @@ public class MultiAgentSummaryBugTest
         // Simulate the logic from MultiAgentChat.razor StartChat method
         var agentsForChat = new List<AgentDescription> { kantDesc, benthamDesc };
         var manager = new RoundRobinSummaryGroupChatManager(summaryOptions.SummaryAgent);
-        
+
         if (manager is IGroupChatAgentProvider provider)
         {
             foreach (var agentId in provider.GetRequiredAgents())
@@ -107,7 +107,7 @@ public class MultiAgentSummaryBugTest
         // Simulate the logic from MultiAgentChat.razor StartChat method
         var agentsForChat = new List<AgentDescription> { kantDesc, benthamDesc };
         var manager = new RoundRobinSummaryGroupChatManager(summaryOptions.SummaryAgent);
-        
+
         bool foundMissingAgent = false;
         if (manager is IGroupChatAgentProvider provider)
         {
@@ -174,17 +174,17 @@ public class MultiAgentSummaryBugTest
 
         public IReadOnlyDictionary<string, object?> Attributes { get; } = new Dictionary<string, object?>();
 
-        public async Task<IReadOnlyList<ChatMessageContent>> GetChatMessageContentsAsync(
+        public Task<IReadOnlyList<ChatMessageContent>> GetChatMessageContentsAsync(
             ChatHistory chatHistory,
             PromptExecutionSettings? executionSettings = null,
             Kernel? kernel = null,
             CancellationToken cancellationToken = default)
         {
             _output.WriteLine($"GetChatMessageContentsAsync called with {chatHistory.Count()} messages");
-            return new[] { new ChatMessageContent(AuthorRole.Assistant, "Philosophical response from mock service", "assistant") };
+            return Task.FromResult<IReadOnlyList<ChatMessageContent>>(new[] { new ChatMessageContent(AuthorRole.Assistant, "Philosophical response from mock service", "assistant") });
         }
 
-        public async IAsyncEnumerable<StreamingChatMessageContent> GetStreamingChatMessageContentsAsync(ChatHistory chatHistory, PromptExecutionSettings? executionSettings = null, Kernel? kernel = null, [EnumeratorCancellation] CancellationToken cancellationToken = default)
+        public IAsyncEnumerable<StreamingChatMessageContent> GetStreamingChatMessageContentsAsync(ChatHistory chatHistory, PromptExecutionSettings? executionSettings = null, Kernel? kernel = null, [EnumeratorCancellation] CancellationToken cancellationToken = default)
         {
             _output.WriteLine($"GetStreamingChatMessageContentsAsync called with {chatHistory.Count()} messages");
 
