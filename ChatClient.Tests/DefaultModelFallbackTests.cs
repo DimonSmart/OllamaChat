@@ -26,7 +26,7 @@ public class DefaultModelFallbackTests
     {
         // Arrange
         var agentDescription = new AgentDescription { ModelName = null };
-        var chatConfiguration = new ChatConfiguration("defaultModel", []);
+        var chatConfiguration = new AppChatConfiguration("defaultModel", []);
 
         // Act - simulate the logic from ChatService.CreateAgents
         var modelName = agentDescription.ModelName ?? chatConfiguration.ModelName ?? throw new InvalidOperationException($"Agent model name is not set and no default model is configured.");
@@ -41,7 +41,7 @@ public class DefaultModelFallbackTests
     {
         // Arrange
         var agentDescription = new AgentDescription { ModelName = "agentSpecificModel" };
-        var chatConfiguration = new ChatConfiguration("defaultModel", []);
+        var chatConfiguration = new AppChatConfiguration("defaultModel", []);
 
         // Act - simulate the logic from ChatService.CreateAgents
         var modelName = agentDescription.ModelName ?? chatConfiguration.ModelName ?? throw new InvalidOperationException($"Agent model name is not set and no default model is configured.");
@@ -56,7 +56,7 @@ public class DefaultModelFallbackTests
     {
         // Arrange
         var agentDescription = new AgentDescription { AgentName = "TestAgent", ModelName = null };
-        var chatConfiguration = new ChatConfiguration(null!, []);
+        var chatConfiguration = new AppChatConfiguration(null!, []);
 
         // Act & Assert
         var exception = Assert.Throws<InvalidOperationException>(() =>

@@ -9,7 +9,7 @@ public class MarkdownChatFormatter : IChatFormatter
 {
     public ChatFormat FormatType => ChatFormat.Markdown;
 
-    public string Format(IEnumerable<ChatMessageViewModel> messages)
+    public string Format(IEnumerable<AppChatMessageViewModel> messages)
     {
         var sb = new StringBuilder();
         foreach (var msg in messages)

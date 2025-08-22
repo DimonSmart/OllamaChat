@@ -23,7 +23,7 @@
 
 @code {
     [CascadingParameter] IDialogReference DialogReference { get; set; } = null!;
-    [Parameter] public ChatMessageFile ImageFile { get; set; } = null!;
+    [Parameter] public AppChatMessageFile ImageFile { get; set; } = null!;
 
     private string GetImageDataUrl()
     {

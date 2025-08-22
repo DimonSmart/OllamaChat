@@ -13,7 +13,7 @@ using Microsoft.Extensions.AI;
 
 namespace ChatClient.Api.Client.ViewModels;
 
-public class ChatMessageViewModel
+public class AppChatMessageViewModel
 {
     public Guid Id { get; set; }
     public string RawContent { get; set; } = string.Empty;
@@ -28,7 +28,7 @@ public class ChatMessageViewModel
     public string? Statistics { get; set; }
     public bool IsStreaming { get; set; }
     public bool IsCanceled { get; set; }
-    public IReadOnlyList<ChatMessageFile> Files { get; set; } = [];
+    public IReadOnlyList<AppChatMessageFile> Files { get; set; } = [];
     public string? AgentName { get; set; }
 
     private static readonly MarkdownPipeline Pipeline = new MarkdownPipelineBuilder()
@@ -36,7 +36,7 @@ public class ChatMessageViewModel
         .UseMathematics()
         .UseSlashParensMath()
         .Build();
-    private ChatMessageViewModel Populate(IAppChatMessage message)
+    private AppChatMessageViewModel Populate(IAppChatMessage message)
     {
         Id = message.Id;
         RawContent = message.Content;
@@ -93,7 +93,7 @@ public class ChatMessageViewModel
         return this;
     }
 
-    public static ChatMessageViewModel CreateFromDomainModel(IAppChatMessage message) => new ChatMessageViewModel().Populate(message);
+    public static AppChatMessageViewModel CreateFromDomainModel(IAppChatMessage message) => new AppChatMessageViewModel().Populate(message);
 
     public void UpdateFromDomainModel(IAppChatMessage message) => Populate(message);
 }

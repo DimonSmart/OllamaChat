@@ -11,7 +11,7 @@ namespace ChatClient.Tests;
 
 public class ChatServiceTests
 {
-    private class DummyHistoryBuilder : IChatHistoryBuilder
+    private class DummyHistoryBuilder : IAppChatHistoryBuilder
     {
         public Task<ChatHistory> BuildChatHistoryAsync(IEnumerable<IAppChatMessage> messages, Kernel kernel, CancellationToken cancellationToken)
             => Task.FromResult(new ChatHistory());
@@ -20,11 +20,11 @@ public class ChatServiceTests
     [Fact]
     public void InitializeChat_NoAgents_Throws()
     {
-        var chatService = new ChatService(
+        var chatService = new AppChatService(
             kernelService: null!,
-            logger: new LoggerFactory().CreateLogger<ChatService>(),
+            logger: new LoggerFactory().CreateLogger<AppChatService>(),
             chatHistoryBuilder: new DummyHistoryBuilder(),
-            reducer: new ForceLastUserReducer());
+            reducer: new AppForceLastUserReducer());
 
         Assert.Throws<ArgumentException>(() => chatService.InitializeChat([]));
     }
@@ -32,11 +32,11 @@ public class ChatServiceTests
     [Fact]
     public void InitializeChat_SingleAgent_NoSystemMessage()
     {
-        var chatService = new ChatService(
+        var chatService = new AppChatService(
             kernelService: null!,
-            logger: new LoggerFactory().CreateLogger<ChatService>(),
+            logger: new LoggerFactory().CreateLogger<AppChatService>(),
             chatHistoryBuilder: new DummyHistoryBuilder(),
-            reducer: new ForceLastUserReducer());
+            reducer: new AppForceLastUserReducer());
 
         var prompt = new AgentDescription { AgentName = "Agent", Content = "Hello" };
         chatService.InitializeChat([prompt]);

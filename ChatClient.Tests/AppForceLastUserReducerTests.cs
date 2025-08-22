@@ -10,7 +10,7 @@ using Xunit;
 
 namespace ChatClient.Tests;
 
-public class ForceLastUserReducerTests
+public class AppForceLastUserReducerTests
 {
     [Fact]
     public async Task ReplaceAssistantWithUser()
@@ -21,7 +21,7 @@ public class ForceLastUserReducerTests
             new ChatMessageContent(AuthorRole.Assistant, "answer", "assistant")
         ];
 
-        var reducer = new ForceLastUserReducer(new NullLogger<ForceLastUserReducer>());
+        var reducer = new AppForceLastUserReducer(new NullLogger<AppForceLastUserReducer>());
         var reduced = await reducer.ReduceAsync(history);
         var last = reduced!.Last();
         Assert.Equal(AuthorRole.User, last.Role);

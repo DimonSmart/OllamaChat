@@ -61,7 +61,7 @@ public class UserSettings
     /// Defines how chat history should be prepared before sending to the LLM
     /// </summary>
     [JsonPropertyName("chatHistoryMode")]
-    public ChatHistoryMode ChatHistoryMode { get; set; } = ChatHistoryMode.None;
+    public AppChatHistoryMode ChatHistoryMode { get; set; } = AppChatHistoryMode.None;
 
     /// <summary>
     /// Embedding model used for building the function index

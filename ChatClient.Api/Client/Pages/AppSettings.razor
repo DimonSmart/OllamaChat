@@ -62,10 +62,10 @@
 
                     <MudCard Class="mb-4" Elevation="1">
                         <MudCardContent Class="pt-0">
-                            <MudSelect T="ChatHistoryMode" Label="History Processing" @bind-Value="_settings.ChatHistoryMode" Variant="Variant.Outlined" Dense="true">
-                                <MudSelectItem Value="@ChatHistoryMode.None">None</MudSelectItem>
-                                <MudSelectItem Value="@ChatHistoryMode.Truncate">Truncate</MudSelectItem>
-                                <MudSelectItem Value="@ChatHistoryMode.Summarize">Summarize</MudSelectItem>
+                            <MudSelect T="AppChatHistoryMode" Label="History Processing" @bind-Value="_settings.ChatHistoryMode" Variant="Variant.Outlined" Dense="true">
+                                <MudSelectItem Value="@AppChatHistoryMode.None">None</MudSelectItem>
+                                <MudSelectItem Value="@AppChatHistoryMode.Truncate">Truncate</MudSelectItem>
+                                <MudSelectItem Value="@AppChatHistoryMode.Summarize">Summarize</MudSelectItem>
                             </MudSelect>
                             <MudText Typo="Typo.caption" Class="mt-2">
                                 Determines how message history is prepared before sending to the model.

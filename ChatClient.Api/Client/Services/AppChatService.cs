@@ -17,18 +17,18 @@ using OllamaSharp.Models.Exceptions;
 
 namespace ChatClient.Api.Client.Services;
 
-public class ChatService(
+public class AppChatService(
     KernelService kernelService,
-    ILogger<ChatService> logger,
-    IChatHistoryBuilder chatHistoryBuilder,
-    ForceLastUserReducer reducer) : IChatService
+    ILogger<AppChatService> logger,
+    IAppChatHistoryBuilder chatHistoryBuilder,
+    AppForceLastUserReducer reducer) : IAppChatService
 {
     private CancellationTokenSource? _cancellationTokenSource;
-    private StreamingMessageManager _streamingManager = null!;
+    private AppStreamingMessageManager _streamingManager = null!;
     private readonly Dictionary<string, StreamingAppChatMessage> _activeStreams = new();
     private const string PlaceholderAgent = "__placeholder__";
     private Dictionary<string, AgentDescription> _agentsByName = new();
-    private readonly ForceLastUserReducer _reducer = reducer;
+    private readonly AppForceLastUserReducer _reducer = reducer;
 
     public event Action<bool>? AnsweringStateChanged;
     public event Action? ChatReset;
@@ -57,7 +57,7 @@ public class ChatService(
 
         Messages.Clear();
         _activeStreams.Clear();
-        _streamingManager = new StreamingMessageManager();
+        _streamingManager = new AppStreamingMessageManager();
 
         // Create lookup dictionary for agent names
         _agentsByName = agents.ToDictionary(
@@ -106,7 +106,7 @@ public class ChatService(
         _activeStreams.Clear();
     }
 
-    public async Task GenerateAnswerAsync(string text, ChatConfiguration chatConfiguration, GroupChatManager groupChatManager, IReadOnlyList<ChatMessageFile>? files = null)
+    public async Task GenerateAnswerAsync(string text, AppChatConfiguration chatConfiguration, GroupChatManager groupChatManager, IReadOnlyList<AppChatMessageFile>? files = null)
     {
         logger.LogInformation("GenerateAnswerAsync called with text length {Length}", text?.Length);
         if (string.IsNullOrWhiteSpace(text) || IsAnswering)
@@ -219,7 +219,7 @@ public class ChatService(
     private async Task<List<ChatCompletionAgent>> CreateAgents(
         string userMessage,
         TrackingFiltersScope trackingScope,
-        ChatConfiguration chatConfiguration,
+        AppChatConfiguration chatConfiguration,
         CancellationToken cancellationToken)
     {
         logger.LogInformation("Creating {AgentCount} agents", _agentsByName.Count);
@@ -371,7 +371,7 @@ public class ChatService(
         }
     }
 
-    private async Task HandleModelNotSupportingTools(ModelDoesNotSupportToolsException ex, ChatConfiguration chatConfiguration)
+    private async Task HandleModelNotSupportingTools(ModelDoesNotSupportToolsException ex, AppChatConfiguration chatConfiguration)
     {
         logger.LogWarning(ex, "Model {ModelName} does not support function calling", chatConfiguration.ModelName);
 
