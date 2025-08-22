@@ -24,11 +24,14 @@ public class KernelService(
         _mcpClientService = mcpClientService;
     }
 
-    public async Task<IReadOnlyCollection<string>> GetFunctionsToRegisterAsync(FunctionSettings functionSettings, string? userQuery)
+    public async Task<IReadOnlyCollection<string>> GetFunctionsToRegisterAsync(
+        FunctionSettings functionSettings,
+        string? userQuery,
+        CancellationToken cancellationToken = default)
     {
         if (functionSettings.AutoSelectCount > 0 && !string.IsNullOrWhiteSpace(userQuery))
         {
-            return await _indexService.SelectRelevantFunctionsAsync(userQuery, functionSettings.AutoSelectCount);
+            return await _indexService.SelectRelevantFunctionsAsync(userQuery, functionSettings.AutoSelectCount, cancellationToken);
         }
 
         if (functionSettings.SelectedFunctions.Any())
@@ -39,14 +42,18 @@ public class KernelService(
         return [];
     }
 
-    public async Task<Kernel> CreateKernelAsync(string modelName, IEnumerable<string>? functionsToRegister, string agentName)
+    public async Task<Kernel> CreateKernelAsync(
+        string modelName,
+        IEnumerable<string>? functionsToRegister,
+        string agentName,
+        CancellationToken cancellationToken = default)
     {
         var settings = await userSettingsService.GetSettingsAsync();
         var kernel = await CreateBasicKernelAsync(modelName, TimeSpan.FromSeconds(settings.HttpTimeoutSeconds), agentName);
 
         if (functionsToRegister != null && functionsToRegister.Any() && _mcpClientService != null)
         {
-            await RegisterMcpToolsAsync(kernel, functionsToRegister);
+            await RegisterMcpToolsAsync(kernel, functionsToRegister, cancellationToken);
         }
 
         return kernel;
@@ -101,7 +108,10 @@ public class KernelService(
         return httpClient;
     }
 
-    private async Task RegisterMcpToolsAsync(Kernel kernel, IEnumerable<string> functionNames)
+    private async Task RegisterMcpToolsAsync(
+        Kernel kernel,
+        IEnumerable<string> functionNames,
+        CancellationToken cancellationToken)
     {
         if (_mcpClientService == null)
         {
@@ -111,7 +121,7 @@ public class KernelService(
 
         try
         {
-            var mcpClients = await _mcpClientService.GetMcpClientsAsync();
+            var mcpClients = await _mcpClientService.GetMcpClientsAsync(cancellationToken);
             if (mcpClients.Count == 0)
             {
                 logger.LogWarning("MCP client could not be created");
@@ -120,7 +130,8 @@ public class KernelService(
 
             foreach (var mcpClient in mcpClients)
             {
-                var mcpTools = await _mcpClientService.GetMcpTools(mcpClient);
+                cancellationToken.ThrowIfCancellationRequested();
+                var mcpTools = await _mcpClientService.GetMcpTools(mcpClient, cancellationToken);
                 if (mcpTools.Count == 0)
                 {
                     logger.LogWarning($"No MCP tools available to register for server: {mcpClient.ServerInfo.Name} ");
