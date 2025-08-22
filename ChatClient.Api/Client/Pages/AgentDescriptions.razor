@@ -236,7 +236,15 @@
             {
                 <MudDivider Class="my-4" />
                 <MudText Typo="Typo.subtitle1" Class="mb-2">RAG Files</MudText>
-                <MudFileUpload T="IReadOnlyList<IBrowserFile>" OnFilesChanged="UploadFiles" />
+                <div class="rag-drop-wrapper mt-2">
+                    <MudFileUpload T="IReadOnlyList<IBrowserFile>"
+                                   OnFilesChanged="UploadFiles"
+                                   Hidden="false"
+                                   InputClass="rag-drop-input" />
+                    <div class="rag-drop-overlay">
+                        <MudText Typo="Typo.body2" Class="mud-text-secondary">Drag and drop files here or click to browse</MudText>
+                    </div>
+                </div>
                 <MudTable Items="@ragFiles" Dense="true" Bordered="true" Class="mt-2">
                     <HeaderContent>
                         <MudTh>File</MudTh>
