@@ -1,5 +1,4 @@
 #pragma warning disable SKEXP0050
-using System.Text;
 using System.Text.Json;
 
 using ChatClient.Shared.Models;
@@ -41,22 +40,16 @@ public sealed class RagVectorIndexService(
 
         var fragments = new List<RagVectorFragment>();
         var fragmentIndex = 0;
-        var searchOffset = 0;
         foreach (var paragraph in paragraphs)
         {
             var embedding = await generator.GenerateAsync(paragraph, cancellationToken: cancellationToken);
-            var charIndex = text.IndexOf(paragraph, searchOffset, StringComparison.Ordinal);
-            var offset = Encoding.UTF8.GetByteCount(text.AsSpan(0, charIndex));
-            var length = Encoding.UTF8.GetByteCount(paragraph);
             fragments.Add(new RagVectorFragment
             {
                 Id = $"{Path.GetFileName(sourceFilePath)}#{fragmentIndex:D5}",
-                Offset = offset,
-                Length = length,
+                Text = paragraph,
                 Vector = embedding.Vector.ToArray()
             });
             fragmentIndex++;
-            searchOffset = charIndex + paragraph.Length;
         }
 
         var info = new FileInfo(sourceFilePath);
