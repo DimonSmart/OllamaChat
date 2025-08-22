@@ -28,14 +28,19 @@ public sealed class RagVectorSearchService(
     {
         var collection = CollectionName(agentId);
 
-        var matches = await _store.GetNearestMatchesAsync(
-            collection: collection,
-            embedding: queryVector,
-            limit: Math.Max(maxResults * 8, maxResults),
+        var matches = new List<(MemoryRecord, double)>();
+        await foreach (var match in _store.GetNearestMatchesAsync(
+            collection,
+            queryVector,
+            Math.Max(maxResults * 8, maxResults),
             minRelevanceScore: 0.0,
-            cancellationToken: ct);
+            withEmbeddings: false,
+            cancellationToken: ct))
+        {
+            matches.Add(match);
+        }
 
-        if (matches is null || matches.Count == 0)
+        if (matches.Count == 0)
             return [];
 
         var pieces = matches
@@ -129,12 +134,12 @@ public sealed class RagVectorSearchService(
                     if (cur is not null)
                         result.Add(cur);
                     cur = new Segment(
-                        File: p.File,
-                        StartIndex: p.Index,
-                        EndIndex: p.Index,
-                        StartOffset: p.Offset,
-                        EndOffset: p.Offset + p.Length,
-                        Score: p.Score);
+                        file: p.File,
+                        startIndex: p.Index,
+                        endIndex: p.Index,
+                        startOffset: p.Offset,
+                        endOffset: p.Offset + p.Length,
+                        score: p.Score);
                 }
             }
 
@@ -147,6 +152,24 @@ public sealed class RagVectorSearchService(
 
     private sealed record Metadata(string file, int index, long offset, int length);
     private sealed record Piece(string File, int Index, long Offset, int Length, double Score);
-    private sealed record Segment(string File, int StartIndex, int EndIndex, long StartOffset, long EndOffset, double Score);
+    private sealed class Segment
+    {
+        public string File { get; }
+        public int StartIndex { get; set; }
+        public int EndIndex { get; set; }
+        public long StartOffset { get; set; }
+        public long EndOffset { get; set; }
+        public double Score { get; set; }
+
+        public Segment(string file, int startIndex, int endIndex, long startOffset, long endOffset, double score)
+        {
+            File = file;
+            StartIndex = startIndex;
+            EndIndex = endIndex;
+            StartOffset = startOffset;
+            EndOffset = endOffset;
+            Score = score;
+        }
+    }
 }
 

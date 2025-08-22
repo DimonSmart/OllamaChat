@@ -53,7 +53,7 @@ public class RagVectorSearchServiceTests
     {
         var meta = JsonSerializer.Serialize(new { file, index, offset, length });
         var record = new MemoryRecord(
-            new MemoryRecordMetadata(false, $"{file}#{index:D5}", null, null, null, meta),
+            new MemoryRecordMetadata(false, $"{file}#{index:D5}", null!, null!, null!, meta),
             new ReadOnlyMemory<float>(vector),
             $"{file}#{index:D5}",
             null);
