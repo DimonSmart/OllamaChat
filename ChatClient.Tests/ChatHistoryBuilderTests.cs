@@ -20,7 +20,7 @@ public class ChatHistoryBuilderTests
     [Fact]
     public async Task BuildChatHistoryAsync_LastAssistantBecomesUser()
     {
-        var builder = new ChatHistoryBuilder(new DummySettingsService(), new LoggerFactory().CreateLogger<ChatHistoryBuilder>(), new ForceLastUserReducer());
+        var builder = new AppChatHistoryBuilder(new DummySettingsService(), new LoggerFactory().CreateLogger<AppChatHistoryBuilder>(), new AppForceLastUserReducer());
         var messages = new List<IAppChatMessage>
         {
             new AppChatMessage("hi", DateTime.UtcNow, ChatRole.User),
@@ -34,7 +34,7 @@ public class ChatHistoryBuilderTests
     [Fact]
     public void BuildBaseHistory_PreservesOrder()
     {
-        var builder = new ChatHistoryBuilder(new DummySettingsService(), new LoggerFactory().CreateLogger<ChatHistoryBuilder>(), new ForceLastUserReducer());
+        var builder = new AppChatHistoryBuilder(new DummySettingsService(), new LoggerFactory().CreateLogger<AppChatHistoryBuilder>(), new AppForceLastUserReducer());
         var messages = new List<IAppChatMessage>
         {
             new AppChatMessage("first", DateTime.UtcNow.AddMinutes(2), ChatRole.User),
@@ -51,7 +51,7 @@ public class ChatHistoryBuilderTests
     [Fact]
     public void BuildBaseHistory_IncludesStreamingMessage()
     {
-        var builder = new ChatHistoryBuilder(new DummySettingsService(), new LoggerFactory().CreateLogger<ChatHistoryBuilder>(), new ForceLastUserReducer());
+        var builder = new AppChatHistoryBuilder(new DummySettingsService(), new LoggerFactory().CreateLogger<AppChatHistoryBuilder>(), new AppForceLastUserReducer());
         var messages = new List<IAppChatMessage>
         {
             new AppChatMessage("hi", DateTime.UtcNow, ChatRole.User),

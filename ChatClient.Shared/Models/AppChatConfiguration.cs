@@ -1,5 +1,5 @@
 namespace ChatClient.Shared.Models;
 
-public record ChatConfiguration(
+public record AppChatConfiguration(
     string ModelName,
     IReadOnlyCollection<string> Functions);

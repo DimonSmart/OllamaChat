@@ -12,7 +12,7 @@ namespace ChatClient.Tests;
 
 public class ChatViewModelServiceTests
 {
-    private class StubChatService : IChatService
+    private class StubChatService : IAppChatService
     {
         public bool IsAnswering => false;
         public IReadOnlyCollection<AgentDescription> AgentDescriptions { get; } = [];
@@ -28,7 +28,7 @@ public class ChatViewModelServiceTests
         public void ResetChat() { }
         public Task CancelAsync() => Task.CompletedTask;
 #pragma warning disable SKEXP0110
-        public Task GenerateAnswerAsync(string text, ChatConfiguration chatConfiguration, GroupChatManager groupChatManager, IReadOnlyList<ChatMessageFile> files) => Task.CompletedTask;
+        public Task GenerateAnswerAsync(string text, AppChatConfiguration chatConfiguration, GroupChatManager groupChatManager, IReadOnlyList<AppChatMessageFile> files) => Task.CompletedTask;
 #pragma warning restore SKEXP0110
         public Task DeleteMessageAsync(Guid id) => Task.CompletedTask;
 

@@ -9,7 +9,7 @@ public class HtmlChatFormatter : IChatFormatter
 {
     public ChatFormat FormatType => ChatFormat.Html;
 
-    public string Format(IEnumerable<ChatMessageViewModel> messages)
+    public string Format(IEnumerable<AppChatMessageViewModel> messages)
     {
         var sb = new StringBuilder();
         sb.AppendLine("<div class=\"chat-transcript\">");

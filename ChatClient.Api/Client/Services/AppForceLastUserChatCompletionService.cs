@@ -4,7 +4,7 @@ using Microsoft.SemanticKernel.ChatCompletion;
 
 namespace ChatClient.Api.Client.Services;
 
-public sealed class ForceLastUserChatCompletionService(IChatCompletionService inner, ForceLastUserReducer reducer) : IChatCompletionService
+public sealed class AppForceLastUserChatCompletionService(IChatCompletionService inner, AppForceLastUserReducer reducer) : IChatCompletionService
 {
     public IReadOnlyDictionary<string, object?> Attributes => inner.Attributes;
 

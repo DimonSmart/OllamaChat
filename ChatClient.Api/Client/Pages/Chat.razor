@@ -21,7 +21,7 @@
 @inject NavigationManager NavigationManager
 @inject IDialogService DialogService
 @inject IChatViewModelService ChatViewModelService
-@inject IChatService ChatService
+@inject IAppChatService ChatService
 @inject IAgentDescriptionService AgentService
 @inject IUserSettingsService UserSettingsService
 @inject IStopAgentFactory StopAgentFactory
@@ -227,9 +227,9 @@
 
     private StreamingDebouncer _renderDebouncer = null!;
 
-    private Func<ChatMessageViewModel, Task>? _messageAddedHandler;
-    private Func<ChatMessageViewModel, bool, Task>? _messageUpdatedHandler;
-    private Func<ChatMessageViewModel, Task>? _messageDeletedHandler;
+    private Func<AppChatMessageViewModel, Task>? _messageAddedHandler;
+    private Func<AppChatMessageViewModel, bool, Task>? _messageUpdatedHandler;
+    private Func<AppChatMessageViewModel, Task>? _messageDeletedHandler;
 
     protected override async Task OnInitializedAsync()
     {
@@ -259,17 +259,17 @@
         StateHasChanged();
     }
 
-    private async Task OnMessageAdded(ChatMessageViewModel message)
+    private async Task OnMessageAdded(AppChatMessageViewModel message)
     {
         StateHasChanged();
         await ScrollToBottom();
     }    
-    private Task OnMessageUpdated(ChatMessageViewModel message, bool forceRender)
+    private Task OnMessageUpdated(AppChatMessageViewModel message, bool forceRender)
     {
         return _renderDebouncer.TriggerAsync(forceRender);
     }
 
-    private void OnMessageDeleted(ChatMessageViewModel message)
+    private void OnMessageDeleted(AppChatMessageViewModel message)
     {
         StateHasChanged();
     }
@@ -308,13 +308,13 @@
         StateHasChanged();
     }
 
-    private async Task SendChatMessageAsync((string text, IReadOnlyList<ChatMessageFile> files) messageData)
+    private async Task SendChatMessageAsync((string text, IReadOnlyList<AppChatMessageFile> files) messageData)
     {
         if (string.IsNullOrWhiteSpace(messageData.text) || isLLMAnswering) return;
         if (selectedAgent == null) return;
 
         var functions = selectedAgent.FunctionSettings.SelectedFunctions ?? [];
-        var chatConfiguration = new ChatConfiguration(SelectedModel?.Name, functions);
+        var chatConfiguration = new AppChatConfiguration(SelectedModel?.Name, functions);
         var options = new RoundRobinStopAgentOptions { Rounds = 1 };
         var groupChatManager = StopAgentFactory.Create("RoundRobin", options);
         await ChatService.GenerateAnswerAsync(messageData.text.Trim(), chatConfiguration, groupChatManager, messageData.files);
@@ -337,7 +337,7 @@
     {        ChatService.CancelAsync();
     }
 
-    private async Task DeleteMessage(ChatMessageViewModel message)
+    private async Task DeleteMessage(AppChatMessageViewModel message)
     {
         if (isLLMAnswering)
             return;
@@ -345,12 +345,12 @@
         await ChatService.DeleteMessageAsync(message.Id);
     }
 
-    private async Task CopyVisibleMessage(ChatMessageViewModel message)
+    private async Task CopyVisibleMessage(AppChatMessageViewModel message)
     {
         await JSRuntime.InvokeVoidAsync("copyText", message.Content);
     }
 
-    private async Task CopyRawMessage(ChatMessageViewModel message)
+    private async Task CopyRawMessage(AppChatMessageViewModel message)
     {
         if (!string.IsNullOrEmpty(message.RawContent))
         {
@@ -409,10 +409,10 @@
         return contentType.ToLower().StartsWith("image/");
     }
 
-    private string GetImageDataUrl(ChatMessageFile file)
+    private string GetImageDataUrl(AppChatMessageFile file)
     {
         return $"data:{file.ContentType};base64,{Convert.ToBase64String(file.Data)}";
-    }    private async Task ShowFullSizeImage(ChatMessageFile file)
+    }    private async Task ShowFullSizeImage(AppChatMessageFile file)
     {
         var parameters = new DialogParameters
         {

@@ -40,9 +40,9 @@ public partial class PhilosopherDebateTests
 
         StubOllamaHandler handler = new(_output);
         HttpClient httpClient = new(handler) { BaseAddress = new Uri("http://localhost") };
-        var reducer = new ForceLastUserReducer(loggerFactory.CreateLogger<ForceLastUserReducer>());
+        var reducer = new AppForceLastUserReducer(loggerFactory.CreateLogger<AppForceLastUserReducer>());
         HttpChatCompletionService service = new(httpClient, _output);
-        var wrappedService = new ForceLastUserChatCompletionService(service, reducer);
+        var wrappedService = new AppForceLastUserChatCompletionService(service, reducer);
 
         IKernelBuilder builder = Kernel.CreateBuilder();
         builder.Services.AddSingleton<IChatCompletionService>(wrappedService);

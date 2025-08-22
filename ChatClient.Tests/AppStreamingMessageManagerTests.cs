@@ -5,13 +5,13 @@ using Microsoft.Extensions.AI;
 
 namespace ChatClient.Tests;
 
-public class StreamingMessageManagerTests
+public class AppStreamingMessageManagerTests
 {
 
     [Fact]
     public void CancelStreaming_WithContent_AppendsCancelMessage()
     {
-        var manager = new StreamingMessageManager();
+        var manager = new AppStreamingMessageManager();
         var streamingMessage = new StreamingAppChatMessage("Hello", DateTime.Now, ChatRole.Assistant);
         streamingMessage.Append(" world");
 
@@ -24,7 +24,7 @@ public class StreamingMessageManagerTests
     [Fact]
     public void CompleteStreaming_PreservesCanceledStatus()
     {
-        var manager = new StreamingMessageManager();
+        var manager = new AppStreamingMessageManager();
         var streamingMessage = new StreamingAppChatMessage("Hello", DateTime.Now, ChatRole.Assistant);
         streamingMessage.SetCanceled();
 
@@ -38,7 +38,7 @@ public class StreamingMessageManagerTests
     [Fact]
     public void CompleteStreaming_PreservesAgentName()
     {
-        var manager = new StreamingMessageManager();
+        var manager = new AppStreamingMessageManager();
         var streamingMessage = new StreamingAppChatMessage("Hello", DateTime.Now, ChatRole.Assistant, agentName: "Agent1");
 
         var finalMessage = manager.CompleteStreaming(streamingMessage);

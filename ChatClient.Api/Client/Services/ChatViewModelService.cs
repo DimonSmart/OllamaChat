@@ -5,20 +5,20 @@ namespace ChatClient.Api.Client.Services;
 
 public class ChatViewModelService : IChatViewModelService
 {
-    private readonly IChatService _chatService;
-    private readonly List<ChatMessageViewModel> _messages = [];
+    private readonly IAppChatService _chatService;
+    private readonly List<AppChatMessageViewModel> _messages = [];
 
-    public IReadOnlyList<ChatMessageViewModel> Messages => _messages;
+    public IReadOnlyList<AppChatMessageViewModel> Messages => _messages;
 
     public event Action<bool>? AnsweringStateChanged;
     public event Action? ChatReset;
-    public event Func<ChatMessageViewModel, Task>? MessageAdded;
-    public event Func<ChatMessageViewModel, bool, Task>? MessageUpdated;
-    public event Func<ChatMessageViewModel, Task>? MessageDeleted;
+    public event Func<AppChatMessageViewModel, Task>? MessageAdded;
+    public event Func<AppChatMessageViewModel, bool, Task>? MessageUpdated;
+    public event Func<AppChatMessageViewModel, Task>? MessageDeleted;
 
     public bool IsAnswering => _chatService.IsAnswering;
 
-    public ChatViewModelService(IChatService chatService)
+    public ChatViewModelService(IAppChatService chatService)
     {
         _chatService = chatService;
         _chatService.AnsweringStateChanged += async isAnswering => await OnAnsweringStateChanged(isAnswering);
@@ -30,7 +30,7 @@ public class ChatViewModelService : IChatViewModelService
 
     private async Task OnMessageAdded(IAppChatMessage domainMessage)
     {
-        var viewModel = ChatMessageViewModel.CreateFromDomainModel(domainMessage);
+        var viewModel = AppChatMessageViewModel.CreateFromDomainModel(domainMessage);
         _messages.Add(viewModel);
         await (MessageAdded?.Invoke(viewModel) ?? Task.CompletedTask);
     }

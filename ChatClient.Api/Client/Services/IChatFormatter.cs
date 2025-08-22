@@ -6,5 +6,5 @@ namespace ChatClient.Api.Client.Services;
 public interface IChatFormatter
 {
     ChatFormat FormatType { get; }
-    string Format(IEnumerable<ChatMessageViewModel> messages);
+    string Format(IEnumerable<AppChatMessageViewModel> messages);
 }

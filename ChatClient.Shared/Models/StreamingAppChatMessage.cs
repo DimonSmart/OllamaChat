@@ -13,7 +13,7 @@ public class StreamingAppChatMessage(string initialContent, DateTime msgDateTime
     public ChatRole Role { get; private set; } = role;
     public string? Statistics { get; private set; } = string.Empty;
     public bool IsCanceled { get; private set; }
-    public IReadOnlyList<ChatMessageFile> Files { get; private set; } = [];
+    public IReadOnlyList<AppChatMessageFile> Files { get; private set; } = [];
     private readonly List<FunctionCallRecord> _functionCalls = functionCalls ?? [];
     public IReadOnlyCollection<FunctionCallRecord> FunctionCalls => _functionCalls.AsReadOnly();
     public string? AgentName { get; private set; } = agentName;
