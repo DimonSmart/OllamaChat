@@ -43,6 +43,8 @@ builder.Services.AddSingleton<ChatClient.Api.Services.IAppChatHistoryBuilder, Ch
 builder.Services.AddScoped<ChatClient.Api.Services.StartupOllamaChecker>();
 builder.Services.AddSingleton<ChatClient.Shared.Services.IAgentDescriptionService, ChatClient.Api.Services.AgentDescriptionService>();
 builder.Services.AddSingleton<ChatClient.Shared.Services.IUserSettingsService, ChatClient.Api.Services.UserSettingsService>();
+builder.Services.AddSingleton<ChatClient.Shared.Services.IRagFileService, ChatClient.Api.Services.RagFileService>();
+builder.Services.AddSingleton<ChatClient.Api.Services.IFileConverter, ChatClient.Api.Services.NoOpFileConverter>();
 builder.Services.AddScoped<ChatClient.Api.Client.Services.IAppChatService, ChatClient.Api.Client.Services.AppChatService>();
 builder.Services.AddScoped<ChatClient.Api.Client.Services.IChatViewModelService, ChatClient.Api.Client.Services.ChatViewModelService>();
 builder.Services.AddSingleton<ChatClient.Api.Client.Services.IStopAgentFactory, ChatClient.Api.Client.Services.StopAgentFactory>();
