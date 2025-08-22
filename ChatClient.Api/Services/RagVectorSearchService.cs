@@ -4,7 +4,6 @@ using System.Text.Json;
 using ChatClient.Shared.Models;
 using ChatClient.Shared.Services;
 
-using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using Microsoft.SemanticKernel.Memory;
 
@@ -12,13 +11,10 @@ namespace ChatClient.Api.Services;
 
 public sealed class RagVectorSearchService(
     IMemoryStore store,
-    IConfiguration configuration,
     ILogger<RagVectorSearchService> logger) : IRagVectorSearchService
 {
     private readonly IMemoryStore _store = store;
     private readonly ILogger<RagVectorSearchService> _logger = logger;
-    private readonly string _basePath =
-        configuration["RagFiles:BasePath"] ?? Path.Combine("Data", "agents");
 
     public async Task<IReadOnlyList<RagSearchResult>> SearchAsync(
         Guid agentId,
@@ -52,36 +48,13 @@ public sealed class RagVectorSearchService(
         if (pieces.Count == 0)
             return [];
 
-        var segments = MergeAdjacent(pieces)
+        var results = MergeAdjacent(pieces)
             .OrderByDescending(s => s.Score)
             .Take(maxResults)
+            .Select(s => new RagSearchResult { FileName = s.File, Content = s.Text.ToString() })
             .ToList();
 
-        var filesRoot = Path.Combine(_basePath, agentId.ToString("D"), "files");
-        var fileCache = new Dictionary<string, byte[]>(StringComparer.OrdinalIgnoreCase);
-        var results = new List<RagSearchResult>(segments.Count);
-
-        foreach (var seg in segments)
-        {
-            if (!fileCache.TryGetValue(seg.File, out var bytes))
-            {
-                var path = Path.Combine(filesRoot, seg.File);
-                if (!File.Exists(path))
-                    continue;
-                bytes = await File.ReadAllBytesAsync(path, ct);
-                fileCache[seg.File] = bytes;
-            }
-
-            var start = (int)Math.Clamp(seg.StartOffset, 0, bytes.Length);
-            var end = (int)Math.Clamp(seg.EndOffset, 0, bytes.Length);
-            if (end <= start)
-                continue;
-
-            var text = Encoding.UTF8.GetString(bytes.AsSpan(start, end - start));
-            results.Add(new RagSearchResult { FileName = seg.File, Content = text });
-        }
-
-        _logger.LogDebug("RAG search: agent={AgentId} pieces={Pieces} segments={Segments}", agentId, pieces.Count, segments.Count);
+        _logger.LogDebug("RAG search: agent={AgentId} pieces={Pieces} segments={Segments}", agentId, pieces.Count, results.Count);
         return results;
     }
 
@@ -102,8 +75,7 @@ public sealed class RagVectorSearchService(
             return new Piece(
                 File: meta.file,
                 Index: meta.index,
-                Offset: meta.offset,
-                Length: meta.length,
+                Text: meta.text,
                 Score: score);
         }
         catch
@@ -125,8 +97,7 @@ public sealed class RagVectorSearchService(
                 if (cur is not null && p.Index == cur.EndIndex + 1)
                 {
                     cur.EndIndex = p.Index;
-                    cur.EndOffset = Math.Max(cur.EndOffset, p.Offset + p.Length);
-                    cur.StartOffset = Math.Min(cur.StartOffset, p.Offset);
+                    cur.Text.Append(p.Text);
                     cur.Score = Math.Max(cur.Score, p.Score);
                 }
                 else
@@ -137,8 +108,7 @@ public sealed class RagVectorSearchService(
                         file: p.File,
                         startIndex: p.Index,
                         endIndex: p.Index,
-                        startOffset: p.Offset,
-                        endOffset: p.Offset + p.Length,
+                        text: new StringBuilder(p.Text),
                         score: p.Score);
                 }
             }
@@ -150,24 +120,22 @@ public sealed class RagVectorSearchService(
         return result;
     }
 
-    private sealed record Metadata(string file, int index, long offset, int length);
-    private sealed record Piece(string File, int Index, long Offset, int Length, double Score);
+    private sealed record Metadata(string file, int index, string text);
+    private sealed record Piece(string File, int Index, string Text, double Score);
     private sealed class Segment
     {
         public string File { get; }
         public int StartIndex { get; set; }
         public int EndIndex { get; set; }
-        public long StartOffset { get; set; }
-        public long EndOffset { get; set; }
+        public StringBuilder Text { get; }
         public double Score { get; set; }
 
-        public Segment(string file, int startIndex, int endIndex, long startOffset, long endOffset, double score)
+        public Segment(string file, int startIndex, int endIndex, StringBuilder text, double score)
         {
             File = file;
             StartIndex = startIndex;
             EndIndex = endIndex;
-            StartOffset = startOffset;
-            EndOffset = endOffset;
+            Text = text;
             Score = score;
         }
     }
