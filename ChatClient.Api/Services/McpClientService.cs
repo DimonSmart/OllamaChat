@@ -16,7 +16,7 @@ public class McpClientService(
 {
     private List<IMcpClient>? _mcpClients = null;
 
-    public async Task<IReadOnlyCollection<IMcpClient>> GetMcpClientsAsync()
+    public async Task<IReadOnlyCollection<IMcpClient>> GetMcpClientsAsync(CancellationToken cancellationToken = default)
     {
         if (_mcpClients != null)
             return _mcpClients;
@@ -32,6 +32,7 @@ public class McpClientService(
 
         foreach (var serverConfig in mcpServerConfigs)
         {
+            cancellationToken.ThrowIfCancellationRequested();
             if (string.IsNullOrWhiteSpace(serverConfig.Name))
             {
                 logger.LogWarning("MCP server name is null or empty");
@@ -41,9 +42,9 @@ public class McpClientService(
             logger.LogInformation("Creating MCP client for server: {ServerName}", serverConfig.Name);
 
             if (!string.IsNullOrWhiteSpace(serverConfig.Command))
-                _mcpClients.Add(await CreateLocalMcpClientAsync(serverConfig));
+                _mcpClients.Add(await CreateLocalMcpClientAsync(serverConfig, cancellationToken));
             if (!string.IsNullOrWhiteSpace(serverConfig.Sse))
-                await AddSseClient(serverConfig);
+                await AddSseClient(serverConfig, cancellationToken);
 
             logger.LogInformation("MCP client created successfully for server: {ServerName}", serverConfig.Name);
         }
@@ -51,12 +52,13 @@ public class McpClientService(
     }
 
 
-    private async Task AddSseClient(McpServerConfig serverConfig)
+    private async Task AddSseClient(McpServerConfig serverConfig, CancellationToken cancellationToken)
     {
         try
         {
+            cancellationToken.ThrowIfCancellationRequested();
             var httpTransport = new SseClientTransport(new SseClientTransportOptions { Endpoint = new Uri(serverConfig.Sse!) });
-            var clientOptions = await CreateClientOptionsAsync(serverConfig);
+            var clientOptions = await CreateClientOptionsAsync(serverConfig, cancellationToken);
             var client = await McpClientFactory.CreateAsync(httpTransport, clientOptions);
             if (_mcpClients != null && client != null)
             {
@@ -69,7 +71,7 @@ public class McpClientService(
         }
     }
 
-    private async Task<IMcpClient> CreateLocalMcpClientAsync(McpServerConfig config)
+    private async Task<IMcpClient> CreateLocalMcpClientAsync(McpServerConfig config, CancellationToken cancellationToken)
     {
         if (string.IsNullOrEmpty(config.Command))
         {
@@ -79,7 +81,7 @@ public class McpClientService(
         // Use the application's executable directory as working directory instead of Environment.CurrentDirectory
         // This prevents MCP processes from accidentally changing the main application's working directory
         var applicationDirectory = AppContext.BaseDirectory;
-        var clientOptions = await CreateClientOptionsAsync(config);
+        var clientOptions = await CreateClientOptionsAsync(config, cancellationToken);
 
         return await McpClientFactory.CreateAsync(
             clientTransport: new StdioClientTransport(new StdioClientTransportOptions
@@ -93,11 +95,11 @@ public class McpClientService(
         );
     }
 
-    public async Task<IReadOnlyList<McpClientTool>> GetMcpTools(IMcpClient mcpClient)
+    public async Task<IReadOnlyList<McpClientTool>> GetMcpTools(IMcpClient mcpClient, CancellationToken cancellationToken = default)
     {
         try
         {
-            var tools = await mcpClient.ListToolsAsync();
+            var tools = await mcpClient.ListToolsAsync(cancellationToken: cancellationToken);
             logger.LogInformation("Retrieved {Count} tools from MCP server", tools.Count);
             return tools.ToList();
         }
@@ -136,7 +138,7 @@ public class McpClientService(
     /// <summary>
     /// Creates client options that declare sampling capabilities and register the sampling handler
     /// </summary>
-    private async Task<McpClientOptions> CreateClientOptionsAsync(McpServerConfig serverConfig)
+    private async Task<McpClientOptions> CreateClientOptionsAsync(McpServerConfig serverConfig, CancellationToken cancellationToken)
     {
         var settings = await userSettingsService.GetSettingsAsync();
         return new McpClientOptions

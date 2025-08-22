@@ -61,10 +61,11 @@ public class McpFunctionIndexService
                 return;
             }
 
-            var clients = await _clientService.GetMcpClientsAsync();
+            var clients = await _clientService.GetMcpClientsAsync(cancellationToken);
             foreach (var client in clients)
             {
-                var tools = await _clientService.GetMcpTools(client);
+                cancellationToken.ThrowIfCancellationRequested();
+                var tools = await _clientService.GetMcpTools(client, cancellationToken);
                 foreach (var tool in tools)
                 {
                     string text = $"{tool.Name}. {tool.Description}";

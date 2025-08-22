@@ -131,7 +131,7 @@ public class ChatService(
             var runtime = new InProcessRuntime();
             await runtime.StartAsync(_cancellationTokenSource.Token);
 
-            var agents = await CreateAgents(text, trackingScope, chatConfiguration);
+            var agents = await CreateAgents(text, trackingScope, chatConfiguration, _cancellationTokenSource.Token);
 
             OrchestrationInputTransform<string> inputTransform = async (_, ct) =>
             {
@@ -216,16 +216,21 @@ public class ChatService(
     private Task NotifyMessageAddedAsync(IAppChatMessage message) =>
         MessageAdded?.Invoke(message) ?? Task.CompletedTask;
 
-    private async Task<List<ChatCompletionAgent>> CreateAgents(string userMessage, TrackingFiltersScope trackingScope, ChatConfiguration chatConfiguration)
+    private async Task<List<ChatCompletionAgent>> CreateAgents(
+        string userMessage,
+        TrackingFiltersScope trackingScope,
+        ChatConfiguration chatConfiguration,
+        CancellationToken cancellationToken)
     {
         logger.LogInformation("Creating {AgentCount} agents", _agentsByName.Count);
         var agents = new List<ChatCompletionAgent>();
 
         foreach (var desc in _agentsByName.Values)
         {
-            var functionsToRegister = await kernelService.GetFunctionsToRegisterAsync(desc.FunctionSettings, userMessage);
+            cancellationToken.ThrowIfCancellationRequested();
+            var functionsToRegister = await kernelService.GetFunctionsToRegisterAsync(desc.FunctionSettings, userMessage, cancellationToken);
             var modelName = desc.ModelName ?? chatConfiguration.ModelName ?? throw new InvalidOperationException($"Agent '{desc.AgentName}' model name is not set and no default model is configured.");
-            var agentKernel = await kernelService.CreateKernelAsync(modelName, functionsToRegister, desc.AgentName);
+            var agentKernel = await kernelService.CreateKernelAsync(modelName, functionsToRegister, desc.AgentName, cancellationToken);
 
             var agentName = desc.AgentId;
 
