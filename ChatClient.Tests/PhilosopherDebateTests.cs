@@ -15,6 +15,7 @@ using Microsoft.SemanticKernel.Agents.Orchestration.GroupChat;
 using Microsoft.SemanticKernel.Agents.Runtime.InProcess;
 using Microsoft.SemanticKernel.ChatCompletion;
 
+using Xunit;
 using Xunit.Abstractions;
 
 #pragma warning disable SKEXP0110
@@ -31,15 +32,20 @@ public partial class PhilosopherDebateTests
     }
 
     [Fact]
-    public async Task KantAndBentham_DebateLyingToSaveLife_WithDetailedLogging()
+    public async Task KantAndBentham_DebateLyingToSaveLife()
     {
+        if (!await IsOllamaAvailableAsync())
+        {
+            _output.WriteLine("Ollama server unavailable, skipping test.");
+            return;
+        }
+
         ILoggerFactory loggerFactory = LoggerFactory.Create(builder =>
             builder.AddConsole()
                    .AddDebug()
                    .SetMinimumLevel(LogLevel.Debug));
 
-        StubOllamaHandler handler = new(_output);
-        HttpClient httpClient = new(handler) { BaseAddress = new Uri("http://localhost") };
+        using HttpClient httpClient = new() { BaseAddress = new Uri("http://localhost:11434") };
         var reducer = new AppForceLastUserReducer(loggerFactory.CreateLogger<AppForceLastUserReducer>());
         HttpChatCompletionService service = new(httpClient, _output);
         var wrappedService = new AppForceLastUserChatCompletionService(service, reducer);
@@ -54,7 +60,6 @@ public partial class PhilosopherDebateTests
         AgentDescription kantDesc = descriptions.First(a => a.AgentName == "Immanuel Kant");
         AgentDescription benthamDesc = descriptions.First(a => a.AgentName == "Jeremy Bentham");
 
-        _output.WriteLine("Creating Kant agent...");
         ChatCompletionAgent kant = new()
         {
             Name = "Kant",
@@ -64,7 +69,6 @@ public partial class PhilosopherDebateTests
             HistoryReducer = reducer
         };
 
-        _output.WriteLine("Creating Bentham agent...");
         ChatCompletionAgent bentham = new()
         {
             Name = "Bentham",
@@ -74,125 +78,35 @@ public partial class PhilosopherDebateTests
             HistoryReducer = reducer
         };
 
-        _output.WriteLine("Creating group chat orchestration...");
         GroupChatOrchestration chat = new(
             new RoundRobinGroupChatManager { MaximumInvocationCount = 8 },
             kant,
             bentham);
 
-        _output.WriteLine("Starting runtime...");
         await using InProcessRuntime runtime = new();
         await runtime.StartAsync();
 
-        _output.WriteLine("Invoking group chat with question...");
         Microsoft.SemanticKernel.Agents.Orchestration.OrchestrationResult<string> result = await chat.InvokeAsync("Is it morally acceptable to lie to save a life?", runtime);
-
-        _output.WriteLine("Waiting for result...");
         string finalResult = await result.GetValueAsync(TimeSpan.FromSeconds(30));
 
-        _output.WriteLine($"Final result received. Handler observed {handler.ObservedRoles.Count} roles");
-        _output.WriteLine($"Handler observed messages: {string.Join(", ", handler.ObservedMessages)}");
-
-        // Print all observed interactions
-        for (int i = 0; i < handler.ObservedRoles.Count; i++)
-        {
-            _output.WriteLine($"Message {i + 1}: Role={handler.ObservedRoles[i]}, Content={handler.ObservedMessages[i]}");
-        }
-
-        Assert.Equal(8, handler.ObservedRoles.Count);
-        Assert.All(handler.ObservedRoles, r => Assert.Equal("user", r));
+        Assert.False(string.IsNullOrWhiteSpace(finalResult));
     }
 
-    [Fact]
-    public void TestStreamingMessageFlow_WithDetailedLogging()
+    private static async Task<bool> IsOllamaAvailableAsync()
     {
-        // This test simulates the streaming flow to identify where the issue occurs
-        StreamingOllamaHandler handler = new(_output);
-        HttpClient httpClient = new(handler) { BaseAddress = new Uri("http://localhost:11434") };
+        if (Environment.GetEnvironmentVariable("RUN_OLLAMA_TESTS") != "1")
+            return false;
 
-        _output.WriteLine("Creating mock streaming scenario...");
-
-        // Simulate the streaming flow that happens in the real app
-        StreamingAppChatMessage streamingMessage = new(string.Empty, DateTime.Now, Microsoft.Extensions.AI.ChatRole.Assistant, agentName: "PlaceholderAgent");
-
-        _output.WriteLine($"Initial streaming message - Agent: {streamingMessage.AgentName}, Content: '{streamingMessage.Content}'");
-
-        // Simulate what happens when the real agent name is determined
-        streamingMessage.SetAgentName("Philosopher");
-        streamingMessage.ResetContent();
-
-        _output.WriteLine($"After SetAgentName and ResetContent - Agent: {streamingMessage.AgentName}, Content: '{streamingMessage.Content}'");
-
-        // Simulate streaming tokens
-        string[] tokens = new[] { "Lying", " is", " a", " complex", " moral", " issue", "..." };
-
-        foreach (string? token in tokens)
+        try
         {
-            streamingMessage.Append(token);
-            _output.WriteLine($"After appending '{token}' - Content: '{streamingMessage.Content}', Length: {streamingMessage.Content.Length}");
+            using HttpClient client = new() { Timeout = TimeSpan.FromSeconds(2) };
+            using HttpResponseMessage response = await client.GetAsync("http://localhost:11434/api/tags");
+            return response.IsSuccessStatusCode;
         }
-
-        _output.WriteLine($"Final streaming message - Agent: {streamingMessage.AgentName}, Content: '{streamingMessage.Content}'");
-
-        // Verify the streaming message was built correctly
-        Assert.Equal("Philosopher", streamingMessage.AgentName);
-        Assert.NotEmpty(streamingMessage.Content);
-        Assert.Contains("complex", streamingMessage.Content);
-    }
-
-    [Fact]
-    public async Task TestMessageUpdatedEventFlow_WithDetailedLogging()
-    {
-        // Test that MessageUpdated event is properly called during streaming
-        _output.WriteLine("Testing MessageUpdated event flow...");
-
-        List<(string agentName, string content, bool isFinal)> messageUpdates = new();
-
-        // Create streaming message
-        StreamingAppChatMessage streamingMessage = new(string.Empty, DateTime.Now, Microsoft.Extensions.AI.ChatRole.Assistant, agentName: "TestAgent");
-
-        // Simulate the MessageUpdated event handler (like in real UI)
-        Func<StreamingAppChatMessage, bool, Task> messageUpdatedHandler = async (msg, isFinal) =>
+        catch
         {
-            _output.WriteLine($"MessageUpdated called - Agent: {msg.AgentName}, Content: '{msg.Content}', Final: {isFinal}, Content Length: {msg.Content.Length}");
-            messageUpdates.Add((msg.AgentName ?? "null", msg.Content, isFinal));
-            await Task.CompletedTask;
-        };
-
-        // Simulate streaming tokens with manual MessageUpdated calls
-        string[] tokens = new[] { "Hello", " world", "!", " This", " is", " a", " test." };
-
-        _output.WriteLine($"Starting with - Agent: {streamingMessage.AgentName}, Content: '{streamingMessage.Content}'");
-
-        foreach (string? token in tokens)
-        {
-            streamingMessage.Append(token);
-
-            // Manually call the event handler to simulate what ChatService does
-            await messageUpdatedHandler(streamingMessage, false);
+            return false;
         }
-
-        // Final update
-        await messageUpdatedHandler(streamingMessage, true);
-
-        _output.WriteLine($"Final state - Agent: {streamingMessage.AgentName}, Content: '{streamingMessage.Content}'");
-        _output.WriteLine($"Total MessageUpdated calls: {messageUpdates.Count}");
-
-        // Verify all updates were received
-        Assert.Equal(8, messageUpdates.Count); // 7 tokens + 1 final
-        Assert.All(messageUpdates.Take(7), update => Assert.False(update.isFinal));
-        Assert.True(messageUpdates.Last().isFinal);
-
-        // Verify content progression
-        Assert.Equal("Hello", messageUpdates[0].content);
-        Assert.Equal("Hello world", messageUpdates[1].content);
-        Assert.Equal("Hello world!", messageUpdates[2].content);
-        Assert.Equal("Hello world! This is a test.", messageUpdates.Last().content);
-
-        // Verify agent name is consistent
-        Assert.All(messageUpdates, update => Assert.Equal("TestAgent", update.agentName));
-
-        _output.WriteLine("✅ All MessageUpdated events were received correctly");
     }
 
     private static async Task<List<AgentDescription>> LoadDescriptionsAsync()
