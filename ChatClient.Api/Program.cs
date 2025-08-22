@@ -48,6 +48,7 @@ builder.Services.AddSingleton<ChatClient.Shared.Services.IRagVectorIndexService,
 builder.Services.AddSingleton<ChatClient.Api.Services.RagVectorIndexBackgroundService>();
 builder.Services.AddSingleton<ChatClient.Shared.Services.IRagVectorIndexBackgroundService>(sp => sp.GetRequiredService<ChatClient.Api.Services.RagVectorIndexBackgroundService>());
 builder.Services.AddHostedService(sp => sp.GetRequiredService<ChatClient.Api.Services.RagVectorIndexBackgroundService>());
+builder.Services.AddSingleton<ChatClient.Shared.Services.IRagVectorSearchService, ChatClient.Api.Services.RagVectorSearchService>();
 builder.Services.AddSingleton<ChatClient.Api.Services.IFileConverter, ChatClient.Api.Services.NoOpFileConverter>();
 builder.Services.AddScoped<ChatClient.Api.Client.Services.IAppChatService, ChatClient.Api.Client.Services.AppChatService>();
 builder.Services.AddScoped<ChatClient.Api.Client.Services.IChatViewModelService, ChatClient.Api.Client.Services.ChatViewModelService>();
