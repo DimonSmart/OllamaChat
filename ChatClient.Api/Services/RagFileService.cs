@@ -5,14 +5,10 @@ using ChatClient.Shared.Services;
 
 namespace ChatClient.Api.Services;
 
-public class RagFileService : IRagFileService
+public class RagFileService(IRagVectorIndexBackgroundService indexBackgroundService, IConfiguration configuration) : IRagFileService
 {
-    private readonly string _basePath;
-
-    public RagFileService(IConfiguration configuration)
-    {
-        _basePath = configuration["RagFiles:BasePath"] ?? Path.Combine("Data", "agents");
-    }
+    private readonly IRagVectorIndexBackgroundService _indexBackgroundService = indexBackgroundService;
+    private readonly string _basePath = configuration["RagFiles:BasePath"] ?? Path.Combine("Data", "agents");
 
     public async Task<List<RagFile>> GetFilesAsync(Guid id)
     {
@@ -71,8 +67,7 @@ public class RagFileService : IRagFileService
         var indexPath = Path.Combine(agentFolder, "index", Path.ChangeExtension(file.FileName, ".idx"));
         if (File.Exists(indexPath))
             File.Delete(indexPath);
-
-        // TODO: trigger index rebuild
+        _indexBackgroundService.RequestRebuild();
     }
 
     public Task DeleteFileAsync(Guid id, string fileName)
@@ -85,8 +80,7 @@ public class RagFileService : IRagFileService
         var filePath = Path.Combine(agentFolder, "files", fileName);
         if (File.Exists(filePath))
             File.Delete(filePath);
-
-        // TODO: trigger index rebuild
+        _indexBackgroundService.RequestRebuild();
         return Task.CompletedTask;
     }
 
