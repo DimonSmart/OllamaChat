@@ -26,6 +26,7 @@ public sealed class OllamaService(
     private OllamaApiClient? _ollamaClient;
     private HttpClient? _httpClient;
     private SettingsSnapshot? _cachedSettings;
+    private Exception? _embeddingError;
 
     /// <summary>
     /// Returns a cached <see cref="OllamaApiClient"/> instance or rebuilds it when connection settings differ
@@ -72,8 +73,13 @@ public sealed class OllamaService(
         .ToList();
     }
 
+    public bool EmbeddingsAvailable => _embeddingError is null;
+
     public async Task<float[]> GenerateEmbeddingAsync(string input, string modelId, CancellationToken cancellationToken = default)
     {
+        if (_embeddingError is not null)
+            throw new InvalidOperationException("Embedding service unavailable. Restart the application.", _embeddingError);
+
         var client = await GetOllamaClientAsync();
         var request = new EmbedRequest { Model = modelId, Input = new List<string> { input } };
         try
@@ -83,7 +89,13 @@ public sealed class OllamaService(
         }
         catch (HttpRequestException ex) when (ex.StatusCode == System.Net.HttpStatusCode.NotFound)
         {
-            throw new InvalidOperationException($"Embedding model '{modelId}' not found on Ollama server.", ex);
+            _embeddingError = new InvalidOperationException($"Embedding model '{modelId}' not found on Ollama server.", ex);
+            throw _embeddingError;
+        }
+        catch (Exception ex)
+        {
+            _embeddingError = new InvalidOperationException("Failed to generate embedding. Ensure Ollama is running and restart the application.", ex);
+            throw _embeddingError;
         }
     }
 

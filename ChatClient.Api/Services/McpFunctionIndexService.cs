@@ -87,6 +87,11 @@ public class McpFunctionIndexService
                     }
                     catch (Exception ex)
                     {
+                        if (!_ollamaService.EmbeddingsAvailable)
+                        {
+                            _logger.LogError(ex, "Embedding service unavailable. Stopping MCP function indexing.");
+                            return;
+                        }
                         _logger.LogError(ex, "Failed to index tool {Name}", tool.Name);
                     }
                 }

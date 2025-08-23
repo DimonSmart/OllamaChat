@@ -4,6 +4,7 @@
 @using ChatClient.Shared.Models
 @using System.Linq
 @using Microsoft.JSInterop
+@inject ISnackbar Snackbar
 @implements IDisposable
 
 <PageTitle>Vector Search</PageTitle>
@@ -128,10 +129,18 @@
         var text = data.text.Trim();
         if (string.IsNullOrWhiteSpace(text)) return;
 
-        var embedding = await OllamaService.GenerateEmbeddingAsync(text, embeddingModel);
-        var response = await VectorSearchService.SearchAsync(selectedAgent.Id, new ReadOnlyMemory<float>(embedding));
-        results = response.Results.ToList();
-        totalResults = response.Total;
+        try
+        {
+            var embedding = await OllamaService.GenerateEmbeddingAsync(text, embeddingModel);
+            var response = await VectorSearchService.SearchAsync(selectedAgent.Id, new ReadOnlyMemory<float>(embedding));
+            results = response.Results.ToList();
+            totalResults = response.Total;
+        }
+        catch (Exception ex) when (!OllamaService.EmbeddingsAvailable)
+        {
+            Console.Error.WriteLine($"Embedding error: {ex.Message}");
+            Snackbar.Add("Embedding service unavailable. Restart the application.", Severity.Error);
+        }
     }
 
     private async Task CopyResult(RagSearchResult item)
