@@ -1,20 +1,26 @@
+using System.Collections.Concurrent;
 using System.Text;
 using System.Text.Json;
+using System.IO;
 
 using ChatClient.Shared.Models;
 using ChatClient.Shared.Services;
 
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Configuration;
 using Microsoft.SemanticKernel.Memory;
 
 namespace ChatClient.Api.Services;
 
 public sealed class RagVectorSearchService(
     IMemoryStore store,
-    ILogger<RagVectorSearchService> logger) : IRagVectorSearchService
+    ILogger<RagVectorSearchService> logger,
+    IConfiguration configuration) : IRagVectorSearchService
 {
     private readonly IMemoryStore _store = store;
     private readonly ILogger<RagVectorSearchService> _logger = logger;
+    private readonly string _basePath = configuration["RagFiles:BasePath"] ?? Path.Combine("Data", "agents");
+    private readonly ConcurrentDictionary<Guid, bool> _loaded = new();
 
     public async Task<IReadOnlyList<RagSearchResult>> SearchAsync(
         Guid agentId,
@@ -23,6 +29,7 @@ public sealed class RagVectorSearchService(
         CancellationToken ct = default)
     {
         var collection = CollectionName(agentId);
+        await EnsureLoadedAsync(agentId, collection, ct);
 
         var matches = new List<(MemoryRecord, double)>();
         await foreach (var match in _store.GetNearestMatchesAsync(
@@ -56,6 +63,50 @@ public sealed class RagVectorSearchService(
 
         _logger.LogDebug("RAG search: agent={AgentId} pieces={Pieces} segments={Segments}", agentId, pieces.Count, results.Count);
         return results;
+    }
+
+    private async Task EnsureLoadedAsync(Guid agentId, string collection, CancellationToken ct)
+    {
+        if (_loaded.ContainsKey(agentId)) return;
+        var indexDir = Path.Combine(_basePath, agentId.ToString(), "index");
+        if (!Directory.Exists(indexDir))
+        {
+            _loaded[agentId] = true;
+            return;
+        }
+
+        foreach (var file in Directory.GetFiles(indexDir, "*.idx"))
+        {
+            RagVectorIndex? index;
+            try
+            {
+                var json = await File.ReadAllTextAsync(file, ct);
+                index = JsonSerializer.Deserialize<RagVectorIndex>(json);
+            }
+            catch
+            {
+                continue;
+            }
+            if (index?.Fragments.Count is null or 0) continue;
+            foreach (var fragment in index.Fragments)
+            {
+                var fragIndex = ExtractIndex(fragment.Id);
+                var meta = JsonSerializer.Serialize(new { file = index.SourceFileName, index = fragIndex, text = fragment.Text });
+                var record = new MemoryRecord(
+                    new MemoryRecordMetadata(false, fragment.Id, null!, null!, null!, meta),
+                    new ReadOnlyMemory<float>(fragment.Vector),
+                    fragment.Id,
+                    null);
+                await _store.UpsertAsync(collection, record, ct);
+            }
+        }
+        _loaded[agentId] = true;
+    }
+
+    private static int ExtractIndex(string id)
+    {
+        var hash = id.LastIndexOf('#');
+        return hash >= 0 && int.TryParse(id[(hash + 1)..], out var idx) ? idx : 0;
     }
 
     private static string CollectionName(Guid id) => $"agent_{id:N}";
