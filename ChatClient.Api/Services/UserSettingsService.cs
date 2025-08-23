@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Text.Json;
 using System.Linq;
 
@@ -42,9 +43,9 @@ public class UserSettingsService : IUserSettingsService
         }
 
         var json = await File.ReadAllTextAsync(_settingsFilePath);
-        var settings = JsonSerializer.Deserialize<UserSettings>(json, _jsonOptions);
+        var settings = JsonSerializer.Deserialize<UserSettings>(json, _jsonOptions) ?? new UserSettings();
 
-        return settings ?? new UserSettings();
+        return await MigrateSettingsAsync(settings);
     }
 
     public async Task SaveSettingsAsync(UserSettings settings)
@@ -72,5 +73,45 @@ public class UserSettingsService : IUserSettingsService
         {
             _logger.LogError(ex, "Error saving user settings");
         }
+    }
+
+    private async Task<UserSettings> MigrateSettingsAsync(UserSettings settings)
+    {
+        var needsSave = false;
+
+        if (settings.Llms == null || settings.Llms.Count == 0)
+        {
+            var serverId = Guid.NewGuid();
+            settings.Llms = new List<LlmServerConfig>
+            {
+                new()
+                {
+                    Id = serverId,
+                    Name = "Ollama",
+                    ServerType = ServerType.Ollama,
+                    BaseUrl = settings.OllamaServerUrl,
+                    Password = settings.OllamaBasicAuthPassword,
+                    IgnoreSslErrors = settings.IgnoreSslErrors,
+                    HttpTimeoutSeconds = settings.HttpTimeoutSeconds,
+                    CreatedAt = DateTime.UtcNow,
+                    UpdatedAt = DateTime.UtcNow
+                }
+            };
+            settings.DefaultLlmId = serverId;
+            needsSave = true;
+        }
+        else if (settings.DefaultLlmId == null && settings.Llms.Count > 0)
+        {
+            if (settings.Llms[0].Id == null)
+                settings.Llms[0].Id = Guid.NewGuid();
+
+            settings.DefaultLlmId = settings.Llms[0].Id;
+            needsSave = true;
+        }
+
+        if (needsSave)
+            await SaveSettingsAsync(settings);
+
+        return settings;
     }
 }
