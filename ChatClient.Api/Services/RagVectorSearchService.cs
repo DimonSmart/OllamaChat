@@ -22,7 +22,7 @@ public sealed class RagVectorSearchService(
     private readonly string _basePath = configuration["RagFiles:BasePath"] ?? Path.Combine("Data", "agents");
     private readonly ConcurrentDictionary<Guid, bool> _loaded = new();
 
-    public async Task<IReadOnlyList<RagSearchResult>> SearchAsync(
+    public async Task<RagSearchResponse> SearchAsync(
         Guid agentId,
         ReadOnlyMemory<float> queryVector,
         int maxResults = 5,
@@ -44,7 +44,7 @@ public sealed class RagVectorSearchService(
         }
 
         if (matches.Count == 0)
-            return [];
+            return new RagSearchResponse { Total = 0 };
 
         var pieces = matches
             .Select(m => ToPiece(m.Item1, m.Item2))
@@ -53,16 +53,19 @@ public sealed class RagVectorSearchService(
             .ToList();
 
         if (pieces.Count == 0)
-            return [];
+            return new RagSearchResponse { Total = 0 };
 
-        var results = MergeAdjacent(pieces)
+        var segments = MergeAdjacent(pieces)
             .OrderByDescending(s => s.Score)
-            .Take(maxResults)
-            .Select(s => new RagSearchResult { FileName = s.File, Content = s.Text.ToString() })
             .ToList();
 
-        _logger.LogDebug("RAG search: agent={AgentId} pieces={Pieces} segments={Segments}", agentId, pieces.Count, results.Count);
-        return results;
+        var results = segments
+            .Take(maxResults)
+            .Select(s => new RagSearchResult { FileName = s.File, Content = s.Text.ToString(), Score = s.Score })
+            .ToList();
+
+        _logger.LogDebug("RAG search: agent={AgentId} pieces={Pieces} segments={Segments}", agentId, pieces.Count, segments.Count);
+        return new RagSearchResponse { Total = segments.Count, Results = results };
     }
 
     private async Task EnsureLoadedAsync(Guid agentId, string collection, CancellationToken ct)
