@@ -12,7 +12,7 @@
         <MudStack Spacing="2">
             <MudSelect T="AgentDescription"
                        Label="Select Agent"
-                       Value="selectedAgent"
+                       Value="@selectedAgent"
                        ValueChanged="AgentChanged"
                        Variant="Variant.Outlined"
                        Dense="true"
@@ -109,6 +109,7 @@
         totalSize = files.Sum(f => f.Size);
         indexedFiles = files.Count(f => f.HasIndex);
         indexStatus = IndexBackgroundService.GetCurrentStatus();
+        StateHasChanged();
     }
 
     private async Task SearchAsync((string text, IReadOnlyList<AppChatMessageFile> _) data)
