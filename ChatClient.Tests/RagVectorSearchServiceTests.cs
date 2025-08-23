@@ -5,6 +5,7 @@ using ChatClient.Shared.Services;
 
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.SemanticKernel.Memory;
+using Microsoft.Extensions.Configuration;
 
 namespace ChatClient.Tests;
 
@@ -23,14 +24,16 @@ public class RagVectorSearchServiceTests
         await AddAsync(store, collection, "file1.txt", 1, "B", new float[] { 1, 0 });
         await AddAsync(store, collection, "file1.txt", 3, "D", new float[] { 0, 1 });
 
-        IRagVectorSearchService service = new RagVectorSearchService(store, NullLogger<RagVectorSearchService>.Instance);
+        var config = new ConfigurationBuilder().Build();
+        IRagVectorSearchService service = new RagVectorSearchService(store, NullLogger<RagVectorSearchService>.Instance, config);
 
-        var results = await service.SearchAsync(agentId, new ReadOnlyMemory<float>(new float[] { 1, 0 }), 2);
+        var response = await service.SearchAsync(agentId, new ReadOnlyMemory<float>(new float[] { 1, 0 }), 2);
 
-        Assert.Equal(2, results.Count);
-        Assert.Equal("file1.txt", results[0].FileName);
-        Assert.Equal("AB", results[0].Content);
-        Assert.Equal("D", results[1].Content);
+        Assert.Equal(2, response.Total);
+        Assert.Equal(2, response.Results.Count);
+        Assert.Equal("file1.txt", response.Results[0].FileName);
+        Assert.Equal("AB", response.Results[0].Content);
+        Assert.Equal("D", response.Results[1].Content);
     }
 
     private static async Task AddAsync(IMemoryStore store, string collection, string file, int index, string text, float[] vector)

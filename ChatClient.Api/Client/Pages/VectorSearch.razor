@@ -1,5 +1,6 @@
 @page "/vector-search"
 @using ChatClient.Api.Services
+@using ChatClient.Shared.Services
 @using System.Linq
 
 <PageTitle>Vector Search</PageTitle>
@@ -9,7 +10,8 @@
         <MudStack Spacing="2">
             <MudSelect T="AgentDescription"
                        Label="Select Agent"
-                       @bind-Value="selectedAgent"
+                       Value="selectedAgent"
+                       ValueChanged="AgentChanged"
                        Variant="Variant.Outlined"
                        Dense="true"
                        FullWidth="true">
@@ -19,7 +21,17 @@
                 }
             </MudSelect>
 
+            @if (selectedAgent is not null)
+            {
+                <MudText Typo="Typo.body2">Files: @fileCount, size: @FormatSize(totalSize)</MudText>
+            }
+
             <ChatInput OnSend="SearchAsync" />
+
+            @if (totalResults > 0)
+            {
+                <MudText Typo="Typo.body2" Class="mt-2">Found @totalResults segments, showing @results.Count.</MudText>
+            }
 
             @if (results.Count > 0)
             {
@@ -29,6 +41,7 @@
                         <MudListItem T="RagSearchResult">
                             <MudText Typo="Typo.subtitle2">@item.FileName</MudText>
                             <MudText Typo="Typo.body2">@item.Content</MudText>
+                            <MudText Typo="Typo.caption">Score: @item.Score.ToString("0.###")</MudText>
                         </MudListItem>
                     }
                 </MudList>
@@ -41,11 +54,15 @@
     private List<AgentDescription> agents = [];
     private AgentDescription? selectedAgent;
     private List<RagSearchResult> results = [];
+    private int totalResults;
+    private int fileCount;
+    private long totalSize;
     private string embeddingModel = string.Empty;
 
     [Inject] private IAgentDescriptionService AgentService { get; set; } = default!;
     [Inject] private IOllamaClientService OllamaService { get; set; } = default!;
     [Inject] private IRagVectorSearchService VectorSearchService { get; set; } = default!;
+    [Inject] private IRagFileService RagFileService { get; set; } = default!;
     [Inject] private IUserSettingsService UserSettingsService { get; set; } = default!;
     [Inject] private IConfiguration Configuration { get; set; } = default!;
 
@@ -58,6 +75,19 @@
             : settings.EmbeddingModelName;
     }
 
+    private async Task AgentChanged(AgentDescription? agent)
+    {
+        selectedAgent = agent;
+        results.Clear();
+        totalResults = 0;
+        fileCount = 0;
+        totalSize = 0;
+        if (selectedAgent is null) return;
+        var files = await RagFileService.GetFilesAsync(selectedAgent.Id);
+        fileCount = files.Count;
+        totalSize = files.Sum(f => f.Size);
+    }
+
     private async Task SearchAsync((string text, IReadOnlyList<AppChatMessageFile> _) data)
     {
         if (selectedAgent is null) return;
@@ -65,7 +95,21 @@
         if (string.IsNullOrWhiteSpace(text)) return;
 
         var embedding = await OllamaService.GenerateEmbeddingAsync(text, embeddingModel);
-        var found = await VectorSearchService.SearchAsync(selectedAgent.Id, new ReadOnlyMemory<float>(embedding));
-        results = found.ToList();
+        var response = await VectorSearchService.SearchAsync(selectedAgent.Id, new ReadOnlyMemory<float>(embedding));
+        results = response.Results.ToList();
+        totalResults = response.Total;
+    }
+
+    private static string FormatSize(long bytes)
+    {
+        var sizes = new[] { "B", "KB", "MB", "GB" };
+        double len = bytes;
+        var order = 0;
+        while (len >= 1024 && order < sizes.Length - 1)
+        {
+            order++;
+            len /= 1024;
+        }
+        return $"{len:0.#} {sizes[order]}";
     }
 }
