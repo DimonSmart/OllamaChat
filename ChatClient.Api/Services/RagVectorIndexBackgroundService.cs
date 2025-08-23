@@ -1,3 +1,4 @@
+using ChatClient.Shared.Models;
 using ChatClient.Shared.Services;
 
 namespace ChatClient.Api.Services;
@@ -14,6 +15,7 @@ public sealed class RagVectorIndexBackgroundService(
     private readonly object _sync = new();
     private bool _rescanRequested;
     private bool _running;
+    private RagVectorIndexStatus? _currentStatus;
 
     public void RequestRebuild()
     {
@@ -51,6 +53,8 @@ public sealed class RagVectorIndexBackgroundService(
         }
     }
 
+    public RagVectorIndexStatus? GetCurrentStatus() => _currentStatus;
+
     private async Task RebuildMissingIndexesAsync(CancellationToken token)
     {
         try
@@ -61,6 +65,7 @@ public sealed class RagVectorIndexBackgroundService(
             var indexService = scope.ServiceProvider.GetRequiredService<IRagVectorIndexService>();
 
             var basePath = _configuration["RagFiles:BasePath"] ?? Path.Combine("Data", "agents");
+            var pending = new List<(Guid agentId, string source, string index, string fileName)>();
             var agents = await agentService.GetAllAsync();
             foreach (var agent in agents)
             {
@@ -74,8 +79,20 @@ public sealed class RagVectorIndexBackgroundService(
 
                     var sourcePath = Path.Combine(agentFolder, "files", file.FileName);
                     var indexPath = Path.Combine(agentFolder, "index", Path.ChangeExtension(file.FileName, ".idx"));
-                    await indexService.BuildIndexAsync(sourcePath, indexPath, token);
+                    pending.Add((agent.Id, sourcePath, indexPath, file.FileName));
                 }
+            }
+
+            _logger.LogInformation("Vector index rebuild queue has {Count} files", pending.Count);
+
+            for (var i = 0; i < pending.Count; i++)
+            {
+                var item = pending[i];
+                _logger.LogInformation("Indexing {File} ({Current}/{Total})", item.fileName, i + 1, pending.Count);
+                var progress = new Progress<RagVectorIndexStatus>(s => _currentStatus = s);
+                _currentStatus = new(item.agentId, item.fileName, 0, 0);
+                await indexService.BuildIndexAsync(item.agentId, item.source, item.index, progress, token);
+                _currentStatus = null;
             }
         }
         catch (Exception ex)

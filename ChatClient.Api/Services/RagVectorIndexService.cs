@@ -16,7 +16,7 @@ public sealed class RagVectorIndexService(
     IConfiguration configuration,
     ILogger<RagVectorIndexService> logger) : IRagVectorIndexService
 {
-    public async Task BuildIndexAsync(string sourceFilePath, string indexFilePath, CancellationToken cancellationToken = default)
+    public async Task BuildIndexAsync(Guid agentId, string sourceFilePath, string indexFilePath, IProgress<RagVectorIndexStatus>? progress = null, CancellationToken cancellationToken = default)
     {
         if (!File.Exists(sourceFilePath))
             throw new FileNotFoundException($"Source file not found: {sourceFilePath}");
@@ -36,20 +36,32 @@ public sealed class RagVectorIndexService(
         var generator = kernel.GetRequiredService<IEmbeddingGenerator<string, Embedding<float>>>();
 
         var lines = TextChunker.SplitPlainTextLines(text, 256, null);
-        var paragraphs = TextChunker.SplitPlainTextParagraphs(lines, 512, 64, string.Empty, null);
+        var paragraphs = TextChunker.SplitPlainTextParagraphs(lines, 512, 64, string.Empty, null).ToList();
+        var total = paragraphs.Count;
+
+        logger.LogInformation("Building index for {File} with {Count} fragments", sourceFilePath, total);
 
         var fragments = new List<RagVectorFragment>();
-        var fragmentIndex = 0;
-        foreach (var paragraph in paragraphs)
+        var nextLog = 10;
+        for (var i = 0; i < total; i++)
         {
+            var paragraph = paragraphs[i];
             var embedding = await generator.GenerateAsync(paragraph, cancellationToken: cancellationToken);
             fragments.Add(new RagVectorFragment
             {
-                Id = $"{Path.GetFileName(sourceFilePath)}#{fragmentIndex:D5}",
+                Id = $"{Path.GetFileName(sourceFilePath)}#{i:D5}",
                 Text = paragraph,
                 Vector = embedding.Vector.ToArray()
             });
-            fragmentIndex++;
+
+            var processed = i + 1;
+            progress?.Report(new(agentId, Path.GetFileName(sourceFilePath), processed, total));
+            var percent = processed * 100 / total;
+            if (percent >= nextLog)
+            {
+                logger.LogInformation("Building index for {File}: {Percent}% ({Processed}/{Total})", sourceFilePath, percent, processed, total);
+                nextLog += 10;
+            }
         }
 
         var info = new FileInfo(sourceFilePath);
