@@ -23,11 +23,6 @@
                 }
             </MudSelect>
 
-            @if (selectedAgent is not null)
-            {
-                <MudText Typo="Typo.body2">Files: @fileCount, size: @FormatSize(totalSize)</MudText>
-            }
-
             <ChatInput OnSend="SearchAsync" />
 
             @if (results.Count > 0)
@@ -44,17 +39,17 @@
                     }
                 </MudList>
             }
-            else
+            <MudText Typo="Typo.body2" Class="mt-2">
+                Total files: @allFileCount (@allIndexedFiles indexed, @(allFileCount - allIndexedFiles) pending), size: @FormatSize(allTotalSize)
+            </MudText>
+            @if (selectedAgent is not null)
             {
-                if (selectedAgent is not null)
-                {
-                    <MudText Typo="Typo.body2" Class="mt-2">Indexed @indexedFiles of @fileCount files.</MudText>
-                    @if (indexStatus is not null && indexStatus.AgentId == selectedAgent.Id && indexStatus.Total > 0)
-                    {
-                        var percent = indexStatus.Processed * 100 / indexStatus.Total;
-                        <MudText Typo="Typo.body2">Indexing @indexStatus.FileName: @percent%</MudText>
-                    }
-                }
+                <MudText Typo="Typo.body2">@selectedAgent.AgentName: @fileCount files (@indexedFiles indexed), size: @FormatSize(totalSize)</MudText>
+            }
+            @if (indexStatus is not null)
+            {
+                var percent = indexStatus.Total == 0 ? 0 : indexStatus.Processed * 100 / indexStatus.Total;
+                <MudText Typo="Typo.body2">Indexing @indexStatus.FileName: @percent%</MudText>
             }
         </MudStack>
     </MudContainer>
@@ -68,6 +63,9 @@
     private int fileCount;
     private int indexedFiles;
     private long totalSize;
+    private int allFileCount;
+    private int allIndexedFiles;
+    private long allTotalSize;
     private string embeddingModel = string.Empty;
     private RagVectorIndexStatus? indexStatus;
     private System.Timers.Timer? statusTimer;
@@ -83,6 +81,13 @@
     protected override async Task OnInitializedAsync()
     {
         agents = await AgentService.GetAllAsync();
+        foreach (var agent in agents)
+        {
+            var files = await RagFileService.GetFilesAsync(agent.Id);
+            allFileCount += files.Count;
+            allIndexedFiles += files.Count(f => f.HasIndex);
+            allTotalSize += files.Sum(f => f.Size);
+        }
         var settings = await UserSettingsService.GetSettingsAsync();
         embeddingModel = string.IsNullOrWhiteSpace(settings.EmbeddingModelName)
             ? Configuration["Ollama:EmbeddingModel"] ?? "nomic-embed-text"
