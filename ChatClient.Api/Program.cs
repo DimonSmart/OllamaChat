@@ -34,6 +34,7 @@ Console.WriteLine($"Content Root: {builder.Environment.ContentRootPath}");
 Console.WriteLine($"Web Root: {builder.Environment.WebRootPath}");
 
 builder.Services.AddSingleton<ChatClient.Shared.Services.IMcpServerConfigService, ChatClient.Api.Services.McpServerConfigService>();
+builder.Services.AddSingleton<ChatClient.Api.Services.ILlmServerConfigService, ChatClient.Api.Services.LlmServerConfigService>();
 builder.Services.AddSingleton<ChatClient.Api.Services.IMcpClientService, ChatClient.Api.Services.McpClientService>();
 builder.Services.AddSingleton<ChatClient.Api.Services.McpSamplingService>();
 builder.Services.AddSingleton<ChatClient.Api.Services.KernelService>();
