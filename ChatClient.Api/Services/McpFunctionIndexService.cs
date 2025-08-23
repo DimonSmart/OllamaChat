@@ -1,6 +1,7 @@
 using System.Collections.Concurrent;
 using System.Linq;
 using System.Net;
+using System.IO;
 
 using ChatClient.Shared.Models;
 using ChatClient.Shared.Services;
@@ -15,6 +16,7 @@ public class McpFunctionIndexService
     private readonly IOllamaClientService _ollamaService;
     private readonly IConfiguration _configuration;
     private readonly IUserSettingsService _userSettingsService;
+    private readonly IRagVectorIndexBackgroundService _indexBackgroundService;
     private readonly ILogger<McpFunctionIndexService> _logger;
     private string _modelId = "nomic-embed-text";
     private readonly ConcurrentDictionary<string, float[]> _index = new();
@@ -25,13 +27,17 @@ public class McpFunctionIndexService
         IOllamaClientService ollamaService,
         IConfiguration configuration,
         IUserSettingsService userSettingsService,
+        IRagVectorIndexBackgroundService indexBackgroundService,
         ILogger<McpFunctionIndexService> logger)
     {
         _clientService = clientService;
         _ollamaService = ollamaService;
         _configuration = configuration;
         _userSettingsService = userSettingsService;
+        _indexBackgroundService = indexBackgroundService;
         _logger = logger;
+
+        _userSettingsService.EmbeddingModelChanged += HandleEmbeddingModelChangeAsync;
     }
 
     public async Task BuildIndexAsync(CancellationToken cancellationToken = default)
@@ -122,6 +128,29 @@ public class McpFunctionIndexService
             .Take(topK)
             .Select(e => e.Name)
             .ToList();
+    }
+
+    private async Task HandleEmbeddingModelChangeAsync()
+    {
+        var basePath = _configuration["RagFiles:BasePath"] ?? Path.Combine("Data", "agents");
+        if (Directory.Exists(basePath))
+        {
+            foreach (var file in Directory.GetFiles(basePath, "*.idx", SearchOption.AllDirectories))
+            {
+                try
+                {
+                    File.Delete(file);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "Failed to delete index {File}", file);
+                }
+            }
+        }
+
+        Invalidate();
+        await BuildIndexAsync();
+        _indexBackgroundService.RequestRebuild();
     }
 
     private static float Dot(ReadOnlySpan<float> a, IReadOnlyList<float> b)

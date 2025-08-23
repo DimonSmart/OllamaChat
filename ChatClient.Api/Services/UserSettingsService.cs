@@ -1,4 +1,6 @@
+using System;
 using System.Text.Json;
+using System.Linq;
 
 using ChatClient.Shared.Models;
 using ChatClient.Shared.Services;
@@ -9,17 +11,17 @@ public class UserSettingsService : IUserSettingsService
 {
     private readonly string _settingsFilePath;
     private readonly ILogger<UserSettingsService> _logger;
-    private readonly IEmbeddingModelChangeService _changeService;
     private readonly JsonSerializerOptions _jsonOptions = new()
     {
         WriteIndented = true,
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase
     };
 
-    public UserSettingsService(IConfiguration configuration, IEmbeddingModelChangeService changeService, ILogger<UserSettingsService> logger)
+    public event Func<Task>? EmbeddingModelChanged;
+
+    public UserSettingsService(IConfiguration configuration, ILogger<UserSettingsService> logger)
     {
         _logger = logger;
-        _changeService = changeService;
 
         var settingsDir = configuration["UserSettings:Directory"] ?? Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "UserData");
         if (!Directory.Exists(settingsDir))
@@ -61,7 +63,10 @@ public class UserSettingsService : IUserSettingsService
             _logger.LogInformation("User settings saved successfully");
 
             if (existing != null && !string.Equals(existing.EmbeddingModelName, settings.EmbeddingModelName, StringComparison.OrdinalIgnoreCase))
-                await _changeService.HandleChangeAsync();
+            {
+                if (EmbeddingModelChanged != null)
+                    await Task.WhenAll(EmbeddingModelChanged.GetInvocationList().Cast<Func<Task>>().Select(d => d()));
+            }
         }
         catch (Exception ex)
         {
