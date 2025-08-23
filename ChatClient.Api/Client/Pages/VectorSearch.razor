@@ -3,6 +3,7 @@
 @using ChatClient.Shared.Services
 @using ChatClient.Shared.Models
 @using System.Linq
+@using Microsoft.JSInterop
 @implements IDisposable
 
 <PageTitle>Vector Search</PageTitle>
@@ -28,16 +29,19 @@
             @if (results.Count > 0)
             {
                 <MudText Typo="Typo.body2" Class="mt-2">Found @totalResults segments, showing @results.Count.</MudText>
-                <MudList T="RagSearchResult" Dense="true" Class="mt-4">
+                <MudStack Spacing="1" Class="mt-4">
                     @foreach (var item in results)
                     {
-                        <MudListItem T="RagSearchResult">
-                            <MudText Typo="Typo.subtitle2">@item.FileName</MudText>
+                        <MudPaper Class="pa-2" Style="user-select:text;">
+                            <div style="display:flex;justify-content:space-between;">
+                                <MudText Typo="Typo.subtitle2">@item.FileName</MudText>
+                                <span class="copy-button" title="Copy" @onclick="() => CopyResult(item)">📋</span>
+                            </div>
                             <MudText Typo="Typo.body2">@item.Content</MudText>
                             <MudText Typo="Typo.caption">Score: @item.Score.ToString("0.###")</MudText>
-                        </MudListItem>
+                        </MudPaper>
                     }
-                </MudList>
+                </MudStack>
             }
             <MudText Typo="Typo.body2" Class="mt-2">
                 Total files: @allFileCount (@allIndexedFiles indexed, @(allFileCount - allIndexedFiles) pending), size: @FormatSize(allTotalSize)
@@ -77,6 +81,7 @@
     [Inject] private IUserSettingsService UserSettingsService { get; set; } = default!;
     [Inject] private IConfiguration Configuration { get; set; } = default!;
     [Inject] private IRagVectorIndexBackgroundService IndexBackgroundService { get; set; } = default!;
+    [Inject] private IJSRuntime JSRuntime { get; set; } = default!;
 
     protected override async Task OnInitializedAsync()
     {
@@ -127,6 +132,12 @@
         var response = await VectorSearchService.SearchAsync(selectedAgent.Id, new ReadOnlyMemory<float>(embedding));
         results = response.Results.ToList();
         totalResults = response.Total;
+    }
+
+    private async Task CopyResult(RagSearchResult item)
+    {
+        var text = $"{item.FileName}\n{item.Content}\nScore: {item.Score:0.###}";
+        await JSRuntime.InvokeVoidAsync("copyText", text);
     }
 
     private static string FormatSize(long bytes)
