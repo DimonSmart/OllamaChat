@@ -197,6 +197,17 @@
     {
         try
         {
+            if (!string.IsNullOrWhiteSpace(_settings.EmbeddingModelName))
+            {
+                var models = await OllamaService.GetModelsAsync();
+                var exists = models.Any(m => m.Name.Equals(_settings.EmbeddingModelName, StringComparison.OrdinalIgnoreCase));
+                if (!exists)
+                {
+                    Snackbar.Add($"Embedding model '{_settings.EmbeddingModelName}' not found.", Severity.Error);
+                    return;
+                }
+            }
+
             await UserSettingsService.SaveSettingsAsync(_settings);
             Snackbar.Add("Application settings saved successfully", Severity.Success);
         }

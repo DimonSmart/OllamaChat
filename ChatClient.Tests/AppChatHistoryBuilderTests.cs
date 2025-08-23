@@ -30,6 +30,7 @@ public class AppChatHistoryBuilderTests
     {
         public Task<IReadOnlyList<OllamaModel>> GetModelsAsync() => throw new InvalidOperationException();
         public Task<float[]> GenerateEmbeddingAsync(string input, string modelId, CancellationToken cancellationToken = default) => throw new InvalidOperationException();
+        public bool EmbeddingsAvailable => true;
     }
 
     private sealed class ThrowingRagVectorSearchService : IRagVectorSearchService
