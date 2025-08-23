@@ -1,7 +1,9 @@
 @page "/vector-search"
 @using ChatClient.Api.Services
 @using ChatClient.Shared.Services
+@using ChatClient.Shared.Models
 @using System.Linq
+@implements IDisposable
 
 <PageTitle>Vector Search</PageTitle>
 
@@ -28,13 +30,9 @@
 
             <ChatInput OnSend="SearchAsync" />
 
-            @if (totalResults > 0)
-            {
-                <MudText Typo="Typo.body2" Class="mt-2">Found @totalResults segments, showing @results.Count.</MudText>
-            }
-
             @if (results.Count > 0)
             {
+                <MudText Typo="Typo.body2" Class="mt-2">Found @totalResults segments, showing @results.Count.</MudText>
                 <MudList T="RagSearchResult" Dense="true" Class="mt-4">
                     @foreach (var item in results)
                     {
@@ -46,6 +44,18 @@
                     }
                 </MudList>
             }
+            else
+            {
+                if (selectedAgent is not null)
+                {
+                    <MudText Typo="Typo.body2" Class="mt-2">Indexed @indexedFiles of @fileCount files.</MudText>
+                    @if (indexStatus is not null && indexStatus.AgentId == selectedAgent.Id && indexStatus.Total > 0)
+                    {
+                        var percent = indexStatus.Processed * 100 / indexStatus.Total;
+                        <MudText Typo="Typo.body2">Indexing @indexStatus.FileName: @percent%</MudText>
+                    }
+                }
+            }
         </MudStack>
     </MudContainer>
 </OllamaCheck>
@@ -56,8 +66,11 @@
     private List<RagSearchResult> results = [];
     private int totalResults;
     private int fileCount;
+    private int indexedFiles;
     private long totalSize;
     private string embeddingModel = string.Empty;
+    private RagVectorIndexStatus? indexStatus;
+    private System.Timers.Timer? statusTimer;
 
     [Inject] private IAgentDescriptionService AgentService { get; set; } = default!;
     [Inject] private IOllamaClientService OllamaService { get; set; } = default!;
@@ -65,6 +78,7 @@
     [Inject] private IRagFileService RagFileService { get; set; } = default!;
     [Inject] private IUserSettingsService UserSettingsService { get; set; } = default!;
     [Inject] private IConfiguration Configuration { get; set; } = default!;
+    [Inject] private IRagVectorIndexBackgroundService IndexBackgroundService { get; set; } = default!;
 
     protected override async Task OnInitializedAsync()
     {
@@ -73,6 +87,13 @@
         embeddingModel = string.IsNullOrWhiteSpace(settings.EmbeddingModelName)
             ? Configuration["Ollama:EmbeddingModel"] ?? "nomic-embed-text"
             : settings.EmbeddingModelName;
+        statusTimer = new(1000);
+        statusTimer.Elapsed += (_, _) =>
+        {
+            indexStatus = IndexBackgroundService.GetCurrentStatus();
+            InvokeAsync(StateHasChanged);
+        };
+        statusTimer.Start();
     }
 
     private async Task AgentChanged(AgentDescription? agent)
@@ -86,6 +107,8 @@
         var files = await RagFileService.GetFilesAsync(selectedAgent.Id);
         fileCount = files.Count;
         totalSize = files.Sum(f => f.Size);
+        indexedFiles = files.Count(f => f.HasIndex);
+        indexStatus = IndexBackgroundService.GetCurrentStatus();
     }
 
     private async Task SearchAsync((string text, IReadOnlyList<AppChatMessageFile> _) data)
@@ -111,5 +134,9 @@
             len /= 1024;
         }
         return $"{len:0.#} {sizes[order]}";
+    }
+    public void Dispose()
+    {
+        statusTimer?.Dispose();
     }
 }

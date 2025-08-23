@@ -1,6 +1,8 @@
+using ChatClient.Shared.Models;
+
 namespace ChatClient.Shared.Services;
 
 public interface IRagVectorIndexService
 {
-    Task BuildIndexAsync(string sourceFilePath, string indexFilePath, CancellationToken cancellationToken = default);
+    Task BuildIndexAsync(Guid agentId, string sourceFilePath, string indexFilePath, IProgress<RagVectorIndexStatus>? progress = null, CancellationToken cancellationToken = default);
 }
