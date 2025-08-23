@@ -1,3 +1,5 @@
+using System;
+
 using ChatClient.Api.Client.Services;
 using ChatClient.Api.Services;
 using ChatClient.Shared.Models;
@@ -13,7 +15,7 @@ public class ChatServiceTests
 {
     private class DummyHistoryBuilder : IAppChatHistoryBuilder
     {
-        public Task<ChatHistory> BuildChatHistoryAsync(IEnumerable<IAppChatMessage> messages, Kernel kernel, CancellationToken cancellationToken)
+        public Task<ChatHistory> BuildChatHistoryAsync(IEnumerable<IAppChatMessage> messages, Kernel kernel, Guid agentId, CancellationToken cancellationToken)
             => Task.FromResult(new ChatHistory());
     }
 
