@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using System.Text.Json;
 using System.Text.Json.Serialization;
@@ -22,6 +23,12 @@ public class UserSettings
 
     [JsonPropertyName("agentName")]
     public string AgentName { get; set; } = string.Empty;
+
+    [JsonPropertyName("llms")]
+    public List<LlmServerConfig> Llms { get; set; } = [];
+
+    [JsonPropertyName("defaultLlmId")]
+    public Guid? DefaultLlmId { get; set; }
 
     /// <summary>
     /// Ollama server URL (including protocol and port)
