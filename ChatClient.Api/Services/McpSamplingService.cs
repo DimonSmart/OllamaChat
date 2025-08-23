@@ -1,11 +1,17 @@
 using ChatClient.Shared.Models;
 using ChatClient.Shared.Services;
+using ChatClient.Api.Client.Services;
+using ChatClient.Shared.Constants;
 
 using DimonSmart.AiUtils;
 
-using Microsoft.Extensions.DependencyInjection;
 using Microsoft.SemanticKernel;
 using Microsoft.SemanticKernel.ChatCompletion;
+using Microsoft.SemanticKernel.Connectors.Ollama;
+using Microsoft.Extensions.Logging;
+using System.Net.Http.Headers;
+using System.Text;
+using System.Net.Http;
 
 using ModelContextProtocol;
 using ModelContextProtocol.Protocol;
@@ -19,12 +25,17 @@ namespace ChatClient.Api.Services;
 /// Sampling allows MCP servers to request the client to perform LLM inference.
 /// </summary>
 public class McpSamplingService(
-    IServiceProvider serviceProvider,
-    IUserSettingsService userSettingsService,
     IOllamaClientService ollamaService,
+    IUserSettingsService userSettingsService,
+    AppForceLastUserReducer reducer,
+    ILogger<HttpLoggingHandler> httpLogger,
     ILogger<McpSamplingService> logger)
 {
-    private readonly IServiceProvider _serviceProvider = serviceProvider;
+    private readonly IOllamaClientService _ollamaService = ollamaService;
+    private readonly IUserSettingsService _userSettingsService = userSettingsService;
+    private readonly AppForceLastUserReducer _reducer = reducer;
+    private readonly ILogger<HttpLoggingHandler> _httpLogger = httpLogger;
+    private readonly ILogger<McpSamplingService> _logger = logger;
     /// <summary>
     /// Handles a sampling request from an MCP server.
     /// </summary>
@@ -37,13 +48,12 @@ public class McpSamplingService(
         CreateMessageRequestParams request,
         IProgress<ProgressNotificationValue> progress,
         CancellationToken cancellationToken,
-        IUserSettingsService userSettingsService,
         McpServerConfig? mcpServerConfig = null)
     {
         string? model = null;
         try
         {
-            logger.LogInformation("Processing sampling request with {MessageCount} messages", request.Messages?.Count ?? 0);
+            _logger.LogInformation("Processing sampling request with {MessageCount} messages", request.Messages?.Count ?? 0);
 
             if (request.Messages == null || request.Messages.Count == 0)
             {
@@ -53,9 +63,8 @@ public class McpSamplingService(
             progress?.Report(new ProgressNotificationValue { Progress = 0, Total = 100 });
 
             model = await DetermineModelToUseAsync(request.ModelPreferences, mcpServerConfig);
-            var settings = await userSettingsService.GetSettingsAsync();
-            var kernelService = _serviceProvider.GetRequiredService<KernelService>();
-            var kernel = await kernelService.CreateBasicKernelAsync(model, TimeSpan.FromSeconds(settings.McpSamplingTimeoutSeconds));
+            var settings = await _userSettingsService.GetSettingsAsync();
+            var kernel = await CreateKernelAsync(model, TimeSpan.FromSeconds(settings.McpSamplingTimeoutSeconds));
 
             progress?.Report(new ProgressNotificationValue { Progress = 25, Total = 100 });
 
@@ -71,7 +80,7 @@ public class McpSamplingService(
             progress?.Report(new ProgressNotificationValue { Progress = 90, Total = 100 });
             var responseText = ThinkTagParser.ExtractThinkAnswer(response.Content ?? string.Empty).Answer;
 
-            logger.LogInformation("Sampling request completed successfully, response length: {Length}", responseText.Length);
+            _logger.LogInformation("Sampling request completed successfully, response length: {Length}", responseText.Length);
 
             progress?.Report(new ProgressNotificationValue { Progress = 100, Total = 100 });
 
@@ -88,7 +97,7 @@ public class McpSamplingService(
         }
         catch (ModelDoesNotSupportToolsException ex)
         {
-            logger.LogWarning(ex, "Model {ModelName} does not support tools/function calling for MCP sampling request from server: {ServerName}",
+            _logger.LogWarning(ex, "Model {ModelName} does not support tools/function calling for MCP sampling request from server: {ServerName}",
                 model, mcpServerConfig?.Name ?? "Unknown");
             throw new InvalidOperationException(
                 $"The model '{model}' does not support function calling/tools. " +
@@ -100,7 +109,7 @@ public class McpSamplingService(
             if (ex is TaskCanceledException or TimeoutException)
             {
                 var timeoutSeconds = await GetMcpSamplingTimeoutAsync();
-                logger.LogError(ex, "MCP sampling request timed out after {TimeoutSeconds} seconds. " +
+                _logger.LogError(ex, "MCP sampling request timed out after {TimeoutSeconds} seconds. " +
                     "Consider increasing the MCP sampling timeout in settings if this happens frequently. " +
                     "Request had {MessageCount} messages for server: {ServerName}",
                     timeoutSeconds,
@@ -109,10 +118,40 @@ public class McpSamplingService(
             }
             else
             {
-                logger.LogError(ex, "Failed to process sampling request: {Message}", ex.Message);
+                _logger.LogError(ex, "Failed to process sampling request: {Message}", ex.Message);
             }
             throw;
         }
+    }
+
+    private async Task<Kernel> CreateKernelAsync(string modelId, TimeSpan timeout)
+    {
+        var settings = await _userSettingsService.GetSettingsAsync();
+        var baseUrl = !string.IsNullOrWhiteSpace(settings.OllamaServerUrl) ? settings.OllamaServerUrl : OllamaDefaults.ServerUrl;
+
+        var handler = new HttpClientHandler();
+        if (settings.IgnoreSslErrors)
+            handler.ServerCertificateCustomValidationCallback = (_, _, _, _) => true;
+
+        var loggingHandler = new HttpLoggingHandler(_httpLogger) { InnerHandler = handler };
+        var httpClient = new HttpClient(loggingHandler) { Timeout = timeout };
+        httpClient.BaseAddress = new Uri(baseUrl);
+
+        if (!string.IsNullOrWhiteSpace(settings.OllamaBasicAuthPassword))
+        {
+            var authValue = Convert.ToBase64String(Encoding.UTF8.GetBytes($":{settings.OllamaBasicAuthPassword}"));
+            httpClient.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Basic", authValue);
+        }
+
+        IKernelBuilder builder = Kernel.CreateBuilder();
+        builder.Services.AddSingleton(httpClient);
+        builder.Services.AddLogging(c => c.AddConsole().SetMinimumLevel(LogLevel.Information));
+        builder.Services.AddSingleton<IChatCompletionService>(_ =>
+            new AppForceLastUserChatCompletionService(
+                new OllamaChatCompletionService(modelId, httpClient: httpClient),
+                _reducer));
+
+        return builder.Build();
     }
 
     /// <summary>
@@ -149,42 +188,44 @@ public class McpSamplingService(
     /// 3. If user default not set - return error
     /// No hardcoded fallback
     /// </summary>
-    private async Task<string> DetermineModelToUseAsync(ModelPreferences? modelPreferences, McpServerConfig? mcpServerConfig)
+    private async Task<string> DetermineModelToUseAsync(
+        ModelPreferences? modelPreferences,
+        McpServerConfig? mcpServerConfig)
     {
-        var availableModels = await ollamaService.GetModelsAsync();
+        var availableModels = await _ollamaService.GetModelsAsync();
         var availableModelNames = availableModels.Select(m => m.Name).ToHashSet();
 
         var requestedModel = modelPreferences?.Hints?.FirstOrDefault()?.Name;
         if (!string.IsNullOrEmpty(requestedModel) && availableModelNames.Contains(requestedModel))
         {
-            logger.LogInformation("Using requested model for MCP sampling: {ModelName}", requestedModel);
+            _logger.LogInformation("Using requested model for MCP sampling: {ModelName}", requestedModel);
             return requestedModel;
         }
         if (!string.IsNullOrEmpty(mcpServerConfig?.SamplingModel))
         {
             if (availableModelNames.Contains(mcpServerConfig.SamplingModel))
             {
-                logger.LogInformation("Using MCP server configured model for sampling: {ModelName} (Server: {ServerName})",
+                _logger.LogInformation("Using MCP server configured model for sampling: {ModelName} (Server: {ServerName})",
                     mcpServerConfig.SamplingModel, mcpServerConfig.Name);
                 return mcpServerConfig.SamplingModel;
             }
             else
             {
-                logger.LogWarning("MCP server configured model '{ModelName}' not available for server '{ServerName}'",
+                _logger.LogWarning("MCP server configured model '{ModelName}' not available for server '{ServerName}'",
                     mcpServerConfig.SamplingModel, mcpServerConfig.Name);
             }
         }
-        var userSettings = await userSettingsService.GetSettingsAsync();
+        var userSettings = await _userSettingsService.GetSettingsAsync();
         if (!string.IsNullOrEmpty(userSettings.DefaultModelName))
         {
             if (availableModelNames.Contains(userSettings.DefaultModelName))
             {
-                logger.LogInformation("Using user's default model for MCP sampling: {ModelName}", userSettings.DefaultModelName);
+                _logger.LogInformation("Using user's default model for MCP sampling: {ModelName}", userSettings.DefaultModelName);
                 return userSettings.DefaultModelName;
             }
             else
             {
-                logger.LogWarning("User's default model '{ModelName}' not available", userSettings.DefaultModelName);
+                _logger.LogWarning("User's default model '{ModelName}' not available", userSettings.DefaultModelName);
             }
         }
         var errorMessage = "No valid model available for sampling. ";
@@ -207,7 +248,7 @@ public class McpSamplingService(
 
     private async Task<int> GetMcpSamplingTimeoutAsync()
     {
-        var userSettings = await userSettingsService.GetSettingsAsync();
+        var userSettings = await _userSettingsService.GetSettingsAsync();
         return userSettings.McpSamplingTimeoutSeconds;
     }
 }

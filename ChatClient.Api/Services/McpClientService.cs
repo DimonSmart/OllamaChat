@@ -2,7 +2,6 @@ using System.Reflection;
 
 using ChatClient.Shared.Models;
 using ChatClient.Shared.Services;
-
 using ModelContextProtocol.Client;
 using ModelContextProtocol.Protocol;
 
@@ -11,7 +10,6 @@ namespace ChatClient.Api.Services;
 public class McpClientService(
     IMcpServerConfigService mcpServerConfigService,
     McpSamplingService mcpSamplingService,
-    IUserSettingsService userSettingsService,
     ILogger<McpClientService> logger) : IMcpClientService
 {
     private List<IMcpClient>? _mcpClients = null;
@@ -140,7 +138,6 @@ public class McpClientService(
     /// </summary>
     private async Task<McpClientOptions> CreateClientOptionsAsync(McpServerConfig serverConfig, CancellationToken cancellationToken)
     {
-        var settings = await userSettingsService.GetSettingsAsync();
         return new McpClientOptions
         {
             ClientInfo = new Implementation
@@ -164,7 +161,7 @@ public class McpClientService(
                             logger.LogInformation("Handling sampling request with {MessageCount} messages from server: {ServerName}",
                                 request.Messages?.Count ?? 0, serverConfig?.Name ?? "Unknown");
 
-                            var result = await mcpSamplingService.HandleSamplingRequestAsync(request, progress, cancellationToken, userSettingsService, serverConfig);
+                            var result = await mcpSamplingService.HandleSamplingRequestAsync(request, progress, cancellationToken, serverConfig);
 
                             logger.LogInformation("Sampling request completed successfully for server: {ServerName}", serverConfig?.Name ?? "Unknown");
                             return result;

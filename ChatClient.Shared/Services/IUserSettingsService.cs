@@ -6,4 +6,5 @@ public interface IUserSettingsService
 {
     Task<UserSettings> GetSettingsAsync();
     Task SaveSettingsAsync(UserSettings settings);
+    event Func<Task>? EmbeddingModelChanged;
 }
