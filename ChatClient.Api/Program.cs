@@ -58,6 +58,7 @@ builder.Services.AddSingleton<ChatClient.Api.Client.Services.IStopAgentFactory, 
 builder.Services.AddSingleton<IChatFormatter, TextChatFormatter>();
 builder.Services.AddSingleton<IChatFormatter, MarkdownChatFormatter>();
 builder.Services.AddSingleton<IChatFormatter, HtmlChatFormatter>();
+builder.Services.AddSingleton<ChatClient.Shared.Services.IEmbeddingModelChangeService, ChatClient.Api.Services.EmbeddingModelChangeService>();
 
 builder.Services.AddRazorPages();
 builder.Services.AddServerSideBlazor();

@@ -96,6 +96,11 @@ public class McpFunctionIndexService
         }
     }
 
+    public void Invalidate()
+    {
+        _index.Clear();
+    }
+
     private async Task<string> DetermineModelIdAsync()
     {
         var settings = await _userSettingsService.GetSettingsAsync();
