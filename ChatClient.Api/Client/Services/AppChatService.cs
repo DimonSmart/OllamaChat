@@ -1,5 +1,6 @@
 using System;
 using System.Collections.ObjectModel;
+using System.Linq;
 
 using ChatClient.Api.Services;
 using ChatClient.Shared.Models;
@@ -160,7 +161,17 @@ public class AppChatService(
                 logger.LogDebug("InputTransform: filtered {OriginalCount} messages to {FilteredCount} messages",
                     Messages.Count, filteredMessages.Count);
 
-                return await chatHistoryBuilder.BuildChatHistoryAsync(filteredMessages, agents[0].Kernel, ct);
+                var agentId = _agentsByName[agents[0].Name!].Id;
+                var built = await chatHistoryBuilder.BuildChatHistoryAsync(filteredMessages, agents[0].Kernel, agentId, ct);
+
+                var rag = built.FirstOrDefault(m => m.Role == AuthorRole.Tool);
+                var ragText = rag?.Items.OfType<Microsoft.SemanticKernel.TextContent>().FirstOrDefault()?.Text;
+                if (!string.IsNullOrWhiteSpace(ragText) && !Messages.Any(m => m.Role == ChatRole.Tool))
+                {
+                    await AddMessageAsync(new AppChatMessage(ragText, DateTime.Now, ChatRole.Tool));
+                }
+
+                return built;
             };
 
             var chatOrchestration = CreateChatOrchestration(

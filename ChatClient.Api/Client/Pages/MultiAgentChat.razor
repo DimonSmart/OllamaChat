@@ -111,7 +111,16 @@
         <div class="chat-messages-container" @ref="messagesElement">
             @foreach (var message in ChatViewModelService.Messages)
             {
-                @if (message.Role != Microsoft.Extensions.AI.ChatRole.System)
+                if (message.Role == Microsoft.Extensions.AI.ChatRole.System)
+                {
+                    continue;
+                }
+
+                @if (message.Role == Microsoft.Extensions.AI.ChatRole.Tool)
+                {
+                    <RagDisplay Text="@message.Content" />
+                }
+                else
                 {
                     <MudChat Dense="true" ChatPosition="@(message.Role == Microsoft.Extensions.AI.ChatRole.Assistant ? ChatBubblePosition.Start : ChatBubblePosition.End)" @key="message.Id">
                          <MudChatHeader>

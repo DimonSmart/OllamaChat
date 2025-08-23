@@ -1,0 +1,29 @@
+@using Microsoft.AspNetCore.Components
+@using MudBlazor
+
+<MudChatBubble Class="@($"think-line {(isExpanded ? "expanded" : "collapsed")}")" OnClick="Toggle">
+    @if (isExpanded)
+    {
+        <MudText Typo="Typo.caption" Class="mud-text-secondary" Style="white-space: pre-wrap; font-style: italic;">
+            @Text
+        </MudText>
+    }
+    else
+    {
+        <MudText Typo="Typo.caption" Class="mud-text-secondary" Style="font-style: italic;">
+            @ContextIcon @Truncate(Text, 100)
+        </MudText>
+    }
+</MudChatBubble>
+
+@code {
+    [Parameter] public string Text { get; set; } = string.Empty;
+
+    bool isExpanded;
+
+    const string ContextIcon = "\uD83D\uDCC4"; // 📄
+
+    void Toggle() => isExpanded = !isExpanded;
+
+    static string Truncate(string text, int length) => text.Length <= length ? text : text.Substring(0, length) + "...";
+}
