@@ -10,11 +10,13 @@ namespace ChatClient.Api.Controllers;
 public class SettingsController : ControllerBase
 {
     private readonly IUserSettingsService _settingsService;
+    private readonly IEmbeddingModelChangeService _changeService;
     private readonly ILogger<SettingsController> _logger;
 
-    public SettingsController(IUserSettingsService settingsService, ILogger<SettingsController> logger)
+    public SettingsController(IUserSettingsService settingsService, IEmbeddingModelChangeService changeService, ILogger<SettingsController> logger)
     {
         _settingsService = settingsService;
+        _changeService = changeService;
         _logger = logger;
     }
 
@@ -38,7 +40,10 @@ public class SettingsController : ControllerBase
     {
         try
         {
+            var existing = await _settingsService.GetSettingsAsync();
             await _settingsService.SaveSettingsAsync(settings);
+            if (!string.Equals(existing.EmbeddingModelName, settings.EmbeddingModelName, StringComparison.OrdinalIgnoreCase))
+                await _changeService.HandleChangeAsync();
             return Ok();
         }
         catch (Exception ex)
