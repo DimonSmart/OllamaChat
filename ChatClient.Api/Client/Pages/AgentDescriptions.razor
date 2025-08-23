@@ -424,12 +424,18 @@
     {
         if (editingAgent.Id == Guid.Empty) return;
 
+        const long maxFileSize = 10 * 1024 * 1024; // 10MB
         foreach (var file in e.GetMultipleFiles())
         {
+            if (file.Size > maxFileSize)
+            {
+                Snackbar.Add($"File {file.Name} exceeds 10MB", Severity.Error);
+                continue;
+            }
             try
             {
                 await using var ms = new MemoryStream();
-                await file.OpenReadStream().CopyToAsync(ms);
+                await file.OpenReadStream(maxFileSize).CopyToAsync(ms);
                 ms.Position = 0;
                 var formFile = new FormFile(ms, 0, ms.Length, file.Name, file.Name)
                 {
