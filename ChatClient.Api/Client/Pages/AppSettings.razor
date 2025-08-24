@@ -167,7 +167,7 @@
     {
         try
         {
-            _availableModels = (await OllamaService.GetModelsAsync(serverId)).ToList();
+            _availableModels = (await OllamaService.GetModelsAsync(serverId ?? Guid.Empty)).ToList();
             if (_availableModels.Count == 0)
             {
                 Snackbar.Add("No models available. Settings will be saved but model selection won't take effect.", Severity.Warning);
@@ -199,7 +199,7 @@
         {
             if (!string.IsNullOrWhiteSpace(_settings.EmbeddingModelName))
             {
-                var models = await OllamaService.GetModelsAsync(_settings.DefaultLlmId);
+                var models = await OllamaService.GetModelsAsync(_settings.DefaultLlmId ?? Guid.Empty);
                 var exists = models.Any(m => m.Name.Equals(_settings.EmbeddingModelName, StringComparison.OrdinalIgnoreCase));
                 if (!exists)
                 {

@@ -33,7 +33,7 @@ else
         isChecking = true;
         try
         {
-            await OllamaService.GetModelsAsync();
+            await OllamaService.GetModelsAsync(Guid.Empty);
         }
         catch (Exception ex)
         {

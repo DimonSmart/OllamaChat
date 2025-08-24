@@ -350,7 +350,7 @@
     {
         try
         {
-            availableModels = (await OllamaService.GetModelsAsync()).ToList();
+            availableModels = (await OllamaService.GetModelsAsync(Guid.Empty)).ToList();
         }
         catch (Exception ex)
         {
