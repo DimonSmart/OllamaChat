@@ -1,0 +1,240 @@
+@page "/llm-servers"
+@using ChatClient.Shared.Models
+@using ChatClient.Api.Services
+@using System.Net.Http
+@inject ILlmServerConfigService LlmServerConfigService
+@inject ISnackbar Snackbar
+
+<PageTitle>LLM Servers</PageTitle>
+
+<MudContainer MaxWidth="MaxWidth.ExtraLarge" Class="mt-3">
+    <MudText Class="page-header">LLM Servers</MudText>
+
+    <MudPaper Elevation="3" Class="pa-3 rounded-lg">
+        <MudToolBar Dense="true">
+            <MudButton Variant="Variant.Filled"
+                       Color="Color.Primary"
+                       StartIcon="@Icons.Material.Filled.Add"
+                       OnClick="AddServer"
+                       Size="Size.Small">
+                Add Server
+            </MudButton>
+        </MudToolBar>
+
+        @if (loading)
+        {
+            <MudStack Justify="Justify.Center" Class="my-4">
+                <MudProgressCircular Color="Color.Primary" Indeterminate="true" />
+            </MudStack>
+        }
+        else
+        {
+            <MudTable Items="servers" Hover="true" Striped="true" Bordered="true" Class="mt-4">
+                <HeaderContent>
+                    <MudTh>Name</MudTh>
+                    <MudTh>Type</MudTh>
+                    <MudTh>Base URL</MudTh>
+                    <MudTh>Updated</MudTh>
+                    <MudTh></MudTh>
+                </HeaderContent>
+                <RowTemplate>
+                    <MudTd DataLabel="Name">@context.Name</MudTd>
+                    <MudTd DataLabel="Type">@context.ServerType</MudTd>
+                    <MudTd DataLabel="Base URL">@context.BaseUrl</MudTd>
+                    <MudTd DataLabel="Updated">@context.UpdatedAt.ToLocalTime().ToString("g")</MudTd>
+                    <MudTd Class="d-flex justify-end">
+                        <MudIconButton Icon="@Icons.Material.Filled.PlayArrow"
+                                        Size="Size.Small"
+                                        Color="Color.Info"
+                                        OnClick="@( () => TestServer(context) )" />
+                        <MudIconButton Icon="@Icons.Material.Filled.Edit"
+                                        Size="Size.Small"
+                                        OnClick="@( () => StartEdit(context) )" />
+                        <MudIconButton Icon="@Icons.Material.Filled.Delete"
+                                        Size="Size.Small"
+                                        Color="Color.Error"
+                                        OnClick="@( () => ConfirmDelete(context) )" />
+                    </MudTd>
+                </RowTemplate>
+                <NoRecordsContent>
+                    <MudText Class="pa-4">No servers configured.</MudText>
+                </NoRecordsContent>
+            </MudTable>
+        }
+    </MudPaper>
+</MudContainer>
+
+<MudDialog @bind-Visible="editDialog" Options="editDialogOptions">
+    <TitleContent>
+        <MudText Typo="Typo.h6">@(editingServer?.Id == null ? "Add Server" : "Edit Server")</MudText>
+    </TitleContent>
+    <DialogContent>
+        <MudForm @ref="editForm" Model="editingServer">
+            <LlmServerEditor Server="editingServer" />
+        </MudForm>
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="CancelEdit" Size="Size.Medium">Cancel</MudButton>
+        <MudButton Color="Color.Primary" OnClick="SaveServer" Size="Size.Medium">Save</MudButton>
+    </DialogActions>
+</MudDialog>
+
+<MudDialog @bind-Visible="deleteDialog" Options="dialogOptions">
+    <TitleContent>
+        <MudText Typo="Typo.h6">Confirm Delete</MudText>
+    </TitleContent>
+    <DialogContent>
+        <MudText>Delete server "@serverToDelete?.Name"?</MudText>
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="CancelDelete" Size="Size.Medium">Cancel</MudButton>
+        <MudButton Color="Color.Error" OnClick="DeleteServer" Size="Size.Medium">Delete</MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    private List<LlmServerConfig> servers = new();
+    private bool loading = true;
+    private bool editDialog;
+    private bool deleteDialog;
+    private LlmServerConfig editingServer = new();
+    private LlmServerConfig? serverToDelete;
+    private MudForm? editForm;
+
+    private DialogOptions dialogOptions = new() { CloseOnEscapeKey = true, CloseButton = true };
+    private DialogOptions editDialogOptions = new() { CloseOnEscapeKey = true, CloseButton = true, MaxWidth = MaxWidth.Small, FullWidth = true };
+
+    protected override async Task OnInitializedAsync() => await LoadServers();
+
+    private async Task LoadServers()
+    {
+        try
+        {
+            loading = true;
+            servers = await LlmServerConfigService.GetAllAsync();
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Error loading servers: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            loading = false;
+        }
+    }
+
+    private void AddServer()
+    {
+        editingServer = new LlmServerConfig { ServerType = ServerType.Ollama };
+        editDialog = true;
+    }
+
+    private void StartEdit(LlmServerConfig server)
+    {
+        editingServer = new LlmServerConfig
+        {
+            Id = server.Id,
+            Name = server.Name,
+            ServerType = server.ServerType,
+            BaseUrl = server.BaseUrl,
+            ApiKey = server.ApiKey,
+            Password = server.Password,
+            IgnoreSslErrors = server.IgnoreSslErrors,
+            HttpTimeoutSeconds = server.HttpTimeoutSeconds,
+            CreatedAt = server.CreatedAt,
+            UpdatedAt = server.UpdatedAt
+        };
+        editDialog = true;
+    }
+
+    private async Task SaveServer()
+    {
+        if (editForm is null)
+            return;
+
+        await editForm.Validate();
+        if (!editForm.IsValid)
+            return;
+
+        try
+        {
+            if (editingServer.Id == null)
+            {
+                await LlmServerConfigService.CreateAsync(editingServer);
+                Snackbar.Add("Server created", Severity.Success);
+            }
+            else
+            {
+                await LlmServerConfigService.UpdateAsync(editingServer);
+                Snackbar.Add("Server updated", Severity.Success);
+            }
+            editDialog = false;
+            await LoadServers();
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Error saving server: {ex.Message}", Severity.Error);
+        }
+    }
+
+    private void CancelEdit() => editDialog = false;
+
+    private void ConfirmDelete(LlmServerConfig server)
+    {
+        serverToDelete = server;
+        deleteDialog = true;
+    }
+
+    private void CancelDelete() => deleteDialog = false;
+
+    private async Task DeleteServer()
+    {
+        if (serverToDelete?.Id == null)
+            return;
+
+        try
+        {
+            await LlmServerConfigService.DeleteAsync(serverToDelete.Id.Value);
+            Snackbar.Add("Server deleted", Severity.Success);
+            await LoadServers();
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Error deleting server: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            deleteDialog = false;
+        }
+    }
+
+    private async Task TestServer(LlmServerConfig server)
+    {
+        try
+        {
+            using var handler = new HttpClientHandler();
+            if (server.IgnoreSslErrors)
+                handler.ServerCertificateCustomValidationCallback = (_, _, _, _) => true;
+
+            using var client = new HttpClient(handler)
+            {
+                Timeout = TimeSpan.FromSeconds(server.HttpTimeoutSeconds),
+                BaseAddress = new Uri(server.BaseUrl)
+            };
+
+            if (!string.IsNullOrEmpty(server.Password))
+            {
+                var auth = Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes($":{server.Password}"));
+                client.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Basic", auth);
+            }
+
+            var response = await client.GetAsync("api/tags");
+            response.EnsureSuccessStatusCode();
+            Snackbar.Add("Connection successful", Severity.Success);
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Connection failed: {ex.Message}", Severity.Error);
+        }
+    }
+}

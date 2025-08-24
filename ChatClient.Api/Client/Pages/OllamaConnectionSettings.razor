@@ -21,34 +21,18 @@
     else
     {
         <MudPaper Elevation="3" Class="pa-3 rounded-lg">
-            <MudForm @ref="_form" Model="@_settings">
+            <MudForm @ref="_form" Model="@_server">
                 <MudCard Class="mb-4" Elevation="1">
                     <MudCardHeader Class="pb-2">
                         <MudText Class="section-header">Server Connection</MudText>
                     </MudCardHeader>
                     <MudCardContent Class="pt-0">
-                        <MudTextField T="string" Label="Server URL" @bind-Value="_settings.OllamaServerUrl"
-                                      Variant="Variant.Outlined"
-                                      HelperText="Ollama server URL including protocol and port (e.g., https://my-server:11434)"
-                                      Placeholder="@OllamaDefaults.ServerUrl" />
-
-                        <MudTextField T="string" Label="Basic Auth Password" @bind-Value="_settings.OllamaBasicAuthPassword"
-                                      Variant="Variant.Outlined" InputType="InputType.Password"
-                                      HelperText="Password for basic authentication (leave empty if not required)"
-                                      Class="mt-3" />                        <MudNumericField T="int" Label="HTTP Timeout (seconds)" @bind-Value="_settings.HttpTimeoutSeconds"
-                                         Variant="Variant.Outlined" Min="1" Max="3600"
-                                         HelperText="Timeout for HTTP requests to Ollama server (1-3600 seconds)"
-                                         Class="mt-3" />
+                        <LlmServerEditor Server="_server" />
 
                         <MudNumericField T="int" Label="MCP Sampling Timeout (seconds)" @bind-Value="_settings.McpSamplingTimeoutSeconds"
                                          Variant="Variant.Outlined" Min="60" Max="7200"
                                          HelperText="Timeout for MCP sampling requests - typically longer than regular API calls (60-7200 seconds)"
-                                         Class="mt-3" />
-
-                        <MudSwitch T="bool" @bind-Value="_settings.IgnoreSslErrors" Color="Color.Primary" Class="mt-3">
-                            Ignore SSL certificate errors (for self-signed certificates)
-                        </MudSwitch>
-
+                                         Class="mt-4" />
                     </MudCardContent>
                 </MudCard>
 
@@ -90,6 +74,7 @@
 
 @code {
     private UserSettings _settings = new();
+    private LlmServerConfig _server = new();
     private bool _loading = true;
     private bool _testingConnection = false;
     private MudForm? _form;
@@ -113,6 +98,15 @@
         try
         {
             _settings = await UserSettingsService.GetSettingsAsync();
+            _server = new LlmServerConfig
+            {
+                Name = "Ollama",
+                ServerType = ServerType.Ollama,
+                BaseUrl = _settings.OllamaServerUrl,
+                Password = _settings.OllamaBasicAuthPassword,
+                IgnoreSslErrors = _settings.IgnoreSslErrors,
+                HttpTimeoutSeconds = _settings.HttpTimeoutSeconds
+            };
         }
         catch (Exception ex)
         {
@@ -125,6 +119,10 @@
     {
         try
         {
+            _settings.OllamaServerUrl = _server.BaseUrl;
+            _settings.OllamaBasicAuthPassword = _server.Password;
+            _settings.IgnoreSslErrors = _server.IgnoreSslErrors;
+            _settings.HttpTimeoutSeconds = _server.HttpTimeoutSeconds;
             await UserSettingsService.SaveSettingsAsync(_settings);
             Snackbar.Add("Connection settings saved successfully", Severity.Success);
         }
@@ -150,9 +148,12 @@
         try
         {
             // Save current settings temporarily to test them
+            _settings.OllamaServerUrl = _server.BaseUrl;
+            _settings.OllamaBasicAuthPassword = _server.Password;
+            _settings.IgnoreSslErrors = _server.IgnoreSslErrors;
+            _settings.HttpTimeoutSeconds = _server.HttpTimeoutSeconds;
             await UserSettingsService.SaveSettingsAsync(_settings);
 
-            // Try to get models to test connection
             var models = await OllamaService.GetModelsAsync();
 
             _connectionTestResult = new ConnectionTestResult
