@@ -51,7 +51,11 @@ public class KernelService(
         Guid? serverId = null)
     {
         var settings = await userSettingsService.GetSettingsAsync();
-        var kernel = await CreateBasicKernelAsync(modelName, TimeSpan.FromSeconds(settings.HttpTimeoutSeconds), agentName, serverId);
+        var targetServer = serverId.HasValue && serverId.Value != Guid.Empty
+            ? settings.Llms.FirstOrDefault(s => s.Id == serverId.Value)
+            : settings.Llms.FirstOrDefault(s => s.Id == settings.DefaultLlmId) ?? settings.Llms.FirstOrDefault();
+        var timeoutSeconds = targetServer?.HttpTimeoutSeconds ?? 600;
+        var kernel = await CreateBasicKernelAsync(modelName, TimeSpan.FromSeconds(timeoutSeconds), agentName, serverId);
 
         if (functionsToRegister != null && functionsToRegister.Any() && _mcpClientService != null)
         {
@@ -84,10 +88,10 @@ public class KernelService(
         LlmServerConfig? server = null;
         if (serverId.HasValue && serverId.Value != Guid.Empty)
             server = settings.Llms.FirstOrDefault(s => s.Id == serverId.Value);
+        server ??= settings.Llms.FirstOrDefault(s => s.Id == settings.DefaultLlmId) ?? settings.Llms.FirstOrDefault();
 
         var handler = new HttpClientHandler();
-        var ignoreSsl = server?.IgnoreSslErrors ?? settings.IgnoreSslErrors;
-        if (ignoreSsl)
+        if (server?.IgnoreSslErrors == true)
             handler.ServerCertificateCustomValidationCallback = (sender, cert, chain, sslPolicyErrors) => true;
 
         var loggingHandler = new HttpLoggingHandler(serviceProvider.GetRequiredService<ILogger<HttpLoggingHandler>>())
@@ -98,10 +102,10 @@ public class KernelService(
         var httpClient = new HttpClient(loggingHandler)
         {
             Timeout = TimeSpan.FromSeconds(server?.HttpTimeoutSeconds ?? (int)timeout.TotalSeconds),
-            BaseAddress = new Uri(server?.BaseUrl ?? (!string.IsNullOrWhiteSpace(settings.OllamaServerUrl) ? settings.OllamaServerUrl : OllamaDefaults.ServerUrl))
+            BaseAddress = new Uri(server?.BaseUrl ?? OllamaDefaults.ServerUrl)
         };
 
-        var password = server?.Password ?? settings.OllamaBasicAuthPassword;
+        var password = server?.Password;
         if (!string.IsNullOrWhiteSpace(password))
         {
             var authValue = Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes($":{password}"));
