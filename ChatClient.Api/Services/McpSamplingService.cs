@@ -132,20 +132,20 @@ public class McpSamplingService(
         LlmServerConfig? server = null;
         if (serverId.HasValue && serverId.Value != Guid.Empty)
             server = settings.Llms.FirstOrDefault(s => s.Id == serverId.Value);
+        server ??= settings.Llms.FirstOrDefault(s => s.Id == settings.DefaultLlmId) ?? settings.Llms.FirstOrDefault();
 
         var handler = new HttpClientHandler();
-        var ignoreSsl = server?.IgnoreSslErrors ?? settings.IgnoreSslErrors;
-        if (ignoreSsl)
+        if (server?.IgnoreSslErrors == true)
             handler.ServerCertificateCustomValidationCallback = (_, _, _, _) => true;
 
         var loggingHandler = new HttpLoggingHandler(_httpLogger) { InnerHandler = handler };
         var httpClient = new HttpClient(loggingHandler)
         {
             Timeout = TimeSpan.FromSeconds(server?.HttpTimeoutSeconds ?? (int)timeout.TotalSeconds),
-            BaseAddress = new Uri(server?.BaseUrl ?? (!string.IsNullOrWhiteSpace(settings.OllamaServerUrl) ? settings.OllamaServerUrl : OllamaDefaults.ServerUrl))
+            BaseAddress = new Uri(server?.BaseUrl ?? OllamaDefaults.ServerUrl)
         };
 
-        var password = server?.Password ?? settings.OllamaBasicAuthPassword;
+        var password = server?.Password;
         if (!string.IsNullOrWhiteSpace(password))
         {
             var authValue = Convert.ToBase64String(Encoding.UTF8.GetBytes($":{password}"));
