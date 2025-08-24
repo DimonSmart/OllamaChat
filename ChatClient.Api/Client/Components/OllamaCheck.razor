@@ -38,7 +38,7 @@ else
         catch (Exception ex)
         {
             Logger.LogWarning(ex, "Ollama not available for page access");
-            NavigationManager.NavigateTo("/ollama-connection-settings", true);
+            NavigationManager.NavigateTo("/llm-servers", true);
             return;
         }
         finally
