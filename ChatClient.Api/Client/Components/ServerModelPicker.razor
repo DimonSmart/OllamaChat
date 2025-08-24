@@ -1,0 +1,74 @@
+@using ChatClient.Api.Services
+@using ChatClient.Shared.Models
+@inject ILlmServerConfigService LlmServerConfigService
+@inject IOllamaClientService OllamaService
+
+<MudStack Spacing="2">
+    <MudSelect T="Guid?" Value="selectedServerId" ValueChanged="OnServerChanged" Label="Server" Variant="Variant.Outlined">
+        @foreach (var server in servers)
+        {
+            <MudSelectItem Value="@server.Id">@server.Name</MudSelectItem>
+        }
+    </MudSelect>
+
+    <MudSelect T="string" Value="selectedModel" ValueChanged="OnModelChanged" Label="Model" Variant="Variant.Outlined" Disabled="@(!selectedServerId.HasValue)">
+        @foreach (var model in models)
+        {
+            <MudSelectItem Value="@model.Name">@model.Name</MudSelectItem>
+        }
+    </MudSelect>
+</MudStack>
+
+@code {
+    [Parameter] public ServerModel Value { get; set; } = new(Guid.Empty, string.Empty);
+    [Parameter] public EventCallback<ServerModel> ValueChanged { get; set; }
+
+    private Guid? selectedServerId;
+    private string? selectedModel;
+    private List<LlmServerConfig> servers = [];
+    private List<OllamaModel> models = [];
+
+    protected override async Task OnInitializedAsync()
+    {
+        servers = await LlmServerConfigService.GetAllAsync();
+        if (Value.ServerId != Guid.Empty)
+        {
+            selectedServerId = Value.ServerId;
+            await LoadModelsAsync(Value.ServerId);
+        }
+        if (!string.IsNullOrEmpty(Value.ModelName))
+        {
+            selectedModel = Value.ModelName;
+        }
+    }
+
+    private async Task OnServerChanged(Guid? id)
+    {
+        selectedServerId = id;
+        selectedModel = null;
+        models.Clear();
+        if (id.HasValue)
+        {
+            await LoadModelsAsync(id.Value);
+        }
+        await NotifyValueChanged();
+    }
+
+    private async Task OnModelChanged(string? model)
+    {
+        selectedModel = model;
+        await NotifyValueChanged();
+    }
+
+    private async Task NotifyValueChanged()
+    {
+        var selection = new ServerModel(selectedServerId ?? Guid.Empty, selectedModel ?? string.Empty);
+        Value = selection;
+        await ValueChanged.InvokeAsync(selection);
+    }
+
+    private async Task LoadModelsAsync(Guid serverId)
+    {
+        models = (await OllamaService.GetModelsAsync()).ToList();
+    }
+}
