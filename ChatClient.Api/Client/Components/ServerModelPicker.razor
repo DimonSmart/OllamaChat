@@ -3,15 +3,20 @@
 @inject ILlmServerConfigService LlmServerConfigService
 @inject IOllamaClientService OllamaService
 
-<MudStack Spacing="2" Row="true" AlignItems="AlignItems.Center" @attributes="Attributes">
-    <MudSelect T="Guid?" Value="selectedServerId" ValueChanged="OnServerChanged" Label="Server" Variant="Variant.Outlined" Dense="true" Style="width:200px;">
+<MudStack Spacing="1" Row="true" AlignItems="AlignItems.Center" @attributes="Attributes" Style="flex: 1; min-width: 0;">
+    <MudSelect T="Guid?" Value="selectedServerId" ValueChanged="OnServerChanged" Placeholder="Server" 
+               Variant="Variant.Filled" Dense="true" Margin="Margin.None"
+               Style="min-width:120px; max-width:160px;"
+               Text="@GetSelectedServerName()">
         @foreach (var server in servers)
         {
             <MudSelectItem Value="@server.Id">@server.Name</MudSelectItem>
         }
     </MudSelect>
 
-    <MudSelect T="string" Value="selectedModel" ValueChanged="OnModelChanged" Label="Model" Variant="Variant.Outlined" Disabled="@(!selectedServerId.HasValue)" Dense="true" Style="width:200px;">
+    <MudSelect T="string" Value="selectedModel" ValueChanged="OnModelChanged" Placeholder="Model" 
+               Variant="Variant.Filled" Disabled="@(!selectedServerId.HasValue)" Dense="true" Margin="Margin.None"
+               Style="min-width:120px; max-width:180px;">
         @foreach (var model in models)
         {
             <MudSelectItem Value="@model.Name">@model.Name</MudSelectItem>
@@ -71,5 +76,14 @@
     private async Task LoadModelsAsync(Guid serverId)
     {
         models = (await OllamaService.GetModelsAsync(serverId)).ToList();
+    }
+
+    private string GetSelectedServerName()
+    {
+        if (!selectedServerId.HasValue)
+            return string.Empty;
+        
+        var server = servers.FirstOrDefault(s => s.Id == selectedServerId.Value);
+        return server?.Name ?? string.Empty;
     }
 }

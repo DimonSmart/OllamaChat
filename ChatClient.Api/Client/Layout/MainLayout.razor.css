@@ -31,6 +31,8 @@ main {
     height: 3.5rem;
     display: flex;
     align-items: center;
+    overflow: hidden; /* Prevent overflow */
+    padding: 0 1rem;
 }
 
     .top-row ::deep a, .top-row ::deep .btn-link {
@@ -51,10 +53,16 @@ main {
 @media (max-width: 640.98px) {
     .top-row {
         justify-content: space-between;
+        padding: 0 0.5rem !important;
     }
 
     .top-row ::deep a, .top-row ::deep .btn-link {
         margin-left: 0;
+    }
+    
+    /* Hide some elements on small screens for space */
+    .top-row .mud-text {
+        display: none;
     }
 }
 
@@ -86,4 +94,21 @@ main {
         padding-left: 2rem !important;
         padding-right: 1.5rem !important;
     }
+}
+
+/* AppBar improvements */
+.mud-appbar {
+    overflow: hidden;
+}
+
+.mud-appbar .mud-toolbar {
+    gap: 0.5rem;
+    padding: 0 1rem;
+}
+
+/* Better text truncation for title */
+.mud-appbar .mud-typography {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
