@@ -8,7 +8,7 @@ public class StartupOllamaChecker(IOllamaClientService ollamaService, ILogger<St
     {
         try
         {
-            var models = await ollamaService.GetModelsAsync(serverId);
+            var models = await ollamaService.GetModelsAsync(serverId ?? Guid.Empty);
             logger.LogInformation("Ollama is available with {ModelCount} models", models.Count);
 
             return new OllamaServerStatus

@@ -10,11 +10,11 @@ namespace ChatClient.Api.Controllers;
 public class ModelsController(IOllamaClientService ollamaService, ILogger<ModelsController> logger) : ControllerBase
 {
     [HttpGet]
-    public async Task<ActionResult<IEnumerable<OllamaModel>>> GetModels()
+    public async Task<ActionResult<IEnumerable<OllamaModel>>> GetModels([FromQuery] Guid? serverId = null)
     {
         try
         {
-            var models = await ollamaService.GetModelsAsync();
+            var models = await ollamaService.GetModelsAsync(serverId ?? Guid.Empty);
             return Ok(models);
         }
         catch (Exception ex)

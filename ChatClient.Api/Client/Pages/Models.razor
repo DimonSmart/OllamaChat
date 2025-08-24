@@ -86,7 +86,7 @@
                 var settings = await UserSettingsService.GetSettingsAsync();
                 serverId = settings.DefaultLlmId;
             }
-            _models = (await OllamaService.GetModelsAsync(serverId)).ToList();
+            _models = (await OllamaService.GetModelsAsync(serverId ?? Guid.Empty)).ToList();
             _errorMessage = null;
         }
         catch (Exception ex)
