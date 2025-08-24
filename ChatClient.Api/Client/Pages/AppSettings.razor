@@ -1,6 +1,7 @@
 @page "/app-settings"
 @using ChatClient.Api.Client.Services
 @using ChatClient.Api.Services
+@using ChatClient.Api.Client.Components
 @using ChatClient.Shared.Models
 @using ChatClient.Shared.Services
 @using System.Text.Json
@@ -25,36 +26,9 @@
                 <MudForm @ref="_form" Model="@_settings">
                     <MudCard Class="mb-4" Elevation="1">
                         <MudCardContent>
-                            <MudSelect T="string" Label="Default Model" @bind-Value="_settings.DefaultModelName"
-                                       Variant="Variant.Outlined" AnchorOrigin="Origin.BottomCenter" Dense="true">
-                                @foreach (var model in _availableModels)
-                                {
-                                    <MudSelectItem Value="@model.Name">
-                                        <MudStack Row="true" AlignItems="AlignItems.Center">
-                                            <span>@model.Name</span>
-                                            @if (model.SupportsImages)
-                                            {
-                                                <MudIcon Icon="@Icons.Material.Filled.Image"
-                                                         Size="Size.Small"
-                                                         Class="ml-1"
-                                                         title="Supports images"
-                                                         Style="color: #4caf50;" />
-                                            }
-
-                                            @if (model.SupportsFunctionCalling)
-                                            {
-                                                <MudIcon Icon="@Icons.Material.Filled.Settings"
-                                                         Size="Size.Small"
-                                                         Class="ml-1"
-                                                         title="Function calling support detected (may not be accurate)"
-                                                         Style="color: #2196f3;" />
-                                            }
-                                        </MudStack>
-                                    </MudSelectItem>
-                                }
-                            </MudSelect>
+                            <ServerModelPicker Value="_defaultModel" ValueChanged="OnDefaultModelChanged" />
                             <MudText Typo="Typo.caption" Class="mt-2">
-                                This model will be selected by default when starting a new chat.
+                                This server and model will be selected by default when starting a new chat.
                             </MudText>
                         </MudCardContent>
                     </MudCard>
@@ -144,7 +118,7 @@
 
 @code {
     private UserSettings _settings = new();
-    private List<OllamaModel> _availableModels = new();
+    private ServerModel _defaultModel = new(Guid.Empty, string.Empty);
     private bool _loading = true;
     private MudForm? _form;
 
@@ -154,7 +128,7 @@
         {
             _loading = true;
             await LoadSettings();
-            await LoadModels(_settings.DefaultLlmId);
+            _defaultModel = new(_settings.DefaultLlmId ?? Guid.Empty, _settings.DefaultModelName);
         }
         finally
         {
@@ -162,21 +136,12 @@
         }
     }
 
-    private async Task LoadModels(Guid? serverId)
+    private Task OnDefaultModelChanged(ServerModel model)
     {
-        try
-        {
-            _availableModels = (await OllamaService.GetModelsAsync(serverId ?? Guid.Empty)).ToList();
-            if (_availableModels.Count == 0)
-            {
-                Snackbar.Add("No models available. Settings will be saved but model selection won't take effect.", Severity.Warning);
-            }
-        }
-        catch (Exception ex)
-        {
-            Console.Error.WriteLine($"Error loading models: {ex.Message}");
-            Snackbar.Add("Failed to load available models.", Severity.Error);
-        }
+        _defaultModel = model;
+        _settings.DefaultLlmId = model.ServerId == Guid.Empty ? null : model.ServerId;
+        _settings.DefaultModelName = model.ModelName;
+        return Task.CompletedTask;
     }
 
     private async Task LoadSettings()
