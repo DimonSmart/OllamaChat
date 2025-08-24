@@ -255,6 +255,10 @@
     [CascadingParameter(Name = "SelectedModel")]
     public ServerModel? SelectedModel { get; set; }
 
+    private string CurrentModelName => string.IsNullOrWhiteSpace(SelectedModel?.ModelName)
+        ? userSettings.DefaultModelName
+        : SelectedModel.ModelName;
+
     private const string RoundRobinStopAgent = "RoundRobin";
     private const string RoundRobinSummaryStopAgent = "RoundRobinWithSummary";
     private List<string> stopAgents = new();
@@ -392,7 +396,7 @@
 
         foreach (var agent in selectedAgents)
             if (string.IsNullOrWhiteSpace(agent.ModelName))
-                agent.ModelName = SelectedModel?.ModelName;
+                agent.ModelName = CurrentModelName;
 
         userSettings.StopAgentName = stopAgentName;
         userSettings.MultiAgentSelectedAgents = selectedAgents.Select(a => a.AgentName).ToList();
@@ -469,7 +473,7 @@
             }
         }
         var groupChatManager = StopAgentFactory.Create(stopAgentName, options);
-        var chatConfiguration = new AppChatConfiguration(SelectedModel?.ModelName, allFunctions);
+        var chatConfiguration = new AppChatConfiguration(CurrentModelName, allFunctions);
 
         await ChatService.GenerateAnswerAsync(messageData.text.Trim(), chatConfiguration, groupChatManager, messageData.files);
         await ScrollToBottom();
