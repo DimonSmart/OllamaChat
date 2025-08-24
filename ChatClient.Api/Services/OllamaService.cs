@@ -118,17 +118,15 @@ public sealed class OllamaService(
             }
         }
 
-        var baseUrl = !string.IsNullOrWhiteSpace(settings.OllamaServerUrl)
-            ? settings.OllamaServerUrl
-            : configuration["Ollama:BaseUrl"] ?? OllamaDefaults.ServerUrl;
+        var server = settings.Llms.FirstOrDefault();
+        if (server != null)
+            return server;
 
+        var baseUrl = configuration["Ollama:BaseUrl"] ?? OllamaDefaults.ServerUrl;
         return new LlmServerConfig
         {
             Id = Guid.Empty,
             BaseUrl = baseUrl,
-            Password = settings.OllamaBasicAuthPassword,
-            IgnoreSslErrors = settings.IgnoreSslErrors,
-            HttpTimeoutSeconds = settings.HttpTimeoutSeconds,
             ServerType = ServerType.Ollama,
             Name = "Default"
         };
