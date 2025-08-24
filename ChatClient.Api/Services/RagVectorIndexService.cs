@@ -3,6 +3,7 @@ using System.Text.Json;
 
 using ChatClient.Shared.Models;
 using ChatClient.Shared.Services;
+using System.Linq;
 
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Logging;
@@ -16,7 +17,7 @@ public sealed class RagVectorIndexService(
     IConfiguration configuration,
     ILogger<RagVectorIndexService> logger) : IRagVectorIndexService
 {
-    public async Task BuildIndexAsync(Guid agentId, string sourceFilePath, string indexFilePath, IProgress<RagVectorIndexStatus>? progress = null, CancellationToken cancellationToken = default)
+    public async Task BuildIndexAsync(Guid agentId, string sourceFilePath, string indexFilePath, IProgress<RagVectorIndexStatus>? progress = null, CancellationToken cancellationToken = default, Guid? serverId = null)
     {
         if (!File.Exists(sourceFilePath))
             throw new FileNotFoundException($"Source file not found: {sourceFilePath}");
@@ -26,7 +27,7 @@ public sealed class RagVectorIndexService(
             throw new InvalidOperationException("Source file is empty.");
 
         var modelId = await GetModelIdAsync();
-        var baseUrl = await GetBaseUrlAsync();
+        var baseUrl = await GetBaseUrlAsync(serverId);
 
         IKernelBuilder builder = Kernel.CreateBuilder();
         builder.Services.AddLogging();
@@ -81,9 +82,15 @@ public sealed class RagVectorIndexService(
         logger.LogInformation("Built index {IndexPath} with {Count} fragments", indexFilePath, fragments.Count);
     }
 
-    private async Task<string> GetBaseUrlAsync()
+    private async Task<string> GetBaseUrlAsync(Guid? serverId)
     {
         var settings = await userSettings.GetSettingsAsync();
+        if (serverId.HasValue && serverId.Value != Guid.Empty)
+        {
+            var server = settings.Llms.FirstOrDefault(s => s.Id == serverId.Value);
+            if (server != null)
+                return server.BaseUrl;
+        }
         if (!string.IsNullOrWhiteSpace(settings.OllamaServerUrl))
             return settings.OllamaServerUrl;
         return configuration["Ollama:BaseUrl"] ?? "http://localhost:11434";

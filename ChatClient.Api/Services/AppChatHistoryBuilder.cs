@@ -16,7 +16,7 @@ namespace ChatClient.Api.Services;
 
 public interface IAppChatHistoryBuilder
 {
-    Task<ChatHistory> BuildChatHistoryAsync(IEnumerable<IAppChatMessage> messages, Kernel kernel, Guid agentId, CancellationToken cancellationToken);
+    Task<ChatHistory> BuildChatHistoryAsync(IEnumerable<IAppChatMessage> messages, Kernel kernel, Guid agentId, CancellationToken cancellationToken, Guid? serverId = null);
 }
 
 public class AppChatHistoryBuilder(
@@ -73,7 +73,7 @@ public class AppChatHistoryBuilder(
         return history;
     }
 
-    public async Task<ChatHistory> BuildChatHistoryAsync(IEnumerable<IAppChatMessage> messages, Kernel kernel, Guid agentId, CancellationToken cancellationToken)
+    public async Task<ChatHistory> BuildChatHistoryAsync(IEnumerable<IAppChatMessage> messages, Kernel kernel, Guid agentId, CancellationToken cancellationToken, Guid? serverId = null)
     {
         var messageList = messages.ToList();
         logger.LogInformation("Building chat history from {MessageCount} messages", messageList.Count);
@@ -102,7 +102,7 @@ public class AppChatHistoryBuilder(
                 var query = ThinkTagParser.ExtractThinkAnswer(lastUser.Content).Answer;
                 try
                 {
-                    var embedding = await _ollama.GenerateEmbeddingAsync(query, model, cancellationToken: cancellationToken);
+                    var embedding = await _ollama.GenerateEmbeddingAsync(query, model, serverId, cancellationToken);
                     var response = await _ragSearch.SearchAsync(agentId, new ReadOnlyMemory<float>(embedding), 5, cancellationToken);
                     if (response.Results.Count > 0)
                     {

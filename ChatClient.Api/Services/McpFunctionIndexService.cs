@@ -40,7 +40,7 @@ public class McpFunctionIndexService
         _userSettingsService.EmbeddingModelChanged += HandleEmbeddingModelChangeAsync;
     }
 
-    public async Task BuildIndexAsync(CancellationToken cancellationToken = default)
+    public async Task BuildIndexAsync(CancellationToken cancellationToken = default, Guid? serverId = null)
     {
         if (_index.Count > 0)
         {
@@ -59,7 +59,7 @@ public class McpFunctionIndexService
 
             try
             {
-                await _ollamaService.GetModelsAsync();
+                await _ollamaService.GetModelsAsync(serverId);
             }
             catch (Exception ex)
             {
@@ -77,7 +77,7 @@ public class McpFunctionIndexService
                     string text = $"{tool.Name}. {tool.Description}";
                     try
                     {
-                        var embedding = await _ollamaService.GenerateEmbeddingAsync(text, _modelId, cancellationToken: cancellationToken);
+                        var embedding = await _ollamaService.GenerateEmbeddingAsync(text, _modelId, serverId, cancellationToken);
                         _index[$"{client.ServerInfo.Name}:{tool.Name}"] = embedding;
                     }
                     catch (HttpRequestException ex) when (ex.StatusCode == HttpStatusCode.NotFound)
@@ -123,10 +123,10 @@ public class McpFunctionIndexService
         return _configuration["Ollama:EmbeddingModel"] ?? "nomic-embed-text";
     }
 
-    public async Task<IReadOnlyList<string>> SelectRelevantFunctionsAsync(string query, int topK, CancellationToken cancellationToken = default)
+    public async Task<IReadOnlyList<string>> SelectRelevantFunctionsAsync(string query, int topK, CancellationToken cancellationToken = default, Guid? serverId = null)
     {
-        await BuildIndexAsync(cancellationToken);
-        var queryEmbedding = await _ollamaService.GenerateEmbeddingAsync(query, _modelId, cancellationToken: cancellationToken);
+        await BuildIndexAsync(cancellationToken, serverId);
+        var queryEmbedding = await _ollamaService.GenerateEmbeddingAsync(query, _modelId, serverId, cancellationToken);
         return _index
             .Select(kvp => new { Name = kvp.Key, Score = Dot(queryEmbedding.AsSpan(), kvp.Value) })
             .OrderByDescending(e => e.Score)
