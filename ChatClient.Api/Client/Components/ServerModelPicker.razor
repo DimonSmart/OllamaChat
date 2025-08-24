@@ -3,15 +3,15 @@
 @inject ILlmServerConfigService LlmServerConfigService
 @inject IOllamaClientService OllamaService
 
-<MudStack Spacing="2" @attributes="Attributes">
-    <MudSelect T="Guid?" Value="selectedServerId" ValueChanged="OnServerChanged" Label="Server" Variant="Variant.Outlined">
+<MudStack Spacing="2" Row="true" AlignItems="AlignItems.Center" @attributes="Attributes">
+    <MudSelect T="Guid?" Value="selectedServerId" ValueChanged="OnServerChanged" Label="Server" Variant="Variant.Outlined" Dense="true" Style="width:200px;">
         @foreach (var server in servers)
         {
             <MudSelectItem Value="@server.Id">@server.Name</MudSelectItem>
         }
     </MudSelect>
 
-    <MudSelect T="string" Value="selectedModel" ValueChanged="OnModelChanged" Label="Model" Variant="Variant.Outlined" Disabled="@(!selectedServerId.HasValue)">
+    <MudSelect T="string" Value="selectedModel" ValueChanged="OnModelChanged" Label="Model" Variant="Variant.Outlined" Disabled="@(!selectedServerId.HasValue)" Dense="true" Style="width:200px;">
         @foreach (var model in models)
         {
             <MudSelectItem Value="@model.Name">@model.Name</MudSelectItem>
