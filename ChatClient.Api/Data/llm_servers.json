@@ -1,14 +1,14 @@
 [
   {
     "Id": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
-    "Name": "Ollama",
+    "Name": "Local Ollama",
     "ServerType": 0,
     "BaseUrl": "http://localhost:11434",
-    "ApiKey": null,
-    "Password": null,
+    "ApiKey": "",
+    "Password": "",
     "IgnoreSslErrors": false,
-    "HttpTimeoutSeconds": 600,
+    "HttpTimeoutSeconds": 3600,
     "CreatedAt": "2025-05-24T00:00:00Z",
-    "UpdatedAt": "2025-06-01T23:42:25.155509Z"
+    "UpdatedAt": "2025-08-24T11:09:52.707962Z"
   }
 ]
