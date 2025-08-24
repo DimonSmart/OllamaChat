@@ -1,10 +1,9 @@
-using System;
-using System.Collections.Generic;
-using System.Text.Json;
-using System.Linq;
-
 using ChatClient.Shared.Models;
 using ChatClient.Shared.Services;
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Text.Json;
 
 namespace ChatClient.Api.Services;
 

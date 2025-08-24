@@ -4,7 +4,7 @@ using Microsoft.SemanticKernel.ChatCompletion;
 
 namespace ChatClient.Api.Client.Services;
 
-#pragma warning disable SKEXP0110
+
 public sealed class BridgingRoundRobinManager : RoundRobinGroupChatManager
 {
     private ChatMessageContent? _fixedAgentMessage = null;
@@ -15,18 +15,15 @@ public sealed class BridgingRoundRobinManager : RoundRobinGroupChatManager
         GroupChatTeam team,
         CancellationToken cancellationToken = default)
     {
-        // 0) Откат предыдущей временной подмены роли (если была)
         if (_fixedAgentMessage is not null)
         {
             _fixedAgentMessage.Role = _fixedMessageRole;
             _fixedAgentMessage = null;
         }
 
-        // 1) Кто следующий — пусть решит базовый round-robin
         GroupChatManagerResult<string> result = await base.SelectNextAgent(history, team, cancellationToken);
 
 
-        // 3) Подменяем роль последнего сообщения на User перед вызовом LLM
         ChatMessageContent? last = history.LastOrDefault();
         if (last is not null && last.Role == AuthorRole.Assistant)
         {
@@ -38,4 +35,4 @@ public sealed class BridgingRoundRobinManager : RoundRobinGroupChatManager
         return result;
     }
 }
-#pragma warning restore SKEXP0110
+

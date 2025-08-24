@@ -1,15 +1,11 @@
+using ChatClient.Api.Client.MarkdownExtensions;
+using ChatClient.Shared.Models;
+using DimonSmart.AiUtils;
+using Markdig;
+using Microsoft.Extensions.AI;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
-
-using ChatClient.Api.Client.MarkdownExtensions;
-using ChatClient.Shared.Models;
-
-using DimonSmart.AiUtils;
-
-using Markdig;
-
-using Microsoft.Extensions.AI;
 
 namespace ChatClient.Api.Client.ViewModels;
 

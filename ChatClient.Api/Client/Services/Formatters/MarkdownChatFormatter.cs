@@ -1,15 +1,12 @@
-using System.Collections.Generic;
+using ChatClient.Api.Client.ViewModels;
+using Microsoft.Extensions.AI;
 using System.Text;
 
-using ChatClient.Api.Client.ViewModels;
+namespace ChatClient.Api.Client.Services.Formatters;
 
-using Microsoft.Extensions.AI;
-
-namespace ChatClient.Api.Client.Services;
-
-public class TextChatFormatter : IChatFormatter
+public class MarkdownChatFormatter : IChatFormatter
 {
-    public ChatFormat FormatType => ChatFormat.Text;
+    public ChatFormat FormatType => ChatFormat.Markdown;
 
     public string Format(IEnumerable<AppChatMessageViewModel> messages)
     {
@@ -18,11 +15,9 @@ public class TextChatFormatter : IChatFormatter
         {
             if (msg.Role == ChatRole.System)
                 continue;
-
             var name = msg.Role == ChatRole.Assistant ? msg.AgentName ?? "Assistant" : "User";
-            sb.AppendLine($"{name}: {msg.Content}");
+            sb.AppendLine($"**{name}:** {msg.Content}\n");
         }
-
         return sb.ToString();
     }
 }

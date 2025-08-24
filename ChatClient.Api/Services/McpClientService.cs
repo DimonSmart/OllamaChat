@@ -1,9 +1,9 @@
-using System;
-using System.Reflection;
 using ChatClient.Shared.Models;
 using ChatClient.Shared.Services;
 using ModelContextProtocol.Client;
 using ModelContextProtocol.Protocol;
+using System;
+using System.Reflection;
 
 namespace ChatClient.Api.Services;
 
@@ -48,7 +48,6 @@ public class McpClientService(
         }
         return _mcpClients;
     }
-
 
     private async Task AddSseClient(McpServerConfig serverConfig, CancellationToken cancellationToken)
     {

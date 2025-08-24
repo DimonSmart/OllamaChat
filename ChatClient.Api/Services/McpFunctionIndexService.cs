@@ -1,13 +1,11 @@
-using System.Collections.Concurrent;
-using System.Linq;
-using System.Net;
-using System.IO;
-
 using ChatClient.Shared.Models;
 using ChatClient.Shared.Services;
-
 using Microsoft.Extensions.Configuration;
 using ModelContextProtocol.Client;
+using System.Collections.Concurrent;
+using System.IO;
+using System.Linq;
+using System.Net;
 
 namespace ChatClient.Api.Services;
 

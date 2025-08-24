@@ -1,10 +1,10 @@
-using System;
-using System.IO;
-using System.Text.Json;
 using ChatClient.Api.Services;
 using ChatClient.Shared.Models;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
+using System;
+using System.IO;
+using System.Text.Json;
 
 namespace ChatClient.Tests;
 
@@ -16,7 +16,7 @@ public class UserSettingsServiceTests
         var tempDir = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString());
         Directory.CreateDirectory(tempDir);
         var filePath = Path.Combine(tempDir, "user_settings.json");
-        
+
         try
         {
             var config = new ConfigurationBuilder()
@@ -28,9 +28,11 @@ public class UserSettingsServiceTests
             var logger = new LoggerFactory().CreateLogger<UserSettingsService>();
             var service = new UserSettingsService(config, logger);
 
+            var serverId = Guid.NewGuid();
             var testSettings = new UserSettings
             {
                 DefaultModelName = "test-model",
+                DefaultLlmId = serverId,
                 UserName = "Test User"
             };
 
@@ -38,6 +40,7 @@ public class UserSettingsServiceTests
             var loadedSettings = await service.GetSettingsAsync();
 
             Assert.Equal(testSettings.DefaultModelName, loadedSettings.DefaultModelName);
+            Assert.Equal(testSettings.DefaultLlmId, loadedSettings.DefaultLlmId);
             Assert.Equal(testSettings.UserName, loadedSettings.UserName);
         }
         finally

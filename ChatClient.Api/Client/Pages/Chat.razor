@@ -1,20 +1,21 @@
 @page "/"
 @page "/chat"
-@using Microsoft.AspNetCore.Components
-@using Microsoft.AspNetCore.Components.Web
-@using System.Collections.ObjectModel
 @using System.Collections.Generic
-@using System.Text.Json
-@using ChatClient.Shared.Models
-@using ChatClient.Shared.Models.StopAgents
-@using System.Threading
-@using System.Text
+@using System.Collections.ObjectModel
 @using System.Linq
-@using MudBlazor
-@using ChatClient.Api.Client.Services
+@using System.Text
+@using System.Text.Json
+@using System.Threading
 @using ChatClient.Api.Client.Components
+@using ChatClient.Api.Client.Services
+@using ChatClient.Api.Client.Services.Formatters
 @using ChatClient.Api.Client.ViewModels
 @using ChatClient.Api.Services
+@using ChatClient.Shared.Models
+@using ChatClient.Shared.Models.StopAgents
+@using Microsoft.AspNetCore.Components
+@using Microsoft.AspNetCore.Components.Web
+@using MudBlazor
 
 @implements IAsyncDisposable
 @inject IJSRuntime JSRuntime
@@ -329,6 +330,7 @@
         var chatConfiguration = new AppChatConfiguration(CurrentModelName, functions);
         var options = new RoundRobinStopAgentOptions { Rounds = 1 };
         var groupChatManager = StopAgentFactory.Create("RoundRobin", options);
+        
         await ChatService.GenerateAnswerAsync(messageData.text.Trim(), chatConfiguration, groupChatManager, messageData.files);
         await ScrollToBottom();
     }

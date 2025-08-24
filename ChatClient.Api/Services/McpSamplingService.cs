@@ -1,22 +1,18 @@
+using ChatClient.Api.Client.Services;
 using ChatClient.Shared.Models;
 using ChatClient.Shared.Services;
-using ChatClient.Api.Client.Services;
-using System.Linq;
-
 using DimonSmart.AiUtils;
-
+using Microsoft.Extensions.Logging;
 using Microsoft.SemanticKernel;
 using Microsoft.SemanticKernel.ChatCompletion;
 using Microsoft.SemanticKernel.Connectors.Ollama;
-using Microsoft.Extensions.Logging;
-using System.Net.Http.Headers;
-using System.Text;
-using System.Net.Http;
-
 using ModelContextProtocol;
 using ModelContextProtocol.Protocol;
-
 using OllamaSharp.Models.Exceptions;
+using System.Linq;
+using System.Net.Http;
+using System.Net.Http.Headers;
+using System.Text;
 
 namespace ChatClient.Api.Services;
 
@@ -36,6 +32,7 @@ public class McpSamplingService(
     private readonly AppForceLastUserReducer _reducer = reducer;
     private readonly ILogger<HttpLoggingHandler> _httpLogger = httpLogger;
     private readonly ILogger<McpSamplingService> _logger = logger;
+
     /// <summary>
     /// Handles a sampling request from an MCP server.
     /// </summary>
@@ -188,10 +185,12 @@ public class McpSamplingService(
         IKernelBuilder builder = Kernel.CreateBuilder();
         builder.Services.AddSingleton(httpClient);
         builder.Services.AddLogging(c => c.AddConsole().SetMinimumLevel(LogLevel.Information));
+        
+        // Use modern OllamaApiClient approach  
+        var ollamaClient = new OllamaSharp.OllamaApiClient(httpClient);
+        var chatService = ollamaClient.AsChatCompletionService();
         builder.Services.AddSingleton<IChatCompletionService>(_ =>
-            new AppForceLastUserChatCompletionService(
-                new OllamaChatCompletionService(modelId, httpClient: httpClient),
-                _reducer));
+            new AppForceLastUserChatCompletionService(chatService, _reducer));
 
         return builder.Build();
     }

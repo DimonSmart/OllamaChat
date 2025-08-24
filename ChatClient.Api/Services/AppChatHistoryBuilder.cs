@@ -1,23 +1,12 @@
-using System.Linq;
-using System.Text;
-
 using ChatClient.Api.Client.Services;
 using ChatClient.Shared.Models;
 using ChatClient.Shared.Services;
-
 using DimonSmart.AiUtils;
-
-using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Configuration;
 using Microsoft.SemanticKernel;
 using Microsoft.SemanticKernel.ChatCompletion;
+using System.Text;
 
 namespace ChatClient.Api.Services;
-
-public interface IAppChatHistoryBuilder
-{
-    Task<ChatHistory> BuildChatHistoryAsync(IEnumerable<IAppChatMessage> messages, Kernel kernel, Guid agentId, CancellationToken cancellationToken, Guid? serverId = null);
-}
 
 public class AppChatHistoryBuilder(
     IUserSettingsService settingsService,

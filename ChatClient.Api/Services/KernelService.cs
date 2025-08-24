@@ -1,17 +1,15 @@
 using ChatClient.Api.Client.Services;
 using ChatClient.Shared.Models;
 using ChatClient.Shared.Services;
-using System.Linq;
-
 using Microsoft.Extensions.Logging;
 using Microsoft.SemanticKernel;
 using Microsoft.SemanticKernel.ChatCompletion;
 using Microsoft.SemanticKernel.Connectors.Ollama;
+using System.Linq;
 
 namespace ChatClient.Api.Services;
 
 public class KernelService(
-    IUserSettingsService userSettingsService,
     McpFunctionIndexService indexService,
     ILogger<KernelService> logger,
     IServiceProvider serviceProvider)
@@ -40,43 +38,6 @@ public class KernelService(
         }
 
         return [];
-    }
-
-    public async Task<Kernel> CreateKernelAsync(
-        string modelName,
-        IEnumerable<string>? functionsToRegister,
-        string agentName,
-        CancellationToken cancellationToken = default,
-        Guid? serverId = null)
-    {
-        var settings = await userSettingsService.GetSettingsAsync();
-        var targetServer = serverId.HasValue && serverId.Value != Guid.Empty
-            ? settings.Llms.FirstOrDefault(s => s.Id == serverId.Value)
-            : settings.Llms.FirstOrDefault(s => s.Id == settings.DefaultLlmId) ?? settings.Llms.FirstOrDefault();
-        
-        var timeoutSeconds = targetServer?.HttpTimeoutSeconds ?? 600;
-        var timeout = TimeSpan.FromSeconds(timeoutSeconds);
-        
-        var httpClient = CreateConfiguredHttpClient(settings, serverId, timeout);
-        if (!string.IsNullOrEmpty(agentName))
-            httpClient.DefaultRequestHeaders.Add("X-Agent-Name", agentName);
-
-        IKernelBuilder builder = Kernel.CreateBuilder();
-        builder.Services.AddSingleton(httpClient);
-        builder.Services.AddLogging(c => c.AddConsole().SetMinimumLevel(LogLevel.Information));
-        builder.Services.AddSingleton<IChatCompletionService>(_ =>
-            new AppForceLastUserChatCompletionService(
-                new OllamaChatCompletionService(modelName, httpClient: httpClient),
-                serviceProvider.GetRequiredService<AppForceLastUserReducer>()));
-
-        var kernel = builder.Build();
-
-        if (functionsToRegister != null && functionsToRegister.Any() && _mcpClientService != null)
-        {
-            await RegisterMcpToolsAsync(kernel, functionsToRegister, cancellationToken);
-        }
-
-        return kernel;
     }
 
     private HttpClient CreateConfiguredHttpClient(UserSettings settings, Guid? serverId, TimeSpan timeout)
@@ -120,6 +81,17 @@ public class KernelService(
         Kernel kernel,
         IEnumerable<string> functionNames,
         CancellationToken cancellationToken)
+    {
+        await RegisterMcpToolsPublicAsync(kernel, functionNames, cancellationToken);
+    }
+
+    /// <summary>
+    /// Public method to register MCP tools for modern agent architecture
+    /// </summary>
+    public async Task RegisterMcpToolsPublicAsync(
+        Kernel kernel,
+        IEnumerable<string> functionNames,
+        CancellationToken cancellationToken = default)
     {
         if (_mcpClientService == null)
         {

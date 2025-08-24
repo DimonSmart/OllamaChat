@@ -1,20 +1,13 @@
-using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Threading;
-using System.Threading.Tasks;
-
-using ChatClient.Api.Services;
 using ChatClient.Api.Client.Services;
+using ChatClient.Api.Services;
 using ChatClient.Shared.Models;
 using ChatClient.Shared.Services;
-using OllamaSharp;
-
+using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.AI;
 using Microsoft.SemanticKernel;
 using Microsoft.SemanticKernel.ChatCompletion;
+using OllamaSharp;
 
 namespace ChatClient.Tests;
 

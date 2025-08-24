@@ -1,4 +1,3 @@
-using System.Reflection;
 using ChatClient.Api.Services;
 using ChatClient.Shared.Models;
 using ChatClient.Shared.Services;
@@ -6,6 +5,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using OllamaSharp;
+using System.Reflection;
 
 public class OllamaServiceTests
 {

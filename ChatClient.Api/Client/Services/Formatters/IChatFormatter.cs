@@ -1,8 +1,6 @@
-using System.Collections.Generic;
-
 using ChatClient.Api.Client.ViewModels;
 
-namespace ChatClient.Api.Client.Services;
+namespace ChatClient.Api.Client.Services.Formatters;
 
 public interface IChatFormatter
 {
