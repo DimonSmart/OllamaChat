@@ -3,7 +3,7 @@
 @inject ILlmServerConfigService LlmServerConfigService
 @inject IOllamaClientService OllamaService
 
-<MudStack Spacing="2">
+<MudStack Spacing="2" @attributes="Attributes">
     <MudSelect T="Guid?" Value="selectedServerId" ValueChanged="OnServerChanged" Label="Server" Variant="Variant.Outlined">
         @foreach (var server in servers)
         {
@@ -22,6 +22,7 @@
 @code {
     [Parameter] public ServerModel Value { get; set; } = new(Guid.Empty, string.Empty);
     [Parameter] public EventCallback<ServerModel> ValueChanged { get; set; }
+    [Parameter(CaptureUnmatchedValues = true)] public Dictionary<string, object> Attributes { get; set; } = [];
 
     private Guid? selectedServerId;
     private string? selectedModel;
