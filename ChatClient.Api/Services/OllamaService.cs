@@ -56,10 +56,22 @@ public sealed class OllamaService(
     /// </summary>
     public Task<OllamaApiClient> GetClientAsync() => GetOllamaClientAsync();
 
-    public async Task<IReadOnlyList<OllamaModel>> GetModelsAsync()
+    public async Task<IReadOnlyList<OllamaModel>> GetModelsAsync(Guid? serverId = null)
     {
-        var client = await GetOllamaClientAsync();
-        var models = await client.ListLocalModelsAsync();
+        IEnumerable<Model> models;
+
+        if (serverId.HasValue && serverId.Value != Guid.Empty)
+        {
+            var snapshot = await GetServerSettingsAsync(serverId.Value);
+            using var client = new OllamaApiClient(BuildHttpClient(snapshot));
+            models = await client.ListLocalModelsAsync();
+        }
+        else
+        {
+            var client = await GetOllamaClientAsync();
+            models = await client.ListLocalModelsAsync();
+        }
+
         return models.Select(m => new OllamaModel
         {
             Name = m.Name,
@@ -75,12 +87,24 @@ public sealed class OllamaService(
 
     public bool EmbeddingsAvailable => _embeddingError is null;
 
-    public async Task<float[]> GenerateEmbeddingAsync(string input, string modelId, CancellationToken cancellationToken = default)
+    public async Task<float[]> GenerateEmbeddingAsync(string input, string modelId, Guid? serverId = null, CancellationToken cancellationToken = default)
     {
         if (_embeddingError is not null)
             throw new InvalidOperationException("Embedding service unavailable. Restart the application.", _embeddingError);
 
-        var client = await GetOllamaClientAsync();
+        OllamaApiClient client;
+        var dispose = false;
+        if (serverId.HasValue && serverId.Value != Guid.Empty)
+        {
+            var snapshot = await GetServerSettingsAsync(serverId.Value);
+            client = new OllamaApiClient(BuildHttpClient(snapshot));
+            dispose = true;
+        }
+        else
+        {
+            client = await GetOllamaClientAsync();
+        }
+
         var request = new EmbedRequest { Model = modelId, Input = new List<string> { input } };
         try
         {
@@ -97,11 +121,29 @@ public sealed class OllamaService(
             _embeddingError = new InvalidOperationException("Failed to generate embedding. Ensure Ollama is running and restart the application.", ex);
             throw _embeddingError;
         }
+        finally
+        {
+            if (dispose)
+                client.Dispose();
+        }
     }
 
     private async Task<SettingsSnapshot> GetCurrentSettingsAsync()
     {
         var settings = await userSettingsService.GetSettingsAsync();
+
+        if (settings.DefaultLlmId.HasValue)
+        {
+            var server = settings.Llms.FirstOrDefault(s => s.Id == settings.DefaultLlmId.Value);
+            if (server is not null)
+            {
+                return new SettingsSnapshot(
+                    server.BaseUrl,
+                    server.Password,
+                    server.IgnoreSslErrors,
+                    server.HttpTimeoutSeconds);
+            }
+        }
 
         return new SettingsSnapshot(
             !string.IsNullOrWhiteSpace(settings.OllamaServerUrl)
@@ -110,6 +152,20 @@ public sealed class OllamaService(
             settings.OllamaBasicAuthPassword,
             settings.IgnoreSslErrors,
             settings.HttpTimeoutSeconds);
+    }
+
+    private async Task<SettingsSnapshot> GetServerSettingsAsync(Guid serverId)
+    {
+        var settings = await userSettingsService.GetSettingsAsync();
+        var server = settings.Llms.FirstOrDefault(s => s.Id == serverId);
+        if (server is null)
+            throw new InvalidOperationException($"Server {serverId} not found.");
+
+        return new SettingsSnapshot(
+            server.BaseUrl,
+            server.Password,
+            server.IgnoreSslErrors,
+            server.HttpTimeoutSeconds);
     }
 
     private HttpClient BuildHttpClient(SettingsSnapshot s)

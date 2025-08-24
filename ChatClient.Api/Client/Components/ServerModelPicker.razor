@@ -69,6 +69,6 @@
 
     private async Task LoadModelsAsync(Guid serverId)
     {
-        models = (await OllamaService.GetModelsAsync()).ToList();
+        models = (await OllamaService.GetModelsAsync(serverId)).ToList();
     }
 }

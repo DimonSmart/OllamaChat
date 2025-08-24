@@ -102,7 +102,7 @@ public class AppChatHistoryBuilder(
                 var query = ThinkTagParser.ExtractThinkAnswer(lastUser.Content).Answer;
                 try
                 {
-                    var embedding = await _ollama.GenerateEmbeddingAsync(query, model, cancellationToken);
+                    var embedding = await _ollama.GenerateEmbeddingAsync(query, model, cancellationToken: cancellationToken);
                     var response = await _ragSearch.SearchAsync(agentId, new ReadOnlyMemory<float>(embedding), 5, cancellationToken);
                     if (response.Results.Count > 0)
                     {

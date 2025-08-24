@@ -84,6 +84,9 @@
     [Inject] private IRagVectorIndexBackgroundService IndexBackgroundService { get; set; } = default!;
     [Inject] private IJSRuntime JSRuntime { get; set; } = default!;
 
+    [CascadingParameter(Name = "SelectedModel")]
+    public ServerModel? SelectedModel { get; set; }
+
     protected override async Task OnInitializedAsync()
     {
         agents = await AgentService.GetAllAsync();
@@ -131,7 +134,7 @@
 
         try
         {
-            var embedding = await OllamaService.GenerateEmbeddingAsync(text, embeddingModel);
+            var embedding = await OllamaService.GenerateEmbeddingAsync(text, embeddingModel, SelectedModel?.ServerId);
             var response = await VectorSearchService.SearchAsync(selectedAgent.Id, new ReadOnlyMemory<float>(embedding));
             results = response.Results.ToList();
             totalResults = response.Total;

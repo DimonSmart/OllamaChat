@@ -28,8 +28,8 @@ public class AppChatHistoryBuilderTests
 
     private sealed class ThrowingOllamaClientService : IOllamaClientService
     {
-        public Task<IReadOnlyList<OllamaModel>> GetModelsAsync() => throw new InvalidOperationException();
-        public Task<float[]> GenerateEmbeddingAsync(string input, string modelId, CancellationToken cancellationToken = default) => throw new InvalidOperationException();
+        public Task<IReadOnlyList<OllamaModel>> GetModelsAsync(Guid? serverId = null) => throw new InvalidOperationException();
+        public Task<float[]> GenerateEmbeddingAsync(string input, string modelId, Guid? serverId = null, CancellationToken cancellationToken = default) => throw new InvalidOperationException();
         public bool EmbeddingsAvailable => true;
     }
 

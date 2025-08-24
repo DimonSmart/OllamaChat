@@ -3,10 +3,9 @@
 @inject NavigationManager NavigationManager
 @inject IAppChatService ChatService
 @inject IUserSettingsService UserSettingsService
-@inject IOllamaClientService OllamaService
 @using ChatClient.Shared.Models
 @using ChatClient.Api.Client.Pages
-@using System.Collections.Generic
+@using ChatClient.Api.Client.Components
 @using ChatClient.Api.Services
 
 <MudThemeProvider Theme="@_theme" IsDarkMode="_isDarkMode" />
@@ -26,38 +25,7 @@
                        StartIcon="@Icons.Material.Filled.AddCircle"
                        Size="Size.Small"
                        Class="ml-4">New Chat</MudButton>
-            <MudSelect T="OllamaModel"
-                       Value="selectedModel"
-                       ValueChanged="OnModelChanged"
-                       Label="Model"
-                       Variant="Variant.Filled"
-                       Dense="true"
-                       Margin="Margin.Dense"
-                       Class="ml-4"
-                       Style="min-width: 150px;">
-                @foreach (var model in availableModels)
-                {
-                    <MudSelectItem Value="@model">
-                        <span>@model.Name</span>
-                        @if (model.SupportsImages)
-                        {
-                            <MudIcon Icon="@Icons.Material.Filled.Image"
-                                     Size="Size.Small"
-                                     Class="ml-1"
-                                     title="Supports images"
-                                     Style="color: #4caf50;" />
-                        }
-                        @if (model.SupportsFunctionCalling)
-                        {
-                            <MudIcon Icon="@Icons.Material.Filled.Settings"
-                                     Size="Size.Small"
-                                     Class="ml-1"
-                                     title="Function calling support detected (may not be accurate)"
-                                     Style="color: #2196f3;" />
-                        }
-                    </MudSelectItem>
-                }
-            </MudSelect>
+            <ServerModelPicker Value="selectedModel" ValueChanged="OnModelChanged" Class="ml-4" />
         }
         <MudSpacer />
         <MudIconButton Icon="@(DarkLightModeButtonIcon)" Color="Color.Inherit" OnClick="@DarkModeToggle" Size="Size.Medium" />
@@ -92,8 +60,7 @@
     private bool _drawerOpen = true;
     private bool _isDarkMode = true;
     private bool isLLMAnswering;
-    private List<OllamaModel> availableModels = new();
-    private OllamaModel? selectedModel;
+    private ServerModel selectedModel = new(Guid.Empty, string.Empty);
     private MudTheme? _theme = null;
 
     protected override async Task OnInitializedAsync()
@@ -104,25 +71,7 @@
         isLLMAnswering = ChatService.IsAnswering;
 
         var settings = await UserSettingsService.GetSettingsAsync();
-
-        try
-        {
-            availableModels = (await OllamaService.GetModelsAsync()).ToList();
-            if (!string.IsNullOrWhiteSpace(settings.DefaultModelName) &&
-                availableModels.Any(m => m.Name == settings.DefaultModelName))
-            {
-                selectedModel = availableModels.FirstOrDefault(m => m.Name == settings.DefaultModelName);
-            }
-            else
-            {
-                selectedModel = availableModels.FirstOrDefault();
-            }
-        }
-        catch (Exception ex)
-        {
-            Console.WriteLine($"Error loading available models: {ex}");
-            availableModels = new List<OllamaModel>();
-        }
+        selectedModel = new(settings.DefaultLlmId ?? Guid.Empty, settings.DefaultModelName);
 
         _theme = new()
         {
@@ -170,9 +119,14 @@
 
     
 
-    private void OnModelChanged(OllamaModel model)
+    private async Task OnModelChanged(ServerModel model)
     {
-        selectedModel = model;
+        var settings = await UserSettingsService.GetSettingsAsync();
+        var serverId = model.ServerId != Guid.Empty ? model.ServerId : settings.DefaultLlmId ?? Guid.Empty;
+        settings.DefaultLlmId = serverId;
+        settings.DefaultModelName = model.ModelName;
+        await UserSettingsService.SaveSettingsAsync(settings);
+        selectedModel = model with { ServerId = serverId };
         StateHasChanged();
     }
 
