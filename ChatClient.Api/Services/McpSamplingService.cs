@@ -50,7 +50,7 @@ public class McpSamplingService(
         IProgress<ProgressNotificationValue> progress,
         CancellationToken cancellationToken,
         McpServerConfig? mcpServerConfig = null,
-        Guid? serverId = null)
+        Guid serverId = default)
     {
         string? model = null;
         try
@@ -126,12 +126,12 @@ public class McpSamplingService(
         }
     }
 
-    private async Task<Kernel> CreateKernelAsync(string modelId, TimeSpan timeout, Guid? serverId)
+    private async Task<Kernel> CreateKernelAsync(string modelId, TimeSpan timeout, Guid serverId)
     {
         var settings = await _userSettingsService.GetSettingsAsync();
         LlmServerConfig? server = null;
-        if (serverId.HasValue && serverId.Value != Guid.Empty)
-            server = settings.Llms.FirstOrDefault(s => s.Id == serverId.Value);
+        if (serverId != Guid.Empty)
+            server = settings.Llms.FirstOrDefault(s => s.Id == serverId);
         server ??= settings.Llms.FirstOrDefault(s => s.Id == settings.DefaultLlmId) ?? settings.Llms.FirstOrDefault();
 
         var handler = new HttpClientHandler();
@@ -200,9 +200,9 @@ public class McpSamplingService(
     private async Task<string> DetermineModelToUseAsync(
         ModelPreferences? modelPreferences,
         McpServerConfig? mcpServerConfig,
-        Guid? serverId)
+        Guid serverId)
     {
-        var availableModels = await _ollamaService.GetModelsAsync(serverId ?? Guid.Empty);
+        var availableModels = await _ollamaService.GetModelsAsync(serverId);
         var availableModelNames = availableModels.Select(m => m.Name).ToHashSet();
 
         var requestedModel = modelPreferences?.Hints?.FirstOrDefault()?.Name;
