@@ -91,7 +91,7 @@ public sealed class RagVectorIndexBackgroundService(
                 _logger.LogInformation("Indexing {File} ({Current}/{Total})", item.fileName, i + 1, pending.Count);
                 var progress = new Progress<RagVectorIndexStatus>(s => _currentStatus = s);
                 _currentStatus = new(item.agentId, item.fileName, 0, 0);
-                await indexService.BuildIndexAsync(item.agentId, item.source, item.index, progress, token);
+                await indexService.BuildIndexAsync(item.agentId, item.source, item.index, progress, token, Guid.Empty);
                 _currentStatus = null;
             }
         }

@@ -17,7 +17,7 @@ public sealed class RagVectorIndexService(
     IConfiguration configuration,
     ILogger<RagVectorIndexService> logger) : IRagVectorIndexService
 {
-    public async Task BuildIndexAsync(Guid agentId, string sourceFilePath, string indexFilePath, IProgress<RagVectorIndexStatus>? progress = null, CancellationToken cancellationToken = default, Guid? serverId = null)
+    public async Task BuildIndexAsync(Guid agentId, string sourceFilePath, string indexFilePath, IProgress<RagVectorIndexStatus>? progress = null, CancellationToken cancellationToken = default, Guid serverId = default)
     {
         if (!File.Exists(sourceFilePath))
             throw new FileNotFoundException($"Source file not found: {sourceFilePath}");
@@ -82,12 +82,12 @@ public sealed class RagVectorIndexService(
         logger.LogInformation("Built index {IndexPath} with {Count} fragments", indexFilePath, fragments.Count);
     }
 
-    private async Task<string> GetBaseUrlAsync(Guid? serverId)
+    private async Task<string> GetBaseUrlAsync(Guid serverId)
     {
         var settings = await userSettings.GetSettingsAsync();
         LlmServerConfig? server = null;
-        if (serverId.HasValue && serverId.Value != Guid.Empty)
-            server = settings.Llms.FirstOrDefault(s => s.Id == serverId.Value);
+        if (serverId != Guid.Empty)
+            server = settings.Llms.FirstOrDefault(s => s.Id == serverId);
         server ??= settings.Llms.FirstOrDefault(s => s.Id == settings.DefaultLlmId) ?? settings.Llms.FirstOrDefault();
         return server?.BaseUrl ?? configuration["Ollama:BaseUrl"] ?? "http://localhost:11434";
     }
