@@ -2,6 +2,7 @@
 @using ChatClient.Shared.Models
 @inject ILlmServerConfigService LlmServerConfigService
 @inject IOllamaClientService OllamaService
+@inject IUserSettingsService UserSettingsService
 
 <MudStack Spacing="1" Row="true" AlignItems="AlignItems.Center" @attributes="Attributes" Style="flex: 1; min-width: 0;">
     <MudSelect T="Guid?" Value="selectedServerId" ValueChanged="OnServerChanged" Placeholder="Server" 
@@ -47,15 +48,21 @@
     protected override async Task OnInitializedAsync()
     {
         servers = await LlmServerConfigService.GetAllAsync();
-        if (Value.ServerId != Guid.Empty)
+        if (Value.ServerId == Guid.Empty && string.IsNullOrEmpty(Value.ModelName))
         {
-            selectedServerId = Value.ServerId;
-            await LoadModelsAsync(Value.ServerId);
+            var settings = await UserSettingsService.GetSettingsAsync();
+            selectedServerId = settings.DefaultLlmId;
+            selectedModel = settings.DefaultModelName;
+            if (selectedServerId.HasValue)
+                await LoadModelsAsync(selectedServerId.Value);
+            await NotifyValueChanged();
+            return;
         }
+        selectedServerId = Value.ServerId;
+        if (selectedServerId.HasValue)
+            await LoadModelsAsync(selectedServerId.Value);
         if (!string.IsNullOrEmpty(Value.ModelName))
-        {
             selectedModel = Value.ModelName;
-        }
     }
 
     private async Task OnServerChanged(Guid? id)
