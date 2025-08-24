@@ -50,7 +50,14 @@ public class UserSettingsService : IUserSettingsService
         var version = doc.RootElement.TryGetProperty("version", out var v) ? v.GetInt32() : 1;
         settings.Version = version;
 
-        return version < CurrentVersion ? await MigrateSettingsAsync(settings, doc.RootElement) : settings;
+        if (version < CurrentVersion)
+        {
+            var migrated = await MigrateSettingsAsync(settings, doc.RootElement);
+            await SaveSettingsAsync(migrated);
+            return migrated;
+        }
+
+        return settings;
     }
 
     public async Task SaveSettingsAsync(UserSettings settings)
@@ -117,7 +124,6 @@ public class UserSettingsService : IUserSettingsService
         }
 
         settings.Version = CurrentVersion;
-        await SaveSettingsAsync(settings);
         return settings;
     }
 }
