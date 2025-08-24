@@ -139,10 +139,15 @@ public class McpSamplingService(
             handler.ServerCertificateCustomValidationCallback = (_, _, _, _) => true;
 
         var loggingHandler = new HttpLoggingHandler(_httpLogger) { InnerHandler = handler };
+        var baseUrl = string.IsNullOrWhiteSpace(server?.BaseUrl) ? OllamaDefaults.ServerUrl : server.BaseUrl.Trim();
+        if (string.IsNullOrWhiteSpace(baseUrl))
+        {
+            baseUrl = OllamaDefaults.ServerUrl;
+        }
         var httpClient = new HttpClient(loggingHandler)
         {
             Timeout = TimeSpan.FromSeconds(server?.HttpTimeoutSeconds ?? (int)timeout.TotalSeconds),
-            BaseAddress = new Uri(server?.BaseUrl ?? OllamaDefaults.ServerUrl)
+            BaseAddress = new Uri(baseUrl)
         };
 
         var password = server?.Password;

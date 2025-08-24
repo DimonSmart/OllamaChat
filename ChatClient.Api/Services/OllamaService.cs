@@ -163,7 +163,11 @@ public sealed class OllamaService(
             InnerHandler = handler
         };
 
-        var baseUrl = string.IsNullOrWhiteSpace(config.BaseUrl) ? OllamaDefaults.ServerUrl : config.BaseUrl;
+        var baseUrl = string.IsNullOrWhiteSpace(config.BaseUrl) ? OllamaDefaults.ServerUrl : config.BaseUrl.Trim();
+        if (string.IsNullOrWhiteSpace(baseUrl))
+        {
+            baseUrl = OllamaDefaults.ServerUrl;
+        }
         var client = new HttpClient(loggingHandler)
         {
             Timeout = TimeSpan.FromSeconds(config.HttpTimeoutSeconds),

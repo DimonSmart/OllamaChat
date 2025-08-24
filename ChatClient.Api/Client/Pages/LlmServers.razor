@@ -216,10 +216,11 @@
             if (server.IgnoreSslErrors)
                 handler.ServerCertificateCustomValidationCallback = (_, _, _, _) => true;
 
+            var baseUrl = string.IsNullOrWhiteSpace(server.BaseUrl) ? "http://localhost:11434" : server.BaseUrl.Trim();
             using var client = new HttpClient(handler)
             {
                 Timeout = TimeSpan.FromSeconds(server.HttpTimeoutSeconds),
-                BaseAddress = new Uri(server.BaseUrl)
+                BaseAddress = new Uri(baseUrl)
             };
 
             if (!string.IsNullOrEmpty(server.Password))

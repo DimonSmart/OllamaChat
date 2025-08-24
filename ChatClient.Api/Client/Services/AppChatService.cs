@@ -233,7 +233,8 @@ public class AppChatService(
         AppChatConfiguration chatConfiguration,
         CancellationToken cancellationToken)
     {
-        logger.LogInformation("Creating {AgentCount} agents", _agentsByName.Count);
+        var agentNames = string.Join(", ", _agentsByName.Keys);
+        logger.LogInformation("Creating {AgentCount} agents: [{AgentNames}]", _agentsByName.Count, agentNames);
         var agents = new List<ChatCompletionAgent>();
 
         foreach (var desc in _agentsByName.Values)
