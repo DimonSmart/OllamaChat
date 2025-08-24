@@ -154,8 +154,8 @@
         try
         {
             _loading = true;
-            await LoadModels();
             await LoadSettings();
+            await LoadModels(_settings.DefaultLlmId);
         }
         finally
         {
@@ -163,11 +163,11 @@
         }
     }
 
-    private async Task LoadModels()
+    private async Task LoadModels(Guid? serverId)
     {
         try
         {
-            _availableModels = (await OllamaService.GetModelsAsync()).ToList();
+            _availableModels = (await OllamaService.GetModelsAsync(serverId)).ToList();
             if (_availableModels.Count == 0)
             {
                 Snackbar.Add("No models available. Settings will be saved but model selection won't take effect.", Severity.Warning);
@@ -199,7 +199,7 @@
         {
             if (!string.IsNullOrWhiteSpace(_settings.EmbeddingModelName))
             {
-                var models = await OllamaService.GetModelsAsync();
+                var models = await OllamaService.GetModelsAsync(_settings.DefaultLlmId);
                 var exists = models.Any(m => m.Name.Equals(_settings.EmbeddingModelName, StringComparison.OrdinalIgnoreCase));
                 if (!exists)
                 {
