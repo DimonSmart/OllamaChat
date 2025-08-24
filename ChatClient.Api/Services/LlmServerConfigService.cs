@@ -47,10 +47,8 @@ public class LlmServerConfigService : ILlmServerConfigService
 
     public async Task<List<LlmServerConfig>> GetAllAsync()
     {
-        try
+        return await SemaphoreHelper.ExecuteWithSemaphoreAsync(_semaphore, async () =>
         {
-            await _semaphore.WaitAsync();
-
             if (!File.Exists(_filePath))
             {
                 await CreateDefaultServersFile();
@@ -58,16 +56,7 @@ public class LlmServerConfigService : ILlmServerConfigService
             }
 
             return await ReadFromFileAsync();
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Error getting LLM server configs");
-            return [];
-        }
-        finally
-        {
-            _semaphore.Release();
-        }
+        }, _logger, "Error getting LLM server configs");
     }
 
     public async Task<LlmServerConfig?> GetByIdAsync(Guid id)
@@ -78,15 +67,11 @@ public class LlmServerConfigService : ILlmServerConfigService
 
     public async Task<LlmServerConfig> CreateAsync(LlmServerConfig server)
     {
-        try
+        return await SemaphoreHelper.ExecuteWithSemaphoreAsync(_semaphore, async () =>
         {
-            await _semaphore.WaitAsync();
-
             var servers = await ReadFromFileAsync();
 
-            if (server.Id == null)
-                server.Id = Guid.NewGuid();
-
+            server.Id ??= Guid.NewGuid();
             server.CreatedAt = DateTime.UtcNow;
             server.UpdatedAt = DateTime.UtcNow;
 
@@ -94,31 +79,18 @@ public class LlmServerConfigService : ILlmServerConfigService
             await WriteToFileAsync(servers);
 
             return server;
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Error creating LLM server config");
-            throw;
-        }
-        finally
-        {
-            _semaphore.Release();
-        }
+        }, _logger, "Error creating LLM server config");
     }
 
     public async Task<LlmServerConfig> UpdateAsync(LlmServerConfig server)
     {
-        try
+        return await SemaphoreHelper.ExecuteWithSemaphoreAsync(_semaphore, async () =>
         {
-            await _semaphore.WaitAsync();
-
             var servers = await ReadFromFileAsync();
             var existingIndex = servers.FindIndex(s => s.Id == server.Id);
 
             if (existingIndex == -1)
-            {
                 throw new KeyNotFoundException($"LLM server config with ID {server.Id} not found");
-            }
 
             server.UpdatedAt = DateTime.UtcNow;
             servers[existingIndex] = server;
@@ -126,44 +98,22 @@ public class LlmServerConfigService : ILlmServerConfigService
             await WriteToFileAsync(servers);
 
             return server;
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Error updating LLM server config");
-            throw;
-        }
-        finally
-        {
-            _semaphore.Release();
-        }
+        }, _logger, "Error updating LLM server config");
     }
 
     public async Task DeleteAsync(Guid id)
     {
-        try
+        await SemaphoreHelper.ExecuteWithSemaphoreAsync(_semaphore, async () =>
         {
-            await _semaphore.WaitAsync();
-
             var servers = await ReadFromFileAsync();
             var existingServer = servers.FirstOrDefault(s => s.Id == id);
 
             if (existingServer == null)
-            {
                 throw new KeyNotFoundException($"LLM server config with ID {id} not found");
-            }
 
             servers.Remove(existingServer);
             await WriteToFileAsync(servers);
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Error deleting LLM server config");
-            throw;
-        }
-        finally
-        {
-            _semaphore.Release();
-        }
+        }, _logger, "Error deleting LLM server config");
     }
 
     private async Task<List<LlmServerConfig>> ReadFromFileAsync()

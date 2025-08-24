@@ -1,6 +1,5 @@
 using System.Reflection;
 using ChatClient.Api.Services;
-using ChatClient.Shared.Constants;
 using ChatClient.Shared.Models;
 using ChatClient.Shared.Services;
 using Microsoft.Extensions.Configuration;
@@ -31,7 +30,7 @@ public class OllamaServiceTests
         var dict = (Dictionary<Guid, (OllamaApiClient Client, HttpClient HttpClient)>)field.GetValue(service)!;
         var httpClient = dict[Guid.Empty].HttpClient;
 
-        Assert.Equal(new Uri(OllamaDefaults.ServerUrl), httpClient.BaseAddress);
+        Assert.Equal(new Uri(LlmServerConfig.DefaultOllamaUrl), httpClient.BaseAddress);
     }
 
     private sealed class StubUserSettingsService : IUserSettingsService

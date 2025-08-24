@@ -1,7 +1,6 @@
 using ChatClient.Shared.Models;
 using ChatClient.Shared.Services;
 using ChatClient.Api.Client.Services;
-using ChatClient.Shared.Constants;
 using System.Linq;
 
 using DimonSmart.AiUtils;
@@ -55,52 +54,21 @@ public class McpSamplingService(
         string? model = null;
         try
         {
-            _logger.LogInformation("Processing sampling request with {MessageCount} messages", request.Messages?.Count ?? 0);
-
-            if (request.Messages == null || request.Messages.Count == 0)
-            {
-                throw new ArgumentException("Sampling request must contain at least one message");
-            }
-
+            ValidateRequest(request);
             progress?.Report(new ProgressNotificationValue { Progress = 0, Total = 100 });
 
             model = await DetermineModelToUseAsync(request.ModelPreferences, mcpServerConfig, serverId);
-            var settings = await _userSettingsService.GetSettingsAsync();
-            var kernel = await CreateKernelAsync(model, TimeSpan.FromSeconds(settings.McpSamplingTimeoutSeconds), serverId);
-
+            var kernel = await CreateKernelForSamplingAsync(model, serverId);
             progress?.Report(new ProgressNotificationValue { Progress = 25, Total = 100 });
 
-            var chatHistory = ConvertMcpMessagesToChatHistory(request.Messages);
-
-            progress?.Report(new ProgressNotificationValue { Progress = 50, Total = 100 });
-            var chatCompletionService = kernel.GetRequiredService<IChatCompletionService>();
-            var response = await chatCompletionService.GetChatMessageContentAsync(
-                chatHistory: chatHistory,
-                kernel: kernel,
-                cancellationToken: cancellationToken);
-
-            progress?.Report(new ProgressNotificationValue { Progress = 90, Total = 100 });
-            var responseText = ThinkTagParser.ExtractThinkAnswer(response.Content ?? string.Empty).Answer;
-
-            _logger.LogInformation("Sampling request completed successfully, response length: {Length}", responseText.Length);
-
+            var response = await ProcessSamplingRequestAsync(request, kernel, progress, cancellationToken);
             progress?.Report(new ProgressNotificationValue { Progress = 100, Total = 100 });
 
-            return new CreateMessageResult
-            {
-                Content = new TextContentBlock
-                {
-                    Text = responseText
-                },
-                Model = model!,
-                StopReason = "endTurn",
-                Role = Role.Assistant
-            };
+            return CreateSuccessfulResult(response, model);
         }
         catch (ModelDoesNotSupportToolsException ex)
         {
-            _logger.LogWarning(ex, "Model {ModelName} does not support tools/function calling for MCP sampling request from server: {ServerName}",
-                model, mcpServerConfig?.Name ?? "Unknown");
+            LogModelToolSupportError(ex, model, mcpServerConfig);
             throw new InvalidOperationException(
                 $"The model '{model}' does not support function calling/tools. " +
                 "MCP sampling requires a model that supports tool use. " +
@@ -108,21 +76,81 @@ public class McpSamplingService(
         }
         catch (Exception ex)
         {
-            if (ex is TaskCanceledException or TimeoutException)
-            {
-                var timeoutSeconds = await GetMcpSamplingTimeoutAsync();
-                _logger.LogError(ex, "MCP sampling request timed out after {TimeoutSeconds} seconds. " +
-                    "Consider increasing the MCP sampling timeout in settings if this happens frequently. " +
-                    "Request had {MessageCount} messages for server: {ServerName}",
-                    timeoutSeconds,
-                    request.Messages?.Count ?? 0,
-                    mcpServerConfig?.Name ?? "Unknown");
-            }
-            else
-            {
-                _logger.LogError(ex, "Failed to process sampling request: {Message}", ex.Message);
-            }
+            await LogAndHandleExceptionAsync(ex, request, mcpServerConfig);
             throw;
+        }
+    }
+
+    private void ValidateRequest(CreateMessageRequestParams request)
+    {
+        _logger.LogInformation("Processing sampling request with {MessageCount} messages", request.Messages?.Count ?? 0);
+
+        if (request.Messages == null || request.Messages.Count == 0)
+        {
+            throw new ArgumentException("Sampling request must contain at least one message");
+        }
+    }
+
+    private async Task<Kernel> CreateKernelForSamplingAsync(string model, Guid serverId)
+    {
+        var settings = await _userSettingsService.GetSettingsAsync();
+        return await CreateKernelAsync(model, TimeSpan.FromSeconds(settings.McpSamplingTimeoutSeconds), serverId);
+    }
+
+    private async Task<ChatMessageContent> ProcessSamplingRequestAsync(
+        CreateMessageRequestParams request,
+        Kernel kernel,
+        IProgress<ProgressNotificationValue>? progress,
+        CancellationToken cancellationToken)
+    {
+        var chatHistory = ConvertMcpMessagesToChatHistory(request.Messages);
+        progress?.Report(new ProgressNotificationValue { Progress = 50, Total = 100 });
+
+        var chatCompletionService = kernel.GetRequiredService<IChatCompletionService>();
+        var response = await chatCompletionService.GetChatMessageContentAsync(
+            chatHistory: chatHistory,
+            kernel: kernel,
+            cancellationToken: cancellationToken);
+
+        progress?.Report(new ProgressNotificationValue { Progress = 90, Total = 100 });
+        return response;
+    }
+
+    private CreateMessageResult CreateSuccessfulResult(ChatMessageContent response, string model)
+    {
+        var responseText = ThinkTagParser.ExtractThinkAnswer(response.Content ?? string.Empty).Answer;
+        _logger.LogInformation("Sampling request completed successfully, response length: {Length}", responseText.Length);
+
+        return new CreateMessageResult
+        {
+            Content = new TextContentBlock { Text = responseText },
+            Model = model!,
+            StopReason = "endTurn",
+            Role = Role.Assistant
+        };
+    }
+
+    private void LogModelToolSupportError(ModelDoesNotSupportToolsException ex, string? model, McpServerConfig? mcpServerConfig)
+    {
+        _logger.LogWarning(ex, "Model {ModelName} does not support tools/function calling for MCP sampling request from server: {ServerName}",
+            model, mcpServerConfig?.Name ?? "Unknown");
+    }
+
+    private async Task LogAndHandleExceptionAsync(Exception ex, CreateMessageRequestParams request, McpServerConfig? mcpServerConfig)
+    {
+        if (ex is TaskCanceledException or TimeoutException)
+        {
+            var timeoutSeconds = await GetMcpSamplingTimeoutAsync();
+            _logger.LogError(ex, "MCP sampling request timed out after {TimeoutSeconds} seconds. " +
+                "Consider increasing the MCP sampling timeout in settings if this happens frequently. " +
+                "Request had {MessageCount} messages for server: {ServerName}",
+                timeoutSeconds,
+                request.Messages?.Count ?? 0,
+                mcpServerConfig?.Name ?? "Unknown");
+        }
+        else
+        {
+            _logger.LogError(ex, "Failed to process sampling request: {Message}", ex.Message);
         }
     }
 
@@ -139,10 +167,10 @@ public class McpSamplingService(
             handler.ServerCertificateCustomValidationCallback = (_, _, _, _) => true;
 
         var loggingHandler = new HttpLoggingHandler(_httpLogger) { InnerHandler = handler };
-        var baseUrl = string.IsNullOrWhiteSpace(server?.BaseUrl) ? OllamaDefaults.ServerUrl : server.BaseUrl.Trim();
+        var baseUrl = string.IsNullOrWhiteSpace(server?.BaseUrl) ? LlmServerConfig.DefaultOllamaUrl : server.BaseUrl.Trim();
         if (string.IsNullOrWhiteSpace(baseUrl))
         {
-            baseUrl = OllamaDefaults.ServerUrl;
+            baseUrl = LlmServerConfig.DefaultOllamaUrl;
         }
         var httpClient = new HttpClient(loggingHandler)
         {

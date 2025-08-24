@@ -56,10 +56,8 @@ public class McpServerConfigService : IMcpServerConfigService
 
     public async Task<List<McpServerConfig>> GetAllServersAsync()
     {
-        try
+        return await SemaphoreHelper.ExecuteWithSemaphoreAsync(_semaphore, async () =>
         {
-            await _semaphore.WaitAsync();
-
             if (!File.Exists(_filePath))
             {
                 await CreateDefaultServersFile();
@@ -67,16 +65,7 @@ public class McpServerConfigService : IMcpServerConfigService
             }
 
             return await ReadFromFileAsync();
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Error getting MCP server configs");
-            return [];
-        }
-        finally
-        {
-            _semaphore.Release();
-        }
+        }, _logger, "Error getting MCP server configs");
     }
 
     public async Task<McpServerConfig?> GetServerByIdAsync(Guid id)
@@ -87,15 +76,11 @@ public class McpServerConfigService : IMcpServerConfigService
 
     public async Task<McpServerConfig> CreateServerAsync(McpServerConfig server)
     {
-        try
+        return await SemaphoreHelper.ExecuteWithSemaphoreAsync(_semaphore, async () =>
         {
-            await _semaphore.WaitAsync();
-
             var servers = await ReadFromFileAsync();
 
-            if (server.Id == null)
-                server.Id = Guid.NewGuid();
-
+            server.Id ??= Guid.NewGuid();
             server.CreatedAt = DateTime.UtcNow;
             server.UpdatedAt = DateTime.UtcNow;
 
@@ -103,31 +88,18 @@ public class McpServerConfigService : IMcpServerConfigService
             await WriteToFileAsync(servers);
 
             return server;
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Error creating MCP server config");
-            throw;
-        }
-        finally
-        {
-            _semaphore.Release();
-        }
+        }, _logger, "Error creating MCP server config");
     }
 
     public async Task<McpServerConfig> UpdateServerAsync(McpServerConfig server)
     {
-        try
+        return await SemaphoreHelper.ExecuteWithSemaphoreAsync(_semaphore, async () =>
         {
-            await _semaphore.WaitAsync();
-
             var servers = await ReadFromFileAsync();
             var existingIndex = servers.FindIndex(s => s.Id == server.Id);
 
             if (existingIndex == -1)
-            {
                 throw new KeyNotFoundException($"MCP server config with ID {server.Id} not found");
-            }
 
             server.UpdatedAt = DateTime.UtcNow;
             servers[existingIndex] = server;
@@ -135,44 +107,22 @@ public class McpServerConfigService : IMcpServerConfigService
             await WriteToFileAsync(servers);
 
             return server;
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Error updating MCP server config");
-            throw;
-        }
-        finally
-        {
-            _semaphore.Release();
-        }
+        }, _logger, "Error updating MCP server config");
     }
 
     public async Task DeleteServerAsync(Guid id)
     {
-        try
+        await SemaphoreHelper.ExecuteWithSemaphoreAsync(_semaphore, async () =>
         {
-            await _semaphore.WaitAsync();
-
             var servers = await ReadFromFileAsync();
             var existingServer = servers.FirstOrDefault(s => s.Id == id);
 
             if (existingServer == null)
-            {
                 throw new KeyNotFoundException($"MCP server config with ID {id} not found");
-            }
 
             servers.Remove(existingServer);
             await WriteToFileAsync(servers);
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Error deleting MCP server config");
-            throw;
-        }
-        finally
-        {
-            _semaphore.Release();
-        }
+        }, _logger, "Error deleting MCP server config");
     }
 
     private async Task<List<McpServerConfig>> ReadFromFileAsync()

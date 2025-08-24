@@ -1,6 +1,5 @@
 using System;
 using System.Reflection;
-
 using ChatClient.Shared.Models;
 using ChatClient.Shared.Services;
 using ModelContextProtocol.Client;
@@ -57,7 +56,7 @@ public class McpClientService(
         {
             cancellationToken.ThrowIfCancellationRequested();
             var httpTransport = new SseClientTransport(new SseClientTransportOptions { Endpoint = new Uri(serverConfig.Sse!) });
-            var clientOptions = await CreateClientOptionsAsync(serverConfig, cancellationToken);
+            var clientOptions = CreateClientOptions(serverConfig);
             var client = await McpClientFactory.CreateAsync(httpTransport, clientOptions);
             if (_mcpClients != null && client != null)
             {
@@ -80,7 +79,7 @@ public class McpClientService(
         // Use the application's executable directory as working directory instead of Environment.CurrentDirectory
         // This prevents MCP processes from accidentally changing the main application's working directory
         var applicationDirectory = AppContext.BaseDirectory;
-        var clientOptions = await CreateClientOptionsAsync(config, cancellationToken);
+        var clientOptions = CreateClientOptions(config);
 
         return await McpClientFactory.CreateAsync(
             clientTransport: new StdioClientTransport(new StdioClientTransportOptions
@@ -137,7 +136,7 @@ public class McpClientService(
     /// <summary>
     /// Creates client options that declare sampling capabilities and register the sampling handler
     /// </summary>
-    private async Task<McpClientOptions> CreateClientOptionsAsync(McpServerConfig serverConfig, CancellationToken cancellationToken)
+    private McpClientOptions CreateClientOptions(McpServerConfig serverConfig)
     {
         return new McpClientOptions
         {
@@ -162,7 +161,7 @@ public class McpClientService(
                             logger.LogInformation("Handling sampling request with {MessageCount} messages from server: {ServerName}",
                                 request.Messages?.Count ?? 0, serverConfig?.Name ?? "Unknown");
 
-                            var result = await mcpSamplingService.HandleSamplingRequestAsync(request, progress, cancellationToken, serverConfig, serverConfig.Id ?? Guid.Empty);
+                            var result = await mcpSamplingService.HandleSamplingRequestAsync(request, progress, cancellationToken, serverConfig, serverConfig?.Id ?? Guid.Empty);
 
                             logger.LogInformation("Sampling request completed successfully for server: {ServerName}", serverConfig?.Name ?? "Unknown");
                             return result;

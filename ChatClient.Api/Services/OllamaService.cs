@@ -4,7 +4,6 @@ using System.Linq;
 using System.Net.Http.Headers;
 using System.Text;
 
-using ChatClient.Shared.Constants;
 using ChatClient.Shared.Models;
 using ChatClient.Shared.Services;
 
@@ -142,7 +141,7 @@ public sealed class OllamaService(
 
         var baseUrl = configuration["Ollama:BaseUrl"];
         if (string.IsNullOrWhiteSpace(baseUrl))
-            baseUrl = OllamaDefaults.ServerUrl;
+            baseUrl = LlmServerConfig.DefaultOllamaUrl;
         return new LlmServerConfig
         {
             Id = Guid.Empty,
@@ -163,10 +162,10 @@ public sealed class OllamaService(
             InnerHandler = handler
         };
 
-        var baseUrl = string.IsNullOrWhiteSpace(config.BaseUrl) ? OllamaDefaults.ServerUrl : config.BaseUrl.Trim();
+        var baseUrl = string.IsNullOrWhiteSpace(config.BaseUrl) ? LlmServerConfig.DefaultOllamaUrl : config.BaseUrl.Trim();
         if (string.IsNullOrWhiteSpace(baseUrl))
         {
-            baseUrl = OllamaDefaults.ServerUrl;
+            baseUrl = LlmServerConfig.DefaultOllamaUrl;
         }
         var client = new HttpClient(loggingHandler)
         {

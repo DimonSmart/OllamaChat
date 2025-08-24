@@ -7,6 +7,7 @@ using ChatClient.Shared.Models;
 using ChatClient.Shared.Services;
 
 using Microsoft.Extensions.Configuration;
+using ModelContextProtocol.Client;
 
 namespace ChatClient.Api.Services;
 
@@ -57,45 +58,12 @@ public class McpFunctionIndexService
 
             _modelId = await DetermineModelIdAsync();
 
-            try
+            if (!await IsOllamaAvailableAsync(serverId))
             {
-                await _ollamaService.GetModelsAsync(serverId ?? Guid.Empty);
-            }
-            catch (Exception ex)
-            {
-                _logger.LogWarning(ex, "Ollama is not available. Skipping MCP function indexing.");
                 return;
             }
 
-            var clients = await _clientService.GetMcpClientsAsync(cancellationToken);
-            foreach (var client in clients)
-            {
-                cancellationToken.ThrowIfCancellationRequested();
-                var tools = await _clientService.GetMcpTools(client, cancellationToken);
-                foreach (var tool in tools)
-                {
-                    string text = $"{tool.Name}. {tool.Description}";
-                    try
-                    {
-                        var embedding = await _ollamaService.GenerateEmbeddingAsync(text, new ServerModel(serverId ?? Guid.Empty, _modelId), cancellationToken);
-                        _index[$"{client.ServerInfo.Name}:{tool.Name}"] = embedding;
-                    }
-                    catch (HttpRequestException ex) when (ex.StatusCode == HttpStatusCode.NotFound)
-                    {
-                        _logger.LogError("Embedding model '{Model}' not found. Skipping MCP function indexing.", _modelId);
-                        return;
-                    }
-                    catch (Exception ex)
-                    {
-                        if (!_ollamaService.EmbeddingsAvailable)
-                        {
-                            _logger.LogError(ex, "Embedding service unavailable. Stopping MCP function indexing.");
-                            return;
-                        }
-                        _logger.LogError(ex, "Failed to index tool {Name}", tool.Name);
-                    }
-                }
-            }
+            await IndexMcpFunctionsAsync(cancellationToken, serverId);
         }
         catch (Exception ex)
         {
@@ -104,6 +72,63 @@ public class McpFunctionIndexService
         finally
         {
             _buildLock.Release();
+        }
+    }
+
+    private async Task<bool> IsOllamaAvailableAsync(Guid? serverId)
+    {
+        try
+        {
+            await _ollamaService.GetModelsAsync(serverId ?? Guid.Empty);
+            return true;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Ollama is not available. Skipping MCP function indexing.");
+            return false;
+        }
+    }
+
+    private async Task IndexMcpFunctionsAsync(CancellationToken cancellationToken, Guid? serverId)
+    {
+        var clients = await _clientService.GetMcpClientsAsync(cancellationToken);
+        foreach (var client in clients)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            await IndexClientFunctionsAsync(client, cancellationToken, serverId);
+        }
+    }
+
+    private async Task IndexClientFunctionsAsync(IMcpClient client, CancellationToken cancellationToken, Guid? serverId)
+    {
+        var tools = await _clientService.GetMcpTools(client, cancellationToken);
+        foreach (var tool in tools)
+        {
+            await IndexSingleToolAsync(client, tool, serverId, cancellationToken);
+        }
+    }
+
+    private async Task IndexSingleToolAsync(IMcpClient client, McpClientTool tool, Guid? serverId, CancellationToken cancellationToken)
+    {
+        string text = $"{tool.Name}. {tool.Description}";
+        try
+        {
+            var embedding = await _ollamaService.GenerateEmbeddingAsync(text, new ServerModel(serverId ?? Guid.Empty, _modelId), cancellationToken);
+            _index[$"{client.ServerInfo.Name}:{tool.Name}"] = embedding;
+        }
+        catch (HttpRequestException ex) when (ex.StatusCode == HttpStatusCode.NotFound)
+        {
+            _logger.LogError("Embedding model '{Model}' not found. Skipping MCP function indexing.", _modelId);
+            throw; // Re-throw to stop the entire indexing process
+        }
+        catch (Exception ex)
+        {
+            if (!_ollamaService.EmbeddingsAvailable)
+            {
+                _logger.LogError(ex, "Embedding service unavailable. Stopping MCP function indexing.");
+                throw; // Re-throw to stop the entire indexing process
+            }
+            _logger.LogError(ex, "Failed to index tool {Name}", tool.Name);
         }
     }
 

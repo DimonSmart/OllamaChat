@@ -68,36 +68,40 @@
     private async Task OnServerToggled(string serverName, bool isChecked)
     {
         var serverFunctions = AvailableFunctions.Where(f => f.ServerName == serverName).Select(f => f.Name);
-        if (isChecked)
+        
+        foreach (var fn in serverFunctions)
         {
-            foreach (var fn in serverFunctions)
-                internalSelectedFunctions.Add(fn);
+            UpdateFunctionSelection(fn, isChecked);
         }
-        else
-        {
-            foreach (var fn in serverFunctions)
-                internalSelectedFunctions.Remove(fn);
-        }
+        
         serverSelections[serverName] = isChecked;
-        await SelectedFunctionsChanged.InvokeAsync(internalSelectedFunctions.ToList());
+        await NotifySelectionChanged();
     }
 
     private async Task OnFunctionToggled(FunctionInfo fn, bool isChecked)
     {
-        if (isChecked)
-        {
-            if (!internalSelectedFunctions.Contains(fn.Name))
-                internalSelectedFunctions.Add(fn.Name);
-        }
+        UpdateFunctionSelection(fn.Name, isChecked);
+        UpdateServerSelection(fn.ServerName);
+        await NotifySelectionChanged();
+    }
+
+    private void UpdateFunctionSelection(string functionName, bool isSelected)
+    {
+        if (isSelected)
+            internalSelectedFunctions.Add(functionName);
         else
-        {
-            internalSelectedFunctions.Remove(fn.Name);
-        }
+            internalSelectedFunctions.Remove(functionName);
+    }
 
-        serverSelections[fn.ServerName] = AvailableFunctions
-            .Where(f => f.ServerName == fn.ServerName)
+    private void UpdateServerSelection(string serverName)
+    {
+        serverSelections[serverName] = AvailableFunctions
+            .Where(f => f.ServerName == serverName)
             .All(f => internalSelectedFunctions.Contains(f.Name));
+    }
 
+    private async Task NotifySelectionChanged()
+    {
         await SelectedFunctionsChanged.InvokeAsync(internalSelectedFunctions.ToList());
     }
 
