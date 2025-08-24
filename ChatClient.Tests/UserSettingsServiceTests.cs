@@ -11,21 +11,12 @@ namespace ChatClient.Tests;
 public class UserSettingsServiceTests
 {
     [Fact]
-    public async Task MigrationSavesSettingsAndRemovesLegacyFields()
+    public async Task SaveAndLoadSettings_WorksCorrectly()
     {
         var tempDir = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString());
         Directory.CreateDirectory(tempDir);
         var filePath = Path.Combine(tempDir, "user_settings.json");
-        var legacy = """
-        {
-            "version":1,
-            "ollamaServerUrl":"http://localhost:11434",
-            "ollamaBasicAuthPassword":"secret",
-            "ignoreSslErrors":true,
-            "httpTimeoutSeconds":10
-        }
-        """;
-        await File.WriteAllTextAsync(filePath, legacy);
+        
         try
         {
             var config = new ConfigurationBuilder()
@@ -37,22 +28,22 @@ public class UserSettingsServiceTests
             var logger = new LoggerFactory().CreateLogger<UserSettingsService>();
             var service = new UserSettingsService(config, logger);
 
-            var settings = await service.GetSettingsAsync();
+            var testSettings = new UserSettings
+            {
+                DefaultModelName = "test-model",
+                UserName = "Test User"
+            };
 
-            var json = await File.ReadAllTextAsync(filePath);
-            using var doc = JsonDocument.Parse(json);
-            var root = doc.RootElement;
-            Assert.False(root.TryGetProperty("ollamaServerUrl", out _));
-            Assert.False(root.TryGetProperty("ollamaBasicAuthPassword", out _));
-            Assert.False(root.TryGetProperty("ignoreSslErrors", out _));
-            Assert.False(root.TryGetProperty("httpTimeoutSeconds", out _));
-            Assert.NotEmpty(settings.Llms);
-            Assert.Equal(2, settings.Version);
-            Assert.NotNull(settings.DefaultLlmId);
+            await service.SaveSettingsAsync(testSettings);
+            var loadedSettings = await service.GetSettingsAsync();
+
+            Assert.Equal(testSettings.DefaultModelName, loadedSettings.DefaultModelName);
+            Assert.Equal(testSettings.UserName, loadedSettings.UserName);
         }
         finally
         {
-            Directory.Delete(tempDir, true);
+            if (Directory.Exists(tempDir))
+                Directory.Delete(tempDir, true);
         }
     }
 }

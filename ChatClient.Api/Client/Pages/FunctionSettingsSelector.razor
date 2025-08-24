@@ -65,13 +65,11 @@
     private async Task OnServerToggled(string serverName, bool isChecked)
     {
         var serverFunctions = AvailableFunctions.Where(f => f.ServerName == serverName).Select(f => f.Name);
+        
         if (isChecked)
         {
-            foreach (var fn in serverFunctions)
-            {
-                if (!FunctionSettings.SelectedFunctions.Contains(fn))
-                    FunctionSettings.SelectedFunctions.Add(fn);
-            }
+            foreach (var fn in serverFunctions.Where(fn => !FunctionSettings.SelectedFunctions.Contains(fn)))
+                FunctionSettings.SelectedFunctions.Add(fn);
         }
         else
         {
@@ -84,21 +82,24 @@
 
     private async Task OnFunctionToggled(FunctionInfo fn, bool isChecked)
     {
-        if (isChecked)
-        {
-            if (!FunctionSettings.SelectedFunctions.Contains(fn.Name))
-                FunctionSettings.SelectedFunctions.Add(fn.Name);
-        }
-        else
-        {
-            FunctionSettings.SelectedFunctions.Remove(fn.Name);
-        }
-
-        serverSelections[fn.ServerName] = AvailableFunctions
-            .Where(f => f.ServerName == fn.ServerName)
-            .All(f => FunctionSettings.SelectedFunctions.Contains(f.Name));
-
+        UpdateFunctionInSettings(fn.Name, isChecked);
+        UpdateServerSelectionInSettings(fn.ServerName);
         await FunctionSettingsChanged.InvokeAsync(FunctionSettings);
+    }
+
+    private void UpdateFunctionInSettings(string functionName, bool isSelected)
+    {
+        if (isSelected && !FunctionSettings.SelectedFunctions.Contains(functionName))
+            FunctionSettings.SelectedFunctions.Add(functionName);
+        else if (!isSelected)
+            FunctionSettings.SelectedFunctions.Remove(functionName);
+    }
+
+    private void UpdateServerSelectionInSettings(string serverName)
+    {
+        serverSelections[serverName] = AvailableFunctions
+            .Where(f => f.ServerName == serverName)
+            .All(f => FunctionSettings.SelectedFunctions.Contains(f.Name));
     }
 
     private async Task OnAutoSelectCountChanged(int value)

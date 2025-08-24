@@ -8,6 +8,8 @@ public enum ServerType
 
 public class LlmServerConfig
 {
+    public const string DefaultOllamaUrl = "http://localhost:11434";
+
     public Guid? Id { get; set; }
     public string Name { get; set; } = string.Empty;
     public ServerType ServerType { get; set; }

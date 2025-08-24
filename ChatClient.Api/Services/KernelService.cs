@@ -1,5 +1,4 @@
 using ChatClient.Api.Client.Services;
-using ChatClient.Shared.Constants;
 using ChatClient.Shared.Models;
 using ChatClient.Shared.Services;
 using System.Linq;
@@ -54,8 +53,23 @@ public class KernelService(
         var targetServer = serverId.HasValue && serverId.Value != Guid.Empty
             ? settings.Llms.FirstOrDefault(s => s.Id == serverId.Value)
             : settings.Llms.FirstOrDefault(s => s.Id == settings.DefaultLlmId) ?? settings.Llms.FirstOrDefault();
+        
         var timeoutSeconds = targetServer?.HttpTimeoutSeconds ?? 600;
-        var kernel = await CreateBasicKernelAsync(modelName, TimeSpan.FromSeconds(timeoutSeconds), agentName, serverId);
+        var timeout = TimeSpan.FromSeconds(timeoutSeconds);
+        
+        var httpClient = CreateConfiguredHttpClient(settings, serverId, timeout);
+        if (!string.IsNullOrEmpty(agentName))
+            httpClient.DefaultRequestHeaders.Add("X-Agent-Name", agentName);
+
+        IKernelBuilder builder = Kernel.CreateBuilder();
+        builder.Services.AddSingleton(httpClient);
+        builder.Services.AddLogging(c => c.AddConsole().SetMinimumLevel(LogLevel.Information));
+        builder.Services.AddSingleton<IChatCompletionService>(_ =>
+            new AppForceLastUserChatCompletionService(
+                new OllamaChatCompletionService(modelName, httpClient: httpClient),
+                serviceProvider.GetRequiredService<AppForceLastUserReducer>()));
+
+        var kernel = builder.Build();
 
         if (functionsToRegister != null && functionsToRegister.Any() && _mcpClientService != null)
         {
@@ -63,24 +77,6 @@ public class KernelService(
         }
 
         return kernel;
-    }
-
-    [Obsolete]
-    public async Task<Kernel> CreateBasicKernelAsync(string modelId, TimeSpan timeout, string? agentName = null, Guid? serverId = null)
-    {
-        var settings = await userSettingsService.GetSettingsAsync();
-        var httpClient = CreateConfiguredHttpClient(settings, serverId, timeout);
-        if (!string.IsNullOrEmpty(agentName))
-            httpClient.DefaultRequestHeaders.Add("X-Agent-Name", agentName);
-        IKernelBuilder builder = Kernel.CreateBuilder();
-        builder.Services.AddSingleton(httpClient);
-        builder.Services.AddLogging(c => c.AddConsole().SetMinimumLevel(LogLevel.Information));
-        builder.Services.AddSingleton<IChatCompletionService>(_ =>
-            new AppForceLastUserChatCompletionService(
-                new OllamaChatCompletionService(modelId, httpClient: httpClient),
-                serviceProvider.GetRequiredService<AppForceLastUserReducer>()));
-
-        return builder.Build();
     }
 
     private HttpClient CreateConfiguredHttpClient(UserSettings settings, Guid? serverId, TimeSpan timeout)
@@ -99,10 +95,10 @@ public class KernelService(
             InnerHandler = handler
         };
 
-        var baseUrl = string.IsNullOrWhiteSpace(server?.BaseUrl) ? OllamaDefaults.ServerUrl : server.BaseUrl.Trim();
+        var baseUrl = string.IsNullOrWhiteSpace(server?.BaseUrl) ? LlmServerConfig.DefaultOllamaUrl : server.BaseUrl.Trim();
         if (string.IsNullOrWhiteSpace(baseUrl))
         {
-            baseUrl = OllamaDefaults.ServerUrl;
+            baseUrl = LlmServerConfig.DefaultOllamaUrl;
         }
         var httpClient = new HttpClient(loggingHandler)
         {

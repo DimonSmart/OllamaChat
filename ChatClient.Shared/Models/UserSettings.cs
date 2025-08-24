@@ -3,15 +3,10 @@ using System.Collections.Generic;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 
-using ChatClient.Shared.Constants;
-
 namespace ChatClient.Shared.Models;
 
 public class UserSettings
 {
-    [JsonPropertyName("version")]
-    public int Version { get; set; } = 2;
-
     [JsonPropertyName("defaultModelName")]
     public string DefaultModelName { get; set; } = string.Empty;
 
