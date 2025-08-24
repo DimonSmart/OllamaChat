@@ -1,5 +1,5 @@
-﻿#pragma warning disable SKEXP0070
-using System.Collections.Generic;
+#pragma warning disable SKEXP0070
+using System.Collections.Concurrent;
 using System.Linq;
 using System.Net.Http.Headers;
 using System.Text;
@@ -13,65 +13,41 @@ using OllamaSharp.Models;
 
 namespace ChatClient.Api.Services;
 
-/// <summary>
-/// Lightweight wrapper around <see cref="OllamaApiClient"/> that recreates the underlying client only
-/// when the user‑facing connection settings actually change.
-/// </summary>
 public sealed class OllamaService(
     IConfiguration configuration,
     IUserSettingsService userSettingsService,
-    ILogger<OllamaService> logger,
+    ILlmServerConfigService serverConfigService,
     IServiceProvider serviceProvider) : IOllamaClientService, IDisposable
 {
-    private OllamaApiClient? _ollamaClient;
-    private HttpClient? _httpClient;
-    private SettingsSnapshot? _cachedSettings;
+    private readonly ConcurrentDictionary<Guid, (HttpClient HttpClient, OllamaApiClient Client)> _clients = new();
     private Exception? _embeddingError;
 
-    /// <summary>
-    /// Returns a cached <see cref="OllamaApiClient"/> instance or rebuilds it when connection settings differ
-    /// from the previous snapshot.
-    /// </summary>
-    private async Task<OllamaApiClient> GetOllamaClientAsync()
+    private async Task<OllamaApiClient> GetOllamaClientAsync(Guid? serverId = null)
     {
-        var current = await GetCurrentSettingsAsync();
+        var config = await GetServerConfigAsync(serverId);
+        var id = config.Id ?? Guid.Empty;
 
-        // Re‑create the client only if something important changed.
-        if (_ollamaClient is null || !_cachedSettings!.Equals(current))
-        {
-            _ollamaClient?.Dispose();
-            _httpClient?.Dispose();
+        if (_clients.TryGetValue(id, out var entry))
+            return entry.Client;
 
-            _httpClient = BuildHttpClient(current);
-            _ollamaClient = new OllamaApiClient(_httpClient);
-
-            _cachedSettings = current;
-        }
-
-        return _ollamaClient;
+        var httpClient = BuildHttpClient(config);
+        var client = new OllamaApiClient(httpClient);
+        _clients[id] = (httpClient, client);
+        return client;
     }
 
-    /// <summary>
-    /// Provides the underlying <see cref="OllamaApiClient"/> instance for direct API calls.
-    /// </summary>
-    public Task<OllamaApiClient> GetClientAsync() => GetOllamaClientAsync();
+    public Task<OllamaApiClient> GetClientAsync(Guid? serverId = null) => GetOllamaClientAsync(serverId);
 
-    public async Task<IReadOnlyList<OllamaModel>> GetModelsAsync(Guid? serverId = null)
+    public Task<IReadOnlyList<OllamaModel>> GetModelsAsync(Guid? serverId = null) =>
+        GetModelsInternalAsync(serverId);
+
+    public Task<IReadOnlyList<OllamaModel>> GetModelsAsync(ServerModel serverModel) =>
+        GetModelsInternalAsync(serverModel.ServerId);
+
+    private async Task<IReadOnlyList<OllamaModel>> GetModelsInternalAsync(Guid? serverId)
     {
-        IEnumerable<Model> models;
-
-        if (serverId.HasValue && serverId.Value != Guid.Empty)
-        {
-            var snapshot = await GetServerSettingsAsync(serverId.Value);
-            using var client = new OllamaApiClient(BuildHttpClient(snapshot));
-            models = await client.ListLocalModelsAsync();
-        }
-        else
-        {
-            var client = await GetOllamaClientAsync();
-            models = await client.ListLocalModelsAsync();
-        }
-
+        var client = await GetOllamaClientAsync(serverId);
+        var models = await client.ListLocalModelsAsync();
         return models.Select(m => new OllamaModel
         {
             Name = m.Name,
@@ -87,23 +63,15 @@ public sealed class OllamaService(
 
     public bool EmbeddingsAvailable => _embeddingError is null;
 
+    public Task<float[]> GenerateEmbeddingAsync(string input, ServerModel model, CancellationToken cancellationToken = default) =>
+        GenerateEmbeddingAsync(input, model.ModelName, model.ServerId, cancellationToken);
+
     public async Task<float[]> GenerateEmbeddingAsync(string input, string modelId, Guid? serverId = null, CancellationToken cancellationToken = default)
     {
         if (_embeddingError is not null)
             throw new InvalidOperationException("Embedding service unavailable. Restart the application.", _embeddingError);
 
-        OllamaApiClient client;
-        var dispose = false;
-        if (serverId.HasValue && serverId.Value != Guid.Empty)
-        {
-            var snapshot = await GetServerSettingsAsync(serverId.Value);
-            client = new OllamaApiClient(BuildHttpClient(snapshot));
-            dispose = true;
-        }
-        else
-        {
-            client = await GetOllamaClientAsync();
-        }
+        var client = await GetOllamaClientAsync(serverId);
 
         var request = new EmbedRequest { Model = modelId, Input = new List<string> { input } };
         try
@@ -121,62 +89,52 @@ public sealed class OllamaService(
             _embeddingError = new InvalidOperationException("Failed to generate embedding. Ensure Ollama is running and restart the application.", ex);
             throw _embeddingError;
         }
-        finally
-        {
-            if (dispose)
-                client.Dispose();
-        }
     }
 
-    private async Task<SettingsSnapshot> GetCurrentSettingsAsync()
+    private async Task<LlmServerConfig> GetServerConfigAsync(Guid? serverId)
     {
-        var settings = await userSettingsService.GetSettingsAsync();
+        if (serverId.HasValue && serverId.Value != Guid.Empty)
+        {
+            var config = await serverConfigService.GetByIdAsync(serverId.Value);
+            if (config is null)
+                throw new InvalidOperationException($"Server {serverId} not found.");
+            config.Id ??= serverId.Value;
+            return config;
+        }
 
+        var settings = await userSettingsService.GetSettingsAsync();
         if (settings.DefaultLlmId.HasValue)
         {
-            var server = settings.Llms.FirstOrDefault(s => s.Id == settings.DefaultLlmId.Value);
-            if (server is not null)
+            var cfg = await serverConfigService.GetByIdAsync(settings.DefaultLlmId.Value);
+            if (cfg is not null)
             {
-                return new SettingsSnapshot(
-                    server.BaseUrl,
-                    server.Password,
-                    server.IgnoreSslErrors,
-                    server.HttpTimeoutSeconds);
+                cfg.Id ??= settings.DefaultLlmId.Value;
+                return cfg;
             }
         }
 
-        return new SettingsSnapshot(
-            !string.IsNullOrWhiteSpace(settings.OllamaServerUrl)
-                ? settings.OllamaServerUrl
-                : configuration["Ollama:BaseUrl"] ?? OllamaDefaults.ServerUrl,
-            settings.OllamaBasicAuthPassword,
-            settings.IgnoreSslErrors,
-            settings.HttpTimeoutSeconds);
+        var baseUrl = !string.IsNullOrWhiteSpace(settings.OllamaServerUrl)
+            ? settings.OllamaServerUrl
+            : configuration["Ollama:BaseUrl"] ?? OllamaDefaults.ServerUrl;
+
+        return new LlmServerConfig
+        {
+            Id = Guid.Empty,
+            BaseUrl = baseUrl,
+            Password = settings.OllamaBasicAuthPassword,
+            IgnoreSslErrors = settings.IgnoreSslErrors,
+            HttpTimeoutSeconds = settings.HttpTimeoutSeconds,
+            ServerType = ServerType.Ollama,
+            Name = "Default"
+        };
     }
 
-    private async Task<SettingsSnapshot> GetServerSettingsAsync(Guid serverId)
-    {
-        var settings = await userSettingsService.GetSettingsAsync();
-        var server = settings.Llms.FirstOrDefault(s => s.Id == serverId);
-        if (server is null)
-            throw new InvalidOperationException($"Server {serverId} not found.");
-
-        return new SettingsSnapshot(
-            server.BaseUrl,
-            server.Password,
-            server.IgnoreSslErrors,
-            server.HttpTimeoutSeconds);
-    }
-
-    private HttpClient BuildHttpClient(SettingsSnapshot s)
+    private HttpClient BuildHttpClient(LlmServerConfig config)
     {
         var handler = new HttpClientHandler();
-        if (s.IgnoreSslErrors)
-        {
+        if (config.IgnoreSslErrors)
             handler.ServerCertificateCustomValidationCallback = (_, _, _, _) => true;
-        }
 
-        // Create logging handler and chain it with the base handler
         var loggingHandler = new HttpLoggingHandler(serviceProvider.GetRequiredService<ILogger<HttpLoggingHandler>>())
         {
             InnerHandler = handler
@@ -184,43 +142,36 @@ public sealed class OllamaService(
 
         var client = new HttpClient(loggingHandler)
         {
-            Timeout = TimeSpan.FromSeconds(s.TimeoutSeconds),
-            BaseAddress = new Uri(s.ServerUrl)
+            Timeout = TimeSpan.FromSeconds(config.HttpTimeoutSeconds),
+            BaseAddress = new Uri(config.BaseUrl)
         };
 
-        if (!string.IsNullOrWhiteSpace(s.Password))
+        if (!string.IsNullOrWhiteSpace(config.Password))
         {
-            var auth = Convert.ToBase64String(Encoding.UTF8.GetBytes($":{s.Password}"));
+            var auth = Convert.ToBase64String(Encoding.UTF8.GetBytes($":{config.Password}"));
             client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Basic", auth);
         }
+
         return client;
     }
 
-    /// <summary>
-    /// Experimental! Determines if a model supports function calling based on its name and family.
-    /// </summary>
     private static bool DeterminesFunctionCallingSupport(OllamaSharp.Models.Model model)
     {
-        // Additional check: if model has tool-related capabilities or specific families
-        if (model.Details?.Families != null)
-        {
-            // Some models might have specific families that indicate tool support
-            // This is more speculative but can be refined based on actual model data
-            return model.Details.Families.Any(family =>
-                family.ToLowerInvariant().Contains("tool") ||
-                family.ToLowerInvariant().Contains("function"));
-        }
+        if (model.Details?.Families == null)
+            return false;
 
-        return false;
+        return model.Details.Families.Any(family =>
+            family.ToLowerInvariant().Contains("tool") ||
+            family.ToLowerInvariant().Contains("function"));
     }
 
     public void Dispose()
     {
-        _ollamaClient?.Dispose();
-        _httpClient?.Dispose();
+        foreach (var entry in _clients.Values)
+        {
+            entry.Client.Dispose();
+            entry.HttpClient.Dispose();
+        }
     }
-
-    #region Nested ‑ simple value object for comparing settings
-    private sealed record SettingsSnapshot(string ServerUrl, string? Password, bool IgnoreSslErrors, int TimeoutSeconds);
-    #endregion
 }
+
