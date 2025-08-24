@@ -10,6 +10,7 @@ using ChatClient.Shared.Services;
 
 using OllamaSharp;
 using OllamaSharp.Models;
+using Microsoft.Extensions.Logging;
 
 namespace ChatClient.Api.Services;
 
@@ -17,7 +18,8 @@ public sealed class OllamaService(
     IConfiguration configuration,
     IUserSettingsService userSettingsService,
     ILlmServerConfigService serverConfigService,
-    IServiceProvider serviceProvider) : IOllamaClientService, IDisposable
+    IServiceProvider serviceProvider,
+    ILogger<OllamaService> logger) : IOllamaClientService, IDisposable
 {
     private readonly ConcurrentDictionary<Guid, (HttpClient HttpClient, OllamaApiClient Client)> _clients = new();
     private Exception? _embeddingError;
@@ -96,10 +98,13 @@ public sealed class OllamaService(
         if (serverId.HasValue && serverId.Value != Guid.Empty)
         {
             var config = await serverConfigService.GetByIdAsync(serverId.Value);
-            if (config is null)
-                throw new InvalidOperationException($"Server {serverId} not found.");
-            config.Id ??= serverId.Value;
-            return config;
+            if (config is not null)
+            {
+                config.Id ??= serverId.Value;
+                return config;
+            }
+
+            logger.LogWarning("Server {ServerId} not found. Using default configuration.", serverId);
         }
 
         var settings = await userSettingsService.GetSettingsAsync();
