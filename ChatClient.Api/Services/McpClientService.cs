@@ -1,3 +1,4 @@
+using System;
 using System.Reflection;
 
 using ChatClient.Shared.Models;
@@ -161,7 +162,7 @@ public class McpClientService(
                             logger.LogInformation("Handling sampling request with {MessageCount} messages from server: {ServerName}",
                                 request.Messages?.Count ?? 0, serverConfig?.Name ?? "Unknown");
 
-                            var result = await mcpSamplingService.HandleSamplingRequestAsync(request, progress, cancellationToken, serverConfig);
+                            var result = await mcpSamplingService.HandleSamplingRequestAsync(request, progress, cancellationToken, serverConfig, serverConfig.Id ?? Guid.Empty);
 
                             logger.LogInformation("Sampling request completed successfully for server: {ServerName}", serverConfig?.Name ?? "Unknown");
                             return result;
