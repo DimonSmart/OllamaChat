@@ -15,7 +15,7 @@ public class ChatServiceTests
 {
     private class DummyHistoryBuilder : IAppChatHistoryBuilder
     {
-        public Task<ChatHistory> BuildChatHistoryAsync(IEnumerable<IAppChatMessage> messages, Kernel kernel, Guid agentId, CancellationToken cancellationToken)
+        public Task<ChatHistory> BuildChatHistoryAsync(IEnumerable<IAppChatMessage> messages, Kernel kernel, Guid agentId, CancellationToken cancellationToken, Guid? serverId = null)
             => Task.FromResult(new ChatHistory());
     }
 
