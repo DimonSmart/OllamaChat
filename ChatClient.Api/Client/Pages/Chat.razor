@@ -229,7 +229,7 @@
     private AgentDescription? selectedAgent { get; set; }
 
     [CascadingParameter(Name = "SelectedModel")]
-    public OllamaModel? SelectedModel { get; set; }
+    public ServerModel? SelectedModel { get; set; }
 
 
     private UserSettings userSettings = new();
@@ -310,7 +310,7 @@
             throw new InvalidOperationException("Single-agent chat requires exactly one agent.");
 
         if (string.IsNullOrWhiteSpace(agents[0].ModelName))
-            agents[0].ModelName = SelectedModel?.Name;
+            agents[0].ModelName = SelectedModel?.ModelName;
 
         ChatService.InitializeChat(agents);
         chatStarted = true;
@@ -323,7 +323,7 @@
         if (selectedAgent == null) return;
 
         var functions = selectedAgent.FunctionSettings.SelectedFunctions ?? [];
-        var chatConfiguration = new AppChatConfiguration(SelectedModel?.Name, functions);
+        var chatConfiguration = new AppChatConfiguration(SelectedModel?.ModelName, functions);
         var options = new RoundRobinStopAgentOptions { Rounds = 1 };
         var groupChatManager = StopAgentFactory.Create("RoundRobin", options);
         await ChatService.GenerateAnswerAsync(messageData.text.Trim(), chatConfiguration, groupChatManager, messageData.files);

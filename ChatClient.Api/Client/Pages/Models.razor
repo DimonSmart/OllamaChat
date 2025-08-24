@@ -67,6 +67,9 @@
 </OllamaCheck>
 
 @code {
+    [CascadingParameter(Name = "SelectedModel")]
+    public ServerModel? SelectedModel { get; set; }
+
     private List<OllamaModel> _models = new();
     private bool _loading = true;
     private string? _errorMessage;
@@ -76,7 +79,7 @@
         try
         {
             _loading = true;
-            _models = (await OllamaService.GetModelsAsync()).ToList();
+            _models = (await OllamaService.GetModelsAsync(SelectedModel?.ServerId)).ToList();
             _errorMessage = null;
         }
         catch (Exception ex)
