@@ -28,10 +28,14 @@ public sealed class RagVectorIndexService(
 
         var modelId = await GetModelIdAsync();
         var baseUrl = await GetBaseUrlAsync(serverId);
+        if (string.IsNullOrWhiteSpace(baseUrl))
+        {
+            throw new InvalidOperationException("Base URL cannot be empty for embedding service");
+        }
 
         IKernelBuilder builder = Kernel.CreateBuilder();
         builder.Services.AddLogging();
-        builder.AddOllamaEmbeddingGenerator(modelId, new Uri(baseUrl));
+        builder.AddOllamaEmbeddingGenerator(modelId, new Uri(baseUrl.Trim()));
         var kernel = builder.Build();
 
         var generator = kernel.GetRequiredService<IEmbeddingGenerator<string, Embedding<float>>>();
