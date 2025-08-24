@@ -2,6 +2,7 @@ using ChatClient.Api.Client.Services;
 using ChatClient.Shared.Constants;
 using ChatClient.Shared.Models;
 using ChatClient.Shared.Services;
+using System.Linq;
 
 using Microsoft.Extensions.Logging;
 using Microsoft.SemanticKernel;
@@ -46,10 +47,11 @@ public class KernelService(
         string modelName,
         IEnumerable<string>? functionsToRegister,
         string agentName,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        Guid? serverId = null)
     {
         var settings = await userSettingsService.GetSettingsAsync();
-        var kernel = await CreateBasicKernelAsync(modelName, TimeSpan.FromSeconds(settings.HttpTimeoutSeconds), agentName);
+        var kernel = await CreateBasicKernelAsync(modelName, TimeSpan.FromSeconds(settings.HttpTimeoutSeconds), agentName, serverId);
 
         if (functionsToRegister != null && functionsToRegister.Any() && _mcpClientService != null)
         {
@@ -60,16 +62,13 @@ public class KernelService(
     }
 
     [Obsolete]
-    public async Task<Kernel> CreateBasicKernelAsync(string modelId, TimeSpan timeout, string? agentName = null)
+    public async Task<Kernel> CreateBasicKernelAsync(string modelId, TimeSpan timeout, string? agentName = null, Guid? serverId = null)
     {
         var settings = await userSettingsService.GetSettingsAsync();
-        var baseUrl = !string.IsNullOrWhiteSpace(settings.OllamaServerUrl) ? settings.OllamaServerUrl : OllamaDefaults.ServerUrl;
-
-        IKernelBuilder builder = Kernel.CreateBuilder();
-        var httpClient = CreateConfiguredHttpClient(settings, timeout);
-        httpClient.BaseAddress = new Uri(baseUrl);
+        var httpClient = CreateConfiguredHttpClient(settings, serverId, timeout);
         if (!string.IsNullOrEmpty(agentName))
             httpClient.DefaultRequestHeaders.Add("X-Agent-Name", agentName);
+        IKernelBuilder builder = Kernel.CreateBuilder();
         builder.Services.AddSingleton(httpClient);
         builder.Services.AddLogging(c => c.AddConsole().SetMinimumLevel(LogLevel.Information));
         builder.Services.AddSingleton<IChatCompletionService>(_ =>
@@ -80,16 +79,17 @@ public class KernelService(
         return builder.Build();
     }
 
-    private HttpClient CreateConfiguredHttpClient(UserSettings settings, TimeSpan timeout)
+    private HttpClient CreateConfiguredHttpClient(UserSettings settings, Guid? serverId, TimeSpan timeout)
     {
+        LlmServerConfig? server = null;
+        if (serverId.HasValue && serverId.Value != Guid.Empty)
+            server = settings.Llms.FirstOrDefault(s => s.Id == serverId.Value);
+
         var handler = new HttpClientHandler();
-
-        if (settings.IgnoreSslErrors)
-        {
+        var ignoreSsl = server?.IgnoreSslErrors ?? settings.IgnoreSslErrors;
+        if (ignoreSsl)
             handler.ServerCertificateCustomValidationCallback = (sender, cert, chain, sslPolicyErrors) => true;
-        }
 
-        // Create logging handler and chain it with the base handler
         var loggingHandler = new HttpLoggingHandler(serviceProvider.GetRequiredService<ILogger<HttpLoggingHandler>>())
         {
             InnerHandler = handler
@@ -97,12 +97,14 @@ public class KernelService(
 
         var httpClient = new HttpClient(loggingHandler)
         {
-            Timeout = timeout
+            Timeout = TimeSpan.FromSeconds(server?.HttpTimeoutSeconds ?? (int)timeout.TotalSeconds),
+            BaseAddress = new Uri(server?.BaseUrl ?? (!string.IsNullOrWhiteSpace(settings.OllamaServerUrl) ? settings.OllamaServerUrl : OllamaDefaults.ServerUrl))
         };
 
-        if (!string.IsNullOrWhiteSpace(settings.OllamaBasicAuthPassword))
+        var password = server?.Password ?? settings.OllamaBasicAuthPassword;
+        if (!string.IsNullOrWhiteSpace(password))
         {
-            var authValue = Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes($":{settings.OllamaBasicAuthPassword}"));
+            var authValue = Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes($":{password}"));
             httpClient.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Basic", authValue);
         }
 

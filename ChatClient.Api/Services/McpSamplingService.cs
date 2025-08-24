@@ -2,6 +2,7 @@ using ChatClient.Shared.Models;
 using ChatClient.Shared.Services;
 using ChatClient.Api.Client.Services;
 using ChatClient.Shared.Constants;
+using System.Linq;
 
 using DimonSmart.AiUtils;
 
@@ -48,7 +49,8 @@ public class McpSamplingService(
         CreateMessageRequestParams request,
         IProgress<ProgressNotificationValue> progress,
         CancellationToken cancellationToken,
-        McpServerConfig? mcpServerConfig = null)
+        McpServerConfig? mcpServerConfig = null,
+        Guid? serverId = null)
     {
         string? model = null;
         try
@@ -62,9 +64,9 @@ public class McpSamplingService(
 
             progress?.Report(new ProgressNotificationValue { Progress = 0, Total = 100 });
 
-            model = await DetermineModelToUseAsync(request.ModelPreferences, mcpServerConfig);
+            model = await DetermineModelToUseAsync(request.ModelPreferences, mcpServerConfig, serverId);
             var settings = await _userSettingsService.GetSettingsAsync();
-            var kernel = await CreateKernelAsync(model, TimeSpan.FromSeconds(settings.McpSamplingTimeoutSeconds));
+            var kernel = await CreateKernelAsync(model, TimeSpan.FromSeconds(settings.McpSamplingTimeoutSeconds), serverId);
 
             progress?.Report(new ProgressNotificationValue { Progress = 25, Total = 100 });
 
@@ -124,22 +126,29 @@ public class McpSamplingService(
         }
     }
 
-    private async Task<Kernel> CreateKernelAsync(string modelId, TimeSpan timeout)
+    private async Task<Kernel> CreateKernelAsync(string modelId, TimeSpan timeout, Guid? serverId)
     {
         var settings = await _userSettingsService.GetSettingsAsync();
-        var baseUrl = !string.IsNullOrWhiteSpace(settings.OllamaServerUrl) ? settings.OllamaServerUrl : OllamaDefaults.ServerUrl;
+        LlmServerConfig? server = null;
+        if (serverId.HasValue && serverId.Value != Guid.Empty)
+            server = settings.Llms.FirstOrDefault(s => s.Id == serverId.Value);
 
         var handler = new HttpClientHandler();
-        if (settings.IgnoreSslErrors)
+        var ignoreSsl = server?.IgnoreSslErrors ?? settings.IgnoreSslErrors;
+        if (ignoreSsl)
             handler.ServerCertificateCustomValidationCallback = (_, _, _, _) => true;
 
         var loggingHandler = new HttpLoggingHandler(_httpLogger) { InnerHandler = handler };
-        var httpClient = new HttpClient(loggingHandler) { Timeout = timeout };
-        httpClient.BaseAddress = new Uri(baseUrl);
-
-        if (!string.IsNullOrWhiteSpace(settings.OllamaBasicAuthPassword))
+        var httpClient = new HttpClient(loggingHandler)
         {
-            var authValue = Convert.ToBase64String(Encoding.UTF8.GetBytes($":{settings.OllamaBasicAuthPassword}"));
+            Timeout = TimeSpan.FromSeconds(server?.HttpTimeoutSeconds ?? (int)timeout.TotalSeconds),
+            BaseAddress = new Uri(server?.BaseUrl ?? (!string.IsNullOrWhiteSpace(settings.OllamaServerUrl) ? settings.OllamaServerUrl : OllamaDefaults.ServerUrl))
+        };
+
+        var password = server?.Password ?? settings.OllamaBasicAuthPassword;
+        if (!string.IsNullOrWhiteSpace(password))
+        {
+            var authValue = Convert.ToBase64String(Encoding.UTF8.GetBytes($":{password}"));
             httpClient.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Basic", authValue);
         }
 
@@ -190,9 +199,10 @@ public class McpSamplingService(
     /// </summary>
     private async Task<string> DetermineModelToUseAsync(
         ModelPreferences? modelPreferences,
-        McpServerConfig? mcpServerConfig)
+        McpServerConfig? mcpServerConfig,
+        Guid? serverId)
     {
-        var availableModels = await _ollamaService.GetModelsAsync();
+        var availableModels = await _ollamaService.GetModelsAsync(serverId);
         var availableModelNames = availableModels.Select(m => m.Name).ToHashSet();
 
         var requestedModel = modelPreferences?.Hints?.FirstOrDefault()?.Name;
