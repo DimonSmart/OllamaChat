@@ -1,0 +1,42 @@
+@using ChatClient.Shared.Models
+
+<MudTextField @bind-Value="Server.Name"
+              Label="Server Name"
+              Required="true"
+              Immediate="true" />
+
+<MudSelect T="ServerType" @bind-Value="Server.ServerType" Label="Server Type" Class="mt-4">
+    <MudSelectItem Value="ServerType.Ollama">Ollama</MudSelectItem>
+    <MudSelectItem Value="ServerType.ChatGpt">ChatGPT</MudSelectItem>
+</MudSelect>
+
+<MudTextField @bind-Value="Server.BaseUrl"
+              Label="Base URL"
+              Variant="Variant.Outlined"
+              Class="mt-4"
+              Required="true" />
+
+<MudTextField @bind-Value="Server.ApiKey"
+              Label="API Key"
+              Variant="Variant.Outlined"
+              Class="mt-4" />
+
+<MudTextField @bind-Value="Server.Password"
+              Label="Password"
+              Variant="Variant.Outlined"
+              InputType="InputType.Password"
+              Class="mt-4" />
+
+<MudNumericField T="int" @bind-Value="Server.HttpTimeoutSeconds"
+                 Label="HTTP Timeout (seconds)"
+                 Variant="Variant.Outlined"
+                 Min="1" Max="3600"
+                 Class="mt-4" />
+
+<MudSwitch @bind-Value="Server.IgnoreSslErrors" Class="mt-4">
+    Ignore SSL certificate errors
+</MudSwitch>
+
+@code {
+    [Parameter] public LlmServerConfig Server { get; set; } = new();
+}
