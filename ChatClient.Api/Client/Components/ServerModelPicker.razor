@@ -14,14 +14,22 @@
         }
     </MudSelect>
 
-    <MudSelect T="string" Value="selectedModel" ValueChanged="OnModelChanged" Placeholder="Model" 
-               Variant="Variant.Filled" Disabled="@(!selectedServerId.HasValue)" Dense="true" Margin="Margin.None"
+    <MudSelect T="string" Value="selectedModel" ValueChanged="OnModelChanged" Placeholder="Model"
+               Variant="Variant.Filled" Disabled="@(!selectedServerId.HasValue || loading || loadError != null)" Dense="true" Margin="Margin.None"
                Style="min-width:120px; max-width:180px;">
         @foreach (var model in models)
         {
             <MudSelectItem Value="@model.Name">@model.Name</MudSelectItem>
         }
     </MudSelect>
+    @if (loading)
+    {
+        <MudProgressCircular Size="Size.Small" Indeterminate="true" Class="ml-2" />
+    }
+    else if (loadError != null)
+    {
+        <MudIcon Icon="@Icons.Material.Filled.Warning" Color="Color.Error" Class="ml-2" Title="@loadError" />
+    }
 </MudStack>
 
 @code {
@@ -33,6 +41,8 @@
     private string? selectedModel;
     private List<LlmServerConfig> servers = [];
     private List<OllamaModel> models = [];
+    private bool loading;
+    private string? loadError;
 
     protected override async Task OnInitializedAsync()
     {
@@ -75,7 +85,22 @@
 
     private async Task LoadModelsAsync(Guid serverId)
     {
-        models = (await OllamaService.GetModelsAsync(serverId)).ToList();
+        try
+        {
+            loading = true;
+            loadError = null;
+            StateHasChanged();
+            models = (await OllamaService.GetModelsAsync(serverId)).ToList();
+        }
+        catch (Exception ex)
+        {
+            loadError = ex.Message;
+            models.Clear();
+        }
+        finally
+        {
+            loading = false;
+        }
     }
 
     private string GetSelectedServerName()

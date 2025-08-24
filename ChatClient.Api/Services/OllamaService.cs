@@ -22,23 +22,28 @@ public sealed class OllamaService(
     ILogger<OllamaService> logger) : IOllamaClientService, IDisposable
 {
     private readonly ConcurrentDictionary<Guid, (HttpClient HttpClient, OllamaApiClient Client)> _clients = new();
+    private readonly ConcurrentDictionary<Guid, IReadOnlyList<OllamaModel>> _modelsCache = new();
     private Exception? _embeddingError;
 
-    private async Task<OllamaApiClient> GetOllamaClientAsync(Guid? serverId = null)
+    private async Task<(OllamaApiClient Client, Guid Id)> GetOllamaClientAsync(Guid? serverId = null)
     {
         var config = await GetServerConfigAsync(serverId);
         var id = config.Id ?? Guid.Empty;
 
         if (_clients.TryGetValue(id, out var entry))
-            return entry.Client;
+            return (entry.Client, id);
 
         var httpClient = BuildHttpClient(config);
         var client = new OllamaApiClient(httpClient);
         _clients[id] = (httpClient, client);
-        return client;
+        return (client, id);
     }
 
-    public Task<OllamaApiClient> GetClientAsync(Guid? serverId = null) => GetOllamaClientAsync(serverId);
+    public async Task<OllamaApiClient> GetClientAsync(Guid? serverId = null)
+    {
+        var (client, _) = await GetOllamaClientAsync(serverId);
+        return client;
+    }
 
     public Task<IReadOnlyList<OllamaModel>> GetModelsAsync(Guid? serverId = null) =>
         GetModelsInternalAsync(serverId);
@@ -48,9 +53,12 @@ public sealed class OllamaService(
 
     private async Task<IReadOnlyList<OllamaModel>> GetModelsInternalAsync(Guid? serverId)
     {
-        var client = await GetOllamaClientAsync(serverId);
+        var (client, id) = await GetOllamaClientAsync(serverId);
+        if (_modelsCache.TryGetValue(id, out var cached))
+            return cached;
+
         var models = await client.ListLocalModelsAsync();
-        return models.Select(m => new OllamaModel
+        var list = models.Select(m => new OllamaModel
         {
             Name = m.Name,
             ModifiedAt = m.ModifiedAt.ToString("yyyy-MM-ddTHH:mm:ss.fffZ"),
@@ -61,6 +69,9 @@ public sealed class OllamaService(
         })
         .OrderBy(m => m.Name)
         .ToList();
+
+        _modelsCache[id] = list;
+        return list;
     }
 
     public bool EmbeddingsAvailable => _embeddingError is null;
@@ -73,7 +84,7 @@ public sealed class OllamaService(
         if (_embeddingError is not null)
             throw new InvalidOperationException("Embedding service unavailable. Restart the application.", _embeddingError);
 
-        var client = await GetOllamaClientAsync(serverId);
+        var (client, _) = await GetOllamaClientAsync(serverId);
 
         var request = new EmbedRequest { Model = modelId, Input = new List<string> { input } };
         try
