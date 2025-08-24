@@ -202,7 +202,7 @@ public class McpSamplingService(
         McpServerConfig? mcpServerConfig,
         Guid? serverId)
     {
-        var availableModels = await _ollamaService.GetModelsAsync(serverId);
+        var availableModels = await _ollamaService.GetModelsAsync(serverId ?? Guid.Empty);
         var availableModelNames = availableModels.Select(m => m.Name).ToHashSet();
 
         var requestedModel = modelPreferences?.Hints?.FirstOrDefault()?.Name;

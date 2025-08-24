@@ -21,37 +21,44 @@ public sealed class OllamaService(
     IServiceProvider serviceProvider,
     ILogger<OllamaService> logger) : IOllamaClientService, IDisposable
 {
-    private readonly ConcurrentDictionary<Guid, (HttpClient HttpClient, OllamaApiClient Client)> _clients = new();
+    private readonly Dictionary<Guid, (OllamaApiClient Client, HttpClient HttpClient)> _clients = new();
     private readonly ConcurrentDictionary<Guid, IReadOnlyList<OllamaModel>> _modelsCache = new();
+    private readonly object _lock = new();
     private Exception? _embeddingError;
 
-    private async Task<(OllamaApiClient Client, Guid Id)> GetOllamaClientAsync(Guid? serverId = null)
+    private async Task<(OllamaApiClient Client, Guid Id)> GetOllamaClientAsync(Guid serverId)
     {
         var config = await GetServerConfigAsync(serverId);
         var id = config.Id ?? Guid.Empty;
 
-        if (_clients.TryGetValue(id, out var entry))
-            return (entry.Client, id);
+        lock (_lock)
+        {
+            if (_clients.TryGetValue(id, out var entry))
+                return (entry.Client, id);
+        }
 
         var httpClient = BuildHttpClient(config);
         var client = new OllamaApiClient(httpClient);
-        _clients[id] = (httpClient, client);
+        lock (_lock)
+        {
+            _clients[id] = (client, httpClient);
+        }
         return (client, id);
     }
 
-    public async Task<OllamaApiClient> GetClientAsync(Guid? serverId = null)
+    public async Task<OllamaApiClient> GetClientAsync(Guid serverId)
     {
         var (client, _) = await GetOllamaClientAsync(serverId);
         return client;
     }
 
-    public Task<IReadOnlyList<OllamaModel>> GetModelsAsync(Guid? serverId = null) =>
+    public Task<IReadOnlyList<OllamaModel>> GetModelsAsync(Guid serverId) =>
         GetModelsInternalAsync(serverId);
 
     public Task<IReadOnlyList<OllamaModel>> GetModelsAsync(ServerModel serverModel) =>
         GetModelsInternalAsync(serverModel.ServerId);
 
-    private async Task<IReadOnlyList<OllamaModel>> GetModelsInternalAsync(Guid? serverId)
+    private async Task<IReadOnlyList<OllamaModel>> GetModelsInternalAsync(Guid serverId)
     {
         var (client, id) = await GetOllamaClientAsync(serverId);
         if (_modelsCache.TryGetValue(id, out var cached))
@@ -79,7 +86,7 @@ public sealed class OllamaService(
     public Task<float[]> GenerateEmbeddingAsync(string input, ServerModel model, CancellationToken cancellationToken = default) =>
         GenerateEmbeddingAsync(input, model.ModelName, model.ServerId, cancellationToken);
 
-    public async Task<float[]> GenerateEmbeddingAsync(string input, string modelId, Guid? serverId = null, CancellationToken cancellationToken = default)
+    public async Task<float[]> GenerateEmbeddingAsync(string input, string modelId, Guid serverId, CancellationToken cancellationToken = default)
     {
         if (_embeddingError is not null)
             throw new InvalidOperationException("Embedding service unavailable. Restart the application.", _embeddingError);
@@ -104,14 +111,14 @@ public sealed class OllamaService(
         }
     }
 
-    private async Task<LlmServerConfig> GetServerConfigAsync(Guid? serverId)
+    private async Task<LlmServerConfig> GetServerConfigAsync(Guid serverId)
     {
-        if (serverId.HasValue && serverId.Value != Guid.Empty)
+        if (serverId != Guid.Empty)
         {
-            var config = await serverConfigService.GetByIdAsync(serverId.Value);
+            var config = await serverConfigService.GetByIdAsync(serverId);
             if (config is not null)
             {
-                config.Id ??= serverId.Value;
+                config.Id ??= serverId;
                 return config;
             }
 
@@ -181,10 +188,13 @@ public sealed class OllamaService(
 
     public void Dispose()
     {
-        foreach (var entry in _clients.Values)
+        lock (_lock)
         {
-            entry.Client.Dispose();
-            entry.HttpClient.Dispose();
+            foreach (var entry in _clients.Values)
+            {
+                entry.Client.Dispose();
+                entry.HttpClient.Dispose();
+            }
         }
     }
 }

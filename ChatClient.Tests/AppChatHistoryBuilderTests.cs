@@ -8,6 +8,7 @@ using ChatClient.Api.Services;
 using ChatClient.Api.Client.Services;
 using ChatClient.Shared.Models;
 using ChatClient.Shared.Services;
+using OllamaSharp;
 
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
@@ -28,9 +29,10 @@ public class AppChatHistoryBuilderTests
 
     private sealed class ThrowingOllamaClientService : IOllamaClientService
     {
-        public Task<IReadOnlyList<OllamaModel>> GetModelsAsync(Guid? serverId = null) => throw new InvalidOperationException();
+        public Task<IReadOnlyList<OllamaModel>> GetModelsAsync(Guid serverId) => throw new InvalidOperationException();
         public Task<IReadOnlyList<OllamaModel>> GetModelsAsync(ServerModel serverModel) => throw new InvalidOperationException();
-        public Task<float[]> GenerateEmbeddingAsync(string input, string modelId, Guid? serverId = null, CancellationToken cancellationToken = default) => throw new InvalidOperationException();
+        public Task<OllamaApiClient> GetClientAsync(Guid serverId) => throw new InvalidOperationException();
+        public Task<float[]> GenerateEmbeddingAsync(string input, string modelId, Guid serverId, CancellationToken cancellationToken = default) => throw new InvalidOperationException();
         public Task<float[]> GenerateEmbeddingAsync(string input, ServerModel model, CancellationToken cancellationToken = default) => throw new InvalidOperationException();
         public bool EmbeddingsAvailable => true;
     }
