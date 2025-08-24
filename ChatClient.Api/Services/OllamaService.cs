@@ -140,7 +140,9 @@ public sealed class OllamaService(
         if (server != null)
             return server;
 
-        var baseUrl = configuration["Ollama:BaseUrl"] ?? OllamaDefaults.ServerUrl;
+        var baseUrl = configuration["Ollama:BaseUrl"];
+        if (string.IsNullOrWhiteSpace(baseUrl))
+            baseUrl = OllamaDefaults.ServerUrl;
         return new LlmServerConfig
         {
             Id = Guid.Empty,
@@ -161,10 +163,11 @@ public sealed class OllamaService(
             InnerHandler = handler
         };
 
+        var baseUrl = string.IsNullOrWhiteSpace(config.BaseUrl) ? OllamaDefaults.ServerUrl : config.BaseUrl;
         var client = new HttpClient(loggingHandler)
         {
             Timeout = TimeSpan.FromSeconds(config.HttpTimeoutSeconds),
-            BaseAddress = new Uri(config.BaseUrl)
+            BaseAddress = new Uri(baseUrl)
         };
 
         if (!string.IsNullOrWhiteSpace(config.Password))
