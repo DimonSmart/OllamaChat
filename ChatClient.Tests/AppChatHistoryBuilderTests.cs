@@ -25,7 +25,6 @@ public class AppChatHistoryBuilderTests
         public Task<IReadOnlyList<OllamaModel>> GetModelsAsync(Guid serverId) => throw new InvalidOperationException();
         public Task<IReadOnlyList<OllamaModel>> GetModelsAsync(ServerModel serverModel) => throw new InvalidOperationException();
         public Task<OllamaApiClient> GetClientAsync(Guid serverId) => throw new InvalidOperationException();
-        public Task<float[]> GenerateEmbeddingAsync(string input, string modelId, Guid serverId, CancellationToken cancellationToken = default) => throw new InvalidOperationException();
         public Task<float[]> GenerateEmbeddingAsync(string input, ServerModel model, CancellationToken cancellationToken = default) => throw new InvalidOperationException();
         public bool EmbeddingsAvailable => true;
     }
