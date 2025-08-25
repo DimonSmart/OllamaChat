@@ -26,8 +26,8 @@ public sealed class VolatileMemoryStore : IMemoryStore
     public Task<bool> DoesCollectionExistAsync(string collectionName, CancellationToken cancellationToken = default)
         => Task.FromResult(_collections.ContainsKey(collectionName));
 
-    public async IAsyncEnumerable<string> GetCollectionsAsync(
-        [EnumeratorCancellation] CancellationToken cancellationToken = default)
+
+    public async IAsyncEnumerable<string> GetCollectionsAsync([EnumeratorCancellation] CancellationToken cancellationToken = default)
     {
         foreach (var key in _collections.Keys)
             yield return key;

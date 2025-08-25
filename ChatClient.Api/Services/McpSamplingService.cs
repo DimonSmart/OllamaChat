@@ -41,7 +41,6 @@ public class McpSamplingService(
     /// <param name="cancellationToken">Cancellation token</param>
     /// <param name="mcpServerConfig">Configuration of the MCP server making the request (optional)</param>
     /// <returns>The LLM response</returns>
-    [Obsolete]
     public async ValueTask<CreateMessageResult> HandleSamplingRequestAsync(
         CreateMessageRequestParams request,
         IProgress<ProgressNotificationValue> progress,
@@ -89,7 +88,6 @@ public class McpSamplingService(
         }
     }
 
-    [Obsolete]
     private async Task<Kernel> CreateKernelForSamplingAsync(string model, Guid serverId)
     {
         var settings = await _userSettingsService.GetSettingsAsync();

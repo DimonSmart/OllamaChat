@@ -1,6 +1,3 @@
-using Microsoft.Extensions.Logging;
-using System;
-using System.Linq;
 using System.Text;
 
 namespace ChatClient.Api.Services;
