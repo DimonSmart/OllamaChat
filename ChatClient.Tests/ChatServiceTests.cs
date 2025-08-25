@@ -22,7 +22,6 @@ public class ChatServiceTests
     {
         public bool EmbeddingsAvailable => false;
         public Task<OllamaApiClient> GetClientAsync(Guid serverId) => Task.FromResult(new OllamaApiClient(new HttpClient()));
-        public Task<float[]> GenerateEmbeddingAsync(string input, string modelId, Guid serverId, CancellationToken cancellationToken = default) => Task.FromResult(new float[0]);
         public Task<float[]> GenerateEmbeddingAsync(string input, ServerModel model, CancellationToken cancellationToken = default) => Task.FromResult(new float[0]);
         public Task<IReadOnlyList<OllamaModel>> GetModelsAsync(Guid serverId) => Task.FromResult<IReadOnlyList<OllamaModel>>(new List<OllamaModel>());
         public Task<IReadOnlyList<OllamaModel>> GetModelsAsync(ServerModel serverModel) => Task.FromResult<IReadOnlyList<OllamaModel>>(new List<OllamaModel>());

@@ -48,26 +48,26 @@ public class McpSamplingService(
         McpServerConfig? mcpServerConfig = null,
         Guid serverId = default)
     {
-        string? model = null;
+        ServerModel? model = null;
         try
         {
             ValidateRequest(request);
             progress?.Report(new ProgressNotificationValue { Progress = 0, Total = 100 });
 
             model = await DetermineModelToUseAsync(request.ModelPreferences, mcpServerConfig, serverId);
-            var kernel = await CreateKernelForSamplingAsync(model, serverId);
+            var kernel = await CreateKernelForSamplingAsync(model);
             progress?.Report(new ProgressNotificationValue { Progress = 25, Total = 100 });
 
             var response = await ProcessSamplingRequestAsync(request, kernel, progress, cancellationToken);
             progress?.Report(new ProgressNotificationValue { Progress = 100, Total = 100 });
 
-            return CreateSuccessfulResult(response, model);
+            return CreateSuccessfulResult(response, model.ModelName);
         }
         catch (ModelDoesNotSupportToolsException ex)
         {
-            LogModelToolSupportError(ex, model, mcpServerConfig);
+            LogModelToolSupportError(ex, model?.ModelName, mcpServerConfig);
             throw new InvalidOperationException(
-                $"The model '{model}' does not support function calling/tools. " +
+                $"The model '{model?.ModelName}' does not support function calling/tools. " +
                 "MCP sampling requires a model that supports tool use. " +
                 "Please configure a different model in the MCP server settings or user settings.", ex);
         }
@@ -88,10 +88,10 @@ public class McpSamplingService(
         }
     }
 
-    private async Task<Kernel> CreateKernelForSamplingAsync(string model, Guid serverId)
+    private async Task<Kernel> CreateKernelForSamplingAsync(ServerModel model)
     {
         var settings = await _userSettingsService.GetSettingsAsync();
-        return await CreateKernelAsync(model, TimeSpan.FromSeconds(settings.McpSamplingTimeoutSeconds), serverId);
+        return await CreateKernelAsync(model, TimeSpan.FromSeconds(settings.McpSamplingTimeoutSeconds));
     }
 
     private async Task<ChatMessageContent> ProcessSamplingRequestAsync(
@@ -151,12 +151,12 @@ public class McpSamplingService(
         }
     }
 
-    private async Task<Kernel> CreateKernelAsync(string modelId, TimeSpan timeout, Guid serverId)
+    private async Task<Kernel> CreateKernelAsync(ServerModel model, TimeSpan timeout)
     {
         var settings = await _userSettingsService.GetSettingsAsync();
         LlmServerConfig? server = null;
-        if (serverId != Guid.Empty)
-            server = settings.Llms.FirstOrDefault(s => s.Id == serverId);
+        if (model.ServerId != Guid.Empty)
+            server = settings.Llms.FirstOrDefault(s => s.Id == model.ServerId);
         server ??= settings.Llms.FirstOrDefault(s => s.Id == settings.DefaultLlmId) ?? settings.Llms.FirstOrDefault();
 
         var handler = new HttpClientHandler();
@@ -229,7 +229,7 @@ public class McpSamplingService(
     /// 3. If user default not set - return error
     /// No hardcoded fallback
     /// </summary>
-    private async Task<string> DetermineModelToUseAsync(
+    private async Task<ServerModel> DetermineModelToUseAsync(
         ModelPreferences? modelPreferences,
         McpServerConfig? mcpServerConfig,
         Guid serverId)
@@ -241,7 +241,7 @@ public class McpSamplingService(
         if (!string.IsNullOrEmpty(requestedModel) && availableModelNames.Contains(requestedModel))
         {
             _logger.LogInformation("Using requested model for MCP sampling: {ModelName}", requestedModel);
-            return requestedModel;
+            return new ServerModel(serverId, requestedModel);
         }
         if (!string.IsNullOrEmpty(mcpServerConfig?.SamplingModel))
         {
@@ -249,7 +249,7 @@ public class McpSamplingService(
             {
                 _logger.LogInformation("Using MCP server configured model for sampling: {ModelName} (Server: {ServerName})",
                     mcpServerConfig.SamplingModel, mcpServerConfig.Name);
-                return mcpServerConfig.SamplingModel;
+                return new ServerModel(serverId, mcpServerConfig.SamplingModel);
             }
             else
             {
@@ -263,7 +263,7 @@ public class McpSamplingService(
             if (availableModelNames.Contains(userSettings.DefaultModelName))
             {
                 _logger.LogInformation("Using user's default model for MCP sampling: {ModelName}", userSettings.DefaultModelName);
-                return userSettings.DefaultModelName;
+                return new ServerModel(serverId, userSettings.DefaultModelName);
             }
             else
             {
