@@ -263,7 +263,7 @@ public class AppChatService(
             }
 
             // Create Kernel using modern approach for this agent
-            var kernel = await CreateModernKernelAsync(modelName, functionsToRegister, desc.AgentName, cancellationToken);
+            var kernel = await CreateModernKernelAsync(modelName, functionsToRegister, desc.AgentName, desc.LlmId ?? Guid.Empty, cancellationToken);
             
             // Add tracking filter to the kernel
             kernel.FunctionInvocationFilters.Add(trackingFilter);
@@ -293,6 +293,7 @@ public class AppChatService(
         string modelName,
         IEnumerable<string>? functionsToRegister,
         string agentName,
+        Guid serverId,
         CancellationToken cancellationToken = default)
     {
         // Create a kernel with proper IChatCompletionService registration
@@ -302,7 +303,7 @@ public class AppChatService(
         builder.Services.AddLogging(c => c.AddConsole().SetMinimumLevel(LogLevel.Information));
 
         // Get Ollama client and add IChatCompletionService - required for ChatCompletionAgent
-        var ollamaClient = await ollamaClientService.GetClientAsync(Guid.Empty);
+        var ollamaClient = await ollamaClientService.GetClientAsync(serverId);
         var baseChatService = ollamaClient.AsChatCompletionService();
         builder.Services.AddSingleton<IChatCompletionService>(_ =>
             new AppForceLastUserChatCompletionService(baseChatService, _reducer));
