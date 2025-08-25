@@ -1,12 +1,10 @@
 @page "/models"
 @using ChatClient.Shared.Models
-@using System.Text.Json
 @using ChatClient.Api.Services
 @inject IOllamaClientService OllamaService
-@inject IUserSettingsService UserSettingsService
+@inject ILlmServerConfigService LlmServerConfigService
 
-<OllamaCheck>
-    <MudContainer Class="mt-3">
+<MudContainer Class="mt-3">
     <MudText Class="page-header">Available Models</MudText>
 
     @if (_loading)
@@ -14,84 +12,91 @@
         <MudProgressCircular Color="Color.Primary" Indeterminate="true" />
         <MudText Class="ml-2">Loading models...</MudText>
     }
-    else if (_models.Count == 0)
+    else if (_serverModels.Count == 0)
     {
-        <MudAlert Severity="Severity.Info">No models available. Make sure Ollama is running and has models installed.</MudAlert>
+        <MudAlert Severity="Severity.Info">No servers configured.</MudAlert>
     }
     else
     {
-        <MudAlert Severity="Severity.Info" Class="mb-3">
-            Function calling support detection is based on model metadata and naming patterns. 
-            The actual capabilities may vary and should be verified through testing.
-        </MudAlert>
-        
-        <MudTable Items="@_models" Hover="true" Striped="true" Dense="true" Class="mb-4" Elevation="2">
-            <HeaderContent>
-                <MudTh>Model Name</MudTh>
-                <MudTh>Image Support</MudTh>
-                <MudTh>Function Calling</MudTh>
-                <MudTh>Modified At</MudTh>
-                <MudTh>Size</MudTh>
-            </HeaderContent>
-            <RowTemplate>
-                <MudTd DataLabel="Name">@context.Name</MudTd>
-                <MudTd DataLabel="Image Support" Style="text-align: center;">
-                    @if (context.SupportsImages)
-                    {
-                        <span style="color: #4caf50; font-size: 20px; font-weight: bold;" title="Supports images">✓</span>
-                    }
-                    else
-                    {
-                        <span style="color: #9e9e9e; font-size: 20px;" title="Text only">−</span>
-                    }
-                </MudTd>
-                <MudTd DataLabel="Function Calling" Style="text-align: center;">
-                    @if (context.SupportsFunctionCalling)
-                    {
-                        <span style="color: #2196f3; font-size: 20px; font-weight: bold;" title="Function calling support detected (may not be accurate)">⚙</span>
-                    }
-                    else
-                    {
-                        <span style="color: #9e9e9e; font-size: 20px;" title="No function calling support detected">−</span>
-                    }
-                </MudTd>
-                <MudTd DataLabel="Modified At">@FormatDate(context.ModifiedAt)</MudTd>
-                <MudTd DataLabel="Size">@FormatSize(context.Size)</MudTd>
-            </RowTemplate>
-        </MudTable>
-    }    
-    @if (_errorMessage != null)
-    {
-        <MudAlert Severity="Severity.Error" Class="mt-2">@_errorMessage</MudAlert>
+        @foreach (var server in _serverModels)
+        {
+            <MudText Typo="Typo.h6" Class="mt-4">@server.Server.Name</MudText>
+            @if (server.ErrorMessage is not null)
+            {
+                <MudAlert Severity="Severity.Error" Class="mb-4">@server.ErrorMessage</MudAlert>
+            }
+            else if (server.Models.Count == 0)
+            {
+                <MudAlert Severity="Severity.Info" Class="mb-4">No models available. Make sure Ollama is running and has models installed.</MudAlert>
+            }
+            else
+            {
+                <MudAlert Severity="Severity.Info" Class="mb-3">
+                    Function calling support detection is based on model metadata and naming patterns.
+                    The actual capabilities may vary and should be verified through testing.
+                </MudAlert>
+                <MudTable Items="server.Models" Hover="true" Striped="true" Dense="true" Class="mb-4" Elevation="2">
+                    <HeaderContent>
+                        <MudTh>Model Name</MudTh>
+                        <MudTh>Image Support</MudTh>
+                        <MudTh>Function Calling</MudTh>
+                        <MudTh>Modified At</MudTh>
+                        <MudTh>Size</MudTh>
+                    </HeaderContent>
+                    <RowTemplate>
+                        <MudTd DataLabel="Name">@context.Name</MudTd>
+                        <MudTd DataLabel="Image Support" Style="text-align: center;">
+                            @if (context.SupportsImages)
+                            {
+                                <span style="color: #4caf50; font-size: 20px; font-weight: bold;" title="Supports images">✓</span>
+                            }
+                            else
+                            {
+                                <span style="color: #9e9e9e; font-size: 20px;" title="Text only">−</span>
+                            }
+                        </MudTd>
+                        <MudTd DataLabel="Function Calling" Style="text-align: center;">
+                            @if (context.SupportsFunctionCalling)
+                            {
+                                <span style="color: #2196f3; font-size: 20px; font-weight: bold;" title="Function calling support detected (may not be accurate)">⚙</span>
+                            }
+                            else
+                            {
+                                <span style="color: #9e9e9e; font-size: 20px;" title="No function calling support detected">−</span>
+                            }
+                        </MudTd>
+                        <MudTd DataLabel="Modified At">@FormatDate(context.ModifiedAt)</MudTd>
+                        <MudTd DataLabel="Size">@FormatSize(context.Size)</MudTd>
+                    </RowTemplate>
+                </MudTable>
+            }
+        }
     }
 </MudContainer>
-</OllamaCheck>
 
 @code {
-    [CascadingParameter(Name = "SelectedModel")]
-    public ServerModel? SelectedModel { get; set; }
-
-    private List<OllamaModel> _models = new();
+    private List<ServerModels> _serverModels = [];
     private bool _loading = true;
-    private string? _errorMessage;
-    
+
     protected override async Task OnInitializedAsync()
     {
+        _loading = true;
         try
         {
-            _loading = true;
-            var serverId = SelectedModel?.ServerId;
-            if (serverId == null || serverId == Guid.Empty)
+            var servers = await LlmServerConfigService.GetAllAsync();
+            var tasks = servers.Select(async s =>
             {
-                var settings = await UserSettingsService.GetSettingsAsync();
-                serverId = settings.DefaultLlmId;
-            }
-            _models = (await OllamaService.GetModelsAsync(serverId ?? Guid.Empty)).ToList();
-            _errorMessage = null;
-        }
-        catch (Exception ex)
-        {
-            _errorMessage = $"Error loading models: {ex.Message}";
+                try
+                {
+                    var models = (await OllamaService.GetModelsAsync(s.Id ?? Guid.Empty)).ToList();
+                    return new ServerModels(s, models, null);
+                }
+                catch
+                {
+                    return new ServerModels(s, [], "This server is currently unavailable.");
+                }
+            });
+            _serverModels = (await Task.WhenAll(tasks)).ToList();
         }
         finally
         {
@@ -102,9 +107,7 @@
     private string FormatDate(string timestamp)
     {
         if (DateTime.TryParse(timestamp, out var date))
-        {
             return date.ToString("g");
-        }
         return timestamp;
     }
 
@@ -112,14 +115,14 @@
     {
         string[] sizes = { "B", "KB", "MB", "GB", "TB" };
         double len = bytes;
-        int order = 0;
-
+        var order = 0;
         while (len >= 1024 && order < sizes.Length - 1)
         {
             order++;
             len /= 1024;
         }
-
         return $"{len:0.##} {sizes[order]}";
     }
+
+    private sealed record ServerModels(LlmServerConfig Server, List<OllamaModel> Models, string? ErrorMessage);
 }
