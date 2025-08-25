@@ -16,7 +16,8 @@ public class AppChatService(
     KernelService kernelService,
     ILogger<AppChatService> logger,
     IAppChatHistoryBuilder chatHistoryBuilder,
-    AppForceLastUserReducer reducer) : IAppChatService
+    AppForceLastUserReducer reducer,
+    IOllamaClientService ollamaClientService) : IAppChatService
 {
     private CancellationTokenSource? _cancellationTokenSource;
     private AppStreamingMessageManager _streamingManager = null!;
@@ -101,12 +102,15 @@ public class AppChatService(
         _activeStreams.Clear();
     }
 
-    [Obsolete]
+    /// <summary>
+    /// Modern implementation using ChatCompletionAgent without obsolete methods
+    /// </summary>
     public async Task GenerateAnswerAsync(string text, AppChatConfiguration chatConfiguration, GroupChatManager groupChatManager, IReadOnlyList<AppChatMessageFile>? files = null)
     {
         logger.LogInformation("GenerateAnswerAsync called with text length {Length}", text?.Length);
         if (string.IsNullOrWhiteSpace(text) || IsAnswering)
             return;
+
         var userMessage = new AppChatMessage(text, DateTime.Now, ChatRole.User, string.Empty, files);
         await AddMessageAsync(userMessage);
 
@@ -114,51 +118,43 @@ public class AppChatService(
         await NotifyMessageAddedAsync(placeholder);
 
         using var trackingScope = CreateTrackingScope();
-
         UpdateAnsweringState(true);
-
         _cancellationTokenSource = new CancellationTokenSource();
-        var functionCount = chatConfiguration.Functions.Count;
 
         try
         {
-            logger.LogInformation("Processing response with configuration: {chatConfiguration}", chatConfiguration);
+            logger.LogInformation("Processing response with modern agent architecture");
 
             var runtime = new InProcessRuntime();
             await runtime.StartAsync(_cancellationTokenSource.Token);
 
-            var agents = await CreateAgents(text, trackingScope, chatConfiguration, _cancellationTokenSource.Token);
+            // Create modern agents using ChatCompletionAgent constructor directly
+            var agents = await CreateModernAgentsAsync(text, trackingScope, chatConfiguration, _cancellationTokenSource.Token);
 
             OrchestrationInputTransform<string> inputTransform = async (_, ct) =>
             {
                 // Filter out streaming placeholders and empty messages before building history
                 var filteredMessages = Messages.Where(msg =>
                 {
-                    // Skip streaming messages that are placeholders
                     if (msg.IsStreaming)
                     {
-                        logger.LogDebug("Filtering out streaming message: {AgentName}", msg.AgentName);
-                        return false;
+                        return false; // Skip streaming placeholders
                     }
-
-                    // Skip empty assistant messages without agent name - these are internal SK placeholders
-                    if (msg.Role == Microsoft.Extensions.AI.ChatRole.Assistant &&
-                        string.IsNullOrEmpty(msg.Content) &&
-                        string.IsNullOrEmpty(msg.AgentName))
-                    {
-                        logger.LogDebug("Filtering out empty assistant message without agent name");
-                        return false;
-                    }
-
-                    return true;
+                    return !string.IsNullOrWhiteSpace(msg.Content) || (msg.Files?.Count > 0);
                 }).ToList();
 
-                logger.LogDebug("InputTransform: filtered {OriginalCount} messages to {FilteredCount} messages",
+                logger.LogInformation("Building chat history from {TotalMessages} messages, filtered to {FilteredCount}",
                     Messages.Count, filteredMessages.Count);
 
-                var agentId = _agentsByName[agents[0].Name!].Id;
-                var built = await chatHistoryBuilder.BuildChatHistoryAsync(filteredMessages, agents[0].Kernel, agentId, ct);
+                // Use the first agent's kernel for history building
+                var firstAgent = agents.FirstOrDefault();
+                if (firstAgent?.Kernel == null)
+                    throw new InvalidOperationException("No agents available or agent kernel is null");
 
+                var agentId = _agentsByName[firstAgent.Name!].Id;
+                var built = await chatHistoryBuilder.BuildChatHistoryAsync(filteredMessages, firstAgent.Kernel, agentId, ct);
+
+                // Add RAG context if available
                 var rag = built.FirstOrDefault(m => m.Role == AuthorRole.Tool);
                 var ragText = rag?.Items.OfType<Microsoft.SemanticKernel.TextContent>().FirstOrDefault()?.Text;
                 if (!string.IsNullOrWhiteSpace(ragText) && !Messages.Any(m => m.Role == ChatRole.Tool))
@@ -172,7 +168,7 @@ public class AppChatService(
             var chatOrchestration = CreateChatOrchestration(
                 groupChatManager,
                 agents,
-                functionCount,
+                trackingScope.Filters.Values.Sum(f => f.Records.Count),
                 trackingScope,
                 inputTransform);
 
@@ -194,7 +190,7 @@ public class AppChatService(
         finally
         {
             CleanupWithoutTrackingFilters();
-            await FinalizeProcessing(functionCount, trackingScope);
+            await FinalizeProcessing(trackingScope.Filters.Values.Sum(f => f.Records.Count), trackingScope);
         }
     }
 
@@ -222,15 +218,17 @@ public class AppChatService(
     private Task NotifyMessageAddedAsync(IAppChatMessage message) =>
         MessageAdded?.Invoke(message) ?? Task.CompletedTask;
 
-    [Obsolete]
-    private async Task<List<ChatCompletionAgent>> CreateAgents(
+    /// <summary>
+    /// Modern implementation of agent creation using ChatCompletionAgent constructor without obsolete methods
+    /// </summary>
+    private async Task<List<ChatCompletionAgent>> CreateModernAgentsAsync(
         string userMessage,
         TrackingFiltersScope trackingScope,
         AppChatConfiguration chatConfiguration,
         CancellationToken cancellationToken)
     {
         var agentNames = string.Join(", ", _agentsByName.Keys);
-        logger.LogInformation("Creating {AgentCount} agents: [{AgentNames}]", _agentsByName.Count, agentNames);
+        logger.LogInformation("Creating {AgentCount} modern agents: [{AgentNames}]", _agentsByName.Count, agentNames);
         var agents = new List<ChatCompletionAgent>();
 
         foreach (var desc in _agentsByName.Values)
@@ -238,17 +236,17 @@ public class AppChatService(
             cancellationToken.ThrowIfCancellationRequested();
             var functionsToRegister = await kernelService.GetFunctionsToRegisterAsync(desc.FunctionSettings, userMessage, cancellationToken);
             var modelName = desc.ModelName ?? chatConfiguration.ModelName ?? throw new InvalidOperationException($"Agent '{desc.AgentName}' model name is not set and no default model is configured.");
-            var agentKernel = await kernelService.CreateKernelAsync(modelName, functionsToRegister, desc.AgentName, cancellationToken);
 
+            // Create agent using ChatCompletionAgent constructor directly with modern approach
             var agentName = desc.AgentId;
 
             var trackingFilter = new FunctionCallRecordingFilter();
-            agentKernel.FunctionInvocationFilters.Add(trackingFilter);
-            trackingScope.Register(agentName, trackingFilter, () => agentKernel.FunctionInvocationFilters.Remove(trackingFilter));
+            trackingScope.Register(agentName, trackingFilter, () => { /* Cleanup will be handled by scope */ });
 
-            logger.LogDebug("Configuring agent {AgentName} with model {ModelName}", agentName, modelName);
+            logger.LogDebug("Configuring modern agent {AgentName} with model {ModelName}", agentName, modelName);
             var settings = new PromptExecutionSettings
             {
+                ModelId = modelName,
                 FunctionChoiceBehavior = FunctionChoiceBehavior.Auto(autoInvoke: true)
             };
 
@@ -264,18 +262,62 @@ public class AppChatService(
                 settings.ExtensionData["repeat_penalty"] = desc.RepeatPenalty.Value;
             }
 
-            agents.Add(new ChatCompletionAgent
+            // Create Kernel using modern approach for this agent
+            var kernel = await CreateModernKernelAsync(modelName, functionsToRegister, desc.AgentName, cancellationToken);
+            
+            // Add tracking filter to the kernel
+            kernel.FunctionInvocationFilters.Add(trackingFilter);
+
+            // Create ChatCompletionAgent with modern approach - kernel must be set in initializer
+            var agent = new ChatCompletionAgent
             {
                 Name = agentName,
                 Description = desc.AgentName,
                 Instructions = desc.Content,
-                Kernel = agentKernel,
+                Kernel = kernel,
                 Arguments = new KernelArguments(settings),
                 HistoryReducer = _reducer
-            });
+            };
+
+            agents.Add(agent);
         }
 
         return agents;
+    }
+
+    /// <summary>
+    /// Modern kernel creation method that creates a basic kernel for ChatCompletionAgent
+    /// This is a simplified approach since ChatCompletionAgent handles most of the complexity
+    /// </summary>
+    private async Task<Kernel> CreateModernKernelAsync(
+        string modelName,
+        IEnumerable<string>? functionsToRegister,
+        string agentName,
+        CancellationToken cancellationToken = default)
+    {
+        // Create a kernel with proper IChatCompletionService registration
+        var builder = Kernel.CreateBuilder();
+        
+        // Add basic services that might be needed
+        builder.Services.AddLogging(c => c.AddConsole().SetMinimumLevel(LogLevel.Information));
+
+        // Get Ollama client and add IChatCompletionService - required for ChatCompletionAgent
+        var ollamaClient = await ollamaClientService.GetClientAsync(Guid.Empty);
+        var baseChatService = ollamaClient.AsChatCompletionService();
+        builder.Services.AddSingleton<IChatCompletionService>(_ =>
+            new AppForceLastUserChatCompletionService(baseChatService, _reducer));
+
+        var kernel = builder.Build();
+
+        // Register MCP tools if needed and if MCP client service is available
+        if (functionsToRegister != null && functionsToRegister.Any())
+        {
+            // Use the public method to register MCP tools
+            await kernelService.RegisterMcpToolsPublicAsync(kernel, functionsToRegister, cancellationToken);
+            logger.LogInformation("MCP tools registered for modern agent {AgentName}: [{Functions}]", agentName, string.Join(", ", functionsToRegister));
+        }
+
+        return kernel;
     }
 
     private GroupChatOrchestration CreateChatOrchestration(

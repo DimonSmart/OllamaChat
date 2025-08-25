@@ -151,7 +151,6 @@ public class McpSamplingService(
         }
     }
 
-    [Obsolete]
     private async Task<Kernel> CreateKernelAsync(string modelId, TimeSpan timeout, Guid serverId)
     {
         var settings = await _userSettingsService.GetSettingsAsync();
@@ -186,10 +185,12 @@ public class McpSamplingService(
         IKernelBuilder builder = Kernel.CreateBuilder();
         builder.Services.AddSingleton(httpClient);
         builder.Services.AddLogging(c => c.AddConsole().SetMinimumLevel(LogLevel.Information));
+        
+        // Use modern OllamaApiClient approach  
+        var ollamaClient = new OllamaSharp.OllamaApiClient(httpClient);
+        var chatService = ollamaClient.AsChatCompletionService();
         builder.Services.AddSingleton<IChatCompletionService>(_ =>
-            new AppForceLastUserChatCompletionService(
-                new OllamaChatCompletionService(modelId, httpClient: httpClient),
-                _reducer));
+            new AppForceLastUserChatCompletionService(chatService, _reducer));
 
         return builder.Build();
     }

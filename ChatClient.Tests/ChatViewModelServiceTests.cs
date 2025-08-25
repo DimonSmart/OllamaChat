@@ -26,7 +26,7 @@ public class ChatViewModelServiceTests
         public void ResetChat() { }
         public Task CancelAsync() => Task.CompletedTask;
 
-        public Task GenerateAnswerAsync(string text, AppChatConfiguration chatConfiguration, GroupChatManager groupChatManager, IReadOnlyList<AppChatMessageFile> files) => Task.CompletedTask;
+        public Task GenerateAnswerAsync(string text, AppChatConfiguration chatConfiguration, GroupChatManager groupChatManager, IReadOnlyList<AppChatMessageFile>? files = null) => Task.CompletedTask;
 
         public Task DeleteMessageAsync(Guid id) => Task.CompletedTask;
 

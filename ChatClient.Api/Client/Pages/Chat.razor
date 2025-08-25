@@ -330,6 +330,7 @@
         var chatConfiguration = new AppChatConfiguration(CurrentModelName, functions);
         var options = new RoundRobinStopAgentOptions { Rounds = 1 };
         var groupChatManager = StopAgentFactory.Create("RoundRobin", options);
+        
         await ChatService.GenerateAnswerAsync(messageData.text.Trim(), chatConfiguration, groupChatManager, messageData.files);
         await ScrollToBottom();
     }

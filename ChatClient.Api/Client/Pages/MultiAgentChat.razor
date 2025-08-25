@@ -476,6 +476,7 @@
         var groupChatManager = StopAgentFactory.Create(stopAgentName, options);
         var chatConfiguration = new AppChatConfiguration(CurrentModelName, allFunctions);
 
+        // Use modern agent architecture instead of obsolete method
         await ChatService.GenerateAnswerAsync(messageData.text.Trim(), chatConfiguration, groupChatManager, messageData.files);
         await ScrollToBottom();
     }
