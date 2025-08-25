@@ -259,6 +259,9 @@
     private string CurrentModelName => string.IsNullOrWhiteSpace(SelectedModel?.ModelName)
         ? userSettings.DefaultModelName
         : SelectedModel.ModelName;
+    private Guid CurrentServerId => SelectedModel?.ServerId != Guid.Empty
+        ? SelectedModel.ServerId
+        : userSettings.DefaultLlmId ?? Guid.Empty;
 
     private const string RoundRobinStopAgent = "RoundRobin";
     private const string RoundRobinSummaryStopAgent = "RoundRobinWithSummary";
@@ -396,8 +399,12 @@
             return;
 
         foreach (var agent in selectedAgents)
+        {
             if (string.IsNullOrWhiteSpace(agent.ModelName))
                 agent.ModelName = CurrentModelName;
+            if (!agent.LlmId.HasValue || agent.LlmId == Guid.Empty)
+                agent.LlmId = CurrentServerId;
+        }
 
         userSettings.StopAgentName = stopAgentName;
         userSettings.MultiAgentSelectedAgents = selectedAgents.Select(a => a.AgentName).ToList();

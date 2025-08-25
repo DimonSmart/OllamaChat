@@ -235,6 +235,9 @@
     private string CurrentModelName => string.IsNullOrWhiteSpace(SelectedModel?.ModelName)
         ? userSettings.DefaultModelName
         : SelectedModel.ModelName;
+    private Guid CurrentServerId => SelectedModel?.ServerId != Guid.Empty
+        ? SelectedModel.ServerId
+        : userSettings.DefaultLlmId ?? Guid.Empty;
 
     private UserSettings userSettings = new();
 
@@ -315,6 +318,8 @@
 
         if (string.IsNullOrWhiteSpace(agents[0].ModelName))
             agents[0].ModelName = CurrentModelName;
+        if (!agents[0].LlmId.HasValue || agents[0].LlmId == Guid.Empty)
+            agents[0].LlmId = CurrentServerId;
 
         ChatService.InitializeChat(agents);
         chatStarted = true;
