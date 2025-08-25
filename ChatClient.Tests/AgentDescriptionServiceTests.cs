@@ -25,11 +25,13 @@ public class AgentDescriptionServiceTests
             var logger = new LoggerFactory().CreateLogger<AgentDescriptionService>();
             var service = new AgentDescriptionService(config, logger);
 
+            var serverId = Guid.NewGuid();
             var prompt = new AgentDescription
             {
                 AgentName = "Test",
                 Content = "Test content",
                 ModelName = "test-model",
+                LlmId = serverId,
                 FunctionSettings = new FunctionSettings
                 {
                     SelectedFunctions = ["srv:fn1", "srv:fn2"],
@@ -44,6 +46,7 @@ public class AgentDescriptionServiceTests
 
             Assert.NotNull(retrieved);
             Assert.Equal("test-model", retrieved!.ModelName);
+            Assert.Equal(serverId, retrieved.LlmId);
             Assert.Equal(["srv:fn1", "srv:fn2"], retrieved.FunctionSettings.SelectedFunctions);
             Assert.Equal(3, retrieved.FunctionSettings.AutoSelectCount);
         }

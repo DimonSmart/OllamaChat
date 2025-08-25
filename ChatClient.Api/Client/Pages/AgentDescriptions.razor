@@ -5,14 +5,15 @@
 @using ChatClient.Shared.Models
 @using ChatClient.Shared.Services
 @using ChatClient.Api.Services
+@using ChatClient.Api.Client.Components
 @using Microsoft.AspNetCore.Components.Forms
 @using Microsoft.AspNetCore.Http
 @inject IAgentDescriptionService AgentService
 @inject ISnackbar Snackbar
-@inject IOllamaClientService OllamaService
 @inject KernelService KernelService
 @inject IRagFileService RagFileService
 @inject IFileConverter FileConverter
+@inject ILlmServerConfigService LlmServerConfigService
 
 <PageTitle>Agent Descriptions Management</PageTitle>
 
@@ -81,10 +82,11 @@
                     <TemplateColumn Title="Model" isEditable="false">
                         <CellTemplate>
                             <div>
-                                @if (!string.IsNullOrWhiteSpace(context.Item.ModelName))
+                                @{ var modelDisplay = GetModelDisplay(context.Item); }
+                                @if (!string.IsNullOrWhiteSpace(modelDisplay))
                                 {
                                     <MudChip T="string" Color="Color.Secondary" Size="Size.Small">
-                                        @context.Item.ModelName
+                                        @modelDisplay
                                     </MudChip>
                                 }
                                 else
@@ -202,12 +204,7 @@
                           HelperText="Custom short name for this agent. If empty, uses global agent name from settings."
                           Placeholder="Enter short name..." />
 
-            <MudSelect T="string" @bind-Value="editingAgent.ModelName" Label="Model (Optional)" Class="mt-4" Dense="true" Clearable="true">
-                @foreach (var model in availableModels)
-                {
-                    <MudSelectItem Value="@model.Name">@model.Name</MudSelectItem>
-                }
-            </MudSelect>
+            <ServerModelPicker @bind-Value="editingServerModel" Class="mt-4" />
             <MudText Typo="Typo.caption">Leave blank to use chat's default model.</MudText>
 
             <MudNumericField T="double?" @bind-Value="editingAgent.Temperature" Label="Temperature (Optional)" Class="mt-4" Immediate="true" Min="0" Max="2" Step="0.1" />
@@ -290,11 +287,12 @@
     private string searchString = string.Empty;
     private MudForm? editAgentForm;
     private MudDataGrid<AgentDescription>? dataGrid;
-    private List<OllamaModel> availableModels = new();
     private List<FunctionInfo> availableFunctions = new();
     private bool functionsExpanded;
     private Dictionary<Guid, int> ragCounts = new();
     private List<RagFile> ragFiles = new();
+    private ServerModel editingServerModel = new(Guid.Empty, string.Empty);
+    private List<LlmServerConfig> servers = new();
     private DialogOptions dialogOptions = new()
     {
         CloseOnEscapeKey = true,
@@ -313,7 +311,7 @@
     protected override async Task OnInitializedAsync()
     {
         await LoadAgents();
-        await LoadAvailableModels();
+        servers = await LlmServerConfigService.GetAllAsync();
         await LoadAvailableFunctions();
     }
 
@@ -346,19 +344,6 @@
         }
     }
 
-    private async Task LoadAvailableModels()
-    {
-        try
-        {
-            availableModels = (await OllamaService.GetModelsAsync(Guid.Empty)).ToList();
-        }
-        catch (Exception ex)
-        {
-            Snackbar.Add($"Error loading models: {ex.Message}", Severity.Error);
-            availableModels = new();
-        }
-    }
-
     private async Task LoadAvailableFunctions()
     {
         try
@@ -369,6 +354,16 @@
         {
             availableFunctions = new();
         }
+    }
+
+    private string GetModelDisplay(AgentDescription agent)
+    {
+        if (string.IsNullOrWhiteSpace(agent.ModelName))
+            return string.Empty;
+        var server = servers.FirstOrDefault(s => s.Id == (agent.LlmId ?? Guid.Empty));
+        return server is null || server.Id == Guid.Empty
+            ? agent.ModelName
+            : $"{server.Name}/{agent.ModelName}";
     }
 
     private void AddNewAgent()
@@ -382,6 +377,7 @@
             Content = "",
             ShortName = null,
             ModelName = null,
+            LlmId = null,
             Temperature = null,
             RepeatPenalty = null,
             FunctionSettings = new FunctionSettings
@@ -390,6 +386,7 @@
                 SelectedFunctions = []
             }
         };
+        editingServerModel = new ServerModel(Guid.Empty, string.Empty);
         ragFiles = new();
         showEditAgentDialog = true;
     }
@@ -488,6 +485,7 @@
             Content = agent.Content,
             ShortName = agent.ShortName,
             ModelName = agent.ModelName,
+            LlmId = agent.LlmId,
             Temperature = agent.Temperature,
             RepeatPenalty = agent.RepeatPenalty,
             CreatedAt = agent.CreatedAt,
@@ -499,6 +497,7 @@
             }
         };
 
+        editingServerModel = new ServerModel(agent.LlmId ?? Guid.Empty, agent.ModelName ?? string.Empty);
         await LoadRagFiles(agent.Id);
         showEditAgentDialog = true;
     }
@@ -579,6 +578,8 @@
         {
             try
             {
+                editingAgent.LlmId = editingServerModel.ServerId == Guid.Empty ? null : editingServerModel.ServerId;
+                editingAgent.ModelName = string.IsNullOrWhiteSpace(editingServerModel.ModelName) ? null : editingServerModel.ModelName;
                 if (editingAgent.Id == Guid.Empty)
                 {
                     var result = await AgentService.CreateAsync(editingAgent);
