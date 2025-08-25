@@ -1,10 +1,7 @@
-using System.IO;
-using System.Linq;
-
-using Microsoft.AspNetCore.Mvc;
 using ChatClient.Api.Services;
 using ChatClient.Shared.Models;
 using ChatClient.Shared.Services;
+using Microsoft.AspNetCore.Mvc;
 
 namespace ChatClient.Api.Controllers;
 

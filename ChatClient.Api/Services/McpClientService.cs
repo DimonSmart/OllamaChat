@@ -1,9 +1,9 @@
-using System;
-using System.Reflection;
 using ChatClient.Shared.Models;
 using ChatClient.Shared.Services;
 using ModelContextProtocol.Client;
 using ModelContextProtocol.Protocol;
+using System;
+using System.Reflection;
 
 namespace ChatClient.Api.Services;
 
@@ -49,7 +49,7 @@ public class McpClientService(
         return _mcpClients;
     }
 
-
+    [Obsolete]
     private async Task AddSseClient(McpServerConfig serverConfig, CancellationToken cancellationToken)
     {
         try
@@ -69,6 +69,7 @@ public class McpClientService(
         }
     }
 
+    [Obsolete]
     private async Task<IMcpClient> CreateLocalMcpClientAsync(McpServerConfig config, CancellationToken cancellationToken)
     {
         if (string.IsNullOrEmpty(config.Command))
@@ -136,6 +137,7 @@ public class McpClientService(
     /// <summary>
     /// Creates client options that declare sampling capabilities and register the sampling handler
     /// </summary>
+    [Obsolete]
     private McpClientOptions CreateClientOptions(McpServerConfig serverConfig)
     {
         return new McpClientOptions

@@ -1,11 +1,9 @@
-using System.Text.Json;
-
 using ChatClient.Api.Services;
 using ChatClient.Shared.Services;
-
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.SemanticKernel.Memory;
-using Microsoft.Extensions.Configuration;
+using System.Text.Json;
 
 namespace ChatClient.Tests;
 

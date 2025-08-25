@@ -1,10 +1,11 @@
 using ChatClient.Api;
 using ChatClient.Api.Client.Services;
+using ChatClient.Api.Client.Services.Formatters;
 using ChatClient.Api.Services;
-using Microsoft.SemanticKernel.Memory;
 
 using Microsoft.AspNetCore.Hosting.Server;
 using Microsoft.AspNetCore.Hosting.Server.Features;
+using Microsoft.SemanticKernel.Memory;
 
 using MudBlazor.Services;
 

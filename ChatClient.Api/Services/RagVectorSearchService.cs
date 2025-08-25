@@ -1,14 +1,12 @@
-using System.Collections.Concurrent;
-using System.Text;
-using System.Text.Json;
-using System.IO;
-
 using ChatClient.Shared.Models;
 using ChatClient.Shared.Services;
-
-using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Logging;
 using Microsoft.SemanticKernel.Memory;
+using System.Collections.Concurrent;
+using System.IO;
+using System.Text;
+using System.Text.Json;
 
 namespace ChatClient.Api.Services;
 
@@ -70,7 +68,8 @@ public sealed class RagVectorSearchService(
 
     private async Task EnsureLoadedAsync(Guid agentId, string collection, CancellationToken ct)
     {
-        if (_loaded.ContainsKey(agentId)) return;
+        if (_loaded.ContainsKey(agentId))
+            return;
         var indexDir = Path.Combine(_basePath, agentId.ToString(), "index");
         if (!Directory.Exists(indexDir))
         {
@@ -90,7 +89,8 @@ public sealed class RagVectorSearchService(
             {
                 continue;
             }
-            if (index?.Fragments.Count is null or 0) continue;
+            if (index?.Fragments.Count is null or 0)
+                continue;
             foreach (var fragment in index.Fragments)
             {
                 var fragIndex = ExtractIndex(fragment.Id);

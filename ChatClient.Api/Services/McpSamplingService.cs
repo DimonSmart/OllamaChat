@@ -1,22 +1,18 @@
+using ChatClient.Api.Client.Services;
 using ChatClient.Shared.Models;
 using ChatClient.Shared.Services;
-using ChatClient.Api.Client.Services;
-using System.Linq;
-
 using DimonSmart.AiUtils;
-
+using Microsoft.Extensions.Logging;
 using Microsoft.SemanticKernel;
 using Microsoft.SemanticKernel.ChatCompletion;
 using Microsoft.SemanticKernel.Connectors.Ollama;
-using Microsoft.Extensions.Logging;
-using System.Net.Http.Headers;
-using System.Text;
-using System.Net.Http;
-
 using ModelContextProtocol;
 using ModelContextProtocol.Protocol;
-
 using OllamaSharp.Models.Exceptions;
+using System.Linq;
+using System.Net.Http;
+using System.Net.Http.Headers;
+using System.Text;
 
 namespace ChatClient.Api.Services;
 
@@ -36,6 +32,7 @@ public class McpSamplingService(
     private readonly AppForceLastUserReducer _reducer = reducer;
     private readonly ILogger<HttpLoggingHandler> _httpLogger = httpLogger;
     private readonly ILogger<McpSamplingService> _logger = logger;
+
     /// <summary>
     /// Handles a sampling request from an MCP server.
     /// </summary>
@@ -44,6 +41,7 @@ public class McpSamplingService(
     /// <param name="cancellationToken">Cancellation token</param>
     /// <param name="mcpServerConfig">Configuration of the MCP server making the request (optional)</param>
     /// <returns>The LLM response</returns>
+    [Obsolete]
     public async ValueTask<CreateMessageResult> HandleSamplingRequestAsync(
         CreateMessageRequestParams request,
         IProgress<ProgressNotificationValue> progress,
@@ -91,6 +89,7 @@ public class McpSamplingService(
         }
     }
 
+    [Obsolete]
     private async Task<Kernel> CreateKernelForSamplingAsync(string model, Guid serverId)
     {
         var settings = await _userSettingsService.GetSettingsAsync();
@@ -154,6 +153,7 @@ public class McpSamplingService(
         }
     }
 
+    [Obsolete]
     private async Task<Kernel> CreateKernelAsync(string modelId, TimeSpan timeout, Guid serverId)
     {
         var settings = await _userSettingsService.GetSettingsAsync();

@@ -1,15 +1,13 @@
 #pragma warning disable SKEXP0070
+using ChatClient.Shared.Models;
+using ChatClient.Shared.Services;
+using Microsoft.Extensions.Logging;
+using OllamaSharp;
+using OllamaSharp.Models;
 using System.Collections.Concurrent;
 using System.Linq;
 using System.Net.Http.Headers;
 using System.Text;
-
-using ChatClient.Shared.Models;
-using ChatClient.Shared.Services;
-
-using OllamaSharp;
-using OllamaSharp.Models;
-using Microsoft.Extensions.Logging;
 
 namespace ChatClient.Api.Services;
 

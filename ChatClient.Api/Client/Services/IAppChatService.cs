@@ -1,6 +1,6 @@
 using ChatClient.Shared.Models;
 
-#pragma warning disable SKEXP0110
+
 using Microsoft.SemanticKernel.Agents.Orchestration.GroupChat;
 
 namespace ChatClient.Api.Client.Services;
@@ -22,4 +22,4 @@ public interface IAppChatService
     Task GenerateAnswerAsync(string text, AppChatConfiguration chatConfiguration, GroupChatManager groupChatManager, IReadOnlyList<AppChatMessageFile> files);
     Task DeleteMessageAsync(Guid id);
 }
-#pragma warning restore SKEXP0110
+

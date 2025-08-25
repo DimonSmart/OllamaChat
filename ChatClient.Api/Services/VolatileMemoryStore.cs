@@ -1,6 +1,6 @@
+using Microsoft.SemanticKernel.Memory;
 using System.Collections.Concurrent;
 using System.Runtime.CompilerServices;
-using Microsoft.SemanticKernel.Memory;
 
 namespace ChatClient.Api.Services;
 

@@ -1,7 +1,7 @@
 ﻿using ChatClient.Shared.Models;
 
 using Microsoft.SemanticKernel;
-#pragma warning disable SKEXP0110
+
 
 namespace ChatClient.Api.Client.Services;
 
@@ -25,4 +25,4 @@ internal sealed class FunctionCallRecordingFilter : IFunctionInvocationFilter
     }
 }
 
-#pragma warning restore SKEXP0110
+

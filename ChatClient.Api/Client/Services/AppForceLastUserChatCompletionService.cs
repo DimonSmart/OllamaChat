@@ -1,7 +1,6 @@
-using System.Runtime.CompilerServices;
-
 using Microsoft.SemanticKernel;
 using Microsoft.SemanticKernel.ChatCompletion;
+using System.Runtime.CompilerServices;
 
 namespace ChatClient.Api.Client.Services;
 

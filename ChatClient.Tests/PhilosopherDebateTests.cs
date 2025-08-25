@@ -1,12 +1,5 @@
-using System.IO;
-using System.Linq;
-using System.Runtime.CompilerServices;
-using System.Text;
-using System.Text.Json;
-
 using ChatClient.Api.Client.Services;
 using ChatClient.Shared.Models;
-
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.SemanticKernel;
@@ -14,11 +7,15 @@ using Microsoft.SemanticKernel.Agents;
 using Microsoft.SemanticKernel.Agents.Orchestration.GroupChat;
 using Microsoft.SemanticKernel.Agents.Runtime.InProcess;
 using Microsoft.SemanticKernel.ChatCompletion;
-
+using System.IO;
+using System.Linq;
+using System.Runtime.CompilerServices;
+using System.Text;
+using System.Text.Json;
 using Xunit;
 using Xunit.Abstractions;
 
-#pragma warning disable SKEXP0110
+
 #pragma warning disable SKEXP0001
 namespace ChatClient.Tests;
 

@@ -1,8 +1,4 @@
-using System.Collections.Generic;
-using System.Threading.Tasks;
-
 using ChatClient.Shared.Models;
-
 using Microsoft.Extensions.AI;
 
 namespace ChatClient.Api.Client.Services;

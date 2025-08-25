@@ -1,10 +1,5 @@
-using System;
-using System.Collections.ObjectModel;
-using System.Linq;
-
 using ChatClient.Api.Services;
 using ChatClient.Shared.Models;
-
 using Microsoft.Extensions.AI;
 using Microsoft.SemanticKernel;
 using Microsoft.SemanticKernel.Agents;
@@ -12,9 +7,8 @@ using Microsoft.SemanticKernel.Agents.Orchestration.GroupChat;
 using Microsoft.SemanticKernel.Agents.Orchestration.Transforms;
 using Microsoft.SemanticKernel.Agents.Runtime.InProcess;
 using Microsoft.SemanticKernel.ChatCompletion;
-
 using OllamaSharp.Models.Exceptions;
-#pragma warning disable SKEXP0110
+using System.Collections.ObjectModel;
 
 namespace ChatClient.Api.Client.Services;
 
@@ -107,6 +101,7 @@ public class AppChatService(
         _activeStreams.Clear();
     }
 
+    [Obsolete]
     public async Task GenerateAnswerAsync(string text, AppChatConfiguration chatConfiguration, GroupChatManager groupChatManager, IReadOnlyList<AppChatMessageFile>? files = null)
     {
         logger.LogInformation("GenerateAnswerAsync called with text length {Length}", text?.Length);
@@ -227,6 +222,7 @@ public class AppChatService(
     private Task NotifyMessageAddedAsync(IAppChatMessage message) =>
         MessageAdded?.Invoke(message) ?? Task.CompletedTask;
 
+    [Obsolete]
     private async Task<List<ChatCompletionAgent>> CreateAgents(
         string userMessage,
         TrackingFiltersScope trackingScope,
@@ -508,5 +504,3 @@ public class AppChatService(
         await (MessageDeleted?.Invoke(id) ?? Task.CompletedTask);
     }
 }
-
-#pragma warning restore SKEXP0110

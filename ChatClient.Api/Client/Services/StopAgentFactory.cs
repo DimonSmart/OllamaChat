@@ -4,7 +4,7 @@ using Microsoft.SemanticKernel.Agents.Orchestration.GroupChat;
 
 namespace ChatClient.Api.Client.Services;
 
-#pragma warning disable SKEXP0110
+
 internal class StopAgentFactory : IStopAgentFactory
 {
     private readonly Dictionary<string, Func<IStopAgentOptions?, GroupChatManager>> _factories = new()
@@ -43,4 +43,4 @@ internal class StopAgentFactory : IStopAgentFactory
         return new RoundRobinSummaryGroupChatManager(agent) { MaximumInvocationCount = rounds };
     }
 }
-#pragma warning restore SKEXP0110
+

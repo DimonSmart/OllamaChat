@@ -1,9 +1,8 @@
-#pragma warning disable SKEXP0110
 
-using System;
-using System.Collections.Generic;
 
 using Microsoft.SemanticKernel.Agents.Runtime.InProcess;
+using System;
+using System.Collections.Generic;
 
 namespace ChatClient.Api.Client.Services;
 
@@ -34,4 +33,4 @@ internal sealed class TrackingFiltersScope : IDisposable
     }
 }
 
-#pragma warning restore SKEXP0110
+

@@ -1,13 +1,11 @@
-using System;
-
 using ChatClient.Api.Client.Services;
 using ChatClient.Api.Services;
 using ChatClient.Shared.Models;
-
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Logging;
 using Microsoft.SemanticKernel;
 using Microsoft.SemanticKernel.ChatCompletion;
+using System;
 
 namespace ChatClient.Tests;
 

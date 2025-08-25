@@ -1,6 +1,5 @@
-using System.Text.Json.Serialization;
-
 using Microsoft.Extensions.AI;
+using System.Text.Json.Serialization;
 
 namespace ChatClient.Shared.Models;
 

@@ -1,14 +1,12 @@
 #pragma warning disable SKEXP0050
-using System.Text.Json;
-
 using ChatClient.Shared.Models;
 using ChatClient.Shared.Services;
-using System.Linq;
-
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Logging;
 using Microsoft.SemanticKernel;
 using Microsoft.SemanticKernel.Text;
+using System.Linq;
+using System.Text.Json;
 
 namespace ChatClient.Api.Services;
 

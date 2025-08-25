@@ -1,11 +1,8 @@
-using System.Collections.Generic;
-
 using Microsoft.SemanticKernel.Agents.Orchestration.GroupChat;
 using Microsoft.SemanticKernel.ChatCompletion;
 
 namespace ChatClient.Api.Client.Services;
 
-#pragma warning disable SKEXP0110
 public sealed class RoundRobinSummaryGroupChatManager(string summaryAgentName) : RoundRobinGroupChatManager, IGroupChatAgentProvider
 {
     private readonly string _summaryAgentName = summaryAgentName;
@@ -57,4 +54,3 @@ public sealed class RoundRobinSummaryGroupChatManager(string summaryAgentName) :
         return result;
     }
 }
-#pragma warning restore SKEXP0110

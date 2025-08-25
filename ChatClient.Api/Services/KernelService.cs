@@ -1,12 +1,11 @@
 using ChatClient.Api.Client.Services;
 using ChatClient.Shared.Models;
 using ChatClient.Shared.Services;
-using System.Linq;
-
 using Microsoft.Extensions.Logging;
 using Microsoft.SemanticKernel;
 using Microsoft.SemanticKernel.ChatCompletion;
 using Microsoft.SemanticKernel.Connectors.Ollama;
+using System.Linq;
 
 namespace ChatClient.Api.Services;
 
@@ -42,6 +41,7 @@ public class KernelService(
         return [];
     }
 
+    [Obsolete]
     public async Task<Kernel> CreateKernelAsync(
         string modelName,
         IEnumerable<string>? functionsToRegister,
@@ -53,10 +53,10 @@ public class KernelService(
         var targetServer = serverId.HasValue && serverId.Value != Guid.Empty
             ? settings.Llms.FirstOrDefault(s => s.Id == serverId.Value)
             : settings.Llms.FirstOrDefault(s => s.Id == settings.DefaultLlmId) ?? settings.Llms.FirstOrDefault();
-        
+
         var timeoutSeconds = targetServer?.HttpTimeoutSeconds ?? 600;
         var timeout = TimeSpan.FromSeconds(timeoutSeconds);
-        
+
         var httpClient = CreateConfiguredHttpClient(settings, serverId, timeout);
         if (!string.IsNullOrEmpty(agentName))
             httpClient.DefaultRequestHeaders.Add("X-Agent-Name", agentName);

@@ -1,7 +1,6 @@
-using System.IO;
-
 using ChatClient.Shared.Models;
 using ChatClient.Shared.Services;
+using System.IO;
 
 namespace ChatClient.Api.Services;
 
