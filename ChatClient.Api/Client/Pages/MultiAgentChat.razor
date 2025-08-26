@@ -414,7 +414,6 @@
         var agentsForChat = selectedAgents.ToList();
         var manager = StopAgentFactory.Create(stopAgentName, stopAgentOptions);
         
-        // Validate that all required agents are available
         if (manager is IGroupChatAgentProvider provider)
         {
             var missingAgents = new List<string>();

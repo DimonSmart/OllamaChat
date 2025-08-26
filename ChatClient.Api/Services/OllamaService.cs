@@ -52,9 +52,6 @@ public sealed class OllamaService(
     public Task<IReadOnlyList<OllamaModel>> GetModelsAsync(Guid serverId) =>
         GetModelsInternalAsync(serverId);
 
-    public Task<IReadOnlyList<OllamaModel>> GetModelsAsync(ServerModel serverModel) =>
-        GetModelsInternalAsync(serverModel.ServerId);
-
     private async Task<IReadOnlyList<OllamaModel>> GetModelsInternalAsync(Guid serverId)
     {
         var (client, id) = await GetOllamaClientAsync(serverId);
@@ -112,21 +109,38 @@ public sealed class OllamaService(
     {
         if (serverId != Guid.Empty)
         {
+            // Сначала ищем в настройках пользователя
+            var userSettings = await userSettingsService.GetSettingsAsync();
+            var userServer = userSettings.Llms.FirstOrDefault(s => s.Id == serverId);
+            if (userServer != null && userServer.ServerType == ServerType.Ollama)
+            {
+                return userServer;
+            }
+            
+            // Потом в старом файле конфигурации, но только для Ollama серверов
             var config = await serverConfigService.GetByIdAsync(serverId);
-            if (config is not null)
+            if (config is not null && config.ServerType == ServerType.Ollama)
             {
                 config.Id ??= serverId;
                 return config;
             }
 
-            logger.LogWarning("Server {ServerId} not found. Using default configuration.", serverId);
+            logger.LogWarning("Ollama server {ServerId} not found. Using default configuration.", serverId);
         }
 
         var settings = await userSettingsService.GetSettingsAsync();
         if (settings.DefaultLlmId.HasValue)
         {
+            // Сначала ищем в настройках пользователя
+            var userServer = settings.Llms.FirstOrDefault(s => s.Id == settings.DefaultLlmId.Value);
+            if (userServer != null && userServer.ServerType == ServerType.Ollama)
+            {
+                return userServer;
+            }
+            
+            // Потом в старом файле конфигурации, но только для Ollama серверов
             var cfg = await serverConfigService.GetByIdAsync(settings.DefaultLlmId.Value);
-            if (cfg is not null)
+            if (cfg is not null && cfg.ServerType == ServerType.Ollama)
             {
                 cfg.Id ??= settings.DefaultLlmId.Value;
                 return cfg;

@@ -31,7 +31,6 @@ internal class StopAgentFactory : IStopAgentFactory
         var rounds = opts?.Rounds ?? 1;
         var agent = opts?.SummaryAgent ?? string.Empty;
 
-        // Validate that summary agent is specified
         if (string.IsNullOrWhiteSpace(agent))
         {
             throw new ArgumentException(

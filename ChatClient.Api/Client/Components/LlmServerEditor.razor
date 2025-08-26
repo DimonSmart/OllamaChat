@@ -14,18 +14,29 @@
               Label="Base URL"
               Variant="Variant.Outlined"
               Class="mt-4"
-              Required="true" />
+              Required="@(Server.ServerType == ServerType.Ollama)"
+              HelperText="@GetBaseUrlHelperText()" />
 
-<MudTextField @bind-Value="Server.ApiKey"
-              Label="API Key"
-              Variant="Variant.Outlined"
-              Class="mt-4" />
+@if (Server.ServerType == ServerType.ChatGpt)
+{
+    <MudTextField @bind-Value="Server.ApiKey"
+                  Label="API Key"
+                  Variant="Variant.Outlined"
+                  Class="mt-4"
+                  Required="true"
+                  InputType="InputType.Password"
+                  HelperText="OpenAI API key (required)" />
+}
 
-<MudTextField @bind-Value="Server.Password"
-              Label="Password"
-              Variant="Variant.Outlined"
-              InputType="InputType.Password"
-              Class="mt-4" />
+@if (Server.ServerType == ServerType.Ollama)
+{
+    <MudTextField @bind-Value="Server.Password"
+                  Label="Password"
+                  Variant="Variant.Outlined"
+                  InputType="InputType.Password"
+                  Class="mt-4"
+                  HelperText="Optional password for Ollama server" />
+}
 
 <MudNumericField T="int" @bind-Value="Server.HttpTimeoutSeconds"
                  Label="HTTP Timeout (seconds)"
@@ -33,10 +44,23 @@
                  Min="1" Max="3600"
                  Class="mt-4" />
 
-<MudSwitch @bind-Value="Server.IgnoreSslErrors" Class="mt-4">
-    Ignore SSL certificate errors
-</MudSwitch>
+@if (Server.ServerType == ServerType.Ollama)
+{
+    <MudSwitch @bind-Value="Server.IgnoreSslErrors" Class="mt-4">
+        Ignore SSL certificate errors
+    </MudSwitch>
+}
 
 @code {
     [Parameter] public LlmServerConfig Server { get; set; } = new();
+
+    private string GetBaseUrlHelperText()
+    {
+        return Server.ServerType switch
+        {
+            ServerType.Ollama => "Ollama server URL (e.g., http://localhost:11434)",
+            ServerType.ChatGpt => "Optional custom OpenAI API base URL (leave empty for default)",
+            _ => ""
+        };
+    }
 }

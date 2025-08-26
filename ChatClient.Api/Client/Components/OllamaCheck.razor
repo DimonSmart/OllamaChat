@@ -1,6 +1,10 @@
 @using ChatClient.Api.Services
+@using ChatClient.Shared.Services
+@using ChatClient.Shared.Models
 @using MudBlazor
 @inject IOllamaClientService OllamaService
+@inject IOpenAIClientService OpenAIService
+@inject IUserSettingsService UserSettingsService
 @inject NavigationManager NavigationManager
 @inject ILogger<OllamaCheck> Logger
 
@@ -9,7 +13,7 @@
     <MudStack Justify="Justify.Center" AlignItems="AlignItems.Center" Style="height: 50vh;">
         <div class="text-center">
             <MudProgressCircular Size="Size.Large" Indeterminate="true" />
-            <MudText Typo="Typo.h6" Class="mt-4">Checking Ollama status...</MudText>
+            <MudText Typo="Typo.h6" Class="mt-4">Checking server status...</MudText>
         </div>
     </MudStack>
 }
@@ -25,19 +29,58 @@ else
 
     protected override async Task OnInitializedAsync()
     {
-        await CheckOllamaStatus();
+        await CheckServerStatus();
     }
 
-    private async Task CheckOllamaStatus()
+    private async Task CheckServerStatus()
     {
         isChecking = true;
         try
         {
-            await OllamaService.GetModelsAsync(Guid.Empty);
+            var settings = await UserSettingsService.GetSettingsAsync();
+            if (!settings.DefaultLlmId.HasValue)
+            {
+                Logger.LogWarning("No default server configured");
+                NavigationManager.NavigateTo("/llm-servers", true);
+                return;
+            }
+
+            var server = settings.Llms.FirstOrDefault(s => s.Id == settings.DefaultLlmId.Value);
+            if (server == null)
+            {
+                Logger.LogWarning("Default server not found: {ServerId}", settings.DefaultLlmId.Value);
+                NavigationManager.NavigateTo("/llm-servers", true);
+                return;
+            }
+
+            // Проверяем только Ollama серверы - для OpenAI серверов пропускаем проверку
+            if (server.ServerType == ServerType.Ollama)
+            {
+                await OllamaService.GetModelsAsync(settings.DefaultLlmId.Value);
+                Logger.LogInformation("Ollama server '{ServerName}' is available", server.Name);
+            }
+            else if (server.ServerType == ServerType.ChatGpt)
+            {
+                // Для OpenAI серверов просто проверяем доступность
+                var isAvailable = await OpenAIService.IsAvailableAsync(settings.DefaultLlmId.Value);
+                if (!isAvailable)
+                {
+                    Logger.LogWarning("OpenAI server '{ServerName}' is not available", server.Name);
+                    NavigationManager.NavigateTo("/llm-servers", true);
+                    return;
+                }
+                Logger.LogInformation("OpenAI server '{ServerName}' is available", server.Name);
+            }
+            else
+            {
+                Logger.LogWarning("Unknown server type: {ServerType}", server.ServerType);
+                NavigationManager.NavigateTo("/llm-servers", true);
+                return;
+            }
         }
         catch (Exception ex)
         {
-            Logger.LogWarning(ex, "Ollama not available for page access");
+            Logger.LogWarning(ex, "Server not available for page access");
             NavigationManager.NavigateTo("/llm-servers", true);
             return;
         }

@@ -11,8 +11,7 @@ namespace ChatClient.Api.Services;
 
 public class KernelService(
     McpFunctionIndexService indexService,
-    ILogger<KernelService> logger,
-    IServiceProvider serviceProvider)
+    ILogger<KernelService> logger)
 {
     private readonly McpFunctionIndexService _indexService = indexService;
     private IMcpClientService? _mcpClientService;
@@ -38,43 +37,6 @@ public class KernelService(
         }
 
         return [];
-    }
-
-    private HttpClient CreateConfiguredHttpClient(UserSettings settings, Guid? serverId, TimeSpan timeout)
-    {
-        LlmServerConfig? server = null;
-        if (serverId.HasValue && serverId.Value != Guid.Empty)
-            server = settings.Llms.FirstOrDefault(s => s.Id == serverId.Value);
-        server ??= settings.Llms.FirstOrDefault(s => s.Id == settings.DefaultLlmId) ?? settings.Llms.FirstOrDefault();
-
-        var handler = new HttpClientHandler();
-        if (server?.IgnoreSslErrors == true)
-            handler.ServerCertificateCustomValidationCallback = (sender, cert, chain, sslPolicyErrors) => true;
-
-        var loggingHandler = new HttpLoggingHandler(serviceProvider.GetRequiredService<ILogger<HttpLoggingHandler>>())
-        {
-            InnerHandler = handler
-        };
-
-        var baseUrl = string.IsNullOrWhiteSpace(server?.BaseUrl) ? LlmServerConfig.DefaultOllamaUrl : server.BaseUrl.Trim();
-        if (string.IsNullOrWhiteSpace(baseUrl))
-        {
-            baseUrl = LlmServerConfig.DefaultOllamaUrl;
-        }
-        var httpClient = new HttpClient(loggingHandler)
-        {
-            Timeout = TimeSpan.FromSeconds(server?.HttpTimeoutSeconds ?? (int)timeout.TotalSeconds),
-            BaseAddress = new Uri(baseUrl)
-        };
-
-        var password = server?.Password;
-        if (!string.IsNullOrWhiteSpace(password))
-        {
-            var authValue = Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes($":{password}"));
-            httpClient.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Basic", authValue);
-        }
-
-        return httpClient;
     }
 
     private async Task RegisterMcpToolsAsync(

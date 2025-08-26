@@ -20,6 +20,11 @@ Log.Logger = new LoggerConfiguration()
 var builder = WebApplication.CreateBuilder(args);
 builder.Host.UseSerilog();
 
+if (builder.Environment.IsDevelopment())
+{
+    builder.Configuration.AddUserSecrets<Program>(optional: true);
+}
+
 // For single-file deployment compatibility only in production
 if (builder.Environment.IsProduction())
 {
@@ -30,9 +35,7 @@ if (builder.Environment.IsProduction())
     builder.Environment.ContentRootPath = exeFolder;
 }
 
-Console.WriteLine($"Environment: {builder.Environment.EnvironmentName}");
-Console.WriteLine($"Content Root: {builder.Environment.ContentRootPath}");
-Console.WriteLine($"Web Root: {builder.Environment.WebRootPath}");
+
 
 builder.Services.AddSingleton<ChatClient.Shared.Services.IMcpServerConfigService, ChatClient.Api.Services.McpServerConfigService>();
 builder.Services.AddSingleton<ChatClient.Api.Services.ILlmServerConfigService, ChatClient.Api.Services.LlmServerConfigService>();
@@ -40,6 +43,9 @@ builder.Services.AddSingleton<ChatClient.Api.Services.IMcpClientService, ChatCli
 builder.Services.AddSingleton<ChatClient.Api.Services.McpSamplingService>();
 builder.Services.AddSingleton<ChatClient.Api.Services.KernelService>();
 builder.Services.AddSingleton<IOllamaClientService, OllamaService>();
+builder.Services.AddSingleton<IOpenAIClientService, OpenAIClientService>();
+builder.Services.AddSingleton<IServerConnectionTestService, ServerConnectionTestService>();
+builder.Services.AddSingleton<IOllamaKernelService, OllamaKernelService>();
 builder.Services.AddSingleton<IOllamaEmbeddingService>(sp =>
     (IOllamaEmbeddingService)sp.GetRequiredService<IOllamaClientService>());
 builder.Services.AddSingleton<ChatClient.Api.Services.McpFunctionIndexService>();
@@ -65,6 +71,7 @@ builder.Services.AddSingleton<IChatFormatter, HtmlChatFormatter>();
 
 builder.Services.AddRazorPages();
 builder.Services.AddServerSideBlazor();
+builder.Services.AddHttpClient();
 
 builder.Services.AddMudServices();
 
@@ -101,13 +108,11 @@ using (var scope = app.Services.CreateScope())
 if (app.Environment.IsDevelopment())
 {
     app.UseDeveloperExceptionPage();
-    Console.WriteLine("Development mode enabled");
 }
 else
 {
     app.UseExceptionHandler("/Error");
     app.UseHsts();
-    Console.WriteLine("Production mode enabled");
 }
 
 app.UseStaticFiles();
@@ -133,18 +138,13 @@ app.Lifetime.ApplicationStarted.Register(() =>
             var httpAddr = addressesFeature.Addresses.FirstOrDefault(a => a.StartsWith("http://"));
             var httpsAddr = addressesFeature.Addresses.FirstOrDefault(a => a.StartsWith("https://"));
 
-            Console.WriteLine($"Server listening on: {string.Join(", ", addressesFeature.Addresses)}");
-
             var launchUrl = httpsAddr ?? httpAddr;
             if (launchUrl != null)
             {
                 BrowserLaunchService.DisplayInfoAndLaunchBrowser(launchUrl, httpsAddr ?? "N/A");
             }
 
-            // Log environment info
-            var env = app.Services.GetService<IWebHostEnvironment>();
-            Console.WriteLine($"Content root path: {env?.ContentRootPath}");
-            Console.WriteLine($"Web root path: {env?.WebRootPath}");
+
         }
         else
         {
@@ -157,5 +157,4 @@ app.Lifetime.ApplicationStarted.Register(() =>
     }
 });
 
-Console.WriteLine("Starting web server...");
 await app.RunAsync();

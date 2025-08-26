@@ -2,8 +2,11 @@
 @using ChatClient.Shared.Models
 @using ChatClient.Api.Services
 @using System.Net.Http
+@using System.Text.Json
+@using System.Text
 @inject ILlmServerConfigService LlmServerConfigService
 @inject ISnackbar Snackbar
+@inject IServerConnectionTestService ConnectionTestService
 
 <PageTitle>LLM Servers</PageTitle>
 
@@ -212,30 +215,20 @@
     {
         try
         {
-            using var handler = new HttpClientHandler();
-            if (server.IgnoreSslErrors)
-                handler.ServerCertificateCustomValidationCallback = (_, _, _, _) => true;
+            var result = await ConnectionTestService.TestConnectionAsync(server);
 
-            var baseUrl = string.IsNullOrWhiteSpace(server.BaseUrl) ? "http://localhost:11434" : server.BaseUrl.Trim();
-            using var client = new HttpClient(handler)
+            if (result.IsSuccessful)
             {
-                Timeout = TimeSpan.FromSeconds(server.HttpTimeoutSeconds),
-                BaseAddress = new Uri(baseUrl)
-            };
-
-            if (!string.IsNullOrEmpty(server.Password))
-            {
-                var auth = Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes($":{server.Password}"));
-                client.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Basic", auth);
+                Snackbar.Add(result.Details ?? "Connection successful", Severity.Success);
             }
-
-            var response = await client.GetAsync("api/tags");
-            response.EnsureSuccessStatusCode();
-            Snackbar.Add("Connection successful", Severity.Success);
+            else
+            {
+                Snackbar.Add(result.ErrorMessage ?? "Connection test failed", Severity.Error);
+            }
         }
         catch (Exception ex)
         {
-            Snackbar.Add($"Connection failed: {ex.Message}", Severity.Error);
+            Snackbar.Add($"Connection test error: {ex.Message}", Severity.Error);
         }
     }
 }

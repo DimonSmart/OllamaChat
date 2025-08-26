@@ -6,7 +6,8 @@
         <!-- Use both NoWarn and WarningsNotAsErrors to handle the experimental API warning -->
         <NoWarn>$(NoWarn);SKEXP0070;SKEXP0110</NoWarn>
         <WarningsNotAsErrors>$(WarningsNotAsErrors);SKEXP0070</WarningsNotAsErrors>
-    </PropertyGroup>
+      <UserSecretsId>4a3297bb-431d-45ef-b95d-3d5c01782724</UserSecretsId>
+  </PropertyGroup>
             <ItemGroup>
         <PackageReference Include="Microsoft.AspNetCore.OpenApi" Version="9.0.8" />
         <PackageReference Include="Microsoft.Extensions.Http" Version="9.0.8" />
@@ -17,6 +18,7 @@
         <PackageReference Include="Microsoft.SemanticKernel.Agents.Runtime.InProcess" Version="1.61.0-preview" />
         <PackageReference Include="Microsoft.SemanticKernel.Connectors.InMemory" Version="1.61.0-preview" />
         <PackageReference Include="Microsoft.SemanticKernel.Connectors.Ollama" Version="1.61.0-alpha" />
+        <PackageReference Include="Microsoft.SemanticKernel.Connectors.OpenAI" Version="1.62.0" />
         <PackageReference Include="Microsoft.SemanticKernel.Plugins.Core" Version="1.61.0-preview" />
         <PackageReference Include="Microsoft.SemanticKernel.Agents.Abstractions" Version="1.62.0" />
         <PackageReference Include="Microsoft.SemanticKernel.Agents.Core" Version="1.62.0" />

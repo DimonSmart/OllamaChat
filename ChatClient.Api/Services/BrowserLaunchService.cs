@@ -37,8 +37,6 @@ namespace ChatClient.Api.Services
         {
             try
             {
-                Console.WriteLine($"Opening browser with URL: {url}");
-
                 if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
                 {
                     Process.Start(new ProcessStartInfo(url) { UseShellExecute = true });
