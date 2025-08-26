@@ -9,6 +9,7 @@
 ### Control Flow
 - Minimize use of `if…else`; prefer guard clauses and early `return`.
 - Avoid deep nesting of `if` statements; use early exits to keep methods flat.
+- Create router methods that delegate to appropriate specialized services based on conditions.
 
 ### JSON Serialization
 - Use `System.Text.Json` for all JSON (de)serialization.
@@ -30,6 +31,8 @@
 - Follow Clean Architecture principles with clear separation of concerns.
 - Use dependency injection for service registration and resolution.
 - Organize code into logical layers: API, Services, Models, Shared.
+- Follow DRY principle: extract duplicated logic into helper classes or services.
+- Create specialized services for complex operations instead of embedding logic in multiple places.
 
 ### Modern C# Features
 - Use target-typed expressions where appropriate (`return [];`).
