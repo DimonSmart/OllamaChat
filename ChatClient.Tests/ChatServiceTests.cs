@@ -1,6 +1,7 @@
 using ChatClient.Api.Client.Services;
 using ChatClient.Api.Services;
 using ChatClient.Shared.Models;
+using ChatClient.Shared.Services;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Logging;
 using Microsoft.SemanticKernel;
@@ -18,13 +19,30 @@ public class ChatServiceTests
             => Task.FromResult(new ChatHistory());
     }
 
-    private class MockOllamaClientService : IOllamaClientService
+    private class MockOllamaKernelService : IOllamaKernelService
     {
-        public bool EmbeddingsAvailable => false;
-        public Task<OllamaApiClient> GetClientAsync(Guid serverId) => Task.FromResult(new OllamaApiClient(new HttpClient()));
-        public Task<float[]> GenerateEmbeddingAsync(string input, ServerModel model, CancellationToken cancellationToken = default) => Task.FromResult(new float[0]);
-        public Task<IReadOnlyList<OllamaModel>> GetModelsAsync(Guid serverId) => Task.FromResult<IReadOnlyList<OllamaModel>>(new List<OllamaModel>());
-        public Task<IReadOnlyList<OllamaModel>> GetModelsAsync(ServerModel serverModel) => Task.FromResult<IReadOnlyList<OllamaModel>>(new List<OllamaModel>());
+        public Task<IChatCompletionService> GetClientAsync(Guid serverId)
+            => Task.FromResult<IChatCompletionService>(null!);
+    }
+
+    private class MockOpenAIClientService : IOpenAIClientService
+    {
+        public Task<IChatCompletionService> GetClientAsync(ServerModel serverModel, CancellationToken cancellationToken = default)
+            => Task.FromResult<IChatCompletionService>(null!);
+
+        public Task<List<string>> GetAvailableModelsAsync(Guid serverId, CancellationToken cancellationToken = default)
+            => Task.FromResult(new List<string>());
+
+        public Task<bool> IsAvailableAsync(Guid serverId, CancellationToken cancellationToken = default)
+            => Task.FromResult(false);
+    }
+
+    private class MockUserSettingsService : IUserSettingsService
+    {
+        public event Func<Task>? EmbeddingModelChanged;
+
+        public Task<UserSettings> GetSettingsAsync() => Task.FromResult(new UserSettings());
+        public Task SaveSettingsAsync(UserSettings settings) => Task.CompletedTask;
     }
 
     [Fact]
@@ -35,7 +53,9 @@ public class ChatServiceTests
             logger: new LoggerFactory().CreateLogger<AppChatService>(),
             chatHistoryBuilder: new DummyHistoryBuilder(),
             reducer: new AppForceLastUserReducer(),
-            ollamaClientService: new MockOllamaClientService());
+            ollamaKernelService: new MockOllamaKernelService(),
+            openAIClientService: new MockOpenAIClientService(),
+            userSettingsService: new MockUserSettingsService());
 
         Assert.Throws<ArgumentException>(() => chatService.InitializeChat([]));
     }
@@ -48,7 +68,9 @@ public class ChatServiceTests
             logger: new LoggerFactory().CreateLogger<AppChatService>(),
             chatHistoryBuilder: new DummyHistoryBuilder(),
             reducer: new AppForceLastUserReducer(),
-            ollamaClientService: new MockOllamaClientService());
+            ollamaKernelService: new MockOllamaKernelService(),
+            openAIClientService: new MockOpenAIClientService(),
+            userSettingsService: new MockUserSettingsService());
 
         var prompt = new AgentDescription { AgentName = "Agent", Content = "Hello" };
         chatService.InitializeChat([prompt]);

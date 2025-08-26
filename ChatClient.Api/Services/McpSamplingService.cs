@@ -6,6 +6,7 @@ using Microsoft.Extensions.Logging;
 using Microsoft.SemanticKernel;
 using Microsoft.SemanticKernel.ChatCompletion;
 using Microsoft.SemanticKernel.Connectors.Ollama;
+using Microsoft.SemanticKernel.Connectors.OpenAI;
 using ModelContextProtocol;
 using ModelContextProtocol.Protocol;
 using OllamaSharp.Models.Exceptions;
@@ -22,12 +23,16 @@ namespace ChatClient.Api.Services;
 /// </summary>
 public class McpSamplingService(
     IOllamaClientService ollamaService,
+    IOllamaKernelService ollamaKernelService,
+    IOpenAIClientService openAIClientService,
     IUserSettingsService userSettingsService,
     AppForceLastUserReducer reducer,
     ILogger<HttpLoggingHandler> httpLogger,
     ILogger<McpSamplingService> logger)
 {
     private readonly IOllamaClientService _ollamaService = ollamaService;
+    private readonly IOllamaKernelService _ollamaKernelService = ollamaKernelService;
+    private readonly IOpenAIClientService _openAIClientService = openAIClientService;
     private readonly IUserSettingsService _userSettingsService = userSettingsService;
     private readonly AppForceLastUserReducer _reducer = reducer;
     private readonly ILogger<HttpLoggingHandler> _httpLogger = httpLogger;
@@ -153,42 +158,16 @@ public class McpSamplingService(
 
     private async Task<Kernel> CreateKernelAsync(ServerModel model, TimeSpan timeout)
     {
-        var settings = await _userSettingsService.GetSettingsAsync();
-        LlmServerConfig? server = null;
-        if (model.ServerId != Guid.Empty)
-            server = settings.Llms.FirstOrDefault(s => s.Id == model.ServerId);
-        server ??= settings.Llms.FirstOrDefault(s => s.Id == settings.DefaultLlmId) ?? settings.Llms.FirstOrDefault();
+        var server = await LlmServerConfigHelper.GetServerConfigAsync(_userSettingsService, model.ServerId)
+            ?? throw new InvalidOperationException("No server configuration found for the specified model");
 
-        var handler = new HttpClientHandler();
-        if (server?.IgnoreSslErrors == true)
-            handler.ServerCertificateCustomValidationCallback = (_, _, _, _) => true;
-
-        var loggingHandler = new HttpLoggingHandler(_httpLogger) { InnerHandler = handler };
-        var baseUrl = string.IsNullOrWhiteSpace(server?.BaseUrl) ? LlmServerConfig.DefaultOllamaUrl : server.BaseUrl.Trim();
-        if (string.IsNullOrWhiteSpace(baseUrl))
-        {
-            baseUrl = LlmServerConfig.DefaultOllamaUrl;
-        }
-        var httpClient = new HttpClient(loggingHandler)
-        {
-            Timeout = TimeSpan.FromSeconds(server?.HttpTimeoutSeconds ?? (int)timeout.TotalSeconds),
-            BaseAddress = new Uri(baseUrl)
-        };
-
-        var password = server?.Password;
-        if (!string.IsNullOrWhiteSpace(password))
-        {
-            var authValue = Convert.ToBase64String(Encoding.UTF8.GetBytes($":{password}"));
-            httpClient.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Basic", authValue);
-        }
-
-        IKernelBuilder builder = Kernel.CreateBuilder();
-        builder.Services.AddSingleton(httpClient);
+        var builder = Kernel.CreateBuilder();
         builder.Services.AddLogging(c => c.AddConsole().SetMinimumLevel(LogLevel.Information));
-        
-        // Use modern OllamaApiClient approach  
-        var ollamaClient = new OllamaSharp.OllamaApiClient(httpClient);
-        var chatService = ollamaClient.AsChatCompletionService();
+
+        var chatService = server.ServerType == ServerType.ChatGpt
+            ? await _openAIClientService.GetClientAsync(model)
+            : await _ollamaKernelService.GetClientAsync(model.ServerId);
+
         builder.Services.AddSingleton<IChatCompletionService>(_ =>
             new AppForceLastUserChatCompletionService(chatService, _reducer));
 

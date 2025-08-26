@@ -19,9 +19,9 @@ public interface IAppChatService
     void InitializeChat(IReadOnlyCollection<AgentDescription> initialAgents);
     void ResetChat();
     Task CancelAsync();
-    
+
     Task GenerateAnswerAsync(string text, AppChatConfiguration chatConfiguration, GroupChatManager groupChatManager, IReadOnlyList<AppChatMessageFile>? files = null);
-    
+
     Task DeleteMessageAsync(Guid id);
 }
 

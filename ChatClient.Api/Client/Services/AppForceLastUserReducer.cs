@@ -13,7 +13,6 @@ public sealed class AppForceLastUserReducer(ILogger<AppForceLastUserReducer>? lo
         if (source.Count == 0)
             return Task.FromResult<IEnumerable<ChatMessageContent>?>(source);
 
-        // Filter out empty messages without proper AuthorName (streaming placeholders from GroupChat)
         var filteredMessages = source.Where(m =>
             !string.IsNullOrEmpty(m.Content) || !string.IsNullOrEmpty(m.AuthorName))
             .ToList();

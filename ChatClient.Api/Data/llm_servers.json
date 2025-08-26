@@ -10,5 +10,17 @@
     "HttpTimeoutSeconds": 3600,
     "CreatedAt": "2025-05-24T00:00:00Z",
     "UpdatedAt": "2025-08-24T11:09:52.707962Z"
+  },
+  {
+    "Id": "6104131b-ee93-42a4-81a4-66114972870d",
+    "Name": "OpenAI",
+    "ServerType": 1,
+    "BaseUrl": "https://api.openai.com/v1/",
+    "ApiKey": "",
+    "Password": "alice",
+    "IgnoreSslErrors": false,
+    "HttpTimeoutSeconds": 600,
+    "CreatedAt": "2025-08-25T22:31:06.4997059Z",
+    "UpdatedAt": "2025-08-25T22:31:45.8802055Z"
   }
 ]
