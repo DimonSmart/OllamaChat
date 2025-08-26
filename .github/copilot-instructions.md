@@ -5,6 +5,7 @@
 - Only add comments when they add real value.
 - Write all comments in English.
 - If consider adding comment to variable check mey be it's better to adjust variable name
+- **Self-documenting code**: Good code documents itself through clear naming, simple structure, and obvious intent. Comments should explain "why" not "what". If you need to explain "what" the code does, consider refactoring for clarity instead.
 
 ### Control Flow
 - Minimize use of `if…else`; prefer guard clauses and early `return`.
@@ -26,6 +27,7 @@
 ### Error Handling
 - Return empty collections (`[]`) instead of null when no data is available.
 - Log errors with structured logging using ILogger.
+- **Fail-fast principle**: Throw exceptions for invalid parameters instead of returning default values that mask bugs. If a required ID/parameter is missing or invalid, throw `InvalidOperationException` or `ArgumentException` with clear error message.
 
 ### Architecture
 - Follow Clean Architecture principles with clear separation of concerns.
@@ -33,6 +35,7 @@
 - Organize code into logical layers: API, Services, Models, Shared.
 - Follow DRY principle: extract duplicated logic into helper classes or services.
 - Create specialized services for complex operations instead of embedding logic in multiple places.
+- **Method overloads**: Don't create overloads that merely delegate to another signature — keep one universal version and replace calls accordingly.
 
 ### Modern C# Features
 - Use target-typed expressions where appropriate (`return [];`).
