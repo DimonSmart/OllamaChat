@@ -4,9 +4,9 @@ namespace ChatClient.Shared.Services;
 
 public interface IMcpServerConfigService
 {
-    Task<List<McpServerConfig>> GetAllServersAsync();
-    Task<McpServerConfig?> GetServerByIdAsync(Guid id);
-    Task<McpServerConfig> CreateServerAsync(McpServerConfig server);
-    Task<McpServerConfig> UpdateServerAsync(McpServerConfig server);
-    Task DeleteServerAsync(Guid id);
+    Task<List<McpServerConfig>> GetAllAsync();
+    Task<McpServerConfig?> GetByIdAsync(Guid id);
+    Task<McpServerConfig> CreateAsync(McpServerConfig server);
+    Task<McpServerConfig> UpdateAsync(McpServerConfig server);
+    Task DeleteAsync(Guid id);
 }

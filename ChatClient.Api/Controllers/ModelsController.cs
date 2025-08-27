@@ -21,7 +21,7 @@ public class ModelsController(
             if (serverId == null || serverId == Guid.Empty)
                 throw new ArgumentException("ServerId is required and cannot be empty");
 
-            var serverType = await GetServerTypeAsync(serverId);
+            var serverType = await LlmServerConfigHelper.GetServerTypeAsync(userSettingsService, serverId);
 
             if (serverType == ServerType.ChatGpt)
             {
@@ -39,11 +39,5 @@ public class ModelsController(
             logger.LogError(ex, "Error retrieving models for serverId: {ServerId}", serverId);
             return StatusCode(500, "An error occurred while retrieving models");
         }
-    }
-
-    private async Task<ServerType> GetServerTypeAsync(Guid? serverId)
-    {
-        var server = await LlmServerConfigHelper.GetServerConfigAsync(userSettingsService, serverId);
-        return server?.ServerType ?? ServerType.Ollama;
     }
 }

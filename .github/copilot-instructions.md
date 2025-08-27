@@ -1,11 +1,45 @@
 ﻿## Project Coding Standards
 
 ### Comments
-- Avoid obvious comment.
-- Only add comments when they add real value.
+- Avoid obvious comments that merely repeat what the code does.
+- Only add comments when they add real value explaining "why", not "what".
 - Write all comments in English.
-- If consider adding comment to variable check mey be it's better to adjust variable name
+- If you need to comment a variable, consider if a better variable name would eliminate the need.
 - **Self-documenting code**: Good code documents itself through clear naming, simple structure, and obvious intent. Comments should explain "why" not "what". If you need to explain "what" the code does, consider refactoring for clarity instead.
+- **XML Documentation**: Only document public APIs. Avoid obvious XML comments that repeat method names or parameter types. Focus on business value, edge cases, or non-obvious behavior.
+- **Examples of obvious comments to avoid**:
+  ```csharp
+  // BAD - obvious comments
+  catch (JsonException)
+  {
+      // If parsing fails, return null
+  }
+  return null;
+  
+  // Increment counter
+  counter++;
+  
+  // Check if user is null
+  if (user == null) return;
+  
+  /// Modern implementation using new API instead of obsolete methods
+  public void ProcessData() { }
+  
+  /// Updates user settings with new values
+  public void UpdateUserSettings(UserSettings settings) { }
+  
+  // GOOD - valuable comments
+  // Using exponential backoff to avoid overwhelming the API during retries
+  await Task.Delay(TimeSpan.FromSeconds(Math.Pow(2, attempt)));
+  
+  // WorkAround: Azure API sometimes returns stale data, force refresh after writes
+  cache.InvalidateKey(userId);
+  
+  /// <summary>
+  /// Validates credit card using Luhn algorithm. Returns false for test cards in development.
+  /// </summary>
+  public bool ValidateCreditCard(string number) { }
+  ```
 
 ### Control Flow
 - Minimize use of `if…else`; prefer guard clauses and early `return`.

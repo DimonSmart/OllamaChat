@@ -18,7 +18,7 @@ public class OpenAIClientService(
     {
         if (serverModel.ServerId == Guid.Empty)
             throw new ArgumentException("ServerId cannot be empty", nameof(serverModel));
-        
+
         if (string.IsNullOrWhiteSpace(serverModel.ModelName))
             throw new ArgumentException("ModelName cannot be null or empty", nameof(serverModel));
 
@@ -105,9 +105,9 @@ public class OpenAIClientService(
     {
         if (string.IsNullOrWhiteSpace(server.ApiKey))
             throw new ArgumentException("OpenAI API key is required", nameof(server));
-            
+
         var credential = new ApiKeyCredential(server.ApiKey);
-        
+
         if (!string.IsNullOrWhiteSpace(server.BaseUrl))
         {
             var options = new OpenAIClientOptions
@@ -122,20 +122,6 @@ public class OpenAIClientService(
 
     private HttpClient CreateHttpClient(LlmServerConfig server)
     {
-        var handler = new HttpClientHandler();
-        if (server.IgnoreSslErrors)
-            handler.ServerCertificateCustomValidationCallback = (sender, cert, chain, sslPolicyErrors) => true;
-
-        var httpClient = new HttpClient(handler)
-        {
-            Timeout = TimeSpan.FromSeconds(server.HttpTimeoutSeconds)
-        };
-
-        if (!string.IsNullOrWhiteSpace(server.BaseUrl))
-        {
-            httpClient.BaseAddress = new Uri(server.BaseUrl);
-        }
-
-        return httpClient;
+        return LlmServerConfigHelper.CreateHttpClient(server);
     }
 }

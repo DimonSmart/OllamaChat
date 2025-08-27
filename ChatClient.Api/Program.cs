@@ -51,7 +51,7 @@ builder.Services.AddSingleton<IOllamaEmbeddingService>(sp =>
 builder.Services.AddSingleton<ChatClient.Api.Services.McpFunctionIndexService>();
 builder.Services.AddSingleton<AppForceLastUserReducer>();
 builder.Services.AddSingleton<ChatClient.Api.Services.IAppChatHistoryBuilder, ChatClient.Api.Services.AppChatHistoryBuilder>();
-builder.Services.AddScoped<ChatClient.Api.Services.StartupOllamaChecker>();
+builder.Services.AddScoped<ChatClient.Api.Services.OllamaServerAvailabilityService>();
 builder.Services.AddSingleton<ChatClient.Shared.Services.IAgentDescriptionService, ChatClient.Api.Services.AgentDescriptionService>();
 builder.Services.AddSingleton<ChatClient.Shared.Services.IUserSettingsService, ChatClient.Api.Services.UserSettingsService>();
 builder.Services.AddSingleton<ChatClient.Shared.Services.IRagFileService, ChatClient.Api.Services.RagFileService>();
@@ -88,7 +88,7 @@ using (var scope = app.Services.CreateScope())
     var mcpClientService = scope.ServiceProvider.GetRequiredService<IMcpClientService>();
     kernelService.SetMcpClientService(mcpClientService);
 
-    var startupChecker = scope.ServiceProvider.GetRequiredService<StartupOllamaChecker>();
+    var startupChecker = scope.ServiceProvider.GetRequiredService<OllamaServerAvailabilityService>();
     var ollamaStatus = await startupChecker.CheckOllamaStatusAsync();
 
     if (ollamaStatus.IsAvailable)

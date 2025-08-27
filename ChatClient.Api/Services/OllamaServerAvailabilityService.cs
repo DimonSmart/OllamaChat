@@ -3,10 +3,10 @@ using ChatClient.Shared.Services;
 
 namespace ChatClient.Api.Services;
 
-public class StartupOllamaChecker(
+public class OllamaServerAvailabilityService(
     IOllamaClientService ollamaService,
     IUserSettingsService userSettingsService,
-    ILogger<StartupOllamaChecker> logger)
+    ILogger<OllamaServerAvailabilityService> logger)
 {
     public async Task<OllamaServerStatus> CheckOllamaStatusAsync(Guid? serverId = null)
     {
@@ -14,7 +14,7 @@ public class StartupOllamaChecker(
         {
             var settings = await userSettingsService.GetSettingsAsync();
             var serverToCheck = serverId ?? settings.DefaultLlmId;
-            
+
             if (!serverToCheck.HasValue)
             {
                 logger.LogWarning("No default server configured");
@@ -25,7 +25,7 @@ public class StartupOllamaChecker(
                 };
             }
 
-            // Найдем сервер в настройках
+            // Find server in settings
             var server = settings.Llms.FirstOrDefault(s => s.Id == serverToCheck.Value);
             if (server == null)
             {
@@ -37,7 +37,7 @@ public class StartupOllamaChecker(
                 };
             }
 
-            // Проверяем только Ollama серверы
+            // Only check Ollama servers
             if (server.ServerType != ServerType.Ollama)
             {
                 logger.LogInformation("Skipping non-Ollama server: {ServerName} (Type: {ServerType})",

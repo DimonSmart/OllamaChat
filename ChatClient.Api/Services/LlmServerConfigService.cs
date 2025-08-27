@@ -1,3 +1,4 @@
+using ChatClient.Shared.Constants;
 using ChatClient.Shared.Models;
 using System.Text.Json;
 
@@ -11,7 +12,7 @@ public class LlmServerConfigService : ILlmServerConfigService
 
     public LlmServerConfigService(IConfiguration configuration, ILogger<LlmServerConfigService> logger)
     {
-        var serversFilePath = configuration["LlmServers:FilePath"] ?? "Data/llm_servers.json";
+        var serversFilePath = configuration["LlmServers:FilePath"] ?? FilePathConstants.DefaultLlmServersFile;
         _filePath = Path.GetFullPath(serversFilePath);
         _logger = logger;
         var directory = Path.GetDirectoryName(_filePath);

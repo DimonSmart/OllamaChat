@@ -48,7 +48,7 @@ public class KernelService(
     }
 
     /// <summary>
-    /// Public method to register MCP tools for modern agent architecture
+    /// Public method to register MCP tools for agent architecture
     /// </summary>
     public async Task RegisterMcpToolsPublicAsync(
         Kernel kernel,
@@ -100,9 +100,6 @@ public class KernelService(
         }
     }
 
-    /// <summary>
-    /// Returns the list of available functions that can be used with the kernel.
-    /// </summary>
     public async Task<IReadOnlyCollection<FunctionInfo>> GetAvailableFunctionsAsync()
     {
         var functions = new List<FunctionInfo>();

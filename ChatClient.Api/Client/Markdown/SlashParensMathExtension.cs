@@ -32,9 +32,6 @@ public class SlashParensMathExtension : IMarkdownExtension
 /// </summary>
 public static class SlashParensMathExtensionMethods
 {
-    /// <summary>
-    /// Adds support for inline math delimited by \( and \) to the pipeline.
-    /// </summary>
     public static MarkdownPipelineBuilder UseSlashParensMath(this MarkdownPipelineBuilder pipeline)
     {
         pipeline.Extensions.AddIfNotAlready<SlashParensMathExtension>();

@@ -38,56 +38,79 @@ else
         try
         {
             var settings = await UserSettingsService.GetSettingsAsync();
-            if (!settings.DefaultLlmId.HasValue)
-            {
-                Logger.LogWarning("No default server configured");
-                NavigationManager.NavigateTo("/llm-servers", true);
+            if (!ValidateDefaultServer(settings))
                 return;
-            }
 
-            var server = settings.Llms.FirstOrDefault(s => s.Id == settings.DefaultLlmId.Value);
+            var server = GetDefaultServer(settings);
             if (server == null)
-            {
-                Logger.LogWarning("Default server not found: {ServerId}", settings.DefaultLlmId.Value);
-                NavigationManager.NavigateTo("/llm-servers", true);
                 return;
-            }
 
-            // Проверяем только Ollama серверы - для OpenAI серверов пропускаем проверку
-            if (server.ServerType == ServerType.Ollama)
-            {
-                await OllamaService.GetModelsAsync(settings.DefaultLlmId.Value);
-                Logger.LogInformation("Ollama server '{ServerName}' is available", server.Name);
-            }
-            else if (server.ServerType == ServerType.ChatGpt)
-            {
-                // Для OpenAI серверов просто проверяем доступность
-                var isAvailable = await OpenAIService.IsAvailableAsync(settings.DefaultLlmId.Value);
-                if (!isAvailable)
-                {
-                    Logger.LogWarning("OpenAI server '{ServerName}' is not available", server.Name);
-                    NavigationManager.NavigateTo("/llm-servers", true);
-                    return;
-                }
-                Logger.LogInformation("OpenAI server '{ServerName}' is available", server.Name);
-            }
-            else
-            {
-                Logger.LogWarning("Unknown server type: {ServerType}", server.ServerType);
-                NavigationManager.NavigateTo("/llm-servers", true);
-                return;
-            }
+            await ValidateServerAvailability(server, settings.DefaultLlmId!.Value);
         }
         catch (Exception ex)
         {
             Logger.LogWarning(ex, "Server not available for page access");
-            NavigationManager.NavigateTo("/llm-servers", true);
-            return;
+            NavigateToServerConfig();
         }
         finally
         {
             isChecking = false;
             StateHasChanged();
         }
+    }
+
+    private bool ValidateDefaultServer(UserSettings settings)
+    {
+        if (settings.DefaultLlmId.HasValue)
+            return true;
+
+        Logger.LogWarning("No default server configured");
+        NavigateToServerConfig();
+        return false;
+    }
+
+    private LlmServerConfig? GetDefaultServer(UserSettings settings)
+    {
+        return LlmServerConfigHelper.GetServerConfig(settings, settings.DefaultLlmId);
+    }
+
+    private async Task ValidateServerAvailability(LlmServerConfig server, Guid serverId)
+    {
+        switch (server.ServerType)
+        {
+            case ServerType.Ollama:
+                await ValidateOllamaServer(server, serverId);
+                break;
+            case ServerType.ChatGpt:
+                await ValidateOpenAIServer(server, serverId);
+                break;
+            default:
+                Logger.LogWarning("Unknown server type: {ServerType}", server.ServerType);
+                NavigateToServerConfig();
+                break;
+        }
+    }
+
+    private async Task ValidateOllamaServer(LlmServerConfig server, Guid serverId)
+    {
+        await OllamaService.GetModelsAsync(serverId);
+        Logger.LogInformation("Ollama server '{ServerName}' is available", server.Name);
+    }
+
+    private async Task ValidateOpenAIServer(LlmServerConfig server, Guid serverId)
+    {
+        var isAvailable = await OpenAIService.IsAvailableAsync(serverId);
+        if (!isAvailable)
+        {
+            Logger.LogWarning("OpenAI server '{ServerName}' is not available", server.Name);
+            NavigateToServerConfig();
+            return;
+        }
+        Logger.LogInformation("OpenAI server '{ServerName}' is available", server.Name);
+    }
+
+    private void NavigateToServerConfig()
+    {
+        NavigationManager.NavigateTo("/llm-servers", true);
     }
 }

@@ -47,9 +47,6 @@ public class FunctionSettings
         return "−";
     }
 
-    /// <summary>
-    /// Gets tooltip text describing the current function settings.
-    /// </summary>
     public string GetTooltipText()
     {
         if (AutoSelectCount > 0)

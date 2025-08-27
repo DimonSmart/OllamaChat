@@ -38,9 +38,6 @@ public class McpSamplingService(
     private readonly ILogger<HttpLoggingHandler> _httpLogger = httpLogger;
     private readonly ILogger<McpSamplingService> _logger = logger;
 
-    /// <summary>
-    /// Handles a sampling request from an MCP server.
-    /// </summary>
     /// <param name="request">The sampling request containing messages and model parameters</param>
     /// <param name="progress">Progress reporting for long-running operations</param>
     /// <param name="cancellationToken">Cancellation token</param>

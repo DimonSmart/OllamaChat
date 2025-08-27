@@ -266,7 +266,7 @@
             loading = true;
             StateHasChanged();
 
-            servers = await McpServerConfigService.GetAllServersAsync() ?? new();
+            servers = await McpServerConfigService.GetAllAsync() ?? new();
             filteredServers = servers;
         }
         catch (Exception ex)
@@ -370,7 +370,7 @@
         if (serverToDelete?.Id == null) return;
         try
         {
-            await McpServerConfigService.DeleteServerAsync(serverToDelete.Id.Value);
+            await McpServerConfigService.DeleteAsync(serverToDelete.Id.Value);
             Snackbar.Add("Server deleted successfully", Severity.Success);
 
             servers.Remove(serverToDelete);
@@ -389,9 +389,6 @@
     {
         if (string.IsNullOrWhiteSpace(name))
             return "Name is required";
-
-        if (name.Length < 3)
-            return "Name must be at least 3 characters";
 
         return string.Empty;
     }
@@ -444,14 +441,14 @@
 
                 if (editingServer.Id == null)
                 {
-                    var result = await McpServerConfigService.CreateServerAsync(editingServer);
+                    var result = await McpServerConfigService.CreateAsync(editingServer);
                     servers.Add(result);
                     Snackbar.Add("MCP server created successfully", Severity.Success);
                 }
                 else
                 {
                     editingServer.UpdatedAt = DateTime.UtcNow;
-                    var result = await McpServerConfigService.UpdateServerAsync(editingServer);
+                    var result = await McpServerConfigService.UpdateAsync(editingServer);
                     var index = servers.FindIndex(s => s.Id == editingServer.Id);
                     if (index >= 0) servers[index] = result;
                     Snackbar.Add("MCP server updated successfully", Severity.Success);

@@ -12,18 +12,12 @@ namespace ChatClient.Api.Client.MarkdownExtensions;
 /// </summary>
 public class SlashParensMathInlineParser : InlineParser
 {
-    /// <summary>
-    /// Initializes a new instance of the <see cref="SlashParensMathInlineParser"/> class.
-    /// </summary>
     public SlashParensMathInlineParser()
     {
         OpeningCharacters = ['\\'];
         DefaultClass = "math";
     }
 
-    /// <summary>
-    /// Gets or sets the default CSS class for created math inlines.
-    /// </summary>
     public string? DefaultClass { get; set; }
 
     /// <inheritdoc />

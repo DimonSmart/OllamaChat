@@ -1,3 +1,4 @@
+using ChatClient.Shared.Constants;
 using ChatClient.Shared.Models;
 using ChatClient.Shared.Services;
 using System.Text.Json;
@@ -12,7 +13,7 @@ public class McpServerConfigService : IMcpServerConfigService
 
     public McpServerConfigService(IConfiguration configuration, ILogger<McpServerConfigService> logger)
     {
-        var serversFilePath = configuration["McpServers:FilePath"] ?? "Data/mcp_servers.json";
+        var serversFilePath = configuration["McpServers:FilePath"] ?? FilePathConstants.DefaultMcpServersFile;
         _filePath = Path.GetFullPath(serversFilePath);
         _logger = logger;
         var directory = Path.GetDirectoryName(_filePath);
@@ -53,7 +54,7 @@ public class McpServerConfigService : IMcpServerConfigService
         await WriteToFileAsync(defaultServers);
     }
 
-    public async Task<List<McpServerConfig>> GetAllServersAsync()
+    public async Task<List<McpServerConfig>> GetAllAsync()
     {
         return await SemaphoreHelper.ExecuteWithSemaphoreAsync(_semaphore, async () =>
         {
@@ -67,13 +68,13 @@ public class McpServerConfigService : IMcpServerConfigService
         }, _logger, "Error getting MCP server configs");
     }
 
-    public async Task<McpServerConfig?> GetServerByIdAsync(Guid id)
+    public async Task<McpServerConfig?> GetByIdAsync(Guid id)
     {
-        var servers = await GetAllServersAsync();
+        var servers = await GetAllAsync();
         return servers.FirstOrDefault(s => s.Id == id);
     }
 
-    public async Task<McpServerConfig> CreateServerAsync(McpServerConfig server)
+    public async Task<McpServerConfig> CreateAsync(McpServerConfig server)
     {
         return await SemaphoreHelper.ExecuteWithSemaphoreAsync(_semaphore, async () =>
         {
@@ -90,7 +91,7 @@ public class McpServerConfigService : IMcpServerConfigService
         }, _logger, "Error creating MCP server config");
     }
 
-    public async Task<McpServerConfig> UpdateServerAsync(McpServerConfig server)
+    public async Task<McpServerConfig> UpdateAsync(McpServerConfig server)
     {
         return await SemaphoreHelper.ExecuteWithSemaphoreAsync(_semaphore, async () =>
         {
@@ -109,7 +110,7 @@ public class McpServerConfigService : IMcpServerConfigService
         }, _logger, "Error updating MCP server config");
     }
 
-    public async Task DeleteServerAsync(Guid id)
+    public async Task DeleteAsync(Guid id)
     {
         await SemaphoreHelper.ExecuteWithSemaphoreAsync(_semaphore, async () =>
         {

@@ -260,7 +260,7 @@
         ? userSettings.DefaultModelName
         : SelectedModel.ModelName;
     private Guid CurrentServerId => SelectedModel?.ServerId != Guid.Empty
-        ? SelectedModel.ServerId
+        ? SelectedModel?.ServerId ?? Guid.Empty
         : userSettings.DefaultLlmId ?? Guid.Empty;
 
     private const string RoundRobinStopAgent = "RoundRobin";
@@ -419,7 +419,6 @@
             var missingAgents = new List<string>();
             foreach (var agentId in provider.GetRequiredAgents())
             {
-                // Skip empty agent IDs
                 if (string.IsNullOrWhiteSpace(agentId))
                 {
                     Console.WriteLine($"Warning: Empty agent ID found in required agents for {stopAgentName}");
@@ -439,7 +438,6 @@
                 }
             }
 
-            // If there are missing agents, show error and don't start chat
             if (missingAgents.Count > 0)
             {
                 var missingAgentNames = string.Join(", ", missingAgents);
@@ -482,7 +480,6 @@
         var groupChatManager = StopAgentFactory.Create(stopAgentName, options);
         var chatConfiguration = new AppChatConfiguration(CurrentModelName, allFunctions);
 
-        // Use modern agent architecture instead of obsolete method
         await ChatService.GenerateAnswerAsync(messageData.text.Trim(), chatConfiguration, groupChatManager, messageData.files);
         await ScrollToBottom();
     }
