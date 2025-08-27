@@ -24,8 +24,9 @@ public sealed class RagVectorIndexService(
         if (string.IsNullOrWhiteSpace(text))
             throw new InvalidOperationException("Source file is empty.");
 
-        var modelId = await GetModelIdAsync();
-        var baseUrl = await GetBaseUrlAsync(serverId);
+        var model = await GetModelAsync();
+        var targetServer = serverId == Guid.Empty ? model.ServerId : serverId;
+        var baseUrl = await GetBaseUrlAsync(targetServer);
         if (string.IsNullOrWhiteSpace(baseUrl))
         {
             throw new InvalidOperationException("Base URL cannot be empty for embedding service");
@@ -33,7 +34,7 @@ public sealed class RagVectorIndexService(
 
         IKernelBuilder builder = Kernel.CreateBuilder();
         builder.Services.AddLogging();
-        builder.AddOllamaEmbeddingGenerator(modelId, new Uri(baseUrl.Trim()));
+        builder.AddOllamaEmbeddingGenerator(model.ModelName, new Uri(baseUrl.Trim()));
         var kernel = builder.Build();
 
         var generator = kernel.GetRequiredService<IEmbeddingGenerator<string, Embedding<float>>>();
@@ -72,7 +73,7 @@ public sealed class RagVectorIndexService(
         {
             SourceFileName = Path.GetFileName(sourceFilePath),
             SourceModifiedTime = info.LastWriteTimeUtc,
-            EmbeddingModel = modelId,
+            EmbeddingModel = model.ModelName,
             VectorDimensions = fragments.Count > 0 ? fragments[0].Vector.Length : 0,
             Fragments = fragments
         };
@@ -90,11 +91,13 @@ public sealed class RagVectorIndexService(
         return server?.BaseUrl ?? configuration["Ollama:BaseUrl"] ?? "http://localhost:11434";
     }
 
-    private async Task<string> GetModelIdAsync()
+    private async Task<ServerModel> GetModelAsync()
     {
         var settings = await userSettings.GetSettingsAsync();
-        if (!string.IsNullOrWhiteSpace(settings.EmbeddingModelName))
-            return settings.EmbeddingModelName;
-        return configuration["Ollama:EmbeddingModel"] ?? "nomic-embed-text";
+        var modelName = string.IsNullOrWhiteSpace(settings.EmbeddingModelName)
+            ? configuration["Ollama:EmbeddingModel"] ?? "nomic-embed-text"
+            : settings.EmbeddingModelName;
+        var server = settings.EmbeddingLlmId ?? Guid.Empty;
+        return new(server, modelName);
     }
 }

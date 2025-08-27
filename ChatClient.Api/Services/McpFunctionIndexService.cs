@@ -17,7 +17,7 @@ public class McpFunctionIndexService
     private readonly IUserSettingsService _userSettingsService;
     private readonly IRagVectorIndexBackgroundService _indexBackgroundService;
     private readonly ILogger<McpFunctionIndexService> _logger;
-    private string _modelId = "nomic-embed-text";
+    private ServerModel _model = new(Guid.Empty, "nomic-embed-text");
     private readonly ConcurrentDictionary<string, float[]> _index = new();
     private readonly SemaphoreSlim _buildLock = new(1, 1);
 
@@ -54,14 +54,15 @@ public class McpFunctionIndexService
                 return;
             }
 
-            _modelId = await DetermineModelIdAsync();
+            _model = await DetermineModelAsync();
 
-            if (!await IsOllamaAvailableAsync(serverId))
+            var targetServer = serverId ?? _model.ServerId;
+            if (!await IsOllamaAvailableAsync(targetServer))
             {
                 return;
             }
 
-            await IndexMcpFunctionsAsync(cancellationToken, serverId);
+            await IndexMcpFunctionsAsync(cancellationToken, targetServer);
         }
         catch (Exception ex)
         {
@@ -111,12 +112,13 @@ public class McpFunctionIndexService
         string text = $"{tool.Name}. {tool.Description}";
         try
         {
-            var embedding = await _ollamaService.GenerateEmbeddingAsync(text, new ServerModel(serverId ?? Guid.Empty, _modelId), cancellationToken);
+            var model = new ServerModel(serverId ?? _model.ServerId, _model.ModelName);
+            var embedding = await _ollamaService.GenerateEmbeddingAsync(text, model, cancellationToken);
             _index[$"{client.ServerInfo.Name}:{tool.Name}"] = embedding;
         }
         catch (HttpRequestException ex) when (ex.StatusCode == HttpStatusCode.NotFound)
         {
-            _logger.LogError("Embedding model '{Model}' not found. Skipping MCP function indexing.", _modelId);
+            _logger.LogError("Embedding model '{Model}' not found. Skipping MCP function indexing.", _model.ModelName);
             throw; // Re-throw to stop the entire indexing process
         }
         catch (Exception ex)
@@ -135,21 +137,21 @@ public class McpFunctionIndexService
         _index.Clear();
     }
 
-    private async Task<string> DetermineModelIdAsync()
+    private async Task<ServerModel> DetermineModelAsync()
     {
         var settings = await _userSettingsService.GetSettingsAsync();
-        if (!string.IsNullOrWhiteSpace(settings.EmbeddingModelName))
-        {
-            return settings.EmbeddingModelName;
-        }
-
-        return _configuration["Ollama:EmbeddingModel"] ?? "nomic-embed-text";
+        var modelName = string.IsNullOrWhiteSpace(settings.EmbeddingModelName)
+            ? _configuration["Ollama:EmbeddingModel"] ?? "nomic-embed-text"
+            : settings.EmbeddingModelName;
+        var server = settings.EmbeddingLlmId ?? Guid.Empty;
+        return new(server, modelName);
     }
 
     public async Task<IReadOnlyList<string>> SelectRelevantFunctionsAsync(string query, int topK, CancellationToken cancellationToken = default, Guid? serverId = null)
     {
         await BuildIndexAsync(cancellationToken, serverId);
-        var queryEmbedding = await _ollamaService.GenerateEmbeddingAsync(query, new ServerModel(serverId ?? Guid.Empty, _modelId), cancellationToken);
+        var model = new ServerModel(serverId ?? _model.ServerId, _model.ModelName);
+        var queryEmbedding = await _ollamaService.GenerateEmbeddingAsync(query, model, cancellationToken);
         return _index
             .Select(kvp => new { Name = kvp.Key, Score = Dot(queryEmbedding.AsSpan(), kvp.Value) })
             .OrderByDescending(e => e.Score)

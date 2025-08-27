@@ -63,6 +63,9 @@ public sealed class RagVectorIndexBackgroundService(
             var agentService = scope.ServiceProvider.GetRequiredService<IAgentDescriptionService>();
             var fileService = scope.ServiceProvider.GetRequiredService<IRagFileService>();
             var indexService = scope.ServiceProvider.GetRequiredService<IRagVectorIndexService>();
+            var settingsService = scope.ServiceProvider.GetRequiredService<IUserSettingsService>();
+            var settings = await settingsService.GetSettingsAsync();
+            var embedServer = settings.EmbeddingLlmId ?? Guid.Empty;
 
             var basePath = _configuration["RagFiles:BasePath"] ?? Path.Combine("Data", "agents");
             var pending = new List<(Guid agentId, string source, string index, string fileName)>();
@@ -91,7 +94,7 @@ public sealed class RagVectorIndexBackgroundService(
                 _logger.LogInformation("Indexing {File} ({Current}/{Total})", item.fileName, i + 1, pending.Count);
                 var progress = new Progress<RagVectorIndexStatus>(s => _currentStatus = s);
                 _currentStatus = new(item.agentId, item.fileName, 0, 0);
-                await indexService.BuildIndexAsync(item.agentId, item.source, item.index, progress, token, Guid.Empty);
+                await indexService.BuildIndexAsync(item.agentId, item.source, item.index, progress, token, embedServer);
                 _currentStatus = null;
             }
         }

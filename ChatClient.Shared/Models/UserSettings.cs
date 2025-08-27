@@ -53,6 +53,9 @@ public class UserSettings
     [JsonPropertyName("embeddingModelName")]
     public string EmbeddingModelName { get; set; } = string.Empty;
 
+    [JsonPropertyName("embeddingLlmId")]
+    public Guid? EmbeddingLlmId { get; set; }
+
     [JsonPropertyName("stopAgentName")]
     public string StopAgentName { get; set; } = string.Empty;
 

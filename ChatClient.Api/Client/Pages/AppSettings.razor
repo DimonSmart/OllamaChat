@@ -95,10 +95,11 @@
                 </MudCard>
 
                 <MudCard Class="mb-4" Elevation="1">
-                    <MudCardContent Class="pt-0">
-                        <MudTextField T="string" Label="Embedding Model Name" @bind-Value="_settings.EmbeddingModelName"
-                                      Variant="Variant.Outlined"
-                                      HelperText="Model used for generating embeddings (e.g., nomic-embed-text)" />
+                    <MudCardContent>
+                        <ServerModelPicker Value="_embeddingModel" ValueChanged="OnEmbeddingModelChanged" ShowClearButton="true" />
+                        <MudText Typo="Typo.caption" Class="mt-2">
+                            Model used for generating embeddings.
+                        </MudText>
                     </MudCardContent>
                 </MudCard>
 
@@ -119,6 +120,7 @@
 @code {
     private UserSettings _settings = new();
     private ServerModel _defaultModel = new(Guid.Empty, string.Empty);
+    private ServerModel _embeddingModel = new(Guid.Empty, string.Empty);
     private bool _loading = true;
     private MudForm? _form;
 
@@ -128,7 +130,6 @@
         {
             _loading = true;
             await LoadSettings();
-            _defaultModel = new(_settings.DefaultLlmId ?? Guid.Empty, _settings.DefaultModelName);
         }
         finally
         {
@@ -144,11 +145,21 @@
         return Task.CompletedTask;
     }
 
+    private Task OnEmbeddingModelChanged(ServerModel model)
+    {
+        _embeddingModel = model;
+        _settings.EmbeddingLlmId = model.ServerId == Guid.Empty ? null : model.ServerId;
+        _settings.EmbeddingModelName = model.ModelName;
+        return Task.CompletedTask;
+    }
+
     private async Task LoadSettings()
     {
         try
         {
             _settings = await UserSettingsService.GetSettingsAsync();
+            _defaultModel = new(_settings.DefaultLlmId ?? Guid.Empty, _settings.DefaultModelName);
+            _embeddingModel = new(_settings.EmbeddingLlmId ?? Guid.Empty, _settings.EmbeddingModelName);
         }
         catch (Exception ex)
         {
@@ -161,9 +172,9 @@
     {
         try
         {
-            if (!string.IsNullOrWhiteSpace(_settings.EmbeddingModelName))
+            if (_settings.EmbeddingLlmId.HasValue && !string.IsNullOrWhiteSpace(_settings.EmbeddingModelName))
             {
-                var models = await OllamaService.GetModelsAsync(_settings.DefaultLlmId ?? Guid.Empty);
+                var models = await OllamaService.GetModelsAsync(_settings.EmbeddingLlmId.Value);
                 var exists = models.Any(m => m.Name.Equals(_settings.EmbeddingModelName, StringComparison.OrdinalIgnoreCase));
                 if (!exists)
                 {

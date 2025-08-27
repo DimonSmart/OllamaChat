@@ -71,7 +71,7 @@
     private int allFileCount;
     private int allIndexedFiles;
     private long allTotalSize;
-    private string embeddingModel = string.Empty;
+    private ServerModel embeddingModel = new(Guid.Empty, string.Empty);
     private RagVectorIndexStatus? indexStatus;
     private System.Timers.Timer? statusTimer;
 
@@ -84,8 +84,6 @@
     [Inject] private IRagVectorIndexBackgroundService IndexBackgroundService { get; set; } = default!;
     [Inject] private IJSRuntime JSRuntime { get; set; } = default!;
 
-    [CascadingParameter(Name = "SelectedModel")]
-    public ServerModel? SelectedModel { get; set; }
 
     protected override async Task OnInitializedAsync()
     {
@@ -98,9 +96,10 @@
             allTotalSize += files.Sum(f => f.Size);
         }
         var settings = await UserSettingsService.GetSettingsAsync();
-        embeddingModel = string.IsNullOrWhiteSpace(settings.EmbeddingModelName)
+        var modelName = string.IsNullOrWhiteSpace(settings.EmbeddingModelName)
             ? Configuration["Ollama:EmbeddingModel"] ?? "nomic-embed-text"
             : settings.EmbeddingModelName;
+        embeddingModel = new(settings.EmbeddingLlmId ?? Guid.Empty, modelName);
         statusTimer = new(1000);
         statusTimer.Elapsed += (_, _) =>
         {
@@ -134,13 +133,13 @@
 
         try
         {
-            var serverId = SelectedModel?.ServerId;
-            if (serverId == null || serverId == Guid.Empty)
+            var model = embeddingModel;
+            if (model.ServerId == Guid.Empty)
             {
                 var settings = await UserSettingsService.GetSettingsAsync();
-                serverId = settings.DefaultLlmId;
+                model = model with { ServerId = settings.DefaultLlmId ?? Guid.Empty };
             }
-            var embedding = await OllamaService.GenerateEmbeddingAsync(text, new ServerModel(serverId ?? Guid.Empty, embeddingModel));
+            var embedding = await OllamaService.GenerateEmbeddingAsync(text, model);
             var response = await VectorSearchService.SearchAsync(selectedAgent.Id, new ReadOnlyMemory<float>(embedding));
             results = response.Results.ToList();
             totalResults = response.Total;

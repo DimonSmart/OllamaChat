@@ -60,7 +60,9 @@ public class UserSettingsService : IUserSettingsService
             await File.WriteAllTextAsync(_settingsFilePath, json);
             _logger.LogInformation("User settings saved successfully");
 
-            if (existing != null && !string.Equals(existing.EmbeddingModelName, settings.EmbeddingModelName, StringComparison.OrdinalIgnoreCase))
+            if (existing != null &&
+                (!string.Equals(existing.EmbeddingModelName, settings.EmbeddingModelName, StringComparison.OrdinalIgnoreCase) ||
+                 existing.EmbeddingLlmId != settings.EmbeddingLlmId))
             {
                 if (EmbeddingModelChanged != null)
                     await Task.WhenAll(EmbeddingModelChanged.GetInvocationList().Cast<Func<Task>>().Select(d => d()));
