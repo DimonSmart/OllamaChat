@@ -85,13 +85,14 @@ public class AppChatHistoryBuilder(
             if (files.Any(f => f.HasIndex))
             {
                 var settings = await settingsService.GetSettingsAsync();
-                var model = string.IsNullOrWhiteSpace(settings.EmbeddingModelName)
+                var modelName = string.IsNullOrWhiteSpace(settings.EmbeddingModelName)
                     ? _configuration["Ollama:EmbeddingModel"] ?? "nomic-embed-text"
                     : settings.EmbeddingModelName;
+                var server = settings.EmbeddingLlmId ?? serverId ?? settings.DefaultLlmId ?? Guid.Empty;
                 var query = ThinkTagParser.ExtractThinkAnswer(lastUser.Content).Answer;
                 try
                 {
-                    var embedding = await _ollama.GenerateEmbeddingAsync(query, new ServerModel(serverId ?? Guid.Empty, model), cancellationToken);
+                    var embedding = await _ollama.GenerateEmbeddingAsync(query, new ServerModel(server, modelName), cancellationToken);
                     var response = await _ragSearch.SearchAsync(agentId, new ReadOnlyMemory<float>(embedding), 5, cancellationToken);
                     if (response.Results.Count > 0)
                     {
