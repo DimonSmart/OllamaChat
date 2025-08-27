@@ -88,7 +88,16 @@ public sealed class RagVectorIndexService(
     private async Task<string> GetBaseUrlAsync(Guid serverId)
     {
         var server = await LlmServerConfigHelper.GetServerConfigAsync(userSettings, serverId);
-        return server?.BaseUrl ?? configuration["Ollama:BaseUrl"] ?? "http://localhost:11434";
+        var candidate = server?.BaseUrl;
+        if (string.IsNullOrWhiteSpace(candidate))
+        {
+            candidate = configuration["Ollama:BaseUrl"];
+        }
+        if (string.IsNullOrWhiteSpace(candidate))
+        {
+            candidate = "http://localhost:11434";
+        }
+        return candidate.Trim();
     }
 
     private async Task<ServerModel> GetModelAsync()
