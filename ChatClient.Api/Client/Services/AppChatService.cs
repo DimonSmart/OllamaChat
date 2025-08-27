@@ -26,6 +26,7 @@ public class AppChatService(
     private AppStreamingMessageManager _streamingManager = null!;
     private readonly Dictionary<string, StreamingAppChatMessage> _activeStreams = new();
     private const string PlaceholderAgent = "__placeholder__";
+    private const string DeleteMarkerAgent = "?";
     private Dictionary<string, AgentDescription> _agentsByName = new();
 
     public event Action<bool>? AnsweringStateChanged;
@@ -90,7 +91,8 @@ public class AppChatService(
     {
         foreach (var message in _activeStreams.Values.ToList())
         {
-            if (message.AgentName == "?")
+            // Messages marked for deletion should be removed without cancellation processing
+            if (message.AgentName == DeleteMarkerAgent)
             {
                 await (MessageDeleted?.Invoke(message.Id) ?? Task.CompletedTask);
                 continue;
@@ -103,9 +105,6 @@ public class AppChatService(
         _activeStreams.Clear();
     }
 
-    /// <summary>
-    /// Modern implementation using ChatCompletionAgent without obsolete methods
-    /// </summary>
     public async Task GenerateAnswerAsync(string text, AppChatConfiguration chatConfiguration, GroupChatManager groupChatManager, IReadOnlyList<AppChatMessageFile>? files = null)
     {
         logger.LogInformation("GenerateAnswerAsync called with text length {Length}", text?.Length);
@@ -124,12 +123,12 @@ public class AppChatService(
 
         try
         {
-            logger.LogInformation("Processing response with modern agent architecture");
+            logger.LogInformation("Processing response with agent architecture");
 
             var runtime = new InProcessRuntime();
             await runtime.StartAsync(_cancellationTokenSource.Token);
 
-            var agents = await CreateModernAgentsAsync(text, trackingScope, chatConfiguration, _cancellationTokenSource.Token);
+            var agents = await CreateAgentsAsync(text, trackingScope, chatConfiguration, _cancellationTokenSource.Token);
 
             OrchestrationInputTransform<string> inputTransform = async (_, ct) =>
             {
@@ -215,17 +214,14 @@ public class AppChatService(
     private Task NotifyMessageAddedAsync(IAppChatMessage message) =>
         MessageAdded?.Invoke(message) ?? Task.CompletedTask;
 
-    /// <summary>
-    /// Modern implementation of agent creation using ChatCompletionAgent constructor without obsolete methods
-    /// </summary>
-    private async Task<List<ChatCompletionAgent>> CreateModernAgentsAsync(
+    private async Task<List<ChatCompletionAgent>> CreateAgentsAsync(
         string userMessage,
         TrackingFiltersScope trackingScope,
         AppChatConfiguration chatConfiguration,
         CancellationToken cancellationToken)
     {
         var agentNames = string.Join(", ", _agentsByName.Keys);
-        logger.LogInformation("Creating {AgentCount} modern agents: [{AgentNames}]", _agentsByName.Count, agentNames);
+        logger.LogInformation("Creating {AgentCount} agents: [{AgentNames}]", _agentsByName.Count, agentNames);
         var agents = new List<ChatCompletionAgent>();
 
         foreach (var desc in _agentsByName.Values)
@@ -239,7 +235,7 @@ public class AppChatService(
             var trackingFilter = new FunctionCallRecordingFilter();
             trackingScope.Register(agentName, trackingFilter, () => { /* Cleanup will be handled by scope */ });
 
-            logger.LogDebug("Configuring modern agent {AgentName} with model {ModelName}", agentName, modelName);
+            logger.LogDebug("Configuring agent {AgentName} with model {ModelName}", agentName, modelName);
             var settings = new PromptExecutionSettings
             {
                 ModelId = modelName,
@@ -258,7 +254,7 @@ public class AppChatService(
                 settings.ExtensionData["repeat_penalty"] = desc.RepeatPenalty.Value;
             }
 
-            var kernel = await CreateModernKernelAsync(new ServerModel(desc.LlmId ?? Guid.Empty, modelName), functionsToRegister, desc.AgentName, cancellationToken);
+            var kernel = await CreateKernelAsync(new ServerModel(desc.LlmId ?? Guid.Empty, modelName), functionsToRegister, desc.AgentName, cancellationToken);
 
             kernel.FunctionInvocationFilters.Add(trackingFilter);
 
@@ -278,21 +274,7 @@ public class AppChatService(
         return agents;
     }
 
-    private async Task<ServerType> GetServerTypeAsync(Guid serverId)
-    {
-        var server = await LlmServerConfigHelper.GetServerConfigAsync(userSettingsService, serverId);
-        
-        if (server == null)
-            throw new InvalidOperationException($"Server configuration not found for ID: {serverId}");
-            
-        return server.ServerType;
-    }
-
-    /// <summary>
-    /// Modern kernel creation method that creates a basic kernel for ChatCompletionAgent
-    /// This is a simplified approach since ChatCompletionAgent handles most of the complexity
-    /// </summary>
-    private async Task<Kernel> CreateModernKernelAsync(
+    private async Task<Kernel> CreateKernelAsync(
         ServerModel serverModel,
         IEnumerable<string>? functionsToRegister,
         string agentName,
@@ -302,17 +284,10 @@ public class AppChatService(
 
         builder.Services.AddLogging(c => c.AddConsole().SetMinimumLevel(LogLevel.Information));
 
-        var serverType = await GetServerTypeAsync(serverModel.ServerId);
-        IChatCompletionService baseChatService;
-
-        if (serverType == ServerType.ChatGpt)
-        {
-            baseChatService = await openAIClientService.GetClientAsync(serverModel, cancellationToken);
-        }
-        else
-        {
-            baseChatService = await ollamaKernelService.GetClientAsync(serverModel.ServerId);
-        }
+        var serverType = await LlmServerConfigHelper.GetServerTypeAsync(userSettingsService, serverModel.ServerId);
+        IChatCompletionService baseChatService = serverType == ServerType.ChatGpt
+            ? await openAIClientService.GetClientAsync(serverModel, cancellationToken)
+            : await ollamaKernelService.GetClientAsync(serverModel.ServerId);
 
         builder.Services.AddSingleton<IChatCompletionService>(_ =>
             new AppForceLastUserChatCompletionService(baseChatService, reducer));
@@ -322,7 +297,7 @@ public class AppChatService(
         if (functionsToRegister != null && functionsToRegister.Any())
         {
             await kernelService.RegisterMcpToolsPublicAsync(kernel, functionsToRegister, cancellationToken);
-            logger.LogInformation("MCP tools registered for modern agent {AgentName}: [{Functions}]", agentName, string.Join(", ", functionsToRegister));
+            logger.LogInformation("MCP tools registered for agent {AgentName}: [{Functions}]", agentName, string.Join(", ", functionsToRegister));
         }
 
         return kernel;
@@ -361,7 +336,6 @@ public class AppChatService(
                         logger.LogDebug("Placeholder replaced with agent {AgentName}, new content length: {ContentLength}",
                                        agentName, placeholder.Content.Length);
 
-                        // Force an update after agent name change to ensure UI sees the change
                         if (MessageUpdated != null)
                         {
                             logger.LogDebug("Sending forced update for agent name change: {AgentName}", agentName);
@@ -466,7 +440,7 @@ public class AppChatService(
     {
         foreach (var kvp in _activeStreams.ToList())
         {
-            if (kvp.Value.AgentName == "?")
+            if (kvp.Value.AgentName == DeleteMarkerAgent)
             {
                 await (MessageDeleted?.Invoke(kvp.Value.Id) ?? Task.CompletedTask);
             }
@@ -515,7 +489,7 @@ public class AppChatService(
 
     private async Task RemoveDanglingPlaceholderAsync()
     {
-        if (_activeStreams.TryGetValue(PlaceholderAgent, out var placeholder) && placeholder.AgentName == "?")
+        if (_activeStreams.TryGetValue(PlaceholderAgent, out var placeholder) && placeholder.AgentName == DeleteMarkerAgent)
         {
             _activeStreams.Remove(PlaceholderAgent);
             await (MessageDeleted?.Invoke(placeholder.Id) ?? Task.CompletedTask);

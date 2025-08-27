@@ -18,9 +18,9 @@ public class ServerTestController(
         try
         {
             logger.LogInformation("Testing connection to server {ServerName} of type {ServerType}", server.Name, server.ServerType);
-            
+
             var result = await connectionTestService.TestConnectionAsync(server, cancellationToken);
-            
+
             if (result.IsSuccessful)
             {
                 logger.LogInformation("Connection test successful for server {ServerName}", server.Name);
@@ -51,7 +51,7 @@ public class ServerTestController(
             }
 
             var result = await connectionTestService.TestConnectionAsync(server, cancellationToken);
-            
+
             if (result.IsSuccessful)
             {
                 return Ok(result);

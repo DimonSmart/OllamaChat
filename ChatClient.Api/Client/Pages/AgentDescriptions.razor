@@ -541,9 +541,6 @@
         if (string.IsNullOrWhiteSpace(name))
             return "Name is required";
 
-        if (name.Length < 3)
-            return "Name must be at least 3 characters";
-
         return string.Empty;
     }
 
@@ -551,9 +548,6 @@
     {
         if (string.IsNullOrWhiteSpace(content))
             return "Content is required";
-
-        if (content.Length < 10)
-            return "Content must be at least 10 characters";
 
         return string.Empty;
     }

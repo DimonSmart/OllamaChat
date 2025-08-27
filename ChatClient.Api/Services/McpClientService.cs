@@ -20,7 +20,7 @@ public class McpClientService(
             return _mcpClients;
         _mcpClients = [];
 
-        var mcpServerConfigs = await mcpServerConfigService.GetAllServersAsync();
+        var mcpServerConfigs = await mcpServerConfigService.GetAllAsync();
 
         if (mcpServerConfigs.Count == 0)
         {

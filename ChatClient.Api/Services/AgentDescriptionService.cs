@@ -1,3 +1,4 @@
+using ChatClient.Shared.Constants;
 using ChatClient.Shared.Models;
 using ChatClient.Shared.Services;
 using System.Text.Json;
@@ -12,7 +13,7 @@ public class AgentDescriptionService : IAgentDescriptionService
 
     public AgentDescriptionService(IConfiguration configuration, ILogger<AgentDescriptionService> logger)
     {
-        var promptsFilePath = configuration["AgentDescriptions:FilePath"] ?? "agent_descriptions.json";
+        var promptsFilePath = configuration["AgentDescriptions:FilePath"] ?? FilePathConstants.DefaultAgentDescriptionsFile;
         _filePath = Path.GetFullPath(promptsFilePath);
         _logger = logger;
         var directory = Path.GetDirectoryName(_filePath);
@@ -64,7 +65,7 @@ public class AgentDescriptionService : IAgentDescriptionService
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error getting agents");
-            return [];
+            throw;
         }
         finally
         {

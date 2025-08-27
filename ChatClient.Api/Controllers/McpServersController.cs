@@ -14,7 +14,7 @@ public class McpServersController(IMcpServerConfigService mcpServerConfigService
     {
         try
         {
-            var servers = await mcpServerConfigService.GetAllServersAsync();
+            var servers = await mcpServerConfigService.GetAllAsync();
             return Ok(servers);
         }
         catch (Exception ex)
@@ -29,7 +29,7 @@ public class McpServersController(IMcpServerConfigService mcpServerConfigService
     {
         try
         {
-            var server = await mcpServerConfigService.GetServerByIdAsync(id);
+            var server = await mcpServerConfigService.GetByIdAsync(id);
             if (server == null)
             {
                 return NotFound($"MCP server config with ID {id} not found");
@@ -59,7 +59,7 @@ public class McpServersController(IMcpServerConfigService mcpServerConfigService
                 return BadRequest("Either Command or Sse must be specified");
             }
 
-            var createdServer = await mcpServerConfigService.CreateServerAsync(server);
+            var createdServer = await mcpServerConfigService.CreateAsync(server);
             return CreatedAtAction(nameof(GetServerById), new { id = createdServer.Id }, createdServer);
         }
         catch (Exception ex)
@@ -89,13 +89,13 @@ public class McpServersController(IMcpServerConfigService mcpServerConfigService
                 return BadRequest("Either Command or Sse must be specified");
             }
 
-            var existingServer = await mcpServerConfigService.GetServerByIdAsync(id);
+            var existingServer = await mcpServerConfigService.GetByIdAsync(id);
             if (existingServer == null)
             {
                 return NotFound($"MCP server config with ID {id} not found");
             }
 
-            var updatedServer = await mcpServerConfigService.UpdateServerAsync(server);
+            var updatedServer = await mcpServerConfigService.UpdateAsync(server);
             return Ok(updatedServer);
         }
         catch (Exception ex)
@@ -110,13 +110,13 @@ public class McpServersController(IMcpServerConfigService mcpServerConfigService
     {
         try
         {
-            var existingServer = await mcpServerConfigService.GetServerByIdAsync(id);
+            var existingServer = await mcpServerConfigService.GetByIdAsync(id);
             if (existingServer == null)
             {
                 return NotFound($"MCP server config with ID {id} not found");
             }
 
-            await mcpServerConfigService.DeleteServerAsync(id);
+            await mcpServerConfigService.DeleteAsync(id);
             return NoContent();
         }
         catch (Exception ex)

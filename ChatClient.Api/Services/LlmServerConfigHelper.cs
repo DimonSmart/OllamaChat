@@ -37,23 +37,61 @@ public static class LlmServerConfigHelper
             ? settings.Llms.Where(s => s.ServerType == serverType.Value)
             : settings.Llms;
 
-        LlmServerConfig? server = null;
+        var serverById = TryGetServerById(servers, serverId);
+        if (serverById != null)
+            return serverById;
 
-        // Сначала пытаемся найти сервер по заданному ID
-        if (serverId.HasValue && serverId.Value != Guid.Empty)
+        var defaultServer = TryGetDefaultServer(servers, settings.DefaultLlmId);
+        if (defaultServer != null)
+            return defaultServer;
+
+        return servers.FirstOrDefault();
+    }
+
+    /// <summary>
+    /// Получает тип сервера по ID с fallback на Ollama если сервер не найден
+    /// </summary>
+    public static async Task<ServerType> GetServerTypeAsync(
+        IUserSettingsService userSettingsService,
+        Guid? serverId)
+    {
+        var server = await GetServerConfigAsync(userSettingsService, serverId);
+        return server?.ServerType ?? ServerType.Ollama;
+    }
+
+    /// <summary>
+    /// Создает HttpClient с базовой конфигурацией для LLM сервера
+    /// </summary>
+    public static HttpClient CreateHttpClient(LlmServerConfig server, string? defaultBaseUrl = null)
+    {
+        var handler = new HttpClientHandler();
+        if (server.IgnoreSslErrors)
+            handler.ServerCertificateCustomValidationCallback = (_, _, _, _) => true;
+
+        var baseUrl = string.IsNullOrWhiteSpace(server.BaseUrl)
+            ? defaultBaseUrl ?? "http://localhost:11434"
+            : server.BaseUrl.TrimEnd('/');
+
+        var client = new HttpClient(handler)
         {
-            server = servers.FirstOrDefault(s => s.Id == serverId.Value);
-        }
+            Timeout = TimeSpan.FromSeconds(server.HttpTimeoutSeconds),
+            BaseAddress = new Uri(baseUrl)
+        };
 
-        // Если не найден, пытаемся использовать сервер по умолчанию
-        if (server == null && settings.DefaultLlmId.HasValue)
-        {
-            server = servers.FirstOrDefault(s => s.Id == settings.DefaultLlmId.Value);
-        }
+        return client;
+    }
 
-        // Если и его нет, берем первый доступный сервер нужного типа
-        server ??= servers.FirstOrDefault();
+    private static LlmServerConfig? TryGetServerById(IEnumerable<LlmServerConfig> servers, Guid? serverId)
+    {
+        return serverId.HasValue && serverId.Value != Guid.Empty
+            ? servers.FirstOrDefault(s => s.Id == serverId.Value)
+            : null;
+    }
 
-        return server;
+    private static LlmServerConfig? TryGetDefaultServer(IEnumerable<LlmServerConfig> servers, Guid? defaultLlmId)
+    {
+        return defaultLlmId.HasValue
+            ? servers.FirstOrDefault(s => s.Id == defaultLlmId.Value)
+            : null;
     }
 }
