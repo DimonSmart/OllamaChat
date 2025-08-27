@@ -2,8 +2,8 @@ using ChatClient.Api.Services;
 using ChatClient.Shared.Services;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging.Abstractions;
-using Microsoft.SemanticKernel.Memory;
-using System.Text.Json;
+using Microsoft.SemanticKernel.Connectors.InMemory;
+using Microsoft.Extensions.VectorData;
 
 namespace ChatClient.Tests;
 
@@ -14,13 +14,13 @@ public class RagVectorSearchServiceTests
     {
         var agentId = Guid.NewGuid();
 
-        var store = new VolatileMemoryStore();
-        var collection = $"agent_{agentId:N}";
-        await store.CreateCollectionAsync(collection);
+        var store = new InMemoryVectorStore();
+        var collection = store.GetCollection<string, RagVectorRecord>($"agent_{agentId:N}");
+        await collection.EnsureCollectionExistsAsync();
 
-        await AddAsync(store, collection, "file1.txt", 0, "A", new float[] { 1, 0 });
-        await AddAsync(store, collection, "file1.txt", 1, "B", new float[] { 1, 0 });
-        await AddAsync(store, collection, "file1.txt", 3, "D", new float[] { 0, 1 });
+        await AddAsync(collection, "file1.txt", 0, "A", new float[] { 1, 0 });
+        await AddAsync(collection, "file1.txt", 1, "B", new float[] { 1, 0 });
+        await AddAsync(collection, "file1.txt", 3, "D", new float[] { 0, 1 });
 
         var config = new ConfigurationBuilder().Build();
         IRagVectorSearchService service = new RagVectorSearchService(store, NullLogger<RagVectorSearchService>.Instance, config);
@@ -34,15 +34,17 @@ public class RagVectorSearchServiceTests
         Assert.Equal("D", response.Results[1].Content);
     }
 
-    private static async Task AddAsync(IMemoryStore store, string collection, string file, int index, string text, float[] vector)
+    private static async Task AddAsync(IVectorStoreCollection<string, RagVectorRecord> collection, string file, int index, string text, float[] vector)
     {
-        var meta = JsonSerializer.Serialize(new { file, index, text });
-        var record = new MemoryRecord(
-            new MemoryRecordMetadata(false, $"{file}#{index:D5}", null!, null!, null!, meta),
-            new ReadOnlyMemory<float>(vector),
-            $"{file}#{index:D5}",
-            null);
-        await store.UpsertAsync(collection, record);
+        var record = new RagVectorRecord
+        {
+            Id = $"{file}#{index:D5}",
+            File = file,
+            Index = index,
+            Text = text,
+            Embedding = new ReadOnlyMemory<float>(vector)
+        };
+        await collection.UpsertAsync(record);
     }
 }
 
