@@ -5,7 +5,7 @@ using ChatClient.Api.Services;
 
 using Microsoft.AspNetCore.Hosting.Server;
 using Microsoft.AspNetCore.Hosting.Server.Features;
-using Microsoft.SemanticKernel.Memory;
+using Microsoft.SemanticKernel.Connectors.InMemory;
 
 using MudBlazor.Services;
 
@@ -59,7 +59,7 @@ builder.Services.AddSingleton<ChatClient.Shared.Services.IRagVectorIndexService,
 builder.Services.AddSingleton<ChatClient.Api.Services.RagVectorIndexBackgroundService>();
 builder.Services.AddSingleton<ChatClient.Shared.Services.IRagVectorIndexBackgroundService>(sp => sp.GetRequiredService<ChatClient.Api.Services.RagVectorIndexBackgroundService>());
 builder.Services.AddHostedService(sp => sp.GetRequiredService<ChatClient.Api.Services.RagVectorIndexBackgroundService>());
-builder.Services.AddSingleton<IMemoryStore, VolatileMemoryStore>();
+builder.Services.AddSingleton<InMemoryVectorStore>();
 builder.Services.AddSingleton<ChatClient.Shared.Services.IRagVectorSearchService, ChatClient.Api.Services.RagVectorSearchService>();
 builder.Services.AddSingleton<ChatClient.Api.Services.IFileConverter, ChatClient.Api.Services.NoOpFileConverter>();
 builder.Services.AddScoped<ChatClient.Api.Client.Services.IAppChatService, ChatClient.Api.Client.Services.AppChatService>();
