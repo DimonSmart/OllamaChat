@@ -26,7 +26,7 @@
                 <MudForm @ref="_form" Model="@_settings">
                     <MudCard Class="mb-4" Elevation="1">
                         <MudCardContent>
-                            <ServerModelPicker Value="_defaultModel" ValueChanged="OnDefaultModelChanged" />
+                            <ServerModelPicker Value="_defaultModel" ValueChanged="OnDefaultModelChanged" ShowClearButton="true" />
                             <MudText Typo="Typo.caption" Class="mt-2">
                                 This server and model will be selected by default when starting a new chat.
                             </MudText>
