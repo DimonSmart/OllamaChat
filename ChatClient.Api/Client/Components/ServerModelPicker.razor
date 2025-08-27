@@ -23,6 +23,17 @@
             <MudSelectItem Value="@model.Name">@model.Name</MudSelectItem>
         }
     </MudSelect>
+    
+    @if (ShowClearButton && (selectedServerId.HasValue || !string.IsNullOrEmpty(selectedModel)))
+    {
+        <MudIconButton Icon="@Icons.Material.Filled.Clear" 
+                       Size="Size.Small" 
+                       Color="Color.Default"
+                       OnClick="OnClearSelection"
+                       title="Clear server and model selection"
+                       Class="ml-1" />
+    }
+    
     @if (loading)
     {
         <MudProgressCircular Size="Size.Small" Indeterminate="true" Class="ml-2" />
@@ -36,6 +47,7 @@
 @code {
     [Parameter] public ServerModel Value { get; set; } = new(Guid.Empty, string.Empty);
     [Parameter] public EventCallback<ServerModel> ValueChanged { get; set; }
+    [Parameter] public bool ShowClearButton { get; set; } = false;
     [Parameter(CaptureUnmatchedValues = true)] public Dictionary<string, object> Attributes { get; set; } = [];
 
     private Guid? selectedServerId;
@@ -80,6 +92,14 @@
     private async Task OnModelChanged(string? model)
     {
         selectedModel = model;
+        await NotifyValueChanged();
+    }
+
+    private async Task OnClearSelection()
+    {
+        selectedServerId = null;
+        selectedModel = null;
+        models.Clear();
         await NotifyValueChanged();
     }
 

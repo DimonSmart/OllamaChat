@@ -2,8 +2,8 @@ using ChatClient.Shared.Models;
 using ChatClient.Shared.Services;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
-using Microsoft.SemanticKernel.Connectors.InMemory;
 using Microsoft.Extensions.VectorData;
+using Microsoft.SemanticKernel.Connectors.InMemory;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.IO;
@@ -64,7 +64,7 @@ public sealed class RagVectorSearchService(
         return new RagSearchResponse { Total = segments.Count, Results = results };
     }
 
-    private async Task EnsureLoadedAsync(Guid agentId, IVectorStoreCollection<string, RagVectorRecord> collection, CancellationToken ct)
+    private async Task EnsureLoadedAsync(Guid agentId, VectorStoreCollection<string, RagVectorRecord> collection, CancellationToken ct)
     {
         if (_loaded.ContainsKey(agentId))
             return;

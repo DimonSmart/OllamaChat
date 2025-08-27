@@ -2,8 +2,8 @@ using ChatClient.Api.Services;
 using ChatClient.Shared.Services;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging.Abstractions;
-using Microsoft.SemanticKernel.Connectors.InMemory;
 using Microsoft.Extensions.VectorData;
+using Microsoft.SemanticKernel.Connectors.InMemory;
 
 namespace ChatClient.Tests;
 
@@ -34,7 +34,7 @@ public class RagVectorSearchServiceTests
         Assert.Equal("D", response.Results[1].Content);
     }
 
-    private static async Task AddAsync(IVectorStoreCollection<string, RagVectorRecord> collection, string file, int index, string text, float[] vector)
+    private static async Task AddAsync(VectorStoreCollection<string, RagVectorRecord> collection, string file, int index, string text, float[] vector)
     {
         var record = new RagVectorRecord
         {
