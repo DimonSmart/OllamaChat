@@ -40,15 +40,9 @@ public sealed class RagVectorIndexService(
 
         var generator = kernel.GetRequiredService<IEmbeddingGenerator<string, Embedding<float>>>();
         var settings = await userSettings.GetSettingsAsync();
-        var maxTokensPerLine = settings.RagLineChunkSize > 0
-            ? settings.RagLineChunkSize
-            : configuration.GetValue<int?>("RagIndex:MaxTokensPerLine") ?? 256;
-        var maxTokensPerParagraph = settings.RagParagraphChunkSize > 0
-            ? settings.RagParagraphChunkSize
-            : configuration.GetValue<int?>("RagIndex:MaxTokensPerParagraph") ?? 512;
-        var paragraphOverlap = settings.RagParagraphOverlap > 0
-            ? settings.RagParagraphOverlap
-            : configuration.GetValue<int?>("RagIndex:ParagraphOverlap") ?? 64;
+        var maxTokensPerLine = settings.RagLineChunkSize;
+        var maxTokensPerParagraph = settings.RagParagraphChunkSize;
+        var paragraphOverlap = settings.RagParagraphOverlap;
         var lines = TextChunker.SplitPlainTextLines(text, maxTokensPerLine, null);
         var paragraphs = TextChunker.SplitPlainTextParagraphs(lines, maxTokensPerParagraph, paragraphOverlap, string.Empty, null).ToList();
         var total = paragraphs.Count;
