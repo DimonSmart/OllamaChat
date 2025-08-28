@@ -86,7 +86,7 @@ public class AppChatHistoryBuilder(
             {
                 var settings = await settingsService.GetSettingsAsync();
                 var modelName = string.IsNullOrWhiteSpace(settings.EmbeddingModelName)
-                    ? _configuration["Ollama:EmbeddingModel"] ?? "nomic-embed-text"
+                    ? LlmServerConfig.DefaultEmbeddingModel
                     : settings.EmbeddingModelName;
                 var server = settings.EmbeddingLlmId ?? serverId ?? settings.DefaultLlmId ?? Guid.Empty;
                 var query = ThinkTagParser.ExtractThinkAnswer(lastUser.Content).Answer;

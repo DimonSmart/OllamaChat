@@ -45,6 +45,15 @@ public class ChatServiceTests
         public Task SaveSettingsAsync(UserSettings settings) => Task.CompletedTask;
     }
 
+    private class MockLlmServerConfigService : ILlmServerConfigService
+    {
+        public Task<List<LlmServerConfig>> GetAllAsync() => Task.FromResult(new List<LlmServerConfig>());
+        public Task<LlmServerConfig?> GetByIdAsync(Guid id) => Task.FromResult<LlmServerConfig?>(null);
+        public Task<LlmServerConfig> CreateAsync(LlmServerConfig server) => Task.FromResult(server);
+        public Task<LlmServerConfig> UpdateAsync(LlmServerConfig server) => Task.FromResult(server);
+        public Task DeleteAsync(Guid id) => Task.CompletedTask;
+    }
+
     [Fact]
     public void InitializeChat_NoAgents_Throws()
     {
@@ -55,7 +64,8 @@ public class ChatServiceTests
             reducer: new AppForceLastUserReducer(),
             ollamaKernelService: new MockOllamaKernelService(),
             openAIClientService: new MockOpenAIClientService(),
-            userSettingsService: new MockUserSettingsService());
+            userSettingsService: new MockUserSettingsService(),
+            llmServerConfigService: new MockLlmServerConfigService());
 
         Assert.Throws<ArgumentException>(() => chatService.InitializeChat([]));
     }
@@ -70,7 +80,8 @@ public class ChatServiceTests
             reducer: new AppForceLastUserReducer(),
             ollamaKernelService: new MockOllamaKernelService(),
             openAIClientService: new MockOpenAIClientService(),
-            userSettingsService: new MockUserSettingsService());
+            userSettingsService: new MockUserSettingsService(),
+            llmServerConfigService: new MockLlmServerConfigService());
 
         var prompt = new AgentDescription { AgentName = "Agent", Content = "Hello" };
         chatService.InitializeChat([prompt]);

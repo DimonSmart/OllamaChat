@@ -8,54 +8,69 @@ public static class LlmServerConfigHelper
     /// <summary>
     /// Получает конфигурацию сервера по ID с возможностью fallback на сервер по умолчанию
     /// </summary>
+    /// <param name="llmServerConfigService">Сервис конфигурации LLM серверов</param>
     /// <param name="userSettingsService">Сервис настроек пользователя</param>
     /// <param name="serverId">ID сервера (может быть null или Guid.Empty)</param>
     /// <param name="serverType">Тип сервера для фильтрации (опционально)</param>
     /// <returns>Конфигурация сервера или null если не найдена</returns>
     public static async Task<LlmServerConfig?> GetServerConfigAsync(
+        ILlmServerConfigService llmServerConfigService,
         IUserSettingsService userSettingsService,
         Guid? serverId = null,
         ServerType? serverType = null)
     {
+        var servers = await llmServerConfigService.GetAllAsync();
         var settings = await userSettingsService.GetSettingsAsync();
-        return GetServerConfig(settings, serverId, serverType);
+        
+        return GetServerConfig(servers, settings.DefaultLlmId, serverId, serverType);
     }
 
     /// <summary>
-    /// Получает конфигурацию сервера по ID с возможностью fallback на сервер по умолчанию
+    /// Получает конфигурацию сервера по ID через ServiceProvider (временное решение для совместимости)
     /// </summary>
-    /// <param name="settings">Настройки пользователя</param>
-    /// <param name="serverId">ID сервера (может быть null или Guid.Empty)</param>
-    /// <param name="serverType">Тип сервера для фильтрации (опционально)</param>
-    /// <returns>Конфигурация сервера или null если не найдена</returns>
-    public static LlmServerConfig? GetServerConfig(
-        UserSettings settings,
+    public static async Task<LlmServerConfig?> GetServerConfigAsync(
+        IUserSettingsService userSettingsService,
+        IServiceProvider serviceProvider,
         Guid? serverId = null,
         ServerType? serverType = null)
     {
-        var servers = serverType.HasValue
-            ? settings.Llms.Where(s => s.ServerType == serverType.Value)
-            : settings.Llms;
+        var llmServerConfigService = serviceProvider.GetRequiredService<ILlmServerConfigService>();
+        return await GetServerConfigAsync(llmServerConfigService, userSettingsService, serverId, serverType);
+    }
 
-        var serverById = TryGetServerById(servers, serverId);
+    /// <summary>
+    /// Получает конфигурацию сервера из списка серверов
+    /// </summary>
+    public static LlmServerConfig? GetServerConfig(
+        IEnumerable<LlmServerConfig> servers,
+        Guid? defaultLlmId,
+        Guid? serverId = null,
+        ServerType? serverType = null)
+    {
+        var filteredServers = serverType.HasValue
+            ? servers.Where(s => s.ServerType == serverType.Value)
+            : servers;
+
+        var serverById = TryGetServerById(filteredServers, serverId);
         if (serverById != null)
             return serverById;
 
-        var defaultServer = TryGetDefaultServer(servers, settings.DefaultLlmId);
+        var defaultServer = TryGetDefaultServer(filteredServers, defaultLlmId);
         if (defaultServer != null)
             return defaultServer;
 
-        return servers.FirstOrDefault();
+        return filteredServers.FirstOrDefault();
     }
 
     /// <summary>
     /// Получает тип сервера по ID с fallback на Ollama если сервер не найден
     /// </summary>
     public static async Task<ServerType> GetServerTypeAsync(
+        ILlmServerConfigService llmServerConfigService,
         IUserSettingsService userSettingsService,
         Guid? serverId)
     {
-        var server = await GetServerConfigAsync(userSettingsService, serverId);
+        var server = await GetServerConfigAsync(llmServerConfigService, userSettingsService, serverId);
         return server?.ServerType ?? ServerType.Ollama;
     }
 

@@ -26,6 +26,7 @@ public class McpSamplingService(
     IOllamaKernelService ollamaKernelService,
     IOpenAIClientService openAIClientService,
     IUserSettingsService userSettingsService,
+    ILlmServerConfigService llmServerConfigService,
     AppForceLastUserReducer reducer,
     ILogger<HttpLoggingHandler> httpLogger,
     ILogger<McpSamplingService> logger)
@@ -34,6 +35,7 @@ public class McpSamplingService(
     private readonly IOllamaKernelService _ollamaKernelService = ollamaKernelService;
     private readonly IOpenAIClientService _openAIClientService = openAIClientService;
     private readonly IUserSettingsService _userSettingsService = userSettingsService;
+    private readonly ILlmServerConfigService _llmServerConfigService = llmServerConfigService;
     private readonly AppForceLastUserReducer _reducer = reducer;
     private readonly ILogger<HttpLoggingHandler> _httpLogger = httpLogger;
     private readonly ILogger<McpSamplingService> _logger = logger;
@@ -155,7 +157,7 @@ public class McpSamplingService(
 
     private async Task<Kernel> CreateKernelAsync(ServerModel model, TimeSpan timeout)
     {
-        var server = await LlmServerConfigHelper.GetServerConfigAsync(_userSettingsService, model.ServerId)
+        var server = await LlmServerConfigHelper.GetServerConfigAsync(_llmServerConfigService, _userSettingsService, model.ServerId)
             ?? throw new InvalidOperationException("No server configuration found for the specified model");
 
         var builder = Kernel.CreateBuilder();

@@ -5,6 +5,7 @@
 @inject IOllamaClientService OllamaService
 @inject IOpenAIClientService OpenAIService
 @inject IUserSettingsService UserSettingsService
+@inject ILlmServerConfigService LlmServerConfigService
 @inject NavigationManager NavigationManager
 @inject ILogger<OllamaCheck> Logger
 
@@ -41,7 +42,7 @@ else
             if (!ValidateDefaultServer(settings))
                 return;
 
-            var server = GetDefaultServer(settings);
+            var server = await GetDefaultServerAsync(settings);
             if (server == null)
                 return;
 
@@ -69,9 +70,10 @@ else
         return false;
     }
 
-    private LlmServerConfig? GetDefaultServer(UserSettings settings)
+    private async Task<LlmServerConfig?> GetDefaultServerAsync(UserSettings settings)
     {
-        return LlmServerConfigHelper.GetServerConfig(settings, settings.DefaultLlmId);
+        var servers = await LlmServerConfigService.GetAllAsync();
+        return LlmServerConfigHelper.GetServerConfig(servers, settings.DefaultLlmId);
     }
 
     private async Task ValidateServerAvailability(LlmServerConfig server, Guid serverId)

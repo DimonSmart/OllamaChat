@@ -141,7 +141,7 @@ public class McpFunctionIndexService
     {
         var settings = await _userSettingsService.GetSettingsAsync();
         var modelName = string.IsNullOrWhiteSpace(settings.EmbeddingModelName)
-            ? _configuration["Ollama:EmbeddingModel"] ?? "nomic-embed-text"
+            ? LlmServerConfig.DefaultEmbeddingModel
             : settings.EmbeddingModelName;
         var server = settings.EmbeddingLlmId ?? Guid.Empty;
         return new(server, modelName);

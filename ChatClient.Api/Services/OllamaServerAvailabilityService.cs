@@ -6,6 +6,7 @@ namespace ChatClient.Api.Services;
 public class OllamaServerAvailabilityService(
     IOllamaClientService ollamaService,
     IUserSettingsService userSettingsService,
+    ILlmServerConfigService llmServerConfigService,
     ILogger<OllamaServerAvailabilityService> logger)
 {
     public async Task<OllamaServerStatus> CheckOllamaStatusAsync(Guid? serverId = null)
@@ -26,7 +27,8 @@ public class OllamaServerAvailabilityService(
             }
 
             // Find server in settings
-            var server = settings.Llms.FirstOrDefault(s => s.Id == serverToCheck.Value);
+            var servers = await llmServerConfigService.GetAllAsync();
+            var server = servers.FirstOrDefault(s => s.Id == serverToCheck.Value);
             if (server == null)
             {
                 logger.LogWarning("Server not found: {ServerId}", serverToCheck.Value);

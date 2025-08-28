@@ -10,6 +10,34 @@ namespace ChatClient.Tests;
 
 public class UserSettingsServiceTests
 {
+    private class MockLlmServerConfigService : ILlmServerConfigService
+    {
+        public Task<List<LlmServerConfig>> GetAllAsync()
+        {
+            return Task.FromResult(new List<LlmServerConfig>());
+        }
+
+        public Task<LlmServerConfig?> GetByIdAsync(Guid id)
+        {
+            return Task.FromResult<LlmServerConfig?>(null);
+        }
+
+        public Task<LlmServerConfig> CreateAsync(LlmServerConfig server)
+        {
+            return Task.FromResult(server);
+        }
+
+        public Task<LlmServerConfig> UpdateAsync(LlmServerConfig server)
+        {
+            return Task.FromResult(server);
+        }
+
+        public Task DeleteAsync(Guid id)
+        {
+            return Task.CompletedTask;
+        }
+    }
+
     [Fact]
     public async Task SaveAndLoadSettings_WorksCorrectly()
     {
@@ -26,7 +54,8 @@ public class UserSettingsServiceTests
                 })
                 .Build();
             var logger = new LoggerFactory().CreateLogger<UserSettingsService>();
-            var service = new UserSettingsService(config, logger);
+            var mockLlmService = new MockLlmServerConfigService();
+            var service = new UserSettingsService(config, logger, mockLlmService);
 
             var serverId = Guid.NewGuid();
             var testSettings = new UserSettings

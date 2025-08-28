@@ -10,18 +10,16 @@ using System.Reflection;
 public class OllamaServiceTests
 {
     [Fact]
-    public async Task GetClientAsync_UsesDefaultUrl_WhenConfigurationEmpty()
+    public async Task GetClientAsync_UsesDefaultUrl_WhenNoServersConfigured()
     {
-        var configValues = new Dictionary<string, string?> { ["Ollama:BaseUrl"] = "" };
-        var configuration = new ConfigurationBuilder().AddInMemoryCollection(configValues).Build();
-
         var userSettingsService = new StubUserSettingsService();
+        var llmServerConfigService = new MockLlmServerConfigService();
         var services = new ServiceCollection();
         services.AddLogging();
         var provider = services.BuildServiceProvider();
         var logger = provider.GetRequiredService<ILogger<OllamaService>>();
 
-        var service = new OllamaService(configuration, userSettingsService, provider, logger);
+        var service = new OllamaService(userSettingsService, llmServerConfigService, provider, logger);
 
         await service.GetClientAsync(Guid.Empty);
 
@@ -37,5 +35,33 @@ public class OllamaServiceTests
         public event Func<Task>? EmbeddingModelChanged;
         public Task<UserSettings> GetSettingsAsync() => Task.FromResult(new UserSettings());
         public Task SaveSettingsAsync(UserSettings settings) => Task.CompletedTask;
+    }
+
+    private class MockLlmServerConfigService : ILlmServerConfigService
+    {
+        public Task<List<LlmServerConfig>> GetAllAsync()
+        {
+            return Task.FromResult(new List<LlmServerConfig>());
+        }
+
+        public Task<LlmServerConfig?> GetByIdAsync(Guid id)
+        {
+            return Task.FromResult<LlmServerConfig?>(null);
+        }
+
+        public Task<LlmServerConfig> CreateAsync(LlmServerConfig server)
+        {
+            return Task.FromResult(server);
+        }
+
+        public Task<LlmServerConfig> UpdateAsync(LlmServerConfig server)
+        {
+            return Task.FromResult(server);
+        }
+
+        public Task DeleteAsync(Guid id)
+        {
+            return Task.CompletedTask;
+        }
     }
 }

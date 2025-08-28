@@ -1,3 +1,4 @@
+using ChatClient.Shared.Constants;
 using ChatClient.Shared.Models;
 using ChatClient.Shared.Services;
 using System;
@@ -12,6 +13,7 @@ public class UserSettingsService : IUserSettingsService
     private readonly string _settingsFilePath;
     private readonly ILogger<UserSettingsService> _logger;
     private readonly IConfiguration _configuration;
+    private readonly ILlmServerConfigService _llmServerConfigService;
     private readonly JsonSerializerOptions _jsonOptions = new()
     {
         WriteIndented = true,
@@ -20,73 +22,54 @@ public class UserSettingsService : IUserSettingsService
 
     public event Func<Task>? EmbeddingModelChanged;
 
-    public UserSettingsService(IConfiguration configuration, ILogger<UserSettingsService> logger)
+    public UserSettingsService(IConfiguration configuration, ILogger<UserSettingsService> logger, ILlmServerConfigService llmServerConfigService)
     {
         _configuration = configuration;
         _logger = logger;
+        _llmServerConfigService = llmServerConfigService;
 
-        var settingsDir = configuration["UserSettings:Directory"] ?? Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "UserData");
-        if (!Directory.Exists(settingsDir))
-            Directory.CreateDirectory(settingsDir);
+        var userSettingsFilePath = configuration["UserSettings:FilePath"] ?? FilePathConstants.DefaultUserSettingsFile;
+        _settingsFilePath = Path.GetFullPath(userSettingsFilePath);
 
-        _settingsFilePath = Path.Combine(settingsDir, "user_settings.json");
+        var directory = Path.GetDirectoryName(_settingsFilePath);
+        if (!string.IsNullOrEmpty(directory) && !Directory.Exists(directory))
+            Directory.CreateDirectory(directory);
+
         _logger.LogInformation("User settings file path: {FilePath}", _settingsFilePath);
     }
 
     public async Task<UserSettings> GetSettingsAsync()
     {
+        UserSettings settings;
+
         if (!File.Exists(_settingsFilePath))
         {
             _logger.LogInformation("Settings file not found. Creating a new one with default settings");
-            var defaultSettings = CreateDefaultSettings();
-            await SaveSettingsAsync(defaultSettings);
-            return defaultSettings;
+            settings = new UserSettings();
+        }
+        else
+        {
+            var json = await File.ReadAllTextAsync(_settingsFilePath);
+            settings = JsonSerializer.Deserialize<UserSettings>(json, _jsonOptions) ?? new UserSettings();
         }
 
-        var json = await File.ReadAllTextAsync(_settingsFilePath);
-        var settings = JsonSerializer.Deserialize<UserSettings>(json, _jsonOptions) ?? CreateDefaultSettings();
-
-        var defaults = GetDefaultRagValues();
         var updated = false;
-        if (settings.RagLineChunkSize <= 0)
+
+        if (settings.DefaultLlmId == null)
         {
-            settings.RagLineChunkSize = defaults.line;
-            updated = true;
-        }
-        if (settings.RagParagraphChunkSize <= 0)
-        {
-            settings.RagParagraphChunkSize = defaults.paragraph;
-            updated = true;
-        }
-        if (settings.RagParagraphOverlap <= 0)
-        {
-            settings.RagParagraphOverlap = defaults.overlap;
-            updated = true;
+            var servers = await _llmServerConfigService.GetAllAsync();
+            var defaultServer = servers.FirstOrDefault(s => s.ServerType == ServerType.Ollama);
+            if (defaultServer != null)
+            {
+                settings.DefaultLlmId = defaultServer.Id;
+                updated = true;
+            }
         }
 
-        if (updated)
+        if (updated || !File.Exists(_settingsFilePath))
             await SaveSettingsAsync(settings);
 
         return settings;
-    }
-
-    private UserSettings CreateDefaultSettings()
-    {
-        var defaults = GetDefaultRagValues();
-        return new UserSettings
-        {
-            RagLineChunkSize = defaults.line,
-            RagParagraphChunkSize = defaults.paragraph,
-            RagParagraphOverlap = defaults.overlap
-        };
-    }
-
-    private (int line, int paragraph, int overlap) GetDefaultRagValues()
-    {
-        var line = _configuration.GetValue<int?>("RagIndex:MaxTokensPerLine") ?? 256;
-        var paragraph = _configuration.GetValue<int?>("RagIndex:MaxTokensPerParagraph") ?? 512;
-        var overlap = _configuration.GetValue<int?>("RagIndex:ParagraphOverlap") ?? 64;
-        return (line, paragraph, overlap);
     }
 
     public async Task SaveSettingsAsync(UserSettings settings)
@@ -117,6 +100,5 @@ public class UserSettingsService : IUserSettingsService
             _logger.LogError(ex, "Error saving user settings");
         }
     }
-
 
 }

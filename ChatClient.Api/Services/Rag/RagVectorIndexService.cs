@@ -13,7 +13,7 @@ namespace ChatClient.Api.Services.Rag;
 
 public sealed class RagVectorIndexService(
     IUserSettingsService userSettings,
-    IConfiguration configuration,
+    ILlmServerConfigService llmServerConfigService,
     ILogger<RagVectorIndexService> logger) : IRagVectorIndexService
 {
     public async Task BuildIndexAsync(Guid agentId, string sourceFilePath, string indexFilePath, IProgress<RagVectorIndexStatus>? progress = null, CancellationToken cancellationToken = default, Guid serverId = default)
@@ -91,15 +91,11 @@ public sealed class RagVectorIndexService(
 
     private async Task<string> GetBaseUrlAsync(Guid serverId)
     {
-        var server = await LlmServerConfigHelper.GetServerConfigAsync(userSettings, serverId);
+        var server = await LlmServerConfigHelper.GetServerConfigAsync(llmServerConfigService, userSettings, serverId);
         var candidate = server?.BaseUrl;
         if (string.IsNullOrWhiteSpace(candidate))
         {
-            candidate = configuration["Ollama:BaseUrl"];
-        }
-        if (string.IsNullOrWhiteSpace(candidate))
-        {
-            candidate = "http://localhost:11434";
+            candidate = LlmServerConfig.DefaultOllamaUrl;
         }
         return candidate.Trim();
     }
@@ -108,7 +104,7 @@ public sealed class RagVectorIndexService(
     {
         var settings = await userSettings.GetSettingsAsync();
         var modelName = string.IsNullOrWhiteSpace(settings.EmbeddingModelName)
-            ? configuration["Ollama:EmbeddingModel"] ?? "nomic-embed-text"
+            ? LlmServerConfig.DefaultEmbeddingModel
             : settings.EmbeddingModelName;
         var server = settings.EmbeddingLlmId ?? Guid.Empty;
         return new(server, modelName);

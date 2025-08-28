@@ -22,9 +22,6 @@ public class UserSettings
     [JsonPropertyName("agentName")]
     public string AgentName { get; set; } = string.Empty;
 
-    [JsonPropertyName("llms")]
-    public List<LlmServerConfig> Llms { get; set; } = [];
-
     [JsonPropertyName("defaultLlmId")]
     public Guid? DefaultLlmId { get; set; }
 

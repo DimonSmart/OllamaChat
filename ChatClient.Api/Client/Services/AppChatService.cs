@@ -20,7 +20,8 @@ public class AppChatService(
     AppForceLastUserReducer reducer,
     IOllamaKernelService ollamaKernelService,
     IOpenAIClientService openAIClientService,
-    IUserSettingsService userSettingsService) : IAppChatService
+    IUserSettingsService userSettingsService,
+    ILlmServerConfigService llmServerConfigService) : IAppChatService
 {
     private CancellationTokenSource? _cancellationTokenSource;
     private AppStreamingMessageManager _streamingManager = null!;
@@ -284,7 +285,7 @@ public class AppChatService(
 
         builder.Services.AddLogging(c => c.AddConsole().SetMinimumLevel(LogLevel.Information));
 
-        var serverType = await LlmServerConfigHelper.GetServerTypeAsync(userSettingsService, serverModel.ServerId);
+        var serverType = await LlmServerConfigHelper.GetServerTypeAsync(llmServerConfigService, userSettingsService, serverModel.ServerId);
         IChatCompletionService baseChatService = serverType == ServerType.ChatGpt
             ? await openAIClientService.GetClientAsync(serverModel, cancellationToken)
             : await ollamaKernelService.GetClientAsync(serverModel.ServerId);
