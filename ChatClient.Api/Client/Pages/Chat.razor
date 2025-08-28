@@ -27,6 +27,7 @@
 @inject IUserSettingsService UserSettingsService
 @inject IStopAgentFactory StopAgentFactory
 @inject IEnumerable<IChatFormatter> ChatFormatters
+@inject ILogger<Chat> Logger
 
 <PageTitle>Chat with AI Assistant</PageTitle>
 
@@ -233,11 +234,11 @@
     public ServerModel? SelectedModel { get; set; }
 
     private string CurrentModelName => string.IsNullOrWhiteSpace(SelectedModel?.ModelName)
-        ? userSettings.DefaultModelName
+        ? userSettings.DefaultModel.ModelName
         : SelectedModel.ModelName;
     private Guid CurrentServerId => SelectedModel?.ServerId != Guid.Empty
-        ? SelectedModel.ServerId
-        : userSettings.DefaultLlmId ?? Guid.Empty;
+        ? SelectedModel?.ServerId ?? Guid.Empty
+        : userSettings.DefaultModel.ServerId;
 
     private UserSettings userSettings = new();
 
@@ -348,7 +349,7 @@
         }        
         catch (Exception ex)
         {
-            Console.WriteLine($"Error scrolling to bottom: {ex.Message}");
+            Logger.LogWarning(ex, "Failed to scroll to bottom");
         }
     }
 

@@ -55,13 +55,13 @@ public class UserSettingsService : IUserSettingsService
 
         var updated = false;
 
-        if (settings.DefaultLlmId == null)
+        if (settings.DefaultModel.ServerId == Guid.Empty)
         {
             var servers = await _llmServerConfigService.GetAllAsync();
             var defaultServer = servers.FirstOrDefault(s => s.ServerType == ServerType.Ollama);
             if (defaultServer != null)
             {
-                settings.DefaultLlmId = defaultServer.Id;
+                settings.DefaultModel = settings.DefaultModel with { ServerId = defaultServer.Id ?? Guid.Empty };
                 updated = true;
             }
         }
@@ -88,8 +88,8 @@ public class UserSettingsService : IUserSettingsService
             _logger.LogInformation("User settings saved successfully");
 
             if (existing != null &&
-                (!string.Equals(existing.EmbeddingModelName, settings.EmbeddingModelName, StringComparison.OrdinalIgnoreCase) ||
-                 existing.EmbeddingLlmId != settings.EmbeddingLlmId))
+                (!string.Equals(existing.EmbeddingModel.ModelName, settings.EmbeddingModel.ModelName, StringComparison.OrdinalIgnoreCase) ||
+                 existing.EmbeddingModel.ServerId != settings.EmbeddingModel.ServerId))
             {
                 if (EmbeddingModelChanged != null)
                     await Task.WhenAll(EmbeddingModelChanged.GetInvocationList().Cast<Func<Task>>().Select(d => d()));

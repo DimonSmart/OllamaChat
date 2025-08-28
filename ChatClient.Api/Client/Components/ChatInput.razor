@@ -4,6 +4,7 @@
 @using ChatClient.Shared.Models
 @using MudBlazor
 @inject IUserSettingsService UserSettingsService
+@inject ILogger<ChatInput> Logger
 
 <MudPaper Class="pa-2" Elevation="2">
     <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="1">
@@ -138,9 +139,9 @@
                 var chatFile = new AppChatMessageFile(file.Name, file.Size, file.ContentType, buffer);
                 attachedFiles.Add(chatFile);
             }
-            catch
+            catch (Exception ex)
             {
-                // TODO: Handle file read error
+                Logger.LogWarning(ex, "Failed to read file: {FileName}", file.Name);
             }        
         }
 

@@ -39,14 +39,6 @@ public class KernelService(
         return [];
     }
 
-    private async Task RegisterMcpToolsAsync(
-        Kernel kernel,
-        IEnumerable<string> functionNames,
-        CancellationToken cancellationToken)
-    {
-        await RegisterMcpToolsPublicAsync(kernel, functionNames, cancellationToken);
-    }
-
     /// <summary>
     /// Public method to register MCP tools for agent architecture
     /// </summary>
@@ -100,7 +92,7 @@ public class KernelService(
         }
     }
 
-    public async Task<IReadOnlyCollection<FunctionInfo>> GetAvailableFunctionsAsync()
+    public async Task<IReadOnlyCollection<FunctionInfo>> GetAvailableFunctionsAsync(CancellationToken cancellationToken = default)
     {
         var functions = new List<FunctionInfo>();
 
@@ -112,12 +104,12 @@ public class KernelService(
 
         try
         {
-            var mcpClients = await _mcpClientService.GetMcpClientsAsync();
+            var mcpClients = await _mcpClientService.GetMcpClientsAsync(cancellationToken);
             if (mcpClients.Count == 0)
                 return [];
             foreach (var mcpClient in mcpClients)
             {
-                var mcpTools = await _mcpClientService.GetMcpTools(mcpClient);
+                var mcpTools = await _mcpClientService.GetMcpTools(mcpClient, cancellationToken);
                 var toolFuncs = mcpTools.Select(tool =>
                     new FunctionInfo
                     {

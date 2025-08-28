@@ -60,16 +60,15 @@ public class UserSettingsServiceTests
             var serverId = Guid.NewGuid();
             var testSettings = new UserSettings
             {
-                DefaultModelName = "test-model",
-                DefaultLlmId = serverId,
+                DefaultModel = new(serverId, "test-model"),
                 UserName = "Test User"
             };
 
             await service.SaveSettingsAsync(testSettings);
             var loadedSettings = await service.GetSettingsAsync();
 
-            Assert.Equal(testSettings.DefaultModelName, loadedSettings.DefaultModelName);
-            Assert.Equal(testSettings.DefaultLlmId, loadedSettings.DefaultLlmId);
+            Assert.Equal(testSettings.DefaultModel.ModelName, loadedSettings.DefaultModel.ModelName);
+            Assert.Equal(testSettings.DefaultModel.ServerId, loadedSettings.DefaultModel.ServerId);
             Assert.Equal(testSettings.UserName, loadedSettings.UserName);
         }
         finally

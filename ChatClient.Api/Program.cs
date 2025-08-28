@@ -46,8 +46,6 @@ builder.Services.AddSingleton<IOllamaClientService, OllamaService>();
 builder.Services.AddSingleton<IOpenAIClientService, OpenAIClientService>();
 builder.Services.AddSingleton<IServerConnectionTestService, ServerConnectionTestService>();
 builder.Services.AddSingleton<IOllamaKernelService, OllamaKernelService>();
-builder.Services.AddSingleton<IOllamaEmbeddingService>(sp =>
-    (IOllamaEmbeddingService)sp.GetRequiredService<IOllamaClientService>());
 builder.Services.AddSingleton<ChatClient.Api.Services.McpFunctionIndexService>();
 builder.Services.AddSingleton<AppForceLastUserReducer>();
 builder.Services.AddSingleton<ChatClient.Api.Services.IAppChatHistoryBuilder, ChatClient.Api.Services.AppChatHistoryBuilder>();

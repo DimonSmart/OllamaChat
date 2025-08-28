@@ -236,16 +236,17 @@ public class McpSamplingService(
             }
         }
         var userSettings = await _userSettingsService.GetSettingsAsync();
-        if (!string.IsNullOrEmpty(userSettings.DefaultModelName))
+        var defaultModel = userSettings.DefaultModel;
+        if (!string.IsNullOrEmpty(defaultModel.ModelName))
         {
-            if (availableModelNames.Contains(userSettings.DefaultModelName))
+            if (availableModelNames.Contains(defaultModel.ModelName))
             {
-                _logger.LogInformation("Using user's default model for MCP sampling: {ModelName}", userSettings.DefaultModelName);
-                return new ServerModel(serverId, userSettings.DefaultModelName);
+                _logger.LogInformation("Using user's default model for MCP sampling: {ModelName}", defaultModel.ModelName);
+                return new ServerModel(serverId, defaultModel.ModelName);
             }
             else
             {
-                _logger.LogWarning("User's default model '{ModelName}' not available", userSettings.DefaultModelName);
+                _logger.LogWarning("User's default model '{ModelName}' not available", defaultModel.ModelName);
             }
         }
         var errorMessage = "No valid model available for sampling. ";
@@ -257,9 +258,9 @@ public class McpSamplingService(
         {
             errorMessage += $"MCP server model '{mcpServerConfig.SamplingModel}' not found. ";
         }
-        if (!string.IsNullOrEmpty(userSettings.DefaultModelName))
+        if (!string.IsNullOrEmpty(defaultModel.ModelName))
         {
-            errorMessage += $"User default model '{userSettings.DefaultModelName}' not found. ";
+            errorMessage += $"User default model '{defaultModel.ModelName}' not found. ";
         }
         errorMessage += "Please configure a valid model in MCP server settings or user settings.";
 

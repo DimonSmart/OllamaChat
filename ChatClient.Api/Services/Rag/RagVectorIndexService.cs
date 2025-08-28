@@ -1,6 +1,7 @@
 #pragma warning disable SKEXP0050
 using ChatClient.Shared.Models;
 using ChatClient.Shared.Services;
+using ChatClient.Shared.Helpers;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
@@ -103,10 +104,10 @@ public sealed class RagVectorIndexService(
     private async Task<ServerModel> GetModelAsync()
     {
         var settings = await userSettings.GetSettingsAsync();
-        var modelName = string.IsNullOrWhiteSpace(settings.EmbeddingModelName)
-            ? LlmServerConfig.DefaultEmbeddingModel
-            : settings.EmbeddingModelName;
-        var server = settings.EmbeddingLlmId ?? Guid.Empty;
-        return new(server, modelName);
+        return ModelSelectionHelper.GetEffectiveEmbeddingModel(
+            settings.EmbeddingModel,
+            settings.DefaultModel,
+            "RAG vector indexing",
+            logger);
     }
 }

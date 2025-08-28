@@ -348,9 +348,9 @@
     {
         try
         {
-            availableFunctions = (await KernelService.GetAvailableFunctionsAsync()).ToList();
+            availableFunctions = (await KernelService.GetAvailableFunctionsAsync(CancellationToken.None)).ToList();
         }
-        catch
+        catch (Exception)
         {
             availableFunctions = new();
         }

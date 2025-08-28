@@ -46,7 +46,7 @@ else
             if (server == null)
                 return;
 
-            await ValidateServerAvailability(server, settings.DefaultLlmId!.Value);
+            await ValidateServerAvailability(server, settings.DefaultModel.ServerId);
         }
         catch (Exception ex)
         {
@@ -62,7 +62,7 @@ else
 
     private bool ValidateDefaultServer(UserSettings settings)
     {
-        if (settings.DefaultLlmId.HasValue)
+        if (settings.DefaultModel.ServerId != Guid.Empty)
             return true;
 
         Logger.LogWarning("No default server configured");
@@ -73,7 +73,7 @@ else
     private async Task<LlmServerConfig?> GetDefaultServerAsync(UserSettings settings)
     {
         var servers = await LlmServerConfigService.GetAllAsync();
-        return LlmServerConfigHelper.GetServerConfig(servers, settings.DefaultLlmId);
+        return LlmServerConfigHelper.GetServerConfig(servers, settings.DefaultModel.ServerId);
     }
 
     private async Task ValidateServerAvailability(LlmServerConfig server, Guid serverId)

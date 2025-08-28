@@ -1,5 +1,6 @@
 using ChatClient.Shared.Models;
 using ChatClient.Shared.Services;
+using ChatClient.Shared.Helpers;
 using Microsoft.Extensions.Configuration;
 using ModelContextProtocol.Client;
 using System.Collections.Concurrent;
@@ -17,7 +18,7 @@ public class McpFunctionIndexService
     private readonly IUserSettingsService _userSettingsService;
     private readonly IRagVectorIndexBackgroundService _indexBackgroundService;
     private readonly ILogger<McpFunctionIndexService> _logger;
-    private ServerModel _model = new(Guid.Empty, "nomic-embed-text");
+    private ServerModel _model = new(Guid.Empty, string.Empty);
     private readonly ConcurrentDictionary<string, float[]> _index = new();
     private readonly SemaphoreSlim _buildLock = new(1, 1);
 
@@ -140,11 +141,11 @@ public class McpFunctionIndexService
     private async Task<ServerModel> DetermineModelAsync()
     {
         var settings = await _userSettingsService.GetSettingsAsync();
-        var modelName = string.IsNullOrWhiteSpace(settings.EmbeddingModelName)
-            ? LlmServerConfig.DefaultEmbeddingModel
-            : settings.EmbeddingModelName;
-        var server = settings.EmbeddingLlmId ?? Guid.Empty;
-        return new(server, modelName);
+        return ModelSelectionHelper.GetEffectiveEmbeddingModel(
+            settings.EmbeddingModel,
+            settings.DefaultModel,
+            "MCP function indexing",
+            _logger);
     }
 
     public async Task<IReadOnlyList<string>> SelectRelevantFunctionsAsync(string query, int topK, CancellationToken cancellationToken = default, Guid? serverId = null)

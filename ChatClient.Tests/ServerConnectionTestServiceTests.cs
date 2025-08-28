@@ -111,7 +111,7 @@ public class ServerConnectionTestServiceTests
         var result = await service.TestConnectionAsync(server);
 
         // Assert
-        // Должен попробовать использовать ключ из конфигурации
+        // Should try to use the API key from configuration
         // Результат будет неудачным из-за неправильного ключа, но ошибка будет другой
         Assert.False(result.IsSuccessful);
         Assert.DoesNotContain("API Key is required", result.ErrorMessage);

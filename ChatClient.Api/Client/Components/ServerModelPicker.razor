@@ -63,8 +63,9 @@
         if (Value.ServerId == Guid.Empty && string.IsNullOrEmpty(Value.ModelName))
         {
             var settings = await UserSettingsService.GetSettingsAsync();
-            selectedServerId = settings.DefaultLlmId;
-            selectedModel = settings.DefaultModelName;
+            var defaultModel = settings.DefaultModel;
+            selectedServerId = defaultModel.ServerId == Guid.Empty ? null : defaultModel.ServerId;
+            selectedModel = defaultModel.ModelName;
             if (selectedServerId.HasValue)
                 await LoadModelsAsync(selectedServerId.Value);
             await NotifyValueChanged();

@@ -13,6 +13,7 @@
 @using ChatClient.Api.Client.Services.Formatters
 @using ChatClient.Api.Client.ViewModels
 @using ChatClient.Shared.Models
+@using ChatClient.Shared.Helpers
 @using ChatClient.Shared.Models.StopAgents
 @using Microsoft.AspNetCore.Components
 @using Microsoft.AspNetCore.Components.Web
@@ -28,6 +29,7 @@
 @inject IUserSettingsService UserSettingsService
 @inject IStopAgentFactory StopAgentFactory
 @inject IEnumerable<IChatFormatter> ChatFormatters
+@inject ILogger<MultiAgentChat> Logger
 
 <PageTitle>Chat with AI Assistant</PageTitle>
 
@@ -256,12 +258,12 @@
     [CascadingParameter(Name = "SelectedModel")]
     public ServerModel? SelectedModel { get; set; }
 
-    private string CurrentModelName => string.IsNullOrWhiteSpace(SelectedModel?.ModelName)
-        ? userSettings.DefaultModelName
-        : SelectedModel.ModelName;
-    private Guid CurrentServerId => SelectedModel?.ServerId != Guid.Empty
-        ? SelectedModel?.ServerId ?? Guid.Empty
-        : userSettings.DefaultLlmId ?? Guid.Empty;
+    private ServerModel CurrentModel => SelectedModel?.ServerId != Guid.Empty && !string.IsNullOrWhiteSpace(SelectedModel?.ModelName)
+        ? SelectedModel
+        : userSettings.DefaultModel;
+    
+    private string CurrentModelName => CurrentModel.ModelName;
+    private Guid CurrentServerId => CurrentModel.ServerId;
 
     private const string RoundRobinStopAgent = "RoundRobin";
     private const string RoundRobinSummaryStopAgent = "RoundRobinWithSummary";
@@ -400,10 +402,13 @@
 
         foreach (var agent in selectedAgents)
         {
-            if (string.IsNullOrWhiteSpace(agent.ModelName))
-                agent.ModelName = CurrentModelName;
-            if (!agent.LlmId.HasValue || agent.LlmId == Guid.Empty)
-                agent.LlmId = CurrentServerId;
+            var effectiveModel = ModelSelectionHelper.GetEffectiveAgentModel(
+                agent, 
+                CurrentModel, 
+                Logger);
+                
+            agent.ModelName = effectiveModel.ModelName;
+            agent.LlmId = effectiveModel.ServerId;
         }
 
         userSettings.StopAgentName = stopAgentName;
@@ -421,7 +426,7 @@
             {
                 if (string.IsNullOrWhiteSpace(agentId))
                 {
-                    Console.WriteLine($"Warning: Empty agent ID found in required agents for {stopAgentName}");
+                    Logger.LogWarning("Empty agent ID found in required agents for {StopAgentName}", stopAgentName);
                     continue;
                 }
 
@@ -429,12 +434,12 @@
                 if (agent is null)
                 {
                     missingAgents.Add(agentId);
-                    Console.WriteLine($"Error: Required agent '{agentId}' not found in available agents");
+                    Logger.LogError("Required agent '{AgentId}' not found in available agents", agentId);
                 }
                 else if (agentsForChat.All(a => a.AgentId != agent.AgentId))
                 {
                     agentsForChat.Add(agent);
-                    Console.WriteLine($"Added required agent: {agent.AgentName} ({agent.AgentId})");
+                    Logger.LogDebug("Added required agent: {AgentName} ({AgentId})", agent.AgentName, agent.AgentId);
                 }
             }
 
@@ -492,7 +497,7 @@
         }        
         catch (Exception ex)
         {
-            Console.WriteLine($"Error scrolling to bottom: {ex.Message}");
+            Logger.LogWarning(ex, "Failed to scroll to bottom");
         }
     }
 

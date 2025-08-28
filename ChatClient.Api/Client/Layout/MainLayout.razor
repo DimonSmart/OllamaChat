@@ -74,7 +74,7 @@
         isLLMAnswering = ChatService.IsAnswering;
 
         var settings = await UserSettingsService.GetSettingsAsync();
-        selectedModel = new(settings.DefaultLlmId ?? Guid.Empty, settings.DefaultModelName);
+        selectedModel = settings.DefaultModel;
 
         _theme = new()
         {
@@ -109,9 +109,7 @@
     private void NewChat()
     {
         if (ChatService.AgentDescriptions.Count == 0)
-        {
             return;
-        }
 
         ChatService.InitializeChat(ChatService.AgentDescriptions);
         if (!IsOnChatPage())
@@ -125,11 +123,12 @@
     private async Task OnModelChanged(ServerModel model)
     {
         var settings = await UserSettingsService.GetSettingsAsync();
-        var serverId = model.ServerId != Guid.Empty ? model.ServerId : settings.DefaultLlmId ?? Guid.Empty;
-        settings.DefaultLlmId = serverId;
-        settings.DefaultModelName = model.ModelName;
+        var selectedModel = model.ServerId != Guid.Empty && !string.IsNullOrWhiteSpace(model.ModelName)
+            ? model 
+            : settings.DefaultModel;
+        settings.DefaultModel = selectedModel;
         await UserSettingsService.SaveSettingsAsync(settings);
-        selectedModel = model with { ServerId = serverId };
+        this.selectedModel = selectedModel;
         StateHasChanged();
     }
 

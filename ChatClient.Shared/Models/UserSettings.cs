@@ -7,9 +7,6 @@ namespace ChatClient.Shared.Models;
 
 public class UserSettings
 {
-    [JsonPropertyName("defaultModelName")]
-    public string DefaultModelName { get; set; } = string.Empty;
-
     [JsonPropertyName("defaultChatMessage")]
     public string DefaultChatMessage { get; set; } = string.Empty;
 
@@ -22,8 +19,8 @@ public class UserSettings
     [JsonPropertyName("agentName")]
     public string AgentName { get; set; } = string.Empty;
 
-    [JsonPropertyName("defaultLlmId")]
-    public Guid? DefaultLlmId { get; set; }
+    [JsonPropertyName("defaultModel")]
+    public ServerModel DefaultModel { get; set; } = new(Guid.Empty, string.Empty);
 
     /// <summary>
     /// HTTP request timeout in seconds for MCP sampling requests (typically longer than regular API calls)
@@ -47,11 +44,8 @@ public class UserSettings
     /// <summary>
     /// Embedding model used for building the function index
     /// </summary>
-    [JsonPropertyName("embeddingModelName")]
-    public string EmbeddingModelName { get; set; } = string.Empty;
-
-    [JsonPropertyName("embeddingLlmId")]
-    public Guid? EmbeddingLlmId { get; set; }
+    [JsonPropertyName("embeddingModel")]
+    public ServerModel EmbeddingModel { get; set; } = new(Guid.Empty, string.Empty);
 
     [JsonPropertyName("ragLineChunkSize")]
     public int RagLineChunkSize { get; set; } = 256;

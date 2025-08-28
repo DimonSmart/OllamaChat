@@ -6,13 +6,13 @@ namespace ChatClient.Api.Services;
 public static class LlmServerConfigHelper
 {
     /// <summary>
-    /// Получает конфигурацию сервера по ID с возможностью fallback на сервер по умолчанию
+    /// Gets server configuration by ID with fallback to default server
     /// </summary>
-    /// <param name="llmServerConfigService">Сервис конфигурации LLM серверов</param>
-    /// <param name="userSettingsService">Сервис настроек пользователя</param>
-    /// <param name="serverId">ID сервера (может быть null или Guid.Empty)</param>
-    /// <param name="serverType">Тип сервера для фильтрации (опционально)</param>
-    /// <returns>Конфигурация сервера или null если не найдена</returns>
+    /// <param name="llmServerConfigService">LLM server configuration service</param>
+    /// <param name="userSettingsService">User settings service</param>
+    /// <param name="serverId">Server ID (can be null or Guid.Empty)</param>
+    /// <param name="serverType">Server type for filtering (optional)</param>
+    /// <returns>Server configuration or null if not found</returns>
     public static async Task<LlmServerConfig?> GetServerConfigAsync(
         ILlmServerConfigService llmServerConfigService,
         IUserSettingsService userSettingsService,
@@ -21,8 +21,8 @@ public static class LlmServerConfigHelper
     {
         var servers = await llmServerConfigService.GetAllAsync();
         var settings = await userSettingsService.GetSettingsAsync();
-        
-        return GetServerConfig(servers, settings.DefaultLlmId, serverId, serverType);
+
+        return GetServerConfig(servers, settings.DefaultModel.ServerId, serverId, serverType);
     }
 
     /// <summary>

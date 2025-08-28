@@ -8,6 +8,7 @@
 @inject IUserSettingsService UserSettingsService
 @inject IOllamaClientService OllamaService
 @inject ISnackbar Snackbar
+@inject ILogger<AppSettings> Logger
 
 <PageTitle>Application Settings</PageTitle>
 
@@ -144,16 +145,14 @@
     private Task OnDefaultModelChanged(ServerModel model)
     {
         _defaultModel = model;
-        _settings.DefaultLlmId = model.ServerId == Guid.Empty ? null : model.ServerId;
-        _settings.DefaultModelName = model.ModelName;
+        _settings.DefaultModel = model;
         return Task.CompletedTask;
     }
 
     private Task OnEmbeddingModelChanged(ServerModel model)
     {
         _embeddingModel = model;
-        _settings.EmbeddingLlmId = model.ServerId == Guid.Empty ? null : model.ServerId;
-        _settings.EmbeddingModelName = model.ModelName;
+        _settings.EmbeddingModel = model;
         return Task.CompletedTask;
     }
 
@@ -162,12 +161,12 @@
         try
         {
             _settings = await UserSettingsService.GetSettingsAsync();
-            _defaultModel = new(_settings.DefaultLlmId ?? Guid.Empty, _settings.DefaultModelName);
-            _embeddingModel = new(_settings.EmbeddingLlmId ?? Guid.Empty, _settings.EmbeddingModelName);
+            _defaultModel = _settings.DefaultModel;
+            _embeddingModel = _settings.EmbeddingModel;
         }
         catch (Exception ex)
         {
-            Console.Error.WriteLine($"Error loading settings: {ex.Message}");
+            Logger.LogError(ex, "Error loading settings");
             Snackbar.Add("Failed to load settings.", Severity.Error);
         }
     }
@@ -176,13 +175,13 @@
     {
         try
         {
-            if (_settings.EmbeddingLlmId.HasValue && !string.IsNullOrWhiteSpace(_settings.EmbeddingModelName))
+            if (_settings.EmbeddingModel.ServerId != Guid.Empty && !string.IsNullOrWhiteSpace(_settings.EmbeddingModel.ModelName))
             {
-                var models = await OllamaService.GetModelsAsync(_settings.EmbeddingLlmId.Value);
-                var exists = models.Any(m => m.Name.Equals(_settings.EmbeddingModelName, StringComparison.OrdinalIgnoreCase));
+                var models = await OllamaService.GetModelsAsync(_settings.EmbeddingModel.ServerId);
+                var exists = models.Any(m => m.Name.Equals(_settings.EmbeddingModel.ModelName, StringComparison.OrdinalIgnoreCase));
                 if (!exists)
                 {
-                    Snackbar.Add($"Embedding model '{_settings.EmbeddingModelName}' not found.", Severity.Error);
+                    Snackbar.Add($"Embedding model '{_settings.EmbeddingModel.ModelName}' not found.", Severity.Error);
                     return;
                 }
             }
@@ -192,7 +191,7 @@
         }
         catch (Exception ex)
         {
-            Console.Error.WriteLine($"Error saving settings: {ex.Message}");
+            Logger.LogError(ex, "Error saving settings");
             Snackbar.Add($"Failed to save settings: {ex.Message}", Severity.Error);
         }
     }

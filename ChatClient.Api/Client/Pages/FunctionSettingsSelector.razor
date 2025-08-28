@@ -90,8 +90,12 @@
     private void UpdateFunctionInSettings(string functionName, bool isSelected)
     {
         if (isSelected && !FunctionSettings.SelectedFunctions.Contains(functionName))
+        {
             FunctionSettings.SelectedFunctions.Add(functionName);
-        else if (!isSelected)
+            return;
+        }
+        
+        if (!isSelected)
             FunctionSettings.SelectedFunctions.Remove(functionName);
     }
 

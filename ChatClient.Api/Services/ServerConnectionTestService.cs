@@ -96,6 +96,7 @@ public class ServerConnectionTestService(ILogger<ServerConnectionTestService> lo
         }
         catch (JsonException)
         {
+            return null;
         }
         return null;
     }
@@ -211,6 +212,7 @@ public class ServerConnectionTestService(ILogger<ServerConnectionTestService> lo
         }
         catch (JsonException)
         {
+            return null;
         }
         return null;
     }
