@@ -53,7 +53,7 @@ public sealed class RagVectorIndexService(
             var embedding = await generator.GenerateAsync(paragraph, cancellationToken: cancellationToken);
             fragments.Add(new RagVectorFragment
             {
-                Id = $"{Path.GetFileName(sourceFilePath)}#{i:D5}",
+                Index = i,
                 Text = paragraph,
                 Vector = embedding.Vector.ToArray()
             });
