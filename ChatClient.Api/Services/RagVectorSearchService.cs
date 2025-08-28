@@ -30,11 +30,12 @@ public sealed class RagVectorSearchService(
     {
         var collection = _store.GetCollection<string, RagVectorRecord>(CollectionName(agentId));
         await collection.EnsureCollectionExistsAsync(ct);
-        await EnsureLoadedAsync(agentId, collection, ct);
+        if (!await EnsureLoadedAsync(agentId, collection, ct))
+            _logger.LogWarning("Failed to load RAG index for agent {AgentId}", agentId);
 
         var options = new VectorSearchOptions<RagVectorRecord> { IncludeVectors = false };
         var matches = new List<(RagVectorRecord, double)>();
-        await foreach (var result in collection.SearchAsync(queryVector, Math.Max(maxResults * 8, maxResults), options, ct))
+        await foreach (var result in collection.SearchAsync(queryVector, maxResults * 8, options, ct))
         {
             if (result.Score is double score)
                 matches.Add((result.Record, score));
@@ -64,53 +65,48 @@ public sealed class RagVectorSearchService(
         return new RagSearchResponse { Total = segments.Count, Results = results };
     }
 
-    private async Task EnsureLoadedAsync(Guid agentId, VectorStoreCollection<string, RagVectorRecord> collection, CancellationToken ct)
+    private async Task<bool> EnsureLoadedAsync(Guid agentId, VectorStoreCollection<string, RagVectorRecord> collection, CancellationToken ct)
     {
         if (_loaded.ContainsKey(agentId))
-            return;
+            return true;
+
         var indexDir = Path.Combine(_basePath, agentId.ToString(), "index");
         if (!Directory.Exists(indexDir))
         {
             _loaded[agentId] = true;
-            return;
+            return true;
         }
 
+        var success = true;
         foreach (var file in Directory.GetFiles(indexDir, "*.idx"))
         {
-            RagVectorIndex? index;
             try
             {
                 var json = await File.ReadAllTextAsync(file, ct);
-                index = JsonSerializer.Deserialize<RagVectorIndex>(json);
-            }
-            catch
-            {
-                continue;
-            }
-            if (index?.Fragments.Count is null or 0)
-                continue;
+                var index = JsonSerializer.Deserialize<RagVectorIndex>(json);
+                if (index?.Fragments.Count is null or 0)
+                    continue;
 
-            var records = new List<RagVectorRecord>();
-            foreach (var fragment in index.Fragments)
-            {
-                records.Add(new RagVectorRecord
+                var records = index.Fragments.Select(fragment => new RagVectorRecord
                 {
-                    Id = fragment.Id,
+                    Id = $"{index.SourceFileName}#{fragment.Index:D5}",
                     File = index.SourceFileName,
-                    Index = ExtractIndex(fragment.Id),
+                    Index = fragment.Index,
                     Text = fragment.Text,
                     Embedding = new ReadOnlyMemory<float>(fragment.Vector)
-                });
-            }
-            await collection.UpsertAsync(records, ct);
-        }
-        _loaded[agentId] = true;
-    }
+                }).ToList();
 
-    private static int ExtractIndex(string id)
-    {
-        var hash = id.LastIndexOf('#');
-        return hash >= 0 && int.TryParse(id[(hash + 1)..], out var idx) ? idx : 0;
+                await collection.UpsertAsync(records, ct);
+            }
+            catch (Exception ex)
+            {
+                success = false;
+                _logger.LogError(ex, "Failed to load index file {File}", file);
+            }
+        }
+
+        _loaded[agentId] = true;
+        return success;
     }
 
     private static string CollectionName(Guid id) => $"agent_{id:N}";
