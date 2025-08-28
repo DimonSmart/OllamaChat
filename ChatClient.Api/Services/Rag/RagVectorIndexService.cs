@@ -2,6 +2,7 @@
 using ChatClient.Shared.Models;
 using ChatClient.Shared.Services;
 using Microsoft.Extensions.AI;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using Microsoft.SemanticKernel;
 using Microsoft.SemanticKernel.Text;
@@ -38,9 +39,12 @@ public sealed class RagVectorIndexService(
         var kernel = builder.Build();
 
         var generator = kernel.GetRequiredService<IEmbeddingGenerator<string, Embedding<float>>>();
-
-        var lines = TextChunker.SplitPlainTextLines(text, 256, null);
-        var paragraphs = TextChunker.SplitPlainTextParagraphs(lines, 512, 64, string.Empty, null).ToList();
+        var settings = await userSettings.GetSettingsAsync();
+        var maxTokensPerLine = settings.RagLineChunkSize;
+        var maxTokensPerParagraph = settings.RagParagraphChunkSize;
+        var paragraphOverlap = settings.RagParagraphOverlap;
+        var lines = TextChunker.SplitPlainTextLines(text, maxTokensPerLine, null);
+        var paragraphs = TextChunker.SplitPlainTextParagraphs(lines, maxTokensPerParagraph, paragraphOverlap, string.Empty, null).ToList();
         var total = paragraphs.Count;
 
         logger.LogInformation("Building index for {File} with {Count} fragments", sourceFilePath, total);

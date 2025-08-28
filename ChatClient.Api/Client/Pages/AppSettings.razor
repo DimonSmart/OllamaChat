@@ -100,6 +100,10 @@
                         <MudText Typo="Typo.caption" Class="mt-2">
                             Model used for generating embeddings.
                         </MudText>
+                        <MudNumericField T="int" @bind-Value="_settings.RagLineChunkSize" Label="Line Chunk Size" Min="1" Variant="Variant.Outlined" Class="mt-4" />
+                        <MudNumericField T="int" @bind-Value="_settings.RagParagraphChunkSize" Label="Paragraph Chunk Size" Min="1" Variant="Variant.Outlined" Class="mt-4" />
+                        <MudNumericField T="int" @bind-Value="_settings.RagParagraphOverlap" Label="Paragraph Overlap" Min="0" Variant="Variant.Outlined" Class="mt-4" />
+                        <MudText Typo="Typo.caption" Class="mt-2">Text chunking parameters for building RAG indexes.</MudText>
                     </MudCardContent>
                 </MudCard>
 

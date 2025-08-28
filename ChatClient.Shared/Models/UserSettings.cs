@@ -56,6 +56,15 @@ public class UserSettings
     [JsonPropertyName("embeddingLlmId")]
     public Guid? EmbeddingLlmId { get; set; }
 
+    [JsonPropertyName("ragLineChunkSize")]
+    public int RagLineChunkSize { get; set; } = 256;
+
+    [JsonPropertyName("ragParagraphChunkSize")]
+    public int RagParagraphChunkSize { get; set; } = 512;
+
+    [JsonPropertyName("ragParagraphOverlap")]
+    public int RagParagraphOverlap { get; set; } = 64;
+
     [JsonPropertyName("stopAgentName")]
     public string StopAgentName { get; set; } = string.Empty;
 

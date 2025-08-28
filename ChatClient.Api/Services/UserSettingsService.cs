@@ -11,6 +11,7 @@ public class UserSettingsService : IUserSettingsService
 {
     private readonly string _settingsFilePath;
     private readonly ILogger<UserSettingsService> _logger;
+    private readonly IConfiguration _configuration;
     private readonly JsonSerializerOptions _jsonOptions = new()
     {
         WriteIndented = true,
@@ -21,6 +22,7 @@ public class UserSettingsService : IUserSettingsService
 
     public UserSettingsService(IConfiguration configuration, ILogger<UserSettingsService> logger)
     {
+        _configuration = configuration;
         _logger = logger;
 
         var settingsDir = configuration["UserSettings:Directory"] ?? Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "UserData");
@@ -36,13 +38,55 @@ public class UserSettingsService : IUserSettingsService
         if (!File.Exists(_settingsFilePath))
         {
             _logger.LogInformation("Settings file not found. Creating a new one with default settings");
-            var defaultSettings = new UserSettings();
+            var defaultSettings = CreateDefaultSettings();
             await SaveSettingsAsync(defaultSettings);
             return defaultSettings;
         }
 
         var json = await File.ReadAllTextAsync(_settingsFilePath);
-        return JsonSerializer.Deserialize<UserSettings>(json, _jsonOptions) ?? new UserSettings();
+        var settings = JsonSerializer.Deserialize<UserSettings>(json, _jsonOptions) ?? CreateDefaultSettings();
+
+        var defaults = GetDefaultRagValues();
+        var updated = false;
+        if (settings.RagLineChunkSize <= 0)
+        {
+            settings.RagLineChunkSize = defaults.line;
+            updated = true;
+        }
+        if (settings.RagParagraphChunkSize <= 0)
+        {
+            settings.RagParagraphChunkSize = defaults.paragraph;
+            updated = true;
+        }
+        if (settings.RagParagraphOverlap <= 0)
+        {
+            settings.RagParagraphOverlap = defaults.overlap;
+            updated = true;
+        }
+
+        if (updated)
+            await SaveSettingsAsync(settings);
+
+        return settings;
+    }
+
+    private UserSettings CreateDefaultSettings()
+    {
+        var defaults = GetDefaultRagValues();
+        return new UserSettings
+        {
+            RagLineChunkSize = defaults.line,
+            RagParagraphChunkSize = defaults.paragraph,
+            RagParagraphOverlap = defaults.overlap
+        };
+    }
+
+    private (int line, int paragraph, int overlap) GetDefaultRagValues()
+    {
+        var line = _configuration.GetValue<int?>("RagIndex:MaxTokensPerLine") ?? 256;
+        var paragraph = _configuration.GetValue<int?>("RagIndex:MaxTokensPerParagraph") ?? 512;
+        var overlap = _configuration.GetValue<int?>("RagIndex:ParagraphOverlap") ?? 64;
+        return (line, paragraph, overlap);
     }
 
     public async Task SaveSettingsAsync(UserSettings settings)
