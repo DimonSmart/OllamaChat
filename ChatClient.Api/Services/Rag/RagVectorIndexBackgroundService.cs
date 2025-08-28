@@ -1,7 +1,7 @@
 using ChatClient.Shared.Models;
 using ChatClient.Shared.Services;
 
-namespace ChatClient.Api.Services;
+namespace ChatClient.Api.Services.Rag;
 
 public sealed class RagVectorIndexBackgroundService(
     IServiceScopeFactory scopeFactory,
@@ -12,7 +12,7 @@ public sealed class RagVectorIndexBackgroundService(
     private readonly IConfiguration _configuration = configuration;
     private readonly ILogger<RagVectorIndexBackgroundService> _logger = logger;
     private readonly SemaphoreSlim _signal = new(0, 1);
-    private readonly object _sync = new();
+    private readonly Lock _sync = new();
     private bool _rescanRequested;
     private bool _running;
     private RagVectorIndexStatus? _currentStatus;

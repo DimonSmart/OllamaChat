@@ -1,4 +1,4 @@
-using ChatClient.Api.Services;
+using ChatClient.Api.Services.Rag;
 using ChatClient.Shared.Services;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging.Abstractions;

@@ -8,7 +8,7 @@ using Microsoft.SemanticKernel.Text;
 using System.Linq;
 using System.Text.Json;
 
-namespace ChatClient.Api.Services;
+namespace ChatClient.Api.Services.Rag;
 
 public sealed class RagVectorIndexService(
     IUserSettingsService userSettings,

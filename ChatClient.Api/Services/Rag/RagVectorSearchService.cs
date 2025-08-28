@@ -10,7 +10,7 @@ using System.IO;
 using System.Text;
 using System.Text.Json;
 
-namespace ChatClient.Api.Services;
+namespace ChatClient.Api.Services.Rag;
 
 public sealed class RagVectorSearchService(
     InMemoryVectorStore store,
