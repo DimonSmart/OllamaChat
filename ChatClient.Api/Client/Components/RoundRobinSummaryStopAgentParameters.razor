@@ -58,7 +58,6 @@ else
 
     protected override void OnInitialized()
     {
-        // If no summary agent is selected and we have agents available, select the first suitable one
         if (string.IsNullOrWhiteSpace(TypedOptions.SummaryAgent) && Context.Agents.Any())
         {
             // Try to find a referee-type agent first

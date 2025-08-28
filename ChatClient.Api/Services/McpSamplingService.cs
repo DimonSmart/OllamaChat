@@ -26,6 +26,7 @@ public class McpSamplingService(
     IOllamaKernelService ollamaKernelService,
     IOpenAIClientService openAIClientService,
     IUserSettingsService userSettingsService,
+    ILlmServerConfigService llmServerConfigService,
     AppForceLastUserReducer reducer,
     ILogger<HttpLoggingHandler> httpLogger,
     ILogger<McpSamplingService> logger)
@@ -34,6 +35,7 @@ public class McpSamplingService(
     private readonly IOllamaKernelService _ollamaKernelService = ollamaKernelService;
     private readonly IOpenAIClientService _openAIClientService = openAIClientService;
     private readonly IUserSettingsService _userSettingsService = userSettingsService;
+    private readonly ILlmServerConfigService _llmServerConfigService = llmServerConfigService;
     private readonly AppForceLastUserReducer _reducer = reducer;
     private readonly ILogger<HttpLoggingHandler> _httpLogger = httpLogger;
     private readonly ILogger<McpSamplingService> _logger = logger;
@@ -155,7 +157,7 @@ public class McpSamplingService(
 
     private async Task<Kernel> CreateKernelAsync(ServerModel model, TimeSpan timeout)
     {
-        var server = await LlmServerConfigHelper.GetServerConfigAsync(_userSettingsService, model.ServerId)
+        var server = await LlmServerConfigHelper.GetServerConfigAsync(_llmServerConfigService, _userSettingsService, model.ServerId)
             ?? throw new InvalidOperationException("No server configuration found for the specified model");
 
         var builder = Kernel.CreateBuilder();
@@ -234,16 +236,17 @@ public class McpSamplingService(
             }
         }
         var userSettings = await _userSettingsService.GetSettingsAsync();
-        if (!string.IsNullOrEmpty(userSettings.DefaultModelName))
+        var defaultModel = userSettings.DefaultModel;
+        if (!string.IsNullOrEmpty(defaultModel.ModelName))
         {
-            if (availableModelNames.Contains(userSettings.DefaultModelName))
+            if (availableModelNames.Contains(defaultModel.ModelName))
             {
-                _logger.LogInformation("Using user's default model for MCP sampling: {ModelName}", userSettings.DefaultModelName);
-                return new ServerModel(serverId, userSettings.DefaultModelName);
+                _logger.LogInformation("Using user's default model for MCP sampling: {ModelName}", defaultModel.ModelName);
+                return new ServerModel(serverId, defaultModel.ModelName);
             }
             else
             {
-                _logger.LogWarning("User's default model '{ModelName}' not available", userSettings.DefaultModelName);
+                _logger.LogWarning("User's default model '{ModelName}' not available", defaultModel.ModelName);
             }
         }
         var errorMessage = "No valid model available for sampling. ";
@@ -255,9 +258,9 @@ public class McpSamplingService(
         {
             errorMessage += $"MCP server model '{mcpServerConfig.SamplingModel}' not found. ";
         }
-        if (!string.IsNullOrEmpty(userSettings.DefaultModelName))
+        if (!string.IsNullOrEmpty(defaultModel.ModelName))
         {
-            errorMessage += $"User default model '{userSettings.DefaultModelName}' not found. ";
+            errorMessage += $"User default model '{defaultModel.ModelName}' not found. ";
         }
         errorMessage += "Please configure a valid model in MCP server settings or user settings.";
 

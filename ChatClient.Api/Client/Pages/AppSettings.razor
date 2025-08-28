@@ -8,6 +8,7 @@
 @inject IUserSettingsService UserSettingsService
 @inject IOllamaClientService OllamaService
 @inject ISnackbar Snackbar
+@inject ILogger<AppSettings> Logger
 
 <PageTitle>Application Settings</PageTitle>
 
@@ -75,19 +76,6 @@
                     </MudCard>
 
                 <MudCard Class="mb-4" Elevation="1">
-                    <MudCardHeader Class="pb-2">
-                        <MudText Class="section-header">Function Auto-Selection</MudText>
-                    </MudCardHeader>
-                    <MudCardContent Class="pt-0">
-                        <MudNumericField T="int" @bind-Value="_settings.DefaultAutoSelectCount" Min="0" Max="10"
-                                         Variant="Variant.Outlined" Class="mt-2" Label="Auto-select Count" />
-                        <MudText Typo="Typo.caption" Class="mt-2">
-                            Number of functions to auto-select for new chats. Set to 0 to disable auto-selection.
-                        </MudText>
-                    </MudCardContent>
-                </MudCard>
-
-                <MudCard Class="mb-4" Elevation="1">
                     <MudCardContent Class="pt-0">
                         <MudTextField T="string" Label="Stop Agent Name" @bind-Value="_settings.StopAgentName"
                                       Variant="Variant.Outlined" HelperText="Agent name that triggers chat termination" />
@@ -100,6 +88,10 @@
                         <MudText Typo="Typo.caption" Class="mt-2">
                             Model used for generating embeddings.
                         </MudText>
+                        <MudNumericField T="int" @bind-Value="_settings.RagLineChunkSize" Label="Line Chunk Size" Min="1" Variant="Variant.Outlined" Class="mt-4" />
+                        <MudNumericField T="int" @bind-Value="_settings.RagParagraphChunkSize" Label="Paragraph Chunk Size" Min="1" Variant="Variant.Outlined" Class="mt-4" />
+                        <MudNumericField T="int" @bind-Value="_settings.RagParagraphOverlap" Label="Paragraph Overlap" Min="0" Variant="Variant.Outlined" Class="mt-4" />
+                        <MudText Typo="Typo.caption" Class="mt-2">Text chunking parameters for building RAG indexes.</MudText>
                     </MudCardContent>
                 </MudCard>
 
@@ -140,16 +132,14 @@
     private Task OnDefaultModelChanged(ServerModel model)
     {
         _defaultModel = model;
-        _settings.DefaultLlmId = model.ServerId == Guid.Empty ? null : model.ServerId;
-        _settings.DefaultModelName = model.ModelName;
+        _settings.DefaultModel = model;
         return Task.CompletedTask;
     }
 
     private Task OnEmbeddingModelChanged(ServerModel model)
     {
         _embeddingModel = model;
-        _settings.EmbeddingLlmId = model.ServerId == Guid.Empty ? null : model.ServerId;
-        _settings.EmbeddingModelName = model.ModelName;
+        _settings.EmbeddingModel = model;
         return Task.CompletedTask;
     }
 
@@ -158,12 +148,12 @@
         try
         {
             _settings = await UserSettingsService.GetSettingsAsync();
-            _defaultModel = new(_settings.DefaultLlmId ?? Guid.Empty, _settings.DefaultModelName);
-            _embeddingModel = new(_settings.EmbeddingLlmId ?? Guid.Empty, _settings.EmbeddingModelName);
+            _defaultModel = _settings.DefaultModel;
+            _embeddingModel = _settings.EmbeddingModel;
         }
         catch (Exception ex)
         {
-            Console.Error.WriteLine($"Error loading settings: {ex.Message}");
+            Logger.LogError(ex, "Error loading settings");
             Snackbar.Add("Failed to load settings.", Severity.Error);
         }
     }
@@ -172,13 +162,13 @@
     {
         try
         {
-            if (_settings.EmbeddingLlmId.HasValue && !string.IsNullOrWhiteSpace(_settings.EmbeddingModelName))
+            if (_settings.EmbeddingModel.ServerId != Guid.Empty && !string.IsNullOrWhiteSpace(_settings.EmbeddingModel.ModelName))
             {
-                var models = await OllamaService.GetModelsAsync(_settings.EmbeddingLlmId.Value);
-                var exists = models.Any(m => m.Name.Equals(_settings.EmbeddingModelName, StringComparison.OrdinalIgnoreCase));
+                var models = await OllamaService.GetModelsAsync(_settings.EmbeddingModel.ServerId);
+                var exists = models.Any(m => m.Name.Equals(_settings.EmbeddingModel.ModelName, StringComparison.OrdinalIgnoreCase));
                 if (!exists)
                 {
-                    Snackbar.Add($"Embedding model '{_settings.EmbeddingModelName}' not found.", Severity.Error);
+                    Snackbar.Add($"Embedding model '{_settings.EmbeddingModel.ModelName}' not found.", Severity.Error);
                     return;
                 }
             }
@@ -188,7 +178,7 @@
         }
         catch (Exception ex)
         {
-            Console.Error.WriteLine($"Error saving settings: {ex.Message}");
+            Logger.LogError(ex, "Error saving settings");
             Snackbar.Add($"Failed to save settings: {ex.Message}", Severity.Error);
         }
     }

@@ -1,6 +1,7 @@
 using ChatClient.Api.Client.Services;
 using ChatClient.Shared.Models;
 using ChatClient.Shared.Services;
+using ChatClient.Shared.Helpers;
 using DimonSmart.AiUtils;
 using Microsoft.SemanticKernel;
 using Microsoft.SemanticKernel.ChatCompletion;
@@ -85,14 +86,17 @@ public class AppChatHistoryBuilder(
             if (files.Any(f => f.HasIndex))
             {
                 var settings = await settingsService.GetSettingsAsync();
-                var modelName = string.IsNullOrWhiteSpace(settings.EmbeddingModelName)
-                    ? _configuration["Ollama:EmbeddingModel"] ?? "nomic-embed-text"
-                    : settings.EmbeddingModelName;
-                var server = settings.EmbeddingLlmId ?? serverId ?? settings.DefaultLlmId ?? Guid.Empty;
+                var embeddingModel = ModelSelectionHelper.GetEffectiveEmbeddingModel(
+                    settings.EmbeddingModel,
+                    settings.DefaultModel,
+                    "RAG search",
+                    logger);
+                    
+                var server = serverId ?? embeddingModel.ServerId;
                 var query = ThinkTagParser.ExtractThinkAnswer(lastUser.Content).Answer;
                 try
                 {
-                    var embedding = await _ollama.GenerateEmbeddingAsync(query, new ServerModel(server, modelName), cancellationToken);
+                    var embedding = await _ollama.GenerateEmbeddingAsync(query, new ServerModel(server, embeddingModel.ModelName), cancellationToken);
                     var response = await _ragSearch.SearchAsync(agentId, new ReadOnlyMemory<float>(embedding), 5, cancellationToken);
                     if (response.Results.Count > 0)
                     {

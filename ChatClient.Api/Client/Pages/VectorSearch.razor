@@ -2,9 +2,11 @@
 @using ChatClient.Api.Services
 @using ChatClient.Shared.Services
 @using ChatClient.Shared.Models
+@using ChatClient.Shared.Helpers
 @using System.Linq
 @using Microsoft.JSInterop
 @inject ISnackbar Snackbar
+@inject ILogger<VectorSearch> Logger
 @implements IDisposable
 
 <PageTitle>Vector Search</PageTitle>
@@ -96,10 +98,11 @@
             allTotalSize += files.Sum(f => f.Size);
         }
         var settings = await UserSettingsService.GetSettingsAsync();
-        var modelName = string.IsNullOrWhiteSpace(settings.EmbeddingModelName)
-            ? Configuration["Ollama:EmbeddingModel"] ?? "nomic-embed-text"
-            : settings.EmbeddingModelName;
-        embeddingModel = new(settings.EmbeddingLlmId ?? Guid.Empty, modelName);
+        embeddingModel = ModelSelectionHelper.GetEffectiveEmbeddingModel(
+            settings.EmbeddingModel,
+            settings.DefaultModel,
+            "Vector search UI",
+            Logger);
         statusTimer = new(1000);
         statusTimer.Elapsed += (_, _) =>
         {
@@ -137,7 +140,7 @@
             if (model.ServerId == Guid.Empty)
             {
                 var settings = await UserSettingsService.GetSettingsAsync();
-                model = model with { ServerId = settings.DefaultLlmId ?? Guid.Empty };
+                model = model with { ServerId = settings.DefaultModel.ServerId };
             }
             var embedding = await OllamaService.GenerateEmbeddingAsync(text, model);
             var response = await VectorSearchService.SearchAsync(selectedAgent.Id, new ReadOnlyMemory<float>(embedding));

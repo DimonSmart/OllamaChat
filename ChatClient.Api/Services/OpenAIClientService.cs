@@ -9,9 +9,11 @@ namespace ChatClient.Api.Services;
 
 public class OpenAIClientService(
     IUserSettingsService userSettingsService,
+    ILlmServerConfigService llmServerConfigService,
     ILogger<OpenAIClientService> logger) : IOpenAIClientService
 {
     private readonly IUserSettingsService _userSettingsService = userSettingsService;
+    private readonly ILlmServerConfigService _llmServerConfigService = llmServerConfigService;
     private readonly ILogger<OpenAIClientService> _logger = logger;
 
     public async Task<IChatCompletionService> GetClientAsync(ServerModel serverModel, CancellationToken cancellationToken = default)
@@ -22,7 +24,7 @@ public class OpenAIClientService(
         if (string.IsNullOrWhiteSpace(serverModel.ModelName))
             throw new ArgumentException("ModelName cannot be null or empty", nameof(serverModel));
 
-        var server = await LlmServerConfigHelper.GetServerConfigAsync(_userSettingsService, serverModel.ServerId, ServerType.ChatGpt);
+        var server = await LlmServerConfigHelper.GetServerConfigAsync(_llmServerConfigService, _userSettingsService, serverModel.ServerId, ServerType.ChatGpt);
         if (server == null)
         {
             throw new InvalidOperationException($"No OpenAI server configuration found for serverId: {serverModel.ServerId}");
@@ -48,7 +50,7 @@ public class OpenAIClientService(
 
         try
         {
-            var server = await LlmServerConfigHelper.GetServerConfigAsync(_userSettingsService, serverId, ServerType.ChatGpt);
+            var server = await LlmServerConfigHelper.GetServerConfigAsync(_llmServerConfigService, _userSettingsService, serverId, ServerType.ChatGpt);
             if (server == null)
             {
                 throw new InvalidOperationException($"No OpenAI server configuration found for serverId: {serverId}");

@@ -12,8 +12,8 @@ using System.Text;
 namespace ChatClient.Api.Services;
 
 public sealed class OllamaService(
-    IConfiguration configuration,
     IUserSettingsService userSettingsService,
+    ILlmServerConfigService llmServerConfigService,
     IServiceProvider serviceProvider,
     ILogger<OllamaService> logger) : IOllamaClientService, IDisposable
 {
@@ -106,49 +106,31 @@ public sealed class OllamaService(
 
     private async Task<LlmServerConfig> GetServerConfigAsync(Guid serverId)
     {
-        var serverConfig = await TryGetOllamaServerAsync(serverId);
-        if (serverConfig != null)
-            return serverConfig;
+        logger.LogDebug("Attempting to get Ollama server config for ID: {ServerId}", serverId);
 
-        var settings = await userSettingsService.GetSettingsAsync();
-        if (settings.DefaultLlmId.HasValue)
+        var serverConfig = await LlmServerConfigHelper.GetServerConfigAsync(
+            llmServerConfigService,
+            userSettingsService,
+            serverId,
+            ServerType.Ollama);
+
+        if (serverConfig != null)
         {
-            var defaultConfig = await TryGetOllamaServerAsync(settings.DefaultLlmId.Value);
-            if (defaultConfig != null)
-                return defaultConfig;
+            logger.LogDebug("Found Ollama server: {ServerName} (ID: {ServerId}, Type: {ServerType})",
+                serverConfig.Name, serverConfig.Id, serverConfig.ServerType);
+            return serverConfig;
         }
 
-        var firstServer = settings.Llms.FirstOrDefault();
-        if (firstServer != null)
-            return firstServer;
-
+        logger.LogWarning("No Ollama server found for ID {ServerId}. Creating fallback configuration.", serverId);
         return CreateFallbackServerConfig();
-    }
-
-    private async Task<LlmServerConfig?> TryGetOllamaServerAsync(Guid serverId)
-    {
-        if (serverId == Guid.Empty)
-            return null;
-
-        var userSettings = await userSettingsService.GetSettingsAsync();
-        var userServer = userSettings.Llms.FirstOrDefault(s => s.Id == serverId);
-        if (userServer?.ServerType == ServerType.Ollama)
-            return userServer;
-
-        logger.LogWarning("Ollama server {ServerId} not found. Using fallback configuration.", serverId);
-        return null;
     }
 
     private LlmServerConfig CreateFallbackServerConfig()
     {
-        var baseUrl = configuration["Ollama:BaseUrl"];
-        if (string.IsNullOrWhiteSpace(baseUrl))
-            baseUrl = LlmServerConfig.DefaultOllamaUrl;
-
         return new LlmServerConfig
         {
             Id = Guid.Empty,
-            BaseUrl = baseUrl,
+            BaseUrl = LlmServerConfig.DefaultOllamaUrl,
             ServerType = ServerType.Ollama,
             Name = "Default"
         };

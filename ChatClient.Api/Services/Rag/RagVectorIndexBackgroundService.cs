@@ -65,7 +65,7 @@ public sealed class RagVectorIndexBackgroundService(
             var indexService = scope.ServiceProvider.GetRequiredService<IRagVectorIndexService>();
             var settingsService = scope.ServiceProvider.GetRequiredService<IUserSettingsService>();
             var settings = await settingsService.GetSettingsAsync();
-            var embedServer = settings.EmbeddingLlmId ?? Guid.Empty;
+            var embedServer = settings.EmbeddingModel.ServerId;
 
             var basePath = _configuration["RagFiles:BasePath"] ?? Path.Combine("Data", "agents");
             var pending = new List<(Guid agentId, string source, string index, string fileName)>();

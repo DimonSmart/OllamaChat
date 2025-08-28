@@ -11,6 +11,7 @@ public class ModelsController(
     IOllamaClientService ollamaService,
     IOpenAIClientService openAIService,
     IUserSettingsService userSettingsService,
+    ILlmServerConfigService llmServerConfigService,
     ILogger<ModelsController> logger) : ControllerBase
 {
     [HttpGet]
@@ -21,7 +22,7 @@ public class ModelsController(
             if (serverId == null || serverId == Guid.Empty)
                 throw new ArgumentException("ServerId is required and cannot be empty");
 
-            var serverType = await LlmServerConfigHelper.GetServerTypeAsync(userSettingsService, serverId);
+            var serverType = await LlmServerConfigHelper.GetServerTypeAsync(llmServerConfigService, userSettingsService, serverId);
 
             if (serverType == ServerType.ChatGpt)
             {

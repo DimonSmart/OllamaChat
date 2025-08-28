@@ -9,6 +9,7 @@ public enum ServerType
 public class LlmServerConfig
 {
     public const string DefaultOllamaUrl = "http://localhost:11434";
+    public const string DefaultEmbeddingModel = "nomic-embed-text";
 
     public Guid? Id { get; set; }
     public string Name { get; set; } = string.Empty;

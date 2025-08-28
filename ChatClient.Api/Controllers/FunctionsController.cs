@@ -10,9 +10,9 @@ namespace ChatClient.Api.Controllers;
 public class FunctionsController(KernelService kernelService) : ControllerBase
 {
     [HttpGet]
-    public async Task<ActionResult<IEnumerable<FunctionInfo>>> GetAvailableFunctions()
+    public async Task<ActionResult<IEnumerable<FunctionInfo>>> GetAvailableFunctions(CancellationToken cancellationToken)
     {
-        var functions = await kernelService.GetAvailableFunctionsAsync();
+        var functions = await kernelService.GetAvailableFunctionsAsync(cancellationToken);
         return Ok(functions);
     }
 }

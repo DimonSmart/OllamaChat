@@ -10,6 +10,7 @@ namespace ChatClient.Api.Controllers;
 public class ServerTestController(
     IServerConnectionTestService connectionTestService,
     IUserSettingsService userSettingsService,
+    ILlmServerConfigService llmServerConfigService,
     ILogger<ServerTestController> logger) : ControllerBase
 {
     [HttpPost("test-connection")]
@@ -44,7 +45,7 @@ public class ServerTestController(
     {
         try
         {
-            var server = await LlmServerConfigHelper.GetServerConfigAsync(userSettingsService, serverId);
+            var server = await LlmServerConfigHelper.GetServerConfigAsync(llmServerConfigService, userSettingsService, serverId);
             if (server == null)
             {
                 return NotFound(ServerConnectionTestResult.Failure("Server configuration not found"));

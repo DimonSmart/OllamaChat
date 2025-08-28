@@ -6,6 +6,7 @@ namespace ChatClient.Api.Services;
 public class OllamaServerAvailabilityService(
     IOllamaClientService ollamaService,
     IUserSettingsService userSettingsService,
+    ILlmServerConfigService llmServerConfigService,
     ILogger<OllamaServerAvailabilityService> logger)
 {
     public async Task<OllamaServerStatus> CheckOllamaStatusAsync(Guid? serverId = null)
@@ -13,9 +14,9 @@ public class OllamaServerAvailabilityService(
         try
         {
             var settings = await userSettingsService.GetSettingsAsync();
-            var serverToCheck = serverId ?? settings.DefaultLlmId;
+            var serverToCheck = serverId ?? settings.DefaultModel.ServerId;
 
-            if (!serverToCheck.HasValue)
+            if (serverToCheck == Guid.Empty)
             {
                 logger.LogWarning("No default server configured");
                 return new OllamaServerStatus
@@ -26,10 +27,11 @@ public class OllamaServerAvailabilityService(
             }
 
             // Find server in settings
-            var server = settings.Llms.FirstOrDefault(s => s.Id == serverToCheck.Value);
+            var servers = await llmServerConfigService.GetAllAsync();
+            var server = servers.FirstOrDefault(s => s.Id == serverToCheck);
             if (server == null)
             {
-                logger.LogWarning("Server not found: {ServerId}", serverToCheck.Value);
+                logger.LogWarning("Server not found: {ServerId}", serverToCheck);
                 return new OllamaServerStatus
                 {
                     IsAvailable = false,
@@ -49,7 +51,7 @@ public class OllamaServerAvailabilityService(
                 };
             }
 
-            var models = await ollamaService.GetModelsAsync(serverToCheck.Value);
+            var models = await ollamaService.GetModelsAsync(serverToCheck);
             logger.LogInformation("Ollama server '{ServerName}' is available with {ModelCount} models",
                 server.Name, models.Count);
 

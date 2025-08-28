@@ -1,7 +1,9 @@
 #pragma warning disable SKEXP0050
 using ChatClient.Shared.Models;
 using ChatClient.Shared.Services;
+using ChatClient.Shared.Helpers;
 using Microsoft.Extensions.AI;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using Microsoft.SemanticKernel;
 using Microsoft.SemanticKernel.Text;
@@ -12,7 +14,7 @@ namespace ChatClient.Api.Services.Rag;
 
 public sealed class RagVectorIndexService(
     IUserSettingsService userSettings,
-    IConfiguration configuration,
+    ILlmServerConfigService llmServerConfigService,
     ILogger<RagVectorIndexService> logger) : IRagVectorIndexService
 {
     public async Task BuildIndexAsync(Guid agentId, string sourceFilePath, string indexFilePath, IProgress<RagVectorIndexStatus>? progress = null, CancellationToken cancellationToken = default, Guid serverId = default)
@@ -38,9 +40,12 @@ public sealed class RagVectorIndexService(
         var kernel = builder.Build();
 
         var generator = kernel.GetRequiredService<IEmbeddingGenerator<string, Embedding<float>>>();
-
-        var lines = TextChunker.SplitPlainTextLines(text, 256, null);
-        var paragraphs = TextChunker.SplitPlainTextParagraphs(lines, 512, 64, string.Empty, null).ToList();
+        var settings = await userSettings.GetSettingsAsync();
+        var maxTokensPerLine = settings.RagLineChunkSize;
+        var maxTokensPerParagraph = settings.RagParagraphChunkSize;
+        var paragraphOverlap = settings.RagParagraphOverlap;
+        var lines = TextChunker.SplitPlainTextLines(text, maxTokensPerLine, null);
+        var paragraphs = TextChunker.SplitPlainTextParagraphs(lines, maxTokensPerParagraph, paragraphOverlap, string.Empty, null).ToList();
         var total = paragraphs.Count;
 
         logger.LogInformation("Building index for {File} with {Count} fragments", sourceFilePath, total);
@@ -87,15 +92,11 @@ public sealed class RagVectorIndexService(
 
     private async Task<string> GetBaseUrlAsync(Guid serverId)
     {
-        var server = await LlmServerConfigHelper.GetServerConfigAsync(userSettings, serverId);
+        var server = await LlmServerConfigHelper.GetServerConfigAsync(llmServerConfigService, userSettings, serverId);
         var candidate = server?.BaseUrl;
         if (string.IsNullOrWhiteSpace(candidate))
         {
-            candidate = configuration["Ollama:BaseUrl"];
-        }
-        if (string.IsNullOrWhiteSpace(candidate))
-        {
-            candidate = "http://localhost:11434";
+            candidate = LlmServerConfig.DefaultOllamaUrl;
         }
         return candidate.Trim();
     }
@@ -103,10 +104,10 @@ public sealed class RagVectorIndexService(
     private async Task<ServerModel> GetModelAsync()
     {
         var settings = await userSettings.GetSettingsAsync();
-        var modelName = string.IsNullOrWhiteSpace(settings.EmbeddingModelName)
-            ? configuration["Ollama:EmbeddingModel"] ?? "nomic-embed-text"
-            : settings.EmbeddingModelName;
-        var server = settings.EmbeddingLlmId ?? Guid.Empty;
-        return new(server, modelName);
+        return ModelSelectionHelper.GetEffectiveEmbeddingModel(
+            settings.EmbeddingModel,
+            settings.DefaultModel,
+            "RAG vector indexing",
+            logger);
     }
 }

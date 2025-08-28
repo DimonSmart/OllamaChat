@@ -39,7 +39,7 @@ public class HttpLoggingHandler(ILogger<HttpLoggingHandler> logger) : Delegating
         {
             try
             { await request.Content.LoadIntoBufferAsync(); }
-            catch { }
+            catch { /* Ignore failures when loading content for logging */ }
 
             if (request.Content.Headers.Any())
             {
