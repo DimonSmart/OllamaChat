@@ -1,7 +1,7 @@
 using Microsoft.Extensions.VectorData;
 
 
-namespace ChatClient.Api.Services;
+namespace ChatClient.Api.Services.Rag;
 
 public sealed class RagVectorRecord
 {

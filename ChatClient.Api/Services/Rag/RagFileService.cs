@@ -1,8 +1,7 @@
 using ChatClient.Shared.Models;
 using ChatClient.Shared.Services;
-using System.IO;
 
-namespace ChatClient.Api.Services;
+namespace ChatClient.Api.Services.Rag;
 
 public class RagFileService(IRagVectorIndexBackgroundService indexBackgroundService, IConfiguration configuration) : IRagFileService
 {
