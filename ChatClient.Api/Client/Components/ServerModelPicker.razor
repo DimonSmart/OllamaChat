@@ -5,9 +5,9 @@
 @inject IUserSettingsService UserSettingsService
 
 <MudStack Spacing="1" Row="true" AlignItems="AlignItems.Center" @attributes="Attributes" Style="flex: 1; min-width: 0;">
-    <MudSelect T="Guid?" Value="selectedServerId" ValueChanged="OnServerChanged" Placeholder="Server" 
+    <MudSelect T="Guid?" Value="selectedServerId" ValueChanged="OnServerChanged" Placeholder="Server"
                Variant="Variant.Filled" Dense="true" Margin="Margin.None"
-               Style="min-width:120px; max-width:160px;"
+               Style="min-width:120px; flex:1;"
                Text="@GetSelectedServerName()">
         @foreach (var server in servers)
         {
@@ -17,7 +17,7 @@
 
     <MudSelect T="string" Value="selectedModel" ValueChanged="OnModelChanged" Placeholder="Model"
                Variant="Variant.Filled" Disabled="@(!selectedServerId.HasValue || loading || loadError != null)" Dense="true" Margin="Margin.None"
-               Style="min-width:120px; max-width:180px;">
+               Style="min-width:120px; flex:1;">
         @foreach (var model in models)
         {
             <MudSelectItem Value="@model.Name">@model.Name</MudSelectItem>
