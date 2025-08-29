@@ -374,17 +374,6 @@
             _ => new RoundRobinStopAgentOptions()
         };
 
-        if (userSettings.StopAgentOptions.HasValue)
-        {
-            var element = userSettings.StopAgentOptions.Value;
-            stopAgentOptions = stopAgentName switch
-            {
-                RoundRobinStopAgent => element.Deserialize<RoundRobinStopAgentOptions>() ?? new RoundRobinStopAgentOptions(),
-                RoundRobinSummaryStopAgent => element.Deserialize<RoundRobinSummaryStopAgentOptions>() ?? new RoundRobinSummaryStopAgentOptions(),
-                _ => new RoundRobinStopAgentOptions()
-            };
-        }
-
         if (userSettings.MultiAgentSelectedAgents?.Count > 0)
         {
             selectedAgents = userSettings.MultiAgentSelectedAgents
@@ -413,7 +402,6 @@
 
         userSettings.StopAgentName = stopAgentName;
         userSettings.MultiAgentSelectedAgents = selectedAgents.Select(a => a.AgentName).ToList();
-        userSettings.StopAgentOptions = JsonSerializer.SerializeToElement(stopAgentOptions, stopAgentOptions.GetType());
         await UserSettingsService.SaveSettingsAsync(userSettings);
 
         var agentsForChat = selectedAgents.ToList();
