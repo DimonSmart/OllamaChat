@@ -1,0 +1,21 @@
+{
+  "defaultChatMessage": "",
+  "defaultMultiAgentChatMessage": "",
+  "userName": "",
+  "agentName": "",
+  "defaultModel": {
+    "serverId": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
+    "modelName": ""
+  },
+  "mcpSamplingTimeoutSeconds": 1800,
+  "chatHistoryMode": 0,
+  "embeddingModel": {
+    "serverId": "00000000-0000-0000-0000-000000000000",
+    "modelName": ""
+  },
+  "ragLineChunkSize": 256,
+  "ragParagraphChunkSize": 512,
+  "ragParagraphOverlap": 64,
+  "stopAgentName": "",
+  "multiAgentSelectedAgents": []
+}

@@ -1,6 +1,3 @@
-using System;
-using System.Collections.Generic;
-using System.Text.Json;
 using System.Text.Json.Serialization;
 
 namespace ChatClient.Shared.Models;
@@ -54,7 +51,4 @@ public class UserSettings
 
     [JsonPropertyName("multiAgentSelectedAgents")]
     public List<string> MultiAgentSelectedAgents { get; set; } = [];
-
-    [JsonPropertyName("stopAgentOptions")]
-    public JsonElement? StopAgentOptions { get; set; }
 }
