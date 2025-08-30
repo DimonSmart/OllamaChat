@@ -5,17 +5,20 @@
   "agentName": "",
   "defaultModel": {
     "serverId": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
-    "modelName": ""
+    "modelName": "qwen3:latest"
   },
   "mcpSamplingTimeoutSeconds": 1800,
   "chatHistoryMode": 0,
   "embeddingModel": {
-    "serverId": "00000000-0000-0000-0000-000000000000",
-    "modelName": ""
+    "serverId": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
+    "modelName": "bge-m3:latest"
   },
   "ragLineChunkSize": 256,
   "ragParagraphChunkSize": 512,
   "ragParagraphOverlap": 64,
-  "stopAgentName": "",
-  "multiAgentSelectedAgents": []
+  "stopAgentName": "RoundRobinWithSummary",
+  "multiAgentSelectedAgents": [
+    "Friedrich Nietzsche",
+    "John Stuart Mill"
+  ]
 }
