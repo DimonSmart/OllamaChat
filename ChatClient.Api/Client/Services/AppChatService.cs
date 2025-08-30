@@ -286,12 +286,18 @@ public class AppChatService(
         builder.Services.AddLogging(c => c.AddConsole().SetMinimumLevel(LogLevel.Information));
 
         var serverType = await LlmServerConfigHelper.GetServerTypeAsync(llmServerConfigService, userSettingsService, serverModel.ServerId);
-        IChatCompletionService baseChatService = serverType == ServerType.ChatGpt
-            ? await openAIClientService.GetClientAsync(serverModel, cancellationToken)
-            : await ollamaKernelService.GetClientAsync(serverModel.ServerId);
 
+        IChatClient rawClient = serverType == ServerType.ChatGpt
+            ? (await openAIClientService.GetClientAsync(serverModel, cancellationToken)).AsChatClient()
+            : (await ollamaKernelService.GetClientAsync(serverModel.ServerId)).AsChatClient();
+
+        IChatClient fcClient = rawClient.AsBuilder()
+            .UseKernelFunctionInvocation()
+            .Build();
+
+        builder.Services.AddSingleton<IChatClient>(fcClient);
         builder.Services.AddSingleton<IChatCompletionService>(_ =>
-            new AppForceLastUserChatCompletionService(baseChatService, reducer));
+            new AppForceLastUserChatCompletionService(fcClient.AsChatCompletionService(), reducer));
 
         var kernel = builder.Build();
 
