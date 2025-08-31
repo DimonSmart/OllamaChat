@@ -70,6 +70,7 @@
 - Follow DRY principle: extract duplicated logic into helper classes or services.
 - Create specialized services for complex operations instead of embedding logic in multiple places.
 - **Method overloads**: Don't create overloads that merely delegate to another signature — keep one universal version and replace calls accordingly.
+- **Avoid parameter pass-through methods**: If a method only receives parameters to create an object and return it at the end, consider removing the method and creating the object directly in the calling code. Methods should perform meaningful logic, not just pass parameters to constructors.
 
 ### Modern C# Features
 - Use target-typed expressions where appropriate (`return [];`).
