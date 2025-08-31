@@ -94,7 +94,7 @@ public class KernelService(
 
     public async Task<IReadOnlyCollection<FunctionInfo>> GetAvailableFunctionsAsync(CancellationToken cancellationToken = default)
     {
-        var functions = new List<FunctionInfo>();
+        List<FunctionInfo> functions = [];
 
         if (_mcpClientService == null)
         {

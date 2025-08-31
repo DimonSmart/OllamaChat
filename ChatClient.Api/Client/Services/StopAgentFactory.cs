@@ -7,23 +7,19 @@ namespace ChatClient.Api.Client.Services;
 
 internal class StopAgentFactory : IStopAgentFactory
 {
-    private readonly Dictionary<string, Func<IStopAgentOptions?, GroupChatManager>> _factories = new()
-    {
-        ["RoundRobin"] = o => CreateRoundRobin(o as RoundRobinStopAgentOptions),
-        ["RoundRobinWithSummary"] = o => CreateRoundRobinWithSummary(o as RoundRobinSummaryStopAgentOptions)
-    };
-
     public GroupChatManager Create(string name, IStopAgentOptions? options = null)
     {
-        if (_factories.TryGetValue(name, out var factory))
-            return factory(options);
-        return CreateRoundRobin(options as RoundRobinStopAgentOptions);
-    }
+        return name switch
+        {
+            "RoundRobin" => new BridgingRoundRobinManager
+            {
+                MaximumInvocationCount = (options as RoundRobinStopAgentOptions)?.Rounds ?? 1
+            },
 
-    private static GroupChatManager CreateRoundRobin(RoundRobinStopAgentOptions? opts)
-    {
-        var rounds = opts?.Rounds ?? 1;
-        return new BridgingRoundRobinManager { MaximumInvocationCount = rounds };
+            "RoundRobinWithSummary" => CreateRoundRobinWithSummary(options as RoundRobinSummaryStopAgentOptions),
+
+            _ => new BridgingRoundRobinManager { MaximumInvocationCount = 1 }
+        };
     }
 
     private static GroupChatManager CreateRoundRobinWithSummary(RoundRobinSummaryStopAgentOptions? opts)

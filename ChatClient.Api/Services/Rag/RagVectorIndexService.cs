@@ -1,7 +1,7 @@
 #pragma warning disable SKEXP0050
+using ChatClient.Shared.Helpers;
 using ChatClient.Shared.Models;
 using ChatClient.Shared.Services;
-using ChatClient.Shared.Helpers;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
@@ -50,7 +50,7 @@ public sealed class RagVectorIndexService(
 
         logger.LogInformation("Building index for {File} with {Count} fragments", sourceFilePath, total);
 
-        var fragments = new List<RagVectorFragment>();
+        List<RagVectorFragment> fragments = [];
         var nextLog = 10;
         for (var i = 0; i < total; i++)
         {

@@ -116,7 +116,7 @@ public sealed class RagVectorSearchService(
 
     private static List<Segment> MergeAdjacent(IEnumerable<Piece> pieces)
     {
-        var result = new List<Segment>();
+        List<Segment> result = [];
 
         foreach (var group in pieces.GroupBy(p => p.File, StringComparer.OrdinalIgnoreCase))
         {

@@ -194,14 +194,14 @@ public class AppChatService(
     private StreamingAppChatMessage CreateInitialPlaceholderMessage()
     {
         // Display a temporary placeholder while waiting for the first agent token
-        var placeholder = _streamingManager.CreateStreamingMessage(agentName: "?");
+        var placeholder = new StreamingAppChatMessage(string.Empty, DateTime.Now, ChatRole.Assistant, null, "?");
         placeholder.Append("...");
         return placeholder;
     }
 
     private StreamingAppChatMessage CreateNextAgentPlaceholder()
     {
-        var placeholder = _streamingManager.CreateStreamingMessage(agentName: "?");
+        var placeholder = new StreamingAppChatMessage(string.Empty, DateTime.Now, ChatRole.Assistant, null, "?");
         placeholder.Append("...");
         return placeholder;
     }
@@ -223,7 +223,7 @@ public class AppChatService(
     {
         var agentNames = string.Join(", ", _agentsByName.Keys);
         logger.LogInformation("Creating {AgentCount} agents: [{AgentNames}]", _agentsByName.Count, agentNames);
-        var agents = new List<ChatCompletionAgent>();
+        List<ChatCompletionAgent> agents = [];
 
         foreach (var desc in _agentsByName.Values)
         {
@@ -379,7 +379,7 @@ public class AppChatService(
     private async Task<StreamingAppChatMessage> CreateStreamingState(
         string agentName)
     {
-        var stream = _streamingManager.CreateStreamingMessage(null, agentName);
+        var stream = new StreamingAppChatMessage(string.Empty, DateTime.Now, ChatRole.Assistant, null, agentName);
         _activeStreams[agentName] = stream;
 
         await NotifyMessageAddedAsync(stream);
@@ -466,7 +466,7 @@ public class AppChatService(
         int functionCount,
         TrackingFiltersScope trackingScope)
     {
-        var messageFunctionCalls = new List<FunctionCallRecord>();
+        List<FunctionCallRecord> messageFunctionCalls = [];
         if (!string.IsNullOrEmpty(message.AgentName) &&
             trackingScope.Filters.TryGetValue(message.AgentName, out var filter))
         {

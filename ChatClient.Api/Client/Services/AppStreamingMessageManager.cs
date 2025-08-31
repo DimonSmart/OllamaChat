@@ -5,15 +5,6 @@ namespace ChatClient.Api.Client.Services;
 
 public class AppStreamingMessageManager
 {
-    public AppStreamingMessageManager()
-    {
-    }
-
-    public StreamingAppChatMessage CreateStreamingMessage(List<FunctionCallRecord>? functionCalls = null, string? agentName = null)
-    {
-        return new StreamingAppChatMessage(string.Empty, DateTime.Now, ChatRole.Assistant, functionCalls, agentName);
-    }
-
     public AppChatMessage CompleteStreaming(StreamingAppChatMessage streamingMessage, string? statistics = null)
     {
         if (!string.IsNullOrEmpty(statistics))
@@ -30,9 +21,11 @@ public class AppStreamingMessageManager
     {
         streamingMessage.SetCanceled();
 
-        var finalMessage = new AppChatMessage(streamingMessage.Content, streamingMessage.MsgDateTime, ChatRole.Assistant, streamingMessage.Statistics, streamingMessage.Files, streamingMessage.FunctionCalls, streamingMessage.AgentName);
-        finalMessage.Id = streamingMessage.Id; // Preserve the original ID
-        finalMessage.IsCanceled = true;
+        var finalMessage = new AppChatMessage(streamingMessage.Content, streamingMessage.MsgDateTime, ChatRole.Assistant, streamingMessage.Statistics, streamingMessage.Files, streamingMessage.FunctionCalls, streamingMessage.AgentName)
+        {
+            Id = streamingMessage.Id, // Preserve the original ID
+            IsCanceled = true
+        };
         return finalMessage;
     }
 

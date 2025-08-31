@@ -68,7 +68,7 @@ public sealed class RagVectorIndexBackgroundService(
             var embedServer = settings.EmbeddingModel.ServerId;
 
             var basePath = _configuration["RagFiles:BasePath"] ?? Path.Combine("Data", "agents");
-            var pending = new List<(Guid agentId, string source, string index, string fileName)>();
+            List<(Guid agentId, string source, string index, string fileName)> pending = [];
             var agents = await agentService.GetAllAsync();
             foreach (var agent in agents)
             {
