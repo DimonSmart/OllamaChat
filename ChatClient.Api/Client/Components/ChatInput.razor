@@ -126,7 +126,7 @@
         {
             if (file.Size > maxFileSize)
             {
-                // TODO: Show error message for file too large
+                Snackbar?.Add($"File '{file.Name}' is too large (max {maxFileSize / (1024 * 1024)}MB)", Severity.Warning);
                 continue;
             }
             try

@@ -40,7 +40,7 @@ public class ServerConnectionTestServiceTests
     {
         // Arrange
         var logger = new LoggerFactory().CreateLogger<ServerConnectionTestService>();
-        var configValues = new Dictionary<string, string?>();
+        Dictionary<string, string?> configValues = [];
         var configuration = new ConfigurationBuilder().AddInMemoryCollection(configValues).Build();
         var service = new ServerConnectionTestService(logger, configuration);
 
@@ -67,7 +67,7 @@ public class ServerConnectionTestServiceTests
     {
         // Arrange
         var logger = new LoggerFactory().CreateLogger<ServerConnectionTestService>();
-        var configValues = new Dictionary<string, string?>();
+        Dictionary<string, string?> configValues = [];
         var configuration = new ConfigurationBuilder().AddInMemoryCollection(configValues).Build();
         var service = new ServerConnectionTestService(logger, configuration);
 

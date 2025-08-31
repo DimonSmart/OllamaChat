@@ -41,7 +41,7 @@ public class OllamaServiceTests
     {
         public Task<List<LlmServerConfig>> GetAllAsync()
         {
-            return Task.FromResult(new List<LlmServerConfig>());
+            return Task.FromResult<List<LlmServerConfig>>([]);
         }
 
         public Task<LlmServerConfig?> GetByIdAsync(Guid id)

@@ -86,28 +86,7 @@ public static class ModelSelectionHelper
         return effectiveModel;
     }
 
-    /// <summary>
-    /// Определяет эффективную модель для агента на основе его настроек или UI выбора
-    /// </summary>
-    /// <param name="agent">Агент с возможно настроенными LlmId и ModelName</param>
-    /// <param name="uiSelectedModel">Модель, выбранная в UI</param>
-    /// <param name="logger">Logger для записи выбора</param>
-    /// <returns>Эффективная модель для агента</returns>
-    public static ServerModel GetEffectiveAgentModel(
-        AgentDescription agent,
-        ServerModel uiSelectedModel,
-        ILogger? logger = null)
-    {
-        var configuredModel = agent.LlmId.HasValue && agent.LlmId != Guid.Empty && !string.IsNullOrWhiteSpace(agent.ModelName)
-            ? new ServerModel(agent.LlmId.Value, agent.ModelName)
-            : null;
 
-        return GetEffectiveModel(
-            configuredModel,
-            uiSelectedModel,
-            $"Agent: {agent.AgentName}",
-            logger);
-    }
 
     /// <summary>
     /// Проверяет, является ли модель валидной (указаны и сервер и название модели)

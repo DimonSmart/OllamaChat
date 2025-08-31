@@ -50,7 +50,7 @@ public sealed class RagVectorIndexService(
 
         logger.LogInformation("Building index for {File} with {Count} fragments", sourceFilePath, total);
 
-        var fragments = new List<RagVectorFragment>();
+        List<RagVectorFragment> fragments = [];
         var nextLog = 10;
         for (var i = 0; i < total; i++)
         {

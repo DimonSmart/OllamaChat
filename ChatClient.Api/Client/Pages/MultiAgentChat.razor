@@ -391,9 +391,13 @@
 
         foreach (var agent in selectedAgents)
         {
-            var effectiveModel = ModelSelectionHelper.GetEffectiveAgentModel(
-                agent, 
-                CurrentModel, 
+            var configuredModel = agent.LlmId.HasValue && agent.LlmId != Guid.Empty && !string.IsNullOrWhiteSpace(agent.ModelName)
+                ? new ServerModel(agent.LlmId.Value, agent.ModelName)
+                : null;
+            var effectiveModel = ModelSelectionHelper.GetEffectiveModel(
+                configuredModel,
+                CurrentModel,
+                $"Agent: {agent.AgentName}",
                 Logger);
                 
             agent.ModelName = effectiveModel.ModelName;

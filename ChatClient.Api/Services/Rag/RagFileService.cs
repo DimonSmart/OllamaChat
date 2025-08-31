@@ -16,7 +16,7 @@ public class RagFileService(IRagVectorIndexBackgroundService indexBackgroundServ
             return [];
 
         var indexDir = Path.Combine(agentFolder, "index");
-        var result = new List<RagFile>();
+        List<RagFile> result = [];
         foreach (var file in Directory.GetFiles(filesDir))
         {
             var fileName = Path.GetFileName(file);

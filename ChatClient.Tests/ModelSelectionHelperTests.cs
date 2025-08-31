@@ -110,7 +110,10 @@ public class ModelSelectionHelperTests
         var uiSelectedModel = new ServerModel(Guid.NewGuid(), "ui-model");
         
         // Act
-        var result = ModelSelectionHelper.GetEffectiveAgentModel(agent, uiSelectedModel);
+        var configuredModel = agent.LlmId.HasValue && agent.LlmId != Guid.Empty && !string.IsNullOrWhiteSpace(agent.ModelName)
+            ? new ServerModel(agent.LlmId.Value, agent.ModelName)
+            : null;
+        var result = ModelSelectionHelper.GetEffectiveModel(configuredModel, uiSelectedModel, $"Agent: {agent.AgentName}");
             
         // Assert
         Assert.Equal(agent.LlmId.Value, result.ServerId);
@@ -130,7 +133,10 @@ public class ModelSelectionHelperTests
         var uiSelectedModel = new ServerModel(Guid.NewGuid(), "ui-model");
         
         // Act
-        var result = ModelSelectionHelper.GetEffectiveAgentModel(agent, uiSelectedModel);
+        var configuredModel = agent.LlmId.HasValue && agent.LlmId != Guid.Empty && !string.IsNullOrWhiteSpace(agent.ModelName)
+            ? new ServerModel(agent.LlmId.Value, agent.ModelName)
+            : null;
+        var result = ModelSelectionHelper.GetEffectiveModel(configuredModel, uiSelectedModel, $"Agent: {agent.AgentName}");
             
         // Assert
         Assert.Equal(uiSelectedModel.ServerId, result.ServerId);
