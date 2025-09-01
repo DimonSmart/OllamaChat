@@ -3,6 +3,7 @@ using ChatClient.Api.Client.Services;
 using ChatClient.Api.Client.Services.Formatters;
 using ChatClient.Api.Services;
 using ChatClient.Api.Services.Rag;
+using Microsoft.AspNetCore.Components.Server.Circuits;
 using Microsoft.AspNetCore.Hosting.Server;
 using Microsoft.AspNetCore.Hosting.Server.Features;
 using Microsoft.SemanticKernel.Connectors.InMemory;
@@ -72,6 +73,8 @@ builder.Services.AddServerSideBlazor();
 builder.Services.AddHttpClient();
 
 builder.Services.AddMudServices();
+
+builder.Services.AddSingleton<CircuitHandler, AutoShutdownCircuitHandler>();
 
 builder.Services.AddControllers(options =>
 {
