@@ -32,7 +32,6 @@ public class OllamaServiceTests
 
     private sealed class StubUserSettingsService : IUserSettingsService
     {
-        public event Func<Task>? EmbeddingModelChanged;
         public Task<UserSettings> GetSettingsAsync() => Task.FromResult(new UserSettings());
         public Task SaveSettingsAsync(UserSettings settings) => Task.CompletedTask;
     }

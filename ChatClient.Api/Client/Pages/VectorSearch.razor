@@ -99,7 +99,7 @@
         }
         var settings = await UserSettingsService.GetSettingsAsync();
         embeddingModel = ModelSelectionHelper.GetEffectiveEmbeddingModel(
-            settings.EmbeddingModel,
+            settings.Embedding.Model,
             settings.DefaultModel,
             "Vector search UI",
             Logger);

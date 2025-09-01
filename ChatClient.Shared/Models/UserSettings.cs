@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using System.Text.Json.Serialization;
 
 namespace ChatClient.Shared.Models;
@@ -31,20 +32,8 @@ public class UserSettings
     [JsonPropertyName("chatHistoryMode")]
     public AppChatHistoryMode ChatHistoryMode { get; set; } = AppChatHistoryMode.None;
 
-    /// <summary>
-    /// Embedding model used for building the function index
-    /// </summary>
-    [JsonPropertyName("embeddingModel")]
-    public ServerModel EmbeddingModel { get; set; } = new(Guid.Empty, string.Empty);
-
-    [JsonPropertyName("ragLineChunkSize")]
-    public int RagLineChunkSize { get; set; } = 256;
-
-    [JsonPropertyName("ragParagraphChunkSize")]
-    public int RagParagraphChunkSize { get; set; } = 512;
-
-    [JsonPropertyName("ragParagraphOverlap")]
-    public int RagParagraphOverlap { get; set; } = 64;
+    [JsonPropertyName("embedding")]
+    public EmbeddingSettings Embedding { get; set; } = new();
 
     [JsonPropertyName("stopAgentName")]
     public string StopAgentName { get; set; } = string.Empty;

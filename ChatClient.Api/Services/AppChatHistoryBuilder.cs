@@ -87,7 +87,7 @@ public class AppChatHistoryBuilder(
             {
                 var settings = await settingsService.GetSettingsAsync();
                 var embeddingModel = ModelSelectionHelper.GetEffectiveEmbeddingModel(
-                    settings.EmbeddingModel,
+                    settings.Embedding.Model,
                     settings.DefaultModel,
                     "RAG search",
                     logger);
