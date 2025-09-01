@@ -4,18 +4,18 @@ using Microsoft.Extensions.Logging;
 namespace ChatClient.Shared.Helpers;
 
 /// <summary>
-/// Помогает определить эффективную пару сервер+модель с логированием выбора
+/// Helper for determining effective server+model pair with selection logging
 /// </summary>
 public static class ModelSelectionHelper
 {
     /// <summary>
-    /// Определяет эффективную пару сервер+модель на основе приоритета: конфигурация > UI выбор
+    /// Determines effective server+model pair based on priority: configuration > UI selection
     /// </summary>
-    /// <param name="configuredModel">Модель, заданная в конфигурации (агент, настройки и т.д.)</param>
-    /// <param name="uiSelectedModel">Модель, выбранная в UI</param>
-    /// <param name="context">Описание контекста для логирования (например, "Agent: Kant", "Embedding", "Default chat")</param>
-    /// <param name="logger">Logger для записи выбора</param>
-    /// <returns>Эффективная пара сервер+модель</returns>
+    /// <param name="configuredModel">Model specified in configuration (agent, settings, etc.)</param>
+    /// <param name="uiSelectedModel">Model selected in UI</param>
+    /// <param name="context">Context description for logging (e.g., "Agent: Kant", "Embedding", "Default chat")</param>
+    /// <param name="logger">Logger for recording selection</param>
+    /// <returns>Effective server+model pair</returns>
     public static ServerModel GetEffectiveModel(
         ServerModel? configuredModel,
         ServerModel uiSelectedModel,
@@ -48,13 +48,13 @@ public static class ModelSelectionHelper
     }
 
     /// <summary>
-    /// Определяет эффективную модель для встраивания (embedding) на основе специальной настройки или fallback на обычную модель
+    /// Determines effective embedding model based on special configuration or fallback to regular model
     /// </summary>
-    /// <param name="embeddingModel">Специальная модель для embedding из настроек</param>
-    /// <param name="defaultModel">Модель по умолчанию</param>
-    /// <param name="context">Описание контекста для логирования</param>
-    /// <param name="logger">Logger для записи выбора</param>
-    /// <returns>Эффективная модель для embedding</returns>
+    /// <param name="embeddingModel">Special embedding model from settings</param>
+    /// <param name="defaultModel">Default model</param>
+    /// <param name="context">Context description for logging</param>
+    /// <param name="logger">Logger for recording selection</param>
+    /// <returns>Effective embedding model</returns>
     public static ServerModel GetEffectiveEmbeddingModel(
         ServerModel embeddingModel,
         ServerModel defaultModel,
@@ -89,7 +89,7 @@ public static class ModelSelectionHelper
 
 
     /// <summary>
-    /// Проверяет, является ли модель валидной (указаны и сервер и название модели)
+    /// Validates model by checking if both server and model name are specified
     /// </summary>
     private static bool IsValidModel(ServerModel? model)
     {
@@ -98,9 +98,6 @@ public static class ModelSelectionHelper
                !string.IsNullOrWhiteSpace(model.ModelName);
     }
 
-    /// <summary>
-    /// Получает отображаемое имя сервера для логирования
-    /// </summary>
     private static string GetServerDisplayName(Guid serverId)
     {
         return serverId == Guid.Empty ? "Unknown" : serverId.ToString()[..8];

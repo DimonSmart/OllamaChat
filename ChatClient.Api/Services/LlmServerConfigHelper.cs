@@ -5,14 +5,6 @@ namespace ChatClient.Api.Services;
 
 public static class LlmServerConfigHelper
 {
-    /// <summary>
-    /// Gets server configuration by ID with fallback to default server
-    /// </summary>
-    /// <param name="llmServerConfigService">LLM server configuration service</param>
-    /// <param name="userSettingsService">User settings service</param>
-    /// <param name="serverId">Server ID (can be null or Guid.Empty)</param>
-    /// <param name="serverType">Server type for filtering (optional)</param>
-    /// <returns>Server configuration or null if not found</returns>
     public static async Task<LlmServerConfig?> GetServerConfigAsync(
         ILlmServerConfigService llmServerConfigService,
         IUserSettingsService userSettingsService,
@@ -26,7 +18,7 @@ public static class LlmServerConfigHelper
     }
 
     /// <summary>
-    /// Получает конфигурацию сервера по ID через ServiceProvider (временное решение для совместимости)
+    /// Temporary solution for compatibility - uses ServiceProvider to resolve dependencies
     /// </summary>
     public static async Task<LlmServerConfig?> GetServerConfigAsync(
         IUserSettingsService userSettingsService,
@@ -38,9 +30,6 @@ public static class LlmServerConfigHelper
         return await GetServerConfigAsync(llmServerConfigService, userSettingsService, serverId, serverType);
     }
 
-    /// <summary>
-    /// Получает конфигурацию сервера из списка серверов
-    /// </summary>
     public static LlmServerConfig? GetServerConfig(
         IEnumerable<LlmServerConfig> servers,
         Guid? defaultLlmId,
@@ -63,7 +52,7 @@ public static class LlmServerConfigHelper
     }
 
     /// <summary>
-    /// Получает тип сервера по ID с fallback на Ollama если сервер не найден
+    /// Fallback to Ollama if server not found
     /// </summary>
     public static async Task<ServerType> GetServerTypeAsync(
         ILlmServerConfigService llmServerConfigService,
@@ -75,7 +64,7 @@ public static class LlmServerConfigHelper
     }
 
     /// <summary>
-    /// Создает HttpClient с базовой конфигурацией для LLM сервера
+    /// Creates HttpClient with basic configuration for LLM server
     /// </summary>
     public static HttpClient CreateHttpClient(LlmServerConfig server, string? defaultBaseUrl = null)
     {
