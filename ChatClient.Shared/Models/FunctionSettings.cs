@@ -33,7 +33,6 @@ public class FunctionSettings
     public bool HasManualFunctions => !IsAutoSelectEnabled && SelectedFunctions.Count > 0;
 
     /// <summary>
-    /// Gets display text for the function settings.
     /// Returns auto-select count, checkmark for manual functions, or dash for none.
     /// </summary>
     public string GetDisplayText()

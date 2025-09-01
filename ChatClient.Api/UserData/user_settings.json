@@ -9,13 +9,15 @@
   },
   "mcpSamplingTimeoutSeconds": 1800,
   "chatHistoryMode": 0,
-  "embeddingModel": {
-    "serverId": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
-    "modelName": "bge-m3:latest"
+  "embedding": {
+    "model": {
+      "serverId": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
+      "modelName": "bge-m3:latest"
+    },
+    "ragLineChunkSize": 256,
+    "ragParagraphChunkSize": 512,
+    "ragParagraphOverlap": 64
   },
-  "ragLineChunkSize": 256,
-  "ragParagraphChunkSize": 512,
-  "ragParagraphOverlap": 64,
   "stopAgentName": "RoundRobinWithSummary",
   "multiAgentSelectedAgents": [
     "Friedrich Nietzsche",

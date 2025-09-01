@@ -20,8 +20,6 @@ public class UserSettingsService : IUserSettingsService
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase
     };
 
-    public event Func<Task>? EmbeddingModelChanged;
-
     public UserSettingsService(IConfiguration configuration, ILogger<UserSettingsService> logger, ILlmServerConfigService llmServerConfigService)
     {
         _configuration = configuration;
@@ -66,6 +64,8 @@ public class UserSettingsService : IUserSettingsService
             }
         }
 
+        settings.Embedding ??= new EmbeddingSettings();
+
         if (updated || !File.Exists(_settingsFilePath))
             await SaveSettingsAsync(settings);
 
@@ -76,24 +76,9 @@ public class UserSettingsService : IUserSettingsService
     {
         try
         {
-            UserSettings? existing = null;
-            if (File.Exists(_settingsFilePath))
-            {
-                var jsonExisting = await File.ReadAllTextAsync(_settingsFilePath);
-                existing = JsonSerializer.Deserialize<UserSettings>(jsonExisting, _jsonOptions);
-            }
-
             var json = JsonSerializer.Serialize(settings, _jsonOptions);
             await File.WriteAllTextAsync(_settingsFilePath, json);
             _logger.LogInformation("User settings saved successfully");
-
-            if (existing != null &&
-                (!string.Equals(existing.EmbeddingModel.ModelName, settings.EmbeddingModel.ModelName, StringComparison.OrdinalIgnoreCase) ||
-                 existing.EmbeddingModel.ServerId != settings.EmbeddingModel.ServerId))
-            {
-                if (EmbeddingModelChanged != null)
-                    await Task.WhenAll(EmbeddingModelChanged.GetInvocationList().Cast<Func<Task>>().Select(d => d()));
-            }
         }
         catch (Exception ex)
         {

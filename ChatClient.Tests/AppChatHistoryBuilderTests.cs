@@ -15,7 +15,6 @@ public class AppChatHistoryBuilderTests
 {
     private sealed class ThrowingUserSettingsService : IUserSettingsService
     {
-        public event Func<Task>? EmbeddingModelChanged;
         public Task<UserSettings> GetSettingsAsync() => throw new InvalidOperationException();
         public Task SaveSettingsAsync(UserSettings settings) => throw new InvalidOperationException();
     }

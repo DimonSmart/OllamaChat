@@ -41,9 +41,9 @@ public sealed class RagVectorIndexService(
 
         var generator = kernel.GetRequiredService<IEmbeddingGenerator<string, Embedding<float>>>();
         var settings = await userSettings.GetSettingsAsync();
-        var maxTokensPerLine = settings.RagLineChunkSize;
-        var maxTokensPerParagraph = settings.RagParagraphChunkSize;
-        var paragraphOverlap = settings.RagParagraphOverlap;
+        var maxTokensPerLine = settings.Embedding.RagLineChunkSize;
+        var maxTokensPerParagraph = settings.Embedding.RagParagraphChunkSize;
+        var paragraphOverlap = settings.Embedding.RagParagraphOverlap;
         var lines = TextChunker.SplitPlainTextLines(text, maxTokensPerLine, null);
         var paragraphs = TextChunker.SplitPlainTextParagraphs(lines, maxTokensPerParagraph, paragraphOverlap, string.Empty, null).ToList();
         var total = paragraphs.Count;
@@ -105,7 +105,7 @@ public sealed class RagVectorIndexService(
     {
         var settings = await userSettings.GetSettingsAsync();
         return ModelSelectionHelper.GetEffectiveEmbeddingModel(
-            settings.EmbeddingModel,
+            settings.Embedding.Model,
             settings.DefaultModel,
             "RAG vector indexing",
             logger);

@@ -112,7 +112,7 @@ public class ServerConnectionTestServiceTests
 
         // Assert
         // Should try to use the API key from configuration
-        // Результат будет неудачным из-за неправильного ключа, но ошибка будет другой
+        // Result will fail due to invalid key, but error will be different
         Assert.False(result.IsSuccessful);
         Assert.DoesNotContain("API Key is required", result.ErrorMessage);
     }
