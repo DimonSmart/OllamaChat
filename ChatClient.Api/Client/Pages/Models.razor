@@ -1,7 +1,9 @@
 @page "/models"
 @using ChatClient.Shared.Models
 @using ChatClient.Api.Services
+@using System.Linq
 @inject IOllamaClientService OllamaService
+@inject IOpenAIClientService OpenAIService
 @inject ILlmServerConfigService LlmServerConfigService
 
 <MudContainer Class="mt-3">
@@ -27,7 +29,7 @@
             }
             else if (server.Models.Count == 0)
             {
-                <MudAlert Severity="Severity.Info" Class="mb-4">No models available. Make sure Ollama is running and has models installed.</MudAlert>
+                <MudAlert Severity="Severity.Info" Class="mb-4">No models available.</MudAlert>
             }
             else
             {
@@ -88,7 +90,10 @@
             {
                 try
                 {
-                    var models = (await OllamaService.GetModelsAsync(s.Id ?? Guid.Empty)).ToList();
+                    var serverId = s.Id ?? Guid.Empty;
+                    List<OllamaModel> models = s.ServerType == ServerType.ChatGpt
+                        ? (await OpenAIService.GetAvailableModelsAsync(serverId)).Select(m => new OllamaModel { Name = m }).ToList()
+                        : (await OllamaService.GetModelsAsync(serverId)).ToList();
                     return new ServerModels(s, models, null);
                 }
                 catch

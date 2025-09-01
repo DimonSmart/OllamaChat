@@ -59,7 +59,7 @@ public class ServerConnectionTestService(ILogger<ServerConnectionTestService> lo
 
     private HttpClient CreateHttpClient(LlmServerConfig server)
     {
-        using var handler = new HttpClientHandler();
+        var handler = new HttpClientHandler();
         if (server.IgnoreSslErrors)
             handler.ServerCertificateCustomValidationCallback = (_, _, _, _) => true;
 
