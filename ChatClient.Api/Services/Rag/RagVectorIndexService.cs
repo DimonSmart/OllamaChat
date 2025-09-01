@@ -1,7 +1,7 @@
 #pragma warning disable SKEXP0050
+using ChatClient.Shared.Helpers;
 using ChatClient.Shared.Models;
 using ChatClient.Shared.Services;
-using ChatClient.Shared.Helpers;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;

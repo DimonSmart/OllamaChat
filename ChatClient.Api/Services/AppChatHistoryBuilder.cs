@@ -1,7 +1,7 @@
 using ChatClient.Api.Client.Services;
+using ChatClient.Shared.Helpers;
 using ChatClient.Shared.Models;
 using ChatClient.Shared.Services;
-using ChatClient.Shared.Helpers;
 using DimonSmart.AiUtils;
 using Microsoft.SemanticKernel;
 using Microsoft.SemanticKernel.ChatCompletion;
@@ -91,7 +91,7 @@ public class AppChatHistoryBuilder(
                     settings.DefaultModel,
                     "RAG search",
                     logger);
-                    
+
                 var server = serverId ?? embeddingModel.ServerId;
                 var query = ThinkTagParser.ExtractThinkAnswer(lastUser.Content).Answer;
                 try
