@@ -36,8 +36,6 @@ public class McpFunctionIndexService
         _userSettingsService = userSettingsService;
         _indexBackgroundService = indexBackgroundService;
         _logger = logger;
-
-        _userSettingsService.EmbeddingModelChanged += HandleEmbeddingModelChangeAsync;
     }
 
     public async Task BuildIndexAsync(CancellationToken cancellationToken = default, Guid? serverId = null)
@@ -142,7 +140,7 @@ public class McpFunctionIndexService
     {
         var settings = await _userSettingsService.GetSettingsAsync();
         return ModelSelectionHelper.GetEffectiveEmbeddingModel(
-            settings.EmbeddingModel,
+            settings.Embedding.Model,
             settings.DefaultModel,
             "MCP function indexing",
             _logger);
@@ -161,7 +159,7 @@ public class McpFunctionIndexService
             .ToList();
     }
 
-    private async Task HandleEmbeddingModelChangeAsync()
+    public async Task RebuildAsync()
     {
         var basePath = _configuration["RagFiles:BasePath"] ?? Path.Combine("Data", "agents");
         if (Directory.Exists(basePath))
