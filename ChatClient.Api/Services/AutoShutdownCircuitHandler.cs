@@ -4,21 +4,21 @@ using System.Threading;
 namespace ChatClient.Api.Services;
 
 /// <summary>
-/// Stops the application when the last browser connection closes.
+/// Stops the application when the last circuit ends to avoid shutdowns during transient disconnects.
 /// </summary>
 public sealed class AutoShutdownCircuitHandler(IHostApplicationLifetime lifetime) : CircuitHandler
 {
-    private int connections;
+    private int circuits;
 
-    public override Task OnConnectionUpAsync(Circuit circuit, CancellationToken cancellationToken)
+    public override Task OnCircuitOpenedAsync(Circuit circuit, CancellationToken cancellationToken)
     {
-        Interlocked.Increment(ref connections);
+        Interlocked.Increment(ref circuits);
         return Task.CompletedTask;
     }
 
-    public override Task OnConnectionDownAsync(Circuit circuit, CancellationToken cancellationToken)
+    public override Task OnCircuitClosedAsync(Circuit circuit, CancellationToken cancellationToken)
     {
-        if (Interlocked.Decrement(ref connections) == 0)
+        if (Interlocked.Decrement(ref circuits) == 0)
         {
             lifetime.StopApplication();
         }
