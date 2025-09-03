@@ -12,7 +12,7 @@
 <MudDialogProvider />
 <MudSnackbarProvider />
 <MudPopoverProvider />
-<CascadingValue Value="@selectedModel" Name="SelectedModel">
+<CascadingValue Value="@pickerModel" Name="UiModelSelection">
 <MudLayout>
     <MudAppBar Elevation="1" Dense="true">
         <MudIconButton Icon="@Icons.Material.Filled.Menu" Color="Color.Inherit" Edge="Edge.Start" OnClick="@((e) => DrawerToggle())" Size="Size.Medium" />
@@ -27,7 +27,7 @@
                        Class="ml-4"
                        Style="flex-shrink: 0;">New Chat</MudButton>
             <div class="ml-2" style="flex-shrink: 1; min-width: 0;">
-                <ServerModelPicker Value="selectedModel" ValueChanged="OnModelChanged" />
+                <ServerModelPicker Value="pickerModel" ValueChanged="OnModelChanged" />
             </div>
         }
         <MudSpacer />
@@ -63,7 +63,7 @@
     private bool _drawerOpen = true;
     private bool _isDarkMode = true;
     private bool isLLMAnswering;
-    private ServerModel selectedModel = new(Guid.Empty, string.Empty);
+    private ServerModelSelection pickerModel = new(null, null);
     private MudTheme? _theme = null;
 
     protected override async Task OnInitializedAsync()
@@ -74,7 +74,7 @@
         isLLMAnswering = ChatService.IsAnswering;
 
         var settings = await UserSettingsService.GetSettingsAsync();
-        selectedModel = settings.DefaultModel;
+        pickerModel = settings.DefaultModel;
 
         _theme = new()
         {
@@ -120,15 +120,13 @@
 
     
 
-    private async Task OnModelChanged(ServerModel model)
+    private async Task OnModelChanged(ServerModelSelection model)
     {
+        pickerModel = model;
+
         var settings = await UserSettingsService.GetSettingsAsync();
-        var selectedModel = model.ServerId != Guid.Empty && !string.IsNullOrWhiteSpace(model.ModelName)
-            ? model 
-            : settings.DefaultModel;
-        settings.DefaultModel = selectedModel;
+        settings.DefaultModel = model;
         await UserSettingsService.SaveSettingsAsync(settings);
-        this.selectedModel = selectedModel;
         StateHasChanged();
     }
 

@@ -5,7 +5,7 @@ namespace ChatClient.Shared.Models;
 public class EmbeddingSettings
 {
     [JsonPropertyName("model")]
-    public ServerModel Model { get; set; } = new(Guid.Empty, string.Empty);
+    public ServerModelSelection Model { get; set; } = new(null, null);
 
     [JsonPropertyName("ragLineChunkSize")]
     public int RagLineChunkSize { get; set; } = 256;

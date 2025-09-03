@@ -16,7 +16,7 @@ public class OllamaServerAvailabilityService(
             var settings = await userSettingsService.GetSettingsAsync();
             var serverToCheck = serverId ?? settings.DefaultModel.ServerId;
 
-            if (serverToCheck == Guid.Empty)
+            if (!serverToCheck.HasValue)
             {
                 logger.LogWarning("No default server configured");
                 return new OllamaServerStatus
@@ -51,7 +51,7 @@ public class OllamaServerAvailabilityService(
                 };
             }
 
-            var models = await ollamaService.GetModelsAsync(serverToCheck);
+            var models = await ollamaService.GetModelsAsync(serverToCheck.Value);
             logger.LogInformation("Ollama server '{ServerName}' is available with {ModelCount} models",
                 server.Name, models.Count);
 

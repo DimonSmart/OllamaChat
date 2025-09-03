@@ -291,7 +291,7 @@
     private bool functionsExpanded;
     private Dictionary<Guid, int> ragCounts = new();
     private List<RagFile> ragFiles = new();
-    private ServerModel editingServerModel = new(Guid.Empty, string.Empty);
+    private ServerModelSelection editingServerModel = new(null, null);
     private List<LlmServerConfig> servers = new();
     private DialogOptions dialogOptions = new()
     {
@@ -386,7 +386,7 @@
                 SelectedFunctions = []
             }
         };
-        editingServerModel = new ServerModel(Guid.Empty, string.Empty);
+        editingServerModel = new ServerModelSelection(null, null);
         ragFiles = new();
         showEditAgentDialog = true;
     }
@@ -497,7 +497,7 @@
             }
         };
 
-        editingServerModel = new ServerModel(agent.LlmId ?? Guid.Empty, agent.ModelName ?? string.Empty);
+        editingServerModel = new ServerModelSelection(agent.LlmId, agent.ModelName);
         await LoadRagFiles(agent.Id);
         showEditAgentDialog = true;
     }
@@ -572,8 +572,8 @@
         {
             try
             {
-                editingAgent.LlmId = editingServerModel.ServerId == Guid.Empty ? null : editingServerModel.ServerId;
-                editingAgent.ModelName = string.IsNullOrWhiteSpace(editingServerModel.ModelName) ? null : editingServerModel.ModelName;
+                editingAgent.LlmId = editingServerModel.ServerId;
+                editingAgent.ModelName = editingServerModel.ModelName;
                 if (editingAgent.Id == Guid.Empty)
                 {
                     var result = await AgentService.CreateAsync(editingAgent);
