@@ -1,9 +1,10 @@
 @page "/mcp-playground"
 @using ChatClient.Shared.Models
 @using System.Text.Json
-@using System.Net.Http.Json
 @using System.Linq
-@inject HttpClient Http
+@using ModelContextProtocol.Client
+@using ChatClient.Api.Services
+@inject IMcpClientService McpClientService
 @inject ISnackbar Snackbar
 
 <PageTitle>MCP Playground</PageTitle>
@@ -45,8 +46,10 @@
 @code {
     private readonly List<string> servers = [];
     private readonly List<McpToolInfo> tools = [];
+    private readonly Dictionary<string, McpClientTool> toolMap = new(StringComparer.OrdinalIgnoreCase);
     private readonly List<string> fields = [];
     private readonly Dictionary<string, string> parameters = new(StringComparer.OrdinalIgnoreCase);
+    private IMcpClient? currentClient;
     private string? selectedServer;
     private string? selectedFunction;
     private string? result;
@@ -55,9 +58,8 @@
     {
         try
         {
-            var list = await Http.GetFromJsonAsync<List<string>>("api/mcp-playground/servers");
-            if (list != null)
-                servers.AddRange(list);
+            var clients = await McpClientService.GetMcpClientsAsync();
+            servers.AddRange(clients.Select(c => c.ServerInfo.Name));
         }
         catch (Exception ex)
         {
@@ -70,6 +72,7 @@
         selectedServer = value;
         selectedFunction = null;
         tools.Clear();
+        toolMap.Clear();
         fields.Clear();
         parameters.Clear();
         result = null;
@@ -77,9 +80,16 @@
             return;
         try
         {
-            var list = await Http.GetFromJsonAsync<List<McpToolInfo>>($"api/mcp-playground/tools/{selectedServer}");
-            if (list != null)
-                tools.AddRange(list);
+            var clients = await McpClientService.GetMcpClientsAsync();
+            currentClient = clients.FirstOrDefault(c => string.Equals(c.ServerInfo.Name, selectedServer, StringComparison.OrdinalIgnoreCase));
+            if (currentClient == null)
+                return;
+            var list = await McpClientService.GetMcpTools(currentClient);
+            foreach (var t in list)
+            {
+                tools.Add(new McpToolInfo(t.Name, t.Description, t.JsonSchema));
+                toolMap[t.Name] = t;
+            }
         }
         catch (Exception ex)
         {
@@ -110,22 +120,16 @@
 
     private async Task Call()
     {
-        if (string.IsNullOrEmpty(selectedServer) || string.IsNullOrEmpty(selectedFunction))
+        if (currentClient == null || string.IsNullOrEmpty(selectedFunction))
             return;
-        var request = new McpFunctionCallRequest(selectedServer, selectedFunction, new(parameters));
+        if (!toolMap.TryGetValue(selectedFunction, out var tool))
+            return;
         try
         {
-            var response = await Http.PostAsJsonAsync("api/mcp-playground/call", request);
-            var text = await response.Content.ReadAsStringAsync();
-            try
-            {
-                var elem = JsonSerializer.Deserialize<JsonElement>(text);
-                result = JsonSerializer.Serialize(elem, new JsonSerializerOptions { WriteIndented = true });
-            }
-            catch
-            {
-                result = text;
-            }
+            var args = parameters.ToDictionary(kv => kv.Key, kv => (object?)kv.Value);
+            var obj = await tool.CallAsync(args, null, null);
+            var elem = JsonSerializer.SerializeToElement(obj);
+            result = JsonSerializer.Serialize(elem, new JsonSerializerOptions { WriteIndented = true });
         }
         catch (Exception ex)
         {
