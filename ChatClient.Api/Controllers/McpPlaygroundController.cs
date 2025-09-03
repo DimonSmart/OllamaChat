@@ -1,9 +1,9 @@
 using ChatClient.Api.Services;
 using ChatClient.Shared.Models;
 using Microsoft.AspNetCore.Mvc;
-using System.Text.Json;
 using System.Collections.Generic;
 using System.Linq;
+using System.Text.Json;
 
 namespace ChatClient.Api.Controllers;
 
