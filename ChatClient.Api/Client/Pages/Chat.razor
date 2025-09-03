@@ -12,6 +12,7 @@
 @using ChatClient.Api.Client.ViewModels
 @using ChatClient.Api.Services
 @using ChatClient.Shared.Models
+@using ChatClient.Shared.Helpers
 @using ChatClient.Shared.Models.StopAgents
 @using Microsoft.AspNetCore.Components
 @using Microsoft.AspNetCore.Components.Web
@@ -58,14 +59,17 @@
                         }
                     </MudSelect>
 
-                    <MudButton Variant="Variant.Filled"
-                               Color="Color.Primary"
-                               FullWidth="true"
-                               Class="mt-4"
-                               Size="Size.Medium"
-                               OnClick="StartChat">
-                        Start Chat
-                    </MudButton>
+                    <MudTooltip Text="Select server and model" Disabled="@CanStartChat">
+                        <MudButton Variant="Variant.Filled"
+                                   Color="Color.Primary"
+                                   FullWidth="true"
+                                   Class="mt-4"
+                                   Size="Size.Medium"
+                                   Disabled="@(!CanStartChat)"
+                                   OnClick="StartChat">
+                            Start Chat
+                        </MudButton>
+                    </MudTooltip>
                     <MudButton Href="/agent-descriptions"
                                Variant="Variant.Text"
                                Color="Color.Secondary"
@@ -230,15 +234,19 @@
     private List<AgentDescription> agents = new();
     private AgentDescription? selectedAgent { get; set; }
 
-    [CascadingParameter(Name = "SelectedModel")]
-    public ServerModel? SelectedModel { get; set; }
+    [CascadingParameter(Name = "UiModelSelection")]
+    public ServerModelSelection UiModelSelection { get; set; } = new(null, null);
 
-    private string CurrentModelName => string.IsNullOrWhiteSpace(SelectedModel?.ModelName)
-        ? userSettings.DefaultModel.ModelName
-        : SelectedModel.ModelName;
-    private Guid CurrentServerId => SelectedModel?.ServerId != Guid.Empty
-        ? SelectedModel?.ServerId ?? Guid.Empty
-        : userSettings.DefaultModel.ServerId;
+    private ServerModel? effectiveModel;
+    private string CurrentModelName => effectiveModel!.ModelName;
+    private Guid CurrentServerId => effectiveModel!.ServerId;
+
+    private bool CanStartChat =>
+        selectedAgent != null &&
+        ModelSelectionHelper.TryGetEffectiveModel(
+            new ServerModelSelection(selectedAgent.LlmId, selectedAgent.ModelName),
+            UiModelSelection,
+            out _);
 
     private UserSettings userSettings = new();
 
@@ -313,14 +321,19 @@
 
     private void StartChat()
     {
-        var agents = selectedAgent != null ? new[] { selectedAgent } : Array.Empty<AgentDescription>();
-        if (agents.Length != 1)
-            throw new InvalidOperationException("Single-agent chat requires exactly one agent.");
+        if (selectedAgent is null)
+            return;
 
-        if (string.IsNullOrWhiteSpace(agents[0].ModelName))
-            agents[0].ModelName = CurrentModelName;
-        if (!agents[0].LlmId.HasValue || agents[0].LlmId == Guid.Empty)
-            agents[0].LlmId = CurrentServerId;
+        var agents = new[] { selectedAgent };
+        var configured = new ServerModelSelection(selectedAgent.LlmId, selectedAgent.ModelName);
+        effectiveModel = ModelSelectionHelper.GetEffectiveModel(
+            configured,
+            UiModelSelection,
+            $"Agent: {selectedAgent.AgentName}",
+            Logger);
+
+        selectedAgent.ModelName = effectiveModel.ModelName;
+        selectedAgent.LlmId = effectiveModel.ServerId;
 
         ChatService.InitializeChat(agents);
         chatStarted = true;

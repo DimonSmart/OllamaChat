@@ -18,7 +18,7 @@ public class UserSettings
     public string AgentName { get; set; } = string.Empty;
 
     [JsonPropertyName("defaultModel")]
-    public ServerModel DefaultModel { get; set; } = new(Guid.Empty, string.Empty);
+    public ServerModelSelection DefaultModel { get; set; } = new(null, null);
 
     /// <summary>
     /// HTTP request timeout in seconds for MCP sampling requests (typically longer than regular API calls)
