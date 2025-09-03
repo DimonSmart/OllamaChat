@@ -59,7 +59,7 @@ public class UserSettingsService : IUserSettingsService
             var defaultServer = servers.FirstOrDefault(s => s.ServerType == ServerType.Ollama);
             if (defaultServer != null)
             {
-                settings.DefaultModel = settings.DefaultModel with { ServerId = defaultServer.Id }; 
+                settings.DefaultModel = settings.DefaultModel with { ServerId = defaultServer.Id };
                 updated = true;
             }
         }
