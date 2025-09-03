@@ -1,0 +1,135 @@
+@page "/mcp-playground"
+@using ChatClient.Shared.Models
+@using System.Text.Json
+@using System.Net.Http.Json
+@using System.Linq
+@inject HttpClient Http
+@inject ISnackbar Snackbar
+
+<PageTitle>MCP Playground</PageTitle>
+<MudText Class="page-header">MCP Playground</MudText>
+
+<MudStack Spacing="2">
+    <MudSelect Label="Server" T="string" Value="@selectedServer" ValueChanged="OnServerChanged" Dense="true">
+        @foreach (var s in servers)
+        {
+            <MudSelectItem Value="@s">@s</MudSelectItem>
+        }
+    </MudSelect>
+
+    <MudSelect Label="Function" T="string" Value="@selectedFunction" ValueChanged="OnFunctionChanged" Disabled="@(!tools.Any())" Dense="true">
+        @foreach (var t in tools)
+        {
+            <MudSelectItem Value="@t.Name">@t.Name</MudSelectItem>
+        }
+    </MudSelect>
+
+    @if (fields.Any())
+    {
+        @foreach (var f in fields)
+        {
+            <MudTextField @bind-Value="parameters[f]" Label="@f" />
+        }
+    }
+
+    <MudButton Variant="Variant.Filled" OnClick="Call" Disabled="@(string.IsNullOrEmpty(selectedServer) || string.IsNullOrEmpty(selectedFunction))">Go</MudButton>
+
+    @if (!string.IsNullOrEmpty(result))
+    {
+        <MudPaper Class="pa-4" Outlined="true">
+            <pre>@result</pre>
+        </MudPaper>
+    }
+</MudStack>
+
+@code {
+    private readonly List<string> servers = [];
+    private readonly List<McpToolInfo> tools = [];
+    private readonly List<string> fields = [];
+    private readonly Dictionary<string, string> parameters = new(StringComparer.OrdinalIgnoreCase);
+    private string? selectedServer;
+    private string? selectedFunction;
+    private string? result;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            var list = await Http.GetFromJsonAsync<List<string>>("api/mcp-playground/servers");
+            if (list != null)
+                servers.AddRange(list);
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Error loading servers: {ex.Message}", Severity.Error);
+        }
+    }
+
+    private async Task OnServerChanged(string? value)
+    {
+        selectedServer = value;
+        selectedFunction = null;
+        tools.Clear();
+        fields.Clear();
+        parameters.Clear();
+        result = null;
+        if (string.IsNullOrEmpty(selectedServer))
+            return;
+        try
+        {
+            var list = await Http.GetFromJsonAsync<List<McpToolInfo>>($"api/mcp-playground/tools/{selectedServer}");
+            if (list != null)
+                tools.AddRange(list);
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Error loading tools: {ex.Message}", Severity.Error);
+        }
+    }
+
+    private void OnFunctionChanged(string? value)
+    {
+        selectedFunction = value;
+        fields.Clear();
+        parameters.Clear();
+        result = null;
+        var tool = tools.FirstOrDefault(t => t.Name == selectedFunction);
+        if (tool == null)
+            return;
+        if (tool.JsonSchema.ValueKind == JsonValueKind.Undefined)
+            return;
+        if (tool.JsonSchema.TryGetProperty("properties", out var props))
+        {
+            foreach (var prop in props.EnumerateObject())
+            {
+                fields.Add(prop.Name);
+                parameters[prop.Name] = string.Empty;
+            }
+        }
+    }
+
+    private async Task Call()
+    {
+        if (string.IsNullOrEmpty(selectedServer) || string.IsNullOrEmpty(selectedFunction))
+            return;
+        var request = new McpFunctionCallRequest(selectedServer, selectedFunction, new(parameters));
+        try
+        {
+            var response = await Http.PostAsJsonAsync("api/mcp-playground/call", request);
+            var text = await response.Content.ReadAsStringAsync();
+            try
+            {
+                var elem = JsonSerializer.Deserialize<JsonElement>(text);
+                result = JsonSerializer.Serialize(elem, new JsonSerializerOptions { WriteIndented = true });
+            }
+            catch
+            {
+                result = text;
+            }
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Error calling function: {ex.Message}", Severity.Error);
+        }
+    }
+}
