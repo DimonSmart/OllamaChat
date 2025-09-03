@@ -46,7 +46,7 @@ else
             if (server == null)
                 return;
 
-            await ValidateServerAvailability(server, settings.DefaultModel.ServerId);
+            await ValidateServerAvailability(server, settings.DefaultModel.ServerId!.Value);
         }
         catch (Exception ex)
         {
@@ -62,7 +62,7 @@ else
 
     private bool ValidateDefaultServer(UserSettings settings)
     {
-        if (settings.DefaultModel.ServerId != Guid.Empty)
+        if (settings.DefaultModel.ServerId is not null)
             return true;
 
         Logger.LogWarning("No default server configured");

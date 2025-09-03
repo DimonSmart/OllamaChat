@@ -9,7 +9,7 @@ namespace ChatClient.Shared.Helpers;
 public static class ModelSelectionHelper
 {
     /// <summary>
-    /// Determines effective server+model pair based on priority: configuration > UI selection
+    /// Combines configuration and UI selections into a required model. Throws if incomplete.
     /// </summary>
     /// <param name="configuredModel">Model specified in configuration (agent, settings, etc.)</param>
     /// <param name="uiSelectedModel">Model selected in UI</param>
@@ -17,34 +17,44 @@ public static class ModelSelectionHelper
     /// <param name="logger">Logger for recording selection</param>
     /// <returns>Effective server+model pair</returns>
     public static ServerModel GetEffectiveModel(
-        ServerModel? configuredModel,
-        ServerModel uiSelectedModel,
+        ServerModelSelection configuredModel,
+        ServerModelSelection uiSelectedModel,
         string context,
         ILogger? logger = null)
     {
-        var isConfiguredModelValid = IsValidModel(configuredModel);
+        if (!TryGetEffectiveModel(configuredModel, uiSelectedModel, out var effectiveModel))
+            throw new InvalidOperationException($"Model selection for {context} is incomplete.");
 
-        ServerModel effectiveModel;
-        string source;
+        var serverFrom = uiSelectedModel.ServerId.HasValue ? "UI selection" : "configuration";
+        var modelFrom = !string.IsNullOrWhiteSpace(uiSelectedModel.ModelName) ? "UI selection" : "configuration";
+        var source = serverFrom == modelFrom ? serverFrom : "combined";
 
-        if (isConfiguredModelValid)
-        {
-            effectiveModel = configuredModel!;
-            source = "configuration";
-        }
-        else
-        {
-            effectiveModel = uiSelectedModel;
-            source = "UI selection";
-        }
-
-        logger?.LogDebug("Model selection for {Context}: using {ModelName} on {ServerName} from {Source}",
+        logger?.LogDebug(
+            "Model selection for {Context}: using {ModelName} on {ServerName} from {Source}",
             context,
             effectiveModel.ModelName,
             GetServerDisplayName(effectiveModel.ServerId),
             source);
 
         return effectiveModel;
+    }
+
+    public static bool TryGetEffectiveModel(
+        ServerModelSelection configuredModel,
+        ServerModelSelection uiSelectedModel,
+        out ServerModel effectiveModel)
+    {
+        var serverId = uiSelectedModel.ServerId ?? configuredModel.ServerId;
+        var modelName = uiSelectedModel.ModelName ?? configuredModel.ModelName;
+
+        if (serverId is { } id && id != Guid.Empty && !string.IsNullOrWhiteSpace(modelName))
+        {
+            effectiveModel = new(id, modelName);
+            return true;
+        }
+
+        effectiveModel = default!;
+        return false;
     }
 
     /// <summary>
@@ -56,8 +66,8 @@ public static class ModelSelectionHelper
     /// <param name="logger">Logger for recording selection</param>
     /// <returns>Effective embedding model</returns>
     public static ServerModel GetEffectiveEmbeddingModel(
-        ServerModel embeddingModel,
-        ServerModel defaultModel,
+        ServerModelSelection embeddingModel,
+        ServerModelSelection defaultModel,
         string context,
         ILogger? logger = null)
     {
@@ -68,12 +78,12 @@ public static class ModelSelectionHelper
 
         if (isEmbeddingModelValid)
         {
-            effectiveModel = embeddingModel;
+            effectiveModel = new(embeddingModel.ServerId!.Value, embeddingModel.ModelName!);
             source = "embedding configuration";
         }
         else
         {
-            effectiveModel = defaultModel;
+            effectiveModel = new(defaultModel.ServerId!.Value, defaultModel.ModelName!);
             source = "default model fallback";
         }
 
@@ -91,10 +101,9 @@ public static class ModelSelectionHelper
     /// <summary>
     /// Validates model by checking if both server and model name are specified
     /// </summary>
-    private static bool IsValidModel(ServerModel? model)
+    private static bool IsValidModel(ServerModelSelection model)
     {
-        return model != null &&
-               model.ServerId != Guid.Empty &&
+        return model.ServerId is { } id && id != Guid.Empty &&
                !string.IsNullOrWhiteSpace(model.ModelName);
     }
 

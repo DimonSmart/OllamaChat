@@ -137,11 +137,6 @@
         try
         {
             var model = embeddingModel;
-            if (model.ServerId == Guid.Empty)
-            {
-                var settings = await UserSettingsService.GetSettingsAsync();
-                model = model with { ServerId = settings.DefaultModel.ServerId };
-            }
             var embedding = await OllamaService.GenerateEmbeddingAsync(text, model);
             var response = await VectorSearchService.SearchAsync(selectedAgent.Id, new ReadOnlyMemory<float>(embedding));
             results = response.Results.ToList();

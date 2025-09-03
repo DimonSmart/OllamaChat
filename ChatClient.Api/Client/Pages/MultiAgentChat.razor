@@ -82,14 +82,17 @@
                         <em>Editor for '@stopAgentOptions.GetType().Name' not found</em>
                     }
 
-                    <MudButton Variant="Variant.Filled"
-                               Color="Color.Primary"
-                               FullWidth="true"
-                               Class="mt-4"
-                               Size="Size.Medium"
-                               OnClick="StartChat">
-                        Start Chat
-                    </MudButton>
+                    <MudTooltip Text="Select server and model" Disabled="@CanStartChat">
+                        <MudButton Variant="Variant.Filled"
+                                   Color="Color.Primary"
+                                   FullWidth="true"
+                                   Class="mt-4"
+                                   Size="Size.Medium"
+                                   Disabled="@(!CanStartChat)"
+                                   OnClick="StartChat">
+                            Start Chat
+                        </MudButton>
+                    </MudTooltip>
                     <MudButton Href="/agent-descriptions"
                                Variant="Variant.Text"
                                Color="Color.Secondary"
@@ -255,15 +258,18 @@
     private List<AgentDescription> agents = new();
     private List<AgentDescription> selectedAgents { get; set; } = new();
 
-    [CascadingParameter(Name = "SelectedModel")]
-    public ServerModel? SelectedModel { get; set; }
+    [CascadingParameter(Name = "UiModelSelection")]
+    public ServerModelSelection UiModelSelection { get; set; } = new(null, null);
 
-    private ServerModel CurrentModel => SelectedModel?.ServerId != Guid.Empty && !string.IsNullOrWhiteSpace(SelectedModel?.ModelName)
-        ? SelectedModel
-        : userSettings.DefaultModel;
-    
-    private string CurrentModelName => CurrentModel.ModelName;
-    private Guid CurrentServerId => CurrentModel.ServerId;
+    private string? currentModelName;
+
+    private bool CanStartChat =>
+        selectedAgents.Count > 0 &&
+        selectedAgents.All(agent =>
+            ModelSelectionHelper.TryGetEffectiveModel(
+                new ServerModelSelection(agent.LlmId, agent.ModelName),
+                UiModelSelection,
+                out _));
 
     private const string RoundRobinStopAgent = "RoundRobin";
     private const string RoundRobinSummaryStopAgent = "RoundRobinWithSummary";
@@ -386,23 +392,23 @@
     
     private async Task StartChat()
     {
-        if (selectedAgents.Count == 0)
+        if (!CanStartChat)
             return;
 
         foreach (var agent in selectedAgents)
         {
-            var configuredModel = agent.LlmId.HasValue && agent.LlmId != Guid.Empty && !string.IsNullOrWhiteSpace(agent.ModelName)
-                ? new ServerModel(agent.LlmId.Value, agent.ModelName)
-                : null;
+            var configured = new ServerModelSelection(agent.LlmId, agent.ModelName);
             var effectiveModel = ModelSelectionHelper.GetEffectiveModel(
-                configuredModel,
-                CurrentModel,
+                configured,
+                UiModelSelection,
                 $"Agent: {agent.AgentName}",
                 Logger);
-                
+
             agent.ModelName = effectiveModel.ModelName;
             agent.LlmId = effectiveModel.ServerId;
         }
+
+        currentModelName = selectedAgents[0].ModelName!;
 
         userSettings.StopAgentName = stopAgentName;
         userSettings.MultiAgentSelectedAgents = selectedAgents.Select(a => a.AgentName).ToList();
@@ -475,7 +481,7 @@
             }
         }
         var groupChatManager = StopAgentFactory.Create(stopAgentName, options);
-        var chatConfiguration = new AppChatConfiguration(CurrentModelName, allFunctions);
+        var chatConfiguration = new AppChatConfiguration(currentModelName!, allFunctions);
 
         await ChatService.GenerateAnswerAsync(messageData.text.Trim(), chatConfiguration, groupChatManager, messageData.files);
         await ScrollToBottom();

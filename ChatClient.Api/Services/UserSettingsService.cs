@@ -53,13 +53,13 @@ public class UserSettingsService : IUserSettingsService
 
         var updated = false;
 
-        if (settings.DefaultModel.ServerId == Guid.Empty)
+        if (settings.DefaultModel.ServerId is null)
         {
             var servers = await _llmServerConfigService.GetAllAsync();
             var defaultServer = servers.FirstOrDefault(s => s.ServerType == ServerType.Ollama);
             if (defaultServer != null)
             {
-                settings.DefaultModel = settings.DefaultModel with { ServerId = defaultServer.Id ?? Guid.Empty };
+                settings.DefaultModel = settings.DefaultModel with { ServerId = defaultServer.Id }; 
                 updated = true;
             }
         }

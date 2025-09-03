@@ -18,12 +18,6 @@ public class OpenAIClientService(
 
     public async Task<IChatCompletionService> GetClientAsync(ServerModel serverModel, CancellationToken cancellationToken = default)
     {
-        if (serverModel.ServerId == Guid.Empty)
-            throw new ArgumentException("ServerId cannot be empty", nameof(serverModel));
-
-        if (string.IsNullOrWhiteSpace(serverModel.ModelName))
-            throw new ArgumentException("ModelName cannot be null or empty", nameof(serverModel));
-
         var server = await LlmServerConfigHelper.GetServerConfigAsync(_llmServerConfigService, _userSettingsService, serverModel.ServerId, ServerType.ChatGpt);
         if (server == null)
         {

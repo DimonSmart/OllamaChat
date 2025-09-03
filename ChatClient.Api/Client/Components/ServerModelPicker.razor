@@ -45,8 +45,8 @@
 </MudStack>
 
 @code {
-    [Parameter] public ServerModel Value { get; set; } = new(Guid.Empty, string.Empty);
-    [Parameter] public EventCallback<ServerModel> ValueChanged { get; set; }
+    [Parameter] public ServerModelSelection Value { get; set; } = new(null, null);
+    [Parameter] public EventCallback<ServerModelSelection> ValueChanged { get; set; }
     [Parameter] public bool ShowClearButton { get; set; } = false;
     [Parameter(CaptureUnmatchedValues = true)] public Dictionary<string, object> Attributes { get; set; } = [];
 
@@ -60,11 +60,11 @@
     protected override async Task OnInitializedAsync()
     {
         servers = await LlmServerConfigService.GetAllAsync();
-        if (Value.ServerId == Guid.Empty && string.IsNullOrEmpty(Value.ModelName))
+        if (Value.ServerId is null && string.IsNullOrEmpty(Value.ModelName))
         {
             var settings = await UserSettingsService.GetSettingsAsync();
             var defaultModel = settings.DefaultModel;
-            selectedServerId = defaultModel.ServerId == Guid.Empty ? null : defaultModel.ServerId;
+            selectedServerId = defaultModel.ServerId;
             selectedModel = defaultModel.ModelName;
             if (selectedServerId.HasValue)
                 await LoadModelsAsync(selectedServerId.Value);
@@ -106,7 +106,7 @@
 
     private async Task NotifyValueChanged()
     {
-        var selection = new ServerModel(selectedServerId ?? Guid.Empty, selectedModel ?? string.Empty);
+        var selection = new ServerModelSelection(selectedServerId, selectedModel);
         Value = selection;
         await ValueChanged.InvokeAsync(selection);
     }

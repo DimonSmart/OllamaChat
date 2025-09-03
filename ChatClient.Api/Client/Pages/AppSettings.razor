@@ -115,8 +115,8 @@
 
 @code {
     private UserSettings _settings = new();
-    private ServerModel _defaultModel = new(Guid.Empty, string.Empty);
-    private ServerModel _embeddingModel = new(Guid.Empty, string.Empty);
+    private ServerModelSelection _defaultModel = new(null, null);
+    private ServerModelSelection _embeddingModel = new(null, null);
     private bool _loading = true;
     private MudForm? _form;
 
@@ -133,14 +133,14 @@
         }
     }
 
-    private Task OnDefaultModelChanged(ServerModel model)
+    private Task OnDefaultModelChanged(ServerModelSelection model)
     {
         _defaultModel = model;
         _settings.DefaultModel = model;
         return Task.CompletedTask;
     }
 
-    private Task OnEmbeddingModelChanged(ServerModel model)
+    private Task OnEmbeddingModelChanged(ServerModelSelection model)
     {
         _embeddingModel = model;
         _settings.Embedding.Model = model;
@@ -166,9 +166,9 @@
     {
         try
         {
-            if (_settings.Embedding.Model.ServerId != Guid.Empty && !string.IsNullOrWhiteSpace(_settings.Embedding.Model.ModelName))
+            if (_settings.Embedding.Model.ServerId is { } serverId && !string.IsNullOrWhiteSpace(_settings.Embedding.Model.ModelName))
             {
-                var models = await OllamaService.GetModelsAsync(_settings.Embedding.Model.ServerId);
+                var models = await OllamaService.GetModelsAsync(serverId);
                 var exists = models.Any(m => m.Name.Equals(_settings.Embedding.Model.ModelName, StringComparison.OrdinalIgnoreCase));
                 if (!exists)
                 {
