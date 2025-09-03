@@ -112,3 +112,9 @@ code {
 .form-floating > .form-control-plaintext:focus::placeholder, .form-floating > .form-control:focus::placeholder {
     text-align: start;
 }
+
+.mcp-result {
+    width: 100%;
+    max-height: 400px;
+    overflow: auto;
+}
