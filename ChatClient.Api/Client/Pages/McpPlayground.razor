@@ -32,7 +32,7 @@
             @switch (f.Type)
             {
                 case "boolean":
-                    <MudSwitch Checked="@(parameters.TryGetValue(f.Name, out var o) && o is bool b && b)"
+                    <MudSwitch T="bool" Checked="@(parameters.TryGetValue(f.Name, out var val) && val is bool b && b)"
                                CheckedChanged="v => parameters[f.Name] = v"
                                Label="@f.Name" />
                     break;
@@ -47,7 +47,7 @@
                                      Label="@f.Name" />
                     break;
                 default:
-                    <MudTextField Value="@(parameters.TryGetValue(f.Name, out var o) ? o?.ToString() : string.Empty)"
+                    <MudTextField T="string" Value="@(parameters.TryGetValue(f.Name, out var obj) ? obj?.ToString() : string.Empty)"
                                   ValueChanged="v => parameters[f.Name] = v"
                                   Label="@f.Name" />
                     break;
@@ -89,7 +89,7 @@
         }
     }
 
-    private async Task OnServerChanged(string? value)
+    private async Task OnServerChanged(string value)
     {
         selectedServer = value;
         selectedFunction = null;
@@ -119,7 +119,7 @@
         }
     }
 
-    private void OnFunctionChanged(string? value)
+    private void OnFunctionChanged(string value)
     {
         selectedFunction = value;
         fields.Clear();
