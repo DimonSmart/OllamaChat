@@ -15,8 +15,41 @@ public class MarkdownChatFormatter : IChatFormatter
         {
             if (msg.Role == ChatRole.System)
                 continue;
-            var name = msg.Role == ChatRole.Assistant ? msg.AgentName ?? "Assistant" : "User";
+
+            string name;
+            if (msg.Role == ChatRole.Assistant)
+                name = msg.AgentName ?? "Assistant";
+            else if (msg.Role == ChatRole.Tool)
+                name = "Tool";
+            else
+                name = "User";
+
             sb.AppendLine($"**{name}:** {msg.Content}\n");
+
+            foreach (var thought in msg.ThinkSegments)
+            {
+                sb.AppendLine($"> 💭 {thought}\n");
+            }
+
+            foreach (var call in msg.FunctionCalls)
+            {
+                var callName = string.IsNullOrEmpty(call.Function) ? call.Server : $"{call.Server}.{call.Function}";
+                sb.AppendLine($"**🛠 {callName}**  ");
+                if (!string.IsNullOrEmpty(call.Request))
+                {
+                    sb.AppendLine("**Request:**");
+                    sb.AppendLine("```");
+                    sb.AppendLine(call.Request);
+                    sb.AppendLine("```");
+                }
+                if (!string.IsNullOrEmpty(call.Response))
+                {
+                    sb.AppendLine("**Response:**");
+                    sb.AppendLine("```");
+                    sb.AppendLine(call.Response);
+                    sb.AppendLine("```");
+                }
+            }
         }
         return sb.ToString();
     }
