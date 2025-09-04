@@ -29,16 +29,40 @@
     {
         @foreach (var f in fields)
         {
-            <MudTextField @bind-Value="parameters[f]" Label="@f" />
+            @switch (f.Type)
+            {
+                case "boolean":
+                    <MudSwitch T="bool" Checked="@(parameters.TryGetValue(f.Name, out var val) && val is bool b && b)"
+                               CheckedChanged="v => parameters[f.Name] = v"
+                               Label="@f.Name" />
+                    break;
+                case "integer":
+                    <MudNumericField T="int?" Value="@(parameters[f.Name] as int?)"
+                                     ValueChanged="v => parameters[f.Name] = v"
+                                     Label="@f.Name" />
+                    break;
+                case "number":
+                    <MudNumericField T="double?" Value="@(parameters[f.Name] as double?)"
+                                     ValueChanged="v => parameters[f.Name] = v"
+                                     Label="@f.Name" />
+                    break;
+                default:
+                    <MudTextField T="string" Value="@(parameters.TryGetValue(f.Name, out var obj) ? obj?.ToString() : string.Empty)"
+                                  ValueChanged="v => parameters[f.Name] = v"
+                                  Label="@f.Name" />
+                    break;
+            }
         }
     }
 
     <MudButton Variant="Variant.Filled" OnClick="Call" Disabled="@(string.IsNullOrEmpty(selectedServer) || string.IsNullOrEmpty(selectedFunction))">Go</MudButton>
 
-    @if (!string.IsNullOrEmpty(result))
+    <MudSwitch T="bool" @bind-Checked="showRaw" Label="Raw response" Disabled="@string.IsNullOrEmpty(rawResult)" />
+
+    @if (!string.IsNullOrEmpty(rawResult) || !string.IsNullOrEmpty(contentResult))
     {
         <MudPaper Class="pa-4 mcp-result" Outlined="true">
-            <pre>@result</pre>
+            <pre>@(showRaw ? rawResult : contentResult)</pre>
         </MudPaper>
     }
 </MudStack>
@@ -47,12 +71,14 @@
     private readonly List<string> servers = [];
     private readonly List<McpToolInfo> tools = [];
     private readonly Dictionary<string, McpClientTool> toolMap = new(StringComparer.OrdinalIgnoreCase);
-    private readonly List<string> fields = [];
-    private readonly Dictionary<string, string> parameters = new(StringComparer.OrdinalIgnoreCase);
+    private readonly List<FieldInfo> fields = [];
+    private readonly Dictionary<string, object?> parameters = new(StringComparer.OrdinalIgnoreCase);
     private IMcpClient? currentClient;
     private string? selectedServer;
     private string? selectedFunction;
-    private string? result;
+    private string? rawResult;
+    private string? contentResult;
+    private bool showRaw = true;
 
     protected override async Task OnInitializedAsync()
     {
@@ -67,7 +93,7 @@
         }
     }
 
-    private async Task OnServerChanged(string? value)
+    private async Task OnServerChanged(string value)
     {
         selectedServer = value;
         selectedFunction = null;
@@ -75,7 +101,8 @@
         toolMap.Clear();
         fields.Clear();
         parameters.Clear();
-        result = null;
+        rawResult = null;
+        contentResult = null;
         if (string.IsNullOrEmpty(selectedServer))
             return;
         try
@@ -97,12 +124,13 @@
         }
     }
 
-    private void OnFunctionChanged(string? value)
+    private void OnFunctionChanged(string value)
     {
         selectedFunction = value;
         fields.Clear();
         parameters.Clear();
-        result = null;
+        rawResult = null;
+        contentResult = null;
         var tool = tools.FirstOrDefault(t => t.Name == selectedFunction);
         if (tool == null)
             return;
@@ -112,8 +140,9 @@
         {
             foreach (var prop in props.EnumerateObject())
             {
-                fields.Add(prop.Name);
-                parameters[prop.Name] = string.Empty;
+                var type = prop.Value.TryGetProperty("type", out var t) ? t.GetString() : "string";
+                fields.Add(new FieldInfo(prop.Name, type ?? "string"));
+                parameters[prop.Name] = null;
             }
         }
     }
@@ -126,14 +155,36 @@
             return;
         try
         {
-            var args = parameters.ToDictionary(kv => kv.Key, kv => (object?)kv.Value);
+            var args = new Dictionary<string, object?>();
+            foreach (var f in fields)
+            {
+                if (!parameters.TryGetValue(f.Name, out var val))
+                    continue;
+                if (val is string s && (f.Type == "array" || f.Type == "object"))
+                {
+                    try
+                    {
+                        val = JsonSerializer.Deserialize<JsonElement>(s);
+                    }
+                    catch
+                    {
+                        continue;
+                    }
+                }
+                args[f.Name] = val;
+            }
             var obj = await tool.CallAsync(args, null, null);
             var elem = JsonSerializer.SerializeToElement(obj);
-            result = JsonSerializer.Serialize(elem, new JsonSerializerOptions { WriteIndented = true });
+            rawResult = JsonSerializer.Serialize(elem, new JsonSerializerOptions { WriteIndented = true });
+            contentResult = elem.TryGetProperty("content", out var c)
+                ? JsonSerializer.Serialize(c, new JsonSerializerOptions { WriteIndented = true })
+                : null;
         }
         catch (Exception ex)
         {
             Snackbar.Add($"Error calling function: {ex.Message}", Severity.Error);
         }
     }
+
+    private sealed record FieldInfo(string Name, string Type);
 }
