@@ -57,7 +57,7 @@
 
     <MudButton Variant="Variant.Filled" OnClick="Call" Disabled="@(string.IsNullOrEmpty(selectedServer) || string.IsNullOrEmpty(selectedFunction))">Go</MudButton>
 
-    <MudSwitch T="bool" @bind-Checked="showRaw" 
+    <MudSwitch @bind-Value="showRaw" 
                Label="@(showRaw ? "Raw" : "Simplified")" 
                Disabled="@string.IsNullOrEmpty(rawResult)"
                Color="@(showRaw ? Color.Warning : Color.Success)" />
