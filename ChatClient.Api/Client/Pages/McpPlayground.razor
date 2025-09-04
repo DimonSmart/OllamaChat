@@ -57,10 +57,12 @@
 
     <MudButton Variant="Variant.Filled" OnClick="Call" Disabled="@(string.IsNullOrEmpty(selectedServer) || string.IsNullOrEmpty(selectedFunction))">Go</MudButton>
 
-    @if (!string.IsNullOrEmpty(result))
+    <MudSwitch T="bool" @bind-Checked="showRaw" Label="Raw response" Disabled="@string.IsNullOrEmpty(rawResult)" />
+
+    @if (!string.IsNullOrEmpty(rawResult) || !string.IsNullOrEmpty(contentResult))
     {
         <MudPaper Class="pa-4 mcp-result" Outlined="true">
-            <pre>@result</pre>
+            <pre>@(showRaw ? rawResult : contentResult)</pre>
         </MudPaper>
     }
 </MudStack>
@@ -74,7 +76,9 @@
     private IMcpClient? currentClient;
     private string? selectedServer;
     private string? selectedFunction;
-    private string? result;
+    private string? rawResult;
+    private string? contentResult;
+    private bool showRaw = true;
 
     protected override async Task OnInitializedAsync()
     {
@@ -97,7 +101,8 @@
         toolMap.Clear();
         fields.Clear();
         parameters.Clear();
-        result = null;
+        rawResult = null;
+        contentResult = null;
         if (string.IsNullOrEmpty(selectedServer))
             return;
         try
@@ -124,7 +129,8 @@
         selectedFunction = value;
         fields.Clear();
         parameters.Clear();
-        result = null;
+        rawResult = null;
+        contentResult = null;
         var tool = tools.FirstOrDefault(t => t.Name == selectedFunction);
         if (tool == null)
             return;
@@ -169,7 +175,10 @@
             }
             var obj = await tool.CallAsync(args, null, null);
             var elem = JsonSerializer.SerializeToElement(obj);
-            result = JsonSerializer.Serialize(elem, new JsonSerializerOptions { WriteIndented = true });
+            rawResult = JsonSerializer.Serialize(elem, new JsonSerializerOptions { WriteIndented = true });
+            contentResult = elem.TryGetProperty("content", out var c)
+                ? JsonSerializer.Serialize(c, new JsonSerializerOptions { WriteIndented = true })
+                : null;
         }
         catch (Exception ex)
         {
