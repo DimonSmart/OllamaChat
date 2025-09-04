@@ -16,8 +16,26 @@ public class HtmlChatFormatter : IChatFormatter
         {
             if (msg.Role == ChatRole.System)
                 continue;
-            var name = msg.Role == ChatRole.Assistant ? msg.AgentName ?? "Assistant" : "User";
+
+            string name;
+            if (msg.Role == ChatRole.Assistant)
+                name = msg.AgentName ?? "Assistant";
+            else if (msg.Role == ChatRole.Tool)
+                name = "Tool";
+            else
+                name = "User";
+
             sb.Append("<p><strong>").Append(name).Append(":</strong> ").Append(msg.HtmlContent).AppendLine("</p>");
+
+            foreach (var html in msg.HtmlThinkSegments)
+            {
+                sb.Append("<div class=\"think\"><em>").Append(html).AppendLine("</em></div>");
+            }
+
+            foreach (var html in msg.HtmlFunctionCalls)
+            {
+                sb.Append("<div class=\"function-call\">").Append(html).AppendLine("</div>");
+            }
         }
         sb.AppendLine("</div>");
         return sb.ToString();
