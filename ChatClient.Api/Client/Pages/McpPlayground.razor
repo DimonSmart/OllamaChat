@@ -29,7 +29,29 @@
     {
         @foreach (var f in fields)
         {
-            <MudTextField @bind-Value="parameters[f]" Label="@f" />
+            @switch (f.Type)
+            {
+                case "boolean":
+                    <MudSwitch Checked="@(parameters.TryGetValue(f.Name, out var o) && o is bool b && b)"
+                               CheckedChanged="v => parameters[f.Name] = v"
+                               Label="@f.Name" />
+                    break;
+                case "integer":
+                    <MudNumericField T="int?" Value="@(parameters[f.Name] as int?)"
+                                     ValueChanged="v => parameters[f.Name] = v"
+                                     Label="@f.Name" />
+                    break;
+                case "number":
+                    <MudNumericField T="double?" Value="@(parameters[f.Name] as double?)"
+                                     ValueChanged="v => parameters[f.Name] = v"
+                                     Label="@f.Name" />
+                    break;
+                default:
+                    <MudTextField Value="@(parameters.TryGetValue(f.Name, out var o) ? o?.ToString() : string.Empty)"
+                                  ValueChanged="v => parameters[f.Name] = v"
+                                  Label="@f.Name" />
+                    break;
+            }
         }
     }
 
@@ -47,8 +69,8 @@
     private readonly List<string> servers = [];
     private readonly List<McpToolInfo> tools = [];
     private readonly Dictionary<string, McpClientTool> toolMap = new(StringComparer.OrdinalIgnoreCase);
-    private readonly List<string> fields = [];
-    private readonly Dictionary<string, string> parameters = new(StringComparer.OrdinalIgnoreCase);
+    private readonly List<FieldInfo> fields = [];
+    private readonly Dictionary<string, object?> parameters = new(StringComparer.OrdinalIgnoreCase);
     private IMcpClient? currentClient;
     private string? selectedServer;
     private string? selectedFunction;
@@ -112,8 +134,9 @@
         {
             foreach (var prop in props.EnumerateObject())
             {
-                fields.Add(prop.Name);
-                parameters[prop.Name] = string.Empty;
+                var type = prop.Value.TryGetProperty("type", out var t) ? t.GetString() : "string";
+                fields.Add(new FieldInfo(prop.Name, type ?? "string"));
+                parameters[prop.Name] = null;
             }
         }
     }
@@ -126,7 +149,24 @@
             return;
         try
         {
-            var args = parameters.ToDictionary(kv => kv.Key, kv => (object?)kv.Value);
+            var args = new Dictionary<string, object?>();
+            foreach (var f in fields)
+            {
+                if (!parameters.TryGetValue(f.Name, out var val))
+                    continue;
+                if (val is string s && (f.Type == "array" || f.Type == "object"))
+                {
+                    try
+                    {
+                        val = JsonSerializer.Deserialize<JsonElement>(s);
+                    }
+                    catch
+                    {
+                        continue;
+                    }
+                }
+                args[f.Name] = val;
+            }
             var obj = await tool.CallAsync(args, null, null);
             var elem = JsonSerializer.SerializeToElement(obj);
             result = JsonSerializer.Serialize(elem, new JsonSerializerOptions { WriteIndented = true });
@@ -136,4 +176,6 @@
             Snackbar.Add($"Error calling function: {ex.Message}", Severity.Error);
         }
     }
+
+    private sealed record FieldInfo(string Name, string Type);
 }

@@ -41,7 +41,7 @@ public class McpPlaygroundController(IMcpClientService clientService, ILogger<Mc
             .FirstOrDefault(t => string.Equals(t.Name, request.Function, StringComparison.OrdinalIgnoreCase));
         if (tool == null)
             return NotFound($"Function {request.Function} not found");
-        var args = request.Parameters?.ToDictionary(kv => kv.Key, kv => (object?)kv.Value) ?? new Dictionary<string, object?>();
+        var args = request.Parameters?.ToDictionary(kv => kv.Key, kv => kv.Value.Deserialize<object?>()) ?? new Dictionary<string, object?>();
         try
         {
             var result = await tool.CallAsync(args, null, null, cancellationToken);
