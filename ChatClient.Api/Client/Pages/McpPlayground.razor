@@ -57,7 +57,10 @@
 
     <MudButton Variant="Variant.Filled" OnClick="Call" Disabled="@(string.IsNullOrEmpty(selectedServer) || string.IsNullOrEmpty(selectedFunction))">Go</MudButton>
 
-    <MudSwitch T="bool" @bind-Checked="showRaw" Label="Raw response" Disabled="@string.IsNullOrEmpty(rawResult)" />
+    <MudSwitch @bind-Value="showRaw" 
+               Label="@(showRaw ? "Raw" : "Simplified")" 
+               Disabled="@string.IsNullOrEmpty(rawResult)"
+               Color="@(showRaw ? Color.Warning : Color.Success)" />
 
     @if (!string.IsNullOrEmpty(rawResult) || !string.IsNullOrEmpty(contentResult))
     {
@@ -176,13 +179,46 @@
             var obj = await tool.CallAsync(args, null, null);
             var elem = JsonSerializer.SerializeToElement(obj);
             rawResult = JsonSerializer.Serialize(elem, new JsonSerializerOptions { WriteIndented = true });
-            contentResult = elem.TryGetProperty("content", out var c)
-                ? JsonSerializer.Serialize(c, new JsonSerializerOptions { WriteIndented = true })
-                : null;
+            contentResult = FormatContent(elem);
+            showRaw = contentResult is null;
         }
         catch (Exception ex)
         {
             Snackbar.Add($"Error calling function: {ex.Message}", Severity.Error);
+        }
+    }
+
+    private static string? FormatContent(JsonElement elem)
+    {
+        if (!elem.TryGetProperty("content", out var content))
+            return null;
+        return content.ValueKind switch
+        {
+            JsonValueKind.Array => string.Join("\n", content.EnumerateArray().Select(FormatContentItem)),
+            JsonValueKind.String => FormatStringContent(content.GetString()),
+            _ => JsonSerializer.Serialize(content, new JsonSerializerOptions { WriteIndented = true })
+        };
+    }
+
+    private static string FormatContentItem(JsonElement elem)
+    {
+        if (elem.ValueKind == JsonValueKind.Object && elem.TryGetProperty("text", out var text) && text.ValueKind == JsonValueKind.String)
+            return FormatStringContent(text.GetString());
+        return JsonSerializer.Serialize(elem, new JsonSerializerOptions { WriteIndented = true });
+    }
+
+    private static string FormatStringContent(string? str)
+    {
+        if (string.IsNullOrEmpty(str))
+            return string.Empty;
+        try
+        {
+            using var doc = JsonDocument.Parse(str);
+            return JsonSerializer.Serialize(doc.RootElement, new JsonSerializerOptions { WriteIndented = true });
+        }
+        catch
+        {
+            return str;
         }
     }
 
