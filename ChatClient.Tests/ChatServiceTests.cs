@@ -86,4 +86,29 @@ public class ChatServiceTests
 
         Assert.Empty(chatService.Messages);
     }
+
+    [Fact]
+    public void ResetChat_ClearsAgents()
+    {
+        var chatService = new AppChatService(
+            kernelService: null!,
+            logger: new LoggerFactory().CreateLogger<AppChatService>(),
+            chatHistoryBuilder: new DummyHistoryBuilder(),
+            reducer: new AppForceLastUserReducer(),
+            ollamaKernelService: new MockOllamaKernelService(),
+            openAIClientService: new MockOpenAIClientService(),
+            userSettingsService: new MockUserSettingsService(),
+            llmServerConfigService: new MockLlmServerConfigService());
+
+        var prompt = new AgentDescription { AgentName = "Agent", Content = "Hello" };
+        chatService.InitializeChat([prompt]);
+        Assert.Single(chatService.AgentDescriptions);
+
+        var resetRaised = false;
+        chatService.ChatReset += () => resetRaised = true;
+        chatService.ResetChat();
+
+        Assert.Empty(chatService.AgentDescriptions);
+        Assert.True(resetRaised);
+    }
 }
