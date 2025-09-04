@@ -72,6 +72,8 @@ public class AppChatService(
         logger.LogInformation("Resetting chat");
         Messages.Clear();
         _activeStreams.Clear();
+        _streamingManager = new AppStreamingMessageManager();
+        _agentsByName.Clear();
         ChatReset?.Invoke();
     }
 

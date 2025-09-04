@@ -7,6 +7,7 @@
 @using ChatClient.Api.Client.Pages
 @using ChatClient.Api.Client.Components
 @using ChatClient.Api.Services
+@using System.Linq
 
 <MudThemeProvider Theme="@_theme" IsDarkMode="_isDarkMode" />
 <MudDialogProvider />
@@ -17,7 +18,7 @@
     <MudAppBar Elevation="1" Dense="true">
         <MudIconButton Icon="@Icons.Material.Filled.Menu" Color="Color.Inherit" Edge="Edge.Start" OnClick="@((e) => DrawerToggle())" Size="Size.Medium" />
         <MudText Typo="Typo.h6" Class="ml-3" Style="flex-shrink: 0;">Ollama chat with MCP</MudText>
-        @if (!isLLMAnswering)
+        @if (!isLLMAnswering && ChatService.AgentDescriptions.Any())
         {
             <MudButton OnClick="NewChat"
                        Color="Color.Secondary"
@@ -108,10 +109,7 @@
 
     private void NewChat()
     {
-        if (ChatService.AgentDescriptions.Count == 0)
-            return;
-
-        ChatService.InitializeChat(ChatService.AgentDescriptions);
+        ChatService.ResetChat();
         if (!IsOnChatPage())
         {
             NavigationManager.NavigateTo("/chat");
