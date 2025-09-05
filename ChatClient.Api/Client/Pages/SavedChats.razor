@@ -1,0 +1,100 @@
+@page "/saved-chats"
+@using ChatClient.Shared.Models
+@using ChatClient.Shared.Services
+@using Microsoft.Extensions.AI
+@using MudBlazor
+@inject ISavedChatService SavedChatService
+@inject NavigationManager NavigationManager
+@inject ISnackbar Snackbar
+
+<PageTitle>Saved Chats</PageTitle>
+
+<MudContainer MaxWidth="MaxWidth.ExtraLarge" Class="mt-3">
+    <MudText Class="page-header">Saved Chats</MudText>
+
+    <MudPaper Elevation="3" Class="pa-3 rounded-lg">
+        <MudToolBar Dense="true">
+            <MudTextField T="string"
+                          Value="@search"
+                          ValueChanged="OnSearch"
+                          Placeholder="Search saved chats..."
+                          Adornment="Adornment.Start"
+                          AdornmentIcon="@Icons.Material.Filled.Search"
+                          Immediate="true"
+                          DebounceInterval="300"
+                          Style="min-width:300px" />
+        </MudToolBar>
+
+        @if (loading)
+        {
+            <MudStack Justify="Justify.Center" Class="my-4">
+                <MudProgressCircular Color="Color.Primary" Indeterminate="true" />
+            </MudStack>
+        }
+        else
+        {
+            <MudTable Items="@chats" Hover="true" Bordered="true" Striped="true" Dense="true">
+                <HeaderContent>
+                    <MudTh>Title</MudTh>
+                    <MudTh>Saved</MudTh>
+                    <MudTh>Participants</MudTh>
+                    <MudTh></MudTh>
+                </HeaderContent>
+                <RowTemplate>
+                    <MudTd>@context.Title</MudTd>
+                    <MudTd>@context.SavedAt.ToString("g")</MudTd>
+                    <MudTd>@string.Join(", ", context.Participants.Where(p => p.Role == ChatRole.Assistant).Select(p => p.Name))</MudTd>
+                    <MudTd Class="text-right">
+                        <MudIconButton Icon="@Icons.Material.Filled.OpenInNew" Size="Size.Small" OnClick="@(() => OpenChat(context))" />
+                        <MudIconButton Icon="@Icons.Material.Filled.Delete" Size="Size.Small" Color="Color.Error" OnClick="@(() => DeleteChat(context))" />
+                    </MudTd>
+                </RowTemplate>
+                <NoRecordsContent>
+                    <MudText Typo="Typo.body1" Class="m-4">No saved chats found.</MudText>
+                </NoRecordsContent>
+            </MudTable>
+        }
+    </MudPaper>
+</MudContainer>
+
+@code {
+    private List<SavedChat> chats = [];
+    private string search = string.Empty;
+    private bool loading = true;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadChats();
+    }
+
+    private async Task LoadChats(string? query = null)
+    {
+        loading = true;
+        StateHasChanged();
+        chats = string.IsNullOrWhiteSpace(query)
+            ? await SavedChatService.GetAllAsync()
+            : await SavedChatService.SearchAsync(query);
+        loading = false;
+        StateHasChanged();
+    }
+
+    private async Task OnSearch(string value)
+    {
+        search = value;
+        await LoadChats(value);
+    }
+
+    private void OpenChat(SavedChat chat)
+    {
+        var assistantCount = chat.Participants.Count(p => p.Role == ChatRole.Assistant);
+        var url = assistantCount > 1 ? $"/multi-agent-chat?saved={chat.Id}" : $"/chat?saved={chat.Id}";
+        NavigationManager.NavigateTo(url);
+    }
+
+    private async Task DeleteChat(SavedChat chat)
+    {
+        await SavedChatService.DeleteAsync(chat.Id);
+        Snackbar.Add("Chat deleted", Severity.Success);
+        await LoadChats(search);
+    }
+}
