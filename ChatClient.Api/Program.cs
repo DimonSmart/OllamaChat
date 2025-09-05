@@ -53,6 +53,7 @@ builder.Services.AddSingleton<ChatClient.Api.Services.IAppChatHistoryBuilder, Ch
 builder.Services.AddScoped<ChatClient.Api.Services.OllamaServerAvailabilityService>();
 builder.Services.AddSingleton<ChatClient.Shared.Services.IAgentDescriptionService, ChatClient.Api.Services.AgentDescriptionService>();
 builder.Services.AddSingleton<ChatClient.Shared.Services.IUserSettingsService, ChatClient.Api.Services.UserSettingsService>();
+builder.Services.AddSingleton<ChatClient.Shared.Services.ISavedChatService, ChatClient.Api.Services.SavedChatService>();
 builder.Services.AddSingleton<ChatClient.Shared.Services.IRagFileService, RagFileService>();
 builder.Services.AddSingleton<ChatClient.Shared.Services.IRagVectorIndexService, RagVectorIndexService>();
 builder.Services.AddSingleton<RagVectorIndexBackgroundService>();
