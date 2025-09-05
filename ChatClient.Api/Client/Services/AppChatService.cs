@@ -10,6 +10,7 @@ using Microsoft.SemanticKernel.Agents.Runtime.InProcess;
 using Microsoft.SemanticKernel.ChatCompletion;
 using OllamaSharp.Models.Exceptions;
 using System.Collections.ObjectModel;
+using System.Linq;
 
 namespace ChatClient.Api.Client.Services;
 
@@ -39,6 +40,7 @@ public class AppChatService(
     public bool IsAnswering { get; private set; }
     public Guid Id { get; private set; } = Guid.NewGuid();
     public ObservableCollection<IAppChatMessage> Messages { get; } = [];
+    IReadOnlyCollection<IAppChatMessage> IAppChatService.Messages => Messages;
 
     private TrackingFiltersScope CreateTrackingScope()
     {
@@ -219,6 +221,18 @@ public class AppChatService(
 
     private Task NotifyMessageAddedAsync(IAppChatMessage message) =>
         MessageAdded?.Invoke(message) ?? Task.CompletedTask;
+
+    public async Task LoadHistoryAsync(IEnumerable<IAppChatMessage> messages)
+    {
+        if (messages is null)
+            throw new ArgumentNullException(nameof(messages));
+
+        foreach (var message in messages.OrderBy(m => m.MsgDateTime))
+        {
+            Messages.Add(message);
+            await (MessageAdded?.Invoke(message) ?? Task.CompletedTask);
+        }
+    }
 
     private async Task<List<ChatCompletionAgent>> CreateAgentsAsync(
         string userMessage,

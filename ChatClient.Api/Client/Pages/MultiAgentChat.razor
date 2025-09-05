@@ -13,8 +13,10 @@
 @using ChatClient.Api.Client.Services.Formatters
 @using ChatClient.Api.Client.ViewModels
 @using ChatClient.Shared.Models
+@using ChatClient.Shared.Services
 @using ChatClient.Shared.Helpers
 @using ChatClient.Shared.Models.StopAgents
+@using Microsoft.Extensions.AI
 @using Microsoft.AspNetCore.Components
 @using Microsoft.AspNetCore.Components.Web
 @using MudBlazor
@@ -30,6 +32,8 @@
 @inject IStopAgentFactory StopAgentFactory
 @inject IEnumerable<IChatFormatter> ChatFormatters
 @inject ILogger<MultiAgentChat> Logger
+@inject ISavedChatService SavedChatService
+@inject ISnackbar Snackbar
 
 <PageTitle>Chat with AI Assistant</PageTitle>
 
@@ -105,6 +109,7 @@
                 <MudMenuItem OnClick="@(() => CopyChatAsync(ChatFormat.Markdown))">Copy as Markdown</MudMenuItem>
                 <MudMenuItem OnClick="@(() => CopyChatAsync(ChatFormat.Html))">Copy as HTML</MudMenuItem>
             </MudMenu>
+            <MudIconButton Icon="@Icons.Material.Filled.Save" Color="Color.Primary" OnClick="SaveCurrentChat" />
         </div>
         <div class="chat-messages-container" @ref="messagesElement">
             @foreach (var message in ChatViewModelService.Messages)
@@ -305,8 +310,11 @@
         _messageUpdatedHandler = (msg, force) => InvokeAsync(() => OnMessageUpdated(msg, force));
         _messageDeletedHandler = msg => InvokeAsync(() => OnMessageDeleted(msg));
         ChatViewModelService.MessageAdded += _messageAddedHandler;
-        ChatViewModelService.MessageUpdated += _messageUpdatedHandler;
-        ChatViewModelService.MessageDeleted += _messageDeletedHandler;
+       ChatViewModelService.MessageUpdated += _messageUpdatedHandler;
+       ChatViewModelService.MessageDeleted += _messageDeletedHandler;
+
+        if (SavedChatId.HasValue)
+            await LoadSavedChat(SavedChatId.Value);
 
         isLoadingInitialData = false;
         StateHasChanged();
@@ -381,6 +389,56 @@
                 .ToList();
         }
     }
+
+    [SupplyParameterFromQuery(Name = "saved")]
+    public Guid? SavedChatId { get; set; }
+
+    private async Task LoadSavedChat(Guid id)
+    {
+        var saved = await SavedChatService.GetByIdAsync(id);
+        if (saved is null)
+        {
+            Snackbar.Add("Saved chat not found", Severity.Error);
+            return;
+        }
+
+        var assistantIds = saved.Participants
+            .Where(p => p.Role == ChatRole.Assistant)
+            .Select(p => p.Id)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        selectedAgents = agents
+            .Where(a => assistantIds.Contains(a.AgentId))
+            .ToList();
+
+        if (selectedAgents.Count == 0)
+        {
+            Snackbar.Add("Agents for saved chat not found", Severity.Error);
+            return;
+        }
+
+        foreach (var agent in selectedAgents)
+        {
+            var configured = new ServerModelSelection(agent.LlmId, agent.ModelName);
+            var effective = ModelSelectionHelper.GetEffectiveModel(configured, UiModelSelection, $"Agent: {agent.AgentName}", Logger);
+            agent.ModelName = effective.ModelName;
+            agent.LlmId = effective.ServerId;
+        }
+
+        currentModelName = selectedAgents[0].ModelName!;
+        ChatService.InitializeChat(selectedAgents);
+
+        var savedMessages = saved.Messages
+            .Select(m =>
+            {
+                var msg = new AppChatMessage(m.Content, m.MsgDateTime, m.Role, agentName: m.AgentName);
+                msg.Id = m.Id;
+                return (IAppChatMessage)msg;
+            }).ToList();
+
+        await ChatService.LoadHistoryAsync(savedMessages);
+        chatStarted = true;
+    }
     
     private async Task StartChat()
     {
@@ -449,6 +507,46 @@
         chatStarted = true;
         StateHasChanged();
     }
+
+    private async Task SaveCurrentChat()
+    {
+        if (!ChatService.Messages.Any())
+        {
+            Snackbar.Add("Nothing to save", Severity.Info);
+            return;
+        }
+
+        var dialog = DialogService.Show<SaveChatDialog>("Save Chat");
+        var result = await dialog.Result;
+        if (result.Canceled)
+            return;
+
+        var title = result.Data as string ?? string.Empty;
+
+        var participants = ChatService.AgentDescriptions
+            .Select(a => new SavedChatParticipant(a.AgentId, a.AgentName, ChatRole.Assistant))
+            .ToList();
+        participants.Add(new SavedChatParticipant(userSettings.UserName.ToLowerInvariant(), userSettings.UserName, ChatRole.User));
+
+        var agentMap = ChatService.AgentDescriptions.ToDictionary(a => a.AgentName, a => a.AgentId, StringComparer.OrdinalIgnoreCase);
+
+        var messages = ChatService.Messages
+            .Where(m => !m.IsStreaming && !m.IsCanceled && m.Role != ChatRole.System)
+            .Where(m => !string.IsNullOrWhiteSpace(m.Content) || m.Files.Count > 0)
+            .Select(m => new SavedChatMessage(
+                m.Id,
+                m.Content,
+                m.MsgDateTime,
+                m.Role,
+                m.Role == ChatRole.Assistant && m.AgentName != null && agentMap.TryGetValue(m.AgentName, out var aid) ? aid : null,
+                m.AgentName))
+            .ToList();
+
+        var chat = new SavedChat(Guid.NewGuid(), title, DateTime.UtcNow, messages, participants);
+        await SavedChatService.SaveAsync(chat);
+        Snackbar.Add("Chat saved", Severity.Success);
+    }
+
     private async Task SendChatMessageAsync((string text, IReadOnlyList<AppChatMessageFile> files) messageData)
     {
         if (string.IsNullOrWhiteSpace(messageData.text) || isLLMAnswering)

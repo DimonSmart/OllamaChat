@@ -1,6 +1,7 @@
 using ChatClient.Shared.Constants;
 using ChatClient.Shared.Models;
 using ChatClient.Shared.Services;
+using System.Linq;
 using System.Text.Json;
 
 namespace ChatClient.Api.Services;
@@ -53,6 +54,17 @@ public class SavedChatService : ISavedChatService
             _logger.LogError(ex, "Error reading saved chats");
             return [];
         }
+    }
+
+    public async Task<List<SavedChat>> SearchAsync(string query, CancellationToken cancellationToken = default)
+    {
+        var chats = await GetAllAsync(cancellationToken);
+        if (string.IsNullOrWhiteSpace(query))
+            return chats;
+        return chats.Where(c =>
+                c.Title.Contains(query, StringComparison.OrdinalIgnoreCase) ||
+                c.Participants.Any(p => p.Name.Contains(query, StringComparison.OrdinalIgnoreCase)))
+            .ToList();
     }
 
     public async Task<SavedChat?> GetByIdAsync(Guid id, CancellationToken cancellationToken = default)

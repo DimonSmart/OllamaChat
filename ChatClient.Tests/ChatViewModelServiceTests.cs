@@ -15,6 +15,7 @@ public class ChatViewModelServiceTests
         public bool IsAnswering => false;
         public Guid Id { get; } = Guid.NewGuid();
         public IReadOnlyCollection<AgentDescription> AgentDescriptions { get; } = [];
+        public IReadOnlyCollection<IAppChatMessage> Messages { get; } = [];
 #pragma warning disable CS0067
         public event Action<bool>? AnsweringStateChanged;
         public event Action? ChatReset;
@@ -28,6 +29,8 @@ public class ChatViewModelServiceTests
         public Task CancelAsync() => Task.CompletedTask;
 
         public Task GenerateAnswerAsync(string text, AppChatConfiguration chatConfiguration, GroupChatManager groupChatManager, IReadOnlyList<AppChatMessageFile>? files = null) => Task.CompletedTask;
+
+        public Task LoadHistoryAsync(IEnumerable<IAppChatMessage> messages) => Task.CompletedTask;
 
         public Task DeleteMessageAsync(Guid id) => Task.CompletedTask;
 
