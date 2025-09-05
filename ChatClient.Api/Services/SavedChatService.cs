@@ -3,6 +3,7 @@ using ChatClient.Shared.Models;
 using ChatClient.Shared.Services;
 using System.Linq;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 
 namespace ChatClient.Api.Services;
 
@@ -23,6 +24,7 @@ public class SavedChatService : ISavedChatService
         _directoryPath = Path.GetFullPath(path);
         Directory.CreateDirectory(_directoryPath);
         _logger.LogInformation("Saved chats directory: {DirectoryPath}", _directoryPath);
+        _jsonOptions.Converters.Add(new JsonStringEnumConverter());
     }
 
     public async Task<List<SavedChat>> GetAllAsync(CancellationToken cancellationToken = default)
