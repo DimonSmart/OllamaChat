@@ -15,9 +15,9 @@
 </MudDialog>
 
 @code {
-    [CascadingParameter] IDialogReference DialogReference { get; set; } = null!;
+    [CascadingParameter] IMudDialogInstance? Dialog { get; set; }
     private string title = string.Empty;
 
-    private void Cancel() => DialogReference.Close(DialogResult.Cancel());
-    private void Save() => DialogReference.Close(DialogResult.Ok(title));
+    private void Cancel() => (Dialog ?? throw new InvalidOperationException("Dialog reference is missing.")).Cancel();
+    private void Save() => (Dialog ?? throw new InvalidOperationException("Dialog reference is missing.")).Close(DialogResult.Ok(title));
 }
