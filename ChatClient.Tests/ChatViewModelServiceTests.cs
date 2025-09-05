@@ -13,6 +13,7 @@ public class ChatViewModelServiceTests
     private class StubChatService : IAppChatService
     {
         public bool IsAnswering => false;
+        public Guid Id { get; } = Guid.NewGuid();
         public IReadOnlyCollection<AgentDescription> AgentDescriptions { get; } = [];
 #pragma warning disable CS0067
         public event Action<bool>? AnsweringStateChanged;

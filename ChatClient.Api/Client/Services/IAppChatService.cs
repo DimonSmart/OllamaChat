@@ -8,6 +8,7 @@ namespace ChatClient.Api.Client.Services;
 public interface IAppChatService
 {
     bool IsAnswering { get; }
+    Guid Id { get; }
     IReadOnlyCollection<AgentDescription> AgentDescriptions { get; }
 
     event Action<bool>? AnsweringStateChanged;

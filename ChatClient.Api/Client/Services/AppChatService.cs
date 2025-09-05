@@ -37,6 +37,7 @@ public class AppChatService(
     public event Func<Guid, Task>? MessageDeleted;
 
     public bool IsAnswering { get; private set; }
+    public Guid Id { get; private set; } = Guid.NewGuid();
     public ObservableCollection<IAppChatMessage> Messages { get; } = [];
 
     private TrackingFiltersScope CreateTrackingScope()
@@ -55,6 +56,7 @@ public class AppChatService(
         if (agents.Count == 0)
             throw new ArgumentException("At least one agent must be selected.", nameof(agents));
 
+        Id = Guid.NewGuid();
         Messages.Clear();
         _activeStreams.Clear();
         _streamingManager = new AppStreamingMessageManager();
@@ -70,6 +72,7 @@ public class AppChatService(
     public void ResetChat()
     {
         logger.LogInformation("Resetting chat");
+        Id = Guid.NewGuid();
         Messages.Clear();
         _activeStreams.Clear();
         _streamingManager = new AppStreamingMessageManager();
