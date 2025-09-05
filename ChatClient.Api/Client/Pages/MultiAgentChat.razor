@@ -320,11 +320,17 @@
 
     protected override async Task OnParametersSetAsync()
     {
-        if (SavedChatId.HasValue && SavedChatId != lastSavedChatId)
+        if (!SavedChatId.HasValue)
         {
-            lastSavedChatId = SavedChatId;
-            await LoadSavedChat(SavedChatId.Value);
+            lastSavedChatId = null;
+            return;
         }
+
+        if (SavedChatId == lastSavedChatId)
+            return;
+
+        lastSavedChatId = SavedChatId;
+        await LoadSavedChat(SavedChatId.Value);
     }
 
     private void OnAnsweringStateChanged(bool answering)
@@ -351,6 +357,7 @@
     private void OnChatReset()
     {
         chatStarted = true;
+        lastSavedChatId = null;
         StateHasChanged();
     }
 
