@@ -530,9 +530,9 @@
             return;
         }
 
-        var dialog = DialogService.Show<SaveChatDialog>("Save Chat");
+        var dialog = await DialogService.ShowAsync<SaveChatDialog>("Save Chat");
         var result = await dialog.Result;
-        if (result.Canceled)
+        if (result?.Canceled != false)
             return;
 
         var title = result.Data as string ?? string.Empty;
