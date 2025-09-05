@@ -2,6 +2,7 @@ using ChatClient.Api.Services;
 using ChatClient.Shared.Models;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
+using System.Text.Json;
 
 namespace ChatClient.Tests;
 
@@ -102,6 +103,47 @@ public class SavedChatServiceTests
             var byParticipant = await service.SearchAsync("beta");
             Assert.Single(byParticipant);
             Assert.Equal(chat2.Id, byParticipant[0].Id);
+        }
+        finally
+        {
+            if (Directory.Exists(tempDir))
+                Directory.Delete(tempDir, true);
+        }
+    }
+
+    [Fact]
+    public async Task GetByIdAsync_ReadsLegacyNumericEnums()
+    {
+        var tempDir = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString());
+        try
+        {
+            var config = new ConfigurationBuilder()
+                .AddInMemoryCollection(new Dictionary<string, string?>
+                {
+                    ["SavedChats:DirectoryPath"] = tempDir
+                })
+                .Build();
+            var logger = new LoggerFactory().CreateLogger<SavedChatService>();
+            var service = new SavedChatService(config, logger);
+
+            var id = Guid.NewGuid();
+            var msgId = Guid.NewGuid();
+            var legacyOptions = new JsonSerializerOptions
+            {
+                WriteIndented = true,
+                PropertyNamingPolicy = JsonNamingPolicy.CamelCase
+            };
+            var chat = new SavedChat(id, "Test", DateTime.UtcNow,
+                [new SavedChatMessage(msgId, "hi", DateTime.UtcNow, Microsoft.Extensions.AI.ChatRole.User, null, null)],
+                [new SavedChatParticipant("user", "User", Microsoft.Extensions.AI.ChatRole.User)]);
+            Directory.CreateDirectory(tempDir);
+            var json = JsonSerializer.Serialize(chat, legacyOptions);
+            await File.WriteAllTextAsync(Path.Combine(tempDir, $"{id}.json"), json);
+
+            var loaded = await service.GetByIdAsync(id);
+            Assert.NotNull(loaded);
+            Assert.Equal(Microsoft.Extensions.AI.ChatRole.User, loaded!.Messages[0].Role);
+            Assert.Equal(Microsoft.Extensions.AI.ChatRole.User, loaded.Participants.First().Role);
         }
         finally
         {
