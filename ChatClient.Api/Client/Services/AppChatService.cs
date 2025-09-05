@@ -29,7 +29,7 @@ public class AppChatService(
     private readonly Dictionary<string, StreamingAppChatMessage> _activeStreams = new();
     private const string PlaceholderAgent = "__placeholder__";
     private const string DeleteMarkerAgent = "?";
-    private Dictionary<string, AgentDescription> _agentsByName = new();
+    private readonly AppChat _chat = new();
 
     public event Action<bool>? AnsweringStateChanged;
     public event Action? ChatReset;
@@ -38,16 +38,16 @@ public class AppChatService(
     public event Func<Guid, Task>? MessageDeleted;
 
     public bool IsAnswering { get; private set; }
-    public Guid Id { get; private set; } = Guid.NewGuid();
-    public ObservableCollection<IAppChatMessage> Messages { get; } = [];
-    IReadOnlyCollection<IAppChatMessage> IAppChatService.Messages => Messages;
+    public Guid Id => _chat.Id;
+    public ObservableCollection<IAppChatMessage> Messages => _chat.Messages;
+    IReadOnlyCollection<IAppChatMessage> IAppChatService.Messages => _chat.Messages;
 
     private TrackingFiltersScope CreateTrackingScope()
     {
         return new TrackingFiltersScope();
     }
 
-    public IReadOnlyCollection<AgentDescription> AgentDescriptions => _agentsByName.Values;
+    public IReadOnlyCollection<AgentDescription> AgentDescriptions => _chat.AgentDescriptions;
 
     public void InitializeChat(IReadOnlyCollection<AgentDescription> agents)
     {
@@ -58,15 +58,11 @@ public class AppChatService(
         if (agents.Count == 0)
             throw new ArgumentException("At least one agent must be selected.", nameof(agents));
 
-        Id = Guid.NewGuid();
-        Messages.Clear();
+        _chat.Reset();
         _activeStreams.Clear();
         _streamingManager = new AppStreamingMessageManager();
 
-        _agentsByName = agents.ToDictionary(
-            desc => desc.AgentId,
-            desc => desc,
-            StringComparer.OrdinalIgnoreCase);
+        _chat.SetAgents(agents);
 
         ChatReset?.Invoke();
     }
@@ -74,11 +70,9 @@ public class AppChatService(
     public void ResetChat()
     {
         logger.LogInformation("Resetting chat");
-        Id = Guid.NewGuid();
-        Messages.Clear();
+        _chat.Reset();
         _activeStreams.Clear();
         _streamingManager = new AppStreamingMessageManager();
-        _agentsByName.Clear();
         ChatReset?.Invoke();
     }
 
@@ -120,6 +114,11 @@ public class AppChatService(
             return;
 
         var userMessage = new AppChatMessage(text, DateTime.Now, ChatRole.User, string.Empty, files);
+        if (_chat.FirstUserMessage == null)
+        {
+            _chat.FirstUserMessage = text;
+            _chat.InitialModel ??= new ServerModelSelection(null, chatConfiguration.ModelName);
+        }
         await AddMessageAsync(userMessage);
 
         var placeholder = _activeStreams[PlaceholderAgent] = CreateInitialPlaceholderMessage();
@@ -156,7 +155,7 @@ public class AppChatService(
                 if (firstAgent?.Kernel == null)
                     throw new InvalidOperationException("No agents available or agent kernel is null");
 
-                var agentId = _agentsByName[firstAgent.Name!].Id;
+                var agentId = _chat.AgentsByName[firstAgent.Name!].Id;
                 var built = await chatHistoryBuilder.BuildChatHistoryAsync(filteredMessages, firstAgent.Kernel, agentId, ct);
 
                 var rag = built.FirstOrDefault(m => m.Role == AuthorRole.Tool);
@@ -240,11 +239,11 @@ public class AppChatService(
         AppChatConfiguration chatConfiguration,
         CancellationToken cancellationToken)
     {
-        var agentNames = string.Join(", ", _agentsByName.Keys);
-        logger.LogInformation("Creating {AgentCount} agents: [{AgentNames}]", _agentsByName.Count, agentNames);
+        var agentNames = string.Join(", ", _chat.AgentsByName.Keys);
+        logger.LogInformation("Creating {AgentCount} agents: [{AgentNames}]", _chat.AgentsByName.Count, agentNames);
         List<ChatCompletionAgent> agents = [];
 
-        foreach (var desc in _agentsByName.Values)
+        foreach (var desc in _chat.AgentsByName.Values)
         {
             cancellationToken.ThrowIfCancellationRequested();
             var functionsToRegister = await kernelService.GetFunctionsToRegisterAsync(desc.FunctionSettings, userMessage, cancellationToken);
@@ -344,7 +343,7 @@ public class AppChatService(
             {
                 var agentName = streamingContent.AuthorName;
                 if (string.IsNullOrWhiteSpace(agentName))
-                    agentName = _agentsByName.Values.FirstOrDefault()?.AgentName ?? "Assistant";
+                    agentName = _chat.AgentsByName.Values.FirstOrDefault()?.AgentName ?? "Assistant";
 
                 if (!_activeStreams.TryGetValue(agentName, out var message))
                 {
@@ -384,7 +383,7 @@ public class AppChatService(
                     await (MessageUpdated?.Invoke(final, true) ?? Task.CompletedTask);
                     _activeStreams.Remove(agentName);
 
-                    if (_agentsByName.Count > 1)
+                    if (_chat.AgentsByName.Count > 1)
                     {
                         var next = CreateNextAgentPlaceholder();
                         _activeStreams[PlaceholderAgent] = next;
@@ -499,7 +498,7 @@ public class AppChatService(
 
         var processingTime = DateTime.Now - message.MsgDateTime;
 
-        var modelName = !string.IsNullOrEmpty(message.AgentName) && _agentsByName.TryGetValue(message.AgentName, out var agentDesc)
+        var modelName = !string.IsNullOrEmpty(message.AgentName) && _chat.AgentsByName.TryGetValue(message.AgentName, out var agentDesc)
             ? agentDesc.ModelName ?? string.Empty
             : string.Empty;
 
