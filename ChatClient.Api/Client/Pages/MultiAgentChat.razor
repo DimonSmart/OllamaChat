@@ -390,7 +390,7 @@
         }
     }
 
-    [SupplyParameterFromQuery(Name = "saved")]
+    [Parameter, SupplyParameterFromQuery(Name = "saved")]
     public Guid? SavedChatId { get; set; }
 
     private async Task LoadSavedChat(Guid id)
