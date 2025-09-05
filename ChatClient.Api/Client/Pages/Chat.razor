@@ -248,6 +248,7 @@
     private UserSettings userSettings = new();
 
     private StreamingDebouncer _renderDebouncer = null!;
+    private Guid? lastSavedChatId;
 
     private Func<AppChatMessageViewModel, Task>? _messageAddedHandler;
     private Func<AppChatMessageViewModel, bool, Task>? _messageUpdatedHandler;
@@ -271,11 +272,17 @@
         ChatViewModelService.MessageUpdated += _messageUpdatedHandler;
         ChatViewModelService.MessageDeleted += _messageDeletedHandler;
 
-        if (SavedChatId.HasValue)
-            await LoadSavedChat(SavedChatId.Value);
-
         isLoadingInitialData = false;
         StateHasChanged();
+    }
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (SavedChatId.HasValue && SavedChatId != lastSavedChatId)
+        {
+            lastSavedChatId = SavedChatId;
+            await LoadSavedChat(SavedChatId.Value);
+        }
     }
 
     private void OnAnsweringStateChanged(bool answering)
