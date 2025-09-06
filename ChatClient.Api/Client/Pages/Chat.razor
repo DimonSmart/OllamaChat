@@ -508,8 +508,6 @@
 
     public async ValueTask DisposeAsync()
     {
-        await ChatService.CancelAsync();
-        ChatService.ResetChat();
         ChatService.AnsweringStateChanged -= OnAnsweringStateChanged;
         ChatViewModelService.ChatReset -= OnChatReset;
         if (_messageAddedHandler != null)
@@ -518,6 +516,10 @@
             ChatViewModelService.MessageUpdated -= _messageUpdatedHandler;
         if (_messageDeletedHandler != null)
             ChatViewModelService.MessageDeleted -= _messageDeletedHandler;
+
+        await ChatViewModelService.DisposeAsync();
+        await ChatService.CancelAsync();
+        ChatService.ResetChat();
     }
 
     private string GetFileIcon(string contentType)
