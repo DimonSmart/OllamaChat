@@ -25,6 +25,14 @@ public class RagFilesController : ControllerBase
     [HttpGet("{fileName}")]
     public async Task<ActionResult<RagFile>> GetFile(Guid id, string fileName)
     {
+        try
+        {
+            FileNameValidator.Validate(fileName);
+        }
+        catch (ArgumentException)
+        {
+            return BadRequest("Invalid file name.");
+        }
         var file = await _fileService.GetFileAsync(id, fileName);
         if (file is null)
             return NotFound();
@@ -34,6 +42,14 @@ public class RagFilesController : ControllerBase
     [HttpPost]
     public async Task<ActionResult> Upload(Guid id, [FromForm] IFormFile file)
     {
+        try
+        {
+            FileNameValidator.Validate(file.FileName);
+        }
+        catch (ArgumentException)
+        {
+            return BadRequest("Invalid file name.");
+        }
         var ext = Path.GetExtension(file.FileName);
         if (!_converter.GetSupportedExtensions().Contains(ext, StringComparer.OrdinalIgnoreCase))
             return BadRequest($"Unsupported file type {ext}");
@@ -46,6 +62,15 @@ public class RagFilesController : ControllerBase
     [HttpPut("{fileName}")]
     public async Task<ActionResult> Update(Guid id, string fileName, [FromForm] IFormFile file)
     {
+        try
+        {
+            FileNameValidator.Validate(fileName);
+            FileNameValidator.Validate(file.FileName);
+        }
+        catch (ArgumentException)
+        {
+            return BadRequest("Invalid file name.");
+        }
         var ext = Path.GetExtension(file.FileName);
         if (!_converter.GetSupportedExtensions().Contains(ext, StringComparer.OrdinalIgnoreCase))
             return BadRequest($"Unsupported file type {ext}");
@@ -58,6 +83,14 @@ public class RagFilesController : ControllerBase
     [HttpDelete("{fileName}")]
     public async Task<ActionResult> Delete(Guid id, string fileName)
     {
+        try
+        {
+            FileNameValidator.Validate(fileName);
+        }
+        catch (ArgumentException)
+        {
+            return BadRequest("Invalid file name.");
+        }
         await _fileService.DeleteFileAsync(id, fileName);
         return NoContent();
     }
