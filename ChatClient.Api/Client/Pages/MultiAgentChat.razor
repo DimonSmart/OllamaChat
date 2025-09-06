@@ -251,6 +251,7 @@
     private bool isLoadingInitialData = true;
     private bool chatStarted = false;
     private Guid? lastSavedChatId;
+    private string lastSavedChatTitle = string.Empty;
     private ElementReference messagesElement;
 
     private List<AgentDescription> agents = new();
@@ -349,6 +350,7 @@
     {
         chatStarted = false;
         lastSavedChatId = null;
+        lastSavedChatTitle = string.Empty;
         StateHasChanged();
     }
 
@@ -448,6 +450,7 @@
         await ChatService.StartAsync(session);
         chatStarted = true;
         lastSavedChatId = id;
+        lastSavedChatTitle = saved.Title;
     }
     
     private async Task StartChat()
@@ -529,7 +532,11 @@
             return;
         }
 
-        var dialog = await DialogService.ShowAsync<SaveChatDialog>("Save Chat");
+        var parameters = new DialogParameters
+        {
+            ["InitialTitle"] = SavedChatId.HasValue ? lastSavedChatTitle : string.Empty
+        };
+        var dialog = await DialogService.ShowAsync<SaveChatDialog>("Save Chat", parameters);
         var result = await dialog.Result;
         if (result?.Canceled != false)
             return;
@@ -561,6 +568,7 @@
 
         var isNew = !SavedChatId.HasValue;
         SavedChatId = chatId;
+        lastSavedChatTitle = title;
         Snackbar.Add("Chat saved", Severity.Success);
         if (isNew)
             NavigationManager.NavigateTo(NavigationManager.GetUriWithQueryParameter("saved", chatId));
