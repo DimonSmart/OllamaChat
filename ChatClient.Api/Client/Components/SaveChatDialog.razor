@@ -16,7 +16,10 @@
 
 @code {
     [CascadingParameter] IMudDialogInstance? Dialog { get; set; }
+    [Parameter] public string InitialTitle { get; set; } = string.Empty;
     private string title = string.Empty;
+
+    protected override void OnInitialized() => title = InitialTitle;
 
     private void Cancel() => (Dialog ?? throw new InvalidOperationException("Dialog reference is missing.")).Cancel();
     private void Save() => (Dialog ?? throw new InvalidOperationException("Dialog reference is missing.")).Close(DialogResult.Ok(title));
