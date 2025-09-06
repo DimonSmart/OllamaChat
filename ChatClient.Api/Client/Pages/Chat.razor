@@ -226,6 +226,7 @@
     private bool isLLMAnswering { get; set; } = false;
     private bool isLoadingInitialData = true;
     private bool chatStarted = false;
+    private Guid? lastSavedChatId;
     private ElementReference messagesElement;
 
     private List<AgentDescription> agents = new();
@@ -277,7 +278,7 @@
 
     protected override async Task OnParametersSetAsync()
     {
-        if (SavedChatId.HasValue && !chatStarted)
+        if (SavedChatId.HasValue && SavedChatId != lastSavedChatId)
             await LoadSavedChat(SavedChatId.Value);
     }
 
@@ -305,6 +306,7 @@
     private void OnChatReset()
     {
         chatStarted = false;
+        lastSavedChatId = null;
         StateHasChanged();
     }
 
@@ -376,6 +378,7 @@
         var session = new ChatSessionParameters(groupChatManager, chatConfiguration, agentsForChat, savedMessages);
         await ChatService.StartAsync(session);
         chatStarted = true;
+        lastSavedChatId = id;
     }
 
     private async Task StartChat()
