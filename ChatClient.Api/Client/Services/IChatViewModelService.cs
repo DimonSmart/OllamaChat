@@ -9,6 +9,6 @@ public interface IChatViewModelService : IAsyncDisposable
     event Action<bool>? AnsweringStateChanged;
     event Action? ChatReset;
     event Func<AppChatMessageViewModel, Task>? MessageAdded;
-    event Func<AppChatMessageViewModel, bool, Task>? MessageUpdated;
+    event Func<AppChatMessageViewModel, MessageUpdateOptions, Task>? MessageUpdated;
     event Func<AppChatMessageViewModel, Task>? MessageDeleted;
 }

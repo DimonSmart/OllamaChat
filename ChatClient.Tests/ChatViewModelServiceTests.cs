@@ -21,7 +21,7 @@ public class ChatViewModelServiceTests
         public event Action? ChatReset;
 #pragma warning restore CS0067
         public event Func<IAppChatMessage, Task>? MessageAdded;
-        public event Func<IAppChatMessage, bool, Task>? MessageUpdated;
+        public event Func<IAppChatMessage, MessageUpdateOptions, Task>? MessageUpdated;
         public event Func<Guid, Task>? MessageDeleted;
 
         public Task StartAsync(ChatSessionParameters parameters) => Task.CompletedTask;
@@ -32,7 +32,7 @@ public class ChatViewModelServiceTests
         public Task DeleteMessageAsync(Guid id) => Task.CompletedTask;
 
         public Task RaiseMessageAdded(IAppChatMessage message) => MessageAdded?.Invoke(message) ?? Task.CompletedTask;
-        public Task RaiseMessageUpdated(IAppChatMessage message, bool forceRender = false) => MessageUpdated?.Invoke(message, forceRender) ?? Task.CompletedTask;
+        public Task RaiseMessageUpdated(IAppChatMessage message, MessageUpdateOptions options = default) => MessageUpdated?.Invoke(message, options) ?? Task.CompletedTask;
         public Task RaiseMessageDeleted(Guid id) => MessageDeleted?.Invoke(id) ?? Task.CompletedTask;
     }
 

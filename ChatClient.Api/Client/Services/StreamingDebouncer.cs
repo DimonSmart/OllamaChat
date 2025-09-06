@@ -19,11 +19,11 @@ public sealed class StreamingDebouncer
     /// <summary>
     /// Triggers the update callback if the debounce interval has elapsed or when forced.
     /// </summary>
-    public Task TriggerAsync(bool forceRender = false)
+    public Task TriggerAsync(MessageUpdateOptions options = default)
     {
         var now = DateTime.UtcNow;
 
-        if (forceRender || (now - _lastUpdate).TotalMilliseconds >= _debounceDelayMs)
+        if (options.ForceRender || (now - _lastUpdate).TotalMilliseconds >= _debounceDelayMs)
         {
             _lastUpdate = now;
             return _onUpdate();
