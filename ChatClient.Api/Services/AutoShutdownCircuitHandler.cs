@@ -4,7 +4,7 @@ using System.Threading;
 namespace ChatClient.Api.Services;
 
 /// <summary>
-/// Stops the application when the last circuit ends to avoid shutdowns during transient disconnects.
+/// Stops the application when no circuits remain after a short delay to allow quick reconnects.
 /// </summary>
 public sealed class AutoShutdownCircuitHandler(IHostApplicationLifetime lifetime) : CircuitHandler
 {
@@ -18,10 +18,19 @@ public sealed class AutoShutdownCircuitHandler(IHostApplicationLifetime lifetime
 
     public override Task OnCircuitClosedAsync(Circuit circuit, CancellationToken cancellationToken)
     {
-        if (Interlocked.Decrement(ref circuits) == 0)
+        if (Interlocked.Decrement(ref circuits) != 0)
         {
-            lifetime.StopApplication();
+            return Task.CompletedTask;
         }
+
+        _ = Task.Run(async () =>
+        {
+            await Task.Delay(TimeSpan.FromSeconds(2));
+            if (Volatile.Read(ref circuits) == 0)
+            {
+                lifetime.StopApplication();
+            }
+        });
 
         return Task.CompletedTask;
     }
