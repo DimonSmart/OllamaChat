@@ -227,8 +227,12 @@ public class AppChatService(
 
     private async Task AddMessageAsync(IAppChatMessage message)
     {
-        Messages.Add(message);
-        await (MessageAdded?.Invoke(message) ?? Task.CompletedTask);
+        // Check if message with this ID already exists to prevent duplicates
+        if (!Messages.Any(m => m.Id == message.Id))
+        {
+            Messages.Add(message);
+            await (MessageAdded?.Invoke(message) ?? Task.CompletedTask);
+        }
     }
 
     private Task NotifyMessageAddedAsync(IAppChatMessage message) =>
@@ -241,8 +245,12 @@ public class AppChatService(
 
         foreach (var message in messages.OrderBy(m => m.MsgDateTime))
         {
-            Messages.Add(message);
-            await (MessageAdded?.Invoke(message) ?? Task.CompletedTask);
+            // Check if message with this ID already exists to prevent duplicates
+            if (!Messages.Any(m => m.Id == message.Id))
+            {
+                Messages.Add(message);
+                await (MessageAdded?.Invoke(message) ?? Task.CompletedTask);
+            }
         }
     }
 

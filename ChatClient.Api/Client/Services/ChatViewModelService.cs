@@ -42,6 +42,16 @@ public class ChatViewModelService : IChatViewModelService, IAsyncDisposable
 
     private async Task OnMessageAdded(IAppChatMessage domainMessage)
     {
+        // Check if message with this ID already exists to prevent duplicates
+        var existingMessage = _messages.FirstOrDefault(m => m.Id == domainMessage.Id);
+        if (existingMessage != null)
+        {
+            // Update existing message instead of adding duplicate
+            existingMessage.UpdateFromDomainModel(domainMessage);
+            await (MessageUpdated?.Invoke(existingMessage, true) ?? Task.CompletedTask);
+            return;
+        }
+
         var viewModel = AppChatMessageViewModel.CreateFromDomainModel(domainMessage);
         _messages.Add(viewModel);
         await (MessageAdded?.Invoke(viewModel) ?? Task.CompletedTask);
