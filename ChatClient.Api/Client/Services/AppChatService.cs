@@ -103,7 +103,11 @@ public class AppChatService(
             }
 
             var canceled = _streamingManager.CancelStreaming(message);
-            Messages.Add(canceled);
+            var index = Messages.IndexOf(message);
+            if (index >= 0)
+                Messages[index] = canceled;
+            else
+                Messages.Add(canceled);
             await (MessageUpdated?.Invoke(canceled, true) ?? Task.CompletedTask);
         }
         _activeStreams.Clear();
@@ -395,7 +399,11 @@ public class AppChatService(
                 if (isFinal)
                 {
                     var final = CompleteStreamingMessage(message, functionCount, trackingScope);
-                    Messages.Add(final);
+                    var index = Messages.IndexOf(message);
+                    if (index >= 0)
+                        Messages[index] = final;
+                    else
+                        Messages.Add(final);
                     await (MessageUpdated?.Invoke(final, true) ?? Task.CompletedTask);
                     _activeStreams.Remove(agentName);
 
