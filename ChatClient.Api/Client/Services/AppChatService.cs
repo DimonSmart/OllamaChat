@@ -30,6 +30,7 @@ public class AppChatService(
     private const string PlaceholderAgent = "__placeholder__";
     private const string DeleteMarkerAgent = "?";
     private readonly AppChat _chat = new();
+    private ChatSessionParameters? _parameters;
 
     public event Action<bool>? AnsweringStateChanged;
     public event Action? ChatReset;
@@ -49,22 +50,22 @@ public class AppChatService(
 
     public IReadOnlyCollection<AgentDescription> AgentDescriptions => _chat.AgentDescriptions;
 
-    public void InitializeChat(IReadOnlyCollection<AgentDescription> agents)
+    public async Task StartAsync(ChatSessionParameters parameters)
     {
-        logger.LogInformation("Initializing chat with {AgentCount} agents", agents?.Count);
-        if (agents is null)
-            throw new ArgumentNullException(nameof(agents));
+        if (parameters is null)
+            throw new ArgumentNullException(nameof(parameters));
+        if (parameters.Agents.Count == 0)
+            throw new ArgumentException("At least one agent must be provided.", nameof(parameters));
 
-        if (agents.Count == 0)
-            throw new ArgumentException("At least one agent must be selected.", nameof(agents));
-
+        logger.LogInformation("Starting chat with {AgentCount} agents", parameters.Agents.Count);
+        _parameters = parameters;
         _chat.Reset();
         _activeStreams.Clear();
         _streamingManager = new AppStreamingMessageManager();
-
-        _chat.SetAgents(agents);
-
+        _chat.SetAgents(parameters.Agents);
         ChatReset?.Invoke();
+        if (parameters.History.Count > 0)
+            await LoadHistoryAsync(parameters.History);
     }
 
     public void ResetChat()
@@ -73,6 +74,7 @@ public class AppChatService(
         _chat.Reset();
         _activeStreams.Clear();
         _streamingManager = new AppStreamingMessageManager();
+        _parameters = null;
         ChatReset?.Invoke();
     }
 
@@ -107,7 +109,14 @@ public class AppChatService(
         _activeStreams.Clear();
     }
 
-    public async Task GenerateAnswerAsync(string text, AppChatConfiguration chatConfiguration, GroupChatManager groupChatManager, IReadOnlyList<AppChatMessageFile>? files = null)
+    public Task SendAsync(string text, IReadOnlyList<AppChatMessageFile>? files = null)
+    {
+        if (_parameters is null)
+            throw new InvalidOperationException("Chat session not started.");
+        return GenerateAnswerAsync(text, _parameters.Configuration, _parameters.GroupChatManager, files);
+    }
+
+    private async Task GenerateAnswerAsync(string text, AppChatConfiguration chatConfiguration, GroupChatManager groupChatManager, IReadOnlyList<AppChatMessageFile>? files = null)
     {
         logger.LogInformation("GenerateAnswerAsync called with text length {Length}", text?.Length);
         if (string.IsNullOrWhiteSpace(text) || IsAnswering)
@@ -221,7 +230,7 @@ public class AppChatService(
     private Task NotifyMessageAddedAsync(IAppChatMessage message) =>
         MessageAdded?.Invoke(message) ?? Task.CompletedTask;
 
-    public async Task LoadHistoryAsync(IEnumerable<IAppChatMessage> messages)
+    private async Task LoadHistoryAsync(IEnumerable<IAppChatMessage> messages)
     {
         if (messages is null)
             throw new ArgumentNullException(nameof(messages));
@@ -231,6 +240,13 @@ public class AppChatService(
             Messages.Add(message);
             await (MessageAdded?.Invoke(message) ?? Task.CompletedTask);
         }
+    }
+
+    public ChatSessionParameters GetState()
+    {
+        if (_parameters is null)
+            throw new InvalidOperationException("Chat session not started.");
+        return new ChatSessionParameters(_parameters.GroupChatManager, _parameters.Configuration, _chat.AgentDescriptions, _chat.Messages);
     }
 
     private async Task<List<ChatCompletionAgent>> CreateAgentsAsync(

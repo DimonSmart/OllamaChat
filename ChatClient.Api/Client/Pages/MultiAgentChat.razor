@@ -440,7 +440,10 @@
         }
 
         currentModelName = selectedAgents[0].ModelName!;
-        ChatService.InitializeChat(selectedAgents);
+
+        var manager = StopAgentFactory.Create(stopAgentName, stopAgentOptions);
+        var allFunctions = selectedAgents.SelectMany(a => a.FunctionSettings.SelectedFunctions ?? []).ToList();
+        var chatConfiguration = new AppChatConfiguration(currentModelName, allFunctions);
 
         var savedMessages = saved.Messages
             .Select(m =>
@@ -450,7 +453,8 @@
                 return (IAppChatMessage)msg;
             }).ToList();
 
-        await ChatService.LoadHistoryAsync(savedMessages);
+        var session = new ChatSessionParameters(manager, chatConfiguration, selectedAgents, savedMessages);
+        await ChatService.StartAsync(session);
         chatStarted = true;
     }
     
@@ -517,7 +521,10 @@
             }
         }
         
-        ChatService.InitializeChat(agentsForChat);
+        var allFunctions = agentsForChat.SelectMany(a => a.FunctionSettings.SelectedFunctions ?? []).ToList();
+        var chatConfiguration = new AppChatConfiguration(currentModelName!, allFunctions);
+        var session = new ChatSessionParameters(manager, chatConfiguration, agentsForChat);
+        await ChatService.StartAsync(session);
         chatStarted = true;
         StateHasChanged();
     }
@@ -566,28 +573,7 @@
         if (string.IsNullOrWhiteSpace(messageData.text) || isLLMAnswering)
             return;
 
-        var allFunctions = selectedAgents
-            .SelectMany(a => a.FunctionSettings.SelectedFunctions)
-            .Distinct()
-            .ToList();
-
-        var options = stopAgentOptions;
-        if (selectedAgents.Count == 1)
-        {
-            switch (options)
-            {
-                case RoundRobinStopAgentOptions rr:
-                    rr.Rounds = 1;
-                    break;
-                case RoundRobinSummaryStopAgentOptions rs:
-                    rs.Rounds = 1;
-                    break;
-            }
-        }
-        var groupChatManager = StopAgentFactory.Create(stopAgentName, options);
-        var chatConfiguration = new AppChatConfiguration(currentModelName!, allFunctions);
-
-        await ChatService.GenerateAnswerAsync(messageData.text.Trim(), chatConfiguration, groupChatManager, messageData.files);
+        await ChatService.SendAsync(messageData.text.Trim(), messageData.files);
         await ScrollToBottom();
     }
 
