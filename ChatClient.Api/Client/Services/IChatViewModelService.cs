@@ -1,7 +1,8 @@
+using System;
 using ChatClient.Api.Client.ViewModels;
 namespace ChatClient.Api.Client.Services;
 
-public interface IChatViewModelService
+public interface IChatViewModelService : IAsyncDisposable
 {
     IReadOnlyList<AppChatMessageViewModel> Messages { get; }
     bool IsAnswering { get; }
