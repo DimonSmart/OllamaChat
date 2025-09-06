@@ -1,5 +1,6 @@
 using ChatClient.Shared.Models;
 using ChatClient.Shared.Services;
+using ChatClient.Api.Services;
 
 namespace ChatClient.Api.Services.Rag;
 
@@ -36,6 +37,7 @@ public class RagFileService(IRagVectorIndexBackgroundService indexBackgroundServ
 
     public async Task<RagFile?> GetFileAsync(Guid id, string fileName)
     {
+        FileNameValidator.Validate(fileName);
         var agentFolder = GetAgentFolder(id);
         var filePath = Path.Combine(agentFolder, "files", fileName);
         if (!File.Exists(filePath))
@@ -55,6 +57,7 @@ public class RagFileService(IRagVectorIndexBackgroundService indexBackgroundServ
 
     public async Task AddOrUpdateFileAsync(Guid id, RagFile file)
     {
+        FileNameValidator.Validate(file.FileName);
         var agentFolder = GetAgentFolder(id);
         Directory.CreateDirectory(Path.Combine(agentFolder, "files"));
         Directory.CreateDirectory(Path.Combine(agentFolder, "index"));
@@ -70,6 +73,7 @@ public class RagFileService(IRagVectorIndexBackgroundService indexBackgroundServ
 
     public Task DeleteFileAsync(Guid id, string fileName)
     {
+        FileNameValidator.Validate(fileName);
         var agentFolder = GetAgentFolder(id);
         var indexPath = Path.Combine(agentFolder, "index", Path.ChangeExtension(fileName, ".idx"));
         if (File.Exists(indexPath))
