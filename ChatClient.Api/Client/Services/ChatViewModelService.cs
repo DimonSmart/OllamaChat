@@ -3,10 +3,15 @@ using ChatClient.Shared.Models;
 
 namespace ChatClient.Api.Client.Services;
 
-public class ChatViewModelService : IChatViewModelService
+public class ChatViewModelService : IChatViewModelService, IAsyncDisposable
 {
     private readonly IAppChatService _chatService;
     private readonly List<AppChatMessageViewModel> _messages = [];
+    private readonly Action<bool> _answeringStateChangedHandler;
+    private readonly Action _chatResetHandler;
+    private readonly Func<IAppChatMessage, Task> _messageAddedHandler;
+    private readonly Func<IAppChatMessage, bool, Task> _messageUpdatedHandler;
+    private readonly Func<Guid, Task> _messageDeletedHandler;
 
     public IReadOnlyList<AppChatMessageViewModel> Messages => _messages;
 
@@ -21,11 +26,18 @@ public class ChatViewModelService : IChatViewModelService
     public ChatViewModelService(IAppChatService chatService)
     {
         _chatService = chatService;
-        _chatService.AnsweringStateChanged += async isAnswering => await OnAnsweringStateChanged(isAnswering);
-        _chatService.ChatReset += OnChatReset;
-        _chatService.MessageAdded += OnMessageAdded;
-        _chatService.MessageUpdated += OnMessageUpdated;
-        _chatService.MessageDeleted += OnMessageDeleted;
+
+        _answeringStateChangedHandler = async isAnswering => await OnAnsweringStateChanged(isAnswering);
+        _chatResetHandler = OnChatReset;
+        _messageAddedHandler = OnMessageAdded;
+        _messageUpdatedHandler = OnMessageUpdated;
+        _messageDeletedHandler = OnMessageDeleted;
+
+        _chatService.AnsweringStateChanged += _answeringStateChangedHandler;
+        _chatService.ChatReset += _chatResetHandler;
+        _chatService.MessageAdded += _messageAddedHandler;
+        _chatService.MessageUpdated += _messageUpdatedHandler;
+        _chatService.MessageDeleted += _messageDeletedHandler;
     }
 
     private async Task OnMessageAdded(IAppChatMessage domainMessage)
@@ -74,5 +86,15 @@ public class ChatViewModelService : IChatViewModelService
             return;
         _messages.Remove(message);
         await (MessageDeleted?.Invoke(message) ?? Task.CompletedTask);
+    }
+
+    public ValueTask DisposeAsync()
+    {
+        _chatService.AnsweringStateChanged -= _answeringStateChangedHandler;
+        _chatService.ChatReset -= _chatResetHandler;
+        _chatService.MessageAdded -= _messageAddedHandler;
+        _chatService.MessageUpdated -= _messageUpdatedHandler;
+        _chatService.MessageDeleted -= _messageDeletedHandler;
+        return ValueTask.CompletedTask;
     }
 }
