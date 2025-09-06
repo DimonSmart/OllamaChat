@@ -89,6 +89,9 @@
             <MudIconButton Icon="@Icons.Material.Filled.Save" Color="Color.Primary" OnClick="SaveCurrentChat" />
         </div>
         <div class="chat-messages-container" @ref="messagesElement">
+            @{
+                var messageIndex = 0;
+            }
             @foreach (var message in ChatViewModelService.Messages)
             {
                 if (message.Role == Microsoft.Extensions.AI.ChatRole.System)
@@ -102,7 +105,8 @@
                 }
                 else
                 {
-                    <MudChat Dense="true" ChatPosition="@(message.Role == Microsoft.Extensions.AI.ChatRole.Assistant ? ChatBubblePosition.Start : ChatBubblePosition.End)" @key="message.Id">
+                    messageIndex++;
+                    <MudChat Dense="true" ChatPosition="@(message.Role == Microsoft.Extensions.AI.ChatRole.Assistant ? ChatBubblePosition.Start : ChatBubblePosition.End)" @key="@($"{messageIndex}_{message.Id}")">
                          <MudChatHeader>
                              <time>@message.MsgDateTime.ToString("g")</time>
                              <span class="copy-button" title="Copy answer" @onclick="(() => CopyVisibleMessage(message))">📋</span>
@@ -517,7 +521,6 @@
         if (_messageDeletedHandler != null)
             ChatViewModelService.MessageDeleted -= _messageDeletedHandler;
 
-        await ChatViewModelService.DisposeAsync();
         await ChatService.CancelAsync();
         ChatService.ResetChat();
     }

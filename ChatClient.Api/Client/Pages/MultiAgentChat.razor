@@ -631,7 +631,6 @@
         if (_messageDeletedHandler != null)
             ChatViewModelService.MessageDeleted -= _messageDeletedHandler;
 
-        await ChatViewModelService.DisposeAsync();
         await ChatService.CancelAsync();
         ChatService.ResetChat();
     }
