@@ -24,14 +24,11 @@ public class ChatViewModelServiceTests
         public event Func<IAppChatMessage, bool, Task>? MessageUpdated;
         public event Func<Guid, Task>? MessageDeleted;
 
-        public void InitializeChat(IReadOnlyCollection<AgentDescription> initialAgents) { }
+        public Task StartAsync(ChatSessionParameters parameters) => Task.CompletedTask;
         public void ResetChat() { }
         public Task CancelAsync() => Task.CompletedTask;
-
-        public Task GenerateAnswerAsync(string text, AppChatConfiguration chatConfiguration, GroupChatManager groupChatManager, IReadOnlyList<AppChatMessageFile>? files = null) => Task.CompletedTask;
-
-        public Task LoadHistoryAsync(IEnumerable<IAppChatMessage> messages) => Task.CompletedTask;
-
+        public Task SendAsync(string text, IReadOnlyList<AppChatMessageFile>? files = null) => Task.CompletedTask;
+        public ChatSessionParameters GetState() => throw new NotImplementedException();
         public Task DeleteMessageAsync(Guid id) => Task.CompletedTask;
 
         public Task RaiseMessageAdded(IAppChatMessage message) => MessageAdded?.Invoke(message) ?? Task.CompletedTask;

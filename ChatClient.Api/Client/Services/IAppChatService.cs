@@ -1,8 +1,5 @@
 using ChatClient.Shared.Models;
 
-
-using Microsoft.SemanticKernel.Agents.Orchestration.GroupChat;
-
 namespace ChatClient.Api.Client.Services;
 
 public interface IAppChatService
@@ -18,14 +15,10 @@ public interface IAppChatService
     event Func<IAppChatMessage, bool, Task>? MessageUpdated;
     event Func<Guid, Task>? MessageDeleted;
 
-    void InitializeChat(IReadOnlyCollection<AgentDescription> initialAgents);
+    Task StartAsync(ChatSessionParameters parameters);
     void ResetChat();
     Task CancelAsync();
-
-    Task GenerateAnswerAsync(string text, AppChatConfiguration chatConfiguration, GroupChatManager groupChatManager, IReadOnlyList<AppChatMessageFile>? files = null);
-
-    Task LoadHistoryAsync(IEnumerable<IAppChatMessage> messages);
-
+    Task SendAsync(string text, IReadOnlyList<AppChatMessageFile>? files = null);
+    ChatSessionParameters GetState();
     Task DeleteMessageAsync(Guid id);
 }
-

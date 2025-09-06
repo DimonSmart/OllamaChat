@@ -6,8 +6,10 @@ using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Logging;
 using Microsoft.SemanticKernel;
 using Microsoft.SemanticKernel.ChatCompletion;
+using Microsoft.SemanticKernel.Agents.Orchestration.GroupChat;
 using OllamaSharp;
 using System;
+using System.Threading.Tasks;
 
 namespace ChatClient.Tests;
 
@@ -53,7 +55,7 @@ public class ChatServiceTests
     }
 
     [Fact]
-    public void InitializeChat_NoAgents_Throws()
+    public async Task StartAsync_NoAgents_Throws()
     {
         var chatService = new AppChatService(
             kernelService: null!,
@@ -65,11 +67,12 @@ public class ChatServiceTests
             userSettingsService: new MockUserSettingsService(),
             llmServerConfigService: new MockLlmServerConfigService());
 
-        Assert.Throws<ArgumentException>(() => chatService.InitializeChat([]));
+        var session = new ChatSessionParameters(new RoundRobinGroupChatManager(), new AppChatConfiguration("m", []), []);
+        await Assert.ThrowsAsync<ArgumentException>(() => chatService.StartAsync(session));
     }
 
     [Fact]
-    public void InitializeChat_SingleAgent_NoSystemMessage()
+    public async Task StartAsync_SingleAgent_NoSystemMessage()
     {
         var chatService = new AppChatService(
             kernelService: null!,
@@ -82,13 +85,14 @@ public class ChatServiceTests
             llmServerConfigService: new MockLlmServerConfigService());
 
         var prompt = new AgentDescription { AgentName = "Agent", Content = "Hello" };
-        chatService.InitializeChat([prompt]);
+        var session = new ChatSessionParameters(new RoundRobinGroupChatManager(), new AppChatConfiguration("m", []), [prompt]);
+        await chatService.StartAsync(session);
 
         Assert.Empty(chatService.Messages);
     }
 
     [Fact]
-    public void ResetChat_ClearsAgents()
+    public async Task ResetChat_ClearsAgents()
     {
         var chatService = new AppChatService(
             kernelService: null!,
@@ -101,7 +105,8 @@ public class ChatServiceTests
             llmServerConfigService: new MockLlmServerConfigService());
 
         var prompt = new AgentDescription { AgentName = "Agent", Content = "Hello" };
-        chatService.InitializeChat([prompt]);
+        var session = new ChatSessionParameters(new RoundRobinGroupChatManager(), new AppChatConfiguration("m", []), [prompt]);
+        await chatService.StartAsync(session);
         Assert.Single(chatService.AgentDescriptions);
 
         var resetRaised = false;

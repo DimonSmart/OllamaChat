@@ -371,7 +371,10 @@
         selectedAgent.ModelName = effectiveModel.ModelName;
         selectedAgent.LlmId = effectiveModel.ServerId;
 
-        ChatService.InitializeChat(agentsForChat);
+        var functions = selectedAgent.FunctionSettings.SelectedFunctions ?? [];
+        var chatConfiguration = new AppChatConfiguration(CurrentModelName, functions);
+        var options = new RoundRobinStopAgentOptions { Rounds = 1 };
+        var groupChatManager = StopAgentFactory.Create("RoundRobin", options);
 
         var savedMessages = saved.Messages
             .Select(m =>
@@ -381,11 +384,12 @@
                 return (IAppChatMessage)msg;
             }).ToList();
 
-        await ChatService.LoadHistoryAsync(savedMessages);
+        var session = new ChatSessionParameters(groupChatManager, chatConfiguration, agentsForChat, savedMessages);
+        await ChatService.StartAsync(session);
         chatStarted = true;
     }
 
-    private void StartChat()
+    private async Task StartChat()
     {
         if (selectedAgent is null)
             return;
@@ -401,7 +405,12 @@
         selectedAgent.ModelName = effectiveModel.ModelName;
         selectedAgent.LlmId = effectiveModel.ServerId;
 
-        ChatService.InitializeChat(agents);
+        var functions = selectedAgent.FunctionSettings.SelectedFunctions ?? [];
+        var chatConfiguration = new AppChatConfiguration(CurrentModelName, functions);
+        var options = new RoundRobinStopAgentOptions { Rounds = 1 };
+        var groupChatManager = StopAgentFactory.Create("RoundRobin", options);
+        var session = new ChatSessionParameters(groupChatManager, chatConfiguration, agents);
+        await ChatService.StartAsync(session);
         chatStarted = true;
         StateHasChanged();
     }
@@ -450,12 +459,7 @@
         if (string.IsNullOrWhiteSpace(messageData.text) || isLLMAnswering) return;
         if (selectedAgent == null) return;
 
-        var functions = selectedAgent.FunctionSettings.SelectedFunctions ?? [];
-        var chatConfiguration = new AppChatConfiguration(CurrentModelName, functions);
-        var options = new RoundRobinStopAgentOptions { Rounds = 1 };
-        var groupChatManager = StopAgentFactory.Create("RoundRobin", options);
-        
-        await ChatService.GenerateAnswerAsync(messageData.text.Trim(), chatConfiguration, groupChatManager, messageData.files);
+        await ChatService.SendAsync(messageData.text.Trim(), messageData.files);
         await ScrollToBottom();
     }
 
