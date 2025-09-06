@@ -255,7 +255,7 @@
     private StreamingDebouncer _renderDebouncer = null!;
 
     private Func<AppChatMessageViewModel, Task>? _messageAddedHandler;
-    private Func<AppChatMessageViewModel, bool, Task>? _messageUpdatedHandler;
+    private Func<AppChatMessageViewModel, MessageUpdateOptions, Task>? _messageUpdatedHandler;
     private Func<AppChatMessageViewModel, Task>? _messageDeletedHandler;
 
     protected override async Task OnInitializedAsync()
@@ -270,7 +270,7 @@
         ChatViewModelService.ChatReset += OnChatReset;
         _renderDebouncer = new StreamingDebouncer(UpdateIntervalMs, () => InvokeAsync(StateHasChanged));
         _messageAddedHandler = msg => InvokeAsync(() => OnMessageAdded(msg));
-        _messageUpdatedHandler = (msg, force) => InvokeAsync(() => OnMessageUpdated(msg, force));
+        _messageUpdatedHandler = (msg, opts) => InvokeAsync(() => OnMessageUpdated(msg, opts));
         _messageDeletedHandler = msg => InvokeAsync(() => OnMessageDeleted(msg));
         ChatViewModelService.MessageAdded += _messageAddedHandler;
         ChatViewModelService.MessageUpdated += _messageUpdatedHandler;
@@ -297,9 +297,9 @@
         StateHasChanged();
         await ScrollToBottom();
     }    
-    private Task OnMessageUpdated(AppChatMessageViewModel message, bool forceRender)
+    private Task OnMessageUpdated(AppChatMessageViewModel message, MessageUpdateOptions options)
     {
-        return _renderDebouncer.TriggerAsync(forceRender);
+        return _renderDebouncer.TriggerAsync(options);
     }
 
     private void OnMessageDeleted(AppChatMessageViewModel message)

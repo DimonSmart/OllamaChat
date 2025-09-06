@@ -12,7 +12,7 @@ public interface IAppChatService
     event Action<bool>? AnsweringStateChanged;
     event Action? ChatReset;
     event Func<IAppChatMessage, Task>? MessageAdded;
-    event Func<IAppChatMessage, bool, Task>? MessageUpdated;
+    event Func<IAppChatMessage, MessageUpdateOptions, Task>? MessageUpdated;
     event Func<Guid, Task>? MessageDeleted;
 
     Task StartAsync(ChatSessionParameters parameters);

@@ -35,7 +35,7 @@ public class AppChatService(
     public event Action<bool>? AnsweringStateChanged;
     public event Action? ChatReset;
     public event Func<IAppChatMessage, Task>? MessageAdded;
-    public event Func<IAppChatMessage, bool, Task>? MessageUpdated;
+    public event Func<IAppChatMessage, MessageUpdateOptions, Task>? MessageUpdated;
     public event Func<Guid, Task>? MessageDeleted;
 
     public bool IsAnswering { get; private set; }
@@ -108,7 +108,7 @@ public class AppChatService(
                 Messages[index] = canceled;
             else
                 Messages.Add(canceled);
-            await (MessageUpdated?.Invoke(canceled, true) ?? Task.CompletedTask);
+            await (MessageUpdated?.Invoke(canceled, new MessageUpdateOptions(true)) ?? Task.CompletedTask);
         }
         _activeStreams.Clear();
     }
@@ -392,7 +392,7 @@ public class AppChatService(
                         if (MessageUpdated != null)
                         {
                             logger.LogDebug("Sending forced update for agent name change: {AgentName}", agentName);
-                            await MessageUpdated(message, false);
+                            await MessageUpdated(message, default);
                         }
                     }
                     else
@@ -412,7 +412,7 @@ public class AppChatService(
                         Messages[index] = final;
                     else
                         Messages.Add(final);
-                    await (MessageUpdated?.Invoke(final, true) ?? Task.CompletedTask);
+                    await (MessageUpdated?.Invoke(final, new MessageUpdateOptions(true)) ?? Task.CompletedTask);
                     _activeStreams.Remove(agentName);
 
                     if (_chat.AgentsByName.Count > 1)
@@ -450,7 +450,7 @@ public class AppChatService(
         {
             logger.LogDebug("Invoking MessageUpdated event for agent {AgentName}, content length: {ContentLength}",
                            message.AgentName, message.Content.Length);
-            await MessageUpdated(message, false);
+            await MessageUpdated(message, default);
             logger.LogDebug("MessageUpdated event completed for agent {AgentName}", message.AgentName);
         }
         else
@@ -505,7 +505,7 @@ public class AppChatService(
             {
                 var final = CompleteStreamingMessage(kvp.Value, functionCount, trackingScope);
                 Messages.Add(final);
-                await (MessageUpdated?.Invoke(final, true) ?? Task.CompletedTask);
+                await (MessageUpdated?.Invoke(final, new MessageUpdateOptions(true)) ?? Task.CompletedTask);
             }
             _activeStreams.Remove(kvp.Key);
         }
