@@ -288,7 +288,6 @@
     private UserSettings userSettings = new();
 
     private StreamingDebouncer _renderDebouncer = null!;
-    private Guid? lastSavedChatId;
 
     private Func<AppChatMessageViewModel, Task>? _messageAddedHandler;
     private Func<AppChatMessageViewModel, bool, Task>? _messageUpdatedHandler;
@@ -320,17 +319,8 @@
 
     protected override async Task OnParametersSetAsync()
     {
-        if (!SavedChatId.HasValue)
-        {
-            lastSavedChatId = null;
-            return;
-        }
-
-        if (SavedChatId == lastSavedChatId)
-            return;
-
-        lastSavedChatId = SavedChatId;
-        await LoadSavedChat(SavedChatId.Value);
+        if (SavedChatId.HasValue && !chatStarted)
+            await LoadSavedChat(SavedChatId.Value);
     }
 
     private void OnAnsweringStateChanged(bool answering)
@@ -356,8 +346,7 @@
 
     private void OnChatReset()
     {
-        chatStarted = true;
-        lastSavedChatId = null;
+        chatStarted = false;
         StateHasChanged();
     }
 
@@ -563,9 +552,15 @@
                 m.AgentName))
             .ToList();
 
-        var chat = new SavedChat(Guid.NewGuid(), title, DateTime.UtcNow, messages, participants);
+        var chatId = SavedChatId ?? Guid.NewGuid();
+        var chat = new SavedChat(chatId, title, DateTime.UtcNow, messages, participants);
         await SavedChatService.SaveAsync(chat);
+
+        var isNew = !SavedChatId.HasValue;
+        SavedChatId = chatId;
         Snackbar.Add("Chat saved", Severity.Success);
+        if (isNew)
+            NavigationManager.NavigateTo(NavigationManager.GetUriWithQueryParameter("saved", chatId));
     }
 
     private async Task SendChatMessageAsync((string text, IReadOnlyList<AppChatMessageFile> files) messageData)
