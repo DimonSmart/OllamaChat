@@ -11,34 +11,25 @@ public class ModelsController(
     IOllamaClientService ollamaService,
     IOpenAIClientService openAIService,
     IUserSettingsService userSettingsService,
-    ILlmServerConfigService llmServerConfigService,
-    ILogger<ModelsController> logger) : ControllerBase
+    ILlmServerConfigService llmServerConfigService) : ControllerBase
 {
     [HttpGet]
     public async Task<ActionResult<object>> GetModels([FromQuery] Guid? serverId = null)
     {
-        try
+        if (serverId == null || serverId == Guid.Empty)
+            return BadRequest("ServerId is required and cannot be empty");
+
+        var serverType = await LlmServerConfigHelper.GetServerTypeAsync(llmServerConfigService, userSettingsService, serverId);
+
+        if (serverType == ServerType.ChatGpt)
         {
-            if (serverId == null || serverId == Guid.Empty)
-                throw new ArgumentException("ServerId is required and cannot be empty");
-
-            var serverType = await LlmServerConfigHelper.GetServerTypeAsync(llmServerConfigService, userSettingsService, serverId);
-
-            if (serverType == ServerType.ChatGpt)
-            {
-                var models = await openAIService.GetAvailableModelsAsync(serverId.Value);
-                return Ok(models.Select(m => new { Id = m, Name = m }));
-            }
-            else
-            {
-                var models = await ollamaService.GetModelsAsync(serverId.Value);
-                return Ok(models);
-            }
+            var models = await openAIService.GetAvailableModelsAsync(serverId.Value);
+            return Ok(models.Select(m => new { Id = m, Name = m }));
         }
-        catch (Exception ex)
+        else
         {
-            logger.LogError(ex, "Error retrieving models for serverId: {ServerId}", serverId);
-            return StatusCode(500, "An error occurred while retrieving models");
+            var models = await ollamaService.GetModelsAsync(serverId.Value);
+            return Ok(models);
         }
     }
 }

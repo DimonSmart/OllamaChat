@@ -10,128 +10,86 @@ namespace ChatClient.Api.Controllers;
 public class AgentDescriptionsController : ControllerBase
 {
     private readonly IAgentDescriptionService _agentService;
-    private readonly ILogger<AgentDescriptionsController> _logger;
 
-    public AgentDescriptionsController(IAgentDescriptionService agentService, ILogger<AgentDescriptionsController> logger)
+    public AgentDescriptionsController(IAgentDescriptionService agentService)
     {
         _agentService = agentService;
-        _logger = logger;
     }
 
     [HttpGet]
     public async Task<ActionResult<IEnumerable<AgentDescription>>> GetAgents()
     {
-        try
-        {
-            var agents = await _agentService.GetAllAsync();
-            return Ok(agents);
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Error retrieving all agents");
-            return StatusCode(500, "An error occurred while retrieving agents");
-        }
+        var agents = await _agentService.GetAllAsync();
+        return Ok(agents);
     }
 
     [HttpGet("{id}")]
     public async Task<ActionResult<AgentDescription>> GetAgentById(Guid id)
     {
-        try
+        var agent = await _agentService.GetByIdAsync(id);
+        if (agent == null)
         {
-            var agent = await _agentService.GetByIdAsync(id);
-            if (agent == null)
-            {
-                return NotFound($"Agent with ID {id} not found");
-            }
+            return NotFound($"Agent with ID {id} not found");
+        }
 
-            return Ok(agent);
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Error retrieving agent with ID {Id}", id);
-            return StatusCode(500, "An error occurred while retrieving the agent");
-        }
+        return Ok(agent);
     }
 
     [HttpPost]
     public async Task<ActionResult<AgentDescription>> CreateAgent([FromBody] AgentDescription agent)
     {
-        try
+        if (string.IsNullOrWhiteSpace(agent.AgentName))
         {
-            if (string.IsNullOrWhiteSpace(agent.AgentName))
-            {
-                return BadRequest("Agent name is required");
-            }
-
-            if (string.IsNullOrWhiteSpace(agent.Content))
-            {
-                return BadRequest("Agent description content is required");
-            }
-
-            var createdAgent = await _agentService.CreateAsync(agent);
-            return CreatedAtAction(nameof(GetAgentById), new { id = createdAgent.Id }, createdAgent);
+            return BadRequest("Agent name is required");
         }
-        catch (Exception ex)
+
+        if (string.IsNullOrWhiteSpace(agent.Content))
         {
-            _logger.LogError(ex, "Error creating agent");
-            return StatusCode(500, "An error occurred while creating the agent");
+            return BadRequest("Agent description content is required");
         }
+
+        var createdAgent = await _agentService.CreateAsync(agent);
+        return CreatedAtAction(nameof(GetAgentById), new { id = createdAgent.Id }, createdAgent);
     }
 
     [HttpPut("{id}")]
     public async Task<ActionResult<AgentDescription>> UpdateAgent(Guid id, [FromBody] AgentDescription agent)
     {
-        try
+        if (id != agent.Id)
         {
-            if (id != agent.Id)
-            {
-                return BadRequest("ID in URL does not match ID in request body");
-            }
-
-            if (string.IsNullOrWhiteSpace(agent.AgentName))
-            {
-                return BadRequest("Agent name is required");
-            }
-
-            if (string.IsNullOrWhiteSpace(agent.Content))
-            {
-                return BadRequest("Agent description content is required");
-            }
-
-            var existingAgent = await _agentService.GetByIdAsync(id);
-            if (existingAgent == null)
-            {
-                return NotFound($"Agent with ID {id} not found");
-            }
-
-            var updatedAgent = await _agentService.UpdateAsync(agent);
-            return Ok(updatedAgent);
+            return BadRequest("ID in URL does not match ID in request body");
         }
-        catch (Exception ex)
+
+        if (string.IsNullOrWhiteSpace(agent.AgentName))
         {
-            _logger.LogError(ex, "Error updating agent with ID {Id}", id);
-            return StatusCode(500, "An error occurred while updating the agent");
+            return BadRequest("Agent name is required");
         }
+
+        if (string.IsNullOrWhiteSpace(agent.Content))
+        {
+            return BadRequest("Agent description content is required");
+        }
+
+        var existingAgent = await _agentService.GetByIdAsync(id);
+        if (existingAgent == null)
+        {
+            return NotFound($"Agent with ID {id} not found");
+        }
+
+        var updatedAgent = await _agentService.UpdateAsync(agent);
+        return Ok(updatedAgent);
     }
 
     [HttpDelete("{id}")]
     public async Task<ActionResult> DeleteAgent(Guid id)
     {
-        try
+        var existingAgent = await _agentService.GetByIdAsync(id);
+        if (existingAgent == null)
         {
-            var existingAgent = await _agentService.GetByIdAsync(id);
-            if (existingAgent == null)
-            {
-                return NotFound($"Agent with ID {id} not found");
-            }
+            return NotFound($"Agent with ID {id} not found");
+        }
 
-            await _agentService.DeleteAsync(id);
-            return NoContent();
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Error deleting agent with ID {Id}", id);
-            return StatusCode(500, "An error occurred while deleting the agent");
-        }
+        await _agentService.DeleteAsync(id);
+        return NoContent();
     }
 }

@@ -9,7 +9,7 @@ namespace ChatClient.Api.Controllers;
 
 [ApiController]
 [Route("api/mcp-playground")]
-public class McpPlaygroundController(IMcpClientService clientService, ILogger<McpPlaygroundController> logger) : ControllerBase
+public class McpPlaygroundController(IMcpClientService clientService) : ControllerBase
 {
     [HttpGet("servers")]
     public async Task<ActionResult<IEnumerable<string>>> GetServers(CancellationToken cancellationToken)
@@ -42,15 +42,7 @@ public class McpPlaygroundController(IMcpClientService clientService, ILogger<Mc
         if (tool == null)
             return NotFound($"Function {request.Function} not found");
         var args = request.Parameters?.ToDictionary(kv => kv.Key, kv => kv.Value.Deserialize<object?>()) ?? new Dictionary<string, object?>();
-        try
-        {
-            var result = await tool.CallAsync(args, null, null, cancellationToken);
-            return Ok(JsonSerializer.SerializeToElement(result));
-        }
-        catch (Exception ex)
-        {
-            logger.LogError(ex, "Error calling tool {Function} on server {Server}", request.Function, request.Server);
-            return StatusCode(500, JsonSerializer.SerializeToElement(new { error = ex.Message }));
-        }
+        var result = await tool.CallAsync(args, null, null, cancellationToken);
+        return Ok(JsonSerializer.SerializeToElement(result));
     }
 }
