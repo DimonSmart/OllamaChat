@@ -36,7 +36,7 @@ public class UserSettingsService : IUserSettingsService
         _logger.LogInformation("User settings file path: {FilePath}", _settingsFilePath);
     }
 
-    public async Task<UserSettings> GetSettingsAsync()
+    public async Task<UserSettings> GetSettingsAsync(CancellationToken cancellationToken = default)
     {
         UserSettings settings;
 
@@ -47,7 +47,7 @@ public class UserSettingsService : IUserSettingsService
         }
         else
         {
-            var json = await File.ReadAllTextAsync(_settingsFilePath);
+            var json = await File.ReadAllTextAsync(_settingsFilePath, cancellationToken);
             settings = JsonSerializer.Deserialize<UserSettings>(json, _jsonOptions) ?? new UserSettings();
         }
 
@@ -67,17 +67,17 @@ public class UserSettingsService : IUserSettingsService
         settings.Embedding ??= new EmbeddingSettings();
 
         if (updated || !File.Exists(_settingsFilePath))
-            await SaveSettingsAsync(settings);
+            await SaveSettingsAsync(settings, cancellationToken);
 
         return settings;
     }
 
-    public async Task SaveSettingsAsync(UserSettings settings)
+    public async Task SaveSettingsAsync(UserSettings settings, CancellationToken cancellationToken = default)
     {
         try
         {
             var json = JsonSerializer.Serialize(settings, _jsonOptions);
-            await File.WriteAllTextAsync(_settingsFilePath, json);
+            await File.WriteAllTextAsync(_settingsFilePath, json, cancellationToken);
             _logger.LogInformation("User settings saved successfully");
         }
         catch (Exception ex)
