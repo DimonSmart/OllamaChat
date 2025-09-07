@@ -96,14 +96,18 @@ public class SavedChatService : ISavedChatService
         await WriteAsync(file, chat, cancellationToken);
     }
 
-    public Task DeleteAsync(Guid id, CancellationToken cancellationToken = default)
+    public async Task DeleteAsync(Guid id, CancellationToken cancellationToken = default)
     {
         if (id == Guid.Empty)
             throw new ArgumentException("Chat id must be provided", nameof(id));
+
         var file = Path.Combine(_directoryPath, $"{id}.json");
-        if (File.Exists(file))
-            File.Delete(file);
-        return Task.CompletedTask;
+
+        await Task.Run(() =>
+        {
+            if (File.Exists(file))
+                File.Delete(file);
+        }, cancellationToken);
     }
 
     private async Task WriteAsync(string file, SavedChat chat, CancellationToken cancellationToken)
