@@ -5,8 +5,8 @@ using ChatClient.Shared.Services;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Logging;
 using Microsoft.SemanticKernel;
-using Microsoft.SemanticKernel.ChatCompletion;
 using Microsoft.SemanticKernel.Agents.Orchestration.GroupChat;
+using Microsoft.SemanticKernel.ChatCompletion;
 using OllamaSharp;
 using System;
 using System.Threading.Tasks;
@@ -41,8 +41,11 @@ public class ChatServiceTests
 
     private class MockUserSettingsService : IUserSettingsService
     {
-        public Task<UserSettings> GetSettingsAsync() => Task.FromResult(new UserSettings());
-        public Task SaveSettingsAsync(UserSettings settings) => Task.CompletedTask;
+        public Task<UserSettings> GetSettingsAsync(CancellationToken cancellationToken = default)
+            => Task.FromResult(new UserSettings());
+
+        public Task SaveSettingsAsync(UserSettings settings, CancellationToken cancellationToken = default)
+            => Task.CompletedTask;
     }
 
     private class MockLlmServerConfigService : ILlmServerConfigService

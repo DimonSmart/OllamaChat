@@ -15,8 +15,11 @@ public class AppChatHistoryBuilderTests
 {
     private sealed class ThrowingUserSettingsService : IUserSettingsService
     {
-        public Task<UserSettings> GetSettingsAsync() => throw new InvalidOperationException();
-        public Task SaveSettingsAsync(UserSettings settings) => throw new InvalidOperationException();
+        public Task<UserSettings> GetSettingsAsync(CancellationToken cancellationToken = default)
+            => throw new InvalidOperationException();
+
+        public Task SaveSettingsAsync(UserSettings settings, CancellationToken cancellationToken = default)
+            => throw new InvalidOperationException();
     }
 
     private sealed class ThrowingOllamaClientService : IOllamaClientService

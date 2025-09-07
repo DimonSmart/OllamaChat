@@ -32,8 +32,11 @@ public class OllamaServiceTests
 
     private sealed class StubUserSettingsService : IUserSettingsService
     {
-        public Task<UserSettings> GetSettingsAsync() => Task.FromResult(new UserSettings());
-        public Task SaveSettingsAsync(UserSettings settings) => Task.CompletedTask;
+        public Task<UserSettings> GetSettingsAsync(CancellationToken cancellationToken = default)
+            => Task.FromResult(new UserSettings());
+
+        public Task SaveSettingsAsync(UserSettings settings, CancellationToken cancellationToken = default)
+            => Task.CompletedTask;
     }
 
     private class MockLlmServerConfigService : ILlmServerConfigService

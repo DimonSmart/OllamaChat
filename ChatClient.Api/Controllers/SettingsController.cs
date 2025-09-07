@@ -19,11 +19,11 @@ public class SettingsController : ControllerBase
     }
 
     [HttpGet]
-    public async Task<ActionResult<UserSettings>> GetSettings()
+    public async Task<ActionResult<UserSettings>> GetSettings(CancellationToken cancellationToken)
     {
         try
         {
-            var settings = await _settingsService.GetSettingsAsync();
+            var settings = await _settingsService.GetSettingsAsync(cancellationToken);
             return Ok(settings);
         }
         catch (Exception ex)
@@ -34,11 +34,11 @@ public class SettingsController : ControllerBase
     }
 
     [HttpPost]
-    public async Task<ActionResult> SaveSettings([FromBody] UserSettings settings)
+    public async Task<ActionResult> SaveSettings([FromBody] UserSettings settings, CancellationToken cancellationToken)
     {
         try
         {
-            await _settingsService.SaveSettingsAsync(settings);
+            await _settingsService.SaveSettingsAsync(settings, cancellationToken);
             return Ok();
         }
         catch (Exception ex)
