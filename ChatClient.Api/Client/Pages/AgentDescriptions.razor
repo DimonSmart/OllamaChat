@@ -204,7 +204,7 @@
                           HelperText="Custom short name for this agent. If empty, uses global agent name from settings."
                           Placeholder="Enter short name..." />
 
-            <ServerModelPicker @bind-Value="editingServerModel" ShowClearButton="true" Class="mt-4" />
+            <ServerModelPicker @bind-Value="editingServerModel" ShowClearButton="true" UseDefaultsWhenUnset="false" Class="mt-4" />
             <MudText Typo="Typo.caption">Leave blank to use chat's default model.</MudText>
 
             <MudNumericField T="double?" @bind-Value="editingAgent.Temperature" Label="Temperature (Optional)" Class="mt-4" Immediate="true" Min="0" Max="2" Step="0.1" />

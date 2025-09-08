@@ -48,6 +48,7 @@
     [Parameter] public ServerModelSelection Value { get; set; } = new(null, null);
     [Parameter] public EventCallback<ServerModelSelection> ValueChanged { get; set; }
     [Parameter] public bool ShowClearButton { get; set; } = false;
+    [Parameter] public bool UseDefaultsWhenUnset { get; set; } = true;
     [Parameter(CaptureUnmatchedValues = true)] public Dictionary<string, object> Attributes { get; set; } = [];
 
     private Guid? selectedServerId;
@@ -62,13 +63,16 @@
         servers = await LlmServerConfigService.GetAllAsync();
         if (Value.ServerId is null && string.IsNullOrEmpty(Value.ModelName))
         {
-            var settings = await UserSettingsService.GetSettingsAsync();
-            var defaultModel = settings.DefaultModel;
-            selectedServerId = defaultModel.ServerId;
-            selectedModel = defaultModel.ModelName;
-            if (selectedServerId.HasValue)
-                await LoadModelsAsync(selectedServerId.Value);
-            await NotifyValueChanged();
+            if (UseDefaultsWhenUnset)
+            {
+                var settings = await UserSettingsService.GetSettingsAsync();
+                var defaultModel = settings.DefaultModel;
+                selectedServerId = defaultModel.ServerId;
+                selectedModel = defaultModel.ModelName;
+                if (selectedServerId.HasValue)
+                    await LoadModelsAsync(selectedServerId.Value);
+                await NotifyValueChanged();
+            }
             return;
         }
         selectedServerId = Value.ServerId;
