@@ -5,7 +5,7 @@ using Microsoft.SemanticKernel.ChatCompletion;
 namespace ChatClient.Api.Client.Services;
 
 
-public sealed class BridgingRoundRobinManager : RoundRobinGroupChatManager
+public sealed class BridgingRoundRobinManager : ResettableRoundRobinGroupChatManager
 {
     private ChatMessageContent? _fixedAgentMessage = null;
     private AuthorRole _fixedMessageRole = AuthorRole.Assistant;

@@ -1,7 +1,7 @@
 # Multi-Agent Chat
 
 OllamaChat uses Semantic Kernel's `GroupChatOrchestration` to coordinate
-selected `ChatCompletionAgent` instances. A `RoundRobinGroupChatManager`
+selected `ChatCompletionAgent` instances. A `ResettableRoundRobinGroupChatManager`
 cycles through agents; increase `MaximumInvocationCount` to let them
 auto‑continue without extra user messages.
 
@@ -13,7 +13,7 @@ final agent reply as a user message (`AuthorName="user"`).
 
 ```csharp
 var orchestrator = new GroupChatOrchestration(
-    new RoundRobinGroupChatManager { MaximumInvocationCount = 2 },
+    new ResettableRoundRobinGroupChatManager { MaximumInvocationCount = 2 },
     agents);
 ```
 

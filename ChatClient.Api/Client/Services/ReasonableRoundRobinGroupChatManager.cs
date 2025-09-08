@@ -7,7 +7,7 @@ namespace ChatClient.Api.Client.Services;
 
 internal sealed class ReasonableRoundRobinGroupChatManager(
     string stopAgentName,
-    string stopPhrase) : RoundRobinGroupChatManager
+    string stopPhrase) : ResettableRoundRobinGroupChatManager
 {
     private readonly StopPhraseEvaluator _stopEvaluator = new(stopAgentName, stopPhrase);
 
