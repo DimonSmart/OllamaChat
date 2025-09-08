@@ -27,6 +27,9 @@
                        Size="Size.Small"
                        Class="ml-4"
                        Style="flex-shrink: 0;">New Chat</MudButton>
+        }
+        @if (!isLLMAnswering)
+        {
             <div class="ml-2" style="flex-shrink: 1; min-width: 0;">
                 <ServerModelPicker Value="pickerModel" ValueChanged="OnModelChanged" />
             </div>
