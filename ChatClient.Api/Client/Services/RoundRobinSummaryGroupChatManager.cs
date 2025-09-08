@@ -3,7 +3,7 @@ using Microsoft.SemanticKernel.ChatCompletion;
 
 namespace ChatClient.Api.Client.Services;
 
-public sealed class RoundRobinSummaryGroupChatManager(string summaryAgentName) : RoundRobinGroupChatManager, IGroupChatAgentProvider
+public sealed class RoundRobinSummaryGroupChatManager(string summaryAgentName) : ResettableRoundRobinGroupChatManager, IGroupChatAgentProvider
 {
     private readonly string _summaryAgentName = summaryAgentName;
     private bool _summaryPending;
