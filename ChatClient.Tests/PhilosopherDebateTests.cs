@@ -76,7 +76,7 @@ public partial class PhilosopherDebateTests
         };
 
         GroupChatOrchestration chat = new(
-            new RoundRobinGroupChatManager { MaximumInvocationCount = 8 },
+            new ResettableRoundRobinGroupChatManager { MaximumInvocationCount = 8 },
             kant,
             bentham);
 

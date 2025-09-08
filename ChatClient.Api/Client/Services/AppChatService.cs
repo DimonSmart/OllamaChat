@@ -11,7 +11,6 @@ using Microsoft.SemanticKernel.ChatCompletion;
 using OllamaSharp.Models.Exceptions;
 using System.Collections.ObjectModel;
 using System.Linq;
-using System.Reflection;
 
 namespace ChatClient.Api.Client.Services;
 
@@ -569,8 +568,10 @@ public class AppChatService(
 
     private static void ResetInvocationCount(GroupChatManager manager)
     {
-        var field = typeof(GroupChatManager).GetField("_invocationCount", BindingFlags.Instance | BindingFlags.NonPublic);
-        field?.SetValue(manager, 0);
+        if (manager is ResettableRoundRobinGroupChatManager resettable)
+        {
+            resettable.ResetInvocationCount();
+        }
     }
 
     private void UpdateAnsweringState(bool isAnswering)

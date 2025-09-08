@@ -70,7 +70,7 @@ public class ChatServiceTests
             userSettingsService: new MockUserSettingsService(),
             llmServerConfigService: new MockLlmServerConfigService());
 
-        var session = new ChatSessionParameters(new RoundRobinGroupChatManager(), new AppChatConfiguration("m", []), []);
+        var session = new ChatSessionParameters(new ResettableRoundRobinGroupChatManager(), new AppChatConfiguration("m", []), []);
         await Assert.ThrowsAsync<ArgumentException>(() => chatService.StartAsync(session));
     }
 
@@ -88,7 +88,7 @@ public class ChatServiceTests
             llmServerConfigService: new MockLlmServerConfigService());
 
         var prompt = new AgentDescription { AgentName = "Agent", Content = "Hello" };
-        var session = new ChatSessionParameters(new RoundRobinGroupChatManager(), new AppChatConfiguration("m", []), [prompt]);
+        var session = new ChatSessionParameters(new ResettableRoundRobinGroupChatManager(), new AppChatConfiguration("m", []), [prompt]);
         await chatService.StartAsync(session);
 
         Assert.Empty(chatService.Messages);
@@ -108,7 +108,7 @@ public class ChatServiceTests
             llmServerConfigService: new MockLlmServerConfigService());
 
         var prompt = new AgentDescription { AgentName = "Agent", Content = "Hello" };
-        var session = new ChatSessionParameters(new RoundRobinGroupChatManager(), new AppChatConfiguration("m", []), [prompt]);
+        var session = new ChatSessionParameters(new ResettableRoundRobinGroupChatManager(), new AppChatConfiguration("m", []), [prompt]);
         await chatService.StartAsync(session);
         Assert.Single(chatService.AgentDescriptions);
 
