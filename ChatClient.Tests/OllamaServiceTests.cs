@@ -1,16 +1,13 @@
 using ChatClient.Api.Services;
 using ChatClient.Shared.Models;
 using ChatClient.Shared.Services;
-using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
-using OllamaSharp;
-using System.Reflection;
 
 public class OllamaServiceTests
 {
     [Fact]
-    public async Task GetClientAsync_UsesDefaultUrl_WhenNoServersConfigured()
+    public async Task GetClientAsync_ThrowsException_WhenServerNotFound()
     {
         var userSettingsService = new StubUserSettingsService();
         var llmServerConfigService = new MockLlmServerConfigService();
@@ -21,13 +18,8 @@ public class OllamaServiceTests
 
         var service = new OllamaService(userSettingsService, llmServerConfigService, provider, logger);
 
-        await service.GetClientAsync(Guid.Empty);
-
-        var field = typeof(OllamaService).GetField("_clients", BindingFlags.NonPublic | BindingFlags.Instance)!;
-        var dict = (Dictionary<Guid, (OllamaApiClient Client, HttpClient HttpClient)>)field.GetValue(service)!;
-        var httpClient = dict[Guid.Empty].HttpClient;
-
-        Assert.Equal(new Uri(LlmServerConfig.DefaultOllamaUrl), httpClient.BaseAddress);
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(() => service.GetClientAsync(Guid.Empty));
+        Assert.Contains("not found", exception.Message);
     }
 
     private sealed class StubUserSettingsService : IUserSettingsService
