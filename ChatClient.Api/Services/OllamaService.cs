@@ -1,11 +1,9 @@
 #pragma warning disable SKEXP0070
 using ChatClient.Shared.Models;
 using ChatClient.Shared.Services;
-using Microsoft.Extensions.Logging;
 using OllamaSharp;
 using OllamaSharp.Models;
 using System.Collections.Concurrent;
-using System.Linq;
 using System.Net.Http.Headers;
 using System.Text;
 
@@ -22,30 +20,28 @@ public sealed class OllamaService(
     private readonly object _lock = new();
     private Exception? _embeddingError;
 
-    private async Task<(OllamaApiClient Client, Guid Id)> GetOllamaClientAsync(Guid serverId)
+    private async Task<OllamaApiClient> GetOllamaClientAsync(Guid serverId)
     {
-        var config = await GetServerConfigAsync(serverId);
-        var id = config.Id ?? Guid.Empty;
-
         lock (_lock)
         {
-            if (_clients.TryGetValue(id, out var entry))
-                return (entry.Client, id);
+            if (_clients.TryGetValue(serverId, out var entry))
+                return entry.Client;
         }
 
+        var config = await GetServerConfigAsync(serverId);
         var httpClient = BuildHttpClient(config);
         var client = new OllamaApiClient(httpClient);
+
         lock (_lock)
         {
-            _clients[id] = (client, httpClient);
+            _clients[serverId] = (client, httpClient);
         }
-        return (client, id);
+        return client;
     }
 
     public async Task<OllamaApiClient> GetClientAsync(Guid serverId)
     {
-        var (client, _) = await GetOllamaClientAsync(serverId);
-        return client;
+        return await GetOllamaClientAsync(serverId);
     }
 
     public Task<IReadOnlyList<OllamaModel>> GetModelsAsync(Guid serverId) =>
@@ -53,10 +49,10 @@ public sealed class OllamaService(
 
     private async Task<IReadOnlyList<OllamaModel>> GetModelsInternalAsync(Guid serverId)
     {
-        var (client, id) = await GetOllamaClientAsync(serverId);
-        if (_modelsCache.TryGetValue(id, out var cached))
+        if (_modelsCache.TryGetValue(serverId, out var cached))
             return cached;
 
+        var client = await GetOllamaClientAsync(serverId);
         var models = await client.ListLocalModelsAsync();
         var list = models.Select(m => new OllamaModel
         {
@@ -70,7 +66,7 @@ public sealed class OllamaService(
         .OrderBy(m => m.Name)
         .ToList();
 
-        _modelsCache[id] = list;
+        _modelsCache[serverId] = list;
         return list;
     }
 
@@ -84,7 +80,7 @@ public sealed class OllamaService(
         if (_embeddingError is not null)
             throw new InvalidOperationException("Embedding service unavailable. Restart the application.", _embeddingError);
 
-        var (client, _) = await GetOllamaClientAsync(serverId);
+        var client = await GetOllamaClientAsync(serverId);
 
         var request = new EmbedRequest { Model = modelId, Input = new List<string> { input } };
         try
@@ -121,19 +117,8 @@ public sealed class OllamaService(
             return serverConfig;
         }
 
-        logger.LogWarning("No Ollama server found for ID {ServerId}. Creating fallback configuration.", serverId);
-        return CreateFallbackServerConfig();
-    }
-
-    private LlmServerConfig CreateFallbackServerConfig()
-    {
-        return new LlmServerConfig
-        {
-            Id = Guid.Empty,
-            BaseUrl = LlmServerConfig.DefaultOllamaUrl,
-            ServerType = ServerType.Ollama,
-            Name = "Default"
-        };
+        logger.LogError("No Ollama server found for ID {ServerId}", serverId);
+        throw new InvalidOperationException($"Ollama server with ID {serverId} not found.");
     }
 
     private HttpClient BuildHttpClient(LlmServerConfig config)
