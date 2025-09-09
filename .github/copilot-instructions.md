@@ -71,6 +71,8 @@
 - Create specialized services for complex operations instead of embedding logic in multiple places.
 - **Method overloads**: Don't create overloads that merely delegate to another signature — keep one universal version and replace calls accordingly.
 - **Avoid parameter pass-through methods**: If a method only receives parameters to create an object and return it at the end, consider removing the method and creating the object directly in the calling code. Methods should perform meaningful logic, not just pass parameters to constructors.
+- **Don't return input parameters**: Avoid returning the same parameters that were passed as input to the method. It's redundant and adds no value. If a method receives an ID and needs to return it unchanged, the caller already has that ID.
+- **Avoid tuple returns**: Returning tuples is often a sign of poor design. Consider creating a dedicated class/record or refactoring the method to have a single responsibility. If you find yourself returning multiple unrelated values, the method is likely doing too much.
 
 ### Modern C# Features
 - Use target-typed expressions where appropriate (`return [];`).
