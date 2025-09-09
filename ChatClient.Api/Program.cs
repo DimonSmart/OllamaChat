@@ -7,10 +7,15 @@ using Microsoft.AspNetCore.Components.Server.Circuits;
 using Microsoft.AspNetCore.Hosting.Server;
 using Microsoft.AspNetCore.Hosting.Server.Features;
 using Microsoft.SemanticKernel.Connectors.InMemory;
+using System.Text;
 
 using MudBlazor.Services;
 
 using Serilog;
+
+// Enable UTF-8 for proper Cyrillic support.
+Console.OutputEncoding = Encoding.UTF8;
+Console.InputEncoding = Encoding.UTF8;
 
 Log.Logger = new LoggerConfiguration()
     .WriteTo.Console()
