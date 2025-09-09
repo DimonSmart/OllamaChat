@@ -65,39 +65,35 @@ public class LlmServerConfigService : ILlmServerConfigService
         return servers.FirstOrDefault(s => s.Id == id);
     }
 
-    public async Task<LlmServerConfig> CreateAsync(LlmServerConfig server)
+    public async Task CreateAsync(LlmServerConfig serverConfig)
     {
-        return await SemaphoreHelper.ExecuteWithSemaphoreAsync(_semaphore, async () =>
+        await SemaphoreHelper.ExecuteWithSemaphoreAsync(_semaphore, async () =>
         {
             var servers = await ReadFromFileAsync();
 
-            server.Id ??= Guid.NewGuid();
-            server.CreatedAt = DateTime.UtcNow;
-            server.UpdatedAt = DateTime.UtcNow;
+            serverConfig.Id ??= Guid.NewGuid();
+            serverConfig.CreatedAt = DateTime.UtcNow;
+            serverConfig.UpdatedAt = DateTime.UtcNow;
 
-            servers.Add(server);
+            servers.Add(serverConfig);
             await WriteToFileAsync(servers);
-
-            return server;
         }, _logger, "Error creating LLM server config");
     }
 
-    public async Task<LlmServerConfig> UpdateAsync(LlmServerConfig server)
+    public async Task UpdateAsync(LlmServerConfig serverConfig)
     {
-        return await SemaphoreHelper.ExecuteWithSemaphoreAsync(_semaphore, async () =>
+        await SemaphoreHelper.ExecuteWithSemaphoreAsync(_semaphore, async () =>
         {
             var servers = await ReadFromFileAsync();
-            var existingIndex = servers.FindIndex(s => s.Id == server.Id);
+            var existingIndex = servers.FindIndex(s => s.Id == serverConfig.Id);
 
             if (existingIndex == -1)
-                throw new KeyNotFoundException($"LLM server config with ID {server.Id} not found");
+                throw new KeyNotFoundException($"LLM server config with ID {serverConfig.Id} not found");
 
-            server.UpdatedAt = DateTime.UtcNow;
-            servers[existingIndex] = server;
+            serverConfig.UpdatedAt = DateTime.UtcNow;
+            servers[existingIndex] = serverConfig;
 
             await WriteToFileAsync(servers);
-
-            return server;
         }, _logger, "Error updating LLM server config");
     }
 

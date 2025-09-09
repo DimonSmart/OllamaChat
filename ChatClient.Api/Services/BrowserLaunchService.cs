@@ -1,6 +1,6 @@
+using Serilog;
 using System.Diagnostics;
 using System.Runtime.InteropServices;
-using Serilog;
 
 namespace ChatClient.Api.Services
 {

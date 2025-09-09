@@ -68,9 +68,9 @@ public class McpClientService(
         }
     }
 
-    private async Task<IMcpClient> CreateLocalMcpClientAsync(McpServerConfig config, CancellationToken cancellationToken)
+    private async Task<IMcpClient> CreateLocalMcpClientAsync(McpServerConfig serverConfig, CancellationToken cancellationToken)
     {
-        if (string.IsNullOrEmpty(config.Command))
+        if (string.IsNullOrEmpty(serverConfig.Command))
         {
             throw new InvalidOperationException("MCP server command cannot be null or empty for local connection");
         }
@@ -78,14 +78,14 @@ public class McpClientService(
         // Use the application's executable directory as working directory instead of Environment.CurrentDirectory
         // This prevents MCP processes from accidentally changing the main application's working directory
         var applicationDirectory = AppContext.BaseDirectory;
-        var clientOptions = CreateClientOptions(config);
+        var clientOptions = CreateClientOptions(serverConfig);
 
         return await McpClientFactory.CreateAsync(
             clientTransport: new StdioClientTransport(new StdioClientTransportOptions
             {
-                Name = config.Name,
-                Command = config.Command,
-                Arguments = config.Arguments ?? [],
+                Name = serverConfig.Name,
+                Command = serverConfig.Command,
+                Arguments = serverConfig.Arguments ?? [],
                 WorkingDirectory = applicationDirectory // Use fixed application directory
             }),
             clientOptions: clientOptions

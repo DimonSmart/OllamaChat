@@ -1,6 +1,6 @@
+using ChatClient.Api.Services;
 using ChatClient.Shared.Models;
 using ChatClient.Shared.Services;
-using ChatClient.Api.Services;
 
 namespace ChatClient.Api.Services.Rag;
 

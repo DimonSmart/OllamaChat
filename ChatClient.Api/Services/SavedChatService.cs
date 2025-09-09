@@ -88,12 +88,12 @@ public class SavedChatService : ISavedChatService
         }
     }
 
-    public async Task SaveAsync(SavedChat chat, CancellationToken cancellationToken = default)
+    public async Task SaveAsync(SavedChat savedChat, CancellationToken cancellationToken = default)
     {
-        if (chat is null)
-            throw new ArgumentNullException(nameof(chat));
-        var file = Path.Combine(_directoryPath, $"{chat.Id}.json");
-        await WriteAsync(file, chat, cancellationToken);
+        if (savedChat is null)
+            throw new ArgumentNullException(nameof(savedChat));
+        var file = Path.Combine(_directoryPath, $"{savedChat.Id}.json");
+        await WriteAsync(file, savedChat, cancellationToken);
     }
 
     public async Task DeleteAsync(Guid id, CancellationToken cancellationToken = default)

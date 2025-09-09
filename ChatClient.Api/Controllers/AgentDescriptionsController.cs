@@ -48,8 +48,8 @@ public class AgentDescriptionsController : ControllerBase
             return BadRequest("Agent description content is required");
         }
 
-        var createdAgent = await _agentService.CreateAsync(agent);
-        return CreatedAtAction(nameof(GetAgentById), new { id = createdAgent.Id }, createdAgent);
+        await _agentService.CreateAsync(agent);
+        return CreatedAtAction(nameof(GetAgentById), new { id = agent.Id }, agent);
     }
 
     [HttpPut("{id}")]
@@ -76,8 +76,8 @@ public class AgentDescriptionsController : ControllerBase
             return NotFound($"Agent with ID {id} not found");
         }
 
-        var updatedAgent = await _agentService.UpdateAsync(agent);
-        return Ok(updatedAgent);
+        await _agentService.UpdateAsync(agent);
+        return Ok(agent);
     }
 
     [HttpDelete("{id}")]

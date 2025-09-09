@@ -74,39 +74,35 @@ public class McpServerConfigService : IMcpServerConfigService
         return servers.FirstOrDefault(s => s.Id == id);
     }
 
-    public async Task<McpServerConfig> CreateAsync(McpServerConfig server)
+    public async Task CreateAsync(McpServerConfig serverConfig)
     {
-        return await SemaphoreHelper.ExecuteWithSemaphoreAsync(_semaphore, async () =>
+        await SemaphoreHelper.ExecuteWithSemaphoreAsync(_semaphore, async () =>
         {
             var servers = await ReadFromFileAsync();
 
-            server.Id ??= Guid.NewGuid();
-            server.CreatedAt = DateTime.UtcNow;
-            server.UpdatedAt = DateTime.UtcNow;
+            serverConfig.Id ??= Guid.NewGuid();
+            serverConfig.CreatedAt = DateTime.UtcNow;
+            serverConfig.UpdatedAt = DateTime.UtcNow;
 
-            servers.Add(server);
+            servers.Add(serverConfig);
             await WriteToFileAsync(servers);
-
-            return server;
         }, _logger, "Error creating MCP server config");
     }
 
-    public async Task<McpServerConfig> UpdateAsync(McpServerConfig server)
+    public async Task UpdateAsync(McpServerConfig serverConfig)
     {
-        return await SemaphoreHelper.ExecuteWithSemaphoreAsync(_semaphore, async () =>
+        await SemaphoreHelper.ExecuteWithSemaphoreAsync(_semaphore, async () =>
         {
             var servers = await ReadFromFileAsync();
-            var existingIndex = servers.FindIndex(s => s.Id == server.Id);
+            var existingIndex = servers.FindIndex(s => s.Id == serverConfig.Id);
 
             if (existingIndex == -1)
-                throw new KeyNotFoundException($"MCP server config with ID {server.Id} not found");
+                throw new KeyNotFoundException($"MCP server config with ID {serverConfig.Id} not found");
 
-            server.UpdatedAt = DateTime.UtcNow;
-            servers[existingIndex] = server;
+            serverConfig.UpdatedAt = DateTime.UtcNow;
+            servers[existingIndex] = serverConfig;
 
             await WriteToFileAsync(servers);
-
-            return server;
         }, _logger, "Error updating MCP server config");
     }
 

@@ -6,8 +6,8 @@ public interface IAgentDescriptionService
 {
     Task<List<AgentDescription>> GetAllAsync();
     Task<AgentDescription?> GetByIdAsync(Guid id);
-    Task<AgentDescription> CreateAsync(AgentDescription prompt);
-    Task<AgentDescription> UpdateAsync(AgentDescription prompt);
+    Task CreateAsync(AgentDescription agentDescription);
+    Task UpdateAsync(AgentDescription agentDescription);
     Task DeleteAsync(Guid id);
     AgentDescription GetDefaultAgentDescription();
 }

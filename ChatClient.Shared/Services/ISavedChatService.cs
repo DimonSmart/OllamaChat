@@ -10,6 +10,6 @@ public interface ISavedChatService
     /// </summary>
     Task<List<SavedChat>> SearchAsync(string query, CancellationToken cancellationToken = default);
     Task<SavedChat?> GetByIdAsync(Guid id, CancellationToken cancellationToken = default);
-    Task SaveAsync(SavedChat chat, CancellationToken cancellationToken = default);
+    Task SaveAsync(SavedChat savedChat, CancellationToken cancellationToken = default);
     Task DeleteAsync(Guid id, CancellationToken cancellationToken = default);
 }

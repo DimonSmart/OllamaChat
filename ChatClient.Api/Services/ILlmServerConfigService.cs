@@ -6,7 +6,7 @@ public interface ILlmServerConfigService
 {
     Task<List<LlmServerConfig>> GetAllAsync();
     Task<LlmServerConfig?> GetByIdAsync(Guid id);
-    Task<LlmServerConfig> CreateAsync(LlmServerConfig server);
-    Task<LlmServerConfig> UpdateAsync(LlmServerConfig server);
+    Task CreateAsync(LlmServerConfig serverConfig);
+    Task UpdateAsync(LlmServerConfig serverConfig);
     Task DeleteAsync(Guid id);
 }

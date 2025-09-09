@@ -576,18 +576,18 @@
                 editingAgent.ModelName = editingServerModel.ModelName;
                 if (editingAgent.Id == Guid.Empty)
                 {
-                    var result = await AgentService.CreateAsync(editingAgent);
-                    agents.Add(result);
-                    ragCounts[result.Id] = ragFiles.Count;
+                    await AgentService.CreateAsync(editingAgent);
+                    agents.Add(editingAgent);
+                    ragCounts[editingAgent.Id] = ragFiles.Count;
                     Snackbar.Add("Agent description created successfully", Severity.Success);
                 }
                 else
                 {
                     editingAgent.UpdatedAt = DateTime.UtcNow;
-                    var result = await AgentService.UpdateAsync(editingAgent);
+                    await AgentService.UpdateAsync(editingAgent);
                     var index = agents.FindIndex(p => p.Id == editingAgent.Id);
-                    if (index >= 0) agents[index] = result;
-                    ragCounts[result.Id] = ragFiles.Count;
+                    if (index >= 0) agents[index] = editingAgent;
+                    ragCounts[editingAgent.Id] = ragFiles.Count;
                     Snackbar.Add("Agent description updated successfully", Severity.Success);
                 }
 

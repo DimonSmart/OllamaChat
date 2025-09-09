@@ -41,8 +41,8 @@ public class McpServersController(IMcpServerConfigService mcpServerConfigService
             return BadRequest("Either Command or Sse must be specified");
         }
 
-        var createdServer = await mcpServerConfigService.CreateAsync(server);
-        return CreatedAtAction(nameof(GetServerById), new { id = createdServer.Id }, createdServer);
+        await mcpServerConfigService.CreateAsync(server);
+        return CreatedAtAction(nameof(GetServerById), new { id = server.Id }, server);
     }
 
     [HttpPut("{id}")]
@@ -69,8 +69,8 @@ public class McpServersController(IMcpServerConfigService mcpServerConfigService
             return NotFound($"MCP server config with ID {id} not found");
         }
 
-        var updatedServer = await mcpServerConfigService.UpdateAsync(server);
-        return Ok(updatedServer);
+        await mcpServerConfigService.UpdateAsync(server);
+        return Ok(server);
     }
 
     [HttpDelete("{id}")]
