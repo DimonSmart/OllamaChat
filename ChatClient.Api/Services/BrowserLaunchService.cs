@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.Runtime.InteropServices;
+using Serilog;
 
 namespace ChatClient.Api.Services
 {
@@ -9,19 +10,22 @@ namespace ChatClient.Api.Services
     public static class BrowserLaunchService
     {
         /// <summary>
-        /// Display application information in console and launch browser
+        /// Display application information and launch the default browser
         /// </summary>
         /// <param name="httpUrl">Full HTTP URL to display and open</param>
         /// <param name="httpsUrl">Full HTTPS URL to display</param>
         /// <param name="delayMs">Delay in milliseconds before launching browser</param>
         public static void DisplayInfoAndLaunchBrowser(string httpUrl, string httpsUrl, int delayMs = 1500)
         {
-            Console.WriteLine("\n=================================================");
-            Console.WriteLine("OllamaChat is now running!");
-            Console.WriteLine("Access the application at:");
-            Console.WriteLine($"  HTTP:  {httpUrl}");
-            Console.WriteLine($"  HTTPS: {httpsUrl}");
-            Console.WriteLine("=================================================\n");
+            Log.Information(string.Empty);
+            Log.Information("=================================================");
+            Log.Information(
+                "OllamaChat is running. HTTP: {HttpUrl} HTTPS: {HttpsUrl}",
+                httpUrl,
+                httpsUrl);
+            Log.Information("=================================================");
+            Log.Information(string.Empty);
+
             Task.Run(async () =>
             {
                 await Task.Delay(delayMs);
@@ -52,7 +56,7 @@ namespace ChatClient.Api.Services
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"Failed to open browser: {ex.Message}");
+                Log.Error(ex, "Failed to open browser at {Url}", url);
             }
         }
     }
