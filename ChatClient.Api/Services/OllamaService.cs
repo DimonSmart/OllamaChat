@@ -20,7 +20,7 @@ public sealed class OllamaService(
     private readonly object _lock = new();
     private Exception? _embeddingError;
 
-    private async Task<OllamaApiClient> GetOllamaClientAsync(Guid serverId)
+    public async Task<OllamaApiClient> GetClientAsync(Guid serverId)
     {
         lock (_lock)
         {
@@ -39,20 +39,12 @@ public sealed class OllamaService(
         return client;
     }
 
-    public async Task<OllamaApiClient> GetClientAsync(Guid serverId)
-    {
-        return await GetOllamaClientAsync(serverId);
-    }
-
-    public Task<IReadOnlyList<OllamaModel>> GetModelsAsync(Guid serverId) =>
-        GetModelsInternalAsync(serverId);
-
-    private async Task<IReadOnlyList<OllamaModel>> GetModelsInternalAsync(Guid serverId)
+    public async Task<IReadOnlyList<OllamaModel>> GetModelsAsync(Guid serverId)
     {
         if (_modelsCache.TryGetValue(serverId, out var cached))
             return cached;
 
-        var client = await GetOllamaClientAsync(serverId);
+        var client = await GetClientAsync(serverId);
         var models = await client.ListLocalModelsAsync();
         var list = models.Select(m => new OllamaModel
         {
@@ -80,7 +72,7 @@ public sealed class OllamaService(
         if (_embeddingError is not null)
             throw new InvalidOperationException("Embedding service unavailable. Restart the application.", _embeddingError);
 
-        var client = await GetOllamaClientAsync(serverId);
+        var client = await GetClientAsync(serverId);
 
         var request = new EmbedRequest { Model = modelId, Input = new List<string> { input } };
         try

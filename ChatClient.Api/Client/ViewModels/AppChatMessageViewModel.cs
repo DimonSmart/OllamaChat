@@ -32,7 +32,7 @@ public class AppChatMessageViewModel
         .UseMathematics()
         .UseSlashParensMath()
         .Build();
-    private AppChatMessageViewModel Populate(IAppChatMessage message)
+    public AppChatMessageViewModel UpdateFromDomainModel(IAppChatMessage message)
     {
         Id = message.Id;
         RawContent = message.Content;
@@ -89,7 +89,5 @@ public class AppChatMessageViewModel
         return this;
     }
 
-    public static AppChatMessageViewModel CreateFromDomainModel(IAppChatMessage message) => new AppChatMessageViewModel().Populate(message);
-
-    public void UpdateFromDomainModel(IAppChatMessage message) => Populate(message);
+    public static AppChatMessageViewModel CreateFromDomainModel(IAppChatMessage message) => new AppChatMessageViewModel().UpdateFromDomainModel(message);
 }
