@@ -32,22 +32,22 @@ public class LlmServerConfigServiceTests
                 BaseUrl = "http://localhost"
             };
 
-            var created = await service.CreateAsync(server);
-            Assert.NotNull(created.Id);
+            await service.CreateAsync(server);
+            Assert.NotNull(server.Id);
 
             var all = await service.GetAllAsync();
             Assert.Single(all);
 
-            var retrieved = await service.GetByIdAsync(created.Id!.Value);
+            var retrieved = await service.GetByIdAsync(server.Id!.Value);
             Assert.NotNull(retrieved);
             Assert.Equal("Test", retrieved!.Name);
 
-            created.Name = "Updated";
-            await service.UpdateAsync(created);
-            var updated = await service.GetByIdAsync(created.Id.Value);
+            server.Name = "Updated";
+            await service.UpdateAsync(server);
+            var updated = await service.GetByIdAsync(server.Id.Value);
             Assert.Equal("Updated", updated!.Name);
 
-            await service.DeleteAsync(created.Id.Value);
+            await service.DeleteAsync(server.Id.Value);
             var afterDelete = await service.GetAllAsync();
             Assert.Empty(afterDelete);
         }

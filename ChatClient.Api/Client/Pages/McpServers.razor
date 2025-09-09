@@ -441,16 +441,16 @@
 
                 if (editingServer.Id == null)
                 {
-                    var result = await McpServerConfigService.CreateAsync(editingServer);
-                    servers.Add(result);
+                    await McpServerConfigService.CreateAsync(editingServer);
+                    servers.Add(editingServer);
                     Snackbar.Add("MCP server created successfully", Severity.Success);
                 }
                 else
                 {
                     editingServer.UpdatedAt = DateTime.UtcNow;
-                    var result = await McpServerConfigService.UpdateAsync(editingServer);
+                    await McpServerConfigService.UpdateAsync(editingServer);
                     var index = servers.FindIndex(s => s.Id == editingServer.Id);
-                    if (index >= 0) servers[index] = result;
+                    if (index >= 0) servers[index] = editingServer;
                     Snackbar.Add("MCP server updated successfully", Severity.Success);
                 }
 

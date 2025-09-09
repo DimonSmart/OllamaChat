@@ -1,5 +1,5 @@
-using System;
 using ChatClient.Api.Client.ViewModels;
+using System;
 namespace ChatClient.Api.Client.Services;
 
 public interface IChatViewModelService : IAsyncDisposable

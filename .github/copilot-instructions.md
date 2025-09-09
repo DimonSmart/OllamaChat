@@ -58,6 +58,7 @@
 - Use camelCase for parameters, local variables, and private fields.
 - Prefix interfaces with `I` (e.g., `IUserService`).
 - Use primary constructors when appropriate (C# 12+).
+- **Parameter naming**: Parameter names must match their semantic purpose in the method. Avoid generic names that don't reflect the actual data type or business meaning.
 
 ### Error Handling
 - Return empty collections (`[]`) instead of null when no data is available.
@@ -74,6 +75,7 @@
 - **Avoid parameter pass-through methods**: If a method only receives parameters to create an object and return it at the end, consider removing the method and creating the object directly in the calling code. Methods should perform meaningful logic, not just pass parameters to constructors.
 - **Don't return input parameters**: Avoid returning the same parameters that were passed as input to the method. It's redundant and adds no value. If a method receives an ID and needs to return it unchanged, the caller already has that ID.
 - **Avoid tuple returns**: Returning tuples is often a sign of poor design. Consider creating a dedicated class/record or refactoring the method to have a single responsibility. If you find yourself returning multiple unrelated values, the method is likely doing too much.
+- **Factory methods exception**: Factory methods like `CreateFromDomainModel` or similar that combine multiple operations for code readability and provide meaningful naming are acceptable and improve code clarity.
 
 ### Modern C# Features
 - Use target-typed expressions where appropriate (`return [];`).

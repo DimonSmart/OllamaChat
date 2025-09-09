@@ -8,11 +8,9 @@ using Microsoft.AspNetCore.Hosting.Server;
 using Microsoft.AspNetCore.Hosting.Server.Features;
 using Microsoft.Extensions.Logging;
 using Microsoft.SemanticKernel.Connectors.InMemory;
-using System.Text;
-
 using MudBlazor.Services;
-
 using Serilog;
+using System.Text;
 
 // Enable UTF-8 for proper Cyrillic support.
 Console.OutputEncoding = Encoding.UTF8;

@@ -1,5 +1,5 @@
-using System;
 using ChatClient.Api.Services;
+using System;
 
 public class FileNameValidatorTests
 {

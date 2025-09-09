@@ -52,8 +52,8 @@ public class ChatServiceTests
     {
         public Task<List<LlmServerConfig>> GetAllAsync() => Task.FromResult<List<LlmServerConfig>>([]);
         public Task<LlmServerConfig?> GetByIdAsync(Guid id) => Task.FromResult<LlmServerConfig?>(null);
-        public Task<LlmServerConfig> CreateAsync(LlmServerConfig server) => Task.FromResult(server);
-        public Task<LlmServerConfig> UpdateAsync(LlmServerConfig server) => Task.FromResult(server);
+        public Task CreateAsync(LlmServerConfig serverConfig) => Task.CompletedTask;
+        public Task UpdateAsync(LlmServerConfig serverConfig) => Task.CompletedTask;
         public Task DeleteAsync(Guid id) => Task.CompletedTask;
     }
 

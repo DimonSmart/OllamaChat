@@ -694,11 +694,5 @@
         await DialogService.ShowAsync<ImageViewerDialog>("Image Viewer", parameters, options);
     }
 
-    private string GetAvatarText(string? name)
-    {
-        if (string.IsNullOrWhiteSpace(name))
-            return string.Empty;
-
-        return name;
-    }
+    private string GetAvatarText(string? name) => string.IsNullOrWhiteSpace(name) ? string.Empty : name;
 }

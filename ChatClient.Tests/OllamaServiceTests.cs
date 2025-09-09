@@ -43,14 +43,14 @@ public class OllamaServiceTests
             return Task.FromResult<LlmServerConfig?>(null);
         }
 
-        public Task<LlmServerConfig> CreateAsync(LlmServerConfig server)
+        public Task CreateAsync(LlmServerConfig serverConfig)
         {
-            return Task.FromResult(server);
+            return Task.CompletedTask;
         }
 
-        public Task<LlmServerConfig> UpdateAsync(LlmServerConfig server)
+        public Task UpdateAsync(LlmServerConfig serverConfig)
         {
-            return Task.FromResult(server);
+            return Task.CompletedTask;
         }
 
         public Task DeleteAsync(Guid id)
