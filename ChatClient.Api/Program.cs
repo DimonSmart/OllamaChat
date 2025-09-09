@@ -6,6 +6,7 @@ using ChatClient.Api.Services.Rag;
 using Microsoft.AspNetCore.Components.Server.Circuits;
 using Microsoft.AspNetCore.Hosting.Server;
 using Microsoft.AspNetCore.Hosting.Server.Features;
+using Microsoft.Extensions.Logging;
 using Microsoft.SemanticKernel.Connectors.InMemory;
 using System.Text;
 
@@ -97,18 +98,19 @@ using (var scope = app.Services.CreateScope())
 
     var startupChecker = scope.ServiceProvider.GetRequiredService<OllamaServerAvailabilityService>();
     var ollamaStatus = await startupChecker.CheckOllamaStatusAsync();
+    var logger = scope.ServiceProvider.GetRequiredService<ILogger<Program>>();
 
     if (ollamaStatus.IsAvailable)
     {
         var indexService = scope.ServiceProvider.GetRequiredService<McpFunctionIndexService>();
         await indexService.BuildIndexAsync();
-        Console.WriteLine("Ollama is available and ready.");
+        logger.LogInformation("Ollama is available and ready.");
     }
     else
     {
-        Console.WriteLine($"Warning: Ollama is not available - {ollamaStatus.ErrorMessage}");
-        Console.WriteLine("The application will start but Ollama functionality will be limited.");
-        Console.WriteLine("Users will be redirected to the setup page when trying to use Ollama features.");
+        logger.LogWarning("Ollama is not available - {Error}", ollamaStatus.ErrorMessage);
+        logger.LogWarning("The application will start but Ollama functionality will be limited.");
+        logger.LogWarning("Users will be redirected to the setup page when trying to use Ollama features.");
     }
 }
 
@@ -137,6 +139,7 @@ app.Lifetime.ApplicationStarted.Register(() =>
 {
     try
     {
+        var logger = app.Services.GetRequiredService<ILogger<Program>>();
         var server = app.Services.GetRequiredService<IServer>();
         var addressesFeature = server.Features.Get<IServerAddressesFeature>();
 
@@ -155,12 +158,13 @@ app.Lifetime.ApplicationStarted.Register(() =>
         }
         else
         {
-            Console.WriteLine("Warning: No server addresses were found. Browser cannot be launched.");
+            logger.LogWarning("No server addresses were found. Browser cannot be launched.");
         }
     }
     catch (Exception ex)
     {
-        Console.WriteLine($"Error during application startup: {ex.Message}");
+        var logger = app.Services.GetRequiredService<ILogger<Program>>();
+        logger.LogError(ex, "Error during application startup");
     }
 });
 
