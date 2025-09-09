@@ -17,19 +17,6 @@ public static class LlmServerConfigHelper
         return GetServerConfig(servers, settings.DefaultModel.ServerId, serverId, serverType);
     }
 
-    /// <summary>
-    /// Temporary solution for compatibility - uses ServiceProvider to resolve dependencies
-    /// </summary>
-    public static async Task<LlmServerConfig?> GetServerConfigAsync(
-        IUserSettingsService userSettingsService,
-        IServiceProvider serviceProvider,
-        Guid? serverId = null,
-        ServerType? serverType = null)
-    {
-        var llmServerConfigService = serviceProvider.GetRequiredService<ILlmServerConfigService>();
-        return await GetServerConfigAsync(llmServerConfigService, userSettingsService, serverId, serverType);
-    }
-
     public static LlmServerConfig? GetServerConfig(
         IEnumerable<LlmServerConfig> servers,
         Guid? defaultLlmId,
