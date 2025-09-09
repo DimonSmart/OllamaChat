@@ -59,10 +59,12 @@ public class McpSamplingService(
             progress?.Report(new ProgressNotificationValue { Progress = 0, Total = 100 });
 
             model = await DetermineModelToUseAsync(request.ModelPreferences, mcpServerConfig, serverId);
-            var kernel = await CreateKernelForSamplingAsync(model);
+            var kernel = await CreateKernelAsync(model);
             progress?.Report(new ProgressNotificationValue { Progress = 25, Total = 100 });
-
-            var response = await ProcessSamplingRequestAsync(request, kernel, progress, cancellationToken);
+            var timeoutSeconds = await GetMcpSamplingTimeoutAsync();
+            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(timeoutSeconds));
+            using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(cts.Token, cancellationToken);
+            var response = await ProcessSamplingRequestAsync(request, kernel, progress, linkedCts.Token);
             progress?.Report(new ProgressNotificationValue { Progress = 100, Total = 100 });
 
             return CreateSuccessfulResult(response, model.ModelName);
@@ -90,12 +92,6 @@ public class McpSamplingService(
         {
             throw new ArgumentException("Sampling request must contain at least one message");
         }
-    }
-
-    private async Task<Kernel> CreateKernelForSamplingAsync(ServerModel model)
-    {
-        var settings = await _userSettingsService.GetSettingsAsync();
-        return await CreateKernelAsync(model, TimeSpan.FromSeconds(settings.McpSamplingTimeoutSeconds));
     }
 
     private async Task<ChatMessageContent> ProcessSamplingRequestAsync(
@@ -155,7 +151,7 @@ public class McpSamplingService(
         }
     }
 
-    private async Task<Kernel> CreateKernelAsync(ServerModel model, TimeSpan timeout)
+    private async Task<Kernel> CreateKernelAsync(ServerModel model)
     {
         var server = await LlmServerConfigHelper.GetServerConfigAsync(_llmServerConfigService, _userSettingsService, model.ServerId)
             ?? throw new InvalidOperationException("No server configuration found for the specified model");

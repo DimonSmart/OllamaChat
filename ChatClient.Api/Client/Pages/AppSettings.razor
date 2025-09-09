@@ -85,6 +85,17 @@
 
                 <MudCard Class="mb-4" Elevation="1">
                     <MudCardContent>
+                        <MudNumericField T="int" @bind-Value="_settings.McpSamplingTimeoutSeconds"
+                                         Label="MCP Sampling Timeout (seconds)"
+                                         Min="1" Variant="Variant.Outlined" />
+                        <MudText Typo="Typo.caption" Class="mt-2">
+                            Maximum duration for sampling requests from MCP servers.
+                        </MudText>
+                    </MudCardContent>
+                </MudCard>
+
+                <MudCard Class="mb-4" Elevation="1">
+                    <MudCardContent>
                         <ServerModelPicker Value="_embeddingModel" ValueChanged="OnEmbeddingModelChanged" ShowClearButton="true" />
                         <MudText Typo="Typo.caption" Class="mt-2">
                             Model used for generating embeddings.
