@@ -4,6 +4,7 @@ using ChatClient.Application.Services;
 using OllamaSharp;
 using OllamaSharp.Models;
 using System.Collections.Concurrent;
+using System.Net.Http;
 using System.Net.Http.Headers;
 using System.Text;
 using System.Threading;
@@ -13,31 +14,38 @@ namespace ChatClient.Api.Services;
 public sealed class OllamaService(
     IUserSettingsService userSettingsService,
     ILlmServerConfigService llmServerConfigService,
-    IServiceProvider serviceProvider,
+    IHttpClientFactory httpClientFactory,
     ILogger<OllamaService> logger) : IOllamaClientService, IDisposable
 {
-    private readonly Dictionary<Guid, (OllamaApiClient Client, HttpClient HttpClient)> _clients = new();
+    private readonly ConcurrentDictionary<Guid, Lazy<Task<ClientEntry>>> _clients = new();
     private readonly ConcurrentDictionary<Guid, IReadOnlyList<OllamaModel>> _modelsCache = new();
-    private readonly Lock _lock = new();
     private Exception? _embeddingError;
 
     public async Task<OllamaApiClient> GetClientAsync(Guid serverId)
+        => (await _clients.GetOrAdd(serverId, id =>
+                new Lazy<Task<ClientEntry>>(() => CreateClientEntryAsync(id))).Value).Client;
+
+    private async Task<ClientEntry> CreateClientEntryAsync(Guid serverId)
     {
-        {
-            using var guard = _lock.EnterScope();
-            if (_clients.TryGetValue(serverId, out var entry))
-                return entry.Client;
-        }
+        var cfg = await GetServerConfigAsync(serverId);
+        var http = BuildHttpClient(cfg);
+        var client = new OllamaApiClient(http);
+        return new ClientEntry(client, http);
+    }
 
-        var config = await GetServerConfigAsync(serverId);
-        var httpClient = BuildHttpClient(config);
-        var client = new OllamaApiClient(httpClient);
-
+    public bool TryInvalidate(Guid serverId)
+    {
+        if (_clients.TryRemove(serverId, out var lazy))
         {
-            using var guard = _lock.EnterScope();
-            _clients[serverId] = (client, httpClient);
+            if (lazy.IsValueCreated)
+            {
+                var task = lazy.Value;
+                if (task.IsCompletedSuccessfully)
+                    task.Result.Dispose();
+            }
+            return true;
         }
-        return client;
+        return false;
     }
 
     public async Task<IReadOnlyList<OllamaModel>> GetModelsAsync(Guid serverId)
@@ -47,14 +55,15 @@ public sealed class OllamaService(
 
         var client = await GetClientAsync(serverId);
         var models = await client.ListLocalModelsAsync();
+
         var list = models.Select(m => new OllamaModel
         {
             Name = m.Name,
-            ModifiedAt = m.ModifiedAt.ToString("yyyy-MM-ddTHH:mm:ss.fffZ"),
+            ModifiedAt = m.ModifiedAt.ToUniversalTime().ToString("O"),
             Size = m.Size,
             Digest = m.Digest,
-            SupportsImages = m.Details?.Families?.Contains("clip") == true,
-            SupportsFunctionCalling = DeterminesFunctionCallingSupport(m)
+            SupportsImages = m.Details?.Families?.Any(f => f.Equals("clip", StringComparison.OrdinalIgnoreCase)) == true,
+            SupportsFunctionCalling = SupportsFunctionCalling(m)
         })
         .OrderBy(m => m.Name)
         .ToList();
@@ -65,31 +74,34 @@ public sealed class OllamaService(
 
     public bool EmbeddingsAvailable => _embeddingError is null;
 
-    public Task<float[]> GenerateEmbeddingAsync(string input, ServerModel model, CancellationToken cancellationToken = default) =>
-        GenerateEmbeddingInternalAsync(input, model.ModelName, model.ServerId, cancellationToken);
+    public Task<float[]> GenerateEmbeddingAsync(string input, ServerModel model, CancellationToken ct = default)
+        => GenerateEmbeddingInternalAsync(input, model.ModelName, model.ServerId, ct);
 
-    private async Task<float[]> GenerateEmbeddingInternalAsync(string input, string modelId, Guid serverId, CancellationToken cancellationToken = default)
+    private async Task<float[]> GenerateEmbeddingInternalAsync(string input, string modelId, Guid serverId, CancellationToken ct)
     {
         if (_embeddingError is not null)
             throw new InvalidOperationException("Embedding service unavailable. Restart the application.", _embeddingError);
 
         var client = await GetClientAsync(serverId);
+        var req = new EmbedRequest { Model = modelId, Input = new List<string> { input } };
 
-        var request = new EmbedRequest { Model = modelId, Input = new List<string> { input } };
         try
         {
-            var response = await client.EmbedAsync(request, cancellationToken);
-            return response.Embeddings.First();
+            var resp = await client.EmbedAsync(req, ct);
+            return resp.Embeddings.First();
         }
         catch (HttpRequestException ex) when (ex.StatusCode == System.Net.HttpStatusCode.NotFound)
         {
             _embeddingError = new InvalidOperationException($"Embedding model '{modelId}' not found on Ollama server.", ex);
             throw _embeddingError;
         }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
         catch (Exception ex)
         {
-            _embeddingError = new InvalidOperationException("Failed to generate embedding. Ensure Ollama is running and restart the application.", ex);
-            throw _embeddingError;
+            throw new InvalidOperationException("Failed to generate embedding. Ensure Ollama is running.", ex);
         }
     }
 
@@ -97,72 +109,74 @@ public sealed class OllamaService(
     {
         logger.LogDebug("Attempting to get Ollama server config for ID: {ServerId}", serverId);
 
-        var serverConfig = await LlmServerConfigHelper.GetServerConfigAsync(
+        var cfg = await LlmServerConfigHelper.GetServerConfigAsync(
             llmServerConfigService,
             userSettingsService,
             serverId,
             ServerType.Ollama);
 
-        if (serverConfig != null)
+        if (cfg != null)
         {
             logger.LogDebug("Found Ollama server: {ServerName} (ID: {ServerId}, Type: {ServerType})",
-                serverConfig.Name, serverConfig.Id, serverConfig.ServerType);
-            return serverConfig;
+                cfg.Name, cfg.Id, cfg.ServerType);
+            return cfg;
         }
 
         logger.LogError("No Ollama server found for ID {ServerId}", serverId);
         throw new InvalidOperationException($"Ollama server with ID {serverId} not found.");
     }
 
-    private HttpClient BuildHttpClient(LlmServerConfig config)
+    private HttpClient BuildHttpClient(LlmServerConfig cfg)
     {
-        var handler = new HttpClientHandler();
-        if (config.IgnoreSslErrors)
-            handler.ServerCertificateCustomValidationCallback = (_, _, _, _) => true;
+        var client = httpClientFactory.CreateClient(cfg.IgnoreSslErrors ? "ollama-insecure" : "ollama");
 
-        var loggingHandler = new HttpLoggingHandler(serviceProvider.GetRequiredService<ILogger<HttpLoggingHandler>>())
-        {
-            InnerHandler = handler
-        };
+        var baseUrl = string.IsNullOrWhiteSpace(cfg.BaseUrl) ? LlmServerConfig.DefaultOllamaUrl : cfg.BaseUrl.Trim();
+        client.BaseAddress = new Uri(string.IsNullOrWhiteSpace(baseUrl) ? LlmServerConfig.DefaultOllamaUrl : baseUrl);
+        client.Timeout = TimeSpan.FromSeconds(cfg.HttpTimeoutSeconds);
 
-        var baseUrl = string.IsNullOrWhiteSpace(config.BaseUrl) ? LlmServerConfig.DefaultOllamaUrl : config.BaseUrl.Trim();
-        if (string.IsNullOrWhiteSpace(baseUrl))
+        if (!string.IsNullOrWhiteSpace(cfg.Password))
         {
-            baseUrl = LlmServerConfig.DefaultOllamaUrl;
-        }
-        var client = new HttpClient(loggingHandler)
-        {
-            Timeout = TimeSpan.FromSeconds(config.HttpTimeoutSeconds),
-            BaseAddress = new Uri(baseUrl)
-        };
-
-        if (!string.IsNullOrWhiteSpace(config.Password))
-        {
-            var auth = Convert.ToBase64String(Encoding.UTF8.GetBytes($":{config.Password}"));
+            var auth = Convert.ToBase64String(Encoding.UTF8.GetBytes($":{cfg.Password}"));
             client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Basic", auth);
         }
 
         return client;
     }
 
-    private static bool DeterminesFunctionCallingSupport(OllamaSharp.Models.Model model)
-    {
-        if (model.Details?.Families == null)
-            return false;
-
-        return model.Details.Families.Any(family =>
-            family.ToLowerInvariant().Contains("tool") ||
-            family.ToLowerInvariant().Contains("function"));
-    }
+    private static bool SupportsFunctionCalling(OllamaSharp.Models.Model model)
+        => model.Details?.Families?.Any(f =>
+               f.Contains("tool", StringComparison.OrdinalIgnoreCase) ||
+               f.Contains("function", StringComparison.OrdinalIgnoreCase)) == true;
 
     public void Dispose()
     {
-        using var guard = _lock.EnterScope();
-        foreach (var entry in _clients.Values)
+        foreach (var lazy in _clients.Values)
         {
-            entry.Client.Dispose();
-            entry.HttpClient.Dispose();
+            if (lazy.IsValueCreated)
+            {
+                var task = lazy.Value;
+                if (task.IsCompletedSuccessfully)
+                    task.Result.Dispose();
+            }
+        }
+        _clients.Clear();
+    }
+
+    private sealed class ClientEntry : IDisposable
+    {
+        public ClientEntry(OllamaApiClient client, HttpClient httpClient)
+        {
+            Client = client;
+            HttpClient = httpClient;
+        }
+
+        public OllamaApiClient Client { get; }
+        public HttpClient HttpClient { get; }
+
+        public void Dispose()
+        {
+            Client.Dispose();
+            HttpClient.Dispose();
         }
     }
 }
-

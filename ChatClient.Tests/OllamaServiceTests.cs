@@ -3,6 +3,7 @@ using ChatClient.Domain.Models;
 using ChatClient.Application.Services;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+using System.Net.Http;
 
 public class OllamaServiceTests
 {
@@ -13,10 +14,19 @@ public class OllamaServiceTests
         var llmServerConfigService = new MockLlmServerConfigService();
         var services = new ServiceCollection();
         services.AddLogging();
+        services.AddTransient<HttpLoggingHandler>();
+        services.AddHttpClient();
+        services.AddHttpClient("ollama");
+        services.AddHttpClient("ollama-insecure")
+            .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler
+            {
+                ServerCertificateCustomValidationCallback = (_, _, _, _) => true
+            });
         var provider = services.BuildServiceProvider();
         var logger = provider.GetRequiredService<ILogger<OllamaService>>();
+        var factory = provider.GetRequiredService<IHttpClientFactory>();
 
-        var service = new OllamaService(userSettingsService, llmServerConfigService, provider, logger);
+        var service = new OllamaService(userSettingsService, llmServerConfigService, factory, logger);
 
         var exception = await Assert.ThrowsAsync<InvalidOperationException>(() => service.GetClientAsync(Guid.Empty));
         Assert.Contains("not found", exception.Message);

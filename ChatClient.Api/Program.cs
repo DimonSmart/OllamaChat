@@ -13,6 +13,7 @@ using Microsoft.SemanticKernel.Connectors.InMemory;
 using MudBlazor.Services;
 using Serilog;
 using System.Text;
+using System.Net.Http;
 
 // Enable UTF-8 for proper Cyrillic support.
 Console.OutputEncoding = Encoding.UTF8;
@@ -88,7 +89,17 @@ builder.Services.AddSingleton<McpServerConfigSeeder>();
 
 builder.Services.AddRazorPages();
 builder.Services.AddServerSideBlazor();
+
+builder.Services.AddTransient<HttpLoggingHandler>();
 builder.Services.AddHttpClient();
+builder.Services.AddHttpClient("ollama")
+    .AddHttpMessageHandler<HttpLoggingHandler>();
+builder.Services.AddHttpClient("ollama-insecure")
+    .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler
+    {
+        ServerCertificateCustomValidationCallback = (_, _, _, _) => true
+    })
+    .AddHttpMessageHandler<HttpLoggingHandler>();
 
 builder.Services.AddMudServices();
 
