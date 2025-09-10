@@ -10,25 +10,25 @@ public class RagFileService(IRagFileRepository repository, IRagVectorIndexBackgr
     private readonly IRagFileRepository _repository = repository;
     private readonly IRagVectorIndexBackgroundService _indexBackgroundService = indexBackgroundService;
 
-    public Task<IReadOnlyCollection<RagFile>> GetFilesAsync(Guid id) => _repository.GetFilesAsync(id);
+    public Task<IReadOnlyCollection<RagFile>> GetFilesAsync(Guid agentId) => _repository.GetFilesAsync(agentId);
 
-    public Task<RagFile?> GetFileAsync(Guid id, string fileName)
+    public Task<RagFile?> GetFileAsync(Guid agentId, string fileName)
     {
         FileNameValidator.Validate(fileName);
-        return _repository.GetFileAsync(id, fileName);
+        return _repository.GetFileAsync(agentId, fileName);
     }
 
-    public async Task AddOrUpdateFileAsync(Guid id, RagFile file)
+    public async Task AddOrUpdateFileAsync(Guid agentId, RagFile file)
     {
         FileNameValidator.Validate(file.FileName);
-        await _repository.AddOrUpdateFileAsync(id, file);
+        await _repository.AddOrUpdateFileAsync(agentId, file);
         _indexBackgroundService.RequestRebuild();
     }
 
-    public async Task DeleteFileAsync(Guid id, string fileName)
+    public async Task DeleteFileAsync(Guid agentId, string fileName)
     {
         FileNameValidator.Validate(fileName);
-        await _repository.DeleteFileAsync(id, fileName);
+        await _repository.DeleteFileAsync(agentId, fileName);
         _indexBackgroundService.RequestRebuild();
     }
 }

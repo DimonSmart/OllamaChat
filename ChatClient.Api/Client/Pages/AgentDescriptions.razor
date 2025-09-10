@@ -411,10 +411,10 @@
             .ToList();
     }
 
-    private async Task LoadRagFiles(Guid id)
+    private async Task LoadRagFiles(Guid agentId)
     {
-        ragFiles = (await RagFileService.GetFilesAsync(id)).ToList();
-        ragCounts[id] = ragFiles.Count;
+        ragFiles = (await RagFileService.GetFilesAsync(agentId)).ToList();
+        ragCounts[agentId] = ragFiles.Count;
     }
 
     private async Task UploadFiles(InputFileChangeEventArgs e)

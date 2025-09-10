@@ -6,7 +6,7 @@ using Microsoft.AspNetCore.Mvc;
 namespace ChatClient.Api.Controllers;
 
 [ApiController]
-[Route("api/agents/{id:guid}/files")]
+[Route("api/agents/{agentId:guid}/files")]
 public class RagFilesController : ControllerBase
 {
     private readonly IRagFileService _fileService;
@@ -19,11 +19,11 @@ public class RagFilesController : ControllerBase
     }
 
     [HttpGet]
-    public async Task<ActionResult<IEnumerable<RagFile>>> GetFiles(Guid id)
-        => Ok(await _fileService.GetFilesAsync(id));
+    public async Task<ActionResult<IEnumerable<RagFile>>> GetFiles(Guid agentId)
+        => Ok(await _fileService.GetFilesAsync(agentId));
 
     [HttpGet("{fileName}")]
-    public async Task<ActionResult<RagFile>> GetFile(Guid id, string fileName)
+    public async Task<ActionResult<RagFile>> GetFile(Guid agentId, string fileName)
     {
         try
         {
@@ -33,14 +33,14 @@ public class RagFilesController : ControllerBase
         {
             return BadRequest("Invalid file name.");
         }
-        var file = await _fileService.GetFileAsync(id, fileName);
+        var file = await _fileService.GetFileAsync(agentId, fileName);
         if (file is null)
             return NotFound();
         return Ok(file);
     }
 
     [HttpPost]
-    public async Task<ActionResult> Upload(Guid id, [FromForm] IFormFile file)
+    public async Task<ActionResult> Upload(Guid agentId, [FromForm] IFormFile file)
     {
         try
         {
@@ -55,12 +55,12 @@ public class RagFilesController : ControllerBase
             return BadRequest($"Unsupported file type {ext}");
 
         var content = await _converter.ConvertToTextAsync(file);
-        await _fileService.AddOrUpdateFileAsync(id, new RagFile { FileName = file.FileName, Content = content });
+        await _fileService.AddOrUpdateFileAsync(agentId, new RagFile { FileName = file.FileName, Content = content });
         return Ok();
     }
 
     [HttpPut("{fileName}")]
-    public async Task<ActionResult> Update(Guid id, string fileName, [FromForm] IFormFile file)
+    public async Task<ActionResult> Update(Guid agentId, string fileName, [FromForm] IFormFile file)
     {
         try
         {
@@ -76,12 +76,12 @@ public class RagFilesController : ControllerBase
             return BadRequest($"Unsupported file type {ext}");
 
         var content = await _converter.ConvertToTextAsync(file);
-        await _fileService.AddOrUpdateFileAsync(id, new RagFile { FileName = fileName, Content = content });
+        await _fileService.AddOrUpdateFileAsync(agentId, new RagFile { FileName = fileName, Content = content });
         return Ok();
     }
 
     [HttpDelete("{fileName}")]
-    public async Task<ActionResult> Delete(Guid id, string fileName)
+    public async Task<ActionResult> Delete(Guid agentId, string fileName)
     {
         try
         {
@@ -91,7 +91,7 @@ public class RagFilesController : ControllerBase
         {
             return BadRequest("Invalid file name.");
         }
-        await _fileService.DeleteFileAsync(id, fileName);
+        await _fileService.DeleteFileAsync(agentId, fileName);
         return NoContent();
     }
 }
