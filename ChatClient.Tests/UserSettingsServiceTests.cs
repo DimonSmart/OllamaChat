@@ -1,10 +1,9 @@
+using ChatClient.Api.Repositories;
 using ChatClient.Api.Services;
 using ChatClient.Shared.Models;
-using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using System;
 using System.IO;
-using System.Text.Json;
 
 namespace ChatClient.Tests;
 
@@ -47,15 +46,11 @@ public class UserSettingsServiceTests
 
         try
         {
-            var config = new ConfigurationBuilder()
-                .AddInMemoryCollection(new Dictionary<string, string?>
-                {
-                    ["UserSettings:Directory"] = tempDir
-                })
-                .Build();
-            var logger = new LoggerFactory().CreateLogger<UserSettingsService>();
+            var repositoryLogger = new LoggerFactory().CreateLogger<JsonFileRepository<UserSettings>>();
+            var repository = new JsonFileRepository<UserSettings>(filePath, repositoryLogger);
+            var serviceLogger = new LoggerFactory().CreateLogger<UserSettingsService>();
             var mockLlmService = new MockLlmServerConfigService();
-            var service = new UserSettingsService(config, logger, mockLlmService);
+            var service = new UserSettingsService(repository, serviceLogger, mockLlmService);
 
             var serverId = Guid.NewGuid();
             var testSettings = new UserSettings
