@@ -8,9 +8,9 @@ public class RagFileRepository(IConfiguration configuration) : IRagFileRepositor
 {
     private readonly string _basePath = configuration["RagFiles:BasePath"] ?? Path.Combine("Data", "agents");
 
-    public async Task<IReadOnlyCollection<RagFile>> GetFilesAsync(Guid id)
+    public async Task<IReadOnlyCollection<RagFile>> GetFilesAsync(Guid agentId)
     {
-        var agentFolder = GetAgentFolder(id);
+        var agentFolder = GetAgentFolder(agentId);
         var filesDir = Path.Combine(agentFolder, "files");
         if (!Directory.Exists(filesDir))
             return [];
@@ -34,9 +34,9 @@ public class RagFileRepository(IConfiguration configuration) : IRagFileRepositor
         return result;
     }
 
-    public async Task<RagFile?> GetFileAsync(Guid id, string fileName)
+    public async Task<RagFile?> GetFileAsync(Guid agentId, string fileName)
     {
-        var agentFolder = GetAgentFolder(id);
+        var agentFolder = GetAgentFolder(agentId);
         var filePath = Path.Combine(agentFolder, "files", fileName);
         if (!File.Exists(filePath))
             return null;
@@ -53,9 +53,9 @@ public class RagFileRepository(IConfiguration configuration) : IRagFileRepositor
         };
     }
 
-    public async Task AddOrUpdateFileAsync(Guid id, RagFile file)
+    public async Task AddOrUpdateFileAsync(Guid agentId, RagFile file)
     {
-        var agentFolder = GetAgentFolder(id);
+        var agentFolder = GetAgentFolder(agentId);
         Directory.CreateDirectory(Path.Combine(agentFolder, "files"));
         Directory.CreateDirectory(Path.Combine(agentFolder, "index"));
 
@@ -67,9 +67,9 @@ public class RagFileRepository(IConfiguration configuration) : IRagFileRepositor
             File.Delete(indexPath);
     }
 
-    public Task DeleteFileAsync(Guid id, string fileName)
+    public Task DeleteFileAsync(Guid agentId, string fileName)
     {
-        var agentFolder = GetAgentFolder(id);
+        var agentFolder = GetAgentFolder(agentId);
         var indexPath = Path.Combine(agentFolder, "index", Path.ChangeExtension(fileName, ".idx"));
         if (File.Exists(indexPath))
             File.Delete(indexPath);
@@ -80,5 +80,5 @@ public class RagFileRepository(IConfiguration configuration) : IRagFileRepositor
         return Task.CompletedTask;
     }
 
-    private string GetAgentFolder(Guid id) => Path.Combine(_basePath, id.ToString());
+    private string GetAgentFolder(Guid agentId) => Path.Combine(_basePath, agentId.ToString());
 }

@@ -60,6 +60,7 @@
 - Use primary constructors when appropriate (C# 12+).
 - Prefer `System.Threading.Lock` over `object` for synchronization.
 - **Parameter naming**: Parameter names must match their semantic purpose in the method. Avoid generic names that don't reflect the actual data type or business meaning.
+- Use descriptive ID names (e.g., `agentId`, `fileId`) instead of generic `id`.
 - Return `IReadOnlyCollection<T>` instead of `List<T>` when modification isn't required.
 
 ### Error Handling
