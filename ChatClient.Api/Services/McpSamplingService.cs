@@ -1,4 +1,5 @@
 using ChatClient.Api.Client.Services;
+using ChatClient.Api.Client.Services.Reducers;
 using ChatClient.Application.Services;
 using ChatClient.Domain.Models;
 using DimonSmart.AiUtils;

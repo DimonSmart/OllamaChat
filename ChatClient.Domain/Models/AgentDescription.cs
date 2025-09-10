@@ -4,7 +4,7 @@ namespace ChatClient.Domain.Models;
 
 public class AgentDescription
 {
-    public Guid Id { get; set; }
+    public Guid Id { get; set; } = Guid.NewGuid();
     public string AgentName { get; set; } = string.Empty;
     public string Content { get; set; } = string.Empty;
     public string? ShortName { get; set; }

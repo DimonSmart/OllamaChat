@@ -15,13 +15,13 @@ public class McpServersController(IMcpServerConfigService mcpServerConfigService
         return Ok(servers);
     }
 
-    [HttpGet("{id}")]
-    public async Task<ActionResult<McpServerConfig>> GetServerById(Guid id)
+    [HttpGet("{serverId}")]
+    public async Task<ActionResult<McpServerConfig>> GetServerById(Guid serverId)
     {
-        var server = await mcpServerConfigService.GetByIdAsync(id);
+        var server = await mcpServerConfigService.GetByIdAsync(serverId);
         if (server == null)
         {
-            return NotFound($"MCP server config with ID {id} not found");
+            return NotFound($"MCP server config with ID {serverId} not found");
         }
 
         return Ok(server);
@@ -41,13 +41,13 @@ public class McpServersController(IMcpServerConfigService mcpServerConfigService
         }
 
         await mcpServerConfigService.CreateAsync(server);
-        return CreatedAtAction(nameof(GetServerById), new { id = server.Id }, server);
+        return CreatedAtAction(nameof(GetServerById), new { serverId = server.Id }, server);
     }
 
-    [HttpPut("{id}")]
-    public async Task<ActionResult<McpServerConfig>> UpdateServer(Guid id, [FromBody] McpServerConfig server)
+    [HttpPut("{serverId}")]
+    public async Task<ActionResult<McpServerConfig>> UpdateServer(Guid serverId, [FromBody] McpServerConfig server)
     {
-        if (id != server.Id)
+        if (serverId != server.Id)
         {
             return BadRequest("ID in URL does not match ID in request body");
         }
@@ -62,26 +62,26 @@ public class McpServersController(IMcpServerConfigService mcpServerConfigService
             return BadRequest("Either Command or Sse must be specified");
         }
 
-        var existingServer = await mcpServerConfigService.GetByIdAsync(id);
+        var existingServer = await mcpServerConfigService.GetByIdAsync(serverId);
         if (existingServer == null)
         {
-            return NotFound($"MCP server config with ID {id} not found");
+            return NotFound($"MCP server config with ID {serverId} not found");
         }
 
         await mcpServerConfigService.UpdateAsync(server);
         return Ok(server);
     }
 
-    [HttpDelete("{id}")]
-    public async Task<ActionResult> DeleteServer(Guid id)
+    [HttpDelete("{serverId}")]
+    public async Task<ActionResult> DeleteServer(Guid serverId)
     {
-        var existingServer = await mcpServerConfigService.GetByIdAsync(id);
+        var existingServer = await mcpServerConfigService.GetByIdAsync(serverId);
         if (existingServer == null)
         {
-            return NotFound($"MCP server config with ID {id} not found");
+            return NotFound($"MCP server config with ID {serverId} not found");
         }
 
-        await mcpServerConfigService.DeleteAsync(id);
+        await mcpServerConfigService.DeleteAsync(serverId);
         return NoContent();
     }
 }

@@ -9,10 +9,10 @@ public class LlmServerConfigService(ILlmServerConfigRepository repository) : ILl
 
     public Task<IReadOnlyCollection<LlmServerConfig>> GetAllAsync() => _repository.GetAllAsync();
 
-    public async Task<LlmServerConfig?> GetByIdAsync(Guid id)
+    public async Task<LlmServerConfig?> GetByIdAsync(Guid serverId)
     {
         var servers = await _repository.GetAllAsync();
-        return servers.FirstOrDefault(s => s.Id == id);
+        return servers.FirstOrDefault(s => s.Id == serverId);
     }
 
     public async Task CreateAsync(LlmServerConfig serverConfig)
@@ -36,11 +36,11 @@ public class LlmServerConfigService(ILlmServerConfigRepository repository) : ILl
         await _repository.SaveAllAsync(servers);
     }
 
-    public async Task DeleteAsync(Guid id)
+    public async Task DeleteAsync(Guid serverId)
     {
         var servers = (await _repository.GetAllAsync()).ToList();
-        var existing = servers.FirstOrDefault(s => s.Id == id) ??
-                       throw new KeyNotFoundException($"LLM server config with ID {id} not found");
+        var existing = servers.FirstOrDefault(s => s.Id == serverId) ??
+                       throw new KeyNotFoundException($"LLM server config with ID {serverId} not found");
         servers.Remove(existing);
         await _repository.SaveAllAsync(servers);
     }

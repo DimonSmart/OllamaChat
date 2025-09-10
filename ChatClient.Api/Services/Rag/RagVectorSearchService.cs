@@ -109,7 +109,7 @@ public sealed class RagVectorSearchService(
         return success;
     }
 
-    private static string CollectionName(Guid id) => $"agent_{id:N}";
+    private static string CollectionName(Guid agentId) => $"agent_{agentId:N}";
 
     private static Piece ToPiece(RagVectorRecord record, double score)
         => new(record.File, record.Index, record.Text, score);

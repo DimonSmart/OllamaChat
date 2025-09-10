@@ -1,4 +1,5 @@
 using ChatClient.Api.Client.Services;
+using ChatClient.Api.Client.Services.Reducers;
 using ChatClient.Domain.Models;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
@@ -43,7 +44,7 @@ public partial class PhilosopherDebateTests
                    .SetMinimumLevel(LogLevel.Debug));
 
         using HttpClient httpClient = new() { BaseAddress = new Uri("http://localhost:11434") };
-        var reducer = new AppForceLastUserReducer(loggerFactory.CreateLogger<AppForceLastUserReducer>());
+        var reducer = new AppForceLastUserReducer();
         HttpChatCompletionService service = new(httpClient, _output);
         var wrappedService = new AppForceLastUserChatCompletionService(service, reducer);
 

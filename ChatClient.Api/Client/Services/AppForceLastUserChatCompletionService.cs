@@ -4,7 +4,7 @@ using System.Runtime.CompilerServices;
 
 namespace ChatClient.Api.Client.Services;
 
-public sealed class AppForceLastUserChatCompletionService(IChatCompletionService inner, AppForceLastUserReducer reducer) : IChatCompletionService
+public sealed class AppForceLastUserChatCompletionService(IChatCompletionService inner, IChatHistoryReducer reducer) : IChatCompletionService
 {
     public IReadOnlyDictionary<string, object?> Attributes => inner.Attributes;
 
@@ -27,6 +27,7 @@ public sealed class AppForceLastUserChatCompletionService(IChatCompletionService
     {
         var reduced = await reducer.ReduceAsync(chatHistory, cancellationToken) ?? chatHistory;
         var history = reduced is ChatHistory h ? h : new ChatHistory(reduced);
+
         await foreach (var item in inner.GetStreamingChatMessageContentsAsync(history, executionSettings, kernel, cancellationToken))
             yield return item;
     }

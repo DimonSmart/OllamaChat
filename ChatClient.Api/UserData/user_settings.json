@@ -11,14 +11,14 @@
   "chatHistoryMode": 0,
   "embedding": {
     "model": {
-      "ServerId": null,
-      "ModelName": null
+      "ServerId": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
+      "ModelName": "bge-m3:latest"
     },
     "ragLineChunkSize": 256,
     "ragParagraphChunkSize": 512,
     "ragParagraphOverlap": 64
   },
-  "stopAgentName": "RoundRobinWithSummary",
+  "chatStrategyName": "RoundRobinWithSummary",
   "multiAgentSelectedAgents": [
     "Immanuel Kant",
     "Diogenes"

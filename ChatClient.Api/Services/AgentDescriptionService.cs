@@ -10,29 +10,18 @@ public class AgentDescriptionService(IAgentDescriptionRepository repository) : I
 
     public async Task<IReadOnlyCollection<AgentDescription>> GetAllAsync()
     {
-        var agents = (await _repository.GetAllAsync()).ToList();
-        var updated = false;
-        foreach (var agent in agents.Where(a => a.Id == Guid.Empty))
-        {
-            agent.Id = Guid.NewGuid();
-            updated = true;
-        }
-        if (updated)
-            await _repository.SaveAllAsync(agents);
-        return agents;
+        return await _repository.GetAllAsync();
     }
 
-    public async Task<AgentDescription?> GetByIdAsync(Guid id)
+    public async Task<AgentDescription?> GetByIdAsync(Guid agentId)
     {
         var agents = await _repository.GetAllAsync();
-        return agents.FirstOrDefault(p => p.Id == id);
+        return agents.FirstOrDefault(p => p.Id == agentId);
     }
 
     public async Task CreateAsync(AgentDescription agentDescription)
     {
         var agents = (await _repository.GetAllAsync()).ToList();
-        if (agentDescription.Id == Guid.Empty)
-            agentDescription.Id = Guid.NewGuid();
         agentDescription.CreatedAt = DateTime.UtcNow;
         agentDescription.UpdatedAt = DateTime.UtcNow;
         agents.Add(agentDescription);
@@ -50,20 +39,13 @@ public class AgentDescriptionService(IAgentDescriptionRepository repository) : I
         await _repository.SaveAllAsync(agents);
     }
 
-    public async Task DeleteAsync(Guid id)
+    public async Task DeleteAsync(Guid agentId)
     {
         var agents = (await _repository.GetAllAsync()).ToList();
-        var existing = agents.FirstOrDefault(p => p.Id == id) ??
-                       throw new KeyNotFoundException($"Agent with ID {id} not found");
+        var existing = agents.FirstOrDefault(p => p.Id == agentId) ??
+                       throw new KeyNotFoundException($"Agent with ID {agentId} not found");
         agents.Remove(existing);
         await _repository.SaveAllAsync(agents);
     }
-
-    public AgentDescription GetDefaultAgentDescription() => new()
-    {
-        Id = Guid.NewGuid(),
-        AgentName = "Default Assistant",
-        Content = "You are a helpful AI assistant. Please format your responses using Markdown."
-    };
 }
 

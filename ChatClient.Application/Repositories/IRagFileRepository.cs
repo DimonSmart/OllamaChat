@@ -4,8 +4,8 @@ using ChatClient.Domain.Models;
 
 public interface IRagFileRepository
 {
-    Task<IReadOnlyCollection<RagFile>> GetFilesAsync(Guid id);
-    Task<RagFile?> GetFileAsync(Guid id, string fileName);
-    Task AddOrUpdateFileAsync(Guid id, RagFile file);
-    Task DeleteFileAsync(Guid id, string fileName);
+    Task<IReadOnlyCollection<RagFile>> GetFilesAsync(Guid agentId);
+    Task<RagFile?> GetFileAsync(Guid agentId, string fileName);
+    Task AddOrUpdateFileAsync(Guid agentId, RagFile file);
+    Task DeleteFileAsync(Guid agentId, string fileName);
 }

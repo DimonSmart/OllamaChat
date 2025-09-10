@@ -1,4 +1,5 @@
 using ChatClient.Api.Client.Services;
+using ChatClient.Api.Client.Services.Reducers;
 using ChatClient.Api.Services;
 using ChatClient.Application.Services;
 using ChatClient.Domain.Models;
@@ -37,10 +38,10 @@ public class AppChatHistoryBuilderTests
 
     private sealed class ThrowingRagFileService : IRagFileService
     {
-        public Task<IReadOnlyCollection<RagFile>> GetFilesAsync(Guid id) => throw new InvalidOperationException();
-        public Task<RagFile?> GetFileAsync(Guid id, string fileName) => throw new InvalidOperationException();
-        public Task AddOrUpdateFileAsync(Guid id, RagFile file) => throw new InvalidOperationException();
-        public Task DeleteFileAsync(Guid id, string fileName) => throw new InvalidOperationException();
+        public Task<IReadOnlyCollection<RagFile>> GetFilesAsync(Guid agentId) => throw new InvalidOperationException();
+        public Task<RagFile?> GetFileAsync(Guid agentId, string fileName) => throw new InvalidOperationException();
+        public Task AddOrUpdateFileAsync(Guid agentId, RagFile file) => throw new InvalidOperationException();
+        public Task DeleteFileAsync(Guid agentId, string fileName) => throw new InvalidOperationException();
     }
 
     [Fact]

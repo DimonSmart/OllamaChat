@@ -6,6 +6,7 @@ using Microsoft.Extensions.AI;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
+using MarkdigMarkdown = Markdig.Markdown;
 
 namespace ChatClient.Api.Client.ViewModels;
 
@@ -48,11 +49,11 @@ public class AppChatMessageViewModel
 
         ThinkSegments = result.ThoughtSegments;
         HtmlThinkSegments = result.ThoughtSegments
-            .Select(segment => Markdown.ToHtml(segment, Pipeline))
+            .Select(segment => MarkdigMarkdown.ToHtml(segment, Pipeline))
             .ToList()
             .AsReadOnly();
         Content = result.Answer;
-        HtmlContent = Markdown.ToHtml(result.Answer, Pipeline);
+        HtmlContent = MarkdigMarkdown.ToHtml(result.Answer, Pipeline);
 
         HtmlFunctionCalls = FunctionCalls
             .Select(call =>
@@ -81,7 +82,7 @@ public class AppChatMessageViewModel
                 sb.AppendLine("```");
                 sb.AppendLine(call.Response);
                 sb.AppendLine("```");
-                return Markdown.ToHtml(sb.ToString(), Pipeline);
+                return MarkdigMarkdown.ToHtml(sb.ToString(), Pipeline);
             })
             .ToList()
             .AsReadOnly();

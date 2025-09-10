@@ -1,4 +1,4 @@
-using ChatClient.Api.Client.Services;
+using ChatClient.Api.Client.Services.Reducers;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.SemanticKernel;
 using Microsoft.SemanticKernel.ChatCompletion;
@@ -18,7 +18,7 @@ public class AppForceLastUserReducerTests
             new ChatMessageContent(AuthorRole.Assistant, "answer", "assistant")
         ];
 
-        var reducer = new AppForceLastUserReducer(new NullLogger<AppForceLastUserReducer>());
+        var reducer = new AppForceLastUserReducer();
         var reduced = await reducer.ReduceAsync(history);
         var last = reduced!.Last();
         Assert.Equal(AuthorRole.User, last.Role);

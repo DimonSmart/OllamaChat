@@ -1,6 +1,6 @@
 @using MudBlazor
-@using ChatClient.Domain.Models.StopAgents
-@inherits StopAgentParametersBase
+@using ChatClient.Domain.Models.ChatStrategies
+@inherits ChatStrategyParametersBase
 
 <MudNumericField T="int"
                  Value="TypedOptions.Rounds"
@@ -12,7 +12,7 @@
                  Class="mt-4" />
 
 @code {
-    private RoundRobinStopAgentOptions TypedOptions => (RoundRobinStopAgentOptions)Context.Options;
+    private RoundRobinChatStrategyOptions TypedOptions => (RoundRobinChatStrategyOptions)Context.Options;
 
     private void OnRoundsChanged(int value)
     {
