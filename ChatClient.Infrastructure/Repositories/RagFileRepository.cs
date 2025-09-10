@@ -1,5 +1,5 @@
-using ChatClient.Domain.Models;
 using ChatClient.Application.Repositories;
+using ChatClient.Domain.Models;
 using Microsoft.Extensions.Configuration;
 
 namespace ChatClient.Infrastructure.Repositories;

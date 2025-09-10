@@ -1,5 +1,5 @@
-using ChatClient.Infrastructure.Repositories;
 using ChatClient.Domain.Models;
+using ChatClient.Infrastructure.Repositories;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging.Abstractions;
 

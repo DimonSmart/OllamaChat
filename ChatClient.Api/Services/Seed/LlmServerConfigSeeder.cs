@@ -1,7 +1,7 @@
-using ChatClient.Domain.Models;
 using ChatClient.Application.Repositories;
+using ChatClient.Domain.Models;
 
-namespace ChatClient.Api.Services;
+namespace ChatClient.Api.Services.Seed;
 
 public class LlmServerConfigSeeder(ILlmServerConfigRepository repository)
 {

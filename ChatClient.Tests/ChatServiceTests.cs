@@ -1,7 +1,7 @@
 using ChatClient.Api.Client.Services;
 using ChatClient.Api.Services;
-using ChatClient.Domain.Models;
 using ChatClient.Application.Services;
+using ChatClient.Domain.Models;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Logging;
 using Microsoft.SemanticKernel;

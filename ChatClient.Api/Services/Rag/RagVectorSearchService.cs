@@ -1,5 +1,5 @@
-using ChatClient.Domain.Models;
 using ChatClient.Application.Services;
+using ChatClient.Domain.Models;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.VectorData;

@@ -1,5 +1,5 @@
-using ChatClient.Domain.Models;
 using ChatClient.Application.Services;
+using ChatClient.Domain.Models;
 
 namespace ChatClient.Api.Services.Rag;
 

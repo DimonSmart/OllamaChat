@@ -1,8 +1,8 @@
 #pragma warning disable SKEXP0050
 using ChatClient.Application.Helpers;
-using ChatClient.Domain.Models;
 using ChatClient.Application.Repositories;
 using ChatClient.Application.Services;
+using ChatClient.Domain.Models;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;

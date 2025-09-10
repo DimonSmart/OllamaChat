@@ -1,6 +1,6 @@
 using ChatClient.Api.Client.Services;
-using ChatClient.Domain.Models;
 using ChatClient.Application.Services;
+using ChatClient.Domain.Models;
 using Microsoft.Extensions.Logging;
 using Microsoft.SemanticKernel;
 using Microsoft.SemanticKernel.ChatCompletion;

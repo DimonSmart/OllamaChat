@@ -1,11 +1,11 @@
 using ChatClient.Api.Services;
-using ChatClient.Domain.Models;
 using ChatClient.Application.Services;
+using ChatClient.Domain.Models;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
-using System.Net.Http;
 using System.Collections.Generic;
 using System.Linq;
+using System.Net.Http;
 
 public class OllamaServiceTests
 {

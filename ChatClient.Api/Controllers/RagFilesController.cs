@@ -1,6 +1,6 @@
 using ChatClient.Api.Services;
-using ChatClient.Domain.Models;
 using ChatClient.Application.Services;
+using ChatClient.Domain.Models;
 using Microsoft.AspNetCore.Mvc;
 
 namespace ChatClient.Api.Controllers;

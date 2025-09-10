@@ -1,8 +1,8 @@
-using ChatClient.Infrastructure.Repositories;
 using ChatClient.Domain.Models;
+using ChatClient.Infrastructure.Repositories;
+using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging.Abstractions;
-using Microsoft.Extensions.AI;
 
 namespace ChatClient.Tests;
 

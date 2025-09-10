@@ -1,5 +1,5 @@
-using ChatClient.Domain.Models;
 using ChatClient.Application.Services;
+using ChatClient.Domain.Models;
 using ModelContextProtocol.Client;
 using ModelContextProtocol.Protocol;
 using System;
