@@ -9,7 +9,7 @@ public interface ISavedChatService
     /// Returns saved chats matching the specified query in title or participant names.
     /// </summary>
     Task<IReadOnlyCollection<SavedChat>> SearchAsync(string query, CancellationToken cancellationToken = default);
-    Task<SavedChat?> GetByIdAsync(Guid id, CancellationToken cancellationToken = default);
+    Task<SavedChat?> GetByIdAsync(Guid chatId, CancellationToken cancellationToken = default);
     Task SaveAsync(SavedChat savedChat, CancellationToken cancellationToken = default);
-    Task DeleteAsync(Guid id, CancellationToken cancellationToken = default);
+    Task DeleteAsync(Guid chatId, CancellationToken cancellationToken = default);
 }

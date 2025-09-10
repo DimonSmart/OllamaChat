@@ -580,17 +580,17 @@ public class AppChatService(
         AnsweringStateChanged?.Invoke(isAnswering);
     }
 
-    public async Task DeleteMessageAsync(Guid id)
+    public async Task DeleteMessageAsync(Guid messageId)
     {
-        logger.LogInformation("Deleting message {MessageId}", id);
+        logger.LogInformation("Deleting message {MessageId}", messageId);
         if (IsAnswering)
             return;
 
-        var message = Messages.FirstOrDefault(m => m.Id == id);
+        var message = Messages.FirstOrDefault(m => m.Id == messageId);
         if (message == null)
             return;
 
         Messages.Remove(message);
-        await (MessageDeleted?.Invoke(id) ?? Task.CompletedTask);
+        await (MessageDeleted?.Invoke(messageId) ?? Task.CompletedTask);
     }
 }

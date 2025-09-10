@@ -29,11 +29,11 @@ public class ChatViewModelServiceTests
         public Task CancelAsync() => Task.CompletedTask;
         public Task SendAsync(string text, IReadOnlyList<AppChatMessageFile>? files = null) => Task.CompletedTask;
         public ChatSessionParameters GetState() => throw new NotImplementedException();
-        public Task DeleteMessageAsync(Guid id) => Task.CompletedTask;
+        public Task DeleteMessageAsync(Guid messageId) => Task.CompletedTask;
 
         public Task RaiseMessageAdded(IAppChatMessage message) => MessageAdded?.Invoke(message) ?? Task.CompletedTask;
         public Task RaiseMessageUpdated(IAppChatMessage message, MessageUpdateOptions options = default) => MessageUpdated?.Invoke(message, options) ?? Task.CompletedTask;
-        public Task RaiseMessageDeleted(Guid id) => MessageDeleted?.Invoke(id) ?? Task.CompletedTask;
+        public Task RaiseMessageDeleted(Guid messageId) => MessageDeleted?.Invoke(messageId) ?? Task.CompletedTask;
     }
 
     [Fact]

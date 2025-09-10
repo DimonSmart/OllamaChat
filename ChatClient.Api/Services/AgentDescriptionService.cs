@@ -13,10 +13,10 @@ public class AgentDescriptionService(IAgentDescriptionRepository repository) : I
         return await _repository.GetAllAsync();
     }
 
-    public async Task<AgentDescription?> GetByIdAsync(Guid id)
+    public async Task<AgentDescription?> GetByIdAsync(Guid agentId)
     {
         var agents = await _repository.GetAllAsync();
-        return agents.FirstOrDefault(p => p.Id == id);
+        return agents.FirstOrDefault(p => p.Id == agentId);
     }
 
     public async Task CreateAsync(AgentDescription agentDescription)
@@ -39,11 +39,11 @@ public class AgentDescriptionService(IAgentDescriptionRepository repository) : I
         await _repository.SaveAllAsync(agents);
     }
 
-    public async Task DeleteAsync(Guid id)
+    public async Task DeleteAsync(Guid agentId)
     {
         var agents = (await _repository.GetAllAsync()).ToList();
-        var existing = agents.FirstOrDefault(p => p.Id == id) ??
-                       throw new KeyNotFoundException($"Agent with ID {id} not found");
+        var existing = agents.FirstOrDefault(p => p.Id == agentId) ??
+                       throw new KeyNotFoundException($"Agent with ID {agentId} not found");
         agents.Remove(existing);
         await _repository.SaveAllAsync(agents);
     }

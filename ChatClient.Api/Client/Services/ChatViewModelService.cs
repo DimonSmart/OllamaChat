@@ -89,9 +89,9 @@ public class ChatViewModelService : IChatViewModelService, IAsyncDisposable
         await (MessageUpdated?.Invoke(existingMessage, options) ?? Task.CompletedTask);
     }
 
-    private async Task OnMessageDeleted(Guid id)
+    private async Task OnMessageDeleted(Guid messageId)
     {
-        var message = _messages.FirstOrDefault(m => m.Id == id);
+        var message = _messages.FirstOrDefault(m => m.Id == messageId);
         if (message == null)
             return;
         _messages.Remove(message);

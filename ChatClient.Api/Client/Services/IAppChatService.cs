@@ -20,5 +20,5 @@ public interface IAppChatService
     Task CancelAsync();
     Task SendAsync(string text, IReadOnlyList<AppChatMessageFile>? files = null);
     ChatSessionParameters GetState();
-    Task DeleteMessageAsync(Guid id);
+    Task DeleteMessageAsync(Guid messageId);
 }

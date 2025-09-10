@@ -51,10 +51,10 @@ public class ChatServiceTests
     private class MockLlmServerConfigService : ILlmServerConfigService
     {
         public Task<IReadOnlyCollection<LlmServerConfig>> GetAllAsync() => Task.FromResult<IReadOnlyCollection<LlmServerConfig>>([]);
-        public Task<LlmServerConfig?> GetByIdAsync(Guid id) => Task.FromResult<LlmServerConfig?>(null);
+        public Task<LlmServerConfig?> GetByIdAsync(Guid serverId) => Task.FromResult<LlmServerConfig?>(null);
         public Task CreateAsync(LlmServerConfig serverConfig) => Task.CompletedTask;
         public Task UpdateAsync(LlmServerConfig serverConfig) => Task.CompletedTask;
-        public Task DeleteAsync(Guid id) => Task.CompletedTask;
+        public Task DeleteAsync(Guid serverId) => Task.CompletedTask;
     }
 
     [Fact]

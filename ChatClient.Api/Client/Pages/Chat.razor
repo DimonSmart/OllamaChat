@@ -331,9 +331,9 @@
     [Parameter, SupplyParameterFromQuery(Name = "saved")]
     public Guid? SavedChatId { get; set; }
 
-    private async Task LoadSavedChat(Guid id)
+    private async Task LoadSavedChat(Guid savedChatId)
     {
-        var saved = await SavedChatService.GetByIdAsync(id);
+        var saved = await SavedChatService.GetByIdAsync(savedChatId);
         if (saved is null)
         {
             Snackbar.Add("Saved chat not found", Severity.Error);
@@ -382,7 +382,7 @@
         var session = new ChatSessionParameters(groupChatManager, chatConfiguration, agentsForChat, savedMessages);
         await ChatService.StartAsync(session);
         chatStarted = true;
-        lastSavedChatId = id;
+        lastSavedChatId = savedChatId;
         lastSavedChatTitle = saved.Title;
     }
 
