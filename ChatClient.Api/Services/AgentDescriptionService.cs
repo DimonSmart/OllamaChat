@@ -10,16 +10,7 @@ public class AgentDescriptionService(IAgentDescriptionRepository repository) : I
 
     public async Task<IReadOnlyCollection<AgentDescription>> GetAllAsync()
     {
-        var agents = (await _repository.GetAllAsync()).ToList();
-        var updated = false;
-        foreach (var agent in agents.Where(a => a.Id == Guid.Empty))
-        {
-            agent.Id = Guid.NewGuid();
-            updated = true;
-        }
-        if (updated)
-            await _repository.SaveAllAsync(agents);
-        return agents;
+        return await _repository.GetAllAsync();
     }
 
     public async Task<AgentDescription?> GetByIdAsync(Guid id)
@@ -31,8 +22,6 @@ public class AgentDescriptionService(IAgentDescriptionRepository repository) : I
     public async Task CreateAsync(AgentDescription agentDescription)
     {
         var agents = (await _repository.GetAllAsync()).ToList();
-        if (agentDescription.Id == Guid.Empty)
-            agentDescription.Id = Guid.NewGuid();
         agentDescription.CreatedAt = DateTime.UtcNow;
         agentDescription.UpdatedAt = DateTime.UtcNow;
         agents.Add(agentDescription);
