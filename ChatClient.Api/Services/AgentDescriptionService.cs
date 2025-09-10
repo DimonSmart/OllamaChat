@@ -1,76 +1,32 @@
+using ChatClient.Api.Repositories;
 using ChatClient.Shared.Constants;
 using ChatClient.Shared.Models;
 using ChatClient.Shared.Services;
-using System.Text.Json;
 
 namespace ChatClient.Api.Services;
 
 public class AgentDescriptionService : IAgentDescriptionService
 {
-    private readonly string _filePath;
-    private readonly ILogger<AgentDescriptionService> _logger;
-    private readonly SemaphoreSlim _semaphore = new(1, 1);
+    private readonly JsonFileRepository<List<AgentDescription>> _repository;
 
     public AgentDescriptionService(IConfiguration configuration, ILogger<AgentDescriptionService> logger)
     {
-        var promptsFilePath = configuration["AgentDescriptions:FilePath"] ?? FilePathConstants.DefaultAgentDescriptionsFile;
-        _filePath = Path.GetFullPath(promptsFilePath);
-        _logger = logger;
-        var directory = Path.GetDirectoryName(_filePath);
-        if (!string.IsNullOrEmpty(directory) && !Directory.Exists(directory))
-        {
-            Directory.CreateDirectory(directory);
-        }
-
-        if (!File.Exists(_filePath))
-        {
-            CreateDefaultAgentsFile();
-        }
+        var filePath = configuration["AgentDescriptions:FilePath"] ?? FilePathConstants.DefaultAgentDescriptionsFile;
+        _repository = new JsonFileRepository<List<AgentDescription>>(filePath, logger);
     }
-
-    private void CreateDefaultAgentsFile()
-    {
-        var defaultAgents = new List<AgentDescription>
-        {
-            new AgentDescription
-            {
-                AgentName = "Default Assistant",
-                Content = "You are a helpful assistant."
-            },
-            new AgentDescription
-            {
-                AgentName = "Code Assistant",
-                Content = "You are a coding assistant. Help the user write and understand code."
-            }
-        };
-
-        WriteToFile(defaultAgents);
-    }
-
 
     public async Task<List<AgentDescription>> GetAllAsync()
     {
-        try
+        var agents = await _repository.ReadAsync() ?? [];
+        var updated = false;
+        foreach (var agent in agents.Where(a => a.Id == Guid.Empty))
         {
-            await _semaphore.WaitAsync();
-
-            if (!File.Exists(_filePath))
-            {
-                CreateDefaultAgentsFile();
-                return await ReadFromFileAsync();
-            }
-
-            return await ReadFromFileAsync();
+            agent.Id = Guid.NewGuid();
+            updated = true;
         }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Error getting agents");
-            throw;
-        }
-        finally
-        {
-            _semaphore.Release();
-        }
+        if (updated)
+            await _repository.WriteAsync(agents);
+        return agents;
     }
 
     public async Task<AgentDescription?> GetByIdAsync(Guid id)
@@ -81,127 +37,39 @@ public class AgentDescriptionService : IAgentDescriptionService
 
     public async Task CreateAsync(AgentDescription agentDescription)
     {
-        try
+        await _repository.UpdateAsync(agents =>
         {
-            await _semaphore.WaitAsync();
-
-            var agents = await ReadFromFileAsync();
-
             if (agentDescription.Id == Guid.Empty)
                 agentDescription.Id = Guid.NewGuid();
-
             agentDescription.CreatedAt = DateTime.UtcNow;
             agentDescription.UpdatedAt = DateTime.UtcNow;
-
             agents.Add(agentDescription);
-            await WriteToFileAsync(agents);
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Error creating agent");
-            throw;
-        }
-        finally
-        {
-            _semaphore.Release();
-        }
+            return Task.CompletedTask;
+        }, []);
     }
 
     public async Task UpdateAsync(AgentDescription agentDescription)
     {
-        try
+        await _repository.UpdateAsync(agents =>
         {
-            await _semaphore.WaitAsync();
-
-            var agents = await ReadFromFileAsync();
-            var existingIndex = agents.FindIndex(p => p.Id == agentDescription.Id);
-
-            if (existingIndex == -1)
-            {
+            var index = agents.FindIndex(p => p.Id == agentDescription.Id);
+            if (index == -1)
                 throw new KeyNotFoundException($"Agent with ID {agentDescription.Id} not found");
-            }
-
             agentDescription.UpdatedAt = DateTime.UtcNow;
-            agents[existingIndex] = agentDescription;
-
-            await WriteToFileAsync(agents);
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Error updating agent");
-            throw;
-        }
-        finally
-        {
-            _semaphore.Release();
-        }
+            agents[index] = agentDescription;
+            return Task.CompletedTask;
+        }, []);
     }
 
     public async Task DeleteAsync(Guid id)
     {
-        try
+        await _repository.UpdateAsync(agents =>
         {
-            await _semaphore.WaitAsync();
-
-            var agents = await ReadFromFileAsync();
-            var existingAgent = agents.FirstOrDefault(p => p.Id == id);
-
-            if (existingAgent == null)
-            {
-                throw new KeyNotFoundException($"Agent with ID {id} not found");
-            }
-
-            agents.Remove(existingAgent);
-            await WriteToFileAsync(agents);
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Error deleting agent");
-            throw;
-        }
-        finally
-        {
-            _semaphore.Release();
-        }
-    }
-
-    private async Task<List<AgentDescription>> ReadFromFileAsync()
-    {
-        if (!File.Exists(_filePath))
-        {
-            return [];
-        }
-
-        var json = await File.ReadAllTextAsync(_filePath);
-        var agents = JsonSerializer.Deserialize<List<AgentDescription>>(json) ?? [];
-
-        var updated = false;
-        foreach (var agent in agents.Where(a => a.Id == Guid.Empty))
-        {
-            agent.Id = Guid.NewGuid();
-            updated = true;
-        }
-
-        if (updated)
-            await WriteToFileAsync(agents);
-
-        return agents;
-    }
-
-    private static string SerializeAgents(List<AgentDescription> agents)
-    {
-        var options = new JsonSerializerOptions { WriteIndented = true };
-        return JsonSerializer.Serialize(agents, options);
-    }
-
-    private async Task WriteToFileAsync(List<AgentDescription> agents)
-    {
-        await File.WriteAllTextAsync(_filePath, SerializeAgents(agents));
-    }
-
-    private void WriteToFile(List<AgentDescription> agents)
-    {
-        File.WriteAllText(_filePath, SerializeAgents(agents));
+            var existing = agents.FirstOrDefault(p => p.Id == id) ??
+                           throw new KeyNotFoundException($"Agent with ID {id} not found");
+            agents.Remove(existing);
+            return Task.CompletedTask;
+        }, []);
     }
 
     public AgentDescription GetDefaultAgentDescription() => new()

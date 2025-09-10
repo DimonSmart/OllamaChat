@@ -3,6 +3,9 @@ using ChatClient.Api.Client.Services;
 using ChatClient.Api.Client.Services.Formatters;
 using ChatClient.Api.Services;
 using ChatClient.Api.Services.Rag;
+using ChatClient.Api.Repositories;
+using ChatClient.Shared.Constants;
+using ChatClient.Shared.Models;
 using Microsoft.AspNetCore.Components.Server.Circuits;
 using Microsoft.AspNetCore.Hosting.Server;
 using Microsoft.AspNetCore.Hosting.Server.Features;
@@ -56,6 +59,13 @@ builder.Services.AddSingleton<AppForceLastUserReducer>();
 builder.Services.AddSingleton<ChatClient.Api.Services.IAppChatHistoryBuilder, ChatClient.Api.Services.AppChatHistoryBuilder>();
 builder.Services.AddScoped<ChatClient.Api.Services.OllamaServerAvailabilityService>();
 builder.Services.AddSingleton<ChatClient.Shared.Services.IAgentDescriptionService, ChatClient.Api.Services.AgentDescriptionService>();
+builder.Services.AddSingleton(sp =>
+{
+    var config = sp.GetRequiredService<IConfiguration>();
+    var logger = sp.GetRequiredService<ILogger<JsonFileRepository<UserSettings>>>();
+    var filePath = config["UserSettings:FilePath"] ?? FilePathConstants.DefaultUserSettingsFile;
+    return new JsonFileRepository<UserSettings>(filePath, logger);
+});
 builder.Services.AddSingleton<ChatClient.Shared.Services.IUserSettingsService, ChatClient.Api.Services.UserSettingsService>();
 builder.Services.AddSingleton<ChatClient.Shared.Services.ISavedChatService, ChatClient.Api.Services.SavedChatService>();
 builder.Services.AddSingleton<ChatClient.Shared.Services.IRagFileService, RagFileService>();
@@ -72,6 +82,10 @@ builder.Services.AddSingleton<ChatClient.Api.Client.Services.IStopAgentFactory, 
 builder.Services.AddSingleton<IChatFormatter, TextChatFormatter>();
 builder.Services.AddSingleton<IChatFormatter, MarkdownChatFormatter>();
 builder.Services.AddSingleton<IChatFormatter, HtmlChatFormatter>();
+
+builder.Services.AddSingleton<AgentDescriptionSeeder>();
+builder.Services.AddSingleton<LlmServerConfigSeeder>();
+builder.Services.AddSingleton<McpServerConfigSeeder>();
 
 builder.Services.AddRazorPages();
 builder.Services.AddServerSideBlazor();
@@ -90,6 +104,13 @@ var app = builder.Build();
 
 using (var scope = app.Services.CreateScope())
 {
+    var agentSeeder = scope.ServiceProvider.GetRequiredService<AgentDescriptionSeeder>();
+    await agentSeeder.SeedAsync();
+    var llmSeeder = scope.ServiceProvider.GetRequiredService<LlmServerConfigSeeder>();
+    await llmSeeder.SeedAsync();
+    var mcpSeeder = scope.ServiceProvider.GetRequiredService<McpServerConfigSeeder>();
+    await mcpSeeder.SeedAsync();
+
     var kernelService = scope.ServiceProvider.GetRequiredService<KernelService>();
     var mcpClientService = scope.ServiceProvider.GetRequiredService<IMcpClientService>();
     kernelService.SetMcpClientService(mcpClientService);
