@@ -1,22 +1,16 @@
-using ChatClient.Api.Repositories;
-using ChatClient.Shared.Constants;
-using ChatClient.Shared.Models;
+using ChatClient.Domain.Models;
+using ChatClient.Application.Repositories;
 
 namespace ChatClient.Api.Services;
 
-public class AgentDescriptionSeeder
+public class AgentDescriptionSeeder(IAgentDescriptionRepository repository)
 {
-    private readonly JsonFileRepository<List<AgentDescription>> _repository;
-
-    public AgentDescriptionSeeder(IConfiguration configuration, ILogger<AgentDescriptionSeeder> logger)
-    {
-        var filePath = configuration["AgentDescriptions:FilePath"] ?? FilePathConstants.DefaultAgentDescriptionsFile;
-        _repository = new JsonFileRepository<List<AgentDescription>>(filePath, logger);
-    }
+    private readonly IAgentDescriptionRepository _repository = repository;
 
     public async Task SeedAsync()
     {
-        if (_repository.Exists)
+        var existing = await _repository.GetAllAsync();
+        if (existing.Count > 0)
             return;
 
         var defaultAgents = new List<AgentDescription>
@@ -33,6 +27,7 @@ public class AgentDescriptionSeeder
             }
         };
 
-        await _repository.WriteAsync(defaultAgents);
+        await _repository.SaveAllAsync(defaultAgents);
     }
 }
+

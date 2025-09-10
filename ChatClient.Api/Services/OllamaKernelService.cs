@@ -1,5 +1,5 @@
-using ChatClient.Shared.Models;
-using ChatClient.Shared.Services;
+using ChatClient.Domain.Models;
+using ChatClient.Application.Services;
 using Microsoft.SemanticKernel.ChatCompletion;
 
 namespace ChatClient.Api.Services;

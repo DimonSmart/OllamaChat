@@ -1,6 +1,7 @@
-using ChatClient.Api.Repositories;
 using ChatClient.Api.Services;
-using ChatClient.Shared.Models;
+using ChatClient.Infrastructure.Repositories;
+using ChatClient.Domain.Models;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using System;
 using System.IO;
@@ -46,8 +47,14 @@ public class UserSettingsServiceTests
 
         try
         {
-            var repositoryLogger = new LoggerFactory().CreateLogger<JsonFileRepository<UserSettings>>();
-            var repository = new JsonFileRepository<UserSettings>(filePath, repositoryLogger);
+            var config = new ConfigurationBuilder()
+                .AddInMemoryCollection(new Dictionary<string, string?>
+                {
+                    ["UserSettings:FilePath"] = filePath
+                })
+                .Build();
+            var repositoryLogger = new LoggerFactory().CreateLogger<UserSettingsRepository>();
+            var repository = new UserSettingsRepository(config, repositoryLogger);
             var serviceLogger = new LoggerFactory().CreateLogger<UserSettingsService>();
             var mockLlmService = new MockLlmServerConfigService();
             var service = new UserSettingsService(repository, serviceLogger, mockLlmService);

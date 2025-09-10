@@ -1,6 +1,6 @@
 namespace ChatClient.Api.Services;
 
-using ChatClient.Shared.Models;
+using ChatClient.Domain.Models;
 
 public interface IOllamaEmbeddingService
 {

@@ -1,5 +1,5 @@
 using ChatClient.Api.Client.MarkdownExtensions;
-using ChatClient.Shared.Models;
+using ChatClient.Domain.Models;
 using DimonSmart.AiUtils;
 using Markdig;
 using Microsoft.Extensions.AI;

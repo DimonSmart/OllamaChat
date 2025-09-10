@@ -1,5 +1,5 @@
-using ChatClient.Shared.Models;
-using ChatClient.Shared.Models.StopAgents;
+using ChatClient.Domain.Models;
+using ChatClient.Domain.Models.StopAgents;
 
 using Microsoft.AspNetCore.Components;
 

@@ -1,4 +1,4 @@
-using ChatClient.Shared.Models.StopAgents;
+using ChatClient.Domain.Models.StopAgents;
 
 using Microsoft.SemanticKernel.Agents.Orchestration.GroupChat;
 
