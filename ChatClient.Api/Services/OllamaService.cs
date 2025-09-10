@@ -23,8 +23,8 @@ public sealed class OllamaService(
 
     public async Task<OllamaApiClient> GetClientAsync(Guid serverId)
     {
-        lock (_lock)
         {
+            using var guard = _lock.EnterScope();
             if (_clients.TryGetValue(serverId, out var entry))
                 return entry.Client;
         }
@@ -33,8 +33,8 @@ public sealed class OllamaService(
         var httpClient = BuildHttpClient(config);
         var client = new OllamaApiClient(httpClient);
 
-        lock (_lock)
         {
+            using var guard = _lock.EnterScope();
             _clients[serverId] = (client, httpClient);
         }
         return client;
@@ -157,13 +157,11 @@ public sealed class OllamaService(
 
     public void Dispose()
     {
-        lock (_lock)
+        using var guard = _lock.EnterScope();
+        foreach (var entry in _clients.Values)
         {
-            foreach (var entry in _clients.Values)
-            {
-                entry.Client.Dispose();
-                entry.HttpClient.Dispose();
-            }
+            entry.Client.Dispose();
+            entry.HttpClient.Dispose();
         }
     }
 }
