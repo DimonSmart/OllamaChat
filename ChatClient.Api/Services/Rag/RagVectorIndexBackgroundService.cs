@@ -19,16 +19,14 @@ public sealed class RagVectorIndexBackgroundService(
 
     public void RequestRebuild()
     {
-        lock (_sync)
+        using var guard = _sync.EnterScope();
+        if (_running)
         {
-            if (_running)
-            {
-                _rescanRequested = true;
-                return;
-            }
-            _running = true;
-            _signal.Release();
+            _rescanRequested = true;
+            return;
         }
+        _running = true;
+        _signal.Release();
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -38,17 +36,15 @@ public sealed class RagVectorIndexBackgroundService(
         {
             await _signal.WaitAsync(stoppingToken);
             await RebuildMissingIndexesAsync(stoppingToken);
-            lock (_sync)
+            using var guard = _sync.EnterScope();
+            if (_rescanRequested && !stoppingToken.IsCancellationRequested)
             {
-                if (_rescanRequested && !stoppingToken.IsCancellationRequested)
-                {
-                    _rescanRequested = false;
-                    _signal.Release();
-                }
-                else
-                {
-                    _running = false;
-                }
+                _rescanRequested = false;
+                _signal.Release();
+            }
+            else
+            {
+                _running = false;
             }
         }
     }
