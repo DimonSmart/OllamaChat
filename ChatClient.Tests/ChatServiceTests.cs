@@ -32,8 +32,8 @@ public class ChatServiceTests
         public Task<IChatCompletionService> GetClientAsync(ServerModel serverModel, CancellationToken cancellationToken = default)
             => Task.FromResult<IChatCompletionService>(null!);
 
-        public Task<List<string>> GetAvailableModelsAsync(Guid serverId, CancellationToken cancellationToken = default)
-            => Task.FromResult<List<string>>([]);
+        public Task<IReadOnlyCollection<string>> GetAvailableModelsAsync(Guid serverId, CancellationToken cancellationToken = default)
+            => Task.FromResult<IReadOnlyCollection<string>>([]);
 
         public Task<bool> IsAvailableAsync(Guid serverId, CancellationToken cancellationToken = default)
             => Task.FromResult(false);
@@ -50,7 +50,7 @@ public class ChatServiceTests
 
     private class MockLlmServerConfigService : ILlmServerConfigService
     {
-        public Task<List<LlmServerConfig>> GetAllAsync() => Task.FromResult<List<LlmServerConfig>>([]);
+        public Task<IReadOnlyCollection<LlmServerConfig>> GetAllAsync() => Task.FromResult<IReadOnlyCollection<LlmServerConfig>>([]);
         public Task<LlmServerConfig?> GetByIdAsync(Guid id) => Task.FromResult<LlmServerConfig?>(null);
         public Task CreateAsync(LlmServerConfig serverConfig) => Task.CompletedTask;
         public Task UpdateAsync(LlmServerConfig serverConfig) => Task.CompletedTask;

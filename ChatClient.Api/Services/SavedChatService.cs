@@ -9,10 +9,10 @@ public class SavedChatService(ISavedChatRepository repository) : ISavedChatServi
 {
     private readonly ISavedChatRepository _repository = repository;
 
-    public Task<List<SavedChat>> GetAllAsync(CancellationToken cancellationToken = default) =>
+    public Task<IReadOnlyCollection<SavedChat>> GetAllAsync(CancellationToken cancellationToken = default) =>
         _repository.GetAllAsync(cancellationToken);
 
-    public async Task<List<SavedChat>> SearchAsync(string query, CancellationToken cancellationToken = default)
+    public async Task<IReadOnlyCollection<SavedChat>> SearchAsync(string query, CancellationToken cancellationToken = default)
     {
         var chats = await _repository.GetAllAsync(cancellationToken);
         if (string.IsNullOrWhiteSpace(query))

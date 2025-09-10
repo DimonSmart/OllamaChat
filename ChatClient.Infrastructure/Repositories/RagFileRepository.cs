@@ -8,7 +8,7 @@ public class RagFileRepository(IConfiguration configuration) : IRagFileRepositor
 {
     private readonly string _basePath = configuration["RagFiles:BasePath"] ?? Path.Combine("Data", "agents");
 
-    public async Task<List<RagFile>> GetFilesAsync(Guid id)
+    public async Task<IReadOnlyCollection<RagFile>> GetFilesAsync(Guid id)
     {
         var agentFolder = GetAgentFolder(id);
         var filesDir = Path.Combine(agentFolder, "files");

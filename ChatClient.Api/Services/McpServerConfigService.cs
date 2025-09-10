@@ -8,7 +8,7 @@ public class McpServerConfigService(IMcpServerConfigRepository repository) : IMc
 {
     private readonly IMcpServerConfigRepository _repository = repository;
 
-    public Task<List<McpServerConfig>> GetAllAsync() => _repository.GetAllAsync();
+    public Task<IReadOnlyCollection<McpServerConfig>> GetAllAsync() => _repository.GetAllAsync();
 
     public async Task<McpServerConfig?> GetByIdAsync(Guid id)
     {
@@ -18,7 +18,7 @@ public class McpServerConfigService(IMcpServerConfigRepository repository) : IMc
 
     public async Task CreateAsync(McpServerConfig serverConfig)
     {
-        var servers = await _repository.GetAllAsync();
+        var servers = (await _repository.GetAllAsync()).ToList();
         serverConfig.Id ??= Guid.NewGuid();
         serverConfig.CreatedAt = DateTime.UtcNow;
         serverConfig.UpdatedAt = DateTime.UtcNow;
@@ -28,7 +28,7 @@ public class McpServerConfigService(IMcpServerConfigRepository repository) : IMc
 
     public async Task UpdateAsync(McpServerConfig serverConfig)
     {
-        var servers = await _repository.GetAllAsync();
+        var servers = (await _repository.GetAllAsync()).ToList();
         var index = servers.FindIndex(s => s.Id == serverConfig.Id);
         if (index == -1)
             throw new KeyNotFoundException($"MCP server config with ID {serverConfig.Id} not found");
@@ -39,7 +39,7 @@ public class McpServerConfigService(IMcpServerConfigRepository repository) : IMc
 
     public async Task DeleteAsync(Guid id)
     {
-        var servers = await _repository.GetAllAsync();
+        var servers = (await _repository.GetAllAsync()).ToList();
         var existing = servers.FirstOrDefault(s => s.Id == id) ??
                        throw new KeyNotFoundException($"MCP server config with ID {id} not found");
         servers.Remove(existing);

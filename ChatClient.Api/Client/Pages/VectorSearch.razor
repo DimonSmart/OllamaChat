@@ -89,7 +89,7 @@
 
     protected override async Task OnInitializedAsync()
     {
-        agents = await AgentService.GetAllAsync();
+        agents = (await AgentService.GetAllAsync()).ToList();
         foreach (var agent in agents)
         {
             var files = await RagFileService.GetFilesAsync(agent.Id);

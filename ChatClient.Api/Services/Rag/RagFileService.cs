@@ -10,7 +10,7 @@ public class RagFileService(IRagFileRepository repository, IRagVectorIndexBackgr
     private readonly IRagFileRepository _repository = repository;
     private readonly IRagVectorIndexBackgroundService _indexBackgroundService = indexBackgroundService;
 
-    public Task<List<RagFile>> GetFilesAsync(Guid id) => _repository.GetFilesAsync(id);
+    public Task<IReadOnlyCollection<RagFile>> GetFilesAsync(Guid id) => _repository.GetFilesAsync(id);
 
     public Task<RagFile?> GetFileAsync(Guid id, string fileName)
     {

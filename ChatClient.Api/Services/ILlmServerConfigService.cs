@@ -4,7 +4,7 @@ namespace ChatClient.Api.Services;
 
 public interface ILlmServerConfigService
 {
-    Task<List<LlmServerConfig>> GetAllAsync();
+    Task<IReadOnlyCollection<LlmServerConfig>> GetAllAsync();
     Task<LlmServerConfig?> GetByIdAsync(Guid id);
     Task CreateAsync(LlmServerConfig serverConfig);
     Task UpdateAsync(LlmServerConfig serverConfig);

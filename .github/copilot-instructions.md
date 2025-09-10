@@ -59,6 +59,7 @@
 - Prefix interfaces with `I` (e.g., `IUserService`).
 - Use primary constructors when appropriate (C# 12+).
 - **Parameter naming**: Parameter names must match their semantic purpose in the method. Avoid generic names that don't reflect the actual data type or business meaning.
+- Return `IReadOnlyCollection<T>` instead of `List<T>` when modification isn't required.
 
 ### Error Handling
 - Return empty collections (`[]`) instead of null when no data is available.

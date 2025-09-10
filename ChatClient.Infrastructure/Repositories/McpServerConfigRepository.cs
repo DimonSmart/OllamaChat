@@ -16,7 +16,7 @@ public class McpServerConfigRepository : IMcpServerConfigRepository
         _repo = new JsonFileRepository<List<McpServerConfig>>(filePath, logger);
     }
 
-    public async Task<List<McpServerConfig>> GetAllAsync(CancellationToken cancellationToken = default) =>
+    public async Task<IReadOnlyCollection<McpServerConfig>> GetAllAsync(CancellationToken cancellationToken = default) =>
         await _repo.ReadAsync(cancellationToken) ?? [];
 
     public Task SaveAllAsync(List<McpServerConfig> servers, CancellationToken cancellationToken = default) =>

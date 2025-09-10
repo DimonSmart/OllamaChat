@@ -114,7 +114,7 @@
         try
         {
             loading = true;
-            servers = await LlmServerConfigService.GetAllAsync();
+            servers = (await LlmServerConfigService.GetAllAsync()).ToList();
         }
         catch (Exception ex)
         {

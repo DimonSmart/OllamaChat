@@ -16,7 +16,7 @@ public class LlmServerConfigRepository : ILlmServerConfigRepository
         _repo = new JsonFileRepository<List<LlmServerConfig>>(filePath, logger);
     }
 
-    public async Task<List<LlmServerConfig>> GetAllAsync(CancellationToken cancellationToken = default) =>
+    public async Task<IReadOnlyCollection<LlmServerConfig>> GetAllAsync(CancellationToken cancellationToken = default) =>
         await _repo.ReadAsync(cancellationToken) ?? [];
 
     public Task SaveAllAsync(List<LlmServerConfig> servers, CancellationToken cancellationToken = default) =>

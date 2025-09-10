@@ -262,7 +262,7 @@ public class AppChatService(
         return new ChatSessionParameters(_parameters.GroupChatManager, _parameters.Configuration, _chat.AgentDescriptions, _chat.Messages);
     }
 
-    private async Task<List<ChatCompletionAgent>> CreateAgentsAsync(
+    private async Task<IReadOnlyCollection<ChatCompletionAgent>> CreateAgentsAsync(
         string userMessage,
         TrackingFiltersScope trackingScope,
         AppChatConfiguration chatConfiguration,
@@ -359,7 +359,7 @@ public class AppChatService(
 
     private GroupChatOrchestration CreateChatOrchestration(
         GroupChatManager groupChatManager,
-        List<ChatCompletionAgent> agents,
+        IReadOnlyCollection<ChatCompletionAgent> agents,
         int functionCount,
         TrackingFiltersScope trackingScope,
         OrchestrationInputTransform<string> inputTransform)
