@@ -1,22 +1,16 @@
-using ChatClient.Api.Repositories;
-using ChatClient.Shared.Constants;
-using ChatClient.Shared.Models;
+using ChatClient.Domain.Models;
+using ChatClient.Application.Repositories;
 
 namespace ChatClient.Api.Services;
 
-public class LlmServerConfigSeeder
+public class LlmServerConfigSeeder(ILlmServerConfigRepository repository)
 {
-    private readonly JsonFileRepository<List<LlmServerConfig>> _repository;
-
-    public LlmServerConfigSeeder(IConfiguration configuration, ILogger<LlmServerConfigSeeder> logger)
-    {
-        var filePath = configuration["LlmServers:FilePath"] ?? FilePathConstants.DefaultLlmServersFile;
-        _repository = new JsonFileRepository<List<LlmServerConfig>>(filePath, logger);
-    }
+    private readonly ILlmServerConfigRepository _repository = repository;
 
     public async Task SeedAsync()
     {
-        if (_repository.Exists)
+        var existing = await _repository.GetAllAsync();
+        if (existing.Count > 0)
             return;
 
         var defaultServers = new List<LlmServerConfig>
@@ -32,6 +26,7 @@ public class LlmServerConfigSeeder
             }
         };
 
-        await _repository.WriteAsync(defaultServers);
+        await _repository.SaveAllAsync(defaultServers);
     }
 }
+

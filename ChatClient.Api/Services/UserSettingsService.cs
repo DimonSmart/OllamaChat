@@ -1,18 +1,18 @@
-using ChatClient.Api.Repositories;
-using ChatClient.Shared.Models;
-using ChatClient.Shared.Services;
+using ChatClient.Domain.Models;
+using ChatClient.Application.Repositories;
+using ChatClient.Application.Services;
 
 namespace ChatClient.Api.Services;
 
-public class UserSettingsService(JsonFileRepository<UserSettings> repository, ILogger<UserSettingsService> logger, ILlmServerConfigService llmServerConfigService) : IUserSettingsService
+public class UserSettingsService(IUserSettingsRepository repository, ILogger<UserSettingsService> logger, ILlmServerConfigService llmServerConfigService) : IUserSettingsService
 {
-    private readonly JsonFileRepository<UserSettings> _repository = repository;
+    private readonly IUserSettingsRepository _repository = repository;
     private readonly ILogger<UserSettingsService> _logger = logger;
     private readonly ILlmServerConfigService _llmServerConfigService = llmServerConfigService;
 
     public async Task<UserSettings> GetSettingsAsync(CancellationToken cancellationToken = default)
     {
-        var settings = await _repository.ReadAsync(cancellationToken) ?? new UserSettings();
+        var settings = await _repository.GetAsync(cancellationToken) ?? new UserSettings();
         var updated = false;
 
         if (settings.DefaultModel.ServerId is null)
@@ -38,7 +38,7 @@ public class UserSettingsService(JsonFileRepository<UserSettings> repository, IL
     {
         try
         {
-            await _repository.WriteAsync(settings, cancellationToken);
+            await _repository.SaveAsync(settings, cancellationToken);
             _logger.LogInformation("User settings saved successfully");
         }
         catch (Exception ex)
@@ -47,3 +47,4 @@ public class UserSettingsService(JsonFileRepository<UserSettings> repository, IL
         }
     }
 }
+

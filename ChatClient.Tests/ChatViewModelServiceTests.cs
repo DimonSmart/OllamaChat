@@ -1,5 +1,5 @@
 using ChatClient.Api.Client.Services;
-using ChatClient.Shared.Models;
+using ChatClient.Domain.Models;
 using Microsoft.Extensions.AI;
 using Microsoft.SemanticKernel.Agents.Orchestration.GroupChat;
 using System;

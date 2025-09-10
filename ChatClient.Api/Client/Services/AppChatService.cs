@@ -1,6 +1,6 @@
 using ChatClient.Api.Services;
-using ChatClient.Shared.Models;
-using ChatClient.Shared.Services;
+using ChatClient.Domain.Models;
+using ChatClient.Application.Services;
 using Microsoft.Extensions.AI;
 using Microsoft.SemanticKernel;
 using Microsoft.SemanticKernel.Agents;

@@ -1,5 +1,5 @@
 using ChatClient.Api.Services;
-using ChatClient.Shared.Models;
+using ChatClient.Domain.Models;
 using Microsoft.AspNetCore.Mvc;
 using System.Collections.Generic;
 using System.Linq;

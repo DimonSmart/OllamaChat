@@ -1,5 +1,5 @@
-using ChatClient.Shared.Helpers;
-using ChatClient.Shared.Models;
+using ChatClient.Application.Helpers;
+using ChatClient.Domain.Models;
 using Xunit;
 
 namespace ChatClient.Tests;

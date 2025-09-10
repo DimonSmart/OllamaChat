@@ -1,22 +1,16 @@
-using ChatClient.Api.Repositories;
-using ChatClient.Shared.Constants;
-using ChatClient.Shared.Models;
+using ChatClient.Domain.Models;
+using ChatClient.Application.Repositories;
 
 namespace ChatClient.Api.Services;
 
-public class McpServerConfigSeeder
+public class McpServerConfigSeeder(IMcpServerConfigRepository repository)
 {
-    private readonly JsonFileRepository<List<McpServerConfig>> _repository;
-
-    public McpServerConfigSeeder(IConfiguration configuration, ILogger<McpServerConfigSeeder> logger)
-    {
-        var filePath = configuration["McpServers:FilePath"] ?? FilePathConstants.DefaultMcpServersFile;
-        _repository = new JsonFileRepository<List<McpServerConfig>>(filePath, logger);
-    }
+    private readonly IMcpServerConfigRepository _repository = repository;
 
     public async Task SeedAsync()
     {
-        if (_repository.Exists)
+        var existing = await _repository.GetAllAsync();
+        if (existing.Count > 0)
             return;
 
         var defaultServers = new List<McpServerConfig>
@@ -41,6 +35,7 @@ public class McpServerConfigSeeder
             }
         };
 
-        await _repository.WriteAsync(defaultServers);
+        await _repository.SaveAllAsync(defaultServers);
     }
 }
+

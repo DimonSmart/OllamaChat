@@ -1,5 +1,5 @@
 using ChatClient.Api.Client.ViewModels;
-using ChatClient.Shared.Models;
+using ChatClient.Domain.Models;
 
 namespace ChatClient.Api.Client.Services;
 

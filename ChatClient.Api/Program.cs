@@ -3,9 +3,8 @@ using ChatClient.Api.Client.Services;
 using ChatClient.Api.Client.Services.Formatters;
 using ChatClient.Api.Services;
 using ChatClient.Api.Services.Rag;
-using ChatClient.Api.Repositories;
-using ChatClient.Shared.Constants;
-using ChatClient.Shared.Models;
+using ChatClient.Infrastructure.Repositories;
+using ChatClient.Application.Repositories;
 using Microsoft.AspNetCore.Components.Server.Circuits;
 using Microsoft.AspNetCore.Hosting.Server;
 using Microsoft.AspNetCore.Hosting.Server.Features;
@@ -45,7 +44,7 @@ if (builder.Environment.IsProduction())
 
 
 
-builder.Services.AddSingleton<ChatClient.Shared.Services.IMcpServerConfigService, ChatClient.Api.Services.McpServerConfigService>();
+builder.Services.AddSingleton<ChatClient.Application.Services.IMcpServerConfigService, ChatClient.Api.Services.McpServerConfigService>();
 builder.Services.AddSingleton<ChatClient.Api.Services.ILlmServerConfigService, ChatClient.Api.Services.LlmServerConfigService>();
 builder.Services.AddSingleton<ChatClient.Api.Services.IMcpClientService, ChatClient.Api.Services.McpClientService>();
 builder.Services.AddSingleton<ChatClient.Api.Services.McpSamplingService>();
@@ -58,23 +57,23 @@ builder.Services.AddSingleton<ChatClient.Api.Services.McpFunctionIndexService>()
 builder.Services.AddSingleton<AppForceLastUserReducer>();
 builder.Services.AddSingleton<ChatClient.Api.Services.IAppChatHistoryBuilder, ChatClient.Api.Services.AppChatHistoryBuilder>();
 builder.Services.AddScoped<ChatClient.Api.Services.OllamaServerAvailabilityService>();
-builder.Services.AddSingleton<ChatClient.Shared.Services.IAgentDescriptionService, ChatClient.Api.Services.AgentDescriptionService>();
-builder.Services.AddSingleton(sp =>
-{
-    var config = sp.GetRequiredService<IConfiguration>();
-    var logger = sp.GetRequiredService<ILogger<JsonFileRepository<UserSettings>>>();
-    var filePath = config["UserSettings:FilePath"] ?? FilePathConstants.DefaultUserSettingsFile;
-    return new JsonFileRepository<UserSettings>(filePath, logger);
-});
-builder.Services.AddSingleton<ChatClient.Shared.Services.IUserSettingsService, ChatClient.Api.Services.UserSettingsService>();
-builder.Services.AddSingleton<ChatClient.Shared.Services.ISavedChatService, ChatClient.Api.Services.SavedChatService>();
-builder.Services.AddSingleton<ChatClient.Shared.Services.IRagFileService, RagFileService>();
-builder.Services.AddSingleton<ChatClient.Shared.Services.IRagVectorIndexService, RagVectorIndexService>();
+builder.Services.AddSingleton<IAgentDescriptionRepository, AgentDescriptionRepository>();
+builder.Services.AddSingleton<ILlmServerConfigRepository, LlmServerConfigRepository>();
+builder.Services.AddSingleton<IMcpServerConfigRepository, McpServerConfigRepository>();
+builder.Services.AddSingleton<IUserSettingsRepository, UserSettingsRepository>();
+builder.Services.AddSingleton<ChatClient.Application.Services.IAgentDescriptionService, ChatClient.Api.Services.AgentDescriptionService>();
+builder.Services.AddSingleton<ISavedChatRepository, SavedChatRepository>();
+builder.Services.AddSingleton<IRagFileRepository, RagFileRepository>();
+builder.Services.AddSingleton<IRagVectorIndexRepository, RagVectorIndexRepository>();
+builder.Services.AddSingleton<ChatClient.Application.Services.IUserSettingsService, ChatClient.Api.Services.UserSettingsService>();
+builder.Services.AddSingleton<ChatClient.Application.Services.ISavedChatService, ChatClient.Api.Services.SavedChatService>();
+builder.Services.AddSingleton<ChatClient.Application.Services.IRagFileService, RagFileService>();
+builder.Services.AddSingleton<ChatClient.Application.Services.IRagVectorIndexService, RagVectorIndexService>();
 builder.Services.AddSingleton<RagVectorIndexBackgroundService>();
-builder.Services.AddSingleton<ChatClient.Shared.Services.IRagVectorIndexBackgroundService>(sp => sp.GetRequiredService<RagVectorIndexBackgroundService>());
+builder.Services.AddSingleton<ChatClient.Application.Services.IRagVectorIndexBackgroundService>(sp => sp.GetRequiredService<RagVectorIndexBackgroundService>());
 builder.Services.AddHostedService(sp => sp.GetRequiredService<RagVectorIndexBackgroundService>());
 builder.Services.AddSingleton<InMemoryVectorStore>();
-builder.Services.AddSingleton<ChatClient.Shared.Services.IRagVectorSearchService, RagVectorSearchService>();
+builder.Services.AddSingleton<ChatClient.Application.Services.IRagVectorSearchService, RagVectorSearchService>();
 builder.Services.AddSingleton<ChatClient.Api.Services.IFileConverter, ChatClient.Api.Services.NoOpFileConverter>();
 builder.Services.AddScoped<ChatClient.Api.Client.Services.IAppChatService, ChatClient.Api.Client.Services.AppChatService>();
 builder.Services.AddScoped<ChatClient.Api.Client.Services.IChatViewModelService, ChatClient.Api.Client.Services.ChatViewModelService>();
