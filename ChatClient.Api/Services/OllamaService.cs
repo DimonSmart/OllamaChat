@@ -6,6 +6,7 @@ using OllamaSharp.Models;
 using System.Collections.Concurrent;
 using System.Net.Http.Headers;
 using System.Text;
+using System.Threading;
 
 namespace ChatClient.Api.Services;
 
@@ -17,7 +18,7 @@ public sealed class OllamaService(
 {
     private readonly Dictionary<Guid, (OllamaApiClient Client, HttpClient HttpClient)> _clients = new();
     private readonly ConcurrentDictionary<Guid, IReadOnlyList<OllamaModel>> _modelsCache = new();
-    private readonly object _lock = new();
+    private readonly Lock _lock = new();
     private Exception? _embeddingError;
 
     public async Task<OllamaApiClient> GetClientAsync(Guid serverId)
