@@ -1,6 +1,6 @@
-using ChatClient.Infrastructure.Constants;
-using ChatClient.Domain.Models;
 using ChatClient.Application.Repositories;
+using ChatClient.Domain.Models;
+using ChatClient.Infrastructure.Constants;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 

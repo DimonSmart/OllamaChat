@@ -1,6 +1,6 @@
-using System.Text.Json;
 using ChatClient.Infrastructure.Helpers;
 using Microsoft.Extensions.Logging;
+using System.Text.Json;
 
 namespace ChatClient.Infrastructure.Repositories;
 

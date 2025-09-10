@@ -3,7 +3,7 @@ using Markdig.Parsers;
 using Markdig.Parsers.Inlines;
 using Markdig.Renderers;
 
-namespace ChatClient.Api.Client.MarkdownExtensions;
+namespace ChatClient.Api.Client.Markdown;
 
 /// <summary>
 /// Markdown extension that enables parsing LaTeX inline math using \( and \) delimiters.

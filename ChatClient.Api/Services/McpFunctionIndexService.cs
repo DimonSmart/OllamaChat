@@ -1,6 +1,6 @@
 using ChatClient.Application.Helpers;
-using ChatClient.Domain.Models;
 using ChatClient.Application.Services;
+using ChatClient.Domain.Models;
 using Microsoft.Extensions.Configuration;
 using ModelContextProtocol.Client;
 using System.Collections.Concurrent;

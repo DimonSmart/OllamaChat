@@ -3,8 +3,9 @@ using ChatClient.Api.Client.Services;
 using ChatClient.Api.Client.Services.Formatters;
 using ChatClient.Api.Services;
 using ChatClient.Api.Services.Rag;
-using ChatClient.Infrastructure.Repositories;
+using ChatClient.Api.Services.Seed;
 using ChatClient.Application.Repositories;
+using ChatClient.Infrastructure.Repositories;
 using Microsoft.AspNetCore.Components.Server.Circuits;
 using Microsoft.AspNetCore.Hosting.Server;
 using Microsoft.AspNetCore.Hosting.Server.Features;
@@ -12,8 +13,8 @@ using Microsoft.Extensions.Logging;
 using Microsoft.SemanticKernel.Connectors.InMemory;
 using MudBlazor.Services;
 using Serilog;
-using System.Text;
 using System.Net.Http;
+using System.Text;
 
 // Enable UTF-8 for proper Cyrillic support.
 Console.OutputEncoding = Encoding.UTF8;

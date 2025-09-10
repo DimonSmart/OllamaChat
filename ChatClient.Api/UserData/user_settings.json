@@ -4,15 +4,15 @@
   "userName": "",
   "agentName": "",
   "defaultModel": {
-    "serverId": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
-    "modelName": "qwen3:latest"
+    "ServerId": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
+    "ModelName": "qwen3:latest"
   },
   "mcpSamplingTimeoutSeconds": 1800,
   "chatHistoryMode": 0,
   "embedding": {
     "model": {
-      "serverId": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
-      "modelName": "bge-m3:latest"
+      "ServerId": null,
+      "ModelName": null
     },
     "ragLineChunkSize": 256,
     "ragParagraphChunkSize": 512,
@@ -20,7 +20,7 @@
   },
   "stopAgentName": "RoundRobinWithSummary",
   "multiAgentSelectedAgents": [
-    "Friedrich Nietzsche",
-    "John Stuart Mill"
+    "Immanuel Kant",
+    "Diogenes"
   ]
 }

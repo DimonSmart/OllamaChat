@@ -1,6 +1,6 @@
-using ChatClient.Domain.Models;
 using ChatClient.Application.Repositories;
 using ChatClient.Application.Services;
+using ChatClient.Domain.Models;
 using System.Linq;
 
 namespace ChatClient.Api.Services;

@@ -1,7 +1,7 @@
 using ChatClient.Api.Client.Services;
 using ChatClient.Application.Helpers;
-using ChatClient.Domain.Models;
 using ChatClient.Application.Services;
+using ChatClient.Domain.Models;
 using DimonSmart.AiUtils;
 using Microsoft.SemanticKernel;
 using Microsoft.SemanticKernel.ChatCompletion;

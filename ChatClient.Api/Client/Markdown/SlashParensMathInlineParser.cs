@@ -4,7 +4,7 @@ using Markdig.Parsers;
 using Markdig.Syntax;
 using Markdig.Syntax.Inlines;
 
-namespace ChatClient.Api.Client.MarkdownExtensions;
+namespace ChatClient.Api.Client.Markdown;
 
 /// <summary>
 /// Inline parser supporting LaTeX math delimited by \( and \).

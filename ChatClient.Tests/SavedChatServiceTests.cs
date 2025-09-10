@@ -1,10 +1,10 @@
 using ChatClient.Api.Services;
-using ChatClient.Infrastructure.Repositories;
 using ChatClient.Domain.Models;
+using ChatClient.Infrastructure.Repositories;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
-using System.Text.Json;
 using System.Linq;
+using System.Text.Json;
 
 namespace ChatClient.Tests;
 
