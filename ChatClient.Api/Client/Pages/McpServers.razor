@@ -266,7 +266,7 @@
             loading = true;
             StateHasChanged();
 
-            servers = await McpServerConfigService.GetAllAsync() ?? new();
+            servers = (await McpServerConfigService.GetAllAsync()).ToList();
             filteredServers = servers;
         }
         catch (Exception ex)

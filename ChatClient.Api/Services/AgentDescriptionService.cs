@@ -8,9 +8,9 @@ public class AgentDescriptionService(IAgentDescriptionRepository repository) : I
 {
     private readonly IAgentDescriptionRepository _repository = repository;
 
-    public async Task<List<AgentDescription>> GetAllAsync()
+    public async Task<IReadOnlyCollection<AgentDescription>> GetAllAsync()
     {
-        var agents = await _repository.GetAllAsync();
+        var agents = (await _repository.GetAllAsync()).ToList();
         var updated = false;
         foreach (var agent in agents.Where(a => a.Id == Guid.Empty))
         {
@@ -30,7 +30,7 @@ public class AgentDescriptionService(IAgentDescriptionRepository repository) : I
 
     public async Task CreateAsync(AgentDescription agentDescription)
     {
-        var agents = await _repository.GetAllAsync();
+        var agents = (await _repository.GetAllAsync()).ToList();
         if (agentDescription.Id == Guid.Empty)
             agentDescription.Id = Guid.NewGuid();
         agentDescription.CreatedAt = DateTime.UtcNow;
@@ -41,7 +41,7 @@ public class AgentDescriptionService(IAgentDescriptionRepository repository) : I
 
     public async Task UpdateAsync(AgentDescription agentDescription)
     {
-        var agents = await _repository.GetAllAsync();
+        var agents = (await _repository.GetAllAsync()).ToList();
         var index = agents.FindIndex(p => p.Id == agentDescription.Id);
         if (index == -1)
             throw new KeyNotFoundException($"Agent with ID {agentDescription.Id} not found");
@@ -52,7 +52,7 @@ public class AgentDescriptionService(IAgentDescriptionRepository repository) : I
 
     public async Task DeleteAsync(Guid id)
     {
-        var agents = await _repository.GetAllAsync();
+        var agents = (await _repository.GetAllAsync()).ToList();
         var existing = agents.FirstOrDefault(p => p.Id == id) ??
                        throw new KeyNotFoundException($"Agent with ID {id} not found");
         agents.Remove(existing);

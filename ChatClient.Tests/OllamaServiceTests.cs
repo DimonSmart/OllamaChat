@@ -33,9 +33,9 @@ public class OllamaServiceTests
 
     private class MockLlmServerConfigService : ILlmServerConfigService
     {
-        public Task<List<LlmServerConfig>> GetAllAsync()
+        public Task<IReadOnlyCollection<LlmServerConfig>> GetAllAsync()
         {
-            return Task.FromResult<List<LlmServerConfig>>([]);
+            return Task.FromResult<IReadOnlyCollection<LlmServerConfig>>([]);
         }
 
         public Task<LlmServerConfig?> GetByIdAsync(Guid id)

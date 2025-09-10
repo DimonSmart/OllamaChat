@@ -27,7 +27,7 @@ public class SavedChatRepository : ISavedChatRepository
         Directory.CreateDirectory(_directoryPath);
     }
 
-    public async Task<List<SavedChat>> GetAllAsync(CancellationToken cancellationToken = default)
+    public async Task<IReadOnlyCollection<SavedChat>> GetAllAsync(CancellationToken cancellationToken = default)
     {
         try
         {

@@ -4,6 +4,7 @@ using ChatClient.Domain.Models;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using System.Text.Json;
+using System.Linq;
 
 namespace ChatClient.Tests;
 
@@ -102,11 +103,11 @@ public class SavedChatServiceTests
 
             var byTitle = await service.SearchAsync("First");
             Assert.Single(byTitle);
-            Assert.Equal(chat1.Id, byTitle[0].Id);
+            Assert.Equal(chat1.Id, byTitle.First().Id);
 
             var byParticipant = await service.SearchAsync("beta");
             Assert.Single(byParticipant);
-            Assert.Equal(chat2.Id, byParticipant[0].Id);
+            Assert.Equal(chat2.Id, byParticipant.First().Id);
         }
         finally
         {

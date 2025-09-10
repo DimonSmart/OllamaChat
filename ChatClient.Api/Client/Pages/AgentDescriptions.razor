@@ -311,7 +311,7 @@
     protected override async Task OnInitializedAsync()
     {
         await LoadAgents();
-        servers = await LlmServerConfigService.GetAllAsync();
+        servers = (await LlmServerConfigService.GetAllAsync()).ToList();
         await LoadAvailableFunctions();
     }
 
@@ -322,7 +322,7 @@
             loading = true;
             StateHasChanged();
 
-            agents = await AgentService.GetAllAsync() ?? new();
+            agents = (await AgentService.GetAllAsync()).ToList();
             filteredAgents = agents;
 
             ragCounts.Clear();
@@ -413,7 +413,7 @@
 
     private async Task LoadRagFiles(Guid id)
     {
-        ragFiles = await RagFileService.GetFilesAsync(id);
+        ragFiles = (await RagFileService.GetFilesAsync(id)).ToList();
         ragCounts[id] = ragFiles.Count;
     }
 

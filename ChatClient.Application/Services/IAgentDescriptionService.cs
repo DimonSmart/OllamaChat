@@ -4,7 +4,7 @@ namespace ChatClient.Application.Services;
 
 public interface IAgentDescriptionService
 {
-    Task<List<AgentDescription>> GetAllAsync();
+    Task<IReadOnlyCollection<AgentDescription>> GetAllAsync();
     Task<AgentDescription?> GetByIdAsync(Guid id);
     Task CreateAsync(AgentDescription agentDescription);
     Task UpdateAsync(AgentDescription agentDescription);
