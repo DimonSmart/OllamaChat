@@ -1,6 +1,6 @@
 using ChatClient.Api;
-using ChatClient.Api.Client.Services;
 using ChatClient.Api.Client.Services.Formatters;
+using ChatClient.Api.Client.Services.Reducers;
 using ChatClient.Api.Services;
 using ChatClient.Api.Services.Rag;
 using ChatClient.Api.Services.Seed;
@@ -10,6 +10,7 @@ using Microsoft.AspNetCore.Components.Server.Circuits;
 using Microsoft.AspNetCore.Hosting.Server;
 using Microsoft.AspNetCore.Hosting.Server.Features;
 using Microsoft.Extensions.Logging;
+using Microsoft.SemanticKernel.ChatCompletion;
 using Microsoft.SemanticKernel.Connectors.InMemory;
 using MudBlazor.Services;
 using Serilog;
@@ -57,6 +58,13 @@ builder.Services.AddSingleton<IServerConnectionTestService, ServerConnectionTest
 builder.Services.AddSingleton<IOllamaKernelService, OllamaKernelService>();
 builder.Services.AddSingleton<ChatClient.Api.Services.McpFunctionIndexService>();
 builder.Services.AddSingleton<AppForceLastUserReducer>();
+builder.Services.AddSingleton<ThinkTagsRemovalReducer>();
+builder.Services.AddSingleton<IChatHistoryReducer>(serviceProvider =>
+{
+    var thinkTagsReducer = serviceProvider.GetRequiredService<ThinkTagsRemovalReducer>();
+    var forceLastUserReducer = serviceProvider.GetRequiredService<AppForceLastUserReducer>();
+    return new MetaReducer([thinkTagsReducer, forceLastUserReducer]);
+});
 builder.Services.AddSingleton<ChatClient.Api.Services.IAppChatHistoryBuilder, ChatClient.Api.Services.AppChatHistoryBuilder>();
 builder.Services.AddScoped<ChatClient.Api.Services.OllamaServerAvailabilityService>();
 builder.Services.AddSingleton<IAgentDescriptionRepository, AgentDescriptionRepository>();
@@ -79,7 +87,7 @@ builder.Services.AddSingleton<ChatClient.Application.Services.IRagVectorSearchSe
 builder.Services.AddSingleton<ChatClient.Api.Services.IFileConverter, ChatClient.Api.Services.NoOpFileConverter>();
 builder.Services.AddScoped<ChatClient.Api.Client.Services.IAppChatService, ChatClient.Api.Client.Services.AppChatService>();
 builder.Services.AddScoped<ChatClient.Api.Client.Services.IChatViewModelService, ChatClient.Api.Client.Services.ChatViewModelService>();
-builder.Services.AddSingleton<ChatClient.Api.Client.Services.IStopAgentFactory, ChatClient.Api.Client.Services.StopAgentFactory>();
+builder.Services.AddSingleton<ChatClient.Api.Client.Services.IGroupChatManagerFactory, ChatClient.Api.Client.Services.GroupChatManagerFactory>();
 builder.Services.AddSingleton<IChatFormatter, TextChatFormatter>();
 builder.Services.AddSingleton<IChatFormatter, MarkdownChatFormatter>();
 builder.Services.AddSingleton<IChatFormatter, HtmlChatFormatter>();

@@ -23,12 +23,12 @@ public class SavedChatService(ISavedChatRepository repository) : ISavedChatServi
             .ToList();
     }
 
-    public Task<SavedChat?> GetByIdAsync(Guid id, CancellationToken cancellationToken = default) =>
-        _repository.GetByIdAsync(id, cancellationToken);
+    public Task<SavedChat?> GetByIdAsync(Guid chatId, CancellationToken cancellationToken = default) =>
+        _repository.GetByIdAsync(chatId, cancellationToken);
 
     public Task SaveAsync(SavedChat savedChat, CancellationToken cancellationToken = default) =>
         _repository.SaveAsync(savedChat, cancellationToken);
 
-    public Task DeleteAsync(Guid id, CancellationToken cancellationToken = default) =>
-        _repository.DeleteAsync(id, cancellationToken);
+    public Task DeleteAsync(Guid chatId, CancellationToken cancellationToken = default) =>
+        _repository.DeleteAsync(chatId, cancellationToken);
 }

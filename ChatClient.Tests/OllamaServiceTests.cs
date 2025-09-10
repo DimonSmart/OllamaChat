@@ -85,8 +85,8 @@ public class OllamaServiceTests
         public Task<IReadOnlyCollection<LlmServerConfig>> GetAllAsync()
             => Task.FromResult<IReadOnlyCollection<LlmServerConfig>>(_servers);
 
-        public Task<LlmServerConfig?> GetByIdAsync(Guid id)
-            => Task.FromResult(_servers.FirstOrDefault(s => s.Id == id));
+        public Task<LlmServerConfig?> GetByIdAsync(Guid serverId)
+            => Task.FromResult(_servers.FirstOrDefault(s => s.Id == serverId));
 
         public Task CreateAsync(LlmServerConfig serverConfig)
             => Task.CompletedTask;
@@ -94,7 +94,7 @@ public class OllamaServiceTests
         public Task UpdateAsync(LlmServerConfig serverConfig)
             => Task.CompletedTask;
 
-        public Task DeleteAsync(Guid id)
+        public Task DeleteAsync(Guid serverId)
             => Task.CompletedTask;
     }
 }

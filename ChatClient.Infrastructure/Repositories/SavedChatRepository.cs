@@ -58,11 +58,11 @@ public class SavedChatRepository : ISavedChatRepository
         }
     }
 
-    public async Task<SavedChat?> GetByIdAsync(Guid id, CancellationToken cancellationToken = default)
+    public async Task<SavedChat?> GetByIdAsync(Guid chatId, CancellationToken cancellationToken = default)
     {
-        if (id == Guid.Empty)
-            throw new ArgumentException("Chat id must be provided", nameof(id));
-        var file = Path.Combine(_directoryPath, $"{id}.json");
+        if (chatId == Guid.Empty)
+            throw new ArgumentException("Chat id must be provided", nameof(chatId));
+        var file = Path.Combine(_directoryPath, $"{chatId}.json");
         var repo = new JsonFileRepository<SavedChat>(file, _logger, _options);
         return await repo.ReadAsync(cancellationToken);
     }
@@ -76,11 +76,11 @@ public class SavedChatRepository : ISavedChatRepository
         await repo.WriteAsync(savedChat, cancellationToken);
     }
 
-    public async Task DeleteAsync(Guid id, CancellationToken cancellationToken = default)
+    public async Task DeleteAsync(Guid chatId, CancellationToken cancellationToken = default)
     {
-        if (id == Guid.Empty)
-            throw new ArgumentException("Chat id must be provided", nameof(id));
-        var file = Path.Combine(_directoryPath, $"{id}.json");
+        if (chatId == Guid.Empty)
+            throw new ArgumentException("Chat id must be provided", nameof(chatId));
+        var file = Path.Combine(_directoryPath, $"{chatId}.json");
         await Task.Run(() =>
         {
             if (File.Exists(file))

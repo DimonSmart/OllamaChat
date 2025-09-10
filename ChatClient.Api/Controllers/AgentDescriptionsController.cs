@@ -22,13 +22,13 @@ public class AgentDescriptionsController : ControllerBase
         return Ok(agents);
     }
 
-    [HttpGet("{id}")]
-    public async Task<ActionResult<AgentDescription>> GetAgentById(Guid id)
+    [HttpGet("{agentId}")]
+    public async Task<ActionResult<AgentDescription>> GetAgentById(Guid agentId)
     {
-        var agent = await _agentService.GetByIdAsync(id);
+        var agent = await _agentService.GetByIdAsync(agentId);
         if (agent == null)
         {
-            return NotFound($"Agent with ID {id} not found");
+            return NotFound($"Agent with ID {agentId} not found");
         }
 
         return Ok(agent);
@@ -48,13 +48,13 @@ public class AgentDescriptionsController : ControllerBase
         }
 
         await _agentService.CreateAsync(agent);
-        return CreatedAtAction(nameof(GetAgentById), new { id = agent.Id }, agent);
+        return CreatedAtAction(nameof(GetAgentById), new { agentId = agent.Id }, agent);
     }
 
-    [HttpPut("{id}")]
-    public async Task<ActionResult<AgentDescription>> UpdateAgent(Guid id, [FromBody] AgentDescription agent)
+    [HttpPut("{agentId}")]
+    public async Task<ActionResult<AgentDescription>> UpdateAgent(Guid agentId, [FromBody] AgentDescription agent)
     {
-        if (id != agent.Id)
+        if (agentId != agent.Id)
         {
             return BadRequest("ID in URL does not match ID in request body");
         }
@@ -69,26 +69,26 @@ public class AgentDescriptionsController : ControllerBase
             return BadRequest("Agent description content is required");
         }
 
-        var existingAgent = await _agentService.GetByIdAsync(id);
+        var existingAgent = await _agentService.GetByIdAsync(agentId);
         if (existingAgent == null)
         {
-            return NotFound($"Agent with ID {id} not found");
+            return NotFound($"Agent with ID {agentId} not found");
         }
 
         await _agentService.UpdateAsync(agent);
         return Ok(agent);
     }
 
-    [HttpDelete("{id}")]
-    public async Task<ActionResult> DeleteAgent(Guid id)
+    [HttpDelete("{agentId}")]
+    public async Task<ActionResult> DeleteAgent(Guid agentId)
     {
-        var existingAgent = await _agentService.GetByIdAsync(id);
+        var existingAgent = await _agentService.GetByIdAsync(agentId);
         if (existingAgent == null)
         {
-            return NotFound($"Agent with ID {id} not found");
+            return NotFound($"Agent with ID {agentId} not found");
         }
 
-        await _agentService.DeleteAsync(id);
+        await _agentService.DeleteAsync(agentId);
         return NoContent();
     }
 }

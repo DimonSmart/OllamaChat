@@ -398,6 +398,10 @@ Temporary Items
 .apdisk
 
 # content below from: https://github.com/github/gitignore/blob/master/Global/Windows.gitignore
+
+# App runtime data
+# Saved chats directory (see FilePathConstants.DefaultSavedChatsDirectory)
+UserData/SavedChats/
 # Windows thumbnail cache files
 Thumbs.db
 ehthumbs.db

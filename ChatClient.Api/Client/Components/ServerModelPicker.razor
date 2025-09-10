@@ -82,14 +82,14 @@
             selectedModel = Value.ModelName;
     }
 
-    private async Task OnServerChanged(Guid? id)
+    private async Task OnServerChanged(Guid? serverId)
     {
-        selectedServerId = id;
+        selectedServerId = serverId;
         selectedModel = null;
         models.Clear();
-        if (id.HasValue)
+        if (serverId.HasValue)
         {
-            await LoadModelsAsync(id.Value);
+            await LoadModelsAsync(serverId.Value);
         }
         await NotifyValueChanged();
     }

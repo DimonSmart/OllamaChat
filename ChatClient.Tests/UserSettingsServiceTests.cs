@@ -17,7 +17,7 @@ public class UserSettingsServiceTests
             return Task.FromResult<IReadOnlyCollection<LlmServerConfig>>([]);
         }
 
-        public Task<LlmServerConfig?> GetByIdAsync(Guid id)
+        public Task<LlmServerConfig?> GetByIdAsync(Guid serverId)
         {
             return Task.FromResult<LlmServerConfig?>(null);
         }
@@ -32,7 +32,7 @@ public class UserSettingsServiceTests
             return Task.CompletedTask;
         }
 
-        public Task DeleteAsync(Guid id)
+        public Task DeleteAsync(Guid serverId)
         {
             return Task.CompletedTask;
         }
