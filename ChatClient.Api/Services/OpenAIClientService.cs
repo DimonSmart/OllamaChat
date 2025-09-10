@@ -37,7 +37,7 @@ public class OpenAIClientService(
         return openAIClient;
     }
 
-    public async Task<List<string>> GetAvailableModelsAsync(Guid serverId, CancellationToken cancellationToken = default)
+    public async Task<IReadOnlyCollection<string>> GetAvailableModelsAsync(Guid serverId, CancellationToken cancellationToken = default)
     {
         if (serverId == Guid.Empty)
             throw new ArgumentException("ServerId cannot be empty", nameof(serverId));

@@ -60,7 +60,7 @@
 
     protected override async Task OnInitializedAsync()
     {
-        servers = await LlmServerConfigService.GetAllAsync();
+        servers = (await LlmServerConfigService.GetAllAsync()).ToList();
         if (Value.ServerId is null && string.IsNullOrEmpty(Value.ModelName))
         {
             if (UseDefaultsWhenUnset)

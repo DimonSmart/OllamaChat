@@ -53,7 +53,7 @@ public partial class PhilosopherDebateTests
         builder.Services.AddLogging();
         Kernel kernel = builder.Build();
 
-        List<AgentDescription> descriptions = await LoadDescriptionsAsync();
+        var descriptions = await LoadDescriptionsAsync();
         AgentDescription kantDesc = descriptions.First(a => a.AgentName == "Immanuel Kant");
         AgentDescription benthamDesc = descriptions.First(a => a.AgentName == "Jeremy Bentham");
 
@@ -106,7 +106,7 @@ public partial class PhilosopherDebateTests
         }
     }
 
-    private static async Task<List<AgentDescription>> LoadDescriptionsAsync()
+    private static async Task<IReadOnlyCollection<AgentDescription>> LoadDescriptionsAsync()
     {
         string currentDir = Directory.GetCurrentDirectory();
         string[] paths =

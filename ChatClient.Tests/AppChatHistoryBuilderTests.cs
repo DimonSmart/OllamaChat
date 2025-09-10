@@ -37,7 +37,7 @@ public class AppChatHistoryBuilderTests
 
     private sealed class ThrowingRagFileService : IRagFileService
     {
-        public Task<List<RagFile>> GetFilesAsync(Guid id) => throw new InvalidOperationException();
+        public Task<IReadOnlyCollection<RagFile>> GetFilesAsync(Guid id) => throw new InvalidOperationException();
         public Task<RagFile?> GetFileAsync(Guid id, string fileName) => throw new InvalidOperationException();
         public Task AddOrUpdateFileAsync(Guid id, RagFile file) => throw new InvalidOperationException();
         public Task DeleteFileAsync(Guid id, string fileName) => throw new InvalidOperationException();

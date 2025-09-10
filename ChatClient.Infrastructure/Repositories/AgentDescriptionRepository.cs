@@ -16,7 +16,7 @@ public class AgentDescriptionRepository : IAgentDescriptionRepository
         _repo = new JsonFileRepository<List<AgentDescription>>(filePath, logger);
     }
 
-    public async Task<List<AgentDescription>> GetAllAsync(CancellationToken cancellationToken = default) =>
+    public async Task<IReadOnlyCollection<AgentDescription>> GetAllAsync(CancellationToken cancellationToken = default) =>
         await _repo.ReadAsync(cancellationToken) ?? [];
 
     public Task SaveAllAsync(List<AgentDescription> agents, CancellationToken cancellationToken = default) =>

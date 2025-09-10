@@ -72,8 +72,8 @@
         loading = true;
         StateHasChanged();
         chats = string.IsNullOrWhiteSpace(query)
-            ? await SavedChatService.GetAllAsync()
-            : await SavedChatService.SearchAsync(query);
+            ? (await SavedChatService.GetAllAsync()).ToList()
+            : (await SavedChatService.SearchAsync(query)).ToList();
         loading = false;
         StateHasChanged();
     }
