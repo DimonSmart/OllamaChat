@@ -89,4 +89,26 @@ public class AppChatHistoryBuilderTests
         Assert.Single(history);
         Assert.Equal(AuthorRole.Tool, history.First().Role);
     }
+
+    [Fact]
+    public void BuildBaseHistory_RemovesThinkSegments()
+    {
+        var builder = new AppChatHistoryBuilder(
+            new ThrowingUserSettingsService(),
+            new LoggerFactory().CreateLogger<AppChatHistoryBuilder>(),
+            new AppForceLastUserReducer(),
+            new ThrowingOllamaClientService(),
+            new ThrowingRagVectorSearchService(),
+            new ThrowingRagFileService(),
+            new ConfigurationBuilder().Build());
+
+        var messages = new List<IAppChatMessage>
+        {
+            new AppChatMessage("<think>t</think>answer", DateTime.UtcNow, ChatRole.Assistant)
+        };
+
+        var history = builder.BuildBaseHistory(messages);
+        var text = history.First().Items.OfType<Microsoft.SemanticKernel.TextContent>().FirstOrDefault()?.Text ?? string.Empty;
+        Assert.Equal("answer", text.Trim());
+    }
 }
