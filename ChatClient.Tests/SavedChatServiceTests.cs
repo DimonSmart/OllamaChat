@@ -1,5 +1,6 @@
 using ChatClient.Api.Services;
-using ChatClient.Shared.Models;
+using ChatClient.Infrastructure.Repositories;
+using ChatClient.Domain.Models;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using System.Text.Json;
@@ -27,8 +28,9 @@ public class SavedChatServiceTests
                     ["SavedChats:DirectoryPath"] = tempDir
                 })
                 .Build();
-            var logger = new LoggerFactory().CreateLogger<SavedChatService>();
-            var service = new SavedChatService(config, logger);
+            var repoLogger = new LoggerFactory().CreateLogger<SavedChatRepository>();
+            var repository = new SavedChatRepository(config, repoLogger);
+            var service = new SavedChatService(repository);
 
             var chat = CreateSampleChat();
             await service.SaveAsync(chat);
@@ -63,8 +65,9 @@ public class SavedChatServiceTests
                     ["SavedChats:DirectoryPath"] = tempDir
                 })
                 .Build();
-            var logger = new LoggerFactory().CreateLogger<SavedChatService>();
-            var service = new SavedChatService(config, logger);
+            var repoLogger = new LoggerFactory().CreateLogger<SavedChatRepository>();
+            var repository = new SavedChatRepository(config, repoLogger);
+            var service = new SavedChatService(repository);
 
             var all = await service.GetAllAsync();
             Assert.Empty(all);
@@ -88,8 +91,9 @@ public class SavedChatServiceTests
                     ["SavedChats:DirectoryPath"] = tempDir
                 })
                 .Build();
-            var logger = new LoggerFactory().CreateLogger<SavedChatService>();
-            var service = new SavedChatService(config, logger);
+            var repoLogger = new LoggerFactory().CreateLogger<SavedChatRepository>();
+            var repository = new SavedChatRepository(config, repoLogger);
+            var service = new SavedChatService(repository);
 
             var chat1 = CreateSampleChat("First", "Alpha");
             var chat2 = CreateSampleChat("Second", "Beta");
@@ -123,8 +127,9 @@ public class SavedChatServiceTests
                     ["SavedChats:DirectoryPath"] = tempDir
                 })
                 .Build();
-            var logger = new LoggerFactory().CreateLogger<SavedChatService>();
-            var service = new SavedChatService(config, logger);
+            var repoLogger = new LoggerFactory().CreateLogger<SavedChatRepository>();
+            var repository = new SavedChatRepository(config, repoLogger);
+            var service = new SavedChatService(repository);
 
             var id = Guid.NewGuid();
             var msgId = Guid.NewGuid();

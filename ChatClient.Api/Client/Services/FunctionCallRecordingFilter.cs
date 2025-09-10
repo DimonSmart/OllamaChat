@@ -1,4 +1,4 @@
-﻿using ChatClient.Shared.Models;
+﻿using ChatClient.Domain.Models;
 
 using Microsoft.SemanticKernel;
 

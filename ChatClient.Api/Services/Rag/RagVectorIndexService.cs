@@ -1,7 +1,8 @@
 #pragma warning disable SKEXP0050
-using ChatClient.Shared.Helpers;
-using ChatClient.Shared.Models;
-using ChatClient.Shared.Services;
+using ChatClient.Application.Helpers;
+using ChatClient.Domain.Models;
+using ChatClient.Application.Repositories;
+using ChatClient.Application.Services;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
@@ -15,14 +16,17 @@ namespace ChatClient.Api.Services.Rag;
 public sealed class RagVectorIndexService(
     IUserSettingsService userSettings,
     ILlmServerConfigService llmServerConfigService,
+    IRagVectorIndexRepository repository,
     ILogger<RagVectorIndexService> logger) : IRagVectorIndexService
 {
+    private readonly IRagVectorIndexRepository _repository = repository;
+
     public async Task BuildIndexAsync(Guid agentId, string sourceFilePath, string indexFilePath, IProgress<RagVectorIndexStatus>? progress = null, CancellationToken cancellationToken = default, Guid serverId = default)
     {
-        if (!File.Exists(sourceFilePath))
+        if (!_repository.SourceExists(sourceFilePath))
             throw new FileNotFoundException($"Source file not found: {sourceFilePath}");
 
-        var text = await File.ReadAllTextAsync(sourceFilePath, cancellationToken);
+        var text = await _repository.ReadSourceAsync(sourceFilePath, cancellationToken);
         if (string.IsNullOrWhiteSpace(text))
             throw new InvalidOperationException("Source file is empty.");
 
@@ -30,9 +34,7 @@ public sealed class RagVectorIndexService(
         var targetServer = serverId == Guid.Empty ? model.ServerId : serverId;
         var baseUrl = await GetBaseUrlAsync(targetServer);
         if (string.IsNullOrWhiteSpace(baseUrl))
-        {
             throw new InvalidOperationException("Base URL cannot be empty for embedding service");
-        }
 
         IKernelBuilder builder = Kernel.CreateBuilder();
         builder.Services.AddLogging();
@@ -73,19 +75,19 @@ public sealed class RagVectorIndexService(
             }
         }
 
-        var info = new FileInfo(sourceFilePath);
+        var modified = _repository.GetSourceModifiedUtc(sourceFilePath);
         var index = new RagVectorIndex
         {
             SourceFileName = Path.GetFileName(sourceFilePath),
-            SourceModifiedTime = info.LastWriteTimeUtc,
+            SourceModifiedTime = modified,
             EmbeddingModel = model.ModelName,
             VectorDimensions = fragments.Count > 0 ? fragments[0].Vector.Length : 0,
             Fragments = fragments
         };
 
         var options = new JsonSerializerOptions { WriteIndented = true };
-        Directory.CreateDirectory(Path.GetDirectoryName(indexFilePath)!);
-        await File.WriteAllTextAsync(indexFilePath, JsonSerializer.Serialize(index, options), cancellationToken);
+        var json = JsonSerializer.Serialize(index, options);
+        await _repository.WriteIndexAsync(indexFilePath, json, cancellationToken);
 
         logger.LogInformation("Built index {IndexPath} with {Count} fragments", indexFilePath, fragments.Count);
     }
@@ -95,9 +97,7 @@ public sealed class RagVectorIndexService(
         var server = await LlmServerConfigHelper.GetServerConfigAsync(llmServerConfigService, userSettings, serverId);
         var candidate = server?.BaseUrl;
         if (string.IsNullOrWhiteSpace(candidate))
-        {
             candidate = LlmServerConfig.DefaultOllamaUrl;
-        }
         return candidate.Trim();
     }
 

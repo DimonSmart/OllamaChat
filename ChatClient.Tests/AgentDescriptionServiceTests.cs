@@ -1,6 +1,6 @@
 using ChatClient.Api.Services;
-using ChatClient.Shared.Models;
-
+using ChatClient.Infrastructure.Repositories;
+using ChatClient.Domain.Models;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 
@@ -22,8 +22,9 @@ public class AgentDescriptionServiceTests
                 })
                 .Build();
 
-            var logger = new LoggerFactory().CreateLogger<AgentDescriptionService>();
-            var service = new AgentDescriptionService(config, logger);
+            var repoLogger = new LoggerFactory().CreateLogger<AgentDescriptionRepository>();
+            var repository = new AgentDescriptionRepository(config, repoLogger);
+            var service = new AgentDescriptionService(repository);
 
             var serverId = Guid.NewGuid();
             var prompt = new AgentDescription
@@ -41,7 +42,9 @@ public class AgentDescriptionServiceTests
 
             await service.CreateAsync(prompt);
 
-            var serviceReloaded = new AgentDescriptionService(config, logger);
+            var repoReloadedLogger = new LoggerFactory().CreateLogger<AgentDescriptionRepository>();
+            var repositoryReloaded = new AgentDescriptionRepository(config, repoReloadedLogger);
+            var serviceReloaded = new AgentDescriptionService(repositoryReloaded);
             var retrieved = await serviceReloaded.GetByIdAsync(prompt.Id);
 
             Assert.NotNull(retrieved);

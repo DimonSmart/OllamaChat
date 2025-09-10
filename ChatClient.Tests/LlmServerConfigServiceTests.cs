@@ -1,6 +1,6 @@
 using ChatClient.Api.Services;
-using ChatClient.Shared.Models;
-
+using ChatClient.Infrastructure.Repositories;
+using ChatClient.Domain.Models;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 
@@ -22,8 +22,9 @@ public class LlmServerConfigServiceTests
                 })
                 .Build();
 
-            var logger = new LoggerFactory().CreateLogger<LlmServerConfigService>();
-            var service = new LlmServerConfigService(config, logger);
+            var repoLogger = new LoggerFactory().CreateLogger<LlmServerConfigRepository>();
+            var repository = new LlmServerConfigRepository(config, repoLogger);
+            var service = new LlmServerConfigService(repository);
 
             var server = new LlmServerConfig
             {

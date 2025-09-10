@@ -1,6 +1,6 @@
 @using Microsoft.AspNetCore.Components
 @using MudBlazor
-@using ChatClient.Shared.Models
+@using ChatClient.Domain.Models
 
 <MudChatBubble Class="@($"mcp-call {(isExpanded ? "expanded" : "collapsed")}")" OnClick="Toggle">
     @if (isExpanded)

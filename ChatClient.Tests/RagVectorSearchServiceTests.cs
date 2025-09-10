@@ -1,5 +1,5 @@
 using ChatClient.Api.Services.Rag;
-using ChatClient.Shared.Services;
+using ChatClient.Application.Services;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.VectorData;
