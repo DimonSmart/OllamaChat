@@ -47,12 +47,5 @@ public class AgentDescriptionService(IAgentDescriptionRepository repository) : I
         agents.Remove(existing);
         await _repository.SaveAllAsync(agents);
     }
-
-    public AgentDescription GetDefaultAgentDescription() => new()
-    {
-        Id = Guid.NewGuid(),
-        AgentName = "Default Assistant",
-        Content = "You are a helpful AI assistant. Please format your responses using Markdown."
-    };
 }
 

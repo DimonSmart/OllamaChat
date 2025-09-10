@@ -9,5 +9,4 @@ public interface IAgentDescriptionService
     Task CreateAsync(AgentDescription agentDescription);
     Task UpdateAsync(AgentDescription agentDescription);
     Task DeleteAsync(Guid id);
-    AgentDescription GetDefaultAgentDescription();
 }

@@ -320,8 +320,6 @@
     private async Task LoadAgents()
     {
         agents = (await AgentService.GetAllAsync()).ToList();
-        if (agents.Count == 0)
-            agents.Add(AgentService.GetDefaultAgentDescription());
         selectedAgent = null;
     }
 
