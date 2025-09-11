@@ -12,7 +12,7 @@ namespace ChatClient.Api.Services;
 public class AppChatHistoryBuilder(
     IUserSettingsService settingsService,
     ILogger<AppChatHistoryBuilder> logger,
-    AppForceLastUserReducer reducer,
+    IChatHistoryReducer reducer,
     IOllamaClientService ollamaService,
     IRagVectorSearchService ragSearch,
     IRagFileService ragFileService,

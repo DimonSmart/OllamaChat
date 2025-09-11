@@ -2,11 +2,11 @@ using ChatClient.Api.Client.Markdown;
 using ChatClient.Domain.Models;
 using DimonSmart.AiUtils;
 using Markdig;
-using MarkdigMarkdown = Markdig.Markdown;
 using Microsoft.Extensions.AI;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
+using MarkdigMarkdown = Markdig.Markdown;
 
 namespace ChatClient.Api.Client.ViewModels;
 

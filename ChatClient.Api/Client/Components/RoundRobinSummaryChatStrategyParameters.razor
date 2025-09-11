@@ -1,7 +1,7 @@
 @using MudBlazor
-@using ChatClient.Domain.Models.StopAgents
+@using ChatClient.Domain.Models.ChatStrategies
 @using ChatClient.Domain.Models
-@inherits StopAgentParametersBase
+@inherits ChatStrategyParametersBase
 
 <MudNumericField T="int"
                  Value="TypedOptions.Rounds"
@@ -54,7 +54,7 @@ else
 }
 
 @code {
-    private RoundRobinSummaryStopAgentOptions TypedOptions => (RoundRobinSummaryStopAgentOptions)Context.Options;
+    private RoundRobinSummaryChatStrategyOptions TypedOptions => (RoundRobinSummaryChatStrategyOptions)Context.Options;
 
     protected override void OnInitialized()
     {

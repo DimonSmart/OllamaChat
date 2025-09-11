@@ -18,7 +18,7 @@ public class AppChatService(
     KernelService kernelService,
     ILogger<AppChatService> logger,
     IAppChatHistoryBuilder chatHistoryBuilder,
-    AppForceLastUserReducer reducer,
+    IChatHistoryReducer reducer,
     IOllamaKernelService ollamaKernelService,
     IOpenAIClientService openAIClientService,
     IUserSettingsService userSettingsService,

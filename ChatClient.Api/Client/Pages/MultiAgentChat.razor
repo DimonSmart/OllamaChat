@@ -15,7 +15,7 @@
 @using ChatClient.Domain.Models
 @using ChatClient.Application.Services
 @using ChatClient.Application.Helpers
-@using ChatClient.Domain.Models.StopAgents
+@using ChatClient.Domain.Models.ChatStrategies
 @using Microsoft.Extensions.AI
 @using Microsoft.AspNetCore.Components
 @using Microsoft.AspNetCore.Components.Web
@@ -29,7 +29,7 @@
 @inject IAppChatService ChatService
 @inject IAgentDescriptionService AgentService
 @inject IUserSettingsService UserSettingsService
-@inject IStopAgentFactory StopAgentFactory
+@inject IGroupChatManagerFactory GroupChatManagerFactory
 @inject IEnumerable<IChatFormatter> ChatFormatters
 @inject ILogger<MultiAgentChat> Logger
 @inject ISavedChatService SavedChatService
@@ -65,16 +65,16 @@
                     </MudSelect>
 
                     <MudSelect T="string"
-                               Label="Stop Agent"
-                               Value="stopAgentName"
-                               ValueChanged="OnStopAgentChanged"
+                               Label="Chat Strategy"
+                               Value="chatStrategyName"
+                               ValueChanged="OnChatStrategyChanged"
                                Variant="Variant.Outlined"
                                FullWidth="true"
                                Class="mt-4"
                                Dense="true">
-                        @foreach (var agent in stopAgents)
+                        @foreach (var strategy in chatStrategies)
                         {
-                            <MudSelectItem Value="@agent">@agent</MudSelectItem>
+                            <MudSelectItem Value="@strategy">@strategy</MudSelectItem>
                         }
                     </MudSelect>
                     @if (editorType is not null)
@@ -83,7 +83,7 @@
                     }
                     else
                     {
-                        <em>Editor for '@stopAgentOptions.GetType().Name' not found</em>
+                        <em>Editor for '@chatStrategyOptions.GetType().Name' not found</em>
                     }
 
                     <MudTooltip Text="Select server and model" Disabled="@CanStartChat">
@@ -270,22 +270,22 @@
                 UiModelSelection,
                 out _));
 
-    private const string RoundRobinStopAgent = "RoundRobin";
-    private const string RoundRobinSummaryStopAgent = "RoundRobinWithSummary";
-    private List<string> stopAgents = new();
-    private IStopAgentOptions stopAgentOptions = new RoundRobinStopAgentOptions();
-    private string stopAgentName = RoundRobinStopAgent;
+    private const string RoundRobinChatStrategy = "RoundRobin";
+    private const string RoundRobinSummaryChatStrategy = "RoundRobinWithSummary";
+    private List<string> chatStrategies = new();
+    private IChatStrategyOptions chatStrategyOptions = new RoundRobinChatStrategyOptions();
+    private string chatStrategyName = RoundRobinChatStrategy;
 
     private static readonly IReadOnlyDictionary<Type, Type> Editors = new Dictionary<Type, Type>
     {
-        { typeof(RoundRobinStopAgentOptions), typeof(RoundRobinStopAgentParameters) },
-        { typeof(RoundRobinSummaryStopAgentOptions), typeof(RoundRobinSummaryStopAgentParameters) },
+        { typeof(RoundRobinChatStrategyOptions), typeof(RoundRobinChatStrategyParameters) },
+        { typeof(RoundRobinSummaryChatStrategyOptions), typeof(RoundRobinSummaryChatStrategyParameters) },
     }.ToImmutableDictionary();
 
-    private Type? editorType => Editors.TryGetValue(stopAgentOptions.GetType(), out var t) ? t : null;
+    private Type? editorType => Editors.TryGetValue(chatStrategyOptions.GetType(), out var t) ? t : null;
 
     private Dictionary<string, object?> editorParams =>
-        new() { ["Context"] = new StopAgentEditorContext(stopAgentOptions, agents) };
+        new() { ["Context"] = new ChatStrategyEditorContext(chatStrategyOptions, agents) };
 
     private UserSettings userSettings = new();
 
@@ -297,7 +297,7 @@
 
     protected override async Task OnInitializedAsync()
     {
-        stopAgents = new() { RoundRobinStopAgent, RoundRobinSummaryStopAgent };
+        chatStrategies = new() { RoundRobinChatStrategy, RoundRobinSummaryChatStrategy };
 
         isLoadingInitialData = true;
         StateHasChanged();
@@ -354,14 +354,14 @@
         StateHasChanged();
     }
 
-    private void OnStopAgentChanged(string name)
+    private void OnChatStrategyChanged(string name)
     {
-        stopAgentName = name;
-        stopAgentOptions = name switch
+        chatStrategyName = name;
+        chatStrategyOptions = name switch
         {
-            RoundRobinStopAgent => new RoundRobinStopAgentOptions(),
-            RoundRobinSummaryStopAgent => new RoundRobinSummaryStopAgentOptions(),
-            _ => new RoundRobinStopAgentOptions()
+            RoundRobinChatStrategy => new RoundRobinChatStrategyOptions(),
+            RoundRobinSummaryChatStrategy => new RoundRobinSummaryChatStrategyOptions(),
+            _ => new RoundRobinChatStrategyOptions()
         };
     }
 
@@ -374,15 +374,15 @@
     private async Task LoadUserSettings()
     {
         userSettings = await UserSettingsService.GetSettingsAsync();
-        stopAgentName = string.IsNullOrWhiteSpace(userSettings.StopAgentName)
-            ? RoundRobinStopAgent
-            : userSettings.StopAgentName;
+        chatStrategyName = string.IsNullOrWhiteSpace(userSettings.ChatStrategyName)
+            ? RoundRobinChatStrategy
+            : userSettings.ChatStrategyName;
 
-        stopAgentOptions = stopAgentName switch
+        chatStrategyOptions = chatStrategyName switch
         {
-            RoundRobinStopAgent => new RoundRobinStopAgentOptions(),
-            RoundRobinSummaryStopAgent => new RoundRobinSummaryStopAgentOptions(),
-            _ => new RoundRobinStopAgentOptions()
+            RoundRobinChatStrategy => new RoundRobinChatStrategyOptions(),
+            RoundRobinSummaryChatStrategy => new RoundRobinSummaryChatStrategyOptions(),
+            _ => new RoundRobinChatStrategyOptions()
         };
 
         if (userSettings.MultiAgentSelectedAgents?.Count > 0)
@@ -432,7 +432,7 @@
 
         currentModelName = selectedAgents[0].ModelName!;
 
-        var manager = StopAgentFactory.Create(stopAgentName, stopAgentOptions);
+        var manager = GroupChatManagerFactory.Create(chatStrategyName, chatStrategyOptions);
         var allFunctions = selectedAgents.SelectMany(a => a.FunctionSettings.SelectedFunctions ?? []).ToList();
         var chatConfiguration = new AppChatConfiguration(currentModelName, allFunctions);
 
@@ -471,12 +471,12 @@
 
         currentModelName = selectedAgents[0].ModelName!;
 
-        userSettings.StopAgentName = stopAgentName;
+        userSettings.ChatStrategyName = chatStrategyName;
         userSettings.MultiAgentSelectedAgents = selectedAgents.Select(a => a.AgentName).ToList();
         await UserSettingsService.SaveSettingsAsync(userSettings);
 
         var agentsForChat = selectedAgents.ToList();
-        var manager = StopAgentFactory.Create(stopAgentName, stopAgentOptions);
+        var manager = GroupChatManagerFactory.Create(chatStrategyName, chatStrategyOptions);
         
         if (manager is IGroupChatAgentProvider provider)
         {
@@ -485,7 +485,7 @@
             {
                 if (string.IsNullOrWhiteSpace(agentId))
                 {
-                    Logger.LogWarning("Empty agent ID found in required agents for {StopAgentName}", stopAgentName);
+                    Logger.LogWarning("Empty agent ID found in required agents for {ChatStrategyName}", chatStrategyName);
                     continue;
                 }
 
@@ -507,7 +507,7 @@
                 var missingAgentNames = string.Join(", ", missingAgents);
                 await DialogService.ShowMessageBox(
                     "Missing Required Agents",
-                    $"The following agents are required for the '{stopAgentName}' strategy but are not available: {missingAgentNames}. " +
+                    $"The following agents are required for the '{chatStrategyName}' strategy but are not available: {missingAgentNames}. " +
                     "Please either select a different strategy or ensure all required agents are available.",
                     yesText: "OK");
                 return;

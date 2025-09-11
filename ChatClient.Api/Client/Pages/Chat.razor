@@ -14,7 +14,7 @@
 @using ChatClient.Domain.Models
 @using ChatClient.Application.Services
 @using ChatClient.Application.Helpers
-@using ChatClient.Domain.Models.StopAgents
+@using ChatClient.Domain.Models.ChatStrategies
 @using Microsoft.Extensions.AI
 @using Microsoft.AspNetCore.Components
 @using Microsoft.AspNetCore.Components.Web
@@ -28,7 +28,7 @@
 @inject IAppChatService ChatService
 @inject IAgentDescriptionService AgentService
 @inject IUserSettingsService UserSettingsService
-@inject IStopAgentFactory StopAgentFactory
+@inject IGroupChatManagerFactory GroupChatManagerFactory
 @inject IEnumerable<IChatFormatter> ChatFormatters
 @inject ILogger<Chat> Logger
 @inject ISavedChatService SavedChatService
@@ -368,8 +368,8 @@
 
         var functions = selectedAgent.FunctionSettings.SelectedFunctions ?? [];
         var chatConfiguration = new AppChatConfiguration(CurrentModelName, functions);
-        var options = new RoundRobinStopAgentOptions { Rounds = 1 };
-        var groupChatManager = StopAgentFactory.Create("RoundRobin", options);
+        var options = new RoundRobinChatStrategyOptions { Rounds = 1 };
+        var groupChatManager = GroupChatManagerFactory.Create("RoundRobin", options);
 
         var savedMessages = saved.Messages
             .Select(m =>
@@ -404,8 +404,8 @@
 
         var functions = selectedAgent.FunctionSettings.SelectedFunctions ?? [];
         var chatConfiguration = new AppChatConfiguration(CurrentModelName, functions);
-        var options = new RoundRobinStopAgentOptions { Rounds = 1 };
-        var groupChatManager = StopAgentFactory.Create("RoundRobin", options);
+        var options = new RoundRobinChatStrategyOptions { Rounds = 1 };
+        var groupChatManager = GroupChatManagerFactory.Create("RoundRobin", options);
         var session = new ChatSessionParameters(groupChatManager, chatConfiguration, agents);
         await ChatService.StartAsync(session);
         chatStarted = true;
