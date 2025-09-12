@@ -15,20 +15,18 @@ public class RagFileRepository(IConfiguration configuration) : IRagFileRepositor
         if (!Directory.Exists(filesDir))
             return [];
 
-        var indexDir = Path.Combine(agentFolder, "index");
         List<RagFile> result = [];
         foreach (var file in Directory.GetFiles(filesDir))
         {
             var fileName = Path.GetFileName(file);
             var content = await File.ReadAllTextAsync(file);
             var size = new FileInfo(file).Length;
-            var hasIndex = File.Exists(Path.Combine(indexDir, Path.ChangeExtension(fileName, ".idx")));
             result.Add(new RagFile
             {
                 FileName = fileName,
                 Content = content,
                 Size = size,
-                HasIndex = hasIndex
+                HasIndex = false
             });
         }
         return result;
@@ -43,13 +41,12 @@ public class RagFileRepository(IConfiguration configuration) : IRagFileRepositor
 
         var content = await File.ReadAllTextAsync(filePath);
         var size = new FileInfo(filePath).Length;
-        var hasIndex = File.Exists(Path.Combine(agentFolder, "index", Path.ChangeExtension(fileName, ".idx")));
         return new RagFile
         {
             FileName = fileName,
             Content = content,
             Size = size,
-            HasIndex = hasIndex
+            HasIndex = false
         };
     }
 
@@ -57,23 +54,14 @@ public class RagFileRepository(IConfiguration configuration) : IRagFileRepositor
     {
         var agentFolder = GetAgentFolder(agentId);
         Directory.CreateDirectory(Path.Combine(agentFolder, "files"));
-        Directory.CreateDirectory(Path.Combine(agentFolder, "index"));
 
         var filePath = Path.Combine(agentFolder, "files", file.FileName);
         await File.WriteAllTextAsync(filePath, file.Content);
-
-        var indexPath = Path.Combine(agentFolder, "index", Path.ChangeExtension(file.FileName, ".idx"));
-        if (File.Exists(indexPath))
-            File.Delete(indexPath);
     }
 
     public Task DeleteFileAsync(Guid agentId, string fileName)
     {
         var agentFolder = GetAgentFolder(agentId);
-        var indexPath = Path.Combine(agentFolder, "index", Path.ChangeExtension(fileName, ".idx"));
-        if (File.Exists(indexPath))
-            File.Delete(indexPath);
-
         var filePath = Path.Combine(agentFolder, "files", fileName);
         if (File.Exists(filePath))
             File.Delete(filePath);

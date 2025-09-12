@@ -11,10 +11,12 @@ using Microsoft.AspNetCore.Hosting.Server;
 using Microsoft.AspNetCore.Hosting.Server.Features;
 using Microsoft.Extensions.Logging;
 using Microsoft.SemanticKernel.ChatCompletion;
-using Microsoft.SemanticKernel.Connectors.InMemory;
+using Microsoft.SemanticKernel.Connectors.Sqlite;
+using Microsoft.SemanticKernel.Memory;
 using MudBlazor.Services;
 using Serilog;
 using System.Net.Http;
+using System.IO;
 using System.Text;
 
 // Enable UTF-8 for proper Cyrillic support.
@@ -82,7 +84,12 @@ builder.Services.AddSingleton<ChatClient.Application.Services.IRagVectorIndexSer
 builder.Services.AddSingleton<RagVectorIndexBackgroundService>();
 builder.Services.AddSingleton<ChatClient.Application.Services.IRagVectorIndexBackgroundService>(sp => sp.GetRequiredService<RagVectorIndexBackgroundService>());
 builder.Services.AddHostedService(sp => sp.GetRequiredService<RagVectorIndexBackgroundService>());
-builder.Services.AddSingleton<InMemoryVectorStore>();
+builder.Services.AddSingleton<IMemoryStore>(sp =>
+{
+    var path = Path.Combine("Data", "rag.sqlite");
+    Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+    return SqliteMemoryStore.ConnectAsync(path).GetAwaiter().GetResult();
+});
 builder.Services.AddSingleton<ChatClient.Application.Services.IRagVectorSearchService, RagVectorSearchService>();
 builder.Services.AddSingleton<ChatClient.Api.Services.IFileConverter, ChatClient.Api.Services.NoOpFileConverter>();
 builder.Services.AddScoped<ChatClient.Api.Client.Services.IAppChatService, ChatClient.Api.Client.Services.AppChatService>();
