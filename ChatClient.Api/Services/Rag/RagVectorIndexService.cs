@@ -1,15 +1,14 @@
-#pragma warning disable SKEXP0050
+#pragma warning disable SKEXP0050, SKEXP0070
 using ChatClient.Application.Helpers;
 using ChatClient.Application.Repositories;
 using ChatClient.Application.Services;
 using ChatClient.Domain.Models;
-using Microsoft.Extensions.AI;
-using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using Microsoft.SemanticKernel;
+using Microsoft.SemanticKernel.Embeddings;
+using Microsoft.SemanticKernel.Memory;
 using Microsoft.SemanticKernel.Text;
 using System.Linq;
-using System.Text.Json;
 
 namespace ChatClient.Api.Services.Rag;
 
@@ -17,11 +16,13 @@ public sealed class RagVectorIndexService(
     IUserSettingsService userSettings,
     ILlmServerConfigService llmServerConfigService,
     IRagVectorIndexRepository repository,
+    IMemoryStore store,
     ILogger<RagVectorIndexService> logger) : IRagVectorIndexService
 {
     private readonly IRagVectorIndexRepository _repository = repository;
+    private readonly IMemoryStore _store = store;
 
-    public async Task BuildIndexAsync(Guid agentId, string sourceFilePath, string indexFilePath, IProgress<RagVectorIndexStatus>? progress = null, CancellationToken cancellationToken = default, Guid serverId = default)
+    public async Task BuildIndexAsync(Guid agentId, string sourceFilePath, IProgress<RagVectorIndexStatus>? progress = null, CancellationToken cancellationToken = default, Guid serverId = default)
     {
         if (!_repository.SourceExists(sourceFilePath))
             throw new FileNotFoundException($"Source file not found: {sourceFilePath}");
@@ -38,10 +39,15 @@ public sealed class RagVectorIndexService(
 
         IKernelBuilder builder = Kernel.CreateBuilder();
         builder.Services.AddLogging();
-        builder.AddOllamaEmbeddingGenerator(model.ModelName, new Uri(baseUrl.Trim()));
+        builder.AddOllamaTextEmbeddingGeneration(model.ModelName, new Uri(baseUrl.Trim()));
         var kernel = builder.Build();
 
-        var generator = kernel.GetRequiredService<IEmbeddingGenerator<string, Embedding<float>>>();
+        var embeddingService = kernel.GetRequiredService<ITextEmbeddingGenerationService>();
+        var memory = new MemoryBuilder()
+            .WithMemoryStore(_store)
+            .WithTextEmbeddingGeneration(embeddingService)
+            .Build();
+
         var settings = await userSettings.GetSettingsAsync();
         var maxTokensPerLine = settings.Embedding.RagLineChunkSize;
         var maxTokensPerParagraph = settings.Embedding.RagParagraphChunkSize;
@@ -52,18 +58,23 @@ public sealed class RagVectorIndexService(
 
         logger.LogInformation("Building index for {File} with {Count} fragments", sourceFilePath, total);
 
-        List<RagVectorFragment> fragments = [];
+        var collection = CollectionName(agentId);
+        await _store.CreateCollectionAsync(collection, cancellationToken);
+        for (var i = 0; ; i++)
+        {
+            var key = Key(Path.GetFileName(sourceFilePath), i);
+            var existing = await _store.GetAsync(collection, key, cancellationToken: cancellationToken);
+            if (existing is null)
+                break;
+            await _store.RemoveAsync(collection, key, cancellationToken);
+        }
+
         var nextLog = 10;
         for (var i = 0; i < total; i++)
         {
             var paragraph = paragraphs[i];
-            var embedding = await generator.GenerateAsync(paragraph, cancellationToken: cancellationToken);
-            fragments.Add(new RagVectorFragment
-            {
-                Index = i,
-                Text = paragraph,
-                Vector = embedding.Vector.ToArray()
-            });
+            var key = Key(Path.GetFileName(sourceFilePath), i);
+            await memory.SaveInformationAsync(collection, paragraph, key, cancellationToken: cancellationToken);
 
             var processed = i + 1;
             progress?.Report(new(agentId, Path.GetFileName(sourceFilePath), processed, total));
@@ -75,21 +86,7 @@ public sealed class RagVectorIndexService(
             }
         }
 
-        var modified = _repository.GetSourceModifiedUtc(sourceFilePath);
-        var index = new RagVectorIndex
-        {
-            SourceFileName = Path.GetFileName(sourceFilePath),
-            SourceModifiedTime = modified,
-            EmbeddingModel = model.ModelName,
-            VectorDimensions = fragments.Count > 0 ? fragments[0].Vector.Length : 0,
-            Fragments = fragments
-        };
-
-        var options = new JsonSerializerOptions { WriteIndented = true };
-        var json = JsonSerializer.Serialize(index, options);
-        await _repository.WriteIndexAsync(indexFilePath, json, cancellationToken);
-
-        logger.LogInformation("Built index {IndexPath} with {Count} fragments", indexFilePath, fragments.Count);
+        logger.LogInformation("Built index for {File} with {Count} fragments", sourceFilePath, total);
     }
 
     private async Task<string> GetBaseUrlAsync(Guid serverId)
@@ -110,4 +107,7 @@ public sealed class RagVectorIndexService(
             "RAG vector indexing",
             logger);
     }
+
+    private static string CollectionName(Guid agentId) => $"agent_{agentId:N}";
+    private static string Key(string file, int index) => $"{file}#{index:D5}";
 }
