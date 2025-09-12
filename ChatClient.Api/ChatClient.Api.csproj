@@ -12,17 +12,18 @@
         <PackageReference Include="Microsoft.AspNetCore.OpenApi" Version="9.0.8" />
         <PackageReference Include="Microsoft.Extensions.Http" Version="9.0.8" />
         <PackageReference Include="Microsoft.Extensions.AI" Version="9.8.0" />
-        <PackageReference Include="Microsoft.Extensions.VectorData.Abstractions" Version="9.7.0" />
         <PackageReference Include="Microsoft.SemanticKernel" Version="1.64.0" />
         <PackageReference Include="Microsoft.SemanticKernel.Abstractions" Version="1.64.0" />
         <PackageReference Include="Microsoft.SemanticKernel.Agents.Orchestration" Version="1.64.0-preview" />
         <PackageReference Include="Microsoft.SemanticKernel.Agents.Runtime.InProcess" Version="1.64.0-preview" />
-        <PackageReference Include="Microsoft.SemanticKernel.Connectors.InMemory" Version="1.64.0-preview" />
         <PackageReference Include="Microsoft.SemanticKernel.Connectors.Ollama" Version="1.64.0-alpha" />
         <PackageReference Include="Microsoft.SemanticKernel.Connectors.OpenAI" Version="1.64.0" />
+        <PackageReference Include="Microsoft.SemanticKernel.Connectors.Sqlite" Version="1.51.0-preview" />
         <PackageReference Include="Microsoft.SemanticKernel.Plugins.Core" Version="1.64.0-preview" />
+        <PackageReference Include="Microsoft.SemanticKernel.Plugins.Memory" Version="1.64.0-alpha" />
         <PackageReference Include="Microsoft.SemanticKernel.Agents.Abstractions" Version="1.64.0" />
         <PackageReference Include="Microsoft.SemanticKernel.Agents.Core" Version="1.64.0" />
+        <PackageReference Include="Microsoft.Data.Sqlite" Version="9.0.0" />
         <PackageReference Include="ModelContextProtocol" Version="0.3.0-preview.4" />
         <PackageReference Include="ModelContextProtocol-SemanticKernel" Version="0.3.0" />
         <PackageReference Include="MudBlazor" Version="8.11.0" />
@@ -37,9 +38,9 @@
     </PropertyGroup>
     
     <ItemGroup>
-        <ProjectReference Include="..\ChatClient.Application\ChatClient.Application.csproj" />
-        <ProjectReference Include="..\ChatClient.Domain\ChatClient.Domain.csproj" />
-        <ProjectReference Include="..\ChatClient.Infrastructure\ChatClient.Infrastructure.csproj" />
+        <ProjectReference Include="../ChatClient.Application/ChatClient.Application.csproj" />
+        <ProjectReference Include="../ChatClient.Domain/ChatClient.Domain.csproj" />
+        <ProjectReference Include="../ChatClient.Infrastructure/ChatClient.Infrastructure.csproj" />
     </ItemGroup>
     
 </Project>

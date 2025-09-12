@@ -5,7 +5,7 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <IsPackable>false</IsPackable>
-    <NoWarn>$(NoWarn);SKEXP0070;SKEXP0110;SKEXP0001</NoWarn>
+    <NoWarn>$(NoWarn);SKEXP0070;SKEXP0110;SKEXP0001;SKEXP0050</NoWarn>
   </PropertyGroup>
 
   <ItemGroup>
@@ -28,10 +28,10 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\ChatClient.Api\ChatClient.Api.csproj" />
-    <ProjectReference Include="..\ChatClient.Application\ChatClient.Application.csproj" />
-    <ProjectReference Include="..\ChatClient.Domain\ChatClient.Domain.csproj" />
-    <ProjectReference Include="..\ChatClient.Infrastructure\ChatClient.Infrastructure.csproj" />
+    <ProjectReference Include="../ChatClient.Api/ChatClient.Api.csproj" />
+    <ProjectReference Include="../ChatClient.Application/ChatClient.Application.csproj" />
+    <ProjectReference Include="../ChatClient.Domain/ChatClient.Domain.csproj" />
+    <ProjectReference Include="../ChatClient.Infrastructure/ChatClient.Infrastructure.csproj" />
   </ItemGroup>
 
 </Project>
