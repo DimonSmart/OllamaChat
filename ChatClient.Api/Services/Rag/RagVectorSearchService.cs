@@ -1,26 +1,16 @@
 using ChatClient.Application.Services;
 using ChatClient.Domain.Models;
-using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.VectorData;
-using Microsoft.SemanticKernel.Connectors.InMemory;
-using System.Collections.Concurrent;
-using System.Collections.Generic;
-using System.IO;
+using Microsoft.SemanticKernel.Memory;
+using System.Linq;
 using System.Text;
-using System.Text.Json;
 
 namespace ChatClient.Api.Services.Rag;
 
-public sealed class RagVectorSearchService(
-    InMemoryVectorStore store,
-    ILogger<RagVectorSearchService> logger,
-    IConfiguration configuration) : IRagVectorSearchService
+public sealed class RagVectorSearchService(IMemoryStore store, ILogger<RagVectorSearchService> logger) : IRagVectorSearchService
 {
-    private readonly InMemoryVectorStore _store = store;
+    private readonly IMemoryStore _store = store;
     private readonly ILogger<RagVectorSearchService> _logger = logger;
-    private readonly string _basePath = configuration["RagFiles:BasePath"] ?? Path.Combine("Data", "agents");
-    private readonly ConcurrentDictionary<Guid, bool> _loaded = new();
 
     public async Task<RagSearchResponse> SearchAsync(
         Guid agentId,
@@ -28,17 +18,13 @@ public sealed class RagVectorSearchService(
         int maxResults = 5,
         CancellationToken ct = default)
     {
-        var collection = _store.GetCollection<string, RagVectorRecord>(CollectionName(agentId));
-        await collection.EnsureCollectionExistsAsync(ct);
-        if (!await EnsureLoadedAsync(agentId, collection, ct))
-            _logger.LogWarning("Failed to load RAG index for agent {AgentId}", agentId);
+        var collection = CollectionName(agentId);
+        await _store.CreateCollectionAsync(collection, ct);
 
-        var options = new VectorSearchOptions<RagVectorRecord> { IncludeVectors = false };
-        var matches = new List<(RagVectorRecord, double)>();
-        await foreach (var result in collection.SearchAsync(queryVector, maxResults * 8, options, ct))
+        var matches = new List<(MemoryRecord, double)>();
+        await foreach (var result in _store.GetNearestMatchesAsync(collection, queryVector, maxResults * 8, withEmbeddings: false, cancellationToken: ct))
         {
-            if (result.Score is double score)
-                matches.Add((result.Record, score));
+            matches.Add(result);
         }
 
         if (matches.Count == 0)
@@ -65,54 +51,17 @@ public sealed class RagVectorSearchService(
         return new RagSearchResponse { Total = segments.Count, Results = results };
     }
 
-    private async Task<bool> EnsureLoadedAsync(Guid agentId, VectorStoreCollection<string, RagVectorRecord> collection, CancellationToken ct)
-    {
-        if (_loaded.ContainsKey(agentId))
-            return true;
-
-        var indexDir = Path.Combine(_basePath, agentId.ToString(), "index");
-        if (!Directory.Exists(indexDir))
-        {
-            _loaded[agentId] = true;
-            return true;
-        }
-
-        var success = true;
-        foreach (var file in Directory.GetFiles(indexDir, "*.idx"))
-        {
-            try
-            {
-                var json = await File.ReadAllTextAsync(file, ct);
-                var index = JsonSerializer.Deserialize<RagVectorIndex>(json);
-                if (index?.Fragments.Count is null or 0)
-                    continue;
-
-                var records = index.Fragments.Select(fragment => new RagVectorRecord
-                {
-                    Id = $"{index.SourceFileName}#{fragment.Index:D5}",
-                    File = index.SourceFileName,
-                    Index = fragment.Index,
-                    Text = fragment.Text,
-                    Embedding = new ReadOnlyMemory<float>(fragment.Vector)
-                }).ToList();
-
-                await collection.UpsertAsync(records, ct);
-            }
-            catch (Exception ex)
-            {
-                success = false;
-                _logger.LogError(ex, "Failed to load index file {File}", file);
-            }
-        }
-
-        _loaded[agentId] = true;
-        return success;
-    }
-
     private static string CollectionName(Guid agentId) => $"agent_{agentId:N}";
 
-    private static Piece ToPiece(RagVectorRecord record, double score)
-        => new(record.File, record.Index, record.Text, score);
+    private static Piece ToPiece(MemoryRecord record, double score)
+    {
+        var key = record.Metadata.Id ?? record.Key;
+        var idx = key.IndexOf('#');
+        var file = idx >= 0 ? key[..idx] : key;
+        var indexPart = idx >= 0 ? key[(idx + 1)..] : "0";
+        var index = int.TryParse(indexPart, out var i) ? i : 0;
+        return new Piece(file, index, record.Metadata.Text ?? string.Empty, score);
+    }
 
     private static List<Segment> MergeAdjacent(IEnumerable<Piece> pieces)
     {
