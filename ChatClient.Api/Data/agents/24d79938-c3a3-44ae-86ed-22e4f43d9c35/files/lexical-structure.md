@@ -1,0 +1,40 @@
+# Lexical structure
+
+This content has moved to the [`dotnet/csharpstandard`](https://github.com/dotnet/csharpstandard) repository.
+The list below provides links to each heading in this section. The links specify the C# 6 branch, which is version when the specifications merged.
+
+> To view the text of the Microsoft spec before merging with the ECMA text, checkout the [ms-spec-text](https://github.com/dotnet/csharplang/releases/tag/ms-spec-text) tag in this repository.
+
+- <a id="lexical-structure"></a>[Lexical structure](https://github.com/dotnet/csharpstandard/blob/draft-v6/standard/lexical-structure.md)
+  - <a id="programs"></a>[Programs](https://github.com/dotnet/csharpstandard/blob/draft-v6/standard/lexical-structure.md#61-programs)
+  - <a id="grammars"></a>[Grammars](https://github.com/dotnet/csharpstandard/blob/draft-v6/standard/lexical-structure.md#62-grammars)
+    - <a id="grammar-notation"></a>[Grammar notation](https://github.com/dotnet/csharpstandard/blob/draft-v6/standard/lexical-structure.md#622-grammar-notation)
+    - <a id="lexical-grammar"></a>[Lexical grammar](https://github.com/dotnet/csharpstandard/blob/draft-v6/standard/lexical-structure.md#623-lexical-grammar)
+    - <a id="syntactic-grammar"></a>[Syntactic grammar](https://github.com/dotnet/csharpstandard/blob/draft-v6/standard/lexical-structure.md#624-syntactic-grammar)
+  - <a id="lexical-analysis"></a>[Lexical analysis](https://github.com/dotnet/csharpstandard/blob/draft-v6/standard/lexical-structure.md#63-lexical-analysis)
+    - <a id="line-terminators"></a>[Line terminators](https://github.com/dotnet/csharpstandard/blob/draft-v6/standard/lexical-structure.md#632-line-terminators)
+    - <a id="comments"></a>[Comments](https://github.com/dotnet/csharpstandard/blob/draft-v6/standard/lexical-structure.md#633-comments)
+    - <a id="white-space"></a>[White space](https://github.com/dotnet/csharpstandard/blob/draft-v6/standard/lexical-structure.md#634-white-space)
+  - <a id="tokens"></a>[Tokens](https://github.com/dotnet/csharpstandard/blob/draft-v6/standard/lexical-structure.md#64-tokens)
+    - <a id="unicode-character-escape-sequences"></a>[Unicode character escape sequences](https://github.com/dotnet/csharpstandard/blob/draft-v6/standard/lexical-structure.md#642-unicode-character-escape-sequences)
+    - <a id="identifiers"></a>[Identifiers](https://github.com/dotnet/csharpstandard/blob/draft-v6/standard/lexical-structure.md#643-identifiers)
+    - <a id="keywords"></a>[Keywords](https://github.com/dotnet/csharpstandard/blob/draft-v6/standard/lexical-structure.md#644-keywords)
+    - <a id="literals"></a>[Literals](https://github.com/dotnet/csharpstandard/blob/draft-v6/standard/lexical-structure.md#645-literals)
+      - <a id="boolean-literals"></a>[Boolean literals](https://github.com/dotnet/csharpstandard/blob/draft-v6/standard/lexical-structure.md#6452-boolean-literals)
+      - <a id="integer-literals"></a>[Integer literals](https://github.com/dotnet/csharpstandard/blob/draft-v6/standard/lexical-structure.md#6453-integer-literals)
+      - <a id="real-literals"></a>[Real literals](https://github.com/dotnet/csharpstandard/blob/draft-v6/standard/lexical-structure.md#6454-real-literals)
+      - <a id="character-literals"></a>[Character literals](https://github.com/dotnet/csharpstandard/blob/draft-v6/standard/lexical-structure.md#6455-character-literals)
+      - <a id="string-literals"></a>[String literals](https://github.com/dotnet/csharpstandard/blob/draft-v6/standard/lexical-structure.md#6456-string-literals)
+      - <a id="interpolated-string-literals"></a>[Interpolated string literals](https://github.com/dotnet/csharpstandard/blob/draft-v6/standard/lexical-structure.md#6456-string-literals)
+      - <a id="the-null-literal"></a>[The null literal](https://github.com/dotnet/csharpstandard/blob/draft-v6/standard/lexical-structure.md#6457-the-null-literal)
+    - <a id="operators-and-punctuators"></a>[Operators and punctuators](https://github.com/dotnet/csharpstandard/blob/draft-v6/standard/lexical-structure.md#646-operators-and-punctuators))
+  - <a id="pre-processing-directives"></a>[Pre-processing directives](https://github.com/dotnet/csharpstandard/blob/draft-v6/standard/lexical-structure.md#65-pre-processing-directives)
+    - <a id="conditional-compilation-symbols"></a>[Conditional compilation symbols](https://github.com/dotnet/csharpstandard/blob/draft-v6/standard/lexical-structure.md#652-conditional-compilation-symbols)
+    - <a id="pre-processing-expressions"></a>[Pre-processing expressions](https://github.com/dotnet/csharpstandard/blob/draft-v6/standard/lexical-structure.md#653-pre-processing-expressions)
+    - <a id="declaration-directives"></a>[Declaration directives](https://github.com/dotnet/csharpstandard/blob/draft-v6/standard/lexical-structure.md#654-definition-directives)
+    - <a id="conditional-compilation-directives"></a>[Conditional compilation directives](https://github.com/dotnet/csharpstandard/blob/draft-v6/standard/lexical-structure.md#655-conditional-compilation-directives)
+    - <a id="diagnostic-directives"></a>[Diagnostic directives](https://github.com/dotnet/csharpstandard/blob/draft-v6/standard/lexical-structure.md#656-diagnostic-directives)
+    - <a id="region-directives"></a>[Region directives](https://github.com/dotnet/csharpstandard/blob/draft-v6/standard/lexical-structure.md#657-region-directives)
+    - <a id="line-directives"></a>[Line directives](https://github.com/dotnet/csharpstandard/blob/draft-v6/standard/lexical-structure.md#658-line-directives)
+    - <a id="pragma-directives"></a> [Pragma directives](https://github.com/dotnet/csharpstandard/blob/draft-v6/standard/lexical-structure.md#659-pragma-directives)
+      - <a id="pragma-warning"></a>[Pragma warning](https://github.com/dotnet/csharpstandard/blob/draft-v6/standard/lexical-structure.md#659-pragma-directives)
