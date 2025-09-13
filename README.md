@@ -1,17 +1,12 @@
 # OllamaChat
 
-OllamaChat is a sample chat client for local LLMs built on
-[Semantic Kernel](https://github.com/microsoft/semantic-kernel). It supports
-multi‑agent conversations via `GroupChatOrchestration` and uses a
-`AppForceLastUserReducer` so the chat history always ends with a user message
-(`AuthorName="user"`).
+OllamaChat is an inspiring playground built on [Semantic Kernel](https://github.com/microsoft/semantic-kernel) that helps C# developers explore the breadth of modern AI.
 
-## Running Tests
+## Features
 
-Integration tests that talk to an Ollama server are disabled by default. To run them:
+- **Multi-agent Nova Chat** – orchestrate lively debates, like pitting famous philosophers against each other.
+- **Single-agent Nova Chat** – keep it simple with one responsive assistant.
+- **Document uploads** – give agents background files just like OpenAI does.
+- **Flexible connections** – talk to local Ollama servers or remote OpenAI endpoints.
 
-1. Start an Ollama server on `http://localhost:11434`.
-2. Set `RUN_OLLAMA_TESTS=1` in the environment.
-3. Execute `dotnet test ChatClient.Tests/ChatClient.Tests.csproj`.
-
-If the server is unavailable, the test is skipped automatically.
+From playful battles to practical experiments, this repository shows how Semantic Kernel can bring creative conversations to life and serves as a great starting point for getting familiar with its capabilities.
