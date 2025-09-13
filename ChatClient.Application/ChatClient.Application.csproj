@@ -5,7 +5,7 @@
     <Nullable>enable</Nullable>
   </PropertyGroup>
   <ItemGroup>
-    <ProjectReference Include="..\ChatClient.Domain\ChatClient.Domain.csproj" />
+    <ProjectReference Include="../ChatClient.Domain/ChatClient.Domain.csproj" />
     <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="9.0.8" />
   </ItemGroup>
 </Project>

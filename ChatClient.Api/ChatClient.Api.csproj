@@ -38,9 +38,9 @@
     </PropertyGroup>
     
     <ItemGroup>
-        <ProjectReference Include="..\ChatClient.Application\ChatClient.Application.csproj" />
-        <ProjectReference Include="..\ChatClient.Domain\ChatClient.Domain.csproj" />
-        <ProjectReference Include="..\ChatClient.Infrastructure\ChatClient.Infrastructure.csproj" />
+        <ProjectReference Include="../ChatClient.Application/ChatClient.Application.csproj" />
+        <ProjectReference Include="../ChatClient.Domain/ChatClient.Domain.csproj" />
+        <ProjectReference Include="../ChatClient.Infrastructure/ChatClient.Infrastructure.csproj" />
     </ItemGroup>
     
 </Project>

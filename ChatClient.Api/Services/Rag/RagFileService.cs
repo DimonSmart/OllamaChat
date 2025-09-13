@@ -16,6 +16,7 @@ public class RagFileService(IRagFileRepository repository, IRagVectorIndexBackgr
     {
         var files = await _repository.GetFilesAsync(agentId);
         var collection = CollectionName(agentId);
+        await _memoryStore.CreateCollectionAsync(collection, cancellationToken: default);
         foreach (var f in files)
         {
             var key = Key(f.FileName, 0);
@@ -30,8 +31,10 @@ public class RagFileService(IRagFileRepository repository, IRagVectorIndexBackgr
         var file = await _repository.GetFileAsync(agentId, fileName);
         if (file is null)
             return null;
+        var collection = CollectionName(agentId);
+        await _memoryStore.CreateCollectionAsync(collection, cancellationToken: default);
         var key = Key(fileName, 0);
-        file.HasIndex = await _memoryStore.GetAsync(CollectionName(agentId), key, withEmbedding: false, cancellationToken: default) is not null;
+        file.HasIndex = await _memoryStore.GetAsync(collection, key, withEmbedding: false, cancellationToken: default) is not null;
         return file;
     }
 
@@ -54,6 +57,7 @@ public class RagFileService(IRagFileRepository repository, IRagVectorIndexBackgr
     private async Task RemoveEmbeddingsAsync(Guid agentId, string fileName)
     {
         var collection = CollectionName(agentId);
+        await _memoryStore.CreateCollectionAsync(collection, cancellationToken: default);
         for (var i = 0; ; i++)
         {
             var key = Key(fileName, i);
