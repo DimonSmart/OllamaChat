@@ -1,4 +1,4 @@
-#pragma warning disable SKEXP0050
+#pragma warning disable SKEXP0050, SKEXP0070
 using ChatClient.Application.Helpers;
 using ChatClient.Application.Repositories;
 using ChatClient.Application.Services;
@@ -39,7 +39,7 @@ public sealed class RagVectorIndexService(
 
         IKernelBuilder builder = Kernel.CreateBuilder();
         builder.Services.AddLogging();
-        builder.AddOllamaEmbeddingGenerator(model.ModelName, new Uri(baseUrl.Trim()));
+        builder.AddOllamaTextEmbeddingGeneration(model.ModelName, new Uri(baseUrl.Trim()));
         var kernel = builder.Build();
 
         var embeddingService = kernel.GetRequiredService<ITextEmbeddingGenerationService>();
