@@ -80,6 +80,7 @@ builder.Services.AddSingleton<IRagVectorIndexRepository, RagVectorIndexRepositor
 builder.Services.AddSingleton<ChatClient.Application.Services.IUserSettingsService, ChatClient.Api.Services.UserSettingsService>();
 builder.Services.AddSingleton<ChatClient.Application.Services.ISavedChatService, ChatClient.Api.Services.SavedChatService>();
 builder.Services.AddSingleton<ChatClient.Application.Services.IRagFileService, RagFileService>();
+builder.Services.AddSingleton<ChatClient.Application.Services.IRagContentImportService, RagContentImportService>();
 builder.Services.AddSingleton<ChatClient.Application.Services.IRagVectorIndexService, RagVectorIndexService>();
 builder.Services.AddSingleton<RagVectorIndexBackgroundService>();
 builder.Services.AddSingleton<ChatClient.Application.Services.IRagVectorIndexBackgroundService>(sp => sp.GetRequiredService<RagVectorIndexBackgroundService>());
@@ -91,7 +92,8 @@ builder.Services.AddSingleton<IMemoryStore>(sp =>
     return SqliteMemoryStore.ConnectAsync(path).GetAwaiter().GetResult();
 });
 builder.Services.AddSingleton<ChatClient.Application.Services.IRagVectorSearchService, RagVectorSearchService>();
-builder.Services.AddSingleton<ChatClient.Api.Services.IFileConverter, ChatClient.Api.Services.NoOpFileConverter>();
+builder.Services.AddSingleton<ChatClient.Api.Services.IFileConverter, ChatClient.Api.Services.MarkdownFileConverter>();
+builder.Services.AddSingleton<ChatClient.Api.Services.IFileConverter, ChatClient.Api.Services.FileConverter>();
 builder.Services.AddScoped<ChatClient.Api.Client.Services.IAppChatService, ChatClient.Api.Client.Services.AppChatService>();
 builder.Services.AddScoped<ChatClient.Api.Client.Services.IChatViewModelService, ChatClient.Api.Client.Services.ChatViewModelService>();
 builder.Services.AddSingleton<ChatClient.Api.Client.Services.IGroupChatManagerFactory, ChatClient.Api.Client.Services.GroupChatManagerFactory>();

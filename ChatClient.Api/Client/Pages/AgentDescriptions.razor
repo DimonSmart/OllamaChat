@@ -2,6 +2,7 @@
 @using System
 @using System.IO
 @using System.Linq
+@using System.Collections.Generic
 @using ChatClient.Domain.Models
 @using ChatClient.Application.Services
 @using ChatClient.Api.Services
@@ -12,7 +13,7 @@
 @inject ISnackbar Snackbar
 @inject KernelService KernelService
 @inject IRagFileService RagFileService
-@inject IFileConverter FileConverter
+@inject IEnumerable<IFileConverter> FileConverters
 @inject ILlmServerConfigService LlmServerConfigService
 
 <PageTitle>Agent Descriptions Management</PageTitle>
@@ -439,7 +440,14 @@
                     Headers = new HeaderDictionary(),
                     ContentType = file.ContentType
                 };
-                var content = await FileConverter.ConvertToTextAsync(formFile);
+                var ext = Path.GetExtension(file.Name);
+                var converter = FileConverters.FirstOrDefault(c => c.GetSupportedExtensions().Contains(ext, StringComparer.OrdinalIgnoreCase));
+                if (converter is null)
+                {
+                    Snackbar.Add($"Unsupported file type {ext}", Severity.Error);
+                    continue;
+                }
+                var content = await converter.ConvertToTextAsync(formFile);
                 await RagFileService.AddOrUpdateFileAsync(editingAgent.Id, new RagFile { FileName = file.Name, Content = content });
             }
             catch (Exception ex)
