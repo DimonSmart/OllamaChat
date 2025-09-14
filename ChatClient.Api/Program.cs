@@ -80,6 +80,7 @@ builder.Services.AddSingleton<IRagVectorIndexRepository, RagVectorIndexRepositor
 builder.Services.AddSingleton<ChatClient.Application.Services.IUserSettingsService, ChatClient.Api.Services.UserSettingsService>();
 builder.Services.AddSingleton<ChatClient.Application.Services.ISavedChatService, ChatClient.Api.Services.SavedChatService>();
 builder.Services.AddSingleton<ChatClient.Application.Services.IRagFileService, RagFileService>();
+builder.Services.AddSingleton<ChatClient.Application.Services.IRagContentImportService, RagContentImportService>();
 builder.Services.AddSingleton<ChatClient.Application.Services.IRagVectorIndexService, RagVectorIndexService>();
 builder.Services.AddSingleton<RagVectorIndexBackgroundService>();
 builder.Services.AddSingleton<ChatClient.Application.Services.IRagVectorIndexBackgroundService>(sp => sp.GetRequiredService<RagVectorIndexBackgroundService>());

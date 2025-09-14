@@ -4,11 +4,12 @@
         <Nullable>enable</Nullable>
         <ImplicitUsings>enable</ImplicitUsings>
         <!-- Use both NoWarn and WarningsNotAsErrors to handle the experimental API warning -->
-        <NoWarn>$(NoWarn);SKEXP0070;SKEXP0110</NoWarn>
-        <WarningsNotAsErrors>$(WarningsNotAsErrors);SKEXP0070</WarningsNotAsErrors>
+        <NoWarn>$(NoWarn);SKEXP0070;SKEXP0110;SKEXP0050</NoWarn>
+        <WarningsNotAsErrors>$(WarningsNotAsErrors);SKEXP0070;SKEXP0050</WarningsNotAsErrors>
       <UserSecretsId>4a3297bb-431d-45ef-b95d-3d5c01782724</UserSecretsId>
   </PropertyGroup>
             <ItemGroup>
+        <PackageReference Include="HtmlAgilityPack" Version="1.12.2" />
         <PackageReference Include="Microsoft.AspNetCore.OpenApi" Version="9.0.8" />
         <PackageReference Include="Microsoft.Extensions.Http" Version="9.0.8" />
         <PackageReference Include="Microsoft.Extensions.AI" Version="9.8.0" />
@@ -21,6 +22,7 @@
         <PackageReference Include="Microsoft.SemanticKernel.Connectors.Sqlite" Version="1.51.0-preview" />
         <PackageReference Include="Microsoft.SemanticKernel.Plugins.Core" Version="1.64.0-preview" />
         <PackageReference Include="Microsoft.SemanticKernel.Plugins.Memory" Version="1.64.0-alpha" />
+        <PackageReference Include="Microsoft.SemanticKernel.Plugins.Web" Version="1.64.0-alpha" />
         <PackageReference Include="Microsoft.SemanticKernel.Agents.Abstractions" Version="1.64.0" />
         <PackageReference Include="Microsoft.SemanticKernel.Agents.Core" Version="1.64.0" />
         <PackageReference Include="Microsoft.Data.Sqlite" Version="9.0.0" />
