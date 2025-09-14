@@ -2,6 +2,7 @@ using ChatClient.Api.Services;
 using ChatClient.Application.Services;
 using ChatClient.Domain.Models;
 using Microsoft.AspNetCore.Mvc;
+using System.Linq;
 
 namespace ChatClient.Api.Controllers;
 
@@ -10,12 +11,12 @@ namespace ChatClient.Api.Controllers;
 public class RagFilesController : ControllerBase
 {
     private readonly IRagFileService _fileService;
-    private readonly IFileConverter _converter;
+    private readonly IEnumerable<IFileConverter> _converters;
 
-    public RagFilesController(IRagFileService fileService, IFileConverter converter)
+    public RagFilesController(IRagFileService fileService, IEnumerable<IFileConverter> converters)
     {
         _fileService = fileService;
-        _converter = converter;
+        _converters = converters;
     }
 
     [HttpGet]
@@ -51,10 +52,11 @@ public class RagFilesController : ControllerBase
             return BadRequest("Invalid file name.");
         }
         var ext = Path.GetExtension(file.FileName);
-        if (!_converter.GetSupportedExtensions().Contains(ext, StringComparer.OrdinalIgnoreCase))
+        var converter = _converters.FirstOrDefault(c => c.GetSupportedExtensions().Contains(ext, StringComparer.OrdinalIgnoreCase));
+        if (converter is null)
             return BadRequest($"Unsupported file type {ext}");
 
-        var content = await _converter.ConvertToTextAsync(file);
+        var content = await converter.ConvertToTextAsync(file);
         await _fileService.AddOrUpdateFileAsync(agentId, new RagFile { FileName = file.FileName, Content = content });
         return Ok();
     }
@@ -72,10 +74,11 @@ public class RagFilesController : ControllerBase
             return BadRequest("Invalid file name.");
         }
         var ext = Path.GetExtension(file.FileName);
-        if (!_converter.GetSupportedExtensions().Contains(ext, StringComparer.OrdinalIgnoreCase))
+        var converter = _converters.FirstOrDefault(c => c.GetSupportedExtensions().Contains(ext, StringComparer.OrdinalIgnoreCase));
+        if (converter is null)
             return BadRequest($"Unsupported file type {ext}");
 
-        var content = await _converter.ConvertToTextAsync(file);
+        var content = await converter.ConvertToTextAsync(file);
         await _fileService.AddOrUpdateFileAsync(agentId, new RagFile { FileName = fileName, Content = content });
         return Ok();
     }
