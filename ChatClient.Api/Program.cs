@@ -91,7 +91,8 @@ builder.Services.AddSingleton<IMemoryStore>(sp =>
     return SqliteMemoryStore.ConnectAsync(path).GetAwaiter().GetResult();
 });
 builder.Services.AddSingleton<ChatClient.Application.Services.IRagVectorSearchService, RagVectorSearchService>();
-builder.Services.AddSingleton<ChatClient.Api.Services.IFileConverter, ChatClient.Api.Services.NoOpFileConverter>();
+builder.Services.AddSingleton<ChatClient.Api.Services.IFileConverter, ChatClient.Api.Services.MarkdownFileConverter>();
+builder.Services.AddSingleton<ChatClient.Api.Services.IFileConverter, ChatClient.Api.Services.FileConverter>();
 builder.Services.AddScoped<ChatClient.Api.Client.Services.IAppChatService, ChatClient.Api.Client.Services.AppChatService>();
 builder.Services.AddScoped<ChatClient.Api.Client.Services.IChatViewModelService, ChatClient.Api.Client.Services.ChatViewModelService>();
 builder.Services.AddSingleton<ChatClient.Api.Client.Services.IGroupChatManagerFactory, ChatClient.Api.Client.Services.GroupChatManagerFactory>();
