@@ -1,21 +1,12 @@
 using ChatClient.Api;
-using ChatClient.Api.Client.Services.Formatters;
-using ChatClient.Api.Client.Services.Reducers;
 using ChatClient.Api.Services;
-using ChatClient.Api.Services.Rag;
 using ChatClient.Api.Services.Seed;
-using ChatClient.Application.Repositories;
-using ChatClient.Infrastructure.Repositories;
-using Microsoft.AspNetCore.Components.Server.Circuits;
+using ChatClient.Api.Client.Services.Reducers;
+using Microsoft.SemanticKernel.ChatCompletion;
 using Microsoft.AspNetCore.Hosting.Server;
 using Microsoft.AspNetCore.Hosting.Server.Features;
 using Microsoft.Extensions.Logging;
-using Microsoft.SemanticKernel.ChatCompletion;
-using Microsoft.SemanticKernel.Connectors.Sqlite;
-using Microsoft.SemanticKernel.Memory;
-using MudBlazor.Services;
 using Serilog;
-using System.Net.Http;
 using System.IO;
 using System.Text;
 
@@ -46,87 +37,15 @@ if (builder.Environment.IsProduction())
     builder.Environment.WebRootPath = webRootPath;
     builder.Environment.ContentRootPath = exeFolder;
 }
-
-
-
-builder.Services.AddSingleton<ChatClient.Application.Services.IMcpServerConfigService, ChatClient.Api.Services.McpServerConfigService>();
-builder.Services.AddSingleton<ChatClient.Api.Services.ILlmServerConfigService, ChatClient.Api.Services.LlmServerConfigService>();
-builder.Services.AddSingleton<ChatClient.Api.Services.IMcpClientService, ChatClient.Api.Services.McpClientService>();
-builder.Services.AddSingleton<ChatClient.Api.Services.McpSamplingService>();
-builder.Services.AddSingleton<ChatClient.Api.Services.KernelService>();
-builder.Services.AddSingleton<IOllamaClientService, OllamaService>();
-builder.Services.AddSingleton<IOpenAIClientService, OpenAIClientService>();
-builder.Services.AddSingleton<IServerConnectionTestService, ServerConnectionTestService>();
-builder.Services.AddSingleton<IOllamaKernelService, OllamaKernelService>();
-builder.Services.AddSingleton<ChatClient.Api.Services.McpFunctionIndexService>();
 builder.Services.AddSingleton<AppForceLastUserReducer>();
 builder.Services.AddSingleton<ThinkTagsRemovalReducer>();
-builder.Services.AddSingleton<IChatHistoryReducer>(serviceProvider =>
+builder.Services.AddSingleton<IChatHistoryReducer>(sp =>
 {
-    var thinkTagsReducer = serviceProvider.GetRequiredService<ThinkTagsRemovalReducer>();
-    var forceLastUserReducer = serviceProvider.GetRequiredService<AppForceLastUserReducer>();
+    var thinkTagsReducer = sp.GetRequiredService<ThinkTagsRemovalReducer>();
+    var forceLastUserReducer = sp.GetRequiredService<AppForceLastUserReducer>();
     return new MetaReducer([thinkTagsReducer, forceLastUserReducer]);
 });
-builder.Services.AddSingleton<ChatClient.Api.Services.IAppChatHistoryBuilder, ChatClient.Api.Services.AppChatHistoryBuilder>();
-builder.Services.AddScoped<ChatClient.Api.Services.OllamaServerAvailabilityService>();
-builder.Services.AddSingleton<IAgentDescriptionRepository, AgentDescriptionRepository>();
-builder.Services.AddSingleton<ILlmServerConfigRepository, LlmServerConfigRepository>();
-builder.Services.AddSingleton<IMcpServerConfigRepository, McpServerConfigRepository>();
-builder.Services.AddSingleton<IUserSettingsRepository, UserSettingsRepository>();
-builder.Services.AddSingleton<ChatClient.Application.Services.IAgentDescriptionService, ChatClient.Api.Services.AgentDescriptionService>();
-builder.Services.AddSingleton<ISavedChatRepository, SavedChatRepository>();
-builder.Services.AddSingleton<IRagFileRepository, RagFileRepository>();
-builder.Services.AddSingleton<IRagVectorIndexRepository, RagVectorIndexRepository>();
-builder.Services.AddSingleton<ChatClient.Application.Services.IUserSettingsService, ChatClient.Api.Services.UserSettingsService>();
-builder.Services.AddSingleton<ChatClient.Application.Services.ISavedChatService, ChatClient.Api.Services.SavedChatService>();
-builder.Services.AddSingleton<ChatClient.Application.Services.IRagFileService, RagFileService>();
-builder.Services.AddSingleton<ChatClient.Application.Services.IRagContentImportService, RagContentImportService>();
-builder.Services.AddSingleton<ChatClient.Application.Services.IRagVectorIndexService, RagVectorIndexService>();
-builder.Services.AddSingleton<RagVectorIndexBackgroundService>();
-builder.Services.AddSingleton<ChatClient.Application.Services.IRagVectorIndexBackgroundService>(sp => sp.GetRequiredService<RagVectorIndexBackgroundService>());
-builder.Services.AddHostedService(sp => sp.GetRequiredService<RagVectorIndexBackgroundService>());
-builder.Services.AddSingleton<IMemoryStore>(sp =>
-{
-    var path = Path.Combine("Data", "rag.sqlite");
-    Directory.CreateDirectory(Path.GetDirectoryName(path)!);
-    return SqliteMemoryStore.ConnectAsync(path).GetAwaiter().GetResult();
-});
-builder.Services.AddSingleton<ChatClient.Application.Services.IRagVectorSearchService, RagVectorSearchService>();
-builder.Services.AddSingleton<ChatClient.Api.Services.IFileConverter, ChatClient.Api.Services.MarkdownFileConverter>();
-builder.Services.AddSingleton<ChatClient.Api.Services.IFileConverter, ChatClient.Api.Services.FileConverter>();
-builder.Services.AddScoped<ChatClient.Api.Client.Services.IAppChatService, ChatClient.Api.Client.Services.AppChatService>();
-builder.Services.AddScoped<ChatClient.Api.Client.Services.IChatViewModelService, ChatClient.Api.Client.Services.ChatViewModelService>();
-builder.Services.AddSingleton<ChatClient.Api.Client.Services.IGroupChatManagerFactory, ChatClient.Api.Client.Services.GroupChatManagerFactory>();
-builder.Services.AddSingleton<IChatFormatter, TextChatFormatter>();
-builder.Services.AddSingleton<IChatFormatter, MarkdownChatFormatter>();
-builder.Services.AddSingleton<IChatFormatter, HtmlChatFormatter>();
-
-builder.Services.AddSingleton<AgentDescriptionSeeder>();
-builder.Services.AddSingleton<LlmServerConfigSeeder>();
-builder.Services.AddSingleton<McpServerConfigSeeder>();
-
-builder.Services.AddRazorPages();
-builder.Services.AddServerSideBlazor();
-
-builder.Services.AddTransient<HttpLoggingHandler>();
-builder.Services.AddHttpClient();
-builder.Services.AddHttpClient("ollama")
-    .AddHttpMessageHandler<HttpLoggingHandler>();
-builder.Services.AddHttpClient("ollama-insecure")
-    .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler
-    {
-        ServerCertificateCustomValidationCallback = (_, _, _, _) => true
-    })
-    .AddHttpMessageHandler<HttpLoggingHandler>();
-
-builder.Services.AddMudServices();
-
-builder.Services.AddSingleton<CircuitHandler, AutoShutdownCircuitHandler>();
-
-builder.Services.AddControllers(options =>
-{
-    options.Filters.Add<ApiExceptionFilter>();
-});
+builder.Services.AddApplicationServices();
 
 var app = builder.Build();
 
