@@ -1,11 +1,11 @@
 using ChatClient.Api;
+using ChatClient.Api.Client.Services.Reducers;
 using ChatClient.Api.Services;
 using ChatClient.Api.Services.Seed;
-using ChatClient.Api.Client.Services.Reducers;
-using Microsoft.SemanticKernel.ChatCompletion;
 using Microsoft.AspNetCore.Hosting.Server;
 using Microsoft.AspNetCore.Hosting.Server.Features;
 using Microsoft.Extensions.Logging;
+using Microsoft.SemanticKernel.ChatCompletion;
 using Serilog;
 using System.IO;
 using System.Text;

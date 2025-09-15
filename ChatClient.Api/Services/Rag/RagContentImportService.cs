@@ -1,6 +1,6 @@
-using System;
 using ChatClient.Application.Services;
 using ChatClient.Domain.Models;
+using System;
 
 namespace ChatClient.Api.Services.Rag;
 

@@ -22,6 +22,7 @@ public sealed class RagVectorIndexService(
     private readonly IRagVectorIndexRepository _repository = repository;
     private readonly IMemoryStore _store = store;
 
+    [Obsolete]
     public async Task BuildIndexAsync(Guid agentId, string sourceFilePath, IProgress<RagVectorIndexStatus>? progress = null, CancellationToken cancellationToken = default, Guid serverId = default)
     {
         if (!_repository.SourceExists(sourceFilePath))

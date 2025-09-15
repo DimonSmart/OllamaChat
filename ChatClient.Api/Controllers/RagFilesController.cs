@@ -1,10 +1,10 @@
 using ChatClient.Api.Services;
 using ChatClient.Application.Services;
 using ChatClient.Domain.Models;
-using Microsoft.AspNetCore.Mvc;
-using System.Linq;
-using Microsoft.SemanticKernel.Plugins.Web;
 using HtmlAgilityPack;
+using Microsoft.AspNetCore.Mvc;
+using Microsoft.SemanticKernel.Plugins.Web;
+using System.Linq;
 
 namespace ChatClient.Api.Controllers;
 
