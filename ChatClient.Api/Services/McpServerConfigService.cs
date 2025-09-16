@@ -1,3 +1,4 @@
+using ChatClient.Application.Helpers;
 using ChatClient.Application.Repositories;
 using ChatClient.Application.Services;
 using ChatClient.Domain.Models;
@@ -44,6 +45,13 @@ public class McpServerConfigService(IMcpServerConfigRepository repository) : IMc
                        throw new KeyNotFoundException($"MCP server config with ID {serverId} not found");
         servers.Remove(existing);
         await _repository.SaveAllAsync(servers);
+    }
+
+    public async Task<McpServerConfig> InstallFromLinkAsync(string link)
+    {
+        var serverConfig = McpInstallLinkParser.Parse(link);
+        await CreateAsync(serverConfig);
+        return serverConfig;
     }
 }
 

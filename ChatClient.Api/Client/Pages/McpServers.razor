@@ -21,6 +21,14 @@
                        Size="Size.Small">
                 Add Server
             </MudButton>
+            <MudButton Variant="Variant.Outlined"
+                       Color="Color.Primary"
+                       StartIcon="@Icons.Material.Filled.Link"
+                       OnClick="ShowInstallFromLinkDialog"
+                       Class="ml-2 px-4"
+                       Size="Size.Small">
+                Install from Link
+            </MudButton>
             <MudSpacer />
             <MudTextField T="string"
                           ValueChanged="@(s => OnSearch(s))"
@@ -137,6 +145,31 @@
     </DialogActions>
 </MudDialog>
 
+<MudDialog @bind-Visible="@showInstallFromLinkDialog" Options="installDialogOptions">
+    <TitleContent>
+        <MudText Typo="Typo.h6">Install MCP Server from Link</MudText>
+    </TitleContent>
+    <DialogContent>
+        <MudForm @ref="installFromLinkForm">
+            <MudTextField @bind-Value="installLink"
+                         Label="VS Code MCP Link"
+                         Required="true"
+                         Immediate="true"
+                         Validation="@(new Func<string, string>(ValidateInstallLink))"
+                         Placeholder="Paste a vscode:mcp/install link" />
+        </MudForm>
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="CancelInstallFromLink" Size="Size.Medium">Cancel</MudButton>
+        <MudButton Color="Color.Primary"
+                   OnClick="InstallServerFromLink"
+                   Disabled="@installInProgress"
+                   Size="Size.Medium">
+            Install
+        </MudButton>
+    </DialogActions>
+</MudDialog>
+
 <MudDialog @bind-Visible="@showEditServerDialog" Options="editDialogOptions">
     <TitleContent>
         <MudText Typo="Typo.h6">@(editingServer?.Id == null ? "Create New Server" : "Edit Server")</MudText>
@@ -221,11 +254,15 @@
     private McpServerConfig editingServer = new();
     private bool showDeleteDialog { get; set; } = false;
     private bool showEditServerDialog { get; set; } = false;
+    private bool showInstallFromLinkDialog;
     private string searchString = string.Empty;
     private MudForm? editServerForm;
+    private MudForm? installFromLinkForm;
     private MudDataGrid<McpServerConfig>? dataGrid;
     private string serverType = "local";
     private string argumentsText = string.Empty;
+    private string installLink = string.Empty;
+    private bool installInProgress;
 
     private DialogOptions dialogOptions = new()
         {
@@ -234,17 +271,27 @@
             MaxWidth = MaxWidth.ExtraSmall
         };
 
+    private DialogOptions installDialogOptions = new()
+        {
+            CloseOnEscapeKey = true,
+            CloseButton = true,
+            MaxWidth = MaxWidth.Small,
+            FullWidth = true
+        };
+
     private DialogOptions editDialogOptions = new()
         {
             CloseOnEscapeKey = true,
             CloseButton = true,
             MaxWidth = MaxWidth.Medium,
             FullWidth = true
-        };    protected override async Task OnInitializedAsync()
+        };
+
+    protected override async Task OnInitializedAsync()
     {
         await LoadServers();
         await LoadAvailableModels();
-    }    
+    }
     
     private async Task LoadAvailableModels()
     {
@@ -308,6 +355,13 @@
         serverType = "local";
         argumentsText = string.Empty;
         showEditServerDialog = true;
+    }
+
+    private void ShowInstallFromLinkDialog()
+    {
+        installLink = string.Empty;
+        showInstallFromLinkDialog = true;
+        installFromLinkForm?.ResetValidation();
     }
 
     private void OnSearch(string text)
@@ -385,10 +439,55 @@
         showDeleteDialog = false;
     }
 
+    private void CancelInstallFromLink()
+    {
+        showInstallFromLinkDialog = false;
+        installLink = string.Empty;
+        installFromLinkForm?.ResetValidation();
+    }
+
+    private async Task InstallServerFromLink()
+    {
+        if (installFromLinkForm == null)
+            return;
+
+        await installFromLinkForm.Validate();
+        if (!installFromLinkForm.IsValid)
+            return;
+
+        installInProgress = true;
+        try
+        {
+            var installed = await McpServerConfigService.InstallFromLinkAsync(installLink.Trim());
+            servers.Add(installed);
+            ApplySearch();
+            Snackbar.Add($"MCP server \"{installed.Name}\" installed successfully", Severity.Success);
+            showInstallFromLinkDialog = false;
+            installLink = string.Empty;
+            installFromLinkForm?.ResetValidation();
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Failed to install MCP server: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            installInProgress = false;
+        }
+    }
+
     private string ValidateName(string name)
     {
         if (string.IsNullOrWhiteSpace(name))
             return "Name is required";
+
+        return string.Empty;
+    }
+
+    private string ValidateInstallLink(string link)
+    {
+        if (string.IsNullOrWhiteSpace(link))
+            return "Link is required";
 
         return string.Empty;
     }
