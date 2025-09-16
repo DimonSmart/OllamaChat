@@ -9,4 +9,5 @@ public interface IMcpServerConfigService
     Task CreateAsync(McpServerConfig serverConfig);
     Task UpdateAsync(McpServerConfig serverConfig);
     Task DeleteAsync(Guid serverId);
+    Task<McpServerConfig> InstallFromLinkAsync(string link);
 }
