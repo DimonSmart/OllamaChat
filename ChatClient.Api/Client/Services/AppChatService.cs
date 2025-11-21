@@ -1,6 +1,7 @@
 using ChatClient.Api.Services;
 using ChatClient.Application.Services;
 using ChatClient.Domain.Models;
+using ChatClient.Api.Client.Services.Whiteboard;
 using Microsoft.Extensions.AI;
 using Microsoft.SemanticKernel;
 using Microsoft.SemanticKernel.Agents;
@@ -236,6 +237,11 @@ public class AppChatService(
         }
     }
 
+    private Task PublishWhiteboardUpdateAsync(string text)
+    {
+        return AddMessageAsync(new AppChatMessage(text, DateTime.Now, ChatRole.Tool));
+    }
+
     private Task NotifyMessageAddedAsync(IAppChatMessage message) =>
         MessageAdded?.Invoke(message) ?? Task.CompletedTask;
 
@@ -347,6 +353,9 @@ public class AppChatService(
             new AppForceLastUserChatCompletionService(fcClient.AsChatCompletionService(), reducer));
 
         var kernel = builder.Build();
+
+        var whiteboardPlugin = new WhiteboardKernelPlugin(_chat.Whiteboard, PublishWhiteboardUpdateAsync);
+        kernel.Plugins.AddFromObject(whiteboardPlugin, "whiteboard");
 
         if (functionsToRegister != null && functionsToRegister.Any())
         {
