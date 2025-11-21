@@ -33,6 +33,8 @@
 @inject ILogger<Chat> Logger
 @inject ISavedChatService SavedChatService
 @inject ISnackbar Snackbar
+@inject ILlmServerConfigService LlmServerConfigService
+@inject IOllamaClientService OllamaClientService
 
 <PageTitle>Chat with AI Assistant</PageTitle>
 
@@ -56,12 +58,22 @@
                 }
                 else
                 {
-                    <MudSelect T="AgentDescription" Label="Select Agent" @bind-Value="selectedAgent" Variant="Variant.Outlined" FullWidth="true" Dense="true">
+                    <MudSelect T="AgentDescription" Label="Select Agent" Value="selectedAgent" ValueChanged="OnAgentChanged" Variant="Variant.Outlined" FullWidth="true" Dense="true">
                         @foreach (var agent in agents)
                         {
                             <MudSelectItem Value="@agent">@agent.AgentName</MudSelectItem>
                         }
                     </MudSelect>
+
+                    <MudCheckBox @bind-Value="whiteboardEnabled"
+                                 Label="Use whiteboard"
+                                 Dense="true"
+                                 Disabled="@(!isWhiteboardSupported)"
+                                 Class="mt-2" />
+                    @if (!isWhiteboardSupported && !string.IsNullOrWhiteSpace(whiteboardSupportHint))
+                    {
+                        <MudText Typo="Typo.caption" Color="Color.Warning" Class="ml-1">@whiteboardSupportHint</MudText>
+                    }
 
                     <MudTooltip Text="Select server and model" Disabled="@CanStartChat">
                         <MudButton Variant="Variant.Filled"
@@ -236,6 +248,10 @@
 
     private List<AgentDescription> agents = new();
     private AgentDescription? selectedAgent { get; set; }
+    private bool whiteboardEnabled = true;
+    private bool isWhiteboardSupported = true;
+    private string? whiteboardSupportHint;
+    private ServerModelSelection lastUiModelSelection = new(null, null);
 
     [CascadingParameter(Name = "UiModelSelection")]
     public ServerModelSelection UiModelSelection { get; set; } = new(null, null);
@@ -285,6 +301,12 @@
     {
         if (SavedChatId.HasValue && SavedChatId != lastSavedChatId)
             await LoadSavedChat(SavedChatId.Value);
+
+        if (!chatStarted && UiSelectionChanged())
+        {
+            lastUiModelSelection = new(UiModelSelection.ServerId, UiModelSelection.ModelName);
+            await RefreshWhiteboardSupportAsync();
+        }
     }
 
     private void OnAnsweringStateChanged(bool answering)
@@ -313,6 +335,9 @@
         chatStarted = false;
         lastSavedChatId = null;
         lastSavedChatTitle = string.Empty;
+        whiteboardEnabled = true;
+        isWhiteboardSupported = true;
+        whiteboardSupportHint = null;
         StateHasChanged();
     }
 
@@ -363,11 +388,13 @@
             $"Agent: {selectedAgent.AgentName}",
             Logger);
 
+        await UpdateWhiteboardSupportAsync(effectiveModel);
+
         selectedAgent.ModelName = effectiveModel.ModelName;
         selectedAgent.LlmId = effectiveModel.ServerId;
 
         var functions = selectedAgent.FunctionSettings.SelectedFunctions ?? [];
-        var chatConfiguration = new AppChatConfiguration(CurrentModelName, functions);
+        var chatConfiguration = new AppChatConfiguration(CurrentModelName, functions, whiteboardEnabled);
         var options = new RoundRobinChatStrategyOptions { Rounds = 1 };
         var groupChatManager = GroupChatManagerFactory.Create("RoundRobin", options);
 
@@ -399,11 +426,13 @@
             $"Agent: {selectedAgent.AgentName}",
             Logger);
 
+        await UpdateWhiteboardSupportAsync(effectiveModel);
+
         selectedAgent.ModelName = effectiveModel.ModelName;
         selectedAgent.LlmId = effectiveModel.ServerId;
 
         var functions = selectedAgent.FunctionSettings.SelectedFunctions ?? [];
-        var chatConfiguration = new AppChatConfiguration(CurrentModelName, functions);
+        var chatConfiguration = new AppChatConfiguration(CurrentModelName, functions, whiteboardEnabled);
         var options = new RoundRobinChatStrategyOptions { Rounds = 1 };
         var groupChatManager = GroupChatManagerFactory.Create("RoundRobin", options);
         var session = new ChatSessionParameters(groupChatManager, chatConfiguration, agents);
@@ -515,6 +544,67 @@
         var text = formatter.Format(ChatViewModelService.Messages);
         await JSRuntime.InvokeVoidAsync("copyText", text);
     }
+
+    private async Task OnAgentChanged(AgentDescription? agent)
+    {
+        selectedAgent = agent;
+        await RefreshWhiteboardSupportAsync();
+    }
+
+    private async Task RefreshWhiteboardSupportAsync()
+    {
+        if (selectedAgent is null)
+        {
+            isWhiteboardSupported = true;
+            whiteboardSupportHint = null;
+            StateHasChanged();
+            return;
+        }
+
+        if (ModelSelectionHelper.TryGetEffectiveModel(new ServerModelSelection(selectedAgent.LlmId, selectedAgent.ModelName), UiModelSelection, out var model))
+        {
+            await UpdateWhiteboardSupportAsync(model);
+        }
+        else
+        {
+            isWhiteboardSupported = true;
+            whiteboardSupportHint = null;
+        }
+
+        StateHasChanged();
+    }
+
+    private async Task UpdateWhiteboardSupportAsync(ServerModel model)
+    {
+        isWhiteboardSupported = true;
+        whiteboardSupportHint = null;
+
+        var server = await LlmServerConfigService.GetByIdAsync(model.ServerId);
+        if (server?.ServerType != ServerType.Ollama)
+        {
+            return;
+        }
+
+        try
+        {
+            var models = await OllamaClientService.GetModelsAsync(model.ServerId);
+            var ollamaModel = models.FirstOrDefault(m => string.Equals(m.Name, model.ModelName, StringComparison.OrdinalIgnoreCase));
+            if (ollamaModel is { SupportsFunctionCalling: false })
+            {
+                isWhiteboardSupported = false;
+                whiteboardEnabled = false;
+                whiteboardSupportHint = $"Whiteboard disabled because {model.ModelName} does not support functions.";
+            }
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "Failed to determine function support for model {ModelName}", model.ModelName);
+        }
+    }
+
+    private bool UiSelectionChanged() =>
+        UiModelSelection.ServerId != lastUiModelSelection.ServerId ||
+        UiModelSelection.ModelName != lastUiModelSelection.ModelName;
 
     public async ValueTask DisposeAsync()
     {

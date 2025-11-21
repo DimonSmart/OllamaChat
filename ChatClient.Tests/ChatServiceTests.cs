@@ -10,6 +10,7 @@ using Microsoft.SemanticKernel.Agents.Orchestration.GroupChat;
 using Microsoft.SemanticKernel.ChatCompletion;
 using OllamaSharp;
 using System;
+using System.Linq;
 using System.Threading.Tasks;
 
 namespace ChatClient.Tests;
@@ -119,5 +120,43 @@ public class ChatServiceTests
 
         Assert.Empty(chatService.AgentDescriptions);
         Assert.True(resetRaised);
+    }
+
+    [Fact]
+    public void ConfigureWhiteboardPlugin_Disabled_SkipsRegistration()
+    {
+        var chatService = new AppChatService(
+            kernelService: null!,
+            logger: new LoggerFactory().CreateLogger<AppChatService>(),
+            chatHistoryBuilder: new DummyHistoryBuilder(),
+            reducer: new AppForceLastUserReducer(),
+            ollamaKernelService: new MockOllamaKernelService(),
+            openAIClientService: new MockOpenAIClientService(),
+            userSettingsService: new MockUserSettingsService(),
+            llmServerConfigService: new MockLlmServerConfigService());
+
+        var kernel = Kernel.CreateBuilder().Build();
+        chatService.ConfigureWhiteboardPlugin(kernel, new AppChatConfiguration("model", [], UseWhiteboard: false));
+
+        Assert.DoesNotContain(kernel.Plugins, p => p.Name.Equals("whiteboard", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public void ConfigureWhiteboardPlugin_Enabled_RegistersPlugin()
+    {
+        var chatService = new AppChatService(
+            kernelService: null!,
+            logger: new LoggerFactory().CreateLogger<AppChatService>(),
+            chatHistoryBuilder: new DummyHistoryBuilder(),
+            reducer: new AppForceLastUserReducer(),
+            ollamaKernelService: new MockOllamaKernelService(),
+            openAIClientService: new MockOpenAIClientService(),
+            userSettingsService: new MockUserSettingsService(),
+            llmServerConfigService: new MockLlmServerConfigService());
+
+        var kernel = Kernel.CreateBuilder().Build();
+        chatService.ConfigureWhiteboardPlugin(kernel, new AppChatConfiguration("model", []));
+
+        Assert.Contains(kernel.Plugins, p => p.Name.Equals("whiteboard", StringComparison.OrdinalIgnoreCase));
     }
 }
