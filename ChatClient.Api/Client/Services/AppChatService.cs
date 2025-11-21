@@ -308,7 +308,12 @@ public class AppChatService(
                 settings.ExtensionData["repeat_penalty"] = desc.RepeatPenalty.Value;
             }
 
-            var kernel = await CreateKernelAsync(new ServerModel(desc.LlmId ?? Guid.Empty, modelName), functionsToRegister, desc.AgentName, cancellationToken);
+            var kernel = await CreateKernelAsync(
+                new ServerModel(desc.LlmId ?? Guid.Empty, modelName),
+                functionsToRegister,
+                desc.AgentName,
+                chatConfiguration,
+                cancellationToken);
 
             kernel.FunctionInvocationFilters.Add(trackingFilter);
 
@@ -332,6 +337,7 @@ public class AppChatService(
         ServerModel serverModel,
         IEnumerable<string>? functionsToRegister,
         string agentName,
+        AppChatConfiguration chatConfiguration,
         CancellationToken cancellationToken = default)
     {
         var builder = Kernel.CreateBuilder();
@@ -354,8 +360,7 @@ public class AppChatService(
 
         var kernel = builder.Build();
 
-        var whiteboardPlugin = new WhiteboardKernelPlugin(_chat.Whiteboard, PublishWhiteboardUpdateAsync);
-        kernel.Plugins.AddFromObject(whiteboardPlugin, "whiteboard");
+        ConfigureWhiteboardPlugin(kernel, chatConfiguration);
 
         if (functionsToRegister != null && functionsToRegister.Any())
         {
@@ -364,6 +369,15 @@ public class AppChatService(
         }
 
         return kernel;
+    }
+
+    internal void ConfigureWhiteboardPlugin(Kernel kernel, AppChatConfiguration chatConfiguration)
+    {
+        if (chatConfiguration.UseWhiteboard)
+        {
+            var whiteboardPlugin = new WhiteboardKernelPlugin(_chat.Whiteboard, PublishWhiteboardUpdateAsync);
+            kernel.Plugins.AddFromObject(whiteboardPlugin, "whiteboard");
+        }
     }
 
     private GroupChatOrchestration CreateChatOrchestration(
