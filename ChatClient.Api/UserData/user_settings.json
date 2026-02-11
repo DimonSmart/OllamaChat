@@ -5,7 +5,7 @@
   "agentName": "AI",
   "defaultModel": {
     "ServerId": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
-    "ModelName": "qwen3:latest"
+    "ModelName": "llama3.2:latest"
   },
   "mcpSamplingTimeoutSeconds": 1800,
   "chatHistoryMode": 0,

@@ -23,8 +23,8 @@
     "AgentName": "C# Code Assistant",
     "Content": "You are a C# coding assistant. Help the user write and understand code, follow SOLID principles, and adhere to best coding practices.",
     "ShortName": "C#",
-    "ModelName": null,
-    "LlmId": null,
+    "ModelName": "gpt-oss:120b-cloud",
+    "LlmId": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
     "Temperature": null,
     "RepeatPenalty": null,
     "FunctionSettings": {
@@ -44,7 +44,7 @@
       "HasManualFunctions": false
     },
     "CreatedAt": "2025-04-25T19:44:23.4936811Z",
-    "UpdatedAt": "2025-09-12T09:24:04.5376587Z"
+    "UpdatedAt": "2026-02-11T17:59:53.6219893Z"
   },
   {
     "Id": "598953dc-2e3c-41af-8623-809f58a62417",

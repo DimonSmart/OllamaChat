@@ -1,0 +1,107 @@
+using ChatClient.Api.Client.ViewModels;
+using ChatClient.Domain.Models;
+
+namespace ChatClient.Api.Client.Services.Agentic;
+
+public sealed class AgenticChatViewModelService : IAgenticChatViewModelService, IAsyncDisposable
+{
+    private readonly IAgenticAppChatService _chatService;
+    private readonly List<AppChatMessageViewModel> _messages = [];
+    private readonly Action<bool> _answeringStateChangedHandler;
+    private readonly Action _chatResetHandler;
+    private readonly Func<IAppChatMessage, Task> _messageAddedHandler;
+    private readonly Func<IAppChatMessage, MessageUpdateOptions, Task> _messageUpdatedHandler;
+    private readonly Func<Guid, Task> _messageDeletedHandler;
+
+    public IReadOnlyList<AppChatMessageViewModel> Messages => _messages;
+
+    public event Action<bool>? AnsweringStateChanged;
+    public event Action? ChatReset;
+    public event Func<AppChatMessageViewModel, Task>? MessageAdded;
+    public event Func<AppChatMessageViewModel, MessageUpdateOptions, Task>? MessageUpdated;
+    public event Func<AppChatMessageViewModel, Task>? MessageDeleted;
+
+    public bool IsAnswering => _chatService.IsAnswering;
+
+    public AgenticChatViewModelService(IAgenticAppChatService chatService)
+    {
+        _chatService = chatService;
+
+        _answeringStateChangedHandler = async isAnswering => await OnAnsweringStateChanged(isAnswering);
+        _chatResetHandler = OnChatReset;
+        _messageAddedHandler = OnMessageAdded;
+        _messageUpdatedHandler = OnMessageUpdated;
+        _messageDeletedHandler = OnMessageDeleted;
+
+        _chatService.AnsweringStateChanged += _answeringStateChangedHandler;
+        _chatService.ChatReset += _chatResetHandler;
+        _chatService.MessageAdded += _messageAddedHandler;
+        _chatService.MessageUpdated += _messageUpdatedHandler;
+        _chatService.MessageDeleted += _messageDeletedHandler;
+    }
+
+    private async Task OnMessageAdded(IAppChatMessage domainMessage)
+    {
+        var existingMessage = _messages.FirstOrDefault(m => m.Id == domainMessage.Id);
+        if (existingMessage != null)
+        {
+            existingMessage.UpdateFromDomainModel(domainMessage);
+            await (MessageUpdated?.Invoke(existingMessage, new MessageUpdateOptions(true)) ?? Task.CompletedTask);
+            return;
+        }
+
+        var viewModel = AppChatMessageViewModel.CreateFromDomainModel(domainMessage);
+        _messages.Add(viewModel);
+        await (MessageAdded?.Invoke(viewModel) ?? Task.CompletedTask);
+    }
+
+    private async Task OnAnsweringStateChanged(bool isAnswering)
+    {
+        if (!isAnswering)
+        {
+            foreach (var message in _messages.Where(m => m.IsStreaming))
+            {
+                message.IsStreaming = false;
+                await (MessageUpdated?.Invoke(message, new MessageUpdateOptions(true)) ?? Task.CompletedTask);
+            }
+        }
+
+        AnsweringStateChanged?.Invoke(isAnswering);
+    }
+
+    private void OnChatReset()
+    {
+        _messages.Clear();
+        ChatReset?.Invoke();
+    }
+
+    private async Task OnMessageUpdated(IAppChatMessage domainMessage, MessageUpdateOptions options)
+    {
+        var existingMessage = _messages.FirstOrDefault(m => m.Id == domainMessage.Id);
+        if (existingMessage == null)
+            return;
+
+        existingMessage.UpdateFromDomainModel(domainMessage);
+        await (MessageUpdated?.Invoke(existingMessage, options) ?? Task.CompletedTask);
+    }
+
+    private async Task OnMessageDeleted(Guid messageId)
+    {
+        var message = _messages.FirstOrDefault(m => m.Id == messageId);
+        if (message == null)
+            return;
+
+        _messages.Remove(message);
+        await (MessageDeleted?.Invoke(message) ?? Task.CompletedTask);
+    }
+
+    public ValueTask DisposeAsync()
+    {
+        _chatService.AnsweringStateChanged -= _answeringStateChangedHandler;
+        _chatService.ChatReset -= _chatResetHandler;
+        _chatService.MessageAdded -= _messageAddedHandler;
+        _chatService.MessageUpdated -= _messageUpdatedHandler;
+        _chatService.MessageDeleted -= _messageDeletedHandler;
+        return ValueTask.CompletedTask;
+    }
+}

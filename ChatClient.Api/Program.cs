@@ -2,6 +2,7 @@ using ChatClient.Api;
 using ChatClient.Api.Client.Services.Reducers;
 using ChatClient.Api.Services;
 using ChatClient.Api.Services.Seed;
+using ChatClient.Application.Services.Agentic;
 using Microsoft.AspNetCore.Hosting.Server;
 using Microsoft.AspNetCore.Hosting.Server.Features;
 using Microsoft.Extensions.Logging;
@@ -22,6 +23,7 @@ Log.Logger = new LoggerConfiguration()
 
 var builder = WebApplication.CreateBuilder(args);
 builder.Host.UseSerilog();
+builder.Services.Configure<ChatEngineOptions>(builder.Configuration.GetSection(ChatEngineOptions.SectionName));
 
 if (builder.Environment.IsDevelopment())
 {

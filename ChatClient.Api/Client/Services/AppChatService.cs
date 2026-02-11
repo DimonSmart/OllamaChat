@@ -22,6 +22,7 @@ public class AppChatService(
     IChatHistoryReducer reducer,
     IOllamaKernelService ollamaKernelService,
     IOpenAIClientService openAIClientService,
+    IModelCapabilityService modelCapabilityService,
     IUserSettingsService userSettingsService,
     ILlmServerConfigService llmServerConfigService) : IAppChatService
 {
@@ -283,6 +284,17 @@ public class AppChatService(
             cancellationToken.ThrowIfCancellationRequested();
             var functionsToRegister = await kernelService.GetFunctionsToRegisterAsync(desc.FunctionSettings, userMessage, cancellationToken);
             var modelName = desc.ModelName ?? chatConfiguration.ModelName ?? throw new InvalidOperationException($"Agent '{desc.AgentName}' model name is not set and no default model is configured.");
+            var serverModel = new ServerModel(desc.LlmId ?? Guid.Empty, modelName);
+            bool supportsFunctionCalling = await modelCapabilityService.SupportsFunctionCallingAsync(serverModel, cancellationToken);
+
+            if (!supportsFunctionCalling)
+            {
+                functionsToRegister = [];
+                logger.LogInformation(
+                    "Model {ModelName} for agent {AgentName} does not support function calling. Running without tools.",
+                    modelName,
+                    desc.AgentName);
+            }
 
             var agentName = desc.AgentId;
 
@@ -292,9 +304,12 @@ public class AppChatService(
             logger.LogDebug("Configuring agent {AgentName} with model {ModelName}", agentName, modelName);
             var settings = new PromptExecutionSettings
             {
-                ModelId = modelName,
-                FunctionChoiceBehavior = FunctionChoiceBehavior.Auto(autoInvoke: true)
+                ModelId = modelName
             };
+            if (supportsFunctionCalling)
+            {
+                settings.FunctionChoiceBehavior = FunctionChoiceBehavior.Auto(autoInvoke: true);
+            }
 
             if (desc.Temperature.HasValue)
             {
@@ -309,10 +324,11 @@ public class AppChatService(
             }
 
             var kernel = await CreateKernelAsync(
-                new ServerModel(desc.LlmId ?? Guid.Empty, modelName),
+                serverModel,
                 functionsToRegister,
                 desc.AgentName,
                 chatConfiguration,
+                supportsFunctionCalling,
                 cancellationToken);
 
             kernel.FunctionInvocationFilters.Add(trackingFilter);
@@ -338,6 +354,7 @@ public class AppChatService(
         IEnumerable<string>? functionsToRegister,
         string agentName,
         AppChatConfiguration chatConfiguration,
+        bool supportsFunctionCalling,
         CancellationToken cancellationToken = default)
     {
         var builder = Kernel.CreateBuilder();
@@ -350,9 +367,9 @@ public class AppChatService(
             ? (await openAIClientService.GetClientAsync(serverModel, cancellationToken)).AsChatClient()
             : (await ollamaKernelService.GetClientAsync(serverModel.ServerId)).AsChatClient();
 
-        IChatClient fcClient = rawClient.AsBuilder()
-            .UseKernelFunctionInvocation()
-            .Build();
+        IChatClient fcClient = supportsFunctionCalling
+            ? rawClient.AsBuilder().UseKernelFunctionInvocation().Build()
+            : rawClient;
 
         builder.Services.AddSingleton<IChatClient>(fcClient);
         builder.Services.AddSingleton<IChatCompletionService>(_ =>
@@ -360,9 +377,9 @@ public class AppChatService(
 
         var kernel = builder.Build();
 
-        ConfigureWhiteboardPlugin(kernel, chatConfiguration);
+        ConfigureWhiteboardPlugin(kernel, chatConfiguration, supportsFunctionCalling);
 
-        if (functionsToRegister != null && functionsToRegister.Any())
+        if (supportsFunctionCalling && functionsToRegister != null && functionsToRegister.Any())
         {
             await kernelService.RegisterMcpToolsPublicAsync(kernel, functionsToRegister, cancellationToken);
             logger.LogInformation("MCP tools registered for agent {AgentName}: [{Functions}]", agentName, string.Join(", ", functionsToRegister));
@@ -371,9 +388,9 @@ public class AppChatService(
         return kernel;
     }
 
-    internal void ConfigureWhiteboardPlugin(Kernel kernel, AppChatConfiguration chatConfiguration)
+    internal void ConfigureWhiteboardPlugin(Kernel kernel, AppChatConfiguration chatConfiguration, bool supportsFunctionCalling)
     {
-        if (chatConfiguration.UseWhiteboard)
+        if (chatConfiguration.UseWhiteboard && supportsFunctionCalling)
         {
             var whiteboardPlugin = new WhiteboardKernelPlugin(_chat.Whiteboard, PublishWhiteboardUpdateAsync);
             kernel.Plugins.AddFromObject(whiteboardPlugin, "whiteboard");

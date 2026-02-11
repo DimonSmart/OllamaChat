@@ -59,6 +59,12 @@ public class ChatServiceTests
         public Task DeleteAsync(Guid serverId) => Task.CompletedTask;
     }
 
+    private sealed class MockModelCapabilityService : IModelCapabilityService
+    {
+        public Task<bool> SupportsFunctionCallingAsync(ServerModel model, CancellationToken cancellationToken = default)
+            => Task.FromResult(true);
+    }
+
     [Fact]
     public async Task StartAsync_NoAgents_Throws()
     {
@@ -69,6 +75,7 @@ public class ChatServiceTests
             reducer: new AppForceLastUserReducer(),
             ollamaKernelService: new MockOllamaKernelService(),
             openAIClientService: new MockOpenAIClientService(),
+            modelCapabilityService: new MockModelCapabilityService(),
             userSettingsService: new MockUserSettingsService(),
             llmServerConfigService: new MockLlmServerConfigService());
 
@@ -86,6 +93,7 @@ public class ChatServiceTests
             reducer: new AppForceLastUserReducer(),
             ollamaKernelService: new MockOllamaKernelService(),
             openAIClientService: new MockOpenAIClientService(),
+            modelCapabilityService: new MockModelCapabilityService(),
             userSettingsService: new MockUserSettingsService(),
             llmServerConfigService: new MockLlmServerConfigService());
 
@@ -106,6 +114,7 @@ public class ChatServiceTests
             reducer: new AppForceLastUserReducer(),
             ollamaKernelService: new MockOllamaKernelService(),
             openAIClientService: new MockOpenAIClientService(),
+            modelCapabilityService: new MockModelCapabilityService(),
             userSettingsService: new MockUserSettingsService(),
             llmServerConfigService: new MockLlmServerConfigService());
 
@@ -132,11 +141,12 @@ public class ChatServiceTests
             reducer: new AppForceLastUserReducer(),
             ollamaKernelService: new MockOllamaKernelService(),
             openAIClientService: new MockOpenAIClientService(),
+            modelCapabilityService: new MockModelCapabilityService(),
             userSettingsService: new MockUserSettingsService(),
             llmServerConfigService: new MockLlmServerConfigService());
 
         var kernel = Kernel.CreateBuilder().Build();
-        chatService.ConfigureWhiteboardPlugin(kernel, new AppChatConfiguration("model", [], UseWhiteboard: false));
+        chatService.ConfigureWhiteboardPlugin(kernel, new AppChatConfiguration("model", [], UseWhiteboard: false), supportsFunctionCalling: true);
 
         Assert.DoesNotContain(kernel.Plugins, p => p.Name.Equals("whiteboard", StringComparison.OrdinalIgnoreCase));
     }
@@ -151,11 +161,12 @@ public class ChatServiceTests
             reducer: new AppForceLastUserReducer(),
             ollamaKernelService: new MockOllamaKernelService(),
             openAIClientService: new MockOpenAIClientService(),
+            modelCapabilityService: new MockModelCapabilityService(),
             userSettingsService: new MockUserSettingsService(),
             llmServerConfigService: new MockLlmServerConfigService());
 
         var kernel = Kernel.CreateBuilder().Build();
-        chatService.ConfigureWhiteboardPlugin(kernel, new AppChatConfiguration("model", []));
+        chatService.ConfigureWhiteboardPlugin(kernel, new AppChatConfiguration("model", []), supportsFunctionCalling: true);
 
         Assert.Contains(kernel.Plugins, p => p.Name.Equals("whiteboard", StringComparison.OrdinalIgnoreCase));
     }

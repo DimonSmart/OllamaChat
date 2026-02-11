@@ -10,10 +10,12 @@ namespace ChatClient.Api.Services;
 public class OpenAIClientService(
     IUserSettingsService userSettingsService,
     ILlmServerConfigService llmServerConfigService,
+    IConfiguration configuration,
     ILogger<OpenAIClientService> logger) : IOpenAIClientService
 {
     private readonly IUserSettingsService _userSettingsService = userSettingsService;
     private readonly ILlmServerConfigService _llmServerConfigService = llmServerConfigService;
+    private readonly IConfiguration _configuration = configuration;
     private readonly ILogger<OpenAIClientService> _logger = logger;
 
     public async Task<IChatCompletionService> GetClientAsync(ServerModel serverModel, CancellationToken cancellationToken = default)
@@ -24,14 +26,11 @@ public class OpenAIClientService(
             throw new InvalidOperationException($"No OpenAI server configuration found for serverId: {serverModel.ServerId}");
         }
 
-        if (string.IsNullOrWhiteSpace(server.ApiKey))
-        {
-            throw new InvalidOperationException("OpenAI API key is required but not configured");
-        }
+        var apiKey = GetEffectiveApiKey(server);
 
         var openAIClient = new OpenAIChatCompletionService(
             modelId: serverModel.ModelName,
-            apiKey: server.ApiKey,
+            apiKey: apiKey,
             httpClient: CreateHttpClient(server));
 
         return openAIClient;
@@ -48,11 +47,6 @@ public class OpenAIClientService(
             if (server == null)
             {
                 throw new InvalidOperationException($"No OpenAI server configuration found for serverId: {serverId}");
-            }
-
-            if (string.IsNullOrWhiteSpace(server.ApiKey))
-            {
-                throw new InvalidOperationException("OpenAI API key is required but not configured");
             }
 
             var openAIClient = CreateOpenAIClient(server);
@@ -90,6 +84,11 @@ public class OpenAIClientService(
             var client = await GetClientAsync(testModel, cancellationToken);
             return client != null;
         }
+        catch (InvalidOperationException ex) when (string.Equals(ex.Message, "OpenAI API key is required but not configured", StringComparison.Ordinal))
+        {
+            _logger.LogInformation("OpenAI service not available: {Message}", ex.Message);
+            return false;
+        }
         catch (Exception ex)
         {
             _logger.LogWarning(ex, "OpenAI service not available: {Message}", ex.Message);
@@ -99,10 +98,9 @@ public class OpenAIClientService(
 
     private OpenAIClient CreateOpenAIClient(LlmServerConfig server)
     {
-        if (string.IsNullOrWhiteSpace(server.ApiKey))
-            throw new ArgumentException("OpenAI API key is required", nameof(server));
+        var apiKey = GetEffectiveApiKey(server);
 
-        var credential = new ApiKeyCredential(server.ApiKey);
+        var credential = new ApiKeyCredential(apiKey);
 
         if (!string.IsNullOrWhiteSpace(server.BaseUrl))
         {
@@ -114,6 +112,21 @@ public class OpenAIClientService(
         }
 
         return new OpenAIClient(credential);
+    }
+
+    private string GetEffectiveApiKey(LlmServerConfig server)
+    {
+        if (!string.IsNullOrWhiteSpace(server.ApiKey))
+            return server.ApiKey;
+
+        var configApiKey = _configuration["OpenAI:ApiKey"];
+        if (!string.IsNullOrWhiteSpace(configApiKey))
+        {
+            _logger.LogDebug("Using OpenAI API key from configuration for server {ServerName}", server.Name);
+            return configApiKey;
+        }
+
+        throw new InvalidOperationException("OpenAI API key is required but not configured");
     }
 
     private HttpClient CreateHttpClient(LlmServerConfig server)
