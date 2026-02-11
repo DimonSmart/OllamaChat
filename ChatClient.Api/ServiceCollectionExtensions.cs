@@ -1,6 +1,7 @@
 using ChatClient.Api.Client.Services;
 using ChatClient.Api.Client.Services.Agentic;
 using ChatClient.Api.Client.Services.Formatters;
+using ChatClient.Api.Client.Services.SemanticKernelRuntime;
 using ChatClient.Api.Services;
 using ChatClient.Api.Services.Rag;
 using ChatClient.Api.Services.Seed;
@@ -66,6 +67,7 @@ public static class ServiceCollectionExtensions
         services.AddScoped<SemanticKernelChatEngineOrchestrator>();
         services.AddScoped<SemanticKernelChatEngineHistoryBuilder>();
         services.AddScoped<SemanticKernelChatEngineStreamingBridge>();
+        services.AddScoped<IAgenticExecutionRuntime, SemanticKernelAgenticExecutionRuntime>();
         services.AddScoped<AgenticChatEngineOrchestrator>();
         services.AddScoped<IAgenticRagContextService, AgenticRagContextService>();
         services.AddScoped<AgenticChatEngineHistoryBuilder>();

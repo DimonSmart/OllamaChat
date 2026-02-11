@@ -2,13 +2,13 @@ using System.ComponentModel;
 using ChatClient.Application.Services.Agentic;
 using Microsoft.SemanticKernel;
 
-namespace ChatClient.Api.Client.Services.Agentic;
+namespace ChatClient.Api.Client.Services.SemanticKernelRuntime;
 
-public sealed class AgenticRagRetrievalKernelPlugin(
+public sealed class SemanticKernelRagRetrievalKernelPlugin(
     Guid agentId,
     Guid? serverId,
     IAgenticRagContextService ragContextService,
-    ILogger<AgenticRagRetrievalKernelPlugin> logger)
+    ILogger<SemanticKernelRagRetrievalKernelPlugin> logger)
 {
     [KernelFunction]
     [Description("Retrieve indexed context for the current agent. Use this when you need factual grounding from uploaded documents.")]

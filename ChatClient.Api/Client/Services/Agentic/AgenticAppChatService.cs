@@ -6,14 +6,10 @@ namespace ChatClient.Api.Client.Services.Agentic;
 public sealed class AgenticAppChatService : IAgenticAppChatService
 {
     private readonly AgenticChatEngineSessionService _engineSessionService;
-    private readonly IGroupChatManagerFactory _groupChatManagerFactory;
 
-    public AgenticAppChatService(
-        AgenticChatEngineSessionService engineSessionService,
-        IGroupChatManagerFactory groupChatManagerFactory)
+    public AgenticAppChatService(AgenticChatEngineSessionService engineSessionService)
     {
         _engineSessionService = engineSessionService;
-        _groupChatManagerFactory = groupChatManagerFactory;
         AttachEvents();
     }
 
@@ -31,33 +27,17 @@ public sealed class AgenticAppChatService : IAgenticAppChatService
 
     public IReadOnlyCollection<IAppChatMessage> Messages => _engineSessionService.Messages;
 
-    public Task StartAsync(ChatSessionParameters parameters)
-    {
-        ArgumentNullException.ThrowIfNull(parameters);
-        var request = new ChatEngineSessionStartRequest
-        {
-            Configuration = parameters.Configuration,
-            Agents = parameters.Agents,
-            History = parameters.History,
-            ChatStrategyName = parameters.GroupChatManager.GetType().Name
-        };
-
-        return _engineSessionService.StartAsync(request);
-    }
+    public Task StartAsync(ChatEngineSessionStartRequest request, CancellationToken cancellationToken = default) =>
+        _engineSessionService.StartAsync(request, cancellationToken);
 
     public void ResetChat() => _engineSessionService.ResetChat();
 
     public Task CancelAsync() => _engineSessionService.CancelAsync();
 
-    public Task SendAsync(string text, IReadOnlyList<AppChatMessageFile>? files = null) =>
-        _engineSessionService.SendAsync(text, files);
+    public Task SendAsync(string text, IReadOnlyList<AppChatMessageFile>? files = null, CancellationToken cancellationToken = default) =>
+        _engineSessionService.SendAsync(text, files, cancellationToken);
 
-    public ChatSessionParameters GetState()
-    {
-        var state = _engineSessionService.GetState();
-        var manager = _groupChatManagerFactory.Create("RoundRobin");
-        return new ChatSessionParameters(manager, state.Configuration, state.Agents, state.Messages);
-    }
+    public ChatEngineSessionState GetState() => _engineSessionService.GetState();
 
     public Task DeleteMessageAsync(Guid messageId) => _engineSessionService.DeleteMessageAsync(messageId);
 

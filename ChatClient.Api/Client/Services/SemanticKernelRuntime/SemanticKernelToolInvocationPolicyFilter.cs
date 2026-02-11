@@ -7,11 +7,11 @@ using ChatClient.Application.Services.Agentic;
 using ChatClient.Domain.Models;
 using Microsoft.SemanticKernel;
 
-namespace ChatClient.Api.Client.Services.Agentic;
+namespace ChatClient.Api.Client.Services.SemanticKernelRuntime;
 
-public sealed class AgenticToolInvocationPolicyFilter(
+public sealed class SemanticKernelToolInvocationPolicyFilter(
     AgenticToolInvocationPolicyOptions policyOptions,
-    ILogger<AgenticToolInvocationPolicyFilter> logger) : IFunctionInvocationFilter
+    ILogger<SemanticKernelToolInvocationPolicyFilter> logger) : IFunctionInvocationFilter
 {
     private static readonly JsonSerializerOptions StableJson = new()
     {

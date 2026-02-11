@@ -13,6 +13,7 @@
 @using ChatClient.Api.Services
 @using ChatClient.Domain.Models
 @using ChatClient.Application.Services
+@using ChatClient.Application.Services.Agentic
 @using ChatClient.Application.Helpers
 @using ChatClient.Domain.Models.ChatStrategies
 @using Microsoft.Extensions.AI
@@ -28,7 +29,6 @@
 @inject IAgenticAppChatService ChatService
 @inject IAgentDescriptionService AgentService
 @inject IUserSettingsService UserSettingsService
-@inject IGroupChatManagerFactory GroupChatManagerFactory
 @inject IEnumerable<IChatFormatter> ChatFormatters
 @inject ILogger<ChatAgentic> Logger
 @inject ISavedChatService SavedChatService
@@ -262,10 +262,7 @@
 
     private bool CanStartChat =>
         selectedAgent != null &&
-        ModelSelectionHelper.TryGetEffectiveModel(
-            new ServerModelSelection(selectedAgent.LlmId, selectedAgent.ModelName),
-            UiModelSelection,
-            out _);
+        TryResolveEffectiveModel(selectedAgent, out _);
 
     private UserSettings userSettings = new();
 
@@ -381,23 +378,21 @@
         }
 
         selectedAgent = agentsForChat[0];
-        var configured = new ServerModelSelection(selectedAgent.LlmId, selectedAgent.ModelName);
-        effectiveModel = ModelSelectionHelper.GetEffectiveModel(
-            configured,
-            UiModelSelection,
-            $"Agent: {selectedAgent.AgentName}",
-            Logger);
+        if (!TryResolveEffectiveModel(selectedAgent, out var resolvedModel))
+        {
+            throw new InvalidOperationException($"Model selection for Agent: {selectedAgent.AgentName} is incomplete.");
+        }
+
+        effectiveModel = resolvedModel;
 
         await UpdateWhiteboardSupportAsync(effectiveModel);
 
-        selectedAgent.ModelName = effectiveModel.ModelName;
-        selectedAgent.LlmId = effectiveModel.ServerId;
+        var resolvedAgents = agentsForChat
+            .Select(a => a.Id == selectedAgent.Id ? CloneWithResolvedModel(a, effectiveModel) : a)
+            .ToList();
 
-        var functions = selectedAgent.FunctionSettings.SelectedFunctions ?? [];
+        var functions = resolvedAgents[0].FunctionSettings.SelectedFunctions ?? [];
         var chatConfiguration = new AppChatConfiguration(CurrentModelName, functions, whiteboardEnabled);
-        var options = new RoundRobinChatStrategyOptions { Rounds = 1 };
-        var groupChatManager = GroupChatManagerFactory.Create("RoundRobin", options);
-
         var savedMessages = saved.Messages
             .Select(m =>
             {
@@ -406,8 +401,15 @@
                 return (IAppChatMessage)msg;
             }).ToList();
 
-        var session = new ChatSessionParameters(groupChatManager, chatConfiguration, agentsForChat, savedMessages);
-        await ChatService.StartAsync(session);
+        var request = new ChatEngineSessionStartRequest
+        {
+            Configuration = chatConfiguration,
+            Agents = resolvedAgents,
+            History = savedMessages,
+            ChatStrategyName = "RoundRobin",
+            ChatStrategyOptions = new RoundRobinChatStrategyOptions { Rounds = 1 }
+        };
+        await ChatService.StartAsync(request);
         chatStarted = true;
         lastSavedChatId = savedChatId;
         lastSavedChatTitle = saved.Title;
@@ -418,25 +420,28 @@
         if (selectedAgent is null)
             return;
 
-        var agents = new[] { selectedAgent };
-        var configured = new ServerModelSelection(selectedAgent.LlmId, selectedAgent.ModelName);
-        effectiveModel = ModelSelectionHelper.GetEffectiveModel(
-            configured,
-            UiModelSelection,
-            $"Agent: {selectedAgent.AgentName}",
-            Logger);
+        if (!TryResolveEffectiveModel(selectedAgent, out var resolvedModel))
+        {
+            throw new InvalidOperationException($"Model selection for Agent: {selectedAgent.AgentName} is incomplete.");
+        }
+
+        effectiveModel = resolvedModel;
 
         await UpdateWhiteboardSupportAsync(effectiveModel);
 
-        selectedAgent.ModelName = effectiveModel.ModelName;
-        selectedAgent.LlmId = effectiveModel.ServerId;
+        var resolvedAgent = CloneWithResolvedModel(selectedAgent, effectiveModel);
+        var agents = new[] { resolvedAgent };
 
-        var functions = selectedAgent.FunctionSettings.SelectedFunctions ?? [];
+        var functions = resolvedAgent.FunctionSettings.SelectedFunctions ?? [];
         var chatConfiguration = new AppChatConfiguration(CurrentModelName, functions, whiteboardEnabled);
-        var options = new RoundRobinChatStrategyOptions { Rounds = 1 };
-        var groupChatManager = GroupChatManagerFactory.Create("RoundRobin", options);
-        var session = new ChatSessionParameters(groupChatManager, chatConfiguration, agents);
-        await ChatService.StartAsync(session);
+        var request = new ChatEngineSessionStartRequest
+        {
+            Configuration = chatConfiguration,
+            Agents = agents,
+            ChatStrategyName = "RoundRobin",
+            ChatStrategyOptions = new RoundRobinChatStrategyOptions { Rounds = 1 }
+        };
+        await ChatService.StartAsync(request);
         chatStarted = true;
         StateHasChanged();
     }
@@ -561,7 +566,7 @@
             return;
         }
 
-        if (ModelSelectionHelper.TryGetEffectiveModel(new ServerModelSelection(selectedAgent.LlmId, selectedAgent.ModelName), UiModelSelection, out var model))
+        if (TryResolveEffectiveModel(selectedAgent, out var model))
         {
             await UpdateWhiteboardSupportAsync(model);
         }
@@ -605,6 +610,42 @@
     private bool UiSelectionChanged() =>
         UiModelSelection.ServerId != lastUiModelSelection.ServerId ||
         UiModelSelection.ModelName != lastUiModelSelection.ModelName;
+
+    private bool TryResolveEffectiveModel(AgentDescription agent, out ServerModel model)
+    {
+        var configured = new ServerModelSelection(agent.LlmId, agent.ModelName);
+        if (configured.ServerId is { } id &&
+            id != Guid.Empty &&
+            !string.IsNullOrWhiteSpace(configured.ModelName))
+        {
+            model = new ServerModel(id, configured.ModelName!);
+            return true;
+        }
+
+        return ModelSelectionHelper.TryGetEffectiveModel(configured, UiModelSelection, out model);
+    }
+
+    private static AgentDescription CloneWithResolvedModel(AgentDescription source, ServerModel model)
+    {
+        return new AgentDescription
+        {
+            Id = source.Id,
+            AgentName = source.AgentName,
+            Content = source.Content,
+            ShortName = source.ShortName,
+            ModelName = model.ModelName,
+            LlmId = model.ServerId,
+            Temperature = source.Temperature,
+            RepeatPenalty = source.RepeatPenalty,
+            FunctionSettings = new FunctionSettings
+            {
+                AutoSelectCount = source.FunctionSettings.AutoSelectCount,
+                SelectedFunctions = [.. source.FunctionSettings.SelectedFunctions]
+            },
+            CreatedAt = source.CreatedAt,
+            UpdatedAt = source.UpdatedAt
+        };
+    }
 
     public async ValueTask DisposeAsync()
     {
