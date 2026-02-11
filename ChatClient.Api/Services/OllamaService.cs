@@ -7,6 +7,7 @@ using System.Collections.Concurrent;
 using System.Net.Http;
 using System.Net.Http.Headers;
 using System.Text;
+using System.Text.Json;
 using System.Threading;
 
 namespace ChatClient.Api.Services;
@@ -32,20 +33,34 @@ public sealed class OllamaService(
         if (_modelsCache.TryGetValue(serverId, out var cached))
             return cached;
 
-        using var client = await GetClientAsync(serverId);
+        var cfg = await GetServerConfigAsync(serverId);
+        var http = BuildHttpClient(cfg);
+        using var client = new OllamaApiClient(http);
         var models = await client.ListLocalModelsAsync();
 
-        var list = models.Select(m => new OllamaModel
+        var list = new List<OllamaModel>();
+        foreach (var model in models.OrderBy(m => m.Name))
         {
-            Name = m.Name,
-            ModifiedAt = m.ModifiedAt.ToUniversalTime().ToString("O"),
-            Size = m.Size,
-            Digest = m.Digest,
-            SupportsImages = m.Details?.Families?.Any(f => f.Equals("clip", StringComparison.OrdinalIgnoreCase)) == true,
-            SupportsFunctionCalling = SupportsFunctionCalling(m)
-        })
-        .OrderBy(m => m.Name)
-        .ToList();
+            var supportsFunctionCalling = SupportsFunctionCallingByFamily(model);
+            if (!supportsFunctionCalling)
+            {
+                var fromCapabilities = await TryGetFunctionToolCapabilityAsync(http, model.Name);
+                if (fromCapabilities.HasValue)
+                {
+                    supportsFunctionCalling = fromCapabilities.Value;
+                }
+            }
+
+            list.Add(new OllamaModel
+            {
+                Name = model.Name,
+                ModifiedAt = model.ModifiedAt.ToUniversalTime().ToString("O"),
+                Size = model.Size,
+                Digest = model.Digest,
+                SupportsImages = model.Details?.Families?.Any(f => f.Equals("clip", StringComparison.OrdinalIgnoreCase)) == true,
+                SupportsFunctionCalling = supportsFunctionCalling
+            });
+        }
 
         _modelsCache[serverId] = list;
         return list;
@@ -122,8 +137,50 @@ public sealed class OllamaService(
         return client;
     }
 
-    private static bool SupportsFunctionCalling(OllamaSharp.Models.Model model)
+    private static bool SupportsFunctionCallingByFamily(OllamaSharp.Models.Model model)
         => model.Details?.Families?.Any(f =>
                f.Contains("tool", StringComparison.OrdinalIgnoreCase) ||
                f.Contains("function", StringComparison.OrdinalIgnoreCase)) == true;
+
+    private async Task<bool?> TryGetFunctionToolCapabilityAsync(HttpClient httpClient, string modelName)
+    {
+        try
+        {
+            var payload = JsonSerializer.Serialize(new { model = modelName });
+            using var request = new HttpRequestMessage(HttpMethod.Post, "api/show")
+            {
+                Content = new StringContent(payload, Encoding.UTF8, "application/json")
+            };
+
+            using var response = await httpClient.SendAsync(request);
+            if (!response.IsSuccessStatusCode)
+            {
+                return null;
+            }
+
+            await using var stream = await response.Content.ReadAsStreamAsync();
+            using var doc = await JsonDocument.ParseAsync(stream);
+            if (!doc.RootElement.TryGetProperty("capabilities", out var capabilities) ||
+                capabilities.ValueKind != JsonValueKind.Array)
+            {
+                return null;
+            }
+
+            foreach (var capability in capabilities.EnumerateArray())
+            {
+                if (capability.ValueKind == JsonValueKind.String &&
+                    string.Equals(capability.GetString(), "tools", StringComparison.OrdinalIgnoreCase))
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+        catch (Exception ex)
+        {
+            logger.LogDebug(ex, "Failed to detect tools capability via /api/show for model {ModelName}", modelName);
+            return null;
+        }
+    }
 }
