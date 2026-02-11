@@ -1,20 +1,48 @@
-# Multi-Agent Chat
+# Multi-Agent Chat in the Current Semantic Kernel Engine
 
-OllamaChat uses Semantic Kernel's `GroupChatOrchestration` to coordinate
-selected `ChatCompletionAgent` instances. The `GroupChatManagerFactory`
-creates various group chat managers such as `BridgingRoundRobinManager`
-that cycle through agents. Increase `MaximumInvocationCount` to let them
-auto‑continue without extra user messages.
+This document describes how multi-agent chat works in the current implementation.
 
-The orchestrator's `ResponseCallback` writes messages directly to the chat
-history and the UI displays agent names from `ChatCompletionAgent.Name`.
+## Execution flow
 
-To keep the last speaker consistent, an `AppForceLastUserReducer` rewrites the
-final agent reply as a user message (`AuthorName="user"`).
+1. `AppChatService` starts a chat session and validates selected agents.
+2. A Semantic Kernel `InProcessRuntime` is created for orchestration.
+3. Agent instances are built from configured agent descriptions.
+4. Input is transformed into `ChatHistory` using `IAppChatHistoryBuilder`.
+5. `GroupChatOrchestration` executes with a selected group manager strategy.
+6. Streaming output is appended to UI messages and finalized when complete.
 
-```csharp
-var factory = new GroupChatManagerFactory();
-var manager = factory.Create("RoundRobin", new RoundRobinChatStrategyOptions { Rounds = 2 });
-var orchestrator = new GroupChatOrchestration(manager, agents);
-```
+## Group orchestration
 
+The app uses Semantic Kernel group chat orchestration (`GroupChatOrchestration`) with manager strategies created through `IGroupChatManagerFactory`.
+
+Examples of behavior implemented in the current engine:
+
+- strategy-based round-robin agent turn selection,
+- runtime invocation count resets,
+- stop-phrase evaluation,
+- temporary UI placeholder messages while waiting for first tokens,
+- cancellation support for active streams.
+
+## Chat history shaping
+
+Before orchestration execution, messages are filtered and converted to Semantic Kernel `ChatHistory`.
+
+The pipeline includes:
+
+- dropping transient streaming placeholders,
+- preserving uploaded file references,
+- optional insertion of tool/RAG context messages,
+- chat history reducers for output normalization.
+
+A dedicated reducer rewrites the last message role in specific scenarios to keep UI behavior consistent with the app's interaction model.
+
+## Why this matters for migration
+
+This implementation is tightly coupled to Semantic Kernel orchestration/runtime types. Migrating to Microsoft Agentic Framework should preserve:
+
+- the same UI streaming behavior,
+- the same message lifecycle and cancellation semantics,
+- parity for group strategy behavior,
+- compatibility with current server/model configuration and RAG flow.
+
+For the migration plan, see `docs/agentic-migration-plan.md`.
