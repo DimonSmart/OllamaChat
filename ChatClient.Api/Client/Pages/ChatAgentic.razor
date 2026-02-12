@@ -17,6 +17,7 @@
 @using ChatClient.Application.Helpers
 @using ChatClient.Domain.Models.ChatStrategies
 @using Microsoft.Extensions.AI
+@using Microsoft.Extensions.Options
 @using Microsoft.AspNetCore.Components
 @using Microsoft.AspNetCore.Components.Web
 @using MudBlazor
@@ -35,6 +36,7 @@
 @inject ISnackbar Snackbar
 @inject ILlmServerConfigService LlmServerConfigService
 @inject IOllamaClientService OllamaClientService
+@inject IOptions<ChatEngineOptions> ChatEngineOptionsAccessor
 
 <PageTitle>Agentic Chat with AI Assistant</PageTitle>
 
@@ -274,6 +276,12 @@
 
     protected override async Task OnInitializedAsync()
     {
+        if (ChatEngineOptionsAccessor.Value.Mode == ChatEngineMode.SemanticKernel)
+        {
+            NavigationManager.NavigateTo("/chat", replace: true);
+            return;
+        }
+
         isLoadingInitialData = true;
         StateHasChanged();
 

@@ -1,7 +1,6 @@
 using ChatClient.Api.Client.Services;
 using ChatClient.Api.Client.Services.Agentic;
 using ChatClient.Api.Client.Services.Formatters;
-using ChatClient.Api.Client.Services.SemanticKernelRuntime;
 using ChatClient.Api.Services;
 using ChatClient.Api.Services.Rag;
 using ChatClient.Api.Services.Seed;
@@ -10,6 +9,7 @@ using ChatClient.Application.Repositories;
 using ChatClient.Application.Services;
 using ChatClient.Infrastructure.Repositories;
 using Microsoft.AspNetCore.Components.Server.Circuits;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.SemanticKernel.Connectors.Sqlite;
 using Microsoft.SemanticKernel.Memory;
@@ -21,8 +21,12 @@ namespace ChatClient.Api;
 
 public static class ServiceCollectionExtensions
 {
-    public static IServiceCollection AddApplicationServices(this IServiceCollection services)
+    public static IServiceCollection AddApplicationServices(this IServiceCollection services, IConfiguration configuration)
     {
+        var mode = configuration
+            .GetSection(ChatEngineOptions.SectionName)
+            .Get<ChatEngineOptions>()?.Mode ?? ChatEngineMode.Dual;
+
         services.AddSingleton<IMcpServerConfigService, McpServerConfigService>();
         services.AddSingleton<ILlmServerConfigService, LlmServerConfigService>();
         services.AddSingleton<IMcpClientService, McpClientService>();
@@ -61,13 +65,21 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<IRagVectorSearchService, RagVectorSearchService>();
         services.AddSingleton<IFileConverter, MarkdownFileConverter>();
         services.AddSingleton<IFileConverter, FileConverter>();
-        services.AddScoped<IAppChatService, AppChatService>();
+        if (mode == ChatEngineMode.Agentic)
+        {
+            services.AddScoped<IAppChatService, DisabledSemanticKernelAppChatService>();
+        }
+        else
+        {
+            services.AddScoped<IAppChatService, AppChatService>();
+        }
+
         services.AddScoped<IChatViewModelService, ChatViewModelService>();
         services.AddScoped<SemanticKernelChatEngineSessionService>();
         services.AddScoped<SemanticKernelChatEngineOrchestrator>();
         services.AddScoped<SemanticKernelChatEngineHistoryBuilder>();
         services.AddScoped<SemanticKernelChatEngineStreamingBridge>();
-        services.AddScoped<IAgenticExecutionRuntime, SemanticKernelAgenticExecutionRuntime>();
+        services.AddScoped<IAgenticExecutionRuntime, HttpAgenticExecutionRuntime>();
         services.AddScoped<AgenticChatEngineOrchestrator>();
         services.AddScoped<IAgenticRagContextService, AgenticRagContextService>();
         services.AddScoped<AgenticChatEngineHistoryBuilder>();

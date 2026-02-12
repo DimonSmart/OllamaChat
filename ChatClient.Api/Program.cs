@@ -47,7 +47,7 @@ builder.Services.AddSingleton<IChatHistoryReducer>(sp =>
     var forceLastUserReducer = sp.GetRequiredService<AppForceLastUserReducer>();
     return new MetaReducer([thinkTagsReducer, forceLastUserReducer]);
 });
-builder.Services.AddApplicationServices();
+builder.Services.AddApplicationServices(builder.Configuration);
 
 var app = builder.Build();
 
