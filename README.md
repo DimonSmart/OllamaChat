@@ -27,6 +27,4 @@ During chat execution, the Agentic pipeline builds history, injects optional RAG
 
 ## Docs
 
-- Migration plan (completed SK decommission phase): `docs/agentic-migration-plan.md`
-- Historical multi-agent SK description (archive): `docs/multi-agent-chat.md`
 - Publishing notes: `docs/Publishing.md`
