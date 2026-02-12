@@ -1,25 +1,24 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk.Web">
     <PropertyGroup>
-        <TargetFramework>net9.0</TargetFramework>
+        <TargetFramework>net10.0</TargetFramework>
         <Nullable>enable</Nullable>
         <ImplicitUsings>enable</ImplicitUsings>
       <UserSecretsId>4a3297bb-431d-45ef-b95d-3d5c01782724</UserSecretsId>
   </PropertyGroup>
             <ItemGroup>
-        <PackageReference Include="HtmlAgilityPack" Version="1.12.2" />
-        <PackageReference Include="Microsoft.AspNetCore.OpenApi" Version="9.0.8" />
-        <PackageReference Include="Microsoft.Extensions.Http" Version="10.0.3" />
+        <PackageReference Include="HtmlAgilityPack" Version="1.12.4" />
+        <PackageReference Include="Microsoft.AspNetCore.OpenApi" Version="10.0.3" />
         <PackageReference Include="Microsoft.Extensions.AI" Version="10.3.0" />
         <PackageReference Include="Microsoft.Data.Sqlite" Version="10.0.3" />
-        <PackageReference Include="ModelContextProtocol" Version="0.3.0-preview.4" />
+        <PackageReference Include="ModelContextProtocol" Version="0.8.0-preview.1" />
         <PackageReference Include="MudBlazor" Version="8.15.0" />
-        <PackageReference Include="Markdig" Version="0.41.3" />
+        <PackageReference Include="Markdig" Version="0.45.0" />
         <PackageReference Include="DimonSmart.AiUtils" Version="1.25624.1027" />
         <PackageReference Include="OllamaSharp" Version="5.4.16" />
         <PackageReference Include="OpenAI" Version="2.8.0" />
         <PackageReference Include="Serilog.AspNetCore" Version="10.0.0" />
         <PackageReference Include="Serilog.Sinks.File" Version="7.0.0" />
-        <PackageReference Include="DocumentFormat.OpenXml" Version="3.0.2" />
+        <PackageReference Include="DocumentFormat.OpenXml" Version="3.4.1" />
         <PackageReference Include="PdfPig" Version="0.1.13" />
     </ItemGroup>
 

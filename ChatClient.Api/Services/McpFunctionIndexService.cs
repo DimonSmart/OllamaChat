@@ -97,7 +97,7 @@ public class McpFunctionIndexService
         }
     }
 
-    private async Task IndexClientFunctionsAsync(IMcpClient client, CancellationToken cancellationToken, Guid? serverId)
+    private async Task IndexClientFunctionsAsync(McpClient client, CancellationToken cancellationToken, Guid? serverId)
     {
         var tools = await _clientService.GetMcpTools(client, cancellationToken);
         foreach (var tool in tools)
@@ -106,7 +106,7 @@ public class McpFunctionIndexService
         }
     }
 
-    private async Task IndexSingleToolAsync(IMcpClient client, McpClientTool tool, Guid? serverId, CancellationToken cancellationToken)
+    private async Task IndexSingleToolAsync(McpClient client, McpClientTool tool, Guid? serverId, CancellationToken cancellationToken)
     {
         string text = $"{tool.Name}. {tool.Description}";
         try

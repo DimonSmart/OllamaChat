@@ -76,7 +76,7 @@
     private readonly Dictionary<string, McpClientTool> toolMap = new(StringComparer.OrdinalIgnoreCase);
     private readonly List<FieldInfo> fields = [];
     private readonly Dictionary<string, object?> parameters = new(StringComparer.OrdinalIgnoreCase);
-    private IMcpClient? currentClient;
+    private McpClient? currentClient;
     private string? selectedServer;
     private string? selectedFunction;
     private string? rawResult;

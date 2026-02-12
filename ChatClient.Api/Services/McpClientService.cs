@@ -10,11 +10,12 @@ namespace ChatClient.Api.Services;
 public class McpClientService(
     IMcpServerConfigService mcpServerConfigService,
     McpSamplingService mcpSamplingService,
-    ILogger<McpClientService> logger) : IMcpClientService
+    ILogger<McpClientService> logger,
+    ILoggerFactory loggerFactory) : IMcpClientService
 {
-    private List<IMcpClient>? _mcpClients = null;
+    private List<McpClient>? _mcpClients = null;
 
-    public async Task<IReadOnlyCollection<IMcpClient>> GetMcpClientsAsync(CancellationToken cancellationToken = default)
+    public async Task<IReadOnlyCollection<McpClient>> GetMcpClientsAsync(CancellationToken cancellationToken = default)
     {
         if (_mcpClients != null)
             return _mcpClients;
@@ -54,9 +55,16 @@ public class McpClientService(
         try
         {
             cancellationToken.ThrowIfCancellationRequested();
-            var httpTransport = new SseClientTransport(new SseClientTransportOptions { Endpoint = new Uri(serverConfig.Sse!) });
+            var httpTransport = new HttpClientTransport(
+                new HttpClientTransportOptions
+                {
+                    Name = serverConfig.Name,
+                    Endpoint = new Uri(serverConfig.Sse!),
+                    TransportMode = HttpTransportMode.Sse
+                },
+                loggerFactory);
             var clientOptions = CreateClientOptions(serverConfig);
-            var client = await McpClientFactory.CreateAsync(httpTransport, clientOptions);
+            var client = await McpClient.CreateAsync(httpTransport, clientOptions, loggerFactory, cancellationToken);
             if (_mcpClients != null && client != null)
             {
                 _mcpClients.Add(client);
@@ -68,7 +76,7 @@ public class McpClientService(
         }
     }
 
-    private async Task<IMcpClient> CreateLocalMcpClientAsync(McpServerConfig serverConfig, CancellationToken cancellationToken)
+    private async Task<McpClient> CreateLocalMcpClientAsync(McpServerConfig serverConfig, CancellationToken cancellationToken)
     {
         if (string.IsNullOrEmpty(serverConfig.Command))
         {
@@ -80,19 +88,22 @@ public class McpClientService(
         var applicationDirectory = AppContext.BaseDirectory;
         var clientOptions = CreateClientOptions(serverConfig);
 
-        return await McpClientFactory.CreateAsync(
-            clientTransport: new StdioClientTransport(new StdioClientTransportOptions
-            {
-                Name = serverConfig.Name,
-                Command = serverConfig.Command,
-                Arguments = serverConfig.Arguments ?? [],
-                WorkingDirectory = applicationDirectory // Use fixed application directory
-            }),
-            clientOptions: clientOptions
-        );
+        return await McpClient.CreateAsync(
+            clientTransport: new StdioClientTransport(
+                new StdioClientTransportOptions
+                {
+                    Name = serverConfig.Name,
+                    Command = serverConfig.Command,
+                    Arguments = serverConfig.Arguments ?? [],
+                    WorkingDirectory = applicationDirectory // Use fixed application directory
+                },
+                loggerFactory),
+            clientOptions: clientOptions,
+            loggerFactory: loggerFactory,
+            cancellationToken: cancellationToken);
     }
 
-    public async Task<IReadOnlyList<McpClientTool>> GetMcpTools(IMcpClient mcpClient, CancellationToken cancellationToken = default)
+    public async Task<IReadOnlyList<McpClientTool>> GetMcpTools(McpClient mcpClient, CancellationToken cancellationToken = default)
     {
         try
         {
@@ -148,29 +159,34 @@ public class McpClientService(
             {
                 Sampling = new SamplingCapability
                 {
-                    SamplingHandler = async (request, progress, cancellationToken) =>
+                    Context = new SamplingContextCapability(),
+                    Tools = new SamplingToolsCapability()
+                }
+            },
+            Handlers = new McpClientHandlers
+            {
+                SamplingHandler = async (request, progress, cancellationToken) =>
+                {
+                    try
                     {
-                        try
+                        if (request == null)
                         {
-                            if (request == null)
-                            {
-                                throw new ArgumentNullException(nameof(request), "Sampling request cannot be null");
-                            }
-
-                            logger.LogInformation("Handling sampling request with {MessageCount} messages from server: {ServerName}",
-                                request.Messages?.Count ?? 0, serverConfig?.Name ?? "Unknown");
-
-                            var result = await mcpSamplingService.HandleSamplingRequestAsync(request, progress, cancellationToken, serverConfig, serverConfig?.Id ?? Guid.Empty);
-
-                            logger.LogInformation("Sampling request completed successfully for server: {ServerName}", serverConfig?.Name ?? "Unknown");
-                            return result;
+                            throw new ArgumentNullException(nameof(request), "Sampling request cannot be null");
                         }
-                        catch (Exception ex)
-                        {
-                            logger.LogError(ex, "Failed to handle sampling request from server {ServerName}: {Message}",
-                                serverConfig?.Name ?? "Unknown", ex.Message);
-                            throw;
-                        }
+
+                        logger.LogInformation("Handling sampling request with {MessageCount} messages from server: {ServerName}",
+                            request.Messages?.Count ?? 0, serverConfig?.Name ?? "Unknown");
+
+                        var result = await mcpSamplingService.HandleSamplingRequestAsync(request, progress, cancellationToken, serverConfig, serverConfig?.Id ?? Guid.Empty);
+
+                        logger.LogInformation("Sampling request completed successfully for server: {ServerName}", serverConfig?.Name ?? "Unknown");
+                        return result;
+                    }
+                    catch (Exception ex)
+                    {
+                        logger.LogError(ex, "Failed to handle sampling request from server {ServerName}: {Message}",
+                            serverConfig?.Name ?? "Unknown", ex.Message);
+                        throw;
                     }
                 }
             }

@@ -77,7 +77,7 @@ public sealed class McpSamplingService(
     }
 
     private async Task<string> ProcessSamplingRequestAsync(
-        IReadOnlyList<SamplingMessage> sourceMessages,
+        IList<SamplingMessage> sourceMessages,
         LlmServerConfig server,
         string modelName,
         CancellationToken cancellationToken)
@@ -184,7 +184,7 @@ public sealed class McpSamplingService(
 
         return new CreateMessageResult
         {
-            Content = new TextContentBlock { Text = parsed },
+            Content = [new TextContentBlock { Text = parsed }],
             Model = modelName,
             StopReason = "endTurn",
             Role = Role.Assistant
@@ -289,11 +289,12 @@ public sealed class McpSamplingService(
         var result = new List<ProviderMessage>();
         foreach (var sourceMessage in source)
         {
-            var content = sourceMessage.Content switch
-            {
-                TextContentBlock text => text.Text,
-                _ => string.Empty
-            };
+            var content = string.Join(
+                Environment.NewLine,
+                sourceMessage.Content
+                    .OfType<TextContentBlock>()
+                    .Select(static block => block.Text)
+                    .Where(static text => !string.IsNullOrWhiteSpace(text)));
 
             if (string.IsNullOrWhiteSpace(content))
             {
