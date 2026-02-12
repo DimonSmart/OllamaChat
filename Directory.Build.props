@@ -17,5 +17,7 @@
     <AnalysisLevel>latest</AnalysisLevel>
     <EnforceCodeStyleInBuild>true</EnforceCodeStyleInBuild>
     <TreatWarningsAsErrors>false</TreatWarningsAsErrors>
+    <!-- Exclude custom build output folders from default item globbing -->
+    <DefaultItemExcludes>$(DefaultItemExcludes);**/artifacts/**;**/_build/**</DefaultItemExcludes>
   </PropertyGroup>
 </Project>
