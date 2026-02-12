@@ -2,6 +2,7 @@ using System.Runtime.CompilerServices;
 using ChatClient.Api.Client.Services.Agentic;
 using ChatClient.Application.Services.Agentic;
 using ChatClient.Domain.Models;
+using ChatClient.Domain.Models.ChatStrategies;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Logging;
 
@@ -132,6 +133,105 @@ public class AgenticChatEngineSessionServiceTests
 
         var assistant = service.Messages.Last(m => m.Role == ChatRole.Assistant);
         Assert.True(assistant.IsCanceled);
+    }
+
+    [Fact]
+    public async Task SendAsync_WithMultipleAgents_ProducesMessagesInRoundRobinOrder()
+    {
+        var orchestrator = new StubOrchestrator
+        {
+            Handler = static (request, cancellationToken) => StreamChunks(
+                request.Agent.AgentName,
+                [request.Agent.AgentName],
+                cancellationToken)
+        };
+
+        var service = CreateService(orchestrator);
+        var agentA = CreateAgent("Agent-A");
+        var agentB = CreateAgent("Agent-B");
+
+        await service.StartAsync(new ChatEngineSessionStartRequest
+        {
+            Configuration = new AppChatConfiguration("model-a", []),
+            Agents = [agentA, agentB],
+            ChatStrategyName = "RoundRobin",
+            ChatStrategyOptions = new RoundRobinChatStrategyOptions { Rounds = 1 }
+        });
+
+        await service.SendAsync("ping");
+
+        var assistants = service.Messages
+            .Where(m => m.Role == ChatRole.Assistant && !m.IsCanceled)
+            .ToList();
+
+        Assert.Equal(2, assistants.Count);
+        Assert.Equal("Agent-A", assistants[0].AgentName);
+        Assert.Equal("Agent-A", assistants[0].Content);
+        Assert.Equal("Agent-B", assistants[1].AgentName);
+        Assert.Equal("Agent-B", assistants[1].Content);
+    }
+
+    [Fact]
+    public async Task SendAsync_WithMultipleRounds_RepeatsAgentsPerRound()
+    {
+        var orchestrator = new StubOrchestrator
+        {
+            Handler = static (request, cancellationToken) => StreamChunks(
+                request.Agent.AgentName,
+                [request.Agent.AgentName],
+                cancellationToken)
+        };
+
+        var service = CreateService(orchestrator);
+        var agentA = CreateAgent("Agent-A");
+        var agentB = CreateAgent("Agent-B");
+
+        await service.StartAsync(new ChatEngineSessionStartRequest
+        {
+            Configuration = new AppChatConfiguration("model-a", []),
+            Agents = [agentA, agentB],
+            ChatStrategyName = "RoundRobin",
+            ChatStrategyOptions = new RoundRobinChatStrategyOptions { Rounds = 2 }
+        });
+
+        await service.SendAsync("ping");
+
+        var assistants = service.Messages
+            .Where(m => m.Role == ChatRole.Assistant && !m.IsCanceled)
+            .Select(m => m.AgentName)
+            .ToList();
+
+        Assert.Equal(["Agent-A", "Agent-B", "Agent-A", "Agent-B"], assistants);
+    }
+
+    [Fact]
+    public async Task SendAsync_WithMultipleAgents_EnablesRagOnlyForFirstExecution()
+    {
+        var ragFlags = new List<bool>();
+        var orchestrator = new StubOrchestrator
+        {
+            Handler = (request, cancellationToken) =>
+            {
+                ragFlags.Add(request.EnableRagContext);
+                return StreamChunks(request.Agent.AgentName, ["ok"], cancellationToken);
+            }
+        };
+
+        var service = CreateService(orchestrator);
+        var agentA = CreateAgent("Agent-A");
+        var agentB = CreateAgent("Agent-B");
+
+        await service.StartAsync(new ChatEngineSessionStartRequest
+        {
+            Configuration = new AppChatConfiguration("model-a", []),
+            Agents = [agentA, agentB],
+            ChatStrategyName = "RoundRobin",
+            ChatStrategyOptions = new RoundRobinChatStrategyOptions { Rounds = 2 }
+        });
+
+        await service.SendAsync("ping");
+
+        Assert.Equal([true, false, false, false], ragFlags);
     }
 
     private static AgenticChatEngineSessionService CreateService(IChatEngineOrchestrator orchestrator) =>

@@ -115,13 +115,18 @@
     private bool IsOnChatPage()
     {
         var currentPath = NavigationManager.ToAbsoluteUri(NavigationManager.Uri).LocalPath;
-        return currentPath == "/" || currentPath == "/chat" || currentPath == "/multi-agent-chat" || currentPath == "/chat-agentic";
+        return currentPath == "/" ||
+               currentPath == "/chat" ||
+               currentPath == "/multi-agent-chat" ||
+               currentPath == "/chat-agentic" ||
+               currentPath == "/multi-agent-chat-agentic";
     }
 
     private bool IsOnAgenticChatPage()
     {
         var currentPath = NavigationManager.ToAbsoluteUri(NavigationManager.Uri).LocalPath;
-        return string.Equals(currentPath, "/chat-agentic", StringComparison.OrdinalIgnoreCase);
+        return string.Equals(currentPath, "/chat-agentic", StringComparison.OrdinalIgnoreCase) ||
+               string.Equals(currentPath, "/multi-agent-chat-agentic", StringComparison.OrdinalIgnoreCase);
     }
 
     private bool ActiveChatHasAgents() =>

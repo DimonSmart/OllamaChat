@@ -1,5 +1,6 @@
 using ChatClient.Application.Services.Agentic;
 using ChatClient.Domain.Models;
+using ChatClient.Domain.Models.ChatStrategies;
 using Microsoft.Extensions.AI;
 using OllamaSharp.Models.Exceptions;
 using System.Collections.ObjectModel;
@@ -119,41 +120,76 @@ public sealed class AgenticChatEngineSessionService(
         if (string.IsNullOrWhiteSpace(text) || IsAnswering)
             return;
 
-        var primaryAgent = parameters.Agents[0];
-        if (parameters.Agents.Count > 1)
-        {
-            logger.LogInformation(
-                "Agentic session is currently single-agent. Using the first agent: {AgentName}",
-                primaryAgent.AgentName);
-        }
-
         var userMessage = new AppChatMessage(text, DateTime.Now, ChatRole.User, files: files);
         await AddMessageAsync(userMessage);
 
-        var stream = streamingBridge.Create(primaryAgent.AgentName);
+        _cancellationTokenSource = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        UpdateAnsweringState(true);
+
+        try
+        {
+            foreach (var (agent, round) in BuildExecutionOrder(parameters).WithIndex())
+            {
+                _cancellationTokenSource.Token.ThrowIfCancellationRequested();
+                logger.LogDebug(
+                    "Agentic round {RoundNumber}: executing agent {AgentName}",
+                    round + 1,
+                    agent.AgentName);
+
+                bool shouldContinue = await StreamAgentResponseAsync(
+                    agent,
+                    parameters,
+                    text,
+                    files,
+                    enableRagContext: round == 0,
+                    _cancellationTokenSource.Token);
+                if (!shouldContinue)
+                {
+                    return;
+                }
+            }
+        }
+        catch (OperationCanceledException)
+        { }
+        finally
+        {
+            _cancellationTokenSource?.Dispose();
+            _cancellationTokenSource = null;
+            UpdateAnsweringState(false);
+        }
+    }
+
+    private async Task<bool> StreamAgentResponseAsync(
+        AgentDescription agent,
+        ChatEngineSessionStartRequest parameters,
+        string userMessageText,
+        IReadOnlyList<AppChatMessageFile> files,
+        bool enableRagContext,
+        CancellationToken cancellationToken)
+    {
+        var stream = streamingBridge.Create(agent.AgentName);
         _activeStreams[stream.Id] = stream;
         await AddMessageAsync(stream);
 
-        _cancellationTokenSource = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         var startedAt = DateTime.Now;
-        UpdateAnsweringState(true);
 
         try
         {
             var history = historyBuilder.Build(_chat.Messages);
             var request = new ChatEngineOrchestrationRequest
             {
-                Agent = primaryAgent,
+                Agent = agent,
                 Configuration = parameters.Configuration,
                 Messages = history,
-                UserMessage = text,
-                Files = files
+                UserMessage = userMessageText,
+                Files = files,
+                EnableRagContext = enableRagContext
             };
 
             IReadOnlyList<FunctionCallRecord> functionCalls = [];
             string? retrievedContext = null;
 
-            await foreach (var chunk in orchestrator.StreamAsync(request, _cancellationTokenSource.Token))
+            await foreach (var chunk in orchestrator.StreamAsync(request, cancellationToken))
             {
                 if (!string.IsNullOrWhiteSpace(chunk.RetrievedContext))
                 {
@@ -169,8 +205,8 @@ public sealed class AgenticChatEngineSessionService(
                 {
                     await AddRetrievedContextMessageIfNeededAsync(retrievedContext);
                     await CancelStreamAsync(stream);
-                    await HandleError(chunk.Content);
-                    return;
+                    await HandleError(chunk.Content, chunk.AgentName);
+                    return false;
                 }
 
                 if (!string.IsNullOrEmpty(chunk.Content))
@@ -194,36 +230,38 @@ public sealed class AgenticChatEngineSessionService(
             await AddRetrievedContextMessageIfNeededAsync(retrievedContext);
             var final = streamingBridge.Complete(
                 stream,
-                BuildStatistics(startedAt, primaryAgent.ModelName ?? parameters.Configuration.ModelName, stream.ApproximateTokenCount));
+                BuildStatistics(startedAt, agent.ModelName ?? parameters.Configuration.ModelName, stream.ApproximateTokenCount));
             if (functionCalls.Count > 0)
             {
                 final.FunctionCalls = functionCalls;
             }
+
             ReplaceMessage(stream, final);
             await (MessageUpdated?.Invoke(final, true) ?? Task.CompletedTask);
+            return true;
         }
         catch (OperationCanceledException)
         {
             await CancelStreamAsync(stream);
+            throw;
         }
         catch (ModelDoesNotSupportToolsException ex)
         {
-            logger.LogWarning(ex, "Model does not support tools for agent {AgentName}", primaryAgent.AgentName);
+            logger.LogWarning(ex, "Model does not support tools for agent {AgentName}", agent.AgentName);
             await CancelStreamAsync(stream);
-            await HandleError($"The model **{primaryAgent.ModelName ?? parameters.Configuration.ModelName}** does not support function calling.");
+            await HandleError($"The model **{agent.ModelName ?? parameters.Configuration.ModelName}** does not support function calling.", agent.AgentName);
+            return false;
         }
         catch (Exception ex)
         {
-            logger.LogError(ex, "Agentic session failed");
+            logger.LogError(ex, "Agentic session failed for agent {AgentName}", agent.AgentName);
             await CancelStreamAsync(stream);
-            await HandleError($"An error occurred while getting the response: {ex.Message}");
+            await HandleError($"An error occurred while getting the response: {ex.Message}", agent.AgentName);
+            return false;
         }
         finally
         {
             _activeStreams.Remove(stream.Id);
-            _cancellationTokenSource?.Dispose();
-            _cancellationTokenSource = null;
-            UpdateAnsweringState(false);
         }
     }
 
@@ -272,9 +310,9 @@ public sealed class AgenticChatEngineSessionService(
         _activeStreams.Remove(stream.Id);
     }
 
-    private async Task HandleError(string text)
+    private async Task HandleError(string text, string? agentName = null)
     {
-        await AddMessageAsync(new AppChatMessage(text, DateTime.Now, ChatRole.Assistant));
+        await AddMessageAsync(new AppChatMessage(text, DateTime.Now, ChatRole.Assistant, agentName: agentName));
     }
 
     private async Task AddRetrievedContextMessageIfNeededAsync(string? retrievedContext)
@@ -306,5 +344,44 @@ public sealed class AgenticChatEngineSessionService(
             : "N/A";
 
         return $"time {duration.TotalSeconds:F1}s | model {modelName} | tokens {tokenCount} ({tokensPerSecond}/s)";
+    }
+
+    private static IReadOnlyList<AgentDescription> BuildExecutionOrder(ChatEngineSessionStartRequest parameters)
+    {
+        if (parameters.Agents.Count == 1)
+        {
+            return parameters.Agents;
+        }
+
+        int rounds = parameters.ChatStrategyOptions switch
+        {
+            RoundRobinChatStrategyOptions roundRobin => Math.Max(1, roundRobin.Rounds),
+            RoundRobinSummaryChatStrategyOptions summary => Math.Max(1, summary.Rounds),
+            _ => 1
+        };
+
+        if (rounds == 1)
+        {
+            return parameters.Agents;
+        }
+
+        var orderedAgents = new List<AgentDescription>(parameters.Agents.Count * rounds);
+        for (int round = 0; round < rounds; round++)
+        {
+            orderedAgents.AddRange(parameters.Agents);
+        }
+
+        return orderedAgents;
+    }
+}
+
+file static class EnumerableExtensions
+{
+    public static IEnumerable<(T Item, int Index)> WithIndex<T>(this IReadOnlyList<T> items)
+    {
+        for (int index = 0; index < items.Count; index++)
+        {
+            yield return (items[index], index);
+        }
     }
 }

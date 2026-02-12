@@ -21,7 +21,11 @@ public sealed class AgenticChatEngineOrchestrator(
             conversation.Add(new ChatMessage(ChatRole.User, BuildUserMessage(request.UserMessage, request.Files)));
         }
 
-        AgenticRagContextResult? ragContext = await TryInjectRagContextAsync(request, conversation, cancellationToken);
+        AgenticRagContextResult? ragContext = null;
+        if (request.EnableRagContext)
+        {
+            ragContext = await TryInjectRagContextAsync(request, conversation, cancellationToken);
+        }
         var runtimeRequest = new AgenticExecutionRuntimeRequest
         {
             Agent = request.Agent,
@@ -49,12 +53,6 @@ public sealed class AgenticChatEngineOrchestrator(
         List<ChatMessage> conversation,
         CancellationToken cancellationToken)
     {
-        int userMessages = request.Messages.Count(m => m.Role == ChatRole.User);
-        if (userMessages != 1)
-        {
-            return null;
-        }
-
         var context = await ragContextService.TryBuildContextAsync(
             request.Agent.Id,
             request.UserMessage,

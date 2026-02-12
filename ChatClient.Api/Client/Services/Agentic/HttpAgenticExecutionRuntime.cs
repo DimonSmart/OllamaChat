@@ -7,6 +7,7 @@ using ChatClient.Application.Services;
 using ChatClient.Application.Services.Agentic;
 using ChatClient.Domain.Models;
 using Microsoft.Extensions.AI;
+using Microsoft.Extensions.Options;
 using ModelContextProtocol.Client;
 
 namespace ChatClient.Api.Client.Services.Agentic;
@@ -18,6 +19,7 @@ public sealed class HttpAgenticExecutionRuntime(
     IMcpClientService mcpClientService,
     KernelService kernelService,
     IConfiguration configuration,
+    IOptions<ChatEngineOptions> chatEngineOptions,
     ILogger<HttpAgenticExecutionRuntime> logger) : IAgenticExecutionRuntime
 {
     private const int MaxToolRounds = 8;
@@ -28,6 +30,7 @@ public sealed class HttpAgenticExecutionRuntime(
     };
 
     private static readonly JsonElement EmptyToolSchema = CreateEmptyToolSchema();
+    private readonly AgenticToolInvocationPolicyOptions _toolPolicy = NormalizeToolPolicy(chatEngineOptions.Value.ToolPolicy);
 
     public async IAsyncEnumerable<ChatEngineStreamChunk> StreamAsync(
         AgenticExecutionRuntimeRequest request,
@@ -324,40 +327,114 @@ public sealed class HttpAgenticExecutionRuntime(
                 new FunctionCallRecord("unknown", toolCall.Name, toolCall.Arguments, $"status=error;response={errorPayload}"));
         }
 
-        var (arguments, normalizedRequest) = ParseToolArguments(toolCall.Arguments);
-
-        try
+        if (!TryValidateAndParseToolArguments(
+                toolCall.Arguments,
+                tool.Tool.JsonSchema,
+                out var arguments,
+                out var normalizedRequest,
+                out var validationError))
         {
-            var result = await tool.Tool.CallAsync(arguments, null, null, cancellationToken);
-            string responsePayload = SerializeForToolTransport(result);
-
-            logger.LogInformation(
-                "Executed MCP tool {Server}:{ToolName} for provider tool {ProviderToolName}",
+            logger.LogWarning(
+                "Tool argument validation failed for {Server}:{ToolName}. Provider name: {ProviderToolName}. Error: {Error}",
                 tool.ServerName,
                 tool.ToolName,
-                tool.ProviderName);
+                tool.ProviderName,
+                validationError);
 
-            return new ToolExecutionResult(
-                new ProviderMessage("tool", responsePayload, tool.ProviderName, toolCall.Id, null),
-                new FunctionCallRecord(tool.ServerName, tool.ToolName, normalizedRequest, $"status=ok;response={responsePayload}"));
-        }
-        catch (OperationCanceledException)
-        {
-            throw;
-        }
-        catch (Exception ex)
-        {
-            logger.LogError(
-                ex,
-                "MCP tool execution failed for {Server}:{ToolName}",
-                tool.ServerName,
-                tool.ToolName);
-
-            string errorPayload = JsonSerializer.Serialize(new { error = ex.Message }, JsonOptions);
+            string errorPayload = JsonSerializer.Serialize(new { error = validationError }, JsonOptions);
             return new ToolExecutionResult(
                 new ProviderMessage("tool", errorPayload, tool.ProviderName, toolCall.Id, null),
-                new FunctionCallRecord(tool.ServerName, tool.ToolName, normalizedRequest, $"status=error;response={errorPayload}"));
+                new FunctionCallRecord(
+                    tool.ServerName,
+                    tool.ToolName,
+                    normalizedRequest,
+                    $"status=validation_error;attempt=1;durationMs=0;response={errorPayload}"));
         }
+
+        int maxAttempts = Math.Max(1, _toolPolicy.MaxRetries + 1);
+        Exception? lastException = null;
+
+        for (int attempt = 1; attempt <= maxAttempts; attempt++)
+        {
+            var startedAt = DateTime.UtcNow;
+            try
+            {
+                using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+                timeoutCts.CancelAfter(TimeSpan.FromSeconds(_toolPolicy.TimeoutSeconds));
+
+                var result = await tool.Tool.CallAsync(arguments, null, null, timeoutCts.Token);
+                string responsePayload = SerializeForToolTransport(result);
+                int durationMs = (int)Math.Max(0, (DateTime.UtcNow - startedAt).TotalMilliseconds);
+
+                logger.LogInformation(
+                    "Executed MCP tool {Server}:{ToolName} for provider tool {ProviderToolName} (attempt {Attempt}/{MaxAttempts}, {DurationMs} ms)",
+                    tool.ServerName,
+                    tool.ToolName,
+                    tool.ProviderName,
+                    attempt,
+                    maxAttempts,
+                    durationMs);
+
+                return new ToolExecutionResult(
+                    new ProviderMessage("tool", responsePayload, tool.ProviderName, toolCall.Id, null),
+                    new FunctionCallRecord(
+                        tool.ServerName,
+                        tool.ToolName,
+                        normalizedRequest,
+                        $"status=ok;attempt={attempt};durationMs={durationMs};response={responsePayload}"));
+            }
+            catch (OperationCanceledException ex) when (!cancellationToken.IsCancellationRequested)
+            {
+                lastException = ex;
+                int durationMs = (int)Math.Max(0, (DateTime.UtcNow - startedAt).TotalMilliseconds);
+                logger.LogWarning(
+                    "MCP tool {Server}:{ToolName} timed out on attempt {Attempt}/{MaxAttempts} after {DurationMs} ms.",
+                    tool.ServerName,
+                    tool.ToolName,
+                    attempt,
+                    maxAttempts,
+                    durationMs);
+            }
+            catch (OperationCanceledException)
+            {
+                throw;
+            }
+            catch (Exception ex)
+            {
+                lastException = ex;
+                int durationMs = (int)Math.Max(0, (DateTime.UtcNow - startedAt).TotalMilliseconds);
+                logger.LogWarning(
+                    ex,
+                    "MCP tool {Server}:{ToolName} failed on attempt {Attempt}/{MaxAttempts} after {DurationMs} ms.",
+                    tool.ServerName,
+                    tool.ToolName,
+                    attempt,
+                    maxAttempts,
+                    durationMs);
+            }
+
+            if (attempt < maxAttempts && _toolPolicy.RetryDelayMs > 0)
+            {
+                await Task.Delay(_toolPolicy.RetryDelayMs, cancellationToken);
+            }
+        }
+
+        string finalMessage = lastException?.Message ?? "Unknown tool execution failure.";
+        string finalPayload = JsonSerializer.Serialize(new { error = finalMessage }, JsonOptions);
+        logger.LogError(
+            lastException,
+            "MCP tool execution failed for {Server}:{ToolName} after {MaxAttempts} attempts.",
+            tool.ServerName,
+            tool.ToolName,
+            maxAttempts);
+
+        return new ToolExecutionResult(
+            new ProviderMessage("tool", finalPayload, tool.ProviderName, toolCall.Id, null),
+            new FunctionCallRecord(
+                tool.ServerName,
+                tool.ToolName,
+                normalizedRequest,
+                $"status=error;attempt={maxAttempts};response={finalPayload}"));
     }
 
     private async IAsyncEnumerable<ChatEngineStreamChunk> StreamOllamaAsync(
@@ -1040,31 +1117,156 @@ public sealed class HttpAgenticExecutionRuntime(
         }
     }
 
-    private static (Dictionary<string, object?> Arguments, string NormalizedRequest) ParseToolArguments(string arguments)
+    private static bool TryValidateAndParseToolArguments(
+        string arguments,
+        JsonElement schema,
+        out Dictionary<string, object?> parsedArguments,
+        out string normalizedRequest,
+        out string error)
     {
-        if (string.IsNullOrWhiteSpace(arguments))
-        {
-            return (new Dictionary<string, object?>(), "{}");
-        }
+        parsedArguments = new Dictionary<string, object?>();
+        normalizedRequest = "{}";
+        error = string.Empty;
+
+        string payload = string.IsNullOrWhiteSpace(arguments) ? "{}" : arguments;
+        JsonDocument document;
 
         try
         {
-            using var document = JsonDocument.Parse(arguments);
-            string normalized = document.RootElement.GetRawText();
-            if (document.RootElement.ValueKind != JsonValueKind.Object)
+            document = JsonDocument.Parse(payload);
+        }
+        catch (JsonException ex)
+        {
+            normalizedRequest = payload;
+            error = $"Tool arguments are not valid JSON: {ex.Message}";
+            return false;
+        }
+
+        using (document)
+        {
+            var root = document.RootElement;
+            normalizedRequest = root.GetRawText();
+
+            if (root.ValueKind != JsonValueKind.Object)
             {
-                return (new Dictionary<string, object?>(), normalized);
+                error = "Tool arguments must be a JSON object.";
+                return false;
             }
 
-            var parsed = JsonSerializer.Deserialize<Dictionary<string, object?>>(normalized) ??
-                         new Dictionary<string, object?>();
+            if (!ValidateAgainstSchema(root, schema, out error))
+            {
+                return false;
+            }
 
-            return (parsed, normalized);
+            parsedArguments = JsonSerializer.Deserialize<Dictionary<string, object?>>(normalizedRequest) ??
+                              new Dictionary<string, object?>();
+            return true;
         }
-        catch
+    }
+
+    private static bool ValidateAgainstSchema(JsonElement arguments, JsonElement schema, out string error)
+    {
+        error = string.Empty;
+        if (schema.ValueKind != JsonValueKind.Object)
         {
-            return (new Dictionary<string, object?>(), arguments);
+            return true;
         }
+
+        if (schema.TryGetProperty("required", out var requiredProperty) &&
+            requiredProperty.ValueKind == JsonValueKind.Array)
+        {
+            var argumentNames = arguments
+                .EnumerateObject()
+                .Select(static p => p.Name)
+                .ToHashSet(StringComparer.Ordinal);
+
+            foreach (var requiredItem in requiredProperty.EnumerateArray())
+            {
+                if (requiredItem.ValueKind != JsonValueKind.String)
+                {
+                    continue;
+                }
+
+                string requiredName = requiredItem.GetString() ?? string.Empty;
+                if (!string.IsNullOrWhiteSpace(requiredName) && !argumentNames.Contains(requiredName))
+                {
+                    error = $"Missing required argument '{requiredName}'.";
+                    return false;
+                }
+            }
+        }
+
+        if (schema.TryGetProperty("properties", out var propertiesSchema) &&
+            propertiesSchema.ValueKind == JsonValueKind.Object &&
+            schema.TryGetProperty("additionalProperties", out var additionalProperties) &&
+            additionalProperties.ValueKind == JsonValueKind.False)
+        {
+            var allowed = propertiesSchema
+                .EnumerateObject()
+                .Select(static p => p.Name)
+                .ToHashSet(StringComparer.Ordinal);
+
+            foreach (var argument in arguments.EnumerateObject())
+            {
+                if (!allowed.Contains(argument.Name))
+                {
+                    error = $"Argument '{argument.Name}' is not allowed by tool schema.";
+                    return false;
+                }
+            }
+        }
+
+        if (schema.TryGetProperty("properties", out propertiesSchema) &&
+            propertiesSchema.ValueKind == JsonValueKind.Object)
+        {
+            foreach (var propertySchema in propertiesSchema.EnumerateObject())
+            {
+                if (!arguments.TryGetProperty(propertySchema.Name, out var argumentValue))
+                {
+                    continue;
+                }
+
+                if (!IsJsonTypeCompatible(argumentValue, propertySchema.Value))
+                {
+                    error = $"Argument '{propertySchema.Name}' does not match schema type.";
+                    return false;
+                }
+            }
+        }
+
+        return true;
+    }
+
+    private static bool IsJsonTypeCompatible(JsonElement value, JsonElement propertySchema)
+    {
+        if (!propertySchema.TryGetProperty("type", out var typeProperty))
+        {
+            return true;
+        }
+
+        return typeProperty.ValueKind switch
+        {
+            JsonValueKind.String => IsTypeMatch(value, typeProperty.GetString()),
+            JsonValueKind.Array => typeProperty.EnumerateArray()
+                .Where(static item => item.ValueKind == JsonValueKind.String)
+                .Any(item => IsTypeMatch(value, item.GetString())),
+            _ => true
+        };
+    }
+
+    private static bool IsTypeMatch(JsonElement value, string? schemaType)
+    {
+        return schemaType switch
+        {
+            "string" => value.ValueKind == JsonValueKind.String,
+            "integer" => value.ValueKind == JsonValueKind.Number && value.TryGetInt64(out _),
+            "number" => value.ValueKind == JsonValueKind.Number,
+            "boolean" => value.ValueKind is JsonValueKind.True or JsonValueKind.False,
+            "object" => value.ValueKind == JsonValueKind.Object,
+            "array" => value.ValueKind == JsonValueKind.Array,
+            "null" => value.ValueKind == JsonValueKind.Null,
+            _ => true
+        };
     }
 
     private static string SerializeForToolTransport(object value)
@@ -1300,6 +1502,18 @@ public sealed class HttpAgenticExecutionRuntime(
         {
             return "<failed to read response body>";
         }
+    }
+
+    private static AgenticToolInvocationPolicyOptions NormalizeToolPolicy(AgenticToolInvocationPolicyOptions? policy)
+    {
+        policy ??= new AgenticToolInvocationPolicyOptions();
+
+        return new AgenticToolInvocationPolicyOptions
+        {
+            TimeoutSeconds = Math.Max(1, policy.TimeoutSeconds),
+            MaxRetries = Math.Max(0, policy.MaxRetries),
+            RetryDelayMs = Math.Max(0, policy.RetryDelayMs)
+        };
     }
 
     private static JsonElement CreateEmptyToolSchema()
