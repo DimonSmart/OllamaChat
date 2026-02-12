@@ -6,6 +6,7 @@
 @using ChatClient.Api.Services
 @inject IMcpClientService McpClientService
 @inject ISnackbar Snackbar
+@inject NavigationManager NavigationManager
 
 <PageTitle>MCP Playground</PageTitle>
 <MudText Class="page-header">MCP Playground</MudText>
@@ -83,12 +84,16 @@
     private string? contentResult;
     private bool showRaw = true;
 
+    [Parameter, SupplyParameterFromQuery(Name = "server")]
+    public string? McpServerName { get; set; }
+
     protected override async Task OnInitializedAsync()
     {
         try
         {
             var clients = await McpClientService.GetMcpClientsAsync();
             servers.AddRange(clients.Select(c => c.ServerInfo.Name));
+            await ApplyPreselectedServer();
         }
         catch (Exception ex)
         {
@@ -96,9 +101,23 @@
         }
     }
 
+    private async Task ApplyPreselectedServer()
+    {
+        if (string.IsNullOrWhiteSpace(McpServerName))
+            return;
+
+        var match = servers.FirstOrDefault(s => string.Equals(s, McpServerName, StringComparison.OrdinalIgnoreCase));
+        if (string.IsNullOrEmpty(match))
+            return;
+
+        await OnServerChanged(match);
+    }
+
     private async Task OnServerChanged(string value)
     {
         selectedServer = value;
+        var url = NavigationManager.GetUriWithQueryParameter("server", string.IsNullOrWhiteSpace(selectedServer) ? null : selectedServer);
+        NavigationManager.NavigateTo(url, replace: true);
         selectedFunction = null;
         tools.Clear();
         toolMap.Clear();

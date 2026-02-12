@@ -5,6 +5,7 @@
 @inject IMcpServerConfigService McpServerConfigService
 @inject IOllamaClientService OllamaService
 @inject ISnackbar Snackbar
+@inject NavigationManager NavigationManager
 
 <PageTitle>MCP Servers Management</PageTitle>
 <OllamaCheck>
@@ -97,6 +98,9 @@
                     </TemplateColumn>
                     <TemplateColumn CellStyle="display:flex; justify-content:flex-end;">
                         <CellTemplate>
+                            <MudIconButton Icon="@Icons.Material.Filled.PlayArrow"
+                                         Size="Size.Small"
+                                         OnClick="@(() => NavigateToPlayground(context.Item))" />
                             <MudIconButton Icon="@Icons.Material.Filled.Edit"
                                          Size="Size.Small"
                                          OnClick="@(() => StartEditing(context.Item))" />
@@ -383,7 +387,18 @@
                        (s.Command != null && s.Command.Contains(searchString, StringComparison.OrdinalIgnoreCase)) ||
                        (s.Sse != null && s.Sse.Contains(searchString, StringComparison.OrdinalIgnoreCase)))
             .ToList();
-    }    private void StartEditing(McpServerConfig server)
+    }
+
+    private void NavigateToPlayground(McpServerConfig server)
+    {
+        if (string.IsNullOrWhiteSpace(server.Name))
+            return;
+
+        var serverName = Uri.EscapeDataString(server.Name);
+        NavigationManager.NavigateTo($"/mcp-playground?server={serverName}");
+    }
+
+    private void StartEditing(McpServerConfig server)
     {
         editingServer = new McpServerConfig
         {
