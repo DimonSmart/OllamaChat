@@ -1,5 +1,10 @@
 # Microsoft Agentic Framework Migration Plan (Parallel Coexistence, SK End-State Removal)
 
+## Status
+
+As of February 12, 2026, Semantic Kernel runtime paths were decommissioned and removed from active code paths.
+The repository now runs on the Agentic runtime only.
+
 This plan defines a strict parallel migration strategy:
 
 - run two engines side-by-side during migration,

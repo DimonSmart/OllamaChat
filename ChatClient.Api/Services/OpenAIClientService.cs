@@ -1,7 +1,5 @@
 using ChatClient.Application.Services;
 using ChatClient.Domain.Models;
-using Microsoft.SemanticKernel.ChatCompletion;
-using Microsoft.SemanticKernel.Connectors.OpenAI;
 using OpenAI;
 using System.ClientModel;
 
@@ -17,24 +15,6 @@ public class OpenAIClientService(
     private readonly ILlmServerConfigService _llmServerConfigService = llmServerConfigService;
     private readonly IConfiguration _configuration = configuration;
     private readonly ILogger<OpenAIClientService> _logger = logger;
-
-    public async Task<IChatCompletionService> GetClientAsync(ServerModel serverModel, CancellationToken cancellationToken = default)
-    {
-        var server = await LlmServerConfigHelper.GetServerConfigAsync(_llmServerConfigService, _userSettingsService, serverModel.ServerId, ServerType.ChatGpt);
-        if (server == null)
-        {
-            throw new InvalidOperationException($"No OpenAI server configuration found for serverId: {serverModel.ServerId}");
-        }
-
-        var apiKey = GetEffectiveApiKey(server);
-
-        var openAIClient = new OpenAIChatCompletionService(
-            modelId: serverModel.ModelName,
-            apiKey: apiKey,
-            httpClient: CreateHttpClient(server));
-
-        return openAIClient;
-    }
 
     public async Task<IReadOnlyCollection<string>> GetAvailableModelsAsync(Guid serverId, CancellationToken cancellationToken = default)
     {
@@ -80,14 +60,8 @@ public class OpenAIClientService(
 
         try
         {
-            var testModel = new ServerModel(serverId, "gpt-3.5-turbo");
-            var client = await GetClientAsync(testModel, cancellationToken);
-            return client != null;
-        }
-        catch (InvalidOperationException ex) when (string.Equals(ex.Message, "OpenAI API key is required but not configured", StringComparison.Ordinal))
-        {
-            _logger.LogInformation("OpenAI service not available: {Message}", ex.Message);
-            return false;
+            var models = await GetAvailableModelsAsync(serverId, cancellationToken);
+            return models.Count > 0;
         }
         catch (Exception ex)
         {
@@ -129,8 +103,4 @@ public class OpenAIClientService(
         throw new InvalidOperationException("OpenAI API key is required but not configured");
     }
 
-    private HttpClient CreateHttpClient(LlmServerConfig server)
-    {
-        return LlmServerConfigHelper.CreateHttpClient(server);
-    }
 }

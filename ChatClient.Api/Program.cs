@@ -1,12 +1,10 @@
 using ChatClient.Api;
-using ChatClient.Api.Client.Services.Reducers;
 using ChatClient.Api.Services;
 using ChatClient.Api.Services.Seed;
 using ChatClient.Application.Services.Agentic;
 using Microsoft.AspNetCore.Hosting.Server;
 using Microsoft.AspNetCore.Hosting.Server.Features;
 using Microsoft.Extensions.Logging;
-using Microsoft.SemanticKernel.ChatCompletion;
 using Serilog;
 using System.IO;
 using System.Text;
@@ -39,14 +37,6 @@ if (builder.Environment.IsProduction())
     builder.Environment.WebRootPath = webRootPath;
     builder.Environment.ContentRootPath = exeFolder;
 }
-builder.Services.AddSingleton<AppForceLastUserReducer>();
-builder.Services.AddSingleton<ThinkTagsRemovalReducer>();
-builder.Services.AddSingleton<IChatHistoryReducer>(sp =>
-{
-    var thinkTagsReducer = sp.GetRequiredService<ThinkTagsRemovalReducer>();
-    var forceLastUserReducer = sp.GetRequiredService<AppForceLastUserReducer>();
-    return new MetaReducer([thinkTagsReducer, forceLastUserReducer]);
-});
 builder.Services.AddApplicationServices(builder.Configuration);
 
 var app = builder.Build();
@@ -59,10 +49,6 @@ using (var scope = app.Services.CreateScope())
     await llmSeeder.SeedAsync();
     var mcpSeeder = scope.ServiceProvider.GetRequiredService<McpServerConfigSeeder>();
     await mcpSeeder.SeedAsync();
-
-    var kernelService = scope.ServiceProvider.GetRequiredService<KernelService>();
-    var mcpClientService = scope.ServiceProvider.GetRequiredService<IMcpClientService>();
-    kernelService.SetMcpClientService(mcpClientService);
 
     var startupChecker = scope.ServiceProvider.GetRequiredService<OllamaServerAvailabilityService>();
     var ollamaStatus = await startupChecker.CheckOllamaStatusAsync();

@@ -1,7 +1,10 @@
 # ADR 0001: Parallel Agentic Engine Coexistence with SK End-State Removal
 
 - Date: 2026-02-11
-- Status: Accepted
+- Status: Completed (2026-02-12)
+
+> Historical ADR: the coexistence phase described below is finished.
+> The repository now runs Agentic-only runtime paths and SK has been removed from active code.
 
 ## Context
 

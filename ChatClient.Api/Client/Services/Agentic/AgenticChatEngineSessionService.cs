@@ -183,7 +183,8 @@ public sealed class AgenticChatEngineSessionService(
                 Messages = history,
                 UserMessage = userMessageText,
                 Files = files,
-                EnableRagContext = enableRagContext
+                EnableRagContext = enableRagContext,
+                Whiteboard = _chat.Whiteboard
             };
 
             IReadOnlyList<FunctionCallRecord> functionCalls = [];
@@ -348,11 +349,6 @@ public sealed class AgenticChatEngineSessionService(
 
     private static IReadOnlyList<AgentDescription> BuildExecutionOrder(ChatEngineSessionStartRequest parameters)
     {
-        if (parameters.Agents.Count == 1)
-        {
-            return parameters.Agents;
-        }
-
         int rounds = parameters.ChatStrategyOptions switch
         {
             RoundRobinChatStrategyOptions roundRobin => Math.Max(1, roundRobin.Rounds),
@@ -360,19 +356,69 @@ public sealed class AgenticChatEngineSessionService(
             _ => 1
         };
 
-        if (rounds == 1)
+        if (parameters.ChatStrategyOptions is RoundRobinSummaryChatStrategyOptions summaryOptions)
         {
-            return parameters.Agents;
+            var summaryAgent = ResolveSummaryAgent(parameters.Agents, summaryOptions.SummaryAgent);
+            if (summaryAgent is null)
+            {
+                return BuildRoundRobinOrder(parameters.Agents, rounds);
+            }
+
+            var roundAgents = parameters.Agents
+                .Where(agent => !IsSameAgent(agent, summaryAgent))
+                .ToList();
+
+            if (roundAgents.Count == 0)
+            {
+                return [summaryAgent];
+            }
+
+            var ordered = new List<AgentDescription>(roundAgents.Count * rounds + 1);
+            for (int round = 0; round < rounds; round++)
+            {
+                ordered.AddRange(roundAgents);
+            }
+
+            ordered.Add(summaryAgent);
+            return ordered;
         }
 
-        var orderedAgents = new List<AgentDescription>(parameters.Agents.Count * rounds);
+        return BuildRoundRobinOrder(parameters.Agents, rounds);
+    }
+
+    private static IReadOnlyList<AgentDescription> BuildRoundRobinOrder(
+        IReadOnlyList<AgentDescription> agents,
+        int rounds)
+    {
+        if (rounds == 1)
+        {
+            return agents;
+        }
+
+        var orderedAgents = new List<AgentDescription>(agents.Count * rounds);
         for (int round = 0; round < rounds; round++)
         {
-            orderedAgents.AddRange(parameters.Agents);
+            orderedAgents.AddRange(agents);
         }
 
         return orderedAgents;
     }
+
+    private static AgentDescription? ResolveSummaryAgent(
+        IReadOnlyList<AgentDescription> agents,
+        string summaryAgentId)
+    {
+        if (string.IsNullOrWhiteSpace(summaryAgentId))
+        {
+            return null;
+        }
+
+        return agents.FirstOrDefault(agent =>
+            string.Equals(agent.AgentId, summaryAgentId, StringComparison.OrdinalIgnoreCase));
+    }
+
+    private static bool IsSameAgent(AgentDescription left, AgentDescription right) =>
+        string.Equals(left.AgentId, right.AgentId, StringComparison.OrdinalIgnoreCase);
 }
 
 file static class EnumerableExtensions

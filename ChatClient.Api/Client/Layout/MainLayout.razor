@@ -1,7 +1,6 @@
-﻿@inherits LayoutComponentBase
+@inherits LayoutComponentBase
 @implements IAsyncDisposable
 @inject NavigationManager NavigationManager
-@inject IAppChatService ChatService
 @inject ChatClient.Api.Client.Services.Agentic.IAgenticAppChatService AgenticChatService
 @inject IUserSettingsService UserSettingsService
 @using ChatClient.Domain.Models
@@ -61,7 +60,7 @@
 <div id="blazor-error-ui" data-nosnippet>
     An unhandled error has occurred.
     <a href="." class="reload">Reload</a>
-    <span class="dismiss">🗙</span>
+    <span class="dismiss">??</span>
 </div>
 
 @code {
@@ -75,7 +74,6 @@
     {
         await base.OnInitializedAsync();
 
-        ChatService.AnsweringStateChanged += OnAnsweringStateChanged;
         AgenticChatService.AnsweringStateChanged += OnAnsweringStateChanged;
         RefreshAnsweringState();
 
@@ -125,32 +123,23 @@
     private bool IsOnAgenticChatPage()
     {
         var currentPath = NavigationManager.ToAbsoluteUri(NavigationManager.Uri).LocalPath;
-        return string.Equals(currentPath, "/chat-agentic", StringComparison.OrdinalIgnoreCase) ||
+        return string.Equals(currentPath, "/", StringComparison.OrdinalIgnoreCase) ||
+               string.Equals(currentPath, "/chat", StringComparison.OrdinalIgnoreCase) ||
+               string.Equals(currentPath, "/chat-agentic", StringComparison.OrdinalIgnoreCase) ||
+               string.Equals(currentPath, "/multi-agent-chat", StringComparison.OrdinalIgnoreCase) ||
                string.Equals(currentPath, "/multi-agent-chat-agentic", StringComparison.OrdinalIgnoreCase);
     }
 
-    private bool ActiveChatHasAgents() =>
-        IsOnAgenticChatPage()
-            ? AgenticChatService.AgentDescriptions.Any()
-            : ChatService.AgentDescriptions.Any();
+    private bool ActiveChatHasAgents() => AgenticChatService.AgentDescriptions.Any();
 
     private void NewChat()
     {
-        if (IsOnAgenticChatPage())
-        {
-            AgenticChatService.ResetChat();
-        }
-        else
-        {
-            ChatService.ResetChat();
-        }
+        AgenticChatService.ResetChat();
         if (!IsOnChatPage())
         {
-            NavigationManager.NavigateTo(IsOnAgenticChatPage() ? "/chat-agentic" : "/chat");
+            NavigationManager.NavigateTo("/chat");
         }
     }
-
-    
 
     private async Task OnModelChanged(ServerModelSelection model)
     {
@@ -209,15 +198,12 @@
 
     public ValueTask DisposeAsync()
     {
-        ChatService.AnsweringStateChanged -= OnAnsweringStateChanged;
         AgenticChatService.AnsweringStateChanged -= OnAnsweringStateChanged;
         return ValueTask.CompletedTask;
     }
 
     private void RefreshAnsweringState()
     {
-        isLLMAnswering = IsOnAgenticChatPage()
-            ? AgenticChatService.IsAnswering
-            : ChatService.IsAnswering;
+        isLLMAnswering = IsOnAgenticChatPage() && AgenticChatService.IsAnswering;
     }
 }

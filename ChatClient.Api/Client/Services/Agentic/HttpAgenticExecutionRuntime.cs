@@ -75,16 +75,13 @@ public sealed class HttpAgenticExecutionRuntime(
                 requestedFunctions.Count);
         }
 
-        if (request.Configuration.UseWhiteboard)
-        {
-            logger.LogInformation(
-                "HTTP agentic runtime does not yet expose the whiteboard plugin as a tool. Whiteboard setting: {WhiteboardEnabled}",
-                request.Configuration.UseWhiteboard);
-        }
-
         var messages = BuildProviderMessages(request);
         var toolRegistry = supportsFunctions
-            ? await ResolveToolRegistryAsync(requestedFunctions, cancellationToken)
+            ? await ResolveToolRegistryAsync(
+                requestedFunctions,
+                request.Whiteboard,
+                request.Configuration.UseWhiteboard,
+                cancellationToken)
             : ToolRegistry.Empty;
 
         if (requestedFunctions.Count > 0 && !toolRegistry.HasTools)
@@ -329,7 +326,7 @@ public sealed class HttpAgenticExecutionRuntime(
 
         if (!TryValidateAndParseToolArguments(
                 toolCall.Arguments,
-                tool.Tool.JsonSchema,
+                tool.JsonSchema,
                 out var arguments,
                 out var normalizedRequest,
                 out var validationError))
@@ -362,12 +359,12 @@ public sealed class HttpAgenticExecutionRuntime(
                 using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
                 timeoutCts.CancelAfter(TimeSpan.FromSeconds(_toolPolicy.TimeoutSeconds));
 
-                var result = await tool.Tool.CallAsync(arguments, null, null, timeoutCts.Token);
+                var result = await tool.ExecuteAsync(arguments, timeoutCts.Token);
                 string responsePayload = SerializeForToolTransport(result);
                 int durationMs = (int)Math.Max(0, (DateTime.UtcNow - startedAt).TotalMilliseconds);
 
                 logger.LogInformation(
-                    "Executed MCP tool {Server}:{ToolName} for provider tool {ProviderToolName} (attempt {Attempt}/{MaxAttempts}, {DurationMs} ms)",
+                    "Executed tool {Server}:{ToolName} for provider tool {ProviderToolName} (attempt {Attempt}/{MaxAttempts}, {DurationMs} ms)",
                     tool.ServerName,
                     tool.ToolName,
                     tool.ProviderName,
@@ -388,7 +385,7 @@ public sealed class HttpAgenticExecutionRuntime(
                 lastException = ex;
                 int durationMs = (int)Math.Max(0, (DateTime.UtcNow - startedAt).TotalMilliseconds);
                 logger.LogWarning(
-                    "MCP tool {Server}:{ToolName} timed out on attempt {Attempt}/{MaxAttempts} after {DurationMs} ms.",
+                    "Tool {Server}:{ToolName} timed out on attempt {Attempt}/{MaxAttempts} after {DurationMs} ms.",
                     tool.ServerName,
                     tool.ToolName,
                     attempt,
@@ -405,7 +402,7 @@ public sealed class HttpAgenticExecutionRuntime(
                 int durationMs = (int)Math.Max(0, (DateTime.UtcNow - startedAt).TotalMilliseconds);
                 logger.LogWarning(
                     ex,
-                    "MCP tool {Server}:{ToolName} failed on attempt {Attempt}/{MaxAttempts} after {DurationMs} ms.",
+                    "Tool {Server}:{ToolName} failed on attempt {Attempt}/{MaxAttempts} after {DurationMs} ms.",
                     tool.ServerName,
                     tool.ToolName,
                     attempt,
@@ -423,7 +420,7 @@ public sealed class HttpAgenticExecutionRuntime(
         string finalPayload = JsonSerializer.Serialize(new { error = finalMessage }, JsonOptions);
         logger.LogError(
             lastException,
-            "MCP tool execution failed for {Server}:{ToolName} after {MaxAttempts} attempts.",
+            "Tool execution failed for {Server}:{ToolName} after {MaxAttempts} attempts.",
             tool.ServerName,
             tool.ToolName,
             maxAttempts);
@@ -684,59 +681,138 @@ public sealed class HttpAgenticExecutionRuntime(
 
     private async Task<ToolRegistry> ResolveToolRegistryAsync(
         IReadOnlyCollection<string> requestedFunctions,
+        WhiteboardState? whiteboard,
+        bool useWhiteboard,
         CancellationToken cancellationToken)
     {
-        if (requestedFunctions.Count == 0)
-        {
-            return ToolRegistry.Empty;
-        }
-
-        HashSet<string> requestedQualified = new(requestedFunctions, StringComparer.OrdinalIgnoreCase);
-        HashSet<string> requestedByToolName = new(
-            requestedFunctions.Select(ExtractToolName),
-            StringComparer.OrdinalIgnoreCase);
-
-        var clients = await mcpClientService.GetMcpClientsAsync(cancellationToken);
-        if (clients.Count == 0)
-        {
-            return ToolRegistry.Empty;
-        }
-
         List<ToolBinding> tools = [];
         Dictionary<string, ToolBinding> toolsByProviderName = new(StringComparer.OrdinalIgnoreCase);
         HashSet<string> usedProviderToolNames = new(StringComparer.OrdinalIgnoreCase);
 
-        foreach (var client in clients)
+        if (requestedFunctions.Count > 0)
         {
-            cancellationToken.ThrowIfCancellationRequested();
+            HashSet<string> requestedQualified = new(requestedFunctions, StringComparer.OrdinalIgnoreCase);
+            HashSet<string> requestedByToolName = new(
+                requestedFunctions.Select(ExtractToolName),
+                StringComparer.OrdinalIgnoreCase);
 
-            string serverName = client.ServerInfo.Name ?? string.Empty;
-            if (string.IsNullOrWhiteSpace(serverName))
+            var clients = await mcpClientService.GetMcpClientsAsync(cancellationToken);
+            foreach (var client in clients)
             {
-                logger.LogWarning("Skipping MCP client with empty server name while resolving tools.");
-                continue;
-            }
+                cancellationToken.ThrowIfCancellationRequested();
 
-            var availableTools = await mcpClientService.GetMcpTools(client, cancellationToken);
-            foreach (var tool in availableTools)
-            {
-                string qualifiedName = $"{serverName}:{tool.Name}";
-                bool selected = requestedQualified.Contains(qualifiedName) || requestedByToolName.Contains(tool.Name);
-                if (!selected)
+                string serverName = client.ServerInfo.Name ?? string.Empty;
+                if (string.IsNullOrWhiteSpace(serverName))
                 {
+                    logger.LogWarning("Skipping MCP client with empty server name while resolving tools.");
                     continue;
                 }
 
-                string providerName = CreateProviderToolName(serverName, tool.Name, usedProviderToolNames);
-                var binding = new ToolBinding(serverName, tool.Name, providerName, tool);
-                tools.Add(binding);
-                toolsByProviderName[providerName] = binding;
+                var availableTools = await mcpClientService.GetMcpTools(client, cancellationToken);
+                foreach (var tool in availableTools)
+                {
+                    string qualifiedName = $"{serverName}:{tool.Name}";
+                    bool selected = requestedQualified.Contains(qualifiedName) || requestedByToolName.Contains(tool.Name);
+                    if (!selected)
+                    {
+                        continue;
+                    }
+
+                    string providerName = CreateProviderToolName(serverName, tool.Name, usedProviderToolNames);
+                    var schema = tool.JsonSchema.ValueKind == JsonValueKind.Undefined
+                        ? EmptyToolSchema
+                        : tool.JsonSchema.Clone();
+
+                    var binding = new ToolBinding(
+                        serverName,
+                        tool.Name,
+                        providerName,
+                        tool.Description ?? string.Empty,
+                        schema,
+                        async (arguments, token) => await tool.CallAsync(arguments, null, null, token));
+
+                    tools.Add(binding);
+                    toolsByProviderName[providerName] = binding;
+                }
+            }
+        }
+
+        if (useWhiteboard && whiteboard is not null)
+        {
+            foreach (var whiteboardTool in BuildWhiteboardTools(whiteboard, usedProviderToolNames))
+            {
+                tools.Add(whiteboardTool);
+                toolsByProviderName[whiteboardTool.ProviderName] = whiteboardTool;
             }
         }
 
         return tools.Count == 0
             ? ToolRegistry.Empty
             : new ToolRegistry(tools, toolsByProviderName);
+    }
+
+    private static IReadOnlyList<ToolBinding> BuildWhiteboardTools(
+        WhiteboardState whiteboard,
+        HashSet<string> usedProviderToolNames)
+    {
+        var addNoteSchema = ParseToolSchema("""
+            {
+              "type": "object",
+              "properties": {
+                "note": { "type": "string" },
+                "author": { "type": ["string", "null"] }
+              },
+              "required": ["note"],
+              "additionalProperties": false
+            }
+            """);
+
+        var emptySchema = ParseToolSchema("""
+            {
+              "type": "object",
+              "properties": {},
+              "additionalProperties": false
+            }
+            """);
+
+        var addNoteProviderName = CreateProviderToolName("whiteboard", "add_note", usedProviderToolNames);
+        var getNotesProviderName = CreateProviderToolName("whiteboard", "get_notes", usedProviderToolNames);
+        var clearProviderName = CreateProviderToolName("whiteboard", "clear", usedProviderToolNames);
+
+        return
+        [
+            new ToolBinding(
+                "whiteboard",
+                "add_note",
+                addNoteProviderName,
+                "Add or update a note on the shared whiteboard for this chat session.",
+                addNoteSchema,
+                (arguments, _) =>
+                {
+                    var note = ReadRequiredStringArgument(arguments, "note");
+                    var author = ReadOptionalStringArgument(arguments, "author");
+                    whiteboard.Add(note, author);
+                    return Task.FromResult<object>(BuildWhiteboardSnapshot(whiteboard));
+                }),
+            new ToolBinding(
+                "whiteboard",
+                "get_notes",
+                getNotesProviderName,
+                "Return all whiteboard notes as a markdown list.",
+                emptySchema,
+                (_, _) => Task.FromResult<object>(BuildWhiteboardSnapshot(whiteboard))),
+            new ToolBinding(
+                "whiteboard",
+                "clear",
+                clearProviderName,
+                "Clear every note from the shared whiteboard.",
+                emptySchema,
+                (_, _) =>
+                {
+                    whiteboard.Clear();
+                    return Task.FromResult<object>("Whiteboard cleared.");
+                })
+        ];
     }
 
     private static string BuildOllamaPayload(
@@ -890,9 +966,9 @@ public sealed class HttpAgenticExecutionRuntime(
 
         foreach (var tool in tools)
         {
-            JsonElement schema = tool.Tool.JsonSchema.ValueKind == JsonValueKind.Undefined
+            JsonElement schema = tool.JsonSchema.ValueKind == JsonValueKind.Undefined
                 ? EmptyToolSchema
-                : tool.Tool.JsonSchema.Clone();
+                : tool.JsonSchema.Clone();
 
             result.Add(new Dictionary<string, object?>
             {
@@ -900,7 +976,7 @@ public sealed class HttpAgenticExecutionRuntime(
                 ["function"] = new Dictionary<string, object?>
                 {
                     ["name"] = tool.ProviderName,
-                    ["description"] = tool.Tool.Description,
+                    ["description"] = tool.Description,
                     ["parameters"] = schema
                 }
             });
@@ -1115,6 +1191,80 @@ public sealed class HttpAgenticExecutionRuntime(
         {
             return arguments;
         }
+    }
+
+    private static JsonElement ParseToolSchema(string schemaJson)
+    {
+        using var document = JsonDocument.Parse(schemaJson);
+        return document.RootElement.Clone();
+    }
+
+    private static string ReadRequiredStringArgument(Dictionary<string, object?> arguments, string argumentName)
+    {
+        var value = ReadOptionalStringArgument(arguments, argumentName);
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            throw new InvalidOperationException($"Argument '{argumentName}' is required.");
+        }
+
+        return value;
+    }
+
+    private static string? ReadOptionalStringArgument(Dictionary<string, object?> arguments, string argumentName)
+    {
+        if (!arguments.TryGetValue(argumentName, out var raw) || raw is null)
+        {
+            return null;
+        }
+
+        if (raw is string text)
+        {
+            return text;
+        }
+
+        if (raw is JsonElement json)
+        {
+            return json.ValueKind switch
+            {
+                JsonValueKind.String => json.GetString(),
+                JsonValueKind.Null => null,
+                _ => json.GetRawText()
+            };
+        }
+
+        return raw.ToString();
+    }
+
+    private static string BuildWhiteboardSnapshot(WhiteboardState whiteboard)
+    {
+        if (whiteboard.Notes.Count == 0)
+        {
+            return "Whiteboard is empty.";
+        }
+
+        var builder = new StringBuilder();
+        builder.AppendLine("Current whiteboard notes:");
+        for (int i = 0; i < whiteboard.Notes.Count; i++)
+        {
+            var note = whiteboard.Notes[i];
+            builder.Append("- ");
+            builder.Append(i + 1);
+            builder.Append(". ");
+
+            if (!string.IsNullOrWhiteSpace(note.Author))
+            {
+                builder.Append('[');
+                builder.Append(note.Author);
+                builder.Append("] ");
+            }
+
+            builder.Append(note.Content);
+            builder.Append(" (created at ");
+            builder.Append(note.CreatedAt.ToLocalTime().ToString("u"));
+            builder.AppendLine(")");
+        }
+
+        return builder.ToString().Trim();
     }
 
     private static bool TryValidateAndParseToolArguments(
@@ -1544,7 +1694,9 @@ public sealed class HttpAgenticExecutionRuntime(
         string ServerName,
         string ToolName,
         string ProviderName,
-        McpClientTool Tool);
+        string Description,
+        JsonElement JsonSchema,
+        Func<Dictionary<string, object?>, CancellationToken, Task<object>> ExecuteAsync);
 
     private sealed record ToolRegistry(
         IReadOnlyList<ToolBinding> Tools,

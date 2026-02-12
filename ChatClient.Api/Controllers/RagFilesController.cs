@@ -3,7 +3,6 @@ using ChatClient.Application.Services;
 using ChatClient.Domain.Models;
 using HtmlAgilityPack;
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.SemanticKernel.Plugins.Web;
 using System.Linq;
 
 namespace ChatClient.Api.Controllers;
@@ -71,11 +70,8 @@ public class RagFilesController : ControllerBase
         if (!Uri.TryCreate(request.Url, UriKind.Absolute, out var pageUri))
             return BadRequest("Invalid URL.");
 
-        var tempPath = Path.GetTempFileName();
-        var downloader = new WebFileDownloadPlugin();
-        await downloader.DownloadToFileAsync(pageUri, tempPath, HttpContext.RequestAborted);
-        var html = await System.IO.File.ReadAllTextAsync(tempPath, HttpContext.RequestAborted);
-        System.IO.File.Delete(tempPath);
+        using var httpClient = new HttpClient();
+        var html = await httpClient.GetStringAsync(pageUri, HttpContext.RequestAborted);
 
         var text = HtmlToText(html);
         var fileName = CreateFileName(pageUri);

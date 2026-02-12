@@ -11,10 +11,7 @@ using ChatClient.Infrastructure.Repositories;
 using Microsoft.AspNetCore.Components.Server.Circuits;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.SemanticKernel.Connectors.Sqlite;
-using Microsoft.SemanticKernel.Memory;
 using MudBlazor.Services;
-using System.IO;
 using System.Net.Http;
 
 namespace ChatClient.Api;
@@ -23,10 +20,6 @@ public static class ServiceCollectionExtensions
 {
     public static IServiceCollection AddApplicationServices(this IServiceCollection services, IConfiguration configuration)
     {
-        var mode = configuration
-            .GetSection(ChatEngineOptions.SectionName)
-            .Get<ChatEngineOptions>()?.Mode ?? ChatEngineMode.Dual;
-
         services.AddSingleton<IMcpServerConfigService, McpServerConfigService>();
         services.AddSingleton<ILlmServerConfigService, LlmServerConfigService>();
         services.AddSingleton<IMcpClientService, McpClientService>();
@@ -36,9 +29,7 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<IOpenAIClientService, OpenAIClientService>();
         services.AddSingleton<IModelCapabilityService, ModelCapabilityService>();
         services.AddSingleton<IServerConnectionTestService, ServerConnectionTestService>();
-        services.AddSingleton<IOllamaKernelService, OllamaKernelService>();
         services.AddSingleton<McpFunctionIndexService>();
-        services.AddSingleton<IAppChatHistoryBuilder, AppChatHistoryBuilder>();
         services.AddScoped<OllamaServerAvailabilityService>();
         services.AddSingleton<IAgentDescriptionRepository, AgentDescriptionRepository>();
         services.AddSingleton<ILlmServerConfigRepository, LlmServerConfigRepository>();
@@ -53,32 +44,13 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<IRagFileService, RagFileService>();
         services.AddSingleton<IRagContentImportService, RagContentImportService>();
         services.AddSingleton<IRagVectorIndexService, RagVectorIndexService>();
+        services.AddSingleton<IRagVectorStore, RagVectorStore>();
         services.AddSingleton<RagVectorIndexBackgroundService>();
         services.AddSingleton<IRagVectorIndexBackgroundService>(sp => sp.GetRequiredService<RagVectorIndexBackgroundService>());
         services.AddHostedService(sp => sp.GetRequiredService<RagVectorIndexBackgroundService>());
-        services.AddSingleton<IMemoryStore>(sp =>
-        {
-            var path = Path.Combine("Data", "rag.sqlite");
-            Directory.CreateDirectory(Path.GetDirectoryName(path)!);
-            return SqliteMemoryStore.ConnectAsync(path).GetAwaiter().GetResult();
-        });
         services.AddSingleton<IRagVectorSearchService, RagVectorSearchService>();
         services.AddSingleton<IFileConverter, MarkdownFileConverter>();
         services.AddSingleton<IFileConverter, FileConverter>();
-        if (mode == ChatEngineMode.Agentic)
-        {
-            services.AddScoped<IAppChatService, DisabledSemanticKernelAppChatService>();
-        }
-        else
-        {
-            services.AddScoped<IAppChatService, AppChatService>();
-        }
-
-        services.AddScoped<IChatViewModelService, ChatViewModelService>();
-        services.AddScoped<SemanticKernelChatEngineSessionService>();
-        services.AddScoped<SemanticKernelChatEngineOrchestrator>();
-        services.AddScoped<SemanticKernelChatEngineHistoryBuilder>();
-        services.AddScoped<SemanticKernelChatEngineStreamingBridge>();
         services.AddScoped<IAgenticExecutionRuntime, HttpAgenticExecutionRuntime>();
         services.AddScoped<AgenticChatEngineOrchestrator>();
         services.AddScoped<IAgenticRagContextService, AgenticRagContextService>();
@@ -90,7 +62,6 @@ public static class ServiceCollectionExtensions
         services.AddScoped<AgenticChatEngineSessionService>();
         services.AddScoped<IAgenticAppChatService, AgenticAppChatService>();
         services.AddScoped<IAgenticChatViewModelService, AgenticChatViewModelService>();
-        services.AddSingleton<IGroupChatManagerFactory, GroupChatManagerFactory>();
         services.AddSingleton<IChatFormatter, TextChatFormatter>();
         services.AddSingleton<IChatFormatter, MarkdownChatFormatter>();
         services.AddSingleton<IChatFormatter, HtmlChatFormatter>();

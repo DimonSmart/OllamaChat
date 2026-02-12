@@ -31,7 +31,8 @@ public sealed class AgenticChatEngineOrchestrator(
             Agent = request.Agent,
             Configuration = request.Configuration,
             Conversation = conversation,
-            UserMessage = request.UserMessage
+            UserMessage = request.UserMessage,
+            Whiteboard = request.Whiteboard
         };
 
         await foreach (var chunk in runtime.StreamAsync(runtimeRequest, cancellationToken))

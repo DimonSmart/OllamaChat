@@ -1,51 +1,27 @@
-using ChatClient.Api.Client.Services;
-using ChatClient.Api.Client.Services.Reducers;
 using ChatClient.Application.Services;
 using ChatClient.Domain.Models;
 using DimonSmart.AiUtils;
-using Microsoft.Extensions.Logging;
-using Microsoft.SemanticKernel;
-using Microsoft.SemanticKernel.ChatCompletion;
-using Microsoft.SemanticKernel.Connectors.Ollama;
-using Microsoft.SemanticKernel.Connectors.OpenAI;
 using ModelContextProtocol;
 using ModelContextProtocol.Protocol;
-using OllamaSharp.Models.Exceptions;
-using System.Linq;
-using System.Net.Http;
 using System.Net.Http.Headers;
 using System.Text;
+using System.Text.Json;
 
 namespace ChatClient.Api.Services;
 
 /// <summary>
-/// Service that handles sampling requests from MCP servers.
-/// Sampling allows MCP servers to request the client to perform LLM inference.
+/// Handles MCP sampling requests by calling the configured LLM server directly.
 /// </summary>
-public class McpSamplingService(
+public sealed class McpSamplingService(
     IOllamaClientService ollamaService,
-    IOllamaKernelService ollamaKernelService,
     IOpenAIClientService openAIClientService,
     IUserSettingsService userSettingsService,
     ILlmServerConfigService llmServerConfigService,
-    AppForceLastUserReducer reducer,
-    ILogger<HttpLoggingHandler> httpLogger,
+    IConfiguration configuration,
     ILogger<McpSamplingService> logger)
 {
-    private readonly IOllamaClientService _ollamaService = ollamaService;
-    private readonly IOllamaKernelService _ollamaKernelService = ollamaKernelService;
-    private readonly IOpenAIClientService _openAIClientService = openAIClientService;
-    private readonly IUserSettingsService _userSettingsService = userSettingsService;
-    private readonly ILlmServerConfigService _llmServerConfigService = llmServerConfigService;
-    private readonly AppForceLastUserReducer _reducer = reducer;
-    private readonly ILogger<HttpLoggingHandler> _httpLogger = httpLogger;
-    private readonly ILogger<McpSamplingService> _logger = logger;
+    private readonly JsonSerializerOptions _jsonOptions = new(JsonSerializerDefaults.Web);
 
-    /// <param name="request">The sampling request containing messages and model parameters</param>
-    /// <param name="progress">Progress reporting for long-running operations</param>
-    /// <param name="cancellationToken">Cancellation token</param>
-    /// <param name="mcpServerConfig">Configuration of the MCP server making the request (optional)</param>
-    /// <returns>The LLM response</returns>
     public async ValueTask<CreateMessageResult> HandleSamplingRequestAsync(
         CreateMessageRequestParams request,
         IProgress<ProgressNotificationValue> progress,
@@ -53,28 +29,35 @@ public class McpSamplingService(
         McpServerConfig? mcpServerConfig = null,
         Guid serverId = default)
     {
-        ServerModel? model = null;
+        ServerModel? selectedModel = null;
         try
         {
             ValidateRequest(request);
             progress?.Report(new ProgressNotificationValue { Progress = 0, Total = 100 });
 
-            model = await DetermineModelToUseAsync(request.ModelPreferences, mcpServerConfig, serverId);
-            var kernel = await CreateKernelForSamplingAsync(model);
+            selectedModel = await DetermineModelToUseAsync(
+                request.ModelPreferences,
+                mcpServerConfig,
+                serverId,
+                cancellationToken);
+
+            var server = await LlmServerConfigHelper.GetServerConfigAsync(
+                             llmServerConfigService,
+                             userSettingsService,
+                             selectedModel.ServerId)
+                         ?? throw new InvalidOperationException("No server configuration found for the selected sampling model.");
+
             progress?.Report(new ProgressNotificationValue { Progress = 25, Total = 100 });
 
-            var response = await ProcessSamplingRequestAsync(request, kernel, progress, cancellationToken);
+            var response = await ProcessSamplingRequestAsync(
+                request.Messages,
+                server,
+                selectedModel.ModelName,
+                cancellationToken);
+
             progress?.Report(new ProgressNotificationValue { Progress = 100, Total = 100 });
 
-            return CreateSuccessfulResult(response, model.ModelName);
-        }
-        catch (ModelDoesNotSupportToolsException ex)
-        {
-            LogModelToolSupportError(ex, model?.ModelName, mcpServerConfig);
-            throw new InvalidOperationException(
-                $"The model '{model?.ModelName}' does not support function calling/tools. " +
-                "MCP sampling requires a model that supports tool use. " +
-                "Please configure a different model in the MCP server settings or user settings.", ex);
+            return CreateSuccessfulResult(response, selectedModel.ModelName);
         }
         catch (Exception ex)
         {
@@ -85,7 +68,7 @@ public class McpSamplingService(
 
     private void ValidateRequest(CreateMessageRequestParams request)
     {
-        _logger.LogInformation("Processing sampling request with {MessageCount} messages", request.Messages?.Count ?? 0);
+        logger.LogInformation("Processing sampling request with {MessageCount} messages", request.Messages?.Count ?? 0);
 
         if (request.Messages == null || request.Messages.Count == 0)
         {
@@ -93,49 +76,387 @@ public class McpSamplingService(
         }
     }
 
-    private async Task<Kernel> CreateKernelForSamplingAsync(ServerModel model)
-    {
-        var settings = await _userSettingsService.GetSettingsAsync();
-        return await CreateKernelAsync(model, TimeSpan.FromSeconds(settings.McpSamplingTimeoutSeconds));
-    }
-
-    private async Task<ChatMessageContent> ProcessSamplingRequestAsync(
-        CreateMessageRequestParams request,
-        Kernel kernel,
-        IProgress<ProgressNotificationValue>? progress,
+    private async Task<string> ProcessSamplingRequestAsync(
+        IReadOnlyList<SamplingMessage> sourceMessages,
+        LlmServerConfig server,
+        string modelName,
         CancellationToken cancellationToken)
     {
-        var chatHistory = ConvertMcpMessagesToChatHistory(request.Messages);
-        progress?.Report(new ProgressNotificationValue { Progress = 50, Total = 100 });
+        var messages = ConvertMcpMessagesToProviderMessages(sourceMessages);
+        if (messages.Count == 0)
+        {
+            throw new InvalidOperationException("Sampling request does not contain text messages.");
+        }
 
-        var chatCompletionService = kernel.GetRequiredService<IChatCompletionService>();
-        var response = await chatCompletionService.GetChatMessageContentAsync(
-            chatHistory: chatHistory,
-            kernel: kernel,
-            cancellationToken: cancellationToken);
+        if (!string.Equals(messages[^1].Role, "user", StringComparison.OrdinalIgnoreCase))
+        {
+            messages[^1] = messages[^1] with { Role = "user" };
+        }
 
-        progress?.Report(new ProgressNotificationValue { Progress = 90, Total = 100 });
-        return response;
+        return server.ServerType == ServerType.ChatGpt
+            ? await CompleteOpenAiAsync(server, modelName, messages, cancellationToken)
+            : await CompleteOllamaAsync(server, modelName, messages, cancellationToken);
     }
 
-    private CreateMessageResult CreateSuccessfulResult(ChatMessageContent response, string model)
+    private async Task<string> CompleteOllamaAsync(
+        LlmServerConfig server,
+        string modelName,
+        IReadOnlyList<ProviderMessage> messages,
+        CancellationToken cancellationToken)
     {
-        var responseText = ThinkTagParser.ExtractThinkAnswer(response.Content ?? string.Empty).Answer;
-        _logger.LogInformation("Sampling request completed successfully, response length: {Length}", responseText.Length);
+        using var client = CreateHttpClient(server, LlmServerConfig.DefaultOllamaUrl);
+
+        var payload = JsonSerializer.Serialize(new Dictionary<string, object?>
+        {
+            ["model"] = modelName,
+            ["messages"] = messages.Select(static m => new Dictionary<string, object?>
+            {
+                ["role"] = m.Role,
+                ["content"] = m.Content
+            }).ToList(),
+            ["stream"] = false
+        }, _jsonOptions);
+
+        using var request = new HttpRequestMessage(HttpMethod.Post, BuildOllamaChatEndpoint(server))
+        {
+            Content = new StringContent(payload, Encoding.UTF8, "application/json")
+        };
+
+        using var response = await client.SendAsync(request, cancellationToken);
+        if (!response.IsSuccessStatusCode)
+        {
+            var errorText = await SafeReadBodyAsync(response, cancellationToken);
+            throw new InvalidOperationException(
+                $"Ollama sampling request failed ({(int)response.StatusCode} {response.ReasonPhrase}): {errorText}");
+        }
+
+        var body = await response.Content.ReadAsStringAsync(cancellationToken);
+        return ParseOllamaCompletion(body);
+    }
+
+    private async Task<string> CompleteOpenAiAsync(
+        LlmServerConfig server,
+        string modelName,
+        IReadOnlyList<ProviderMessage> messages,
+        CancellationToken cancellationToken)
+    {
+        var apiKey = GetEffectiveOpenAiApiKey(server);
+        if (string.IsNullOrWhiteSpace(apiKey))
+        {
+            throw new InvalidOperationException("OpenAI API key is required but not configured.");
+        }
+
+        using var client = CreateHttpClient(server, "https://api.openai.com");
+
+        var payload = JsonSerializer.Serialize(new Dictionary<string, object?>
+        {
+            ["model"] = modelName,
+            ["messages"] = messages.Select(static m => new Dictionary<string, object?>
+            {
+                ["role"] = m.Role,
+                ["content"] = m.Content
+            }).ToList(),
+            ["stream"] = false
+        }, _jsonOptions);
+
+        using var request = new HttpRequestMessage(HttpMethod.Post, BuildOpenAiChatEndpoint(server))
+        {
+            Content = new StringContent(payload, Encoding.UTF8, "application/json")
+        };
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", apiKey);
+
+        using var response = await client.SendAsync(request, cancellationToken);
+        if (!response.IsSuccessStatusCode)
+        {
+            var errorText = await SafeReadBodyAsync(response, cancellationToken);
+            throw new InvalidOperationException(
+                $"OpenAI sampling request failed ({(int)response.StatusCode} {response.ReasonPhrase}): {errorText}");
+        }
+
+        var body = await response.Content.ReadAsStringAsync(cancellationToken);
+        return ParseOpenAiCompletion(body);
+    }
+
+    private CreateMessageResult CreateSuccessfulResult(string responseText, string modelName)
+    {
+        var parsed = ThinkTagParser.ExtractThinkAnswer(responseText).Answer;
+        logger.LogInformation("Sampling request completed successfully, response length: {Length}", parsed.Length);
 
         return new CreateMessageResult
         {
-            Content = new TextContentBlock { Text = responseText },
-            Model = model!,
+            Content = new TextContentBlock { Text = parsed },
+            Model = modelName,
             StopReason = "endTurn",
             Role = Role.Assistant
         };
     }
 
-    private void LogModelToolSupportError(ModelDoesNotSupportToolsException ex, string? model, McpServerConfig? mcpServerConfig)
+    private async Task<ServerModel> DetermineModelToUseAsync(
+        ModelPreferences? modelPreferences,
+        McpServerConfig? mcpServerConfig,
+        Guid explicitServerId,
+        CancellationToken cancellationToken)
     {
-        _logger.LogWarning(ex, "Model {ModelName} does not support tools/function calling for MCP sampling request from server: {ServerName}",
-            model, mcpServerConfig?.Name ?? "Unknown");
+        var allServers = await llmServerConfigService.GetAllAsync();
+        if (allServers.Count == 0)
+        {
+            throw new InvalidOperationException("No LLM servers configured.");
+        }
+
+        var settings = await userSettingsService.GetSettingsAsync(cancellationToken);
+
+        LlmServerConfig? selectedServer = null;
+        if (explicitServerId != Guid.Empty)
+        {
+            selectedServer = allServers.FirstOrDefault(s => s.Id == explicitServerId);
+        }
+
+        if (selectedServer is null && settings.DefaultModel.ServerId is Guid defaultServerId && defaultServerId != Guid.Empty)
+        {
+            selectedServer = allServers.FirstOrDefault(s => s.Id == defaultServerId);
+        }
+
+        selectedServer ??= allServers.First();
+
+        var selectedServerId = selectedServer.Id ?? Guid.Empty;
+        var availableModelNames = await TryGetAvailableModelNamesAsync(selectedServer, selectedServerId, cancellationToken);
+        var availableSet = availableModelNames.ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        var requestedModel = modelPreferences?.Hints?.FirstOrDefault()?.Name;
+        var candidates = new[]
+        {
+            requestedModel,
+            mcpServerConfig?.SamplingModel,
+            settings.DefaultModel.ModelName
+        }
+        .Where(static value => !string.IsNullOrWhiteSpace(value))
+        .Select(static value => value!.Trim())
+        .ToList();
+
+        string? modelName = null;
+        foreach (var candidate in candidates)
+        {
+            if (availableSet.Count == 0 || availableSet.Contains(candidate))
+            {
+                modelName = candidate;
+                break;
+            }
+        }
+
+        if (modelName is null && availableModelNames.Count > 0)
+        {
+            modelName = availableModelNames[0];
+        }
+
+        if (string.IsNullOrWhiteSpace(modelName))
+        {
+            throw new InvalidOperationException("No valid model available for MCP sampling.");
+        }
+
+        logger.LogInformation(
+            "Using model {ModelName} on server {ServerName} for MCP sampling.",
+            modelName,
+            selectedServer.Name);
+
+        return new ServerModel(selectedServerId, modelName);
+    }
+
+    private async Task<IReadOnlyList<string>> TryGetAvailableModelNamesAsync(
+        LlmServerConfig server,
+        Guid serverId,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            if (server.ServerType == ServerType.ChatGpt)
+            {
+                var models = await openAIClientService.GetAvailableModelsAsync(serverId, cancellationToken);
+                return models.ToList();
+            }
+
+            var ollamaModels = await ollamaService.GetModelsAsync(serverId);
+            return ollamaModels.Select(static model => model.Name).ToList();
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "Failed to load available models for server {ServerName}", server.Name);
+            return [];
+        }
+    }
+
+    private static List<ProviderMessage> ConvertMcpMessagesToProviderMessages(IEnumerable<SamplingMessage> source)
+    {
+        var result = new List<ProviderMessage>();
+        foreach (var sourceMessage in source)
+        {
+            var content = sourceMessage.Content switch
+            {
+                TextContentBlock text => text.Text,
+                _ => string.Empty
+            };
+
+            if (string.IsNullOrWhiteSpace(content))
+            {
+                continue;
+            }
+
+            var role = sourceMessage.Role switch
+            {
+                Role.User => "user",
+                Role.Assistant => "assistant",
+                _ => "user"
+            };
+
+            result.Add(new ProviderMessage(role, content.Trim()));
+        }
+
+        return result;
+    }
+
+    private string ParseOllamaCompletion(string responseBody)
+    {
+        try
+        {
+            using var document = JsonDocument.Parse(responseBody);
+            var root = document.RootElement;
+
+            if (root.TryGetProperty("error", out var errorProperty))
+            {
+                var error = errorProperty.ValueKind == JsonValueKind.String
+                    ? errorProperty.GetString()
+                    : errorProperty.GetRawText();
+                throw new InvalidOperationException(error ?? "Unknown Ollama error.");
+            }
+
+            if (!root.TryGetProperty("message", out var messageProperty) ||
+                messageProperty.ValueKind != JsonValueKind.Object)
+            {
+                throw new InvalidOperationException("Ollama response does not contain a message object.");
+            }
+
+            if (!messageProperty.TryGetProperty("content", out var contentProperty) ||
+                contentProperty.ValueKind != JsonValueKind.String)
+            {
+                return string.Empty;
+            }
+
+            return contentProperty.GetString() ?? string.Empty;
+        }
+        catch (JsonException ex)
+        {
+            throw new InvalidOperationException($"Failed to parse Ollama response: {ex.Message}", ex);
+        }
+    }
+
+    private string ParseOpenAiCompletion(string responseBody)
+    {
+        try
+        {
+            using var document = JsonDocument.Parse(responseBody);
+            var root = document.RootElement;
+
+            if (root.TryGetProperty("error", out var errorProperty))
+            {
+                var message = ReadOpenAiErrorMessage(errorProperty);
+                throw new InvalidOperationException(message ?? "Unknown OpenAI error.");
+            }
+
+            if (!root.TryGetProperty("choices", out var choicesProperty) ||
+                choicesProperty.ValueKind != JsonValueKind.Array ||
+                choicesProperty.GetArrayLength() == 0)
+            {
+                throw new InvalidOperationException("OpenAI response does not contain choices.");
+            }
+
+            var firstChoice = choicesProperty[0];
+            if (!firstChoice.TryGetProperty("message", out var messageProperty) ||
+                messageProperty.ValueKind != JsonValueKind.Object)
+            {
+                throw new InvalidOperationException("OpenAI response does not contain a message object.");
+            }
+
+            if (!messageProperty.TryGetProperty("content", out var contentProperty))
+            {
+                return string.Empty;
+            }
+
+            return contentProperty.ValueKind switch
+            {
+                JsonValueKind.String => contentProperty.GetString() ?? string.Empty,
+                JsonValueKind.Array => string.Join(
+                    Environment.NewLine,
+                    contentProperty.EnumerateArray()
+                        .Select(static item => item.TryGetProperty("text", out var text) && text.ValueKind == JsonValueKind.String
+                            ? text.GetString()
+                            : null)
+                        .Where(static text => !string.IsNullOrWhiteSpace(text))),
+                _ => string.Empty
+            };
+        }
+        catch (JsonException ex)
+        {
+            throw new InvalidOperationException($"Failed to parse OpenAI response: {ex.Message}", ex);
+        }
+    }
+
+    private static string? ReadOpenAiErrorMessage(JsonElement error)
+    {
+        if (error.ValueKind == JsonValueKind.String)
+        {
+            return error.GetString();
+        }
+
+        if (error.ValueKind == JsonValueKind.Object &&
+            error.TryGetProperty("message", out var messageProperty) &&
+            messageProperty.ValueKind == JsonValueKind.String)
+        {
+            return messageProperty.GetString();
+        }
+
+        return null;
+    }
+
+    private static HttpClient CreateHttpClient(LlmServerConfig server, string defaultBaseUrl)
+    {
+        var client = LlmServerConfigHelper.CreateHttpClient(server, defaultBaseUrl);
+        if (!string.IsNullOrWhiteSpace(server.Password))
+        {
+            var token = Convert.ToBase64String(Encoding.UTF8.GetBytes($":{server.Password}"));
+            client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Basic", token);
+        }
+
+        return client;
+    }
+
+    private static string BuildOllamaChatEndpoint(LlmServerConfig server)
+    {
+        var baseUrl = string.IsNullOrWhiteSpace(server.BaseUrl)
+            ? LlmServerConfig.DefaultOllamaUrl
+            : server.BaseUrl;
+        return $"{baseUrl.TrimEnd('/')}/api/chat";
+    }
+
+    private static string BuildOpenAiChatEndpoint(LlmServerConfig server)
+    {
+        if (string.IsNullOrWhiteSpace(server.BaseUrl))
+        {
+            return "https://api.openai.com/v1/chat/completions";
+        }
+
+        var baseUrl = server.BaseUrl.TrimEnd('/');
+        return baseUrl.EndsWith("/v1", StringComparison.OrdinalIgnoreCase)
+            ? $"{baseUrl}/chat/completions"
+            : $"{baseUrl}/v1/chat/completions";
+    }
+
+    private string GetEffectiveOpenAiApiKey(LlmServerConfig server)
+    {
+        if (!string.IsNullOrWhiteSpace(server.ApiKey))
+        {
+            return server.ApiKey;
+        }
+
+        return configuration["OpenAI:ApiKey"] ?? string.Empty;
     }
 
     private async Task LogAndHandleExceptionAsync(Exception ex, CreateMessageRequestParams request, McpServerConfig? mcpServerConfig)
@@ -143,134 +464,36 @@ public class McpSamplingService(
         if (ex is TaskCanceledException or TimeoutException)
         {
             var timeoutSeconds = await GetMcpSamplingTimeoutAsync();
-            _logger.LogError(ex, "MCP sampling request timed out after {TimeoutSeconds} seconds. " +
-                "Consider increasing the MCP sampling timeout in settings if this happens frequently. " +
-                "Request had {MessageCount} messages for server: {ServerName}",
+            logger.LogError(
+                ex,
+                "MCP sampling request timed out after {TimeoutSeconds} seconds. Request had {MessageCount} messages for server: {ServerName}",
                 timeoutSeconds,
                 request.Messages?.Count ?? 0,
                 mcpServerConfig?.Name ?? "Unknown");
+            return;
         }
-        else
-        {
-            _logger.LogError(ex, "Failed to process sampling request: {Message}", ex.Message);
-        }
-    }
 
-    private async Task<Kernel> CreateKernelAsync(ServerModel model, TimeSpan timeout)
-    {
-        var server = await LlmServerConfigHelper.GetServerConfigAsync(_llmServerConfigService, _userSettingsService, model.ServerId)
-            ?? throw new InvalidOperationException("No server configuration found for the specified model");
-
-        var builder = Kernel.CreateBuilder();
-        builder.Services.AddLogging(c => c.AddConsole().SetMinimumLevel(LogLevel.Information));
-
-        var chatService = server.ServerType == ServerType.ChatGpt
-            ? await _openAIClientService.GetClientAsync(model)
-            : await _ollamaKernelService.GetClientAsync(model.ServerId);
-
-        builder.Services.AddSingleton<IChatCompletionService>(_ =>
-            new AppForceLastUserChatCompletionService(chatService, _reducer));
-
-        return builder.Build();
-    }
-
-    /// <summary>
-    /// Converts MCP protocol messages to a format suitable for the LLM.
-    /// </summary>
-    private static ChatHistory ConvertMcpMessagesToChatHistory(IEnumerable<SamplingMessage> samplingMessage)
-    {
-        var chatHistory = new ChatHistory();
-
-        foreach (var mcpMessage in samplingMessage)
-        {
-            var role = mcpMessage.Role switch
-            {
-                Role.User => AuthorRole.User,
-                Role.Assistant => AuthorRole.Assistant,
-                _ => AuthorRole.User // Default to user if unknown role
-            };
-
-            string content = mcpMessage.Content switch
-            {
-                TextContentBlock tb => tb.Text,
-                _ => string.Empty
-            };
-
-            chatHistory.Add(new ChatMessageContent(role, content));
-        }
-        return chatHistory;
-    }
-
-    /// <summary>
-    /// Determines which model to use for sampling with simplified logic:
-    /// 1. If MCP server requests a model that doesn't exist - use MCP server configured model
-    /// 2. If not configured in MCP - use user's default model  
-    /// 3. If user default not set - return error
-    /// No hardcoded fallback
-    /// </summary>
-    private async Task<ServerModel> DetermineModelToUseAsync(
-        ModelPreferences? modelPreferences,
-        McpServerConfig? mcpServerConfig,
-        Guid serverId)
-    {
-        var availableModels = await _ollamaService.GetModelsAsync(serverId);
-        var availableModelNames = availableModels.Select(m => m.Name).ToHashSet();
-
-        var requestedModel = modelPreferences?.Hints?.FirstOrDefault()?.Name;
-        if (!string.IsNullOrEmpty(requestedModel) && availableModelNames.Contains(requestedModel))
-        {
-            _logger.LogInformation("Using requested model for MCP sampling: {ModelName}", requestedModel);
-            return new ServerModel(serverId, requestedModel);
-        }
-        if (!string.IsNullOrEmpty(mcpServerConfig?.SamplingModel))
-        {
-            if (availableModelNames.Contains(mcpServerConfig.SamplingModel))
-            {
-                _logger.LogInformation("Using MCP server configured model for sampling: {ModelName} (Server: {ServerName})",
-                    mcpServerConfig.SamplingModel, mcpServerConfig.Name);
-                return new ServerModel(serverId, mcpServerConfig.SamplingModel);
-            }
-            else
-            {
-                _logger.LogWarning("MCP server configured model '{ModelName}' not available for server '{ServerName}'",
-                    mcpServerConfig.SamplingModel, mcpServerConfig.Name);
-            }
-        }
-        var userSettings = await _userSettingsService.GetSettingsAsync();
-        var defaultModel = userSettings.DefaultModel;
-        if (!string.IsNullOrEmpty(defaultModel.ModelName))
-        {
-            if (availableModelNames.Contains(defaultModel.ModelName))
-            {
-                _logger.LogInformation("Using user's default model for MCP sampling: {ModelName}", defaultModel.ModelName);
-                return new ServerModel(serverId, defaultModel.ModelName);
-            }
-            else
-            {
-                _logger.LogWarning("User's default model '{ModelName}' not available", defaultModel.ModelName);
-            }
-        }
-        var errorMessage = "No valid model available for sampling. ";
-        if (!string.IsNullOrEmpty(requestedModel))
-        {
-            errorMessage += $"Requested model '{requestedModel}' not found. ";
-        }
-        if (!string.IsNullOrEmpty(mcpServerConfig?.SamplingModel))
-        {
-            errorMessage += $"MCP server model '{mcpServerConfig.SamplingModel}' not found. ";
-        }
-        if (!string.IsNullOrEmpty(defaultModel.ModelName))
-        {
-            errorMessage += $"User default model '{defaultModel.ModelName}' not found. ";
-        }
-        errorMessage += "Please configure a valid model in MCP server settings or user settings.";
-
-        throw new InvalidOperationException(errorMessage);
+        logger.LogError(ex, "Failed to process MCP sampling request: {Message}", ex.Message);
     }
 
     private async Task<int> GetMcpSamplingTimeoutAsync()
     {
-        var userSettings = await _userSettingsService.GetSettingsAsync();
+        var userSettings = await userSettingsService.GetSettingsAsync();
         return userSettings.McpSamplingTimeoutSeconds;
     }
+
+    private static async Task<string> SafeReadBodyAsync(HttpResponseMessage response, CancellationToken cancellationToken)
+    {
+        try
+        {
+            var body = await response.Content.ReadAsStringAsync(cancellationToken);
+            return string.IsNullOrWhiteSpace(body) ? "<empty>" : body;
+        }
+        catch
+        {
+            return "<failed to read response body>";
+        }
+    }
+
+    private sealed record ProviderMessage(string Role, string Content);
 }

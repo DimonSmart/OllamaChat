@@ -1,10 +1,7 @@
 @using Microsoft.AspNetCore.Components.Routing
 @using ChatClient.Api.Client.Layout
 @using ChatClient.Api.Client.Components
-@using ChatClient.Application.Services.Agentic
-@using Microsoft.Extensions.Options
 @using MudBlazor
-@inject IOptions<ChatEngineOptions> ChatEngineOptionsAccessor
 
 <Router AppAssembly="@typeof(App).Assembly">
     <Found Context="routeData">
@@ -23,22 +20,11 @@
                 <MudStack Class="mt-3">
                     <h5>Available Pages</h5>
                     <MudList T="string">
-                        @{
-                            var mode = ChatEngineOptionsAccessor.Value.Mode;
-                            var showSemanticKernel = mode is ChatEngineMode.SemanticKernel or ChatEngineMode.Dual;
-                            var showAgentic = mode is ChatEngineMode.Agentic or ChatEngineMode.Dual;
-                        }
                         <MudListItem T="string" Href="/">Home</MudListItem>
-                        @if (showSemanticKernel)
-                        {
-                            <MudListItem T="string" Href="/chat">Chat</MudListItem>
-                            <MudListItem T="string" Href="/multi-agent-chat">Multi-Agent</MudListItem>
-                        }
-                        @if (showAgentic)
-                        {
-                            <MudListItem T="string" Href="/chat-agentic">Agentic Chat</MudListItem>
-                            <MudListItem T="string" Href="/multi-agent-chat-agentic">Agentic Multi-Agent</MudListItem>
-                        }
+                        <MudListItem T="string" Href="/chat">Chat</MudListItem>
+                        <MudListItem T="string" Href="/multi-agent-chat">Multi-Agent</MudListItem>
+                        <MudListItem T="string" Href="/chat-agentic">Chat Alias</MudListItem>
+                        <MudListItem T="string" Href="/multi-agent-chat-agentic">Multi-Agent Alias</MudListItem>
                         <MudListItem T="string" Href="/agent-descriptions">Agent Descriptions</MudListItem>
                         <MudListItem T="string" Href="/models">Models</MudListItem>
                         <MudListItem T="string" Href="/llm-servers">LLM Servers</MudListItem>

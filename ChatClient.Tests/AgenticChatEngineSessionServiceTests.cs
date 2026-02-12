@@ -234,6 +234,44 @@ public class AgenticChatEngineSessionServiceTests
         Assert.Equal([true, false, false, false], ragFlags);
     }
 
+    [Fact]
+    public async Task SendAsync_WithRoundRobinSummary_AppendsSummaryAgentAtTheEnd()
+    {
+        var orchestrator = new StubOrchestrator
+        {
+            Handler = static (request, cancellationToken) => StreamChunks(
+                request.Agent.AgentName,
+                [request.Agent.AgentName],
+                cancellationToken)
+        };
+
+        var service = CreateService(orchestrator);
+        var agentA = CreateAgent("Agent-A");
+        var agentB = CreateAgent("Agent-B");
+        var summary = CreateAgent("Summary");
+
+        await service.StartAsync(new ChatEngineSessionStartRequest
+        {
+            Configuration = new AppChatConfiguration("model-a", []),
+            Agents = [agentA, agentB, summary],
+            ChatStrategyName = "RoundRobinWithSummary",
+            ChatStrategyOptions = new RoundRobinSummaryChatStrategyOptions
+            {
+                Rounds = 2,
+                SummaryAgent = summary.AgentId
+            }
+        });
+
+        await service.SendAsync("ping");
+
+        var assistants = service.Messages
+            .Where(m => m.Role == ChatRole.Assistant && !m.IsCanceled)
+            .Select(m => m.AgentName)
+            .ToList();
+
+        Assert.Equal(["Agent-A", "Agent-B", "Agent-A", "Agent-B", "Summary"], assistants);
+    }
+
     private static AgenticChatEngineSessionService CreateService(IChatEngineOrchestrator orchestrator) =>
         new(
             new LoggerFactory().CreateLogger<AgenticChatEngineSessionService>(),

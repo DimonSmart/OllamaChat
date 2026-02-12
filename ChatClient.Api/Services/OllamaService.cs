@@ -1,4 +1,3 @@
-#pragma warning disable SKEXP0070
 using ChatClient.Application.Services;
 using ChatClient.Domain.Models;
 using OllamaSharp;

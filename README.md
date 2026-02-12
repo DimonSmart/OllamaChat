@@ -1,62 +1,32 @@
 # OllamaChat
 
-OllamaChat is a **C# server-side chat application** that uses **Semantic Kernel** to run:
+OllamaChat is a C# server-side chat application with an Agentic runtime.
 
-- single-agent chat sessions,
-- multi-agent orchestration sessions,
-- local and remote LLM connections,
-- RAG-assisted responses with uploaded files.
+It provides:
 
-The project is designed as an experimentation and productization base for AI chat systems where you can switch between providers (Ollama and OpenAI-compatible servers), compare behavior, and evolve toward agent-first architecture.
+- single-agent chat,
+- multi-agent chat with round-robin and summary strategy,
+- local Ollama and OpenAI-compatible server connectivity,
+- MCP tool integration (with tool policy: validation, timeout, retries),
+- RAG indexing/search for uploaded files,
+- streaming responses with cancellation and message state tracking.
 
-## What the application does
+## Solution Structure
 
-OllamaChat provides a browser UI and backend services for managing and running chats with configurable AI agents.
+- `ChatClient.Api` - ASP.NET Core host, Blazor Server UI, controllers, runtime services.
+- `ChatClient.Application` - application contracts and orchestration abstractions.
+- `ChatClient.Domain` - shared domain models.
+- `ChatClient.Infrastructure` - repositories and persistence utilities.
+- `ChatClient.Tests` - automated tests.
 
-Core capabilities:
+## Runtime Notes
 
-- **Single-agent chat** for standard assistant workflows.
-- **Multi-agent chat** built on Semantic Kernel orchestration for round-robin and strategy-driven conversations.
-- **Model/server configuration** to connect to local Ollama instances and OpenAI-compatible APIs.
-- **Server connectivity checks** before running workloads.
-- **File upload + RAG indexing/search** to inject document context into chat history.
-- **MCP integration and indexing** for function/tool discovery.
-- **Streaming responses** with cancellation and message state updates.
+On startup, the app seeds agent/LLM/MCP configs, checks Ollama availability, builds MCP function index, and then starts UI/API endpoints.
 
-## Current architecture (high level)
+During chat execution, the Agentic pipeline builds history, injects optional RAG context, runs model/tool calls, and streams responses back to UI.
 
-The solution is split into projects:
+## Docs
 
-- `ChatClient.Api` – ASP.NET Core host, Blazor Server UI, controllers, orchestration services, app startup.
-- `ChatClient.Application` – application services and interfaces.
-- `ChatClient.Domain` – domain models used across the app.
-- `ChatClient.Infrastructure` – repositories and persistence-oriented components.
-- `ChatClient.Tests` – test project.
-
-Dependency injection is configured in `ChatClient.Api/ServiceCollectionExtensions.cs`, where chat services, Semantic Kernel services, RAG services, configuration repositories, and MCP services are registered.
-
-## Runtime model
-
-At startup, the application:
-
-1. initializes seed data for agents, LLM server configs, and MCP server configs,
-2. checks Ollama availability,
-3. builds MCP function index when available,
-4. starts the web UI and API endpoints.
-
-During a chat request, the app:
-
-1. creates/loads session state,
-2. builds chat history (including optional tool/RAG context),
-3. runs orchestration (single-agent or group-chat strategy),
-4. streams assistant and agent messages back to the UI.
-
-## Key documentation
-
-- Multi-agent orchestration details: `docs/multi-agent-chat.md`
-- Agentic Framework migration strategy (parallel engine approach): `docs/agentic-migration-plan.md`
+- Migration plan (completed SK decommission phase): `docs/agentic-migration-plan.md`
+- Historical multi-agent SK description (archive): `docs/multi-agent-chat.md`
 - Publishing notes: `docs/Publishing.md`
-
-## Migration direction
-
-This repository currently uses Semantic Kernel as the production engine. The recommended next phase is to build an **independent Agentic Framework engine in parallel** (separate services/classes and separate UI entry point/tab), run side-by-side with existing functionality, and migrate traffic incrementally based on quality and regression metrics.

@@ -1,15 +1,16 @@
 using ChatClient.Application.Services;
 using ChatClient.Domain.Models;
 using Microsoft.Extensions.Logging;
-using Microsoft.SemanticKernel.Memory;
 using System.Linq;
 using System.Text;
 
 namespace ChatClient.Api.Services.Rag;
 
-public sealed class RagVectorSearchService(IMemoryStore store, ILogger<RagVectorSearchService> logger) : IRagVectorSearchService
+public sealed class RagVectorSearchService(
+    IRagVectorStore store,
+    ILogger<RagVectorSearchService> logger) : IRagVectorSearchService
 {
-    private readonly IMemoryStore _store = store;
+    private readonly IRagVectorStore _store = store;
     private readonly ILogger<RagVectorSearchService> _logger = logger;
 
     public async Task<RagSearchResponse> SearchAsync(
@@ -18,20 +19,26 @@ public sealed class RagVectorSearchService(IMemoryStore store, ILogger<RagVector
         int maxResults = 5,
         CancellationToken ct = default)
     {
-        var collection = CollectionName(agentId);
-        await _store.CreateCollectionAsync(collection, ct);
-
-        var matches = new List<(MemoryRecord, double)>();
-        await foreach (var result in _store.GetNearestMatchesAsync(collection, queryVector, maxResults * 8, withEmbeddings: false, cancellationToken: ct))
-        {
-            matches.Add(result);
-        }
+        var allEntries = await _store.ReadAgentEntriesAsync(agentId, ct);
+        var matches = allEntries
+            .Select(entry => new
+            {
+                Entry = entry,
+                Score = Dot(queryVector.Span, entry.Vector)
+            })
+            .OrderByDescending(static x => x.Score)
+            .Take(maxResults * 8)
+            .ToList();
 
         if (matches.Count == 0)
             return new RagSearchResponse { Total = 0 };
 
         var pieces = matches
-            .Select(m => ToPiece(m.Item1, m.Item2))
+            .Select(static match => new Piece(
+                match.Entry.FileName,
+                match.Entry.Index,
+                match.Entry.Text,
+                match.Score))
             .OrderByDescending(p => p.Score)
             .ToList();
 
@@ -51,16 +58,16 @@ public sealed class RagVectorSearchService(IMemoryStore store, ILogger<RagVector
         return new RagSearchResponse { Total = segments.Count, Results = results };
     }
 
-    private static string CollectionName(Guid agentId) => $"agent_{agentId:N}";
-
-    private static Piece ToPiece(MemoryRecord record, double score)
+    private static double Dot(ReadOnlySpan<float> a, IReadOnlyList<float> b)
     {
-        var key = record.Metadata.Id ?? record.Key;
-        var idx = key.IndexOf('#');
-        var file = idx >= 0 ? key[..idx] : key;
-        var indexPart = idx >= 0 ? key[(idx + 1)..] : "0";
-        var index = int.TryParse(indexPart, out var i) ? i : 0;
-        return new Piece(file, index, record.Metadata.Text ?? string.Empty, score);
+        int len = Math.Min(a.Length, b.Count);
+        double sum = 0d;
+        for (int i = 0; i < len; i++)
+        {
+            sum += a[i] * b[i];
+        }
+
+        return sum;
     }
 
     private static List<Segment> MergeAdjacent(IEnumerable<Piece> pieces)

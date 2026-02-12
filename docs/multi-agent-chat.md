@@ -1,6 +1,7 @@
-# Multi-Agent Chat in the Current Semantic Kernel Engine
+# Multi-Agent Chat in the Legacy Semantic Kernel Engine (Archived)
 
-This document describes how multi-agent chat works in the current implementation.
+This document is historical context from the pre-Agentic runtime implementation.
+The active runtime no longer depends on Semantic Kernel.
 
 ## Execution flow
 

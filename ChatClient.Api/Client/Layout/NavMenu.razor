@@ -1,24 +1,6 @@
-@using ChatClient.Application.Services.Agentic
-@using Microsoft.Extensions.Options
-@inject IOptions<ChatEngineOptions> ChatEngineOptionsAccessor
-
-@{
-    var mode = ChatEngineOptionsAccessor.Value.Mode;
-    var showSemanticKernel = mode is ChatEngineMode.SemanticKernel or ChatEngineMode.Dual;
-    var showAgentic = mode is ChatEngineMode.Agentic or ChatEngineMode.Dual;
-}
-
 <MudNavMenu>
-    @if (showSemanticKernel)
-    {
-        <MudNavLink Href="/" Match="NavLinkMatch.All" Icon="@Icons.Material.Filled.Chat">Chat</MudNavLink>
-        <MudNavLink Href="multi-agent-chat" Match="NavLinkMatch.Prefix" Icon="@Icons.Material.Filled.Groups">Multi-Agent</MudNavLink>
-    }
-    @if (showAgentic)
-    {
-        <MudNavLink Href="chat-agentic" Match="NavLinkMatch.Prefix" Icon="@Icons.Material.Filled.AutoAwesome">Agentic Chat</MudNavLink>
-        <MudNavLink Href="multi-agent-chat-agentic" Match="NavLinkMatch.Prefix" Icon="@Icons.Material.Filled.Groups">Agentic Multi-Agent</MudNavLink>
-    }
+    <MudNavLink Href="/" Match="NavLinkMatch.All" Icon="@Icons.Material.Filled.Chat">Chat</MudNavLink>
+    <MudNavLink Href="multi-agent-chat" Match="NavLinkMatch.Prefix" Icon="@Icons.Material.Filled.Groups">Multi-Agent</MudNavLink>
     <MudNavLink Href="vector-search" Match="NavLinkMatch.Prefix" Icon="@Icons.Material.Filled.Search">Vector Search</MudNavLink>
     <MudNavLink Href="agent-descriptions" Match="NavLinkMatch.Prefix" Icon="@Icons.Material.Filled.List">Agent Descriptions</MudNavLink>
     <MudNavLink Href="/saved-chats" Match="NavLinkMatch.Prefix" Icon="@Icons.Material.Filled.History">Saved Chats</MudNavLink>
