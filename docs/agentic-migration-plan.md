@@ -1,157 +1,178 @@
-# Microsoft Agentic Framework Migration Plan (Parallel Engine Strategy)
+# Microsoft Agentic Framework Migration Plan (Parallel Coexistence, SK End-State Removal)
 
-This plan aligns with the current codebase and with the target vision: **do not rewrite everything in place**. Instead, implement a **new independent engine** in parallel, expose it in a separate UI path/tab, and migrate incrementally with measurable regression control.
+This plan defines a strict parallel migration strategy:
 
-## 1. Current baseline in this repository
+- run two engines side-by-side during migration,
+- keep them isolated,
+- keep both user-facing chat scenarios (single-agent and multi-agent),
+- remove Semantic Kernel only after Agentic reaches acceptance.
 
-Today the app uses Semantic Kernel as the active engine for:
+## 1. Clarified Intent
 
-- single-agent chat,
-- multi-agent orchestration (`GroupChatOrchestration` + group managers),
-- streaming updates and cancellation,
-- tool/function integration,
-- RAG context enrichment,
-- Ollama and OpenAI-compatible model endpoints.
+This is not a "fallback-only" strategy. It is a full parallel coexistence strategy with two active implementations:
 
-The current architecture already has service boundaries that can be used for side-by-side evolution.
+- `Semantic Kernel engine` (existing implementation),
+- `Agentic engine` (new implementation).
 
-## 2. Target architecture
+Both implementations are independently runnable and testable during migration.  
+End-state: Semantic Kernel code path is decommissioned and removed from the repository once acceptance gates are met.
 
-Introduce a second chat engine called **Agentic Engine** with fully separate classes/files:
+## 2. Migration Boundaries
 
-- `ChatClient.Api/Client/Services/Agentic/*` – new engine services,
-- `ChatClient.Application/Services/Agentic/*` – interfaces/contracts,
-- optional `ChatClient.Infrastructure/.../Agentic*` for persistence adapters,
-- dedicated UI route/page/tab (for example: `"/chat-agentic"`).
+Allowed reuse from current codebase:
 
-The existing Semantic Kernel engine remains unchanged and operational during rollout.
+- agent definitions and system prompts,
+- server/model/user settings,
+- HTTP client configuration and connectivity helpers,
+- chat persistence and shared UI components where engine-agnostic.
 
-## 3. Non-goals (important)
+Not allowed in new Agentic runtime paths:
 
-- No big-bang rewrite of current SK services.
-- No immediate deletion of SK-based runtime.
-- No shared mutable orchestration state between engines.
+- direct dependence on `Microsoft.SemanticKernel*` packages/types,
+- reuse of SK orchestration/runtime primitives,
+- reuse of SK plugin invocation pipeline as Agentic orchestration core.
 
-## 4. Migration principles
+## 3. Target Architecture
 
-1. **Isolation first**: independent classes, DI registrations, and orchestration runtime.
-2. **Parity by contract**: match user-visible behavior before optimization.
-3. **Feature flags**: enable progressive rollout by configuration.
-4. **Observability by default**: compare both engines with the same metrics.
+Introduce independent Agentic implementation paths:
 
-## 5. Concrete phased plan
+- `ChatClient.Application/Services/Agentic/*` for contracts/options/models,
+- `ChatClient.Api/Client/Services/Agentic/*` for runtime/orchestration/session services,
+- optional `ChatClient.Infrastructure/.../Agentic*` for adapters if needed.
 
-## Phase A — Stabilize contracts (short)
+UI must expose separate entry points for both scenarios:
 
-Create neutral interfaces used by UI and controllers, for example:
+- single-agent: existing SK tab + new Agentic tab,
+- multi-agent: existing SK tab + new Agentic tab.
+
+Example routes:
+
+- SK: `/chat`, `/multi-agent-chat`,
+- Agentic: `/chat-agentic`, `/multi-agent-chat-agentic`.
+
+## 4. Non-goals During Migration
+
+- no big-bang rewrite,
+- no shared mutable orchestration state between engines,
+- no partial in-place mutation of SK runtime internals pretending to be Agentic.
+
+## 5. Migration Principles
+
+1. Isolation first: separate classes, DI graph, and runtime flow.
+2. Parity by behavior: compare UX and outcomes, not SDK APIs.
+3. Progressive rollout: enable by config per scenario.
+4. Observability by default: identical metrics for both engines.
+5. Explicit decommissioning: SK removal is a planned final phase, not ad-hoc cleanup.
+
+## 6. Concrete Phases
+
+### Phase A - Stabilize engine-neutral contracts
+
+Create and use neutral interfaces for UI/controller orchestration, e.g.:
 
 - `IChatEngineSessionService`
 - `IChatEngineOrchestrator`
 - `IChatEngineHistoryBuilder`
 - `IChatEngineStreamingBridge`
 
-Provide two implementations:
+Provide both implementations:
 
-- `SemanticKernelChatEngine*` (adapter over current code)
-- `AgenticChatEngine*` (new code)
+- `SemanticKernelChatEngine*` adapter layer,
+- `AgenticChatEngine*` implementation.
 
-Result: UI no longer depends on SK-specific types directly.
+Exit criteria:
 
-## Phase B — Build Agentic Engine skeleton
+- UI and orchestration entry points depend on engine-neutral contracts,
+- SK-specific types are not required by shared UI orchestration flow.
 
-Implement minimal Agentic runtime with:
+### Phase B - Agentic single-agent chat path
 
-- one-agent request/response flow,
-- streaming text output to existing UI message model,
+Build complete Agentic single-agent flow:
+
+- request/response with streaming,
 - cancellation propagation,
-- model selection from existing server config entities.
+- model selection via existing server settings,
+- message lifecycle parity with current UX.
 
-Do not implement multi-agent yet.
+Expose via dedicated Agentic single-agent route/tab.
 
-## Phase C — Add dedicated UI tab/route
+### Phase C - Agentic multi-agent chat path
 
-Add a second chat entry point in UI:
+Build complete Agentic multi-agent flow:
 
-- existing tab/page = current SK engine,
-- new tab/page = Agentic engine.
+- round-robin baseline,
+- strategy controls equivalent to existing UX,
+- stop conditions and max-invocation safeguards.
 
-Keep independent session state so users can compare behavior quickly and safely.
+Expose via dedicated Agentic multi-agent route/tab.
 
-## Phase D — Tooling/function parity
+### Phase D - Tooling/function parity in Agentic
 
-Migrate current tool/function calls into Agentic-compatible tool registration.
-
-Requirements:
+Implement Agentic-native tool execution with:
 
 - strict argument schema validation,
 - invocation timeout and retry policy,
-- deterministic tool logging for diagnostics.
+- deterministic tool call logging and diagnostics.
 
-## Phase E — RAG and memory parity
+### Phase E - RAG/memory parity in Agentic
 
-Preserve current RAG behavior through an explicit retrieval tool in Agentic engine:
+Implement explicit retrieval behavior for Agentic runtime:
 
-- reuse existing file indexing and vector search services where possible,
-- keep retrieval pipeline independent from orchestration implementation,
-- maintain source injection behavior into chat history equivalent to current UX.
+- reuse indexing/vector services where practical,
+- keep retrieval pipeline runtime-agnostic,
+- preserve source injection behavior visible to users.
 
-## Phase F — Multi-agent orchestration parity
+### Phase F - Side-by-side validation and rollout
 
-Implement multi-agent flows in Agentic engine:
+Run controlled side-by-side comparison for both scenarios:
 
-- start with simple round-robin parity,
-- add strategy controls equivalent to current managers,
-- preserve stop conditions and max-invocation safeguards.
+- same prompts and model where possible,
+- compare quality, tool success rate, cancellation reliability, latency, token/cost,
+- promote Agentic scenario-by-scenario.
 
-## Phase G — Validation and progressive rollout
+### Phase G - Agentic default by scenario
 
-Use side-by-side evaluation:
+Switch defaults to Agentic where acceptance gates are satisfied, while SK path still exists for controlled coexistence.
 
-- same prompts, same model where possible,
-- compare response quality, tool success rate, latency, and token usage,
-- promote Agentic engine scenario-by-scenario.
+### Phase H - Semantic Kernel decommission and removal
 
-Keep SK engine as fallback until acceptance targets are stable.
+When both single-agent and multi-agent Agentic paths pass acceptance:
 
-## 6. Feature compatibility matrix (what may differ)
+- remove SK runtime/service registrations,
+- remove SK-based UI paths/tabs,
+- remove SK package references,
+- delete obsolete SK adapters/tests/docs,
+- finalize migration documentation.
 
-Potential differences to plan for explicitly:
+## 7. Acceptance Gates Before SK Removal
 
-- planner/orchestration APIs are not 1:1,
-- middleware/filter extension points differ,
-- prompt templating behavior may differ,
-- streaming event granularity may differ,
-- memory abstractions are often implemented differently.
+All of the following must be true:
 
-For each area, define parity tests at the **behavior level**, not SDK API level.
+- no blocking UX regressions in single-agent and multi-agent scenarios,
+- tool call success rate at or above SK baseline,
+- cancellation behavior reliable under load,
+- latency/cost within agreed budget,
+- production logs support root-cause analysis,
+- parity tests for session lifecycle and streaming pass for both scenarios.
 
-## 7. Suggested acceptance gates
+## 8. Repository Work Items (Updated)
 
-Promote a scenario to Agentic-by-default only when all are true:
+1. Keep `docs/agentic-migration-plan.md` and ADR in sync with this strategy.
+2. Complete engine-neutral contracts usage in UI/session orchestration.
+3. Keep Agentic namespaces free from `Microsoft.SemanticKernel*` dependencies.
+4. Add/complete dedicated Agentic routes for single-agent and multi-agent chat.
+5. Implement Agentic tool policy (validation + timeout + retry + diagnostics).
+6. Implement/verify Agentic RAG parity behavior for ongoing conversations.
+7. Add automated parity tests for single-agent and multi-agent lifecycle/streaming.
+8. Define explicit SK removal checklist and execute only after acceptance gates.
 
-- no blocking regressions in UX,
-- tool call success rate is at or above SK baseline,
-- cancellation works reliably,
-- latency/cost are within agreed budget,
-- production logs support root-cause analysis.
+## 9. Why This Fits the Project
 
-## 8. Recommended repository work items
-
-1. Add `docs/agentic-migration-plan.md` (this file).
-2. Add architecture decision record: `docs/adr/0001-parallel-agentic-engine.md`.
-3. Introduce engine-neutral interfaces in `ChatClient.Application`.
-4. Create `Agentic` namespaces/folders in API/Application projects.
-5. Add feature flag: `ChatEngine:Mode = SemanticKernel | Agentic | Dual`.
-6. Add dedicated UI route/tab for Agentic sessions.
-7. Add automated parity tests for session lifecycle and streaming behavior.
-
-## 9. Why this strategy fits this project
-
-The project already has:
+The repository already has:
 
 - modular DI registration,
-- clear service-oriented organization,
-- existing server/model configuration services,
+- service-oriented structure,
+- reusable server/model/settings services,
 - chat history and streaming abstractions.
 
-That makes side-by-side engine development practical and lower-risk than in-place replacement.
+This enables safe parallel development and controlled replacement, with a clear end-state where Agentic fully replaces SK.
