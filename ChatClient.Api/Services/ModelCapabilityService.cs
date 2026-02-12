@@ -5,8 +5,45 @@ namespace ChatClient.Api.Services;
 public sealed class ModelCapabilityService(
     ILlmServerConfigService llmServerConfigService,
     IOllamaClientService ollamaService,
+    IOpenAIClientService openAIClientService,
     ILogger<ModelCapabilityService> logger) : IModelCapabilityService
 {
+    public async Task EnsureModelSupportedByServerAsync(ServerModel model, CancellationToken cancellationToken = default)
+    {
+        if (model.ServerId == Guid.Empty)
+        {
+            throw new InvalidOperationException("Server ID must be specified for chat start.");
+        }
+
+        if (string.IsNullOrWhiteSpace(model.ModelName))
+        {
+            throw new InvalidOperationException("Model name must be specified for chat start.");
+        }
+
+        var server = await llmServerConfigService.GetByIdAsync(model.ServerId);
+        if (server is null)
+        {
+            throw new InvalidOperationException($"Server '{model.ServerId}' is not configured.");
+        }
+
+        IReadOnlyCollection<string> availableModelNames = server.ServerType switch
+        {
+            ServerType.ChatGpt => await openAIClientService.GetAvailableModelsAsync(model.ServerId, cancellationToken),
+            _ => (await ollamaService.GetModelsAsync(model.ServerId))
+                .Select(static m => m.Name)
+                .ToArray()
+        };
+
+        bool isSupported = availableModelNames.Any(name =>
+            string.Equals(name, model.ModelName, StringComparison.OrdinalIgnoreCase));
+
+        if (!isSupported)
+        {
+            throw new InvalidOperationException(
+                $"Model '{model.ModelName}' is not available on server '{server.Name}'.");
+        }
+    }
+
     public async Task<bool> SupportsFunctionCallingAsync(ServerModel model, CancellationToken cancellationToken = default)
     {
         var server = await llmServerConfigService.GetByIdAsync(model.ServerId);

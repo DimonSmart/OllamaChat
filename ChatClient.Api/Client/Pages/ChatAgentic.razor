@@ -392,6 +392,11 @@
         var resolvedAgents = agentsForChat
             .Select(a => a.Id == selectedAgent.Id ? CloneWithResolvedModel(a, effectiveModel) : a)
             .ToList();
+        var runtimeAgents = resolvedAgents
+            .Select(agent => new ResolvedChatAgent(
+                agent,
+                new ServerModel(agent.LlmId!.Value, agent.ModelName!)))
+            .ToList();
 
         var functions = resolvedAgents[0].FunctionSettings.SelectedFunctions ?? [];
         var chatConfiguration = new AppChatConfiguration(CurrentModelName, functions, whiteboardEnabled);
@@ -406,15 +411,22 @@
         var request = new ChatEngineSessionStartRequest
         {
             Configuration = chatConfiguration,
-            Agents = resolvedAgents,
+            Agents = runtimeAgents,
             History = savedMessages,
             ChatStrategyName = "RoundRobin",
             ChatStrategyOptions = new RoundRobinChatStrategyOptions { Rounds = 1 }
         };
-        await ChatService.StartAsync(request);
-        chatStarted = true;
-        lastSavedChatId = savedChatId;
-        lastSavedChatTitle = saved.Title;
+        try
+        {
+            await ChatService.StartAsync(request);
+            chatStarted = true;
+            lastSavedChatId = savedChatId;
+            lastSavedChatTitle = saved.Title;
+        }
+        catch (InvalidOperationException ex)
+        {
+            Snackbar.Add(ex.Message, Severity.Error);
+        }
     }
 
     private async Task StartChat()
@@ -432,20 +444,30 @@
         await UpdateWhiteboardSupportAsync(effectiveModel);
 
         var resolvedAgent = CloneWithResolvedModel(selectedAgent, effectiveModel);
-        var agents = new[] { resolvedAgent };
+        var runtimeAgents = new[]
+        {
+            new ResolvedChatAgent(resolvedAgent, effectiveModel)
+        };
 
         var functions = resolvedAgent.FunctionSettings.SelectedFunctions ?? [];
         var chatConfiguration = new AppChatConfiguration(CurrentModelName, functions, whiteboardEnabled);
         var request = new ChatEngineSessionStartRequest
         {
             Configuration = chatConfiguration,
-            Agents = agents,
+            Agents = runtimeAgents,
             ChatStrategyName = "RoundRobin",
             ChatStrategyOptions = new RoundRobinChatStrategyOptions { Rounds = 1 }
         };
-        await ChatService.StartAsync(request);
-        chatStarted = true;
-        StateHasChanged();
+        try
+        {
+            await ChatService.StartAsync(request);
+            chatStarted = true;
+            StateHasChanged();
+        }
+        catch (InvalidOperationException ex)
+        {
+            Snackbar.Add(ex.Message, Severity.Error);
+        }
     }
 
     private async Task SaveCurrentChat()

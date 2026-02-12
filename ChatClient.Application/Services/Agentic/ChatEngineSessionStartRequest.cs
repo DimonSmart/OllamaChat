@@ -7,7 +7,7 @@ public sealed class ChatEngineSessionStartRequest
 {
     public required AppChatConfiguration Configuration { get; init; }
 
-    public required IReadOnlyList<AgentDescription> Agents { get; init; }
+    public required IReadOnlyList<ResolvedChatAgent> Agents { get; init; }
 
     public IReadOnlyList<IAppChatMessage> History { get; init; } = [];
 

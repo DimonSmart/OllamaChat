@@ -1,5 +1,6 @@
 using System.Runtime.CompilerServices;
 using ChatClient.Api.Client.Services.Agentic;
+using ChatClient.Api.Services;
 using ChatClient.Application.Services.Agentic;
 using ChatClient.Domain.Models;
 using ChatClient.Domain.Models.ChatStrategies;
@@ -17,6 +18,19 @@ public class AgenticChatEngineSessionServiceTests
         public IAsyncEnumerable<ChatEngineStreamChunk> StreamAsync(
             ChatEngineOrchestrationRequest request,
             CancellationToken cancellationToken = default) => Handler(request, cancellationToken);
+    }
+
+    private sealed class StubModelCapabilityService : IModelCapabilityService
+    {
+        public Func<ServerModel, CancellationToken, Task>? EnsureModelSupportedByServerHandler { get; init; }
+        public Func<ServerModel, CancellationToken, Task<bool>> SupportsFunctionCallingHandler { get; init; } =
+            static (_, _) => Task.FromResult(true);
+
+        public Task EnsureModelSupportedByServerAsync(ServerModel model, CancellationToken cancellationToken = default)
+            => EnsureModelSupportedByServerHandler?.Invoke(model, cancellationToken) ?? Task.CompletedTask;
+
+        public Task<bool> SupportsFunctionCallingAsync(ServerModel model, CancellationToken cancellationToken = default)
+            => SupportsFunctionCallingHandler(model, cancellationToken);
     }
 
     [Fact]
@@ -37,7 +51,7 @@ public class AgenticChatEngineSessionServiceTests
         await service.StartAsync(new ChatEngineSessionStartRequest
         {
             Configuration = new AppChatConfiguration("model-a", []),
-            Agents = [agent],
+            Agents = ResolveAgents(agent),
             History = history
         });
 
@@ -62,7 +76,7 @@ public class AgenticChatEngineSessionServiceTests
         await service.StartAsync(new ChatEngineSessionStartRequest
         {
             Configuration = new AppChatConfiguration("model-a", []),
-            Agents = [agent]
+            Agents = ResolveAgents(agent)
         });
 
         await service.SendAsync("ping");
@@ -95,7 +109,7 @@ public class AgenticChatEngineSessionServiceTests
         await service.StartAsync(new ChatEngineSessionStartRequest
         {
             Configuration = new AppChatConfiguration("model-a", []),
-            Agents = [agent]
+            Agents = ResolveAgents(agent)
         });
 
         await service.SendAsync("ping");
@@ -122,7 +136,7 @@ public class AgenticChatEngineSessionServiceTests
         await service.StartAsync(new ChatEngineSessionStartRequest
         {
             Configuration = new AppChatConfiguration("model-a", []),
-            Agents = [agent]
+            Agents = ResolveAgents(agent)
         });
 
         var sendTask = service.SendAsync("ping");
@@ -153,7 +167,7 @@ public class AgenticChatEngineSessionServiceTests
         await service.StartAsync(new ChatEngineSessionStartRequest
         {
             Configuration = new AppChatConfiguration("model-a", []),
-            Agents = [agentA, agentB],
+            Agents = ResolveAgents(agentA, agentB),
             ChatStrategyName = "RoundRobin",
             ChatStrategyOptions = new RoundRobinChatStrategyOptions { Rounds = 1 }
         });
@@ -189,7 +203,7 @@ public class AgenticChatEngineSessionServiceTests
         await service.StartAsync(new ChatEngineSessionStartRequest
         {
             Configuration = new AppChatConfiguration("model-a", []),
-            Agents = [agentA, agentB],
+            Agents = ResolveAgents(agentA, agentB),
             ChatStrategyName = "RoundRobin",
             ChatStrategyOptions = new RoundRobinChatStrategyOptions { Rounds = 2 }
         });
@@ -224,7 +238,7 @@ public class AgenticChatEngineSessionServiceTests
         await service.StartAsync(new ChatEngineSessionStartRequest
         {
             Configuration = new AppChatConfiguration("model-a", []),
-            Agents = [agentA, agentB],
+            Agents = ResolveAgents(agentA, agentB),
             ChatStrategyName = "RoundRobin",
             ChatStrategyOptions = new RoundRobinChatStrategyOptions { Rounds = 2 }
         });
@@ -253,7 +267,7 @@ public class AgenticChatEngineSessionServiceTests
         await service.StartAsync(new ChatEngineSessionStartRequest
         {
             Configuration = new AppChatConfiguration("model-a", []),
-            Agents = [agentA, agentB, summary],
+            Agents = ResolveAgents(agentA, agentB, summary),
             ChatStrategyName = "RoundRobinWithSummary",
             ChatStrategyOptions = new RoundRobinSummaryChatStrategyOptions
             {
@@ -272,9 +286,74 @@ public class AgenticChatEngineSessionServiceTests
         Assert.Equal(["Agent-A", "Agent-B", "Agent-A", "Agent-B", "Summary"], assistants);
     }
 
-    private static AgenticChatEngineSessionService CreateService(IChatEngineOrchestrator orchestrator) =>
+    [Fact]
+    public async Task StartAsync_Throws_WhenModelIsNotSupportedByServer()
+    {
+        var orchestrator = new StubOrchestrator
+        {
+            Handler = static (_, _) => EmptyStream()
+        };
+
+        var capability = new StubModelCapabilityService
+        {
+            EnsureModelSupportedByServerHandler = static (model, _) =>
+                throw new InvalidOperationException($"Model '{model.ModelName}' is unavailable.")
+        };
+
+        var service = CreateService(orchestrator, capability);
+        var agent = CreateAgent("Agentic");
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            service.StartAsync(new ChatEngineSessionStartRequest
+            {
+                Configuration = new AppChatConfiguration("model-a", []),
+                Agents = ResolveAgents(agent)
+            }));
+    }
+
+    [Fact]
+    public async Task SendAsync_UsesResolvedModelWithoutConfigurationFallback()
+    {
+        ServerModel? capturedModel = null;
+
+        var orchestrator = new StubOrchestrator
+        {
+            Handler = (request, cancellationToken) =>
+            {
+                capturedModel = request.ResolvedModel;
+                return StreamChunks(request.Agent.AgentName, ["ok"], cancellationToken);
+            }
+        };
+
+        var service = CreateService(orchestrator);
+        var agent = CreateAgent("Agentic");
+        agent.ModelName = null;
+
+        var resolvedModel = new ServerModel(Guid.NewGuid(), "resolved-model");
+
+        await service.StartAsync(new ChatEngineSessionStartRequest
+        {
+            Configuration = new AppChatConfiguration("config-model", []),
+            Agents = [new ResolvedChatAgent(agent, resolvedModel)]
+        });
+
+        await service.SendAsync("ping");
+
+        Assert.NotNull(capturedModel);
+        Assert.Equal(resolvedModel.ServerId, capturedModel!.ServerId);
+        Assert.Equal("resolved-model", capturedModel.ModelName);
+
+        var assistant = service.Messages.Last(m => m.Role == ChatRole.Assistant);
+        Assert.Contains("resolved-model", assistant.Statistics);
+        Assert.DoesNotContain("config-model", assistant.Statistics);
+    }
+
+    private static AgenticChatEngineSessionService CreateService(
+        IChatEngineOrchestrator orchestrator,
+        IModelCapabilityService? capabilityService = null) =>
         new(
             new LoggerFactory().CreateLogger<AgenticChatEngineSessionService>(),
+            capabilityService ?? new StubModelCapabilityService(),
             orchestrator,
             new AgenticChatEngineHistoryBuilder(),
             new AgenticChatEngineStreamingBridge());
@@ -287,6 +366,15 @@ public class AgenticChatEngineSessionServiceTests
             Content = "You are helpful.",
             ModelName = "model-a"
         };
+
+    private static IReadOnlyList<ResolvedChatAgent> ResolveAgents(params AgentDescription[] agents)
+    {
+        return agents
+            .Select(agent => new ResolvedChatAgent(
+                agent,
+                new ServerModel(Guid.NewGuid(), agent.ModelName ?? "model-a")))
+            .ToList();
+    }
 
     private static async IAsyncEnumerable<ChatEngineStreamChunk> EmptyStream(
         [EnumeratorCancellation] CancellationToken cancellationToken = default)

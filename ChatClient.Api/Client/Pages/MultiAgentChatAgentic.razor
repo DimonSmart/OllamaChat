@@ -458,7 +458,13 @@
             agent.LlmId = effective.ServerId;
         }
 
-        currentModelName = selectedAgents[0].ModelName!;
+        var runtimeAgents = selectedAgents
+            .Select(agent => new ResolvedChatAgent(
+                agent,
+                new ServerModel(agent.LlmId!.Value, agent.ModelName!)))
+            .ToList();
+
+        currentModelName = runtimeAgents[0].Model.ModelName;
 
         var modelsForSupport = selectedAgents
             .Where(a => a.LlmId.HasValue && !string.IsNullOrWhiteSpace(a.ModelName))
@@ -479,15 +485,22 @@
         var request = new ChatEngineSessionStartRequest
         {
             Configuration = chatConfiguration,
-            Agents = selectedAgents.ToList(),
+            Agents = runtimeAgents,
             History = savedMessages,
             ChatStrategyName = chatStrategyName,
             ChatStrategyOptions = chatStrategyOptions
         };
-        await ChatService.StartAsync(request);
-        chatStarted = true;
-        lastSavedChatId = savedChatId;
-        lastSavedChatTitle = saved.Title;
+        try
+        {
+            await ChatService.StartAsync(request);
+            chatStarted = true;
+            lastSavedChatId = savedChatId;
+            lastSavedChatTitle = saved.Title;
+        }
+        catch (InvalidOperationException ex)
+        {
+            Snackbar.Add(ex.Message, Severity.Error);
+        }
     }
     
     private async Task StartChat()
@@ -508,13 +521,17 @@
             agent.LlmId = effectiveModel.ServerId;
         }
 
-        currentModelName = selectedAgents[0].ModelName!;
-
         userSettings.ChatStrategyName = chatStrategyName;
         userSettings.MultiAgentSelectedAgents = selectedAgents.Select(a => a.AgentName).ToList();
         await UserSettingsService.SaveSettingsAsync(userSettings);
 
         var agentsForChat = selectedAgents.ToList();
+        var runtimeAgents = agentsForChat
+            .Select(agent => new ResolvedChatAgent(
+                agent,
+                new ServerModel(agent.LlmId!.Value, agent.ModelName!)))
+            .ToList();
+        currentModelName = runtimeAgents[0].Model.ModelName;
 
         var allFunctions = agentsForChat.SelectMany(a => a.FunctionSettings.SelectedFunctions ?? []).ToList();
         var modelsForSupport = agentsForChat
@@ -526,13 +543,20 @@
         var request = new ChatEngineSessionStartRequest
         {
             Configuration = chatConfiguration,
-            Agents = agentsForChat,
+            Agents = runtimeAgents,
             ChatStrategyName = chatStrategyName,
             ChatStrategyOptions = chatStrategyOptions
         };
-        await ChatService.StartAsync(request);
-        chatStarted = true;
-        StateHasChanged();
+        try
+        {
+            await ChatService.StartAsync(request);
+            chatStarted = true;
+            StateHasChanged();
+        }
+        catch (InvalidOperationException ex)
+        {
+            Snackbar.Add(ex.Message, Severity.Error);
+        }
     }
 
     private async Task SaveCurrentChat()

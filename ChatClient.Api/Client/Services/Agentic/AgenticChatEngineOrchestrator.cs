@@ -29,6 +29,7 @@ public sealed class AgenticChatEngineOrchestrator(
         var runtimeRequest = new AgenticExecutionRuntimeRequest
         {
             Agent = request.Agent,
+            ResolvedModel = request.ResolvedModel,
             Configuration = request.Configuration,
             Conversation = conversation,
             UserMessage = request.UserMessage,
@@ -57,7 +58,7 @@ public sealed class AgenticChatEngineOrchestrator(
         var context = await ragContextService.TryBuildContextAsync(
             request.Agent.Id,
             request.UserMessage,
-            request.Agent.LlmId,
+            request.ResolvedModel.ServerId,
             cancellationToken);
 
         if (!context.HasContext)

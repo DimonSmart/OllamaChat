@@ -7,6 +7,8 @@ public sealed class AgenticExecutionRuntimeRequest
 {
     public required AgentDescription Agent { get; init; }
 
+    public required ServerModel ResolvedModel { get; init; }
+
     public required AppChatConfiguration Configuration { get; init; }
 
     public required IReadOnlyList<ChatMessage> Conversation { get; init; }

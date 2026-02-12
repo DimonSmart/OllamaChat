@@ -1,4 +1,5 @@
 using ChatClient.Application.Services.Agentic;
+using ChatClient.Api.Services;
 using ChatClient.Domain.Models;
 using ChatClient.Domain.Models.ChatStrategies;
 using Microsoft.Extensions.AI;
@@ -9,6 +10,7 @@ namespace ChatClient.Api.Client.Services.Agentic;
 
 public sealed class AgenticChatEngineSessionService(
     ILogger<AgenticChatEngineSessionService> logger,
+    IModelCapabilityService modelCapabilityService,
     IChatEngineOrchestrator orchestrator,
     IChatEngineHistoryBuilder historyBuilder,
     IChatEngineStreamingBridge streamingBridge) : IChatEngineSessionService
@@ -39,10 +41,12 @@ public sealed class AgenticChatEngineSessionService(
         if (request.Agents.Count == 0)
             throw new ArgumentException("At least one agent must be provided.", nameof(request));
 
+        await ValidateResolvedAgentsAsync(request.Agents, cancellationToken);
+
         _parameters = request;
         _chat.Reset();
         _activeStreams.Clear();
-        _chat.SetAgents(request.Agents);
+        _chat.SetAgents(request.Agents.Select(CreateRuntimeAgentDescription));
         ChatReset?.Invoke();
 
         if (request.History.Count > 0)
@@ -128,16 +132,16 @@ public sealed class AgenticChatEngineSessionService(
 
         try
         {
-            foreach (var (agent, round) in BuildExecutionOrder(parameters).WithIndex())
+            foreach (var (resolvedAgent, round) in BuildExecutionOrder(parameters).WithIndex())
             {
                 _cancellationTokenSource.Token.ThrowIfCancellationRequested();
                 logger.LogDebug(
                     "Agentic round {RoundNumber}: executing agent {AgentName}",
                     round + 1,
-                    agent.AgentName);
+                    resolvedAgent.Agent.AgentName);
 
                 bool shouldContinue = await StreamAgentResponseAsync(
-                    agent,
+                    resolvedAgent,
                     parameters,
                     text,
                     files,
@@ -160,14 +164,14 @@ public sealed class AgenticChatEngineSessionService(
     }
 
     private async Task<bool> StreamAgentResponseAsync(
-        AgentDescription agent,
+        ResolvedChatAgent resolvedAgent,
         ChatEngineSessionStartRequest parameters,
         string userMessageText,
         IReadOnlyList<AppChatMessageFile> files,
         bool enableRagContext,
         CancellationToken cancellationToken)
     {
-        var stream = streamingBridge.Create(agent.AgentName);
+        var stream = streamingBridge.Create(resolvedAgent.Agent.AgentName);
         _activeStreams[stream.Id] = stream;
         await AddMessageAsync(stream);
 
@@ -178,7 +182,8 @@ public sealed class AgenticChatEngineSessionService(
             var history = historyBuilder.Build(_chat.Messages);
             var request = new ChatEngineOrchestrationRequest
             {
-                Agent = agent,
+                Agent = resolvedAgent.Agent,
+                ResolvedModel = resolvedAgent.Model,
                 Configuration = parameters.Configuration,
                 Messages = history,
                 UserMessage = userMessageText,
@@ -231,7 +236,7 @@ public sealed class AgenticChatEngineSessionService(
             await AddRetrievedContextMessageIfNeededAsync(retrievedContext);
             var final = streamingBridge.Complete(
                 stream,
-                BuildStatistics(startedAt, agent.ModelName ?? parameters.Configuration.ModelName, stream.ApproximateTokenCount));
+                BuildStatistics(startedAt, resolvedAgent.Model.ModelName, stream.ApproximateTokenCount));
             if (functionCalls.Count > 0)
             {
                 final.FunctionCalls = functionCalls;
@@ -248,16 +253,16 @@ public sealed class AgenticChatEngineSessionService(
         }
         catch (ModelDoesNotSupportToolsException ex)
         {
-            logger.LogWarning(ex, "Model does not support tools for agent {AgentName}", agent.AgentName);
+            logger.LogWarning(ex, "Model does not support tools for agent {AgentName}", resolvedAgent.Agent.AgentName);
             await CancelStreamAsync(stream);
-            await HandleError($"The model **{agent.ModelName ?? parameters.Configuration.ModelName}** does not support function calling.", agent.AgentName);
+            await HandleError($"The model **{resolvedAgent.Model.ModelName}** does not support function calling.", resolvedAgent.Agent.AgentName);
             return false;
         }
         catch (Exception ex)
         {
-            logger.LogError(ex, "Agentic session failed for agent {AgentName}", agent.AgentName);
+            logger.LogError(ex, "Agentic session failed for agent {AgentName}", resolvedAgent.Agent.AgentName);
             await CancelStreamAsync(stream);
-            await HandleError($"An error occurred while getting the response: {ex.Message}", agent.AgentName);
+            await HandleError($"An error occurred while getting the response: {ex.Message}", resolvedAgent.Agent.AgentName);
             return false;
         }
         finally
@@ -337,6 +342,55 @@ public sealed class AgenticChatEngineSessionService(
         AnsweringStateChanged?.Invoke(isAnswering);
     }
 
+    private async Task ValidateResolvedAgentsAsync(
+        IReadOnlyList<ResolvedChatAgent> resolvedAgents,
+        CancellationToken cancellationToken)
+    {
+        foreach (var resolvedAgent in resolvedAgents)
+        {
+            if (resolvedAgent.Model.ServerId == Guid.Empty)
+            {
+                throw new InvalidOperationException(
+                    $"Server is not resolved for agent '{resolvedAgent.Agent.AgentName}'.");
+            }
+
+            if (string.IsNullOrWhiteSpace(resolvedAgent.Model.ModelName))
+            {
+                throw new InvalidOperationException(
+                    $"Model is not resolved for agent '{resolvedAgent.Agent.AgentName}'.");
+            }
+
+            await modelCapabilityService.EnsureModelSupportedByServerAsync(
+                resolvedAgent.Model,
+                cancellationToken);
+        }
+    }
+
+    private static AgentDescription CreateRuntimeAgentDescription(ResolvedChatAgent resolvedAgent)
+    {
+        var source = resolvedAgent.Agent;
+        var model = resolvedAgent.Model;
+
+        return new AgentDescription
+        {
+            Id = source.Id,
+            AgentName = source.AgentName,
+            Content = source.Content,
+            ShortName = source.ShortName,
+            ModelName = model.ModelName,
+            LlmId = model.ServerId,
+            Temperature = source.Temperature,
+            RepeatPenalty = source.RepeatPenalty,
+            FunctionSettings = new FunctionSettings
+            {
+                AutoSelectCount = source.FunctionSettings.AutoSelectCount,
+                SelectedFunctions = [.. source.FunctionSettings.SelectedFunctions]
+            },
+            CreatedAt = source.CreatedAt,
+            UpdatedAt = source.UpdatedAt
+        };
+    }
+
     private static string BuildStatistics(DateTime startedAt, string modelName, int tokenCount)
     {
         var duration = DateTime.Now - startedAt;
@@ -347,7 +401,7 @@ public sealed class AgenticChatEngineSessionService(
         return $"time {duration.TotalSeconds:F1}s | model {modelName} | tokens {tokenCount} ({tokensPerSecond}/s)";
     }
 
-    private static IReadOnlyList<AgentDescription> BuildExecutionOrder(ChatEngineSessionStartRequest parameters)
+    private static IReadOnlyList<ResolvedChatAgent> BuildExecutionOrder(ChatEngineSessionStartRequest parameters)
     {
         int rounds = parameters.ChatStrategyOptions switch
         {
@@ -373,7 +427,7 @@ public sealed class AgenticChatEngineSessionService(
                 return [summaryAgent];
             }
 
-            var ordered = new List<AgentDescription>(roundAgents.Count * rounds + 1);
+            var ordered = new List<ResolvedChatAgent>(roundAgents.Count * rounds + 1);
             for (int round = 0; round < rounds; round++)
             {
                 ordered.AddRange(roundAgents);
@@ -386,8 +440,8 @@ public sealed class AgenticChatEngineSessionService(
         return BuildRoundRobinOrder(parameters.Agents, rounds);
     }
 
-    private static IReadOnlyList<AgentDescription> BuildRoundRobinOrder(
-        IReadOnlyList<AgentDescription> agents,
+    private static IReadOnlyList<ResolvedChatAgent> BuildRoundRobinOrder(
+        IReadOnlyList<ResolvedChatAgent> agents,
         int rounds)
     {
         if (rounds == 1)
@@ -395,7 +449,7 @@ public sealed class AgenticChatEngineSessionService(
             return agents;
         }
 
-        var orderedAgents = new List<AgentDescription>(agents.Count * rounds);
+        var orderedAgents = new List<ResolvedChatAgent>(agents.Count * rounds);
         for (int round = 0; round < rounds; round++)
         {
             orderedAgents.AddRange(agents);
@@ -404,8 +458,8 @@ public sealed class AgenticChatEngineSessionService(
         return orderedAgents;
     }
 
-    private static AgentDescription? ResolveSummaryAgent(
-        IReadOnlyList<AgentDescription> agents,
+    private static ResolvedChatAgent? ResolveSummaryAgent(
+        IReadOnlyList<ResolvedChatAgent> agents,
         string summaryAgentId)
     {
         if (string.IsNullOrWhiteSpace(summaryAgentId))
@@ -414,11 +468,11 @@ public sealed class AgenticChatEngineSessionService(
         }
 
         return agents.FirstOrDefault(agent =>
-            string.Equals(agent.AgentId, summaryAgentId, StringComparison.OrdinalIgnoreCase));
+            string.Equals(agent.Agent.AgentId, summaryAgentId, StringComparison.OrdinalIgnoreCase));
     }
 
-    private static bool IsSameAgent(AgentDescription left, AgentDescription right) =>
-        string.Equals(left.AgentId, right.AgentId, StringComparison.OrdinalIgnoreCase);
+    private static bool IsSameAgent(ResolvedChatAgent left, ResolvedChatAgent right) =>
+        string.Equals(left.Agent.AgentId, right.Agent.AgentId, StringComparison.OrdinalIgnoreCase);
 }
 
 file static class EnumerableExtensions

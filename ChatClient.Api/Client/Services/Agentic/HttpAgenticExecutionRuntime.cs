@@ -14,7 +14,6 @@ namespace ChatClient.Api.Client.Services.Agentic;
 
 public sealed class HttpAgenticExecutionRuntime(
     ILlmServerConfigService llmServerConfigService,
-    IUserSettingsService userSettingsService,
     IModelCapabilityService modelCapabilityService,
     IMcpClientService mcpClientService,
     KernelService kernelService,
@@ -38,31 +37,22 @@ public sealed class HttpAgenticExecutionRuntime(
     {
         ArgumentNullException.ThrowIfNull(request);
 
-        string modelName = request.Agent.ModelName
-            ?? request.Configuration.ModelName
-            ?? throw new InvalidOperationException($"Agent '{request.Agent.AgentName}' model name is not set.");
-
-        LlmServerConfig? server = await LlmServerConfigHelper.GetServerConfigAsync(
-            llmServerConfigService,
-            userSettingsService,
-            request.Agent.LlmId);
+        var resolvedModel = request.ResolvedModel;
+        string modelName = resolvedModel.ModelName;
+        LlmServerConfig? server = await llmServerConfigService.GetByIdAsync(resolvedModel.ServerId);
 
         if (server is null)
         {
             yield return new ChatEngineStreamChunk(
                 request.Agent.AgentName,
-                "No configured LLM server is available for the selected model.",
+                $"Configured LLM server '{resolvedModel.ServerId}' was not found.",
                 IsFinal: true,
                 IsError: true);
             yield break;
         }
 
-        Guid resolvedServerId = request.Agent.LlmId is { } agentServerId && agentServerId != Guid.Empty
-            ? agentServerId
-            : server.Id ?? Guid.Empty;
-
         bool supportsFunctions = await modelCapabilityService.SupportsFunctionCallingAsync(
-            new ServerModel(resolvedServerId, modelName),
+            resolvedModel,
             cancellationToken);
 
         var requestedFunctions = await ResolveRequestedFunctionNamesAsync(request, cancellationToken);
