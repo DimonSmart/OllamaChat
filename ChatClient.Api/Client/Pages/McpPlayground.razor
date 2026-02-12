@@ -73,6 +73,7 @@
 
 @code {
     private readonly List<string> servers = [];
+    private readonly Dictionary<string, string> serverAliases = new(StringComparer.OrdinalIgnoreCase);
     private readonly List<McpToolInfo> tools = [];
     private readonly Dictionary<string, McpClientTool> toolMap = new(StringComparer.OrdinalIgnoreCase);
     private readonly List<FieldInfo> fields = [];
@@ -92,7 +93,11 @@
         try
         {
             var clients = await McpClientService.GetMcpClientsAsync();
-            servers.AddRange(clients.Select(c => c.ServerInfo.Name));
+            servers.AddRange(clients
+                .Select(c => c.ServerInfo.Name)
+                .Where(name => !string.IsNullOrWhiteSpace(name))
+                .Distinct(StringComparer.OrdinalIgnoreCase));
+            BuildServerAliases();
             await ApplyPreselectedServer();
         }
         catch (Exception ex)
@@ -114,7 +119,7 @@
         if (string.IsNullOrWhiteSpace(McpServerName))
             return;
 
-        var match = servers.FirstOrDefault(s => string.Equals(s, McpServerName, StringComparison.OrdinalIgnoreCase));
+        var match = ResolveServerName(McpServerName);
         if (string.IsNullOrEmpty(match))
             return;
 
@@ -122,6 +127,68 @@
             return;
 
         await OnServerChangedInternal(match, updateQuery: false);
+    }
+
+    private void BuildServerAliases()
+    {
+        serverAliases.Clear();
+        foreach (var server in servers)
+        {
+            foreach (var alias in ExpandServerAliases(server))
+            {
+                AddServerAlias(alias, server);
+            }
+        }
+    }
+
+    private string? ResolveServerName(string queryServerName)
+    {
+        foreach (var alias in ExpandServerAliases(queryServerName))
+        {
+            if (serverAliases.TryGetValue(alias, out var aliasMatch))
+                return aliasMatch;
+        }
+
+        return servers.FirstOrDefault(s => string.Equals(s, queryServerName, StringComparison.OrdinalIgnoreCase));
+    }
+
+    private static IEnumerable<string> ExpandServerAliases(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+            yield break;
+
+        var trimmed = value.Trim();
+        yield return trimmed;
+
+        var pathTail = trimmed
+            .Split(['/', '\\'], StringSplitOptions.RemoveEmptyEntries)
+            .LastOrDefault();
+
+        if (!string.IsNullOrWhiteSpace(pathTail) && !string.Equals(pathTail, trimmed, StringComparison.OrdinalIgnoreCase))
+            yield return pathTail;
+
+        var noExe = pathTail ?? trimmed;
+        if (noExe.EndsWith(".exe", StringComparison.OrdinalIgnoreCase))
+        {
+            noExe = noExe[..^4];
+            yield return noExe;
+        }
+
+        var dotTail = noExe
+            .Split('.', StringSplitOptions.RemoveEmptyEntries)
+            .LastOrDefault();
+        if (!string.IsNullOrWhiteSpace(dotTail))
+        {
+            yield return dotTail;
+        }
+    }
+
+    private void AddServerAlias(string? alias, string targetServer)
+    {
+        if (string.IsNullOrWhiteSpace(alias))
+            return;
+
+        serverAliases[alias] = targetServer;
     }
 
     private async Task OnServerChanged(string value)
