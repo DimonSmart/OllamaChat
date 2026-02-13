@@ -9,6 +9,7 @@ public static class BuiltInMcpServerCatalog
     public const string TimeServerKey = "built-in-time";
     public const string FormattedTimeServerKey = "built-in-formatted-time";
     public const string MathServerKey = "built-in-math";
+    public const string UserProfilePrefsServerKey = "built-in-user-profile-prefs";
 
     private static readonly IReadOnlyList<BuiltInMcpServerDefinition> _definitions =
     [
@@ -26,7 +27,12 @@ public static class BuiltInMcpServerCatalog
             Id: Guid.Parse("76ca15c0-4f2d-4a76-8d32-70fdd6dd5083"),
             Key: MathServerKey,
             Name: "Built-in Math MCP Server",
-            Description: "Evaluates arithmetic expressions from text input.")
+            Description: "Evaluates arithmetic expressions from text input."),
+        new(
+            Id: Guid.Parse("c8c4a3cf-e2d5-4f4d-9a6f-4504e322a2b3"),
+            Key: UserProfilePrefsServerKey,
+            Name: "Built-in User Profile Prefs MCP Server",
+            Description: "Stores user preferences and asks for missing values via elicitation.")
     ];
 
     public static IReadOnlyList<BuiltInMcpServerDefinition> Definitions => _definitions;

@@ -71,6 +71,9 @@ public static class BuiltInMcpServerHost
             case BuiltInMcpServerCatalog.MathServerKey:
                 mcpBuilder.WithTools<BuiltInMathServerTools>();
                 break;
+            case BuiltInMcpServerCatalog.UserProfilePrefsServerKey:
+                mcpBuilder.WithTools<BuiltInUserProfilePrefsServerTools>();
+                break;
             default:
                 throw new InvalidOperationException($"Unknown built-in MCP server key '{definition.Key}'.");
         }
