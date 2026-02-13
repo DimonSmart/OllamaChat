@@ -153,10 +153,9 @@
                          </MudChatHeader>
 
                         @{
-                            var displayName = message.Role == Microsoft.Extensions.AI.ChatRole.Assistant
-                                ? (message.AgentName ?? string.Empty)
-                                : userSettings.UserName;
-                            var avatarText = GetAvatarText(displayName);
+                            var avatarText = message.Role == Microsoft.Extensions.AI.ChatRole.Assistant
+                                ? GetAssistantAvatarText(message.AgentName)
+                                : GetAvatarText(userSettings.UserName);
                         }
 
                             @if (!string.IsNullOrEmpty(avatarText))
@@ -747,49 +746,65 @@
     {
         try
         {
-            var response = McpElicitationResponse.Cancel;
+            cancellationToken.ThrowIfCancellationRequested();
 
+            var parameters = new DialogParameters
+            {
+                ["Prompt"] = prompt
+            };
+            var options = new DialogOptions
+            {
+                MaxWidth = MaxWidth.Small,
+                FullWidth = true,
+                BackdropClick = false,
+                CloseOnEscapeKey = true,
+                CloseButton = true
+            };
+
+            IDialogReference? dialog = null;
             await InvokeAsync(async () =>
             {
-                cancellationToken.ThrowIfCancellationRequested();
-
-                var parameters = new DialogParameters
-                {
-                    ["Prompt"] = prompt
-                };
-                var options = new DialogOptions
-                {
-                    MaxWidth = MaxWidth.Small,
-                    FullWidth = true,
-                    BackdropClick = false,
-                    CloseOnEscapeKey = true,
-                    CloseButton = true
-                };
-
-                var dialog = await DialogService.ShowAsync<McpElicitationDialog>(
+                dialog = await DialogService.ShowAsync<McpElicitationDialog>(
                     $"MCP input: {prompt.ServerName}",
                     parameters,
                     options);
-
-                using var registration = cancellationToken.Register(() =>
-                {
-                    _ = InvokeAsync(() => dialog.Close(DialogResult.Ok(McpElicitationResponse.Cancel)));
-                });
-
-                var result = await dialog.Result;
-                if (result?.Canceled != false)
-                {
-                    response = McpElicitationResponse.Cancel;
-                    return;
-                }
-
-                response = result.Data as McpElicitationResponse ?? McpElicitationResponse.Cancel;
             });
 
+            if (dialog is null)
+                return McpElicitationResponse.Cancel;
+
+            Logger.LogInformation(
+                "Elicitation dialog opened in multi-agent chat. Server: {ServerName}. Mode: {Mode}. Fields: {FieldCount}.",
+                prompt.ServerName,
+                prompt.Mode,
+                prompt.Fields.Count);
+
+            using var registration = cancellationToken.Register(() =>
+            {
+                _ = InvokeAsync(() => dialog.Close(DialogResult.Ok(McpElicitationResponse.Cancel)));
+            });
+
+            var result = await dialog.Result;
+            if (result?.Canceled != false)
+            {
+                Logger.LogInformation(
+                    "Elicitation dialog closed in multi-agent chat with cancel. Server: {ServerName}.",
+                    prompt.ServerName);
+                return McpElicitationResponse.Cancel;
+            }
+
+            var response = result.Data as McpElicitationResponse ?? McpElicitationResponse.Cancel;
+            Logger.LogInformation(
+                "Elicitation dialog completed in multi-agent chat. Server: {ServerName}. Action: {Action}.",
+                prompt.ServerName,
+                response.Action);
             return response;
         }
         catch (OperationCanceledException)
         {
+            Logger.LogInformation(
+                "Elicitation dialog canceled by token in multi-agent chat. Server: {ServerName}.",
+                prompt.ServerName);
             return McpElicitationResponse.Cancel;
         }
         catch (Exception ex)
@@ -868,4 +883,20 @@
     }
 
     private string GetAvatarText(string? name) => string.IsNullOrWhiteSpace(name) ? string.Empty : name;
+
+    private string GetAssistantAvatarText(string? agentName)
+    {
+        if (string.IsNullOrWhiteSpace(agentName))
+            return string.Empty;
+
+        var configuredShortName = agents
+            .FirstOrDefault(a => string.Equals(a.AgentName, agentName, StringComparison.OrdinalIgnoreCase))
+            ?.ShortName;
+
+        if (!string.IsNullOrWhiteSpace(configuredShortName))
+            return configuredShortName.Trim();
+
+        var trimmedName = agentName.Trim();
+        return trimmedName.Length <= 3 ? trimmedName : trimmedName[..3];
+    }
 }

@@ -27,7 +27,8 @@ internal sealed record ToolBinding(
     string ProviderName,
     string Description,
     JsonElement JsonSchema,
-    Func<Dictionary<string, object?>, CancellationToken, Task<object>> ExecuteAsync);
+    Func<Dictionary<string, object?>, CancellationToken, Task<object>> ExecuteAsync,
+    bool MayRequireUserInput = false);
 
 internal sealed record ToolRegistry(
     IReadOnlyList<ToolBinding> Tools,

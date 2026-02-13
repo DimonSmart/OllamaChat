@@ -374,10 +374,21 @@ public sealed class HttpAgenticExecutionRuntime(
 
             try
             {
-                using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-                timeoutCts.CancelAfter(TimeSpan.FromSeconds(_toolPolicy.TimeoutSeconds));
+                var timeoutSeconds = tool.MayRequireUserInput
+                    ? Math.Max(_toolPolicy.TimeoutSeconds, _toolPolicy.InteractiveTimeoutSeconds)
+                    : _toolPolicy.TimeoutSeconds;
+
+                using var timeoutCts = timeoutSeconds > 0
+                    ? CancellationTokenSource.CreateLinkedTokenSource(cancellationToken)
+                    : null;
+                if (timeoutSeconds > 0)
+                {
+                    timeoutCts!.CancelAfter(TimeSpan.FromSeconds(timeoutSeconds));
+                }
+
+                var executionToken = timeoutCts?.Token ?? cancellationToken;
                 using var interactionScope = mcpUserInteractionService.BeginInteractionScope(McpInteractionScope.Chat);
-                var result = await tool.ExecuteAsync(arguments, timeoutCts.Token);
+                var result = await tool.ExecuteAsync(arguments, executionToken);
                 string responsePayload = AgenticToolUtility.SerializeForToolTransport(result, JsonOptions);
                 int durationMs = (int)Math.Max(0, (DateTime.UtcNow - startedAt).TotalMilliseconds);
 
@@ -764,7 +775,8 @@ public sealed class HttpAgenticExecutionRuntime(
                         providerName,
                         tool.Description ?? string.Empty,
                         schema,
-                        async (arguments, token) => await tool.CallAsync(arguments, null, null, token));
+                        async (arguments, token) => await tool.CallAsync(arguments, null, null, token),
+                        MayRequireUserInput: MayRequireUserInput(tool.Description));
 
                     tools.Add(binding);
                     toolsByProviderName[providerName] = binding;
@@ -886,10 +898,23 @@ public sealed class HttpAgenticExecutionRuntime(
 
         return new AgenticToolInvocationPolicyOptions
         {
-            TimeoutSeconds = Math.Max(1, policy.TimeoutSeconds),
+            TimeoutSeconds = Math.Max(0, policy.TimeoutSeconds),
+            InteractiveTimeoutSeconds = Math.Max(0, policy.InteractiveTimeoutSeconds),
             MaxRetries = Math.Max(0, policy.MaxRetries),
             RetryDelayMs = Math.Max(0, policy.RetryDelayMs)
         };
+    }
+
+    private static bool MayRequireUserInput(string? description)
+    {
+        if (string.IsNullOrWhiteSpace(description))
+            return false;
+
+        return description.Contains("elicitation", StringComparison.OrdinalIgnoreCase) ||
+               description.Contains("ask user", StringComparison.OrdinalIgnoreCase) ||
+               description.Contains("asks user", StringComparison.OrdinalIgnoreCase) ||
+               description.Contains("asks the user", StringComparison.OrdinalIgnoreCase) ||
+               description.Contains("prompt", StringComparison.OrdinalIgnoreCase);
     }
 
     private static JsonElement CreateEmptyToolSchema()

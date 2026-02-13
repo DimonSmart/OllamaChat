@@ -56,7 +56,7 @@ public sealed class McpUserInteractionService(ILogger<McpUserInteractionService>
 {
     private readonly object _gate = new();
     private readonly AsyncLocal<ScopeFrame?> _currentScope = new();
-    private readonly Dictionary<McpInteractionScope, List<HandlerRegistration>> _handlersByScope = [];
+    private readonly Dictionary<McpInteractionScope, HandlerRegistration> _handlersByScope = [];
     private readonly Dictionary<McpInteractionScope, int> _activeScopes = [];
     private long _nextHandlerId;
     private McpInteractionScope? _lastActiveScope;
@@ -106,13 +106,7 @@ public sealed class McpUserInteractionService(ILogger<McpUserInteractionService>
 
         lock (_gate)
         {
-            if (!_handlersByScope.TryGetValue(scope, out var registrations))
-            {
-                registrations = [];
-                _handlersByScope[scope] = registrations;
-            }
-
-            registrations.Add(registration);
+            _handlersByScope[scope] = registration;
             _lastActiveScope = scope;
         }
 
@@ -120,11 +114,8 @@ public sealed class McpUserInteractionService(ILogger<McpUserInteractionService>
         {
             lock (_gate)
             {
-                if (!_handlersByScope.TryGetValue(scope, out var registrations))
-                    return;
-
-                registrations.RemoveAll(r => r.Id == registration.Id);
-                if (registrations.Count == 0)
+                if (_handlersByScope.TryGetValue(scope, out var existing) &&
+                    existing.Id == registration.Id)
                 {
                     _handlersByScope.Remove(scope);
                 }
@@ -226,10 +217,10 @@ public sealed class McpUserInteractionService(ILogger<McpUserInteractionService>
     {
         handler = null;
 
-        if (!_handlersByScope.TryGetValue(scope, out var handlers) || handlers.Count == 0)
+        if (!_handlersByScope.TryGetValue(scope, out var registration))
             return false;
 
-        handler = handlers[^1].Handler;
+        handler = registration.Handler;
         return true;
     }
 

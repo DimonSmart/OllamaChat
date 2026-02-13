@@ -370,49 +370,65 @@
     {
         try
         {
-            var response = McpElicitationResponse.Cancel;
+            cancellationToken.ThrowIfCancellationRequested();
 
+            var parameters = new DialogParameters
+            {
+                ["Prompt"] = prompt
+            };
+            var options = new DialogOptions
+            {
+                MaxWidth = MaxWidth.Small,
+                FullWidth = true,
+                BackdropClick = false,
+                CloseOnEscapeKey = true,
+                CloseButton = true
+            };
+
+            IDialogReference? dialog = null;
             await InvokeAsync(async () =>
             {
-                cancellationToken.ThrowIfCancellationRequested();
-
-                var parameters = new DialogParameters
-                {
-                    ["Prompt"] = prompt
-                };
-                var options = new DialogOptions
-                {
-                    MaxWidth = MaxWidth.Small,
-                    FullWidth = true,
-                    BackdropClick = false,
-                    CloseOnEscapeKey = true,
-                    CloseButton = true
-                };
-
-                var dialog = await DialogService.ShowAsync<McpElicitationDialog>(
+                dialog = await DialogService.ShowAsync<McpElicitationDialog>(
                     $"MCP input: {prompt.ServerName}",
                     parameters,
                     options);
-
-                using var registration = cancellationToken.Register(() =>
-                {
-                    _ = InvokeAsync(() => dialog.Close(DialogResult.Ok(McpElicitationResponse.Cancel)));
-                });
-
-                var result = await dialog.Result;
-                if (result?.Canceled != false)
-                {
-                    response = McpElicitationResponse.Cancel;
-                    return;
-                }
-
-                response = result.Data as McpElicitationResponse ?? McpElicitationResponse.Cancel;
             });
 
+            if (dialog is null)
+                return McpElicitationResponse.Cancel;
+
+            Logger.LogInformation(
+                "Elicitation dialog opened in MCP playground. Server: {ServerName}. Mode: {Mode}. Fields: {FieldCount}.",
+                prompt.ServerName,
+                prompt.Mode,
+                prompt.Fields.Count);
+
+            using var registration = cancellationToken.Register(() =>
+            {
+                _ = InvokeAsync(() => dialog.Close(DialogResult.Ok(McpElicitationResponse.Cancel)));
+            });
+
+            var result = await dialog.Result;
+            if (result?.Canceled != false)
+            {
+                Logger.LogInformation(
+                    "Elicitation dialog closed in MCP playground with cancel. Server: {ServerName}.",
+                    prompt.ServerName);
+                return McpElicitationResponse.Cancel;
+            }
+
+            var response = result.Data as McpElicitationResponse ?? McpElicitationResponse.Cancel;
+            Logger.LogInformation(
+                "Elicitation dialog completed in MCP playground. Server: {ServerName}. Action: {Action}.",
+                prompt.ServerName,
+                response.Action);
             return response;
         }
         catch (OperationCanceledException)
         {
+            Logger.LogInformation(
+                "Elicitation dialog canceled by token in MCP playground. Server: {ServerName}.",
+                prompt.ServerName);
             return McpElicitationResponse.Cancel;
         }
         catch (Exception ex)
