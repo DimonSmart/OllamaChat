@@ -150,13 +150,13 @@ public sealed class HttpAgenticExecutionRuntime(
                 yield break;
             }
 
-            client = CreateHttpClient(server, "https://api.openai.com");
-            endpoint = BuildOpenAiChatEndpoint(server);
+            client = LlmChatEndpointHelper.CreateHttpClient(server, "https://api.openai.com");
+            endpoint = LlmChatEndpointHelper.BuildOpenAiChatEndpoint(server);
         }
         else
         {
-            client = CreateHttpClient(server, LlmServerConfig.DefaultOllamaUrl);
-            endpoint = BuildOllamaChatEndpoint(server);
+            client = LlmChatEndpointHelper.CreateHttpClient(server, LlmServerConfig.DefaultOllamaUrl);
+            endpoint = LlmChatEndpointHelper.BuildOllamaChatEndpoint(server);
         }
 
         using (client)
@@ -241,12 +241,14 @@ public sealed class HttpAgenticExecutionRuntime(
         ToolRegistry toolRegistry,
         CancellationToken cancellationToken)
     {
-        string payload = BuildOpenAiPayload(
+        string payload = AgenticProviderPayloadBuilder.BuildOpenAiPayload(
             modelName,
             agent,
             messages,
             stream: false,
-            tools: toolRegistry.Tools);
+            tools: toolRegistry.Tools,
+            JsonOptions,
+            EmptyToolSchema);
 
         using var request = new HttpRequestMessage(HttpMethod.Post, endpoint)
         {
@@ -263,7 +265,7 @@ public sealed class HttpAgenticExecutionRuntime(
         }
 
         string body = await response.Content.ReadAsStringAsync(cancellationToken);
-        return ParseOpenAiCompletion(body);
+        return AgenticProviderResponseParser.ParseOpenAiCompletion(body);
     }
 
     private async Task<ProviderAssistantResponse> CompleteOllamaWithToolsAsync(
@@ -275,12 +277,14 @@ public sealed class HttpAgenticExecutionRuntime(
         ToolRegistry toolRegistry,
         CancellationToken cancellationToken)
     {
-        string payload = BuildOllamaPayload(
+        string payload = AgenticProviderPayloadBuilder.BuildOllamaPayload(
             modelName,
             agent,
             messages,
             stream: false,
-            tools: toolRegistry.Tools);
+            tools: toolRegistry.Tools,
+            JsonOptions,
+            EmptyToolSchema);
 
         using var request = new HttpRequestMessage(HttpMethod.Post, endpoint)
         {
@@ -296,7 +300,7 @@ public sealed class HttpAgenticExecutionRuntime(
         }
 
         string body = await response.Content.ReadAsStringAsync(cancellationToken);
-        return ParseOllamaCompletion(body);
+        return AgenticProviderResponseParser.ParseOllamaCompletion(body);
     }
 
     private async Task<ToolExecutionResult> ExecuteToolCallAsync(
@@ -315,7 +319,7 @@ public sealed class HttpAgenticExecutionRuntime(
                 new FunctionCallRecord("unknown", toolCall.Name, toolCall.Arguments, $"status=error;response={errorPayload}"));
         }
 
-        if (!TryValidateAndParseToolArguments(
+        if (!ToolArgumentSchemaValidator.TryValidateAndParse(
                 toolCall.Arguments,
                 tool.JsonSchema,
                 out var arguments,
@@ -351,7 +355,7 @@ public sealed class HttpAgenticExecutionRuntime(
                 timeoutCts.CancelAfter(TimeSpan.FromSeconds(_toolPolicy.TimeoutSeconds));
                 using var interactionScope = mcpUserInteractionService.BeginInteractionScope(McpInteractionScope.Chat);
                 var result = await tool.ExecuteAsync(arguments, timeoutCts.Token);
-                string responsePayload = SerializeForToolTransport(result);
+                string responsePayload = AgenticToolUtility.SerializeForToolTransport(result, JsonOptions);
                 int durationMs = (int)Math.Max(0, (DateTime.UtcNow - startedAt).TotalMilliseconds);
 
                 logger.LogInformation(
@@ -432,9 +436,16 @@ public sealed class HttpAgenticExecutionRuntime(
         IReadOnlyList<ProviderMessage> messages,
         [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken)
     {
-        using var client = CreateHttpClient(server, LlmServerConfig.DefaultOllamaUrl);
-        var endpoint = BuildOllamaChatEndpoint(server);
-        var payload = BuildOllamaPayload(modelName, agent, messages, stream: true, tools: null);
+        using var client = LlmChatEndpointHelper.CreateHttpClient(server, LlmServerConfig.DefaultOllamaUrl);
+        var endpoint = LlmChatEndpointHelper.BuildOllamaChatEndpoint(server);
+        var payload = AgenticProviderPayloadBuilder.BuildOllamaPayload(
+            modelName,
+            agent,
+            messages,
+            stream: true,
+            tools: null,
+            JsonOptions,
+            EmptyToolSchema);
 
         using var request = new HttpRequestMessage(HttpMethod.Post, endpoint)
         {
@@ -471,7 +482,7 @@ public sealed class HttpAgenticExecutionRuntime(
                 continue;
             }
 
-            if (!TryReadOllamaChunk(line, out var content, out var done, out var error))
+            if (!AgenticProviderResponseParser.TryReadOllamaChunk(line, out var content, out var done, out var error))
             {
                 continue;
             }
@@ -520,9 +531,16 @@ public sealed class HttpAgenticExecutionRuntime(
             yield break;
         }
 
-        using var client = CreateHttpClient(server, "https://api.openai.com");
-        var endpoint = BuildOpenAiChatEndpoint(server);
-        var payload = BuildOpenAiPayload(modelName, agent, messages, stream: true, tools: null);
+        using var client = LlmChatEndpointHelper.CreateHttpClient(server, "https://api.openai.com");
+        var endpoint = LlmChatEndpointHelper.BuildOpenAiChatEndpoint(server);
+        var payload = AgenticProviderPayloadBuilder.BuildOpenAiPayload(
+            modelName,
+            agent,
+            messages,
+            stream: true,
+            tools: null,
+            JsonOptions,
+            EmptyToolSchema);
 
         using var request = new HttpRequestMessage(HttpMethod.Post, endpoint)
         {
@@ -565,7 +583,7 @@ public sealed class HttpAgenticExecutionRuntime(
                 break;
             }
 
-            if (TryReadOpenAiChunk(data, out var content, out var error))
+            if (AgenticProviderResponseParser.TryReadOpenAiChunk(data, out var content, out var error))
             {
                 if (!string.IsNullOrWhiteSpace(error))
                 {
@@ -684,7 +702,7 @@ public sealed class HttpAgenticExecutionRuntime(
         {
             HashSet<string> requestedQualified = new(requestedFunctions, StringComparer.OrdinalIgnoreCase);
             HashSet<string> requestedByToolName = new(
-                requestedFunctions.Select(ExtractToolName),
+                requestedFunctions.Select(AgenticToolUtility.ExtractToolName),
                 StringComparer.OrdinalIgnoreCase);
 
             var clients = await mcpClientService.GetMcpClientsAsync(cancellationToken);
@@ -709,7 +727,7 @@ public sealed class HttpAgenticExecutionRuntime(
                         continue;
                     }
 
-                    string providerName = CreateProviderToolName(serverName, tool.Name, usedProviderToolNames);
+                    string providerName = AgenticToolUtility.CreateProviderToolName(serverName, tool.Name, usedProviderToolNames);
                     var schema = tool.JsonSchema.ValueKind == JsonValueKind.Undefined
                         ? EmptyToolSchema
                         : tool.JsonSchema.Clone();
@@ -746,7 +764,7 @@ public sealed class HttpAgenticExecutionRuntime(
         WhiteboardState whiteboard,
         HashSet<string> usedProviderToolNames)
     {
-        var addNoteSchema = ParseToolSchema("""
+        var addNoteSchema = AgenticToolUtility.ParseToolSchema("""
             {
               "type": "object",
               "properties": {
@@ -758,7 +776,7 @@ public sealed class HttpAgenticExecutionRuntime(
             }
             """);
 
-        var emptySchema = ParseToolSchema("""
+        var emptySchema = AgenticToolUtility.ParseToolSchema("""
             {
               "type": "object",
               "properties": {},
@@ -766,9 +784,9 @@ public sealed class HttpAgenticExecutionRuntime(
             }
             """);
 
-        var addNoteProviderName = CreateProviderToolName("whiteboard", "add_note", usedProviderToolNames);
-        var getNotesProviderName = CreateProviderToolName("whiteboard", "get_notes", usedProviderToolNames);
-        var clearProviderName = CreateProviderToolName("whiteboard", "clear", usedProviderToolNames);
+        var addNoteProviderName = AgenticToolUtility.CreateProviderToolName("whiteboard", "add_note", usedProviderToolNames);
+        var getNotesProviderName = AgenticToolUtility.CreateProviderToolName("whiteboard", "get_notes", usedProviderToolNames);
+        var clearProviderName = AgenticToolUtility.CreateProviderToolName("whiteboard", "clear", usedProviderToolNames);
 
         return
         [
@@ -780,10 +798,10 @@ public sealed class HttpAgenticExecutionRuntime(
                 addNoteSchema,
                 (arguments, _) =>
                 {
-                    var note = ReadRequiredStringArgument(arguments, "note");
-                    var author = ReadOptionalStringArgument(arguments, "author");
+                    var note = AgenticToolUtility.ReadRequiredStringArgument(arguments, "note");
+                    var author = AgenticToolUtility.ReadOptionalStringArgument(arguments, "author");
                     whiteboard.Add(note, author);
-                    return Task.FromResult<object>(BuildWhiteboardSnapshot(whiteboard));
+                    return Task.FromResult<object>(AgenticToolUtility.BuildWhiteboardSnapshot(whiteboard));
                 }),
             new ToolBinding(
                 "whiteboard",
@@ -791,7 +809,7 @@ public sealed class HttpAgenticExecutionRuntime(
                 getNotesProviderName,
                 "Return all whiteboard notes as a markdown list.",
                 emptySchema,
-                (_, _) => Task.FromResult<object>(BuildWhiteboardSnapshot(whiteboard))),
+                (_, _) => Task.FromResult<object>(AgenticToolUtility.BuildWhiteboardSnapshot(whiteboard))),
             new ToolBinding(
                 "whiteboard",
                 "clear",
@@ -806,787 +824,11 @@ public sealed class HttpAgenticExecutionRuntime(
         ];
     }
 
-    private static string BuildOllamaPayload(
-        string modelName,
-        AgentDescription agent,
-        IReadOnlyList<ProviderMessage> messages,
-        bool stream,
-        IReadOnlyList<ToolBinding>? tools)
-    {
-        var options = new Dictionary<string, object>();
-        if (agent.Temperature.HasValue)
-        {
-            options["temperature"] = agent.Temperature.Value;
-        }
-
-        if (agent.RepeatPenalty.HasValue)
-        {
-            options["repeat_penalty"] = agent.RepeatPenalty.Value;
-        }
-
-        var payload = new Dictionary<string, object?>
-        {
-            ["model"] = modelName,
-            ["messages"] = ToOllamaPayloadMessages(messages),
-            ["stream"] = stream,
-            ["options"] = options.Count == 0 ? null : options
-        };
-
-        if (tools is { Count: > 0 })
-        {
-            payload["tools"] = BuildProviderToolDefinitions(tools);
-        }
-
-        return JsonSerializer.Serialize(payload, JsonOptions);
-    }
-
-    private static string BuildOpenAiPayload(
-        string modelName,
-        AgentDescription agent,
-        IReadOnlyList<ProviderMessage> messages,
-        bool stream,
-        IReadOnlyList<ToolBinding>? tools)
-    {
-        var payload = new Dictionary<string, object?>
-        {
-            ["model"] = modelName,
-            ["messages"] = ToOpenAiPayloadMessages(messages),
-            ["stream"] = stream
-        };
-
-        if (agent.Temperature.HasValue)
-        {
-            payload["temperature"] = agent.Temperature.Value;
-        }
-
-        if (tools is { Count: > 0 })
-        {
-            payload["tools"] = BuildProviderToolDefinitions(tools);
-        }
-
-        return JsonSerializer.Serialize(payload, JsonOptions);
-    }
-
-    private static List<Dictionary<string, object?>> ToOpenAiPayloadMessages(IReadOnlyList<ProviderMessage> messages)
-    {
-        List<Dictionary<string, object?>> payloadMessages = [];
-
-        foreach (var message in messages)
-        {
-            Dictionary<string, object?> payload = new()
-            {
-                ["role"] = message.Role
-            };
-
-            if (message.Role == "assistant" && message.ToolCalls is { Count: > 0 })
-            {
-                payload["content"] = string.IsNullOrEmpty(message.Content) ? null : message.Content;
-                payload["tool_calls"] = message.ToolCalls.Select(tc => new Dictionary<string, object?>
-                {
-                    ["id"] = tc.Id,
-                    ["type"] = "function",
-                    ["function"] = new Dictionary<string, object?>
-                    {
-                        ["name"] = tc.Name,
-                        ["arguments"] = tc.Arguments
-                    }
-                }).ToList();
-            }
-            else
-            {
-                payload["content"] = message.Content ?? string.Empty;
-            }
-
-            if (message.Role == "tool")
-            {
-                if (!string.IsNullOrWhiteSpace(message.ToolCallId))
-                {
-                    payload["tool_call_id"] = message.ToolCallId;
-                }
-
-                if (!string.IsNullOrWhiteSpace(message.Name))
-                {
-                    payload["name"] = message.Name;
-                }
-            }
-
-            payloadMessages.Add(payload);
-        }
-
-        return payloadMessages;
-    }
-
-    private static List<Dictionary<string, object?>> ToOllamaPayloadMessages(IReadOnlyList<ProviderMessage> messages)
-    {
-        List<Dictionary<string, object?>> payloadMessages = [];
-
-        foreach (var message in messages)
-        {
-            Dictionary<string, object?> payload = new()
-            {
-                ["role"] = message.Role,
-                ["content"] = message.Content ?? string.Empty
-            };
-
-            if (message.Role == "assistant" && message.ToolCalls is { Count: > 0 })
-            {
-                payload["tool_calls"] = message.ToolCalls.Select(tc => new Dictionary<string, object?>
-                {
-                    ["function"] = new Dictionary<string, object?>
-                    {
-                        ["name"] = tc.Name,
-                        ["arguments"] = ParseArgumentsForOllama(tc.Arguments)
-                    }
-                }).ToList();
-            }
-
-            if (message.Role == "tool" && !string.IsNullOrWhiteSpace(message.Name))
-            {
-                payload["tool_name"] = message.Name;
-            }
-
-            payloadMessages.Add(payload);
-        }
-
-        return payloadMessages;
-    }
-
-    private static List<Dictionary<string, object?>> BuildProviderToolDefinitions(IReadOnlyList<ToolBinding> tools)
-    {
-        List<Dictionary<string, object?>> result = [];
-
-        foreach (var tool in tools)
-        {
-            JsonElement schema = tool.JsonSchema.ValueKind == JsonValueKind.Undefined
-                ? EmptyToolSchema
-                : tool.JsonSchema.Clone();
-
-            result.Add(new Dictionary<string, object?>
-            {
-                ["type"] = "function",
-                ["function"] = new Dictionary<string, object?>
-                {
-                    ["name"] = tool.ProviderName,
-                    ["description"] = tool.Description,
-                    ["parameters"] = schema
-                }
-            });
-        }
-
-        return result;
-    }
-
-    private static ProviderAssistantResponse ParseOpenAiCompletion(string json)
-    {
-        try
-        {
-            using var document = JsonDocument.Parse(json);
-            var root = document.RootElement;
-
-            if (root.TryGetProperty("error", out var errorProperty))
-            {
-                var message = ReadOpenAiError(errorProperty) ?? "OpenAI-compatible API returned an error.";
-                return ProviderAssistantResponse.FromError(message);
-            }
-
-            if (!root.TryGetProperty("choices", out var choicesProperty) ||
-                choicesProperty.ValueKind != JsonValueKind.Array ||
-                choicesProperty.GetArrayLength() == 0)
-            {
-                return ProviderAssistantResponse.FromError("OpenAI-compatible response has no choices.");
-            }
-
-            var firstChoice = choicesProperty[0];
-            if (!firstChoice.TryGetProperty("message", out var messageProperty) ||
-                messageProperty.ValueKind != JsonValueKind.Object)
-            {
-                return ProviderAssistantResponse.FromError("OpenAI-compatible response does not contain a message.");
-            }
-
-            string content = messageProperty.TryGetProperty("content", out var contentProperty) &&
-                             contentProperty.ValueKind == JsonValueKind.String
-                ? contentProperty.GetString() ?? string.Empty
-                : string.Empty;
-
-            var toolCalls = ParseOpenAiToolCalls(messageProperty);
-            return new ProviderAssistantResponse(content, toolCalls);
-        }
-        catch (JsonException ex)
-        {
-            return ProviderAssistantResponse.FromError($"Failed to parse OpenAI-compatible response: {ex.Message}");
-        }
-    }
-
-    private static ProviderAssistantResponse ParseOllamaCompletion(string json)
-    {
-        try
-        {
-            using var document = JsonDocument.Parse(json);
-            var root = document.RootElement;
-
-            if (root.TryGetProperty("error", out var errorProperty) && errorProperty.ValueKind == JsonValueKind.String)
-            {
-                return ProviderAssistantResponse.FromError(errorProperty.GetString() ?? "Ollama API returned an error.");
-            }
-
-            if (!root.TryGetProperty("message", out var messageProperty) ||
-                messageProperty.ValueKind != JsonValueKind.Object)
-            {
-                return ProviderAssistantResponse.FromError("Ollama response does not contain a message.");
-            }
-
-            string content = messageProperty.TryGetProperty("content", out var contentProperty) &&
-                             contentProperty.ValueKind == JsonValueKind.String
-                ? contentProperty.GetString() ?? string.Empty
-                : string.Empty;
-
-            var toolCalls = ParseOllamaToolCalls(messageProperty);
-            return new ProviderAssistantResponse(content, toolCalls);
-        }
-        catch (JsonException ex)
-        {
-            return ProviderAssistantResponse.FromError($"Failed to parse Ollama response: {ex.Message}");
-        }
-    }
-
-    private static string? ReadOpenAiError(JsonElement errorProperty)
-    {
-        if (errorProperty.ValueKind == JsonValueKind.String)
-        {
-            return errorProperty.GetString();
-        }
-
-        if (errorProperty.ValueKind == JsonValueKind.Object &&
-            errorProperty.TryGetProperty("message", out var messageProperty) &&
-            messageProperty.ValueKind == JsonValueKind.String)
-        {
-            return messageProperty.GetString();
-        }
-
-        return null;
-    }
-
-    private static List<ProviderToolCall> ParseOpenAiToolCalls(JsonElement message)
-    {
-        List<ProviderToolCall> toolCalls = [];
-
-        if (!message.TryGetProperty("tool_calls", out var toolCallsProperty) ||
-            toolCallsProperty.ValueKind != JsonValueKind.Array)
-        {
-            return toolCalls;
-        }
-
-        int index = 0;
-        foreach (var toolCallProperty in toolCallsProperty.EnumerateArray())
-        {
-            if (!toolCallProperty.TryGetProperty("function", out var functionProperty) ||
-                functionProperty.ValueKind != JsonValueKind.Object)
-            {
-                index++;
-                continue;
-            }
-
-            string? name = functionProperty.TryGetProperty("name", out var nameProperty) &&
-                           nameProperty.ValueKind == JsonValueKind.String
-                ? nameProperty.GetString()
-                : null;
-            if (string.IsNullOrWhiteSpace(name))
-            {
-                index++;
-                continue;
-            }
-
-            string id = toolCallProperty.TryGetProperty("id", out var idProperty) &&
-                        idProperty.ValueKind == JsonValueKind.String
-                ? idProperty.GetString() ?? $"tool_call_{index}"
-                : $"tool_call_{index}";
-
-            string arguments = "{}";
-            if (functionProperty.TryGetProperty("arguments", out var argumentsProperty))
-            {
-                arguments = argumentsProperty.ValueKind == JsonValueKind.String
-                    ? NormalizeJson(argumentsProperty.GetString())
-                    : NormalizeJson(argumentsProperty.GetRawText());
-            }
-
-            toolCalls.Add(new ProviderToolCall(id, name, arguments));
-            index++;
-        }
-
-        return toolCalls;
-    }
-
-    private static List<ProviderToolCall> ParseOllamaToolCalls(JsonElement message)
-    {
-        List<ProviderToolCall> toolCalls = [];
-
-        if (!message.TryGetProperty("tool_calls", out var toolCallsProperty) ||
-            toolCallsProperty.ValueKind != JsonValueKind.Array)
-        {
-            return toolCalls;
-        }
-
-        int index = 0;
-        foreach (var toolCallProperty in toolCallsProperty.EnumerateArray())
-        {
-            JsonElement functionProperty = toolCallProperty;
-            if (toolCallProperty.TryGetProperty("function", out var nestedFunction) &&
-                nestedFunction.ValueKind == JsonValueKind.Object)
-            {
-                functionProperty = nestedFunction;
-            }
-
-            string? name = functionProperty.TryGetProperty("name", out var nameProperty) &&
-                           nameProperty.ValueKind == JsonValueKind.String
-                ? nameProperty.GetString()
-                : null;
-            if (string.IsNullOrWhiteSpace(name))
-            {
-                index++;
-                continue;
-            }
-
-            string id = toolCallProperty.TryGetProperty("id", out var idProperty) &&
-                        idProperty.ValueKind == JsonValueKind.String
-                ? idProperty.GetString() ?? $"tool_call_{index}"
-                : $"tool_call_{index}";
-
-            string arguments = "{}";
-            if (functionProperty.TryGetProperty("arguments", out var argumentsProperty))
-            {
-                arguments = argumentsProperty.ValueKind == JsonValueKind.String
-                    ? NormalizeJson(argumentsProperty.GetString())
-                    : NormalizeJson(argumentsProperty.GetRawText());
-            }
-
-            toolCalls.Add(new ProviderToolCall(id, name, arguments));
-            index++;
-        }
-
-        return toolCalls;
-    }
-
-    private static object ParseArgumentsForOllama(string arguments)
-    {
-        if (string.IsNullOrWhiteSpace(arguments))
-        {
-            return new Dictionary<string, object?>();
-        }
-
-        try
-        {
-            using var document = JsonDocument.Parse(arguments);
-            return document.RootElement.Clone();
-        }
-        catch
-        {
-            return arguments;
-        }
-    }
-
-    private static JsonElement ParseToolSchema(string schemaJson)
-    {
-        using var document = JsonDocument.Parse(schemaJson);
-        return document.RootElement.Clone();
-    }
-
-    private static string ReadRequiredStringArgument(Dictionary<string, object?> arguments, string argumentName)
-    {
-        var value = ReadOptionalStringArgument(arguments, argumentName);
-        if (string.IsNullOrWhiteSpace(value))
-        {
-            throw new InvalidOperationException($"Argument '{argumentName}' is required.");
-        }
-
-        return value;
-    }
-
-    private static string? ReadOptionalStringArgument(Dictionary<string, object?> arguments, string argumentName)
-    {
-        if (!arguments.TryGetValue(argumentName, out var raw) || raw is null)
-        {
-            return null;
-        }
-
-        if (raw is string text)
-        {
-            return text;
-        }
-
-        if (raw is JsonElement json)
-        {
-            return json.ValueKind switch
-            {
-                JsonValueKind.String => json.GetString(),
-                JsonValueKind.Null => null,
-                _ => json.GetRawText()
-            };
-        }
-
-        return raw.ToString();
-    }
-
-    private static string BuildWhiteboardSnapshot(WhiteboardState whiteboard)
-    {
-        if (whiteboard.Notes.Count == 0)
-        {
-            return "Whiteboard is empty.";
-        }
-
-        var builder = new StringBuilder();
-        builder.AppendLine("Current whiteboard notes:");
-        for (int i = 0; i < whiteboard.Notes.Count; i++)
-        {
-            var note = whiteboard.Notes[i];
-            builder.Append("- ");
-            builder.Append(i + 1);
-            builder.Append(". ");
-
-            if (!string.IsNullOrWhiteSpace(note.Author))
-            {
-                builder.Append('[');
-                builder.Append(note.Author);
-                builder.Append("] ");
-            }
-
-            builder.Append(note.Content);
-            builder.Append(" (created at ");
-            builder.Append(note.CreatedAt.ToLocalTime().ToString("u"));
-            builder.AppendLine(")");
-        }
-
-        return builder.ToString().Trim();
-    }
-
-    private static bool TryValidateAndParseToolArguments(
-        string arguments,
-        JsonElement schema,
-        out Dictionary<string, object?> parsedArguments,
-        out string normalizedRequest,
-        out string error)
-    {
-        parsedArguments = new Dictionary<string, object?>();
-        normalizedRequest = "{}";
-        error = string.Empty;
-
-        string payload = string.IsNullOrWhiteSpace(arguments) ? "{}" : arguments;
-        JsonDocument document;
-
-        try
-        {
-            document = JsonDocument.Parse(payload);
-        }
-        catch (JsonException ex)
-        {
-            normalizedRequest = payload;
-            error = $"Tool arguments are not valid JSON: {ex.Message}";
-            return false;
-        }
-
-        using (document)
-        {
-            var root = document.RootElement;
-            normalizedRequest = root.GetRawText();
-
-            if (root.ValueKind != JsonValueKind.Object)
-            {
-                error = "Tool arguments must be a JSON object.";
-                return false;
-            }
-
-            if (!ValidateAgainstSchema(root, schema, out error))
-            {
-                return false;
-            }
-
-            parsedArguments = JsonSerializer.Deserialize<Dictionary<string, object?>>(normalizedRequest) ??
-                              new Dictionary<string, object?>();
-            return true;
-        }
-    }
-
-    private static bool ValidateAgainstSchema(JsonElement arguments, JsonElement schema, out string error)
-    {
-        error = string.Empty;
-        if (schema.ValueKind != JsonValueKind.Object)
-        {
-            return true;
-        }
-
-        if (schema.TryGetProperty("required", out var requiredProperty) &&
-            requiredProperty.ValueKind == JsonValueKind.Array)
-        {
-            var argumentNames = arguments
-                .EnumerateObject()
-                .Select(static p => p.Name)
-                .ToHashSet(StringComparer.Ordinal);
-
-            foreach (var requiredItem in requiredProperty.EnumerateArray())
-            {
-                if (requiredItem.ValueKind != JsonValueKind.String)
-                {
-                    continue;
-                }
-
-                string requiredName = requiredItem.GetString() ?? string.Empty;
-                if (!string.IsNullOrWhiteSpace(requiredName) && !argumentNames.Contains(requiredName))
-                {
-                    error = $"Missing required argument '{requiredName}'.";
-                    return false;
-                }
-            }
-        }
-
-        if (schema.TryGetProperty("properties", out var propertiesSchema) &&
-            propertiesSchema.ValueKind == JsonValueKind.Object &&
-            schema.TryGetProperty("additionalProperties", out var additionalProperties) &&
-            additionalProperties.ValueKind == JsonValueKind.False)
-        {
-            var allowed = propertiesSchema
-                .EnumerateObject()
-                .Select(static p => p.Name)
-                .ToHashSet(StringComparer.Ordinal);
-
-            foreach (var argument in arguments.EnumerateObject())
-            {
-                if (!allowed.Contains(argument.Name))
-                {
-                    error = $"Argument '{argument.Name}' is not allowed by tool schema.";
-                    return false;
-                }
-            }
-        }
-
-        if (schema.TryGetProperty("properties", out propertiesSchema) &&
-            propertiesSchema.ValueKind == JsonValueKind.Object)
-        {
-            foreach (var propertySchema in propertiesSchema.EnumerateObject())
-            {
-                if (!arguments.TryGetProperty(propertySchema.Name, out var argumentValue))
-                {
-                    continue;
-                }
-
-                if (!IsJsonTypeCompatible(argumentValue, propertySchema.Value))
-                {
-                    error = $"Argument '{propertySchema.Name}' does not match schema type.";
-                    return false;
-                }
-            }
-        }
-
-        return true;
-    }
-
-    private static bool IsJsonTypeCompatible(JsonElement value, JsonElement propertySchema)
-    {
-        if (!propertySchema.TryGetProperty("type", out var typeProperty))
-        {
-            return true;
-        }
-
-        return typeProperty.ValueKind switch
-        {
-            JsonValueKind.String => IsTypeMatch(value, typeProperty.GetString()),
-            JsonValueKind.Array => typeProperty.EnumerateArray()
-                .Where(static item => item.ValueKind == JsonValueKind.String)
-                .Any(item => IsTypeMatch(value, item.GetString())),
-            _ => true
-        };
-    }
-
-    private static bool IsTypeMatch(JsonElement value, string? schemaType)
-    {
-        return schemaType switch
-        {
-            "string" => value.ValueKind == JsonValueKind.String,
-            "integer" => value.ValueKind == JsonValueKind.Number && value.TryGetInt64(out _),
-            "number" => value.ValueKind == JsonValueKind.Number,
-            "boolean" => value.ValueKind is JsonValueKind.True or JsonValueKind.False,
-            "object" => value.ValueKind == JsonValueKind.Object,
-            "array" => value.ValueKind == JsonValueKind.Array,
-            "null" => value.ValueKind == JsonValueKind.Null,
-            _ => true
-        };
-    }
-
-    private static string SerializeForToolTransport(object value)
-    {
-        try
-        {
-            return JsonSerializer.Serialize(value, JsonOptions);
-        }
-        catch
-        {
-            return value?.ToString() ?? "null";
-        }
-    }
-
-    private static string NormalizeJson(string? json)
-    {
-        if (string.IsNullOrWhiteSpace(json))
-        {
-            return "{}";
-        }
-
-        try
-        {
-            using var document = JsonDocument.Parse(json);
-            return document.RootElement.GetRawText();
-        }
-        catch
-        {
-            return json;
-        }
-    }
-
-    private static string ExtractToolName(string qualifiedName)
-    {
-        if (string.IsNullOrWhiteSpace(qualifiedName))
-        {
-            return string.Empty;
-        }
-
-        int separatorIndex = qualifiedName.LastIndexOf(':');
-        return separatorIndex >= 0
-            ? qualifiedName[(separatorIndex + 1)..]
-            : qualifiedName;
-    }
-
-    private static string CreateProviderToolName(
-        string serverName,
-        string toolName,
-        HashSet<string> usedNames)
-    {
-        const int maxLength = 64;
-        string baseName = $"{SanitizeToolNamePart(serverName)}__{SanitizeToolNamePart(toolName)}";
-        if (baseName.Length > maxLength)
-        {
-            baseName = baseName[..maxLength];
-        }
-
-        string candidate = baseName;
-        int suffix = 1;
-        while (!usedNames.Add(candidate))
-        {
-            string suffixText = $"_{suffix++}";
-            int prefixLength = Math.Max(1, maxLength - suffixText.Length);
-            candidate = $"{baseName[..Math.Min(baseName.Length, prefixLength)]}{suffixText}";
-        }
-
-        return candidate;
-    }
-
-    private static string SanitizeToolNamePart(string value)
-    {
-        if (string.IsNullOrWhiteSpace(value))
-        {
-            return "tool";
-        }
-
-        var builder = new StringBuilder(value.Length);
-        foreach (char ch in value)
-        {
-            if (char.IsLetterOrDigit(ch) || ch == '_' || ch == '-')
-            {
-                builder.Append(ch);
-            }
-            else
-            {
-                builder.Append('_');
-            }
-        }
-
-        return builder.Length == 0 ? "tool" : builder.ToString();
-    }
-
     private static ProviderMessage ToAssistantMessage(ProviderAssistantResponse completion)
     {
         return completion.ToolCalls.Count == 0
             ? new ProviderMessage("assistant", completion.Content, null, null, null)
             : new ProviderMessage("assistant", completion.Content, null, null, completion.ToolCalls);
-    }
-
-    private static bool TryReadOllamaChunk(string json, out string content, out bool done, out string? error)
-    {
-        content = string.Empty;
-        done = false;
-        error = null;
-
-        try
-        {
-            using var document = JsonDocument.Parse(json);
-            var root = document.RootElement;
-
-            if (root.TryGetProperty("error", out var errorProperty) && errorProperty.ValueKind == JsonValueKind.String)
-            {
-                error = errorProperty.GetString();
-                return true;
-            }
-
-            if (root.TryGetProperty("message", out var messageProperty) &&
-                messageProperty.ValueKind == JsonValueKind.Object &&
-                messageProperty.TryGetProperty("content", out var contentProperty) &&
-                contentProperty.ValueKind == JsonValueKind.String)
-            {
-                content = contentProperty.GetString() ?? string.Empty;
-            }
-
-            if (root.TryGetProperty("done", out var doneProperty) && doneProperty.ValueKind == JsonValueKind.True)
-            {
-                done = true;
-            }
-
-            return true;
-        }
-        catch (JsonException)
-        {
-            return false;
-        }
-    }
-
-    private static bool TryReadOpenAiChunk(string json, out string content, out string? error)
-    {
-        content = string.Empty;
-        error = null;
-
-        try
-        {
-            using var document = JsonDocument.Parse(json);
-            var root = document.RootElement;
-
-            if (root.TryGetProperty("error", out var errorProperty) &&
-                errorProperty.ValueKind == JsonValueKind.Object &&
-                errorProperty.TryGetProperty("message", out var messageProperty) &&
-                messageProperty.ValueKind == JsonValueKind.String)
-            {
-                error = messageProperty.GetString();
-                return true;
-            }
-
-            if (!root.TryGetProperty("choices", out var choicesProperty) ||
-                choicesProperty.ValueKind != JsonValueKind.Array ||
-                choicesProperty.GetArrayLength() == 0)
-            {
-                return false;
-            }
-
-            var firstChoice = choicesProperty[0];
-            if (firstChoice.TryGetProperty("delta", out var deltaProperty) &&
-                deltaProperty.ValueKind == JsonValueKind.Object &&
-                deltaProperty.TryGetProperty("content", out var contentProperty) &&
-                contentProperty.ValueKind == JsonValueKind.String)
-            {
-                content = contentProperty.GetString() ?? string.Empty;
-                return true;
-            }
-
-            return false;
-        }
-        catch (JsonException)
-        {
-            return false;
-        }
     }
 
     private string ResolveOpenAiApiKey(LlmServerConfig server)
@@ -1597,39 +839,6 @@ public sealed class HttpAgenticExecutionRuntime(
         }
 
         return configuration["OpenAI:ApiKey"] ?? string.Empty;
-    }
-
-    private static HttpClient CreateHttpClient(LlmServerConfig server, string defaultBaseUrl)
-    {
-        var client = LlmServerConfigHelper.CreateHttpClient(server, defaultBaseUrl);
-        if (!string.IsNullOrWhiteSpace(server.Password))
-        {
-            var token = Convert.ToBase64String(Encoding.UTF8.GetBytes($":{server.Password}"));
-            client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Basic", token);
-        }
-
-        return client;
-    }
-
-    private static string BuildOllamaChatEndpoint(LlmServerConfig server)
-    {
-        var baseUrl = string.IsNullOrWhiteSpace(server.BaseUrl)
-            ? LlmServerConfig.DefaultOllamaUrl
-            : server.BaseUrl;
-        return $"{baseUrl.TrimEnd('/')}/api/chat";
-    }
-
-    private static string BuildOpenAiChatEndpoint(LlmServerConfig server)
-    {
-        if (string.IsNullOrWhiteSpace(server.BaseUrl))
-        {
-            return "https://api.openai.com/v1/chat/completions";
-        }
-
-        var baseUrl = server.BaseUrl.TrimEnd('/');
-        return baseUrl.EndsWith("/v1", StringComparison.OrdinalIgnoreCase)
-            ? $"{baseUrl}/chat/completions"
-            : $"{baseUrl}/v1/chat/completions";
     }
 
     private static async Task<string> SafeReadBodyAsync(HttpResponseMessage response, CancellationToken cancellationToken)
@@ -1662,40 +871,4 @@ public sealed class HttpAgenticExecutionRuntime(
         using var document = JsonDocument.Parse("{\"type\":\"object\",\"properties\":{}}");
         return document.RootElement.Clone();
     }
-
-    private sealed record ProviderMessage(
-        string Role,
-        string? Content,
-        string? Name,
-        string? ToolCallId,
-        IReadOnlyList<ProviderToolCall>? ToolCalls);
-
-    private sealed record ProviderToolCall(string Id, string Name, string Arguments);
-
-    private sealed record ProviderAssistantResponse(
-        string Content,
-        IReadOnlyList<ProviderToolCall> ToolCalls,
-        string? Error = null)
-    {
-        public bool HasError => !string.IsNullOrWhiteSpace(Error);
-        public static ProviderAssistantResponse FromError(string error) => new(string.Empty, [], error);
-    }
-
-    private sealed record ToolBinding(
-        string ServerName,
-        string ToolName,
-        string ProviderName,
-        string Description,
-        JsonElement JsonSchema,
-        Func<Dictionary<string, object?>, CancellationToken, Task<object>> ExecuteAsync);
-
-    private sealed record ToolRegistry(
-        IReadOnlyList<ToolBinding> Tools,
-        IReadOnlyDictionary<string, ToolBinding> ToolsByProviderName)
-    {
-        public static ToolRegistry Empty { get; } = new([], new Dictionary<string, ToolBinding>(StringComparer.OrdinalIgnoreCase));
-        public bool HasTools => Tools.Count > 0;
-    }
-
-    private sealed record ToolExecutionResult(ProviderMessage ToolMessage, FunctionCallRecord Record);
 }

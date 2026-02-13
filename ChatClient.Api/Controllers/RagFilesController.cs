@@ -12,13 +12,11 @@ namespace ChatClient.Api.Controllers;
 public class RagFilesController : ControllerBase
 {
     private readonly IRagFileService _fileService;
-    private readonly IRagContentImportService _importService;
     private readonly IEnumerable<IFileConverter> _converters;
 
-    public RagFilesController(IRagFileService fileService, IRagContentImportService importService, IEnumerable<IFileConverter> converters)
+    public RagFilesController(IRagFileService fileService, IEnumerable<IFileConverter> converters)
     {
         _fileService = fileService;
-        _importService = importService;
         _converters = converters;
     }
 
@@ -60,7 +58,7 @@ public class RagFilesController : ControllerBase
             return BadRequest($"Unsupported file type {ext}");
 
         var content = await converter.ConvertToTextAsync(file);
-        await _importService.AddContentAsync(agentId, content, file.FileName);
+        await _fileService.AddOrUpdateFileAsync(agentId, new RagFile { FileName = file.FileName, Content = content });
         return Ok();
     }
 
@@ -75,7 +73,7 @@ public class RagFilesController : ControllerBase
 
         var text = HtmlToText(html);
         var fileName = CreateFileName(pageUri);
-        await _importService.AddContentAsync(agentId, text, fileName);
+        await _fileService.AddOrUpdateFileAsync(agentId, new RagFile { FileName = fileName, Content = text });
         return Ok();
     }
 
@@ -110,7 +108,7 @@ public class RagFilesController : ControllerBase
             return BadRequest($"Unsupported file type {ext}");
 
         var content = await converter.ConvertToTextAsync(file);
-        await _importService.AddContentAsync(agentId, content, fileName);
+        await _fileService.AddOrUpdateFileAsync(agentId, new RagFile { FileName = fileName, Content = content });
         return Ok();
     }
 

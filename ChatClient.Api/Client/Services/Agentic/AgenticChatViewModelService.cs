@@ -1,16 +1,17 @@
 using ChatClient.Api.Client.ViewModels;
+using ChatClient.Application.Services.Agentic;
 using ChatClient.Domain.Models;
 
 namespace ChatClient.Api.Client.Services.Agentic;
 
 public sealed class AgenticChatViewModelService : IAgenticChatViewModelService, IAsyncDisposable
 {
-    private readonly IAgenticAppChatService _chatService;
+    private readonly IChatEngineSessionService _chatService;
     private readonly List<AppChatMessageViewModel> _messages = [];
     private readonly Action<bool> _answeringStateChangedHandler;
     private readonly Action _chatResetHandler;
     private readonly Func<IAppChatMessage, Task> _messageAddedHandler;
-    private readonly Func<IAppChatMessage, MessageUpdateOptions, Task> _messageUpdatedHandler;
+    private readonly Func<IAppChatMessage, bool, Task> _messageUpdatedHandler;
     private readonly Func<Guid, Task> _messageDeletedHandler;
 
     public IReadOnlyList<AppChatMessageViewModel> Messages => _messages;
@@ -23,7 +24,7 @@ public sealed class AgenticChatViewModelService : IAgenticChatViewModelService, 
 
     public bool IsAnswering => _chatService.IsAnswering;
 
-    public AgenticChatViewModelService(IAgenticAppChatService chatService)
+    public AgenticChatViewModelService(IChatEngineSessionService chatService)
     {
         _chatService = chatService;
 
@@ -75,14 +76,14 @@ public sealed class AgenticChatViewModelService : IAgenticChatViewModelService, 
         ChatReset?.Invoke();
     }
 
-    private async Task OnMessageUpdated(IAppChatMessage domainMessage, MessageUpdateOptions options)
+    private async Task OnMessageUpdated(IAppChatMessage domainMessage, bool forceRender)
     {
         var existingMessage = _messages.FirstOrDefault(m => m.Id == domainMessage.Id);
         if (existingMessage == null)
             return;
 
         existingMessage.UpdateFromDomainModel(domainMessage);
-        await (MessageUpdated?.Invoke(existingMessage, options) ?? Task.CompletedTask);
+        await (MessageUpdated?.Invoke(existingMessage, new MessageUpdateOptions(forceRender)) ?? Task.CompletedTask);
     }
 
     private async Task OnMessageDeleted(Guid messageId)

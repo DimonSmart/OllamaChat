@@ -104,7 +104,7 @@ public sealed class McpSamplingService(
         IReadOnlyList<ProviderMessage> messages,
         CancellationToken cancellationToken)
     {
-        using var client = CreateHttpClient(server, LlmServerConfig.DefaultOllamaUrl);
+        using var client = LlmChatEndpointHelper.CreateHttpClient(server, LlmServerConfig.DefaultOllamaUrl);
 
         var payload = JsonSerializer.Serialize(new Dictionary<string, object?>
         {
@@ -117,7 +117,7 @@ public sealed class McpSamplingService(
             ["stream"] = false
         }, _jsonOptions);
 
-        using var request = new HttpRequestMessage(HttpMethod.Post, BuildOllamaChatEndpoint(server))
+        using var request = new HttpRequestMessage(HttpMethod.Post, LlmChatEndpointHelper.BuildOllamaChatEndpoint(server))
         {
             Content = new StringContent(payload, Encoding.UTF8, "application/json")
         };
@@ -146,7 +146,7 @@ public sealed class McpSamplingService(
             throw new InvalidOperationException("OpenAI API key is required but not configured.");
         }
 
-        using var client = CreateHttpClient(server, "https://api.openai.com");
+        using var client = LlmChatEndpointHelper.CreateHttpClient(server, "https://api.openai.com");
 
         var payload = JsonSerializer.Serialize(new Dictionary<string, object?>
         {
@@ -159,7 +159,7 @@ public sealed class McpSamplingService(
             ["stream"] = false
         }, _jsonOptions);
 
-        using var request = new HttpRequestMessage(HttpMethod.Post, BuildOpenAiChatEndpoint(server))
+        using var request = new HttpRequestMessage(HttpMethod.Post, LlmChatEndpointHelper.BuildOpenAiChatEndpoint(server))
         {
             Content = new StringContent(payload, Encoding.UTF8, "application/json")
         };
@@ -415,39 +415,6 @@ public sealed class McpSamplingService(
         }
 
         return null;
-    }
-
-    private static HttpClient CreateHttpClient(LlmServerConfig server, string defaultBaseUrl)
-    {
-        var client = LlmServerConfigHelper.CreateHttpClient(server, defaultBaseUrl);
-        if (!string.IsNullOrWhiteSpace(server.Password))
-        {
-            var token = Convert.ToBase64String(Encoding.UTF8.GetBytes($":{server.Password}"));
-            client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Basic", token);
-        }
-
-        return client;
-    }
-
-    private static string BuildOllamaChatEndpoint(LlmServerConfig server)
-    {
-        var baseUrl = string.IsNullOrWhiteSpace(server.BaseUrl)
-            ? LlmServerConfig.DefaultOllamaUrl
-            : server.BaseUrl;
-        return $"{baseUrl.TrimEnd('/')}/api/chat";
-    }
-
-    private static string BuildOpenAiChatEndpoint(LlmServerConfig server)
-    {
-        if (string.IsNullOrWhiteSpace(server.BaseUrl))
-        {
-            return "https://api.openai.com/v1/chat/completions";
-        }
-
-        var baseUrl = server.BaseUrl.TrimEnd('/');
-        return baseUrl.EndsWith("/v1", StringComparison.OrdinalIgnoreCase)
-            ? $"{baseUrl}/chat/completions"
-            : $"{baseUrl}/v1/chat/completions";
     }
 
     private string GetEffectiveOpenAiApiKey(LlmServerConfig server)

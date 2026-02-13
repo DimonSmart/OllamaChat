@@ -39,11 +39,9 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<IAgentDescriptionService, AgentDescriptionService>();
         services.AddSingleton<ISavedChatRepository, SavedChatRepository>();
         services.AddSingleton<IRagFileRepository, RagFileRepository>();
-        services.AddSingleton<IRagVectorIndexRepository, RagVectorIndexRepository>();
         services.AddSingleton<IUserSettingsService, UserSettingsService>();
         services.AddSingleton<ISavedChatService, SavedChatService>();
         services.AddSingleton<IRagFileService, RagFileService>();
-        services.AddSingleton<IRagContentImportService, RagContentImportService>();
         services.AddSingleton<IRagVectorIndexService, RagVectorIndexService>();
         services.AddSingleton<IRagVectorStore, RagVectorStore>();
         services.AddSingleton<RagVectorIndexBackgroundService>();
@@ -61,7 +59,7 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IChatEngineHistoryBuilder>(sp => sp.GetRequiredService<AgenticChatEngineHistoryBuilder>());
         services.AddScoped<IChatEngineStreamingBridge>(sp => sp.GetRequiredService<AgenticChatEngineStreamingBridge>());
         services.AddScoped<AgenticChatEngineSessionService>();
-        services.AddScoped<IAgenticAppChatService, AgenticAppChatService>();
+        services.AddScoped<IChatEngineSessionService>(sp => sp.GetRequiredService<AgenticChatEngineSessionService>());
         services.AddScoped<IAgenticChatViewModelService, AgenticChatViewModelService>();
         services.AddSingleton<IChatFormatter, TextChatFormatter>();
         services.AddSingleton<IChatFormatter, MarkdownChatFormatter>();

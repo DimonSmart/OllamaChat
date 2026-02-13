@@ -38,7 +38,7 @@ public class RagFileService(
     {
         FileNameValidator.Validate(file.FileName);
         await _repository.AddOrUpdateFileAsync(agentId, file);
-        await RemoveEmbeddingsAsync(agentId, file.FileName);
+        await _vectorStore.RemoveFileAsync(agentId, file.FileName);
         _indexBackgroundService.RequestRebuild();
     }
 
@@ -46,12 +46,7 @@ public class RagFileService(
     {
         FileNameValidator.Validate(fileName);
         await _repository.DeleteFileAsync(agentId, fileName);
-        await RemoveEmbeddingsAsync(agentId, fileName);
-        _indexBackgroundService.RequestRebuild();
-    }
-
-    private async Task RemoveEmbeddingsAsync(Guid agentId, string fileName)
-    {
         await _vectorStore.RemoveFileAsync(agentId, fileName);
+        _indexBackgroundService.RequestRebuild();
     }
 }

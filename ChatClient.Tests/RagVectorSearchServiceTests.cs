@@ -16,10 +16,11 @@ public class RagVectorSearchServiceTests
 
         try
         {
+            var databasePath = Path.Combine(tempPath, "rag.sqlite");
             var configuration = new ConfigurationBuilder()
                 .AddInMemoryCollection(new Dictionary<string, string?>
                 {
-                    ["RagVectorStore:BasePath"] = tempPath
+                    ["RagVectorStore:DatabasePath"] = databasePath
                 })
                 .Build();
 

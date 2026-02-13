@@ -2,20 +2,18 @@ using ChatClient.Application.Helpers;
 using ChatClient.Application.Services;
 using ChatClient.Api.Services.Rag;
 using ChatClient.Domain.Models;
-using ModelContextProtocol.Client;
 using System.Collections.Concurrent;
 using System.Linq;
-using System.Net;
 
 namespace ChatClient.Api.Services;
 
 public class McpFunctionIndexService
 {
-    private readonly IMcpClientService _clientService;
     private readonly IOllamaClientService _ollamaService;
     private readonly IUserSettingsService _userSettingsService;
     private readonly IRagVectorIndexBackgroundService _indexBackgroundService;
     private readonly IRagVectorStore _ragVectorStore;
+    private readonly McpFunctionIndexBuilder _indexBuilder;
     private readonly ILogger<McpFunctionIndexService> _logger;
     private ServerModel _model = new(Guid.Empty, string.Empty);
     private readonly ConcurrentDictionary<string, float[]> _index = new();
@@ -29,12 +27,12 @@ public class McpFunctionIndexService
         IRagVectorStore ragVectorStore,
         ILogger<McpFunctionIndexService> logger)
     {
-        _clientService = clientService;
         _ollamaService = ollamaService;
         _userSettingsService = userSettingsService;
         _indexBackgroundService = indexBackgroundService;
         _ragVectorStore = ragVectorStore;
         _logger = logger;
+        _indexBuilder = new McpFunctionIndexBuilder(clientService, ollamaService, logger);
     }
 
     public async Task BuildIndexAsync(CancellationToken cancellationToken = default, Guid? serverId = null)
@@ -60,7 +58,7 @@ public class McpFunctionIndexService
                 return;
             }
 
-            await IndexMcpFunctionsAsync(cancellationToken, targetServer);
+            await _indexBuilder.BuildAsync(_index, _model, targetServer, cancellationToken);
         }
         catch (Exception ex)
         {
@@ -83,50 +81,6 @@ public class McpFunctionIndexService
         {
             _logger.LogWarning(ex, "Ollama is not available. Skipping MCP function indexing.");
             return false;
-        }
-    }
-
-    private async Task IndexMcpFunctionsAsync(CancellationToken cancellationToken, Guid? serverId)
-    {
-        var clients = await _clientService.GetMcpClientsAsync(cancellationToken);
-        foreach (var client in clients)
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-            await IndexClientFunctionsAsync(client, cancellationToken, serverId);
-        }
-    }
-
-    private async Task IndexClientFunctionsAsync(McpClient client, CancellationToken cancellationToken, Guid? serverId)
-    {
-        var tools = await _clientService.GetMcpTools(client, cancellationToken);
-        foreach (var tool in tools)
-        {
-            await IndexSingleToolAsync(client, tool, serverId, cancellationToken);
-        }
-    }
-
-    private async Task IndexSingleToolAsync(McpClient client, McpClientTool tool, Guid? serverId, CancellationToken cancellationToken)
-    {
-        string text = $"{tool.Name}. {tool.Description}";
-        try
-        {
-            var model = new ServerModel(serverId ?? _model.ServerId, _model.ModelName);
-            var embedding = await _ollamaService.GenerateEmbeddingAsync(text, model, cancellationToken);
-            _index[$"{client.ServerInfo.Name}:{tool.Name}"] = embedding;
-        }
-        catch (HttpRequestException ex) when (ex.StatusCode == HttpStatusCode.NotFound)
-        {
-            _logger.LogError("Embedding model '{Model}' not found. Skipping MCP function indexing.", _model.ModelName);
-            throw; // Re-throw to stop the entire indexing process
-        }
-        catch (Exception ex)
-        {
-            if (!_ollamaService.EmbeddingsAvailable)
-            {
-                _logger.LogError(ex, "Embedding service unavailable. Stopping MCP function indexing.");
-                throw; // Re-throw to stop the entire indexing process
-            }
-            _logger.LogError(ex, "Failed to index tool {Name}", tool.Name);
         }
     }
 

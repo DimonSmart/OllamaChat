@@ -19,13 +19,7 @@ public sealed class RagVectorStore(
     private bool _initialized;
 
     private readonly string _databasePath = ResolveDatabasePath(configuration);
-    private readonly string _connectionString = new SqliteConnectionStringBuilder
-    {
-        DataSource = ResolveDatabasePath(configuration),
-        Mode = SqliteOpenMode.ReadWriteCreate,
-        Cache = SqliteCacheMode.Shared,
-        Pooling = false
-    }.ToString();
+    private readonly string _connectionString = BuildConnectionString(ResolveDatabasePath(configuration));
 
     public async Task UpsertFileAsync(
         Guid agentId,
@@ -331,19 +325,21 @@ public sealed class RagVectorStore(
     private static string ResolveDatabasePath(IConfiguration configuration)
     {
         var configuredDatabasePath = configuration["RagVectorStore:DatabasePath"];
-        if (string.IsNullOrWhiteSpace(configuredDatabasePath))
-        {
-            var legacyBasePath = configuration["RagVectorStore:BasePath"];
-            if (!string.IsNullOrWhiteSpace(legacyBasePath))
-            {
-                configuredDatabasePath = Path.Combine(legacyBasePath, "rag.sqlite");
-            }
-        }
-
         return StoragePathResolver.ResolveUserPath(
             configuration,
             configuredDatabasePath,
             FilePathConstants.DefaultRagVectorDatabaseFile);
+    }
+
+    private static string BuildConnectionString(string databasePath)
+    {
+        return new SqliteConnectionStringBuilder
+        {
+            DataSource = databasePath,
+            Mode = SqliteOpenMode.ReadWriteCreate,
+            Cache = SqliteCacheMode.Shared,
+            Pooling = false
+        }.ToString();
     }
 
     private async Task EnsureInitializedAsync(CancellationToken cancellationToken)

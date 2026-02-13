@@ -6,8 +6,6 @@ namespace ChatClient.Api.Client.Services.Agentic;
 
 public sealed class AgenticChatEngineStreamingBridge : IChatEngineStreamingBridge
 {
-    private readonly AppStreamingMessageManager _streamingMessageManager = new();
-
     public StreamingAppChatMessage Create(string agentName) =>
         new(string.Empty, DateTime.Now, ChatRole.Assistant, null, agentName);
 
@@ -20,9 +18,43 @@ public sealed class AgenticChatEngineStreamingBridge : IChatEngineStreamingBridg
         message.ApproximateTokenCount++;
     }
 
-    public AppChatMessage Complete(StreamingAppChatMessage message, string? statistics = null) =>
-        _streamingMessageManager.CompleteStreaming(message, statistics);
+    public AppChatMessage Complete(StreamingAppChatMessage message, string? statistics = null)
+    {
+        if (!string.IsNullOrEmpty(statistics))
+        {
+            message.SetStatistics(statistics);
+        }
 
-    public AppChatMessage Cancel(StreamingAppChatMessage message) =>
-        _streamingMessageManager.CancelStreaming(message);
+        var finalMessage = new AppChatMessage(
+            message.Content,
+            message.MsgDateTime,
+            ChatRole.Assistant,
+            message.Statistics,
+            message.Files,
+            message.FunctionCalls,
+            message.AgentName)
+        {
+            Id = message.Id,
+            IsCanceled = message.IsCanceled
+        };
+        return finalMessage;
+    }
+
+    public AppChatMessage Cancel(StreamingAppChatMessage message)
+    {
+        message.SetCanceled();
+
+        return new AppChatMessage(
+            message.Content,
+            message.MsgDateTime,
+            ChatRole.Assistant,
+            message.Statistics,
+            message.Files,
+            message.FunctionCalls,
+            message.AgentName)
+        {
+            Id = message.Id,
+            IsCanceled = true
+        };
+    }
 }

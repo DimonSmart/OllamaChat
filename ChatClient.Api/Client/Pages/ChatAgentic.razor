@@ -28,7 +28,7 @@
 @inject NavigationManager NavigationManager
 @inject IDialogService DialogService
 @inject IAgenticChatViewModelService ChatViewModelService
-@inject IAgenticAppChatService ChatService
+@inject IChatEngineSessionService ChatService
 @inject IAgentDescriptionService AgentService
 @inject IUserSettingsService UserSettingsService
 @inject IEnumerable<IChatFormatter> ChatFormatters
@@ -547,8 +547,9 @@
         }
     }
 
-    private void Cancel()
-    {        ChatService.CancelAsync();
+    private async Task Cancel()
+    {
+        await ChatService.CancelAsync();
     }
 
     private async Task DeleteMessage(AppChatMessageViewModel message)

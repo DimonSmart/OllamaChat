@@ -1,5 +1,4 @@
 using ChatClient.Application.Helpers;
-using ChatClient.Application.Repositories;
 using ChatClient.Application.Services;
 using ChatClient.Domain.Models;
 using System.Security.Cryptography;
@@ -10,7 +9,6 @@ namespace ChatClient.Api.Services.Rag;
 public sealed class RagVectorIndexService(
     IUserSettingsService userSettings,
     IOllamaClientService ollamaClientService,
-    IRagVectorIndexRepository repository,
     IRagVectorStore store,
     ILogger<RagVectorIndexService> logger) : IRagVectorIndexService
 {
@@ -22,10 +20,10 @@ public sealed class RagVectorIndexService(
         CancellationToken cancellationToken = default,
         Guid serverId = default)
     {
-        if (!repository.SourceExists(sourceFilePath))
+        if (!File.Exists(sourceFilePath))
             throw new FileNotFoundException($"Source file not found: {sourceFilePath}");
 
-        var text = await repository.ReadSourceAsync(sourceFilePath, cancellationToken);
+        var text = await File.ReadAllTextAsync(sourceFilePath, cancellationToken);
         if (string.IsNullOrWhiteSpace(text))
             throw new InvalidOperationException("Source file is empty.");
 
