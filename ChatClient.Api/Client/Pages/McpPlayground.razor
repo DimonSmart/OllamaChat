@@ -1,10 +1,12 @@
 @page "/mcp-playground"
 @using ChatClient.Domain.Models
+@using ChatClient.Application.Services
 @using System.Text.Json
 @using System.Linq
 @using ModelContextProtocol.Client
 @using ChatClient.Api.Services
 @inject IMcpClientService McpClientService
+@inject IMcpServerConfigService McpServerConfigService
 @inject ISnackbar Snackbar
 @inject NavigationManager NavigationManager
 @inject IDialogService DialogService
@@ -19,44 +21,77 @@
     <MudSelect Label="Server" T="string" Value="@selectedServer" ValueChanged="OnServerChanged" Dense="true">
         @foreach (var s in servers)
         {
-            <MudSelectItem Value="@s">@s</MudSelectItem>
+            <MudSelectItem Value="@s">
+                <MudStack Spacing="0">
+                    <MudText Typo="Typo.body2">@s</MudText>
+                    @if (!string.IsNullOrWhiteSpace(GetServerDescription(s)))
+                    {
+                        <MudText Typo="Typo.caption" Class="mud-text-secondary">@GetServerDescription(s)</MudText>
+                    }
+                </MudStack>
+            </MudSelectItem>
         }
     </MudSelect>
+
+    @if (!string.IsNullOrWhiteSpace(selectedServerDescription))
+    {
+        <MudAlert Severity="Severity.Info" Dense="true" Variant="Variant.Outlined">
+            @selectedServerDescription
+        </MudAlert>
+    }
 
     <MudSelect Label="Function" T="string" Value="@selectedFunction" ValueChanged="OnFunctionChanged" Disabled="@(!tools.Any())" Dense="true">
         @foreach (var t in tools)
         {
-            <MudSelectItem Value="@t.Name">@t.Name</MudSelectItem>
+            <MudSelectItem Value="@t.Name">
+                <MudStack Spacing="0">
+                    <MudText Typo="Typo.body2">@t.Name</MudText>
+                    @if (!string.IsNullOrWhiteSpace(GetToolDescription(t)))
+                    {
+                        <MudText Typo="Typo.caption" Class="mud-text-secondary">@GetToolDescription(t)</MudText>
+                    }
+                </MudStack>
+            </MudSelectItem>
         }
     </MudSelect>
+
+    @if (!string.IsNullOrWhiteSpace(selectedFunctionDescription))
+    {
+        <MudAlert Severity="Severity.Info" Dense="true" Variant="Variant.Outlined">
+            @selectedFunctionDescription
+        </MudAlert>
+    }
 
     @if (fields.Any())
     {
         @foreach (var f in fields)
         {
-            @switch (f.Type)
-            {
-                case "boolean":
-                    <MudSwitch T="bool" Checked="@(parameters.TryGetValue(f.Name, out var val) && val is bool b && b)"
-                               CheckedChanged="v => parameters[f.Name] = v"
-                               Label="@f.Name" />
-                    break;
-                case "integer":
-                    <MudNumericField T="int?" Value="@(parameters[f.Name] as int?)"
-                                     ValueChanged="v => parameters[f.Name] = v"
-                                     Label="@f.Name" />
-                    break;
-                case "number":
-                    <MudNumericField T="double?" Value="@(parameters[f.Name] as double?)"
-                                     ValueChanged="v => parameters[f.Name] = v"
-                                     Label="@f.Name" />
-                    break;
-                default:
-                    <MudTextField T="string" Value="@(parameters.TryGetValue(f.Name, out var obj) ? obj?.ToString() : string.Empty)"
-                                  ValueChanged="v => parameters[f.Name] = v"
-                                  Label="@f.Name" />
-                    break;
-            }
+            <MudStack Spacing="0">
+                @switch (f.Type)
+                {
+                    case "boolean":
+                        <MudSwitch T="bool" Checked="@(parameters.TryGetValue(f.Name, out var val) && val is bool b && b)"
+                                   CheckedChanged="v => parameters[f.Name] = v"
+                                   Label="@GetFieldLabel(f)" />
+                        break;
+                    case "integer":
+                        <MudNumericField T="int?" Value="@(parameters[f.Name] as int?)"
+                                         ValueChanged="v => parameters[f.Name] = v"
+                                         Label="@GetFieldLabel(f)" />
+                        break;
+                    case "number":
+                        <MudNumericField T="double?" Value="@(parameters[f.Name] as double?)"
+                                         ValueChanged="v => parameters[f.Name] = v"
+                                         Label="@GetFieldLabel(f)" />
+                        break;
+                    default:
+                        <MudTextField T="string" Value="@(parameters.TryGetValue(f.Name, out var obj) ? obj?.ToString() : string.Empty)"
+                                      ValueChanged="v => parameters[f.Name] = v"
+                                      Label="@GetFieldLabel(f)" />
+                        break;
+                }
+                <MudText Typo="Typo.caption" Class="mud-text-secondary mb-2">@GetFieldMetadata(f)</MudText>
+            </MudStack>
         }
     }
 
@@ -78,13 +113,16 @@
 @code {
     private readonly List<string> servers = [];
     private readonly Dictionary<string, string> serverAliases = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<string, string> serverDescriptions = new(StringComparer.OrdinalIgnoreCase);
     private readonly List<McpToolInfo> tools = [];
     private readonly Dictionary<string, McpClientTool> toolMap = new(StringComparer.OrdinalIgnoreCase);
     private readonly List<FieldInfo> fields = [];
     private readonly Dictionary<string, object?> parameters = new(StringComparer.OrdinalIgnoreCase);
     private McpClient? currentClient;
     private string? selectedServer;
+    private string? selectedServerDescription;
     private string? selectedFunction;
+    private string? selectedFunctionDescription;
     private string? rawResult;
     private string? contentResult;
     private bool showRaw = true;
@@ -106,6 +144,13 @@
                 .Select(c => c.ServerInfo.Name)
                 .Where(name => !string.IsNullOrWhiteSpace(name))
                 .Distinct(StringComparer.OrdinalIgnoreCase));
+
+            var descriptors = await McpServerConfigService.GetAllAsync();
+            foreach (var descriptor in descriptors.Where(d => !string.IsNullOrWhiteSpace(d.Name)))
+            {
+                serverDescriptions[descriptor.Name] = descriptor.Description;
+            }
+
             BuildServerAliases();
             await ApplyPreselectedServer();
         }
@@ -206,6 +251,7 @@
     private async Task OnServerChangedInternal(string value, bool updateQuery)
     {
         selectedServer = value;
+        selectedServerDescription = GetServerDescription(selectedServer);
         if (updateQuery)
         {
             var url = NavigationManager.GetUriWithQueryParameter("server", string.IsNullOrWhiteSpace(selectedServer) ? null : selectedServer);
@@ -213,6 +259,7 @@
         }
 
         selectedFunction = null;
+        selectedFunctionDescription = null;
         tools.Clear();
         toolMap.Clear();
         fields.Clear();
@@ -243,21 +290,36 @@
     private void OnFunctionChanged(string value)
     {
         selectedFunction = value;
+        selectedFunctionDescription = GetToolDescription(tools.FirstOrDefault(t => string.Equals(t.Name, selectedFunction, StringComparison.OrdinalIgnoreCase)));
         fields.Clear();
         parameters.Clear();
         rawResult = null;
         contentResult = null;
-        var tool = tools.FirstOrDefault(t => t.Name == selectedFunction);
+        var tool = tools.FirstOrDefault(t => string.Equals(t.Name, selectedFunction, StringComparison.OrdinalIgnoreCase));
         if (tool == null)
             return;
         if (tool.JsonSchema.ValueKind == JsonValueKind.Undefined)
             return;
-        if (tool.JsonSchema.TryGetProperty("properties", out var props))
+
+        var requiredParams = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        if (tool.JsonSchema.TryGetProperty("required", out var requiredNode) && requiredNode.ValueKind == JsonValueKind.Array)
+        {
+            foreach (var required in requiredNode.EnumerateArray())
+            {
+                if (required.ValueKind == JsonValueKind.String && !string.IsNullOrWhiteSpace(required.GetString()))
+                    requiredParams.Add(required.GetString()!);
+            }
+        }
+
+        if (tool.JsonSchema.TryGetProperty("properties", out var props) && props.ValueKind == JsonValueKind.Object)
         {
             foreach (var prop in props.EnumerateObject())
             {
                 var type = prop.Value.TryGetProperty("type", out var t) ? t.GetString() : "string";
-                fields.Add(new FieldInfo(prop.Name, type ?? "string"));
+                var description = prop.Value.TryGetProperty("description", out var d) && d.ValueKind == JsonValueKind.String
+                    ? d.GetString()
+                    : null;
+                fields.Add(new FieldInfo(prop.Name, type ?? "string", description, requiredParams.Contains(prop.Name)));
                 parameters[prop.Name] = null;
             }
         }
@@ -395,10 +457,54 @@
         }
     }
 
+    private string? GetServerDescription(string? serverName)
+    {
+        if (string.IsNullOrWhiteSpace(serverName))
+            return null;
+
+        return serverDescriptions.TryGetValue(serverName, out var description) && !string.IsNullOrWhiteSpace(description)
+            ? description
+            : null;
+    }
+
+    private static string? GetToolDescription(McpToolInfo? tool)
+    {
+        if (tool == null)
+            return null;
+
+        if (!string.IsNullOrWhiteSpace(tool.Description))
+            return tool.Description;
+
+        if (tool.JsonSchema.ValueKind != JsonValueKind.Object)
+            return null;
+
+        if (tool.JsonSchema.TryGetProperty("description", out var descriptionNode) &&
+            descriptionNode.ValueKind == JsonValueKind.String)
+        {
+            return descriptionNode.GetString();
+        }
+
+        return null;
+    }
+
+    private static string GetFieldLabel(FieldInfo field)
+        => field.IsRequired ? $"{field.Name} *" : field.Name;
+
+    private static string GetFieldMetadata(FieldInfo field)
+    {
+        var typePart = $"Type: {field.Type}";
+        var requiredPart = field.IsRequired ? "Required." : "Optional.";
+
+        if (string.IsNullOrWhiteSpace(field.Description))
+            return $"{typePart}. {requiredPart}";
+
+        return $"{field.Description} ({typePart}). {requiredPart}";
+    }
+
     public void Dispose()
     {
         elicitationHandlerRegistration?.Dispose();
     }
 
-    private sealed record FieldInfo(string Name, string Type);
+    private sealed record FieldInfo(string Name, string Type, string? Description, bool IsRequired);
 }
