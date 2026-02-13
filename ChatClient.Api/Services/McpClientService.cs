@@ -187,7 +187,8 @@ public class McpClientService(
         try
         {
             var tools = await mcpClient.ListToolsAsync(cancellationToken: cancellationToken);
-            logger.LogInformation("Retrieved {Count} tools from MCP server", tools.Count);
+            var serverName = string.IsNullOrWhiteSpace(mcpClient.ServerInfo.Name) ? "Unknown" : mcpClient.ServerInfo.Name;
+            logger.LogDebug("Retrieved {Count} tools from MCP server {ServerName}", tools.Count, serverName);
             return tools.ToList();
         }
         catch (Exception ex)

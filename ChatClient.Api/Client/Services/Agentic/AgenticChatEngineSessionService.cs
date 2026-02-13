@@ -15,6 +15,7 @@ public sealed class AgenticChatEngineSessionService(
     IChatEngineHistoryBuilder historyBuilder,
     IChatEngineStreamingBridge streamingBridge) : IChatEngineSessionService
 {
+    private const int MaxLoggedUserMessageLength = 1000;
     private readonly AppChat _chat = new();
     private readonly Dictionary<Guid, StreamingAppChatMessage> _activeStreams = [];
     private CancellationTokenSource? _cancellationTokenSource;
@@ -125,6 +126,12 @@ public sealed class AgenticChatEngineSessionService(
             return;
 
         var userMessage = new AppChatMessage(text, DateTime.Now, ChatRole.User, files: files);
+        logger.LogInformation(
+            "Chat request received. ChatId: {ChatId}. MessageId: {MessageId}. Files: {FileCount}. UserText: {UserText}",
+            _chat.Id,
+            userMessage.Id,
+            files.Count,
+            FormatForLog(text, MaxLoggedUserMessageLength));
         await AddMessageAsync(userMessage);
 
         _cancellationTokenSource = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
@@ -399,6 +406,18 @@ public sealed class AgenticChatEngineSessionService(
             : "N/A";
 
         return $"time {duration.TotalSeconds:F1}s | model {modelName} | tokens {tokenCount} ({tokensPerSecond}/s)";
+    }
+
+    private static string FormatForLog(string? text, int maxLength)
+    {
+        if (string.IsNullOrWhiteSpace(text))
+            return "<empty>";
+
+        var singleLine = text.Replace("\r", " ").Replace("\n", " ").Trim();
+        if (singleLine.Length <= maxLength)
+            return singleLine;
+
+        return $"{singleLine[..maxLength]}... (truncated, {singleLine.Length} chars)";
     }
 
     private static IReadOnlyList<ResolvedChatAgent> BuildExecutionOrder(ChatEngineSessionStartRequest parameters)

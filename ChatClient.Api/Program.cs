@@ -7,6 +7,7 @@ using Microsoft.AspNetCore.Hosting.Server;
 using Microsoft.AspNetCore.Hosting.Server.Features;
 using Microsoft.Extensions.Logging;
 using Serilog;
+using Serilog.Events;
 using System.IO;
 using System.Text;
 
@@ -20,6 +21,8 @@ if (await BuiltInMcpServerHost.TryRunAsync(args))
 }
 
 Log.Logger = new LoggerConfiguration()
+    .MinimumLevel.Information()
+    .MinimumLevel.Override("ModelContextProtocol", LogEventLevel.Warning)
     .WriteTo.Console()
     .WriteTo.File("Logs/ollamachat-.log", rollingInterval: RollingInterval.Day, fileSizeLimitBytes: 10_000_000, rollOnFileSizeLimit: true, retainedFileCountLimit: 5)
     .WriteTo.Debug()

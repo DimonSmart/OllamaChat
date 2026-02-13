@@ -23,6 +23,7 @@ public sealed class HttpAgenticExecutionRuntime(
     ILogger<HttpAgenticExecutionRuntime> logger) : IAgenticExecutionRuntime
 {
     private const int MaxToolRounds = 8;
+    private const int MaxLoggedPayloadLength = 4000;
 
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web)
     {
@@ -327,11 +328,12 @@ public sealed class HttpAgenticExecutionRuntime(
                 out var validationError))
         {
             logger.LogWarning(
-                "Tool argument validation failed for {Server}:{ToolName}. Provider name: {ProviderToolName}. Error: {Error}",
+                "Tool argument validation failed for {Server}:{ToolName}. Provider name: {ProviderToolName}. Error: {Error}. Arguments: {Arguments}",
                 tool.ServerName,
                 tool.ToolName,
                 tool.ProviderName,
-                validationError);
+                validationError,
+                FormatForLog(toolCall.Arguments, MaxLoggedPayloadLength));
 
             string errorPayload = JsonSerializer.Serialize(new { error = validationError }, JsonOptions);
             return new ToolExecutionResult(
@@ -345,10 +347,31 @@ public sealed class HttpAgenticExecutionRuntime(
 
         int maxAttempts = Math.Max(1, _toolPolicy.MaxRetries + 1);
         Exception? lastException = null;
+        var requestForLog = FormatForLog(normalizedRequest, MaxLoggedPayloadLength);
 
         for (int attempt = 1; attempt <= maxAttempts; attempt++)
         {
             var startedAt = DateTime.UtcNow;
+            if (attempt == 1)
+            {
+                logger.LogInformation(
+                    "Calling MCP tool {Server}:{ToolName} for provider tool {ProviderToolName}. Arguments: {Arguments}",
+                    tool.ServerName,
+                    tool.ToolName,
+                    tool.ProviderName,
+                    requestForLog);
+            }
+            else
+            {
+                logger.LogInformation(
+                    "Retrying MCP tool {Server}:{ToolName} for provider tool {ProviderToolName} (attempt {Attempt}/{MaxAttempts}).",
+                    tool.ServerName,
+                    tool.ToolName,
+                    tool.ProviderName,
+                    attempt,
+                    maxAttempts);
+            }
+
             try
             {
                 using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
@@ -359,13 +382,14 @@ public sealed class HttpAgenticExecutionRuntime(
                 int durationMs = (int)Math.Max(0, (DateTime.UtcNow - startedAt).TotalMilliseconds);
 
                 logger.LogInformation(
-                    "Executed tool {Server}:{ToolName} for provider tool {ProviderToolName} (attempt {Attempt}/{MaxAttempts}, {DurationMs} ms)",
+                    "MCP tool {Server}:{ToolName} completed for provider tool {ProviderToolName} (attempt {Attempt}/{MaxAttempts}, {DurationMs} ms). Response: {Response}",
                     tool.ServerName,
                     tool.ToolName,
                     tool.ProviderName,
                     attempt,
                     maxAttempts,
-                    durationMs);
+                    durationMs,
+                    FormatForLog(responsePayload, MaxLoggedPayloadLength));
 
                 return new ToolExecutionResult(
                     new ProviderMessage("tool", responsePayload, tool.ProviderName, toolCall.Id, null),
@@ -415,10 +439,12 @@ public sealed class HttpAgenticExecutionRuntime(
         string finalPayload = JsonSerializer.Serialize(new { error = finalMessage }, JsonOptions);
         logger.LogError(
             lastException,
-            "Tool execution failed for {Server}:{ToolName} after {MaxAttempts} attempts.",
+            "Tool execution failed for {Server}:{ToolName} (provider tool {ProviderToolName}) after {MaxAttempts} attempts. Arguments: {Arguments}",
             tool.ServerName,
             tool.ToolName,
-            maxAttempts);
+            tool.ProviderName,
+            maxAttempts,
+            requestForLog);
 
         return new ToolExecutionResult(
             new ProviderMessage("tool", finalPayload, tool.ProviderName, toolCall.Id, null),
@@ -870,5 +896,17 @@ public sealed class HttpAgenticExecutionRuntime(
     {
         using var document = JsonDocument.Parse("{\"type\":\"object\",\"properties\":{}}");
         return document.RootElement.Clone();
+    }
+
+    private static string FormatForLog(string? payload, int maxLength)
+    {
+        if (string.IsNullOrWhiteSpace(payload))
+            return "<empty>";
+
+        var singleLine = payload.Replace("\r", " ").Replace("\n", " ").Trim();
+        if (singleLine.Length <= maxLength)
+            return singleLine;
+
+        return $"{singleLine[..maxLength]}... (truncated, {singleLine.Length} chars)";
     }
 }
