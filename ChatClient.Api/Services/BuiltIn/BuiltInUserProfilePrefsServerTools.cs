@@ -391,9 +391,23 @@ internal static class UserProfilePrefsFileStore
     }
 
     private static async Task<Dictionary<string, string>> ReadUnsafeAsync(CancellationToken ct)
-        => (await JsonSerializer.DeserializeAsync<Dictionary<string, string>>(
-                File.OpenRead(_filePath), _jsonOptions, ct))!
-           ?? new(StringComparer.OrdinalIgnoreCase);
+    {
+        if (!File.Exists(_filePath))
+        {
+            return new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        }
+
+        await using var fileStream = new FileStream(_filePath, FileMode.Open, FileAccess.Read, FileShare.Read);
+        if (fileStream.Length == 0)
+        {
+            return new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        }
+
+        var values = await JsonSerializer.DeserializeAsync<Dictionary<string, string>>(fileStream, _jsonOptions, ct);
+        return values is null
+            ? new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+            : new Dictionary<string, string>(values, StringComparer.OrdinalIgnoreCase);
+    }
 
     private static async Task WriteUnsafeAsync(
         IReadOnlyDictionary<string, string> values,
