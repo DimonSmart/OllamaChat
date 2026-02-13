@@ -1,6 +1,7 @@
 using System.ComponentModel;
 using System.Globalization;
 using System.Text.Json;
+using Microsoft.Extensions.DependencyInjection;
 using ModelContextProtocol.Protocol;
 using ModelContextProtocol.Server;
 
@@ -9,6 +10,13 @@ namespace ChatClient.Api.Services.BuiltIn;
 [McpServerToolType]
 public sealed class BuiltInTimeServerTools
 {
+    public static IBuiltInMcpServerDescriptor Descriptor { get; } = new BuiltInMcpServerDescriptor(
+        id: Guid.Parse("f2f13fdb-09e4-46b8-9e2e-352c3da66f20"),
+        key: "built-in-time",
+        name: "Built-in Time MCP Server",
+        description: "Returns current time information.",
+        registerTools: static builder => builder.WithTools<BuiltInTimeServerTools>());
+
     [McpServerTool(Name = "get_current_time"), Description("Returns current time details in ISO-8601 format.")]
     public static object GetCurrentTime(
         [Description("Optional time zone ID. Supports both IANA and Windows IDs.")] string? timeZone = null)
@@ -28,6 +36,13 @@ public sealed class BuiltInTimeServerTools
 [McpServerToolType]
 public sealed class BuiltInFormattedTimeServerTools
 {
+    public static IBuiltInMcpServerDescriptor Descriptor { get; } = new BuiltInMcpServerDescriptor(
+        id: Guid.Parse("1b44ff82-c4fc-4f50-a12f-56429817c078"),
+        key: "built-in-formatted-time",
+        name: "Built-in Formatted Time MCP Server",
+        description: "Returns current time in a custom format and asks user for timezone when needed.",
+        registerTools: static builder => builder.WithTools<BuiltInFormattedTimeServerTools>());
+
     [McpServerTool(Name = "get_formatted_time"), Description("Returns current time formatted with a .NET format string. If timezone is omitted, asks user via elicitation.")]
     public static async Task<object> GetFormattedTimeAsync(
         McpServer server,
@@ -106,6 +121,13 @@ public sealed class BuiltInFormattedTimeServerTools
 [McpServerToolType]
 public sealed class BuiltInMathServerTools
 {
+    public static IBuiltInMcpServerDescriptor Descriptor { get; } = new BuiltInMcpServerDescriptor(
+        id: Guid.Parse("76ca15c0-4f2d-4a76-8d32-70fdd6dd5083"),
+        key: "built-in-math",
+        name: "Built-in Math MCP Server",
+        description: "Evaluates arithmetic expressions from text input.",
+        registerTools: static builder => builder.WithTools<BuiltInMathServerTools>());
+
     [McpServerTool(Name = "evaluate_expression"), Description("Evaluates an arithmetic expression string and returns the numeric result.")]
     public static object EvaluateExpression(
         [Description("Expression with numbers, parentheses and operators + - * / % ^")] string expression)

@@ -60,23 +60,7 @@ public static class BuiltInMcpServerHost
             })
             .WithStdioServerTransport();
 
-        switch (definition.Key)
-        {
-            case BuiltInMcpServerCatalog.TimeServerKey:
-                mcpBuilder.WithTools<BuiltInTimeServerTools>();
-                break;
-            case BuiltInMcpServerCatalog.FormattedTimeServerKey:
-                mcpBuilder.WithTools<BuiltInFormattedTimeServerTools>();
-                break;
-            case BuiltInMcpServerCatalog.MathServerKey:
-                mcpBuilder.WithTools<BuiltInMathServerTools>();
-                break;
-            case BuiltInMcpServerCatalog.UserProfilePrefsServerKey:
-                mcpBuilder.WithTools<BuiltInUserProfilePrefsServerTools>();
-                break;
-            default:
-                throw new InvalidOperationException($"Unknown built-in MCP server key '{definition.Key}'.");
-        }
+        definition.RegisterTools(mcpBuilder);
 
         await builder.Build().RunAsync(cancellationToken);
     }

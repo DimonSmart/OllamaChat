@@ -3,6 +3,7 @@ using System.Text.Json;
 using ChatClient.Infrastructure.Constants;
 using ChatClient.Infrastructure.Helpers;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
 using ModelContextProtocol.Protocol;
 using ModelContextProtocol.Server;
 
@@ -11,6 +12,13 @@ namespace ChatClient.Api.Services.BuiltIn;
 [McpServerToolType]
 public sealed class BuiltInUserProfilePrefsServerTools
 {
+    public static IBuiltInMcpServerDescriptor Descriptor { get; } = new BuiltInMcpServerDescriptor(
+        id: Guid.Parse("c8c4a3cf-e2d5-4f4d-9a6f-4504e322a2b3"),
+        key: "built-in-user-profile-prefs",
+        name: "Built-in User Profile Prefs MCP Server",
+        description: "Stores user preferences and asks for missing values via elicitation.",
+        registerTools: static builder => builder.WithTools<BuiltInUserProfilePrefsServerTools>());
+
     private const int MaxElicitationAttempts = 3;
     private const string ValueFieldName = "value";
     private const string StoredSource = "stored";

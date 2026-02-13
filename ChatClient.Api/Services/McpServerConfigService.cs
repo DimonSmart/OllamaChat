@@ -136,6 +136,12 @@ public class McpServerConfigService(IMcpServerConfigRepository repository) : IMc
                 changed = true;
             }
 
+            if (!string.Equals(existing.Description, definition.Description, StringComparison.Ordinal))
+            {
+                existing.Description = definition.Description;
+                changed = true;
+            }
+
             if (!existing.IsBuiltIn)
             {
                 existing.IsBuiltIn = true;
