@@ -62,16 +62,42 @@
                          Height="100%"
                          Class="mt-4">
                 <Columns>
-                    <PropertyColumn Property="x => x.Name" Title="Name" SortBy="x => x.Name" />
+                    <TemplateColumn Title="Name" isEditable="false">
+                        <CellTemplate>
+                            @{
+                                var server = context.Item;
+                            }
+                            <MudStack Row="true" Spacing="1" AlignItems="AlignItems.Center">
+                                <MudText Typo="Typo.body2">@server.Name</MudText>
+                                @if (server.IsBuiltIn)
+                                {
+                                    <MudChip Size="Size.Small" Color="Color.Warning" Variant="Variant.Outlined">Built-in</MudChip>
+                                }
+                            </MudStack>
+                        </CellTemplate>
+                    </TemplateColumn>
                     <PropertyColumn Property="x => x.UpdatedAt" Title="Updated" Format="g" />
                     <PropertyColumn Property="x => x.CreatedAt" Title="Created" Format="g" />
+                    <TemplateColumn Title="Enabled" isEditable="false">
+                        <CellTemplate>
+                            @{
+                                var server = context.Item;
+                            }
+                            <MudSwitch T="bool"
+                                       Value="@server.IsEnabled"
+                                       ValueChanged="@(enabled => ToggleServerEnabled(server, enabled))"
+                                       Color="Color.Success" />
+                        </CellTemplate>
+                    </TemplateColumn>
                     <TemplateColumn Title="Type" isEditable="false">
                         <CellTemplate>
                             @{
                                 var server = context.Item;
-                                var type = !string.IsNullOrEmpty(server.Command) ? "Local" : "Remote";
+                                var type = server.IsBuiltIn
+                                    ? "Built-in"
+                                    : (!string.IsNullOrEmpty(server.Command) ? "Local" : "Remote");
                             }
-                            <MudChip Size="Size.Small" Color="@(type == "Local" ? Color.Primary : Color.Secondary)">
+                            <MudChip Size="Size.Small" Color="@GetTypeChipColor(type)">
                                 @type
                             </MudChip>
                         </CellTemplate>
@@ -80,9 +106,11 @@
                             <div>
                                 @{
                                     var server = context.Item;
-                                    var configText = !string.IsNullOrEmpty(server.Command)
-                                        ? $"Command: {server.Command}"
-                                        : $"SSE: {server.Sse}";
+                                    var configText = server.IsBuiltIn
+                                        ? $"Built-in key: {server.BuiltInKey}"
+                                        : (!string.IsNullOrEmpty(server.Command)
+                                            ? $"Command: {server.Command}"
+                                            : $"SSE: {server.Sse}");
                                 }
                                 <MudText Typo="Typo.body2" Class="mud-text-truncate">
                                     @configText
@@ -103,10 +131,12 @@
                                          OnClick="@(() => NavigateToPlayground(context.Item))" />
                             <MudIconButton Icon="@Icons.Material.Filled.Edit"
                                          Size="Size.Small"
+                                         Disabled="@context.Item.IsBuiltIn"
                                          OnClick="@(() => StartEditing(context.Item))" />
                             <MudIconButton Icon="@Icons.Material.Filled.Delete"
                                          Size="Size.Small"
                                          Color="Color.Error"
+                                         Disabled="@context.Item.IsBuiltIn"
                                          OnClick="() => ConfirmDelete(context.Item)" />
                         </CellTemplate>
                     </TemplateColumn>
@@ -317,7 +347,10 @@
             loading = true;
             StateHasChanged();
 
-            servers = (await McpServerConfigService.GetAllAsync()).ToList();
+            servers = (await McpServerConfigService.GetAllAsync())
+                .OrderByDescending(s => s.IsBuiltIn)
+                .ThenBy(s => s.Name, StringComparer.OrdinalIgnoreCase)
+                .ToList();
             filteredServers = servers;
         }
         catch (Exception ex)
@@ -353,6 +386,9 @@
             CreatedAt = DateTime.UtcNow,
             UpdatedAt = DateTime.UtcNow,
             Name = "",
+            IsEnabled = true,
+            IsBuiltIn = false,
+            BuiltInKey = null,
             Command = ""
         };
         
@@ -384,6 +420,7 @@
 
         filteredServers = servers
             .Where(s => s.Name.Contains(searchString, StringComparison.OrdinalIgnoreCase) ||
+                       (!string.IsNullOrWhiteSpace(s.BuiltInKey) && s.BuiltInKey.Contains(searchString, StringComparison.OrdinalIgnoreCase)) ||
                        (s.Command != null && s.Command.Contains(searchString, StringComparison.OrdinalIgnoreCase)) ||
                        (s.Sse != null && s.Sse.Contains(searchString, StringComparison.OrdinalIgnoreCase)))
             .ToList();
@@ -400,10 +437,19 @@
 
     private void StartEditing(McpServerConfig server)
     {
+        if (server.IsBuiltIn)
+        {
+            Snackbar.Add("Built-in MCP servers cannot be edited", Severity.Info);
+            return;
+        }
+
         editingServer = new McpServerConfig
         {
             Id = server.Id,
             Name = server.Name,
+            IsEnabled = server.IsEnabled,
+            IsBuiltIn = server.IsBuiltIn,
+            BuiltInKey = server.BuiltInKey,
             Command = server.Command,
             Arguments = server.Arguments,
             Sse = server.Sse,
@@ -423,6 +469,12 @@
 
     private void ConfirmDelete(McpServerConfig server)
     {
+        if (server.IsBuiltIn)
+        {
+            Snackbar.Add("Built-in MCP servers cannot be deleted", Severity.Info);
+            return;
+        }
+
         serverToDelete = server;
         showDeleteDialog = true;
         StateHasChanged();
@@ -437,6 +489,14 @@
     private async Task DeleteServer()
     {
         if (serverToDelete?.Id == null) return;
+        if (serverToDelete.IsBuiltIn)
+        {
+            Snackbar.Add("Built-in MCP servers cannot be deleted", Severity.Info);
+            showDeleteDialog = false;
+            serverToDelete = null;
+            return;
+        }
+
         try
         {
             await McpServerConfigService.DeleteAsync(serverToDelete.Id.Value);
@@ -538,6 +598,12 @@
     private async Task SaveServer()
     {
         if (editServerForm == null) return;
+        if (editingServer.IsBuiltIn)
+        {
+            Snackbar.Add("Built-in MCP servers cannot be edited", Severity.Info);
+            return;
+        }
+
         await editServerForm.Validate();
         if (editServerForm.IsValid)
         {
@@ -576,5 +642,57 @@
                 Snackbar.Add($"Error saving MCP server: {ex.Message}", Severity.Error);
             }
         }
+    }
+
+    private async Task ToggleServerEnabled(McpServerConfig server, bool enabled)
+    {
+        if (server.Id is not Guid serverId)
+            return;
+
+        var originalEnabled = server.IsEnabled;
+        server.IsEnabled = enabled;
+
+        try
+        {
+            var updated = new McpServerConfig
+            {
+                Id = server.Id,
+                Name = server.Name,
+                IsEnabled = enabled,
+                IsBuiltIn = server.IsBuiltIn,
+                BuiltInKey = server.BuiltInKey,
+                Command = server.Command,
+                Arguments = server.Arguments,
+                Sse = server.Sse,
+                SamplingModel = server.SamplingModel,
+                CreatedAt = server.CreatedAt,
+                UpdatedAt = server.UpdatedAt
+            };
+
+            await McpServerConfigService.UpdateAsync(updated);
+            var reloaded = await McpServerConfigService.GetByIdAsync(serverId);
+            if (reloaded is not null)
+            {
+                var index = servers.FindIndex(s => s.Id == serverId);
+                if (index >= 0)
+                    servers[index] = reloaded;
+                ApplySearch();
+            }
+        }
+        catch (Exception ex)
+        {
+            server.IsEnabled = originalEnabled;
+            Snackbar.Add($"Error updating server state: {ex.Message}", Severity.Error);
+        }
+    }
+
+    private static Color GetTypeChipColor(string type)
+    {
+        return type switch
+        {
+            "Built-in" => Color.Warning,
+            "Local" => Color.Primary,
+            _ => Color.Secondary
+        };
     }
 }

@@ -1,5 +1,6 @@
 using ChatClient.Api;
 using ChatClient.Api.Services;
+using ChatClient.Api.Services.BuiltIn;
 using ChatClient.Api.Services.Seed;
 using ChatClient.Application.Services.Agentic;
 using Microsoft.AspNetCore.Hosting.Server;
@@ -12,6 +13,11 @@ using System.Text;
 // Enable UTF-8 for proper Cyrillic support.
 Console.OutputEncoding = Encoding.UTF8;
 Console.InputEncoding = Encoding.UTF8;
+
+if (await BuiltInMcpServerHost.TryRunAsync(args))
+{
+    return;
+}
 
 Log.Logger = new LoggerConfiguration()
     .WriteTo.Console()

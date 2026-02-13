@@ -1,8 +1,8 @@
 using ChatClient.Application.Services;
+using ChatClient.Api.Services.BuiltIn;
 using ChatClient.Domain.Models;
 using ModelContextProtocol.Client;
 using ModelContextProtocol.Protocol;
-using System;
 using System.Reflection;
 
 namespace ChatClient.Api.Services;
@@ -14,44 +14,98 @@ public class McpClientService(
     ILogger<McpClientService> logger,
     ILoggerFactory loggerFactory) : IMcpClientService
 {
+    private readonly SemaphoreSlim _syncLock = new(1, 1);
     private List<McpClient>? _mcpClients = null;
+    private string? _configFingerprint = null;
 
     public async Task<IReadOnlyCollection<McpClient>> GetMcpClientsAsync(CancellationToken cancellationToken = default)
     {
-        if (_mcpClients != null)
-            return _mcpClients;
-        _mcpClients = [];
+        var mcpServerConfigs = (await mcpServerConfigService.GetAllAsync())
+            .OrderBy(s => s.Name, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+        var fingerprint = BuildFingerprint(mcpServerConfigs);
 
-        var mcpServerConfigs = await mcpServerConfigService.GetAllAsync();
-
-        if (mcpServerConfigs.Count == 0)
+        await _syncLock.WaitAsync(cancellationToken);
+        try
         {
-            logger.LogWarning("No MCP server configurations found");
-            return _mcpClients;
-        }
+            if (_mcpClients != null && string.Equals(_configFingerprint, fingerprint, StringComparison.Ordinal))
+                return _mcpClients;
 
-        foreach (var serverConfig in mcpServerConfigs)
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-            if (string.IsNullOrWhiteSpace(serverConfig.Name))
+            if (_mcpClients != null)
             {
-                logger.LogWarning("MCP server name is null or empty");
-                continue;
+                await DisposeClientsAsync(_mcpClients);
+                _mcpClients = null;
             }
 
-            logger.LogInformation("Creating MCP client for server: {ServerName}", serverConfig.Name);
+            var newClients = new List<McpClient>();
 
-            if (!string.IsNullOrWhiteSpace(serverConfig.Command))
-                _mcpClients.Add(await CreateLocalMcpClientAsync(serverConfig, cancellationToken));
-            if (!string.IsNullOrWhiteSpace(serverConfig.Sse))
-                await AddSseClient(serverConfig, cancellationToken);
+            if (mcpServerConfigs.Count == 0)
+            {
+                logger.LogWarning("No MCP server configurations found");
+                _mcpClients = newClients;
+                _configFingerprint = fingerprint;
+                return _mcpClients;
+            }
 
-            logger.LogInformation("MCP client created successfully for server: {ServerName}", serverConfig.Name);
+            foreach (var serverConfig in mcpServerConfigs)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                if (!serverConfig.IsEnabled)
+                {
+                    logger.LogDebug("Skipping disabled MCP server: {ServerName}", serverConfig.Name);
+                    continue;
+                }
+
+                if (string.IsNullOrWhiteSpace(serverConfig.Name))
+                {
+                    logger.LogWarning("MCP server name is null or empty");
+                    continue;
+                }
+
+                logger.LogInformation("Creating MCP client for server: {ServerName}", serverConfig.Name);
+
+                try
+                {
+                    if (serverConfig.IsBuiltIn)
+                    {
+                        var builtInClient = await CreateBuiltInMcpClientAsync(serverConfig, cancellationToken);
+                        newClients.Add(builtInClient);
+                    }
+                    else if (!string.IsNullOrWhiteSpace(serverConfig.Command))
+                    {
+                        newClients.Add(await CreateLocalMcpClientAsync(serverConfig, cancellationToken));
+                    }
+                    else if (!string.IsNullOrWhiteSpace(serverConfig.Sse))
+                    {
+                        await AddSseClient(newClients, serverConfig, cancellationToken);
+                    }
+                    else
+                    {
+                        logger.LogWarning(
+                            "Skipping MCP server {ServerName} because neither Command nor Sse is configured.",
+                            serverConfig.Name);
+                        continue;
+                    }
+
+                    logger.LogInformation("MCP client created successfully for server: {ServerName}", serverConfig.Name);
+                }
+                catch (Exception ex)
+                {
+                    logger.LogError(ex, "Failed to create MCP client for server: {ServerName}", serverConfig.Name);
+                }
+            }
+
+            _mcpClients = newClients;
+            _configFingerprint = fingerprint;
+            return _mcpClients;
         }
-        return _mcpClients;
+        finally
+        {
+            _syncLock.Release();
+        }
     }
 
-    private async Task AddSseClient(McpServerConfig serverConfig, CancellationToken cancellationToken)
+    private async Task AddSseClient(List<McpClient> clients, McpServerConfig serverConfig, CancellationToken cancellationToken)
     {
         try
         {
@@ -66,15 +120,42 @@ public class McpClientService(
                 loggerFactory);
             var clientOptions = CreateClientOptions(serverConfig);
             var client = await McpClient.CreateAsync(httpTransport, clientOptions, loggerFactory, cancellationToken);
-            if (_mcpClients != null && client != null)
+            if (client != null)
             {
-                _mcpClients.Add(client);
+                clients.Add(client);
             }
         }
         catch (Exception ex)
         {
             logger.LogError(ex, "Failed to add network client for server: {ServerName}", serverConfig.Name);
         }
+    }
+
+    private async Task<McpClient> CreateBuiltInMcpClientAsync(McpServerConfig serverConfig, CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(serverConfig.BuiltInKey))
+            throw new InvalidOperationException($"Built-in server '{serverConfig.Name}' does not have BuiltInKey configured.");
+
+        if (!BuiltInMcpServerCatalog.TryGetDefinition(serverConfig.BuiltInKey, out var definition) || definition is null)
+            throw new InvalidOperationException($"Unknown built-in MCP server key '{serverConfig.BuiltInKey}'.");
+
+        var (command, arguments) = GetBuiltInLaunchCommand(definition.Key);
+        var applicationDirectory = AppContext.BaseDirectory;
+        var clientOptions = CreateClientOptions(serverConfig);
+
+        return await McpClient.CreateAsync(
+            clientTransport: new StdioClientTransport(
+                new StdioClientTransportOptions
+                {
+                    Name = serverConfig.Name,
+                    Command = command,
+                    Arguments = arguments,
+                    WorkingDirectory = applicationDirectory
+                },
+                loggerFactory),
+            clientOptions: clientOptions,
+            loggerFactory: loggerFactory,
+            cancellationToken: cancellationToken);
     }
 
     private async Task<McpClient> CreateLocalMcpClientAsync(McpServerConfig serverConfig, CancellationToken cancellationToken)
@@ -122,12 +203,28 @@ public class McpClientService(
 
     public async ValueTask DisposeAsync()
     {
-        if (_mcpClients == null)
+        await _syncLock.WaitAsync();
+        try
         {
-            return;
+            if (_mcpClients != null)
+            {
+                await DisposeClientsAsync(_mcpClients);
+                _mcpClients = null;
+            }
+
+            _configFingerprint = null;
+        }
+        finally
+        {
+            _syncLock.Release();
         }
 
-        foreach (var mcpClient in _mcpClients)
+        GC.SuppressFinalize(this);
+    }
+
+    private async Task DisposeClientsAsync(IEnumerable<McpClient> clients)
+    {
+        foreach (var mcpClient in clients)
         {
             try
             {
@@ -138,9 +235,36 @@ public class McpClientService(
                 logger.LogError(ex, "Failed to dispose MCP client");
             }
         }
+    }
 
-        _mcpClients = null;
-        GC.SuppressFinalize(this);
+    private static (string Command, string[] Arguments) GetBuiltInLaunchCommand(string builtInKey)
+    {
+        var processPath = Environment.ProcessPath;
+        var processFileName = Path.GetFileName(processPath);
+        var isDotnetHost = string.Equals(processFileName, "dotnet", StringComparison.OrdinalIgnoreCase) ||
+                           string.Equals(processFileName, "dotnet.exe", StringComparison.OrdinalIgnoreCase);
+
+        if (!string.IsNullOrWhiteSpace(processPath) && !isDotnetHost)
+        {
+            return (processPath, ["--mcp-builtin", builtInKey]);
+        }
+
+        var assemblyPath = Assembly.GetEntryAssembly()?.Location;
+        if (string.IsNullOrWhiteSpace(assemblyPath))
+            throw new InvalidOperationException("Unable to determine application assembly path for built-in MCP server launch.");
+
+        var command = string.IsNullOrWhiteSpace(processPath) ? "dotnet" : processPath;
+        return (command, [assemblyPath, "--mcp-builtin", builtInKey]);
+    }
+
+    private static string BuildFingerprint(IEnumerable<McpServerConfig> serverConfigs)
+    {
+        return string.Join(
+            "||",
+            serverConfigs
+                .OrderBy(s => s.Id)
+                .Select(s =>
+                    $"{s.Id}|{s.Name}|{s.IsEnabled}|{s.IsBuiltIn}|{s.BuiltInKey}|{s.Command}|{s.Sse}|{s.UpdatedAt:O}"));
     }
 
 

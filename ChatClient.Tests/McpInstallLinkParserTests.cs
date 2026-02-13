@@ -101,7 +101,8 @@ public class McpInstallLinkParserTests
             Assert.NotNull(installed.Id);
 
             var all = await service.GetAllAsync();
-            var saved = Assert.Single(all);
+            Assert.True(all.Count >= 1);
+            var saved = Assert.Single(all, s => s.Id == installed.Id);
             Assert.Equal(installed.Id, saved.Id);
             Assert.Equal("gallery", saved.Name);
             Assert.Equal("uvx", saved.Command);

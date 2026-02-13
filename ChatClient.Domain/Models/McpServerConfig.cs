@@ -6,6 +6,9 @@ public class McpServerConfig
 {
     public Guid? Id { get; set; }
     public string Name { get; set; } = string.Empty;
+    public bool IsEnabled { get; set; } = true;
+    public bool IsBuiltIn { get; set; }
+    public string? BuiltInKey { get; set; }
 
     public string? Command { get; set; }
     public string[]? Arguments { get; set; }

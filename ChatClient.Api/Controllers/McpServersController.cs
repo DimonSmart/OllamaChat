@@ -30,6 +30,11 @@ public class McpServersController(IMcpServerConfigService mcpServerConfigService
     [HttpPost]
     public async Task<ActionResult<McpServerConfig>> CreateServer([FromBody] McpServerConfig server)
     {
+        if (server.IsBuiltIn)
+        {
+            return BadRequest("Built-in MCP servers are managed by the application.");
+        }
+
         if (string.IsNullOrWhiteSpace(server.Name))
         {
             return BadRequest("Server name is required");
@@ -57,7 +62,9 @@ public class McpServersController(IMcpServerConfigService mcpServerConfigService
             return BadRequest("Server name is required");
         }
 
-        if (string.IsNullOrWhiteSpace(server.Command) && string.IsNullOrWhiteSpace(server.Sse))
+        if (!server.IsBuiltIn &&
+            string.IsNullOrWhiteSpace(server.Command) &&
+            string.IsNullOrWhiteSpace(server.Sse))
         {
             return BadRequest("Either Command or Sse must be specified");
         }
