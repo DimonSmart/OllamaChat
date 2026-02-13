@@ -20,8 +20,7 @@ public class McpServerConfigServiceBuiltInTests
         foreach (var definition in BuiltInMcpServerCatalog.Definitions)
         {
             var server = Assert.Single(servers, s => s.Id == definition.Id);
-            Assert.True(server.IsBuiltIn);
-            Assert.Equal(definition.Key, server.BuiltInKey);
+            Assert.IsAssignableFrom<IBuiltInMcpServerDescriptor>(server);
             Assert.Equal(definition.Name, server.Name);
         }
     }
@@ -31,7 +30,7 @@ public class McpServerConfigServiceBuiltInTests
     {
         await using var fixture = new TestFixture();
         var service = fixture.CreateService();
-        var builtIn = (await service.GetAllAsync()).First();
+        var builtIn = BuiltInMcpServerCatalog.Definitions.First();
 
         var ex = await Assert.ThrowsAsync<InvalidOperationException>(() => service.DeleteAsync(builtIn.Id!.Value));
 
@@ -43,12 +42,15 @@ public class McpServerConfigServiceBuiltInTests
     {
         await using var fixture = new TestFixture();
         var service = fixture.CreateService();
-        var builtIn = (await service.GetAllAsync()).First();
+        var builtIn = BuiltInMcpServerCatalog.Definitions.First();
+        var externalLikeBuiltIn = new ChatClient.Domain.Models.McpServerConfig
+        {
+            Id = builtIn.Id,
+            Name = "Hacked Name",
+            Command = "should-not-be-saved"
+        };
 
-        builtIn.Name = "Hacked Name";
-        builtIn.Command = "should-not-be-saved";
-
-        var ex = await Assert.ThrowsAsync<InvalidOperationException>(() => service.UpdateAsync(builtIn));
+        var ex = await Assert.ThrowsAsync<InvalidOperationException>(() => service.UpdateAsync(externalLikeBuiltIn));
 
         Assert.Contains("cannot be edited", ex.Message, StringComparison.OrdinalIgnoreCase);
     }

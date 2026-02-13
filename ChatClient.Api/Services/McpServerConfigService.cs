@@ -10,28 +10,39 @@ public class McpServerConfigService(IMcpServerConfigRepository repository) : IMc
 {
     private readonly IMcpServerConfigRepository _repository = repository;
 
-    public async Task<IReadOnlyCollection<McpServerConfig>> GetAllAsync()
+    public async Task<IReadOnlyCollection<IMcpServerDescriptor>> GetAllAsync()
     {
-        var servers = await LoadServersAsync(ensureBuiltIns: true, persistBuiltInChanges: true);
-        return servers;
+        var externalServers = await LoadExternalServersAsync();
+
+        var allServers = new List<IMcpServerDescriptor>(
+            BuiltInMcpServerCatalog.Definitions.Count + externalServers.Count);
+        allServers.AddRange(BuiltInMcpServerCatalog.Definitions);
+        allServers.AddRange(externalServers);
+        return allServers;
     }
 
-    public async Task<McpServerConfig?> GetByIdAsync(Guid serverId)
+    public async Task<IMcpServerDescriptor?> GetByIdAsync(Guid serverId)
     {
-        var servers = await LoadServersAsync(ensureBuiltIns: true, persistBuiltInChanges: true);
-        return servers.FirstOrDefault(s => s.Id == serverId);
+        if (BuiltInMcpServerCatalog.TryGetDefinition(serverId, out var definition) && definition is not null)
+            return definition;
+
+        var externalServers = await LoadExternalServersAsync();
+        return externalServers.FirstOrDefault(s => s.Id == serverId);
     }
 
     public async Task CreateAsync(McpServerConfig serverConfig)
     {
-        if (serverConfig.IsBuiltIn || BuiltInMcpServerCatalog.TryGetDefinition(serverConfig.BuiltInKey, out _))
+        if (IsBuiltInServer(serverConfig))
             throw new InvalidOperationException("Built-in MCP servers are managed by the application and cannot be created manually.");
 
-        var servers = await LoadServersAsync(ensureBuiltIns: true, persistBuiltInChanges: true);
+        var servers = await LoadExternalServersAsync();
 
         ValidateExternalServerConfig(serverConfig);
 
         serverConfig.Id ??= Guid.NewGuid();
+        if (BuiltInMcpServerCatalog.IsBuiltInId(serverConfig.Id))
+            throw new InvalidOperationException("Generated or provided ID conflicts with a built-in MCP server ID.");
+
         if (servers.Any(s => s.Id == serverConfig.Id))
             throw new InvalidOperationException($"MCP server config with ID {serverConfig.Id} already exists.");
 
@@ -46,7 +57,10 @@ public class McpServerConfigService(IMcpServerConfigRepository repository) : IMc
 
     public async Task UpdateAsync(McpServerConfig serverConfig)
     {
-        var servers = await LoadServersAsync(ensureBuiltIns: true, persistBuiltInChanges: true);
+        if (IsBuiltInServer(serverConfig))
+            throw new InvalidOperationException("Built-in MCP servers cannot be edited.");
+
+        var servers = await LoadExternalServersAsync();
         var index = servers.FindIndex(s => s.Id == serverConfig.Id);
         if (index == -1)
             throw new KeyNotFoundException($"MCP server config with ID {serverConfig.Id} not found");
@@ -69,7 +83,10 @@ public class McpServerConfigService(IMcpServerConfigRepository repository) : IMc
 
     public async Task DeleteAsync(Guid serverId)
     {
-        var servers = await LoadServersAsync(ensureBuiltIns: true, persistBuiltInChanges: true);
+        if (BuiltInMcpServerCatalog.IsBuiltInId(serverId))
+            throw new InvalidOperationException("Built-in MCP servers cannot be deleted.");
+
+        var servers = await LoadExternalServersAsync();
         var existing = servers.FirstOrDefault(s => s.Id == serverId) ??
                        throw new KeyNotFoundException($"MCP server config with ID {serverId} not found");
 
@@ -89,89 +106,19 @@ public class McpServerConfigService(IMcpServerConfigRepository repository) : IMc
         return serverConfig;
     }
 
-    private async Task<List<McpServerConfig>> LoadServersAsync(bool ensureBuiltIns, bool persistBuiltInChanges)
+    private async Task<List<McpServerConfig>> LoadExternalServersAsync()
     {
         var servers = (await _repository.GetAllAsync()).ToList();
-
-        if (!ensureBuiltIns)
-            return servers;
-
-        var nowUtc = DateTime.UtcNow;
-        var changed = EnsureBuiltInServers(servers, nowUtc);
-        if (changed && persistBuiltInChanges)
-        {
+        var changed = RemoveLegacyBuiltInServers(servers);
+        if (changed)
             await _repository.SaveAllAsync(servers);
-        }
 
         return servers;
     }
 
-    private static bool EnsureBuiltInServers(List<McpServerConfig> servers, DateTime nowUtc)
+    private static bool RemoveLegacyBuiltInServers(List<McpServerConfig> servers)
     {
-        var changed = false;
-
-        foreach (var definition in BuiltInMcpServerCatalog.Definitions)
-        {
-            var existing = servers.FirstOrDefault(s => s.Id == definition.Id);
-            existing ??= servers.FirstOrDefault(s =>
-                s.IsBuiltIn &&
-                string.Equals(s.BuiltInKey, definition.Key, StringComparison.OrdinalIgnoreCase));
-
-            if (existing is null)
-            {
-                servers.Add(BuiltInMcpServerCatalog.CreateConfig(definition, nowUtc));
-                changed = true;
-                continue;
-            }
-
-            if (existing.Id != definition.Id)
-            {
-                existing.Id = definition.Id;
-                changed = true;
-            }
-
-            if (!string.Equals(existing.Name, definition.Name, StringComparison.Ordinal))
-            {
-                existing.Name = definition.Name;
-                changed = true;
-            }
-
-            if (!string.Equals(existing.Description, definition.Description, StringComparison.Ordinal))
-            {
-                existing.Description = definition.Description;
-                changed = true;
-            }
-
-            if (!existing.IsBuiltIn)
-            {
-                existing.IsBuiltIn = true;
-                changed = true;
-            }
-
-            if (!string.Equals(existing.BuiltInKey, definition.Key, StringComparison.Ordinal))
-            {
-                existing.BuiltInKey = definition.Key;
-                changed = true;
-            }
-
-            if (!string.IsNullOrWhiteSpace(existing.Command) ||
-                !string.IsNullOrWhiteSpace(existing.Sse) ||
-                (existing.Arguments is { Length: > 0 }))
-            {
-                existing.Command = null;
-                existing.Sse = null;
-                existing.Arguments = null;
-                changed = true;
-            }
-
-            if (existing.CreatedAt == default)
-            {
-                existing.CreatedAt = nowUtc;
-                changed = true;
-            }
-        }
-
-        return changed;
+        return servers.RemoveAll(IsBuiltInServer) > 0;
     }
 
     private static void ValidateExternalServerConfig(McpServerConfig serverConfig)
@@ -181,6 +128,13 @@ public class McpServerConfigService(IMcpServerConfigRepository repository) : IMc
 
         if (string.IsNullOrWhiteSpace(serverConfig.Command) && string.IsNullOrWhiteSpace(serverConfig.Sse))
             throw new InvalidOperationException("Either Command or Sse must be specified.");
+    }
+
+    private static bool IsBuiltInServer(McpServerConfig serverConfig)
+    {
+        return serverConfig.IsBuiltIn ||
+               BuiltInMcpServerCatalog.IsBuiltInId(serverConfig.Id) ||
+               BuiltInMcpServerCatalog.TryGetDefinition(serverConfig.BuiltInKey, out _);
     }
 }
 

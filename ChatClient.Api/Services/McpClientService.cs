@@ -20,10 +20,10 @@ public class McpClientService(
 
     public async Task<IReadOnlyCollection<McpClient>> GetMcpClientsAsync(CancellationToken cancellationToken = default)
     {
-        var mcpServerConfigs = (await mcpServerConfigService.GetAllAsync())
+        var mcpServerDescriptors = (await mcpServerConfigService.GetAllAsync())
             .OrderBy(s => s.Name, StringComparer.OrdinalIgnoreCase)
             .ToList();
-        var fingerprint = BuildFingerprint(mcpServerConfigs);
+        var fingerprint = BuildFingerprint(mcpServerDescriptors);
 
         await _syncLock.WaitAsync(cancellationToken);
         try
@@ -39,7 +39,7 @@ public class McpClientService(
 
             var newClients = new List<McpClient>();
 
-            if (mcpServerConfigs.Count == 0)
+            if (mcpServerDescriptors.Count == 0)
             {
                 logger.LogWarning("No MCP server configurations found");
                 _mcpClients = newClients;
@@ -47,46 +47,54 @@ public class McpClientService(
                 return _mcpClients;
             }
 
-            foreach (var serverConfig in mcpServerConfigs)
+            foreach (var serverDescriptor in mcpServerDescriptors)
             {
                 cancellationToken.ThrowIfCancellationRequested();
 
-                if (string.IsNullOrWhiteSpace(serverConfig.Name))
+                if (string.IsNullOrWhiteSpace(serverDescriptor.Name))
                 {
                     logger.LogWarning("MCP server name is null or empty");
                     continue;
                 }
 
-                logger.LogInformation("Creating MCP client for server: {ServerName}", serverConfig.Name);
+                logger.LogInformation("Creating MCP client for server: {ServerName}", serverDescriptor.Name);
 
                 try
                 {
-                    if (serverConfig.IsBuiltIn)
+                    if (serverDescriptor is IBuiltInMcpServerDescriptor builtInDefinition)
                     {
-                        var builtInClient = await CreateBuiltInMcpClientAsync(serverConfig, cancellationToken);
+                        var builtInClient = await CreateBuiltInMcpClientAsync(builtInDefinition, cancellationToken);
                         newClients.Add(builtInClient);
                     }
-                    else if (!string.IsNullOrWhiteSpace(serverConfig.Command))
+                    else if (serverDescriptor is McpServerConfig serverConfig && !string.IsNullOrWhiteSpace(serverConfig.Command))
                     {
                         newClients.Add(await CreateLocalMcpClientAsync(serverConfig, cancellationToken));
                     }
-                    else if (!string.IsNullOrWhiteSpace(serverConfig.Sse))
+                    else if (serverDescriptor is McpServerConfig sseServerConfig && !string.IsNullOrWhiteSpace(sseServerConfig.Sse))
                     {
-                        await AddSseClient(newClients, serverConfig, cancellationToken);
+                        await AddSseClient(newClients, sseServerConfig, cancellationToken);
+                    }
+                    else if (serverDescriptor is McpServerConfig unsupportedServerConfig)
+                    {
+                        logger.LogWarning(
+                            "Skipping MCP server {ServerName} because neither Command nor Sse is configured.",
+                            unsupportedServerConfig.Name);
+                        continue;
                     }
                     else
                     {
                         logger.LogWarning(
-                            "Skipping MCP server {ServerName} because neither Command nor Sse is configured.",
-                            serverConfig.Name);
+                            "Skipping MCP server {ServerName} because server type is unsupported: {ServerType}",
+                            serverDescriptor.Name,
+                            serverDescriptor.GetType().FullName ?? "Unknown");
                         continue;
                     }
 
-                    logger.LogInformation("MCP client created successfully for server: {ServerName}", serverConfig.Name);
+                    logger.LogInformation("MCP client created successfully for server: {ServerName}", serverDescriptor.Name);
                 }
                 catch (Exception ex)
                 {
-                    logger.LogError(ex, "Failed to create MCP client for server: {ServerName}", serverConfig.Name);
+                    logger.LogError(ex, "Failed to create MCP client for server: {ServerName}", serverDescriptor.Name);
                 }
             }
 
@@ -113,7 +121,7 @@ public class McpClientService(
                     TransportMode = HttpTransportMode.Sse
                 },
                 loggerFactory);
-            var clientOptions = CreateClientOptions(serverConfig);
+            var clientOptions = CreateClientOptions(serverConfig, serverConfig);
             var client = await McpClient.CreateAsync(httpTransport, clientOptions, loggerFactory, cancellationToken);
             if (client != null)
             {
@@ -126,23 +134,17 @@ public class McpClientService(
         }
     }
 
-    private async Task<McpClient> CreateBuiltInMcpClientAsync(McpServerConfig serverConfig, CancellationToken cancellationToken)
+    private async Task<McpClient> CreateBuiltInMcpClientAsync(IBuiltInMcpServerDescriptor definition, CancellationToken cancellationToken)
     {
-        if (string.IsNullOrWhiteSpace(serverConfig.BuiltInKey))
-            throw new InvalidOperationException($"Built-in server '{serverConfig.Name}' does not have BuiltInKey configured.");
-
-        if (!BuiltInMcpServerCatalog.TryGetDefinition(serverConfig.BuiltInKey, out var definition) || definition is null)
-            throw new InvalidOperationException($"Unknown built-in MCP server key '{serverConfig.BuiltInKey}'.");
-
         var (command, arguments) = GetBuiltInLaunchCommand(definition.Key);
         var applicationDirectory = AppContext.BaseDirectory;
-        var clientOptions = CreateClientOptions(serverConfig);
+        var clientOptions = CreateClientOptions(definition);
 
         return await McpClient.CreateAsync(
             clientTransport: new StdioClientTransport(
                 new StdioClientTransportOptions
                 {
-                    Name = serverConfig.Name,
+                    Name = definition.Name,
                     Command = command,
                     Arguments = arguments,
                     WorkingDirectory = applicationDirectory
@@ -163,7 +165,7 @@ public class McpClientService(
         // Use the application's executable directory as working directory instead of Environment.CurrentDirectory
         // This prevents MCP processes from accidentally changing the main application's working directory
         var applicationDirectory = AppContext.BaseDirectory;
-        var clientOptions = CreateClientOptions(serverConfig);
+        var clientOptions = CreateClientOptions(serverConfig, serverConfig);
 
         return await McpClient.CreateAsync(
             clientTransport: new StdioClientTransport(
@@ -252,22 +254,32 @@ public class McpClientService(
         return (command, [assemblyPath, "--mcp-builtin", builtInKey]);
     }
 
-    private static string BuildFingerprint(IEnumerable<McpServerConfig> serverConfigs)
+    private static string BuildFingerprint(IEnumerable<IMcpServerDescriptor> serverDescriptors)
     {
         return string.Join(
             "||",
-            serverConfigs
+            serverDescriptors
                 .OrderBy(s => s.Id)
                 .Select(s =>
-                    $"{s.Id}|{s.Name}|{s.IsBuiltIn}|{s.BuiltInKey}|{s.Command}|{s.Sse}|{s.UpdatedAt:O}"));
+                    s switch
+                    {
+                        IBuiltInMcpServerDescriptor builtIn =>
+                            $"{builtIn.Id}|{builtIn.Name}|built-in|{builtIn.Key}",
+                        McpServerConfig external =>
+                            $"{external.Id}|{external.Name}|external|{external.Command}|{external.Sse}|{external.UpdatedAt:O}",
+                        _ => $"{s.Id}|{s.Name}|unknown"
+                    }));
     }
 
 
     /// <summary>
     /// Creates client options that declare sampling/elicitation capabilities and register handlers.
     /// </summary>
-    private McpClientOptions CreateClientOptions(McpServerConfig serverConfig)
+    private McpClientOptions CreateClientOptions(IMcpServerDescriptor serverDescriptor, McpServerConfig? serverConfig = null)
     {
+        var serverName = string.IsNullOrWhiteSpace(serverDescriptor.Name) ? "Unknown" : serverDescriptor.Name;
+        var serverId = serverDescriptor.Id ?? Guid.Empty;
+
         return new McpClientOptions
         {
             ClientInfo = new Implementation
@@ -297,17 +309,17 @@ public class McpClientService(
 
                         logger.LogInformation(
                             "Handling elicitation request from server: {ServerName}. Mode: {Mode}",
-                            serverConfig?.Name ?? "Unknown",
+                            serverName,
                             request.Mode ?? "form");
 
                         var result = await mcpUserInteractionService.HandleElicitationAsync(
-                            serverConfig?.Name ?? "Unknown",
+                            serverName,
                             request,
                             cancellationToken);
 
                         logger.LogInformation(
                             "Elicitation request completed for server: {ServerName}",
-                            serverConfig?.Name ?? "Unknown");
+                            serverName);
                         return result;
                     }
                     catch (Exception ex)
@@ -315,7 +327,7 @@ public class McpClientService(
                         logger.LogError(
                             ex,
                             "Failed to handle elicitation request from server {ServerName}: {Message}",
-                            serverConfig?.Name ?? "Unknown",
+                            serverName,
                             ex.Message);
                         throw;
                     }
@@ -330,17 +342,22 @@ public class McpClientService(
                         }
 
                         logger.LogInformation("Handling sampling request with {MessageCount} messages from server: {ServerName}",
-                            request.Messages?.Count ?? 0, serverConfig?.Name ?? "Unknown");
+                            request.Messages?.Count ?? 0, serverName);
 
-                        var result = await mcpSamplingService.HandleSamplingRequestAsync(request, progress, cancellationToken, serverConfig, serverConfig?.Id ?? Guid.Empty);
+                        var result = await mcpSamplingService.HandleSamplingRequestAsync(
+                            request,
+                            progress,
+                            cancellationToken,
+                            serverConfig,
+                            serverId);
 
-                        logger.LogInformation("Sampling request completed successfully for server: {ServerName}", serverConfig?.Name ?? "Unknown");
+                        logger.LogInformation("Sampling request completed successfully for server: {ServerName}", serverName);
                         return result;
                     }
                     catch (Exception ex)
                     {
                         logger.LogError(ex, "Failed to handle sampling request from server {ServerName}: {Message}",
-                            serverConfig?.Name ?? "Unknown", ex.Message);
+                            serverName, ex.Message);
                         throw;
                     }
                 }

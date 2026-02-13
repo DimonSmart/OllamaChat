@@ -2,6 +2,7 @@
 @using ChatClient.Domain.Models
 @using ChatClient.Application.Services
 @using ChatClient.Api.Services
+@using ChatClient.Api.Services.BuiltIn
 @inject IMcpServerConfigService McpServerConfigService
 @inject IOllamaClientService OllamaService
 @inject ISnackbar Snackbar
@@ -51,7 +52,7 @@
         }
         else
         {
-            <MudDataGrid T="McpServerConfig" @ref="dataGrid"
+            <MudDataGrid T="IMcpServerDescriptor" @ref="dataGrid"
                          Items="@filteredServers"
                          ReadOnly="true"
                          Bordered="true"
@@ -69,45 +70,58 @@
                             }
                             <MudStack Row="true" Spacing="1" AlignItems="AlignItems.Center">
                                 <MudText Typo="Typo.body2">@server.Name</MudText>
-                                @if (server.IsBuiltIn)
+                                @if (IsBuiltIn(server))
                                 {
                                     <MudChip Size="Size.Small" Color="Color.Warning" Variant="Variant.Outlined">Built-in</MudChip>
                                 }
                             </MudStack>
                         </CellTemplate>
                     </TemplateColumn>
-                    <PropertyColumn Property="x => x.UpdatedAt" Title="Updated" Format="g" />
-                    <PropertyColumn Property="x => x.CreatedAt" Title="Created" Format="g" />
+                    <TemplateColumn Title="Updated" isEditable="false">
+                        <CellTemplate>
+                            @{
+                                var updated = context.Item is McpServerConfig externalServer
+                                    ? externalServer.UpdatedAt.ToLocalTime().ToString("g")
+                                    : "-";
+                            }
+                            <MudText Typo="Typo.body2">@updated</MudText>
+                        </CellTemplate>
+                    </TemplateColumn>
+                    <TemplateColumn Title="Created" isEditable="false">
+                        <CellTemplate>
+                            @{
+                                var created = context.Item is McpServerConfig externalServer
+                                    ? externalServer.CreatedAt.ToLocalTime().ToString("g")
+                                    : "-";
+                            }
+                            <MudText Typo="Typo.body2">@created</MudText>
+                        </CellTemplate>
+                    </TemplateColumn>
                     <TemplateColumn Title="Type" isEditable="false">
                         <CellTemplate>
                             @{
                                 var server = context.Item;
-                                var type = server.IsBuiltIn
-                                    ? "Built-in"
-                                    : (!string.IsNullOrEmpty(server.Command) ? "Local" : "Remote");
+                                var type = GetServerType(server);
                             }
                             <MudChip Size="Size.Small" Color="@GetTypeChipColor(type)">
                                 @type
                             </MudChip>
                         </CellTemplate>
-                    </TemplateColumn>                    <TemplateColumn Title="Configuration" isEditable="false">
+                    </TemplateColumn>
+                    <TemplateColumn Title="Configuration" isEditable="false">
                         <CellTemplate>
                             <div>
                                 @{
                                     var server = context.Item;
-                                    var configText = server.IsBuiltIn
-                                        ? $"Built-in key: {server.BuiltInKey}"
-                                        : (!string.IsNullOrEmpty(server.Command)
-                                            ? $"Command: {server.Command}"
-                                            : $"SSE: {server.Sse}");
+                                    var configText = GetConfigurationText(server);
                                 }
                                 <MudText Typo="Typo.body2" Class="mud-text-truncate">
                                     @configText
                                 </MudText>
-                                @if (!string.IsNullOrEmpty(server.SamplingModel))
+                                @if (server is McpServerConfig externalServer && !string.IsNullOrEmpty(externalServer.SamplingModel))
                                 {
                                     <MudText Typo="Typo.caption" Class="mud-text-secondary">
-                                        Sampling: @server.SamplingModel
+                                        Sampling: @externalServer.SamplingModel
                                     </MudText>
                                 }
                             </div>
@@ -120,18 +134,18 @@
                                          OnClick="@(() => NavigateToPlayground(context.Item))" />
                             <MudIconButton Icon="@Icons.Material.Filled.Edit"
                                          Size="Size.Small"
-                                         Disabled="@context.Item.IsBuiltIn"
+                                         Disabled="@(!CanModify(context.Item))"
                                          OnClick="@(() => StartEditing(context.Item))" />
                             <MudIconButton Icon="@Icons.Material.Filled.Delete"
                                          Size="Size.Small"
                                          Color="Color.Error"
-                                         Disabled="@context.Item.IsBuiltIn"
+                                         Disabled="@(!CanModify(context.Item))"
                                          OnClick="() => ConfirmDelete(context.Item)" />
                         </CellTemplate>
                     </TemplateColumn>
                 </Columns>
                 <PagerContent>
-                    <MudDataGridPager T="McpServerConfig" PageSizeOptions="new[] { 10, 25, 50, 100 }" />
+                    <MudDataGridPager T="IMcpServerDescriptor" PageSizeOptions="new[] { 10, 25, 50, 100 }" />
                 </PagerContent>
                 <NoRecordsContent>
                     <MudPaper Elevation="0">
@@ -269,11 +283,11 @@
 </MudDialog>
 
 @code {
-    private List<McpServerConfig> servers = new();
-    private List<McpServerConfig> filteredServers = new();
+    private List<IMcpServerDescriptor> servers = new();
+    private List<IMcpServerDescriptor> filteredServers = new();
     private List<OllamaModel> availableModels = new();
     private bool loading = true;
-    private McpServerConfig? serverToDelete;
+    private IMcpServerDescriptor? serverToDelete;
     private McpServerConfig editingServer = new();
     private bool showDeleteDialog { get; set; } = false;
     private bool showEditServerDialog { get; set; } = false;
@@ -281,7 +295,7 @@
     private string searchString = string.Empty;
     private MudForm? editServerForm;
     private MudForm? installFromLinkForm;
-    private MudDataGrid<McpServerConfig>? dataGrid;
+    private MudDataGrid<IMcpServerDescriptor>? dataGrid;
     private string serverType = "local";
     private string argumentsText = string.Empty;
     private string installLink = string.Empty;
@@ -337,10 +351,10 @@
             StateHasChanged();
 
             servers = (await McpServerConfigService.GetAllAsync())
-                .OrderByDescending(s => s.IsBuiltIn)
+                .OrderByDescending(IsBuiltIn)
                 .ThenBy(s => s.Name, StringComparer.OrdinalIgnoreCase)
                 .ToList();
-            filteredServers = servers;
+            filteredServers = new List<IMcpServerDescriptor>(servers);
         }
         catch (Exception ex)
         {
@@ -402,19 +416,23 @@
     {
         if (string.IsNullOrWhiteSpace(searchString))
         {
-            filteredServers = new List<McpServerConfig>(servers);
+            filteredServers = new List<IMcpServerDescriptor>(servers);
             return;
         }
 
         filteredServers = servers
             .Where(s => s.Name.Contains(searchString, StringComparison.OrdinalIgnoreCase) ||
-                       (!string.IsNullOrWhiteSpace(s.BuiltInKey) && s.BuiltInKey.Contains(searchString, StringComparison.OrdinalIgnoreCase)) ||
-                       (s.Command != null && s.Command.Contains(searchString, StringComparison.OrdinalIgnoreCase)) ||
-                       (s.Sse != null && s.Sse.Contains(searchString, StringComparison.OrdinalIgnoreCase)))
+                       (s is IBuiltInMcpServerDescriptor builtIn &&
+                        builtIn.Key.Contains(searchString, StringComparison.OrdinalIgnoreCase)) ||
+                       (s is McpServerConfig externalServer &&
+                        ((externalServer.Command != null &&
+                          externalServer.Command.Contains(searchString, StringComparison.OrdinalIgnoreCase)) ||
+                         (externalServer.Sse != null &&
+                          externalServer.Sse.Contains(searchString, StringComparison.OrdinalIgnoreCase)))))
             .ToList();
     }
 
-    private void NavigateToPlayground(McpServerConfig server)
+    private void NavigateToPlayground(IMcpServerDescriptor server)
     {
         if (string.IsNullOrWhiteSpace(server.Name))
             return;
@@ -423,9 +441,9 @@
         NavigationManager.NavigateTo($"/mcp-playground?server={serverName}");
     }
 
-    private void StartEditing(McpServerConfig server)
+    private void StartEditing(IMcpServerDescriptor server)
     {
-        if (server.IsBuiltIn)
+        if (server is not McpServerConfig externalServer)
         {
             Snackbar.Add("Built-in MCP servers cannot be edited", Severity.Info);
             return;
@@ -433,30 +451,30 @@
 
         editingServer = new McpServerConfig
         {
-            Id = server.Id,
-            Name = server.Name,
-            IsBuiltIn = server.IsBuiltIn,
-            BuiltInKey = server.BuiltInKey,
-            Command = server.Command,
-            Arguments = server.Arguments,
-            Sse = server.Sse,
-            SamplingModel = server.SamplingModel,
-            CreatedAt = server.CreatedAt,
-            UpdatedAt = server.UpdatedAt
+            Id = externalServer.Id,
+            Name = externalServer.Name,
+            IsBuiltIn = false,
+            BuiltInKey = null,
+            Command = externalServer.Command,
+            Arguments = externalServer.Arguments,
+            Sse = externalServer.Sse,
+            SamplingModel = externalServer.SamplingModel,
+            CreatedAt = externalServer.CreatedAt,
+            UpdatedAt = externalServer.UpdatedAt
         };
         
-        argumentsText = server.Arguments != null 
-            ? string.Join(Environment.NewLine, server.Arguments) 
+        argumentsText = externalServer.Arguments != null 
+            ? string.Join(Environment.NewLine, externalServer.Arguments) 
             : string.Empty;
             
-        serverType = !string.IsNullOrEmpty(server.Command) ? "local" : "remote";
+        serverType = !string.IsNullOrEmpty(externalServer.Command) ? "local" : "remote";
         
         showEditServerDialog = true;
     }
 
-    private void ConfirmDelete(McpServerConfig server)
+    private void ConfirmDelete(IMcpServerDescriptor server)
     {
-        if (server.IsBuiltIn)
+        if (server is not McpServerConfig)
         {
             Snackbar.Add("Built-in MCP servers cannot be deleted", Severity.Info);
             return;
@@ -475,8 +493,7 @@
 
     private async Task DeleteServer()
     {
-        if (serverToDelete?.Id == null) return;
-        if (serverToDelete.IsBuiltIn)
+        if (serverToDelete is not McpServerConfig externalServer || externalServer.Id is not Guid serverId)
         {
             Snackbar.Add("Built-in MCP servers cannot be deleted", Severity.Info);
             showDeleteDialog = false;
@@ -486,7 +503,7 @@
 
         try
         {
-            await McpServerConfigService.DeleteAsync(serverToDelete.Id.Value);
+            await McpServerConfigService.DeleteAsync(serverId);
             Snackbar.Add("Server deleted successfully", Severity.Success);
 
             servers.Remove(serverToDelete);
@@ -629,6 +646,36 @@
                 Snackbar.Add($"Error saving MCP server: {ex.Message}", Severity.Error);
             }
         }
+    }
+
+    private static bool IsBuiltIn(IMcpServerDescriptor server) => server is IBuiltInMcpServerDescriptor;
+
+    private static bool CanModify(IMcpServerDescriptor server) => server is McpServerConfig;
+
+    private static string GetServerType(IMcpServerDescriptor server)
+    {
+        return server switch
+        {
+            IBuiltInMcpServerDescriptor => "Built-in",
+            McpServerConfig externalServer when !string.IsNullOrEmpty(externalServer.Command) => "Local",
+            McpServerConfig externalServer when !string.IsNullOrEmpty(externalServer.Sse) => "Remote",
+            McpServerConfig => "Unknown",
+            _ => "Unsupported"
+        };
+    }
+
+    private static string GetConfigurationText(IMcpServerDescriptor server)
+    {
+        return server switch
+        {
+            IBuiltInMcpServerDescriptor builtIn => $"Built-in key: {builtIn.Key}",
+            McpServerConfig externalServer when !string.IsNullOrEmpty(externalServer.Command) =>
+                $"Command: {externalServer.Command}",
+            McpServerConfig externalServer when !string.IsNullOrEmpty(externalServer.Sse) =>
+                $"SSE: {externalServer.Sse}",
+            McpServerConfig => "Configuration is not set",
+            _ => "Unsupported server type"
+        };
     }
 
     private static Color GetTypeChipColor(string type)
