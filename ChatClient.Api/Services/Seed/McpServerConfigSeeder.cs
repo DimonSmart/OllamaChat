@@ -1,11 +1,20 @@
 using ChatClient.Application.Repositories;
 using ChatClient.Domain.Models;
+using ChatClient.Infrastructure.Helpers;
+using System.Text.Json;
 
 namespace ChatClient.Api.Services.Seed;
 
-public class McpServerConfigSeeder(IMcpServerConfigRepository repository)
+public class McpServerConfigSeeder(
+    IMcpServerConfigRepository repository,
+    IConfiguration configuration,
+    IHostEnvironment environment,
+    ILogger<McpServerConfigSeeder> logger)
 {
     private readonly IMcpServerConfigRepository _repository = repository;
+    private readonly IConfiguration _configuration = configuration;
+    private readonly IHostEnvironment _environment = environment;
+    private readonly ILogger<McpServerConfigSeeder> _logger = logger;
 
     public async Task SeedAsync()
     {
@@ -13,7 +22,31 @@ public class McpServerConfigSeeder(IMcpServerConfigRepository repository)
         if (existing.Count > 0)
             return;
 
-        var defaultServers = new List<McpServerConfig>
+        var seedPath = StoragePathResolver.ResolveSeedPath(
+            _configuration,
+            _environment.ContentRootPath,
+            _configuration["McpServers:SeedFilePath"],
+            "mcp_servers.json");
+
+        if (File.Exists(seedPath))
+        {
+            try
+            {
+                var json = await File.ReadAllTextAsync(seedPath);
+                var seeded = JsonSerializer.Deserialize<List<McpServerConfig>>(json, new JsonSerializerOptions(JsonSerializerDefaults.Web));
+                if (seeded is { Count: > 0 })
+                {
+                    await _repository.SaveAllAsync(seeded);
+                    return;
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Failed to seed MCP servers from {SeedPath}", seedPath);
+            }
+        }
+
+        var fallbackServers = new List<McpServerConfig>
         {
             new()
             {
@@ -35,7 +68,7 @@ public class McpServerConfigSeeder(IMcpServerConfigRepository repository)
             }
         };
 
-        await _repository.SaveAllAsync(defaultServers);
+        await _repository.SaveAllAsync(fallbackServers);
     }
 }
 

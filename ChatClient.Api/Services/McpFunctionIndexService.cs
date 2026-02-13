@@ -1,10 +1,9 @@
 using ChatClient.Application.Helpers;
 using ChatClient.Application.Services;
+using ChatClient.Api.Services.Rag;
 using ChatClient.Domain.Models;
-using Microsoft.Extensions.Configuration;
 using ModelContextProtocol.Client;
 using System.Collections.Concurrent;
-using System.IO;
 using System.Linq;
 using System.Net;
 
@@ -14,9 +13,9 @@ public class McpFunctionIndexService
 {
     private readonly IMcpClientService _clientService;
     private readonly IOllamaClientService _ollamaService;
-    private readonly IConfiguration _configuration;
     private readonly IUserSettingsService _userSettingsService;
     private readonly IRagVectorIndexBackgroundService _indexBackgroundService;
+    private readonly IRagVectorStore _ragVectorStore;
     private readonly ILogger<McpFunctionIndexService> _logger;
     private ServerModel _model = new(Guid.Empty, string.Empty);
     private readonly ConcurrentDictionary<string, float[]> _index = new();
@@ -25,16 +24,16 @@ public class McpFunctionIndexService
     public McpFunctionIndexService(
         IMcpClientService clientService,
         IOllamaClientService ollamaService,
-        IConfiguration configuration,
         IUserSettingsService userSettingsService,
         IRagVectorIndexBackgroundService indexBackgroundService,
+        IRagVectorStore ragVectorStore,
         ILogger<McpFunctionIndexService> logger)
     {
         _clientService = clientService;
         _ollamaService = ollamaService;
-        _configuration = configuration;
         _userSettingsService = userSettingsService;
         _indexBackgroundService = indexBackgroundService;
+        _ragVectorStore = ragVectorStore;
         _logger = logger;
     }
 
@@ -161,21 +160,7 @@ public class McpFunctionIndexService
 
     public async Task RebuildAsync()
     {
-        var basePath = _configuration["RagFiles:BasePath"] ?? Path.Combine("Data", "agents");
-        if (Directory.Exists(basePath))
-        {
-            foreach (var file in Directory.GetFiles(basePath, "*.idx", SearchOption.AllDirectories))
-            {
-                try
-                {
-                    File.Delete(file);
-                }
-                catch (Exception ex)
-                {
-                    _logger.LogError(ex, "Failed to delete index {File}", file);
-                }
-            }
-        }
+        await _ragVectorStore.ClearAllAsync();
 
         Invalidate();
         await BuildIndexAsync();

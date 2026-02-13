@@ -1,6 +1,7 @@
 using ChatClient.Application.Repositories;
 using ChatClient.Domain.Models;
 using ChatClient.Infrastructure.Constants;
+using ChatClient.Infrastructure.Helpers;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 
@@ -12,7 +13,10 @@ public class McpServerConfigRepository : IMcpServerConfigRepository
 
     public McpServerConfigRepository(IConfiguration configuration, ILogger<McpServerConfigRepository> logger)
     {
-        var filePath = configuration["McpServers:FilePath"] ?? FilePathConstants.DefaultMcpServersFile;
+        var filePath = StoragePathResolver.ResolveUserPath(
+            configuration,
+            configuration["McpServers:FilePath"],
+            FilePathConstants.DefaultMcpServersFile);
         _repo = new JsonFileRepository<List<McpServerConfig>>(filePath, logger);
     }
 

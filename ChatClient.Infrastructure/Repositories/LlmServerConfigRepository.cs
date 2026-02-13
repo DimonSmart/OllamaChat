@@ -1,6 +1,7 @@
 using ChatClient.Application.Repositories;
 using ChatClient.Domain.Models;
 using ChatClient.Infrastructure.Constants;
+using ChatClient.Infrastructure.Helpers;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 
@@ -12,7 +13,10 @@ public class LlmServerConfigRepository : ILlmServerConfigRepository
 
     public LlmServerConfigRepository(IConfiguration configuration, ILogger<LlmServerConfigRepository> logger)
     {
-        var filePath = configuration["LlmServers:FilePath"] ?? FilePathConstants.DefaultLlmServersFile;
+        var filePath = StoragePathResolver.ResolveUserPath(
+            configuration,
+            configuration["LlmServers:FilePath"],
+            FilePathConstants.DefaultLlmServersFile);
         _repo = new JsonFileRepository<List<LlmServerConfig>>(filePath, logger);
     }
 

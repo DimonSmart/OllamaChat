@@ -1,6 +1,7 @@
 using ChatClient.Application.Repositories;
 using ChatClient.Domain.Models;
 using ChatClient.Infrastructure.Constants;
+using ChatClient.Infrastructure.Helpers;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using System.Text.Json;
@@ -21,8 +22,10 @@ public class SavedChatRepository : ISavedChatRepository
 
     public SavedChatRepository(IConfiguration configuration, ILogger<SavedChatRepository> logger)
     {
-        var path = configuration["SavedChats:DirectoryPath"] ?? FilePathConstants.DefaultSavedChatsDirectory;
-        _directoryPath = Path.GetFullPath(path);
+        _directoryPath = StoragePathResolver.ResolveUserPath(
+            configuration,
+            configuration["SavedChats:DirectoryPath"],
+            FilePathConstants.DefaultSavedChatsDirectory);
         _logger = logger;
         Directory.CreateDirectory(_directoryPath);
     }

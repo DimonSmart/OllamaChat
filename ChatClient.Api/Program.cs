@@ -49,6 +49,8 @@ using (var scope = app.Services.CreateScope())
     await llmSeeder.SeedAsync();
     var mcpSeeder = scope.ServiceProvider.GetRequiredService<McpServerConfigSeeder>();
     await mcpSeeder.SeedAsync();
+    var ragFilesSeeder = scope.ServiceProvider.GetRequiredService<RagFilesSeeder>();
+    await ragFilesSeeder.SeedAsync();
 
     var startupChecker = scope.ServiceProvider.GetRequiredService<OllamaServerAvailabilityService>();
     var ollamaStatus = await startupChecker.CheckOllamaStatusAsync();

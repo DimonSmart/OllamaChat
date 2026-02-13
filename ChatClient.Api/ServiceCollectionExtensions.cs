@@ -69,6 +69,7 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<AgentDescriptionSeeder>();
         services.AddSingleton<LlmServerConfigSeeder>();
         services.AddSingleton<McpServerConfigSeeder>();
+        services.AddSingleton<RagFilesSeeder>();
 
         services.AddRazorPages();
         services.AddServerSideBlazor();
