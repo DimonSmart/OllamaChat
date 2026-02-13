@@ -896,7 +896,10 @@
         if (!string.IsNullOrWhiteSpace(configuredShortName))
             return configuredShortName.Trim();
 
-        var trimmedName = agentName.Trim();
-        return trimmedName.Length <= 3 ? trimmedName : trimmedName[..3];
+        var compactName = new string(agentName.Trim().Where(c => !char.IsWhiteSpace(c)).ToArray());
+        if (compactName.Length == 0)
+            return string.Empty;
+
+        return compactName.Length <= 3 ? compactName : compactName[..3];
     }
 }
