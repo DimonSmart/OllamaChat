@@ -78,17 +78,6 @@
                     </TemplateColumn>
                     <PropertyColumn Property="x => x.UpdatedAt" Title="Updated" Format="g" />
                     <PropertyColumn Property="x => x.CreatedAt" Title="Created" Format="g" />
-                    <TemplateColumn Title="Enabled" isEditable="false">
-                        <CellTemplate>
-                            @{
-                                var server = context.Item;
-                            }
-                            <MudSwitch T="bool"
-                                       Value="@server.IsEnabled"
-                                       ValueChanged="@(enabled => ToggleServerEnabled(server, enabled))"
-                                       Color="Color.Success" />
-                        </CellTemplate>
-                    </TemplateColumn>
                     <TemplateColumn Title="Type" isEditable="false">
                         <CellTemplate>
                             @{
@@ -386,7 +375,6 @@
             CreatedAt = DateTime.UtcNow,
             UpdatedAt = DateTime.UtcNow,
             Name = "",
-            IsEnabled = true,
             IsBuiltIn = false,
             BuiltInKey = null,
             Command = ""
@@ -447,7 +435,6 @@
         {
             Id = server.Id,
             Name = server.Name,
-            IsEnabled = server.IsEnabled,
             IsBuiltIn = server.IsBuiltIn,
             BuiltInKey = server.BuiltInKey,
             Command = server.Command,
@@ -641,48 +628,6 @@
             {
                 Snackbar.Add($"Error saving MCP server: {ex.Message}", Severity.Error);
             }
-        }
-    }
-
-    private async Task ToggleServerEnabled(McpServerConfig server, bool enabled)
-    {
-        if (server.Id is not Guid serverId)
-            return;
-
-        var originalEnabled = server.IsEnabled;
-        server.IsEnabled = enabled;
-
-        try
-        {
-            var updated = new McpServerConfig
-            {
-                Id = server.Id,
-                Name = server.Name,
-                IsEnabled = enabled,
-                IsBuiltIn = server.IsBuiltIn,
-                BuiltInKey = server.BuiltInKey,
-                Command = server.Command,
-                Arguments = server.Arguments,
-                Sse = server.Sse,
-                SamplingModel = server.SamplingModel,
-                CreatedAt = server.CreatedAt,
-                UpdatedAt = server.UpdatedAt
-            };
-
-            await McpServerConfigService.UpdateAsync(updated);
-            var reloaded = await McpServerConfigService.GetByIdAsync(serverId);
-            if (reloaded is not null)
-            {
-                var index = servers.FindIndex(s => s.Id == serverId);
-                if (index >= 0)
-                    servers[index] = reloaded;
-                ApplySearch();
-            }
-        }
-        catch (Exception ex)
-        {
-            server.IsEnabled = originalEnabled;
-            Snackbar.Add($"Error updating server state: {ex.Message}", Severity.Error);
         }
     }
 

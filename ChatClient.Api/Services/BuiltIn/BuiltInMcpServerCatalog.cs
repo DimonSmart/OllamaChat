@@ -43,7 +43,6 @@ public static class BuiltInMcpServerCatalog
         {
             Id = definition.Id,
             Name = definition.Name,
-            IsEnabled = true,
             IsBuiltIn = true,
             BuiltInKey = definition.Key,
             Command = null,

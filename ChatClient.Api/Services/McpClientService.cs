@@ -50,11 +50,6 @@ public class McpClientService(
             foreach (var serverConfig in mcpServerConfigs)
             {
                 cancellationToken.ThrowIfCancellationRequested();
-                if (!serverConfig.IsEnabled)
-                {
-                    logger.LogDebug("Skipping disabled MCP server: {ServerName}", serverConfig.Name);
-                    continue;
-                }
 
                 if (string.IsNullOrWhiteSpace(serverConfig.Name))
                 {
@@ -264,7 +259,7 @@ public class McpClientService(
             serverConfigs
                 .OrderBy(s => s.Id)
                 .Select(s =>
-                    $"{s.Id}|{s.Name}|{s.IsEnabled}|{s.IsBuiltIn}|{s.BuiltInKey}|{s.Command}|{s.Sse}|{s.UpdatedAt:O}"));
+                    $"{s.Id}|{s.Name}|{s.IsBuiltIn}|{s.BuiltInKey}|{s.Command}|{s.Sse}|{s.UpdatedAt:O}"));
     }
 
 

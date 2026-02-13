@@ -21,7 +21,6 @@ public class McpServerConfigServiceBuiltInTests
         {
             var server = Assert.Single(servers, s => s.Id == definition.Id);
             Assert.True(server.IsBuiltIn);
-            Assert.True(server.IsEnabled);
             Assert.Equal(definition.Key, server.BuiltInKey);
             Assert.Equal(definition.Name, server.Name);
         }
@@ -40,27 +39,18 @@ public class McpServerConfigServiceBuiltInTests
     }
 
     [Fact]
-    public async Task UpdateAsync_BuiltInServer_UpdatesOnlyEnabledState()
+    public async Task UpdateAsync_BuiltInServer_Throws()
     {
         await using var fixture = new TestFixture();
         var service = fixture.CreateService();
         var builtIn = (await service.GetAllAsync()).First();
-        var originalName = builtIn.Name;
-        var originalKey = builtIn.BuiltInKey;
 
         builtIn.Name = "Hacked Name";
         builtIn.Command = "should-not-be-saved";
-        builtIn.IsEnabled = false;
 
-        await service.UpdateAsync(builtIn);
+        var ex = await Assert.ThrowsAsync<InvalidOperationException>(() => service.UpdateAsync(builtIn));
 
-        var reloaded = await service.GetByIdAsync(builtIn.Id!.Value);
-        Assert.NotNull(reloaded);
-        Assert.False(reloaded!.IsEnabled);
-        Assert.True(reloaded.IsBuiltIn);
-        Assert.Equal(originalName, reloaded.Name);
-        Assert.Equal(originalKey, reloaded.BuiltInKey);
-        Assert.Null(reloaded.Command);
+        Assert.Contains("cannot be edited", ex.Message, StringComparison.OrdinalIgnoreCase);
     }
 
     private sealed class TestFixture : IAsyncDisposable

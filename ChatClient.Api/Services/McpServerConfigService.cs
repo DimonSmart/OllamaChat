@@ -54,11 +54,7 @@ public class McpServerConfigService(IMcpServerConfigRepository repository) : IMc
         var existing = servers[index];
         if (existing.IsBuiltIn)
         {
-            existing.IsEnabled = serverConfig.IsEnabled;
-            existing.UpdatedAt = DateTime.UtcNow;
-            servers[index] = existing;
-            await _repository.SaveAllAsync(servers);
-            return;
+            throw new InvalidOperationException("Built-in MCP servers cannot be edited.");
         }
 
         ValidateExternalServerConfig(serverConfig);
@@ -87,7 +83,6 @@ public class McpServerConfigService(IMcpServerConfigRepository repository) : IMc
     public async Task<McpServerConfig> InstallFromLinkAsync(string link)
     {
         var serverConfig = McpInstallLinkParser.Parse(link);
-        serverConfig.IsEnabled = true;
         serverConfig.IsBuiltIn = false;
         serverConfig.BuiltInKey = null;
         await CreateAsync(serverConfig);
