@@ -10,6 +10,7 @@ namespace ChatClient.Api.Services;
 public class McpClientService(
     IMcpServerConfigService mcpServerConfigService,
     McpSamplingService mcpSamplingService,
+    IMcpUserInteractionService mcpUserInteractionService,
     ILogger<McpClientService> logger,
     ILoggerFactory loggerFactory) : IMcpClientService
 {
@@ -144,7 +145,7 @@ public class McpClientService(
 
 
     /// <summary>
-    /// Creates client options that declare sampling capabilities and register the sampling handler
+    /// Creates client options that declare sampling/elicitation capabilities and register handlers.
     /// </summary>
     private McpClientOptions CreateClientOptions(McpServerConfig serverConfig)
     {
@@ -161,10 +162,45 @@ public class McpClientService(
                 {
                     Context = new SamplingContextCapability(),
                     Tools = new SamplingToolsCapability()
-                }
+                },
+                Elicitation = new ElicitationCapability()
             },
             Handlers = new McpClientHandlers
             {
+                ElicitationHandler = async (request, cancellationToken) =>
+                {
+                    try
+                    {
+                        if (request == null)
+                        {
+                            throw new ArgumentNullException(nameof(request), "Elicitation request cannot be null");
+                        }
+
+                        logger.LogInformation(
+                            "Handling elicitation request from server: {ServerName}. Mode: {Mode}",
+                            serverConfig?.Name ?? "Unknown",
+                            request.Mode ?? "form");
+
+                        var result = await mcpUserInteractionService.HandleElicitationAsync(
+                            serverConfig?.Name ?? "Unknown",
+                            request,
+                            cancellationToken);
+
+                        logger.LogInformation(
+                            "Elicitation request completed for server: {ServerName}",
+                            serverConfig?.Name ?? "Unknown");
+                        return result;
+                    }
+                    catch (Exception ex)
+                    {
+                        logger.LogError(
+                            ex,
+                            "Failed to handle elicitation request from server {ServerName}: {Message}",
+                            serverConfig?.Name ?? "Unknown",
+                            ex.Message);
+                        throw;
+                    }
+                },
                 SamplingHandler = async (request, progress, cancellationToken) =>
                 {
                     try

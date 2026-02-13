@@ -16,6 +16,7 @@ public sealed class HttpAgenticExecutionRuntime(
     ILlmServerConfigService llmServerConfigService,
     IModelCapabilityService modelCapabilityService,
     IMcpClientService mcpClientService,
+    IMcpUserInteractionService mcpUserInteractionService,
     KernelService kernelService,
     IConfiguration configuration,
     IOptions<ChatEngineOptions> chatEngineOptions,
@@ -348,7 +349,7 @@ public sealed class HttpAgenticExecutionRuntime(
             {
                 using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
                 timeoutCts.CancelAfter(TimeSpan.FromSeconds(_toolPolicy.TimeoutSeconds));
-
+                using var interactionScope = mcpUserInteractionService.BeginInteractionScope(McpInteractionScope.Chat);
                 var result = await tool.ExecuteAsync(arguments, timeoutCts.Token);
                 string responsePayload = SerializeForToolTransport(result);
                 int durationMs = (int)Math.Max(0, (DateTime.UtcNow - startedAt).TotalMilliseconds);

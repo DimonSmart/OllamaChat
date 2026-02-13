@@ -24,6 +24,7 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<ILlmServerConfigService, LlmServerConfigService>();
         services.AddSingleton<IMcpClientService, McpClientService>();
         services.AddSingleton<McpSamplingService>();
+        services.AddSingleton<IMcpUserInteractionService, McpUserInteractionService>();
         services.AddSingleton<KernelService>();
         services.AddSingleton<IOllamaClientService, OllamaService>();
         services.AddSingleton<IOpenAIClientService, OpenAIClientService>();

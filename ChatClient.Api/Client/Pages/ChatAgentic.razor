@@ -37,6 +37,7 @@
 @inject ISnackbar Snackbar
 @inject ILlmServerConfigService LlmServerConfigService
 @inject IOllamaClientService OllamaClientService
+@inject IMcpUserInteractionService McpUserInteractionService
 
 <PageTitle>Agentic Chat with AI Assistant</PageTitle>
 
@@ -273,11 +274,16 @@
     private Func<AppChatMessageViewModel, Task>? _messageAddedHandler;
     private Func<AppChatMessageViewModel, MessageUpdateOptions, Task>? _messageUpdatedHandler;
     private Func<AppChatMessageViewModel, Task>? _messageDeletedHandler;
+    private IDisposable? elicitationHandlerRegistration;
 
     protected override async Task OnInitializedAsync()
     {
         isLoadingInitialData = true;
         StateHasChanged();
+
+        elicitationHandlerRegistration = McpUserInteractionService.RegisterElicitationHandler(
+            McpInteractionScope.Chat,
+            HandleElicitationAsync);
 
         await LoadAgents();
         await LoadUserSettings();
@@ -671,6 +677,65 @@
         };
     }
 
+    private async Task<McpElicitationResponse> HandleElicitationAsync(
+        McpElicitationPrompt prompt,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            var response = McpElicitationResponse.Cancel;
+
+            await InvokeAsync(async () =>
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+
+                var parameters = new DialogParameters
+                {
+                    ["Prompt"] = prompt
+                };
+                var options = new DialogOptions
+                {
+                    MaxWidth = MaxWidth.Small,
+                    FullWidth = true,
+                    BackdropClick = false,
+                    CloseOnEscapeKey = true,
+                    CloseButton = true
+                };
+
+                var dialog = await DialogService.ShowAsync<McpElicitationDialog>(
+                    $"MCP input: {prompt.ServerName}",
+                    parameters,
+                    options);
+
+                using var registration = cancellationToken.Register(() =>
+                {
+                    _ = InvokeAsync(() => dialog.Close(DialogResult.Ok(McpElicitationResponse.Cancel)));
+                });
+
+                var result = await dialog.Result;
+                if (result?.Canceled != false)
+                {
+                    response = McpElicitationResponse.Cancel;
+                    return;
+                }
+
+                response = result.Data as McpElicitationResponse ?? McpElicitationResponse.Cancel;
+            });
+
+            return response;
+        }
+        catch (OperationCanceledException)
+        {
+            return McpElicitationResponse.Cancel;
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "Failed to render elicitation dialog in chat.");
+            Snackbar.Add($"Failed to handle MCP user prompt: {ex.Message}", Severity.Warning);
+            return McpElicitationResponse.Cancel;
+        }
+    }
+
     public async ValueTask DisposeAsync()
     {
         ChatService.AnsweringStateChanged -= OnAnsweringStateChanged;
@@ -681,6 +746,7 @@
             ChatViewModelService.MessageUpdated -= _messageUpdatedHandler;
         if (_messageDeletedHandler != null)
             ChatViewModelService.MessageDeleted -= _messageDeletedHandler;
+        elicitationHandlerRegistration?.Dispose();
 
         await ChatService.CancelAsync();
         ChatService.ResetChat();

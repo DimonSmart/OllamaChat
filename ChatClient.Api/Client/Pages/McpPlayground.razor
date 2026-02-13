@@ -7,6 +7,10 @@
 @inject IMcpClientService McpClientService
 @inject ISnackbar Snackbar
 @inject NavigationManager NavigationManager
+@inject IDialogService DialogService
+@inject ILogger<McpPlayground> Logger
+@inject IMcpUserInteractionService McpUserInteractionService
+@implements IDisposable
 
 <PageTitle>MCP Playground</PageTitle>
 <MudText Class="page-header">MCP Playground</MudText>
@@ -84,12 +88,17 @@
     private string? rawResult;
     private string? contentResult;
     private bool showRaw = true;
+    private IDisposable? elicitationHandlerRegistration;
 
     [Parameter, SupplyParameterFromQuery(Name = "server")]
     public string? McpServerName { get; set; }
 
     protected override async Task OnInitializedAsync()
     {
+        elicitationHandlerRegistration = McpUserInteractionService.RegisterElicitationHandler(
+            McpInteractionScope.Playground,
+            HandleElicitationAsync);
+
         try
         {
             var clients = await McpClientService.GetMcpClientsAsync();
@@ -280,6 +289,7 @@
                 }
                 args[f.Name] = val;
             }
+            using var interactionScope = McpUserInteractionService.BeginInteractionScope(McpInteractionScope.Playground);
             var obj = await tool.CallAsync(args, null, null);
             var elem = JsonSerializer.SerializeToElement(obj);
             rawResult = JsonSerializer.Serialize(elem, new JsonSerializerOptions { WriteIndented = true });
@@ -289,6 +299,65 @@
         catch (Exception ex)
         {
             Snackbar.Add($"Error calling function: {ex.Message}", Severity.Error);
+        }
+    }
+
+    private async Task<McpElicitationResponse> HandleElicitationAsync(
+        McpElicitationPrompt prompt,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            var response = McpElicitationResponse.Cancel;
+
+            await InvokeAsync(async () =>
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+
+                var parameters = new DialogParameters
+                {
+                    ["Prompt"] = prompt
+                };
+                var options = new DialogOptions
+                {
+                    MaxWidth = MaxWidth.Small,
+                    FullWidth = true,
+                    BackdropClick = false,
+                    CloseOnEscapeKey = true,
+                    CloseButton = true
+                };
+
+                var dialog = await DialogService.ShowAsync<McpElicitationDialog>(
+                    $"MCP input: {prompt.ServerName}",
+                    parameters,
+                    options);
+
+                using var registration = cancellationToken.Register(() =>
+                {
+                    _ = InvokeAsync(() => dialog.Close(DialogResult.Ok(McpElicitationResponse.Cancel)));
+                });
+
+                var result = await dialog.Result;
+                if (result?.Canceled != false)
+                {
+                    response = McpElicitationResponse.Cancel;
+                    return;
+                }
+
+                response = result.Data as McpElicitationResponse ?? McpElicitationResponse.Cancel;
+            });
+
+            return response;
+        }
+        catch (OperationCanceledException)
+        {
+            return McpElicitationResponse.Cancel;
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "Failed to render elicitation dialog in MCP Playground.");
+            Snackbar.Add($"Failed to handle MCP user prompt: {ex.Message}", Severity.Warning);
+            return McpElicitationResponse.Cancel;
         }
     }
 
@@ -324,6 +393,11 @@
         {
             return str;
         }
+    }
+
+    public void Dispose()
+    {
+        elicitationHandlerRegistration?.Dispose();
     }
 
     private sealed record FieldInfo(string Name, string Type);
