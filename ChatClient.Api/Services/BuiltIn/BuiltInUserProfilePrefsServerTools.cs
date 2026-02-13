@@ -3,7 +3,6 @@ using System.Text.Json;
 using ChatClient.Infrastructure.Constants;
 using ChatClient.Infrastructure.Helpers;
 using Microsoft.Extensions.Configuration;
-using Microsoft.Extensions.DependencyInjection;
 using ModelContextProtocol.Protocol;
 using ModelContextProtocol.Server;
 
@@ -16,7 +15,7 @@ public sealed class BuiltInUserProfilePrefsServerTools
         id: Guid.Parse("c8c4a3cf-e2d5-4f4d-9a6f-4504e322a2b3"),
         key: "built-in-user-profile-prefs",
         name: "Built-in User Profile Prefs MCP Server",
-        description: "Stores user preferences and asks for missing values via elicitation.",
+        description: "Key-value user preferences with optional allowed values and elicitation for missing keys.",
         registerTools: static builder => builder.WithTools<BuiltInUserProfilePrefsServerTools>());
 
     private const int MaxElicitationAttempts = 3;
@@ -24,182 +23,105 @@ public sealed class BuiltInUserProfilePrefsServerTools
     private const string StoredSource = "stored";
     private const string ElicitedSource = "elicited";
 
-    private static readonly PreferenceDefinition[] _supportedPreferences =
-    [
-        new(
-            Key: "displayName",
-            Title: "Display name",
-            Description: "Как к вам обращаться.",
-            Question: "Как к вам обращаться?",
-            Kind: PreferenceValueKind.String,
-            DefaultValue: null,
-            Options: []),
-        new(
-            Key: "preferredLanguage",
-            Title: "Preferred language",
-            Description: "Язык ответов по умолчанию.",
-            Question: "На каком языке отвечать по умолчанию?",
-            Kind: PreferenceValueKind.Enum,
-            DefaultValue: "ru",
-            Options:
-            [
-                new("ru", "Русский"),
-                new("en", "English"),
-                new("es", "Español")
-            ]),
-        new(
-            Key: "tone",
-            Title: "Tone",
-            Description: "Тон общения.",
-            Question: "Какой тон общения предпочитаете?",
-            Kind: PreferenceValueKind.Enum,
-            DefaultValue: "neutral",
-            Options:
-            [
-                new("neutral", "Neutral"),
-                new("friendly", "Friendly"),
-                new("formal", "Formal")
-            ]),
-        new(
-            Key: "verbosity",
-            Title: "Verbosity",
-            Description: "Насколько подробными должны быть ответы.",
-            Question: "Насколько подробные ответы вам удобнее?",
-            Kind: PreferenceValueKind.Enum,
-            DefaultValue: "normal",
-            Options:
-            [
-                new("short", "Short"),
-                new("normal", "Normal"),
-                new("detailed", "Detailed")
-            ]),
-        new(
-            Key: "timezone",
-            Title: "Time zone",
-            Description: "Часовой пояс для времени и дат.",
-            Question: "Какой часовой пояс использовать для времени?",
-            Kind: PreferenceValueKind.String,
-            DefaultValue: "Europe/Madrid",
-            Options: []),
-        new(
-            Key: "measurementSystem",
-            Title: "Measurement system",
-            Description: "Система единиц измерения.",
-            Question: "Какие единицы измерения использовать?",
-            Kind: PreferenceValueKind.Enum,
-            DefaultValue: "metric",
-            Options:
-            [
-                new("metric", "Metric"),
-                new("imperial", "Imperial")
-            ]),
-        new(
-            Key: "grammarGenderRu",
-            Title: "Russian grammar gender",
-            Description: "Предпочтительные формы рода в русском языке.",
-            Question: "Какие формы в русском использовать?",
-            Kind: PreferenceValueKind.Enum,
-            DefaultValue: "neutral",
-            Options:
-            [
-                new("male", "Male"),
-                new("female", "Female"),
-                new("neutral", "Neutral")
-            ]),
-        new(
-            Key: "signature",
-            Title: "Signature",
-            Description: "Подпись для писем или сообщений.",
-            Question: "Какую подпись использовать в письмах/сообщениях?",
-            Kind: PreferenceValueKind.String,
-            DefaultValue: null,
-            Options: []),
-        new(
-            Key: "devEnvironment",
-            Title: "Development environment",
-            Description: "Основная ОС для команд и инструкций.",
-            Question: "Какая у вас ОС?",
-            Kind: PreferenceValueKind.Enum,
-            DefaultValue: "windows",
-            Options:
-            [
-                new("windows", "Windows"),
-                new("macos", "macOS"),
-                new("linux", "Linux"),
-                new("other", "Other")
-            ]),
-        new(
-            Key: "editor",
-            Title: "Editor",
-            Description: "Основная IDE или редактор.",
-            Question: "Какая IDE/редактор?",
-            Kind: PreferenceValueKind.Enum,
-            DefaultValue: "vscode",
-            Options:
-            [
-                new("vs", "Visual Studio"),
-                new("vscode", "VS Code"),
-                new("rider", "Rider"),
-                new("other", "Other")
-            ])
-    ];
+    private sealed record PreferenceSpec(
+        string Prompt,
+        string? DefaultValue = null,
+        IReadOnlyList<string>? AllowedValues = null,
+        string? Description = null);
 
-    private static readonly IReadOnlyDictionary<string, PreferenceDefinition> _supportedByKey =
-        _supportedPreferences.ToDictionary(static preference => preference.Key, static preference => preference, StringComparer.OrdinalIgnoreCase);
+    private static readonly IReadOnlyDictionary<string, PreferenceSpec> _knownSpecs =
+        new Dictionary<string, PreferenceSpec>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["displayName"] = new("How should I address you?"),
+            ["preferredLanguage"] = new(
+                Prompt: "Which language should I use by default when replying?",
+                DefaultValue: "ru",
+                AllowedValues: ["ru", "en", "es"],
+                Description: "Default answer language."),
+            ["tone"] = new(
+                Prompt: "What communication tone do you prefer?",
+                DefaultValue: "neutral",
+                AllowedValues: ["neutral", "friendly", "formal"]),
+            ["verbosity"] = new(
+                Prompt: "How detailed should responses be?",
+                DefaultValue: "normal",
+                AllowedValues: ["short", "normal", "detailed"]),
+            ["timezone"] = new(
+                Prompt: "Which time zone should be used for time-related information?",
+                DefaultValue: "Europe/Madrid"),
+            ["measurementSystem"] = new(
+                Prompt: "Which measurement system should be used?",
+                DefaultValue: "metric",
+                AllowedValues: ["metric", "imperial"]),
+            ["grammarGenderRu"] = new(
+                Prompt: "Which grammatical gender forms should be used in Russian?",
+                DefaultValue: "neutral",
+                AllowedValues: ["male", "female", "neutral"]),
+            ["signature"] = new("What signature should be used in messages?"),
+            ["devEnvironment"] = new(
+                Prompt: "What operating system do you use?",
+                DefaultValue: "windows",
+                AllowedValues: ["windows", "macos", "linux", "other"]),
+            ["editor"] = new(
+                Prompt: "Which IDE or editor do you use?",
+                DefaultValue: "vscode",
+                AllowedValues: ["vs", "vscode", "rider", "other"])
+        };
 
     [McpServerTool(Name = "prefs_get"), Description("Gets one user preference by key. If missing, asks user via elicitation, validates, saves, and returns it.")]
     public static async Task<object> PrefsGetAsync(
         McpServer server,
-        [Description("Supported key: displayName, preferredLanguage, tone, verbosity, timezone, measurementSystem, grammarGenderRu, signature, devEnvironment, editor.")] string key,
+        [Description("Preference key. Known keys include displayName, preferredLanguage, tone, verbosity, timezone, measurementSystem, grammarGenderRu, signature, devEnvironment, editor.")] string key,
         CancellationToken cancellationToken = default)
     {
-        var preference = GetSupportedPreferenceOrThrow(key);
-        var values = await UserProfilePrefsFileStore.GetAllAsync(cancellationToken);
-        if (values.TryGetValue(preference.Key, out var storedValue) &&
-            TryNormalizeValue(preference, storedValue, out var normalizedStoredValue))
+        var normalizedKey = NormalizeKey(key);
+        var storedValues = await UserProfilePrefsFileStore.GetAllAsync(cancellationToken);
+
+        if (storedValues.TryGetValue(normalizedKey, out var storedValue) &&
+            TryNormalizeValue(normalizedKey, storedValue, out var normalizedStoredValue))
         {
             return new
             {
-                key = preference.Key,
+                key = normalizedKey,
                 exists = true,
                 value = normalizedStoredValue,
                 source = StoredSource
             };
         }
 
-        var elicitedValue = await ElicitPreferenceValueAsync(server, preference, cancellationToken);
-        await UserProfilePrefsFileStore.SetAsync(preference.Key, elicitedValue, cancellationToken);
+        var spec = GetSpecOrFallback(normalizedKey);
+        var elicitedValue = await ElicitPreferenceValueAsync(server, normalizedKey, spec, cancellationToken);
+        await UserProfilePrefsFileStore.SetAsync(normalizedKey, elicitedValue, cancellationToken);
 
         return new
         {
-            key = preference.Key,
+            key = normalizedKey,
             exists = true,
             value = elicitedValue,
             source = ElicitedSource
         };
     }
 
-    [McpServerTool(Name = "prefs_get_all"), Description("Returns all stored user preferences and the full supported key list.")]
+    [McpServerTool(Name = "prefs_get_all"), Description("Returns all stored user preferences and known keys with optional constraints.")]
     public static async Task<object> PrefsGetAllAsync(CancellationToken cancellationToken = default)
     {
         var storedValues = await UserProfilePrefsFileStore.GetAllAsync(cancellationToken);
-        var normalizedValues = new Dictionary<string, string>(StringComparer.Ordinal);
+        var normalizedValues = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        var knownKeys = _knownSpecs.Keys.OrderBy(static key => key, StringComparer.OrdinalIgnoreCase).ToArray();
 
-        foreach (var preference in _supportedPreferences)
+        foreach (var (storedKey, rawValue) in storedValues)
         {
-            if (!storedValues.TryGetValue(preference.Key, out var rawValue))
-                continue;
-
-            if (TryNormalizeValue(preference, rawValue, out var normalizedValue))
+            if (TryNormalizeValue(storedKey, rawValue, out var normalizedValue))
             {
-                normalizedValues[preference.Key] = normalizedValue;
+                normalizedValues[storedKey] = normalizedValue;
             }
         }
 
         return new
         {
             values = normalizedValues,
-            supportedKeys = _supportedPreferences.Select(static preference => preference.Key).ToArray()
+            knownKeys,
+            supportedKeys = knownKeys
         };
     }
 
@@ -225,28 +147,25 @@ public sealed class BuiltInUserProfilePrefsServerTools
         };
     }
 
-    private static PreferenceDefinition GetSupportedPreferenceOrThrow(string? key)
+    private static PreferenceSpec GetSpecOrFallback(string key)
     {
-        var normalizedKey = key?.Trim();
-        if (string.IsNullOrWhiteSpace(normalizedKey) ||
-            !_supportedByKey.TryGetValue(normalizedKey, out var preference))
-        {
-            throw new InvalidOperationException("unknown_key");
-        }
+        if (_knownSpecs.TryGetValue(key, out var spec))
+            return spec;
 
-        return preference;
+        return new PreferenceSpec(Prompt: $"Enter a value for preference '{key}'.");
     }
 
     private static async Task<string> ElicitPreferenceValueAsync(
         McpServer server,
-        PreferenceDefinition preference,
+        string key,
+        PreferenceSpec spec,
         CancellationToken cancellationToken)
     {
         string? validationMessage = null;
 
         for (var attempt = 0; attempt < MaxElicitationAttempts; attempt++)
         {
-            var request = BuildPreferenceElicitationRequest(preference, validationMessage);
+            var request = BuildPreferenceElicitationRequest(key, spec, validationMessage);
             var response = await server.ElicitAsync(request, cancellationToken);
 
             if (!response.IsAccepted)
@@ -255,26 +174,27 @@ public sealed class BuiltInUserProfilePrefsServerTools
             }
 
             if (TryReadContentValue(response, ValueFieldName, out var rawValue) &&
-                TryNormalizeValue(preference, rawValue, out var normalizedValue))
+                TryNormalizeValue(key, rawValue, out var normalizedValue))
             {
                 return normalizedValue;
             }
 
-            validationMessage = preference.Kind == PreferenceValueKind.Enum
-                ? "Выберите одно из предложенных значений."
-                : "Значение не должно быть пустым.";
+            validationMessage = spec.AllowedValues is { Count: > 0 }
+                ? "Choose one of the suggested values."
+                : "Value must not be empty.";
         }
 
         throw new InvalidOperationException("invalid_value");
     }
 
     private static ElicitRequestParams BuildPreferenceElicitationRequest(
-        PreferenceDefinition preference,
+        string key,
+        PreferenceSpec spec,
         string? validationMessage)
     {
         var message = string.IsNullOrWhiteSpace(validationMessage)
-            ? preference.Question
-            : $"{validationMessage} {preference.Question}";
+            ? spec.Prompt
+            : $"{validationMessage} {spec.Prompt}";
 
         return new ElicitRequestParams
         {
@@ -284,46 +204,43 @@ public sealed class BuiltInUserProfilePrefsServerTools
             {
                 Properties = new Dictionary<string, ElicitRequestParams.PrimitiveSchemaDefinition>(StringComparer.Ordinal)
                 {
-                    [ValueFieldName] = BuildPreferenceSchema(preference)
+                    [ValueFieldName] = BuildPreferenceSchema(key, spec)
                 },
                 Required = [ValueFieldName]
             }
         };
     }
 
-    private static ElicitRequestParams.PrimitiveSchemaDefinition BuildPreferenceSchema(PreferenceDefinition preference)
+    private static ElicitRequestParams.PrimitiveSchemaDefinition BuildPreferenceSchema(string key, PreferenceSpec spec)
     {
-        if (preference.Kind == PreferenceValueKind.Enum)
+        if (spec.AllowedValues is { Count: > 0 })
         {
             return new ElicitRequestParams.TitledSingleSelectEnumSchema
             {
                 Type = "string",
-                Title = preference.Title,
-                Description = preference.Description,
-                OneOf = preference.Options
-                    .Select(static option => new ElicitRequestParams.EnumSchemaOption
+                Title = key,
+                Description = spec.Description,
+                OneOf = spec.AllowedValues
+                    .Select(static value => new ElicitRequestParams.EnumSchemaOption
                     {
-                        Const = option.Value,
-                        Title = option.Label
+                        Const = value,
+                        Title = value
                     })
                     .ToArray(),
-                Default = preference.DefaultValue
+                Default = spec.DefaultValue
             };
         }
 
         return new ElicitRequestParams.StringSchema
         {
             Type = "string",
-            Title = preference.Title,
-            Description = preference.Description,
-            Default = preference.DefaultValue
+            Title = key,
+            Description = spec.Description,
+            Default = spec.DefaultValue
         };
     }
 
-    private static bool TryNormalizeValue(
-        PreferenceDefinition preference,
-        string? rawValue,
-        out string normalizedValue)
+    private static bool TryNormalizeValue(string key, string? rawValue, out string normalizedValue)
     {
         normalizedValue = string.Empty;
         if (rawValue is null)
@@ -333,22 +250,22 @@ public sealed class BuiltInUserProfilePrefsServerTools
         if (trimmed.Length == 0)
             return false;
 
-        if (preference.Kind != PreferenceValueKind.Enum)
+        if (_knownSpecs.TryGetValue(key, out var spec) && spec.AllowedValues is { Count: > 0 })
         {
-            normalizedValue = trimmed;
-            return true;
+            foreach (var allowedValue in spec.AllowedValues)
+            {
+                if (!string.Equals(allowedValue, trimmed, StringComparison.OrdinalIgnoreCase))
+                    continue;
+
+                normalizedValue = allowedValue;
+                return true;
+            }
+
+            return false;
         }
 
-        foreach (var option in preference.Options)
-        {
-            if (!string.Equals(option.Value, trimmed, StringComparison.OrdinalIgnoreCase))
-                continue;
-
-            normalizedValue = option.Value;
-            return true;
-        }
-
-        return false;
+        normalizedValue = trimmed;
+        return true;
     }
 
     private static async Task<bool> ConfirmResetAsync(McpServer server, CancellationToken cancellationToken)
@@ -356,7 +273,7 @@ public sealed class BuiltInUserProfilePrefsServerTools
         var request = new ElicitRequestParams
         {
             Mode = "form",
-            Message = "Подтвердить сброс всех сохраненных настроек?",
+            Message = "Confirm resetting all saved preferences?",
             RequestedSchema = new ElicitRequestParams.RequestSchema
             {
                 Properties = new Dictionary<string, ElicitRequestParams.PrimitiveSchemaDefinition>(StringComparer.Ordinal)
@@ -364,12 +281,11 @@ public sealed class BuiltInUserProfilePrefsServerTools
                     ["confirm"] = new ElicitRequestParams.TitledSingleSelectEnumSchema
                     {
                         Type = "string",
-                        Title = "Подтверждение",
-                        Description = "Выберите действие.",
+                        Title = "Confirmation",
                         OneOf =
                         [
-                            new ElicitRequestParams.EnumSchemaOption { Const = "yes", Title = "Да, сбросить" },
-                            new ElicitRequestParams.EnumSchemaOption { Const = "no", Title = "Нет, оставить" }
+                            new ElicitRequestParams.EnumSchemaOption { Const = "yes", Title = "Yes" },
+                            new ElicitRequestParams.EnumSchemaOption { Const = "no", Title = "No" }
                         ],
                         Default = "no"
                     }
@@ -394,39 +310,29 @@ public sealed class BuiltInUserProfilePrefsServerTools
         if (response.Content is null || !response.Content.TryGetValue(key, out var jsonValue))
             return false;
 
-        value = JsonElementToString(jsonValue);
-        return true;
-    }
-
-    private static string JsonElementToString(JsonElement value)
-    {
-        return value.ValueKind switch
+        value = jsonValue.ValueKind switch
         {
-            JsonValueKind.String => value.GetString() ?? string.Empty,
-            JsonValueKind.Number => value.GetRawText(),
+            JsonValueKind.String => jsonValue.GetString() ?? string.Empty,
+            JsonValueKind.Number => jsonValue.GetRawText(),
             JsonValueKind.True => "true",
             JsonValueKind.False => "false",
             JsonValueKind.Null or JsonValueKind.Undefined => string.Empty,
-            _ => value.GetRawText()
+            _ => jsonValue.GetRawText()
         };
+
+        return true;
     }
 
-    private enum PreferenceValueKind
+    private static string NormalizeKey(string? key)
     {
-        String,
-        Enum
+        var normalizedKey = key?.Trim() ?? string.Empty;
+        if (normalizedKey.Length == 0)
+        {
+            throw new InvalidOperationException("empty_key");
+        }
+
+        return normalizedKey;
     }
-
-    private sealed record PreferenceOption(string Value, string Label);
-
-    private sealed record PreferenceDefinition(
-        string Key,
-        string Title,
-        string Description,
-        string Question,
-        PreferenceValueKind Kind,
-        string? DefaultValue,
-        IReadOnlyList<PreferenceOption> Options);
 }
 
 internal static class UserProfilePrefsFileStore
@@ -456,12 +362,13 @@ internal static class UserProfilePrefsFileStore
     public static async Task SetAsync(string key, string value, CancellationToken cancellationToken = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(key);
+        ArgumentNullException.ThrowIfNull(value);
 
         await _ioLock.WaitAsync(cancellationToken);
         try
         {
             var values = await ReadUnsafeAsync(cancellationToken);
-            values[key] = value;
+            values[key.Trim()] = value;
             await WriteUnsafeAsync(values, cancellationToken);
         }
         finally
@@ -483,37 +390,10 @@ internal static class UserProfilePrefsFileStore
         }
     }
 
-    private static async Task<Dictionary<string, string>> ReadUnsafeAsync(CancellationToken cancellationToken)
-    {
-        if (!File.Exists(_filePath))
-            return new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-
-        var json = await File.ReadAllTextAsync(_filePath, cancellationToken);
-        if (string.IsNullOrWhiteSpace(json))
-            return new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-
-        try
-        {
-            var parsed = JsonSerializer.Deserialize<Dictionary<string, string>>(json, _jsonOptions);
-            if (parsed is null)
-                return new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-
-            var normalized = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-            foreach (var (key, value) in parsed)
-            {
-                if (string.IsNullOrWhiteSpace(key) || value is null)
-                    continue;
-
-                normalized[key] = value;
-            }
-
-            return normalized;
-        }
-        catch (JsonException)
-        {
-            return new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-        }
-    }
+    private static async Task<Dictionary<string, string>> ReadUnsafeAsync(CancellationToken ct)
+        => (await JsonSerializer.DeserializeAsync<Dictionary<string, string>>(
+                File.OpenRead(_filePath), _jsonOptions, ct))!
+           ?? new(StringComparer.OrdinalIgnoreCase);
 
     private static async Task WriteUnsafeAsync(
         IReadOnlyDictionary<string, string> values,
@@ -526,26 +406,20 @@ internal static class UserProfilePrefsFileStore
         }
 
         var ordered = values
-            .OrderBy(static pair => pair.Key, StringComparer.Ordinal)
-            .ToDictionary(static pair => pair.Key, static pair => pair.Value, StringComparer.Ordinal);
+            .Where(static pair => !string.IsNullOrWhiteSpace(pair.Key))
+            .OrderBy(static pair => pair.Key, StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(static pair => pair.Key, static pair => pair.Value, StringComparer.OrdinalIgnoreCase);
+
         var json = JsonSerializer.Serialize(ordered, _jsonOptions);
         await File.WriteAllTextAsync(_filePath, json, cancellationToken);
     }
 
     private static string ResolvePath()
     {
-        var environmentName = Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT");
-        var configurationBuilder = new ConfigurationBuilder()
+        var configuration = new ConfigurationBuilder()
             .SetBasePath(AppContext.BaseDirectory)
-            .AddJsonFile("appsettings.json", optional: true);
-
-        if (!string.IsNullOrWhiteSpace(environmentName))
-        {
-            configurationBuilder.AddJsonFile($"appsettings.{environmentName}.json", optional: true);
-        }
-
-        configurationBuilder.AddEnvironmentVariables();
-        var configuration = configurationBuilder.Build();
+            .AddJsonFile("appsettings.json", optional: true)
+            .Build();
 
         return StoragePathResolver.ResolveUserPath(
             configuration,
