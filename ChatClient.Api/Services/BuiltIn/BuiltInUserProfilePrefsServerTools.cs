@@ -15,7 +15,7 @@ public sealed class BuiltInUserProfilePrefsServerTools
         id: Guid.Parse("c8c4a3cf-e2d5-4f4d-9a6f-4504e322a2b3"),
         key: "built-in-user-profile-prefs",
         name: "Built-in User Profile Prefs MCP Server",
-        description: "Key-value user preferences with optional allowed values and elicitation for missing keys.",
+        description: "Stores and retrieves user profile preferences (including preferred name via displayName/name/preferred_name), with validation and elicitation for missing values.",
         registerTools: static builder => builder.WithTools<BuiltInUserProfilePrefsServerTools>());
 
     private const int MaxElicitationAttempts = 3;
@@ -32,7 +32,9 @@ public sealed class BuiltInUserProfilePrefsServerTools
     private static readonly IReadOnlyDictionary<string, PreferenceSpec> _knownSpecs =
         new Dictionary<string, PreferenceSpec>(StringComparer.OrdinalIgnoreCase)
         {
-            ["displayName"] = new("How should I address you?"),
+            ["displayName"] = new(
+                Prompt: "How should I address you?",
+                Description: "Preferred user name used for personalized addressing."),
             ["preferredLanguage"] = new(
                 Prompt: "Which language should I use by default when replying?",
                 DefaultValue: "ru",
@@ -68,18 +70,38 @@ public sealed class BuiltInUserProfilePrefsServerTools
                 AllowedValues: ["vs", "vscode", "rider", "other"])
         };
 
-    [McpServerTool(Name = "prefs_get"), Description("Gets one user preference by key. If missing, asks user via elicitation, validates, saves, and returns it.")]
+    private static readonly IReadOnlyDictionary<string, string> _canonicalKeyByAlias =
+        new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["name"] = "displayName",
+            ["preferred_name"] = "displayName",
+            ["preferredName"] = "displayName",
+            ["userName"] = "displayName"
+        };
+
+    private static readonly IReadOnlyDictionary<string, IReadOnlyList<string>> _legacyAliasesByCanonicalKey =
+        new Dictionary<string, IReadOnlyList<string>>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["displayName"] = ["name", "preferred_name", "preferredName", "userName"]
+        };
+
+    [McpServerTool(Name = "prefs_get"), Description("Gets one user preference by key. Accepts aliases (displayName, name, preferred_name). If missing, asks user via elicitation, validates, saves, and returns it.")]
     public static async Task<object> PrefsGetAsync(
         McpServer server,
-        [Description("Preference key. Known keys include displayName, preferredLanguage, tone, verbosity, timezone, measurementSystem, grammarGenderRu, signature, devEnvironment, editor.")] string key,
+        [Description("Preference key. Name key aliases: displayName, name, preferred_name, preferredName, userName. Other known keys: preferredLanguage, tone, verbosity, timezone, measurementSystem, grammarGenderRu, signature, devEnvironment, editor.")] string key,
         CancellationToken cancellationToken = default)
     {
         var normalizedKey = NormalizeKey(key);
         var storedValues = await UserProfilePrefsFileStore.GetAllAsync(cancellationToken);
 
-        if (storedValues.TryGetValue(normalizedKey, out var storedValue) &&
+        if (TryGetStoredValue(storedValues, normalizedKey, out var storedValue) &&
             TryNormalizeValue(normalizedKey, storedValue, out var normalizedStoredValue))
         {
+            if (!storedValues.ContainsKey(normalizedKey))
+            {
+                await UserProfilePrefsFileStore.SetAsync(normalizedKey, normalizedStoredValue, cancellationToken);
+            }
+
             return new
             {
                 key = normalizedKey,
@@ -102,18 +124,20 @@ public sealed class BuiltInUserProfilePrefsServerTools
         };
     }
 
-    [McpServerTool(Name = "prefs_get_all"), Description("Returns all stored user preferences and known keys with optional constraints.")]
+    [McpServerTool(Name = "prefs_get_all"), Description("Returns all stored user preferences normalized to canonical keys. Includes known keys and accepted aliases (for name: displayName, name, preferred_name).")]
     public static async Task<object> PrefsGetAllAsync(CancellationToken cancellationToken = default)
     {
         var storedValues = await UserProfilePrefsFileStore.GetAllAsync(cancellationToken);
         var normalizedValues = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         var knownKeys = _knownSpecs.Keys.OrderBy(static key => key, StringComparer.OrdinalIgnoreCase).ToArray();
+        var acceptedAliases = _canonicalKeyByAlias.Keys.OrderBy(static key => key, StringComparer.OrdinalIgnoreCase).ToArray();
 
         foreach (var (storedKey, rawValue) in storedValues)
         {
-            if (TryNormalizeValue(storedKey, rawValue, out var normalizedValue))
+            var normalizedKey = NormalizeKey(storedKey);
+            if (TryNormalizeValue(normalizedKey, rawValue, out var normalizedValue))
             {
-                normalizedValues[storedKey] = normalizedValue;
+                normalizedValues[normalizedKey] = normalizedValue;
             }
         }
 
@@ -121,6 +145,7 @@ public sealed class BuiltInUserProfilePrefsServerTools
         {
             values = normalizedValues,
             knownKeys,
+            acceptedAliases,
             supportedKeys = knownKeys
         };
     }
@@ -153,6 +178,35 @@ public sealed class BuiltInUserProfilePrefsServerTools
             return spec;
 
         return new PreferenceSpec(Prompt: $"Enter a value for preference '{key}'.");
+    }
+
+    private static bool TryGetStoredValue(
+        IReadOnlyDictionary<string, string> storedValues,
+        string normalizedKey,
+        out string value)
+    {
+        if (storedValues.TryGetValue(normalizedKey, out var directValue) &&
+            !string.IsNullOrWhiteSpace(directValue))
+        {
+            value = directValue;
+            return true;
+        }
+
+        if (_legacyAliasesByCanonicalKey.TryGetValue(normalizedKey, out var aliases))
+        {
+            foreach (var alias in aliases)
+            {
+                if (storedValues.TryGetValue(alias, out var aliasValue) &&
+                    !string.IsNullOrWhiteSpace(aliasValue))
+                {
+                    value = aliasValue;
+                    return true;
+                }
+            }
+        }
+
+        value = string.Empty;
+        return false;
     }
 
     private static async Task<string> ElicitPreferenceValueAsync(
@@ -331,7 +385,9 @@ public sealed class BuiltInUserProfilePrefsServerTools
             throw new InvalidOperationException("empty_key");
         }
 
-        return normalizedKey;
+        return _canonicalKeyByAlias.TryGetValue(normalizedKey, out var canonicalKey)
+            ? canonicalKey
+            : normalizedKey;
     }
 }
 
