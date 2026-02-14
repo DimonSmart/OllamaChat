@@ -24,6 +24,10 @@ public sealed class HttpAgenticExecutionRuntime(
 {
     private const int MaxToolRounds = 8;
     private const int MaxLoggedPayloadLength = 4000;
+    private const int MaxNameLookupReminders = 2;
+    private const string UserProfilePrefsToolName = "prefs_get";
+    private const string UserProfilePrefsGetAllToolName = "prefs_get_all";
+    private const string UserProfileDisplayNameKey = "displayName";
 
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web)
     {
@@ -134,6 +138,10 @@ public sealed class HttpAgenticExecutionRuntime(
         ToolRegistry toolRegistry,
         [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken)
     {
+        var requiresNameLookup = RequiresNameLookupBeforeReply(agent, toolRegistry);
+        var hasNameLookup = false;
+        var nameLookupReminderCount = 0;
+
         string? apiKey = null;
         string endpoint;
         HttpClient client;
@@ -197,10 +205,28 @@ public sealed class HttpAgenticExecutionRuntime(
                     yield break;
                 }
 
-                messages.Add(ToAssistantMessage(completion));
-
                 if (completion.ToolCalls.Count == 0)
                 {
+                    if (requiresNameLookup && !hasNameLookup && nameLookupReminderCount < MaxNameLookupReminders)
+                    {
+                        nameLookupReminderCount++;
+                        messages.Add(new ProviderMessage(
+                            "system",
+                            "Before answering, call tool `prefs_get` with argument {\"key\":\"displayName\"} to get the user's preferred name. Then answer and address the user by that name.",
+                            null,
+                            null,
+                            null));
+
+                        logger.LogDebug(
+                            "Enforcing profile name lookup for agent {AgentName}. Reminder {Reminder}/{MaxReminders}.",
+                            agent.AgentName,
+                            nameLookupReminderCount,
+                            MaxNameLookupReminders);
+                        continue;
+                    }
+
+                    messages.Add(ToAssistantMessage(completion));
+
                     if (!string.IsNullOrEmpty(completion.Content))
                     {
                         yield return new ChatEngineStreamChunk(agent.AgentName, completion.Content);
@@ -214,6 +240,8 @@ public sealed class HttpAgenticExecutionRuntime(
                     yield break;
                 }
 
+                messages.Add(ToAssistantMessage(completion));
+
                 foreach (var toolCall in completion.ToolCalls)
                 {
                     cancellationToken.ThrowIfCancellationRequested();
@@ -221,6 +249,11 @@ public sealed class HttpAgenticExecutionRuntime(
                     var execution = await ExecuteToolCallAsync(toolCall, toolRegistry, cancellationToken);
                     functionCalls.Add(execution.Record);
                     messages.Add(execution.ToolMessage);
+
+                    if (!hasNameLookup && IsNameLookupCall(execution.Record))
+                    {
+                        hasNameLookup = true;
+                    }
                 }
             }
         }
@@ -933,5 +966,58 @@ public sealed class HttpAgenticExecutionRuntime(
             return singleLine;
 
         return $"{singleLine[..maxLength]}... (truncated, {singleLine.Length} chars)";
+    }
+
+    private static bool RequiresNameLookupBeforeReply(AgentDescription agent, ToolRegistry toolRegistry)
+    {
+        if (!toolRegistry.HasTools)
+            return false;
+
+        var prompt = agent.Content ?? string.Empty;
+        var promptRequiresName = prompt.Contains("preferred name", StringComparison.OrdinalIgnoreCase) ||
+                                 prompt.Contains("address the user by", StringComparison.OrdinalIgnoreCase) ||
+                                 prompt.Contains("обращай", StringComparison.OrdinalIgnoreCase) ||
+                                 prompt.Contains("по имени", StringComparison.OrdinalIgnoreCase);
+        if (!promptRequiresName)
+            return false;
+
+        return toolRegistry.Tools.Any(static tool =>
+            string.Equals(tool.ToolName, UserProfilePrefsToolName, StringComparison.OrdinalIgnoreCase));
+    }
+
+    private static bool IsNameLookupCall(FunctionCallRecord record)
+    {
+        if (string.Equals(record.Function, UserProfilePrefsGetAllToolName, StringComparison.OrdinalIgnoreCase))
+            return true;
+
+        if (!string.Equals(record.Function, UserProfilePrefsToolName, StringComparison.OrdinalIgnoreCase))
+            return false;
+
+        if (string.IsNullOrWhiteSpace(record.Request))
+            return false;
+
+        try
+        {
+            using var doc = JsonDocument.Parse(record.Request);
+            if (!doc.RootElement.TryGetProperty("key", out var keyProperty) ||
+                keyProperty.ValueKind != JsonValueKind.String)
+            {
+                return false;
+            }
+
+            var key = keyProperty.GetString();
+            if (string.IsNullOrWhiteSpace(key))
+                return false;
+
+            return string.Equals(key, UserProfileDisplayNameKey, StringComparison.OrdinalIgnoreCase) ||
+                   string.Equals(key, "name", StringComparison.OrdinalIgnoreCase) ||
+                   string.Equals(key, "preferred_name", StringComparison.OrdinalIgnoreCase) ||
+                   string.Equals(key, "preferredName", StringComparison.OrdinalIgnoreCase) ||
+                   string.Equals(key, "userName", StringComparison.OrdinalIgnoreCase);
+        }
+        catch
+        {
+            return false;
+        }
     }
 }
