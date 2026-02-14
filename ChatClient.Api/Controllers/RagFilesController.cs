@@ -3,7 +3,6 @@ using ChatClient.Application.Services;
 using ChatClient.Domain.Models;
 using HtmlAgilityPack;
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.SemanticKernel.Plugins.Web;
 using System.Linq;
 
 namespace ChatClient.Api.Controllers;
@@ -13,13 +12,11 @@ namespace ChatClient.Api.Controllers;
 public class RagFilesController : ControllerBase
 {
     private readonly IRagFileService _fileService;
-    private readonly IRagContentImportService _importService;
     private readonly IEnumerable<IFileConverter> _converters;
 
-    public RagFilesController(IRagFileService fileService, IRagContentImportService importService, IEnumerable<IFileConverter> converters)
+    public RagFilesController(IRagFileService fileService, IEnumerable<IFileConverter> converters)
     {
         _fileService = fileService;
-        _importService = importService;
         _converters = converters;
     }
 
@@ -61,7 +58,7 @@ public class RagFilesController : ControllerBase
             return BadRequest($"Unsupported file type {ext}");
 
         var content = await converter.ConvertToTextAsync(file);
-        await _importService.AddContentAsync(agentId, content, file.FileName);
+        await _fileService.AddOrUpdateFileAsync(agentId, new RagFile { FileName = file.FileName, Content = content });
         return Ok();
     }
 
@@ -71,15 +68,12 @@ public class RagFilesController : ControllerBase
         if (!Uri.TryCreate(request.Url, UriKind.Absolute, out var pageUri))
             return BadRequest("Invalid URL.");
 
-        var tempPath = Path.GetTempFileName();
-        var downloader = new WebFileDownloadPlugin();
-        await downloader.DownloadToFileAsync(pageUri, tempPath, HttpContext.RequestAborted);
-        var html = await System.IO.File.ReadAllTextAsync(tempPath, HttpContext.RequestAborted);
-        System.IO.File.Delete(tempPath);
+        using var httpClient = new HttpClient();
+        var html = await httpClient.GetStringAsync(pageUri, HttpContext.RequestAborted);
 
         var text = HtmlToText(html);
         var fileName = CreateFileName(pageUri);
-        await _importService.AddContentAsync(agentId, text, fileName);
+        await _fileService.AddOrUpdateFileAsync(agentId, new RagFile { FileName = fileName, Content = text });
         return Ok();
     }
 
@@ -114,7 +108,7 @@ public class RagFilesController : ControllerBase
             return BadRequest($"Unsupported file type {ext}");
 
         var content = await converter.ConvertToTextAsync(file);
-        await _importService.AddContentAsync(agentId, content, fileName);
+        await _fileService.AddOrUpdateFileAsync(agentId, new RagFile { FileName = fileName, Content = content });
         return Ok();
     }
 

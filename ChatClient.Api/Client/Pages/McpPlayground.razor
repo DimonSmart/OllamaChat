@@ -1,11 +1,18 @@
 @page "/mcp-playground"
 @using ChatClient.Domain.Models
+@using ChatClient.Application.Services
 @using System.Text.Json
 @using System.Linq
 @using ModelContextProtocol.Client
 @using ChatClient.Api.Services
 @inject IMcpClientService McpClientService
+@inject IMcpServerConfigService McpServerConfigService
 @inject ISnackbar Snackbar
+@inject NavigationManager NavigationManager
+@inject IDialogService DialogService
+@inject ILogger<McpPlayground> Logger
+@inject IMcpUserInteractionService McpUserInteractionService
+@implements IDisposable
 
 <PageTitle>MCP Playground</PageTitle>
 <MudText Class="page-header">MCP Playground</MudText>
@@ -14,44 +21,77 @@
     <MudSelect Label="Server" T="string" Value="@selectedServer" ValueChanged="OnServerChanged" Dense="true">
         @foreach (var s in servers)
         {
-            <MudSelectItem Value="@s">@s</MudSelectItem>
+            <MudSelectItem Value="@s">
+                <MudStack Spacing="0">
+                    <MudText Typo="Typo.body2">@s</MudText>
+                    @if (!string.IsNullOrWhiteSpace(GetServerDescription(s)))
+                    {
+                        <MudText Typo="Typo.caption" Class="mud-text-secondary">@GetServerDescription(s)</MudText>
+                    }
+                </MudStack>
+            </MudSelectItem>
         }
     </MudSelect>
+
+    @if (!string.IsNullOrWhiteSpace(selectedServerDescription))
+    {
+        <MudAlert Severity="Severity.Info" Dense="true" Variant="Variant.Outlined">
+            @selectedServerDescription
+        </MudAlert>
+    }
 
     <MudSelect Label="Function" T="string" Value="@selectedFunction" ValueChanged="OnFunctionChanged" Disabled="@(!tools.Any())" Dense="true">
         @foreach (var t in tools)
         {
-            <MudSelectItem Value="@t.Name">@t.Name</MudSelectItem>
+            <MudSelectItem Value="@t.Name">
+                <MudStack Spacing="0">
+                    <MudText Typo="Typo.body2">@t.Name</MudText>
+                    @if (!string.IsNullOrWhiteSpace(GetToolDescription(t)))
+                    {
+                        <MudText Typo="Typo.caption" Class="mud-text-secondary">@GetToolDescription(t)</MudText>
+                    }
+                </MudStack>
+            </MudSelectItem>
         }
     </MudSelect>
+
+    @if (!string.IsNullOrWhiteSpace(selectedFunctionDescription))
+    {
+        <MudAlert Severity="Severity.Info" Dense="true" Variant="Variant.Outlined">
+            @selectedFunctionDescription
+        </MudAlert>
+    }
 
     @if (fields.Any())
     {
         @foreach (var f in fields)
         {
-            @switch (f.Type)
-            {
-                case "boolean":
-                    <MudSwitch T="bool" Checked="@(parameters.TryGetValue(f.Name, out var val) && val is bool b && b)"
-                               CheckedChanged="v => parameters[f.Name] = v"
-                               Label="@f.Name" />
-                    break;
-                case "integer":
-                    <MudNumericField T="int?" Value="@(parameters[f.Name] as int?)"
-                                     ValueChanged="v => parameters[f.Name] = v"
-                                     Label="@f.Name" />
-                    break;
-                case "number":
-                    <MudNumericField T="double?" Value="@(parameters[f.Name] as double?)"
-                                     ValueChanged="v => parameters[f.Name] = v"
-                                     Label="@f.Name" />
-                    break;
-                default:
-                    <MudTextField T="string" Value="@(parameters.TryGetValue(f.Name, out var obj) ? obj?.ToString() : string.Empty)"
-                                  ValueChanged="v => parameters[f.Name] = v"
-                                  Label="@f.Name" />
-                    break;
-            }
+            <MudStack Spacing="0">
+                @switch (f.Type)
+                {
+                    case "boolean":
+                        <MudSwitch T="bool" Checked="@(parameters.TryGetValue(f.Name, out var val) && val is bool b && b)"
+                                   CheckedChanged="v => parameters[f.Name] = v"
+                                   Label="@GetFieldLabel(f)" />
+                        break;
+                    case "integer":
+                        <MudNumericField T="int?" Value="@(parameters[f.Name] as int?)"
+                                         ValueChanged="v => parameters[f.Name] = v"
+                                         Label="@GetFieldLabel(f)" />
+                        break;
+                    case "number":
+                        <MudNumericField T="double?" Value="@(parameters[f.Name] as double?)"
+                                         ValueChanged="v => parameters[f.Name] = v"
+                                         Label="@GetFieldLabel(f)" />
+                        break;
+                    default:
+                        <MudTextField T="string" Value="@(parameters.TryGetValue(f.Name, out var obj) ? obj?.ToString() : string.Empty)"
+                                      ValueChanged="v => parameters[f.Name] = v"
+                                      Label="@GetFieldLabel(f)" />
+                        break;
+                }
+                <MudText Typo="Typo.caption" Class="mud-text-secondary mb-2">@GetFieldMetadata(f)</MudText>
+            </MudStack>
         }
     }
 
@@ -72,23 +112,47 @@
 
 @code {
     private readonly List<string> servers = [];
+    private readonly Dictionary<string, string> serverAliases = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<string, string> serverDescriptions = new(StringComparer.OrdinalIgnoreCase);
     private readonly List<McpToolInfo> tools = [];
     private readonly Dictionary<string, McpClientTool> toolMap = new(StringComparer.OrdinalIgnoreCase);
     private readonly List<FieldInfo> fields = [];
     private readonly Dictionary<string, object?> parameters = new(StringComparer.OrdinalIgnoreCase);
-    private IMcpClient? currentClient;
+    private McpClient? currentClient;
     private string? selectedServer;
+    private string? selectedServerDescription;
     private string? selectedFunction;
+    private string? selectedFunctionDescription;
     private string? rawResult;
     private string? contentResult;
     private bool showRaw = true;
+    private IDisposable? elicitationHandlerRegistration;
+
+    [Parameter, SupplyParameterFromQuery(Name = "server")]
+    public string? McpServerName { get; set; }
 
     protected override async Task OnInitializedAsync()
     {
+        elicitationHandlerRegistration = McpUserInteractionService.RegisterElicitationHandler(
+            McpInteractionScope.Playground,
+            HandleElicitationAsync);
+
         try
         {
             var clients = await McpClientService.GetMcpClientsAsync();
-            servers.AddRange(clients.Select(c => c.ServerInfo.Name));
+            servers.AddRange(clients
+                .Select(c => c.ServerInfo.Name)
+                .Where(name => !string.IsNullOrWhiteSpace(name))
+                .Distinct(StringComparer.OrdinalIgnoreCase));
+
+            var descriptors = await McpServerConfigService.GetAllAsync();
+            foreach (var descriptor in descriptors.Where(d => !string.IsNullOrWhiteSpace(d.Name)))
+            {
+                serverDescriptions[descriptor.Name] = descriptor.Description;
+            }
+
+            BuildServerAliases();
+            await ApplyPreselectedServer();
         }
         catch (Exception ex)
         {
@@ -96,10 +160,106 @@
         }
     }
 
+    protected override async Task OnParametersSetAsync()
+    {
+        await ApplyPreselectedServer();
+    }
+
+    private async Task ApplyPreselectedServer()
+    {
+        if (!servers.Any())
+            return;
+
+        if (string.IsNullOrWhiteSpace(McpServerName))
+            return;
+
+        var match = ResolveServerName(McpServerName);
+        if (string.IsNullOrEmpty(match))
+            return;
+
+        if (string.Equals(selectedServer, match, StringComparison.OrdinalIgnoreCase))
+            return;
+
+        await OnServerChangedInternal(match, updateQuery: false);
+    }
+
+    private void BuildServerAliases()
+    {
+        serverAliases.Clear();
+        foreach (var server in servers)
+        {
+            foreach (var alias in ExpandServerAliases(server))
+            {
+                AddServerAlias(alias, server);
+            }
+        }
+    }
+
+    private string? ResolveServerName(string queryServerName)
+    {
+        foreach (var alias in ExpandServerAliases(queryServerName))
+        {
+            if (serverAliases.TryGetValue(alias, out var aliasMatch))
+                return aliasMatch;
+        }
+
+        return servers.FirstOrDefault(s => string.Equals(s, queryServerName, StringComparison.OrdinalIgnoreCase));
+    }
+
+    private static IEnumerable<string> ExpandServerAliases(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+            yield break;
+
+        var trimmed = value.Trim();
+        yield return trimmed;
+
+        var pathTail = trimmed
+            .Split(['/', '\\'], StringSplitOptions.RemoveEmptyEntries)
+            .LastOrDefault();
+
+        if (!string.IsNullOrWhiteSpace(pathTail) && !string.Equals(pathTail, trimmed, StringComparison.OrdinalIgnoreCase))
+            yield return pathTail;
+
+        var noExe = pathTail ?? trimmed;
+        if (noExe.EndsWith(".exe", StringComparison.OrdinalIgnoreCase))
+        {
+            noExe = noExe[..^4];
+            yield return noExe;
+        }
+
+        var dotTail = noExe
+            .Split('.', StringSplitOptions.RemoveEmptyEntries)
+            .LastOrDefault();
+        if (!string.IsNullOrWhiteSpace(dotTail))
+        {
+            yield return dotTail;
+        }
+    }
+
+    private void AddServerAlias(string? alias, string targetServer)
+    {
+        if (string.IsNullOrWhiteSpace(alias))
+            return;
+
+        serverAliases[alias] = targetServer;
+    }
+
     private async Task OnServerChanged(string value)
+        => await OnServerChangedInternal(value, updateQuery: true);
+
+    private async Task OnServerChangedInternal(string value, bool updateQuery)
     {
         selectedServer = value;
+        selectedServerDescription = GetServerDescription(selectedServer);
+        if (updateQuery)
+        {
+            var url = NavigationManager.GetUriWithQueryParameter("server", string.IsNullOrWhiteSpace(selectedServer) ? null : selectedServer);
+            NavigationManager.NavigateTo(url, replace: true);
+        }
+
         selectedFunction = null;
+        selectedFunctionDescription = null;
         tools.Clear();
         toolMap.Clear();
         fields.Clear();
@@ -130,21 +290,36 @@
     private void OnFunctionChanged(string value)
     {
         selectedFunction = value;
+        selectedFunctionDescription = GetToolDescription(tools.FirstOrDefault(t => string.Equals(t.Name, selectedFunction, StringComparison.OrdinalIgnoreCase)));
         fields.Clear();
         parameters.Clear();
         rawResult = null;
         contentResult = null;
-        var tool = tools.FirstOrDefault(t => t.Name == selectedFunction);
+        var tool = tools.FirstOrDefault(t => string.Equals(t.Name, selectedFunction, StringComparison.OrdinalIgnoreCase));
         if (tool == null)
             return;
         if (tool.JsonSchema.ValueKind == JsonValueKind.Undefined)
             return;
-        if (tool.JsonSchema.TryGetProperty("properties", out var props))
+
+        var requiredParams = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        if (tool.JsonSchema.TryGetProperty("required", out var requiredNode) && requiredNode.ValueKind == JsonValueKind.Array)
+        {
+            foreach (var required in requiredNode.EnumerateArray())
+            {
+                if (required.ValueKind == JsonValueKind.String && !string.IsNullOrWhiteSpace(required.GetString()))
+                    requiredParams.Add(required.GetString()!);
+            }
+        }
+
+        if (tool.JsonSchema.TryGetProperty("properties", out var props) && props.ValueKind == JsonValueKind.Object)
         {
             foreach (var prop in props.EnumerateObject())
             {
                 var type = prop.Value.TryGetProperty("type", out var t) ? t.GetString() : "string";
-                fields.Add(new FieldInfo(prop.Name, type ?? "string"));
+                var description = prop.Value.TryGetProperty("description", out var d) && d.ValueKind == JsonValueKind.String
+                    ? d.GetString()
+                    : null;
+                fields.Add(new FieldInfo(prop.Name, type ?? "string", description, requiredParams.Contains(prop.Name)));
                 parameters[prop.Name] = null;
             }
         }
@@ -176,6 +351,7 @@
                 }
                 args[f.Name] = val;
             }
+            using var interactionScope = McpUserInteractionService.BeginInteractionScope(McpInteractionScope.Playground);
             var obj = await tool.CallAsync(args, null, null);
             var elem = JsonSerializer.SerializeToElement(obj);
             rawResult = JsonSerializer.Serialize(elem, new JsonSerializerOptions { WriteIndented = true });
@@ -185,6 +361,81 @@
         catch (Exception ex)
         {
             Snackbar.Add($"Error calling function: {ex.Message}", Severity.Error);
+        }
+    }
+
+    private async Task<McpElicitationResponse> HandleElicitationAsync(
+        McpElicitationPrompt prompt,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            var parameters = new DialogParameters
+            {
+                ["Prompt"] = prompt
+            };
+            var options = new DialogOptions
+            {
+                MaxWidth = MaxWidth.Small,
+                FullWidth = true,
+                BackdropClick = false,
+                CloseOnEscapeKey = true,
+                CloseButton = true
+            };
+
+            IDialogReference? dialog = null;
+            await InvokeAsync(async () =>
+            {
+                dialog = await DialogService.ShowAsync<McpElicitationDialog>(
+                    $"MCP input: {prompt.ServerName}",
+                    parameters,
+                    options);
+            });
+
+            if (dialog is null)
+                return McpElicitationResponse.Cancel;
+
+            Logger.LogInformation(
+                "Elicitation dialog opened in MCP playground. Server: {ServerName}. Mode: {Mode}. Fields: {FieldCount}.",
+                prompt.ServerName,
+                prompt.Mode,
+                prompt.Fields.Count);
+
+            using var registration = cancellationToken.Register(() =>
+            {
+                _ = InvokeAsync(() => dialog.Close(DialogResult.Ok(McpElicitationResponse.Cancel)));
+            });
+
+            var result = await dialog.Result;
+            if (result?.Canceled != false)
+            {
+                Logger.LogInformation(
+                    "Elicitation dialog closed in MCP playground with cancel. Server: {ServerName}.",
+                    prompt.ServerName);
+                return McpElicitationResponse.Cancel;
+            }
+
+            var response = result.Data as McpElicitationResponse ?? McpElicitationResponse.Cancel;
+            Logger.LogInformation(
+                "Elicitation dialog completed in MCP playground. Server: {ServerName}. Action: {Action}.",
+                prompt.ServerName,
+                response.Action);
+            return response;
+        }
+        catch (OperationCanceledException)
+        {
+            Logger.LogInformation(
+                "Elicitation dialog canceled by token in MCP playground. Server: {ServerName}.",
+                prompt.ServerName);
+            return McpElicitationResponse.Cancel;
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "Failed to render elicitation dialog in MCP Playground.");
+            Snackbar.Add($"Failed to handle MCP user prompt: {ex.Message}", Severity.Warning);
+            return McpElicitationResponse.Cancel;
         }
     }
 
@@ -222,5 +473,54 @@
         }
     }
 
-    private sealed record FieldInfo(string Name, string Type);
+    private string? GetServerDescription(string? serverName)
+    {
+        if (string.IsNullOrWhiteSpace(serverName))
+            return null;
+
+        return serverDescriptions.TryGetValue(serverName, out var description) && !string.IsNullOrWhiteSpace(description)
+            ? description
+            : null;
+    }
+
+    private static string? GetToolDescription(McpToolInfo? tool)
+    {
+        if (tool == null)
+            return null;
+
+        if (!string.IsNullOrWhiteSpace(tool.Description))
+            return tool.Description;
+
+        if (tool.JsonSchema.ValueKind != JsonValueKind.Object)
+            return null;
+
+        if (tool.JsonSchema.TryGetProperty("description", out var descriptionNode) &&
+            descriptionNode.ValueKind == JsonValueKind.String)
+        {
+            return descriptionNode.GetString();
+        }
+
+        return null;
+    }
+
+    private static string GetFieldLabel(FieldInfo field)
+        => field.IsRequired ? $"{field.Name} *" : field.Name;
+
+    private static string GetFieldMetadata(FieldInfo field)
+    {
+        var typePart = $"Type: {field.Type}";
+        var requiredPart = field.IsRequired ? "Required." : "Optional.";
+
+        if (string.IsNullOrWhiteSpace(field.Description))
+            return $"{typePart}. {requiredPart}";
+
+        return $"{field.Description} ({typePart}). {requiredPart}";
+    }
+
+    public void Dispose()
+    {
+        elicitationHandlerRegistration?.Dispose();
+    }
+
+    private sealed record FieldInfo(string Name, string Type, string? Description, bool IsRequired);
 }

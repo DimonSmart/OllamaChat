@@ -39,14 +39,21 @@ else
         try
         {
             var settings = await UserSettingsService.GetSettingsAsync();
-            if (!ValidateDefaultServer(settings))
+            var servers = (await LlmServerConfigService.GetAllAsync()).ToList();
+            if (servers.Count == 0)
+            {
+                Logger.LogWarning("No LLM servers configured");
+                NavigateToServerConfig();
                 return;
+            }
 
-            var server = await GetDefaultServerAsync(settings);
-            if (server == null)
+            var hasAvailableServer = await HasAnyAvailableServerAsync(settings, servers);
+            if (!hasAvailableServer)
+            {
+                Logger.LogWarning("No available LLM servers found");
+                NavigateToServerConfig();
                 return;
-
-            await ValidateServerAvailability(server, settings.DefaultModel.ServerId!.Value);
+            }
         }
         catch (Exception ex)
         {
@@ -60,55 +67,71 @@ else
         }
     }
 
-    private bool ValidateDefaultServer(UserSettings settings)
+    private async Task<bool> HasAnyAvailableServerAsync(UserSettings settings, IReadOnlyCollection<LlmServerConfig> servers)
     {
-        if (settings.DefaultModel.ServerId is not null)
-            return true;
+        var orderedServers = OrderServersByDefault(settings, servers);
+        foreach (var server in orderedServers)
+        {
+            if (await IsServerAvailableAsync(server))
+                return true;
+        }
 
-        Logger.LogWarning("No default server configured");
-        NavigateToServerConfig();
         return false;
     }
 
-    private async Task<LlmServerConfig?> GetDefaultServerAsync(UserSettings settings)
+    private static IEnumerable<LlmServerConfig> OrderServersByDefault(UserSettings settings, IReadOnlyCollection<LlmServerConfig> servers)
     {
-        var servers = await LlmServerConfigService.GetAllAsync();
-        return LlmServerConfigHelper.GetServerConfig(servers, settings.DefaultModel.ServerId);
+        var defaultServer = LlmServerConfigHelper.GetServerConfig(servers, settings.DefaultModel.ServerId);
+        if (defaultServer is not null)
+            yield return defaultServer;
+
+        foreach (var server in servers.Where(s => s.Id != settings.DefaultModel.ServerId))
+            yield return server;
     }
 
-    private async Task ValidateServerAvailability(LlmServerConfig server, Guid serverId)
+    private async Task<bool> IsServerAvailableAsync(LlmServerConfig server)
     {
+        if (server.Id is null)
+            return false;
+
         switch (server.ServerType)
         {
             case ServerType.Ollama:
-                await ValidateOllamaServer(server, serverId);
-                break;
+                return await ValidateOllamaServer(server, server.Id.Value);
             case ServerType.ChatGpt:
-                await ValidateOpenAIServer(server, serverId);
-                break;
+                return await ValidateOpenAIServer(server, server.Id.Value);
             default:
                 Logger.LogWarning("Unknown server type: {ServerType}", server.ServerType);
-                NavigateToServerConfig();
-                break;
+                return false;
         }
     }
 
-    private async Task ValidateOllamaServer(LlmServerConfig server, Guid serverId)
+    private async Task<bool> ValidateOllamaServer(LlmServerConfig server, Guid serverId)
     {
-        await OllamaService.GetModelsAsync(serverId);
-        Logger.LogInformation("Ollama server '{ServerName}' is available", server.Name);
+        try
+        {
+            await OllamaService.GetModelsAsync(serverId);
+            Logger.LogInformation("Ollama server '{ServerName}' is available", server.Name);
+            return true;
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "Ollama server '{ServerName}' is not available", server.Name);
+            return false;
+        }
     }
 
-    private async Task ValidateOpenAIServer(LlmServerConfig server, Guid serverId)
+    private async Task<bool> ValidateOpenAIServer(LlmServerConfig server, Guid serverId)
     {
         var isAvailable = await OpenAIService.IsAvailableAsync(serverId);
         if (!isAvailable)
         {
             Logger.LogWarning("OpenAI server '{ServerName}' is not available", server.Name);
-            NavigateToServerConfig();
-            return;
+            return false;
         }
+
         Logger.LogInformation("OpenAI server '{ServerName}' is available", server.Name);
+        return true;
     }
 
     private void NavigateToServerConfig()

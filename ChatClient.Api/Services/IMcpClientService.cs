@@ -6,6 +6,6 @@ namespace ChatClient.Api.Services;
 
 public interface IMcpClientService : IAsyncDisposable
 {
-    Task<IReadOnlyCollection<IMcpClient>> GetMcpClientsAsync(CancellationToken cancellationToken = default);
-    Task<IReadOnlyList<McpClientTool>> GetMcpTools(IMcpClient mcpClient, CancellationToken cancellationToken = default);
+    Task<IReadOnlyCollection<McpClient>> GetMcpClientsAsync(CancellationToken cancellationToken = default);
+    Task<IReadOnlyList<McpClientTool>> GetMcpTools(McpClient mcpClient, CancellationToken cancellationToken = default);
 }

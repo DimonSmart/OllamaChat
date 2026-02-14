@@ -101,7 +101,9 @@ public class McpInstallLinkParserTests
             Assert.NotNull(installed.Id);
 
             var all = await service.GetAllAsync();
-            var saved = Assert.Single(all);
+            Assert.True(all.Count >= 1);
+            var savedDescriptor = Assert.Single(all, s => s.Id == installed.Id);
+            var saved = Assert.IsType<ChatClient.Domain.Models.McpServerConfig>(savedDescriptor);
             Assert.Equal(installed.Id, saved.Id);
             Assert.Equal("gallery", saved.Name);
             Assert.Equal("uvx", saved.Command);

@@ -1,6 +1,7 @@
 using ChatClient.Application.Repositories;
 using ChatClient.Domain.Models;
 using ChatClient.Infrastructure.Constants;
+using ChatClient.Infrastructure.Helpers;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 
@@ -12,7 +13,10 @@ public class UserSettingsRepository : IUserSettingsRepository
 
     public UserSettingsRepository(IConfiguration configuration, ILogger<UserSettingsRepository> logger)
     {
-        var filePath = configuration["UserSettings:FilePath"] ?? FilePathConstants.DefaultUserSettingsFile;
+        var filePath = StoragePathResolver.ResolveUserPath(
+            configuration,
+            configuration["UserSettings:FilePath"],
+            FilePathConstants.DefaultUserSettingsFile);
         _repo = new JsonFileRepository<UserSettings>(filePath, logger);
     }
 

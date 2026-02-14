@@ -1,7 +1,7 @@
-﻿@inherits LayoutComponentBase
+@inherits LayoutComponentBase
 @implements IAsyncDisposable
 @inject NavigationManager NavigationManager
-@inject IAppChatService ChatService
+@inject ChatClient.Application.Services.Agentic.IChatEngineSessionService AgenticChatService
 @inject IUserSettingsService UserSettingsService
 @using ChatClient.Domain.Models
 @using ChatClient.Api.Client.Pages
@@ -18,7 +18,7 @@
     <MudAppBar Elevation="1" Dense="true">
         <MudIconButton Icon="@Icons.Material.Filled.Menu" Color="Color.Inherit" Edge="Edge.Start" OnClick="@((e) => DrawerToggle())" Size="Size.Medium" />
         <MudText Typo="Typo.h6" Class="ml-3" Style="flex-shrink: 0;">Ollama chat with MCP</MudText>
-        @if (!isLLMAnswering && ChatService.AgentDescriptions.Any())
+        @if (!isLLMAnswering && ActiveChatHasAgents())
         {
             <MudButton OnClick="NewChat"
                        Color="Color.Secondary"
@@ -60,7 +60,7 @@
 <div id="blazor-error-ui" data-nosnippet>
     An unhandled error has occurred.
     <a href="." class="reload">Reload</a>
-    <span class="dismiss">🗙</span>
+    <span class="dismiss">??</span>
 </div>
 
 @code {
@@ -74,8 +74,8 @@
     {
         await base.OnInitializedAsync();
 
-        ChatService.AnsweringStateChanged += OnAnsweringStateChanged;
-        isLLMAnswering = ChatService.IsAnswering;
+        AgenticChatService.AnsweringStateChanged += OnAnsweringStateChanged;
+        RefreshAnsweringState();
 
         var settings = await UserSettingsService.GetSettingsAsync();
         pickerModel = settings.DefaultModel;
@@ -98,28 +98,48 @@
         _isDarkMode = !_isDarkMode;
     }
 
+    protected override void OnParametersSet()
+    {
+        base.OnParametersSet();
+        RefreshAnsweringState();
+    }
+
     private void OnAnsweringStateChanged(bool answering)
     {
-        isLLMAnswering = answering;
+        RefreshAnsweringState();
         InvokeAsync(StateHasChanged);
     }
 
     private bool IsOnChatPage()
     {
         var currentPath = NavigationManager.ToAbsoluteUri(NavigationManager.Uri).LocalPath;
-        return currentPath == "/" || currentPath == "/chat" || currentPath == "/multi-agent-chat";
+        return currentPath == "/" ||
+               currentPath == "/chat" ||
+               currentPath == "/multi-agent-chat" ||
+               currentPath == "/chat-agentic" ||
+               currentPath == "/multi-agent-chat-agentic";
     }
+
+    private bool IsOnAgenticChatPage()
+    {
+        var currentPath = NavigationManager.ToAbsoluteUri(NavigationManager.Uri).LocalPath;
+        return string.Equals(currentPath, "/", StringComparison.OrdinalIgnoreCase) ||
+               string.Equals(currentPath, "/chat", StringComparison.OrdinalIgnoreCase) ||
+               string.Equals(currentPath, "/chat-agentic", StringComparison.OrdinalIgnoreCase) ||
+               string.Equals(currentPath, "/multi-agent-chat", StringComparison.OrdinalIgnoreCase) ||
+               string.Equals(currentPath, "/multi-agent-chat-agentic", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private bool ActiveChatHasAgents() => AgenticChatService.AgentDescriptions.Any();
 
     private void NewChat()
     {
-        ChatService.ResetChat();
+        AgenticChatService.ResetChat();
         if (!IsOnChatPage())
         {
             NavigationManager.NavigateTo("/chat");
         }
     }
-
-    
 
     private async Task OnModelChanged(ServerModelSelection model)
     {
@@ -178,7 +198,12 @@
 
     public ValueTask DisposeAsync()
     {
-        ChatService.AnsweringStateChanged -= OnAnsweringStateChanged;
+        AgenticChatService.AnsweringStateChanged -= OnAnsweringStateChanged;
         return ValueTask.CompletedTask;
+    }
+
+    private void RefreshAnsweringState()
+    {
+        isLLMAnswering = IsOnAgenticChatPage() && AgenticChatService.IsAnswering;
     }
 }

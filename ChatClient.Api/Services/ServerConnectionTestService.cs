@@ -1,7 +1,4 @@
 using ChatClient.Domain.Models;
-using OpenAI;
-using System.ClientModel;
-using System.ClientModel.Primitives;
 using System.Net.Http.Headers;
 using System.Text.Json;
 

@@ -1,6 +1,8 @@
 @using Microsoft.AspNetCore.Components
 @using MudBlazor
 @using ChatClient.Domain.Models
+@using System.Globalization
+@using System.Text.RegularExpressions
 
 <MudChatBubble Class="@($"mcp-call {(isExpanded ? "expanded" : "collapsed")}")" OnClick="Toggle">
     @if (isExpanded)
@@ -11,12 +13,12 @@
         @if (!string.IsNullOrEmpty(Call.Request))
         {
             <MudText Typo="Typo.caption" Class="mcp-call-label">Request:</MudText>
-            <pre class="mcp-call-pre">@Call.Request</pre>
+            <pre class="mcp-call-pre">@DisplayRequest</pre>
         }
         @if (!string.IsNullOrEmpty(Call.Response))
         {
             <MudText Typo="Typo.caption" Class="mcp-call-label">Response:</MudText>
-            <pre class="mcp-call-pre">@Call.Response</pre>
+            <pre class="mcp-call-pre">@DisplayResponse</pre>
         }
     }
     else
@@ -31,13 +33,39 @@
     [Parameter] public FunctionCallRecord Call { get; set; } = new("", "", "", "");
 
     private bool isExpanded;
+    private static readonly Regex CyrillicUnicodeEscapeRegex = new(@"\\u([0-9a-fA-F]{4})", RegexOptions.Compiled);
 
-    private const string CallIcon = "\uD83D\uDEE0"; // 🛠
+    private const string CallIcon = "\uD83D\uDEE0";
 
     private void Toggle() => isExpanded = !isExpanded;
+
+    private string DisplayRequest => DecodeCyrillicEscapes(Call.Request);
+
+    private string DisplayResponse => DecodeCyrillicEscapes(Call.Response);
 
     private string CollapsedLine =>
         string.IsNullOrEmpty(Call.Function)
             ? Call.Server
             : $"{Call.Server}.{Call.Function}";
+
+    private static string DecodeCyrillicEscapes(string? value)
+    {
+        if (string.IsNullOrEmpty(value))
+        {
+            return string.Empty;
+        }
+
+        return CyrillicUnicodeEscapeRegex.Replace(value, static match =>
+        {
+            var hex = match.Groups[1].Value;
+            if (!ushort.TryParse(hex, NumberStyles.HexNumber, CultureInfo.InvariantCulture, out var codePoint))
+            {
+                return match.Value;
+            }
+
+            return codePoint is >= 0x0400 and <= 0x052F
+                ? ((char)codePoint).ToString()
+                : match.Value;
+        });
+    }
 }

@@ -9,14 +9,14 @@ namespace ChatClient.Api.Controllers;
 public class McpServersController(IMcpServerConfigService mcpServerConfigService) : ControllerBase
 {
     [HttpGet]
-    public async Task<ActionResult<IEnumerable<McpServerConfig>>> GetAllServers()
+    public async Task<ActionResult<IEnumerable<IMcpServerDescriptor>>> GetAllServers()
     {
         var servers = await mcpServerConfigService.GetAllAsync();
         return Ok(servers);
     }
 
     [HttpGet("{serverId}")]
-    public async Task<ActionResult<McpServerConfig>> GetServerById(Guid serverId)
+    public async Task<ActionResult<IMcpServerDescriptor>> GetServerById(Guid serverId)
     {
         var server = await mcpServerConfigService.GetByIdAsync(serverId);
         if (server == null)
@@ -30,6 +30,11 @@ public class McpServersController(IMcpServerConfigService mcpServerConfigService
     [HttpPost]
     public async Task<ActionResult<McpServerConfig>> CreateServer([FromBody] McpServerConfig server)
     {
+        if (server.IsBuiltIn)
+        {
+            return BadRequest("Built-in MCP servers are managed by the application.");
+        }
+
         if (string.IsNullOrWhiteSpace(server.Name))
         {
             return BadRequest("Server name is required");
@@ -52,12 +57,18 @@ public class McpServersController(IMcpServerConfigService mcpServerConfigService
             return BadRequest("ID in URL does not match ID in request body");
         }
 
+        if (server.IsBuiltIn)
+        {
+            return BadRequest("Built-in MCP servers are managed by the application.");
+        }
+
         if (string.IsNullOrWhiteSpace(server.Name))
         {
             return BadRequest("Server name is required");
         }
 
-        if (string.IsNullOrWhiteSpace(server.Command) && string.IsNullOrWhiteSpace(server.Sse))
+        if (string.IsNullOrWhiteSpace(server.Command) &&
+            string.IsNullOrWhiteSpace(server.Sse))
         {
             return BadRequest("Either Command or Sse must be specified");
         }
@@ -66,6 +77,11 @@ public class McpServersController(IMcpServerConfigService mcpServerConfigService
         if (existingServer == null)
         {
             return NotFound($"MCP server config with ID {serverId} not found");
+        }
+
+        if (existingServer is not McpServerConfig)
+        {
+            return BadRequest("Built-in MCP servers are managed by the application.");
         }
 
         await mcpServerConfigService.UpdateAsync(server);
@@ -79,6 +95,11 @@ public class McpServersController(IMcpServerConfigService mcpServerConfigService
         if (existingServer == null)
         {
             return NotFound($"MCP server config with ID {serverId} not found");
+        }
+
+        if (existingServer is not McpServerConfig)
+        {
+            return BadRequest("Built-in MCP servers are managed by the application.");
         }
 
         await mcpServerConfigService.DeleteAsync(serverId);

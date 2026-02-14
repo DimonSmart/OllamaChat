@@ -2,25 +2,24 @@ using ChatClient.Api.Services;
 using ChatClient.Application.Repositories;
 using ChatClient.Application.Services;
 using ChatClient.Domain.Models;
-using Microsoft.SemanticKernel.Memory;
 
 namespace ChatClient.Api.Services.Rag;
 
-public class RagFileService(IRagFileRepository repository, IRagVectorIndexBackgroundService indexBackgroundService, IMemoryStore memoryStore) : IRagFileService
+public class RagFileService(
+    IRagFileRepository repository,
+    IRagVectorIndexBackgroundService indexBackgroundService,
+    IRagVectorStore vectorStore) : IRagFileService
 {
     private readonly IRagFileRepository _repository = repository;
     private readonly IRagVectorIndexBackgroundService _indexBackgroundService = indexBackgroundService;
-    private readonly IMemoryStore _memoryStore = memoryStore;
+    private readonly IRagVectorStore _vectorStore = vectorStore;
 
     public async Task<IReadOnlyCollection<RagFile>> GetFilesAsync(Guid agentId)
     {
         var files = await _repository.GetFilesAsync(agentId);
-        var collection = CollectionName(agentId);
-        await _memoryStore.CreateCollectionAsync(collection, cancellationToken: default);
         foreach (var f in files)
         {
-            var key = Key(f.FileName, 0);
-            f.HasIndex = await _memoryStore.GetAsync(collection, key, withEmbedding: false, cancellationToken: default) is not null;
+            f.HasIndex = await _vectorStore.HasFileAsync(agentId, f.FileName);
         }
         return files;
     }
@@ -31,10 +30,7 @@ public class RagFileService(IRagFileRepository repository, IRagVectorIndexBackgr
         var file = await _repository.GetFileAsync(agentId, fileName);
         if (file is null)
             return null;
-        var collection = CollectionName(agentId);
-        await _memoryStore.CreateCollectionAsync(collection, cancellationToken: default);
-        var key = Key(fileName, 0);
-        file.HasIndex = await _memoryStore.GetAsync(collection, key, withEmbedding: false, cancellationToken: default) is not null;
+        file.HasIndex = await _vectorStore.HasFileAsync(agentId, fileName);
         return file;
     }
 
@@ -42,7 +38,7 @@ public class RagFileService(IRagFileRepository repository, IRagVectorIndexBackgr
     {
         FileNameValidator.Validate(file.FileName);
         await _repository.AddOrUpdateFileAsync(agentId, file);
-        await RemoveEmbeddingsAsync(agentId, file.FileName);
+        await _vectorStore.RemoveFileAsync(agentId, file.FileName);
         _indexBackgroundService.RequestRebuild();
     }
 
@@ -50,24 +46,7 @@ public class RagFileService(IRagFileRepository repository, IRagVectorIndexBackgr
     {
         FileNameValidator.Validate(fileName);
         await _repository.DeleteFileAsync(agentId, fileName);
-        await RemoveEmbeddingsAsync(agentId, fileName);
+        await _vectorStore.RemoveFileAsync(agentId, fileName);
         _indexBackgroundService.RequestRebuild();
     }
-
-    private async Task RemoveEmbeddingsAsync(Guid agentId, string fileName)
-    {
-        var collection = CollectionName(agentId);
-        await _memoryStore.CreateCollectionAsync(collection, cancellationToken: default);
-        for (var i = 0; ; i++)
-        {
-            var key = Key(fileName, i);
-            var record = await _memoryStore.GetAsync(collection, key, cancellationToken: default);
-            if (record is null)
-                break;
-            await _memoryStore.RemoveAsync(collection, key, cancellationToken: default);
-        }
-    }
-
-    private static string CollectionName(Guid agentId) => $"agent_{agentId:N}";
-    private static string Key(string file, int index) => $"{file}#{index:D5}";
 }

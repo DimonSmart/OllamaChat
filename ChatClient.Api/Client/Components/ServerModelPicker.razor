@@ -2,6 +2,7 @@
 @using ChatClient.Domain.Models
 @inject ILlmServerConfigService LlmServerConfigService
 @inject IOllamaClientService OllamaService
+@inject IOpenAIClientService OpenAIService
 @inject IUserSettingsService UserSettingsService
 
 <MudStack Spacing="1" Row="true" AlignItems="AlignItems.Center" @attributes="Attributes" Style="flex: 1; min-width: 0;">
@@ -71,6 +72,7 @@
                 selectedModel = defaultModel.ModelName;
                 if (selectedServerId.HasValue)
                     await LoadModelsAsync(selectedServerId.Value);
+                EnsureSelectedModelIsAvailable();
                 await NotifyValueChanged();
             }
             return;
@@ -80,6 +82,7 @@
             await LoadModelsAsync(selectedServerId.Value);
         if (!string.IsNullOrEmpty(Value.ModelName))
             selectedModel = Value.ModelName;
+        EnsureSelectedModelIsAvailable();
     }
 
     private async Task OnServerChanged(Guid? serverId)
@@ -122,7 +125,22 @@
             loading = true;
             loadError = null;
             StateHasChanged();
-            models = (await OllamaService.GetModelsAsync(serverId)).ToList();
+
+            var server = servers.FirstOrDefault(s => s.Id == serverId);
+            if (server is null)
+            {
+                throw new InvalidOperationException($"Server {serverId} not found.");
+            }
+
+            models = server.ServerType == ServerType.ChatGpt
+                ? (await OpenAIService.GetAvailableModelsAsync(serverId)).Select(name => new OllamaModel { Name = name }).ToList()
+                : (await OllamaService.GetModelsAsync(serverId)).ToList();
+
+            models = models
+                .OrderBy(m => m.Name, StringComparer.OrdinalIgnoreCase)
+                .ToList();
+
+            EnsureSelectedModelIsAvailable();
         }
         catch (Exception ex)
         {
@@ -132,6 +150,18 @@
         finally
         {
             loading = false;
+        }
+    }
+
+    private void EnsureSelectedModelIsAvailable()
+    {
+        if (string.IsNullOrWhiteSpace(selectedModel))
+            return;
+
+        var exists = models.Any(m => string.Equals(m.Name, selectedModel, StringComparison.OrdinalIgnoreCase));
+        if (!exists)
+        {
+            selectedModel = null;
         }
     }
 

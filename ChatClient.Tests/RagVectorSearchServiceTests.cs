@@ -1,7 +1,7 @@
 using ChatClient.Api.Services.Rag;
 using ChatClient.Application.Services;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging.Abstractions;
-using Microsoft.SemanticKernel.Memory;
 
 namespace ChatClient.Tests;
 
@@ -11,30 +11,45 @@ public class RagVectorSearchServiceTests
     public async Task MergesAdjacentFragments()
     {
         var agentId = Guid.NewGuid();
+        var tempPath = Path.Combine(Path.GetTempPath(), $"rag-store-tests-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(tempPath);
 
-        var store = new VolatileMemoryStore();
-        var collection = $"agent_{agentId:N}";
-        await store.CreateCollectionAsync(collection);
+        try
+        {
+            var databasePath = Path.Combine(tempPath, "rag.sqlite");
+            var configuration = new ConfigurationBuilder()
+                .AddInMemoryCollection(new Dictionary<string, string?>
+                {
+                    ["RagVectorStore:DatabasePath"] = databasePath
+                })
+                .Build();
 
-        await AddAsync(store, collection, "file1.txt", 0, "A", new float[] { 1, 0 });
-        await AddAsync(store, collection, "file1.txt", 1, "B", new float[] { 1, 0 });
-        await AddAsync(store, collection, "file1.txt", 3, "D", new float[] { 0, 1 });
+            IRagVectorStore store = new RagVectorStore(configuration, NullLogger<RagVectorStore>.Instance);
+            await store.UpsertFileAsync(
+                agentId,
+                "file1.txt",
+                [
+                    new RagVectorStoreEntry("file1.txt", 0, "A", [1, 0]),
+                    new RagVectorStoreEntry("file1.txt", 1, "B", [1, 0]),
+                    new RagVectorStoreEntry("file1.txt", 3, "D", [0, 1])
+                ]);
 
-        IRagVectorSearchService service = new RagVectorSearchService(store, NullLogger<RagVectorSearchService>.Instance);
+            IRagVectorSearchService service = new RagVectorSearchService(store, NullLogger<RagVectorSearchService>.Instance);
+            var response = await service.SearchAsync(agentId, new ReadOnlyMemory<float>([1, 0]), 2);
 
-        var response = await service.SearchAsync(agentId, new ReadOnlyMemory<float>(new float[] { 1, 0 }), 2);
-
-        Assert.Equal(2, response.Total);
-        Assert.Equal(2, response.Results.Count);
-        Assert.Equal("file1.txt", response.Results[0].FileName);
-        Assert.Equal("AB", response.Results[0].Content);
-        Assert.Equal("D", response.Results[1].Content);
-    }
-
-    private static Task AddAsync(IMemoryStore store, string collection, string file, int index, string text, float[] vector)
-    {
-        var record = MemoryRecord.LocalRecord($"{file}#{index:D5}", text, null, new ReadOnlyMemory<float>(vector), null, null, null);
-        return store.UpsertAsync(collection, record, cancellationToken: default);
+            Assert.Equal(2, response.Total);
+            Assert.Equal(2, response.Results.Count);
+            Assert.Equal("file1.txt", response.Results[0].FileName);
+            Assert.Equal("AB", response.Results[0].Content);
+            Assert.Equal("D", response.Results[1].Content);
+        }
+        finally
+        {
+            if (Directory.Exists(tempPath))
+            {
+                Directory.Delete(tempPath, recursive: true);
+            }
+        }
     }
 }
 

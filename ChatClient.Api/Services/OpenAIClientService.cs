@@ -1,7 +1,5 @@
 using ChatClient.Application.Services;
 using ChatClient.Domain.Models;
-using Microsoft.SemanticKernel.ChatCompletion;
-using Microsoft.SemanticKernel.Connectors.OpenAI;
 using OpenAI;
 using System.ClientModel;
 
@@ -10,32 +8,13 @@ namespace ChatClient.Api.Services;
 public class OpenAIClientService(
     IUserSettingsService userSettingsService,
     ILlmServerConfigService llmServerConfigService,
+    IConfiguration configuration,
     ILogger<OpenAIClientService> logger) : IOpenAIClientService
 {
     private readonly IUserSettingsService _userSettingsService = userSettingsService;
     private readonly ILlmServerConfigService _llmServerConfigService = llmServerConfigService;
+    private readonly IConfiguration _configuration = configuration;
     private readonly ILogger<OpenAIClientService> _logger = logger;
-
-    public async Task<IChatCompletionService> GetClientAsync(ServerModel serverModel, CancellationToken cancellationToken = default)
-    {
-        var server = await LlmServerConfigHelper.GetServerConfigAsync(_llmServerConfigService, _userSettingsService, serverModel.ServerId, ServerType.ChatGpt);
-        if (server == null)
-        {
-            throw new InvalidOperationException($"No OpenAI server configuration found for serverId: {serverModel.ServerId}");
-        }
-
-        if (string.IsNullOrWhiteSpace(server.ApiKey))
-        {
-            throw new InvalidOperationException("OpenAI API key is required but not configured");
-        }
-
-        var openAIClient = new OpenAIChatCompletionService(
-            modelId: serverModel.ModelName,
-            apiKey: server.ApiKey,
-            httpClient: CreateHttpClient(server));
-
-        return openAIClient;
-    }
 
     public async Task<IReadOnlyCollection<string>> GetAvailableModelsAsync(Guid serverId, CancellationToken cancellationToken = default)
     {
@@ -48,11 +27,6 @@ public class OpenAIClientService(
             if (server == null)
             {
                 throw new InvalidOperationException($"No OpenAI server configuration found for serverId: {serverId}");
-            }
-
-            if (string.IsNullOrWhiteSpace(server.ApiKey))
-            {
-                throw new InvalidOperationException("OpenAI API key is required but not configured");
             }
 
             var openAIClient = CreateOpenAIClient(server);
@@ -86,9 +60,8 @@ public class OpenAIClientService(
 
         try
         {
-            var testModel = new ServerModel(serverId, "gpt-3.5-turbo");
-            var client = await GetClientAsync(testModel, cancellationToken);
-            return client != null;
+            var models = await GetAvailableModelsAsync(serverId, cancellationToken);
+            return models.Count > 0;
         }
         catch (Exception ex)
         {
@@ -99,10 +72,9 @@ public class OpenAIClientService(
 
     private OpenAIClient CreateOpenAIClient(LlmServerConfig server)
     {
-        if (string.IsNullOrWhiteSpace(server.ApiKey))
-            throw new ArgumentException("OpenAI API key is required", nameof(server));
+        var apiKey = GetEffectiveApiKey(server);
 
-        var credential = new ApiKeyCredential(server.ApiKey);
+        var credential = new ApiKeyCredential(apiKey);
 
         if (!string.IsNullOrWhiteSpace(server.BaseUrl))
         {
@@ -116,8 +88,19 @@ public class OpenAIClientService(
         return new OpenAIClient(credential);
     }
 
-    private HttpClient CreateHttpClient(LlmServerConfig server)
+    private string GetEffectiveApiKey(LlmServerConfig server)
     {
-        return LlmServerConfigHelper.CreateHttpClient(server);
+        if (!string.IsNullOrWhiteSpace(server.ApiKey))
+            return server.ApiKey;
+
+        var configApiKey = _configuration["OpenAI:ApiKey"];
+        if (!string.IsNullOrWhiteSpace(configApiKey))
+        {
+            _logger.LogDebug("Using OpenAI API key from configuration for server {ServerName}", server.Name);
+            return configApiKey;
+        }
+
+        throw new InvalidOperationException("OpenAI API key is required but not configured");
     }
+
 }

@@ -1,0 +1,373 @@
+@using System.Globalization
+@using ChatClient.Api.Services
+
+<MudDialog>
+    <DialogContent>
+        <MudText Typo="Typo.body1">@CurrentPrompt.Message</MudText>
+        <MudText Typo="Typo.caption" Class="mud-text-secondary">
+            Server: @CurrentPrompt.ServerName | Mode: @CurrentPrompt.Mode
+        </MudText>
+
+        @if (IsUrlMode && !string.IsNullOrWhiteSpace(CurrentPrompt.Url))
+        {
+            <MudAlert Severity="Severity.Info" Dense="true" Class="mt-3">
+                @CurrentPrompt.Url
+            </MudAlert>
+            <MudButton Variant="Variant.Outlined"
+                       Color="Color.Primary"
+                       StartIcon="@Icons.Material.Filled.OpenInNew"
+                       Class="mt-2"
+                       Href="@CurrentPrompt.Url"
+                       Target="_blank">
+                Open URL
+            </MudButton>
+        }
+
+        @if (CurrentPrompt.Fields.Count == 0 && !IsUrlMode)
+        {
+            <MudText Typo="Typo.caption" Class="mt-3 mud-text-secondary">
+                This request does not contain form fields. Click Submit to continue.
+            </MudText>
+        }
+
+        @if (CurrentPrompt.Fields.Count > 0)
+        {
+            <MudStack Spacing="2" Class="mt-3">
+                @foreach (var field in CurrentPrompt.Fields)
+                {
+                    <MudStack Spacing="0" @key="field.Name">
+                        @if (field.IsMultiSelect)
+                        {
+                            <MudSelect T="string"
+                                       Label="@GetFieldLabel(field)"
+                                       MultiSelection="true"
+                                       SelectedValues="@GetMultiValues(field.Name)"
+                                       SelectedValuesChanged="values => SetMultiValues(field.Name, values)">
+                                @foreach (var option in field.Options)
+                                {
+                                    <MudSelectItem T="string" Value="@option.Value">@option.Label</MudSelectItem>
+                                }
+                            </MudSelect>
+                        }
+                        else if (IsBooleanField(field))
+                        {
+                            <MudSwitch T="bool"
+                                       Value="@GetBooleanValue(field.Name)"
+                                       ValueChanged="value => _boolValues[field.Name] = value"
+                                       Label="@GetFieldLabel(field)" />
+                        }
+                        else if (IsSelectField(field))
+                        {
+                            <MudSelect T="string"
+                                       Label="@GetFieldLabel(field)"
+                                       Value="@GetTextValue(field.Name)"
+                                       ValueChanged="value => _textValues[field.Name] = value ?? string.Empty">
+                                @foreach (var option in field.Options)
+                                {
+                                    <MudSelectItem T="string" Value="@option.Value">@option.Label</MudSelectItem>
+                                }
+                            </MudSelect>
+                        }
+                        else
+                        {
+                            <MudTextField T="string"
+                                          Label="@GetFieldLabel(field)"
+                                          Value="@GetTextValue(field.Name)"
+                                          ValueChanged="value => _textValues[field.Name] = value ?? string.Empty"
+                                          InputType="@(IsNumericField(field) ? InputType.Number : InputType.Text)" />
+                        }
+
+                        @if (!string.IsNullOrWhiteSpace(field.Description))
+                        {
+                            <MudText Typo="Typo.caption" Class="mud-text-secondary">@field.Description</MudText>
+                        }
+                    </MudStack>
+                }
+            </MudStack>
+        }
+
+        @if (!string.IsNullOrWhiteSpace(_validationError))
+        {
+            <MudAlert Severity="Severity.Warning" Dense="true" Class="mt-3">
+                @_validationError
+            </MudAlert>
+        }
+    </DialogContent>
+    <DialogActions>
+        <MudButton Variant="Variant.Text" OnClick="Decline">Decline</MudButton>
+        <MudButton Variant="Variant.Text" OnClick="Cancel">Cancel</MudButton>
+        <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="Submit">
+            @(IsUrlMode ? "Continue" : "Submit")
+        </MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] private IMudDialogInstance? Dialog { get; set; }
+
+    [Parameter] public McpElicitationPrompt? Prompt { get; set; }
+
+    private readonly Dictionary<string, string> _textValues = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, bool> _boolValues = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, HashSet<string>> _multiValues = new(StringComparer.Ordinal);
+    private string? _validationError;
+
+    private McpElicitationPrompt CurrentPrompt =>
+        Prompt ?? throw new InvalidOperationException("Prompt parameter is required.");
+
+    private bool IsUrlMode =>
+        string.Equals(CurrentPrompt.Mode, "url", StringComparison.OrdinalIgnoreCase);
+
+    protected override void OnParametersSet()
+    {
+        InitializeFieldState();
+    }
+
+    private void InitializeFieldState()
+    {
+        foreach (var field in CurrentPrompt.Fields)
+        {
+            if (field.IsMultiSelect)
+            {
+                if (!_multiValues.ContainsKey(field.Name))
+                {
+                    _multiValues[field.Name] = new HashSet<string>(
+                        GetDefaultMultiValues(field),
+                        StringComparer.Ordinal);
+                }
+
+                continue;
+            }
+
+            if (IsBooleanField(field))
+            {
+                if (!_boolValues.ContainsKey(field.Name))
+                {
+                    _boolValues[field.Name] = GetDefaultBoolValue(field);
+                }
+
+                continue;
+            }
+
+            if (!_textValues.ContainsKey(field.Name))
+            {
+                _textValues[field.Name] = GetDefaultTextValue(field);
+            }
+        }
+    }
+
+    private void Submit()
+    {
+        _validationError = null;
+
+        if (!TryBuildContent(out var content, out var error))
+        {
+            _validationError = error;
+            return;
+        }
+
+        var response = IsUrlMode
+            ? McpElicitationResponse.Accept()
+            : McpElicitationResponse.Accept(content);
+
+        Dialog?.Close(DialogResult.Ok(response));
+    }
+
+    private void Decline() => Dialog?.Close(DialogResult.Ok(McpElicitationResponse.Decline));
+
+    private void Cancel() => Dialog?.Close(DialogResult.Ok(McpElicitationResponse.Cancel));
+
+    private bool TryBuildContent(out IReadOnlyDictionary<string, object?> content, out string error)
+    {
+        var values = new Dictionary<string, object?>(StringComparer.Ordinal);
+
+        foreach (var field in CurrentPrompt.Fields)
+        {
+            if (field.IsMultiSelect)
+            {
+                var selected = GetMultiValues(field.Name)
+                    .Where(static value => !string.IsNullOrWhiteSpace(value))
+                    .ToArray();
+
+                if (field.Required && selected.Length == 0)
+                {
+                    error = $"Field '{field.Label}' is required.";
+                    content = values;
+                    return false;
+                }
+
+                if (field.MinItems is int minItems && selected.Length < minItems)
+                {
+                    error = $"Field '{field.Label}' requires at least {minItems} item(s).";
+                    content = values;
+                    return false;
+                }
+
+                if (field.MaxItems is int maxItems && selected.Length > maxItems)
+                {
+                    error = $"Field '{field.Label}' allows at most {maxItems} item(s).";
+                    content = values;
+                    return false;
+                }
+
+                if (selected.Length > 0 || field.Required)
+                {
+                    values[field.Name] = selected;
+                }
+
+                continue;
+            }
+
+            if (IsBooleanField(field))
+            {
+                var boolValue = GetBooleanValue(field.Name);
+                if (field.Required || boolValue || field.DefaultValue is not null)
+                {
+                    values[field.Name] = boolValue;
+                }
+
+                continue;
+            }
+
+            var text = GetTextValue(field.Name);
+            if (string.IsNullOrWhiteSpace(text))
+            {
+                if (field.Required)
+                {
+                    error = $"Field '{field.Label}' is required.";
+                    content = values;
+                    return false;
+                }
+
+                continue;
+            }
+
+            if (IsIntegerField(field))
+            {
+                if (!long.TryParse(text, NumberStyles.Integer, CultureInfo.InvariantCulture, out var intValue))
+                {
+                    error = $"Field '{field.Label}' must be an integer.";
+                    content = values;
+                    return false;
+                }
+
+                values[field.Name] = intValue;
+                continue;
+            }
+
+            if (IsNumberField(field))
+            {
+                if (!double.TryParse(text, NumberStyles.Float, CultureInfo.InvariantCulture, out var doubleValue))
+                {
+                    error = $"Field '{field.Label}' must be a number.";
+                    content = values;
+                    return false;
+                }
+
+                values[field.Name] = doubleValue;
+                continue;
+            }
+
+            values[field.Name] = text;
+        }
+
+        content = values;
+        error = string.Empty;
+        return true;
+    }
+
+    private string GetFieldLabel(McpElicitationField field) =>
+        field.Required ? $"{field.Label} *" : field.Label;
+
+    private bool IsBooleanField(McpElicitationField field) =>
+        string.Equals(field.Type, "boolean", StringComparison.OrdinalIgnoreCase);
+
+    private bool IsIntegerField(McpElicitationField field) =>
+        string.Equals(field.Type, "integer", StringComparison.OrdinalIgnoreCase);
+
+    private bool IsNumberField(McpElicitationField field) =>
+        string.Equals(field.Type, "number", StringComparison.OrdinalIgnoreCase);
+
+    private bool IsNumericField(McpElicitationField field) =>
+        IsIntegerField(field) || IsNumberField(field);
+
+    private bool IsSelectField(McpElicitationField field) =>
+        field.Options.Count > 0 && !field.IsMultiSelect;
+
+    private bool GetBooleanValue(string fieldName) =>
+        _boolValues.TryGetValue(fieldName, out var value) && value;
+
+    private string GetTextValue(string fieldName) =>
+        _textValues.TryGetValue(fieldName, out var value) ? value : string.Empty;
+
+    private IReadOnlyCollection<string> GetMultiValues(string fieldName)
+    {
+        if (_multiValues.TryGetValue(fieldName, out var values))
+        {
+            return values;
+        }
+
+        return Array.Empty<string>();
+    }
+
+    private void SetMultiValues(string fieldName, IEnumerable<string>? values)
+    {
+        _multiValues[fieldName] = new HashSet<string>(
+            values ?? Array.Empty<string>(),
+            StringComparer.Ordinal);
+    }
+
+    private static string GetDefaultTextValue(McpElicitationField field)
+    {
+        if (field.DefaultValue is not JsonElement defaultValue)
+            return string.Empty;
+
+        return defaultValue.ValueKind switch
+        {
+            JsonValueKind.String => defaultValue.GetString() ?? string.Empty,
+            JsonValueKind.Number => defaultValue.GetRawText(),
+            JsonValueKind.True => "true",
+            JsonValueKind.False => "false",
+            _ => string.Empty
+        };
+    }
+
+    private static bool GetDefaultBoolValue(McpElicitationField field)
+    {
+        if (field.DefaultValue is not JsonElement defaultValue)
+            return false;
+
+        return defaultValue.ValueKind switch
+        {
+            JsonValueKind.True => true,
+            JsonValueKind.False => false,
+            JsonValueKind.String when bool.TryParse(defaultValue.GetString(), out var parsed) => parsed,
+            _ => false
+        };
+    }
+
+    private static IEnumerable<string> GetDefaultMultiValues(McpElicitationField field)
+    {
+        if (field.DefaultValue is not JsonElement defaultValue ||
+            defaultValue.ValueKind != JsonValueKind.Array)
+        {
+            return Array.Empty<string>();
+        }
+
+        return defaultValue.EnumerateArray()
+            .Select(ToStringValue)
+            .Where(static value => !string.IsNullOrWhiteSpace(value));
+    }
+
+    private static string ToStringValue(JsonElement element)
+    {
+        return element.ValueKind switch
+        {
+            JsonValueKind.String => element.GetString() ?? string.Empty,
+            JsonValueKind.Number => element.GetRawText(),
+            JsonValueKind.True => "true",
+            JsonValueKind.False => "false",
+            _ => element.GetRawText()
+        };
+    }
+}

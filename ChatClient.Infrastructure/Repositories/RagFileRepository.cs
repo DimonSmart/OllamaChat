@@ -1,12 +1,17 @@
 using ChatClient.Application.Repositories;
 using ChatClient.Domain.Models;
+using ChatClient.Infrastructure.Constants;
+using ChatClient.Infrastructure.Helpers;
 using Microsoft.Extensions.Configuration;
 
 namespace ChatClient.Infrastructure.Repositories;
 
 public class RagFileRepository(IConfiguration configuration) : IRagFileRepository
 {
-    private readonly string _basePath = configuration["RagFiles:BasePath"] ?? Path.Combine("Data", "agents");
+    private readonly string _basePath = StoragePathResolver.ResolveUserPath(
+        configuration,
+        configuration["RagFiles:BasePath"],
+        FilePathConstants.DefaultRagFilesDirectory);
 
     public async Task<IReadOnlyCollection<RagFile>> GetFilesAsync(Guid agentId)
     {

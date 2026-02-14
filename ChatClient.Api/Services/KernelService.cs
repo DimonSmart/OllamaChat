@@ -1,25 +1,17 @@
-using ChatClient.Api.Client.Services;
 using ChatClient.Application.Services;
 using ChatClient.Domain.Models;
 using Microsoft.Extensions.Logging;
-using Microsoft.SemanticKernel;
-using Microsoft.SemanticKernel.ChatCompletion;
-using Microsoft.SemanticKernel.Connectors.Ollama;
 using System.Linq;
 
 namespace ChatClient.Api.Services;
 
 public class KernelService(
     McpFunctionIndexService indexService,
+    IMcpClientService mcpClientService,
     ILogger<KernelService> logger)
 {
     private readonly McpFunctionIndexService _indexService = indexService;
-    private IMcpClientService? _mcpClientService;
-
-    public void SetMcpClientService(IMcpClientService mcpClientService)
-    {
-        _mcpClientService = mcpClientService;
-    }
+    private readonly IMcpClientService _mcpClientService = mcpClientService;
 
     public async Task<IReadOnlyCollection<string>> GetFunctionsToRegisterAsync(
         FunctionSettings functionSettings,
@@ -39,68 +31,9 @@ public class KernelService(
         return [];
     }
 
-    /// <summary>
-    /// Public method to register MCP tools for agent architecture
-    /// </summary>
-    public async Task RegisterMcpToolsPublicAsync(
-        Kernel kernel,
-        IEnumerable<string> functionNames,
-        CancellationToken cancellationToken = default)
-    {
-        if (_mcpClientService == null)
-        {
-            logger.LogWarning("MCP client service not available for registering tools");
-            return;
-        }
-
-        try
-        {
-            var mcpClients = await _mcpClientService.GetMcpClientsAsync(cancellationToken);
-            if (mcpClients.Count == 0)
-            {
-                logger.LogWarning("MCP client could not be created");
-                return;
-            }
-
-            foreach (var mcpClient in mcpClients)
-            {
-                cancellationToken.ThrowIfCancellationRequested();
-                var mcpTools = await _mcpClientService.GetMcpTools(mcpClient, cancellationToken);
-                if (mcpTools.Count == 0)
-                {
-                    logger.LogWarning($"No MCP tools available to register for server: {mcpClient.ServerInfo.Name} ");
-                    continue;
-                }
-
-                var toolsToRegister = mcpTools
-                    .Where(t => functionNames.Contains($"{mcpClient.ServerInfo.Name}:{t.Name}"))
-                    .ToList();
-                if (toolsToRegister.Count == 0)
-                {
-                    logger.LogWarning($"No MCP tools matched the requested function names. In mcp server: {mcpClient.ServerInfo.Name}");
-                    continue;
-                }
-                var pluginFunctions = toolsToRegister.Select(tool => tool.AsKernelFunction()).ToList();
-                var pluginName = mcpClient.ServerInfo.Name ?? "McpServer";
-                kernel.Plugins.AddFromFunctions(pluginName, pluginFunctions);
-                logger.LogInformation("Registered {Count} MCP tools for server {Server}", pluginFunctions.Count, pluginName);
-            }
-        }
-        catch (Exception ex)
-        {
-            logger.LogError(ex, "Failed to register MCP tools: {Message}", ex.Message);
-        }
-    }
-
     public async Task<IReadOnlyCollection<FunctionInfo>> GetAvailableFunctionsAsync(CancellationToken cancellationToken = default)
     {
         List<FunctionInfo> functions = [];
-
-        if (_mcpClientService == null)
-        {
-            logger.LogWarning("MCP client service not available for getting functions");
-            return functions;
-        }
 
         try
         {

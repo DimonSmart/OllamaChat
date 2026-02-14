@@ -1,6 +1,7 @@
 using ChatClient.Application.Repositories;
 using ChatClient.Domain.Models;
 using ChatClient.Infrastructure.Constants;
+using ChatClient.Infrastructure.Helpers;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 
@@ -12,7 +13,10 @@ public class AgentDescriptionRepository : IAgentDescriptionRepository
 
     public AgentDescriptionRepository(IConfiguration configuration, ILogger<AgentDescriptionRepository> logger)
     {
-        var filePath = configuration["AgentDescriptions:FilePath"] ?? FilePathConstants.DefaultAgentDescriptionsFile;
+        var filePath = StoragePathResolver.ResolveUserPath(
+            configuration,
+            configuration["AgentDescriptions:FilePath"],
+            FilePathConstants.DefaultAgentDescriptionsFile);
         _repo = new JsonFileRepository<List<AgentDescription>>(filePath, logger);
     }
 

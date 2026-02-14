@@ -1,5 +1,7 @@
 using ChatClient.Application.Services;
 using ChatClient.Domain.Models;
+using ChatClient.Infrastructure.Constants;
+using ChatClient.Infrastructure.Helpers;
 
 namespace ChatClient.Api.Services.Rag;
 
@@ -63,7 +65,10 @@ public sealed class RagVectorIndexBackgroundService(
             var settings = await settingsService.GetSettingsAsync();
             var embedServer = settings.Embedding.Model.ServerId ?? Guid.Empty;
 
-            var basePath = _configuration["RagFiles:BasePath"] ?? Path.Combine("Data", "agents");
+            var basePath = StoragePathResolver.ResolveUserPath(
+                _configuration,
+                _configuration["RagFiles:BasePath"],
+                FilePathConstants.DefaultRagFilesDirectory);
             List<(Guid agentId, string source, string fileName)> pending = [];
             var agents = await agentService.GetAllAsync();
             foreach (var agent in agents)

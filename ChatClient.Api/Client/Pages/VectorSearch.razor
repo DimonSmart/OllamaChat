@@ -2,7 +2,6 @@
 @using ChatClient.Api.Services
 @using ChatClient.Application.Services
 @using ChatClient.Domain.Models
-@using ChatClient.Application.Helpers
 @using System.Linq
 @using Microsoft.JSInterop
 @inject ISnackbar Snackbar
@@ -11,56 +10,77 @@
 
 <PageTitle>Vector Search</PageTitle>
 
-<OllamaCheck>
-    <MudContainer MaxWidth="MaxWidth.Small" Class="pa-4">
-        <MudStack Spacing="2">
-            <MudSelect T="AgentDescription"
-                       Label="Select Agent"
-                       Value="@selectedAgent"
-                       ValueChanged="AgentChanged"
-                       Variant="Variant.Outlined"
-                       Dense="true"
-                       FullWidth="true">
-                @foreach (var agent in agents)
-                {
-                    <MudSelectItem Value="@agent">@agent.AgentName</MudSelectItem>
-                }
-            </MudSelect>
+<MudContainer MaxWidth="MaxWidth.Small" Class="pa-4">
+    <MudStack Spacing="2">
+        @if (!string.IsNullOrWhiteSpace(embeddingSetupMessage))
+        {
+            <MudAlert Severity="Severity.Warning" Dense="true" Variant="Variant.Outlined">
+                <MudText Typo="Typo.body2">@embeddingSetupMessage</MudText>
+                <MudButton Class="mt-2"
+                           Variant="Variant.Outlined"
+                           Color="Color.Warning"
+                           Href="/app-settings"
+                           StartIcon="@Icons.Material.Filled.Settings">
+                    Open Application Settings
+                </MudButton>
+            </MudAlert>
+        }
 
+        <MudSelect T="AgentDescription"
+                   Label="Select Agent"
+                   Value="@selectedAgent"
+                   ValueChanged="AgentChanged"
+                   Variant="Variant.Outlined"
+                   Dense="true"
+                   FullWidth="true">
+            @foreach (var agent in agents)
+            {
+                <MudSelectItem Value="@agent">@agent.AgentName</MudSelectItem>
+            }
+        </MudSelect>
+
+        @if (isEmbeddingReady)
+        {
             <ChatInput OnSend="SearchAsync" />
-
-            @if (results.Count > 0)
-            {
-                <MudText Typo="Typo.body2" Class="mt-2">Found @totalResults segments, showing @results.Count.</MudText>
-                <MudStack Spacing="1" Class="mt-4">
-                    @foreach (var item in results)
-                    {
-                        <MudPaper Class="pa-2" Style="user-select:text;">
-                            <div style="display:flex;justify-content:space-between;">
-                                <MudText Typo="Typo.subtitle2">@item.FileName</MudText>
-                                <span class="copy-button" title="Copy" @onclick="() => CopyResult(item)">📋</span>
-                            </div>
-                            <MudText Typo="Typo.body2">@item.Content</MudText>
-                            <MudText Typo="Typo.caption">Score: @item.Score.ToString("0.###")</MudText>
-                        </MudPaper>
-                    }
-                </MudStack>
-            }
-            <MudText Typo="Typo.body2" Class="mt-2">
-                Total files: @allFileCount (@allIndexedFiles indexed, @(allFileCount - allIndexedFiles) pending), size: @FormatSize(allTotalSize)
+        }
+        else
+        {
+            <MudText Typo="Typo.body2" Class="mt-1">
+                Vector search is unavailable until the embedding model is configured and available.
             </MudText>
-            @if (selectedAgent is not null)
-            {
-                <MudText Typo="Typo.body2">@selectedAgent.AgentName: @fileCount files (@indexedFiles indexed), size: @FormatSize(totalSize)</MudText>
-            }
-            @if (indexStatus is not null)
-            {
-                var percent = indexStatus.Total == 0 ? 0 : indexStatus.Processed * 100 / indexStatus.Total;
-                <MudText Typo="Typo.body2">Indexing @indexStatus.FileName: @percent%</MudText>
-            }
-        </MudStack>
-    </MudContainer>
-</OllamaCheck>
+        }
+
+        @if (results.Count > 0)
+        {
+            <MudText Typo="Typo.body2" Class="mt-2">Found @totalResults segments, showing @results.Count.</MudText>
+            <MudStack Spacing="1" Class="mt-4">
+                @foreach (var item in results)
+                {
+                    <MudPaper Class="pa-2" Style="user-select:text;">
+                        <div style="display:flex;justify-content:space-between;">
+                            <MudText Typo="Typo.subtitle2">@item.FileName</MudText>
+                            <span class="copy-button" title="Copy" @onclick="() => CopyResult(item)">Copy</span>
+                        </div>
+                        <MudText Typo="Typo.body2">@item.Content</MudText>
+                        <MudText Typo="Typo.caption">Score: @item.Score.ToString("0.###")</MudText>
+                    </MudPaper>
+                }
+            </MudStack>
+        }
+        <MudText Typo="Typo.body2" Class="mt-2">
+            Total files: @allFileCount (@allIndexedFiles indexed, @(allFileCount - allIndexedFiles) pending), size: @FormatSize(allTotalSize)
+        </MudText>
+        @if (selectedAgent is not null)
+        {
+            <MudText Typo="Typo.body2">@selectedAgent.AgentName: @fileCount files (@indexedFiles indexed), size: @FormatSize(totalSize)</MudText>
+        }
+        @if (indexStatus is not null)
+        {
+            var percent = indexStatus.Total == 0 ? 0 : indexStatus.Processed * 100 / indexStatus.Total;
+            <MudText Typo="Typo.body2">Indexing @indexStatus.FileName: @percent%</MudText>
+        }
+    </MudStack>
+</MudContainer>
 
 @code {
     private List<AgentDescription> agents = [];
@@ -74,6 +94,8 @@
     private int allIndexedFiles;
     private long allTotalSize;
     private ServerModel embeddingModel = new(Guid.Empty, string.Empty);
+    private bool isEmbeddingReady;
+    private string? embeddingSetupMessage;
     private RagVectorIndexStatus? indexStatus;
     private System.Timers.Timer? statusTimer;
 
@@ -82,27 +104,32 @@
     [Inject] private IRagVectorSearchService VectorSearchService { get; set; } = default!;
     [Inject] private IRagFileService RagFileService { get; set; } = default!;
     [Inject] private IUserSettingsService UserSettingsService { get; set; } = default!;
-    [Inject] private IConfiguration Configuration { get; set; } = default!;
     [Inject] private IRagVectorIndexBackgroundService IndexBackgroundService { get; set; } = default!;
     [Inject] private IJSRuntime JSRuntime { get; set; } = default!;
 
-
     protected override async Task OnInitializedAsync()
     {
-        agents = (await AgentService.GetAllAsync()).ToList();
-        foreach (var agent in agents)
+        try
         {
-            var files = await RagFileService.GetFilesAsync(agent.Id);
-            allFileCount += files.Count;
-            allIndexedFiles += files.Count(f => f.HasIndex);
-            allTotalSize += files.Sum(f => f.Size);
+            agents = (await AgentService.GetAllAsync()).ToList();
+            foreach (var agent in agents)
+            {
+                var files = await RagFileService.GetFilesAsync(agent.Id);
+                allFileCount += files.Count;
+                allIndexedFiles += files.Count(f => f.HasIndex);
+                allTotalSize += files.Sum(f => f.Size);
+            }
+
+            await LoadEmbeddingModelStateAsync();
         }
-        var settings = await UserSettingsService.GetSettingsAsync();
-        embeddingModel = ModelSelectionHelper.GetEffectiveEmbeddingModel(
-            settings.Embedding.Model,
-            settings.DefaultModel,
-            "Vector search UI",
-            Logger);
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Failed to initialize Vector Search page");
+            isEmbeddingReady = false;
+            embeddingSetupMessage ??= "Failed to initialize vector search. Check Application Settings.";
+            Snackbar.Add("Failed to initialize Vector Search", Severity.Error);
+        }
+
         statusTimer = new(1000);
         statusTimer.Elapsed += (_, _) =>
         {
@@ -130,24 +157,95 @@
 
     private async Task SearchAsync((string text, IReadOnlyList<AppChatMessageFile> _) data)
     {
+        if (!isEmbeddingReady)
+        {
+            Snackbar.Add("Configure embedding model in Application Settings first.", Severity.Warning);
+            return;
+        }
+
         if (selectedAgent is null) return;
         var text = data.text.Trim();
         if (string.IsNullOrWhiteSpace(text)) return;
 
         try
         {
-            var model = embeddingModel;
-            var embedding = await OllamaService.GenerateEmbeddingAsync(text, model);
+            var embedding = await OllamaService.GenerateEmbeddingAsync(text, embeddingModel);
             var response = await VectorSearchService.SearchAsync(selectedAgent.Id, new ReadOnlyMemory<float>(embedding));
             results = response.Results.ToList();
             totalResults = response.Total;
         }
         catch (Exception ex) when (!OllamaService.EmbeddingsAvailable)
         {
-            Console.Error.WriteLine($"Embedding error: {ex.Message}");
-            Snackbar.Add("Embedding service unavailable. Restart the application.", Severity.Error);
+            Logger.LogWarning(ex, "Embedding service unavailable on Vector Search");
+            isEmbeddingReady = false;
+            embeddingSetupMessage = "Embedding service is unavailable. Configure a valid model in Application Settings.";
+            Snackbar.Add("Embedding service unavailable. Open Application Settings.", Severity.Error);
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Vector search failed");
+            Snackbar.Add($"Vector search failed: {ex.Message}", Severity.Error);
         }
     }
+
+    private async Task LoadEmbeddingModelStateAsync()
+    {
+        var settings = await UserSettingsService.GetSettingsAsync();
+        if (!TryResolveEmbeddingModel(settings, out var model, out var setupError))
+        {
+            isEmbeddingReady = false;
+            embeddingSetupMessage = setupError;
+            return;
+        }
+
+        try
+        {
+            var models = await OllamaService.GetModelsAsync(model.ServerId);
+            if (!models.Any(m => m.Name.Equals(model.ModelName, StringComparison.OrdinalIgnoreCase)))
+            {
+                isEmbeddingReady = false;
+                embeddingSetupMessage = $"Embedding model '{model.ModelName}' is not available on the selected server.";
+                return;
+            }
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "Embedding model check failed for server {ServerId}", model.ServerId);
+            isEmbeddingReady = false;
+            embeddingSetupMessage = "Embedding model server is unavailable. Configure a valid model in Application Settings.";
+            return;
+        }
+
+        embeddingModel = model;
+        isEmbeddingReady = true;
+        embeddingSetupMessage = null;
+    }
+
+    private static bool TryResolveEmbeddingModel(UserSettings settings, out ServerModel model, out string setupError)
+    {
+        if (IsModelConfigured(settings.Embedding.Model))
+        {
+            model = new ServerModel(settings.Embedding.Model.ServerId!.Value, settings.Embedding.Model.ModelName!);
+            setupError = string.Empty;
+            return true;
+        }
+
+        if (IsModelConfigured(settings.DefaultModel))
+        {
+            model = new ServerModel(settings.DefaultModel.ServerId!.Value, settings.DefaultModel.ModelName!);
+            setupError = string.Empty;
+            return true;
+        }
+
+        model = new ServerModel(Guid.Empty, string.Empty);
+        setupError = "Embedding model is not configured. Set Embedding model (or Default model) in Application Settings.";
+        return false;
+    }
+
+    private static bool IsModelConfigured(ServerModelSelection modelSelection) =>
+        modelSelection.ServerId is { } id &&
+        id != Guid.Empty &&
+        !string.IsNullOrWhiteSpace(modelSelection.ModelName);
 
     private async Task CopyResult(RagSearchResult item)
     {
@@ -167,6 +265,7 @@
         }
         return $"{len:0.#} {sizes[order]}";
     }
+
     public void Dispose()
     {
         statusTimer?.Dispose();
