@@ -20,6 +20,19 @@ if (await BuiltInMcpServerHost.TryRunAsync(args))
     return;
 }
 
+var runFromSelfContainedLayout = !string.Equals(
+    Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT"),
+    Environments.Development,
+    StringComparison.OrdinalIgnoreCase);
+var appBaseDirectory = ResolveApplicationBaseDirectory();
+
+if (runFromSelfContainedLayout)
+{
+    // Winget portable installs can be launched from any working directory.
+    // Pin the process cwd to the executable folder so relative paths stay stable.
+    Directory.SetCurrentDirectory(appBaseDirectory);
+}
+
 Log.Logger = new LoggerConfiguration()
     .MinimumLevel.Information()
     .MinimumLevel.Override("ModelContextProtocol", LogEventLevel.Warning)
@@ -28,7 +41,14 @@ Log.Logger = new LoggerConfiguration()
     .WriteTo.Debug()
     .CreateLogger();
 
-var builder = WebApplication.CreateBuilder(args);
+var builder = runFromSelfContainedLayout
+    ? WebApplication.CreateBuilder(new WebApplicationOptions
+    {
+        Args = args,
+        ContentRootPath = appBaseDirectory,
+        WebRootPath = Path.Combine(appBaseDirectory, "wwwroot")
+    })
+    : WebApplication.CreateBuilder(args);
 builder.Host.UseSerilog();
 builder.Services.Configure<ChatEngineOptions>(builder.Configuration.GetSection(ChatEngineOptions.SectionName));
 
@@ -37,15 +57,6 @@ if (builder.Environment.IsDevelopment())
     builder.Configuration.AddUserSecrets<Program>(optional: true);
 }
 
-// For single-file deployment compatibility only in production
-if (builder.Environment.IsProduction())
-{
-    var exeFolder = AppContext.BaseDirectory;
-    var webRootPath = Path.Combine(exeFolder, "wwwroot");
-    Directory.SetCurrentDirectory(exeFolder);
-    builder.Environment.WebRootPath = webRootPath;
-    builder.Environment.ContentRootPath = exeFolder;
-}
 builder.Services.AddApplicationServices(builder.Configuration);
 
 var app = builder.Build();
@@ -134,3 +145,31 @@ app.Lifetime.ApplicationStarted.Register(() =>
 });
 
 await app.RunAsync();
+
+static string ResolveApplicationBaseDirectory()
+{
+    var processPath = Environment.ProcessPath;
+    if (string.IsNullOrWhiteSpace(processPath))
+    {
+        return AppContext.BaseDirectory;
+    }
+
+    try
+    {
+        var processFile = new FileInfo(processPath);
+        var targetFile = processFile.ResolveLinkTarget(returnFinalTarget: true);
+        if (targetFile is FileInfo resolvedFile && !string.IsNullOrWhiteSpace(resolvedFile.DirectoryName))
+        {
+            return resolvedFile.DirectoryName;
+        }
+    }
+    catch
+    {
+        // Keep fallback path when link target cannot be resolved.
+    }
+
+    var processDirectory = Path.GetDirectoryName(processPath);
+    return string.IsNullOrWhiteSpace(processDirectory)
+        ? AppContext.BaseDirectory
+        : processDirectory;
+}

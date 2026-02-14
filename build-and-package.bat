@@ -1,13 +1,8 @@
 @echo off
-REM Build self-contained deployment version for WinGet
+setlocal
+REM Build, package and verify WinGet artifacts.
 
-echo Cleaning publish folder...
-if exist ".\publish" rmdir /s /q ".\publish"
+powershell -ExecutionPolicy Bypass -File ".\package-release.ps1" %*
+if errorlevel 1 exit /b %errorlevel%
 
-echo Building and publishing OllamaChat (Self-Contained)...
-dotnet publish ChatClient.Api\ChatClient.Api.csproj -c Release --self-contained true -r win-x64 -p:PublishSingleFile=true -p:PublishTrimmed=false -o .\publish
-
-echo Creating versioned release archive...
-powershell -ExecutionPolicy Bypass -File .\package-release.ps1
-
-echo Done!
+echo Done.

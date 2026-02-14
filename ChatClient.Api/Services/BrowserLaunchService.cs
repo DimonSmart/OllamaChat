@@ -9,6 +9,8 @@ namespace ChatClient.Api.Services
     /// </summary>
     public static class BrowserLaunchService
     {
+        private const string DisableBrowserLaunchEnvVar = "OLLAMACHAT_DISABLE_BROWSER_LAUNCH";
+
         /// <summary>
         /// Display application information and launch the default browser
         /// </summary>
@@ -17,6 +19,12 @@ namespace ChatClient.Api.Services
         /// <param name="delayMs">Delay in milliseconds before launching browser</param>
         public static void DisplayInfoAndLaunchBrowser(string httpUrl, string httpsUrl, int delayMs = 1500)
         {
+            if (IsBrowserLaunchDisabled())
+            {
+                Log.Information("Browser launch is disabled via {EnvVar}.", DisableBrowserLaunchEnvVar);
+                return;
+            }
+
             Log.Information(string.Empty);
             Log.Information("=================================================");
             Log.Information(
@@ -58,6 +66,19 @@ namespace ChatClient.Api.Services
             {
                 Log.Error(ex, "Failed to open browser at {Url}", url);
             }
+        }
+
+        private static bool IsBrowserLaunchDisabled()
+        {
+            var value = Environment.GetEnvironmentVariable(DisableBrowserLaunchEnvVar);
+            if (string.IsNullOrWhiteSpace(value))
+            {
+                return false;
+            }
+
+            return value.Equals("1", StringComparison.OrdinalIgnoreCase)
+                || value.Equals("true", StringComparison.OrdinalIgnoreCase)
+                || value.Equals("yes", StringComparison.OrdinalIgnoreCase);
         }
     }
 }
