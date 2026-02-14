@@ -1,4 +1,5 @@
 using System.Net.Http.Headers;
+using System.Text.Encodings.Web;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
@@ -24,7 +25,7 @@ public sealed class HttpAgenticExecutionRuntime(
 {
     private const int MaxToolRounds = 8;
     private const int MaxLoggedPayloadLength = 4000;
-    private const int MaxNameLookupReminders = 2;
+    private const int MaxNameLookupReminders = 1;
     private const string UserProfilePrefsToolName = "prefs_get";
     private const string UserProfilePrefsGetAllToolName = "prefs_get_all";
     private const string UserProfileDisplayNameKey = "displayName";
@@ -32,6 +33,11 @@ public sealed class HttpAgenticExecutionRuntime(
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web)
     {
         DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull
+    };
+    private static readonly JsonSerializerOptions ToolResultJsonOptions = new(JsonSerializerDefaults.Web)
+    {
+        DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
+        Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping
     };
 
     private static readonly JsonElement EmptyToolSchema = CreateEmptyToolSchema();
@@ -205,6 +211,16 @@ public sealed class HttpAgenticExecutionRuntime(
                     yield break;
                 }
 
+                logger.LogDebug(
+                    "Tool round {Round}/{MaxRounds} for agent {AgentName}: contentLength={ContentLength}, toolCalls={ToolCallCount}, requiresNameLookup={RequiresNameLookup}, hasNameLookup={HasNameLookup}.",
+                    round + 1,
+                    MaxToolRounds,
+                    agent.AgentName,
+                    completion.Content?.Length ?? 0,
+                    completion.ToolCalls.Count,
+                    requiresNameLookup,
+                    hasNameLookup);
+
                 if (completion.ToolCalls.Count == 0)
                 {
                     if (requiresNameLookup && !hasNameLookup && nameLookupReminderCount < MaxNameLookupReminders)
@@ -226,6 +242,17 @@ public sealed class HttpAgenticExecutionRuntime(
                     }
 
                     messages.Add(ToAssistantMessage(completion));
+
+                    if (string.IsNullOrWhiteSpace(completion.Content))
+                    {
+                        yield return new ChatEngineStreamChunk(
+                            agent.AgentName,
+                            "Model returned an empty response in tool mode.",
+                            IsFinal: true,
+                            IsError: true,
+                            FunctionCalls: functionCalls.Count > 0 ? functionCalls : null);
+                        yield break;
+                    }
 
                     if (!string.IsNullOrEmpty(completion.Content))
                     {
@@ -347,7 +374,7 @@ public sealed class HttpAgenticExecutionRuntime(
             string errorMessage = $"Tool '{toolCall.Name}' is not registered for this request.";
             logger.LogWarning(errorMessage);
 
-            string errorPayload = JsonSerializer.Serialize(new { error = errorMessage }, JsonOptions);
+            string errorPayload = JsonSerializer.Serialize(new { error = errorMessage }, ToolResultJsonOptions);
             return new ToolExecutionResult(
                 new ProviderMessage("tool", errorPayload, toolCall.Name, toolCall.Id, null),
                 new FunctionCallRecord("unknown", toolCall.Name, toolCall.Arguments, $"status=error;response={errorPayload}"));
@@ -368,7 +395,7 @@ public sealed class HttpAgenticExecutionRuntime(
                 validationError,
                 FormatForLog(toolCall.Arguments, MaxLoggedPayloadLength));
 
-            string errorPayload = JsonSerializer.Serialize(new { error = validationError }, JsonOptions);
+            string errorPayload = JsonSerializer.Serialize(new { error = validationError }, ToolResultJsonOptions);
             return new ToolExecutionResult(
                 new ProviderMessage("tool", errorPayload, tool.ProviderName, toolCall.Id, null),
                 new FunctionCallRecord(
@@ -422,7 +449,7 @@ public sealed class HttpAgenticExecutionRuntime(
                 var executionToken = timeoutCts?.Token ?? cancellationToken;
                 using var interactionScope = mcpUserInteractionService.BeginInteractionScope(McpInteractionScope.Chat);
                 var result = await tool.ExecuteAsync(arguments, executionToken);
-                string responsePayload = AgenticToolUtility.SerializeForToolTransport(result, JsonOptions);
+                string responsePayload = AgenticToolUtility.SerializeForToolTransport(result, ToolResultJsonOptions);
                 int durationMs = (int)Math.Max(0, (DateTime.UtcNow - startedAt).TotalMilliseconds);
 
                 logger.LogInformation(
@@ -480,7 +507,7 @@ public sealed class HttpAgenticExecutionRuntime(
         }
 
         string finalMessage = lastException?.Message ?? "Unknown tool execution failure.";
-        string finalPayload = JsonSerializer.Serialize(new { error = finalMessage }, JsonOptions);
+        string finalPayload = JsonSerializer.Serialize(new { error = finalMessage }, ToolResultJsonOptions);
         logger.LogError(
             lastException,
             "Tool execution failed for {Server}:{ToolName} (provider tool {ProviderToolName}) after {MaxAttempts} attempts. Arguments: {Arguments}",
