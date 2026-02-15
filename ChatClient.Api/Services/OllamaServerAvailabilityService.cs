@@ -11,6 +11,7 @@ public class OllamaServerAvailabilityService(
 {
     public async Task<OllamaServerStatus> CheckOllamaStatusAsync(Guid? serverId = null)
     {
+        LlmServerConfig? server = null;
         try
         {
             var settings = await userSettingsService.GetSettingsAsync();
@@ -28,7 +29,7 @@ public class OllamaServerAvailabilityService(
 
             // Find server in settings
             var servers = await llmServerConfigService.GetAllAsync();
-            var server = servers.FirstOrDefault(s => s.Id == serverToCheck);
+            server = servers.FirstOrDefault(s => s.Id == serverToCheck);
             if (server == null)
             {
                 logger.LogWarning("Server not found: {ServerId}", serverToCheck);
@@ -63,8 +64,8 @@ public class OllamaServerAvailabilityService(
         }
         catch (Exception ex)
         {
-            logger.LogWarning(ex, "Ollama server check failed: {Message}", ex.Message);
-            return OllamaStatusHelper.CreateStatusFromException(ex);
+            logger.LogWarning("Ollama server check failed: {Message}", ex.Message);
+            return OllamaStatusHelper.CreateStatusFromException(ex, server?.BaseUrl);
         }
     }
 }

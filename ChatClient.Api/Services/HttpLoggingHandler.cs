@@ -19,11 +19,11 @@ public class HttpLoggingHandler(ILogger<HttpLoggingHandler> logger) : Delegating
 
     private async Task LogRequestAsync(HttpRequestMessage request, CancellationToken ct)
     {
-        if (!logger.IsEnabled(LogLevel.Information))
+        if (!logger.IsEnabled(LogLevel.Debug))
             return;
 
         if (request.Headers.TryGetValues("X-Agent-Name", out var agentValues))
-            logger.LogInformation("Agent {AgentName} started responding", agentValues.First());
+            logger.LogDebug("Agent {AgentName} started responding", agentValues.First());
 
         var sb = new StringBuilder();
         sb.AppendLine($"HTTP Request: {request.Method} {request.RequestUri}");
@@ -56,12 +56,12 @@ public class HttpLoggingHandler(ILogger<HttpLoggingHandler> logger) : Delegating
             }
         }
 
-        logger.LogInformation(sb.ToString());
+        logger.LogDebug(sb.ToString());
     }
 
     private async Task LogResponseAsync(HttpResponseMessage response, CancellationToken ct)
     {
-        if (!logger.IsEnabled(LogLevel.Information))
+        if (!logger.IsEnabled(LogLevel.Debug))
             return;
 
         var sb = new StringBuilder();
@@ -99,7 +99,7 @@ public class HttpLoggingHandler(ILogger<HttpLoggingHandler> logger) : Delegating
             }
         }
 
-        logger.LogInformation(sb.ToString());
+        logger.LogDebug(sb.ToString());
     }
 
     private static async Task<string?> SafeReadAsStringAsync(HttpContent content, CancellationToken ct)

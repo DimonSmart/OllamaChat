@@ -36,6 +36,8 @@ if (runFromSelfContainedLayout)
 Log.Logger = new LoggerConfiguration()
     .MinimumLevel.Information()
     .MinimumLevel.Override("ModelContextProtocol", LogEventLevel.Warning)
+    .MinimumLevel.Override("System.Net.Http.HttpClient", LogEventLevel.Warning)
+    .MinimumLevel.Override("Microsoft.Extensions.Http", LogEventLevel.Warning)
     .WriteTo.Console()
     .WriteTo.File("Logs/ollamachat-.log", rollingInterval: RollingInterval.Day, fileSizeLimitBytes: 10_000_000, rollOnFileSizeLimit: true, retainedFileCountLimit: 5)
     .WriteTo.Debug()
@@ -85,8 +87,7 @@ using (var scope = app.Services.CreateScope())
     else
     {
         logger.LogWarning("Ollama is not available - {Error}", ollamaStatus.ErrorMessage);
-        logger.LogWarning("The application will start but Ollama functionality will be limited.");
-        logger.LogWarning("Users will be redirected to the setup page when trying to use Ollama features.");
+        logger.LogWarning("Ollama features are limited. Open '/llm-servers' to configure server access.");
     }
 }
 

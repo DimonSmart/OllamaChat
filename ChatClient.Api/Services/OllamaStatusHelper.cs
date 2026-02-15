@@ -1,20 +1,25 @@
 using ChatClient.Domain.Models;
+using System.Net.Sockets;
 
 namespace ChatClient.Api.Services;
 
 public static class OllamaStatusHelper
 {
-    public static OllamaServerStatus CreateStatusFromException(Exception ex)
+    private const string InstallUrl = "https://ollama.com/download";
+
+    public static OllamaServerStatus CreateStatusFromException(Exception ex, string? baseUrl = null)
     {
+        var endpoint = string.IsNullOrWhiteSpace(baseUrl) ? "configured Ollama server" : baseUrl;
+
         var userFriendlyMessage = ex switch
         {
-            HttpRequestException httpEx when httpEx.Message.Contains("actively refused") =>
-                "Ollama server is not running. Please start Ollama using 'ollama serve'",
-            HttpRequestException httpEx when httpEx.Message.Contains("name or service not known") =>
-                "Cannot connect to Ollama server. Please check the server URL in settings",
+            HttpRequestException httpEx when IsConnectionRefused(httpEx) =>
+                $"Cannot connect to Ollama at {endpoint}. Start it with 'ollama serve'. Install: {InstallUrl}",
+            HttpRequestException =>
+                $"Cannot connect to Ollama at {endpoint}. Check the server URL in settings. Install: {InstallUrl}",
             TaskCanceledException =>
-                "Connection to Ollama server timed out. Please check if Ollama is running and accessible",
-            _ => $"Connection failed: {ex.Message}"
+                $"Connection to Ollama at {endpoint} timed out. Ensure it is running and reachable. Install: {InstallUrl}",
+            _ => $"Connection to Ollama failed: {ex.Message}. Install: {InstallUrl}"
         };
 
         return new OllamaServerStatus
@@ -22,5 +27,14 @@ public static class OllamaStatusHelper
             IsAvailable = false,
             ErrorMessage = userFriendlyMessage
         };
+    }
+
+    private static bool IsConnectionRefused(HttpRequestException ex)
+    {
+        if (ex.Message.Contains("actively refused", StringComparison.OrdinalIgnoreCase))
+            return true;
+
+        return ex.InnerException is SocketException socketEx
+            && socketEx.SocketErrorCode == SocketError.ConnectionRefused;
     }
 }

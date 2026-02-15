@@ -1,6 +1,7 @@
 @using ChatClient.Api.Services
 @using ChatClient.Application.Services
 @using ChatClient.Domain.Models
+@using Microsoft.AspNetCore.Components
 @using MudBlazor
 @inject IOllamaClientService OllamaService
 @inject IOpenAIClientService OpenAIService
@@ -55,9 +56,13 @@ else
                 return;
             }
         }
+        catch (NavigationException)
+        {
+            // Expected during prerender when navigation triggers redirect.
+        }
         catch (Exception ex)
         {
-            Logger.LogWarning(ex, "Server not available for page access");
+            Logger.LogWarning("Server not available for page access: {Message}", ex.Message);
             NavigateToServerConfig();
         }
         finally
@@ -116,7 +121,7 @@ else
         }
         catch (Exception ex)
         {
-            Logger.LogWarning(ex, "Ollama server '{ServerName}' is not available", server.Name);
+            Logger.LogWarning("Ollama server '{ServerName}' is not available: {Message}", server.Name, ex.Message);
             return false;
         }
     }

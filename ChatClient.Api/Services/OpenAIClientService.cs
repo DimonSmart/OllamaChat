@@ -46,9 +46,13 @@ public class OpenAIClientService(
             _logger.LogWarning("Invalid response from OpenAI models API");
             throw new InvalidOperationException("Failed to retrieve models from OpenAI API");
         }
+        catch (InvalidOperationException)
+        {
+            throw;
+        }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error retrieving OpenAI models using SDK");
+            _logger.LogDebug(ex, "Error retrieving OpenAI models using SDK for serverId: {ServerId}", serverId);
             throw new InvalidOperationException($"Failed to retrieve models for serverId: {serverId}", ex);
         }
     }
@@ -65,7 +69,7 @@ public class OpenAIClientService(
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "OpenAI service not available: {Message}", ex.Message);
+            _logger.LogWarning("OpenAI service not available: {Message}", ex.Message);
             return false;
         }
     }
