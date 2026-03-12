@@ -1,0 +1,56 @@
+@using System.Text.Json
+@using ChatClient.Api.PlanningRuntime.Execution
+@using MudBlazor
+@inject IJSRuntime JSRuntime
+
+<MudPaper Class="pa-4" Outlined="true">
+    <MudStack Spacing="2">
+        <MudStack Row="true" AlignItems="AlignItems.Center" Justify="Justify.SpaceBetween">
+            <MudText Typo="Typo.h6">Replan And Runtime Log</MudText>
+            @if (HasFullLog)
+            {
+                <MudButton Variant="Variant.Outlined"
+                           Size="Size.Small"
+                           OnClick="CopyFullLogAsync">
+                    Copy full log
+                </MudButton>
+            }
+        </MudStack>
+
+        @foreach (var replanEvent in ReplanEvents)
+        {
+            <MudExpansionPanels MultiExpansion="true">
+                <MudExpansionPanel Text="@($"round {replanEvent.Round} | done={replanEvent.Done}")">
+                    <MudText Typo="Typo.caption" Class="mud-text-secondary">@replanEvent.Reason</MudText>
+                    <MudText Typo="Typo.caption" Class="mt-2 mud-text-secondary">Action Batch</MudText>
+                    <MudPaper Class="pa-3 planning-log-block">@SerializeJson(replanEvent.ActionBatch)</MudPaper>
+                    <MudText Typo="Typo.caption" Class="mt-2 mud-text-secondary">Action Results</MudText>
+                    <MudPaper Class="pa-3 planning-log-block">@SerializeJson(replanEvent.ActionResults)</MudPaper>
+                </MudExpansionPanel>
+            </MudExpansionPanels>
+        }
+
+        @if (HasFullLog)
+        {
+            <MudText Typo="Typo.caption" Class="mud-text-secondary">
+                Full runtime log is hidden from the page. Use the copy button if you need the raw text.
+            </MudText>
+        }
+    </MudStack>
+</MudPaper>
+
+@code {
+    [Parameter] public IReadOnlyList<PlanRunEvent> Events { get; set; } = [];
+    [Parameter] public IReadOnlyList<string> LogLines { get; set; } = [];
+
+    private IReadOnlyList<ReplanRoundCompletedEvent> ReplanEvents =>
+        Events.OfType<ReplanRoundCompletedEvent>().ToList();
+
+    private bool HasFullLog => LogLines.Count > 0;
+
+    private Task CopyFullLogAsync() =>
+        JSRuntime.InvokeVoidAsync("copyText", string.Join(Environment.NewLine, LogLines)).AsTask();
+
+    private static string SerializeJson<T>(T value) =>
+        JsonSerializer.Serialize(value, new JsonSerializerOptions { WriteIndented = true });
+}

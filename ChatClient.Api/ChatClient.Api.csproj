@@ -8,7 +8,10 @@
             <ItemGroup>
         <PackageReference Include="HtmlAgilityPack" Version="1.12.4" />
         <PackageReference Include="Microsoft.AspNetCore.OpenApi" Version="10.0.3" />
+        <PackageReference Include="Microsoft.Agents.AI" Version="1.0.0-rc3" />
+        <PackageReference Include="Microsoft.Agents.Core" Version="1.4.83" />
         <PackageReference Include="Microsoft.Extensions.AI" Version="10.3.0" />
+        <PackageReference Include="Microsoft.Extensions.AI.OpenAI" Version="10.3.0" />
         <PackageReference Include="Microsoft.Data.Sqlite" Version="10.0.3" />
         <PackageReference Include="ModelContextProtocol" Version="0.8.0-preview.1" />
         <PackageReference Include="MudBlazor" Version="8.15.0" />
@@ -20,6 +23,7 @@
         <PackageReference Include="Serilog.Sinks.File" Version="7.0.0" />
         <PackageReference Include="DocumentFormat.OpenXml" Version="3.4.1" />
         <PackageReference Include="PdfPig" Version="0.1.13" />
+        <PackageReference Include="Z.Blazor.Diagrams" Version="3.0.4.1" />
     </ItemGroup>
 
     <ItemGroup>

@@ -1,0 +1,320 @@
+@page "/chat-planning"
+@using ChatClient.Api.Client.Components.Planning
+@using ChatClient.Api.PlanningRuntime.Common
+@using ChatClient.Api.PlanningRuntime.Execution
+@using ChatClient.Api.PlanningRuntime.Host
+@using ChatClient.Api.PlanningRuntime.Planning
+@using ChatClient.Domain.Models
+@using MudBlazor
+@implements IDisposable
+@inject IPlanningSessionService PlanningSessionService
+@inject ISnackbar Snackbar
+
+<PageTitle>Planning Chat</PageTitle>
+
+<MudStack Spacing="3">
+    <MudPaper Class="pa-4" Outlined="true">
+        <MudStack Spacing="2">
+            <MudText Typo="Typo.h5">Planning Chat</MudText>
+            <MudText Typo="Typo.body2" Class="mud-text-secondary">
+                Enter a user request, choose which tools the planner may use, and inspect the generated plan, execution trace, and replanning logic.
+            </MudText>
+
+            @if (!HasModelSelection && !UsingPreviewScenario)
+            {
+                <MudAlert Severity="Severity.Warning" Dense="true">
+                    Select a server and model in the top bar before starting a planning run.
+                </MudAlert>
+            }
+
+            <MudStack Row="true" Wrap="Wrap.Wrap" Spacing="2" Class="planning-preview-toolbar">
+                <MudSelect T="string"
+                           Label="Plan Preview Data"
+                           Value="@selectedPreviewScenarioId"
+                           ValueChanged="OnPreviewScenarioChanged"
+                           Variant="Variant.Outlined"
+                           Dense="true"
+                           Style="min-width: 260px;">
+                    <MudSelectItem Value="@PlanningPreviewScenarios.LiveScenarioId">Live planner</MudSelectItem>
+                    @foreach (var scenario in PlanningPreviewScenarios.All)
+                    {
+                        <MudSelectItem Value="@scenario.Id">@scenario.DisplayName</MudSelectItem>
+                    }
+                </MudSelect>
+
+                @if (ActivePreviewScenario is not null)
+                {
+                    <MudText Typo="Typo.caption" Class="mud-text-secondary planning-preview-description">
+                        @ActivePreviewScenario.Description
+                    </MudText>
+                }
+            </MudStack>
+
+            @if (UsingPreviewScenario)
+            {
+                <MudAlert Severity="Severity.Info" Dense="true">
+                    Preview mode is active. The page shows local mock planning data and disables live execution controls.
+                </MudAlert>
+            }
+
+            <MudTextField T="string"
+                          Label="User request"
+                          Value="@DisplayedUserQuery"
+                          ValueChanged="OnUserQueryChanged"
+                          Lines="4"
+                          Variant="Variant.Outlined"
+                          Immediate="true"
+                          Disabled="@UsingPreviewScenario" />
+
+            <MudStack Row="true" Spacing="2">
+                @foreach (var tool in toolSelections)
+                {
+                    <MudCheckBox T="bool" @bind-Value="tool.Enabled" Label="@tool.DisplayName" Dense="true" Disabled="@UsingPreviewScenario" />
+                }
+            </MudStack>
+
+            <MudStack Row="true" Spacing="2">
+                <MudButton Variant="Variant.Filled"
+                           Color="Color.Primary"
+                           Disabled="@(!CanStart)"
+                           OnClick="StartRunAsync">
+                    Run
+                </MudButton>
+                <MudButton Variant="Variant.Outlined"
+                           Color="Color.Warning"
+                           Disabled="@(!CanCancel)"
+                           OnClick="CancelRunAsync">
+                    Cancel
+                </MudButton>
+                <MudButton Variant="Variant.Text"
+                           Disabled="@(!CanReset)"
+                           OnClick="Reset">
+                    Reset
+                </MudButton>
+            </MudStack>
+        </MudStack>
+    </MudPaper>
+
+    <MudGrid>
+        <MudItem xs="12" lg="7">
+            <PlanningGraph Plan="@CurrentPlan"
+                           ActiveStepId="@CurrentActiveStepId"
+                           SelectedStepId="@selectedStepId"
+                           SelectedStepIdChanged="OnSelectedStepChanged" />
+        </MudItem>
+        <MudItem xs="12" lg="5">
+            <PlanningStepDetails Plan="@CurrentPlan"
+                                 ActiveStepId="@CurrentActiveStepId"
+                                 SelectedStepId="@selectedStepId"
+                                 Events="@CurrentEvents" />
+        </MudItem>
+    </MudGrid>
+
+    <PlanningReplanLog Events="CurrentEvents" LogLines="CurrentLogLines" />
+
+    @if (CurrentFinalResult is not null)
+    {
+        <MudPaper Class="pa-4" Outlined="true">
+            <MudText Typo="Typo.h6">Final Result</MudText>
+            <MudText Typo="Typo.caption" Class="mud-text-secondary">
+                ok: @CurrentFinalResult.Ok
+            </MudText>
+            <MudPaper Class="pa-3 mt-2 planning-json-block">@SerializeJson(CurrentFinalResult)</MudPaper>
+        </MudPaper>
+    }
+</MudStack>
+
+@code {
+    private string userQuery = "Find two popular robot vacuum cleaners, compare their specs, and recommend which one is better.";
+    private string selectedPreviewScenarioId = PlanningPreviewScenarios.LiveScenarioId;
+    private string? selectedStepId;
+    private string? selectedStepContextKey;
+
+    private readonly List<ToolSelection> toolSelections =
+    [
+        new("search", "Web Search", true),
+        new("download", "Web Download", true)
+    ];
+
+    [CascadingParameter(Name = "UiModelSelection")]
+    public ServerModelSelection UiModelSelection { get; set; } = new(null, null);
+
+    private bool HasModelSelection =>
+        UiModelSelection.ServerId.HasValue &&
+        UiModelSelection.ServerId.Value != Guid.Empty &&
+        !string.IsNullOrWhiteSpace(UiModelSelection.ModelName);
+
+    private PlanningPreviewScenario? ActivePreviewScenario =>
+        PlanningPreviewScenarios.Get(selectedPreviewScenarioId);
+
+    private bool UsingPreviewScenario => ActivePreviewScenario is not null;
+
+    private string DisplayedUserQuery =>
+        ActivePreviewScenario?.UserQuery ?? userQuery;
+
+    private PlanDefinition? CurrentPlan =>
+        ActivePreviewScenario?.Plan ?? PlanningSessionService.State.CurrentPlan;
+
+    private string? CurrentActiveStepId =>
+        ActivePreviewScenario?.ActiveStepId ?? PlanningSessionService.State.ActiveStepId;
+
+    private IReadOnlyList<PlanRunEvent> CurrentEvents =>
+        ActivePreviewScenario?.Events ?? GetStateEventsSnapshot();
+
+    private IReadOnlyList<string> CurrentLogLines =>
+        ActivePreviewScenario?.LogLines ?? GetStateLogLinesSnapshot();
+
+    private ResultEnvelope<JsonElement?>? CurrentFinalResult =>
+        ActivePreviewScenario?.FinalResult ?? PlanningSessionService.State.FinalResult;
+
+    private string CurrentGraphKey =>
+        $"{selectedPreviewScenarioId}:{CurrentPlan?.Steps.Count ?? 0}:{string.Join("|", CurrentPlan?.Steps.Select(step => step.Id) ?? [])}";
+
+    private bool CanStart =>
+        !UsingPreviewScenario &&
+        HasModelSelection &&
+        !PlanningSessionService.State.IsRunning &&
+        !string.IsNullOrWhiteSpace(userQuery) &&
+        toolSelections.Any(tool => tool.Enabled);
+
+    private bool CanCancel =>
+        !UsingPreviewScenario && PlanningSessionService.State.IsRunning;
+
+    private bool CanReset =>
+        UsingPreviewScenario ||
+        PlanningSessionService.State.IsRunning ||
+        PlanningSessionService.State.CurrentPlan is not null ||
+        PlanningSessionService.State.FinalResult is not null ||
+        selectedStepId is not null;
+
+    protected override void OnInitialized()
+    {
+        PlanningSessionService.StateChanged += OnStateChanged;
+        SyncSelectedStepId(CurrentPlan, CurrentActiveStepId);
+    }
+
+    private async Task StartRunAsync()
+    {
+        if (UsingPreviewScenario)
+        {
+            return;
+        }
+
+        if (!HasModelSelection)
+        {
+            Snackbar.Add("Select a server and model first.", Severity.Warning);
+            return;
+        }
+
+        await PlanningSessionService.StartAsync(new PlanningRunRequest
+        {
+            Model = new ServerModel(UiModelSelection.ServerId!.Value, UiModelSelection.ModelName!),
+            UserQuery = userQuery,
+            EnabledToolNames = toolSelections.Where(tool => tool.Enabled).Select(tool => tool.Name).ToList()
+        });
+    }
+
+    private Task CancelRunAsync() =>
+        CanCancel
+            ? PlanningSessionService.CancelAsync()
+            : Task.CompletedTask;
+
+    private void Reset()
+    {
+        if (!UsingPreviewScenario)
+        {
+            PlanningSessionService.Reset();
+        }
+
+        SyncSelectedStepId(CurrentPlan, CurrentActiveStepId, forceReset: true);
+    }
+
+    private Task OnSelectedStepChanged(string stepId)
+    {
+        selectedStepId = stepId;
+        selectedStepContextKey = CurrentGraphKey;
+        return InvokeAsync(StateHasChanged);
+    }
+
+    private Task OnUserQueryChanged(string? value)
+    {
+        userQuery = value ?? string.Empty;
+        return Task.CompletedTask;
+    }
+
+    private Task OnPreviewScenarioChanged(string? value)
+    {
+        selectedPreviewScenarioId = string.IsNullOrWhiteSpace(value)
+            ? PlanningPreviewScenarios.LiveScenarioId
+            : value;
+
+        SyncSelectedStepId(CurrentPlan, CurrentActiveStepId, forceReset: true);
+        return InvokeAsync(StateHasChanged);
+    }
+
+    private void OnStateChanged()
+    {
+        _ = InvokeAsync(() =>
+        {
+            SyncSelectedStepId(CurrentPlan, CurrentActiveStepId);
+            StateHasChanged();
+        });
+    }
+
+    public void Dispose()
+    {
+        PlanningSessionService.StateChanged -= OnStateChanged;
+    }
+
+    private static string SerializeJson<T>(T value) =>
+        System.Text.Json.JsonSerializer.Serialize(value, new System.Text.Json.JsonSerializerOptions { WriteIndented = true });
+
+    private IReadOnlyList<PlanRunEvent> GetStateEventsSnapshot()
+    {
+        lock (PlanningSessionService.State.Events)
+        {
+            return [.. PlanningSessionService.State.Events];
+        }
+    }
+
+    private IReadOnlyList<string> GetStateLogLinesSnapshot()
+    {
+        lock (PlanningSessionService.State.LogLines)
+        {
+            return [.. PlanningSessionService.State.LogLines];
+        }
+    }
+
+    private void SyncSelectedStepId(PlanDefinition? plan, string? activeStepId, bool forceReset = false)
+    {
+        var contextKey = CurrentGraphKey;
+
+        if (plan is null || plan.Steps.Count == 0)
+        {
+            selectedStepId = null;
+            selectedStepContextKey = contextKey;
+            return;
+        }
+
+        if (!forceReset &&
+            string.Equals(selectedStepContextKey, contextKey, StringComparison.Ordinal) &&
+            !string.IsNullOrWhiteSpace(selectedStepId) &&
+            plan.Steps.Any(step => string.Equals(step.Id, selectedStepId, StringComparison.Ordinal)))
+        {
+            return;
+        }
+
+        selectedStepId = plan.Steps.FirstOrDefault(step => string.Equals(step.Id, activeStepId, StringComparison.Ordinal))?.Id
+            ?? plan.Steps[0].Id;
+        selectedStepContextKey = contextKey;
+    }
+
+    private sealed class ToolSelection(string name, string displayName, bool enabled)
+    {
+        public string Name { get; } = name;
+
+        public string DisplayName { get; } = displayName;
+
+        public bool Enabled { get; set; } = enabled;
+    }
+}

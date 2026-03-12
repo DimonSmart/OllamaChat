@@ -1,0 +1,38 @@
+.planning-step-details {
+    min-width: 0;
+}
+
+.planning-step-details ::deep .mud-paper,
+.planning-step-details ::deep .mud-stack,
+.planning-step-details ::deep .mud-typography {
+    min-width: 0;
+}
+
+.planning-step-details ::deep .mud-typography {
+    overflow-wrap: anywhere;
+    word-break: break-word;
+}
+
+::deep .planning-step-block,
+::deep .planning-step-call {
+    max-width: 100%;
+    min-width: 0;
+    overflow: auto;
+    box-sizing: border-box;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    word-break: break-word;
+}
+
+.planning-step-code {
+    display: block;
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+    overflow: auto;
+    box-sizing: border-box;
+    margin: 0.35rem 0 0;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    word-break: break-word;
+}

@@ -6,6 +6,7 @@ It provides:
 
 - single-agent chat,
 - multi-agent chat with round-robin and summary strategy,
+- a dedicated planning runtime with plan/execute/verify/replan flow,
 - local Ollama and OpenAI-compatible server connectivity,
 - MCP tool integration (with tool policy: validation, timeout, retries),
 - RAG indexing/search for uploaded files,
@@ -28,3 +29,4 @@ During chat execution, the Agentic pipeline builds history, injects optional RAG
 ## Docs
 
 - Publishing notes: `docs/Publishing.md`
+- Planning runtime: `docs/PlanningRuntime.md`

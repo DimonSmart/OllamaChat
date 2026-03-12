@@ -1,0 +1,104 @@
+@using Blazor.Diagrams
+@using Blazor.Diagrams.Core.Geometry
+@using Blazor.Diagrams.Core.Models
+@using Blazor.Diagrams.Core.Models.Base
+@using DiagramPointerEventArgs = Blazor.Diagrams.Core.Events.PointerEventArgs
+@using DiagramSize = Blazor.Diagrams.Core.Geometry.Size
+@implements IDisposable
+
+@if (_selectionBoxTopLeft is not null && _selectionBoxSize is not null)
+{
+    <div class="planning-selection-box" style="@GenerateStyle()"></div>
+}
+
+@code {
+    private Point? _initialClientPoint;
+    private DiagramSize? _selectionBoxSize;
+    private Point? _selectionBoxTopLeft;
+
+    [CascadingParameter] public BlazorDiagram BlazorDiagram { get; set; } = default!;
+
+    [Parameter] public bool PanModifierActive { get; set; }
+
+    protected override void OnInitialized()
+    {
+        BlazorDiagram.PointerDown += OnPointerDown;
+        BlazorDiagram.PointerMove += OnPointerMove;
+        BlazorDiagram.PointerUp += OnPointerUp;
+    }
+
+    public void Dispose()
+    {
+        BlazorDiagram.PointerDown -= OnPointerDown;
+        BlazorDiagram.PointerMove -= OnPointerMove;
+        BlazorDiagram.PointerUp -= OnPointerUp;
+    }
+
+    private void OnPointerDown(Model? model, DiagramPointerEventArgs e)
+    {
+        if (model is null && e.Button == 0L && !PanModifierActive)
+        {
+            _initialClientPoint = new Point(e.ClientX, e.ClientY);
+        }
+    }
+
+    private void OnPointerMove(Model? model, DiagramPointerEventArgs e)
+    {
+        if (_initialClientPoint is null)
+            return;
+
+        SetSelectionBoxInformation(e.ClientX, e.ClientY);
+
+        var start = BlazorDiagram.GetRelativeMousePoint(_initialClientPoint.X, _initialClientPoint.Y);
+        var end = BlazorDiagram.GetRelativeMousePoint(e.ClientX, e.ClientY);
+
+        var selection = new Rectangle(
+            Math.Min(start.X, end.X),
+            Math.Min(start.Y, end.Y),
+            Math.Max(start.X, end.X),
+            Math.Max(start.Y, end.Y));
+
+        foreach (var node in BlazorDiagram.Nodes)
+        {
+            var bounds = node.GetBounds();
+            if (bounds is null)
+                continue;
+
+            if (selection.Overlap(bounds))
+            {
+                BlazorDiagram.SelectModel(node, unselectOthers: false);
+            }
+            else if (node.Selected)
+            {
+                BlazorDiagram.UnselectModel(node);
+            }
+        }
+
+        _ = InvokeAsync(StateHasChanged);
+    }
+
+    private void OnPointerUp(Model? model, DiagramPointerEventArgs e)
+    {
+        _initialClientPoint = null;
+        _selectionBoxTopLeft = null;
+        _selectionBoxSize = null;
+        _ = InvokeAsync(StateHasChanged);
+    }
+
+    private void SetSelectionBoxInformation(double clientX, double clientY)
+    {
+        var start = BlazorDiagram.GetRelativePoint(_initialClientPoint!.X, _initialClientPoint.Y);
+        var end = BlazorDiagram.GetRelativePoint(clientX, clientY);
+
+        var left = Math.Min(start.X, end.X);
+        var top = Math.Min(start.Y, end.Y);
+        var right = Math.Max(start.X, end.X);
+        var bottom = Math.Max(start.Y, end.Y);
+
+        _selectionBoxTopLeft = new Point(left, top);
+        _selectionBoxSize = new DiagramSize(right - left, bottom - top);
+    }
+
+    private string GenerateStyle() =>
+        $"top:{_selectionBoxTopLeft!.Y}px; left:{_selectionBoxTopLeft.X}px; width:{_selectionBoxSize!.Width}px; height:{_selectionBoxSize.Height}px;";
+}

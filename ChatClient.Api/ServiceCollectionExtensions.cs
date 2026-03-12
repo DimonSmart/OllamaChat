@@ -1,6 +1,7 @@
 using ChatClient.Api.Client.Services;
 using ChatClient.Api.Client.Services.Agentic;
 using ChatClient.Api.Client.Services.Formatters;
+using ChatClient.Api.PlanningRuntime.Host;
 using ChatClient.Api.Services;
 using ChatClient.Api.Services.Rag;
 using ChatClient.Api.Services.Seed;
@@ -61,6 +62,10 @@ public static class ServiceCollectionExtensions
         services.AddScoped<AgenticChatEngineSessionService>();
         services.AddScoped<IChatEngineSessionService>(sp => sp.GetRequiredService<AgenticChatEngineSessionService>());
         services.AddScoped<IAgenticChatViewModelService, AgenticChatViewModelService>();
+        services.AddScoped<IPlanningChatClientFactory, PlanningChatClientFactory>();
+        services.AddScoped<WebSearchTool>();
+        services.AddScoped<WebDownloadTool>();
+        services.AddScoped<IPlanningSessionService, PlanningSessionService>();
         services.AddSingleton<IChatFormatter, TextChatFormatter>();
         services.AddSingleton<IChatFormatter, MarkdownChatFormatter>();
         services.AddSingleton<IChatFormatter, HtmlChatFormatter>();
@@ -71,7 +76,8 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<RagFilesSeeder>();
 
         services.AddRazorPages();
-        services.AddServerSideBlazor();
+        services.AddServerSideBlazor()
+            .AddCircuitOptions(options => options.DetailedErrors = true);
 
         services.AddTransient<HttpLoggingHandler>();
         services.AddHttpClient();

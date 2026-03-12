@@ -1,0 +1,67 @@
+@using Blazor.Diagrams.Core.Models
+@using Blazor.Diagrams.Core.Models.Base
+@using ChatClient.Api.PlanningRuntime.Planning
+
+<div class="@GetCssClass()" style="@GetStyle()">
+    <div class="planning-step-node-header">
+        <div class="planning-step-node-id">@StepNode.Step.Id</div>
+        @if (StepNode.HiddenDescendantCount > 0)
+        {
+            <div class="planning-step-node-badge">@($"{StepNode.HiddenDescendantCount} hidden")</div>
+        }
+    </div>
+    <div class="planning-step-node-meta">@GetKind(StepNode.Step): @GetName(StepNode.Step)</div>
+    <div class="planning-step-node-status">status: @StepNode.Step.Status</div>
+</div>
+
+@code {
+    [Parameter] public NodeModel Node { get; set; } = default!;
+
+    private PlanningStepNodeModel StepNode => (PlanningStepNodeModel)Node;
+
+    private string GetCssClass()
+    {
+        var selected = ((SelectableModel)StepNode).Selected ? " planning-step-node-selected" : string.Empty;
+        var collapsed = StepNode.IsCollapsed ? " planning-step-node-collapsed" : string.Empty;
+        return "planning-step-node" + selected + collapsed;
+    }
+
+    private string GetStyle() =>
+        $"--planning-node-fill:{GetFill(StepNode)}; --planning-node-stroke:{GetStroke(StepNode)};";
+
+    private static string GetKind(PlanStep step) =>
+        string.IsNullOrWhiteSpace(step.Tool) ? "llm" : "tool";
+
+    private static string GetName(PlanStep step) =>
+        string.IsNullOrWhiteSpace(step.Tool) ? step.Llm ?? string.Empty : step.Tool;
+
+    private static string GetFill(PlanningStepNodeModel node)
+    {
+        if (node.IsActive)
+            return "#ff8c42";
+
+        return node.Step.Status switch
+        {
+            PlanStepStatuses.Running => "#ff8c42",
+            PlanStepStatuses.Done => "#227c57",
+            PlanStepStatuses.Fail => "#9f2d2d",
+            PlanStepStatuses.Skip => "#666680",
+            _ => "#2f3b66"
+        };
+    }
+
+    private static string GetStroke(PlanningStepNodeModel node)
+    {
+        if (node.IsActive)
+            return "#ffd8a8";
+
+        return node.Step.Status switch
+        {
+            PlanStepStatuses.Running => "#ffd8a8",
+            PlanStepStatuses.Done => "#6de0b8",
+            PlanStepStatuses.Fail => "#ff9a9a",
+            PlanStepStatuses.Skip => "#c8c8d8",
+            _ => "#9ca8d6"
+        };
+    }
+}

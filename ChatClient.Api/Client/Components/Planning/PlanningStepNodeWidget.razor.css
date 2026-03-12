@@ -1,0 +1,71 @@
+.planning-step-node {
+    width: 230px;
+    min-height: 84px;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.35rem;
+    padding: 0.9rem 1rem;
+    border: 2px solid var(--planning-node-stroke, #9ca8d6);
+    border-radius: 14px;
+    background: var(--planning-node-fill, #2f3b66);
+    box-shadow: 0 14px 32px rgba(5, 8, 20, 0.22);
+    color: #fff;
+    text-align: left;
+    box-sizing: border-box;
+    overflow-wrap: anywhere;
+    word-break: break-word;
+    transition: transform 0.16s ease, box-shadow 0.16s ease, filter 0.16s ease, border-width 0.16s ease;
+}
+
+.planning-step-node:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 18px 38px rgba(5, 8, 20, 0.28);
+    filter: brightness(1.04);
+}
+
+.planning-step-node-selected {
+    border-width: 4px;
+}
+
+.planning-step-node-collapsed {
+    box-shadow: 0 14px 32px rgba(5, 8, 20, 0.22), inset 0 0 0 1px rgba(255, 255, 255, 0.12);
+}
+
+.planning-step-node-header {
+    width: 100%;
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 0.75rem;
+}
+
+.planning-step-node-id {
+    font-size: 0.98rem;
+    font-weight: 700;
+    line-height: 1.2;
+}
+
+.planning-step-node-badge {
+    flex-shrink: 0;
+    padding: 0.18rem 0.45rem;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.14);
+    color: #f4f2ff;
+    font-size: 0.72rem;
+    line-height: 1.2;
+}
+
+.planning-step-node-meta,
+.planning-step-node-status {
+    color: #d9d8ef;
+    line-height: 1.25;
+}
+
+.planning-step-node-meta {
+    font-size: 0.86rem;
+}
+
+.planning-step-node-status {
+    font-size: 0.8rem;
+}

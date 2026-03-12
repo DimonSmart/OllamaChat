@@ -1,0 +1,136 @@
+@using System.Text.Json
+@using ChatClient.Api.PlanningRuntime.Execution
+@using ChatClient.Api.PlanningRuntime.Planning
+@using MudBlazor
+
+@if (SelectedStep is null)
+{
+    <MudPaper Class="pa-4 planning-step-details" Outlined="true">
+        <MudText Typo="Typo.body2" Class="mud-text-secondary">Select a step on the graph to inspect prompts, calls, and outputs.</MudText>
+    </MudPaper>
+}
+else
+{
+    <MudPaper Class="pa-4 planning-step-details" Outlined="true">
+        <MudStack Spacing="2">
+            <div>
+                <MudText Typo="Typo.h6">@SelectedStep.Id</MudText>
+                <MudText Typo="Typo.caption" Class="mud-text-secondary">@GetKind(SelectedStep): @GetName(SelectedStep) | status: @SelectedStep.Status</MudText>
+            </div>
+
+            @if (!string.IsNullOrWhiteSpace(SelectedStep.SystemPrompt))
+            {
+                <MudText Typo="Typo.subtitle2">System Prompt</MudText>
+                <MudPaper Class="pa-3 planning-step-block">@SelectedStep.SystemPrompt</MudPaper>
+            }
+
+            @if (!string.IsNullOrWhiteSpace(SelectedStep.UserPrompt))
+            {
+                <MudText Typo="Typo.subtitle2">User Prompt</MudText>
+                <MudPaper Class="pa-3 planning-step-block">@SelectedStep.UserPrompt</MudPaper>
+            }
+
+            @foreach (var promptEvent in PromptEvents)
+            {
+                <MudText Typo="Typo.subtitle2">Prepared Prompt</MudText>
+                <MudPaper Class="pa-3 planning-step-block">@promptEvent.FullUserPrompt</MudPaper>
+            }
+
+            @if (SelectedStep.In.Count > 0)
+            {
+                <MudText Typo="Typo.subtitle2">Input Bindings</MudText>
+                <MudPaper Class="pa-3 planning-step-block">@SerializeJson(SelectedStep.In)</MudPaper>
+            }
+
+            @if (SelectedStep.Result is not null)
+            {
+                <MudText Typo="Typo.subtitle2">Result</MudText>
+                <MudPaper Class="pa-3 planning-step-block">@SerializeJson(SelectedStep.Result)</MudPaper>
+            }
+
+            @if (SelectedStep.Error is not null)
+            {
+                <MudText Typo="Typo.subtitle2">Error</MudText>
+                <MudPaper Class="pa-3 planning-step-block">@SerializeJson(SelectedStep.Error)</MudPaper>
+            }
+
+            @if (CallEvents.Count > 0)
+            {
+                <MudText Typo="Typo.subtitle2">Calls</MudText>
+                @foreach (var callEvent in CallEvents)
+                {
+                    <MudPaper Class="pa-3 mb-2 planning-step-call" Outlined="true">
+                        <MudText Typo="Typo.caption">call @callEvent.CallIndex | ok: @callEvent.Ok</MudText>
+                        @if (callEvent.Output is not null)
+                        {
+                            <MudText Typo="Typo.caption" Class="mt-1 mud-text-secondary">Output</MudText>
+                            <pre class="planning-step-code">@SerializeJson(callEvent.Output)</pre>
+                        }
+                        @if (callEvent.Error is not null)
+                        {
+                            <MudText Typo="Typo.caption" Class="mt-1 mud-text-secondary">Error</MudText>
+                            <pre class="planning-step-code">@SerializeJson(callEvent.Error)</pre>
+                        }
+                    </MudPaper>
+                }
+            }
+
+            @foreach (var responseEvent in ResponseEvents)
+            {
+                <MudText Typo="Typo.subtitle2">Raw LLM Response</MudText>
+                <MudPaper Class="pa-3 planning-step-block">@responseEvent.RawResponseText</MudPaper>
+            }
+        </MudStack>
+    </MudPaper>
+}
+
+@code {
+    [Parameter] public PlanDefinition? Plan { get; set; }
+    [Parameter] public string? ActiveStepId { get; set; }
+    [Parameter] public string? SelectedStepId { get; set; }
+    [Parameter] public IReadOnlyList<PlanRunEvent> Events { get; set; } = [];
+
+    private PlanStep? SelectedStep => ResolveSelectedStep();
+
+    private string? EffectiveStepId => SelectedStep?.Id;
+
+    private IReadOnlyList<AgentPromptPreparedEvent> PromptEvents =>
+        Events.OfType<AgentPromptPreparedEvent>()
+            .Where(evt => string.Equals(evt.StepId, EffectiveStepId, StringComparison.Ordinal))
+            .ToList();
+
+    private IReadOnlyList<AgentResponseReceivedEvent> ResponseEvents =>
+        Events.OfType<AgentResponseReceivedEvent>()
+            .Where(evt => string.Equals(evt.StepId, EffectiveStepId, StringComparison.Ordinal))
+            .ToList();
+
+    private IReadOnlyList<StepCallCompletedEvent> CallEvents =>
+        Events.OfType<StepCallCompletedEvent>()
+            .Where(evt => string.Equals(evt.StepId, EffectiveStepId, StringComparison.Ordinal))
+            .ToList();
+
+    private PlanStep? ResolveSelectedStep()
+    {
+        if (Plan is null || Plan.Steps.Count == 0)
+            return null;
+
+        foreach (var candidateId in new[] { SelectedStepId, ActiveStepId })
+        {
+            var step = Plan.Steps.FirstOrDefault(candidate =>
+                string.Equals(candidate.Id, candidateId, StringComparison.Ordinal));
+            if (step is not null)
+                return step;
+        }
+
+        return Plan.Steps[0];
+    }
+
+    private static string GetKind(PlanStep step) =>
+        string.IsNullOrWhiteSpace(step.Tool) ? "llm" : "tool";
+
+    private static string GetName(PlanStep step) =>
+        string.IsNullOrWhiteSpace(step.Tool) ? step.Llm ?? string.Empty : step.Tool;
+
+    private static string SerializeJson<T>(T value) =>
+        JsonSerializer.Serialize(value, new JsonSerializerOptions { WriteIndented = true });
+}

@@ -1,0 +1,190 @@
+.planning-graph-shell {
+    width: 100%;
+    height: clamp(420px, 68vh, 860px);
+    overflow: hidden;
+}
+
+.planning-graph-shell ::deep .diagram-canvas {
+    width: 100%;
+    height: 100%;
+    background:
+        radial-gradient(circle at top left, rgba(126, 111, 255, 0.08), transparent 26%),
+        linear-gradient(180deg, rgba(19, 24, 43, 0.92), rgba(15, 18, 33, 0.96));
+    cursor: default !important;
+    touch-action: none;
+    user-select: none;
+}
+
+.planning-graph-shell ::deep .diagram-html-layer {
+    cursor: default !important;
+    touch-action: none;
+    user-select: none;
+}
+
+.planning-graph-shell ::deep .diagram-canvas:active,
+.planning-graph-shell ::deep .diagram-html-layer:active {
+    cursor: default !important;
+}
+
+.planning-graph-shell ::deep .diagram-html-layer {
+    pointer-events: auto;
+}
+
+.planning-graph-shell ::deep .diagram-node {
+    pointer-events: auto;
+}
+
+.planning-graph-shell ::deep .planning-step-node {
+    width: 230px;
+    min-height: 84px;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.35rem;
+    padding: 0.9rem 1rem;
+    border: 2px solid var(--planning-node-stroke, #9ca8d6);
+    border-radius: 14px;
+    background: var(--planning-node-fill, #2f3b66);
+    box-shadow: 0 14px 32px rgba(5, 8, 20, 0.22);
+    color: #fff;
+    text-align: left;
+    box-sizing: border-box;
+    overflow-wrap: anywhere;
+    word-break: break-word;
+    transition: transform 0.16s ease, box-shadow 0.16s ease, filter 0.16s ease, border-width 0.16s ease;
+}
+
+.planning-graph-shell ::deep .planning-step-node:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 18px 38px rgba(5, 8, 20, 0.28);
+    filter: brightness(1.04);
+}
+
+.planning-graph-shell ::deep .planning-step-node-selected {
+    border-width: 4px;
+}
+
+.planning-graph-shell ::deep .planning-step-node-collapsed {
+    box-shadow: 0 14px 32px rgba(5, 8, 20, 0.22), inset 0 0 0 1px rgba(255, 255, 255, 0.12);
+}
+
+.planning-graph-shell ::deep .planning-step-node-header {
+    width: 100%;
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 0.75rem;
+}
+
+.planning-graph-shell ::deep .planning-step-node-id {
+    font-size: 0.98rem;
+    font-weight: 700;
+    line-height: 1.2;
+}
+
+.planning-graph-shell ::deep .planning-step-node-badge {
+    flex-shrink: 0;
+    padding: 0.18rem 0.45rem;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.14);
+    color: #f4f2ff;
+    font-size: 0.72rem;
+    line-height: 1.2;
+}
+
+.planning-graph-shell ::deep .planning-step-node-meta,
+.planning-graph-shell ::deep .planning-step-node-status {
+    color: #d9d8ef;
+    line-height: 1.25;
+}
+
+.planning-graph-shell ::deep .planning-step-node-meta {
+    font-size: 0.86rem;
+}
+
+.planning-graph-shell ::deep .planning-step-node-status {
+    font-size: 0.8rem;
+}
+
+.planning-graph-shell ::deep .diagram-link path {
+    transition: stroke 0.15s ease, stroke-width 0.15s ease, stroke-opacity 0.15s ease;
+}
+
+.planning-graph-shell ::deep .diagram-link .selection-helper {
+    cursor: pointer;
+}
+
+.planning-graph-shell ::deep .diagram-link:hover path:not(.selection-helper) {
+    stroke-width: 3.5px !important;
+}
+
+.planning-graph-host {
+    position: relative;
+    outline: none;
+}
+
+.planning-graph-host.planning-graph-pan-ready ::deep .diagram-canvas,
+.planning-graph-host.planning-graph-pan-ready ::deep .diagram-html-layer {
+    cursor: grab !important;
+}
+
+.planning-graph-host.planning-graph-panning ::deep .diagram-canvas,
+.planning-graph-host.planning-graph-panning ::deep .diagram-canvas:active,
+.planning-graph-host.planning-graph-panning ::deep .diagram-html-layer,
+.planning-graph-host.planning-graph-panning ::deep .diagram-html-layer:active {
+    cursor: grabbing !important;
+}
+
+.planning-graph-toolbar {
+    position: absolute;
+    top: 1rem;
+    left: 1rem;
+    z-index: 3;
+    display: flex;
+    gap: 0.45rem;
+    pointer-events: auto;
+}
+
+.planning-graph-toolbar-button {
+    min-width: 2.4rem;
+    height: 2.4rem;
+    padding: 0 0.75rem;
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    border-radius: 10px;
+    background: rgba(14, 18, 34, 0.92);
+    color: #eef1ff;
+    font-size: 0.9rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background 0.14s ease, border-color 0.14s ease, transform 0.14s ease;
+}
+
+.planning-graph-toolbar-button:hover {
+    background: rgba(29, 38, 72, 0.96);
+    border-color: rgba(255, 216, 168, 0.5);
+    transform: translateY(-1px);
+}
+
+.planning-graph-toolbar-button-wide {
+    min-width: 3.6rem;
+}
+
+.planning-selection-box {
+    position: absolute;
+    z-index: 2;
+    border: 1px solid rgba(255, 216, 168, 0.75);
+    background: rgba(255, 216, 168, 0.12);
+    box-shadow: inset 0 0 0 1px rgba(255, 216, 168, 0.12);
+    pointer-events: none;
+}
+
+.planning-graph-empty-state {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 1.5rem;
+    pointer-events: none;
+    text-align: center;
+}

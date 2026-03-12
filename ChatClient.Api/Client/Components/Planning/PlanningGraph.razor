@@ -1,0 +1,1032 @@
+@using Blazor.Diagrams
+@using Blazor.Diagrams.Components
+@using Blazor.Diagrams.Core.Behaviors
+@using Blazor.Diagrams.Core.Geometry
+@using Blazor.Diagrams.Core.Models
+@using Blazor.Diagrams.Core.Models.Base
+@using DiagramSize = Blazor.Diagrams.Core.Geometry.Size
+@using Microsoft.AspNetCore.Components.Web
+@using Microsoft.JSInterop
+@using System.Text.Json.Nodes
+@using ChatClient.Api.PlanningRuntime.Planning
+@using MudBlazor
+@inject IJSRuntime JSRuntime
+@implements IAsyncDisposable
+
+<MudPaper Class="planning-graph-shell" Outlined="true" Style="@GraphShellStyle">
+    <div @ref="_graphHostElement"
+         class="@GetGraphHostCssClass()"
+         style="@GraphHostStyle"
+         tabindex="0">
+        @if (_canvasReady)
+        {
+            <CascadingValue Value="_diagram">
+                <DiagramCanvas Class="planning-graph-canvas" />
+            </CascadingValue>
+
+            @if (_selectionBoxTopLeft is not null && _selectionBoxSize is not null)
+            {
+                <div class="planning-selection-box" style="@GetSelectionBoxStyle()"></div>
+            }
+        }
+
+        <div class="planning-graph-toolbar">
+            <button type="button" class="planning-graph-toolbar-button" @onclick="ZoomIn">+</button>
+            <button type="button" class="planning-graph-toolbar-button" @onclick="ZoomOut">-</button>
+            <button type="button" class="planning-graph-toolbar-button planning-graph-toolbar-button-wide" @onclick="FitToScreen">Fit</button>
+            <button type="button" class="planning-graph-toolbar-button planning-graph-toolbar-button-wide" @onclick="ResetViewport">100%</button>
+        </div>
+
+        @if (Plan is null || Plan.Steps.Count == 0)
+        {
+            <div class="planning-graph-empty-state">
+                <MudText Typo="Typo.body2" Class="mud-text-secondary">Plan will appear here after the first planning attempt.</MudText>
+            </div>
+        }
+    </div>
+</MudPaper>
+
+@code {
+    private const double NodeWidth = 230d;
+    private const double NodeHeight = 84d;
+    private const double HorizontalGap = 120d;
+    private const double VerticalGap = 54d;
+    private const double Margin = 32d;
+    private const double ZoomMin = 0.6d;
+    private const double ZoomMax = 1.6d;
+    private const double DefaultZoom = 1.0d;
+    private const double ZoomStepFactor = 1.15d;
+    private const double ViewportPadding = 40d;
+    private const string LinkColor = "#8d8bb1";
+    private const string LinkSelectedColor = "#ffd8a8";
+
+    private readonly BlazorDiagram _diagram = CreateDiagram();
+    private readonly HashSet<string> _collapsedStepIds = new(StringComparer.Ordinal);
+
+    private DotNetObjectReference<PlanningGraph>? _selfReference;
+    private ElementReference _graphHostElement;
+    private bool _canvasReady;
+    private string? _keyboardRegistrationId;
+    private string? _structureKey;
+    private bool _fitPending;
+    private bool _fitRequestedExplicitly;
+    private bool _hasInitialFit;
+    private bool _spacePressed;
+    private bool _isPanning;
+    private bool _isNodePointerActive;
+    private bool _syncDeferred;
+    private bool _nodeDragMoved;
+    private bool _selectionBoxActive;
+    private string? _dragNodeId;
+    private string? _suppressClickStepId;
+    private Point? _dragNodeStartPosition;
+    private Point? _panStart;
+    private Point? _selectionStartClientPoint;
+    private Point? _selectionBoxTopLeft;
+    private DiagramSize? _selectionBoxSize;
+    private double _dragStartClientX;
+    private double _dragStartClientY;
+    private double _panStartClientX;
+    private double _panStartClientY;
+
+    [Parameter] public PlanDefinition? Plan { get; set; }
+    [Parameter] public string? ActiveStepId { get; set; }
+    [Parameter] public string? SelectedStepId { get; set; }
+    [Parameter] public EventCallback<string> SelectedStepIdChanged { get; set; }
+
+    private static string GraphShellStyle =>
+        "width:100%; min-height:420px; height:clamp(420px, 68vh, 860px); overflow:hidden;";
+
+    private static string GraphHostStyle =>
+        "position:relative; width:100%; height:100%; min-height:420px;";
+
+    protected override void OnInitialized()
+    {
+        _diagram.RegisterComponent<PlanningStepNodeModel, PlanningStepNodeWidget>();
+        ReplaceDefaultBehaviors();
+
+        _diagram.ContainerChanged += OnDiagramContainerChanged;
+    }
+
+    protected override void OnParametersSet()
+    {
+        if (_canvasReady)
+        {
+            SyncDiagram();
+        }
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!_canvasReady)
+        {
+            _canvasReady = true;
+            SyncDiagram();
+            await InvokeAsync(StateHasChanged);
+            return;
+        }
+
+        DotNetObjectReference<PlanningGraph>? nextSelfReference = null;
+        try
+        {
+            nextSelfReference = DotNetObjectReference.Create(this);
+            _keyboardRegistrationId = await JSRuntime.InvokeAsync<string>(
+                "planningGraphInterop.refreshRegistration",
+                _graphHostElement,
+                nextSelfReference,
+                _keyboardRegistrationId);
+
+            _selfReference?.Dispose();
+            _selfReference = nextSelfReference;
+            nextSelfReference = null;
+        }
+        catch (Exception ex) when (ex is JSDisconnectedException or InvalidOperationException)
+        {
+            nextSelfReference?.Dispose();
+        }
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        _diagram.ContainerChanged -= OnDiagramContainerChanged;
+
+        if (!string.IsNullOrWhiteSpace(_keyboardRegistrationId))
+        {
+            try
+            {
+                await JSRuntime.InvokeVoidAsync("planningGraphInterop.unregister", _keyboardRegistrationId);
+            }
+            catch (Exception ex) when (ex is JSDisconnectedException or InvalidOperationException)
+            {
+            }
+        }
+
+        _selfReference?.Dispose();
+    }
+
+    [JSInvokable]
+    public Task SetSpacePressed(bool isPressed)
+    {
+        if (_spacePressed == isPressed)
+            return Task.CompletedTask;
+
+        _spacePressed = isPressed;
+        if (!isPressed)
+        {
+            _isPanning = false;
+            _panStart = null;
+        }
+
+        return InvokeAsync(StateHasChanged);
+    }
+
+    private static BlazorDiagram CreateDiagram()
+    {
+        var options = new Blazor.Diagrams.Options.BlazorDiagramOptions
+        {
+            LinksLayerOrder = 10,
+            NodesLayerOrder = 20,
+            AllowMultiSelection = false,
+            AllowPanning = true
+        };
+
+        options.Zoom.Minimum = ZoomMin;
+        options.Zoom.Maximum = ZoomMax;
+        options.Zoom.ScaleFactor = ZoomStepFactor;
+
+        return new BlazorDiagram(options);
+    }
+
+    private void ReplaceDefaultBehaviors()
+    {
+        _diagram.UnregisterBehavior<SelectionBehavior>();
+        _diagram.UnregisterBehavior<DragMovablesBehavior>();
+        _diagram.UnregisterBehavior<PanBehavior>();
+        _diagram.UnregisterBehavior<ZoomBehavior>();
+        _diagram.UnregisterBehavior<EventsBehavior>();
+    }
+
+    private void SyncDiagram()
+    {
+        if (_isNodePointerActive)
+        {
+            _syncDeferred = true;
+            return;
+        }
+
+        if (Plan is null || Plan.Steps.Count == 0)
+        {
+            _diagram.Batch(() =>
+            {
+                _diagram.Links.Clear();
+                _diagram.Nodes.Clear();
+                _diagram.Groups.Clear();
+            });
+
+            _structureKey = null;
+            _fitPending = false;
+            _fitRequestedExplicitly = false;
+            _hasInitialFit = false;
+            _collapsedStepIds.Clear();
+            ApplySelection();
+            return;
+        }
+
+        PruneCollapsedStepIds(Plan);
+        var collapsedState = CreateCollapsedState(Plan);
+        var visibleSteps = Plan.Steps
+            .Where(step => !collapsedState.HiddenStepIds.Contains(step.Id))
+            .ToList();
+
+        var nextStructureKey = BuildStructureKey(visibleSteps);
+        if (!string.Equals(_structureKey, nextStructureKey, StringComparison.Ordinal))
+        {
+            RebuildDiagram(visibleSteps, collapsedState.HiddenDescendantCounts);
+            _structureKey = nextStructureKey;
+        }
+        else
+        {
+            UpdateDiagramState(visibleSteps, collapsedState.HiddenDescendantCounts);
+        }
+
+        FitDiagramToViewport();
+        ApplySelection();
+    }
+
+    private void RebuildDiagram(IReadOnlyList<PlanStep> visibleSteps, IReadOnlyDictionary<string, int> hiddenDescendantCounts)
+    {
+        var currentPositions = _diagram.Nodes
+            .OfType<PlanningStepNodeModel>()
+            .ToDictionary(node => node.Step.Id, node => node.Position, StringComparer.Ordinal);
+
+        _diagram.Batch(() =>
+        {
+            _diagram.Links.Clear();
+            _diagram.Nodes.Clear();
+            _diagram.Groups.Clear();
+
+            var graphNodes = BuildGraphNodes(visibleSteps, currentPositions);
+            var nodeLookup = new Dictionary<string, PlanningStepNodeModel>(StringComparer.Ordinal);
+
+            foreach (var graphNode in graphNodes)
+            {
+                var node = new PlanningStepNodeModel(
+                    graphNode.Step,
+                    graphNode.Position,
+                    string.Equals(graphNode.Step.Id, ActiveStepId, StringComparison.Ordinal));
+
+                node.Size = new Blazor.Diagrams.Core.Geometry.Size(NodeWidth, NodeHeight);
+                node.Update(
+                    graphNode.Step,
+                    string.Equals(graphNode.Step.Id, ActiveStepId, StringComparison.Ordinal),
+                    _collapsedStepIds.Contains(graphNode.Step.Id),
+                    hiddenDescendantCounts.GetValueOrDefault(graphNode.Step.Id));
+                nodeLookup[node.Step.Id] = node;
+                _diagram.Nodes.Add(node);
+            }
+
+            foreach (var step in visibleSteps)
+            {
+                if (!nodeLookup.TryGetValue(step.Id, out var target))
+                    continue;
+
+                foreach (var dependency in GetDependencies(step))
+                {
+                    if (!nodeLookup.TryGetValue(dependency, out var source))
+                        continue;
+
+                    _diagram.Links.Add(new LinkModel(source, target)
+                    {
+                        Color = LinkColor,
+                        SelectedColor = LinkSelectedColor,
+                        TargetMarker = LinkMarker.Arrow
+                    });
+                }
+            }
+
+            _fitPending = _fitRequestedExplicitly || !_hasInitialFit;
+        });
+    }
+
+    private void UpdateDiagramState(IReadOnlyList<PlanStep> visibleSteps, IReadOnlyDictionary<string, int> hiddenDescendantCounts)
+    {
+        var nodeLookup = _diagram.Nodes
+            .OfType<PlanningStepNodeModel>()
+            .ToDictionary(node => node.Step.Id, StringComparer.Ordinal);
+
+        foreach (var step in visibleSteps)
+        {
+            if (!nodeLookup.TryGetValue(step.Id, out var node))
+                continue;
+
+            node.Update(
+                step,
+                string.Equals(step.Id, ActiveStepId, StringComparison.Ordinal),
+                _collapsedStepIds.Contains(step.Id),
+                hiddenDescendantCounts.GetValueOrDefault(step.Id));
+        }
+    }
+
+    private void ApplySelection()
+    {
+        var selectedId = ResolveSelectedStepId();
+
+        _diagram.UnselectAll();
+
+        if (string.IsNullOrWhiteSpace(selectedId))
+            return;
+
+        var node = _diagram.Nodes
+            .OfType<PlanningStepNodeModel>()
+            .FirstOrDefault(candidate => string.Equals(candidate.Step.Id, selectedId, StringComparison.Ordinal));
+
+        if (node is not null)
+        {
+            _diagram.SelectModel(node, unselectOthers: true);
+        }
+    }
+
+    private async Task ZoomIn()
+    {
+        await InvokeAsync(() => SetZoomAroundViewportCenter(_diagram.Zoom * ZoomStepFactor));
+    }
+
+    private async Task ZoomOut()
+    {
+        await InvokeAsync(() => SetZoomAroundViewportCenter(_diagram.Zoom / ZoomStepFactor));
+    }
+
+    private async Task FitToScreen()
+    {
+        _fitRequestedExplicitly = true;
+        await InvokeAsync(() =>
+        {
+            _fitPending = true;
+            FitDiagramToViewport();
+            StateHasChanged();
+        });
+    }
+
+    private async Task ResetViewport()
+    {
+        await InvokeAsync(() =>
+        {
+            CenterGraph(DefaultZoom);
+            StateHasChanged();
+        });
+    }
+
+    private void SetZoomAroundViewportCenter(double requestedZoom)
+    {
+        if (_diagram.Container is null)
+            return;
+
+        var container = _diagram.Container;
+        SetZoomAroundPoint(requestedZoom, container.Left + container.Width / 2d, container.Top + container.Height / 2d);
+    }
+
+    private void SetZoomAroundPoint(double requestedZoom, double clientX, double clientY)
+    {
+        if (_diagram.Container is null)
+            return;
+
+        var container = _diagram.Container;
+        var currentZoom = _diagram.Zoom;
+        var newZoom = Math.Clamp(requestedZoom, ZoomMin, ZoomMax);
+        if (Math.Abs(newZoom - currentZoom) < 0.0001d)
+            return;
+
+        var widthDelta = container.Width * newZoom - container.Width * currentZoom;
+        var heightDelta = container.Height * newZoom - container.Height * currentZoom;
+        var relativeX = clientX - container.Left;
+        var relativeY = clientY - container.Top;
+        var ratioX = (relativeX - _diagram.Pan.X) / currentZoom / container.Width;
+        var ratioY = (relativeY - _diagram.Pan.Y) / currentZoom / container.Height;
+        var newPanX = _diagram.Pan.X - widthDelta * ratioX;
+        var newPanY = _diagram.Pan.Y - heightDelta * ratioY;
+
+        _diagram.Batch(() =>
+        {
+            _diagram.SetPan(newPanX, newPanY);
+            _diagram.SetZoom(newZoom);
+        });
+    }
+
+    private void OnDiagramContainerChanged()
+    {
+        FitDiagramToViewport();
+    }
+
+    private void FitDiagramToViewport()
+    {
+        if (!_fitPending || _diagram.Container is null)
+            return;
+
+        var nodes = _diagram.Nodes.OfType<NodeModel>()
+            .Where(node => node.Size is not null)
+            .ToList();
+
+        if (nodes.Count == 0)
+            return;
+
+        var left = nodes.Min(node => node.Position.X);
+        var top = nodes.Min(node => node.Position.Y);
+        var right = nodes.Max(node => node.Position.X + node.Size!.Width);
+        var bottom = nodes.Max(node => node.Position.Y + node.Size!.Height);
+
+        var contentWidth = Math.Max(1d, right - left);
+        var contentHeight = Math.Max(1d, bottom - top);
+        var viewport = _diagram.Container;
+
+        var zoom = Math.Min(
+            (viewport.Width - ViewportPadding * 2d) / contentWidth,
+            (viewport.Height - ViewportPadding * 2d) / contentHeight);
+
+        zoom = Math.Clamp(zoom, ZoomMin, ZoomMax);
+
+        var panX = (viewport.Width - contentWidth * zoom) / 2d - left * zoom;
+        var panY = (viewport.Height - contentHeight * zoom) / 2d - top * zoom;
+
+        _diagram.Batch(() =>
+        {
+            _diagram.SetZoom(zoom);
+            _diagram.SetPan(panX, panY);
+        });
+
+        _fitPending = false;
+        _fitRequestedExplicitly = false;
+        _hasInitialFit = true;
+    }
+
+    private void CenterGraph(double zoom)
+    {
+        if (_diagram.Container is null)
+            return;
+
+        var nodes = _diagram.Nodes.OfType<NodeModel>()
+            .Where(node => node.Size is not null)
+            .ToList();
+
+        if (nodes.Count == 0)
+        {
+            _diagram.Batch(() =>
+            {
+                _diagram.SetZoom(DefaultZoom);
+                _diagram.SetPan(0d, 0d);
+            });
+            return;
+        }
+
+        var left = nodes.Min(node => node.Position.X);
+        var top = nodes.Min(node => node.Position.Y);
+        var right = nodes.Max(node => node.Position.X + node.Size!.Width);
+        var bottom = nodes.Max(node => node.Position.Y + node.Size!.Height);
+        var contentWidth = Math.Max(1d, right - left);
+        var contentHeight = Math.Max(1d, bottom - top);
+        var viewport = _diagram.Container;
+        var clampedZoom = Math.Clamp(zoom, ZoomMin, ZoomMax);
+        var panX = (viewport.Width - contentWidth * clampedZoom) / 2d - left * clampedZoom;
+        var panY = (viewport.Height - contentHeight * clampedZoom) / 2d - top * clampedZoom;
+
+        _diagram.Batch(() =>
+        {
+            _diagram.SetZoom(clampedZoom);
+            _diagram.SetPan(panX, panY);
+        });
+    }
+
+    private string? ResolveSelectedStepId()
+    {
+        if (Plan is null || Plan.Steps.Count == 0)
+            return null;
+
+        foreach (var candidateId in new[] { SelectedStepId, ActiveStepId })
+        {
+            if (!string.IsNullOrWhiteSpace(candidateId) &&
+                Plan.Steps.Any(step => string.Equals(step.Id, candidateId, StringComparison.Ordinal)))
+            {
+                return candidateId;
+            }
+        }
+
+        return Plan.Steps[0].Id;
+    }
+
+    [JSInvokable]
+    public Task HandleNodePointerDown(string stepId, double clientX, double clientY, long button)
+    {
+        var node = FindNode(stepId);
+        if (node is null)
+            return Task.CompletedTask;
+
+        OnNodePointerDown(node, clientX, clientY, button);
+        return InvokeAsync(StateHasChanged);
+    }
+
+    [JSInvokable]
+    public async Task HandleNodeClick(string stepId)
+    {
+        var node = FindNode(stepId);
+        if (node is null)
+            return;
+
+        await OnNodeClickedAsync(node);
+        await InvokeAsync(StateHasChanged);
+    }
+
+    [JSInvokable]
+    public async Task HandleNodeDoubleClick(string stepId)
+    {
+        var node = FindNode(stepId);
+        if (node is null)
+            return;
+
+        await OnNodeDoubleClickedAsync(node);
+    }
+
+    [JSInvokable]
+    public Task HandleHostPointerDown(double clientX, double clientY, long button)
+    {
+        OnHostPointerDown(clientX, clientY, button);
+        return InvokeAsync(StateHasChanged);
+    }
+
+    [JSInvokable]
+    public Task HandleHostPointerMove(double clientX, double clientY)
+    {
+        OnHostPointerMove(clientX, clientY);
+        return InvokeAsync(StateHasChanged);
+    }
+
+    [JSInvokable]
+    public Task HandleHostPointerUp(double clientX, double clientY, long button)
+    {
+        return OnHostPointerUpAsync();
+    }
+
+    [JSInvokable]
+    public Task HandleHostPointerCancel()
+    {
+        return OnHostPointerCancelAsync();
+    }
+
+    [JSInvokable]
+    public Task HandleWheel(double clientX, double clientY, double deltaY, bool ctrlKey)
+    {
+        OnHostWheel(clientX, clientY, deltaY, ctrlKey);
+        return InvokeAsync(StateHasChanged);
+    }
+
+    private void OnNodePointerDown(PlanningStepNodeModel node, double clientX, double clientY, long button)
+    {
+        if (button != 0L)
+            return;
+
+        _isNodePointerActive = true;
+        _syncDeferred = false;
+        _nodeDragMoved = false;
+        _dragNodeId = node.Step.Id;
+        _dragNodeStartPosition = node.Position;
+        _dragStartClientX = clientX;
+        _dragStartClientY = clientY;
+
+        SelectSingleNode(node);
+    }
+
+    private async Task OnNodeClickedAsync(PlanningStepNodeModel node)
+    {
+        if (string.Equals(_suppressClickStepId, node.Step.Id, StringComparison.Ordinal))
+        {
+            _suppressClickStepId = null;
+            return;
+        }
+
+        await SelectSingleNodeAsync(node, notifyParent: true);
+    }
+
+    private Task OnNodeDoubleClickedAsync(PlanningStepNodeModel node)
+    {
+        if (_nodeDragMoved)
+            return Task.CompletedTask;
+
+        return ToggleCollapsedAsync(node.Step.Id);
+    }
+
+    private async Task ToggleCollapsedAsync(string stepId)
+    {
+        if (Plan is null)
+            return;
+
+        var descendantCount = CountDescendants(stepId, Plan);
+        if (descendantCount == 0)
+            return;
+
+        if (!_collapsedStepIds.Add(stepId))
+        {
+            _collapsedStepIds.Remove(stepId);
+        }
+
+        await SelectedStepIdChanged.InvokeAsync(stepId);
+        SyncDiagram();
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private void OnHostPointerDown(double clientX, double clientY, long button)
+    {
+        if (button != 0L)
+            return;
+
+        if (_spacePressed)
+        {
+            _isPanning = true;
+            _panStart = _diagram.Pan;
+            _panStartClientX = clientX;
+            _panStartClientY = clientY;
+            _selectionStartClientPoint = null;
+            _selectionBoxTopLeft = null;
+            _selectionBoxSize = null;
+            _selectionBoxActive = false;
+            return;
+        }
+
+        _selectionStartClientPoint = new Point(clientX, clientY);
+        _selectionBoxActive = false;
+        _selectionBoxTopLeft = null;
+        _selectionBoxSize = null;
+    }
+
+    private void OnHostPointerMove(double clientX, double clientY)
+    {
+        if (_dragNodeId is not null && _dragNodeStartPosition is not null)
+        {
+            var node = FindNode(_dragNodeId);
+            if (node is null)
+                return;
+
+            var deltaX = (clientX - _dragStartClientX) / _diagram.Zoom;
+            var deltaY = (clientY - _dragStartClientY) / _diagram.Zoom;
+            if (!_nodeDragMoved && (Math.Abs(deltaX) > 1d || Math.Abs(deltaY) > 1d))
+            {
+                _nodeDragMoved = true;
+            }
+
+            node.SetPosition(_dragNodeStartPosition.X + deltaX, _dragNodeStartPosition.Y + deltaY);
+            return;
+        }
+
+        if (_isPanning && _panStart is not null)
+        {
+            _diagram.SetPan(
+                _panStart.X + (clientX - _panStartClientX),
+                _panStart.Y + (clientY - _panStartClientY));
+            return;
+        }
+
+        if (_selectionStartClientPoint is null || _diagram.Container is null)
+            return;
+
+        var selectionDeltaX = Math.Abs(clientX - _selectionStartClientPoint.X);
+        var selectionDeltaY = Math.Abs(clientY - _selectionStartClientPoint.Y);
+        if (!_selectionBoxActive && selectionDeltaX < 4d && selectionDeltaY < 4d)
+            return;
+
+        if (!_selectionBoxActive)
+        {
+            _selectionBoxActive = true;
+            _diagram.UnselectAll();
+        }
+
+        UpdateSelectionBox(clientX, clientY);
+        ApplyBoxSelection(clientX, clientY);
+    }
+
+    private Task OnHostPointerUpAsync()
+    {
+        return EndInteractionAsync();
+    }
+
+    private Task OnHostPointerCancelAsync()
+    {
+        return EndInteractionAsync();
+    }
+
+    private async Task EndInteractionAsync()
+    {
+        var draggedNodeId = _dragNodeId;
+        var draggedNodeMoved = _nodeDragMoved;
+        var hadDeferredSync = _syncDeferred;
+        var boxSelectionCompleted = _selectionBoxActive;
+
+        _dragNodeId = null;
+        _dragNodeStartPosition = null;
+        _nodeDragMoved = false;
+        _isNodePointerActive = false;
+        _isPanning = false;
+        _panStart = null;
+        _selectionStartClientPoint = null;
+        _selectionBoxActive = false;
+        _selectionBoxTopLeft = null;
+        _selectionBoxSize = null;
+        _syncDeferred = false;
+
+        if (!string.IsNullOrWhiteSpace(draggedNodeId) && draggedNodeMoved)
+        {
+            _suppressClickStepId = draggedNodeId;
+            FindNode(draggedNodeId)?.TriggerMoved();
+        }
+
+        if (boxSelectionCompleted)
+        {
+            var selectedNodes = _diagram.Nodes
+                .OfType<PlanningStepNodeModel>()
+                .Where(node => node.Selected)
+                .ToList();
+
+            if (selectedNodes.Count == 1)
+            {
+                await SelectedStepIdChanged.InvokeAsync(selectedNodes[0].Step.Id);
+            }
+        }
+
+        if (hadDeferredSync)
+        {
+            SyncDiagram();
+        }
+
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private void OnHostWheel(double clientX, double clientY, double deltaY, bool ctrlKey)
+    {
+        if (!ctrlKey)
+            return;
+
+        var requestedZoom = deltaY > 0d
+            ? _diagram.Zoom * ZoomStepFactor
+            : _diagram.Zoom / ZoomStepFactor;
+
+        SetZoomAroundPoint(requestedZoom, clientX, clientY);
+    }
+
+    private void SelectSingleNode(PlanningStepNodeModel node)
+    {
+        _diagram.UnselectAll();
+        _diagram.SelectModel(node, unselectOthers: true);
+    }
+
+    private async Task SelectSingleNodeAsync(PlanningStepNodeModel node, bool notifyParent)
+    {
+        SelectSingleNode(node);
+
+        if (notifyParent)
+        {
+            await SelectedStepIdChanged.InvokeAsync(node.Step.Id);
+        }
+    }
+
+    private PlanningStepNodeModel? FindNode(string stepId) =>
+        _diagram.Nodes
+            .OfType<PlanningStepNodeModel>()
+            .FirstOrDefault(node => string.Equals(node.Step.Id, stepId, StringComparison.Ordinal));
+
+    private void UpdateSelectionBox(double clientX, double clientY)
+    {
+        var selectionStartClientPoint = _selectionStartClientPoint!;
+        var start = _diagram.GetRelativePoint(selectionStartClientPoint.X, selectionStartClientPoint.Y);
+        var end = _diagram.GetRelativePoint(clientX, clientY);
+
+        var left = Math.Min(start.X, end.X);
+        var top = Math.Min(start.Y, end.Y);
+        var right = Math.Max(start.X, end.X);
+        var bottom = Math.Max(start.Y, end.Y);
+
+        _selectionBoxTopLeft = new Point(left, top);
+        _selectionBoxSize = new DiagramSize(right - left, bottom - top);
+    }
+
+    private void ApplyBoxSelection(double clientX, double clientY)
+    {
+        var selectionStartClientPoint = _selectionStartClientPoint!;
+        var start = _diagram.GetRelativeMousePoint(selectionStartClientPoint.X, selectionStartClientPoint.Y);
+        var end = _diagram.GetRelativeMousePoint(clientX, clientY);
+
+        var selection = new Rectangle(
+            Math.Min(start.X, end.X),
+            Math.Min(start.Y, end.Y),
+            Math.Max(start.X, end.X),
+            Math.Max(start.Y, end.Y));
+
+        foreach (var node in _diagram.Nodes.OfType<PlanningStepNodeModel>())
+        {
+            var bounds = node.GetBounds();
+            if (bounds is null)
+                continue;
+
+            if (selection.Overlap(bounds))
+            {
+                _diagram.SelectModel(node, unselectOthers: false);
+            }
+            else if (node.Selected)
+            {
+                _diagram.UnselectModel(node);
+            }
+        }
+    }
+
+    private string GetSelectionBoxStyle()
+    {
+        var selectionBoxTopLeft = _selectionBoxTopLeft!;
+        var selectionBoxSize = _selectionBoxSize!;
+        return $"top:{selectionBoxTopLeft.Y}px; left:{selectionBoxTopLeft.X}px; width:{selectionBoxSize.Width}px; height:{selectionBoxSize.Height}px;";
+    }
+
+    private string GetGraphHostCssClass()
+    {
+        var css = "planning-graph-host";
+        if (_spacePressed)
+            css += " planning-graph-pan-ready";
+        if (_isPanning)
+            css += " planning-graph-panning";
+        return css;
+    }
+
+    private void PruneCollapsedStepIds(PlanDefinition plan)
+    {
+        var validIds = plan.Steps.Select(step => step.Id).ToHashSet(StringComparer.Ordinal);
+        _collapsedStepIds.RemoveWhere(stepId => !validIds.Contains(stepId));
+    }
+
+    private CollapsedState CreateCollapsedState(PlanDefinition plan)
+    {
+        var hiddenStepIds = new HashSet<string>(StringComparer.Ordinal);
+        var hiddenDescendantCounts = new Dictionary<string, int>(StringComparer.Ordinal);
+        var dependentsLookup = BuildDependentsLookup(plan.Steps);
+
+        foreach (var collapsedStepId in _collapsedStepIds)
+        {
+            var descendants = CollectDescendants(collapsedStepId, dependentsLookup);
+            hiddenDescendantCounts[collapsedStepId] = descendants.Count;
+            hiddenStepIds.UnionWith(descendants);
+        }
+
+        hiddenStepIds.ExceptWith(_collapsedStepIds);
+        return new CollapsedState(hiddenStepIds, hiddenDescendantCounts);
+    }
+
+    private static Dictionary<string, List<string>> BuildDependentsLookup(IEnumerable<PlanStep> steps)
+    {
+        var dependents = new Dictionary<string, List<string>>(StringComparer.Ordinal);
+
+        foreach (var step in steps)
+        {
+            dependents.TryAdd(step.Id, []);
+
+            foreach (var dependency in GetDependencies(step))
+            {
+                if (!dependents.TryGetValue(dependency, out var children))
+                {
+                    children = [];
+                    dependents[dependency] = children;
+                }
+
+                children.Add(step.Id);
+            }
+        }
+
+        return dependents;
+    }
+
+    private static HashSet<string> CollectDescendants(string stepId, IReadOnlyDictionary<string, List<string>> dependentsLookup)
+    {
+        var descendants = new HashSet<string>(StringComparer.Ordinal);
+        var pending = new Stack<string>();
+
+        if (dependentsLookup.TryGetValue(stepId, out var directDependents))
+        {
+            foreach (var dependent in directDependents)
+            {
+                pending.Push(dependent);
+            }
+        }
+
+        while (pending.Count > 0)
+        {
+            var current = pending.Pop();
+            if (!descendants.Add(current))
+                continue;
+
+            if (!dependentsLookup.TryGetValue(current, out var nestedDependents))
+                continue;
+
+            foreach (var dependent in nestedDependents)
+            {
+                pending.Push(dependent);
+            }
+        }
+
+        return descendants;
+    }
+
+    private static int CountDescendants(string stepId, PlanDefinition plan)
+    {
+        var dependentsLookup = BuildDependentsLookup(plan.Steps);
+        return CollectDescendants(stepId, dependentsLookup).Count;
+    }
+
+    private static string BuildStructureKey(IReadOnlyList<PlanStep> visibleSteps)
+    {
+        var parts = new List<string>(visibleSteps.Count);
+        foreach (var step in visibleSteps)
+        {
+            var dependencies = GetDependencies(step)
+                .OrderBy(value => value, StringComparer.Ordinal);
+
+            parts.Add($"{step.Id}:{step.Tool}:{step.Llm}:{string.Join(",", dependencies)}");
+        }
+
+        return string.Join("|", parts);
+    }
+
+    private static List<GraphNode> BuildGraphNodes(
+        IReadOnlyList<PlanStep> visibleSteps,
+        IReadOnlyDictionary<string, Point> currentPositions)
+    {
+        var depthByStepId = new Dictionary<string, int>(StringComparer.Ordinal);
+        var graphNodes = new List<GraphNode>(visibleSteps.Count);
+
+        for (var index = 0; index < visibleSteps.Count; index++)
+        {
+            var step = visibleSteps[index];
+            var depth = GetDependencies(step)
+                .Where(depthByStepId.ContainsKey)
+                .Select(stepId => depthByStepId[stepId] + 1)
+                .DefaultIfEmpty(0)
+                .Max();
+
+            depthByStepId[step.Id] = depth;
+
+            var fallback = new Point(
+                Margin + depth * (NodeWidth + HorizontalGap),
+                Margin + index * VerticalGap);
+
+            graphNodes.Add(new GraphNode(
+                step,
+                currentPositions.TryGetValue(step.Id, out var position) ? position : fallback));
+        }
+
+        return graphNodes;
+    }
+
+    private static IReadOnlyCollection<string> GetDependencies(PlanStep step)
+    {
+        var dependencies = new HashSet<string>(StringComparer.Ordinal);
+
+        foreach (var value in step.In.Values)
+        {
+            CollectDependencies(value, dependencies);
+        }
+
+        return dependencies;
+    }
+
+    private static void CollectDependencies(JsonNode? value, ISet<string> dependencies)
+    {
+        switch (value)
+        {
+            case JsonValue jsonValue when jsonValue.TryGetValue<string>(out var text) && text.StartsWith("$", StringComparison.Ordinal):
+                dependencies.Add(ExtractBaseStepId(text[1..]));
+                break;
+            case JsonArray array:
+                foreach (var item in array)
+                {
+                    CollectDependencies(item, dependencies);
+                }
+                break;
+            case JsonObject obj:
+                foreach (var nested in obj)
+                {
+                    CollectDependencies(nested.Value, dependencies);
+                }
+                break;
+        }
+    }
+
+    private static string ExtractBaseStepId(string expression)
+    {
+        var bracketIndex = expression.IndexOf('[');
+        var dotIndex = expression.IndexOf('.');
+        if (bracketIndex >= 0 && dotIndex >= 0)
+            return expression[..Math.Min(bracketIndex, dotIndex)];
+        if (bracketIndex >= 0)
+            return expression[..bracketIndex];
+        if (dotIndex >= 0)
+            return expression[..dotIndex];
+        return expression;
+    }
+
+    private sealed record GraphNode(PlanStep Step, Point Position);
+
+    private sealed record CollapsedState(
+        HashSet<string> HiddenStepIds,
+        Dictionary<string, int> HiddenDescendantCounts);
+}

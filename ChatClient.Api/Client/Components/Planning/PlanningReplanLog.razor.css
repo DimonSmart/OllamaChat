@@ -1,0 +1,11 @@
+::deep .planning-log-block {
+    max-width: 100%;
+    overflow: auto;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    word-break: break-word;
+}
+
+::deep .planning-log-scroll {
+    max-height: 340px;
+}

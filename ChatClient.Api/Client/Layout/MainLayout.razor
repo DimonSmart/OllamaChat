@@ -115,6 +115,7 @@
         var currentPath = NavigationManager.ToAbsoluteUri(NavigationManager.Uri).LocalPath;
         return currentPath == "/" ||
                currentPath == "/chat" ||
+               currentPath == "/chat-planning" ||
                currentPath == "/multi-agent-chat" ||
                currentPath == "/chat-agentic" ||
                currentPath == "/multi-agent-chat-agentic";
@@ -125,6 +126,7 @@
         var currentPath = NavigationManager.ToAbsoluteUri(NavigationManager.Uri).LocalPath;
         return string.Equals(currentPath, "/", StringComparison.OrdinalIgnoreCase) ||
                string.Equals(currentPath, "/chat", StringComparison.OrdinalIgnoreCase) ||
+               string.Equals(currentPath, "/chat-planning", StringComparison.OrdinalIgnoreCase) ||
                string.Equals(currentPath, "/chat-agentic", StringComparison.OrdinalIgnoreCase) ||
                string.Equals(currentPath, "/multi-agent-chat", StringComparison.OrdinalIgnoreCase) ||
                string.Equals(currentPath, "/multi-agent-chat-agentic", StringComparison.OrdinalIgnoreCase);
