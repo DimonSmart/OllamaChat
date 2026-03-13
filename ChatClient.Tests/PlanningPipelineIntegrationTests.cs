@@ -138,17 +138,33 @@ public sealed class MockSearchTool : ITool
 
     public ToolPlannerMetadata PlannerMetadata => new(
         "search",
-        "Search the web and return candidate page URLs.",
+        "Search the web and return raw structured search results with URL, title, snippet, and site metadata. The output may be noisy or partially irrelevant and must be checked for relevance before relying on it.",
         JsonNode.Parse(@"{""type"":""object"",""properties"":{""query"":{""type"":""string""},""limit"":{""type"":""number""}},""required"":[""query""]}")!.AsObject(),
-        JsonNode.Parse(@"{""type"":""array"",""items"":{""type"":""string""}}")!.AsObject(),
+        JsonNode.Parse(@"{""type"":""array"",""items"":{""type"":""object"",""properties"":{""url"":{""type"":""string""},""title"":{""type"":""string""},""snippet"":{""type"":""string""},""siteName"":{""type"":""string""},""displayUrl"":{""type"":""string""},""position"":{""type"":""integer""}},""required"":[""url"",""title""]}}")!.AsObject(),
         [],
         []);
 
     public Task<ResultEnvelope<JsonElement?>> ExecuteAsync(JsonElement input, CancellationToken cancellationToken = default) =>
         Task.FromResult(ResultEnvelope<JsonElement?>.Success(JsonSerializer.SerializeToElement(new[]
         {
-            "https://example.com/item-a",
-            "https://example.com/item-b"
+            new
+            {
+                url = "https://example.com/item-a",
+                title = "RoboClean A1 Max",
+                snippet = "Popular robot vacuum candidate with LiDAR navigation.",
+                siteName = "Example",
+                displayUrl = "example.com/item-a",
+                position = 1
+            },
+            new
+            {
+                url = "https://example.com/item-b",
+                title = "HomeSweep S5",
+                snippet = "Popular robot vacuum candidate with vSLAM navigation.",
+                siteName = "Example",
+                displayUrl = "example.com/item-b",
+                position = 2
+            }
         })));
 }
 
@@ -158,31 +174,42 @@ public sealed class MockDownloadTool : ITool
 
     public ToolPlannerMetadata PlannerMetadata => new(
         "download",
-        "Download a single page by URL and return its title and body text.",
-        JsonNode.Parse(@"{""type"":""object"",""properties"":{""url"":{""type"":""string""}},""required"":[""url""]}")!.AsObject(),
-        JsonNode.Parse(@"{""type"":""object"",""properties"":{""url"":{""type"":""string""},""title"":{""type"":""string""},""body"":{""type"":""string""}},""required"":[""url"",""title"",""body""]}")!.AsObject(),
+        "Download a single web page. Prefer passing a full search-result object via 'page'; the tool returns the same object enriched with 'content'. If only a raw absolute URL is available, pass it via 'url' and the tool returns a minimal object with url, title, and content.",
+        JsonNode.Parse(@"{""type"":""object"",""properties"":{""page"":{""type"":""object"",""properties"":{""url"":{""type"":""string""},""title"":{""type"":""string""},""snippet"":{""type"":""string""},""siteName"":{""type"":""string""},""displayUrl"":{""type"":""string""},""position"":{""type"":""integer""}}},""url"":{""type"":""string""}}}")!.AsObject(),
+        JsonNode.Parse(@"{""type"":""object"",""properties"":{""url"":{""type"":""string""},""title"":{""type"":""string""},""snippet"":{""type"":""string""},""siteName"":{""type"":""string""},""displayUrl"":{""type"":""string""},""position"":{""type"":""integer""},""content"":{""type"":""string""}},""required"":[""url"",""title"",""content""]}")!.AsObject(),
         [],
         []);
 
     public Task<ResultEnvelope<JsonElement?>> ExecuteAsync(JsonElement input, CancellationToken cancellationToken = default)
     {
-        var url = TryGetStringProperty(input, "url");
+        var pageObject = TryGetObjectProperty(input, "page");
+        var url = pageObject.HasValue
+            ? TryGetStringProperty(pageObject.Value, "url")
+            : TryGetStringProperty(input, "page") ?? TryGetStringProperty(input, "url");
         if (string.IsNullOrWhiteSpace(url))
             return Task.FromResult(ResultEnvelope<JsonElement?>.Failure("invalid_input", "Download URL is required."));
 
-        var payload = url.Contains("item-a", StringComparison.OrdinalIgnoreCase)
-            ? new
+        var content = url.Contains("item-a", StringComparison.OrdinalIgnoreCase)
+            ? "RoboClean A1 Max is a popular robot vacuum cleaner with 7000 Pa suction power, up to 180 minutes of battery runtime, a 0.5 L dustbin, LiDAR navigation, and a list price of $799."
+            : "HomeSweep S5 is a popular robot vacuum cleaner with 5000 Pa suction power, up to 140 minutes of battery runtime, a 0.4 L dustbin, vSLAM navigation, and a list price of $649.";
+
+        JsonObject payload;
+        if (pageObject.HasValue)
+        {
+            payload = JsonNode.Parse(pageObject.Value.GetRawText())?.AsObject() ?? new JsonObject();
+            payload["content"] = content;
+        }
+        else
+        {
+            payload = new JsonObject
             {
-                url,
-                title = "RoboClean A1 Max review",
-                body = "RoboClean A1 Max is a popular robot vacuum cleaner with 7000 Pa suction power, up to 180 minutes of battery runtime, a 0.5 L dustbin, LiDAR navigation, and a list price of $799."
-            }
-            : new
-            {
-                url,
-                title = "HomeSweep S5 review",
-                body = "HomeSweep S5 is a popular robot vacuum cleaner with 5000 Pa suction power, up to 140 minutes of battery runtime, a 0.4 L dustbin, vSLAM navigation, and a list price of $649."
+                ["url"] = url,
+                ["title"] = url.Contains("item-a", StringComparison.OrdinalIgnoreCase)
+                    ? "RoboClean A1 Max review"
+                    : "HomeSweep S5 review",
+                ["content"] = content
             };
+        }
 
         return Task.FromResult(ResultEnvelope<JsonElement?>.Success(JsonSerializer.SerializeToElement(payload)));
     }
@@ -192,6 +219,13 @@ public sealed class MockDownloadTool : ITool
         && element.TryGetProperty(propertyName, out var property)
         && property.ValueKind == JsonValueKind.String
             ? property.GetString()
+            : null;
+
+    private static JsonElement? TryGetObjectProperty(JsonElement element, string propertyName) =>
+        element.ValueKind == JsonValueKind.Object
+        && element.TryGetProperty(propertyName, out var property)
+        && property.ValueKind == JsonValueKind.Object
+            ? property.Clone()
             : null;
 }
 

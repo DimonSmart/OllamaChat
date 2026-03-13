@@ -57,10 +57,10 @@ public static partial class PlanValidator
                     throw new InvalidOperationException($"LLM step '{step.Id}' must not embed step refs inside systemPrompt.");
                 if (ContainsPromptRef(step.UserPrompt!))
                     throw new InvalidOperationException($"LLM step '{step.Id}' must not embed step refs inside userPrompt.");
-                if (step.SystemPrompt!.Contains("{{", StringComparison.Ordinal) || step.UserPrompt!.Contains("{{", StringComparison.Ordinal))
+                if (ContainsTemplatePlaceholder(step.SystemPrompt!) || ContainsTemplatePlaceholder(step.UserPrompt!))
                 {
                     throw new InvalidOperationException(
-                        $"LLM step '{step.Id}' must not contain template placeholders like '{{{{var}}}}' in prompts.");
+                        $"LLM step '{step.Id}' must not contain unresolved template placeholders like '{{name}}', '{{{{name}}}}', '[[name]]', '<<name>>', or '${{name}}' in prompts.");
                 }
             }
 
@@ -128,6 +128,21 @@ public static partial class PlanValidator
     [GeneratedRegex(@"\$[A-Za-z_][A-Za-z0-9_-]*(?:\[\]|\[\d+\])?(?:\.[A-Za-z_][A-Za-z0-9_]*)?")]
     private static partial Regex EmbeddedRefPattern();
 
+    [GeneratedRegex(@"\{\{[^{}\r\n]+\}\}")]
+    private static partial Regex DoubleBracePlaceholderPattern();
+
+    [GeneratedRegex(@"(?<!\{)\{[A-Za-z_][A-Za-z0-9_.:-]*\}(?!\})")]
+    private static partial Regex SingleBracePlaceholderPattern();
+
+    [GeneratedRegex(@"\[\[[^\[\]\r\n]+\]\]")]
+    private static partial Regex DoubleSquarePlaceholderPattern();
+
+    [GeneratedRegex(@"<<[^<>\r\n]+>>")]
+    private static partial Regex DoubleAnglePlaceholderPattern();
+
+    [GeneratedRegex(@"\$\{[A-Za-z_][A-Za-z0-9_.:-]*\}")]
+    private static partial Regex DollarBracePlaceholderPattern();
+
     private static bool IsValidStatus(string? status) =>
         string.Equals(status, PlanStepStatuses.Todo, StringComparison.Ordinal)
         || string.Equals(status, PlanStepStatuses.Done, StringComparison.Ordinal)
@@ -136,5 +151,12 @@ public static partial class PlanValidator
 
     private static bool ContainsPromptRef(string prompt) =>
         EmbeddedRefPattern().IsMatch(prompt);
+
+    private static bool ContainsTemplatePlaceholder(string prompt) =>
+        DoubleBracePlaceholderPattern().IsMatch(prompt)
+        || SingleBracePlaceholderPattern().IsMatch(prompt)
+        || DoubleSquarePlaceholderPattern().IsMatch(prompt)
+        || DoubleAnglePlaceholderPattern().IsMatch(prompt)
+        || DollarBracePlaceholderPattern().IsMatch(prompt);
 }
 

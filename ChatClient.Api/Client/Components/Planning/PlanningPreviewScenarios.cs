@@ -2,7 +2,9 @@ using System.Text.Json;
 using System.Text.Json.Nodes;
 using ChatClient.Api.PlanningRuntime.Common;
 using ChatClient.Api.PlanningRuntime.Execution;
+using ChatClient.Api.PlanningRuntime.Host;
 using ChatClient.Api.PlanningRuntime.Planning;
+using ChatClient.Api.PlanningRuntime.Verification;
 
 namespace ChatClient.Api.Client.Components.Planning;
 
@@ -19,6 +21,8 @@ public sealed class PlanningPreviewScenario
     public required PlanDefinition Plan { get; init; }
 
     public string? ActiveStepId { get; init; }
+
+    public IReadOnlyList<PlanningToolOption> AvailableTools { get; init; } = [];
 
     public IReadOnlyList<PlanRunEvent> Events { get; init; } = [];
 
@@ -42,6 +46,22 @@ public static class PlanningPreviewScenarios
 
     private static PlanningPreviewScenario CreateHappyPathScenario()
     {
+        const string userQuery = "Find two popular robot vacuum cleaners, compare their specs, and recommend which one is better.";
+        var searchResults = new[]
+        {
+            new
+            {
+                title = "Best robot vacuum cleaners in 2026",
+                url = "https://www.approachlabs.com/articles/best-robot-vacuum-cleaners-2026-for-pet-hair-and-hardwood-floors",
+                snippet = "Detailed comparison of obstacle avoidance, docking, and self-emptying."
+            },
+            new
+            {
+                title = "Roborock Qrevo Curv review",
+                url = "https://www.techadvisor.com/article/robot-vacuum-roborock-qrevo-curv-review-long-url-for-overflow-checking.html",
+                snippet = "Strong mopping and low-maintenance dock."
+            }
+        };
         var plan = new PlanDefinition
         {
             Goal = "Compare two strong robot vacuum options and produce a short recommendation with trade-offs.",
@@ -57,21 +77,7 @@ public static class PlanningPreviewScenarios
                         ["limit"] = JsonValue.Create(5)
                     },
                     Status = PlanStepStatuses.Done,
-                    Result = Element(new[]
-                    {
-                        new
-                        {
-                            title = "Best robot vacuum cleaners in 2026",
-                            url = "https://www.approachlabs.com/articles/best-robot-vacuum-cleaners-2026-for-pet-hair-and-hardwood-floors",
-                            snippet = "Detailed comparison of obstacle avoidance, docking, and self-emptying."
-                        },
-                        new
-                        {
-                            title = "Roborock Qrevo Curv review",
-                            url = "https://www.techadvisor.com/article/robot-vacuum-roborock-qrevo-curv-review-long-url-for-overflow-checking.html",
-                            snippet = "Strong mopping and low-maintenance dock."
-                        }
-                    })
+                    Result = Element(searchResults)
                 },
                 new PlanStep
                 {
@@ -152,20 +158,19 @@ public static class PlanningPreviewScenarios
             Id = "happy-path",
             DisplayName = "Mock: Happy Path",
             Description = "Готовый план с несколькими шагами и активным сравнением. Подходит для проверки диаграммы и панели деталей.",
-            UserQuery = "Find two popular robot vacuum cleaners, compare their specs, and recommend which one is better.",
+            UserQuery = userQuery,
             Plan = plan,
             ActiveStepId = "compare",
+            AvailableTools = CreateDefaultAvailableTools(),
             Events =
             [
+                new PlanningAttemptStartedEvent(1, "plan", userQuery),
+                new PlanCreatedEvent(1, "plan", plan),
                 new StepCallCompletedEvent(
                     "search1",
                     0,
                     true,
-                    Element(new[]
-                    {
-                        "https://www.approachlabs.com/articles/best-robot-vacuum-cleaners-2026-for-pet-hair-and-hardwood-floors",
-                        "https://www.techadvisor.com/article/robot-vacuum-roborock-qrevo-curv-review-long-url-for-overflow-checking.html"
-                    }),
+                    Element(searchResults),
                     null),
                 new AgentPromptPreparedEvent(
                     "shortlist",
@@ -175,11 +180,7 @@ public static class PlanningPreviewScenarios
                     "Search results:\n- Best robot vacuum cleaners in 2026\n- Roborock Qrevo Curv review\n\nReturn JSON with exactly two model names.",
                     Element(new
                     {
-                        searchResults = new[]
-                        {
-                            "Best robot vacuum cleaners in 2026",
-                            "Roborock Qrevo Curv review"
-                        }
+                        searchResults
                     })),
                 new AgentResponseReceivedEvent(
                     "shortlist",
@@ -246,7 +247,7 @@ public static class PlanningPreviewScenarios
             LogLines =
             [
                 "[orchestrator] attempt=1 phase=plan [plan] create:start toolCount=2 query=Find two popular robot vacuum cleaners, compare their specs, and recommend which one is better.",
-                "[exec] step=search1 success=True calls=1 outputUrls=2",
+                "[exec] step=search1 success=True calls=1 outputResults=2",
                 "[exec] step=shortlist success=True models=[\"Eufy X10 Pro Omni\",\"Roborock Qrevo Curv\"]",
                 "[exec] step=fetch_eufy success=True url=https://support.eufy.com/s/article/X10-Pro-Omni-full-specifications-and-setup-guide",
                 "[exec] step=fetch_roborock success=True url=https://us.roborock.com/pages/qrevo-curv-specifications",
@@ -257,6 +258,28 @@ public static class PlanningPreviewScenarios
 
     private static PlanningPreviewScenario CreateReplanFailureScenario()
     {
+        const string userQuery = "Compare several robot vacuum cleaners and explain why the current plan keeps failing.";
+        var searchResults = new[]
+        {
+            new
+            {
+                title = "The best robot vacuum cleaners in 2024",
+                url = "https://www.approachlabs.com/the-best-robot-vacuum-cleaners-in-2024/343d6bdb29b07f0c4a8888fd98d4fa5e",
+                snippet = "Roundup article covering multiple robot vacuum models in one page."
+            },
+            new
+            {
+                title = "The best vacuum robots of 2024",
+                url = "https://www.orenteatai.com/blog/the-best-vacuum-robots-of-2024-your-ultimate-cleaning-companion/343d6bdb29b07f0c4a8888fd98d4fa5e",
+                snippet = "Another multi-model roundup that is hard to extract into one product spec."
+            },
+            new
+            {
+                title = "Best robot vacuum cleaners 2024 review roundup",
+                url = "https://www.techadvisor.com/article/724333/best-robot-vacuum-cleaners-2024-review-roundup.html",
+                snippet = "Review roundup with several models and overlapping specifications."
+            }
+        };
         var plan = new PlanDefinition
         {
             Goal = "Compare multiple robot vacuums, but demonstrate the UI for a replan loop with ambiguous extraction and long diagnostic text.",
@@ -272,12 +295,7 @@ public static class PlanningPreviewScenarios
                         ["limit"] = JsonValue.Create(5)
                     },
                     Status = PlanStepStatuses.Done,
-                    Result = Element(new[]
-                    {
-                        "https://www.approachlabs.com/the-best-robot-vacuum-cleaners-in-2024/343d6bdb29b07f0c4a8888fd98d4fa5e",
-                        "https://www.techadvisor.com/article/724333/best-robot-vacuum-cleaners-2024-review-roundup.html",
-                        "https://www.telegraph.co.uk/recommended/home/cleaning/best-robot-vacuum-cleaners-tried-tested/"
-                    })
+                    Result = Element(searchResults)
                 },
                 new PlanStep
                 {
@@ -362,21 +380,19 @@ public static class PlanningPreviewScenarios
             Id = "replan-failure",
             DisplayName = "Mock: Replan Failure",
             Description = "Сценарий с длинными URL, replan-раундами и финальной ошибкой. Нужен для проверки переносов и стабильности графа.",
-            UserQuery = "Compare several robot vacuum cleaners and explain why the current plan keeps failing.",
+            UserQuery = userQuery,
             Plan = plan,
             ActiveStepId = "extract2",
+            AvailableTools = CreateDefaultAvailableTools(),
             Events =
             [
+                new PlanningAttemptStartedEvent(1, "plan", userQuery),
+                new PlanCreatedEvent(1, "plan", plan),
                 new StepCallCompletedEvent(
                     "search1",
                     0,
                     true,
-                    Element(new[]
-                    {
-                        "https://www.approachlabs.com/the-best-robot-vacuum-cleaners-in-2024/343d6bdb29b07f0c4a8888fd98d4fa5e",
-                        "https://www.orenteatai.com/blog/the-best-vacuum-robots-of-2024-your-ultimate-cleaning-companion/343d6bdb29b07f0c4a8888fd98d4fa5e",
-                        "https://www.techadvisor.com/article/724333/best-robot-vacuum-cleaners-2024-review-roundup.html"
-                    }),
+                    Element(searchResults),
                     null),
                 new AgentPromptPreparedEvent(
                     "extract2",
@@ -386,10 +402,10 @@ public static class PlanningPreviewScenarios
                     "The source contains multiple models: Eufy X10 Pro Omni, Samsung Bespoke Jet Bot Combo AI+, Beko VRR61414VB RoboSmart, and others.\nReturn a single spec object or fail with a blocking error.",
                     Element(new
                     {
-                        urls = new[]
+                        searchResults = new[]
                         {
-                            "https://www.approachlabs.com/the-best-robot-vacuum-cleaners-in-2024/343d6bdb29b07f0c4a8888fd98d4fa5e",
-                            "https://www.orenteatai.com/blog/the-best-vacuum-robots-of-2024-your-ultimate-cleaning-companion/343d6bdb29b07f0c4a8888fd98d4fa5e"
+                            searchResults[0],
+                            searchResults[1]
                         }
                     })),
                 new AgentResponseReceivedEvent(
@@ -408,6 +424,41 @@ public static class PlanningPreviewScenarios
                                 "multiple models (Eufy X10 Pro Omni, Samsung Bespoke Jet Bot Combo AI+, Beko VRR61414VB RoboSmart, etc.)"
                             }
                         }))),
+                new ReplanStartedEvent(new PlannerReplanRequest
+                {
+                    UserQuery = userQuery,
+                    AttemptNumber = 1,
+                    Plan = plan,
+                    ExecutionResult = new ExecutionResult
+                    {
+                        StepTraces =
+                        [
+                            new StepExecutionTrace
+                            {
+                                StepId = "extract1",
+                                Success = false,
+                                ErrorCode = "multiple_models",
+                                ErrorMessage = "Multiple robot vacuum models are described in the input; unable to extract a single specification object.",
+                                ErrorDetails = Element(new
+                                {
+                                    status = "blocked",
+                                    needsReplan = true,
+                                    type = "missing",
+                                    details = new[]
+                                    {
+                                        "multiple models (Eufy X10 Pro Omni, Samsung Bespoke Jet Bot Combo AI+, Beko VRR61414VB RoboSmart, etc.)"
+                                    }
+                                })
+                            }
+                        ]
+                    },
+                    GoalVerdict = new GoalVerdict
+                    {
+                        Action = GoalAction.Replan,
+                        Reason = "Execution has failed steps.",
+                        Missing = ["extract1"]
+                    }
+                }),
                 new ReplanRoundCompletedEvent(
                     1,
                     false,
@@ -467,6 +518,22 @@ public static class PlanningPreviewScenarios
                 }))
         };
     }
+
+    private static IReadOnlyList<PlanningToolOption> CreateDefaultAvailableTools() =>
+    [
+        new PlanningToolOption
+        {
+            Name = "search",
+            DisplayName = "Web Search",
+            Description = "Search the web and return structured candidate page objects."
+        },
+        new PlanningToolOption
+        {
+            Name = "download",
+            DisplayName = "Web Download",
+            Description = "Download a page and return the input page object enriched with content."
+        }
+    ];
 
     private static JsonNode? Ref(string value) => JsonValue.Create(value);
 

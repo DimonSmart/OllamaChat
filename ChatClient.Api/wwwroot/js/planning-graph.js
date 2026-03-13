@@ -19,19 +19,41 @@ window.planningGraphInterop = (() => {
         return activeElement === registration.element || registration.element.contains(activeElement);
     };
 
+    const isDisposedReferenceError = (error) => {
+        const text = error?.message ?? String(error ?? "");
+        return text.includes("There is no tracked object with id")
+            || text.includes("Cannot find .NET object reference");
+    };
+
+    const invoke = (registration, methodName, ...args) => {
+        if (!registration || registration.disposed || !registration.dotNet) {
+            return;
+        }
+
+        registration.dotNet.invokeMethodAsync(methodName, ...args).catch((error) => {
+            if (isDisposedReferenceError(error)) {
+                registration.disposed = true;
+                registration.pendingMove = null;
+                return;
+            }
+
+            console.warn("planningGraphInterop", methodName, error);
+        });
+    };
+
     const notifySpaceState = (registration, isPressed) => {
-        if (registration.spacePressed === isPressed) {
+        if (!registration || registration.disposed || !registration.dotNet || registration.spacePressed === isPressed) {
             return;
         }
 
         registration.spacePressed = isPressed;
-        registration.dotNet.invokeMethodAsync("SetSpacePressed", isPressed).catch(() => { });
-    };
-
-    const invoke = (registration, methodName, ...args) =>
-        registration.dotNet.invokeMethodAsync(methodName, ...args).catch((error) => {
-            console.warn("planningGraphInterop", methodName, error);
+        registration.dotNet.invokeMethodAsync("SetSpacePressed", isPressed).catch((error) => {
+            if (isDisposedReferenceError(error)) {
+                registration.disposed = true;
+                registration.pendingMove = null;
+            }
         });
+    };
 
     const getNodeId = (target) => {
         if (!(target instanceof Element)) {
@@ -52,6 +74,7 @@ window.planningGraphInterop = (() => {
             const registration = {
                 element,
                 dotNet,
+                disposed: false,
                 spacePressed: false,
                 pendingMove: null,
                 moveScheduled: false
@@ -73,6 +96,12 @@ window.planningGraphInterop = (() => {
 
             registration.onBlur = () => notifySpaceState(registration, false);
             registration.flushMove = () => {
+                if (registration.disposed) {
+                    registration.moveScheduled = false;
+                    registration.pendingMove = null;
+                    return;
+                }
+
                 registration.moveScheduled = false;
                 const pendingMove = registration.pendingMove;
                 registration.pendingMove = null;
@@ -168,6 +197,7 @@ window.planningGraphInterop = (() => {
             if (currentId) {
                 const current = registrations.get(currentId);
                 if (current?.element === element) {
+                    current.disposed = false;
                     current.dotNet = dotNet;
                     return currentId;
                 }
@@ -183,6 +213,9 @@ window.planningGraphInterop = (() => {
             if (!registration) {
                 return;
             }
+
+            registration.disposed = true;
+            registration.pendingMove = null;
 
             window.removeEventListener("keydown", registration.onKeyDown, true);
             window.removeEventListener("keyup", registration.onKeyUp, true);

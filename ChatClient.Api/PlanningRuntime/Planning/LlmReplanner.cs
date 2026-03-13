@@ -174,6 +174,8 @@ public sealed class LlmReplanner(
         sb.AppendLine("- Reuse successful upstream steps whenever possible.");
         sb.AppendLine("- Do not repeat a failed extraction/comparison prompt unchanged when the failure data explains what was missing.");
         sb.AppendLine("- Use runtime.readFailedTrace(stepId) when you need the compact structured details of a failed step.");
+        sb.AppendLine("- Do not add, estimate, normalize, or impute exact factual values that are missing from executed evidence.");
+        sb.AppendLine("- When the user request needs precise facts and those facts are missing, repair the plan by retrieving better evidence, narrowing scope, or preserving a blocked/missing contract.");
         sb.AppendLine("- If the failed trace has type='missing' and your edit removes that requirement or makes it optional, finish with done=true instead of iterating further.");
         sb.AppendLine("- plan.resetFrom(stepId) resets execution state for that step and all downstream steps so the executor will rerun them.");
         sb.AppendLine("- plan.replaceStep(stepId, step) replaces exactly one existing step in place.");
@@ -187,6 +189,10 @@ public sealed class LlmReplanner(
         sb.AppendLine("- Use only the workflow tools listed below.");
         sb.AppendLine("- Keep references explicit using $stepId, $stepId.field, $stepId[], $stepId[].field, $stepId[n], or $stepId[n].field.");
         sb.AppendLine("- If a tool takes a scalar input and receives an array ref, the executor fans out automatically.");
+        sb.AppendLine("- When chaining search results into download-style tools, prefer passing the whole search result object with input key 'page' so download preserves metadata and adds content.");
+        sb.AppendLine("- If a downstream step truly only needs URLs, prefer $stepId[].url.");
+        sb.AppendLine("- Download-style tools may return the original page object enriched with 'content'.");
+        sb.AppendLine("- For download-style tools, pass exactly one of 'page' or 'url'. Do not send both.");
         sb.AppendLine("- For extraction tasks, prefer a per-item LLM step with each=true.");
         sb.AppendLine();
         sb.AppendLine("Available workflow tools:");

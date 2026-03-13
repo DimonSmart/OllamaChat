@@ -140,6 +140,12 @@ public sealed class LlmPlanner(
         sb.AppendLine("- Avoid a second search unless the first downloaded pages clearly cannot contain the requested facts.");
         sb.AppendLine("- If the user asks for two items, prefer to search for two candidate pages or a very small over-fetch, not many pages.");
         sb.AppendLine("- If a tool returns array data and the next tool expects a scalar parameter, pass the full array ref and let the executor fan out.");
+        sb.AppendLine("- Search-style tools may return arrays of objects; when chaining them into download-style tools, prefer passing the whole search result object with input key 'page' (for example, page: $stepId[]) so metadata is preserved and download can add content.");
+        sb.AppendLine("- If a downstream step truly only needs URLs, use refs like $stepId[].url.");
+        sb.AppendLine("- Download-style tools may return the original page object enriched with 'content'. Prefer consuming title/content from the download result, and keep search metadata when it adds value.");
+        sb.AppendLine("- For download-style tools, pass exactly one of 'page' or 'url'. Do not send both.");
+        sb.AppendLine("- Do not invent, estimate, or fill in exact factual values when the user request requires precise facts.");
+        sb.AppendLine("- If exact values are missing, add retrieval/narrowing steps or let the downstream step fail through the structured execution error contract instead of guessing.");
         sb.AppendLine("- For extraction steps, if the source does not contain the requested entity or the critical facts are absent, rely on the structured execution error contract instead of guessing.");
         sb.AppendLine();
         sb.AppendLine("Available tools:");

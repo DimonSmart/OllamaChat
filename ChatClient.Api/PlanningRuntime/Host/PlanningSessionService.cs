@@ -34,19 +34,28 @@ public sealed class PlanningSessionService(
         if (request.EnabledToolNames.Count == 0)
             throw new InvalidOperationException("At least one planning tool must be enabled.");
 
+        var enabledToolOptions = request.EnabledToolNames
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .Select(name => _availableTools.TryGetValue(name, out var tool)
+                ? new PlanningToolOption
+                {
+                    Name = tool.Name,
+                    DisplayName = tool.PlannerMetadata.Name,
+                    Description = tool.PlannerMetadata.Description
+                }
+                : throw new InvalidOperationException($"Planning tool '{name}' is not available."))
+            .ToList();
+
         _runCts?.Cancel();
         _runCts = new CancellationTokenSource();
 
         Reset();
         State.UserQuery = request.UserQuery.Trim();
         State.IsRunning = true;
-        State.AvailableTools.AddRange(_availableTools.Values
-            .Select(tool => new PlanningToolOption
-            {
-                Name = tool.Name,
-                DisplayName = tool.PlannerMetadata.Name,
-                Description = tool.PlannerMetadata.Description
-            }));
+        lock (State.AvailableTools)
+        {
+            State.AvailableTools.AddRange(enabledToolOptions);
+        }
         NotifyStateChanged();
 
         _runTask = Task.Run(() => ExecuteRunAsync(request, _runCts.Token), _runCts.Token);
@@ -84,7 +93,10 @@ public sealed class PlanningSessionService(
         {
             State.LogLines.Clear();
         }
-        State.AvailableTools.Clear();
+        lock (State.AvailableTools)
+        {
+            State.AvailableTools.Clear();
+        }
         NotifyStateChanged();
     }
 

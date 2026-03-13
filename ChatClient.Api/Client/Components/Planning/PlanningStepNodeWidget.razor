@@ -1,17 +1,16 @@
 @using Blazor.Diagrams.Core.Models
 @using Blazor.Diagrams.Core.Models.Base
 @using ChatClient.Api.PlanningRuntime.Planning
-
 <div class="@GetCssClass()" style="@GetStyle()">
     <div class="planning-step-node-header">
-        <div class="planning-step-node-id">@StepNode.Step.Id</div>
+        <div class="planning-step-node-id">@StepNode.Title</div>
         @if (StepNode.HiddenDescendantCount > 0)
         {
             <div class="planning-step-node-badge">@($"{StepNode.HiddenDescendantCount} hidden")</div>
         }
     </div>
-    <div class="planning-step-node-meta">@GetKind(StepNode.Step): @GetName(StepNode.Step)</div>
-    <div class="planning-step-node-status">status: @StepNode.Step.Status</div>
+    <div class="planning-step-node-meta">@StepNode.MetaText</div>
+    <div class="planning-step-node-status">@StepNode.StatusText</div>
 </div>
 
 @code {
@@ -23,24 +22,45 @@
     {
         var selected = ((SelectableModel)StepNode).Selected ? " planning-step-node-selected" : string.Empty;
         var collapsed = StepNode.IsCollapsed ? " planning-step-node-collapsed" : string.Empty;
-        return "planning-step-node" + selected + collapsed;
+        var kind = StepNode.VisualKind switch
+        {
+            PlanningVisualNodeKind.Planning => " planning-step-node-planning",
+            PlanningVisualNodeKind.Replanning => " planning-step-node-replanning",
+            _ => string.Empty
+        };
+
+        return "planning-step-node" + selected + collapsed + kind;
     }
 
     private string GetStyle() =>
         $"--planning-node-fill:{GetFill(StepNode)}; --planning-node-stroke:{GetStroke(StepNode)};";
-
-    private static string GetKind(PlanStep step) =>
-        string.IsNullOrWhiteSpace(step.Tool) ? "llm" : "tool";
-
-    private static string GetName(PlanStep step) =>
-        string.IsNullOrWhiteSpace(step.Tool) ? step.Llm ?? string.Empty : step.Tool;
 
     private static string GetFill(PlanningStepNodeModel node)
     {
         if (node.IsActive)
             return "#ff8c42";
 
-        return node.Step.Status switch
+        if (node.VisualKind == PlanningVisualNodeKind.Planning)
+        {
+            return node.StatusValue switch
+            {
+                "running" => "#4a3ea8",
+                "done" => "#355f9a",
+                _ => "#4c4c7a"
+            };
+        }
+
+        if (node.VisualKind == PlanningVisualNodeKind.Replanning)
+        {
+            return node.StatusValue switch
+            {
+                "running" => "#8a5a12",
+                "done" => "#7b6b1a",
+                _ => "#6e5b33"
+            };
+        }
+
+        return node.StatusValue switch
         {
             PlanStepStatuses.Running => "#ff8c42",
             PlanStepStatuses.Done => "#227c57",
@@ -55,7 +75,27 @@
         if (node.IsActive)
             return "#ffd8a8";
 
-        return node.Step.Status switch
+        if (node.VisualKind == PlanningVisualNodeKind.Planning)
+        {
+            return node.StatusValue switch
+            {
+                "running" => "#d5caff",
+                "done" => "#a8d2ff",
+                _ => "#c9c7f1"
+            };
+        }
+
+        if (node.VisualKind == PlanningVisualNodeKind.Replanning)
+        {
+            return node.StatusValue switch
+            {
+                "running" => "#ffd8a8",
+                "done" => "#efe08e",
+                _ => "#e1d1aa"
+            };
+        }
+
+        return node.StatusValue switch
         {
             PlanStepStatuses.Running => "#ffd8a8",
             PlanStepStatuses.Done => "#6de0b8",

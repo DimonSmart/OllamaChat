@@ -1,9 +1,114 @@
 @using System.Text.Json
 @using ChatClient.Api.PlanningRuntime.Execution
+@using ChatClient.Api.PlanningRuntime.Host
 @using ChatClient.Api.PlanningRuntime.Planning
 @using MudBlazor
 
-@if (SelectedStep is null)
+@if (SelectedVirtualNode is not null)
+{
+    <MudPaper Class="pa-4 planning-step-details" Outlined="true">
+        <MudStack Spacing="2">
+            <div>
+                <MudText Typo="Typo.h6">@SelectedVirtualNode.Title</MudText>
+                <MudText Typo="Typo.caption" Class="mud-text-secondary">@SelectedVirtualNode.Subtitle | status: @SelectedVirtualNode.StatusValue</MudText>
+            </div>
+
+            @if (SelectedVirtualNode.Kind == PlanningVirtualNodeKind.Planning)
+            {
+                @if (!string.IsNullOrWhiteSpace(SelectedVirtualNode.PlanningStarted?.UserQuery))
+                {
+                    <MudText Typo="Typo.subtitle2">User Request</MudText>
+                    <MudPaper Class="pa-3 planning-step-block">@SelectedVirtualNode.PlanningStarted!.UserQuery</MudPaper>
+                }
+
+                @if (SelectedVirtualNode.AvailableTools.Count > 0)
+                {
+                    <MudText Typo="Typo.subtitle2">Available Tools</MudText>
+                    <MudPaper Class="pa-3 planning-step-block">
+                        <MudStack Spacing="1">
+                            @foreach (var tool in SelectedVirtualNode.AvailableTools)
+                            {
+                                <div>
+                                    <MudText Typo="Typo.body2">@tool.DisplayName (@tool.Name)</MudText>
+                                    <MudText Typo="Typo.caption" Class="mud-text-secondary">@tool.Description</MudText>
+                                </div>
+                            }
+                        </MudStack>
+                    </MudPaper>
+                }
+
+                @if (SelectedVirtualNode.PlannedDraft is not null)
+                {
+                    <MudText Typo="Typo.subtitle2">Raw Plan</MudText>
+                    <MudPaper Class="pa-3 planning-step-block">@SerializeJson(SelectedVirtualNode.PlannedDraft)</MudPaper>
+                }
+            }
+            else
+            {
+                @if (!string.IsNullOrWhiteSpace(SelectedVirtualNode.ReplanStarted?.Request.GoalVerdict.Reason))
+                {
+                    <MudText Typo="Typo.subtitle2">Why Replanning Started</MudText>
+                    <MudPaper Class="pa-3 planning-step-block">@SelectedVirtualNode.ReplanStarted!.Request.GoalVerdict.Reason</MudPaper>
+                }
+
+                @if (SelectedVirtualNode.ReplanStarted?.Request.GoalVerdict.Missing.Count > 0)
+                {
+                    <MudText Typo="Typo.subtitle2">Missing Or Blocked Items</MudText>
+                    <MudPaper Class="pa-3 planning-step-block">@SerializeJson(SelectedVirtualNode.ReplanStarted!.Request.GoalVerdict.Missing)</MudPaper>
+                }
+
+                @if (FailedReplanTraces.Count > 0)
+                {
+                    <MudText Typo="Typo.subtitle2">Failed Execution Traces</MudText>
+                    @foreach (var failedTrace in FailedReplanTraces)
+                    {
+                        <MudPaper Class="pa-3 mb-2 planning-step-call" Outlined="true">
+                            <MudText Typo="Typo.caption">step @failedTrace.StepId | error: @failedTrace.ErrorCode</MudText>
+                            @if (!string.IsNullOrWhiteSpace(failedTrace.ErrorMessage))
+                            {
+                                <MudText Typo="Typo.body2" Class="mt-1">@failedTrace.ErrorMessage</MudText>
+                            }
+                            @if (failedTrace.ErrorDetails is not null)
+                            {
+                                <MudText Typo="Typo.caption" Class="mt-1 mud-text-secondary">Details</MudText>
+                                <pre class="planning-step-code">@SerializeJson(failedTrace.ErrorDetails.Value)</pre>
+                            }
+                        </MudPaper>
+                    }
+                }
+
+                @if (SelectedVirtualNode.ReplanRounds.Count > 0)
+                {
+                    <MudText Typo="Typo.subtitle2">Replan Rounds</MudText>
+                    @foreach (var round in SelectedVirtualNode.ReplanRounds)
+                    {
+                        <MudPaper Class="pa-3 mb-2 planning-step-call" Outlined="true">
+                            <MudText Typo="Typo.caption">round @round.Round | done: @round.Done</MudText>
+                            <MudText Typo="Typo.body2" Class="mt-1">@round.Reason</MudText>
+                            <MudText Typo="Typo.caption" Class="mt-2 mud-text-secondary">Action Batch</MudText>
+                            <pre class="planning-step-code">@SerializeJson(round.ActionBatch)</pre>
+                            <MudText Typo="Typo.caption" Class="mt-2 mud-text-secondary">Action Results</MudText>
+                            <pre class="planning-step-code">@SerializeJson(round.ActionResults)</pre>
+                        </MudPaper>
+                    }
+                }
+            }
+
+            @if (SelectedVirtualNode.Diagnostics.Count > 0)
+            {
+                <MudText Typo="Typo.subtitle2">Diagnostics</MudText>
+                @foreach (var diagnostic in SelectedVirtualNode.Diagnostics)
+                {
+                    <MudPaper Class="pa-3 mb-2 planning-step-call" Outlined="true">
+                        <MudText Typo="Typo.caption">@diagnostic.Source</MudText>
+                        <MudText Typo="Typo.body2" Class="mt-1">@diagnostic.Message</MudText>
+                    </MudPaper>
+                }
+            }
+        </MudStack>
+    </MudPaper>
+}
+else if (SelectedStep is null)
 {
     <MudPaper Class="pa-4 planning-step-details" Outlined="true">
         <MudText Typo="Typo.body2" Class="mud-text-secondary">Select a step on the graph to inspect prompts, calls, and outputs.</MudText>
@@ -89,10 +194,22 @@ else
     [Parameter] public string? ActiveStepId { get; set; }
     [Parameter] public string? SelectedStepId { get; set; }
     [Parameter] public IReadOnlyList<PlanRunEvent> Events { get; set; } = [];
+    [Parameter] public IReadOnlyList<PlanningToolOption> AvailableTools { get; set; } = [];
+
+    private IReadOnlyList<PlanningVirtualNodeDescriptor> VirtualNodes =>
+        PlanningVirtualNodeProjection.Build(Plan, Events, AvailableTools);
+
+    private PlanningVirtualNodeDescriptor? SelectedVirtualNode => ResolveSelectedVirtualNode();
 
     private PlanStep? SelectedStep => ResolveSelectedStep();
 
     private string? EffectiveStepId => SelectedStep?.Id;
+
+    private IReadOnlyList<StepExecutionTrace> FailedReplanTraces =>
+        SelectedVirtualNode?.ReplanStarted?.Request.ExecutionResult.StepTraces
+            .Where(trace => !trace.Success)
+            .ToList()
+        ?? [];
 
     private IReadOnlyList<AgentPromptPreparedEvent> PromptEvents =>
         Events.OfType<AgentPromptPreparedEvent>()
@@ -109,20 +226,50 @@ else
             .Where(evt => string.Equals(evt.StepId, EffectiveStepId, StringComparison.Ordinal))
             .ToList();
 
+    private PlanningVirtualNodeDescriptor? ResolveSelectedVirtualNode()
+    {
+        foreach (var candidateId in GetSelectionCandidates())
+        {
+            if (string.IsNullOrWhiteSpace(candidateId))
+                continue;
+
+            var virtualNode = VirtualNodes.FirstOrDefault(candidate =>
+                string.Equals(candidate.Id, candidateId, StringComparison.Ordinal));
+            if (virtualNode is not null)
+                return virtualNode;
+        }
+
+        return null;
+    }
+
     private PlanStep? ResolveSelectedStep()
     {
         if (Plan is null || Plan.Steps.Count == 0)
             return null;
 
-        foreach (var candidateId in new[] { SelectedStepId, ActiveStepId })
+        foreach (var candidateId in GetSelectionCandidates())
         {
+            if (string.IsNullOrWhiteSpace(candidateId))
+                continue;
+
+            if (VirtualNodes.Any(node => string.Equals(node.Id, candidateId, StringComparison.Ordinal)))
+                return null;
+
             var step = Plan.Steps.FirstOrDefault(candidate =>
                 string.Equals(candidate.Id, candidateId, StringComparison.Ordinal));
             if (step is not null)
                 return step;
         }
 
-        return Plan.Steps[0];
+        return VirtualNodes.Count == 0
+            ? Plan.Steps[0]
+            : null;
+    }
+
+    private IEnumerable<string?> GetSelectionCandidates()
+    {
+        yield return SelectedStepId;
+        yield return ActiveStepId;
     }
 
     private static string GetKind(PlanStep step) =>

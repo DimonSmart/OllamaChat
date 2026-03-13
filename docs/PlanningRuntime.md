@@ -147,18 +147,18 @@ The current UI exposes two built-in tools:
 ### `search`
 
 - Implementation: `WebSearchTool`
-- Purpose: search the web and return candidate page URLs
+- Purpose: search the web and return structured candidate page objects
 - Input: `query`, optional `limit`
 - Default/max limit: `4` / `6`
-- Current implementation: fetches Brave Search HTML, extracts absolute links, filters Brave-owned hosts, and ranks candidates by query term overlap with a small GitHub bias
+- Current implementation: fetches Brave Search HTML, parses structured Brave result cards, filters Brave-owned hosts, and returns `url`, `title`, `snippet`, and related metadata
 - Supported consume mode in planner metadata: `auto`
 
 ### `download`
 
 - Implementation: `WebDownloadTool`
-- Purpose: download one page and return `url`, `title`, and normalized body text
-- Input: absolute HTTP/HTTPS `url`
-- Current implementation: fetches HTML, strips script/style/noscript/svg nodes with HtmlAgilityPack, normalizes whitespace, and truncates body text to `12000` characters
+- Purpose: download one page and return the original page description object enriched with normalized `content`
+- Input: either a full search-result object under `page`, or an absolute HTTP/HTTPS `url`
+- Current implementation: fetches HTML, strips script/style/noscript/svg nodes with HtmlAgilityPack, normalizes whitespace, truncates text to `12000` characters, and returns either the original `page` object plus `content` or a minimal `url/title/content` object
 - Supported consume modes in planner metadata: `auto`, `each`
 
 Both tools return the common `ResultEnvelope<JsonElement?>` contract.

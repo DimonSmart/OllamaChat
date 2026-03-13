@@ -229,9 +229,14 @@ public sealed class PlanExecutor(
 
                     if (expectsScalar)
                     {
+                        var fanOutValues = isTool && TryAutoProjectToolScalarArray(array, input.Key, out var projectedArray)
+                            ? projectedArray.EnumerateArray().Select(item => (JsonElement?)item.Clone()).ToArray()
+                            : array.EnumerateArray().Select(item => (JsonElement?)item.Clone()).ToArray();
                         fanOutInputs ??= new Dictionary<string, JsonElement?[]>(StringComparer.Ordinal);
-                        fanOutInputs[input.Key] = array.EnumerateArray().Select(item => (JsonElement?)item.Clone()).ToArray();
-                        resolved[input.Key] = array.Clone();
+                        fanOutInputs[input.Key] = fanOutValues;
+                        resolved[input.Key] = fanOutValues.Length > 0
+                            ? JsonSerializer.SerializeToElement(fanOutValues.Select(CloneElement).ToArray())
+                            : array.Clone();
                         continue;
                     }
                 }
@@ -410,6 +415,28 @@ public sealed class PlanExecutor(
         }
 
         return JsonSerializer.SerializeToElement(projected);
+    }
+
+    private static bool TryAutoProjectToolScalarArray(JsonElement array, string fieldName, out JsonElement projected)
+    {
+        projected = default;
+        if (array.ValueKind != JsonValueKind.Array)
+            return false;
+
+        var values = new List<JsonElement?>();
+        foreach (var item in array.EnumerateArray())
+        {
+            if (item.ValueKind != JsonValueKind.Object || !item.TryGetProperty(fieldName, out var property))
+                return false;
+
+            values.Add(property.Clone());
+        }
+
+        if (values.Count == 0)
+            return false;
+
+        projected = JsonSerializer.SerializeToElement(values);
+        return true;
     }
 
     private static List<string> GetMissingRefs(PlanStep step, IReadOnlyDictionary<string, PlanStep> stepMap)

@@ -1,9 +1,17 @@
 using Blazor.Diagrams.Core.Geometry;
 using Blazor.Diagrams.Core.Models;
+using ChatClient.Api.PlanningRuntime.Host;
 using ChatClient.Api.PlanningRuntime.Planning;
 using Microsoft.AspNetCore.Components.Web;
 
 namespace ChatClient.Api.Client.Components.Planning;
+
+public enum PlanningVisualNodeKind
+{
+    Step,
+    Planning,
+    Replanning
+}
 
 public sealed class PlanningStepNodeModel : NodeModel
 {
@@ -11,18 +19,40 @@ public sealed class PlanningStepNodeModel : NodeModel
         : base(step.Id, position)
     {
         ControlledSize = true;
-        Step = step;
-        IsActive = isActive;
-        Title = step.Id;
+        Update(step, isActive, isCollapsed: false, hiddenDescendantCount: 0);
     }
 
-    public PlanStep Step { get; private set; }
+    private PlanningStepNodeModel(string nodeId, Point position)
+        : base(nodeId, position)
+    {
+        ControlledSize = true;
+    }
+
+    public static PlanningStepNodeModel CreateVirtual(
+        PlanningVirtualNodeDescriptor descriptor,
+        Point position,
+        bool isActive)
+    {
+        var node = new PlanningStepNodeModel(descriptor.Id, position);
+        node.UpdateVirtual(descriptor, isActive);
+        return node;
+    }
+
+    public PlanStep? Step { get; private set; }
 
     public bool IsActive { get; private set; }
 
     public bool IsCollapsed { get; private set; }
 
     public int HiddenDescendantCount { get; private set; }
+
+    public PlanningVisualNodeKind VisualKind { get; private set; }
+
+    public string MetaText { get; private set; } = string.Empty;
+
+    public string StatusValue { get; private set; } = PlanStepStatuses.Todo;
+
+    public string StatusText { get; private set; } = "status: todo";
 
     public Action<PlanningStepNodeModel, PointerEventArgs>? PointerDownRequested { get; set; }
 
@@ -36,6 +66,32 @@ public sealed class PlanningStepNodeModel : NodeModel
         IsActive = isActive;
         IsCollapsed = isCollapsed;
         HiddenDescendantCount = hiddenDescendantCount;
+        VisualKind = PlanningVisualNodeKind.Step;
+        Title = step.Id;
+        MetaText = string.IsNullOrWhiteSpace(step.Tool)
+            ? $"llm: {step.Llm ?? string.Empty}"
+            : $"tool: {step.Tool}";
+        StatusValue = step.Status;
+        StatusText = $"status: {step.Status}";
+        Refresh();
+    }
+
+    public void UpdateVirtual(PlanningVirtualNodeDescriptor descriptor, bool isActive)
+    {
+        Step = null;
+        IsActive = isActive;
+        IsCollapsed = false;
+        HiddenDescendantCount = 0;
+        VisualKind = descriptor.Kind switch
+        {
+            PlanningVirtualNodeKind.Planning => PlanningVisualNodeKind.Planning,
+            PlanningVirtualNodeKind.Replanning => PlanningVisualNodeKind.Replanning,
+            _ => PlanningVisualNodeKind.Step
+        };
+        Title = descriptor.Title;
+        MetaText = descriptor.Subtitle;
+        StatusValue = descriptor.StatusValue;
+        StatusText = $"status: {descriptor.StatusValue}";
         Refresh();
     }
 

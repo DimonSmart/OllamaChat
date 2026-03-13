@@ -8,6 +8,8 @@
 @using Microsoft.AspNetCore.Components.Web
 @using Microsoft.JSInterop
 @using System.Text.Json.Nodes
+@using ChatClient.Api.PlanningRuntime.Execution
+@using ChatClient.Api.PlanningRuntime.Host
 @using ChatClient.Api.PlanningRuntime.Planning
 @using MudBlazor
 @inject IJSRuntime JSRuntime
@@ -37,7 +39,7 @@
             <button type="button" class="planning-graph-toolbar-button planning-graph-toolbar-button-wide" @onclick="ResetViewport">100%</button>
         </div>
 
-        @if (Plan is null || Plan.Steps.Count == 0)
+        @if (!HasGraphContent)
         {
             <div class="planning-graph-empty-state">
                 <MudText Typo="Typo.body2" Class="mud-text-secondary">Plan will appear here after the first planning attempt.</MudText>
@@ -66,6 +68,7 @@
     private DotNetObjectReference<PlanningGraph>? _selfReference;
     private ElementReference _graphHostElement;
     private bool _canvasReady;
+    private bool _jsRegistrationInFlight;
     private string? _keyboardRegistrationId;
     private string? _structureKey;
     private bool _fitPending;
@@ -92,6 +95,8 @@
     [Parameter] public PlanDefinition? Plan { get; set; }
     [Parameter] public string? ActiveStepId { get; set; }
     [Parameter] public string? SelectedStepId { get; set; }
+    [Parameter] public IReadOnlyList<PlanRunEvent> Events { get; set; } = [];
+    [Parameter] public IReadOnlyList<PlanningToolOption> AvailableTools { get; set; } = [];
     [Parameter] public EventCallback<string> SelectedStepIdChanged { get; set; }
 
     private static string GraphShellStyle =>
@@ -99,6 +104,10 @@
 
     private static string GraphHostStyle =>
         "position:relative; width:100%; height:100%; min-height:420px;";
+
+    private bool HasGraphContent =>
+        (Plan?.Steps.Count ?? 0) > 0
+        || PlanningVirtualNodeProjection.Build(Plan, Events, AvailableTools).Count > 0;
 
     protected override void OnInitialized()
     {
@@ -126,23 +135,28 @@
             return;
         }
 
-        DotNetObjectReference<PlanningGraph>? nextSelfReference = null;
+        if (_jsRegistrationInFlight)
+        {
+            return;
+        }
+
+        _selfReference ??= DotNetObjectReference.Create(this);
+
         try
         {
-            nextSelfReference = DotNetObjectReference.Create(this);
+            _jsRegistrationInFlight = true;
             _keyboardRegistrationId = await JSRuntime.InvokeAsync<string>(
                 "planningGraphInterop.refreshRegistration",
                 _graphHostElement,
-                nextSelfReference,
+                _selfReference,
                 _keyboardRegistrationId);
-
-            _selfReference?.Dispose();
-            _selfReference = nextSelfReference;
-            nextSelfReference = null;
         }
         catch (Exception ex) when (ex is JSDisconnectedException or InvalidOperationException)
         {
-            nextSelfReference?.Dispose();
+        }
+        finally
+        {
+            _jsRegistrationInFlight = false;
         }
     }
 
@@ -208,13 +222,15 @@
 
     private void SyncDiagram()
     {
+        var virtualNodes = PlanningVirtualNodeProjection.Build(Plan, Events, AvailableTools);
+
         if (_isNodePointerActive)
         {
             _syncDeferred = true;
             return;
         }
 
-        if (Plan is null || Plan.Steps.Count == 0)
+        if ((Plan is null || Plan.Steps.Count == 0) && virtualNodes.Count == 0)
         {
             _diagram.Batch(() =>
             {
@@ -232,32 +248,46 @@
             return;
         }
 
-        PruneCollapsedStepIds(Plan);
-        var collapsedState = CreateCollapsedState(Plan);
-        var visibleSteps = Plan.Steps
-            .Where(step => !collapsedState.HiddenStepIds.Contains(step.Id))
-            .ToList();
+        if (Plan is not null)
+        {
+            PruneCollapsedStepIds(Plan);
+        }
+        else
+        {
+            _collapsedStepIds.Clear();
+        }
 
-        var nextStructureKey = BuildStructureKey(visibleSteps);
+        var collapsedState = Plan is null
+            ? new CollapsedState([], [])
+            : CreateCollapsedState(Plan);
+        var visibleSteps = Plan?.Steps
+            .Where(step => !collapsedState.HiddenStepIds.Contains(step.Id))
+            .ToList()
+            ?? [];
+
+        var nextStructureKey = BuildStructureKey(visibleSteps, virtualNodes);
         if (!string.Equals(_structureKey, nextStructureKey, StringComparison.Ordinal))
         {
-            RebuildDiagram(visibleSteps, collapsedState.HiddenDescendantCounts);
+            RebuildDiagram(visibleSteps, collapsedState.HiddenDescendantCounts, virtualNodes);
             _structureKey = nextStructureKey;
         }
         else
         {
-            UpdateDiagramState(visibleSteps, collapsedState.HiddenDescendantCounts);
+            UpdateDiagramState(visibleSteps, collapsedState.HiddenDescendantCounts, virtualNodes);
         }
 
         FitDiagramToViewport();
         ApplySelection();
     }
 
-    private void RebuildDiagram(IReadOnlyList<PlanStep> visibleSteps, IReadOnlyDictionary<string, int> hiddenDescendantCounts)
+    private void RebuildDiagram(
+        IReadOnlyList<PlanStep> visibleSteps,
+        IReadOnlyDictionary<string, int> hiddenDescendantCounts,
+        IReadOnlyList<PlanningVirtualNodeDescriptor> virtualNodes)
     {
         var currentPositions = _diagram.Nodes
             .OfType<PlanningStepNodeModel>()
-            .ToDictionary(node => node.Step.Id, node => node.Position, StringComparer.Ordinal);
+            .ToDictionary(node => node.Id, node => node.Position, StringComparer.Ordinal);
 
         _diagram.Batch(() =>
         {
@@ -265,8 +295,20 @@
             _diagram.Nodes.Clear();
             _diagram.Groups.Clear();
 
-            var graphNodes = BuildGraphNodes(visibleSteps, currentPositions);
+            var graphNodes = BuildGraphNodes(
+                visibleSteps,
+                currentPositions,
+                virtualNodes.Count > 0 ? NodeWidth + HorizontalGap : 0d);
+            var virtualGraphNodes = BuildVirtualGraphNodes(virtualNodes, currentPositions);
             var nodeLookup = new Dictionary<string, PlanningStepNodeModel>(StringComparer.Ordinal);
+
+            foreach (var virtualGraphNode in virtualGraphNodes)
+            {
+                var node = PlanningStepNodeModel.CreateVirtual(virtualGraphNode.Node, virtualGraphNode.Position, isActive: false);
+                node.Size = new Blazor.Diagrams.Core.Geometry.Size(NodeWidth, NodeHeight);
+                nodeLookup[node.Id] = node;
+                _diagram.Nodes.Add(node);
+            }
 
             foreach (var graphNode in graphNodes)
             {
@@ -281,7 +323,7 @@
                     string.Equals(graphNode.Step.Id, ActiveStepId, StringComparison.Ordinal),
                     _collapsedStepIds.Contains(graphNode.Step.Id),
                     hiddenDescendantCounts.GetValueOrDefault(graphNode.Step.Id));
-                nodeLookup[node.Step.Id] = node;
+                nodeLookup[node.Id] = node;
                 _diagram.Nodes.Add(node);
             }
 
@@ -308,11 +350,22 @@
         });
     }
 
-    private void UpdateDiagramState(IReadOnlyList<PlanStep> visibleSteps, IReadOnlyDictionary<string, int> hiddenDescendantCounts)
+    private void UpdateDiagramState(
+        IReadOnlyList<PlanStep> visibleSteps,
+        IReadOnlyDictionary<string, int> hiddenDescendantCounts,
+        IReadOnlyList<PlanningVirtualNodeDescriptor> virtualNodes)
     {
         var nodeLookup = _diagram.Nodes
             .OfType<PlanningStepNodeModel>()
-            .ToDictionary(node => node.Step.Id, StringComparer.Ordinal);
+            .ToDictionary(node => node.Id, StringComparer.Ordinal);
+
+        foreach (var virtualNode in virtualNodes)
+        {
+            if (!nodeLookup.TryGetValue(virtualNode.Id, out var node))
+                continue;
+
+            node.UpdateVirtual(virtualNode, isActive: false);
+        }
 
         foreach (var step in visibleSteps)
         {
@@ -329,7 +382,7 @@
 
     private void ApplySelection()
     {
-        var selectedId = ResolveSelectedStepId();
+        var selectedId = ResolveSelectedNodeId();
 
         _diagram.UnselectAll();
 
@@ -338,7 +391,7 @@
 
         var node = _diagram.Nodes
             .OfType<PlanningStepNodeModel>()
-            .FirstOrDefault(candidate => string.Equals(candidate.Step.Id, selectedId, StringComparison.Ordinal));
+            .FirstOrDefault(candidate => string.Equals(candidate.Id, selectedId, StringComparison.Ordinal));
 
         if (node is not null)
         {
@@ -495,21 +548,31 @@
         });
     }
 
-    private string? ResolveSelectedStepId()
+    private string? ResolveSelectedNodeId()
     {
-        if (Plan is null || Plan.Steps.Count == 0)
+        var virtualNodes = PlanningVirtualNodeProjection.Build(Plan, Events, AvailableTools);
+        var validNodeIds = PlanningVirtualNodeProjection.BuildSelectionKeys(Plan, Events, AvailableTools);
+        if (validNodeIds.Count == 0)
             return null;
 
         foreach (var candidateId in new[] { SelectedStepId, ActiveStepId })
         {
-            if (!string.IsNullOrWhiteSpace(candidateId) &&
-                Plan.Steps.Any(step => string.Equals(step.Id, candidateId, StringComparison.Ordinal)))
+            if (!string.IsNullOrWhiteSpace(candidateId) && validNodeIds.Contains(candidateId))
             {
                 return candidateId;
             }
         }
 
-        return Plan.Steps[0].Id;
+        var defaultVirtualNodeId = virtualNodes
+            .FirstOrDefault()
+            ?.Id;
+        if (!string.IsNullOrWhiteSpace(defaultVirtualNodeId))
+            return defaultVirtualNodeId;
+
+        if (Plan is { Steps.Count: > 0 })
+            return Plan.Steps[0].Id;
+
+        return null;
     }
 
     [JSInvokable]
@@ -585,7 +648,7 @@
         _isNodePointerActive = true;
         _syncDeferred = false;
         _nodeDragMoved = false;
-        _dragNodeId = node.Step.Id;
+        _dragNodeId = node.Id;
         _dragNodeStartPosition = node.Position;
         _dragStartClientX = clientX;
         _dragStartClientY = clientY;
@@ -595,7 +658,7 @@
 
     private async Task OnNodeClickedAsync(PlanningStepNodeModel node)
     {
-        if (string.Equals(_suppressClickStepId, node.Step.Id, StringComparison.Ordinal))
+        if (string.Equals(_suppressClickStepId, node.Id, StringComparison.Ordinal))
         {
             _suppressClickStepId = null;
             return;
@@ -606,7 +669,7 @@
 
     private Task OnNodeDoubleClickedAsync(PlanningStepNodeModel node)
     {
-        if (_nodeDragMoved)
+        if (_nodeDragMoved || node.Step is null)
             return Task.CompletedTask;
 
         return ToggleCollapsedAsync(node.Step.Id);
@@ -744,7 +807,7 @@
 
             if (selectedNodes.Count == 1)
             {
-                await SelectedStepIdChanged.InvokeAsync(selectedNodes[0].Step.Id);
+                await SelectedStepIdChanged.InvokeAsync(selectedNodes[0].Id);
             }
         }
 
@@ -780,14 +843,14 @@
 
         if (notifyParent)
         {
-            await SelectedStepIdChanged.InvokeAsync(node.Step.Id);
+            await SelectedStepIdChanged.InvokeAsync(node.Id);
         }
     }
 
     private PlanningStepNodeModel? FindNode(string stepId) =>
         _diagram.Nodes
             .OfType<PlanningStepNodeModel>()
-            .FirstOrDefault(node => string.Equals(node.Step.Id, stepId, StringComparison.Ordinal));
+            .FirstOrDefault(node => string.Equals(node.Id, stepId, StringComparison.Ordinal));
 
     private void UpdateSelectionBox(double clientX, double clientY)
     {
@@ -933,9 +996,16 @@
         return CollectDescendants(stepId, dependentsLookup).Count;
     }
 
-    private static string BuildStructureKey(IReadOnlyList<PlanStep> visibleSteps)
+    private static string BuildStructureKey(
+        IReadOnlyList<PlanStep> visibleSteps,
+        IReadOnlyList<PlanningVirtualNodeDescriptor> virtualNodes)
     {
-        var parts = new List<string>(visibleSteps.Count);
+        var parts = new List<string>(visibleSteps.Count + virtualNodes.Count);
+        foreach (var virtualNode in virtualNodes)
+        {
+            parts.Add($"virtual:{virtualNode.Id}:{virtualNode.Kind}");
+        }
+
         foreach (var step in visibleSteps)
         {
             var dependencies = GetDependencies(step)
@@ -949,7 +1019,8 @@
 
     private static List<GraphNode> BuildGraphNodes(
         IReadOnlyList<PlanStep> visibleSteps,
-        IReadOnlyDictionary<string, Point> currentPositions)
+        IReadOnlyDictionary<string, Point> currentPositions,
+        double leftOffset)
     {
         var depthByStepId = new Dictionary<string, int>(StringComparer.Ordinal);
         var graphNodes = new List<GraphNode>(visibleSteps.Count);
@@ -966,7 +1037,7 @@
             depthByStepId[step.Id] = depth;
 
             var fallback = new Point(
-                Margin + depth * (NodeWidth + HorizontalGap),
+                Margin + leftOffset + depth * (NodeWidth + HorizontalGap),
                 Margin + index * VerticalGap);
 
             graphNodes.Add(new GraphNode(
@@ -975,6 +1046,27 @@
         }
 
         return graphNodes;
+    }
+
+    private static List<VirtualGraphNode> BuildVirtualGraphNodes(
+        IReadOnlyList<PlanningVirtualNodeDescriptor> virtualNodes,
+        IReadOnlyDictionary<string, Point> currentPositions)
+    {
+        var nodes = new List<VirtualGraphNode>(virtualNodes.Count);
+
+        for (var index = 0; index < virtualNodes.Count; index++)
+        {
+            var virtualNode = virtualNodes[index];
+            var fallback = new Point(
+                Margin,
+                Margin + index * (NodeHeight + VerticalGap));
+
+            nodes.Add(new VirtualGraphNode(
+                virtualNode,
+                currentPositions.TryGetValue(virtualNode.Id, out var position) ? position : fallback));
+        }
+
+        return nodes;
     }
 
     private static IReadOnlyCollection<string> GetDependencies(PlanStep step)
@@ -1025,6 +1117,8 @@
     }
 
     private sealed record GraphNode(PlanStep Step, Point Position);
+
+    private sealed record VirtualGraphNode(PlanningVirtualNodeDescriptor Node, Point Position);
 
     private sealed record CollapsedState(
         HashSet<string> HiddenStepIds,

@@ -100,13 +100,16 @@
             <PlanningGraph Plan="@CurrentPlan"
                            ActiveStepId="@CurrentActiveStepId"
                            SelectedStepId="@selectedStepId"
+                           Events="@CurrentEvents"
+                           AvailableTools="@CurrentAvailableTools"
                            SelectedStepIdChanged="OnSelectedStepChanged" />
         </MudItem>
         <MudItem xs="12" lg="5">
             <PlanningStepDetails Plan="@CurrentPlan"
                                  ActiveStepId="@CurrentActiveStepId"
                                  SelectedStepId="@selectedStepId"
-                                 Events="@CurrentEvents" />
+                                 Events="@CurrentEvents"
+                                 AvailableTools="@CurrentAvailableTools" />
         </MudItem>
     </MudGrid>
 
@@ -161,14 +164,24 @@
     private IReadOnlyList<PlanRunEvent> CurrentEvents =>
         ActivePreviewScenario?.Events ?? GetStateEventsSnapshot();
 
+    private IReadOnlyList<PlanningToolOption> CurrentAvailableTools =>
+        ActivePreviewScenario?.AvailableTools ?? GetStateAvailableToolsSnapshot();
+
     private IReadOnlyList<string> CurrentLogLines =>
         ActivePreviewScenario?.LogLines ?? GetStateLogLinesSnapshot();
 
     private ResultEnvelope<JsonElement?>? CurrentFinalResult =>
         ActivePreviewScenario?.FinalResult ?? PlanningSessionService.State.FinalResult;
 
-    private string CurrentGraphKey =>
-        $"{selectedPreviewScenarioId}:{CurrentPlan?.Steps.Count ?? 0}:{string.Join("|", CurrentPlan?.Steps.Select(step => step.Id) ?? [])}";
+    private string CurrentGraphKey
+    {
+        get
+        {
+            var currentEvents = CurrentEvents;
+            var currentAvailableTools = CurrentAvailableTools;
+            return BuildGraphKey(CurrentPlan, currentEvents, currentAvailableTools);
+        }
+    }
 
     private bool CanStart =>
         !UsingPreviewScenario &&
@@ -285,11 +298,22 @@
         }
     }
 
+    private IReadOnlyList<PlanningToolOption> GetStateAvailableToolsSnapshot()
+    {
+        lock (PlanningSessionService.State.AvailableTools)
+        {
+            return [.. PlanningSessionService.State.AvailableTools];
+        }
+    }
+
     private void SyncSelectedStepId(PlanDefinition? plan, string? activeStepId, bool forceReset = false)
     {
-        var contextKey = CurrentGraphKey;
+        var currentEvents = CurrentEvents;
+        var currentAvailableTools = CurrentAvailableTools;
+        var contextKey = BuildGraphKey(plan, currentEvents, currentAvailableTools);
+        var validNodeIds = PlanningVirtualNodeProjection.BuildSelectionKeys(plan, currentEvents, currentAvailableTools);
 
-        if (plan is null || plan.Steps.Count == 0)
+        if (validNodeIds.Count == 0)
         {
             selectedStepId = null;
             selectedStepContextKey = contextKey;
@@ -299,14 +323,28 @@
         if (!forceReset &&
             string.Equals(selectedStepContextKey, contextKey, StringComparison.Ordinal) &&
             !string.IsNullOrWhiteSpace(selectedStepId) &&
-            plan.Steps.Any(step => string.Equals(step.Id, selectedStepId, StringComparison.Ordinal)))
+            validNodeIds.Contains(selectedStepId))
         {
             return;
         }
 
-        selectedStepId = plan.Steps.FirstOrDefault(step => string.Equals(step.Id, activeStepId, StringComparison.Ordinal))?.Id
-            ?? plan.Steps[0].Id;
+        selectedStepId = !string.IsNullOrWhiteSpace(activeStepId) && validNodeIds.Contains(activeStepId)
+            ? activeStepId
+            : PlanningVirtualNodeProjection.Build(plan, currentEvents, currentAvailableTools).FirstOrDefault()?.Id
+            ?? plan?.Steps.FirstOrDefault()?.Id;
         selectedStepContextKey = contextKey;
+    }
+
+    private string BuildGraphKey(
+        PlanDefinition? plan,
+        IReadOnlyList<PlanRunEvent> events,
+        IReadOnlyList<PlanningToolOption> availableTools)
+    {
+        var planStepIds = string.Join("|", plan?.Steps.Select(step => step.Id) ?? []);
+        var virtualNodeKeys = string.Join("|", PlanningVirtualNodeProjection.Build(plan, events, availableTools)
+            .Select(node => $"{node.Id}:{node.StatusValue}"));
+
+        return $"{selectedPreviewScenarioId}:{planStepIds}:{virtualNodeKeys}";
     }
 
     private sealed class ToolSelection(string name, string displayName, bool enabled)
