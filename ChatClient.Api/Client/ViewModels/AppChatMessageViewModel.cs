@@ -1,12 +1,10 @@
 using ChatClient.Api.Client.Markdown;
 using ChatClient.Domain.Models;
 using DimonSmart.AiUtils;
-using Markdig;
 using Microsoft.Extensions.AI;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
-using MarkdigMarkdown = Markdig.Markdown;
 
 namespace ChatClient.Api.Client.ViewModels;
 
@@ -28,11 +26,6 @@ public class AppChatMessageViewModel
     public IReadOnlyList<AppChatMessageFile> Files { get; set; } = [];
     public string? AgentName { get; set; }
 
-    private static readonly MarkdownPipeline Pipeline = new MarkdownPipelineBuilder()
-        .UseAdvancedExtensions()
-        .UseMathematics()
-        .UseSlashParensMath()
-        .Build();
     public AppChatMessageViewModel UpdateFromDomainModel(IAppChatMessage message)
     {
         Id = message.Id;
@@ -49,11 +42,11 @@ public class AppChatMessageViewModel
 
         ThinkSegments = result.ThoughtSegments;
         HtmlThinkSegments = result.ThoughtSegments
-            .Select(segment => MarkdigMarkdown.ToHtml(segment, Pipeline))
+            .Select(AppMarkdown.ToHtml)
             .ToList()
             .AsReadOnly();
         Content = result.Answer;
-        HtmlContent = MarkdigMarkdown.ToHtml(result.Answer, Pipeline);
+        HtmlContent = AppMarkdown.ToHtml(result.Answer);
 
         HtmlFunctionCalls = FunctionCalls
             .Select(call =>
@@ -82,7 +75,7 @@ public class AppChatMessageViewModel
                 sb.AppendLine("```");
                 sb.AppendLine(call.Response);
                 sb.AppendLine("```");
-                return MarkdigMarkdown.ToHtml(sb.ToString(), Pipeline);
+                return AppMarkdown.ToHtml(sb.ToString());
             })
             .ToList()
             .AsReadOnly();

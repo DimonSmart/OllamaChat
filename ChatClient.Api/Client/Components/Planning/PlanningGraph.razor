@@ -8,6 +8,7 @@
 @using Microsoft.AspNetCore.Components.Web
 @using Microsoft.JSInterop
 @using System.Text.Json.Nodes
+@using ChatClient.Api.PlanningRuntime.Common
 @using ChatClient.Api.PlanningRuntime.Execution
 @using ChatClient.Api.PlanningRuntime.Host
 @using ChatClient.Api.PlanningRuntime.Planning
@@ -97,6 +98,7 @@
     [Parameter] public string? SelectedStepId { get; set; }
     [Parameter] public IReadOnlyList<PlanRunEvent> Events { get; set; } = [];
     [Parameter] public IReadOnlyList<PlanningToolOption> AvailableTools { get; set; } = [];
+    [Parameter] public ResultEnvelope<JsonElement?>? FinalResult { get; set; }
     [Parameter] public EventCallback<string> SelectedStepIdChanged { get; set; }
 
     private static string GraphShellStyle =>
@@ -107,7 +109,7 @@
 
     private bool HasGraphContent =>
         (Plan?.Steps.Count ?? 0) > 0
-        || PlanningVirtualNodeProjection.Build(Plan, Events, AvailableTools).Count > 0;
+        || PlanningVirtualNodeProjection.Build(Plan, Events, AvailableTools, FinalResult).Count > 0;
 
     protected override void OnInitialized()
     {
@@ -222,7 +224,7 @@
 
     private void SyncDiagram()
     {
-        var virtualNodes = PlanningVirtualNodeProjection.Build(Plan, Events, AvailableTools);
+        var virtualNodes = PlanningVirtualNodeProjection.Build(Plan, Events, AvailableTools, FinalResult);
 
         if (_isNodePointerActive)
         {
@@ -298,8 +300,8 @@
             var graphNodes = BuildGraphNodes(
                 visibleSteps,
                 currentPositions,
-                virtualNodes.Count > 0 ? NodeWidth + HorizontalGap : 0d);
-            var virtualGraphNodes = BuildVirtualGraphNodes(virtualNodes, currentPositions);
+                virtualNodes.Any(node => node.Kind != PlanningVirtualNodeKind.Result) ? NodeWidth + HorizontalGap : 0d);
+            var virtualGraphNodes = BuildVirtualGraphNodes(visibleSteps, graphNodes, virtualNodes, currentPositions);
             var nodeLookup = new Dictionary<string, PlanningStepNodeModel>(StringComparer.Ordinal);
 
             foreach (var virtualGraphNode in virtualGraphNodes)
@@ -345,6 +347,8 @@
                     });
                 }
             }
+
+            AddResultLinks(visibleSteps, nodeLookup);
 
             _fitPending = _fitRequestedExplicitly || !_hasInitialFit;
         });
@@ -550,8 +554,7 @@
 
     private string? ResolveSelectedNodeId()
     {
-        var virtualNodes = PlanningVirtualNodeProjection.Build(Plan, Events, AvailableTools);
-        var validNodeIds = PlanningVirtualNodeProjection.BuildSelectionKeys(Plan, Events, AvailableTools);
+        var validNodeIds = PlanningVirtualNodeProjection.BuildSelectionKeys(Plan, Events, AvailableTools, FinalResult);
         if (validNodeIds.Count == 0)
             return null;
 
@@ -563,16 +566,12 @@
             }
         }
 
-        var defaultVirtualNodeId = virtualNodes
-            .FirstOrDefault()
-            ?.Id;
-        if (!string.IsNullOrWhiteSpace(defaultVirtualNodeId))
-            return defaultVirtualNodeId;
-
-        if (Plan is { Steps.Count: > 0 })
-            return Plan.Steps[0].Id;
-
-        return null;
+        return PlanningVirtualNodeProjection.ResolveDefaultSelectionId(
+            Plan,
+            Events,
+            AvailableTools,
+            FinalResult,
+            ActiveStepId);
     }
 
     [JSInvokable]
@@ -1049,17 +1048,23 @@
     }
 
     private static List<VirtualGraphNode> BuildVirtualGraphNodes(
+        IReadOnlyList<PlanStep> visibleSteps,
+        IReadOnlyList<GraphNode> graphNodes,
         IReadOnlyList<PlanningVirtualNodeDescriptor> virtualNodes,
         IReadOnlyDictionary<string, Point> currentPositions)
     {
         var nodes = new List<VirtualGraphNode>(virtualNodes.Count);
+        var leftColumnIndex = 0;
+        var resultAnchor = CreateResultAnchor(visibleSteps, graphNodes);
 
         for (var index = 0; index < virtualNodes.Count; index++)
         {
             var virtualNode = virtualNodes[index];
-            var fallback = new Point(
-                Margin,
-                Margin + index * (NodeHeight + VerticalGap));
+            var fallback = virtualNode.Kind == PlanningVirtualNodeKind.Result
+                ? resultAnchor
+                : new Point(
+                    Margin,
+                    Margin + leftColumnIndex++ * (NodeHeight + VerticalGap));
 
             nodes.Add(new VirtualGraphNode(
                 virtualNode,
@@ -1067,6 +1072,64 @@
         }
 
         return nodes;
+    }
+
+    private void AddResultLinks(
+        IReadOnlyList<PlanStep> visibleSteps,
+        IReadOnlyDictionary<string, PlanningStepNodeModel> nodeLookup)
+    {
+        if (!nodeLookup.TryGetValue(PlanningVirtualNodeDescriptor.ResultNodeId, out var resultNode))
+        {
+            return;
+        }
+
+        foreach (var terminalStepId in GetTerminalStepIds(visibleSteps))
+        {
+            if (!nodeLookup.TryGetValue(terminalStepId, out var source))
+            {
+                continue;
+            }
+
+            _diagram.Links.Add(new LinkModel(source, resultNode)
+            {
+                Color = LinkColor,
+                SelectedColor = LinkSelectedColor,
+                TargetMarker = LinkMarker.Arrow
+            });
+        }
+    }
+
+    private static Point CreateResultAnchor(
+        IReadOnlyList<PlanStep> visibleSteps,
+        IReadOnlyList<GraphNode> graphNodes)
+    {
+        if (graphNodes.Count == 0)
+        {
+            return new Point(Margin + NodeWidth + HorizontalGap, Margin);
+        }
+
+        var terminalStepIds = GetTerminalStepIds(visibleSteps).ToHashSet(StringComparer.Ordinal);
+        var anchorNodes = graphNodes
+            .Where(node => terminalStepIds.Contains(node.Step.Id))
+            .ToList();
+
+        if (anchorNodes.Count == 0)
+        {
+            anchorNodes = [.. graphNodes];
+        }
+
+        var rightMostX = graphNodes.Max(node => node.Position.X);
+        var anchorY = anchorNodes.Average(node => node.Position.Y);
+        return new Point(rightMostX + NodeWidth + HorizontalGap, anchorY);
+    }
+
+    private static IReadOnlyList<string> GetTerminalStepIds(IReadOnlyList<PlanStep> visibleSteps)
+    {
+        var dependentsLookup = BuildDependentsLookup(visibleSteps);
+        return visibleSteps
+            .Where(step => !dependentsLookup.TryGetValue(step.Id, out var children) || children.Count == 0)
+            .Select(step => step.Id)
+            .ToList();
     }
 
     private static IReadOnlyCollection<string> GetDependencies(PlanStep step)

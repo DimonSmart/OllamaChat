@@ -19,7 +19,7 @@
                 @if (!string.IsNullOrWhiteSpace(SelectedVirtualNode.PlanningStarted?.UserQuery))
                 {
                     <MudText Typo="Typo.subtitle2">User Request</MudText>
-                    <MudPaper Class="pa-3 planning-step-block">@SelectedVirtualNode.PlanningStarted!.UserQuery</MudPaper>
+                    <PlanningValueDisplay Text="@SelectedVirtualNode.PlanningStarted!.UserQuery" AutoDetectMarkdown="false" />
                 }
 
                 @if (SelectedVirtualNode.AvailableTools.Count > 0)
@@ -41,21 +41,21 @@
                 @if (SelectedVirtualNode.PlannedDraft is not null)
                 {
                     <MudText Typo="Typo.subtitle2">Raw Plan</MudText>
-                    <MudPaper Class="pa-3 planning-step-block">@SerializeJson(SelectedVirtualNode.PlannedDraft)</MudPaper>
+                    <PlanningValueDisplay Text="@SerializeJson(SelectedVirtualNode.PlannedDraft)" AutoDetectMarkdown="false" />
                 }
             }
-            else
+            else if (SelectedVirtualNode.Kind == PlanningVirtualNodeKind.Replanning)
             {
                 @if (!string.IsNullOrWhiteSpace(SelectedVirtualNode.ReplanStarted?.Request.GoalVerdict.Reason))
                 {
                     <MudText Typo="Typo.subtitle2">Why Replanning Started</MudText>
-                    <MudPaper Class="pa-3 planning-step-block">@SelectedVirtualNode.ReplanStarted!.Request.GoalVerdict.Reason</MudPaper>
+                    <PlanningValueDisplay Text="@SelectedVirtualNode.ReplanStarted!.Request.GoalVerdict.Reason" AutoDetectMarkdown="false" />
                 }
 
                 @if (SelectedVirtualNode.ReplanStarted?.Request.GoalVerdict.Missing.Count > 0)
                 {
                     <MudText Typo="Typo.subtitle2">Missing Or Blocked Items</MudText>
-                    <MudPaper Class="pa-3 planning-step-block">@SerializeJson(SelectedVirtualNode.ReplanStarted!.Request.GoalVerdict.Missing)</MudPaper>
+                    <PlanningValueDisplay Text="@SerializeJson(SelectedVirtualNode.ReplanStarted!.Request.GoalVerdict.Missing)" AutoDetectMarkdown="false" />
                 }
 
                 @if (FailedReplanTraces.Count > 0)
@@ -72,7 +72,9 @@
                             @if (failedTrace.ErrorDetails is not null)
                             {
                                 <MudText Typo="Typo.caption" Class="mt-1 mud-text-secondary">Details</MudText>
-                                <pre class="planning-step-code">@SerializeJson(failedTrace.ErrorDetails.Value)</pre>
+                                <PlanningValueDisplay Json="@failedTrace.ErrorDetails.Value"
+                                                     PaperClass="pa-3 mt-1 planning-step-block"
+                                                     AutoDetectMarkdown="false" />
                             }
                         </MudPaper>
                     }
@@ -87,10 +89,56 @@
                             <MudText Typo="Typo.caption">round @round.Round | done: @round.Done</MudText>
                             <MudText Typo="Typo.body2" Class="mt-1">@round.Reason</MudText>
                             <MudText Typo="Typo.caption" Class="mt-2 mud-text-secondary">Action Batch</MudText>
-                            <pre class="planning-step-code">@SerializeJson(round.ActionBatch)</pre>
+                            <PlanningValueDisplay Json="@round.ActionBatch"
+                                                 PaperClass="pa-3 mt-1 planning-step-block"
+                                                 AutoDetectMarkdown="false" />
                             <MudText Typo="Typo.caption" Class="mt-2 mud-text-secondary">Action Results</MudText>
-                            <pre class="planning-step-code">@SerializeJson(round.ActionResults)</pre>
+                            <PlanningValueDisplay Json="@round.ActionResults"
+                                                 PaperClass="pa-3 mt-1 planning-step-block"
+                                                 AutoDetectMarkdown="false" />
                         </MudPaper>
+                    }
+                }
+            }
+            else if (SelectedVirtualNode.FinalResult is not null)
+            {
+                @if (!string.IsNullOrWhiteSpace(SelectedVirtualNode.Summary))
+                {
+                    <MudText Typo="Typo.subtitle2">Summary</MudText>
+                    <PlanningValueDisplay Text="@SelectedVirtualNode.Summary" AutoDetectMarkdown="false" />
+                }
+
+                <MudText Typo="Typo.subtitle2">Outcome</MudText>
+                <PlanningValueDisplay Text="@($"ok: {SelectedVirtualNode.FinalResult.Ok.ToString().ToLowerInvariant()}")" AutoDetectMarkdown="false" />
+
+                @if (SelectedVirtualNode.FinalResult.Ok)
+                {
+                    @if (SelectedVirtualNode.FinalResult.Data is not null)
+                    {
+                        <MudText Typo="Typo.subtitle2">Result</MudText>
+                        <PlanningValueDisplay Json="@SelectedVirtualNode.FinalResult.Data"
+                                             AutoDetectMarkdown="true" />
+                    }
+                }
+                else if (SelectedVirtualNode.FinalResult.Error is not null)
+                {
+                    @if (!string.IsNullOrWhiteSpace(SelectedVirtualNode.FinalResult.Error.Code))
+                    {
+                        <MudText Typo="Typo.subtitle2">Error Code</MudText>
+                        <PlanningValueDisplay Text="@SelectedVirtualNode.FinalResult.Error.Code" AutoDetectMarkdown="false" />
+                    }
+
+                    @if (!string.IsNullOrWhiteSpace(SelectedVirtualNode.FinalResult.Error.Message))
+                    {
+                        <MudText Typo="Typo.subtitle2">Error Message</MudText>
+                        <PlanningValueDisplay Text="@SelectedVirtualNode.FinalResult.Error.Message" AutoDetectMarkdown="false" />
+                    }
+
+                    @if (SelectedVirtualNode.FinalResult.Error.Details is not null)
+                    {
+                        <MudText Typo="Typo.subtitle2">Error Details</MudText>
+                        <PlanningValueDisplay Json="@SelectedVirtualNode.FinalResult.Error.Details"
+                                             AutoDetectMarkdown="false" />
                     }
                 }
             }
@@ -127,37 +175,37 @@ else
             @if (!string.IsNullOrWhiteSpace(SelectedStep.SystemPrompt))
             {
                 <MudText Typo="Typo.subtitle2">System Prompt</MudText>
-                <MudPaper Class="pa-3 planning-step-block">@SelectedStep.SystemPrompt</MudPaper>
+                <PlanningValueDisplay Text="@SelectedStep.SystemPrompt" AutoDetectMarkdown="false" />
             }
 
             @if (!string.IsNullOrWhiteSpace(SelectedStep.UserPrompt))
             {
                 <MudText Typo="Typo.subtitle2">User Prompt</MudText>
-                <MudPaper Class="pa-3 planning-step-block">@SelectedStep.UserPrompt</MudPaper>
+                <PlanningValueDisplay Text="@SelectedStep.UserPrompt" AutoDetectMarkdown="false" />
             }
 
             @foreach (var promptEvent in PromptEvents)
             {
                 <MudText Typo="Typo.subtitle2">Prepared Prompt</MudText>
-                <MudPaper Class="pa-3 planning-step-block">@promptEvent.FullUserPrompt</MudPaper>
+                <PlanningValueDisplay Text="@promptEvent.FullUserPrompt" AutoDetectMarkdown="false" />
             }
 
             @if (SelectedStep.In.Count > 0)
             {
                 <MudText Typo="Typo.subtitle2">Input Bindings</MudText>
-                <MudPaper Class="pa-3 planning-step-block">@SerializeJson(SelectedStep.In)</MudPaper>
+                <PlanningValueDisplay Text="@SerializeJson(SelectedStep.In)" AutoDetectMarkdown="false" />
             }
 
             @if (SelectedStep.Result is not null)
             {
                 <MudText Typo="Typo.subtitle2">Result</MudText>
-                <MudPaper Class="pa-3 planning-step-block">@SerializeJson(SelectedStep.Result)</MudPaper>
+                <PlanningValueDisplay Json="@SelectedStep.Result" AutoDetectMarkdown="true" />
             }
 
             @if (SelectedStep.Error is not null)
             {
                 <MudText Typo="Typo.subtitle2">Error</MudText>
-                <MudPaper Class="pa-3 planning-step-block">@SerializeJson(SelectedStep.Error)</MudPaper>
+                <PlanningValueDisplay Text="@SerializeJson(SelectedStep.Error)" AutoDetectMarkdown="false" />
             }
 
             @if (CallEvents.Count > 0)
@@ -170,12 +218,16 @@ else
                         @if (callEvent.Output is not null)
                         {
                             <MudText Typo="Typo.caption" Class="mt-1 mud-text-secondary">Output</MudText>
-                            <pre class="planning-step-code">@SerializeJson(callEvent.Output)</pre>
+                            <PlanningValueDisplay Json="@callEvent.Output"
+                                                 PaperClass="pa-3 mt-1 planning-step-block"
+                                                 AutoDetectMarkdown="true" />
                         }
                         @if (callEvent.Error is not null)
                         {
                             <MudText Typo="Typo.caption" Class="mt-1 mud-text-secondary">Error</MudText>
-                            <pre class="planning-step-code">@SerializeJson(callEvent.Error)</pre>
+                            <PlanningValueDisplay Text="@SerializeJson(callEvent.Error)"
+                                                 PaperClass="pa-3 mt-1 planning-step-block"
+                                                 AutoDetectMarkdown="false" />
                         }
                     </MudPaper>
                 }
@@ -184,7 +236,7 @@ else
             @foreach (var responseEvent in ResponseEvents)
             {
                 <MudText Typo="Typo.subtitle2">Raw LLM Response</MudText>
-                <MudPaper Class="pa-3 planning-step-block">@responseEvent.RawResponseText</MudPaper>
+                <PlanningValueDisplay Text="@responseEvent.RawResponseText" AutoDetectMarkdown="false" />
             }
         </MudStack>
     </MudPaper>
@@ -196,9 +248,10 @@ else
     [Parameter] public string? SelectedStepId { get; set; }
     [Parameter] public IReadOnlyList<PlanRunEvent> Events { get; set; } = [];
     [Parameter] public IReadOnlyList<PlanningToolOption> AvailableTools { get; set; } = [];
+    [Parameter] public ResultEnvelope<JsonElement?>? FinalResult { get; set; }
 
     private IReadOnlyList<PlanningVirtualNodeDescriptor> VirtualNodes =>
-        PlanningVirtualNodeProjection.Build(Plan, Events, AvailableTools);
+        PlanningVirtualNodeProjection.Build(Plan, Events, AvailableTools, FinalResult);
 
     private PlanningVirtualNodeDescriptor? SelectedVirtualNode => ResolveSelectedVirtualNode();
 

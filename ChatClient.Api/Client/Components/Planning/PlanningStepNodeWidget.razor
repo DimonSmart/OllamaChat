@@ -26,6 +26,7 @@
         {
             PlanningVisualNodeKind.Planning => " planning-step-node-planning",
             PlanningVisualNodeKind.Replanning => " planning-step-node-replanning",
+            PlanningVisualNodeKind.Result => " planning-step-node-result",
             _ => string.Empty
         };
 
@@ -57,6 +58,16 @@
                 "running" => "#8a5a12",
                 "done" => "#7b6b1a",
                 _ => "#6e5b33"
+            };
+        }
+
+        if (node.VisualKind == PlanningVisualNodeKind.Result)
+        {
+            return node.StatusValue switch
+            {
+                PlanStepStatuses.Done => "#166f69",
+                PlanStepStatuses.Fail => "#8f2f37",
+                _ => "#2d5a72"
             };
         }
 
@@ -92,6 +103,16 @@
                 "running" => "#ffd8a8",
                 "done" => "#efe08e",
                 _ => "#e1d1aa"
+            };
+        }
+
+        if (node.VisualKind == PlanningVisualNodeKind.Result)
+        {
+            return node.StatusValue switch
+            {
+                PlanStepStatuses.Done => "#86efe2",
+                PlanStepStatuses.Fail => "#ffb6be",
+                _ => "#9fd5eb"
             };
         }
 

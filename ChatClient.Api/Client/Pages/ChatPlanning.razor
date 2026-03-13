@@ -102,6 +102,7 @@
                            SelectedStepId="@selectedStepId"
                            Events="@CurrentEvents"
                            AvailableTools="@CurrentAvailableTools"
+                           FinalResult="@CurrentFinalResult"
                            SelectedStepIdChanged="OnSelectedStepChanged" />
         </MudItem>
         <MudItem xs="12" lg="5">
@@ -109,22 +110,12 @@
                                  ActiveStepId="@CurrentActiveStepId"
                                  SelectedStepId="@selectedStepId"
                                  Events="@CurrentEvents"
-                                 AvailableTools="@CurrentAvailableTools" />
+                                 AvailableTools="@CurrentAvailableTools"
+                                 FinalResult="@CurrentFinalResult" />
         </MudItem>
     </MudGrid>
 
     <PlanningReplanLog Events="CurrentEvents" LogLines="CurrentLogLines" />
-
-    @if (CurrentFinalResult is not null)
-    {
-        <MudPaper Class="pa-4" Outlined="true">
-            <MudText Typo="Typo.h6">Final Result</MudText>
-            <MudText Typo="Typo.caption" Class="mud-text-secondary">
-                ok: @CurrentFinalResult.Ok
-            </MudText>
-            <MudPaper Class="pa-3 mt-2 planning-json-block">@SerializeJson(CurrentFinalResult)</MudPaper>
-        </MudPaper>
-    }
 </MudStack>
 
 @code {
@@ -179,7 +170,7 @@
         {
             var currentEvents = CurrentEvents;
             var currentAvailableTools = CurrentAvailableTools;
-            return BuildGraphKey(CurrentPlan, currentEvents, currentAvailableTools);
+            return BuildGraphKey(CurrentPlan, currentEvents, currentAvailableTools, CurrentFinalResult);
         }
     }
 
@@ -203,7 +194,7 @@
     protected override void OnInitialized()
     {
         PlanningSessionService.StateChanged += OnStateChanged;
-        SyncSelectedStepId(CurrentPlan, CurrentActiveStepId);
+        SyncSelectedStepId(CurrentPlan, CurrentActiveStepId, CurrentFinalResult);
     }
 
     private async Task StartRunAsync()
@@ -239,7 +230,7 @@
             PlanningSessionService.Reset();
         }
 
-        SyncSelectedStepId(CurrentPlan, CurrentActiveStepId, forceReset: true);
+        SyncSelectedStepId(CurrentPlan, CurrentActiveStepId, CurrentFinalResult, forceReset: true);
     }
 
     private Task OnSelectedStepChanged(string stepId)
@@ -261,7 +252,7 @@
             ? PlanningPreviewScenarios.LiveScenarioId
             : value;
 
-        SyncSelectedStepId(CurrentPlan, CurrentActiveStepId, forceReset: true);
+        SyncSelectedStepId(CurrentPlan, CurrentActiveStepId, CurrentFinalResult, forceReset: true);
         return InvokeAsync(StateHasChanged);
     }
 
@@ -269,7 +260,7 @@
     {
         _ = InvokeAsync(() =>
         {
-            SyncSelectedStepId(CurrentPlan, CurrentActiveStepId);
+            SyncSelectedStepId(CurrentPlan, CurrentActiveStepId, CurrentFinalResult);
             StateHasChanged();
         });
     }
@@ -278,9 +269,6 @@
     {
         PlanningSessionService.StateChanged -= OnStateChanged;
     }
-
-    private static string SerializeJson<T>(T value) =>
-        PlanningJson.SerializeIndented(value);
 
     private IReadOnlyList<PlanRunEvent> GetStateEventsSnapshot()
     {
@@ -306,12 +294,16 @@
         }
     }
 
-    private void SyncSelectedStepId(PlanDefinition? plan, string? activeStepId, bool forceReset = false)
+    private void SyncSelectedStepId(
+        PlanDefinition? plan,
+        string? activeStepId,
+        ResultEnvelope<JsonElement?>? finalResult,
+        bool forceReset = false)
     {
         var currentEvents = CurrentEvents;
         var currentAvailableTools = CurrentAvailableTools;
-        var contextKey = BuildGraphKey(plan, currentEvents, currentAvailableTools);
-        var validNodeIds = PlanningVirtualNodeProjection.BuildSelectionKeys(plan, currentEvents, currentAvailableTools);
+        var contextKey = BuildGraphKey(plan, currentEvents, currentAvailableTools, finalResult);
+        var validNodeIds = PlanningVirtualNodeProjection.BuildSelectionKeys(plan, currentEvents, currentAvailableTools, finalResult);
 
         if (validNodeIds.Count == 0)
         {
@@ -328,20 +320,23 @@
             return;
         }
 
-        selectedStepId = !string.IsNullOrWhiteSpace(activeStepId) && validNodeIds.Contains(activeStepId)
-            ? activeStepId
-            : PlanningVirtualNodeProjection.Build(plan, currentEvents, currentAvailableTools).FirstOrDefault()?.Id
-            ?? plan?.Steps.FirstOrDefault()?.Id;
+        selectedStepId = PlanningVirtualNodeProjection.ResolveDefaultSelectionId(
+            plan,
+            currentEvents,
+            currentAvailableTools,
+            finalResult,
+            activeStepId);
         selectedStepContextKey = contextKey;
     }
 
     private string BuildGraphKey(
         PlanDefinition? plan,
         IReadOnlyList<PlanRunEvent> events,
-        IReadOnlyList<PlanningToolOption> availableTools)
+        IReadOnlyList<PlanningToolOption> availableTools,
+        ResultEnvelope<JsonElement?>? finalResult)
     {
         var planStepIds = string.Join("|", plan?.Steps.Select(step => step.Id) ?? []);
-        var virtualNodeKeys = string.Join("|", PlanningVirtualNodeProjection.Build(plan, events, availableTools)
+        var virtualNodeKeys = string.Join("|", PlanningVirtualNodeProjection.Build(plan, events, availableTools, finalResult)
             .Select(node => $"{node.Id}:{node.StatusValue}"));
 
         return $"{selectedPreviewScenarioId}:{planStepIds}:{virtualNodeKeys}";

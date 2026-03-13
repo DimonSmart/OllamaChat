@@ -5,11 +5,3 @@
 ::deep .planning-preview-description {
     max-width: 42rem;
 }
-
-::deep .planning-json-block {
-    max-width: 100%;
-    overflow: auto;
-    white-space: pre-wrap;
-    overflow-wrap: anywhere;
-    word-break: break-word;
-}

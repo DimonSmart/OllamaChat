@@ -1,0 +1,121 @@
+@using System.Text.Json
+@using System.Text.RegularExpressions
+@using ChatClient.Api.Client.Markdown
+@using ChatClient.Api.PlanningRuntime.Common
+@using MudBlazor
+
+<MudPaper Class="@ComputedPaperClass" Outlined="@Outlined">
+    @if (DisplayKind == PlanningValueDisplayKind.Markdown)
+    {
+        <div class="planning-value-markdown">
+            @((MarkupString)AppMarkdown.ToHtml(DisplayText))
+        </div>
+    }
+    else if (DisplayKind == PlanningValueDisplayKind.Json)
+    {
+        <pre class="planning-step-code">@DisplayText</pre>
+    }
+    else
+    {
+        @DisplayText
+    }
+</MudPaper>
+
+@code {
+    private static readonly Regex OrderedListPattern = new(@"^\d+\.\s", RegexOptions.Compiled);
+    private static readonly Regex StrongEmphasisPattern = new(@"\*\*[^*\r\n]+\*\*", RegexOptions.Compiled);
+
+    [Parameter] public string? Text { get; set; }
+    [Parameter] public JsonElement? Json { get; set; }
+    [Parameter] public string PaperClass { get; set; } = "pa-3 planning-step-block";
+    [Parameter] public bool Outlined { get; set; }
+    [Parameter] public bool AutoDetectMarkdown { get; set; } = true;
+
+    private PlanningValueDisplayKind DisplayKind => ResolveDisplayKind();
+
+    private string DisplayText => ResolveDisplayText();
+
+    private string ComputedPaperClass =>
+        DisplayKind == PlanningValueDisplayKind.Markdown
+            ? $"{PaperClass} planning-step-markdown"
+            : PaperClass;
+
+    private PlanningValueDisplayKind ResolveDisplayKind()
+    {
+        if (Json is { } json)
+        {
+            return json.ValueKind switch
+            {
+                JsonValueKind.Object or JsonValueKind.Array => PlanningValueDisplayKind.Json,
+                JsonValueKind.String when AutoDetectMarkdown && LooksLikeMarkdown(json.GetString()) => PlanningValueDisplayKind.Markdown,
+                JsonValueKind.String => PlanningValueDisplayKind.Text,
+                JsonValueKind.Undefined or JsonValueKind.Null => PlanningValueDisplayKind.Text,
+                _ => PlanningValueDisplayKind.Json
+            };
+        }
+
+        return AutoDetectMarkdown && LooksLikeMarkdown(Text)
+            ? PlanningValueDisplayKind.Markdown
+            : PlanningValueDisplayKind.Text;
+    }
+
+    private string ResolveDisplayText()
+    {
+        if (Json is not { } json)
+        {
+            return Text ?? string.Empty;
+        }
+
+        return json.ValueKind switch
+        {
+            JsonValueKind.Object or JsonValueKind.Array => PlanningJson.SerializeIndented(json),
+            JsonValueKind.String => json.GetString() ?? string.Empty,
+            JsonValueKind.Undefined or JsonValueKind.Null => "null",
+            _ => json.GetRawText()
+        };
+    }
+
+    private static bool LooksLikeMarkdown(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return false;
+        }
+
+        var normalized = value.Trim();
+        if (normalized.Contains("```", StringComparison.Ordinal) ||
+            normalized.Contains("[", StringComparison.Ordinal) && normalized.Contains("](", StringComparison.Ordinal) ||
+            StrongEmphasisPattern.IsMatch(normalized))
+        {
+            return true;
+        }
+
+        foreach (var rawLine in normalized.Split('\n'))
+        {
+            var line = rawLine.TrimStart();
+            if (string.IsNullOrWhiteSpace(line))
+            {
+                continue;
+            }
+
+            if (line.StartsWith("#", StringComparison.Ordinal) ||
+                line.StartsWith("- ", StringComparison.Ordinal) ||
+                line.StartsWith("* ", StringComparison.Ordinal) ||
+                line.StartsWith("> ", StringComparison.Ordinal) ||
+                line.StartsWith("|", StringComparison.Ordinal) ||
+                OrderedListPattern.IsMatch(line))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private enum PlanningValueDisplayKind
+    {
+        Text,
+        Markdown,
+        Json
+    }
+}

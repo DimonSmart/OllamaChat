@@ -1,0 +1,62 @@
+::deep .planning-step-markdown {
+    white-space: normal;
+}
+
+::deep .planning-value-markdown {
+    white-space: normal;
+    line-height: 1.6;
+}
+
+::deep .planning-value-markdown > :first-child {
+    margin-top: 0;
+}
+
+::deep .planning-value-markdown > :last-child {
+    margin-bottom: 0;
+}
+
+::deep .planning-value-markdown pre {
+    margin: 0.8rem 0;
+    padding: 0.8rem 0.95rem;
+    border-radius: 10px;
+    background: rgba(10, 14, 28, 0.42);
+    overflow: auto;
+}
+
+::deep .planning-value-markdown code {
+    font-family: Consolas, "Courier New", monospace;
+}
+
+::deep .planning-value-markdown :not(pre) > code {
+    padding: 0.1rem 0.35rem;
+    border-radius: 6px;
+    background: rgba(120, 136, 198, 0.2);
+}
+
+::deep .planning-value-markdown ul,
+::deep .planning-value-markdown ol {
+    margin: 0.5rem 0;
+    padding-left: 1.2rem;
+}
+
+::deep .planning-value-markdown blockquote {
+    margin: 0.75rem 0;
+    padding-left: 0.9rem;
+    border-left: 3px solid rgba(132, 200, 255, 0.55);
+    color: #ced9ff;
+}
+
+::deep .planning-value-markdown table {
+    display: block;
+    width: 100%;
+    max-width: 100%;
+    overflow: auto;
+    border-collapse: collapse;
+}
+
+::deep .planning-value-markdown th,
+::deep .planning-value-markdown td {
+    padding: 0.4rem 0.55rem;
+    border: 1px solid rgba(120, 136, 198, 0.22);
+    text-align: left;
+}

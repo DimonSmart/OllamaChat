@@ -10,7 +10,8 @@ public enum PlanningVisualNodeKind
 {
     Step,
     Planning,
-    Replanning
+    Replanning,
+    Result
 }
 
 public sealed class PlanningStepNodeModel : NodeModel
@@ -86,6 +87,7 @@ public sealed class PlanningStepNodeModel : NodeModel
         {
             PlanningVirtualNodeKind.Planning => PlanningVisualNodeKind.Planning,
             PlanningVirtualNodeKind.Replanning => PlanningVisualNodeKind.Replanning,
+            PlanningVirtualNodeKind.Result => PlanningVisualNodeKind.Result,
             _ => PlanningVisualNodeKind.Step
         };
         Title = descriptor.Title;

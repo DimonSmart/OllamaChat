@@ -1,3 +1,5 @@
+using System.Text.Json;
+using ChatClient.Api.PlanningRuntime.Common;
 using ChatClient.Api.PlanningRuntime.Execution;
 using ChatClient.Api.PlanningRuntime.Host;
 using ChatClient.Api.PlanningRuntime.Planning;
@@ -7,12 +9,14 @@ namespace ChatClient.Api.Client.Components.Planning;
 public enum PlanningVirtualNodeKind
 {
     Planning,
-    Replanning
+    Replanning,
+    Result
 }
 
 public sealed record PlanningVirtualNodeDescriptor
 {
     public const string PlanningNodeId = "__planning__";
+    public const string ResultNodeId = "__result__";
 
     public required string Id { get; init; }
 
@@ -37,6 +41,8 @@ public sealed record PlanningVirtualNodeDescriptor
     public ReplanStartedEvent? ReplanStarted { get; init; }
 
     public IReadOnlyList<ReplanRoundCompletedEvent> ReplanRounds { get; init; } = [];
+
+    public ResultEnvelope<JsonElement?>? FinalResult { get; init; }
 }
 
 public static class PlanningVirtualNodeProjection
@@ -44,7 +50,8 @@ public static class PlanningVirtualNodeProjection
     public static IReadOnlyList<PlanningVirtualNodeDescriptor> Build(
         PlanDefinition? plan,
         IReadOnlyList<PlanRunEvent> events,
-        IReadOnlyList<PlanningToolOption> availableTools)
+        IReadOnlyList<PlanningToolOption> availableTools,
+        ResultEnvelope<JsonElement?>? finalResult)
     {
         var nodes = new List<PlanningVirtualNodeDescriptor>();
 
@@ -83,13 +90,20 @@ public static class PlanningVirtualNodeProjection
         }
 
         nodes.AddRange(BuildReplanNodes(events));
+        var resultNode = BuildResultNode(finalResult);
+        if (resultNode is not null)
+        {
+            nodes.Add(resultNode);
+        }
+
         return nodes;
     }
 
     public static IReadOnlyCollection<string> BuildSelectionKeys(
         PlanDefinition? plan,
         IReadOnlyList<PlanRunEvent> events,
-        IReadOnlyList<PlanningToolOption> availableTools)
+        IReadOnlyList<PlanningToolOption> availableTools,
+        ResultEnvelope<JsonElement?>? finalResult)
     {
         var keys = new HashSet<string>(StringComparer.Ordinal);
 
@@ -101,12 +115,39 @@ public static class PlanningVirtualNodeProjection
             }
         }
 
-        foreach (var nodeId in Build(plan, events, availableTools).Select(node => node.Id))
+        foreach (var nodeId in Build(plan, events, availableTools, finalResult).Select(node => node.Id))
         {
             keys.Add(nodeId);
         }
 
         return keys;
+    }
+
+    public static string? ResolveDefaultSelectionId(
+        PlanDefinition? plan,
+        IReadOnlyList<PlanRunEvent> events,
+        IReadOnlyList<PlanningToolOption> availableTools,
+        ResultEnvelope<JsonElement?>? finalResult,
+        string? activeStepId)
+    {
+        var validNodeIds = BuildSelectionKeys(plan, events, availableTools, finalResult);
+        if (validNodeIds.Count == 0)
+        {
+            return null;
+        }
+
+        if (!string.IsNullOrWhiteSpace(activeStepId) && validNodeIds.Contains(activeStepId))
+        {
+            return activeStepId;
+        }
+
+        if (finalResult is not null && validNodeIds.Contains(PlanningVirtualNodeDescriptor.ResultNodeId))
+        {
+            return PlanningVirtualNodeDescriptor.ResultNodeId;
+        }
+
+        return Build(plan, events, availableTools, finalResult).FirstOrDefault()?.Id
+            ?? plan?.Steps.FirstOrDefault()?.Id;
     }
 
     private static IReadOnlyList<PlanningVirtualNodeDescriptor> BuildReplanNodes(IReadOnlyList<PlanRunEvent> events)
@@ -159,6 +200,29 @@ public static class PlanningVirtualNodeProjection
             .ToList();
     }
 
+    private static PlanningVirtualNodeDescriptor? BuildResultNode(ResultEnvelope<JsonElement?>? finalResult)
+    {
+        if (finalResult is null)
+        {
+            return null;
+        }
+
+        return new PlanningVirtualNodeDescriptor
+        {
+            Id = PlanningVirtualNodeDescriptor.ResultNodeId,
+            Kind = PlanningVirtualNodeKind.Result,
+            Title = "result",
+            Subtitle = finalResult.Ok
+                ? "ok: true"
+                : $"error: {finalResult.Error?.Code ?? "planning_failed"}",
+            StatusValue = finalResult.Ok
+                ? PlanStepStatuses.Done
+                : PlanStepStatuses.Fail,
+            Summary = BuildResultSummary(finalResult),
+            FinalResult = CloneEnvelope(finalResult)
+        };
+    }
+
     private static string Shorten(string? value, int maxLength)
     {
         if (string.IsNullOrWhiteSpace(value))
@@ -171,6 +235,68 @@ public static class PlanningVirtualNodeProjection
             ? normalized
             : $"{normalized[..maxLength]}...";
     }
+
+    private static string BuildResultSummary(ResultEnvelope<JsonElement?> result)
+    {
+        if (!result.Ok)
+        {
+            return Shorten(result.Error?.Message ?? result.Error?.Code ?? "Planning failed.", 96);
+        }
+
+        if (TryExtractSummary(result.Data, out var summary))
+        {
+            return Shorten(summary, 96);
+        }
+
+        return "Final result is available.";
+    }
+
+    private static bool TryExtractSummary(JsonElement? data, out string summary)
+    {
+        summary = string.Empty;
+        if (data is not { } value || value.ValueKind is JsonValueKind.Undefined or JsonValueKind.Null)
+        {
+            return false;
+        }
+
+        switch (value.ValueKind)
+        {
+            case JsonValueKind.String:
+                summary = value.GetString() ?? string.Empty;
+                return !string.IsNullOrWhiteSpace(summary);
+
+            case JsonValueKind.Object:
+                foreach (var fieldName in new[] { "summary", "answer", "result", "message", "text", "content" })
+                {
+                    if (value.TryGetProperty(fieldName, out var property) &&
+                        property.ValueKind == JsonValueKind.String &&
+                        !string.IsNullOrWhiteSpace(property.GetString()))
+                    {
+                        summary = property.GetString()!;
+                        return true;
+                    }
+                }
+
+                summary = "Structured JSON result.";
+                return true;
+
+            case JsonValueKind.Array:
+                summary = $"items: {value.GetArrayLength()}";
+                return true;
+
+            default:
+                summary = value.GetRawText();
+                return true;
+        }
+    }
+
+    private static ResultEnvelope<JsonElement?> CloneEnvelope(ResultEnvelope<JsonElement?> result) =>
+        result.Ok
+            ? ResultEnvelope<JsonElement?>.Success(result.Data?.Clone())
+            : ResultEnvelope<JsonElement?>.Failure(
+                result.Error?.Code ?? "planning_failed",
+                result.Error?.Message ?? "Planning failed.",
+                result.Error?.Details?.Clone());
 
     private sealed class ReplanGroup(int index, ReplanStartedEvent start)
     {
