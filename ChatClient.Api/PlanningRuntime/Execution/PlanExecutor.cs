@@ -541,7 +541,7 @@ public sealed class PlanExecutor(
         element?.Clone();
 
     private static string SerializeElement(JsonElement? element) =>
-        element?.GetRawText() ?? "null";
+        PlanningJson.SerializeElementCompact(element);
 
     private static string Shorten(string? value, int maxLength)
     {

@@ -124,7 +124,7 @@ public sealed class PlanningPipelineIntegrationTests(ITestOutputHelper output)
     private static string SerializeJson(JsonElement? element) =>
         element is null
             ? "null"
-            : JsonSerializer.Serialize(element.Value, new JsonSerializerOptions { WriteIndented = true });
+            : PlanningJson.SerializeIndented(element.Value);
 }
 
 public sealed class TestLogger(ITestOutputHelper output) : IExecutionLogger

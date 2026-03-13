@@ -26,11 +26,6 @@ public sealed class AgentStepRunner(IChatClient chatClient) : IAgentStepRunner
         PropertyNameCaseInsensitive = true
     };
 
-    private static readonly JsonSerializerOptions PromptJsonOptions = new()
-    {
-        WriteIndented = true
-    };
-
     private readonly IPlanRunObserver _observer = NullPlanRunObserver.Instance;
 
     public AgentStepRunner(IChatClient chatClient, IPlanRunObserver? planRunObserver = null) : this(chatClient)
@@ -55,7 +50,7 @@ public sealed class AgentStepRunner(IChatClient chatClient) : IAgentStepRunner
             systemPrompt += " Return ONLY valid JSON.";
         systemPrompt += BuildExecutionContract(step.Out);
 
-        var fullUserPrompt = $"{step.UserPrompt}\n\nInput:\n{JsonSerializer.Serialize(new { inputs = resolvedInputs }, PromptJsonOptions)}";
+        var fullUserPrompt = $"{step.UserPrompt}\n\nInput:\n{PlanningJson.SerializeIndented(new { inputs = resolvedInputs })}";
         _observer.OnEvent(new AgentPromptPreparedEvent(
             step.Id,
             step.Llm,

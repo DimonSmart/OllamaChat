@@ -538,10 +538,5 @@ public static class PlanningPreviewScenarios
     private static JsonNode? Ref(string value) => JsonValue.Create(value);
 
     private static JsonElement Element<T>(T value) =>
-        JsonSerializer.SerializeToElement(value, JsonOptions);
-
-    private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web)
-    {
-        WriteIndented = true
-    };
+        JsonSerializer.SerializeToElement(value, PlanningJson.CompactOptions);
 }

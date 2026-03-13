@@ -177,6 +177,15 @@ public class PlanningRuntimeContractsTests
     }
 
     [Fact]
+    public void PlanningJson_SerializesCyrillicWithoutUnicodeEscaping()
+    {
+        var json = PlanningJson.SerializeIndented(new { text = "Русский текст" });
+
+        Assert.Contains("Русский текст", json, StringComparison.Ordinal);
+        Assert.DoesNotContain("\\u0420", json, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void WebDownloadTool_PlannerMetadata_DescribesPagePreservingContentContract()
     {
         var httpClientFactory = new Mock<IHttpClientFactory>();

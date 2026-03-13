@@ -45,10 +45,10 @@ public sealed class LlmReplanner(
             var reason = actionBatch.Reason.Trim();
 
             _log.Log($"[replan] round={round} done={done} actions={actionBatch.Actions.Count} reason={Shorten(reason, 240)}");
-            _log.Log($"[replan] round={round} actionBatch={JsonSerializer.Serialize(actionBatch, new JsonSerializerOptions { WriteIndented = true })}");
+            _log.Log($"[replan] round={round} actionBatch={PlanningJson.SerializeIndented(actionBatch)}");
 
             lastActionResults = ExecuteActions(session, request, actionBatch.Actions);
-            _log.Log($"[replan] round={round} actionResults={lastActionResults.ToJsonString(new JsonSerializerOptions { WriteIndented = true })}");
+            _log.Log($"[replan] round={round} actionResults={PlanningJson.SerializeNodeIndented(lastActionResults)}");
             _observer.OnEvent(new ReplanRoundCompletedEvent(
                 round,
                 done,
@@ -64,7 +64,7 @@ public sealed class LlmReplanner(
                 var replanned = session.BuildPlan();
                 PlanValidator.ValidateOrThrow(replanned, workflowTools);
                 _log.Log($"[replan] success steps={replanned.Steps.Count} goal={Shorten(replanned.Goal, 240)}");
-                _log.Log($"[replan] json {JsonSerializer.Serialize(replanned, new JsonSerializerOptions { WriteIndented = true })}");
+                _log.Log($"[replan] json {PlanningJson.SerializeIndented(replanned)}");
                 _observer.OnEvent(new ReplanAppliedEvent(ClonePlan(replanned)));
                 return replanned;
             }
@@ -225,7 +225,7 @@ public sealed class LlmReplanner(
             ["lastActionResults"] = lastActionResults?.DeepClone() ?? new JsonArray()
         };
 
-        return $"Repair the working plan using the plan-editing tools.\n\nReplanning context:\n{context.ToJsonString(new JsonSerializerOptions { WriteIndented = true })}";
+        return $"Repair the working plan using the plan-editing tools.\n\nReplanning context:\n{PlanningJson.SerializeNodeIndented(context)}";
     }
 
     private static string BuildRepairPrompt(string originalPrompt, string errorMessage) =>

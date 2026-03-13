@@ -280,7 +280,7 @@
     }
 
     private static string SerializeJson<T>(T value) =>
-        System.Text.Json.JsonSerializer.Serialize(value, new System.Text.Json.JsonSerializerOptions { WriteIndented = true });
+        PlanningJson.SerializeIndented(value);
 
     private IReadOnlyList<PlanRunEvent> GetStateEventsSnapshot()
     {

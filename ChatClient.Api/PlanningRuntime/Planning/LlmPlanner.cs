@@ -55,7 +55,7 @@ public sealed class LlmPlanner(
                 PlanValidator.ValidateOrThrow(plan, tools);
 
                 _log.Log($"[plan] create:success steps={plan.Steps.Count} goal={Shorten(plan.Goal, 240)}");
-                _log.Log($"[plan] create:json {JsonSerializer.Serialize(plan, new JsonSerializerOptions { WriteIndented = true })}");
+                _log.Log($"[plan] create:json {PlanningJson.SerializeIndented(plan)}");
                 _observer.OnEvent(new PlanCreatedEvent(attempt, "plan", ClonePlan(plan)));
                 return plan;
             }

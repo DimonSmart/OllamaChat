@@ -45,7 +45,7 @@ public sealed class LlmFinalAnswerVerifier(IChatClient chatClient) : IFinalAnswe
         }
 
         var agent = new ChatClientAgent(chatClient, BuildSystemPrompt(), "final_answer_verifier", null, null, null, null);
-        var answerJson = JsonSerializer.Serialize(answer.Value, new JsonSerializerOptions { WriteIndented = true });
+        var answerJson = PlanningJson.SerializeIndented(answer.Value);
         var response = await agent.RunAsync<ResultEnvelope<VerifierPayload>>(
             BuildUserPrompt(userQuery, answerJson),
             null,

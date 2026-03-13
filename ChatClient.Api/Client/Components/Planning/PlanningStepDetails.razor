@@ -1,4 +1,5 @@
 @using System.Text.Json
+@using ChatClient.Api.PlanningRuntime.Common
 @using ChatClient.Api.PlanningRuntime.Execution
 @using ChatClient.Api.PlanningRuntime.Host
 @using ChatClient.Api.PlanningRuntime.Planning
@@ -279,5 +280,5 @@ else
         string.IsNullOrWhiteSpace(step.Tool) ? step.Llm ?? string.Empty : step.Tool;
 
     private static string SerializeJson<T>(T value) =>
-        JsonSerializer.Serialize(value, new JsonSerializerOptions { WriteIndented = true });
+        PlanningJson.SerializeIndented(value);
 }
