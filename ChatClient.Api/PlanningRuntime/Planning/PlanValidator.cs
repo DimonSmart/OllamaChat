@@ -40,13 +40,19 @@ public static partial class PlanValidator
             if (step.In.Count == 0)
                 throw new InvalidOperationException($"Step '{step.Id}' must declare its inputs in 'in'.");
 
+            AppToolDescriptor? toolMetadata = null;
             if (hasTool && knownTools is not null)
             {
-                if (!knownTools.TryGetValue(step.Tool!, out var toolMetadata))
+                if (!knownTools.TryGetValue(step.Tool!, out toolMetadata))
                     throw new InvalidOperationException($"Step '{step.Id}' references unknown tool '{step.Tool}'.");
 
                 ValidateToolInputs(step, toolMetadata);
             }
+
+            foreach (var input in step.In)
+                ValidateInputOrThrow(step.Id, input.Key, input.Value, seenIds);
+
+            ValidateOutputContractOrThrow(step, toolMetadata);
 
             if (hasLlm)
             {
@@ -63,11 +69,6 @@ public static partial class PlanValidator
                     throw new InvalidOperationException(
                         $"LLM step '{step.Id}' must not contain unresolved template placeholders like '{{name}}', '{{{{name}}}}', '[[name]]', '<<name>>', or '${{name}}' in prompts.");
                 }
-            }
-
-            foreach (var input in step.In)
-            {
-                ValidateRefOrThrow(step.Id, input.Key, input.Value, seenIds);
             }
         }
     }
@@ -96,44 +97,49 @@ public static partial class PlanValidator
         }
     }
 
-    private static void ValidateRefOrThrow(
+    private static void ValidateInputOrThrow(
         string stepId,
         string inputName,
         JsonNode? value,
         HashSet<string> knownStepIds)
     {
-        if (value is not JsonValue jsonValue || !jsonValue.TryGetValue<string>(out var text) || !text.StartsWith('$'))
-            return;
-
-        if (!RefPattern().IsMatch(text))
-            throw new InvalidOperationException($"Step '{stepId}' has invalid ref syntax in input '{inputName}': '{text}'.");
-
-        var referencedStepId = ExtractBaseStepId(text[1..]);
-        if (!knownStepIds.Contains(referencedStepId))
+        if (PlanInputBindingSyntax.TryGetLegacyStringReference(value, out var legacyReference))
         {
             throw new InvalidOperationException(
-                $"Step '{stepId}' references '{text}' before step '{referencedStepId}' is available.");
+                $"Step '{stepId}' input '{inputName}' uses legacy string ref syntax '{legacyReference}'. Use a binding object like {{\"from\":\"{legacyReference}\",\"mode\":\"value\"}}.");
+        }
+
+        if (!PlanInputBindingSyntax.TryParseBinding(value, out var binding, out var bindingError))
+            return;
+
+        if (!string.IsNullOrWhiteSpace(bindingError))
+            throw new InvalidOperationException($"Step '{stepId}' has invalid binding in input '{inputName}': {bindingError}");
+
+        if (!PlanInputBindingSyntax.TryParseReference(binding!.From, out var reference, out var refError))
+        {
+            throw new InvalidOperationException(
+                $"Step '{stepId}' has invalid ref syntax in input '{inputName}': '{binding.From}'. {refError}");
+        }
+
+        if (!knownStepIds.Contains(reference!.StepId))
+        {
+            throw new InvalidOperationException(
+                $"Step '{stepId}' references '{binding.From}' before step '{reference.StepId}' is available.");
         }
     }
 
-    private static string ExtractBaseStepId(string expr)
+    private static void ValidateOutputContractOrThrow(PlanStep step, AppToolDescriptor? toolMetadata)
     {
-        var bracketPos = expr.IndexOf('[');
-        var dotPos = expr.IndexOf('.');
-        if (bracketPos >= 0 && dotPos >= 0)
-            return expr[..Math.Min(bracketPos, dotPos)];
-        if (bracketPos >= 0)
-            return expr[..bracketPos];
-        if (dotPos >= 0)
-            return expr[..dotPos];
-        return expr;
+        var issues = PlanStepOutputContractResolver.ValidateContractDefinition(step, toolMetadata);
+        if (issues.Count == 0)
+            return;
+
+        throw new InvalidOperationException(
+            $"Step '{step.Id}' has invalid out contract: {string.Join(" ", issues)}");
     }
 
-    [GeneratedRegex(@"^\$[A-Za-z_][A-Za-z0-9_-]*(?:\[\]|\[\d+\])?(?:\.[A-Za-z_][A-Za-z0-9_]*)?$")]
-    private static partial Regex RefPattern();
-
-    [GeneratedRegex(@"\$[A-Za-z_][A-Za-z0-9_-]*(?:\[\]|\[\d+\])?(?:\.[A-Za-z_][A-Za-z0-9_]*)?")]
-    private static partial Regex EmbeddedRefPattern();
+    [GeneratedRegex(@"\$[A-Za-z_][A-Za-z0-9_\-.\[\]]*")]
+    private static partial Regex PotentialEmbeddedRefPattern();
 
     [GeneratedRegex(@"\{\{[^{}\r\n]+\}\}")]
     private static partial Regex DoubleBracePlaceholderPattern();
@@ -156,8 +162,16 @@ public static partial class PlanValidator
         || string.Equals(status, PlanStepStatuses.Fail, StringComparison.Ordinal)
         || string.Equals(status, PlanStepStatuses.Skip, StringComparison.Ordinal);
 
-    private static bool ContainsPromptRef(string prompt) =>
-        EmbeddedRefPattern().IsMatch(prompt);
+    private static bool ContainsPromptRef(string prompt)
+    {
+        foreach (Match match in PotentialEmbeddedRefPattern().Matches(prompt))
+        {
+            if (PlanInputBindingSyntax.TryParseReference(match.Value, out _, out _))
+                return true;
+        }
+
+        return false;
+    }
 
     private static bool ContainsTemplatePlaceholder(string prompt) =>
         DoubleBracePlaceholderPattern().IsMatch(prompt)

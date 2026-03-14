@@ -33,6 +33,13 @@ public sealed class PlanningPipelineIntegrationTests(ITestOutputHelper output)
     }
 
     [Fact]
+    public async Task FullPipeline_PlannerAndOrchestrator_WithAlternateMockQuery_ReturnsSystemOutcome()
+    {
+        const string userQuery = "Find two robot vacuum cleaners, compare their suction power, battery life, and price, and recommend the better value option.";
+        await RunFullPipelineAsync(userQuery, CreateMockToolCatalog());
+    }
+
+    [Fact]
     public async Task FullPipeline_PlannerAndOrchestrator_WithRealWebSearchAndDownload_ReturnsSystemOutcome()
     {
         const string userQuery = "Compare Markdig and CommonMark.NET using their GitHub or documentation pages, and tell me which one is better for a small .NET app.";

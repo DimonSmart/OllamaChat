@@ -96,7 +96,26 @@ A step must define exactly one of:
 - `tool`: execute a registered tool
 - `llm`: execute an ad-hoc LLM reasoning step
 
-For LLM steps, `systemPrompt` and `userPrompt` are required. `out` may be `json` or `string`. `each=true` means the LLM step should run once per input item when fed an array.
+For LLM steps, `systemPrompt` and `userPrompt` are required. `out` may be `json` or `string`.
+
+LLM steps also declare an explicit output contract:
+
+```json
+"out": {
+  "format": "json|string",
+  "aggregate": "single|collect|flatten",
+  "schema": { "type": "object|array|string|number|boolean|null" }
+}
+```
+
+Output contract semantics:
+
+- `format` tells the runner whether the step returns plain text or JSON
+- `aggregate=single` means one call produces one final step result
+- `aggregate=collect` means a mapped step returns one item per call and the executor collects those items into an array
+- `aggregate=flatten` means a mapped step returns an array per call and the executor flattens all call results into one array
+- `schema` describes the expected per-call JSON shape for LLM outputs and is also used to validate the final aggregated result
+- tool steps may omit `out`; in that case the runtime derives the contract from the tool output schema
 
 Current step statuses:
 
@@ -106,28 +125,40 @@ Current step statuses:
 - `fail`
 - `skip`
 
-## Input References and Fan-Out
+## Input Bindings and Fan-Out
 
-Step inputs live under `in`. String values starting with `$` are references to outputs of earlier steps.
+Step inputs live under `in`. Each input may be:
 
-Supported reference forms:
+- a literal JSON value, passed as-is
+- a binding object:
+
+```json
+{
+  "from": "$search.results",
+  "mode": "map"
+}
+```
+
+Supported reference forms inside `from`:
 
 - `$stepId`
 - `$stepId.field`
-- `$stepId[]`
-- `$stepId[].field`
-- `$stepId[n]`
-- `$stepId[n].field`
+- `$stepId.field[]`
+- `$stepId.field[].nested`
+- `$stepId.field[n]`
+- `$stepId.field[n].nested`
 
 Important behavior:
 
 - references may only target earlier steps,
+- raw strings like `"$search.results"` are rejected inside `in`; use a binding object instead,
 - LLM prompts must not embed `$stepId` references directly,
-- tool steps automatically fan out when a scalar tool input receives an array reference,
-- LLM steps only fan out when `each=true`,
-- fan-out array inputs must resolve to the same length.
+- `mode=value` is the default and resolves one value for one call,
+- `mode=map` means the step runs once per array item,
+- if multiple inputs use `mode=map`, they are zipped by index and must resolve to the same length,
+- literal inputs are broadcast into every mapped call.
 
-This keeps plans explicit while letting the executor map over downloaded pages or extracted records without duplicating steps manually.
+This keeps fan-out explicit in the plan instead of relying on executor heuristics.
 
 ## Validation Rules
 
@@ -181,7 +212,7 @@ The runtime has two verification layers.
 
 ### Step-level verification
 
-`StepOutputVerifier` checks for null, empty, or structurally empty outputs. If a step output fails verification, the executor marks the step as failed with `verification_failed` and includes structured issue details.
+`StepOutputVerifier` checks for null, empty, or structurally empty outputs. `StepOutputContractValidator` then validates successful step outputs against the declared `out` contract, both per call and after any `collect`/`flatten` aggregation. If validation fails, the executor marks the step as failed with `output_contract_failed` and includes structured issue details such as `expected object, got array` or missing required fields.
 
 ### Goal-level verification
 

@@ -4,6 +4,7 @@ using Microsoft.Extensions.AI;
 using ChatClient.Api.PlanningRuntime.Common;
 using ChatClient.Api.PlanningRuntime.Execution;
 using ChatClient.Api.PlanningRuntime.Planning;
+using ChatClient.Api.PlanningRuntime.Verification;
 
 namespace ChatClient.Api.PlanningRuntime.Agents;
 
@@ -45,10 +46,11 @@ public sealed class AgentStepRunner(IChatClient chatClient) : IAgentStepRunner
         if (string.IsNullOrWhiteSpace(step.UserPrompt))
             return ResultEnvelope<JsonElement?>.Failure("llm_invalid_step", $"Step '{step.Id}' has no userPrompt.");
 
+        var outputContract = PlanStepOutputContractResolver.Resolve(step, toolMetadata: null, hasFanOut: false);
         var systemPrompt = step.SystemPrompt;
         if (!systemPrompt.Contains("JSON", StringComparison.OrdinalIgnoreCase))
             systemPrompt += " Return ONLY valid JSON.";
-        systemPrompt += BuildExecutionContract(step.Out);
+        systemPrompt += BuildExecutionContract(outputContract);
 
         var fullUserPrompt = $"{step.UserPrompt}\n\nInput:\n{PlanningJson.SerializeIndented(new { inputs = resolvedInputs })}";
         _observer.OnEvent(new AgentPromptPreparedEvent(
@@ -65,7 +67,7 @@ public sealed class AgentStepRunner(IChatClient chatClient) : IAgentStepRunner
             var response = await agent.RunAsync<ResultEnvelope<JsonElement?>>(fullUserPrompt, null, JsonOptions, null, cancellationToken);
             var envelope = response.Result
                 ?? throw new InvalidOperationException($"Step '{step.Id}' returned an empty response envelope.");
-            var validatedEnvelope = ValidateEnvelope(step, envelope);
+            var validatedEnvelope = ValidateEnvelope(step, outputContract, envelope);
             _observer.OnEvent(new AgentResponseReceivedEvent(
                 step.Id,
                 step.Llm,
@@ -91,16 +93,20 @@ public sealed class AgentStepRunner(IChatClient chatClient) : IAgentStepRunner
         }
     }
 
-    private static string BuildExecutionContract(string? outputType)
+    private static string BuildExecutionContract(ResolvedPlanStepOutputContract outputContract)
     {
-        var resultHint = string.Equals(outputType, "string", StringComparison.OrdinalIgnoreCase)
+        var resultHint = string.Equals(outputContract.Format, PlanStepOutputFormats.String, StringComparison.OrdinalIgnoreCase)
             ? "a JSON string value"
             : "the requested JSON value";
 
-        return $"\n\nAlways return ONLY valid JSON using this exact top-level shape: {{\"ok\":true|false,\"data\":{resultHint}|null,\"error\":null|{{\"code\":\"short_code\",\"message\":\"human readable message\",\"details\":{{\"status\":\"blocked|partial\",\"needsReplan\":true,\"type\":\"missing|error\",\"details\":[\"short detail\"]}}}}}}. If the task can be completed reliably, return ok=true, error=null, and put the full answer into data. If reliable completion is impossible, return ok=false, data=null, and fill error. Use status='blocked' when the requested entity or critical facts are absent. Use status='partial' when some useful context exists but the task is still incomplete. When ok=false, needsReplan must be true. Use type='missing' when critical input facts are absent. Use type='error' when the step is blocked by another execution problem. Put short factual details into details, such as missing field names, observed evidence, or concrete failure notes. Do not invent exact factual values that are not explicitly present in the provided inputs. If the task requires precise numbers, specs, dates, prices, names, or quotes and they are missing, return ok=false with a blocked or partial error instead of estimating. Do not return markdown or prose outside the JSON envelope.";
+        var contractHint = BuildContractHint(outputContract);
+        return $"\n\nAlways return ONLY valid JSON using this exact top-level shape: {{\"ok\":true|false,\"data\":{resultHint}|null,\"error\":null|{{\"code\":\"short_code\",\"message\":\"human readable message\",\"details\":{{\"status\":\"blocked|partial\",\"needsReplan\":true,\"type\":\"missing|error\",\"details\":[\"short detail\"]}}}}}}. If the task can be completed reliably, return ok=true, error=null, and put the full answer into data. If reliable completion is impossible, return ok=false, data=null, and fill error. Use status='blocked' when the requested entity or critical facts are absent. Use status='partial' when some useful context exists but the task is still incomplete. When ok=false, needsReplan must be true. Use type='missing' when critical input facts are absent. Use type='error' when the step is blocked by another execution problem. Put short factual details into details, such as missing field names, observed evidence, or concrete failure notes. Do not invent exact factual values that are not explicitly present in the provided inputs. If the task requires precise numbers, specs, dates, prices, names, or quotes and they are missing, return ok=false with a blocked or partial error instead of estimating. Do not return markdown or prose outside the JSON envelope.{contractHint}";
     }
 
-    private static ResultEnvelope<JsonElement?> ValidateEnvelope(PlanStep step, ResultEnvelope<JsonElement?> envelope)
+    private static ResultEnvelope<JsonElement?> ValidateEnvelope(
+        PlanStep step,
+        ResolvedPlanStepOutputContract outputContract,
+        ResultEnvelope<JsonElement?> envelope)
     {
         if (envelope.Ok)
         {
@@ -118,7 +124,7 @@ public sealed class AgentStepRunner(IChatClient chatClient) : IAgentStepRunner
                     $"Step '{step.Id}' returned ok=true with null data.");
             }
 
-            if (string.Equals(step.Out, "string", StringComparison.OrdinalIgnoreCase))
+            if (string.Equals(outputContract.Format, PlanStepOutputFormats.String, StringComparison.OrdinalIgnoreCase))
             {
                 if (envelope.Data is not { ValueKind: JsonValueKind.String } stringResult)
                 {
@@ -126,8 +132,22 @@ public sealed class AgentStepRunner(IChatClient chatClient) : IAgentStepRunner
                         "llm_invalid_contract",
                         $"Step '{step.Id}' expected string data in the response envelope.");
                 }
+            }
 
-                return ResultEnvelope<JsonElement?>.Success(stringResult.Clone());
+            var callIssues = StepOutputContractValidator.ValidateCallOutput(step.Id, outputContract, envelope.Data);
+            if (callIssues.Count > 0)
+            {
+                return ResultEnvelope<JsonElement?>.Failure(
+                    "llm_invalid_contract",
+                    $"Step '{step.Id}' returned data that does not match its declared output contract.",
+                    JsonSerializer.SerializeToElement(new
+                    {
+                        issues = callIssues.Select(issue => new
+                        {
+                            code = issue.Code,
+                            message = issue.Message
+                        })
+                    }));
             }
 
             return ResultEnvelope<JsonElement?>.Success(envelope.Data.Value.Clone());
@@ -157,6 +177,14 @@ public sealed class AgentStepRunner(IChatClient chatClient) : IAgentStepRunner
         {
             return ResultEnvelope<JsonElement?>.Failure("llm_invalid_contract", ex.Message);
         }
+    }
+
+    private static string BuildContractHint(ResolvedPlanStepOutputContract outputContract)
+    {
+        if (outputContract.CallSchema is null)
+            return string.Empty;
+
+        return $"\nExpected data contract for this call: format='{outputContract.Format}', aggregate='{outputContract.Aggregate}', schema={outputContract.CallSchema.Value.GetRawText()}.";
     }
 
     private static JsonElement ValidateFailureDetails(string stepId, JsonElement? details)

@@ -71,9 +71,11 @@ public sealed class PlanExecutor(
         var (resolved, fanOutInputs) = ResolveInputs(step, stepMap);
         var resolvedInput = SerializeObject(resolved);
         var isTool = !string.IsNullOrWhiteSpace(step.Tool);
+        var toolMetadata = isTool ? toolCatalog.GetRequired(step.Tool!) : null;
         var fanOutCount = fanOutInputs?.Values.FirstOrDefault()?.Length ?? 0;
+        var outputContract = PlanStepOutputContractResolver.Resolve(step, toolMetadata, fanOutInputs is not null);
 
-        _log.Log($"[exec] step:start id={step.Id} kind={(isTool ? "tool" : "llm")} name={(isTool ? step.Tool : step.Llm)} fanOut={(fanOutInputs is null ? "no" : fanOutCount.ToString())} resolvedInputs={SerializeElement(resolvedInput)}");
+        _log.Log($"[exec] step:start id={step.Id} kind={(isTool ? "tool" : "llm")} name={(isTool ? step.Tool : step.Llm)} fanOut={(fanOutInputs is null ? "no" : fanOutCount.ToString())} aggregate={outputContract.Aggregate} resolvedInputs={SerializeElement(resolvedInput)}");
         _observer.OnEvent(new StepStartedEvent(
             step.Id,
             isTool ? "tool" : "llm",
@@ -87,8 +89,10 @@ public sealed class PlanExecutor(
             _log.Log($"[exec] call:start step={step.Id} callIndex=0 input={SerializeElement(resolvedInput)}");
             _observer.OnEvent(new StepCallStartedEvent(step.Id, 0, resolvedInput.Clone()));
             envelope = isTool
-                ? await RunToolAsync(step.Tool!, resolvedInput, calls, cancellationToken)
+                ? await RunToolAsync(toolMetadata!, resolvedInput, calls, cancellationToken)
                 : await RunAgentAsync(step, resolvedInput, calls, cancellationToken);
+            if (envelope.Ok)
+                envelope = ValidateCallOutput(step, outputContract, envelope);
             _log.Log($"[exec] call:end step={step.Id} callIndex=0 ok={envelope.Ok} output={SerializeElement(envelope.Data)} error={Shorten(envelope.Error?.Message, 240)} details={SerializeElement(envelope.Error?.Details)}");
             _observer.OnEvent(new StepCallCompletedEvent(
                 step.Id,
@@ -111,8 +115,10 @@ public sealed class PlanExecutor(
                 _log.Log($"[exec] call:start step={step.Id} callIndex={callIndex} input={SerializeElement(singleInput)}");
                 _observer.OnEvent(new StepCallStartedEvent(step.Id, callIndex, singleInput.Clone()));
                 envelope = isTool
-                    ? await RunToolAsync(step.Tool!, singleInput, calls, cancellationToken)
+                    ? await RunToolAsync(toolMetadata!, singleInput, calls, cancellationToken)
                     : await RunAgentAsync(step, singleInput, calls, cancellationToken);
+                if (envelope.Ok)
+                    envelope = ValidateCallOutput(step, outputContract, envelope);
                 _log.Log($"[exec] call:end step={step.Id} callIndex={callIndex} ok={envelope.Ok} output={SerializeElement(envelope.Data)} error={Shorten(envelope.Error?.Message, 240)} details={SerializeElement(envelope.Error?.Details)}");
                 _observer.OnEvent(new StepCallCompletedEvent(
                     step.Id,
@@ -132,9 +138,18 @@ public sealed class PlanExecutor(
 
         if (outputs.Count > 0)
         {
-            step.Result = fanOutInputs is null
-                ? CloneElement(outputs[0])
-                : JsonSerializer.SerializeToElement(outputs.Select(CloneElement).ToArray());
+            step.Result = BuildStepResult(step, outputContract, outputs);
+            var contractIssues = StepOutputContractValidator.ValidateFinalOutput(step.Id, outputContract, step.Result);
+            if (contractIssues.Count > 0)
+            {
+                step.Status = PlanStepStatuses.Fail;
+                step.Error = CreateOutputContractError(step.Id, contractIssues, "final");
+                envelope = ResultEnvelope<JsonElement?>.Failure(step.Error.Code, step.Error.Message, CloneElement(step.Error.Details));
+                _log.Log($"[exec] step:end id={step.Id} success=False calls={calls.Count} error={Shorten(step.Error.Message, 240)} details={SerializeElement(step.Error.Details)}");
+                var trace = CreateTrace(step, success: false, reused: false, calls, contractIssues);
+                _observer.OnEvent(new StepCompletedEvent(trace, CloneElement(step.Result)));
+                return (trace, envelope);
+            }
         }
 
         if (!envelope.Ok)
@@ -172,12 +187,11 @@ public sealed class PlanExecutor(
     }
 
     private async Task<ResultEnvelope<JsonElement?>> RunToolAsync(
-        string toolName,
+        AppToolDescriptor tool,
         JsonElement input,
         List<JsonElement> calls,
         CancellationToken cancellationToken)
     {
-        var tool = toolCatalog.GetRequired(toolName);
         var arguments = ConvertInputToArguments(input);
 
         using var interactionScope = mcpUserInteractionService?.BeginInteractionScope(McpInteractionScope.Planning);
@@ -186,7 +200,7 @@ public sealed class PlanExecutor(
 
         calls.Add(JsonSerializer.SerializeToElement(new
         {
-            tool = toolName,
+            tool = tool.QualifiedName,
             input,
             ok = envelope.Ok,
             output = CloneElement(envelope.Data),
@@ -220,36 +234,38 @@ public sealed class PlanExecutor(
     {
         var resolved = new Dictionary<string, JsonElement?>(StringComparer.Ordinal);
         Dictionary<string, JsonElement?[]>? fanOutInputs = null;
-        var isTool = !string.IsNullOrWhiteSpace(step.Tool);
 
         foreach (var input in step.In)
         {
-            if (input.Value is JsonValue value
-                && value.TryGetValue<string>(out var text)
-                && text.StartsWith("$", StringComparison.Ordinal))
+            if (PlanInputBindingSyntax.TryGetLegacyStringReference(input.Value, out var legacyReference))
             {
-                var resolution = ParseStepRef(text[1..], step.Id, stepMap);
-                if (!resolution.SuppressAutoMap && resolution.Value is { ValueKind: JsonValueKind.Array } array)
-                {
-                    var expectsScalar = isTool
-                        ? ToolExpectsScalar(step.Tool!, input.Key)
-                        : step.Each;
+                throw new InvalidOperationException(
+                    $"Step '{step.Id}': input '{input.Key}' uses legacy string ref syntax '{legacyReference}'. Use a binding object like {{\"from\":\"{legacyReference}\",\"mode\":\"value\"}}.");
+            }
 
-                    if (expectsScalar)
-                    {
-                        var fanOutValues = isTool && TryAutoProjectToolScalarArray(array, input.Key, out var projectedArray)
-                            ? projectedArray.EnumerateArray().Select(item => (JsonElement?)item.Clone()).ToArray()
-                            : array.EnumerateArray().Select(item => (JsonElement?)item.Clone()).ToArray();
-                        fanOutInputs ??= new Dictionary<string, JsonElement?[]>(StringComparer.Ordinal);
-                        fanOutInputs[input.Key] = fanOutValues;
-                        resolved[input.Key] = fanOutValues.Length > 0
-                            ? JsonSerializer.SerializeToElement(fanOutValues.Select(CloneElement).ToArray())
-                            : array.Clone();
-                        continue;
-                    }
+            if (PlanInputBindingSyntax.TryParseBinding(input.Value, out var binding, out var bindingError))
+            {
+                if (!string.IsNullOrWhiteSpace(bindingError))
+                {
+                    throw new InvalidOperationException(
+                        $"Step '{step.Id}': invalid binding for input '{input.Key}'. {bindingError}");
                 }
 
-                resolved[input.Key] = CloneElement(resolution.Value);
+                var resolution = PlanInputBindingSyntax.EvaluateReferenceOrThrow(binding!.From, step.Id, stepMap);
+                resolved[input.Key] = resolution.Clone();
+
+                if (binding.Mode == PlanInputBindingMode.Map)
+                {
+                    if (resolution.ValueKind != JsonValueKind.Array)
+                    {
+                        throw new InvalidOperationException(
+                            $"Step '{step.Id}': input '{input.Key}' uses mode='map' but ref '{binding.From}' did not resolve to an array.");
+                    }
+
+                    fanOutInputs ??= new Dictionary<string, JsonElement?[]>(StringComparer.Ordinal);
+                    fanOutInputs[input.Key] = resolution.EnumerateArray().Select(item => (JsonElement?)item.Clone()).ToArray();
+                }
+
                 continue;
             }
 
@@ -265,144 +281,6 @@ public sealed class PlanExecutor(
     private static bool IsReusable(PlanStep step) =>
         PlanExecutionState.IsDone(step)
         || string.Equals(step.Status, PlanStepStatuses.Skip, StringComparison.Ordinal);
-
-    private sealed record RefResolution(JsonElement? Value, bool SuppressAutoMap);
-
-    private static RefResolution ParseStepRef(
-        string expression,
-        string currentStepId,
-        IReadOnlyDictionary<string, PlanStep> stepMap)
-    {
-        var stepId = expression;
-        int? arrayIndex = null;
-        var projectArray = false;
-        string? fieldName = null;
-
-        var bracketStart = expression.IndexOf('[');
-        if (bracketStart >= 0)
-        {
-            stepId = expression[..bracketStart];
-            var bracketEnd = expression.IndexOf(']', bracketStart);
-            if (bracketEnd < 0)
-                throw new InvalidOperationException($"Step '{currentStepId}': invalid ref '${expression}' - unclosed '['.");
-
-            var indexToken = expression[(bracketStart + 1)..bracketEnd];
-            if (indexToken.Length == 0)
-            {
-                projectArray = true;
-            }
-            else if (int.TryParse(indexToken, out var parsedIndex))
-            {
-                arrayIndex = parsedIndex;
-            }
-            else
-            {
-                throw new InvalidOperationException($"Step '{currentStepId}': invalid array index in '${expression}'.");
-            }
-
-            if (bracketEnd + 1 < expression.Length && expression[bracketEnd + 1] == '.')
-                fieldName = expression[(bracketEnd + 2)..];
-        }
-        else
-        {
-            var dotIndex = expression.IndexOf('.');
-            if (dotIndex >= 0)
-            {
-                stepId = expression[..dotIndex];
-                fieldName = expression[(dotIndex + 1)..];
-            }
-        }
-
-        if (!stepMap.TryGetValue(stepId, out var referencedStep))
-            throw new InvalidOperationException($"Step '{currentStepId}': ref '${expression}' - step '{stepId}' not found.");
-
-        if (!PlanExecutionState.IsDone(referencedStep) || referencedStep.Result is null)
-            throw new InvalidOperationException($"Step '{currentStepId}': ref '${expression}' - step '{stepId}' has no completed result.");
-
-        var node = referencedStep.Result;
-        if (projectArray)
-        {
-            if (node is not { ValueKind: JsonValueKind.Array } projectedArray)
-                throw new InvalidOperationException($"Step '{currentStepId}': ref '${expression}' - step '{stepId}' output is not an array.");
-
-            if (fieldName is null)
-                return new RefResolution(projectedArray.Clone(), SuppressAutoMap: false);
-
-            return new RefResolution(ProjectArrayField(projectedArray, fieldName, currentStepId, expression), SuppressAutoMap: false);
-        }
-
-        if (arrayIndex.HasValue)
-        {
-            if (node is not { ValueKind: JsonValueKind.Array } indexedArray)
-                throw new InvalidOperationException($"Step '{currentStepId}': ref '${expression}' - step '{stepId}' output is not an array.");
-
-            var indexedItems = indexedArray.EnumerateArray().ToArray();
-            if (arrayIndex.Value < 0 || arrayIndex.Value >= indexedItems.Length)
-                throw new InvalidOperationException($"Step '{currentStepId}': ref '${expression}' - index {arrayIndex} out of range (count={indexedItems.Length}).");
-
-            node = indexedItems[arrayIndex.Value].Clone();
-        }
-
-        if (fieldName is null)
-            return new RefResolution(CloneElement(node), SuppressAutoMap: arrayIndex.HasValue);
-
-        return node switch
-        {
-            { ValueKind: JsonValueKind.Object } obj when obj.TryGetProperty(fieldName, out var property) => new RefResolution(property.Clone(), SuppressAutoMap: arrayIndex.HasValue),
-            { ValueKind: JsonValueKind.Object } => throw new InvalidOperationException($"Step '{currentStepId}': ref '${expression}' - field '{fieldName}' was not found."),
-            { ValueKind: JsonValueKind.Array } array => new RefResolution(ProjectArrayField(array, fieldName, currentStepId, expression), SuppressAutoMap: false),
-            _ => throw new InvalidOperationException($"Step '{currentStepId}': ref '${expression}' - cannot access field '{fieldName}' on non-object.")
-        };
-    }
-
-    private bool ToolExpectsScalar(string toolName, string paramName)
-    {
-        var schema = toolCatalog.GetRequired(toolName).InputSchema;
-        if (schema.ValueKind != JsonValueKind.Object ||
-            !schema.TryGetProperty("properties", out var propertiesNode) ||
-            propertiesNode.ValueKind != JsonValueKind.Object)
-        {
-            throw new InvalidOperationException(
-                $"Tool '{toolName}' has invalid input schema. It must define an object 'properties' map.");
-        }
-
-        if (!propertiesNode.TryGetProperty(paramName, out var parameterNode))
-            throw new InvalidOperationException($"Tool '{toolName}' does not declare input '{paramName}' in its input schema.");
-
-        return !SchemaAllowsArray(parameterNode);
-    }
-
-    private static bool SchemaAllowsArray(JsonElement parameterNode)
-    {
-        if (parameterNode.ValueKind != JsonValueKind.Object)
-            return false;
-
-        if (parameterNode.TryGetProperty("type", out var typeNode))
-        {
-            if (typeNode.ValueKind == JsonValueKind.String)
-                return string.Equals(typeNode.GetString(), "array", StringComparison.OrdinalIgnoreCase);
-
-            if (typeNode.ValueKind == JsonValueKind.Array)
-            {
-                foreach (var typeValue in typeNode.EnumerateArray())
-                {
-                    if (typeValue.ValueKind == JsonValueKind.String &&
-                        string.Equals(typeValue.GetString(), "array", StringComparison.OrdinalIgnoreCase))
-                    {
-                        return true;
-                    }
-                }
-            }
-        }
-
-        if (parameterNode.TryGetProperty("anyOf", out var anyOfNode) && anyOfNode.ValueKind == JsonValueKind.Array)
-            return anyOfNode.EnumerateArray().Any(SchemaAllowsArray);
-
-        if (parameterNode.TryGetProperty("oneOf", out var oneOfNode) && oneOfNode.ValueKind == JsonValueKind.Array)
-            return oneOfNode.EnumerateArray().Any(SchemaAllowsArray);
-
-        return false;
-    }
 
     private static JsonElement SubstituteScalars(
         IReadOnlyDictionary<string, JsonElement?> resolved,
@@ -429,86 +307,97 @@ public sealed class PlanExecutor(
         }
     }
 
-    private static JsonElement ProjectArrayField(JsonElement array, string fieldName, string currentStepId, string expression)
+    private static ResultEnvelope<JsonElement?> ValidateCallOutput(
+        PlanStep step,
+        ResolvedPlanStepOutputContract outputContract,
+        ResultEnvelope<JsonElement?> envelope)
     {
-        var projected = new List<JsonElement?>();
-        foreach (var item in array.EnumerateArray())
-        {
-            if (item.ValueKind != JsonValueKind.Object)
+        var issues = StepOutputContractValidator.ValidateCallOutput(step.Id, outputContract, envelope.Data);
+        if (issues.Count == 0)
+            return envelope;
+
+        return ResultEnvelope<JsonElement?>.Failure(
+            "output_contract_failed",
+            $"Step '{step.Id}' returned data that does not match its declared output contract.",
+            JsonSerializer.SerializeToElement(new
             {
-                throw new InvalidOperationException(
-                    $"Step '{currentStepId}': ref '${expression}' - cannot access field '{fieldName}' on non-object array item.");
-            }
-
-            if (!item.TryGetProperty(fieldName, out var property))
-            {
-                throw new InvalidOperationException(
-                    $"Step '{currentStepId}': ref '${expression}' - field '{fieldName}' was not found on one of the array items.");
-            }
-
-            projected.Add(property.Clone());
-        }
-
-        return JsonSerializer.SerializeToElement(projected);
+                scope = "call",
+                issues = issues.Select(issue => new
+                {
+                    code = issue.Code,
+                    message = issue.Message
+                })
+            }));
     }
 
-    private static bool TryAutoProjectToolScalarArray(JsonElement array, string fieldName, out JsonElement projected)
+    private static JsonElement BuildStepResult(
+        PlanStep step,
+        ResolvedPlanStepOutputContract outputContract,
+        IReadOnlyList<JsonElement?> outputs)
     {
-        projected = default;
-        if (array.ValueKind != JsonValueKind.Array)
-            return false;
+        if (outputContract.Aggregate == PlanStepOutputAggregates.Single)
+            return outputs[0]!.Value.Clone();
 
-        var values = new List<JsonElement?>();
-        foreach (var item in array.EnumerateArray())
+        if (outputContract.Aggregate == PlanStepOutputAggregates.Collect)
+            return JsonSerializer.SerializeToElement(outputs.Select(CloneElement).ToArray());
+
+        if (outputContract.Aggregate == PlanStepOutputAggregates.Flatten)
         {
-            if (item.ValueKind != JsonValueKind.Object || !item.TryGetProperty(fieldName, out var property))
-                return false;
+            var flattened = new List<JsonElement>();
+            for (var index = 0; index < outputs.Count; index++)
+            {
+                var output = outputs[index];
+                if (output is not { ValueKind: JsonValueKind.Array } arrayOutput)
+                    throw new InvalidOperationException(
+                        $"Step '{step.Id}' uses out.aggregate='flatten' but call {index} returned {DescribeValueKind(output)} instead of an array.");
 
-            values.Add(property.Clone());
+                flattened.AddRange(arrayOutput.EnumerateArray().Select(item => item.Clone()));
+            }
+
+            return JsonSerializer.SerializeToElement(flattened.ToArray());
         }
 
-        if (values.Count == 0)
-            return false;
-
-        projected = JsonSerializer.SerializeToElement(values);
-        return true;
+        throw new InvalidOperationException($"Step '{step.Id}' has unsupported out.aggregate='{outputContract.Aggregate}'.");
     }
+
+    private static PlanStepError CreateOutputContractError(
+        string stepId,
+        IReadOnlyCollection<StepVerificationIssue> issues,
+        string scope) =>
+        new()
+        {
+            Code = "output_contract_failed",
+            Message = $"Step '{stepId}' produced {scope} output that does not match its declared contract.",
+            Details = JsonSerializer.SerializeToElement(new
+            {
+                scope,
+                issues = issues.Select(issue => new
+                {
+                    code = issue.Code,
+                    message = issue.Message
+                })
+            })
+        };
 
     private static List<string> GetMissingRefs(PlanStep step, IReadOnlyDictionary<string, PlanStep> stepMap)
     {
         var missing = new List<string>();
         foreach (var value in step.In.Values)
         {
-            if (value is not JsonValue jsonValue
-                || !jsonValue.TryGetValue<string>(out var text)
-                || !text.StartsWith("$", StringComparison.Ordinal))
-            {
+            if (!PlanInputBindingSyntax.TryParseBinding(value, out var binding, out var bindingError)
+                || !string.IsNullOrWhiteSpace(bindingError)
+                || !PlanInputBindingSyntax.TryParseReference(binding!.From, out var reference, out _))
                 continue;
-            }
 
-            var stepId = ExtractBaseStepId(text[1..]);
-            if (!stepMap.TryGetValue(stepId, out var dependency)
+            if (!stepMap.TryGetValue(reference!.StepId, out var dependency)
                 || !PlanExecutionState.IsDone(dependency)
                 || dependency.Result is null)
             {
-                missing.Add(text);
+                missing.Add(binding.From);
             }
         }
 
         return missing;
-    }
-
-    private static string ExtractBaseStepId(string expression)
-    {
-        var bracketIndex = expression.IndexOf('[');
-        var dotIndex = expression.IndexOf('.');
-        if (bracketIndex >= 0 && dotIndex >= 0)
-            return expression[..Math.Min(bracketIndex, dotIndex)];
-        if (bracketIndex >= 0)
-            return expression[..bracketIndex];
-        if (dotIndex >= 0)
-            return expression[..dotIndex];
-        return expression;
     }
 
     private static StepExecutionTrace CreateTrace(
@@ -565,6 +454,18 @@ public sealed class PlanExecutor(
 
     private static JsonElement? SerializeError(ErrorInfo? error) =>
         error is null ? null : JsonSerializer.SerializeToElement(error);
+
+    private static string DescribeValueKind(JsonElement? value) =>
+        value switch
+        {
+            null => "null",
+            { ValueKind: JsonValueKind.True } => "boolean",
+            { ValueKind: JsonValueKind.False } => "boolean",
+            { ValueKind: JsonValueKind.Number } => "number",
+            { ValueKind: JsonValueKind.Null } => "null",
+            { ValueKind: JsonValueKind.Undefined } => "null",
+            { } element => element.ValueKind.ToString().ToLowerInvariant()
+        };
 
     private static JsonElement SerializeObject(IReadOnlyDictionary<string, JsonElement?> node) =>
         JsonSerializer.SerializeToElement(node);

@@ -113,7 +113,7 @@ public sealed class LlmPlanner(
         sb.AppendLine("    {");
         sb.AppendLine("      \"id\": \"string\",");
         sb.AppendLine("      \"tool\": \"tool-name\",");
-        sb.AppendLine("      \"in\": { \"param\": \"literal or $ref\" },");
+        sb.AppendLine("      \"in\": { \"param\": \"literal or {\\\"from\\\":\\\"$ref\\\",\\\"mode\\\":\\\"value|map\\\"}\" },");
         sb.AppendLine("      \"s\": \"todo\",");
         sb.AppendLine("      \"res\": null,");
         sb.AppendLine("      \"err\": null");
@@ -123,9 +123,12 @@ public sealed class LlmPlanner(
         sb.AppendLine("      \"llm\": \"step-label\",");
         sb.AppendLine("      \"systemPrompt\": \"string\",");
         sb.AppendLine("      \"userPrompt\": \"string\",");
-        sb.AppendLine("      \"in\": { \"param\": \"literal or $ref\" },");
-        sb.AppendLine("      \"out\": \"json|string\",");
-        sb.AppendLine("      \"each\": true|false,");
+        sb.AppendLine("      \"in\": { \"param\": \"literal or {\\\"from\\\":\\\"$ref\\\",\\\"mode\\\":\\\"value|map\\\"}\" },");
+        sb.AppendLine("      \"out\": {");
+        sb.AppendLine("        \"format\": \"json|string\",");
+        sb.AppendLine("        \"aggregate\": \"single|collect|flatten\",");
+        sb.AppendLine("        \"schema\": { }");
+        sb.AppendLine("      },");
         sb.AppendLine("      \"s\": \"todo\",");
         sb.AppendLine("      \"res\": null,");
         sb.AppendLine("      \"err\": null");
@@ -140,10 +143,12 @@ public sealed class LlmPlanner(
         sb.AppendLine("- For final comparison or recommendation steps, instruct the LLM to explicitly mention the compared item names and the reason for the choice.");
         sb.AppendLine("- Avoid a second search unless the first downloaded pages clearly cannot contain the requested facts.");
         sb.AppendLine("- If the user asks for two items, prefer to search for two candidate pages or a very small over-fetch, not many pages.");
-        sb.AppendLine("- If a tool returns array data and the next tool expects a scalar parameter, pass the full array ref and let the executor fan out.");
-        sb.AppendLine("- If a tool returns an object containing an array field, reference that field directly (for example: $search.results).");
-        sb.AppendLine("- When chaining search-style results into download-style tools, prefer passing the whole array field into input key 'page' so metadata is preserved and download can add content.");
-        sb.AppendLine("- If a downstream tool input is named 'url' and receives an array of objects that each contain 'url', the executor can auto-project those URLs.");
+        sb.AppendLine("- Use input binding objects for every dynamic dependency: {\"from\":\"$step.ref\",\"mode\":\"value|map\"}.");
+        sb.AppendLine("- mode='value' passes one resolved value into one call.");
+        sb.AppendLine("- mode='map' means run the step once per array element.");
+        sb.AppendLine("- If a tool returns an object containing an array field, bind from that field directly (for example: {\"from\":\"$search.results\",\"mode\":\"map\"}).");
+        sb.AppendLine("- If a downstream tool needs a projected array field, express it explicitly in the ref (for example: {\"from\":\"$search.results[].url\",\"mode\":\"map\"}).");
+        sb.AppendLine("- When chaining search-style results into download-style tools, prefer binding the whole array field into input key 'page' so metadata is preserved and download can add content.");
         sb.AppendLine("- Download-style tools may return the original page object enriched with 'content'. Prefer consuming title/content from the download result, and keep search metadata when it adds value.");
         sb.AppendLine("- For download-style tools, pass exactly one of 'page' or 'url'. Do not send both.");
         sb.AppendLine("- Tool steps must use the exact tool name listed below, including any server prefix.");
@@ -161,28 +166,33 @@ public sealed class LlmPlanner(
         }
 
         sb.AppendLine();
-        sb.AppendLine("Fan-out rules:");
-        sb.AppendLine("- Tool steps: the executor automatically fans out when a scalar input receives an array.");
-        sb.AppendLine("- LLM steps: set \"each\": true to call the LLM once per array element. Omit it or set false to pass the whole array in one call.");
-        sb.AppendLine();
-        sb.AppendLine("Reference syntax allowed in step inputs:");
-        sb.AppendLine("- $stepId");
-        sb.AppendLine("- $stepId.field");
-        sb.AppendLine("- $stepId[]");
-        sb.AppendLine("- $stepId[].field");
-        sb.AppendLine("- $stepId[n]");
-        sb.AppendLine("- $stepId[n].field");
-        sb.AppendLine("Use $stepId.field only when the referenced step output is an object.");
-        sb.AppendLine("Use $stepId[].field when the referenced step output is an array of objects.");
-        sb.AppendLine("If a tool returns an object containing an array field, pass that field directly (for example: $search.results).");
+        sb.AppendLine("Reference syntax allowed inside binding objects:");
+        sb.AppendLine("- {\"from\":\"$stepId\"}");
+        sb.AppendLine("- {\"from\":\"$stepId.field\"}");
+        sb.AppendLine("- {\"from\":\"$stepId.field[]\"}");
+        sb.AppendLine("- {\"from\":\"$stepId.field[].nested\"}");
+        sb.AppendLine("- {\"from\":\"$stepId.field[n]\"}");
+        sb.AppendLine("- {\"from\":\"$stepId.field[n].nested\"}");
+        sb.AppendLine("- Add \"mode\":\"map\" when the resolved value is an array and the step must run once per item.");
         sb.AppendLine();
         sb.AppendLine("LLM step rules:");
         sb.AppendLine("- LLM steps MUST provide both systemPrompt and userPrompt.");
         sb.AppendLine("- The executor appends an Input section with all resolved 'in' values.");
         sb.AppendLine("- Do NOT use template placeholders such as {var} or {{var}} in prompts.");
-        sb.AppendLine("- Do NOT put step refs like $stepId or $stepId.field inside systemPrompt or userPrompt. All dynamic data must come through 'in'.");
-        sb.AppendLine("- out is \"json\" or \"string\". Prefer \"json\" unless the final answer is intentionally plain text.");
-        sb.AppendLine("- When out is \"json\", the systemPrompt MUST explicitly require valid JSON only.");
+        sb.AppendLine("- Do NOT put step refs like $stepId or $stepId.field inside systemPrompt or userPrompt. All dynamic data must come through binding objects in 'in'.");
+        sb.AppendLine("- out must be an object with format, aggregate, and optional schema.");
+        sb.AppendLine("- Prefer out.format='json' unless the final answer is intentionally plain text.");
+        sb.AppendLine("- If out.format='json', include out.schema that describes the expected JSON shape.");
+        sb.AppendLine("- Every schema node must declare either type or enum.");
+        sb.AppendLine("- If out.schema.type='object', every entry inside out.schema.properties must itself declare type or enum.");
+        sb.AppendLine("- If out.schema.type='array', out.schema.items must declare type or enum.");
+        sb.AppendLine("- If out.format='string', either omit out.schema or use out.schema={\"type\":\"string\"}.");
+        sb.AppendLine("- If your extraction prompt says a field should be null when missing, reflect that in the schema with nullable=true or type=[\"<base>\",\"null\"].");
+        sb.AppendLine("- If the step uses mode='map' and each call returns one item, use out.aggregate='collect'.");
+        sb.AppendLine("- If the step uses mode='map' and each call returns an array of items, use out.aggregate='flatten'.");
+        sb.AppendLine("- If the step does not use mode='map', use out.aggregate='single'.");
+        sb.AppendLine("- If out.aggregate='collect', out.schema must describe one call result item, not the final collected array.");
+        sb.AppendLine("- If out.aggregate='flatten', out.schema must describe the per-call array shape that will be flattened.");
         sb.AppendLine("- Use the exact field name \"userPrompt\". Do not use aliases like \"prompt\" or \"instruction\".");
         sb.AppendLine("- Put step parameters under \"in\". Do not place tool args as top-level step properties.");
         sb.AppendLine("- Every step must include id, in, s, res, and err.");
@@ -197,7 +207,7 @@ public sealed class LlmPlanner(
     private static string BuildPlanningUserPrompt(string userQuery) => userQuery;
 
     private static string BuildRepairPrompt(string originalUserPrompt, string errorMessage) =>
-        $"{originalUserPrompt}\n\nYour previous plan was invalid.\nValidation error: {errorMessage}\n\nReturn a corrected ResultEnvelope<PlanDefinition> as JSON only.\nNon-negotiable requirements:\n- Follow the exact ok/data/error envelope schema.\n- Put the full plan inside data when ok=true.\n- Each step must include id, in, s, res, and err.\n- A step must have exactly one of tool or llm.\n- Each llm step must include systemPrompt, userPrompt, and out.\n- Do not embed $step refs inside prompts.\n- Use the exact field names from the schema.\n- Put all step inputs under in.\n- Use only refs to earlier steps.\nDo not repeat the same mistake.";
+        $"{originalUserPrompt}\n\nYour previous plan was invalid.\nValidation error: {errorMessage}\n\nReturn a corrected ResultEnvelope<PlanDefinition> as JSON only.\nNon-negotiable requirements:\n- Follow the exact ok/data/error envelope schema.\n- Put the full plan inside data when ok=true.\n- Each step must include id, in, s, res, and err.\n- A step must have exactly one of tool or llm.\n- Each llm step must include systemPrompt, userPrompt, and an out object with format/aggregate/schema.\n- Do not embed $step refs inside prompts.\n- Put dynamic inputs under in using binding objects like {{\"from\":\"$step.ref\",\"mode\":\"value|map\"}}.\n- Use collect for mapped single-item extraction, flatten for mapped multi-item extraction, and single otherwise.\n- Every schema node must declare type or enum.\n- Every object property schema must declare type or enum.\n- For string outputs, either omit schema or use {{\"type\":\"string\"}}.\n- Use the exact field names from the schema.\n- Use only refs to earlier steps.\nDo not repeat the same mistake.";
 
     private static string BuildFewShotExamples() =>
         """
@@ -206,7 +216,7 @@ public sealed class LlmPlanner(
         Good plan shape:
         1. search candidate pages
         2. download candidate pages
-        3. extract structured facts from each page with each=true
+        3. extract structured facts from each page using mode="map" bindings and out.aggregate="collect"
         4. compare extracted facts in one final LLM step
 
         Example B:
@@ -224,6 +234,12 @@ public sealed class LlmPlanner(
         2. download those pages
         3. extract maintenance and onboarding facts from each page
         4. return a final recommendation
+
+        Example output contracts:
+        - one object: {"format":"json","aggregate":"single","schema":{"type":"object","required":["name"],"properties":{"name":{"type":"string"}}}}
+        - mapped objects collected into an array: {"format":"json","aggregate":"collect","schema":{"type":"object","required":["name"],"properties":{"name":{"type":"string"}}}}
+        - mapped arrays flattened into one array: {"format":"json","aggregate":"flatten","schema":{"type":"array","items":{"type":"object","required":["name"],"properties":{"name":{"type":"string"}}}}}
+        - final plain text: {"format":"string","aggregate":"single","schema":{"type":"string"}}
         """;
 
     private static string Shorten(string? value, int maxLength)

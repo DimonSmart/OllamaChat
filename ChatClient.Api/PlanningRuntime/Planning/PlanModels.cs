@@ -53,22 +53,22 @@ public sealed class PlanStep
     [JsonPropertyName("userPrompt")]
     public string? UserPrompt { get; init; }
 
-    /// <summary>Input bindings. String values starting with '$' are references to previous step outputs.</summary>
+    /// <summary>
+    /// Input values. Each input may be:
+    /// - a literal JSON value, passed as-is
+    /// - a binding object { "from": "$step.ref", "mode": "value|map" }
+    /// </summary>
     [JsonRequired]
     [JsonPropertyName("in")]
     public Dictionary<string, JsonNode?> In { get; init; } = new();
 
-    /// <summary>Output type hint: "json" (default) or "string".</summary>
-    [JsonPropertyName("out")]
-    public string? Out { get; init; }
-
     /// <summary>
-    /// When true, and the resolved input is a JsonArray, the agent is called once per element
-    /// and results are collected into an array (fan-out / map). Leave false (default) to pass
-    /// the array as-is to the agent (reduce / batch). Ignored for tool steps (schema-driven).
+    /// Output contract for this step.
+    /// LLM steps must declare the expected result format/shape explicitly.
+    /// Tool steps may omit it and rely on the tool output schema.
     /// </summary>
-    [JsonPropertyName("each")]
-    public bool Each { get; init; }
+    [JsonPropertyName("out")]
+    public PlanStepOutputContract? Out { get; init; }
 
     [JsonPropertyName("s")]
     public string Status { get; set; } = PlanStepStatuses.Todo;

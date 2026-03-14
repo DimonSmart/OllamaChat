@@ -89,7 +89,22 @@ public static class PlanningPreviewScenarios
                     {
                         ["searchResults"] = Ref("$search1")
                     },
-                    Out = "json",
+                    Out = JsonOut(new JsonObject
+                    {
+                        ["type"] = "object",
+                        ["required"] = new JsonArray("models"),
+                        ["properties"] = new JsonObject
+                        {
+                            ["models"] = new JsonObject
+                            {
+                                ["type"] = "array",
+                                ["items"] = new JsonObject
+                                {
+                                    ["type"] = "string"
+                                }
+                            }
+                        }
+                    }),
                     Status = PlanStepStatuses.Done,
                     Result = Element(new
                     {
@@ -147,7 +162,10 @@ public static class PlanningPreviewScenarios
                         ["candidateA"] = Ref("$fetch_eufy"),
                         ["candidateB"] = Ref("$fetch_roborock")
                     },
-                    Out = "json",
+                    Out = JsonOut(new JsonObject
+                    {
+                        ["type"] = "object"
+                    }),
                     Status = PlanStepStatuses.Running
                 }
             ]
@@ -307,7 +325,10 @@ public static class PlanningPreviewScenarios
                     {
                         ["articleUrls"] = Ref("$search1")
                     },
-                    Out = "json",
+                    Out = JsonOut(new JsonObject
+                    {
+                        ["type"] = "object"
+                    }),
                     Status = PlanStepStatuses.Fail,
                     Error = new PlanStepError
                     {
@@ -334,7 +355,22 @@ public static class PlanningPreviewScenarios
                         ["failedStep"] = Ref("$extract1.err"),
                         ["searchResults"] = Ref("$search1")
                     },
-                    Out = "json",
+                    Out = JsonOut(new JsonObject
+                    {
+                        ["type"] = "object",
+                        ["required"] = new JsonArray("replacementSteps"),
+                        ["properties"] = new JsonObject
+                        {
+                            ["replacementSteps"] = new JsonObject
+                            {
+                                ["type"] = "array",
+                                ["items"] = new JsonObject
+                                {
+                                    ["type"] = "string"
+                                }
+                            }
+                        }
+                    }),
                     Status = PlanStepStatuses.Done,
                     Result = Element(new
                     {
@@ -356,7 +392,10 @@ public static class PlanningPreviewScenarios
                         ["articleUrls"] = Ref("$search1"),
                         ["replanHints"] = Ref("$replan_models")
                     },
-                    Out = "json",
+                    Out = JsonOut(new JsonObject
+                    {
+                        ["type"] = "object"
+                    }),
                     Status = PlanStepStatuses.Fail,
                     Error = new PlanStepError
                     {
@@ -535,7 +574,19 @@ public static class PlanningPreviewScenarios
         }
     ];
 
-    private static JsonNode? Ref(string value) => JsonValue.Create(value);
+    private static JsonNode? Ref(string value, string mode = "value") => new JsonObject
+    {
+        ["from"] = value,
+        ["mode"] = mode
+    };
+
+    private static PlanStepOutputContract JsonOut(JsonObject schema, string aggregate = PlanStepOutputAggregates.Single) =>
+        new()
+        {
+            Format = PlanStepOutputFormats.Json,
+            Aggregate = aggregate,
+            Schema = JsonSerializer.SerializeToElement(schema, PlanningJson.CompactOptions)
+        };
 
     private static JsonElement Element<T>(T value) =>
         JsonSerializer.SerializeToElement(value, PlanningJson.CompactOptions);

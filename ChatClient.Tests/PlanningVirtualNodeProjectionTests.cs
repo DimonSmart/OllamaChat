@@ -20,7 +20,7 @@ public class PlanningVirtualNodeProjectionTests
             [],
             finalResult);
 
-        var resultNode = Assert.Single(nodes.Where(node => node.Kind == PlanningVirtualNodeKind.Result));
+        var resultNode = Assert.Single(nodes, node => node.Kind == PlanningVirtualNodeKind.Result);
         Assert.Equal(PlanningVirtualNodeDescriptor.ResultNodeId, resultNode.Id);
         Assert.Equal(PlanStepStatuses.Done, resultNode.StatusValue);
         Assert.Equal("ok: true", resultNode.Subtitle);

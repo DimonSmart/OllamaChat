@@ -18,6 +18,7 @@ public class PlanningRuntimeContractsTests
 {
     private const string SearchToolName = "mock-web:search";
     private const string DownloadToolName = "mock-web:download";
+    private const string PairToolName = "mock-web:pair";
 
     [Fact]
     public void PlanValidator_RejectsPromptRefsInsideAgentPrompts()
@@ -44,8 +45,9 @@ public class PlanningRuntimeContractsTests
                     UserPrompt = "Write the final answer.",
                     In = new Dictionary<string, JsonNode?>
                     {
-                        ["pages"] = JsonValue.Create("$searchPages.results")
-                    }
+                        ["pages"] = Ref("$searchPages.results")
+                    },
+                    Out = StringOut()
                 }
             ]
         };
@@ -53,6 +55,41 @@ public class PlanningRuntimeContractsTests
         var exception = Assert.Throws<InvalidOperationException>(() => PlanValidator.ValidateOrThrow(plan));
 
         Assert.Contains("must not embed step refs inside systemPrompt", exception.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void PlanValidator_RejectsLegacyStringRefsInsideInputs()
+    {
+        var plan = new PlanDefinition
+        {
+            Goal = "Download search result pages.",
+            Steps =
+            [
+                new PlanStep
+                {
+                    Id = "searchPages",
+                    Tool = SearchToolName,
+                    In = new Dictionary<string, JsonNode?>
+                    {
+                        ["query"] = JsonValue.Create("example")
+                    }
+                },
+                new PlanStep
+                {
+                    Id = "downloadPages",
+                    Tool = DownloadToolName,
+                    In = new Dictionary<string, JsonNode?>
+                    {
+                        ["url"] = JsonValue.Create("$searchPages.results[].url")
+                    }
+                }
+            ]
+        };
+
+        var exception = Assert.Throws<InvalidOperationException>(() => PlanValidator.ValidateOrThrow(plan));
+
+        Assert.Contains("uses legacy string ref syntax", exception.Message, StringComparison.Ordinal);
+        Assert.Contains("{\"from\":\"$searchPages.results[].url\",\"mode\":\"value\"}", exception.Message, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -72,7 +109,8 @@ public class PlanningRuntimeContractsTests
                     In = new Dictionary<string, JsonNode?>
                     {
                         ["modelName"] = JsonValue.Create("Eufy X10 Pro Omni")
-                    }
+                    },
+                    Out = StringOut()
                 }
             ]
         };
@@ -100,7 +138,8 @@ public class PlanningRuntimeContractsTests
                     {
                         ["modelA"] = JsonValue.Create("Eufy X10 Pro Omni"),
                         ["modelB"] = JsonValue.Create("Roborock Qrevo Curv")
-                    }
+                    },
+                    Out = StringOut()
                 }
             ]
         };
@@ -144,7 +183,8 @@ public class PlanningRuntimeContractsTests
                     Llm = "synthesizer",
                     SystemPrompt = "sys",
                     UserPrompt = "user",
-                    In = []
+                    In = [],
+                    Out = StringOut()
                 }
             ]
         };
@@ -291,7 +331,7 @@ public class PlanningRuntimeContractsTests
     }
 
     [Fact]
-    public async Task PlanExecutor_AutoProjectsUrlFieldWhenToolInputExpectsScalar()
+    public async Task PlanExecutor_MapsProjectedUrlField_WhenBindingUsesMapMode()
     {
         var downloadTool = CreateDownloadByUrlDescriptor();
         var executor = new PlanExecutor(
@@ -317,7 +357,7 @@ public class PlanningRuntimeContractsTests
                     Tool = DownloadToolName,
                     In = new Dictionary<string, JsonNode?>
                     {
-                        ["url"] = JsonValue.Create("$searchPages.results")
+                        ["url"] = Ref("$searchPages.results[].url", mode: "map")
                     }
                 }
             ]
@@ -332,7 +372,7 @@ public class PlanningRuntimeContractsTests
     }
 
     [Fact]
-    public async Task PlanExecutor_FansOutWholeSearchObjects_WhenToolInputUsesPage()
+    public async Task PlanExecutor_MapsWholeSearchObjects_WhenBindingUsesMapMode()
     {
         var downloadTool = CreateDownloadByPageDescriptor();
         var executor = new PlanExecutor(
@@ -358,7 +398,7 @@ public class PlanningRuntimeContractsTests
                     Tool = DownloadToolName,
                     In = new Dictionary<string, JsonNode?>
                     {
-                        ["page"] = JsonValue.Create("$searchPages.results")
+                        ["page"] = Ref("$searchPages.results", mode: "map")
                     }
                 }
             ]
@@ -368,6 +408,436 @@ public class PlanningRuntimeContractsTests
 
         Assert.All(result.StepTraces, trace => Assert.True(trace.Success));
         Assert.Equal(["Item A", "Item B"], downloadTool.ReceivedTitles);
+    }
+
+    [Fact]
+    public async Task PlanExecutor_RejectsLegacyStringRefsInsideInputs()
+    {
+        var executor = new PlanExecutor(
+            new PlanningToolCatalog([CreateStaticSearchDescriptor(), CreateDownloadByUrlDescriptor().Descriptor]),
+            new ThrowingAgentStepRunner());
+        var plan = new PlanDefinition
+        {
+            Goal = "Download search results.",
+            Steps =
+            [
+                new PlanStep
+                {
+                    Id = "searchPages",
+                    Tool = SearchToolName,
+                    In = new Dictionary<string, JsonNode?>
+                    {
+                        ["query"] = JsonValue.Create("example")
+                    }
+                },
+                new PlanStep
+                {
+                    Id = "downloadPages",
+                    Tool = DownloadToolName,
+                    In = new Dictionary<string, JsonNode?>
+                    {
+                        ["url"] = JsonValue.Create("$searchPages.results[].url")
+                    }
+                }
+            ]
+        };
+
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(() => executor.ExecuteAsync(plan));
+
+        Assert.Contains("uses legacy string ref syntax", exception.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task PlanExecutor_Throws_WhenMapBindingResolvesToNonArray()
+    {
+        var executor = new PlanExecutor(
+            new PlanningToolCatalog([CreateStaticSearchDescriptor(), CreateDownloadByUrlDescriptor().Descriptor]),
+            new ThrowingAgentStepRunner());
+        var plan = new PlanDefinition
+        {
+            Goal = "Download search result pages.",
+            Steps =
+            [
+                new PlanStep
+                {
+                    Id = "searchPages",
+                    Tool = SearchToolName,
+                    In = new Dictionary<string, JsonNode?>
+                    {
+                        ["query"] = JsonValue.Create("example")
+                    }
+                },
+                new PlanStep
+                {
+                    Id = "downloadPages",
+                    Tool = DownloadToolName,
+                    In = new Dictionary<string, JsonNode?>
+                    {
+                        ["url"] = Ref("$searchPages.query", mode: "map")
+                    }
+                }
+            ]
+        };
+
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(() => executor.ExecuteAsync(plan));
+
+        Assert.Contains("uses mode='map' but ref '$searchPages.query' did not resolve to an array", exception.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task PlanExecutor_Throws_WhenMappedInputsHaveDifferentLengths()
+    {
+        var executor = new PlanExecutor(
+            new PlanningToolCatalog([CreateVariableSearchDescriptor(), CreatePairDescriptor()]),
+            new ThrowingAgentStepRunner());
+        var plan = new PlanDefinition
+        {
+            Goal = "Zip two mapped inputs.",
+            Steps =
+            [
+                new PlanStep
+                {
+                    Id = "manyResults",
+                    Tool = SearchToolName,
+                    In = new Dictionary<string, JsonNode?>
+                    {
+                        ["query"] = JsonValue.Create("many")
+                    }
+                },
+                new PlanStep
+                {
+                    Id = "singleResult",
+                    Tool = SearchToolName,
+                    In = new Dictionary<string, JsonNode?>
+                    {
+                        ["query"] = JsonValue.Create("single")
+                    }
+                },
+                new PlanStep
+                {
+                    Id = "pairResults",
+                    Tool = PairToolName,
+                    In = new Dictionary<string, JsonNode?>
+                    {
+                        ["first"] = Ref("$manyResults.results[].url", mode: "map"),
+                        ["second"] = Ref("$singleResult.results[].url", mode: "map")
+                    }
+                }
+            ]
+        };
+
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(() => executor.ExecuteAsync(plan));
+
+        Assert.Contains("resolves multiple array inputs with different lengths", exception.Message, StringComparison.Ordinal);
+        Assert.Contains("'first' (2) and 'second' (1)", exception.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void PlanValidator_RejectsJsonLlmStepWithoutOutputSchema()
+    {
+        var plan = new PlanDefinition
+        {
+            Goal = "Extract a product summary.",
+            Steps =
+            [
+                new PlanStep
+                {
+                    Id = "answer",
+                    Llm = "extractor",
+                    SystemPrompt = "Return JSON only.",
+                    UserPrompt = "Extract the requested fields.",
+                    In = new Dictionary<string, JsonNode?>
+                    {
+                        ["content"] = JsonValue.Create("example")
+                    },
+                    Out = new PlanStepOutputContract
+                    {
+                        Format = PlanStepOutputFormats.Json,
+                        Aggregate = PlanStepOutputAggregates.Single
+                    }
+                }
+            ]
+        };
+
+        var exception = Assert.Throws<InvalidOperationException>(() => PlanValidator.ValidateOrThrow(plan));
+
+        Assert.Contains("must provide out.schema", exception.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void PlanValidator_RejectsMappedLlmStepWithSingleAggregate()
+    {
+        var plan = new PlanDefinition
+        {
+            Goal = "Extract package facts.",
+            Steps =
+            [
+                new PlanStep
+                {
+                    Id = "searchPages",
+                    Tool = SearchToolName,
+                    In = new Dictionary<string, JsonNode?>
+                    {
+                        ["query"] = JsonValue.Create("example")
+                    }
+                },
+                new PlanStep
+                {
+                    Id = "extractFacts",
+                    Llm = "extractor",
+                    SystemPrompt = "Return JSON only.",
+                    UserPrompt = "Extract one package per page.",
+                    In = new Dictionary<string, JsonNode?>
+                    {
+                        ["page"] = Ref("$searchPages.results", mode: "map")
+                    },
+                    Out = JsonOut(
+                        new JsonObject
+                        {
+                            ["type"] = "object",
+                            ["required"] = new JsonArray("name"),
+                            ["properties"] = new JsonObject
+                            {
+                                ["name"] = new JsonObject
+                                {
+                                    ["type"] = "string"
+                                }
+                            }
+                        },
+                        aggregate: PlanStepOutputAggregates.Single)
+                }
+            ]
+        };
+
+        var exception = Assert.Throws<InvalidOperationException>(() => PlanValidator.ValidateOrThrow(plan));
+
+        Assert.Contains("out.aggregate='collect' or 'flatten'", exception.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void PlanValidator_AcceptsNullableJsonPropertySchemas()
+    {
+        var plan = new PlanDefinition
+        {
+            Goal = "Extract optional fields.",
+            Steps =
+            [
+                new PlanStep
+                {
+                    Id = "extractFacts",
+                    Llm = "extractor",
+                    SystemPrompt = "Return JSON only.",
+                    UserPrompt = "Extract the product facts.",
+                    In = new Dictionary<string, JsonNode?>
+                    {
+                        ["content"] = JsonValue.Create("example")
+                    },
+                    Out = JsonOut(new JsonObject
+                    {
+                        ["type"] = "object",
+                        ["required"] = new JsonArray("name", "noiseLevel"),
+                        ["properties"] = new JsonObject
+                        {
+                            ["name"] = new JsonObject
+                            {
+                                ["type"] = "string"
+                            },
+                            ["noiseLevel"] = new JsonObject
+                            {
+                                ["type"] = "string",
+                                ["nullable"] = true
+                            }
+                        }
+                    })
+                }
+            ]
+        };
+
+        PlanValidator.ValidateOrThrow(plan);
+    }
+
+    [Fact]
+    public async Task PlanExecutor_FlattenAggregate_FlattensMappedLlmArrayOutputs()
+    {
+        var runner = new DelegateAgentStepRunner((step, resolvedInputs) =>
+        {
+            var page = resolvedInputs.GetProperty("page");
+            var title = page.GetProperty("title").GetString();
+            return ResultEnvelope<JsonElement?>.Success(JsonSerializer.SerializeToElement(new[]
+            {
+                new { name = $"{title} A" },
+                new { name = $"{title} B" }
+            }));
+        });
+
+        var executor = new PlanExecutor(
+            new PlanningToolCatalog([CreateStaticSearchDescriptor(), CreateDownloadByPageDescriptor().Descriptor]),
+            runner);
+
+        var plan = new PlanDefinition
+        {
+            Goal = "Extract multiple packages per page and flatten them.",
+            Steps =
+            [
+                new PlanStep
+                {
+                    Id = "searchPages",
+                    Tool = SearchToolName,
+                    In = new Dictionary<string, JsonNode?>
+                    {
+                        ["query"] = JsonValue.Create("example")
+                    }
+                },
+                new PlanStep
+                {
+                    Id = "extractFacts",
+                    Llm = "extractor",
+                    SystemPrompt = "Return JSON only.",
+                    UserPrompt = "Extract all package names from the page.",
+                    In = new Dictionary<string, JsonNode?>
+                    {
+                        ["page"] = Ref("$searchPages.results", mode: "map")
+                    },
+                    Out = JsonOut(
+                        new JsonObject
+                        {
+                            ["type"] = "array",
+                            ["items"] = new JsonObject
+                            {
+                                ["type"] = "object",
+                                ["required"] = new JsonArray("name"),
+                                ["properties"] = new JsonObject
+                                {
+                                    ["name"] = new JsonObject
+                                    {
+                                        ["type"] = "string"
+                                    }
+                                }
+                            }
+                        },
+                        aggregate: PlanStepOutputAggregates.Flatten)
+                }
+            ]
+        };
+
+        var result = await executor.ExecuteAsync(plan);
+
+        Assert.All(result.StepTraces, trace => Assert.True(trace.Success));
+        var extractStep = Assert.Single(plan.Steps, step => step.Id == "extractFacts");
+        var items = extractStep.Result!.Value.EnumerateArray().Select(item => item.GetProperty("name").GetString()).ToArray();
+        Assert.Collection(
+            items,
+            item => Assert.Equal("Item A A", item),
+            item => Assert.Equal("Item A B", item),
+            item => Assert.Equal("Item B A", item),
+            item => Assert.Equal("Item B B", item));
+    }
+
+    [Fact]
+    public async Task PlanExecutor_Fails_WhenLlmOutputViolatesDeclaredSchema()
+    {
+        var runner = new DelegateAgentStepRunner((step, resolvedInputs) =>
+            ResultEnvelope<JsonElement?>.Success(JsonSerializer.SerializeToElement(new
+            {
+                description = "missing name"
+            })));
+
+        var executor = new PlanExecutor(
+            new PlanningToolCatalog([CreateStaticSearchDescriptor()]),
+            runner);
+
+        var plan = new PlanDefinition
+        {
+            Goal = "Return one extracted object.",
+            Steps =
+            [
+                new PlanStep
+                {
+                    Id = "extractFacts",
+                    Llm = "extractor",
+                    SystemPrompt = "Return JSON only.",
+                    UserPrompt = "Extract the package.",
+                    In = new Dictionary<string, JsonNode?>
+                    {
+                        ["content"] = JsonValue.Create("example")
+                    },
+                    Out = JsonOut(new JsonObject
+                    {
+                        ["type"] = "object",
+                        ["required"] = new JsonArray("name"),
+                        ["properties"] = new JsonObject
+                        {
+                            ["name"] = new JsonObject
+                            {
+                                ["type"] = "string"
+                            }
+                        }
+                    })
+                }
+            ]
+        };
+
+        var result = await executor.ExecuteAsync(plan);
+        var trace = Assert.Single(result.StepTraces);
+        Assert.False(trace.Success);
+        Assert.Equal("output_contract_failed", trace.ErrorCode);
+        Assert.Contains("declared output contract", trace.ErrorMessage ?? string.Empty, StringComparison.Ordinal);
+        Assert.Contains("call output", trace.ErrorDetails?.GetProperty("issues")[0].GetProperty("message").GetString() ?? string.Empty, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task PlanExecutor_AllowsNullField_WhenSchemaUsesTypeUnionWithNull()
+    {
+        var runner = new DelegateAgentStepRunner((step, resolvedInputs) =>
+            ResultEnvelope<JsonElement?>.Success(JsonSerializer.SerializeToElement(new
+            {
+                name = "RoboClean A1 Max",
+                noiseLevel = (string?)null
+            })));
+
+        var executor = new PlanExecutor(
+            new PlanningToolCatalog([CreateStaticSearchDescriptor()]),
+            runner);
+
+        var plan = new PlanDefinition
+        {
+            Goal = "Extract one object with an optional field.",
+            Steps =
+            [
+                new PlanStep
+                {
+                    Id = "extractFacts",
+                    Llm = "extractor",
+                    SystemPrompt = "Return JSON only.",
+                    UserPrompt = "Extract the package.",
+                    In = new Dictionary<string, JsonNode?>
+                    {
+                        ["content"] = JsonValue.Create("example")
+                    },
+                    Out = JsonOut(new JsonObject
+                    {
+                        ["type"] = "object",
+                        ["required"] = new JsonArray("name", "noiseLevel"),
+                        ["properties"] = new JsonObject
+                        {
+                            ["name"] = new JsonObject
+                            {
+                                ["type"] = "string"
+                            },
+                            ["noiseLevel"] = new JsonObject
+                            {
+                                ["type"] = new JsonArray("string", "null")
+                            }
+                        }
+                    })
+                }
+            ]
+        };
+
+        var result = await executor.ExecuteAsync(plan);
+        var trace = Assert.Single(result.StepTraces);
+        Assert.True(trace.Success);
+        Assert.Null(trace.ErrorCode);
     }
 
     private static PlanningSessionService CreateSessionService()
@@ -428,6 +898,88 @@ public class PlanningRuntimeContractsTests
                     new { url = "https://example.com/item-a", title = "Item A" },
                     new { url = "https://example.com/item-b", title = "Item B" }
                 }
+            });
+
+    private static AppToolDescriptor CreateVariableSearchDescriptor() =>
+        CreateDescriptor(
+            serverName: "mock-web",
+            toolName: "search",
+            description: "Structured search results with variable lengths.",
+            inputSchemaJson: """
+                {
+                  "type": "object",
+                  "properties": {
+                    "query": { "type": "string" }
+                  },
+                  "required": ["query"]
+                }
+                """,
+            outputSchemaJson: """
+                {
+                  "type": "object",
+                  "properties": {
+                    "query": { "type": "string" },
+                    "results": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "url": { "type": "string" },
+                          "title": { "type": "string" }
+                        },
+                        "required": ["url", "title"]
+                      }
+                    }
+                  },
+                  "required": ["query", "results"]
+                }
+                """,
+            execute: arguments =>
+            {
+                var query = GetRequiredString(arguments, "query");
+                var results = string.Equals(query, "single", StringComparison.Ordinal)
+                    ? new[]
+                    {
+                        new { url = "https://example.com/item-only", title = "Item Only" }
+                    }
+                    : new[]
+                    {
+                        new { url = "https://example.com/item-a", title = "Item A" },
+                        new { url = "https://example.com/item-b", title = "Item B" }
+                    };
+
+                return new { query, results };
+            });
+
+    private static AppToolDescriptor CreatePairDescriptor() =>
+        CreateDescriptor(
+            serverName: "mock-web",
+            toolName: "pair",
+            description: "Pair two scalar values.",
+            inputSchemaJson: """
+                {
+                  "type": "object",
+                  "properties": {
+                    "first": { "type": "string" },
+                    "second": { "type": "string" }
+                  },
+                  "required": ["first", "second"]
+                }
+                """,
+            outputSchemaJson: """
+                {
+                  "type": "object",
+                  "properties": {
+                    "first": { "type": "string" },
+                    "second": { "type": "string" }
+                  },
+                  "required": ["first", "second"]
+                }
+                """,
+            execute: arguments => new
+            {
+                first = GetRequiredString(arguments, "first"),
+                second = GetRequiredString(arguments, "second")
             });
 
     private static RecordingDownloadDescriptor CreateDownloadByUrlDescriptor()
@@ -551,6 +1103,27 @@ public class PlanningRuntimeContractsTests
         return result;
     }
 
+    private static JsonNode? Ref(string value, string mode = "value") => new JsonObject
+    {
+        ["from"] = value,
+        ["mode"] = mode
+    };
+
+    private static PlanStepOutputContract JsonOut(JsonObject schema, string aggregate = PlanStepOutputAggregates.Single) =>
+        new()
+        {
+            Format = PlanStepOutputFormats.Json,
+            Aggregate = aggregate,
+            Schema = JsonSerializer.SerializeToElement(schema)
+        };
+
+    private static PlanStepOutputContract StringOut(string aggregate = PlanStepOutputAggregates.Single) =>
+        new()
+        {
+            Format = PlanStepOutputFormats.String,
+            Aggregate = aggregate
+        };
+
     private sealed record RecordingDownloadDescriptor(AppToolDescriptor Descriptor, List<string> ReceivedUrls);
 
     private sealed record PageRecordingDownloadDescriptor(AppToolDescriptor Descriptor, List<string> ReceivedTitles);
@@ -568,5 +1141,11 @@ public class PlanningRuntimeContractsTests
     {
         public Task<ResultEnvelope<JsonElement?>> ExecuteAsync(PlanStep step, JsonElement resolvedInputs, CancellationToken cancellationToken = default) =>
             throw new InvalidOperationException("LLM execution is not expected in this test.");
+    }
+
+    private sealed class DelegateAgentStepRunner(Func<PlanStep, JsonElement, ResultEnvelope<JsonElement?>> execute) : IAgentStepRunner
+    {
+        public Task<ResultEnvelope<JsonElement?>> ExecuteAsync(PlanStep step, JsonElement resolvedInputs, CancellationToken cancellationToken = default) =>
+            Task.FromResult(execute(step, resolvedInputs));
     }
 }
