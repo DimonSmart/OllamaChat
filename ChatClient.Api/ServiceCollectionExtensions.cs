@@ -24,6 +24,7 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<IMcpServerConfigService, McpServerConfigService>();
         services.AddSingleton<ILlmServerConfigService, LlmServerConfigService>();
         services.AddSingleton<IMcpClientService, McpClientService>();
+        services.AddSingleton<IAppToolCatalog, AppToolCatalog>();
         services.AddSingleton<McpSamplingService>();
         services.AddSingleton<IMcpUserInteractionService, McpUserInteractionService>();
         services.AddSingleton<KernelService>();
@@ -63,8 +64,6 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IChatEngineSessionService>(sp => sp.GetRequiredService<AgenticChatEngineSessionService>());
         services.AddScoped<IAgenticChatViewModelService, AgenticChatViewModelService>();
         services.AddScoped<IPlanningChatClientFactory, PlanningChatClientFactory>();
-        services.AddScoped<WebSearchTool>();
-        services.AddScoped<WebDownloadTool>();
         services.AddScoped<IPlanningSessionService, PlanningSessionService>();
         services.AddSingleton<IChatFormatter, TextChatFormatter>();
         services.AddSingleton<IChatFormatter, MarkdownChatFormatter>();

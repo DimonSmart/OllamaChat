@@ -7,11 +7,11 @@ namespace ChatClient.Api.Services;
 
 public class KernelService(
     McpFunctionIndexService indexService,
-    IMcpClientService mcpClientService,
+    IAppToolCatalog appToolCatalog,
     ILogger<KernelService> logger)
 {
     private readonly McpFunctionIndexService _indexService = indexService;
-    private readonly IMcpClientService _mcpClientService = mcpClientService;
+    private readonly IAppToolCatalog _appToolCatalog = appToolCatalog;
 
     public async Task<IReadOnlyCollection<string>> GetFunctionsToRegisterAsync(
         FunctionSettings functionSettings,
@@ -37,21 +37,19 @@ public class KernelService(
 
         try
         {
-            var mcpClients = await _mcpClientService.GetMcpClientsAsync(cancellationToken);
-            if (mcpClients.Count == 0)
+            var tools = await _appToolCatalog.ListToolsAsync(cancellationToken);
+            if (tools.Count == 0)
                 return [];
-            foreach (var mcpClient in mcpClients)
+
+            foreach (var tool in tools)
             {
-                var mcpTools = await _mcpClientService.GetMcpTools(mcpClient, cancellationToken);
-                var toolFuncs = mcpTools.Select(tool =>
-                    new FunctionInfo
-                    {
-                        Name = $"{mcpClient.ServerInfo.Name}:{tool.Name}",
-                        ServerName = mcpClient.ServerInfo.Name ?? string.Empty,
-                        DisplayName = tool.Name,
-                        Description = tool.Description
-                    });
-                functions.AddRange(toolFuncs);
+                functions.Add(new FunctionInfo
+                {
+                    Name = tool.QualifiedName,
+                    ServerName = tool.ServerName,
+                    DisplayName = tool.DisplayName,
+                    Description = tool.Description
+                });
             }
 
             return functions;

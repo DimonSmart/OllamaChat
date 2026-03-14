@@ -6,11 +6,12 @@ using System.Runtime.ExceptionServices;
 using ChatClient.Api.PlanningRuntime.Agents;
 using ChatClient.Api.PlanningRuntime.Common;
 using ChatClient.Api.PlanningRuntime.Execution;
-using ChatClient.Api.PlanningRuntime.Host;
 using ChatClient.Api.PlanningRuntime.Orchestration;
 using ChatClient.Api.PlanningRuntime.Planning;
 using ChatClient.Api.PlanningRuntime.Tools;
 using ChatClient.Api.PlanningRuntime.Verification;
+using ChatClient.Api.Services;
+using ChatClient.Api.Services.BuiltIn;
 using Microsoft.Agents.AI;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -28,7 +29,7 @@ public sealed class PlanningPipelineIntegrationTests(ITestOutputHelper output)
     public async Task FullPipeline_PlannerAndOrchestrator_ReturnsSystemOutcome()
     {
         const string userQuery = "I'm looking for a good robot vacuum cleaner. Can you find two popular models, check their specs, and tell me which one is better?";
-        await RunFullPipelineAsync(userQuery, new ToolRegistry([new MockSearchTool(), new MockDownloadTool()]));
+        await RunFullPipelineAsync(userQuery, CreateMockToolCatalog());
     }
 
     [Fact]
@@ -36,14 +37,10 @@ public sealed class PlanningPipelineIntegrationTests(ITestOutputHelper output)
     {
         const string userQuery = "Compare Markdig and CommonMark.NET using their GitHub or documentation pages, and tell me which one is better for a small .NET app.";
         var httpClientFactory = new TestHttpClientFactory();
-        await RunWithRetriesAsync(() => RunFullPipelineAsync(userQuery, new ToolRegistry(
-        [
-            new WebSearchTool(httpClientFactory, NullLogger<WebSearchTool>.Instance),
-            new WebDownloadTool(httpClientFactory, NullLogger<WebDownloadTool>.Instance)
-        ])));
+        await RunWithRetriesAsync(() => RunFullPipelineAsync(userQuery, CreateRealWebToolCatalog(httpClientFactory)));
     }
 
-    private async Task RunFullPipelineAsync(string userQuery, IToolRegistry tools)
+    private async Task RunFullPipelineAsync(string userQuery, PlanningToolCatalog tools)
     {
         var chatClient = BuildChatClient();
         var logger = new TestLogger(output);
@@ -97,6 +94,290 @@ public sealed class PlanningPipelineIntegrationTests(ITestOutputHelper output)
         ExceptionDispatchInfo.Capture(lastException ?? new InvalidOperationException("Pipeline retry failed without an exception.")).Throw();
     }
 
+    private static PlanningToolCatalog CreateMockToolCatalog() =>
+        new([
+            CreateDescriptor(
+                serverName: "mock-web",
+                toolName: "search",
+                description: "Search the web and return raw structured search results with URL, title, snippet, and site metadata. The output may be noisy or partially irrelevant and must be checked for relevance before relying on it.",
+                inputSchemaJson: """
+                    {
+                      "type": "object",
+                      "properties": {
+                        "query": { "type": "string" },
+                        "limit": { "type": "number" }
+                      },
+                      "required": ["query"]
+                    }
+                    """,
+                outputSchemaJson: """
+                    {
+                      "type": "object",
+                      "properties": {
+                        "query": { "type": "string" },
+                        "results": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "url": { "type": "string" },
+                              "title": { "type": "string" },
+                              "snippet": { "type": "string" },
+                              "siteName": { "type": "string" },
+                              "displayUrl": { "type": "string" },
+                              "position": { "type": "integer" }
+                            },
+                            "required": ["url", "title"]
+                          }
+                        }
+                      },
+                      "required": ["query", "results"]
+                    }
+                    """,
+                execute: _ => new
+                {
+                    query = "robot vacuum",
+                    results = new[]
+                    {
+                        new
+                        {
+                            url = "https://example.com/item-a",
+                            title = "RoboClean A1 Max",
+                            snippet = "Popular robot vacuum candidate with LiDAR navigation.",
+                            siteName = "Example",
+                            displayUrl = "example.com/item-a",
+                            position = 1
+                        },
+                        new
+                        {
+                            url = "https://example.com/item-b",
+                            title = "HomeSweep S5",
+                            snippet = "Popular robot vacuum candidate with vSLAM navigation.",
+                            siteName = "Example",
+                            displayUrl = "example.com/item-b",
+                            position = 2
+                        }
+                    }
+                }),
+            CreateDescriptor(
+                serverName: "mock-web",
+                toolName: "download",
+                description: "Download a single web page. Prefer passing a full search-result object via 'page'; the tool returns the same object enriched with 'content'. If only a raw absolute URL is available, pass it via 'url' and the tool returns a minimal object with url, title, and content.",
+                inputSchemaJson: """
+                    {
+                      "type": "object",
+                      "properties": {
+                        "page": {
+                          "type": "object",
+                          "properties": {
+                            "url": { "type": "string" },
+                            "title": { "type": "string" },
+                            "snippet": { "type": "string" },
+                            "siteName": { "type": "string" },
+                            "displayUrl": { "type": "string" },
+                            "position": { "type": "integer" }
+                          }
+                        },
+                        "url": { "type": "string" }
+                      }
+                    }
+                    """,
+                outputSchemaJson: """
+                    {
+                      "type": "object",
+                      "properties": {
+                        "url": { "type": "string" },
+                        "title": { "type": "string" },
+                        "snippet": { "type": "string" },
+                        "siteName": { "type": "string" },
+                        "displayUrl": { "type": "string" },
+                        "position": { "type": "integer" },
+                        "content": { "type": "string" }
+                      },
+                      "required": ["url", "title", "content"]
+                    }
+                    """,
+                execute: arguments =>
+                {
+                    var pageObject = TryGetObjectProperty(arguments, "page");
+                    var url = pageObject is not null
+                        ? TryGetStringProperty(pageObject, "url")
+                        : TryGetStringProperty(arguments, "page") ?? TryGetStringProperty(arguments, "url");
+                    if (string.IsNullOrWhiteSpace(url))
+                        throw new InvalidOperationException("Download URL is required.");
+
+                    var content = url.Contains("item-a", StringComparison.OrdinalIgnoreCase)
+                        ? "RoboClean A1 Max is a popular robot vacuum cleaner with 7000 Pa suction power, up to 180 minutes of battery runtime, a 0.5 L dustbin, LiDAR navigation, and a list price of $799."
+                        : "HomeSweep S5 is a popular robot vacuum cleaner with 5000 Pa suction power, up to 140 minutes of battery runtime, a 0.4 L dustbin, vSLAM navigation, and a list price of $649.";
+
+                    JsonObject payload;
+                    if (pageObject is not null)
+                    {
+                        payload = JsonNode.Parse(JsonSerializer.Serialize(pageObject))?.AsObject() ?? new JsonObject();
+                        payload["content"] = content;
+                    }
+                    else
+                    {
+                        payload = new JsonObject
+                        {
+                            ["url"] = url,
+                            ["title"] = url.Contains("item-a", StringComparison.OrdinalIgnoreCase)
+                                ? "RoboClean A1 Max review"
+                                : "HomeSweep S5 review",
+                            ["content"] = content
+                        };
+                    }
+
+                    return payload;
+                })
+        ]);
+
+    private static PlanningToolCatalog CreateRealWebToolCatalog(IHttpClientFactory httpClientFactory) =>
+        new([
+            CreateDescriptor(
+                serverName: "built-in-web",
+                toolName: "search",
+                description: "Search the web and return structured search results with metadata.",
+                inputSchemaJson: """
+                    {
+                      "type": "object",
+                      "properties": {
+                        "query": { "type": "string" },
+                        "limit": { "type": "integer" }
+                      },
+                      "required": ["query"]
+                    }
+                    """,
+                outputSchemaJson: """
+                    {
+                      "type": "object",
+                      "properties": {
+                        "query": { "type": "string" },
+                        "results": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "url": { "type": "string" },
+                              "title": { "type": "string" },
+                              "snippet": { "type": "string" },
+                              "siteName": { "type": "string" },
+                              "displayUrl": { "type": "string" },
+                              "age": { "type": "string" },
+                              "thumbnailUrl": { "type": "string" },
+                              "position": { "type": "integer" }
+                            },
+                            "required": ["url", "title"]
+                          }
+                        }
+                      },
+                      "required": ["query", "results"]
+                    }
+                    """,
+                execute: arguments => BuiltInWebToolLogic.SearchAsync(
+                    httpClientFactory,
+                    NullLogger.Instance,
+                    new WebSearchInput(
+                        Query: TryGetStringProperty(arguments, "query") ?? throw new InvalidOperationException("Search query is required."),
+                        Limit: TryGetIntProperty(arguments, "limit"))).GetAwaiter().GetResult()),
+            CreateDescriptor(
+                serverName: "built-in-web",
+                toolName: "download",
+                description: "Download a single web page while preserving search metadata when available.",
+                inputSchemaJson: """
+                    {
+                      "type": "object",
+                      "properties": {
+                        "page": { "type": "object" },
+                        "url": { "type": "string" }
+                      }
+                    }
+                    """,
+                outputSchemaJson: """
+                    {
+                      "type": "object",
+                      "properties": {
+                        "url": { "type": "string" },
+                        "title": { "type": "string" },
+                        "content": { "type": "string" },
+                        "snippet": { "type": "string" },
+                        "siteName": { "type": "string" },
+                        "displayUrl": { "type": "string" },
+                        "age": { "type": "string" },
+                        "thumbnailUrl": { "type": "string" },
+                        "position": { "type": "integer" }
+                      },
+                      "required": ["url", "title", "content"]
+                    }
+                    """,
+                execute: arguments => BuiltInWebToolLogic.DownloadAsync(
+                    httpClientFactory,
+                    NullLogger.Instance,
+                    new WebDownloadInput(
+                        Page: TryGetObjectProperty(arguments, "page") is { } page
+                            ? new WebSearchResult(
+                                Url: TryGetStringProperty(page, "url") ?? string.Empty,
+                                Title: TryGetStringProperty(page, "title") ?? string.Empty,
+                                Snippet: TryGetStringProperty(page, "snippet"),
+                                SiteName: TryGetStringProperty(page, "siteName"),
+                                DisplayUrl: TryGetStringProperty(page, "displayUrl"),
+                                Age: TryGetStringProperty(page, "age"),
+                                ThumbnailUrl: TryGetStringProperty(page, "thumbnailUrl"),
+                                Position: TryGetIntProperty(page, "position"))
+                            : null,
+                        Url: TryGetStringProperty(arguments, "url"))).GetAwaiter().GetResult())
+        ]);
+
+    private static AppToolDescriptor CreateDescriptor(
+        string serverName,
+        string toolName,
+        string description,
+        string inputSchemaJson,
+        string outputSchemaJson,
+        Func<Dictionary<string, object?>, object> execute) =>
+        new(
+            QualifiedName: $"{serverName}:{toolName}",
+            ServerName: serverName,
+            ToolName: toolName,
+            DisplayName: toolName,
+            Description: description,
+            InputSchema: ParseJsonElement(inputSchemaJson),
+            OutputSchema: ParseJsonElement(outputSchemaJson),
+            MayRequireUserInput: false,
+            ReadOnlyHint: true,
+            DestructiveHint: false,
+            IdempotentHint: true,
+            OpenWorldHint: true,
+            ExecuteAsync: (arguments, _) => Task.FromResult(execute(arguments)));
+
+    private static JsonElement ParseJsonElement(string json)
+    {
+        using var document = JsonDocument.Parse(json);
+        return document.RootElement.Clone();
+    }
+
+    private static string? TryGetStringProperty(Dictionary<string, object?> source, string propertyName) =>
+        source.TryGetValue(propertyName, out var value) && value is string text
+            ? text
+            : null;
+
+    private static int? TryGetIntProperty(Dictionary<string, object?> source, string propertyName) =>
+        source.TryGetValue(propertyName, out var value)
+            ? value switch
+            {
+                int intValue => intValue,
+                long longValue => (int)longValue,
+                decimal decimalValue => (int)decimalValue,
+                double doubleValue => (int)doubleValue,
+                _ => null
+            }
+            : null;
+
+    private static Dictionary<string, object?>? TryGetObjectProperty(Dictionary<string, object?> source, string propertyName) =>
+        source.TryGetValue(propertyName, out var value) && value is Dictionary<string, object?> result
+            ? result
+            : null;
+
     private static IChatClient BuildChatClient()
     {
         var clientOptions = new OpenAIClientOptions
@@ -130,103 +411,6 @@ public sealed class PlanningPipelineIntegrationTests(ITestOutputHelper output)
 public sealed class TestLogger(ITestOutputHelper output) : IExecutionLogger
 {
     public void Log(string message) => output.WriteLine(message);
-}
-
-public sealed class MockSearchTool : ITool
-{
-    public string Name => "search";
-
-    public ToolPlannerMetadata PlannerMetadata => new(
-        "search",
-        "Search the web and return raw structured search results with URL, title, snippet, and site metadata. The output may be noisy or partially irrelevant and must be checked for relevance before relying on it.",
-        JsonNode.Parse(@"{""type"":""object"",""properties"":{""query"":{""type"":""string""},""limit"":{""type"":""number""}},""required"":[""query""]}")!.AsObject(),
-        JsonNode.Parse(@"{""type"":""array"",""items"":{""type"":""object"",""properties"":{""url"":{""type"":""string""},""title"":{""type"":""string""},""snippet"":{""type"":""string""},""siteName"":{""type"":""string""},""displayUrl"":{""type"":""string""},""position"":{""type"":""integer""}},""required"":[""url"",""title""]}}")!.AsObject(),
-        [],
-        []);
-
-    public Task<ResultEnvelope<JsonElement?>> ExecuteAsync(JsonElement input, CancellationToken cancellationToken = default) =>
-        Task.FromResult(ResultEnvelope<JsonElement?>.Success(JsonSerializer.SerializeToElement(new[]
-        {
-            new
-            {
-                url = "https://example.com/item-a",
-                title = "RoboClean A1 Max",
-                snippet = "Popular robot vacuum candidate with LiDAR navigation.",
-                siteName = "Example",
-                displayUrl = "example.com/item-a",
-                position = 1
-            },
-            new
-            {
-                url = "https://example.com/item-b",
-                title = "HomeSweep S5",
-                snippet = "Popular robot vacuum candidate with vSLAM navigation.",
-                siteName = "Example",
-                displayUrl = "example.com/item-b",
-                position = 2
-            }
-        })));
-}
-
-public sealed class MockDownloadTool : ITool
-{
-    public string Name => "download";
-
-    public ToolPlannerMetadata PlannerMetadata => new(
-        "download",
-        "Download a single web page. Prefer passing a full search-result object via 'page'; the tool returns the same object enriched with 'content'. If only a raw absolute URL is available, pass it via 'url' and the tool returns a minimal object with url, title, and content.",
-        JsonNode.Parse(@"{""type"":""object"",""properties"":{""page"":{""type"":""object"",""properties"":{""url"":{""type"":""string""},""title"":{""type"":""string""},""snippet"":{""type"":""string""},""siteName"":{""type"":""string""},""displayUrl"":{""type"":""string""},""position"":{""type"":""integer""}}},""url"":{""type"":""string""}}}")!.AsObject(),
-        JsonNode.Parse(@"{""type"":""object"",""properties"":{""url"":{""type"":""string""},""title"":{""type"":""string""},""snippet"":{""type"":""string""},""siteName"":{""type"":""string""},""displayUrl"":{""type"":""string""},""position"":{""type"":""integer""},""content"":{""type"":""string""}},""required"":[""url"",""title"",""content""]}")!.AsObject(),
-        [],
-        []);
-
-    public Task<ResultEnvelope<JsonElement?>> ExecuteAsync(JsonElement input, CancellationToken cancellationToken = default)
-    {
-        var pageObject = TryGetObjectProperty(input, "page");
-        var url = pageObject.HasValue
-            ? TryGetStringProperty(pageObject.Value, "url")
-            : TryGetStringProperty(input, "page") ?? TryGetStringProperty(input, "url");
-        if (string.IsNullOrWhiteSpace(url))
-            return Task.FromResult(ResultEnvelope<JsonElement?>.Failure("invalid_input", "Download URL is required."));
-
-        var content = url.Contains("item-a", StringComparison.OrdinalIgnoreCase)
-            ? "RoboClean A1 Max is a popular robot vacuum cleaner with 7000 Pa suction power, up to 180 minutes of battery runtime, a 0.5 L dustbin, LiDAR navigation, and a list price of $799."
-            : "HomeSweep S5 is a popular robot vacuum cleaner with 5000 Pa suction power, up to 140 minutes of battery runtime, a 0.4 L dustbin, vSLAM navigation, and a list price of $649.";
-
-        JsonObject payload;
-        if (pageObject.HasValue)
-        {
-            payload = JsonNode.Parse(pageObject.Value.GetRawText())?.AsObject() ?? new JsonObject();
-            payload["content"] = content;
-        }
-        else
-        {
-            payload = new JsonObject
-            {
-                ["url"] = url,
-                ["title"] = url.Contains("item-a", StringComparison.OrdinalIgnoreCase)
-                    ? "RoboClean A1 Max review"
-                    : "HomeSweep S5 review",
-                ["content"] = content
-            };
-        }
-
-        return Task.FromResult(ResultEnvelope<JsonElement?>.Success(JsonSerializer.SerializeToElement(payload)));
-    }
-
-    private static string? TryGetStringProperty(JsonElement element, string propertyName) =>
-        element.ValueKind == JsonValueKind.Object
-        && element.TryGetProperty(propertyName, out var property)
-        && property.ValueKind == JsonValueKind.String
-            ? property.GetString()
-            : null;
-
-    private static JsonElement? TryGetObjectProperty(JsonElement element, string propertyName) =>
-        element.ValueKind == JsonValueKind.Object
-        && element.TryGetProperty(propertyName, out var property)
-        && property.ValueKind == JsonValueKind.Object
-            ? property.Clone()
-            : null;
 }
 
 public sealed class TestHttpClientFactory : IHttpClientFactory

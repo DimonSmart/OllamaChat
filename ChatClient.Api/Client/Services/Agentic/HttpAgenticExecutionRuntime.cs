@@ -16,7 +16,7 @@ namespace ChatClient.Api.Client.Services.Agentic;
 public sealed class HttpAgenticExecutionRuntime(
     ILlmServerConfigService llmServerConfigService,
     IModelCapabilityService modelCapabilityService,
-    IMcpClientService mcpClientService,
+    IAppToolCatalog appToolCatalog,
     IMcpUserInteractionService mcpUserInteractionService,
     KernelService kernelService,
     IConfiguration configuration,
@@ -802,45 +802,32 @@ public sealed class HttpAgenticExecutionRuntime(
                 requestedFunctions.Select(AgenticToolUtility.ExtractToolName),
                 StringComparer.OrdinalIgnoreCase);
 
-            var clients = await mcpClientService.GetMcpClientsAsync(cancellationToken);
-            foreach (var client in clients)
+            var availableTools = await appToolCatalog.ListToolsAsync(cancellationToken);
+            foreach (var tool in availableTools)
             {
                 cancellationToken.ThrowIfCancellationRequested();
-
-                string serverName = client.ServerInfo.Name ?? string.Empty;
-                if (string.IsNullOrWhiteSpace(serverName))
+                bool selected = requestedQualified.Contains(tool.QualifiedName) || requestedByToolName.Contains(tool.ToolName);
+                if (!selected)
                 {
-                    logger.LogWarning("Skipping MCP client with empty server name while resolving tools.");
                     continue;
                 }
 
-                var availableTools = await mcpClientService.GetMcpTools(client, cancellationToken);
-                foreach (var tool in availableTools)
-                {
-                    string qualifiedName = $"{serverName}:{tool.Name}";
-                    bool selected = requestedQualified.Contains(qualifiedName) || requestedByToolName.Contains(tool.Name);
-                    if (!selected)
-                    {
-                        continue;
-                    }
+                string providerName = AgenticToolUtility.CreateProviderToolName(tool.ServerName, tool.ToolName, usedProviderToolNames);
+                var schema = tool.InputSchema.ValueKind == JsonValueKind.Undefined
+                    ? EmptyToolSchema
+                    : tool.InputSchema.Clone();
 
-                    string providerName = AgenticToolUtility.CreateProviderToolName(serverName, tool.Name, usedProviderToolNames);
-                    var schema = tool.JsonSchema.ValueKind == JsonValueKind.Undefined
-                        ? EmptyToolSchema
-                        : tool.JsonSchema.Clone();
+                var binding = new ToolBinding(
+                    tool.ServerName,
+                    tool.ToolName,
+                    providerName,
+                    tool.Description,
+                    schema,
+                    async (arguments, token) => await tool.ExecuteAsync(arguments, token),
+                    MayRequireUserInput: tool.MayRequireUserInput);
 
-                    var binding = new ToolBinding(
-                        serverName,
-                        tool.Name,
-                        providerName,
-                        tool.Description ?? string.Empty,
-                        schema,
-                        async (arguments, token) => await tool.CallAsync(arguments, null, null, token),
-                        MayRequireUserInput: MayRequireUserInput(tool.Description));
-
-                    tools.Add(binding);
-                    toolsByProviderName[providerName] = binding;
-                }
+                tools.Add(binding);
+                toolsByProviderName[providerName] = binding;
             }
         }
 
@@ -964,19 +951,6 @@ public sealed class HttpAgenticExecutionRuntime(
             RetryDelayMs = Math.Max(0, policy.RetryDelayMs)
         };
     }
-
-    private static bool MayRequireUserInput(string? description)
-    {
-        if (string.IsNullOrWhiteSpace(description))
-            return false;
-
-        return description.Contains("elicitation", StringComparison.OrdinalIgnoreCase) ||
-               description.Contains("ask user", StringComparison.OrdinalIgnoreCase) ||
-               description.Contains("asks user", StringComparison.OrdinalIgnoreCase) ||
-               description.Contains("asks the user", StringComparison.OrdinalIgnoreCase) ||
-               description.Contains("prompt", StringComparison.OrdinalIgnoreCase);
-    }
-
     private static JsonElement CreateEmptyToolSchema()
     {
         using var document = JsonDocument.Parse("{\"type\":\"object\",\"properties\":{}}");

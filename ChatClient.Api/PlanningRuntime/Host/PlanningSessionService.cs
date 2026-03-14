@@ -5,21 +5,16 @@ using ChatClient.Api.PlanningRuntime.Orchestration;
 using ChatClient.Api.PlanningRuntime.Planning;
 using ChatClient.Api.PlanningRuntime.Tools;
 using ChatClient.Api.PlanningRuntime.Verification;
+using ChatClient.Api.Services;
 
 namespace ChatClient.Api.PlanningRuntime.Host;
 
 public sealed class PlanningSessionService(
     IPlanningChatClientFactory chatClientFactory,
-    WebSearchTool searchTool,
-    WebDownloadTool downloadTool,
+    IAppToolCatalog appToolCatalog,
+    IMcpUserInteractionService mcpUserInteractionService,
     ILogger<PlanningSessionService> logger) : IPlanningSessionService
 {
-    private readonly Dictionary<string, ITool> _availableTools = new(StringComparer.OrdinalIgnoreCase)
-    {
-        [searchTool.Name] = searchTool,
-        [downloadTool.Name] = downloadTool
-    };
-
     private CancellationTokenSource? _runCts;
     private Task? _runTask;
 
@@ -27,23 +22,30 @@ public sealed class PlanningSessionService(
 
     public event Action? StateChanged;
 
-    public Task StartAsync(PlanningRunRequest request)
+    public async Task StartAsync(PlanningRunRequest request)
     {
         if (string.IsNullOrWhiteSpace(request.UserQuery))
             throw new InvalidOperationException("User query is required.");
         if (request.EnabledToolNames.Count == 0)
             throw new InvalidOperationException("At least one planning tool must be enabled.");
 
-        var enabledToolOptions = request.EnabledToolNames
+        var toolSnapshot = await appToolCatalog.ListToolsAsync();
+        var availableTools = toolSnapshot.ToDictionary(tool => tool.QualifiedName, StringComparer.OrdinalIgnoreCase);
+        var enabledTools = request.EnabledToolNames
             .Distinct(StringComparer.OrdinalIgnoreCase)
-            .Select(name => _availableTools.TryGetValue(name, out var tool)
-                ? new PlanningToolOption
-                {
-                    Name = tool.Name,
-                    DisplayName = tool.PlannerMetadata.Name,
-                    Description = tool.PlannerMetadata.Description
-                }
+            .Select(name => availableTools.TryGetValue(name, out var tool)
+                ? tool
                 : throw new InvalidOperationException($"Planning tool '{name}' is not available."))
+            .ToList();
+        var enabledToolOptions = enabledTools
+            .Select(tool => new PlanningToolOption
+            {
+                Name = tool.QualifiedName,
+                DisplayName = string.IsNullOrWhiteSpace(tool.DisplayName)
+                    ? tool.QualifiedName
+                    : $"{tool.ServerName}: {tool.DisplayName}",
+                Description = tool.Description
+            })
             .ToList();
 
         _runCts?.Cancel();
@@ -58,8 +60,7 @@ public sealed class PlanningSessionService(
         }
         NotifyStateChanged();
 
-        _runTask = Task.Run(() => ExecuteRunAsync(request, _runCts.Token), _runCts.Token);
-        return Task.CompletedTask;
+        _runTask = Task.Run(() => ExecuteRunAsync(request, enabledTools, _runCts.Token), _runCts.Token);
     }
 
     public async Task CancelAsync()
@@ -100,24 +101,21 @@ public sealed class PlanningSessionService(
         NotifyStateChanged();
     }
 
-    private async Task ExecuteRunAsync(PlanningRunRequest request, CancellationToken cancellationToken)
+    private async Task ExecuteRunAsync(
+        PlanningRunRequest request,
+        IReadOnlyCollection<AppToolDescriptor> enabledTools,
+        CancellationToken cancellationToken)
     {
         try
         {
             var chatClient = await chatClientFactory.CreateAsync(request.Model, cancellationToken);
-            var enabledTools = request.EnabledToolNames
-                .Distinct(StringComparer.OrdinalIgnoreCase)
-                .Select(name => _availableTools.TryGetValue(name, out var tool)
-                    ? tool
-                    : throw new InvalidOperationException($"Planning tool '{name}' is not available."))
-                .ToList();
             var observer = new ActionPlanRunObserver(HandleEvent);
             var loggerSink = new ActionExecutionLogger(HandleLogLine);
-            var registry = new ToolRegistry(enabledTools);
+            var registry = new PlanningToolCatalog(enabledTools);
             var planner = new LlmPlanner(chatClient, registry, loggerSink, observer);
             var replanner = new LlmReplanner(chatClient, registry, loggerSink, observer);
             var runner = new AgentStepRunner(chatClient, observer);
-            var executor = new PlanExecutor(registry, runner, loggerSink, observer);
+            var executor = new PlanExecutor(registry, runner, loggerSink, observer, mcpUserInteractionService);
             var finalAnswerVerifier = new LlmFinalAnswerVerifier(chatClient);
             var orchestrator = new PlanningOrchestrator(
                 planner,

@@ -48,6 +48,7 @@ public static class BuiltInMcpServerHost
             // MCP stdio protocol uses stdout, logs should go to stderr.
             options.LogToStandardErrorThreshold = LogLevel.Trace;
         });
+        builder.Services.AddHttpClient();
 
         var mcpBuilder = builder.Services
             .AddMcpServer(options =>

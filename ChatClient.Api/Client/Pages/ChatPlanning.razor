@@ -4,11 +4,16 @@
 @using ChatClient.Api.PlanningRuntime.Execution
 @using ChatClient.Api.PlanningRuntime.Host
 @using ChatClient.Api.PlanningRuntime.Planning
+@using ChatClient.Api.Services
 @using ChatClient.Domain.Models
 @using MudBlazor
 @implements IDisposable
 @inject IPlanningSessionService PlanningSessionService
 @inject ISnackbar Snackbar
+@inject IDialogService DialogService
+@inject IMcpUserInteractionService McpUserInteractionService
+@inject KernelService KernelService
+@inject ILogger<ChatPlanning> Logger
 
 <PageTitle>Planning Chat</PageTitle>
 
@@ -66,12 +71,14 @@
                           Immediate="true"
                           Disabled="@UsingPreviewScenario" />
 
-            <MudStack Row="true" Spacing="2">
-                @foreach (var tool in toolSelections)
-                {
-                    <MudCheckBox T="bool" @bind-Value="tool.Enabled" Label="@tool.DisplayName" Dense="true" Disabled="@UsingPreviewScenario" />
-                }
-            </MudStack>
+            <FunctionSelector AvailableFunctions="@availablePlanningFunctions"
+                              SelectedFunctions="@selectedPlanningFunctions"
+                              SelectedFunctionsChanged="OnSelectedPlanningFunctionsChanged"
+                              Expanded="true"
+                              ShowAutoSelectCount="false"
+                              Disabled="@UsingPreviewScenario"
+                              Title="Planner MCP Servers and Tools"
+                              EmptyText="No MCP tools are currently available for planning." />
 
             <MudStack Row="true" Spacing="2">
                 <MudButton Variant="Variant.Filled"
@@ -124,11 +131,9 @@
     private string? selectedStepId;
     private string? selectedStepContextKey;
 
-    private readonly List<ToolSelection> toolSelections =
-    [
-        new("search", "Web Search", true),
-        new("download", "Web Download", true)
-    ];
+    private List<FunctionInfo> availablePlanningFunctions = [];
+    private List<string> selectedPlanningFunctions = [];
+    private IDisposable? elicitationHandlerRegistration;
 
     [CascadingParameter(Name = "UiModelSelection")]
     public ServerModelSelection UiModelSelection { get; set; } = new(null, null);
@@ -179,7 +184,7 @@
         HasModelSelection &&
         !PlanningSessionService.State.IsRunning &&
         !string.IsNullOrWhiteSpace(userQuery) &&
-        toolSelections.Any(tool => tool.Enabled);
+        selectedPlanningFunctions.Count > 0;
 
     private bool CanCancel =>
         !UsingPreviewScenario && PlanningSessionService.State.IsRunning;
@@ -191,8 +196,12 @@
         PlanningSessionService.State.FinalResult is not null ||
         selectedStepId is not null;
 
-    protected override void OnInitialized()
+    protected override async Task OnInitializedAsync()
     {
+        elicitationHandlerRegistration = McpUserInteractionService.RegisterElicitationHandler(
+            McpInteractionScope.Planning,
+            HandleElicitationAsync);
+        await RefreshToolSelectionsAsync();
         PlanningSessionService.StateChanged += OnStateChanged;
         SyncSelectedStepId(CurrentPlan, CurrentActiveStepId, CurrentFinalResult);
     }
@@ -214,7 +223,7 @@
         {
             Model = new ServerModel(UiModelSelection.ServerId!.Value, UiModelSelection.ModelName!),
             UserQuery = userQuery,
-            EnabledToolNames = toolSelections.Where(tool => tool.Enabled).Select(tool => tool.Name).ToList()
+            EnabledToolNames = selectedPlanningFunctions
         });
     }
 
@@ -268,6 +277,7 @@
     public void Dispose()
     {
         PlanningSessionService.StateChanged -= OnStateChanged;
+        elicitationHandlerRegistration?.Dispose();
     }
 
     private IReadOnlyList<PlanRunEvent> GetStateEventsSnapshot()
@@ -342,12 +352,120 @@
         return $"{selectedPreviewScenarioId}:{planStepIds}:{virtualNodeKeys}";
     }
 
-    private sealed class ToolSelection(string name, string displayName, bool enabled)
+    private async Task RefreshToolSelectionsAsync()
     {
-        public string Name { get; } = name;
+        try
+        {
+            availablePlanningFunctions = (await KernelService.GetAvailableFunctionsAsync()).ToList();
+            var enabledByName = selectedPlanningFunctions
+                .ToHashSet(StringComparer.OrdinalIgnoreCase);
+            selectedPlanningFunctions = availablePlanningFunctions
+                .Where(function => enabledByName.Contains(function.Name) || ShouldEnableByDefault(function))
+                .Select(function => function.Name)
+                .ToList();
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "Failed to load planning tools.");
+            Snackbar.Add($"Failed to load planning tools: {ex.Message}", Severity.Warning);
+        }
+    }
 
-        public string DisplayName { get; } = displayName;
+    private Task OnSelectedPlanningFunctionsChanged(List<string> selectedFunctions)
+    {
+        selectedPlanningFunctions = selectedFunctions;
+        return Task.CompletedTask;
+    }
 
-        public bool Enabled { get; set; } = enabled;
+    private static bool ShouldEnableByDefault(FunctionInfo function)
+    {
+        var serverName = function.ServerName ?? string.Empty;
+        var toolName = ExtractToolName(function.Name);
+        return serverName.Contains("web", StringComparison.OrdinalIgnoreCase) &&
+               (string.Equals(toolName, "search", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(toolName, "download", StringComparison.OrdinalIgnoreCase));
+    }
+
+    private static string ExtractToolName(string qualifiedName)
+    {
+        var separatorIndex = qualifiedName.LastIndexOf(':');
+        return separatorIndex >= 0 && separatorIndex + 1 < qualifiedName.Length
+            ? qualifiedName[(separatorIndex + 1)..]
+            : qualifiedName;
+    }
+
+    private async Task<McpElicitationResponse> HandleElicitationAsync(
+        McpElicitationPrompt prompt,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            var parameters = new DialogParameters
+            {
+                ["Prompt"] = prompt
+            };
+            var options = new DialogOptions
+            {
+                MaxWidth = MaxWidth.Small,
+                FullWidth = true,
+                BackdropClick = false,
+                CloseOnEscapeKey = true,
+                CloseButton = true
+            };
+
+            IDialogReference? dialog = null;
+            await InvokeAsync(async () =>
+            {
+                dialog = await DialogService.ShowAsync<McpElicitationDialog>(
+                    $"MCP input: {prompt.ServerName}",
+                    parameters,
+                    options);
+            });
+
+            if (dialog is null)
+                return McpElicitationResponse.Cancel;
+
+            Logger.LogInformation(
+                "Elicitation dialog opened in planning UI. Server: {ServerName}. Mode: {Mode}. Fields: {FieldCount}.",
+                prompt.ServerName,
+                prompt.Mode,
+                prompt.Fields.Count);
+
+            using var registration = cancellationToken.Register(() =>
+            {
+                _ = InvokeAsync(() => dialog.Close(DialogResult.Ok(McpElicitationResponse.Cancel)));
+            });
+
+            var result = await dialog.Result;
+            if (result?.Canceled != false)
+            {
+                Logger.LogInformation(
+                    "Elicitation dialog closed in planning UI with cancel. Server: {ServerName}.",
+                    prompt.ServerName);
+                return McpElicitationResponse.Cancel;
+            }
+
+            var response = result.Data as McpElicitationResponse ?? McpElicitationResponse.Cancel;
+            Logger.LogInformation(
+                "Elicitation dialog completed in planning UI. Server: {ServerName}. Action: {Action}.",
+                prompt.ServerName,
+                response.Action);
+            return response;
+        }
+        catch (OperationCanceledException)
+        {
+            Logger.LogInformation(
+                "Elicitation dialog canceled by token in planning UI. Server: {ServerName}.",
+                prompt.ServerName);
+            return McpElicitationResponse.Cancel;
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "Failed to render elicitation dialog in planning UI.");
+            Snackbar.Add($"Failed to handle MCP user prompt: {ex.Message}", Severity.Warning);
+            return McpElicitationResponse.Cancel;
+        }
     }
 }

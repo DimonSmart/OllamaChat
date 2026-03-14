@@ -1,18 +1,21 @@
-﻿using System.Text.Json;
+using System.Text.Json;
 using System.Text.Json.Nodes;
 using ChatClient.Api.PlanningRuntime.Agents;
 using ChatClient.Api.PlanningRuntime.Common;
 using ChatClient.Api.PlanningRuntime.Planning;
 using ChatClient.Api.PlanningRuntime.Tools;
 using ChatClient.Api.PlanningRuntime.Verification;
+using ChatClient.Api.Services;
+using ModelContextProtocol.Protocol;
 
 namespace ChatClient.Api.PlanningRuntime.Execution;
 
 public sealed class PlanExecutor(
-    IToolRegistry toolRegistry,
+    PlanningToolCatalog toolCatalog,
     IAgentStepRunner agentStepRunner,
     IExecutionLogger? executionLogger = null,
-    IPlanRunObserver? planRunObserver = null)
+    IPlanRunObserver? planRunObserver = null,
+    IMcpUserInteractionService? mcpUserInteractionService = null)
 {
     private readonly IExecutionLogger _log = executionLogger ?? NullExecutionLogger.Instance;
     private readonly IPlanRunObserver _observer = planRunObserver ?? NullPlanRunObserver.Instance;
@@ -174,8 +177,13 @@ public sealed class PlanExecutor(
         List<JsonElement> calls,
         CancellationToken cancellationToken)
     {
-        var tool = toolRegistry.GetRequired(toolName);
-        var envelope = await tool.ExecuteAsync(input, cancellationToken);
+        var tool = toolCatalog.GetRequired(toolName);
+        var arguments = ConvertInputToArguments(input);
+
+        using var interactionScope = mcpUserInteractionService?.BeginInteractionScope(McpInteractionScope.Planning);
+        var result = await tool.ExecuteAsync(arguments, cancellationToken);
+        var envelope = NormalizeToolResult(tool, result);
+
         calls.Add(JsonSerializer.SerializeToElement(new
         {
             tool = toolName,
@@ -349,24 +357,51 @@ public sealed class PlanExecutor(
 
     private bool ToolExpectsScalar(string toolName, string paramName)
     {
-        var metadata = toolRegistry.GetRequired(toolName).PlannerMetadata;
-        if (!metadata.InputSchema.TryGetPropertyValue("properties", out var propertiesNode) || propertiesNode is not JsonObject properties)
+        var schema = toolCatalog.GetRequired(toolName).InputSchema;
+        if (schema.ValueKind != JsonValueKind.Object ||
+            !schema.TryGetProperty("properties", out var propertiesNode) ||
+            propertiesNode.ValueKind != JsonValueKind.Object)
         {
             throw new InvalidOperationException(
-                $"Tool '{toolName}' has invalid planner metadata. Input schema must define an object 'properties' map.");
+                $"Tool '{toolName}' has invalid input schema. It must define an object 'properties' map.");
         }
 
-        if (!properties.TryGetPropertyValue(paramName, out var parameterNode) || parameterNode is not JsonObject parameter)
-            throw new InvalidOperationException($"Tool '{toolName}' does not declare input '{paramName}' in planner metadata.");
-        if (!parameter.TryGetPropertyValue("type", out var typeNode))
-            throw new InvalidOperationException($"Tool '{toolName}' input '{paramName}' is missing a JSON schema 'type'.");
-        if (typeNode is not JsonValue typeValue || !typeValue.TryGetValue<string>(out var typeName))
+        if (!propertiesNode.TryGetProperty(paramName, out var parameterNode))
+            throw new InvalidOperationException($"Tool '{toolName}' does not declare input '{paramName}' in its input schema.");
+
+        return !SchemaAllowsArray(parameterNode);
+    }
+
+    private static bool SchemaAllowsArray(JsonElement parameterNode)
+    {
+        if (parameterNode.ValueKind != JsonValueKind.Object)
+            return false;
+
+        if (parameterNode.TryGetProperty("type", out var typeNode))
         {
-            throw new InvalidOperationException(
-                $"Tool '{toolName}' input '{paramName}' has invalid planner metadata. JSON schema 'type' must be a string.");
+            if (typeNode.ValueKind == JsonValueKind.String)
+                return string.Equals(typeNode.GetString(), "array", StringComparison.OrdinalIgnoreCase);
+
+            if (typeNode.ValueKind == JsonValueKind.Array)
+            {
+                foreach (var typeValue in typeNode.EnumerateArray())
+                {
+                    if (typeValue.ValueKind == JsonValueKind.String &&
+                        string.Equals(typeValue.GetString(), "array", StringComparison.OrdinalIgnoreCase))
+                    {
+                        return true;
+                    }
+                }
+            }
         }
 
-        return !string.Equals(typeName, "array", StringComparison.OrdinalIgnoreCase);
+        if (parameterNode.TryGetProperty("anyOf", out var anyOfNode) && anyOfNode.ValueKind == JsonValueKind.Array)
+            return anyOfNode.EnumerateArray().Any(SchemaAllowsArray);
+
+        if (parameterNode.TryGetProperty("oneOf", out var oneOfNode) && oneOfNode.ValueKind == JsonValueKind.Array)
+            return oneOfNode.EnumerateArray().Any(SchemaAllowsArray);
+
+        return false;
     }
 
     private static JsonElement SubstituteScalars(
@@ -534,6 +569,140 @@ public sealed class PlanExecutor(
     private static JsonElement SerializeObject(IReadOnlyDictionary<string, JsonElement?> node) =>
         JsonSerializer.SerializeToElement(node);
 
+    private static Dictionary<string, object?> ConvertInputToArguments(JsonElement input)
+    {
+        if (input.ValueKind != JsonValueKind.Object)
+            throw new InvalidOperationException("Tool input must resolve to a JSON object.");
+
+        var result = new Dictionary<string, object?>(StringComparer.Ordinal);
+        foreach (var property in input.EnumerateObject())
+            result[property.Name] = ConvertElementToArgumentValue(property.Value);
+
+        return result;
+    }
+
+    private static object? ConvertElementToArgumentValue(JsonElement element) =>
+        element.ValueKind switch
+        {
+            JsonValueKind.Object => element.EnumerateObject()
+                .ToDictionary(
+                    property => property.Name,
+                    property => ConvertElementToArgumentValue(property.Value),
+                    StringComparer.Ordinal),
+            JsonValueKind.Array => element.EnumerateArray()
+                .Select(ConvertElementToArgumentValue)
+                .ToList(),
+            JsonValueKind.String => element.GetString(),
+            JsonValueKind.Number when element.TryGetInt64(out var int64Value) => int64Value,
+            JsonValueKind.Number when element.TryGetDecimal(out var decimalValue) => decimalValue,
+            JsonValueKind.Number when element.TryGetDouble(out var doubleValue) => doubleValue,
+            JsonValueKind.True => true,
+            JsonValueKind.False => false,
+            JsonValueKind.Null => null,
+            JsonValueKind.Undefined => null,
+            _ => JsonSerializer.Deserialize<object?>(element.GetRawText())
+        };
+
+    private static ResultEnvelope<JsonElement?> NormalizeToolResult(AppToolDescriptor tool, object? result)
+    {
+        if (result is null)
+            return ResultEnvelope<JsonElement?>.Success(null);
+
+        return result switch
+        {
+            CallToolResult callToolResult => NormalizeCallToolResult(tool, callToolResult),
+            JsonElement element => ResultEnvelope<JsonElement?>.Success(element.Clone()),
+            _ => ResultEnvelope<JsonElement?>.Success(JsonSerializer.SerializeToElement(result))
+        };
+    }
+
+    private static ResultEnvelope<JsonElement?> NormalizeCallToolResult(AppToolDescriptor tool, CallToolResult result)
+    {
+        if (result.IsError == true)
+        {
+            var message = ExtractCallToolText(result);
+            var details = ExtractCallToolDetails(result);
+            return ResultEnvelope<JsonElement?>.Failure(
+                "tool_error",
+                string.IsNullOrWhiteSpace(message)
+                    ? $"Tool '{tool.QualifiedName}' returned an MCP error."
+                    : message,
+                details);
+        }
+
+        if (TryGetStructuredContent(result, out var structuredContent))
+            return ResultEnvelope<JsonElement?>.Success(structuredContent);
+
+        var text = ExtractCallToolText(result);
+        if (!string.IsNullOrWhiteSpace(text))
+        {
+            return TryParseJsonElement(text, out var jsonElement)
+                ? ResultEnvelope<JsonElement?>.Success(jsonElement)
+                : ResultEnvelope<JsonElement?>.Success(JsonSerializer.SerializeToElement(text));
+        }
+
+        if (result.Content?.Count > 0)
+            return ResultEnvelope<JsonElement?>.Success(JsonSerializer.SerializeToElement(result.Content));
+
+        return ResultEnvelope<JsonElement?>.Success(null);
+    }
+
+    private static bool TryGetStructuredContent(CallToolResult result, out JsonElement structuredContent)
+    {
+        structuredContent = default;
+
+        if (result.StructuredContent is JsonNode node)
+        {
+            var element = JsonSerializer.SerializeToElement(node);
+            if (element.ValueKind is not JsonValueKind.Undefined and not JsonValueKind.Null)
+            {
+                structuredContent = element;
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private static JsonElement? ExtractCallToolDetails(CallToolResult result)
+    {
+        if (TryGetStructuredContent(result, out var structuredContent))
+            return structuredContent;
+
+        if (result.Content?.Count > 0)
+            return JsonSerializer.SerializeToElement(result.Content);
+
+        return null;
+    }
+
+    private static string ExtractCallToolText(CallToolResult result)
+    {
+        if (result.Content is null || result.Content.Count == 0)
+            return string.Empty;
+
+        return string.Join(
+            "\n",
+            result.Content
+                .OfType<TextContentBlock>()
+                .Select(block => block.Text?.Trim())
+                .Where(static text => !string.IsNullOrWhiteSpace(text)));
+    }
+
+    private static bool TryParseJsonElement(string text, out JsonElement element)
+    {
+        try
+        {
+            using var document = JsonDocument.Parse(text);
+            element = document.RootElement.Clone();
+            return true;
+        }
+        catch (JsonException)
+        {
+            element = default;
+            return false;
+        }
+    }
+
     private static JsonElement? ConvertNodeToElement(JsonNode? node) =>
         node is null ? null : JsonSerializer.SerializeToElement(node);
 
@@ -554,4 +723,3 @@ public sealed class PlanExecutor(
             : $"{normalized[..maxLength]}...";
     }
 }
-

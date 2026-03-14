@@ -1,4 +1,4 @@
-﻿using System.Text;
+using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Text.Json.Serialization;
@@ -7,12 +7,13 @@ using Microsoft.Extensions.AI;
 using ChatClient.Api.PlanningRuntime.Common;
 using ChatClient.Api.PlanningRuntime.Execution;
 using ChatClient.Api.PlanningRuntime.Tools;
+using ChatClient.Api.Services;
 
 namespace ChatClient.Api.PlanningRuntime.Planning;
 
 public sealed class LlmReplanner(
     IChatClient chatClient,
-    IToolRegistry toolRegistry,
+    PlanningToolCatalog toolCatalog,
     IExecutionLogger? executionLogger = null,
     IPlanRunObserver? planRunObserver = null) : IReplanner
 {
@@ -28,7 +29,7 @@ public sealed class LlmReplanner(
 
     public async Task<PlanDefinition> ReplanAsync(PlannerReplanRequest request, CancellationToken cancellationToken = default)
     {
-        var workflowTools = toolRegistry.ListPlannerMetadata();
+        var workflowTools = toolCatalog.ListTools();
         var session = new PlanEditingSession(request.Plan);
         var systemPrompt = BuildSystemPrompt(workflowTools);
         var agent = new ChatClientAgent(chatClient, systemPrompt, "replanner", null, null, null, null);
@@ -136,7 +137,7 @@ public sealed class LlmReplanner(
         }
     }
 
-    private static string BuildSystemPrompt(IReadOnlyCollection<ToolPlannerMetadata> workflowTools)
+    private static string BuildSystemPrompt(IReadOnlyCollection<AppToolDescriptor> workflowTools)
     {
         var sb = new StringBuilder();
         sb.AppendLine("You are a replanning agent.");
@@ -186,11 +187,12 @@ public sealed class LlmReplanner(
         sb.AppendLine("Plan step rules:");
         sb.AppendLine("- A step must have exactly one of 'tool' or 'llm'.");
         sb.AppendLine("- LLM steps must have systemPrompt and userPrompt.");
-        sb.AppendLine("- Use only the workflow tools listed below.");
+        sb.AppendLine("- Tool steps must use the exact workflow tool name listed below, including any server prefix.");
         sb.AppendLine("- Keep references explicit using $stepId, $stepId.field, $stepId[], $stepId[].field, $stepId[n], or $stepId[n].field.");
         sb.AppendLine("- If a tool takes a scalar input and receives an array ref, the executor fans out automatically.");
-        sb.AppendLine("- When chaining search results into download-style tools, prefer passing the whole search result object with input key 'page' so download preserves metadata and adds content.");
-        sb.AppendLine("- If a downstream step truly only needs URLs, prefer $stepId[].url.");
+        sb.AppendLine("- If a tool returns an object containing an array field, reference that field directly (for example, $search.results).");
+        sb.AppendLine("- When chaining search-style results into download-style tools, prefer passing the whole array field into input key 'page' so download preserves metadata and adds content.");
+        sb.AppendLine("- If a downstream tool input is named 'url' and receives an array of objects that each contain 'url', the executor can auto-project those URLs.");
         sb.AppendLine("- Download-style tools may return the original page object enriched with 'content'.");
         sb.AppendLine("- For download-style tools, pass exactly one of 'page' or 'url'. Do not send both.");
         sb.AppendLine("- For extraction tasks, prefer a per-item LLM step with each=true.");
@@ -198,10 +200,10 @@ public sealed class LlmReplanner(
         sb.AppendLine("Available workflow tools:");
         foreach (var tool in workflowTools)
         {
-            sb.AppendLine($"- name: {tool.Name}");
+            sb.AppendLine($"- name: {tool.QualifiedName}");
             sb.AppendLine($"  description: {tool.Description}");
-            sb.AppendLine($"  inputSchema: {tool.InputSchema.ToJsonString()}");
-            sb.AppendLine($"  outputSchema: {tool.OutputSchema.ToJsonString()}");
+            sb.AppendLine($"  inputSchema: {PlanningJson.SerializeElementCompact(tool.InputSchema)}");
+            sb.AppendLine($"  outputSchema: {PlanningJson.SerializeElementCompact(tool.OutputSchema)}");
         }
 
         return sb.ToString();
@@ -405,4 +407,3 @@ public sealed class LlmReplanner(
         public JsonObject Input { get; init; } = [];
     }
 }
-

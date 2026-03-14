@@ -6,6 +6,8 @@ using ChatClient.Api.PlanningRuntime.Execution;
 using ChatClient.Api.PlanningRuntime.Host;
 using ChatClient.Api.PlanningRuntime.Planning;
 using ChatClient.Api.PlanningRuntime.Tools;
+using ChatClient.Api.Services;
+using ChatClient.Api.Services.BuiltIn;
 using ChatClient.Domain.Models;
 using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
@@ -14,6 +16,9 @@ namespace ChatClient.Tests;
 
 public class PlanningRuntimeContractsTests
 {
+    private const string SearchToolName = "mock-web:search";
+    private const string DownloadToolName = "mock-web:download";
+
     [Fact]
     public void PlanValidator_RejectsPromptRefsInsideAgentPrompts()
     {
@@ -25,7 +30,7 @@ public class PlanningRuntimeContractsTests
                 new PlanStep
                 {
                     Id = "searchPages",
-                    Tool = "search",
+                    Tool = SearchToolName,
                     In = new Dictionary<string, JsonNode?>
                     {
                         ["query"] = JsonValue.Create("best robot vacuum")
@@ -35,11 +40,11 @@ public class PlanningRuntimeContractsTests
                 {
                     Id = "answer",
                     Llm = "synthesizer",
-                    SystemPrompt = "Use $searchPages[] to answer the user.",
+                    SystemPrompt = "Use $searchPages.results to answer the user.",
                     UserPrompt = "Write the final answer.",
                     In = new Dictionary<string, JsonNode?>
                     {
-                        ["pages"] = JsonValue.Create("$searchPages[]")
+                        ["pages"] = JsonValue.Create("$searchPages.results")
                     }
                 }
             ]
@@ -143,13 +148,13 @@ public class PlanningRuntimeContractsTests
                 }
             ]
         };
-        service.State.FinalResult = ChatClient.Api.PlanningRuntime.Common.ResultEnvelope<JsonElement?>.Success(JsonSerializer.SerializeToElement(new { ok = true }));
+        service.State.FinalResult = ResultEnvelope<JsonElement?>.Success(JsonSerializer.SerializeToElement(new { ok = true }));
         service.State.Events.Add(new DiagnosticPlanRunEvent("test", "event"));
         service.State.LogLines.Add("log");
         service.State.AvailableTools.Add(new PlanningToolOption
         {
-            Name = "search",
-            DisplayName = "Web Search",
+            Name = SearchToolName,
+            DisplayName = "Mock Web: Search",
             Description = "Search the web"
         });
 
@@ -167,36 +172,17 @@ public class PlanningRuntimeContractsTests
     }
 
     [Fact]
-    public void WebSearchTool_PlannerMetadata_WarnsThatResultsNeedRelevanceCheck()
-    {
-        var httpClientFactory = new Mock<IHttpClientFactory>();
-        var tool = new WebSearchTool(httpClientFactory.Object, NullLogger<WebSearchTool>.Instance);
-
-        Assert.Contains("raw structured search results", tool.PlannerMetadata.Description, StringComparison.Ordinal);
-        Assert.Contains("checked for relevance", tool.PlannerMetadata.Description, StringComparison.Ordinal);
-    }
-
-    [Fact]
     public void PlanningJson_SerializesCyrillicWithoutUnicodeEscaping()
     {
-        var json = PlanningJson.SerializeIndented(new { text = "Русский текст" });
+        const string text = "\u0420\u0443\u0441\u0441\u043a\u0438\u0439 \u0442\u0435\u043a\u0441\u0442";
+        var json = PlanningJson.SerializeIndented(new { text });
 
-        Assert.Contains("Русский текст", json, StringComparison.Ordinal);
+        Assert.Contains(text, json, StringComparison.Ordinal);
         Assert.DoesNotContain("\\u0420", json, StringComparison.Ordinal);
     }
 
     [Fact]
-    public void WebDownloadTool_PlannerMetadata_DescribesPagePreservingContentContract()
-    {
-        var httpClientFactory = new Mock<IHttpClientFactory>();
-        var tool = new WebDownloadTool(httpClientFactory.Object, NullLogger<WebDownloadTool>.Instance);
-
-        Assert.Contains("full search-result object", tool.PlannerMetadata.Description, StringComparison.Ordinal);
-        Assert.Contains("'content'", tool.PlannerMetadata.Description, StringComparison.Ordinal);
-    }
-
-    [Fact]
-    public async Task WebSearchTool_ExtractsStructuredResultsFromSearchMarkup()
+    public async Task BuiltInWebSearchLogic_ExtractsStructuredResultsFromSearchMarkup()
     {
         const string html = """
             <html>
@@ -225,14 +211,13 @@ public class PlanningRuntimeContractsTests
             .Setup(factory => factory.CreateClient(It.IsAny<string>()))
             .Returns(new HttpClient(new StubHttpMessageHandler(html)));
 
-        var tool = new WebSearchTool(httpClientFactory.Object, NullLogger<WebSearchTool>.Instance);
-        var result = await tool.ExecuteAsync(JsonSerializer.SerializeToElement(new { query = "item a" }));
+        var result = await BuiltInWebToolLogic.SearchAsync(
+            httpClientFactory.Object,
+            NullLogger.Instance,
+            new WebSearchInput("item a"));
 
-        Assert.True(result.Ok);
-        Assert.NotNull(result.Data);
-
-        var items = JsonSerializer.Deserialize<List<WebSearchResult>>(result.Data.Value.GetRawText());
-        var item = Assert.Single(items!);
+        Assert.Equal("item a", result.Query);
+        var item = Assert.Single(result.Results);
         Assert.Equal("https://example.com/item-a", item.Url);
         Assert.Equal("Item A title", item.Title);
         Assert.Equal("Item A summary.", item.Snippet);
@@ -244,7 +229,7 @@ public class PlanningRuntimeContractsTests
     }
 
     [Fact]
-    public async Task WebSearchTool_Fails_WhenStructuredMarkupIsMissing()
+    public async Task BuiltInWebSearchLogic_Fails_WhenStructuredMarkupIsMissing()
     {
         const string html = """
             <html>
@@ -260,15 +245,16 @@ public class PlanningRuntimeContractsTests
             .Setup(factory => factory.CreateClient(It.IsAny<string>()))
             .Returns(new HttpClient(new StubHttpMessageHandler(html)));
 
-        var tool = new WebSearchTool(httpClientFactory.Object, NullLogger<WebSearchTool>.Instance);
-        var result = await tool.ExecuteAsync(JsonSerializer.SerializeToElement(new { query = "item" }));
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(() => BuiltInWebToolLogic.SearchAsync(
+            httpClientFactory.Object,
+            NullLogger.Instance,
+            new WebSearchInput("item")));
 
-        Assert.False(result.Ok);
-        Assert.Equal("search_failed", result.Error?.Code);
+        Assert.Equal("Search returned no structured candidate results.", exception.Message);
     }
 
     [Fact]
-    public async Task WebDownloadTool_PreservesPageObjectAndAddsContent()
+    public async Task BuiltInWebDownloadLogic_PreservesPageObjectAndAddsContent()
     {
         const string html = """
             <html>
@@ -284,35 +270,33 @@ public class PlanningRuntimeContractsTests
             .Setup(factory => factory.CreateClient(It.IsAny<string>()))
             .Returns(new HttpClient(new StubHttpMessageHandler(html)));
 
-        var tool = new WebDownloadTool(httpClientFactory.Object, NullLogger<WebDownloadTool>.Instance);
-        var result = await tool.ExecuteAsync(JsonSerializer.SerializeToElement(new
-        {
-            page = new
-            {
-                url = "https://example.com/item-a",
-                title = "Search title",
-                snippet = "Search snippet",
-                siteName = "Example"
-            }
-        }));
+        var result = await BuiltInWebToolLogic.DownloadAsync(
+            httpClientFactory.Object,
+            NullLogger.Instance,
+            new WebDownloadInput(new WebSearchResult(
+                Url: "https://example.com/item-a",
+                Title: "Search title",
+                Snippet: "Search snippet",
+                SiteName: "Example",
+                DisplayUrl: null,
+                Age: null,
+                ThumbnailUrl: null,
+                Position: null)));
 
-        Assert.True(result.Ok);
-        Assert.NotNull(result.Data);
-
-        var payload = JsonSerializer.Deserialize<JsonElement>(result.Data.Value.GetRawText());
-        Assert.Equal("https://example.com/item-a", payload.GetProperty("url").GetString());
-        Assert.Equal("Search title", payload.GetProperty("title").GetString());
-        Assert.Equal("Search snippet", payload.GetProperty("snippet").GetString());
-        Assert.Equal("Example", payload.GetProperty("siteName").GetString());
-        Assert.Equal("Downloaded page title Example body text.", payload.GetProperty("content").GetString());
+        Assert.Equal("https://example.com/item-a", result.Url);
+        Assert.Equal("Search title", result.Title);
+        Assert.Equal("Search snippet", result.Snippet);
+        Assert.Equal("Example", result.SiteName);
+        Assert.Equal("Downloaded page title Example body text.", result.Content);
     }
 
     [Fact]
     public async Task PlanExecutor_AutoProjectsUrlFieldWhenToolInputExpectsScalar()
     {
-        var searchTool = new StaticSearchResultsTool();
-        var downloadTool = new RecordingDownloadTool();
-        var executor = new PlanExecutor(new ToolRegistry([searchTool, downloadTool]), new ThrowingAgentStepRunner());
+        var downloadTool = CreateDownloadByUrlDescriptor();
+        var executor = new PlanExecutor(
+            new PlanningToolCatalog([CreateStaticSearchDescriptor(), downloadTool.Descriptor]),
+            new ThrowingAgentStepRunner());
         var plan = new PlanDefinition
         {
             Goal = "Download search results.",
@@ -321,7 +305,7 @@ public class PlanningRuntimeContractsTests
                 new PlanStep
                 {
                     Id = "searchPages",
-                    Tool = "search",
+                    Tool = SearchToolName,
                     In = new Dictionary<string, JsonNode?>
                     {
                         ["query"] = JsonValue.Create("example")
@@ -330,10 +314,10 @@ public class PlanningRuntimeContractsTests
                 new PlanStep
                 {
                     Id = "downloadPages",
-                    Tool = "download",
+                    Tool = DownloadToolName,
                     In = new Dictionary<string, JsonNode?>
                     {
-                        ["url"] = JsonValue.Create("$searchPages[]")
+                        ["url"] = JsonValue.Create("$searchPages.results")
                     }
                 }
             ]
@@ -350,9 +334,10 @@ public class PlanningRuntimeContractsTests
     [Fact]
     public async Task PlanExecutor_FansOutWholeSearchObjects_WhenToolInputUsesPage()
     {
-        var searchTool = new StaticSearchResultsTool();
-        var downloadTool = new PageRecordingDownloadTool();
-        var executor = new PlanExecutor(new ToolRegistry([searchTool, downloadTool]), new ThrowingAgentStepRunner());
+        var downloadTool = CreateDownloadByPageDescriptor();
+        var executor = new PlanExecutor(
+            new PlanningToolCatalog([CreateStaticSearchDescriptor(), downloadTool.Descriptor]),
+            new ThrowingAgentStepRunner());
         var plan = new PlanDefinition
         {
             Goal = "Download full search result objects.",
@@ -361,7 +346,7 @@ public class PlanningRuntimeContractsTests
                 new PlanStep
                 {
                     Id = "searchPages",
-                    Tool = "search",
+                    Tool = SearchToolName,
                     In = new Dictionary<string, JsonNode?>
                     {
                         ["query"] = JsonValue.Create("example")
@@ -370,10 +355,10 @@ public class PlanningRuntimeContractsTests
                 new PlanStep
                 {
                     Id = "downloadPages",
-                    Tool = "download",
+                    Tool = DownloadToolName,
                     In = new Dictionary<string, JsonNode?>
                     {
-                        ["page"] = JsonValue.Create("$searchPages[]")
+                        ["page"] = JsonValue.Create("$searchPages.results")
                     }
                 }
             ]
@@ -388,16 +373,187 @@ public class PlanningRuntimeContractsTests
     private static PlanningSessionService CreateSessionService()
     {
         var chatClientFactory = new Mock<IPlanningChatClientFactory>();
-        var httpClientFactory = new Mock<IHttpClientFactory>();
-        var searchTool = new WebSearchTool(httpClientFactory.Object, NullLogger<WebSearchTool>.Instance);
-        var downloadTool = new WebDownloadTool(httpClientFactory.Object, NullLogger<WebDownloadTool>.Instance);
+        var appToolCatalog = new Mock<IAppToolCatalog>();
+        var mcpUserInteractionService = new Mock<IMcpUserInteractionService>();
+        appToolCatalog
+            .Setup(catalog => catalog.ListToolsAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Array.Empty<AppToolDescriptor>());
 
         return new PlanningSessionService(
             chatClientFactory.Object,
-            searchTool,
-            downloadTool,
+            appToolCatalog.Object,
+            mcpUserInteractionService.Object,
             NullLogger<PlanningSessionService>.Instance);
     }
+
+    private static AppToolDescriptor CreateStaticSearchDescriptor() =>
+        CreateDescriptor(
+            serverName: "mock-web",
+            toolName: "search",
+            description: "Structured search results.",
+            inputSchemaJson: """
+                {
+                  "type": "object",
+                  "properties": {
+                    "query": { "type": "string" }
+                  },
+                  "required": ["query"]
+                }
+                """,
+            outputSchemaJson: """
+                {
+                  "type": "object",
+                  "properties": {
+                    "query": { "type": "string" },
+                    "results": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "url": { "type": "string" },
+                          "title": { "type": "string" }
+                        },
+                        "required": ["url", "title"]
+                      }
+                    }
+                  },
+                  "required": ["query", "results"]
+                }
+                """,
+            execute: _ => new
+            {
+                query = "example",
+                results = new[]
+                {
+                    new { url = "https://example.com/item-a", title = "Item A" },
+                    new { url = "https://example.com/item-b", title = "Item B" }
+                }
+            });
+
+    private static RecordingDownloadDescriptor CreateDownloadByUrlDescriptor()
+    {
+        var receivedUrls = new List<string>();
+        var descriptor = CreateDescriptor(
+            serverName: "mock-web",
+            toolName: "download",
+            description: "Download by URL.",
+            inputSchemaJson: """
+                {
+                  "type": "object",
+                  "properties": {
+                    "url": { "type": "string" }
+                  },
+                  "required": ["url"]
+                }
+                """,
+            outputSchemaJson: """
+                {
+                  "type": "object",
+                  "properties": {
+                    "url": { "type": "string" }
+                  },
+                  "required": ["url"]
+                }
+                """,
+            execute: arguments =>
+            {
+                var url = GetRequiredString(arguments, "url");
+                receivedUrls.Add(url);
+                return new { url };
+            });
+
+        return new RecordingDownloadDescriptor(descriptor, receivedUrls);
+    }
+
+    private static PageRecordingDownloadDescriptor CreateDownloadByPageDescriptor()
+    {
+        var receivedTitles = new List<string>();
+        var descriptor = CreateDescriptor(
+            serverName: "mock-web",
+            toolName: "download",
+            description: "Download by page object.",
+            inputSchemaJson: """
+                {
+                  "type": "object",
+                  "properties": {
+                    "page": { "type": "object" }
+                  }
+                }
+                """,
+            outputSchemaJson: """
+                {
+                  "type": "object",
+                  "properties": {
+                    "url": { "type": "string" },
+                    "title": { "type": "string" },
+                    "content": { "type": "string" }
+                  },
+                  "required": ["url", "title", "content"]
+                }
+                """,
+            execute: arguments =>
+            {
+                var page = GetRequiredObject(arguments, "page");
+                var title = GetRequiredString(page, "title");
+                receivedTitles.Add(title);
+                return new
+                {
+                    url = GetRequiredString(page, "url"),
+                    title,
+                    content = "content"
+                };
+            });
+
+        return new PageRecordingDownloadDescriptor(descriptor, receivedTitles);
+    }
+
+    private static AppToolDescriptor CreateDescriptor(
+        string serverName,
+        string toolName,
+        string description,
+        string inputSchemaJson,
+        string outputSchemaJson,
+        Func<Dictionary<string, object?>, object> execute) =>
+        new(
+            QualifiedName: $"{serverName}:{toolName}",
+            ServerName: serverName,
+            ToolName: toolName,
+            DisplayName: toolName,
+            Description: description,
+            InputSchema: ParseJsonElement(inputSchemaJson),
+            OutputSchema: ParseJsonElement(outputSchemaJson),
+            MayRequireUserInput: false,
+            ReadOnlyHint: true,
+            DestructiveHint: false,
+            IdempotentHint: true,
+            OpenWorldHint: false,
+            ExecuteAsync: (arguments, _) => Task.FromResult(execute(arguments)));
+
+    private static JsonElement ParseJsonElement(string json)
+    {
+        using var document = JsonDocument.Parse(json);
+        return document.RootElement.Clone();
+    }
+
+    private static string GetRequiredString(Dictionary<string, object?> arguments, string key)
+    {
+        if (!arguments.TryGetValue(key, out var value) || value is not string text || string.IsNullOrWhiteSpace(text))
+            throw new InvalidOperationException($"Expected argument '{key}' to be a non-empty string.");
+
+        return text;
+    }
+
+    private static Dictionary<string, object?> GetRequiredObject(Dictionary<string, object?> arguments, string key)
+    {
+        if (!arguments.TryGetValue(key, out var value) || value is not Dictionary<string, object?> result)
+            throw new InvalidOperationException($"Expected argument '{key}' to be an object.");
+
+        return result;
+    }
+
+    private sealed record RecordingDownloadDescriptor(AppToolDescriptor Descriptor, List<string> ReceivedUrls);
+
+    private sealed record PageRecordingDownloadDescriptor(AppToolDescriptor Descriptor, List<string> ReceivedTitles);
 
     private sealed class StubHttpMessageHandler(string html) : HttpMessageHandler
     {
@@ -406,75 +562,6 @@ public class PlanningRuntimeContractsTests
             {
                 Content = new StringContent(html)
             });
-    }
-
-    private sealed class StaticSearchResultsTool : ITool
-    {
-        public string Name => "search";
-
-        public ToolPlannerMetadata PlannerMetadata => new(
-            "search",
-            "Structured search results.",
-            JsonNode.Parse(@"{""type"":""object"",""properties"":{""query"":{""type"":""string""}},""required"":[""query""]}")!.AsObject(),
-            JsonNode.Parse(@"{""type"":""array"",""items"":{""type"":""object"",""properties"":{""url"":{""type"":""string""},""title"":{""type"":""string""}},""required"":[""url"",""title""]}}")!.AsObject(),
-            [],
-            []);
-
-        public Task<ResultEnvelope<JsonElement?>> ExecuteAsync(JsonElement input, CancellationToken cancellationToken = default) =>
-            Task.FromResult(ResultEnvelope<JsonElement?>.Success(JsonSerializer.SerializeToElement(new[]
-            {
-                new { url = "https://example.com/item-a", title = "Item A" },
-                new { url = "https://example.com/item-b", title = "Item B" }
-            })));
-    }
-
-    private sealed class RecordingDownloadTool : ITool
-    {
-        public List<string> ReceivedUrls { get; } = [];
-
-        public string Name => "download";
-
-        public ToolPlannerMetadata PlannerMetadata => new(
-            "download",
-            "Download by URL.",
-            JsonNode.Parse(@"{""type"":""object"",""properties"":{""url"":{""type"":""string""}},""required"":[""url""]}")!.AsObject(),
-            JsonNode.Parse(@"{""type"":""object"",""properties"":{""url"":{""type"":""string""}},""required"":[""url""]}")!.AsObject(),
-            [],
-            []);
-
-        public Task<ResultEnvelope<JsonElement?>> ExecuteAsync(JsonElement input, CancellationToken cancellationToken = default)
-        {
-            var url = input.GetProperty("url").GetString() ?? string.Empty;
-            ReceivedUrls.Add(url);
-            return Task.FromResult(ResultEnvelope<JsonElement?>.Success(JsonSerializer.SerializeToElement(new { url })));
-        }
-    }
-
-    private sealed class PageRecordingDownloadTool : ITool
-    {
-        public List<string> ReceivedTitles { get; } = [];
-
-        public string Name => "download";
-
-        public ToolPlannerMetadata PlannerMetadata => new(
-            "download",
-            "Download by page object.",
-            JsonNode.Parse(@"{""type"":""object"",""properties"":{""page"":{""type"":""object""}}}")!.AsObject(),
-            JsonNode.Parse(@"{""type"":""object"",""properties"":{""url"":{""type"":""string""},""title"":{""type"":""string""},""content"":{""type"":""string""}},""required"":[""url"",""title"",""content""]}")!.AsObject(),
-            [],
-            []);
-
-        public Task<ResultEnvelope<JsonElement?>> ExecuteAsync(JsonElement input, CancellationToken cancellationToken = default)
-        {
-            var page = input.GetProperty("page");
-            ReceivedTitles.Add(page.GetProperty("title").GetString() ?? string.Empty);
-            return Task.FromResult(ResultEnvelope<JsonElement?>.Success(JsonSerializer.SerializeToElement(new
-            {
-                url = page.GetProperty("url").GetString(),
-                title = page.GetProperty("title").GetString(),
-                content = "content"
-            })));
-        }
     }
 
     private sealed class ThrowingAgentStepRunner : IAgentStepRunner

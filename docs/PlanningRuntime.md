@@ -26,6 +26,7 @@ The runtime is integrated into the main ASP.NET Core app rather than living as a
 `PlanningSessionService` is responsible for:
 
 - validating the start request,
+- resolving the selected MCP-backed tools from the shared app tool catalog,
 - building the runtime graph for the selected model and enabled tools,
 - running the orchestration loop in the background,
 - projecting live state into `PlanningSessionState`,
@@ -50,6 +51,8 @@ The page shows:
 - at least one enabled planning tool.
 
 When a run starts, the service resets previous state, stores the request, exposes the available tools in UI state, and launches execution with a fresh cancellation token.
+
+The available tool list is loaded dynamically from the same MCP-derived catalog that the regular chat runtime uses. The user explicitly selects which MCP tools the planner may call for a given run.
 
 ### Orchestration
 
@@ -135,33 +138,42 @@ This keeps plans explicit while letting the executor map over downloaded pages o
 - step ids must be unique,
 - each step must have exactly one of `tool` or `llm`,
 - every step must declare `in`,
-- tool steps may only pass inputs declared in tool planner metadata,
+- tool steps may only pass inputs declared in the MCP tool input schema,
 - LLM steps must provide `systemPrompt` and `userPrompt`,
 - prompts may not contain embedded step refs like `$searchPages[]`,
 - prompts may not use template placeholders like `{{var}}`.
 
-## Built-In Planning Tools
+## MCP Tool Integration
 
-The current UI exposes two built-in tools:
+The planner no longer uses a separate `ITool` abstraction. It consumes the shared `AppToolDescriptor` catalog, which is built from connected MCP servers and built-in MCP servers.
+
+That means:
+
+- regular chat and planning use the same discovered tool list,
+- planner prompts reuse MCP `inputSchema`, `description`, and `outputSchema`,
+- planner execution invokes the same MCP-backed tool delegates as regular chat,
+- MCP elicitation dialogs are supported inside the planning UI through the dedicated `Planning` interaction scope.
+
+## Built-In Web MCP Tools
+
+The app now exposes web search/download as a built-in MCP server, and those tools automatically appear in both the regular chat tool catalog and the planning UI.
 
 ### `search`
 
-- Implementation: `WebSearchTool`
+- Implementation: built-in MCP server `BuiltInWebMcpServerTools` backed by `BuiltInWebToolLogic`
 - Purpose: search the web and return structured candidate page objects
 - Input: `query`, optional `limit`
 - Default/max limit: `4` / `6`
-- Current implementation: fetches Brave Search HTML, parses structured Brave result cards, filters Brave-owned hosts, and returns `url`, `title`, `snippet`, and related metadata
-- Supported consume mode in planner metadata: `auto`
+- Current implementation: fetches Brave Search HTML, parses structured Brave result cards, filters Brave-owned hosts, and returns an object with `query` and `results`
 
 ### `download`
 
-- Implementation: `WebDownloadTool`
+- Implementation: built-in MCP server `BuiltInWebMcpServerTools` backed by `BuiltInWebToolLogic`
 - Purpose: download one page and return the original page description object enriched with normalized `content`
 - Input: either a full search-result object under `page`, or an absolute HTTP/HTTPS `url`
-- Current implementation: fetches HTML, strips script/style/noscript/svg nodes with HtmlAgilityPack, normalizes whitespace, truncates text to `12000` characters, and returns either the original `page` object plus `content` or a minimal `url/title/content` object
-- Supported consume modes in planner metadata: `auto`, `each`
+- Current implementation: fetches HTML, strips script/style/noscript/svg nodes with HtmlAgilityPack, normalizes whitespace, truncates text to `12000` characters, and returns a structured object with `url`, `title`, `content`, and preserved search metadata when available
 
-Both tools return the common `ResultEnvelope<JsonElement?>` contract.
+Both tools publish MCP output schemas and structured content, so the planner can reuse MCP metadata directly instead of maintaining a separate planner-specific schema model.
 
 ## Verification
 

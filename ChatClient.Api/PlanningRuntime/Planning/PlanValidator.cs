@@ -1,6 +1,7 @@
-﻿using System.Text.Json.Nodes;
+using System.Text.Json;
+using System.Text.Json.Nodes;
 using System.Text.RegularExpressions;
-using ChatClient.Api.PlanningRuntime.Tools;
+using ChatClient.Api.Services;
 
 namespace ChatClient.Api.PlanningRuntime.Planning;
 
@@ -8,7 +9,7 @@ public static partial class PlanValidator
 {
     public static void ValidateOrThrow(
         PlanDefinition plan,
-        IReadOnlyCollection<ToolPlannerMetadata>? tools = null)
+        IReadOnlyCollection<AppToolDescriptor>? tools = null)
     {
         if (string.IsNullOrWhiteSpace(plan.Goal))
             throw new InvalidOperationException("Plan.goal is required.");
@@ -18,7 +19,7 @@ public static partial class PlanValidator
 
         var seenIds = new HashSet<string>(StringComparer.Ordinal);
         var knownTools = tools?
-            .ToDictionary(tool => tool.Name, StringComparer.OrdinalIgnoreCase);
+            .ToDictionary(tool => tool.QualifiedName, StringComparer.OrdinalIgnoreCase);
 
         foreach (var step in plan.Steps)
         {
@@ -71,20 +72,26 @@ public static partial class PlanValidator
         }
     }
 
-    private static void ValidateToolInputs(PlanStep step, ToolPlannerMetadata toolMetadata)
+    private static void ValidateToolInputs(PlanStep step, AppToolDescriptor toolMetadata)
     {
-        if (!toolMetadata.InputSchema.TryGetPropertyValue("properties", out var propertiesNode) || propertiesNode is not JsonObject properties)
+        if (toolMetadata.InputSchema.ValueKind != JsonValueKind.Object ||
+            !toolMetadata.InputSchema.TryGetProperty("properties", out var propertiesNode) ||
+            propertiesNode.ValueKind != JsonValueKind.Object)
         {
             throw new InvalidOperationException(
-                $"Tool '{toolMetadata.Name}' has invalid planner metadata. Input schema must define an object 'properties' map.");
+                $"Tool '{toolMetadata.QualifiedName}' has invalid input schema. It must define an object 'properties' map.");
         }
+
+        var properties = propertiesNode.EnumerateObject()
+            .Select(property => property.Name)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
 
         foreach (var inputName in step.In.Keys)
         {
-            if (!properties.ContainsKey(inputName))
+            if (!properties.Contains(inputName))
             {
                 throw new InvalidOperationException(
-                    $"Tool step '{step.Id}' passes unknown input '{inputName}' to tool '{toolMetadata.Name}'.");
+                    $"Tool step '{step.Id}' passes unknown input '{inputName}' to tool '{toolMetadata.QualifiedName}'.");
             }
         }
     }
@@ -159,4 +166,3 @@ public static partial class PlanValidator
         || DoubleAnglePlaceholderPattern().IsMatch(prompt)
         || DollarBracePlaceholderPattern().IsMatch(prompt);
 }
-

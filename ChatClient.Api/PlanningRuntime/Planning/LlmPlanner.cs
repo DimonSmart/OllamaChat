@@ -5,6 +5,7 @@ using Microsoft.Extensions.AI;
 using ChatClient.Api.PlanningRuntime.Common;
 using ChatClient.Api.PlanningRuntime.Execution;
 using ChatClient.Api.PlanningRuntime.Tools;
+using ChatClient.Api.Services;
 
 namespace ChatClient.Api.PlanningRuntime.Planning;
 
@@ -15,7 +16,7 @@ namespace ChatClient.Api.PlanningRuntime.Planning;
 /// </summary>
 public sealed class LlmPlanner(
     IChatClient chatClient,
-    IToolRegistry toolRegistry,
+    PlanningToolCatalog toolCatalog,
     IExecutionLogger? executionLogger = null,
     IPlanRunObserver? planRunObserver = null) : IPlanner
 {
@@ -29,7 +30,7 @@ public sealed class LlmPlanner(
 
     public async Task<PlanDefinition> CreatePlanAsync(string userQuery, CancellationToken cancellationToken = default)
     {
-        _log.Log($"[plan] create:start toolCount={toolRegistry.ListPlannerMetadata().Count} query={Shorten(userQuery, 240)}");
+        _log.Log($"[plan] create:start toolCount={toolCatalog.ListTools().Count} query={Shorten(userQuery, 240)}");
         _observer.OnEvent(new PlanningAttemptStartedEvent(1, "plan", userQuery));
         return await GeneratePlanCoreAsync(BuildPlanningUserPrompt(userQuery), cancellationToken);
     }
@@ -38,7 +39,7 @@ public sealed class LlmPlanner(
         string userPrompt,
         CancellationToken cancellationToken)
     {
-        var tools = toolRegistry.ListPlannerMetadata();
+        var tools = toolCatalog.ListTools();
         var systemPrompt = BuildSystemPrompt(tools);
         var agent = new ChatClientAgent(chatClient, systemPrompt, "planner", null, null, null, null);
         var planningPrompt = userPrompt;
@@ -78,7 +79,7 @@ public sealed class LlmPlanner(
             lastError);
     }
 
-    private static string BuildSystemPrompt(IReadOnlyCollection<ToolPlannerMetadata> tools)
+    private static string BuildSystemPrompt(IReadOnlyCollection<AppToolDescriptor> tools)
     {
         var sb = new StringBuilder();
         sb.AppendLine("You are a planning agent. Given a user request, produce an execution plan.");
@@ -140,10 +141,12 @@ public sealed class LlmPlanner(
         sb.AppendLine("- Avoid a second search unless the first downloaded pages clearly cannot contain the requested facts.");
         sb.AppendLine("- If the user asks for two items, prefer to search for two candidate pages or a very small over-fetch, not many pages.");
         sb.AppendLine("- If a tool returns array data and the next tool expects a scalar parameter, pass the full array ref and let the executor fan out.");
-        sb.AppendLine("- Search-style tools may return arrays of objects; when chaining them into download-style tools, prefer passing the whole search result object with input key 'page' (for example, page: $stepId[]) so metadata is preserved and download can add content.");
-        sb.AppendLine("- If a downstream step truly only needs URLs, use refs like $stepId[].url.");
+        sb.AppendLine("- If a tool returns an object containing an array field, reference that field directly (for example: $search.results).");
+        sb.AppendLine("- When chaining search-style results into download-style tools, prefer passing the whole array field into input key 'page' so metadata is preserved and download can add content.");
+        sb.AppendLine("- If a downstream tool input is named 'url' and receives an array of objects that each contain 'url', the executor can auto-project those URLs.");
         sb.AppendLine("- Download-style tools may return the original page object enriched with 'content'. Prefer consuming title/content from the download result, and keep search metadata when it adds value.");
         sb.AppendLine("- For download-style tools, pass exactly one of 'page' or 'url'. Do not send both.");
+        sb.AppendLine("- Tool steps must use the exact tool name listed below, including any server prefix.");
         sb.AppendLine("- Do not invent, estimate, or fill in exact factual values when the user request requires precise facts.");
         sb.AppendLine("- If exact values are missing, add retrieval/narrowing steps or let the downstream step fail through the structured execution error contract instead of guessing.");
         sb.AppendLine("- For extraction steps, if the source does not contain the requested entity or the critical facts are absent, rely on the structured execution error contract instead of guessing.");
@@ -151,10 +154,10 @@ public sealed class LlmPlanner(
         sb.AppendLine("Available tools:");
         foreach (var tool in tools)
         {
-            sb.AppendLine($"- name: {tool.Name}");
+            sb.AppendLine($"- name: {tool.QualifiedName}");
             sb.AppendLine($"  description: {tool.Description}");
-            sb.AppendLine($"  inputSchema: {tool.InputSchema.ToJsonString()}");
-            sb.AppendLine($"  outputSchema: {tool.OutputSchema.ToJsonString()}");
+            sb.AppendLine($"  inputSchema: {PlanningJson.SerializeElementCompact(tool.InputSchema)}");
+            sb.AppendLine($"  outputSchema: {PlanningJson.SerializeElementCompact(tool.OutputSchema)}");
         }
 
         sb.AppendLine();
@@ -171,6 +174,7 @@ public sealed class LlmPlanner(
         sb.AppendLine("- $stepId[n].field");
         sb.AppendLine("Use $stepId.field only when the referenced step output is an object.");
         sb.AppendLine("Use $stepId[].field when the referenced step output is an array of objects.");
+        sb.AppendLine("If a tool returns an object containing an array field, pass that field directly (for example: $search.results).");
         sb.AppendLine();
         sb.AppendLine("LLM step rules:");
         sb.AppendLine("- LLM steps MUST provide both systemPrompt and userPrompt.");

@@ -3,6 +3,7 @@ namespace ChatClient.Api.Services.BuiltIn;
 public static class BuiltInMcpServerCatalog
 {
     public static IReadOnlyList<IBuiltInMcpServerDescriptor> Definitions { get; } = [
+        BuiltInWebMcpServerTools.Descriptor,
         BuiltInTimeServerTools.Descriptor,
         BuiltInFormattedTimeServerTools.Descriptor,
         BuiltInMathServerTools.Descriptor,
