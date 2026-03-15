@@ -1,6 +1,9 @@
 ::deep .planning-log-block {
+    width: 100%;
     max-width: 100%;
+    min-width: 0;
     overflow: auto;
+    box-sizing: border-box;
     white-space: pre-wrap;
     overflow-wrap: anywhere;
     word-break: break-word;

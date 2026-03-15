@@ -1,3 +1,59 @@
+::deep .planning-step-block,
+::deep .planning-step-markdown {
+    position: relative;
+    width: 100%;
+    min-width: 0;
+    box-sizing: border-box;
+    overflow: hidden;
+}
+
+::deep .planning-value-actions {
+    display: flex;
+    justify-content: flex-end;
+    margin: -0.35rem -0.35rem 0.15rem 0;
+}
+
+::deep .planning-value-action-button {
+    width: 1.9rem;
+    height: 1.9rem;
+}
+
+::deep .planning-value-preview,
+::deep .planning-value-text {
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    word-break: break-word;
+}
+
+::deep .planning-value-preview {
+    color: inherit;
+}
+
+::deep .planning-value-expand-button,
+::deep .planning-value-collapse-button {
+    border: none;
+    background: transparent;
+    color: #9fd5eb;
+    cursor: pointer;
+    font: inherit;
+    padding: 0;
+}
+
+::deep .planning-value-expand-button {
+    margin-left: 0.3rem;
+    font-weight: 700;
+}
+
+::deep .planning-value-footer {
+    display: flex;
+    justify-content: flex-end;
+    margin-top: 0.4rem;
+}
+
+::deep .planning-value-collapse-button {
+    font-size: 0.82rem;
+}
+
 ::deep .planning-step-markdown {
     white-space: normal;
 }
@@ -20,7 +76,12 @@
     padding: 0.8rem 0.95rem;
     border-radius: 10px;
     background: rgba(10, 14, 28, 0.42);
+    max-width: 100%;
     overflow: auto;
+    box-sizing: border-box;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    word-break: break-word;
 }
 
 ::deep .planning-value-markdown code {

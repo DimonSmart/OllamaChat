@@ -120,6 +120,14 @@ public static class PlanningVirtualNodeProjection
             keys.Add(nodeId);
         }
 
+        if (plan is not null)
+        {
+            foreach (var linkId in PlanningGraphLinkProjection.Build(plan.Steps, finalResult).Select(link => link.Id))
+            {
+                keys.Add(linkId);
+            }
+        }
+
         return keys;
     }
 

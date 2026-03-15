@@ -1,5 +1,8 @@
 .planning-step-details {
+    width: 100%;
     min-width: 0;
+    box-sizing: border-box;
+    overflow: hidden;
 }
 
 .planning-step-details ::deep .mud-paper,
@@ -13,8 +16,13 @@
     word-break: break-word;
 }
 
+.planning-step-details ::deep .mud-stack > * {
+    min-width: 0;
+}
+
 ::deep .planning-step-block,
 ::deep .planning-step-call {
+    width: 100%;
     max-width: 100%;
     min-width: 0;
     overflow: auto;

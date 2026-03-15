@@ -2,10 +2,39 @@
 @using System.Text.RegularExpressions
 @using ChatClient.Api.Client.Markdown
 @using ChatClient.Api.PlanningRuntime.Common
+@using Microsoft.JSInterop
 @using MudBlazor
+@inject IJSRuntime JSRuntime
 
 <MudPaper Class="@ComputedPaperClass" Outlined="@Outlined">
-    @if (DisplayKind == PlanningValueDisplayKind.Markdown)
+    @if (ShowActions)
+    {
+        <div class="planning-value-actions">
+            @if (ShouldShowCopyButton)
+            {
+                <MudTooltip Text="Copy">
+                    <MudIconButton Icon="@Icons.Material.Filled.ContentCopy"
+                                   Size="Size.Small"
+                                   Class="planning-value-action-button"
+                                   OnClick="CopyValueAsync"
+                                   aria-label="Copy value" />
+                </MudTooltip>
+            }
+        </div>
+    }
+
+    @if (IsCollapsed)
+    {
+        <div class="planning-value-preview">
+            <span>@PreviewText</span>
+            <button type="button"
+                    class="planning-value-expand-button"
+                    @onclick="Expand">
+                ...
+            </button>
+        </div>
+    }
+    else if (DisplayKind == PlanningValueDisplayKind.Markdown)
     {
         <div class="planning-value-markdown">
             @((MarkupString)AppMarkdown.ToHtml(DisplayText))
@@ -17,13 +46,31 @@
     }
     else
     {
-        @DisplayText
+        <div class="planning-value-text">@DisplayText</div>
+    }
+
+    @if (CanCollapse)
+    {
+        <div class="planning-value-footer">
+            <button type="button"
+                    class="planning-value-collapse-button"
+                    @onclick="Collapse">
+                Hide
+            </button>
+        </div>
     }
 </MudPaper>
 
 @code {
+    private const int CollapseCharacterThreshold = 380;
+    private const int CollapseLineThreshold = 7;
+    private const int CopyCharacterThreshold = 80;
+    private const int PreviewCharacterCount = 240;
+
     private static readonly Regex OrderedListPattern = new(@"^\d+\.\s", RegexOptions.Compiled);
     private static readonly Regex StrongEmphasisPattern = new(@"\*\*[^*\r\n]+\*\*", RegexOptions.Compiled);
+    private bool _expanded;
+    private string? _contentSignature;
 
     [Parameter] public string? Text { get; set; }
     [Parameter] public JsonElement? Json { get; set; }
@@ -35,10 +82,32 @@
 
     private string DisplayText => ResolveDisplayText();
 
+    private bool IsCollapsed => IsCollapsible && !_expanded;
+
+    private bool CanCollapse => IsCollapsible && _expanded;
+
+    private bool IsCollapsible => ResolveIsCollapsible();
+
+    private bool ShouldShowCopyButton => ResolveShouldShowCopyButton();
+
+    private bool ShowActions => ShouldShowCopyButton;
+
+    private string PreviewText => ResolvePreviewText();
+
     private string ComputedPaperClass =>
         DisplayKind == PlanningValueDisplayKind.Markdown
             ? $"{PaperClass} planning-step-markdown"
             : PaperClass;
+
+    protected override void OnParametersSet()
+    {
+        var signature = $"{DisplayKind}:{DisplayText}";
+        if (!string.Equals(signature, _contentSignature, StringComparison.Ordinal))
+        {
+            _contentSignature = signature;
+            _expanded = false;
+        }
+    }
 
     private PlanningValueDisplayKind ResolveDisplayKind()
     {
@@ -110,6 +179,81 @@
         }
 
         return false;
+    }
+
+    private bool ResolveIsCollapsible()
+    {
+        var text = DisplayText;
+        if (string.IsNullOrWhiteSpace(text))
+        {
+            return false;
+        }
+
+        if (text.Length > CollapseCharacterThreshold)
+        {
+            return true;
+        }
+
+        return CountLines(text) > CollapseLineThreshold;
+    }
+
+    private bool ResolveShouldShowCopyButton()
+    {
+        var text = DisplayText;
+        if (string.IsNullOrWhiteSpace(text))
+        {
+            return false;
+        }
+
+        return text.Length >= CopyCharacterThreshold
+            || text.Contains('\n', StringComparison.Ordinal)
+            || DisplayKind == PlanningValueDisplayKind.Json;
+    }
+
+    private string ResolvePreviewText()
+    {
+        var text = NormalizePreviewText(DisplayText);
+        if (text.Length <= PreviewCharacterCount)
+        {
+            return text;
+        }
+
+        return text[..PreviewCharacterCount].TrimEnd();
+    }
+
+    private static string NormalizePreviewText(string value) =>
+        value.ReplaceLineEndings(" ").Trim();
+
+    private static int CountLines(string value)
+    {
+        if (string.IsNullOrEmpty(value))
+        {
+            return 0;
+        }
+
+        var lines = 1;
+        foreach (var c in value)
+        {
+            if (c == '\n')
+            {
+                lines++;
+            }
+        }
+
+        return lines;
+    }
+
+    private Task CopyValueAsync() =>
+        JSRuntime.InvokeVoidAsync("copyText", DisplayText).AsTask();
+
+    private void Expand()
+    {
+        _expanded = true;
+    }
+
+    private void Collapse()
+    {
+        _expanded = false;
     }
 
     private enum PlanningValueDisplayKind

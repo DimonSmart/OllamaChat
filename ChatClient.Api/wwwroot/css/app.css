@@ -118,3 +118,8 @@ code {
     max-height: 400px;
     overflow: auto;
 }
+
+.planning-graph-shell .diagram-html-layer,
+.planning-graph-shell .diagram-node {
+    pointer-events: auto !important;
+}

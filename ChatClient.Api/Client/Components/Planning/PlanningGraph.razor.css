@@ -19,6 +19,7 @@
     cursor: default !important;
     touch-action: none;
     user-select: none;
+    pointer-events: auto !important;
 }
 
 .planning-graph-shell ::deep .diagram-canvas:active,
@@ -27,11 +28,11 @@
 }
 
 .planning-graph-shell ::deep .diagram-html-layer {
-    pointer-events: auto;
+    pointer-events: auto !important;
 }
 
 .planning-graph-shell ::deep .diagram-node {
-    pointer-events: auto;
+    pointer-events: auto !important;
 }
 
 .planning-graph-shell ::deep .planning-step-node {

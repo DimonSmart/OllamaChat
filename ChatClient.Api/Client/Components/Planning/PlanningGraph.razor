@@ -114,6 +114,7 @@
     protected override void OnInitialized()
     {
         _diagram.RegisterComponent<PlanningStepNodeModel, PlanningStepNodeWidget>();
+        _diagram.RegisterComponent<PlanningGraphLinkModel, PlanningGraphLinkWidget>();
         ReplaceDefaultBehaviors();
 
         _diagram.ContainerChanged += OnDiagramContainerChanged;
@@ -329,26 +330,23 @@
                 _diagram.Nodes.Add(node);
             }
 
-            foreach (var step in visibleSteps)
+            foreach (var linkDescriptor in PlanningGraphLinkProjection.Build(visibleSteps, FinalResult))
             {
-                if (!nodeLookup.TryGetValue(step.Id, out var target))
-                    continue;
-
-                foreach (var dependency in GetDependencies(step))
+                if (!nodeLookup.TryGetValue(linkDescriptor.SourceId, out var source) ||
+                    !nodeLookup.TryGetValue(linkDescriptor.TargetId, out var target))
                 {
-                    if (!nodeLookup.TryGetValue(dependency, out var source))
-                        continue;
-
-                    _diagram.Links.Add(new LinkModel(source, target)
-                    {
-                        Color = LinkColor,
-                        SelectedColor = LinkSelectedColor,
-                        TargetMarker = LinkMarker.Arrow
-                    });
+                    continue;
                 }
-            }
 
-            AddResultLinks(visibleSteps, nodeLookup);
+                var link = new PlanningGraphLinkModel(linkDescriptor, source, target)
+                {
+                    Color = LinkColor,
+                    SelectedColor = LinkSelectedColor,
+                    TargetMarker = LinkMarker.Arrow
+                };
+                link.ClickRequested = HandleLinkWidgetClick;
+                _diagram.Links.Add(link);
+            }
 
             _fitPending = _fitRequestedExplicitly || !_hasInitialFit;
         });
@@ -386,7 +384,7 @@
 
     private void ApplySelection()
     {
-        var selectedId = ResolveSelectedNodeId();
+        var selectedId = ResolveSelectedModelId();
 
         _diagram.UnselectAll();
 
@@ -400,6 +398,16 @@
         if (node is not null)
         {
             _diagram.SelectModel(node, unselectOthers: true);
+            return;
+        }
+
+        var link = _diagram.Links
+            .OfType<PlanningGraphLinkModel>()
+            .FirstOrDefault(candidate => string.Equals(candidate.Id, selectedId, StringComparison.Ordinal));
+
+        if (link is not null)
+        {
+            _diagram.SelectModel(link, unselectOthers: true);
         }
     }
 
@@ -552,7 +560,7 @@
         });
     }
 
-    private string? ResolveSelectedNodeId()
+    private string? ResolveSelectedModelId()
     {
         var validNodeIds = PlanningVirtualNodeProjection.BuildSelectionKeys(Plan, Events, AvailableTools, FinalResult);
         if (validNodeIds.Count == 0)
@@ -593,6 +601,17 @@
             return;
 
         await OnNodeClickedAsync(node);
+        await InvokeAsync(StateHasChanged);
+    }
+
+    [JSInvokable]
+    public async Task HandleLinkClick(string linkId)
+    {
+        var link = FindLink(linkId);
+        if (link is null)
+            return;
+
+        await SelectSingleLinkAsync(link, notifyParent: true);
         await InvokeAsync(StateHasChanged);
     }
 
@@ -836,6 +855,12 @@
         _diagram.SelectModel(node, unselectOthers: true);
     }
 
+    private void SelectSingleLink(PlanningGraphLinkModel link)
+    {
+        _diagram.UnselectAll();
+        _diagram.SelectModel(link, unselectOthers: true);
+    }
+
     private async Task SelectSingleNodeAsync(PlanningStepNodeModel node, bool notifyParent)
     {
         SelectSingleNode(node);
@@ -846,10 +871,34 @@
         }
     }
 
+    private async Task SelectSingleLinkAsync(PlanningGraphLinkModel link, bool notifyParent)
+    {
+        SelectSingleLink(link);
+
+        if (notifyParent)
+        {
+            await SelectedStepIdChanged.InvokeAsync(link.Id);
+        }
+    }
+
     private PlanningStepNodeModel? FindNode(string stepId) =>
         _diagram.Nodes
             .OfType<PlanningStepNodeModel>()
             .FirstOrDefault(node => string.Equals(node.Id, stepId, StringComparison.Ordinal));
+
+    private PlanningGraphLinkModel? FindLink(string linkId) =>
+        _diagram.Links
+            .OfType<PlanningGraphLinkModel>()
+            .FirstOrDefault(link => string.Equals(link.Id, linkId, StringComparison.Ordinal));
+
+    private void HandleLinkWidgetClick(PlanningGraphLinkModel link)
+    {
+        _ = InvokeAsync(async () =>
+        {
+            await SelectSingleLinkAsync(link, notifyParent: true);
+            StateHasChanged();
+        });
+    }
 
     private void UpdateSelectionBox(double clientX, double clientY)
     {
@@ -1072,31 +1121,6 @@
         }
 
         return nodes;
-    }
-
-    private void AddResultLinks(
-        IReadOnlyList<PlanStep> visibleSteps,
-        IReadOnlyDictionary<string, PlanningStepNodeModel> nodeLookup)
-    {
-        if (!nodeLookup.TryGetValue(PlanningVirtualNodeDescriptor.ResultNodeId, out var resultNode))
-        {
-            return;
-        }
-
-        foreach (var terminalStepId in GetTerminalStepIds(visibleSteps))
-        {
-            if (!nodeLookup.TryGetValue(terminalStepId, out var source))
-            {
-                continue;
-            }
-
-            _diagram.Links.Add(new LinkModel(source, resultNode)
-            {
-                Color = LinkColor,
-                SelectedColor = LinkSelectedColor,
-                TargetMarker = LinkMarker.Arrow
-            });
-        }
     }
 
     private static Point CreateResultAnchor(

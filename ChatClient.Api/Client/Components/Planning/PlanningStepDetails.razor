@@ -5,7 +5,83 @@
 @using ChatClient.Api.PlanningRuntime.Planning
 @using MudBlazor
 
-@if (SelectedVirtualNode is not null)
+@if (SelectedLink is not null)
+{
+    <MudPaper Class="pa-4 planning-step-details" Outlined="true">
+        <MudStack Spacing="2">
+            <div>
+                <MudText Typo="Typo.h6">@GetLinkTitle(SelectedLink)</MudText>
+                <MudText Typo="Typo.caption" Class="mud-text-secondary">@GetLinkSubtitle(SelectedLink)</MudText>
+            </div>
+
+            <MudText Typo="Typo.subtitle2">Source</MudText>
+            <PlanningValueDisplay Text="@BuildStepSummary(SelectedLinkSourceStep, SelectedLink.SourceId)" AutoDetectMarkdown="false" />
+
+            <MudText Typo="Typo.subtitle2">Target</MudText>
+            <PlanningValueDisplay Text="@BuildTargetSummary(SelectedLink, SelectedLinkTargetStep)" AutoDetectMarkdown="false" />
+
+            @if (SelectedLink.Kind == PlanningGraphLinkKind.Dependency && SelectedLink.Matches.Count > 0)
+            {
+                <MudText Typo="Typo.subtitle2">Binding Matches</MudText>
+                @foreach (var match in SelectedLink.Matches)
+                {
+                    <MudPaper Class="pa-3 mb-2 planning-step-call" Outlined="true">
+                        <MudText Typo="Typo.caption">
+                            input: @match.InputName | path: @match.Path | mode: @(match.Mode ?? "value")
+                        </MudText>
+                        <MudText Typo="Typo.caption" Class="mt-2 mud-text-secondary">Reference</MudText>
+                        <PlanningValueDisplay Text="@match.Reference"
+                                             PaperClass="pa-3 mt-1 planning-step-block"
+                                             AutoDetectMarkdown="false" />
+                        <MudText Typo="Typo.caption" Class="mt-2 mud-text-secondary">Reference Fragment</MudText>
+                        <PlanningValueDisplay Text="@match.ReferenceJson"
+                                             PaperClass="pa-3 mt-1 planning-step-block"
+                                             AutoDetectMarkdown="false" />
+                        <MudText Typo="Typo.caption" Class="mt-2 mud-text-secondary">Full Binding</MudText>
+                        <PlanningValueDisplay Text="@match.BindingJson"
+                                             PaperClass="pa-3 mt-1 planning-step-block"
+                                             AutoDetectMarkdown="false" />
+                    </MudPaper>
+                }
+            }
+
+            @if (SelectedLinkSourceStep?.Result is not null)
+            {
+                <MudText Typo="Typo.subtitle2">Source Result</MudText>
+                <PlanningValueDisplay Json="@SelectedLinkSourceStep.Result"
+                                     AutoDetectMarkdown="true" />
+            }
+
+            @if (SelectedLinkSourceStep?.Error is not null)
+            {
+                <MudText Typo="Typo.subtitle2">Source Error</MudText>
+                <PlanningValueDisplay Text="@SerializeJson(SelectedLinkSourceStep.Error)"
+                                     AutoDetectMarkdown="false" />
+            }
+
+            @if (SelectedLink.Kind == PlanningGraphLinkKind.Result && FinalResult is not null)
+            {
+                <MudText Typo="Typo.subtitle2">Final Outcome</MudText>
+                <PlanningValueDisplay Text="@($"ok: {FinalResult.Ok.ToString().ToLowerInvariant()}")"
+                                     AutoDetectMarkdown="false" />
+
+                @if (FinalResult.Ok && FinalResult.Data is not null)
+                {
+                    <MudText Typo="Typo.subtitle2">Final Result</MudText>
+                    <PlanningValueDisplay Json="@FinalResult.Data"
+                                         AutoDetectMarkdown="true" />
+                }
+                else if (!FinalResult.Ok && FinalResult.Error is not null)
+                {
+                    <MudText Typo="Typo.subtitle2">Final Error</MudText>
+                    <PlanningValueDisplay Text="@SerializeJson(FinalResult.Error)"
+                                         AutoDetectMarkdown="false" />
+                }
+            }
+        </MudStack>
+    </MudPaper>
+}
+else if (SelectedVirtualNode is not null)
 {
     <MudPaper Class="pa-4 planning-step-details" Outlined="true">
         <MudStack Spacing="2">
@@ -160,7 +236,7 @@
 else if (SelectedStep is null)
 {
     <MudPaper Class="pa-4 planning-step-details" Outlined="true">
-        <MudText Typo="Typo.body2" Class="mud-text-secondary">Select a step on the graph to inspect prompts, calls, and outputs.</MudText>
+        <MudText Typo="Typo.body2" Class="mud-text-secondary">Select a step or connection on the graph to inspect prompts, calls, bindings, and outputs.</MudText>
     </MudPaper>
 }
 else
@@ -253,9 +329,28 @@ else
     private IReadOnlyList<PlanningVirtualNodeDescriptor> VirtualNodes =>
         PlanningVirtualNodeProjection.Build(Plan, Events, AvailableTools, FinalResult);
 
+    private IReadOnlyList<PlanningGraphLinkDescriptor> LinkDescriptors =>
+        Plan is null
+            ? []
+            : PlanningGraphLinkProjection.Build(Plan.Steps, FinalResult);
+
+    private PlanningGraphLinkDescriptor? SelectedLink => ResolveSelectedLink();
+
     private PlanningVirtualNodeDescriptor? SelectedVirtualNode => ResolveSelectedVirtualNode();
 
     private PlanStep? SelectedStep => ResolveSelectedStep();
+
+    private PlanStep? SelectedLinkSourceStep =>
+        SelectedLink is null || Plan is null
+            ? null
+            : Plan.Steps.FirstOrDefault(step => string.Equals(step.Id, SelectedLink.SourceId, StringComparison.Ordinal));
+
+    private PlanStep? SelectedLinkTargetStep =>
+        SelectedLink is null ||
+        Plan is null ||
+        string.Equals(SelectedLink.TargetId, PlanningVirtualNodeDescriptor.ResultNodeId, StringComparison.Ordinal)
+            ? null
+            : Plan.Steps.FirstOrDefault(step => string.Equals(step.Id, SelectedLink.TargetId, StringComparison.Ordinal));
 
     private string? EffectiveStepId => SelectedStep?.Id;
 
@@ -279,6 +374,22 @@ else
         Events.OfType<StepCallCompletedEvent>()
             .Where(evt => string.Equals(evt.StepId, EffectiveStepId, StringComparison.Ordinal))
             .ToList();
+
+    private PlanningGraphLinkDescriptor? ResolveSelectedLink()
+    {
+        foreach (var candidateId in GetSelectionCandidates())
+        {
+            if (string.IsNullOrWhiteSpace(candidateId))
+                continue;
+
+            var link = LinkDescriptors.FirstOrDefault(candidate =>
+                string.Equals(candidate.Id, candidateId, StringComparison.Ordinal));
+            if (link is not null)
+                return link;
+        }
+
+        return null;
+    }
 
     private PlanningVirtualNodeDescriptor? ResolveSelectedVirtualNode()
     {
@@ -306,8 +417,11 @@ else
             if (string.IsNullOrWhiteSpace(candidateId))
                 continue;
 
-            if (VirtualNodes.Any(node => string.Equals(node.Id, candidateId, StringComparison.Ordinal)))
+            if (LinkDescriptors.Any(link => string.Equals(link.Id, candidateId, StringComparison.Ordinal)) ||
+                VirtualNodes.Any(node => string.Equals(node.Id, candidateId, StringComparison.Ordinal)))
+            {
                 return null;
+            }
 
             var step = Plan.Steps.FirstOrDefault(candidate =>
                 string.Equals(candidate.Id, candidateId, StringComparison.Ordinal));
@@ -331,6 +445,39 @@ else
 
     private static string GetName(PlanStep step) =>
         string.IsNullOrWhiteSpace(step.Tool) ? step.Llm ?? string.Empty : step.Tool;
+
+    private static string GetLinkTitle(PlanningGraphLinkDescriptor link) =>
+        $"{link.SourceId} -> {GetTargetLabel(link)}";
+
+    private static string GetLinkSubtitle(PlanningGraphLinkDescriptor link) =>
+        link.Kind == PlanningGraphLinkKind.Dependency
+            ? $"dependency | bindings: {link.Matches.Count}"
+            : "terminal step -> final result";
+
+    private static string GetTargetLabel(PlanningGraphLinkDescriptor link) =>
+        string.Equals(link.TargetId, PlanningVirtualNodeDescriptor.ResultNodeId, StringComparison.Ordinal)
+            ? "result"
+            : link.TargetId;
+
+    private static string BuildStepSummary(PlanStep? step, string fallbackId)
+    {
+        if (step is null)
+        {
+            return fallbackId;
+        }
+
+        return $"{step.Id}{Environment.NewLine}{GetKind(step)}: {GetName(step)}{Environment.NewLine}status: {step.Status}";
+    }
+
+    private static string BuildTargetSummary(PlanningGraphLinkDescriptor link, PlanStep? targetStep)
+    {
+        if (link.Kind == PlanningGraphLinkKind.Result)
+        {
+            return "result node" + Environment.NewLine + "Aggregates the final answer returned by the planning run.";
+        }
+
+        return BuildStepSummary(targetStep, link.TargetId);
+    }
 
     private static string SerializeJson<T>(T value) =>
         PlanningJson.SerializeIndented(value);

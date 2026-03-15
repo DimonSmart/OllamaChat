@@ -64,6 +64,17 @@ window.planningGraphInterop = (() => {
         return node instanceof HTMLElement ? node.dataset.nodeId ?? null : null;
     };
 
+    const getLinkId = (target) => {
+        if (!(target instanceof Element)) {
+            return null;
+        }
+
+        const link = target.closest(".diagram-link[data-link-id]");
+        return link instanceof SVGGElement || link instanceof HTMLElement
+            ? link.dataset.linkId ?? null
+            : null;
+    };
+
     return {
         register(element, dotNet) {
             if (!element) {
@@ -125,6 +136,10 @@ window.planningGraphInterop = (() => {
                     return;
                 }
 
+                if (getLinkId(event.target)) {
+                    return;
+                }
+
                 invoke(registration, "HandleHostPointerDown", event.clientX, event.clientY, event.button);
             };
 
@@ -155,6 +170,11 @@ window.planningGraphInterop = (() => {
                 if (nodeId) {
                     invoke(registration, "HandleNodeClick", nodeId);
                     return;
+                }
+
+                const linkId = getLinkId(event.target);
+                if (linkId) {
+                    invoke(registration, "HandleLinkClick", linkId);
                 }
             };
 
