@@ -113,7 +113,7 @@ public sealed class LlmPlanner(
         sb.AppendLine("    {");
         sb.AppendLine("      \"id\": \"string\",");
         sb.AppendLine("      \"tool\": \"tool-name\",");
-        sb.AppendLine("      \"in\": { \"param\": \"literal or {\\\"from\\\":\\\"$ref\\\",\\\"mode\\\":\\\"value|map\\\"}\" },");
+        sb.AppendLine("      \"in\": { \"param\": \"literal or {\\\"from\\\":\\\"$ref\\\",\\\"mode\\\":\\\"value|map\\\",\\\"type\\\":\\\"string|object|array<object>|...\\\"}\" },");
         sb.AppendLine("      \"s\": \"todo\",");
         sb.AppendLine("      \"res\": null,");
         sb.AppendLine("      \"err\": null");
@@ -123,7 +123,7 @@ public sealed class LlmPlanner(
         sb.AppendLine("      \"llm\": \"step-label\",");
         sb.AppendLine("      \"systemPrompt\": \"string\",");
         sb.AppendLine("      \"userPrompt\": \"string\",");
-        sb.AppendLine("      \"in\": { \"param\": \"literal or {\\\"from\\\":\\\"$ref\\\",\\\"mode\\\":\\\"value|map\\\"}\" },");
+        sb.AppendLine("      \"in\": { \"param\": \"literal or {\\\"from\\\":\\\"$ref\\\",\\\"mode\\\":\\\"value|map\\\",\\\"type\\\":\\\"string|object|array<object>|...\\\"}\" },");
         sb.AppendLine("      \"out\": {");
         sb.AppendLine("        \"format\": \"json|string\",");
         sb.AppendLine("        \"aggregate\": \"single|collect|flatten\",");
@@ -146,11 +146,16 @@ public sealed class LlmPlanner(
         sb.AppendLine("- For final comparison or recommendation steps, instruct the LLM to explicitly mention the compared item names and the reason for the choice.");
         sb.AppendLine("- Preserve explicit deliverables from the user request, such as official docs links, NuGet/package pages, GitHub URLs, ranked lists, pros/cons, or citations.");
         sb.AppendLine("- If the user explicitly asks for official pages, package pages, repo links, docs links, or multiple evidence sources per entity, plan separate retrieval for those sources.");
+        sb.AppendLine("- Unless the user explicitly asked for official pages, documentation pages, repo URLs, or extra evidence sources, do NOT require them in shortlist/select prompts.");
+        sb.AppendLine("- If the current search results already appear to point at candidate entity pages that downstream download can inspect, shortlist those result URLs directly and carry them forward as evidence.");
         sb.AppendLine("- Avoid a second search unless the first downloaded pages clearly cannot contain the requested facts, but DO use targeted follow-up searches when precise entity-level evidence is required.");
         sb.AppendLine("- If the user asks for two or three items, discovery may over-fetch a little, but do not stop at arbitrary top-N pages. First identify the best entity candidates, then retrieve evidence for those entities.");
         sb.AppendLine("- Use input binding objects for every dynamic dependency: {\"from\":\"$step.ref\",\"mode\":\"value|map\"}.");
         sb.AppendLine("- mode='value' passes one resolved value into one call.");
         sb.AppendLine("- mode='map' means run the step once per array element.");
+        sb.AppendLine("- For LLM steps, when input shape matters, add a compact declared type directly inside the binding object using field 'type'. Example: {\"from\":\"$search.results\",\"mode\":\"value\",\"type\":\"array<object>\"}.");
+        sb.AppendLine("- The binding field 'type' describes the single-call resolved input. Example: mode='value' with $search.results usually means type='array<object>', while mode='map' with $search.results usually means type='object'.");
+        sb.AppendLine("- Supported binding types are: string, number, integer, boolean, object, array, array<string>, array<number>, array<integer>, array<boolean>, array<object>.");
         sb.AppendLine("- If a tool returns an object containing an array field, bind from that field directly (for example: {\"from\":\"$search.results\",\"mode\":\"map\"}).");
         sb.AppendLine("- If a downstream tool needs a projected array field, express it explicitly in the ref (for example: {\"from\":\"$search.results[].url\",\"mode\":\"map\"}).");
         sb.AppendLine("- When chaining search-style results into download-style tools, prefer binding the whole array field into input key 'page' so metadata is preserved and download can add content.");
@@ -160,7 +165,7 @@ public sealed class LlmPlanner(
         sb.AppendLine("- Do not invent, estimate, or fill in exact factual values when the user request requires precise facts.");
         sb.AppendLine("- If exact values are missing, add retrieval/narrowing steps or let the downstream step fail through the structured execution error contract instead of guessing.");
         sb.AppendLine("- For extraction steps, if the source does not contain the requested entity or the critical facts are absent, rely on the structured execution error contract instead of guessing.");
-        sb.AppendLine("- Do not wrap literal tool arguments in helper objects like {\"value\":...}. Tool inputs must be plain literals or binding objects with exactly 'from' and optional 'mode'.");
+        sb.AppendLine("- Do not wrap literal tool arguments in helper objects like {\"value\":...}. Tool inputs must be plain literals or binding objects with exactly 'from' and optional 'mode'. LLM bindings may additionally include optional field 'type'.");
         sb.AppendLine();
         sb.AppendLine("Available tools:");
         foreach (var tool in tools)
@@ -214,7 +219,7 @@ public sealed class LlmPlanner(
     private static string BuildPlanningUserPrompt(string userQuery) => userQuery;
 
     private static string BuildRepairPrompt(string originalUserPrompt, string errorMessage) =>
-        $"{originalUserPrompt}\n\nYour previous plan was invalid.\nValidation error: {errorMessage}\n\nReturn a corrected ResultEnvelope<PlanDefinition> as JSON only.\nNon-negotiable requirements:\n- Follow the exact ok/data/error envelope schema.\n- Put the full plan inside data when ok=true.\n- Each step must include id, in, s, res, and err.\n- A step must have exactly one of tool or llm.\n- Every llm step must include BOTH systemPrompt AND userPrompt, including shortlist/select/extract/compare steps.\n- Each llm step must include an out object with format/aggregate/schema.\n- Do not embed $step refs inside prompts.\n- Put dynamic inputs under in using binding objects like {{\"from\":\"$step.ref\",\"mode\":\"value|map\"}}.\n- Literal tool inputs must be plain JSON literals, never wrapper objects like {{\"value\":...}}.\n- Search/download steps return pages, not chosen entities. If the task compares or reviews a few entities, add shortlist/selection and targeted retrieval instead of assuming top pages equal the final entities.\n- If an extraction step would read a page that may mention multiple entities, either add an explicit target entity input or add a shortlist/select step first.\n- Preserve explicit user deliverables such as links, package pages, docs pages, repo URLs, ranking, and recommendation fields.\n- Use collect for mapped single-item extraction, flatten for mapped multi-item extraction, and single otherwise.\n- Every schema node must declare type or enum.\n- Every object property schema must declare type or enum.\n- For string outputs, either omit schema or use {{\"type\":\"string\"}}.\n- Use the exact field names from the schema.\n- Use only refs to earlier steps.\nDo not repeat the same mistake.";
+        $"{originalUserPrompt}\n\nYour previous plan was invalid.\nValidation error: {errorMessage}\n\nReturn a corrected ResultEnvelope<PlanDefinition> as JSON only.\nNon-negotiable requirements:\n- Follow the exact ok/data/error envelope schema.\n- Put the full plan inside data when ok=true.\n- Each step must include id, in, s, res, and err.\n- A step must have exactly one of tool or llm.\n- Every llm step must include BOTH systemPrompt AND userPrompt, including shortlist/select/extract/compare steps.\n- Each llm step must include an out object with format/aggregate/schema.\n- Do not embed $step refs inside prompts.\n- Put dynamic inputs under in using binding objects like {{\"from\":\"$step.ref\",\"mode\":\"value|map\"}}.\n- If an llm input is shape-sensitive, add inline field \"type\" inside the binding object, for example {{\"from\":\"$search.results\",\"mode\":\"value\",\"type\":\"array<object>\"}}.\n- The inline binding field \"type\" describes one resolved call input. With {{\"mode\":\"value\"}} on $search.results this is often array<object>; with {{\"mode\":\"map\"}} on $search.results this is often object.\n- Supported inline binding types are string, number, integer, boolean, object, array, array<string>, array<number>, array<integer>, array<boolean>, array<object>.\n- Literal tool inputs must be plain JSON literals, never wrapper objects like {{\"value\":...}}.\n- Search/download steps return pages, not chosen entities. If the task compares or reviews a few entities, add shortlist/selection and targeted retrieval instead of assuming top pages equal the final entities.\n- If an extraction step would read a page that may mention multiple entities, either add an explicit target entity input or add a shortlist/select step first.\n- Preserve explicit user deliverables such as links, package pages, docs pages, repo URLs, ranking, and recommendation fields.\n- Unless the user explicitly asked for official pages, documentation pages, repo URLs, or extra evidence sources, do NOT require them in shortlist/select prompts.\n- If current search results already point to usable candidate pages, shortlist and download those URLs directly instead of adding another search just to find a more official-looking page.\n- Use collect for mapped single-item extraction, flatten for mapped multi-item extraction, and single otherwise.\n- Every schema node must declare type or enum.\n- Every object property schema must declare type or enum.\n- For string outputs, either omit schema or use {{\"type\":\"string\"}}.\n- Use the exact field names from the schema.\n- Use only refs to earlier steps.\nDo not repeat the same mistake.";
 
     private static string BuildFewShotExamples() =>
         """
@@ -222,7 +227,7 @@ public sealed class LlmPlanner(
         User request: "Find two popular markdown parsers for .NET, extract license and GitHub repo URL, then recommend one."
         Good plan shape:
         1. search discovery pages
-        2. shortlist exactly two parser packages
+        2. shortlist exactly two parser packages using the best current result URL for each package
         3. retrieve package/repo evidence for each shortlisted parser
         4. extract structured facts for each targeted parser
         5. compare extracted facts in one final LLM step
@@ -231,7 +236,7 @@ public sealed class LlmPlanner(
         User request: "Compare two USB microphones by specs and summarize which is better for streaming."
         Good plan shape:
         1. search product discovery pages
-        2. shortlist two specific microphone models
+        2. shortlist two specific microphone models using the best current result URL for each model
         3. retrieve one evidence page per shortlisted model
         4. extract model name, pickup pattern, sample rate, connectivity, and price for each explicit model
         5. synthesize a recommendation that names both products and states reasons
@@ -240,7 +245,7 @@ public sealed class LlmPlanner(
         User request: "Look up two train-route planning libraries and tell me which one better matches small hobby projects."
         Good plan shape:
         1. search discovery pages
-        2. shortlist two specific libraries
+        2. shortlist two specific libraries using the best current result URL for each library
         3. retrieve docs or repo pages for each shortlisted library
         4. extract maintenance and onboarding facts for each explicit library
         5. return a final recommendation

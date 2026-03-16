@@ -243,6 +243,20 @@ public sealed class PlanExecutor(
         List<JsonElement> calls,
         CancellationToken cancellationToken)
     {
+        var inputFailure = ValidateLlmInputContract(step, input);
+        if (inputFailure is not null)
+        {
+            calls.Add(JsonSerializer.SerializeToElement(new
+            {
+                llm = step.Llm,
+                ok = false,
+                output = (JsonElement?)null,
+                error = SerializeError(inputFailure.Error)
+            }));
+
+            return inputFailure;
+        }
+
         var envelope = await agentStepRunner.ExecuteAsync(step, input, cancellationToken);
         calls.Add(JsonSerializer.SerializeToElement(new
         {
@@ -253,6 +267,54 @@ public sealed class PlanExecutor(
         }));
 
         return envelope;
+    }
+
+    private static ResultEnvelope<JsonElement?>? ValidateLlmInputContract(PlanStep step, JsonElement input)
+    {
+        var issues = new List<StepInputTypeIssue>();
+
+        foreach (var entry in step.In)
+        {
+            if (!PlanInputBindingSyntax.TryParseBinding(entry.Value, out var binding, out var bindingError)
+                || !string.IsNullOrWhiteSpace(bindingError)
+                || string.IsNullOrWhiteSpace(binding?.Type))
+            {
+                continue;
+            }
+
+            if (!StepInputTypeValidator.TryParse(binding.Type, out var expectedType, out var typeError) || expectedType is null)
+            {
+                issues.Add(new StepInputTypeIssue(
+                    "llm_input_type_invalid",
+                    $"Input '{entry.Key}' declares invalid type '{binding.Type}'. {typeError}"));
+                continue;
+            }
+
+            if (!input.TryGetProperty(entry.Key, out var resolvedValue))
+            {
+                issues.Add(new StepInputTypeIssue(
+                    "llm_input_missing",
+                    $"Resolved input is missing field '{entry.Key}'."));
+                continue;
+            }
+
+            issues.AddRange(StepInputTypeValidator.ValidateResolvedValue(resolvedValue, expectedType, entry.Key));
+        }
+
+        if (issues.Count == 0)
+            return null;
+
+        return ResultEnvelope<JsonElement?>.Failure(
+            "llm_input_contract_failed",
+            $"LLM step '{step.Id}' received input that does not match its declared binding types.",
+            JsonSerializer.SerializeToElement(new
+            {
+                issues = issues.Select(issue => new
+                {
+                    code = issue.Code,
+                    message = issue.Message
+                })
+            }));
     }
 
     private (Dictionary<string, JsonElement?> resolved, Dictionary<string, JsonElement?[]>? fanOutInputs) ResolveInputs(

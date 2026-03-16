@@ -19,9 +19,9 @@ internal static class BuiltInWebToolLogic
     private const int SearchMaxAttempts = 5;
     private const int DownloadMaxAttempts = 3;
     private const string SearchCachePathConfigKey = "BuiltInWeb:SearchCachePath";
-    private const string SearchCacheVersion = "v1";
+    private const string SearchCacheVersion = "v2";
     private static readonly TimeSpan SearchCacheTtl = TimeSpan.FromDays(1);
-    private static readonly TimeSpan BraveSearchMinInterval = TimeSpan.FromSeconds(2);
+    private static readonly TimeSpan BraveSearchMinInterval = TimeSpan.FromSeconds(5);
     private static readonly TimeSpan DefaultMaxRetryDelay = TimeSpan.FromSeconds(30);
     private static readonly TimeSpan RateLimitMaxRetryDelay = TimeSpan.FromMinutes(2);
     private static readonly SemaphoreSlim BraveSearchGate = new(1, 1);
@@ -67,6 +67,8 @@ internal static class BuiltInWebToolLogic
         {
             using var client = httpClientFactory.CreateClient();
             client.DefaultRequestHeaders.UserAgent.ParseAdd("Mozilla/5.0 (compatible; OllamaChatWebMcp/1.0)");
+            List<WebSearchResult>? results = null;
+            Exception? braveFailure = null;
 
             await BraveSearchGate.WaitAsync(cancellationToken);
             try
@@ -74,24 +76,27 @@ internal static class BuiltInWebToolLogic
                 if (await TryGetCachedSearchResultAsync(cacheKey, query, limit, cancellationToken) is { } cachedWhileHoldingGate)
                     return cachedWhileHoldingGate;
 
-                await WaitForBraveSearchCooldownAsync(logger, cancellationToken);
-                RegisterBraveSearchCooldown(BraveSearchMinInterval);
-
-                var url = $"https://search.brave.com/search?q={UrlEncoder.Default.Encode(query)}";
-                using var response = await GetWithRetriesAsync(client, logger, url, SearchMaxAttempts, cancellationToken);
-                var html = await response.Content.ReadAsStringAsync(cancellationToken);
-                var results = ExtractStructuredResults(html, MaxLimit);
-
-                if (results.Count == 0)
-                    throw new InvalidOperationException("Search returned no structured candidate results.");
-
-                await StoreCachedSearchResultAsync(cacheKey, query, results, cancellationToken);
-                return new WebSearchData(query, results.Take(limit).ToList());
+                try
+                {
+                    results = await SearchWithBraveAsync(client, logger, query, cancellationToken);
+                }
+                catch (Exception ex) when (ex is not OperationCanceledException)
+                {
+                    braveFailure = ex;
+                    logger.LogWarning(ex, "Brave search failed for query {Query}. Falling back to DuckDuckGo HTML results.", query);
+                }
             }
             finally
             {
                 BraveSearchGate.Release();
             }
+
+            results ??= await SearchWithDuckDuckGoAsync(client, logger, query, cancellationToken);
+            if (results.Count == 0)
+                throw braveFailure ?? new InvalidOperationException("Search returned no structured candidate results.");
+
+            await StoreCachedSearchResultAsync(cacheKey, query, results, cancellationToken);
+            return new WebSearchData(query, results.Take(limit).ToList());
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
@@ -477,6 +482,89 @@ internal static class BuiltInWebToolLogic
     private static string? NullIfWhiteSpace(string? value) =>
         string.IsNullOrWhiteSpace(value) ? null : value;
 
+    private static async Task<List<WebSearchResult>> SearchWithBraveAsync(
+        HttpClient client,
+        ILogger logger,
+        string query,
+        CancellationToken cancellationToken)
+    {
+        await WaitForBraveSearchCooldownAsync(logger, cancellationToken);
+        RegisterBraveSearchCooldown(BraveSearchMinInterval);
+
+        var url = $"https://search.brave.com/search?q={UrlEncoder.Default.Encode(query)}";
+        using var response = await GetWithRetriesAsync(client, logger, url, SearchMaxAttempts, cancellationToken);
+        var html = await response.Content.ReadAsStringAsync(cancellationToken);
+        var results = ExtractStructuredResults(html, MaxLimit);
+
+        if (results.Count == 0)
+            throw new InvalidOperationException("Brave search returned no structured candidate results.");
+
+        return results;
+    }
+
+    private static async Task<List<WebSearchResult>> SearchWithDuckDuckGoAsync(
+        HttpClient client,
+        ILogger logger,
+        string query,
+        CancellationToken cancellationToken)
+    {
+        var url = $"https://html.duckduckgo.com/html/?q={UrlEncoder.Default.Encode(query)}";
+        using var response = await GetWithRetriesAsync(client, logger, url, SearchMaxAttempts, cancellationToken);
+        var html = await response.Content.ReadAsStringAsync(cancellationToken);
+        var results = ExtractDuckDuckGoResults(html, MaxLimit);
+
+        if (results.Count == 0)
+            throw new InvalidOperationException("DuckDuckGo HTML search returned no structured candidate results.");
+
+        return results;
+    }
+
+    private static List<WebSearchResult> ExtractDuckDuckGoResults(string html, int limit)
+    {
+        var document = new HtmlDocument();
+        document.LoadHtml(html);
+
+        var resultNodes = document.DocumentNode.SelectNodes("//div[contains(@class,'result') and contains(@class,'results_links')]");
+        if (resultNodes is null)
+            return [];
+
+        var results = new List<WebSearchResult>();
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var node in resultNodes)
+        {
+            var anchor = node.SelectSingleNode(".//a[contains(@class,'result__a')][@href]");
+            var link = anchor?.GetAttributeValue("href", string.Empty)?.Trim();
+            if (!TryNormalizeDuckDuckGoResultUrl(link, out var normalizedUrl))
+                continue;
+            if (!seen.Add(normalizedUrl))
+                continue;
+
+            var title = NormalizeText(anchor?.InnerText);
+            if (string.IsNullOrWhiteSpace(title))
+                title = normalizedUrl;
+
+            var snippet = NormalizeText(node.SelectSingleNode(".//a[contains(@class,'result__snippet')]")?.InnerText);
+            var displayUrl = NormalizeText(node.SelectSingleNode(".//a[contains(@class,'result__url')]")?.InnerText);
+            var siteName = TryGetHostLabel(normalizedUrl);
+
+            results.Add(new WebSearchResult(
+                Url: normalizedUrl,
+                Title: title,
+                Snippet: NullIfWhiteSpace(snippet),
+                SiteName: NullIfWhiteSpace(siteName),
+                DisplayUrl: NullIfWhiteSpace(displayUrl),
+                Age: null,
+                ThumbnailUrl: null,
+                Position: results.Count + 1));
+
+            if (results.Count >= limit)
+                break;
+        }
+
+        return results;
+    }
+
     private static async Task<HttpResponseMessage> GetWithRetriesAsync(
         HttpClient client,
         ILogger logger,
@@ -582,6 +670,11 @@ internal static class BuiltInWebToolLogic
                 return CapDelay(computed, maxDelay);
         }
 
+        if (response?.StatusCode == HttpStatusCode.TooManyRequests
+            && response.RequestMessage?.RequestUri is { } requestUri
+            && IsBraveSearchUri(requestUri))
+            return CapDelay(TimeSpan.FromSeconds(Math.Min(15 * attempt, 60)), maxDelay);
+
         return CapDelay(TimeSpan.FromMilliseconds(750 * attempt), maxDelay);
     }
 
@@ -590,4 +683,57 @@ internal static class BuiltInWebToolLogic
 
     private static TimeSpan CapDelay(TimeSpan delay, TimeSpan maxDelay) =>
         delay > maxDelay ? maxDelay : delay;
+
+    private static bool TryNormalizeDuckDuckGoResultUrl(string? link, out string normalizedUrl)
+    {
+        normalizedUrl = string.Empty;
+        if (string.IsNullOrWhiteSpace(link))
+            return false;
+
+        var candidate = link.StartsWith("//", StringComparison.Ordinal)
+            ? $"https:{link}"
+            : link;
+
+        if (!Uri.TryCreate(candidate, UriKind.Absolute, out var uri))
+            return false;
+
+        if (string.Equals(uri.Host, "duckduckgo.com", StringComparison.OrdinalIgnoreCase)
+            && TryGetQueryParameter(uri, "uddg", out var targetUrl))
+        {
+            candidate = Uri.UnescapeDataString(targetUrl);
+        }
+
+        return TryNormalizeSearchResultUrl(candidate, out normalizedUrl);
+    }
+
+    private static bool TryGetQueryParameter(Uri uri, string key, out string value)
+    {
+        value = string.Empty;
+        var query = uri.Query;
+        if (string.IsNullOrWhiteSpace(query))
+            return false;
+
+        foreach (var part in query.TrimStart('?').Split('&', StringSplitOptions.RemoveEmptyEntries))
+        {
+            var pair = part.Split('=', 2);
+            if (pair.Length == 0 || !string.Equals(pair[0], key, StringComparison.OrdinalIgnoreCase))
+                continue;
+
+            value = pair.Length == 2 ? pair[1] : string.Empty;
+            return true;
+        }
+
+        return false;
+    }
+
+    private static string? TryGetHostLabel(string absoluteUrl)
+    {
+        if (!Uri.TryCreate(absoluteUrl, UriKind.Absolute, out var uri))
+            return null;
+
+        var host = uri.Host;
+        return host.StartsWith("www.", StringComparison.OrdinalIgnoreCase)
+            ? host["www.".Length..]
+            : host;
+    }
 }

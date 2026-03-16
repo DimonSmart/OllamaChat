@@ -11,7 +11,8 @@ public enum PlanInputBindingMode
 
 public sealed record PlanInputBindingSpec(
     string From,
-    PlanInputBindingMode Mode);
+    PlanInputBindingMode Mode,
+    string? Type = null);
 
 public enum StepReferenceSegmentKind
 {
@@ -58,9 +59,9 @@ public static class PlanInputBindingSyntax
         if (node is not JsonObject obj || !obj.ContainsKey("from"))
             return false;
 
-        if (obj.Count is < 1 or > 2)
+        if (obj.Count is < 1 or > 3)
         {
-            error = "Binding objects may contain only 'from' and optional 'mode'.";
+            error = "Binding objects may contain only 'from' and optional 'mode' and 'type'.";
             return true;
         }
 
@@ -98,7 +99,27 @@ public static class PlanInputBindingSyntax
             }
         }
 
-        binding = new PlanInputBindingSpec(from.Trim(), mode);
+        string? declaredType = null;
+        if (obj.TryGetPropertyValue("type", out var typeNode) && typeNode is not null)
+        {
+            if (typeNode is not JsonValue typeValue
+                || !typeValue.TryGetValue<string>(out var typeText)
+                || string.IsNullOrWhiteSpace(typeText))
+            {
+                error = "Binding object field 'type' must be a non-empty string when provided.";
+                return true;
+            }
+
+            if (!StepInputTypeValidator.TryParse(typeText, out _, out var typeError))
+            {
+                error = $"Binding object field 'type' is invalid. {typeError}";
+                return true;
+            }
+
+            declaredType = typeText.Trim();
+        }
+
+        binding = new PlanInputBindingSpec(from.Trim(), mode, declaredType);
         return true;
     }
 

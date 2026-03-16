@@ -180,6 +180,8 @@ public sealed class LlmReplanner(
         sb.AppendLine("- If a failed step says the source contains multiple entities, do NOT repair by widening a single-entity extraction step into 'return everything' unless the user explicitly asked for every entity on that page.");
         sb.AppendLine("- For compare/review/rank tasks over a few entities, prefer repairs that insert shortlist/select and targeted retrieval steps.");
         sb.AppendLine("- If final verification says the answer is missing explicit deliverables like links, package pages, docs pages, repo URLs, rankings, or named recommendations, repair the upstream plan so those outputs are gathered and preserved.");
+        sb.AppendLine("- Unless the user explicitly asked for official pages, docs pages, or repo pages, do NOT add that requirement during repair.");
+        sb.AppendLine("- If a failed shortlist/select step demanded official pages but the user did not ask for them, repair by reusing current candidate result URLs or by loosening that unnecessary requirement instead of adding more searches.");
         sb.AppendLine("- Do not weaken an upstream field from required/non-null to nullable if a downstream tool input still requires a non-null value. Repair the evidence plan instead.");
         sb.AppendLine("- If the failed trace has type='missing' and your edit removes that requirement or makes it optional, finish with done=true instead of iterating further.");
         sb.AppendLine("- plan.resetFrom(stepId) resets execution state for that step and all downstream steps so the executor will rerun them.");
@@ -193,6 +195,9 @@ public sealed class LlmReplanner(
         sb.AppendLine("- LLM steps must have systemPrompt and userPrompt.");
         sb.AppendLine("- Tool steps must use the exact workflow tool name listed below, including any server prefix.");
         sb.AppendLine("- Put dynamic inputs under 'in' using binding objects like {\"from\":\"$step.ref\",\"mode\":\"value|map\"}.");
+        sb.AppendLine("- For LLM steps, when input shape matters, add inline field 'type' inside the binding object. Example: {\"from\":\"$search.results\",\"mode\":\"value\",\"type\":\"array<object>\"}.");
+        sb.AppendLine("- The binding field 'type' describes one resolved call input. Example: mode='value' with $search.results usually means type='array<object>', while mode='map' with $search.results usually means type='object'.");
+        sb.AppendLine("- Supported binding types are: string, number, integer, boolean, object, array, array<string>, array<number>, array<integer>, array<boolean>, array<object>.");
         sb.AppendLine("- Literal tool inputs must be plain JSON literals. Never wrap them in helper objects like {\"value\":...}.");
         sb.AppendLine("- mode='map' means run the step once per array element.");
         sb.AppendLine("- If a tool returns an object containing an array field, bind from that field directly (for example, {\"from\":\"$search.results\",\"mode\":\"map\"}).");
@@ -247,7 +252,7 @@ public sealed class LlmReplanner(
     }
 
     private static string BuildRepairPrompt(string originalPrompt, string errorMessage) =>
-        $"{originalPrompt}\n\nYour previous response was invalid.\nValidation error: {errorMessage}\n\nReturn a corrected ResultEnvelope<ReplanActionBatch> as JSON only and follow the exact schema.";
+        $"{originalPrompt}\n\nYour previous response was invalid.\nValidation error: {errorMessage}\n\nReturn a corrected ResultEnvelope<ReplanActionBatch> as JSON only and follow the exact schema.\nWhen rewriting step inputs, keep dynamic refs inside binding objects. For llm steps, if input shape matters, you may add inline field \"type\" inside the binding object, for example {{\"from\":\"$search.results\",\"mode\":\"value\",\"type\":\"array<object>\"}}. Do not invent helper wrappers like {{\"value\":...}}.";
 
     private static JsonArray ExecuteActions(
         PlanEditingSession session,

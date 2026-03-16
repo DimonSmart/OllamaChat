@@ -350,7 +350,71 @@ public class PlanningRuntimeContractsTests
             NullLogger.Instance,
             new WebSearchInput("item")));
 
-        Assert.Equal("Search returned no structured candidate results.", exception.Message);
+        Assert.Contains("structured candidate results", exception.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task BuiltInWebSearchLogic_FallsBackToDuckDuckGoHtml_WhenBraveMarkupIsUnavailable()
+    {
+        BuiltInWebToolLogic.ResetSearchStateForTests(CreateTempSearchCacheDirectory());
+
+        const string braveHtml = """
+            <html>
+              <body>
+                <div>This page needs JavaScript to function.</div>
+              </body>
+            </html>
+            """;
+
+        const string duckHtml = """
+            <html>
+              <body>
+                <div class="result results_links results_links_deep web-result">
+                  <div class="links_main links_deep result__body">
+                    <h2 class="result__title">
+                      <a class="result__a" href="//duckduckgo.com/l/?uddg=https%3A%2F%2Fexample.com%2Fitem-a">Item A title</a>
+                    </h2>
+                    <div class="result__extras">
+                      <div class="result__extras__url">
+                        <a class="result__url" href="//duckduckgo.com/l/?uddg=https%3A%2F%2Fexample.com%2Fitem-a">example.com/item-a</a>
+                      </div>
+                    </div>
+                    <a class="result__snippet" href="//duckduckgo.com/l/?uddg=https%3A%2F%2Fexample.com%2Fitem-a">Item A summary.</a>
+                  </div>
+                </div>
+              </body>
+            </html>
+            """;
+
+        var handler = new SequenceHttpMessageHandler(
+        [
+            _ => new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent(braveHtml)
+            },
+            _ => new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent(duckHtml)
+            }
+        ]);
+
+        var httpClientFactory = new Mock<IHttpClientFactory>();
+        httpClientFactory
+            .Setup(factory => factory.CreateClient(It.IsAny<string>()))
+            .Returns(new HttpClient(handler));
+
+        var result = await BuiltInWebToolLogic.SearchAsync(
+            httpClientFactory.Object,
+            NullLogger.Instance,
+            new WebSearchInput("item a"));
+
+        Assert.Equal(2, handler.CallCount);
+        var item = Assert.Single(result.Results);
+        Assert.Equal("https://example.com/item-a", item.Url);
+        Assert.Equal("Item A title", item.Title);
+        Assert.Equal("Item A summary.", item.Snippet);
+        Assert.Equal("example.com", item.SiteName);
+        Assert.Equal("example.com/item-a", item.DisplayUrl);
     }
 
     [Fact]
@@ -680,6 +744,205 @@ public class PlanningRuntimeContractsTests
 
         Assert.Contains("source step 'searchPages' produces object", exception.Message, StringComparison.Ordinal);
         Assert.Contains("expects string", exception.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void PlanValidator_AllowsLlmBindingType_WhenValueModeMatchesArraySource()
+    {
+        var plan = new PlanDefinition
+        {
+            Goal = "Shortlist packages from search results.",
+            Steps =
+            [
+                new PlanStep
+                {
+                    Id = "searchPages",
+                    Tool = SearchToolName,
+                    In = new Dictionary<string, JsonNode?>
+                    {
+                        ["query"] = JsonValue.Create("maze generator nuget")
+                    }
+                },
+                new PlanStep
+                {
+                    Id = "shortlistPackages",
+                    Llm = "shortlist",
+                    SystemPrompt = "Return JSON only.",
+                    UserPrompt = "Choose three packages.",
+                    In = new Dictionary<string, JsonNode?>
+                    {
+                        ["results"] = Ref("$searchPages.results", type: "array<object>"),
+                        ["topic"] = JsonValue.Create("maze generator")
+                    },
+                    Out = JsonOut(new JsonObject
+                    {
+                        ["type"] = "array",
+                        ["items"] = new JsonObject
+                        {
+                            ["type"] = "object",
+                            ["required"] = new JsonArray("name"),
+                            ["properties"] = new JsonObject
+                            {
+                                ["name"] = new JsonObject
+                                {
+                                    ["type"] = "string"
+                                }
+                            }
+                        }
+                    })
+                }
+            ]
+        };
+
+        PlanValidator.ValidateOrThrow(plan, [CreateStaticSearchDescriptor()]);
+    }
+
+    [Fact]
+    public void PlanValidator_AllowsLlmBindingType_WhenMapModeMatchesItemSource()
+    {
+        var plan = new PlanDefinition
+        {
+            Goal = "Extract one object per result.",
+            Steps =
+            [
+                new PlanStep
+                {
+                    Id = "searchPages",
+                    Tool = SearchToolName,
+                    In = new Dictionary<string, JsonNode?>
+                    {
+                        ["query"] = JsonValue.Create("maze generator nuget")
+                    }
+                },
+                new PlanStep
+                {
+                    Id = "extractPackage",
+                    Llm = "extractor",
+                    SystemPrompt = "Return JSON only.",
+                    UserPrompt = "Extract one package.",
+                    In = new Dictionary<string, JsonNode?>
+                    {
+                        ["result"] = Ref("$searchPages.results", mode: "map", type: "object")
+                    },
+                    Out = JsonOut(new JsonObject
+                    {
+                        ["type"] = "object",
+                        ["required"] = new JsonArray("name"),
+                        ["properties"] = new JsonObject
+                        {
+                            ["name"] = new JsonObject
+                            {
+                                ["type"] = "string"
+                            }
+                        }
+                    }, aggregate: PlanStepOutputAggregates.Collect)
+                }
+            ]
+        };
+
+        PlanValidator.ValidateOrThrow(plan, [CreateStaticSearchDescriptor()]);
+    }
+
+    [Fact]
+    public void PlanValidator_RejectsLlmBindingType_WhenMapModeClaimsArray()
+    {
+        var plan = new PlanDefinition
+        {
+            Goal = "Extract one array per mapped result.",
+            Steps =
+            [
+                new PlanStep
+                {
+                    Id = "searchPages",
+                    Tool = SearchToolName,
+                    In = new Dictionary<string, JsonNode?>
+                    {
+                        ["query"] = JsonValue.Create("maze generator nuget")
+                    }
+                },
+                new PlanStep
+                {
+                    Id = "extractPackage",
+                    Llm = "extractor",
+                    SystemPrompt = "Return JSON only.",
+                    UserPrompt = "Extract one package.",
+                    In = new Dictionary<string, JsonNode?>
+                    {
+                        ["result"] = Ref("$searchPages.results", mode: "map", type: "array<object>")
+                    },
+                    Out = JsonOut(new JsonObject
+                    {
+                        ["type"] = "object",
+                        ["required"] = new JsonArray("name"),
+                        ["properties"] = new JsonObject
+                        {
+                            ["name"] = new JsonObject
+                            {
+                                ["type"] = "string"
+                            }
+                        }
+                    }, aggregate: PlanStepOutputAggregates.Collect)
+                }
+            ]
+        };
+
+        var exception = Assert.Throws<InvalidOperationException>(() => PlanValidator.ValidateOrThrow(plan, [CreateStaticSearchDescriptor()]));
+
+        Assert.Contains("declares type 'array<object>'", exception.Message, StringComparison.Ordinal);
+        Assert.Contains("produces object", exception.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void PlanValidator_RejectsLlmBindingType_WhenValueModeClaimsObjectForArraySource()
+    {
+        var plan = new PlanDefinition
+        {
+            Goal = "Shortlist packages from search results.",
+            Steps =
+            [
+                new PlanStep
+                {
+                    Id = "searchPages",
+                    Tool = SearchToolName,
+                    In = new Dictionary<string, JsonNode?>
+                    {
+                        ["query"] = JsonValue.Create("maze generator nuget")
+                    }
+                },
+                new PlanStep
+                {
+                    Id = "shortlistPackages",
+                    Llm = "shortlist",
+                    SystemPrompt = "Return JSON only.",
+                    UserPrompt = "Choose three packages.",
+                    In = new Dictionary<string, JsonNode?>
+                    {
+                        ["results"] = Ref("$searchPages.results", type: "object")
+                    },
+                    Out = JsonOut(new JsonObject
+                    {
+                        ["type"] = "array",
+                        ["items"] = new JsonObject
+                        {
+                            ["type"] = "object",
+                            ["required"] = new JsonArray("name"),
+                            ["properties"] = new JsonObject
+                            {
+                                ["name"] = new JsonObject
+                                {
+                                    ["type"] = "string"
+                                }
+                            }
+                        }
+                    })
+                }
+            ]
+        };
+
+        var exception = Assert.Throws<InvalidOperationException>(() => PlanValidator.ValidateOrThrow(plan, [CreateStaticSearchDescriptor()]));
+
+        Assert.Contains("declares type 'object'", exception.Message, StringComparison.Ordinal);
+        Assert.Contains("produces array", exception.Message, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -1023,6 +1286,63 @@ public class PlanningRuntimeContractsTests
         Assert.Equal("output_contract_failed", trace.ErrorCode);
         Assert.Contains("declared output contract", trace.ErrorMessage ?? string.Empty, StringComparison.Ordinal);
         Assert.Contains("call output", trace.ErrorDetails?.GetProperty("issues")[0].GetProperty("message").GetString() ?? string.Empty, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task PlanExecutor_Fails_WhenResolvedLlmInputViolatesDeclaredBindingType_AtRuntime()
+    {
+        var opaqueTool = CreateOpaqueProducerDescriptor();
+        var executor = new PlanExecutor(
+            new PlanningToolCatalog([opaqueTool]),
+            new ThrowingAgentStepRunner());
+        var plan = new PlanDefinition
+        {
+            Goal = "Validate LLM input shape at runtime.",
+            Steps =
+            [
+                new PlanStep
+                {
+                    Id = "opaqueSource",
+                    Tool = "mock-web:opaque",
+                    In = new Dictionary<string, JsonNode?>
+                    {
+                        ["seed"] = JsonValue.Create("example")
+                    }
+                },
+                new PlanStep
+                {
+                    Id = "extractFacts",
+                    Llm = "extractor",
+                    SystemPrompt = "Return JSON only.",
+                    UserPrompt = "Extract package facts.",
+                    In = new Dictionary<string, JsonNode?>
+                    {
+                        ["results"] = Ref("$opaqueSource.payload", type: "array<object>")
+                    },
+                    Out = JsonOut(new JsonObject
+                    {
+                        ["type"] = "object",
+                        ["required"] = new JsonArray("name"),
+                        ["properties"] = new JsonObject
+                        {
+                            ["name"] = new JsonObject
+                            {
+                                ["type"] = "string"
+                            }
+                        }
+                    })
+                }
+            ]
+        };
+
+        PlanValidator.ValidateOrThrow(plan, [opaqueTool]);
+
+        var result = await executor.ExecuteAsync(plan);
+        var trace = Assert.Single(result.StepTraces, candidate => !candidate.Success);
+        Assert.Equal("extractFacts", trace.StepId);
+        Assert.Equal("llm_input_contract_failed", trace.ErrorCode);
+        Assert.Contains("declared binding types", trace.ErrorMessage ?? string.Empty, StringComparison.Ordinal);
+        Assert.Contains("expected 'array<object>'", trace.ErrorDetails?.GetProperty("issues")[0].GetProperty("message").GetString() ?? string.Empty, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -1373,11 +1693,19 @@ public class PlanningRuntimeContractsTests
         return result;
     }
 
-    private static JsonNode? Ref(string value, string mode = "value") => new JsonObject
+    private static JsonNode? Ref(string value, string mode = "value", string? type = null)
     {
-        ["from"] = value,
-        ["mode"] = mode
-    };
+        var binding = new JsonObject
+        {
+            ["from"] = value,
+            ["mode"] = mode
+        };
+
+        if (!string.IsNullOrWhiteSpace(type))
+            binding["type"] = type;
+
+        return binding;
+    }
 
     private static PlanStepOutputContract JsonOut(JsonObject schema, string aggregate = PlanStepOutputAggregates.Single) =>
         new()

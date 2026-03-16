@@ -58,7 +58,7 @@ public static partial class PlanValidator
                 if (toolInputProperties is not null && toolInputProperties.TryGetValue(input.Key, out var propertySchema))
                     targetInputSchema = propertySchema;
                 ValidateInputOrThrow(
-                    step.Id,
+                    step,
                     input.Key,
                     input.Value,
                     seenIds,
@@ -165,7 +165,7 @@ public static partial class PlanValidator
     }
 
     private static void ValidateInputOrThrow(
-        string stepId,
+        PlanStep step,
         string inputName,
         JsonNode? value,
         HashSet<string> knownStepIds,
@@ -173,6 +173,7 @@ public static partial class PlanValidator
         IReadOnlyDictionary<string, ResolvedPlanStepOutputContract> resolvedOutputContracts,
         JsonElement? targetInputSchema)
     {
+        var stepId = step.Id;
         if (PlanInputBindingSyntax.TryGetLegacyStringReference(value, out var legacyReference))
         {
             throw new InvalidOperationException(
@@ -201,7 +202,19 @@ public static partial class PlanValidator
             && validatedSteps.TryGetValue(reference.StepId, out var sourceStep)
             && resolvedOutputContracts.TryGetValue(reference.StepId, out var sourceOutputContract))
         {
-            ValidateBindingCompatibilityOrThrow(stepId, inputName, binding, reference, sourceStep, sourceOutputContract, targetInputSchema.Value);
+            var sourceSchema = ResolveBoundSourceSchemaOrThrow(stepId, inputName, binding, reference, sourceStep, sourceOutputContract);
+
+            if (!string.IsNullOrWhiteSpace(binding.Type))
+                ValidateBindingDeclaredTypeOrThrow(stepId, inputName, binding, sourceSchema);
+
+            ValidateBindingCompatibilityOrThrow(stepId, inputName, binding, sourceStep, sourceSchema, targetInputSchema.Value);
+        }
+        else if (!string.IsNullOrWhiteSpace(binding.Type)
+            && validatedSteps.TryGetValue(reference.StepId, out var typedSourceStep)
+            && resolvedOutputContracts.TryGetValue(reference.StepId, out var typedSourceOutputContract))
+        {
+            var sourceSchema = ResolveBoundSourceSchemaOrThrow(stepId, inputName, binding, reference, typedSourceStep, typedSourceOutputContract);
+            ValidateBindingDeclaredTypeOrThrow(stepId, inputName, binding, sourceSchema);
         }
     }
 
@@ -261,33 +274,11 @@ public static partial class PlanValidator
         string stepId,
         string inputName,
         PlanInputBindingSpec binding,
-        ParsedStepReference reference,
         PlanStep sourceStep,
-        ResolvedPlanStepOutputContract sourceOutputContract,
+        JsonElement sourceSchema,
         JsonElement targetInputSchema)
     {
-        if (sourceOutputContract.FinalSchema is not { } finalSchema)
-            return;
-
-        var sourceSchema = TryResolveReferenceSchema(finalSchema, reference);
-        if (sourceSchema is null)
-        {
-            throw new InvalidOperationException(
-                $"Step '{stepId}' input '{inputName}' binds from '{binding.From}', but that path does not exist in the output schema of step '{sourceStep.Id}'.");
-        }
-
-        if (binding.Mode == PlanInputBindingMode.Map)
-        {
-            if (!PlanStepOutputContractResolver.SchemaDefinesArray(sourceSchema.Value)
-                || !sourceSchema.Value.TryGetProperty("items", out var itemsSchema))
-            {
-                return;
-            }
-
-            sourceSchema = itemsSchema.Clone();
-        }
-
-        if (!PlanStepOutputContractResolver.TryGetSchemaTypes(sourceSchema.Value, out var sourceTypes)
+        if (!PlanStepOutputContractResolver.TryGetSchemaTypes(sourceSchema, out var sourceTypes)
             || !PlanStepOutputContractResolver.TryGetSchemaTypes(targetInputSchema, out var targetTypes))
         {
             return;
@@ -314,6 +305,57 @@ public static partial class PlanValidator
 
         throw new InvalidOperationException(
             $"Step '{stepId}' input '{inputName}' binds from '{binding.From}', but source step '{sourceStep.Id}' produces {string.Join("|", nonNullSourceTypes)} while the target tool input expects {string.Join("|", targetTypes)}.");
+    }
+
+    private static JsonElement ResolveBoundSourceSchemaOrThrow(
+        string stepId,
+        string inputName,
+        PlanInputBindingSpec binding,
+        ParsedStepReference reference,
+        PlanStep sourceStep,
+        ResolvedPlanStepOutputContract sourceOutputContract)
+    {
+        if (sourceOutputContract.FinalSchema is not { } finalSchema)
+            return default;
+
+        var sourceSchema = TryResolveReferenceSchema(finalSchema, reference);
+        if (sourceSchema is null)
+        {
+            throw new InvalidOperationException(
+                $"Step '{stepId}' input '{inputName}' binds from '{binding.From}', but that path does not exist in the output schema of step '{sourceStep.Id}'.");
+        }
+
+        if (binding.Mode != PlanInputBindingMode.Map)
+            return sourceSchema.Value.Clone();
+
+        if (!PlanStepOutputContractResolver.SchemaDefinesArray(sourceSchema.Value)
+            || !sourceSchema.Value.TryGetProperty("items", out var itemsSchema))
+        {
+            throw new InvalidOperationException(
+                $"Step '{stepId}' input '{inputName}' uses mode='map', but '{binding.From}' does not resolve to an array in the output schema of step '{sourceStep.Id}'.");
+        }
+
+        return itemsSchema.Clone();
+    }
+
+    private static void ValidateBindingDeclaredTypeOrThrow(
+        string stepId,
+        string inputName,
+        PlanInputBindingSpec binding,
+        JsonElement sourceSchema)
+    {
+        if (!StepInputTypeValidator.TryParse(binding.Type, out var expectedType, out var typeError) || expectedType is null)
+        {
+            throw new InvalidOperationException(
+                $"Step '{stepId}' input '{inputName}' declares invalid type '{binding.Type}'. {typeError}");
+        }
+
+        var issues = StepInputTypeValidator.ValidateSourceSchema(sourceSchema, expectedType, inputName);
+        if (issues.Count == 0)
+            return;
+
+        throw new InvalidOperationException(
+            $"Step '{stepId}' input '{inputName}' declares type '{binding.Type}', but the binding is incompatible: {string.Join(" ", issues.Select(issue => issue.Message))}");
     }
 
     private static JsonElement? TryResolveReferenceSchema(JsonElement currentSchema, ParsedStepReference reference)
