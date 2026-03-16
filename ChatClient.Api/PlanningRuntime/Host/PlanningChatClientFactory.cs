@@ -61,13 +61,10 @@ public sealed class PlanningChatClientFactory(
 
     private string ResolveApiKey(LlmServerConfig server)
     {
-        if (!string.IsNullOrWhiteSpace(server.ApiKey))
-            return server.ApiKey;
-
         if (server.ServerType == ServerType.Ollama)
             return "ollama";
 
-        var configuredApiKey = configuration["OpenAI:ApiKey"];
+        var configuredApiKey = LlmServerConfigHelper.GetConfiguredOpenAiApiKey(configuration, server);
         if (!string.IsNullOrWhiteSpace(configuredApiKey))
             return configuredApiKey;
 

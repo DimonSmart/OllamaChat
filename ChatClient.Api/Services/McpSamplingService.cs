@@ -104,7 +104,7 @@ public sealed class McpSamplingService(
         IReadOnlyList<ProviderMessage> messages,
         CancellationToken cancellationToken)
     {
-        using var client = LlmChatEndpointHelper.CreateHttpClient(server, LlmServerConfig.DefaultOllamaUrl);
+        using var client = LlmServerConfigHelper.CreateHttpClient(server, LlmServerConfig.DefaultOllamaUrl);
 
         var payload = JsonSerializer.Serialize(new Dictionary<string, object?>
         {
@@ -140,13 +140,13 @@ public sealed class McpSamplingService(
         IReadOnlyList<ProviderMessage> messages,
         CancellationToken cancellationToken)
     {
-        var apiKey = GetEffectiveOpenAiApiKey(server);
+        var apiKey = LlmServerConfigHelper.GetConfiguredOpenAiApiKey(configuration, server);
         if (string.IsNullOrWhiteSpace(apiKey))
         {
             throw new InvalidOperationException("OpenAI API key is required but not configured.");
         }
 
-        using var client = LlmChatEndpointHelper.CreateHttpClient(server, "https://api.openai.com");
+        using var client = LlmServerConfigHelper.CreateHttpClient(server, "https://api.openai.com");
 
         var payload = JsonSerializer.Serialize(new Dictionary<string, object?>
         {
@@ -415,16 +415,6 @@ public sealed class McpSamplingService(
         }
 
         return null;
-    }
-
-    private string GetEffectiveOpenAiApiKey(LlmServerConfig server)
-    {
-        if (!string.IsNullOrWhiteSpace(server.ApiKey))
-        {
-            return server.ApiKey;
-        }
-
-        return configuration["OpenAI:ApiKey"] ?? string.Empty;
     }
 
     private async Task LogAndHandleExceptionAsync(Exception ex, CreateMessageRequestParams request, McpServerConfig? mcpServerConfig)

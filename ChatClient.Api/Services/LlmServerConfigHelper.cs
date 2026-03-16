@@ -1,5 +1,7 @@
 using ChatClient.Application.Services;
 using ChatClient.Domain.Models;
+using System.Net.Http.Headers;
+using System.Text;
 
 namespace ChatClient.Api.Services;
 
@@ -50,10 +52,18 @@ public static class LlmServerConfigHelper
         return server?.ServerType ?? ServerType.Ollama;
     }
 
-    /// <summary>
-    /// Creates HttpClient with basic configuration for LLM server
-    /// </summary>
-    public static HttpClient CreateHttpClient(LlmServerConfig server, string? defaultBaseUrl = null)
+    public static string GetConfiguredOpenAiApiKey(IConfiguration configuration, LlmServerConfig server)
+    {
+        if (!string.IsNullOrWhiteSpace(server.ApiKey))
+            return server.ApiKey;
+
+        return configuration["OpenAI:ApiKey"] ?? string.Empty;
+    }
+
+    public static HttpClient CreateHttpClient(
+        LlmServerConfig server,
+        string? defaultBaseUrl = null,
+        AuthenticationHeaderValue? authorization = null)
     {
         var handler = new HttpClientHandler();
         if (server.IgnoreSslErrors)
@@ -69,7 +79,17 @@ public static class LlmServerConfigHelper
             BaseAddress = new Uri(baseUrl)
         };
 
+        client.DefaultRequestHeaders.Authorization = authorization ?? CreateBasicAuthentication(server.Password);
         return client;
+    }
+
+    public static AuthenticationHeaderValue? CreateBasicAuthentication(string? password)
+    {
+        if (string.IsNullOrWhiteSpace(password))
+            return null;
+
+        var token = Convert.ToBase64String(Encoding.UTF8.GetBytes($":{password}"));
+        return new AuthenticationHeaderValue("Basic", token);
     }
 
     private static LlmServerConfig? TryGetServerById(IEnumerable<LlmServerConfig> servers, Guid? serverId)

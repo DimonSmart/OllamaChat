@@ -42,8 +42,7 @@ public class SavedChatRepository : ISavedChatRepository
             {
                 try
                 {
-                    var repo = new JsonFileRepository<SavedChat>(file, _logger, _options);
-                    var chat = await repo.ReadAsync(cancellationToken);
+                    var chat = await CreateRepository(file).ReadAsync(cancellationToken);
                     if (chat != null)
                         chats.Add(chat);
                 }
@@ -66,8 +65,7 @@ public class SavedChatRepository : ISavedChatRepository
         if (chatId == Guid.Empty)
             throw new ArgumentException("Chat id must be provided", nameof(chatId));
         var file = Path.Combine(_directoryPath, $"{chatId}.json");
-        var repo = new JsonFileRepository<SavedChat>(file, _logger, _options);
-        return await repo.ReadAsync(cancellationToken);
+        return await CreateRepository(file).ReadAsync(cancellationToken);
     }
 
     public async Task SaveAsync(SavedChat savedChat, CancellationToken cancellationToken = default)
@@ -75,8 +73,7 @@ public class SavedChatRepository : ISavedChatRepository
         if (savedChat is null)
             throw new ArgumentNullException(nameof(savedChat));
         var file = Path.Combine(_directoryPath, $"{savedChat.Id}.json");
-        var repo = new JsonFileRepository<SavedChat>(file, _logger, _options);
-        await repo.WriteAsync(savedChat, cancellationToken);
+        await CreateRepository(file).WriteAsync(savedChat, cancellationToken);
     }
 
     public async Task DeleteAsync(Guid chatId, CancellationToken cancellationToken = default)
@@ -84,10 +81,9 @@ public class SavedChatRepository : ISavedChatRepository
         if (chatId == Guid.Empty)
             throw new ArgumentException("Chat id must be provided", nameof(chatId));
         var file = Path.Combine(_directoryPath, $"{chatId}.json");
-        await Task.Run(() =>
-        {
-            if (File.Exists(file))
-                File.Delete(file);
-        }, cancellationToken);
+        await CreateRepository(file).DeleteAsync(cancellationToken);
     }
+
+    private JsonFileRepository<SavedChat> CreateRepository(string filePath) =>
+        new(filePath, _logger, _options);
 }

@@ -165,12 +165,12 @@ public sealed class HttpAgenticExecutionRuntime(
                 yield break;
             }
 
-            client = LlmChatEndpointHelper.CreateHttpClient(server, "https://api.openai.com");
+            client = LlmServerConfigHelper.CreateHttpClient(server, "https://api.openai.com");
             endpoint = LlmChatEndpointHelper.BuildOpenAiChatEndpoint(server);
         }
         else
         {
-            client = LlmChatEndpointHelper.CreateHttpClient(server, LlmServerConfig.DefaultOllamaUrl);
+            client = LlmServerConfigHelper.CreateHttpClient(server, LlmServerConfig.DefaultOllamaUrl);
             endpoint = LlmChatEndpointHelper.BuildOllamaChatEndpoint(server);
         }
 
@@ -533,7 +533,7 @@ public sealed class HttpAgenticExecutionRuntime(
         IReadOnlyList<ProviderMessage> messages,
         [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken)
     {
-        using var client = LlmChatEndpointHelper.CreateHttpClient(server, LlmServerConfig.DefaultOllamaUrl);
+        using var client = LlmServerConfigHelper.CreateHttpClient(server, LlmServerConfig.DefaultOllamaUrl);
         var endpoint = LlmChatEndpointHelper.BuildOllamaChatEndpoint(server);
         var payload = AgenticProviderPayloadBuilder.BuildOllamaPayload(
             modelName,
@@ -628,7 +628,7 @@ public sealed class HttpAgenticExecutionRuntime(
             yield break;
         }
 
-        using var client = LlmChatEndpointHelper.CreateHttpClient(server, "https://api.openai.com");
+        using var client = LlmServerConfigHelper.CreateHttpClient(server, "https://api.openai.com");
         var endpoint = LlmChatEndpointHelper.BuildOpenAiChatEndpoint(server);
         var payload = AgenticProviderPayloadBuilder.BuildOpenAiPayload(
             modelName,
@@ -918,12 +918,7 @@ public sealed class HttpAgenticExecutionRuntime(
 
     private string ResolveOpenAiApiKey(LlmServerConfig server)
     {
-        if (!string.IsNullOrWhiteSpace(server.ApiKey))
-        {
-            return server.ApiKey;
-        }
-
-        return configuration["OpenAI:ApiKey"] ?? string.Empty;
+        return LlmServerConfigHelper.GetConfiguredOpenAiApiKey(configuration, server);
     }
 
     private static async Task<string> SafeReadBodyAsync(HttpResponseMessage response, CancellationToken cancellationToken)
@@ -979,6 +974,9 @@ public sealed class HttpAgenticExecutionRuntime(
                                  prompt.Contains("address the user by", StringComparison.OrdinalIgnoreCase) ||
                                  prompt.Contains("обращай", StringComparison.OrdinalIgnoreCase) ||
                                  prompt.Contains("по имени", StringComparison.OrdinalIgnoreCase);
+        promptRequiresName = promptRequiresName ||
+                             prompt.Contains("обращай", StringComparison.OrdinalIgnoreCase) ||
+                             prompt.Contains("по имени", StringComparison.OrdinalIgnoreCase);
         if (!promptRequiresName)
             return false;
 

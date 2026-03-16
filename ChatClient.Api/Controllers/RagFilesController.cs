@@ -13,11 +13,16 @@ public class RagFilesController : ControllerBase
 {
     private readonly IRagFileService _fileService;
     private readonly IEnumerable<IFileConverter> _converters;
+    private readonly IHttpClientFactory _httpClientFactory;
 
-    public RagFilesController(IRagFileService fileService, IEnumerable<IFileConverter> converters)
+    public RagFilesController(
+        IRagFileService fileService,
+        IEnumerable<IFileConverter> converters,
+        IHttpClientFactory httpClientFactory)
     {
         _fileService = fileService;
         _converters = converters;
+        _httpClientFactory = httpClientFactory;
     }
 
     [HttpGet]
@@ -68,7 +73,7 @@ public class RagFilesController : ControllerBase
         if (!Uri.TryCreate(request.Url, UriKind.Absolute, out var pageUri))
             return BadRequest("Invalid URL.");
 
-        using var httpClient = new HttpClient();
+        using var httpClient = _httpClientFactory.CreateClient();
         var html = await httpClient.GetStringAsync(pageUri, HttpContext.RequestAborted);
 
         var text = HtmlToText(html);

@@ -1,4 +1,5 @@
 using ChatClient.Api.Services;
+using ChatClient.Application.Repositories;
 using ChatClient.Domain.Models;
 using ChatClient.Infrastructure.Repositories;
 using Microsoft.Extensions.Configuration;
@@ -10,6 +11,17 @@ namespace ChatClient.Tests;
 
 public class UserSettingsServiceTests
 {
+    private sealed class ThrowingUserSettingsRepository : IUserSettingsRepository
+    {
+        public bool Exists => true;
+
+        public Task<UserSettings?> GetAsync(CancellationToken cancellationToken = default) =>
+            Task.FromResult<UserSettings?>(new UserSettings());
+
+        public Task SaveAsync(UserSettings settings, CancellationToken cancellationToken = default) =>
+            throw new IOException("disk write failed");
+    }
+
     private class MockLlmServerConfigService : ILlmServerConfigService
     {
         public Task<IReadOnlyCollection<LlmServerConfig>> GetAllAsync()
@@ -78,5 +90,17 @@ public class UserSettingsServiceTests
             if (Directory.Exists(tempDir))
                 Directory.Delete(tempDir, true);
         }
+    }
+
+    [Fact]
+    public async Task SaveSettingsAsync_PropagatesRepositoryFailures()
+    {
+        var serviceLogger = new LoggerFactory().CreateLogger<UserSettingsService>();
+        var service = new UserSettingsService(
+            new ThrowingUserSettingsRepository(),
+            serviceLogger,
+            new MockLlmServerConfigService());
+
+        await Assert.ThrowsAsync<IOException>(() => service.SaveSettingsAsync(new UserSettings()));
     }
 }

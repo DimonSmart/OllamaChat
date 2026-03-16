@@ -1,5 +1,4 @@
 using ChatClient.Domain.Models;
-using System.Net.Http.Headers;
 using System.Text.Json;
 
 namespace ChatClient.Api.Services;
@@ -29,7 +28,7 @@ public class ServerConnectionTestService(ILogger<ServerConnectionTestService> lo
 
     private async Task<ServerConnectionTestResult> TestOllamaConnectionAsync(LlmServerConfig server, CancellationToken cancellationToken)
     {
-        using var client = CreateHttpClient(server);
+        using var client = LlmServerConfigHelper.CreateHttpClient(server, LlmServerConfig.DefaultOllamaUrl);
 
         try
         {
@@ -54,33 +53,6 @@ public class ServerConnectionTestService(ILogger<ServerConnectionTestService> lo
         }
     }
 
-    private HttpClient CreateHttpClient(LlmServerConfig server)
-    {
-        var handler = new HttpClientHandler();
-        if (server.IgnoreSslErrors)
-            handler.ServerCertificateCustomValidationCallback = (_, _, _, _) => true;
-
-        var baseUrl = string.IsNullOrWhiteSpace(server.BaseUrl) ? "http://localhost:11434" : server.BaseUrl.TrimEnd('/');
-
-        var client = new HttpClient(handler)
-        {
-            Timeout = TimeSpan.FromSeconds(server.HttpTimeoutSeconds),
-            BaseAddress = new Uri(baseUrl)
-        };
-
-        ConfigureOllamaAuthentication(client, server);
-        return client;
-    }
-
-    private static void ConfigureOllamaAuthentication(HttpClient client, LlmServerConfig server)
-    {
-        if (!string.IsNullOrEmpty(server.Password))
-        {
-            var auth = Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes($":{server.Password}"));
-            client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Basic", auth);
-        }
-    }
-
     private static int? TryParseOllamaModelCount(string content)
     {
         try
@@ -98,24 +70,9 @@ public class ServerConnectionTestService(ILogger<ServerConnectionTestService> lo
         return null;
     }
 
-    private string GetEffectiveApiKey(LlmServerConfig server)
-    {
-        if (!string.IsNullOrWhiteSpace(server.ApiKey))
-            return server.ApiKey;
-
-        var configApiKey = _configuration["OpenAI:ApiKey"];
-        if (!string.IsNullOrWhiteSpace(configApiKey))
-        {
-            _logger.LogDebug("Using OpenAI API key from configuration (user secrets)");
-            return configApiKey;
-        }
-
-        return string.Empty;
-    }
-
     private async Task<ServerConnectionTestResult> TestOpenAIConnectionAsync(LlmServerConfig server, CancellationToken cancellationToken)
     {
-        var effectiveApiKey = GetEffectiveApiKey(server);
+        var effectiveApiKey = LlmServerConfigHelper.GetConfiguredOpenAiApiKey(_configuration, server);
         if (string.IsNullOrWhiteSpace(effectiveApiKey))
         {
             return ServerConnectionTestResult.Failure("API Key is required for OpenAI servers. Set it in server settings or use 'dotnet user-secrets set \"OpenAI:ApiKey\" \"your-key\"'");
@@ -123,10 +80,9 @@ public class ServerConnectionTestService(ILogger<ServerConnectionTestService> lo
 
         try
         {
-            using var httpClient = CreateOpenAIHttpClient(server);
+            using var httpClient = LlmServerConfigHelper.CreateHttpClient(server, "https://api.openai.com");
             var fullUrl = BuildOpenAIApiUrl(server);
-
-            httpClient.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", effectiveApiKey);
+            httpClient.DefaultRequestHeaders.Authorization = new("Bearer", effectiveApiKey);
 
             _logger.LogDebug("Testing OpenAI connection to URL: {Url}", fullUrl);
             var response = await httpClient.GetAsync(fullUrl, cancellationToken);
@@ -146,18 +102,6 @@ public class ServerConnectionTestService(ILogger<ServerConnectionTestService> lo
             _logger.LogError(ex, "Unexpected error during OpenAI connection test");
             return ServerConnectionTestResult.Failure($"Connection failed: {ex.Message}");
         }
-    }
-
-    private HttpClient CreateOpenAIHttpClient(LlmServerConfig server)
-    {
-        var handler = new HttpClientHandler();
-        if (server.IgnoreSslErrors)
-            handler.ServerCertificateCustomValidationCallback = (_, _, _, _) => true;
-
-        return new HttpClient(handler)
-        {
-            Timeout = TimeSpan.FromSeconds(server.HttpTimeoutSeconds)
-        };
     }
 
     private static string BuildOpenAIApiUrl(LlmServerConfig server)

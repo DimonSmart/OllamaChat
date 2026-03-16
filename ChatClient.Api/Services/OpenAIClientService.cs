@@ -94,10 +94,7 @@ public class OpenAIClientService(
 
     private string GetEffectiveApiKey(LlmServerConfig server)
     {
-        if (!string.IsNullOrWhiteSpace(server.ApiKey))
-            return server.ApiKey;
-
-        var configApiKey = _configuration["OpenAI:ApiKey"];
+        var configApiKey = LlmServerConfigHelper.GetConfiguredOpenAiApiKey(_configuration, server);
         if (!string.IsNullOrWhiteSpace(configApiKey))
         {
             _logger.LogDebug("Using OpenAI API key from configuration for server {ServerName}", server.Name);

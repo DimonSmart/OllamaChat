@@ -1,5 +1,6 @@
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using System.Text;
 using ChatClient.Api.PlanningRuntime.Common;
 using ChatClient.Api.PlanningRuntime.Execution;
 using ChatClient.Api.PlanningRuntime.Host;
@@ -10,11 +11,17 @@ namespace ChatClient.Api.Client.Components.Planning;
 
 public sealed class PlanningPreviewScenario
 {
+    private string _description = string.Empty;
+
     public required string Id { get; init; }
 
     public required string DisplayName { get; init; }
 
-    public required string Description { get; init; }
+    public required string Description
+    {
+        get => _description;
+        init => _description = PreviewTextNormalizer.Normalize(value);
+    }
 
     public required string UserQuery { get; init; }
 
@@ -29,6 +36,40 @@ public sealed class PlanningPreviewScenario
     public IReadOnlyList<string> LogLines { get; init; } = [];
 
     public ResultEnvelope<JsonElement?>? FinalResult { get; init; }
+}
+
+internal static class PreviewTextNormalizer
+{
+    private static readonly Encoding Cp1251 = CreateCp1251Encoding();
+
+    public static string Normalize(string value)
+    {
+        if (string.IsNullOrWhiteSpace(value) || !LooksLikeUtf8MojibakeAsciiSafe(value))
+            return value;
+
+        try
+        {
+            var bytes = Cp1251.GetBytes(value);
+            var normalized = Encoding.UTF8.GetString(bytes);
+            return normalized.Contains('\uFFFD', StringComparison.Ordinal) ? value : normalized;
+        }
+        catch
+        {
+            return value;
+        }
+    }
+
+    private static bool LooksLikeUtf8Mojibake(string value) =>
+        value.Contains("Р", StringComparison.Ordinal) || value.Contains("С", StringComparison.Ordinal);
+
+    private static bool LooksLikeUtf8MojibakeAsciiSafe(string value) =>
+        value.IndexOf('\u0420') >= 0 || value.IndexOf('\u0421') >= 0;
+
+    private static Encoding CreateCp1251Encoding()
+    {
+        Encoding.RegisterProvider(CodePagesEncodingProvider.Instance);
+        return Encoding.GetEncoding(1251);
+    }
 }
 
 public static class PlanningPreviewScenarios

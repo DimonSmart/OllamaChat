@@ -4,19 +4,10 @@ using System.Runtime.InteropServices;
 
 namespace ChatClient.Api.Services
 {
-    /// <summary>
-    /// Helper service for launching the system's default browser
-    /// </summary>
     public static class BrowserLaunchService
     {
         private const string DisableBrowserLaunchEnvVar = "OLLAMACHAT_DISABLE_BROWSER_LAUNCH";
 
-        /// <summary>
-        /// Display application information and launch the default browser
-        /// </summary>
-        /// <param name="httpUrl">Full HTTP URL to display and open</param>
-        /// <param name="httpsUrl">Full HTTPS URL to display</param>
-        /// <param name="delayMs">Delay in milliseconds before launching browser</param>
         public static void DisplayInfoAndLaunchBrowser(string httpUrl, string httpsUrl, int delayMs = 1500)
         {
             if (IsBrowserLaunchDisabled())
@@ -41,10 +32,6 @@ namespace ChatClient.Api.Services
             });
         }
 
-        /// <summary>
-        /// Open the default system browser to the specified URL
-        /// </summary>
-        /// <param name="url">URL to open</param>
         public static void OpenBrowser(string url)
         {
             try

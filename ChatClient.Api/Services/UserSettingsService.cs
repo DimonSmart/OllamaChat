@@ -44,6 +44,7 @@ public class UserSettingsService(IUserSettingsRepository repository, ILogger<Use
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error saving user settings");
+            throw;
         }
     }
 }
