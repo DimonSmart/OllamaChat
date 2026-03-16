@@ -29,6 +29,9 @@ public static class PlanningJson
     public static string SerializeNodeIndented(JsonNode? value) =>
         value?.ToJsonString(IndentedOptions) ?? "null";
 
+    public static string SerializeNodeCompact(JsonNode? value) =>
+        value?.ToJsonString(CompactOptions) ?? "null";
+
     private static JsonSerializerOptions CreateOptions(bool writeIndented) => new(JsonSerializerDefaults.Web)
     {
         WriteIndented = writeIndented,

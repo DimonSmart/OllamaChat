@@ -1,4 +1,5 @@
 @using System.Text.Json
+@using System.Text.Json.Nodes
 @using ChatClient.Api.PlanningRuntime.Common
 @using ChatClient.Api.PlanningRuntime.Execution
 @using MudBlazor
@@ -8,13 +9,26 @@
     <MudStack Spacing="2">
         <MudStack Row="true" AlignItems="AlignItems.Center" Justify="Justify.SpaceBetween">
             <MudText Typo="Typo.h6">Replan And Runtime Log</MudText>
-            @if (HasFullLog)
+            @if (HasFullLog || HasDiagnosticBundle)
             {
-                <MudButton Variant="Variant.Outlined"
-                           Size="Size.Small"
-                           OnClick="CopyFullLogAsync">
-                    Copy full log
-                </MudButton>
+                <MudStack Row="true" Spacing="1">
+                    @if (HasFullLog)
+                    {
+                        <MudButton Variant="Variant.Outlined"
+                                   Size="Size.Small"
+                                   OnClick="CopyFullLogAsync">
+                            Copy full log
+                        </MudButton>
+                    }
+                    @if (HasDiagnosticBundle)
+                    {
+                        <MudButton Variant="Variant.Outlined"
+                                   Size="Size.Small"
+                                   OnClick="CopyDiagnosticBundleAsync">
+                            Copy diagnostic bundle
+                        </MudButton>
+                    }
+                </MudStack>
             }
         </MudStack>
 
@@ -34,7 +48,7 @@
         @if (HasFullLog)
         {
             <MudText Typo="Typo.caption" Class="mud-text-secondary">
-                Full runtime log is hidden from the page. Use the copy button if you need the raw text.
+                Copy full log exports only text log lines. Copy diagnostic bundle exports log lines plus structured runtime events.
             </MudText>
         }
     </MudStack>
@@ -48,10 +62,39 @@
         Events.OfType<ReplanRoundCompletedEvent>().ToList();
 
     private bool HasFullLog => LogLines.Count > 0;
+    private bool HasDiagnosticBundle => LogLines.Count > 0 || Events.Count > 0;
 
     private Task CopyFullLogAsync() =>
         JSRuntime.InvokeVoidAsync("copyText", string.Join(Environment.NewLine, LogLines)).AsTask();
 
+    private Task CopyDiagnosticBundleAsync() =>
+        JSRuntime.InvokeVoidAsync("copyText", PlanningJson.SerializeNodeIndented(BuildDiagnosticBundle())).AsTask();
+
     private static string SerializeJson<T>(T value) =>
         PlanningJson.SerializeIndented(value);
+
+    private JsonObject BuildDiagnosticBundle() => new()
+    {
+        ["copiedAtUtc"] = DateTimeOffset.UtcNow,
+        ["logLineCount"] = LogLines.Count,
+        ["eventCount"] = Events.Count,
+        ["logLines"] = new JsonArray(LogLines.Select(static line => JsonValue.Create(line)).ToArray()),
+        ["events"] = new JsonArray(Events.Select(SerializeEvent).ToArray())
+    };
+
+    private static JsonObject SerializeEvent(PlanRunEvent planRunEvent)
+    {
+        var serialized = JsonSerializer.SerializeToNode((object)planRunEvent, planRunEvent.GetType(), PlanningJson.IndentedOptions) as JsonObject
+            ?? new JsonObject();
+
+        var result = new JsonObject
+        {
+            ["eventType"] = planRunEvent.GetType().Name
+        };
+
+        foreach (var property in serialized)
+            result[property.Key] = property.Value?.DeepClone();
+
+        return result;
+    }
 }

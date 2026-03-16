@@ -57,7 +57,7 @@ public sealed class LlmPlanner(
                     throw new PlanValidationException(validationIssue!);
 
                 _log.Log($"[plan] create:success steps={plan.Steps.Count} goal={Shorten(plan.Goal, 240)}");
-                _log.Log($"[plan] create:summary {PlanningLogFormatter.SummarizeNode(PlanningLogFormatter.SummarizePlan(plan))}");
+                _log.Log($"[plan] create:summary {PlanningJson.SerializeNodeCompact(PlanningLogFormatter.SummarizePlan(plan))}");
                 _observer.OnEvent(new PlanCreatedEvent(attempt, "plan", ClonePlan(plan)));
                 return plan;
             }

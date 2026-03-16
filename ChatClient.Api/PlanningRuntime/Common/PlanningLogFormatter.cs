@@ -36,15 +36,46 @@ public static class PlanningLogFormatter
             maxObjectProperties,
             maxStringLength);
 
+    public static JsonNode? SummarizeElementValue(
+        JsonElement? value,
+        int maxDepth = DefaultMaxDepth,
+        int maxArrayItems = DefaultMaxArrayItems,
+        int maxObjectProperties = DefaultMaxObjectProperties,
+        int maxStringLength = DefaultMaxStringLength) =>
+        SummarizeNodeValue(
+            value is null ? null : JsonSerializer.SerializeToNode(value.Value),
+            maxDepth,
+            maxArrayItems,
+            maxObjectProperties,
+            maxStringLength);
+
     public static string SummarizeNode(
         JsonNode? value,
         int maxDepth = DefaultMaxDepth,
         int maxArrayItems = DefaultMaxArrayItems,
         int maxObjectProperties = DefaultMaxObjectProperties,
         int maxStringLength = DefaultMaxStringLength) =>
-        SummarizeNodeForDisplay(value, maxDepth, maxArrayItems, maxObjectProperties, maxStringLength)
+        SummarizeNodeValue(
+            value,
+            maxDepth,
+            maxArrayItems,
+            maxObjectProperties,
+            maxStringLength)
             ?.ToJsonString(PlanningJson.CompactOptions)
         ?? "null";
+
+    public static JsonNode? SummarizeNodeValue(
+        JsonNode? value,
+        int maxDepth = DefaultMaxDepth,
+        int maxArrayItems = DefaultMaxArrayItems,
+        int maxObjectProperties = DefaultMaxObjectProperties,
+        int maxStringLength = DefaultMaxStringLength) =>
+        SummarizeNodeForDisplay(
+            value,
+            maxDepth,
+            maxArrayItems,
+            maxObjectProperties,
+            maxStringLength);
 
     public static JsonObject SummarizePlan(PlanDefinition plan) => new()
     {
@@ -68,6 +99,14 @@ public static class PlanningLogFormatter
             },
         ["status"] = step.Status
     };
+
+    public static JsonNode? SummarizeForLog(
+        JsonNode? value,
+        int maxDepth = 4,
+        int maxArrayItems = 4,
+        int maxObjectProperties = 12,
+        int maxStringLength = DefaultMaxStringLength) =>
+        SummarizeNodeForDisplay(value, maxDepth, maxArrayItems, maxObjectProperties, maxStringLength);
 
     private static JsonNode? SummarizeNodeForDisplay(
         JsonNode? value,

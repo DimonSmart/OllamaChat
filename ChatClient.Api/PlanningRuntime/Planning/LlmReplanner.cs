@@ -46,11 +46,11 @@ public sealed class LlmReplanner(
             var reason = actionBatch.Reason.Trim();
 
             _log.Log($"[replan] round={round} done={done} actions={actionBatch.Actions.Count} reason={Shorten(reason, 240)}");
-            _log.Log($"[replan] round={round} actionBatch={PlanningLogFormatter.SummarizeNode(JsonSerializer.SerializeToNode(actionBatch))}");
+            _log.Log($"[replan] round={round} actionBatch={SerializeDetailedSummary(JsonSerializer.SerializeToNode(actionBatch))}");
 
             lastActionResults = ExecuteActions(session, request, actionBatch.Actions);
             AppendDraftValidationResult(session, workflowTools, lastActionResults);
-            _log.Log($"[replan] round={round} actionResults={PlanningLogFormatter.SummarizeNode(lastActionResults)}");
+            _log.Log($"[replan] round={round} actionResults={SerializeDetailedSummary(lastActionResults)}");
             _observer.OnEvent(new ReplanRoundCompletedEvent(
                 round,
                 done,
@@ -78,7 +78,7 @@ public sealed class LlmReplanner(
 
             var replanned = session.BuildPlan();
             _log.Log($"[replan] success steps={replanned.Steps.Count} goal={Shorten(replanned.Goal, 240)}");
-            _log.Log($"[replan] summary {PlanningLogFormatter.SummarizeNode(PlanningLogFormatter.SummarizePlan(replanned))}");
+            _log.Log($"[replan] summary {PlanningJson.SerializeNodeCompact(PlanningLogFormatter.SummarizePlan(replanned))}");
             _observer.OnEvent(new ReplanAppliedEvent(ClonePlan(replanned)));
             return replanned;
         }
@@ -435,6 +435,9 @@ public sealed class LlmReplanner(
             ? normalized
             : $"{normalized[..maxLength]}...";
     }
+
+    private static string SerializeDetailedSummary(JsonNode? value) =>
+        PlanningJson.SerializeNodeCompact(PlanningLogFormatter.SummarizeForLog(value));
 
     private static PlanDefinition ClonePlan(PlanDefinition plan) =>
         JsonSerializer.Deserialize<PlanDefinition>(JsonSerializer.Serialize(plan))

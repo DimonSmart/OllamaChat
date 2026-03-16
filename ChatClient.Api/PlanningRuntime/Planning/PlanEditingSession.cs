@@ -209,8 +209,8 @@ public sealed class PlanEditingSession
         {
             diff["output"] = new JsonObject
             {
-                ["before"] = PlanningLogFormatter.SummarizeNode(beforeOut),
-                ["after"] = PlanningLogFormatter.SummarizeNode(afterOut)
+                ["before"] = PlanningLogFormatter.SummarizeNodeValue(beforeOut, maxDepth: 3),
+                ["after"] = PlanningLogFormatter.SummarizeNodeValue(afterOut, maxDepth: 3)
             };
         }
 
@@ -236,8 +236,8 @@ public sealed class PlanEditingSession
             changedInputs.Add(new JsonObject
             {
                 ["name"] = key,
-                ["before"] = PlanningLogFormatter.SummarizeNode(beforeValue),
-                ["after"] = PlanningLogFormatter.SummarizeNode(afterValue)
+                ["before"] = PlanningLogFormatter.SummarizeNodeValue(beforeValue, maxDepth: 3),
+                ["after"] = PlanningLogFormatter.SummarizeNodeValue(afterValue, maxDepth: 3)
             });
         }
 
