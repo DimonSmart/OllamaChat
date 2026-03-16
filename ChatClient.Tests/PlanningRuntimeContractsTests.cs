@@ -1,5 +1,7 @@
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using System.Net;
+using System.Net.Http.Headers;
 using ChatClient.Api.PlanningRuntime.Agents;
 using ChatClient.Api.PlanningRuntime.Common;
 using ChatClient.Api.PlanningRuntime.Execution;
@@ -150,6 +152,60 @@ public class PlanningRuntimeContractsTests
     }
 
     [Fact]
+    public void PlanValidator_RejectsToolStepMissingRequiredInput()
+    {
+        var plan = new PlanDefinition
+        {
+            Goal = "Search the web.",
+            Steps =
+            [
+                new PlanStep
+                {
+                    Id = "searchPages",
+                    Tool = SearchToolName,
+                    In = new Dictionary<string, JsonNode?>
+                    {
+                        ["limit"] = JsonValue.Create(3)
+                    }
+                }
+            ]
+        };
+
+        var exception = Assert.Throws<InvalidOperationException>(() => PlanValidator.ValidateOrThrow(plan, [CreateStaticSearchDescriptor()]));
+
+        Assert.Contains("missing required input 'query'", exception.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void PlanValidator_RejectsLiteralToolInputWithWrongType()
+    {
+        var plan = new PlanDefinition
+        {
+            Goal = "Search the web.",
+            Steps =
+            [
+                new PlanStep
+                {
+                    Id = "searchPages",
+                    Tool = SearchToolName,
+                    In = new Dictionary<string, JsonNode?>
+                    {
+                        ["query"] = new JsonObject
+                        {
+                            ["value"] = "maze packages"
+                        }
+                    }
+                }
+            ]
+        };
+
+        var exception = Assert.Throws<InvalidOperationException>(() => PlanValidator.ValidateOrThrow(plan, [CreateStaticSearchDescriptor()]));
+
+        Assert.Contains("does not match tool schema", exception.Message, StringComparison.Ordinal);
+        Assert.Contains("Expected string", exception.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task PlanningSessionService_StartAsync_RequiresEnabledTools()
     {
         var service = CreateSessionService();
@@ -224,6 +280,8 @@ public class PlanningRuntimeContractsTests
     [Fact]
     public async Task BuiltInWebSearchLogic_ExtractsStructuredResultsFromSearchMarkup()
     {
+        BuiltInWebToolLogic.ResetSearchStateForTests(CreateTempSearchCacheDirectory());
+
         const string html = """
             <html>
               <body>
@@ -271,6 +329,8 @@ public class PlanningRuntimeContractsTests
     [Fact]
     public async Task BuiltInWebSearchLogic_Fails_WhenStructuredMarkupIsMissing()
     {
+        BuiltInWebToolLogic.ResetSearchStateForTests(CreateTempSearchCacheDirectory());
+
         const string html = """
             <html>
               <body>
@@ -291,6 +351,109 @@ public class PlanningRuntimeContractsTests
             new WebSearchInput("item")));
 
         Assert.Equal("Search returned no structured candidate results.", exception.Message);
+    }
+
+    [Fact]
+    public async Task BuiltInWebSearchLogic_RetriesAfterRateLimit()
+    {
+        BuiltInWebToolLogic.ResetSearchStateForTests(CreateTempSearchCacheDirectory());
+
+        const string html = """
+            <html>
+              <body>
+                <div id="results">
+                  <div class="snippet" data-type="web" data-pos="0">
+                    <a href="https://example.com/item-a" class="l1">
+                      <div class="title" title="Item A title">Item A title</div>
+                    </a>
+                    <div class="generic-snippet">
+                      <div class="content">Item A summary.</div>
+                    </div>
+                  </div>
+                </div>
+              </body>
+            </html>
+            """;
+
+        var handler = new SequenceHttpMessageHandler(
+        [
+            _ =>
+            {
+                var response = new HttpResponseMessage(HttpStatusCode.TooManyRequests);
+                response.Headers.RetryAfter = new RetryConditionHeaderValue(TimeSpan.FromMilliseconds(1));
+                return response;
+            },
+            _ => new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent(html)
+            }
+        ]);
+
+        var httpClientFactory = new Mock<IHttpClientFactory>();
+        httpClientFactory
+            .Setup(factory => factory.CreateClient(It.IsAny<string>()))
+            .Returns(new HttpClient(handler));
+
+        var result = await BuiltInWebToolLogic.SearchAsync(
+            httpClientFactory.Object,
+            NullLogger.Instance,
+            new WebSearchInput("item a"));
+
+        Assert.Equal(2, handler.CallCount);
+        Assert.Single(result.Results);
+        Assert.Equal("https://example.com/item-a", result.Results[0].Url);
+    }
+
+    [Fact]
+    public async Task BuiltInWebSearchLogic_CachesRepeatedQueriesOnDisk()
+    {
+        var cacheDirectory = CreateTempSearchCacheDirectory();
+        BuiltInWebToolLogic.ResetSearchStateForTests(cacheDirectory);
+
+        const string html = """
+            <html>
+              <body>
+                <div id="results">
+                  <div class="snippet" data-type="web" data-pos="0">
+                    <a href="https://example.com/item-a" class="l1">
+                      <div class="title" title="Item A title">Item A title</div>
+                    </a>
+                    <div class="generic-snippet">
+                      <div class="content">Item A summary.</div>
+                    </div>
+                  </div>
+                </div>
+              </body>
+            </html>
+            """;
+
+        var handler = new SequenceHttpMessageHandler(
+        [
+            _ => new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent(html)
+            },
+            _ => throw new InvalidOperationException("The second identical query should have been served from the in-memory cache.")
+        ]);
+
+        var httpClientFactory = new Mock<IHttpClientFactory>();
+        httpClientFactory
+            .Setup(factory => factory.CreateClient(It.IsAny<string>()))
+            .Returns(new HttpClient(handler));
+
+        var first = await BuiltInWebToolLogic.SearchAsync(
+            httpClientFactory.Object,
+            NullLogger.Instance,
+            new WebSearchInput("item a"));
+        BuiltInWebToolLogic.ResetSearchStateForTests(cacheDirectory);
+        var second = await BuiltInWebToolLogic.SearchAsync(
+            httpClientFactory.Object,
+            NullLogger.Instance,
+            new WebSearchInput("item a"));
+
+        Assert.Equal(1, handler.CallCount);
+        Assert.Equal(first.Results[0].Url, second.Results[0].Url);
+        Assert.Single(Directory.GetFiles(cacheDirectory, "*.json"));
     }
 
     [Fact]
@@ -482,6 +645,83 @@ public class PlanningRuntimeContractsTests
         var exception = await Assert.ThrowsAsync<InvalidOperationException>(() => executor.ExecuteAsync(plan));
 
         Assert.Contains("uses mode='map' but ref '$searchPages.query' did not resolve to an array", exception.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void PlanValidator_RejectsBindingWhoseSourceSchemaIsIncompatibleWithTargetToolInput()
+    {
+        var plan = new PlanDefinition
+        {
+            Goal = "Reuse a search result object as a search query.",
+            Steps =
+            [
+                new PlanStep
+                {
+                    Id = "searchPages",
+                    Tool = SearchToolName,
+                    In = new Dictionary<string, JsonNode?>
+                    {
+                        ["query"] = JsonValue.Create("example")
+                    }
+                },
+                new PlanStep
+                {
+                    Id = "searchAgain",
+                    Tool = SearchToolName,
+                    In = new Dictionary<string, JsonNode?>
+                    {
+                        ["query"] = Ref("$searchPages.results[0]")
+                    }
+                }
+            ]
+        };
+
+        var exception = Assert.Throws<InvalidOperationException>(() => PlanValidator.ValidateOrThrow(plan, [CreateStaticSearchDescriptor()]));
+
+        Assert.Contains("source step 'searchPages' produces object", exception.Message, StringComparison.Ordinal);
+        Assert.Contains("expects string", exception.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task PlanExecutor_Fails_WhenResolvedToolInputViolatesInputSchema_AtRuntime()
+    {
+        var opaqueTool = CreateOpaqueProducerDescriptor();
+        var executor = new PlanExecutor(
+            new PlanningToolCatalog([opaqueTool, CreateStaticSearchDescriptor()]),
+            new ThrowingAgentStepRunner());
+        var plan = new PlanDefinition
+        {
+            Goal = "Feed opaque output into a search tool.",
+            Steps =
+            [
+                new PlanStep
+                {
+                    Id = "opaqueSource",
+                    Tool = "mock-web:opaque",
+                    In = new Dictionary<string, JsonNode?>
+                    {
+                        ["seed"] = JsonValue.Create("example")
+                    }
+                },
+                new PlanStep
+                {
+                    Id = "searchAgain",
+                    Tool = SearchToolName,
+                    In = new Dictionary<string, JsonNode?>
+                    {
+                        ["query"] = Ref("$opaqueSource.payload")
+                    }
+                }
+            ]
+        };
+
+        PlanValidator.ValidateOrThrow(plan, [opaqueTool, CreateStaticSearchDescriptor()]);
+
+        var result = await executor.ExecuteAsync(plan);
+        var trace = Assert.Single(result.StepTraces, trace => !trace.Success);
+        Assert.Equal("searchAgain", trace.StepId);
+        Assert.Equal("input_contract_failed", trace.ErrorCode);
+        Assert.Contains("does not match its input schema", trace.ErrorMessage ?? string.Empty, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -982,6 +1222,36 @@ public class PlanningRuntimeContractsTests
                 second = GetRequiredString(arguments, "second")
             });
 
+    private static AppToolDescriptor CreateOpaqueProducerDescriptor() =>
+        new(
+            QualifiedName: "mock-web:opaque",
+            ServerName: "mock-web",
+            ToolName: "opaque",
+            DisplayName: "opaque",
+            Description: "Produce opaque output without an output schema.",
+            InputSchema: ParseJsonElement("""
+                {
+                  "type": "object",
+                  "properties": {
+                    "seed": { "type": "string" }
+                  },
+                  "required": ["seed"]
+                }
+                """),
+            OutputSchema: null,
+            MayRequireUserInput: false,
+            ReadOnlyHint: true,
+            DestructiveHint: false,
+            IdempotentHint: true,
+            OpenWorldHint: false,
+            ExecuteAsync: (arguments, _) => Task.FromResult<object>(new
+            {
+                payload = new
+                {
+                    unexpected = GetRequiredString(arguments, "seed")
+                }
+            }));
+
     private static RecordingDownloadDescriptor CreateDownloadByUrlDescriptor()
     {
         var receivedUrls = new List<string>();
@@ -1124,6 +1394,16 @@ public class PlanningRuntimeContractsTests
             Aggregate = aggregate
         };
 
+    private static string CreateTempSearchCacheDirectory()
+    {
+        var path = Path.Combine(
+            Path.GetTempPath(),
+            "ollamachat-web-search-cache-tests",
+            Guid.NewGuid().ToString("n"));
+        Directory.CreateDirectory(path);
+        return path;
+    }
+
     private sealed record RecordingDownloadDescriptor(AppToolDescriptor Descriptor, List<string> ReceivedUrls);
 
     private sealed record PageRecordingDownloadDescriptor(AppToolDescriptor Descriptor, List<string> ReceivedTitles);
@@ -1135,6 +1415,20 @@ public class PlanningRuntimeContractsTests
             {
                 Content = new StringContent(html)
             });
+    }
+
+    private sealed class SequenceHttpMessageHandler(IReadOnlyList<Func<HttpRequestMessage, HttpResponseMessage>> responses) : HttpMessageHandler
+    {
+        private int _callCount;
+
+        public int CallCount => _callCount;
+
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            var index = _callCount++;
+            var factory = index < responses.Count ? responses[index] : responses[^1];
+            return Task.FromResult(factory(request));
+        }
     }
 
     private sealed class ThrowingAgentStepRunner : IAgentStepRunner

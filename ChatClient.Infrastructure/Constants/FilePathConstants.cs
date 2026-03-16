@@ -10,5 +10,6 @@ public static class FilePathConstants
     public const string DefaultSavedChatsDirectory = "UserData/SavedChats";
     public const string DefaultRagFilesDirectory = "UserData/agents";
     public const string DefaultRagVectorDatabaseFile = "UserData/rag/rag.sqlite";
+    public const string DefaultWebSearchCacheDirectory = "UserData/web_search_cache";
     public const string DefaultSeedDataDirectory = "Data";
 }

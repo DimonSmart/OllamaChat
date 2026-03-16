@@ -1,6 +1,13 @@
+using System.Net;
+using System.Security.Cryptography;
+using System.Text;
+using System.Text.Json;
 using System.Text.Encodings.Web;
 using System.Text.RegularExpressions;
+using ChatClient.Infrastructure.Constants;
+using ChatClient.Infrastructure.Helpers;
 using HtmlAgilityPack;
+using Microsoft.Extensions.Configuration;
 
 namespace ChatClient.Api.Services.BuiltIn;
 
@@ -9,6 +16,20 @@ internal static class BuiltInWebToolLogic
     private const int DefaultLimit = 4;
     private const int MaxLimit = 6;
     private const int MaxContentLength = 12000;
+    private const int SearchMaxAttempts = 5;
+    private const int DownloadMaxAttempts = 3;
+    private const string SearchCachePathConfigKey = "BuiltInWeb:SearchCachePath";
+    private const string SearchCacheVersion = "v1";
+    private static readonly TimeSpan SearchCacheTtl = TimeSpan.FromDays(1);
+    private static readonly TimeSpan BraveSearchMinInterval = TimeSpan.FromSeconds(2);
+    private static readonly TimeSpan DefaultMaxRetryDelay = TimeSpan.FromSeconds(30);
+    private static readonly TimeSpan RateLimitMaxRetryDelay = TimeSpan.FromMinutes(2);
+    private static readonly SemaphoreSlim BraveSearchGate = new(1, 1);
+    private static readonly object BraveSearchStateLock = new();
+    private static readonly JsonSerializerOptions CacheJsonOptions = new() { WriteIndented = true };
+    private static readonly Lazy<string> SearchCacheDirectory = new(ResolveSearchCacheDirectory);
+    private static DateTimeOffset _nextBraveSearchAllowedAt = DateTimeOffset.MinValue;
+    private static string? _searchCacheDirectoryOverrideForTests;
 
     private static readonly string[] IgnoredHosts =
     [
@@ -17,6 +38,12 @@ internal static class BuiltInWebToolLogic
         "imgs.search.brave.com",
         "tiles.search.brave.com"
     ];
+
+    private sealed record SearchCacheEntry(
+        string Version,
+        string Query,
+        DateTimeOffset CachedAtUtc,
+        List<WebSearchResult> Results);
 
     public static async Task<WebSearchData> SearchAsync(
         IHttpClientFactory httpClientFactory,
@@ -31,26 +58,53 @@ internal static class BuiltInWebToolLogic
         var limit = input.Limit.HasValue
             ? Math.Clamp(input.Limit.Value, 1, MaxLimit)
             : DefaultLimit;
+        var cacheKey = BuildSearchCacheKey(query);
+
+        if (await TryGetCachedSearchResultAsync(cacheKey, query, limit, cancellationToken) is { } cached)
+            return cached;
 
         try
         {
             using var client = httpClientFactory.CreateClient();
             client.DefaultRequestHeaders.UserAgent.ParseAdd("Mozilla/5.0 (compatible; OllamaChatWebMcp/1.0)");
 
-            var url = $"https://search.brave.com/search?q={UrlEncoder.Default.Encode(query)}";
-            var html = await client.GetStringAsync(url, cancellationToken);
-            var results = ExtractStructuredResults(html, limit);
+            await BraveSearchGate.WaitAsync(cancellationToken);
+            try
+            {
+                if (await TryGetCachedSearchResultAsync(cacheKey, query, limit, cancellationToken) is { } cachedWhileHoldingGate)
+                    return cachedWhileHoldingGate;
 
-            if (results.Count == 0)
-                throw new InvalidOperationException("Search returned no structured candidate results.");
+                await WaitForBraveSearchCooldownAsync(logger, cancellationToken);
+                RegisterBraveSearchCooldown(BraveSearchMinInterval);
 
-            return new WebSearchData(query, results);
+                var url = $"https://search.brave.com/search?q={UrlEncoder.Default.Encode(query)}";
+                using var response = await GetWithRetriesAsync(client, logger, url, SearchMaxAttempts, cancellationToken);
+                var html = await response.Content.ReadAsStringAsync(cancellationToken);
+                var results = ExtractStructuredResults(html, MaxLimit);
+
+                if (results.Count == 0)
+                    throw new InvalidOperationException("Search returned no structured candidate results.");
+
+                await StoreCachedSearchResultAsync(cacheKey, query, results, cancellationToken);
+                return new WebSearchData(query, results.Take(limit).ToList());
+            }
+            finally
+            {
+                BraveSearchGate.Release();
+            }
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
             logger.LogWarning(ex, "Web search failed for query {Query}", query);
             throw new InvalidOperationException(ex.Message, ex);
         }
+    }
+
+    internal static void ResetSearchStateForTests(string? searchCacheDirectoryOverride = null)
+    {
+        _searchCacheDirectoryOverrideForTests = searchCacheDirectoryOverride;
+        lock (BraveSearchStateLock)
+            _nextBraveSearchAllowedAt = DateTimeOffset.MinValue;
     }
 
     public static async Task<WebDownloadData> DownloadAsync(
@@ -67,8 +121,7 @@ internal static class BuiltInWebToolLogic
             using var client = httpClientFactory.CreateClient();
             client.DefaultRequestHeaders.UserAgent.ParseAdd("Mozilla/5.0 (compatible; OllamaChatWebMcp/1.0)");
 
-            using var response = await client.GetAsync(targetUri, cancellationToken);
-            response.EnsureSuccessStatusCode();
+            using var response = await GetWithRetriesAsync(client, logger, targetUri, DownloadMaxAttempts, cancellationToken);
             var html = await response.Content.ReadAsStringAsync(cancellationToken);
 
             var document = new HtmlDocument();
@@ -285,6 +338,256 @@ internal static class BuiltInWebToolLogic
             ? string.Empty
             : Regex.Replace(HtmlEntity.DeEntitize(value), @"\s+", " ").Trim();
 
+    private static string BuildSearchCacheKey(string query)
+    {
+        var normalized = query.Trim().ToLowerInvariant();
+        var hash = SHA256.HashData(Encoding.UTF8.GetBytes($"{SearchCacheVersion}\n{normalized}"));
+        return Convert.ToHexString(hash).ToLowerInvariant();
+    }
+
+    private static async Task<WebSearchData?> TryGetCachedSearchResultAsync(
+        string cacheKey,
+        string query,
+        int limit,
+        CancellationToken cancellationToken)
+    {
+        var cachePath = GetSearchCachePath(cacheKey);
+        if (!File.Exists(cachePath))
+            return null;
+
+        try
+        {
+            await using var stream = new FileStream(cachePath, FileMode.Open, FileAccess.Read, FileShare.Read);
+            if (stream.Length == 0)
+            {
+                TryDeleteCacheFileQuietly(cachePath);
+                return null;
+            }
+
+            var cached = await JsonSerializer.DeserializeAsync<SearchCacheEntry>(stream, CacheJsonOptions, cancellationToken);
+            if (cached is null
+                || !string.Equals(cached.Version, SearchCacheVersion, StringComparison.Ordinal)
+                || !string.Equals(cached.Query.Trim(), query.Trim(), StringComparison.OrdinalIgnoreCase)
+                || cached.CachedAtUtc + SearchCacheTtl <= DateTimeOffset.UtcNow
+                || cached.Results.Count == 0)
+            {
+                TryDeleteCacheFileQuietly(cachePath);
+                return null;
+            }
+
+            return new WebSearchData(query, cached.Results.Take(limit).ToList());
+        }
+        catch (Exception) when (!cancellationToken.IsCancellationRequested)
+        {
+            TryDeleteCacheFileQuietly(cachePath);
+            return null;
+        }
+    }
+
+    private static async Task StoreCachedSearchResultAsync(
+        string cacheKey,
+        string query,
+        IReadOnlyList<WebSearchResult> results,
+        CancellationToken cancellationToken)
+    {
+        var directory = GetSearchCacheDirectory();
+        Directory.CreateDirectory(directory);
+
+        var cachePath = GetSearchCachePath(cacheKey);
+        var cacheEntry = new SearchCacheEntry(
+            SearchCacheVersion,
+            query,
+            DateTimeOffset.UtcNow,
+            results.ToList());
+
+        await File.WriteAllTextAsync(
+            cachePath,
+            JsonSerializer.Serialize(cacheEntry, CacheJsonOptions),
+            cancellationToken);
+    }
+
+    private static string GetSearchCachePath(string cacheKey) =>
+        Path.Combine(GetSearchCacheDirectory(), $"{cacheKey}.json");
+
+    private static string GetSearchCacheDirectory() =>
+        string.IsNullOrWhiteSpace(_searchCacheDirectoryOverrideForTests)
+            ? SearchCacheDirectory.Value
+            : Path.GetFullPath(_searchCacheDirectoryOverrideForTests);
+
+    private static string ResolveSearchCacheDirectory()
+    {
+        var configuration = new ConfigurationBuilder()
+            .SetBasePath(AppContext.BaseDirectory)
+            .AddJsonFile("appsettings.json", optional: true)
+            .Build();
+
+        return StoragePathResolver.ResolveUserPath(
+            configuration,
+            configuration[SearchCachePathConfigKey],
+            FilePathConstants.DefaultWebSearchCacheDirectory);
+    }
+
+    private static void TryDeleteCacheFileQuietly(string cachePath)
+    {
+        try
+        {
+            if (File.Exists(cachePath))
+                File.Delete(cachePath);
+        }
+        catch
+        {
+            // Ignore broken cache cleanup failures and refetch on the next attempt.
+        }
+    }
+
+    private static async Task WaitForBraveSearchCooldownAsync(ILogger logger, CancellationToken cancellationToken)
+    {
+        var delay = GetBraveSearchCooldownRemaining();
+        if (delay <= TimeSpan.Zero)
+            return;
+
+        logger.LogInformation(
+            "Waiting {DelayMs} ms before the next Brave search request to avoid rate limiting.",
+            (int)delay.TotalMilliseconds);
+        await Task.Delay(delay, cancellationToken);
+    }
+
+    private static TimeSpan GetBraveSearchCooldownRemaining()
+    {
+        lock (BraveSearchStateLock)
+        {
+            var now = DateTimeOffset.UtcNow;
+            return _nextBraveSearchAllowedAt > now
+                ? _nextBraveSearchAllowedAt - now
+                : TimeSpan.Zero;
+        }
+    }
+
+    private static void RegisterBraveSearchCooldown(TimeSpan delay)
+    {
+        var candidate = DateTimeOffset.UtcNow + delay;
+
+        lock (BraveSearchStateLock)
+        {
+            if (candidate > _nextBraveSearchAllowedAt)
+                _nextBraveSearchAllowedAt = candidate;
+        }
+    }
+
     private static string? NullIfWhiteSpace(string? value) =>
         string.IsNullOrWhiteSpace(value) ? null : value;
+
+    private static async Task<HttpResponseMessage> GetWithRetriesAsync(
+        HttpClient client,
+        ILogger logger,
+        string url,
+        int maxAttempts,
+        CancellationToken cancellationToken) =>
+        await GetWithRetriesAsync(client, logger, new Uri(url), maxAttempts, cancellationToken);
+
+    private static async Task<HttpResponseMessage> GetWithRetriesAsync(
+        HttpClient client,
+        ILogger logger,
+        Uri url,
+        int maxAttempts,
+        CancellationToken cancellationToken)
+    {
+        Exception? lastError = null;
+
+        for (var attempt = 1; attempt <= maxAttempts; attempt++)
+        {
+            HttpResponseMessage? response = null;
+            try
+            {
+                response = await client.GetAsync(url, cancellationToken);
+                if (response.StatusCode == System.Net.HttpStatusCode.TooManyRequests && attempt < maxAttempts)
+                {
+                    var delay = GetRetryDelay(response, attempt);
+                    if (IsBraveSearchUri(url))
+                        RegisterBraveSearchCooldown(delay);
+                    logger.LogInformation(
+                        "Web request to {Url} hit rate limit on attempt {Attempt}/{MaxAttempts}. Retrying after {DelayMs} ms.",
+                        url,
+                        attempt,
+                        maxAttempts,
+                        (int)delay.TotalMilliseconds);
+                    response.Dispose();
+                    await Task.Delay(delay, cancellationToken);
+                    continue;
+                }
+
+                if (response.StatusCode == HttpStatusCode.TooManyRequests)
+                {
+                    throw new InvalidOperationException(
+                        $"Web request to '{url}' was rate-limited (HTTP 429) after {maxAttempts} attempts.");
+                }
+
+                response.EnsureSuccessStatusCode();
+                return response;
+            }
+            catch (TaskCanceledException ex) when (!cancellationToken.IsCancellationRequested && attempt < maxAttempts)
+            {
+                lastError = ex;
+                response?.Dispose();
+                var delay = GetRetryDelay(response, attempt);
+                logger.LogInformation(
+                    ex,
+                    "Web request to {Url} timed out on attempt {Attempt}/{MaxAttempts}. Retrying after {DelayMs} ms.",
+                    url,
+                    attempt,
+                    maxAttempts,
+                    (int)delay.TotalMilliseconds);
+                await Task.Delay(delay, cancellationToken);
+            }
+            catch (HttpRequestException ex) when (attempt < maxAttempts)
+            {
+                lastError = ex;
+                response?.Dispose();
+                var delay = GetRetryDelay(response, attempt);
+                logger.LogInformation(
+                    ex,
+                    "Web request to {Url} failed on attempt {Attempt}/{MaxAttempts}. Retrying after {DelayMs} ms.",
+                    url,
+                    attempt,
+                    maxAttempts,
+                    (int)delay.TotalMilliseconds);
+                await Task.Delay(delay, cancellationToken);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                lastError = ex;
+                response?.Dispose();
+                throw;
+            }
+        }
+
+        throw new InvalidOperationException(
+            $"Web request failed for '{url}' after {maxAttempts} attempts.",
+            lastError);
+    }
+
+    private static TimeSpan GetRetryDelay(HttpResponseMessage? response, int attempt)
+    {
+        var maxDelay = response?.StatusCode == HttpStatusCode.TooManyRequests
+            ? RateLimitMaxRetryDelay
+            : DefaultMaxRetryDelay;
+        var retryAfter = response?.Headers.RetryAfter;
+        if (retryAfter?.Delta is { } delta && delta > TimeSpan.Zero)
+            return CapDelay(delta, maxDelay);
+
+        if (retryAfter?.Date is { } retryAt)
+        {
+            var computed = retryAt - DateTimeOffset.UtcNow;
+            if (computed > TimeSpan.Zero)
+                return CapDelay(computed, maxDelay);
+        }
+
+        return CapDelay(TimeSpan.FromMilliseconds(750 * attempt), maxDelay);
+    }
+
+    private static bool IsBraveSearchUri(Uri url) =>
+        string.Equals(url.Host, "search.brave.com", StringComparison.OrdinalIgnoreCase);
+
+    private static TimeSpan CapDelay(TimeSpan delay, TimeSpan maxDelay) =>
+        delay > maxDelay ? maxDelay : delay;
 }

@@ -17,7 +17,7 @@ public sealed class LlmReplanner(
     IExecutionLogger? executionLogger = null,
     IPlanRunObserver? planRunObserver = null) : IReplanner
 {
-    private const int MaxRounds = 6;
+    private const int MaxRounds = 10;
     private const int MaxResponseAttempts = 3;
     private readonly IExecutionLogger _log = executionLogger ?? NullExecutionLogger.Instance;
     private readonly IPlanRunObserver _observer = planRunObserver ?? NullPlanRunObserver.Instance;
@@ -49,6 +49,7 @@ public sealed class LlmReplanner(
             _log.Log($"[replan] round={round} actionBatch={PlanningJson.SerializeIndented(actionBatch)}");
 
             lastActionResults = ExecuteActions(session, request, actionBatch.Actions);
+            AppendDraftValidationResult(session, workflowTools, lastActionResults);
             _log.Log($"[replan] round={round} actionResults={PlanningJson.SerializeNodeIndented(lastActionResults)}");
             _observer.OnEvent(new ReplanRoundCompletedEvent(
                 round,
@@ -60,28 +61,26 @@ public sealed class LlmReplanner(
             if (!done)
                 continue;
 
-            try
+            var validationError = lastActionResults
+                .OfType<JsonObject>()
+                .Where(result => string.Equals(result["tool"]?.GetValue<string>(), "plan.validateDraft", StringComparison.Ordinal))
+                .Where(result => result["ok"]?.GetValue<bool>() == false)
+                .Select(result => result["error"]?["message"]?.GetValue<string>())
+                .FirstOrDefault(message => !string.IsNullOrWhiteSpace(message));
+
+            if (!string.IsNullOrWhiteSpace(validationError))
             {
-                var replanned = session.BuildPlan();
-                PlanValidator.ValidateOrThrow(replanned, workflowTools);
-                _log.Log($"[replan] success steps={replanned.Steps.Count} goal={Shorten(replanned.Goal, 240)}");
-                _log.Log($"[replan] json {PlanningJson.SerializeIndented(replanned)}");
-                _observer.OnEvent(new ReplanAppliedEvent(ClonePlan(replanned)));
-                return replanned;
+                if (round < MaxRounds)
+                    continue;
+
+                throw new InvalidOperationException($"Replanner draft is still invalid after {MaxRounds} rounds. Last validation error: {validationError}");
             }
-            catch (Exception ex) when (round < MaxRounds)
-            {
-                lastActionResults.Add(new JsonObject
-                {
-                    ["tool"] = "plan.validateDraft",
-                    ["ok"] = false,
-                    ["error"] = new JsonObject
-                    {
-                        ["code"] = "invalid_plan",
-                        ["message"] = ex.Message
-                    }
-                });
-            }
+
+            var replanned = session.BuildPlan();
+            _log.Log($"[replan] success steps={replanned.Steps.Count} goal={Shorten(replanned.Goal, 240)}");
+            _log.Log($"[replan] json {PlanningJson.SerializeIndented(replanned)}");
+            _observer.OnEvent(new ReplanAppliedEvent(ClonePlan(replanned)));
+            return replanned;
         }
 
         throw new InvalidOperationException($"Replanner could not produce a valid plan after {MaxRounds} rounds.");
@@ -177,6 +176,11 @@ public sealed class LlmReplanner(
         sb.AppendLine("- Use runtime.readFailedTrace(stepId) when you need the compact structured details of a failed step.");
         sb.AppendLine("- Do not add, estimate, normalize, or impute exact factual values that are missing from executed evidence.");
         sb.AppendLine("- When the user request needs precise facts and those facts are missing, repair the plan by retrieving better evidence, narrowing scope, or preserving a blocked/missing contract.");
+        sb.AppendLine("- Search and download steps return pages/documents, not chosen entities. If the failure indicates ambiguity or multiple candidates, repair the entity-selection strategy, not just the extraction schema.");
+        sb.AppendLine("- If a failed step says the source contains multiple entities, do NOT repair by widening a single-entity extraction step into 'return everything' unless the user explicitly asked for every entity on that page.");
+        sb.AppendLine("- For compare/review/rank tasks over a few entities, prefer repairs that insert shortlist/select and targeted retrieval steps.");
+        sb.AppendLine("- If final verification says the answer is missing explicit deliverables like links, package pages, docs pages, repo URLs, rankings, or named recommendations, repair the upstream plan so those outputs are gathered and preserved.");
+        sb.AppendLine("- Do not weaken an upstream field from required/non-null to nullable if a downstream tool input still requires a non-null value. Repair the evidence plan instead.");
         sb.AppendLine("- If the failed trace has type='missing' and your edit removes that requirement or makes it optional, finish with done=true instead of iterating further.");
         sb.AppendLine("- plan.resetFrom(stepId) resets execution state for that step and all downstream steps so the executor will rerun them.");
         sb.AppendLine("- plan.replaceStep(stepId, step) replaces exactly one existing step in place.");
@@ -189,6 +193,7 @@ public sealed class LlmReplanner(
         sb.AppendLine("- LLM steps must have systemPrompt and userPrompt.");
         sb.AppendLine("- Tool steps must use the exact workflow tool name listed below, including any server prefix.");
         sb.AppendLine("- Put dynamic inputs under 'in' using binding objects like {\"from\":\"$step.ref\",\"mode\":\"value|map\"}.");
+        sb.AppendLine("- Literal tool inputs must be plain JSON literals. Never wrap them in helper objects like {\"value\":...}.");
         sb.AppendLine("- mode='map' means run the step once per array element.");
         sb.AppendLine("- If a tool returns an object containing an array field, bind from that field directly (for example, {\"from\":\"$search.results\",\"mode\":\"map\"}).");
         sb.AppendLine("- If a downstream tool needs a projected array field, express it explicitly in the ref (for example, {\"from\":\"$search.results[].url\",\"mode\":\"map\"}).");
@@ -196,6 +201,7 @@ public sealed class LlmReplanner(
         sb.AppendLine("- Download-style tools may return the original page object enriched with 'content'.");
         sb.AppendLine("- For download-style tools, pass exactly one of 'page' or 'url'. Do not send both.");
         sb.AppendLine("- For extraction tasks, prefer a per-item binding with mode='map'.");
+        sb.AppendLine("- If a page may mention multiple entities and the extractor must return one entity, provide an explicit target entity input (for example model/package/library name).");
         sb.AppendLine("- LLM steps must declare out.format, out.aggregate, and when out.format='json', out.schema.");
         sb.AppendLine("- Every schema node must declare either type or enum.");
         sb.AppendLine("- If out.schema.type='object', every entry inside out.schema.properties must itself declare type or enum.");
@@ -364,6 +370,36 @@ public sealed class LlmReplanner(
             ["message"] = message
         }
     };
+
+    private static void AppendDraftValidationResult(
+        PlanEditingSession session,
+        IReadOnlyCollection<AppToolDescriptor> workflowTools,
+        JsonArray actionResults)
+    {
+        try
+        {
+            var draft = session.BuildPlan();
+            PlanValidator.ValidateOrThrow(draft, workflowTools);
+            actionResults.Add(new JsonObject
+            {
+                ["tool"] = "plan.validateDraft",
+                ["ok"] = true
+            });
+        }
+        catch (Exception ex)
+        {
+            actionResults.Add(new JsonObject
+            {
+                ["tool"] = "plan.validateDraft",
+                ["ok"] = false,
+                ["error"] = new JsonObject
+                {
+                    ["code"] = "invalid_plan",
+                    ["message"] = ex.Message
+                }
+            });
+        }
+    }
 
     private static JsonNode? SerializeElementToNode(JsonElement? element) =>
         element is null ? null : JsonSerializer.SerializeToNode(element.Value);

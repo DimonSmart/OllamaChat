@@ -192,6 +192,33 @@ public sealed class PlanExecutor(
         List<JsonElement> calls,
         CancellationToken cancellationToken)
     {
+        var inputIssues = ToolInputSchemaValidator.ValidateResolvedInput(input, tool.InputSchema);
+        if (inputIssues.Count > 0)
+        {
+            var failure = ResultEnvelope<JsonElement?>.Failure(
+                "input_contract_failed",
+                $"Tool '{tool.QualifiedName}' received input that does not match its input schema.",
+                JsonSerializer.SerializeToElement(new
+                {
+                    issues = inputIssues.Select(issue => new
+                    {
+                        code = issue.Code,
+                        message = issue.Message
+                    })
+                }));
+
+            calls.Add(JsonSerializer.SerializeToElement(new
+            {
+                tool = tool.QualifiedName,
+                input,
+                ok = false,
+                output = (JsonElement?)null,
+                error = SerializeError(failure.Error)
+            }));
+
+            return failure;
+        }
+
         var arguments = ConvertInputToArguments(input);
 
         using var interactionScope = mcpUserInteractionService?.BeginInteractionScope(McpInteractionScope.Planning);

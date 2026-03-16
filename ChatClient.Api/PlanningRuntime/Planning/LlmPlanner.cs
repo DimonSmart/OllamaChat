@@ -20,7 +20,7 @@ public sealed class LlmPlanner(
     IExecutionLogger? executionLogger = null,
     IPlanRunObserver? planRunObserver = null) : IPlanner
 {
-    private const int MaxPlanningAttempts = 5;
+    private const int MaxPlanningAttempts = 8;
     private readonly IExecutionLogger _log = executionLogger ?? NullExecutionLogger.Instance;
     private readonly IPlanRunObserver _observer = planRunObserver ?? NullPlanRunObserver.Instance;
     private static readonly JsonSerializerOptions JsonOptions = new()
@@ -138,11 +138,16 @@ public sealed class LlmPlanner(
         sb.AppendLine();
         sb.AppendLine("General planning rules:");
         sb.AppendLine("- Prefer the SHORTEST plan that can succeed.");
-        sb.AppendLine("- When the user asks to compare, rank, summarize, or compute over a small number of discovered items, prefer this shape:");
-        sb.AppendLine("  search candidate pages -> download candidate pages -> extract structured facts from each page -> synthesize final answer.");
+        sb.AppendLine("- Search and download steps retrieve PAGES or DOCUMENTS, not selected entities. Do not assume 'N pages' means 'N products/packages/libraries'.");
+        sb.AppendLine("- When the user asks to compare, rank, review, or recommend a small number of discovered entities, prefer this shape:");
+        sb.AppendLine("  discovery search -> shortlist exact entities -> targeted retrieval for each chosen entity -> extract facts for that entity -> synthesize final answer.");
+        sb.AppendLine("- Use shortlist/select steps whenever a discovery page, roundup article, search result, or catalog page may mention multiple entities.");
+        sb.AppendLine("- If a page can mention multiple entities, do not feed it into a single-entity extractor unless that extractor also receives an explicit target entity name/id/model.");
         sb.AppendLine("- For final comparison or recommendation steps, instruct the LLM to explicitly mention the compared item names and the reason for the choice.");
-        sb.AppendLine("- Avoid a second search unless the first downloaded pages clearly cannot contain the requested facts.");
-        sb.AppendLine("- If the user asks for two items, prefer to search for two candidate pages or a very small over-fetch, not many pages.");
+        sb.AppendLine("- Preserve explicit deliverables from the user request, such as official docs links, NuGet/package pages, GitHub URLs, ranked lists, pros/cons, or citations.");
+        sb.AppendLine("- If the user explicitly asks for official pages, package pages, repo links, docs links, or multiple evidence sources per entity, plan separate retrieval for those sources.");
+        sb.AppendLine("- Avoid a second search unless the first downloaded pages clearly cannot contain the requested facts, but DO use targeted follow-up searches when precise entity-level evidence is required.");
+        sb.AppendLine("- If the user asks for two or three items, discovery may over-fetch a little, but do not stop at arbitrary top-N pages. First identify the best entity candidates, then retrieve evidence for those entities.");
         sb.AppendLine("- Use input binding objects for every dynamic dependency: {\"from\":\"$step.ref\",\"mode\":\"value|map\"}.");
         sb.AppendLine("- mode='value' passes one resolved value into one call.");
         sb.AppendLine("- mode='map' means run the step once per array element.");
@@ -155,6 +160,7 @@ public sealed class LlmPlanner(
         sb.AppendLine("- Do not invent, estimate, or fill in exact factual values when the user request requires precise facts.");
         sb.AppendLine("- If exact values are missing, add retrieval/narrowing steps or let the downstream step fail through the structured execution error contract instead of guessing.");
         sb.AppendLine("- For extraction steps, if the source does not contain the requested entity or the critical facts are absent, rely on the structured execution error contract instead of guessing.");
+        sb.AppendLine("- Do not wrap literal tool arguments in helper objects like {\"value\":...}. Tool inputs must be plain literals or binding objects with exactly 'from' and optional 'mode'.");
         sb.AppendLine();
         sb.AppendLine("Available tools:");
         foreach (var tool in tools)
@@ -177,6 +183,7 @@ public sealed class LlmPlanner(
         sb.AppendLine();
         sb.AppendLine("LLM step rules:");
         sb.AppendLine("- LLM steps MUST provide both systemPrompt and userPrompt.");
+        sb.AppendLine("- Never omit userPrompt, even for shortlist/select/extract/compare steps. If needed, use a short literal sentence.");
         sb.AppendLine("- The executor appends an Input section with all resolved 'in' values.");
         sb.AppendLine("- Do NOT use template placeholders such as {var} or {{var}} in prompts.");
         sb.AppendLine("- Do NOT put step refs like $stepId or $stepId.field inside systemPrompt or userPrompt. All dynamic data must come through binding objects in 'in'.");
@@ -207,33 +214,36 @@ public sealed class LlmPlanner(
     private static string BuildPlanningUserPrompt(string userQuery) => userQuery;
 
     private static string BuildRepairPrompt(string originalUserPrompt, string errorMessage) =>
-        $"{originalUserPrompt}\n\nYour previous plan was invalid.\nValidation error: {errorMessage}\n\nReturn a corrected ResultEnvelope<PlanDefinition> as JSON only.\nNon-negotiable requirements:\n- Follow the exact ok/data/error envelope schema.\n- Put the full plan inside data when ok=true.\n- Each step must include id, in, s, res, and err.\n- A step must have exactly one of tool or llm.\n- Each llm step must include systemPrompt, userPrompt, and an out object with format/aggregate/schema.\n- Do not embed $step refs inside prompts.\n- Put dynamic inputs under in using binding objects like {{\"from\":\"$step.ref\",\"mode\":\"value|map\"}}.\n- Use collect for mapped single-item extraction, flatten for mapped multi-item extraction, and single otherwise.\n- Every schema node must declare type or enum.\n- Every object property schema must declare type or enum.\n- For string outputs, either omit schema or use {{\"type\":\"string\"}}.\n- Use the exact field names from the schema.\n- Use only refs to earlier steps.\nDo not repeat the same mistake.";
+        $"{originalUserPrompt}\n\nYour previous plan was invalid.\nValidation error: {errorMessage}\n\nReturn a corrected ResultEnvelope<PlanDefinition> as JSON only.\nNon-negotiable requirements:\n- Follow the exact ok/data/error envelope schema.\n- Put the full plan inside data when ok=true.\n- Each step must include id, in, s, res, and err.\n- A step must have exactly one of tool or llm.\n- Every llm step must include BOTH systemPrompt AND userPrompt, including shortlist/select/extract/compare steps.\n- Each llm step must include an out object with format/aggregate/schema.\n- Do not embed $step refs inside prompts.\n- Put dynamic inputs under in using binding objects like {{\"from\":\"$step.ref\",\"mode\":\"value|map\"}}.\n- Literal tool inputs must be plain JSON literals, never wrapper objects like {{\"value\":...}}.\n- Search/download steps return pages, not chosen entities. If the task compares or reviews a few entities, add shortlist/selection and targeted retrieval instead of assuming top pages equal the final entities.\n- If an extraction step would read a page that may mention multiple entities, either add an explicit target entity input or add a shortlist/select step first.\n- Preserve explicit user deliverables such as links, package pages, docs pages, repo URLs, ranking, and recommendation fields.\n- Use collect for mapped single-item extraction, flatten for mapped multi-item extraction, and single otherwise.\n- Every schema node must declare type or enum.\n- Every object property schema must declare type or enum.\n- For string outputs, either omit schema or use {{\"type\":\"string\"}}.\n- Use the exact field names from the schema.\n- Use only refs to earlier steps.\nDo not repeat the same mistake.";
 
     private static string BuildFewShotExamples() =>
         """
         Example A:
         User request: "Find two popular markdown parsers for .NET, extract license and GitHub repo URL, then recommend one."
         Good plan shape:
-        1. search candidate pages
-        2. download candidate pages
-        3. extract structured facts from each page using mode="map" bindings and out.aggregate="collect"
-        4. compare extracted facts in one final LLM step
+        1. search discovery pages
+        2. shortlist exactly two parser packages
+        3. retrieve package/repo evidence for each shortlisted parser
+        4. extract structured facts for each targeted parser
+        5. compare extracted facts in one final LLM step
 
         Example B:
         User request: "Compare two USB microphones by specs and summarize which is better for streaming."
         Good plan shape:
-        1. search product review pages
-        2. download pages
-        3. extract model name, pickup pattern, sample rate, connectivity, and price from each page
-        4. synthesize a recommendation that names both products and states reasons
+        1. search product discovery pages
+        2. shortlist two specific microphone models
+        3. retrieve one evidence page per shortlisted model
+        4. extract model name, pickup pattern, sample rate, connectivity, and price for each explicit model
+        5. synthesize a recommendation that names both products and states reasons
 
         Example C:
         User request: "Look up two train-route planning libraries and tell me which one better matches small hobby projects."
         Good plan shape:
-        1. search docs or repo pages
-        2. download those pages
-        3. extract maintenance and onboarding facts from each page
-        4. return a final recommendation
+        1. search discovery pages
+        2. shortlist two specific libraries
+        3. retrieve docs or repo pages for each shortlisted library
+        4. extract maintenance and onboarding facts for each explicit library
+        5. return a final recommendation
 
         Example output contracts:
         - one object: {"format":"json","aggregate":"single","schema":{"type":"object","required":["name"],"properties":{"name":{"type":"string"}}}}

@@ -25,6 +25,26 @@ public sealed class PlanningPipelineIntegrationTests(ITestOutputHelper output)
 {
     private const string DevModel = "gpt-oss:120b-cloud";
 
+    public static TheoryData<string, string> RealWebExplorationQueries => new()
+    {
+        {
+            "maze-nuget-review",
+            "Find 3 NuGet packages that can generate mazes. For each package, locate its NuGet page and a GitHub or documentation page, compare ease of use and documentation quality, and write a short review with a recommendation."
+        },
+        {
+            "excel-reader-tradeoffs",
+            "Find 3 .NET libraries for reading Excel files. For each one, locate an official documentation or GitHub page and also check its NuGet page, compare ease of use, licensing constraints, and maturity, then recommend one for an internal business tool."
+        },
+        {
+            "pdf-generation-stack",
+            "Find 3 .NET libraries for PDF generation. For each candidate, locate the official docs or repository plus a package page, compare beginner-friendliness, licensing, and server-side suitability, then give a short recommendation."
+        },
+        {
+            "fuzzy-matching-packages",
+            "Find 3 .NET libraries for fuzzy string matching. For each candidate, locate a NuGet page and a README or documentation page, compare API simplicity, maintenance signals, and real-world readiness, then write a compact review and recommend one."
+        }
+    };
+
     [Fact]
     public async Task FullPipeline_PlannerAndOrchestrator_ReturnsSystemOutcome()
     {
@@ -45,6 +65,26 @@ public sealed class PlanningPipelineIntegrationTests(ITestOutputHelper output)
         const string userQuery = "Compare Markdig and CommonMark.NET using their GitHub or documentation pages, and tell me which one is better for a small .NET app.";
         var httpClientFactory = new TestHttpClientFactory();
         await RunWithRetriesAsync(() => RunFullPipelineAsync(userQuery, CreateRealWebToolCatalog(httpClientFactory)));
+    }
+
+    [Theory]
+    [Trait("Category", "RealWebExploration")]
+    [MemberData(nameof(RealWebExplorationQueries))]
+    public async Task FullPipeline_PlannerAndOrchestrator_WithRealWebExplorationQueries_CapturesArtifacts(
+        string scenarioId,
+        string userQuery)
+    {
+        var httpClientFactory = new TestHttpClientFactory();
+        var artifact = await RunFullPipelineInspectionAsync(
+            scenarioId,
+            userQuery,
+            CreateRealWebToolCatalog(httpClientFactory));
+
+        var artifactWriter = new PlanningExplorationArtifactWriter();
+        var savedPaths = await artifactWriter.SaveAsync(artifact);
+
+        output.WriteLine($"Saved exploration summary: {savedPaths.SummaryPath}");
+        output.WriteLine($"Saved exploration log: {savedPaths.LogPath}");
     }
 
     private async Task RunFullPipelineAsync(string userQuery, PlanningToolCatalog tools)
@@ -79,6 +119,87 @@ public sealed class PlanningPipelineIntegrationTests(ITestOutputHelper output)
             $"Expected orchestrator to return a final answer, but got code={result.Error?.Code}, message={result.Error?.Message}, details={SerializeJson(result.Error?.Details)}");
 
         await AssertAnswersQuestionAsync(answerAsserter, userQuery, result.Data);
+    }
+
+    private async Task<PlanningExplorationArtifact> RunFullPipelineInspectionAsync(
+        string scenarioId,
+        string userQuery,
+        PlanningToolCatalog tools)
+    {
+        var chatClient = BuildChatClient();
+        var sink = new TestArtifactLogSink();
+        var logger = new TestLogger(output, sink);
+        var answerAsserter = new CachedLlmAnswerAsserter(chatClient, DevModel);
+        var planner = new LlmPlanner(chatClient, tools, logger);
+        var replanner = new LlmReplanner(chatClient, tools, logger);
+        var runner = new AgentStepRunner(chatClient);
+        var executor = new PlanExecutor(tools, runner, logger);
+        var orchestrator = new PlanningOrchestrator(
+            planner,
+            executor,
+            new GoalVerifier(askUserEnabled: true),
+            logger,
+            maxAttempts: 3,
+            replanner: replanner,
+            finalAnswerVerifier: new LlmFinalAnswerVerifier(chatClient));
+
+        void WriteLine(string message)
+        {
+            output.WriteLine(message);
+            sink.WriteLine(message);
+        }
+
+        WriteLine($"Scenario: {scenarioId}");
+        WriteLine($"User query: {userQuery}");
+
+        try
+        {
+            var result = await orchestrator.RunAsync(userQuery);
+
+            if (result.Ok)
+                WriteLine($"\n=== FINAL ANSWER ===\n{SerializeJson(result.Data)}");
+            else
+                WriteLine($"\n=== OUTCOME DETAILS ===\ncode={result.Error?.Code}\nmessage={result.Error?.Message}\ndetails={SerializeJson(result.Error?.Details)}");
+
+            AnswerAssertionVerdict? verdict = null;
+            if (result.Ok)
+            {
+                verdict = await answerAsserter.EvaluateAsync(userQuery, result.Data);
+                WriteLine($"LLM asserter verdict: isAnswer={verdict.IsAnswer} cache={verdict.FromCache} comment={verdict.Comment}");
+            }
+
+            return new PlanningExplorationArtifact
+            {
+                ScenarioId = scenarioId,
+                UserQuery = userQuery,
+                Status = result.Ok ? "ok" : "error",
+                ErrorCode = result.Error?.Code,
+                ErrorMessage = result.Error?.Message,
+                ErrorDetailsJson = SerializeJson(result.Error?.Details),
+                ResultJson = SerializeJson(result.Data),
+                AnsweredQuestion = verdict?.IsAnswer,
+                AnswerAssertionComment = verdict?.Comment,
+                LogText = sink.GetText()
+            };
+        }
+        catch (Exception ex)
+        {
+            WriteLine($"\n=== UNHANDLED EXCEPTION ===\n{ex}");
+
+            return new PlanningExplorationArtifact
+            {
+                ScenarioId = scenarioId,
+                UserQuery = userQuery,
+                Status = "exception",
+                ErrorCode = ex.GetType().Name,
+                ErrorMessage = ex.Message,
+                ErrorDetailsJson = ex.ToString(),
+                ResultJson = null,
+                AnsweredQuestion = null,
+                AnswerAssertionComment = null,
+                LogText = sink.GetText()
+            };
+        }
     }
 
     private async Task RunWithRetriesAsync(Func<Task> action, int maxAttempts = 3)
@@ -267,12 +388,12 @@ public sealed class PlanningPipelineIntegrationTests(ITestOutputHelper output)
                             "properties": {
                               "url": { "type": "string" },
                               "title": { "type": "string" },
-                              "snippet": { "type": "string" },
-                              "siteName": { "type": "string" },
-                              "displayUrl": { "type": "string" },
-                              "age": { "type": "string" },
-                              "thumbnailUrl": { "type": "string" },
-                              "position": { "type": "integer" }
+                              "snippet": { "type": ["string", "null"] },
+                              "siteName": { "type": ["string", "null"] },
+                              "displayUrl": { "type": ["string", "null"] },
+                              "age": { "type": ["string", "null"] },
+                              "thumbnailUrl": { "type": ["string", "null"] },
+                              "position": { "type": ["integer", "null"] }
                             },
                             "required": ["url", "title"]
                           }
@@ -307,12 +428,12 @@ public sealed class PlanningPipelineIntegrationTests(ITestOutputHelper output)
                         "url": { "type": "string" },
                         "title": { "type": "string" },
                         "content": { "type": "string" },
-                        "snippet": { "type": "string" },
-                        "siteName": { "type": "string" },
-                        "displayUrl": { "type": "string" },
-                        "age": { "type": "string" },
-                        "thumbnailUrl": { "type": "string" },
-                        "position": { "type": "integer" }
+                        "snippet": { "type": ["string", "null"] },
+                        "siteName": { "type": ["string", "null"] },
+                        "displayUrl": { "type": ["string", "null"] },
+                        "age": { "type": ["string", "null"] },
+                        "thumbnailUrl": { "type": ["string", "null"] },
+                        "position": { "type": ["integer", "null"] }
                       },
                       "required": ["url", "title", "content"]
                     }
@@ -415,9 +536,13 @@ public sealed class PlanningPipelineIntegrationTests(ITestOutputHelper output)
             : PlanningJson.SerializeIndented(element.Value);
 }
 
-public sealed class TestLogger(ITestOutputHelper output) : IExecutionLogger
+public sealed class TestLogger(ITestOutputHelper output, TestArtifactLogSink? artifactSink = null) : IExecutionLogger
 {
-    public void Log(string message) => output.WriteLine(message);
+    public void Log(string message)
+    {
+        output.WriteLine(message);
+        artifactSink?.WriteLine(message);
+    }
 }
 
 public sealed class TestHttpClientFactory : IHttpClientFactory
@@ -429,7 +554,7 @@ public sealed class CachedLlmAnswerAsserter(IChatClient chatClient, string model
 {
     private const string PromptVersion = "v7";
     private static readonly JsonSerializerOptions JsonOptions = new() { WriteIndented = true };
-    private readonly string _cacheDirectory = Path.Combine(FindRepositoryRoot(), ".llm-test-cache", "answer-assertions");
+    private readonly string _cacheDirectory = Path.Combine(TestPathHelper.FindRepositoryRoot(), ".llm-test-cache", "answer-assertions");
 
     public async Task<AnswerAssertionVerdict> EvaluateAsync(
         string question,
@@ -499,20 +624,6 @@ public sealed class CachedLlmAnswerAsserter(IChatClient chatClient, string model
 
     private static string BuildUserPrompt(string question, string answerJson) =>
         $"Original question:\n{question}\n\nCandidate answer:\n{answerJson}";
-
-    private static string FindRepositoryRoot()
-    {
-        var current = new DirectoryInfo(AppContext.BaseDirectory);
-        while (current is not null)
-        {
-            if (File.Exists(Path.Combine(current.FullName, "OllamaChat.sln")))
-                return current.FullName;
-
-            current = current.Parent;
-        }
-
-        throw new InvalidOperationException("Could not locate repository root for LLM test cache.");
-    }
 
     private static bool LooksLikeComparisonRecommendation(string question, JsonElement? answer)
     {
@@ -584,4 +695,114 @@ public sealed record AnswerAssertionVerdict
     public string Comment { get; init; } = string.Empty;
 
     public bool FromCache { get; init; }
+}
+
+public sealed class TestArtifactLogSink
+{
+    private readonly StringBuilder _buffer = new();
+    private readonly object _gate = new();
+
+    public void WriteLine(string message)
+    {
+        lock (_gate)
+        {
+            _buffer.AppendLine(message);
+        }
+    }
+
+    public string GetText()
+    {
+        lock (_gate)
+        {
+            return _buffer.ToString();
+        }
+    }
+}
+
+public sealed class PlanningExplorationArtifactWriter
+{
+    private static readonly JsonSerializerOptions JsonOptions = new() { WriteIndented = true };
+    private readonly string _artifactDirectory = Path.Combine(
+        TestPathHelper.FindRepositoryRoot(),
+        "artifacts",
+        "planning-real-web-exploration");
+
+    public async Task<PlanningExplorationArtifactPaths> SaveAsync(
+        PlanningExplorationArtifact artifact,
+        CancellationToken cancellationToken = default)
+    {
+        Directory.CreateDirectory(_artifactDirectory);
+
+        var stamp = DateTime.UtcNow.ToString("yyyyMMdd-HHmmssfff");
+        var safeName = TestPathHelper.SanitizeFileName(artifact.ScenarioId);
+        var filePrefix = Path.Combine(_artifactDirectory, $"{stamp}-{safeName}");
+        var summaryPath = $"{filePrefix}.json";
+        var logPath = $"{filePrefix}.log";
+
+        await File.WriteAllTextAsync(summaryPath, JsonSerializer.Serialize(artifact, JsonOptions), cancellationToken);
+        await File.WriteAllTextAsync(logPath, artifact.LogText ?? string.Empty, cancellationToken);
+
+        return new PlanningExplorationArtifactPaths
+        {
+            SummaryPath = summaryPath,
+            LogPath = logPath
+        };
+    }
+}
+
+public sealed class PlanningExplorationArtifactPaths
+{
+    public string SummaryPath { get; init; } = string.Empty;
+
+    public string LogPath { get; init; } = string.Empty;
+}
+
+public sealed class PlanningExplorationArtifact
+{
+    public string ScenarioId { get; init; } = string.Empty;
+
+    public string UserQuery { get; init; } = string.Empty;
+
+    public string Status { get; init; } = string.Empty;
+
+    public string? ErrorCode { get; init; }
+
+    public string? ErrorMessage { get; init; }
+
+    public string? ErrorDetailsJson { get; init; }
+
+    public string? ResultJson { get; init; }
+
+    public bool? AnsweredQuestion { get; init; }
+
+    public string? AnswerAssertionComment { get; init; }
+
+    public string LogText { get; init; } = string.Empty;
+}
+
+public static class TestPathHelper
+{
+    public static string FindRepositoryRoot()
+    {
+        var current = new DirectoryInfo(AppContext.BaseDirectory);
+        while (current is not null)
+        {
+            if (File.Exists(Path.Combine(current.FullName, "OllamaChat.sln")))
+                return current.FullName;
+
+            current = current.Parent;
+        }
+
+        throw new InvalidOperationException("Could not locate repository root.");
+    }
+
+    public static string SanitizeFileName(string value)
+    {
+        var invalidChars = Path.GetInvalidFileNameChars();
+        var builder = new StringBuilder(value.Length);
+        foreach (var ch in value)
+            builder.Append(invalidChars.Contains(ch) ? '_' : ch);
+
+        return builder.ToString();
+    }
 }
