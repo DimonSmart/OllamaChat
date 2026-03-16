@@ -93,14 +93,44 @@ public sealed class AgentStepRunner(IChatClient chatClient) : IAgentStepRunner
         }
     }
 
-    private static string BuildExecutionContract(ResolvedPlanStepOutputContract outputContract)
+    internal static string BuildExecutionContract(ResolvedPlanStepOutputContract outputContract)
     {
         var resultHint = string.Equals(outputContract.Format, PlanStepOutputFormats.String, StringComparison.OrdinalIgnoreCase)
             ? "a JSON string value"
             : "the requested JSON value";
 
+        var aggregateHint = BuildAggregationHint(outputContract);
         var contractHint = BuildContractHint(outputContract);
-        return $"\n\nAlways return ONLY valid JSON using this exact top-level shape: {{\"ok\":true|false,\"data\":{resultHint}|null,\"error\":null|{{\"code\":\"short_code\",\"message\":\"human readable message\",\"details\":{{\"status\":\"blocked|partial\",\"needsReplan\":true,\"type\":\"missing|error\",\"details\":[\"short detail\"]}}}}}}. If the task can be completed reliably, return ok=true, error=null, and put the full answer into data. If reliable completion is impossible, return ok=false, data=null, and fill error. Use status='blocked' when the requested entity or critical facts are absent. Use status='partial' when some useful context exists but the task is still incomplete. When ok=false, needsReplan must be true. Use type='missing' when critical input facts are absent. Use type='error' when the step is blocked by another execution problem. Put short factual details into details, such as missing field names, observed evidence, or concrete failure notes. Do not invent exact factual values that are not explicitly present in the provided inputs. If the task requires precise numbers, specs, dates, prices, names, or quotes and they are missing, return ok=false with a blocked or partial error instead of estimating. Do not return markdown or prose outside the JSON envelope.{contractHint}";
+        return $"\n\nAlways return ONLY valid JSON using this exact top-level shape: {{\"ok\":true|false,\"data\":{resultHint}|null,\"error\":null|{{\"code\":\"short_code\",\"message\":\"human readable message\",\"details\":{{\"status\":\"blocked|partial\",\"needsReplan\":true,\"type\":\"missing|error\",\"details\":[\"short detail\"]}}}}}}. If the task can be completed reliably, return ok=true, error=null, and put the full answer into data. If reliable completion is impossible, return ok=false, data=null, and fill error. Use status='blocked' when the requested entity or critical facts are absent. Use status='partial' when some useful context exists but the task is still incomplete. When ok=false, needsReplan must be true. Use type='missing' when critical input facts are absent. Use type='error' when the step is blocked by another execution problem. Put short factual details into details, such as missing field names, observed evidence, or concrete failure notes. Do not invent exact factual values that are not explicitly present in the provided inputs. If the task requires precise numbers, specs, dates, prices, names, or quotes and they are missing, return ok=false with a blocked or partial error instead of estimating. Do not return markdown or prose outside the JSON envelope.{aggregateHint}{contractHint}";
+    }
+
+    private static string BuildAggregationHint(ResolvedPlanStepOutputContract outputContract)
+    {
+        if (string.Equals(outputContract.Aggregate, PlanStepOutputAggregates.Collect, StringComparison.OrdinalIgnoreCase))
+        {
+            var hint = " Aggregation semantics for this call: return one result value for the CURRENT input. After all mapped calls finish, the runtime collects those per-call values into the final array. The schema below describes the single-call value, not the final collected array.";
+            if (outputContract.CallSchema is { } callSchema
+                && !PlanStepOutputContractResolver.SchemaDefinesArray(callSchema))
+            {
+                hint += " Do not wrap the value in an extra array.";
+            }
+
+            return hint;
+        }
+
+        if (string.Equals(outputContract.Aggregate, PlanStepOutputAggregates.Flatten, StringComparison.OrdinalIgnoreCase))
+        {
+            var hint = " Aggregation semantics for this call: return an array value for the CURRENT input. After all mapped calls finish, the runtime flattens the per-call arrays into the final array. The schema below describes the per-call array value that will be flattened.";
+            if (outputContract.CallSchema is { } callSchema
+                && PlanStepOutputContractResolver.SchemaDefinesArray(callSchema))
+            {
+                hint += " Do not collapse the array to a single object.";
+            }
+
+            return hint;
+        }
+
+        return string.Empty;
     }
 
     private static ResultEnvelope<JsonElement?> ValidateEnvelope(

@@ -440,13 +440,16 @@ public static partial class PlanValidator
         if (issues.Count == 0)
             return;
 
+        var actualShape = DescribeSchemaShape(sourceSchema);
+
         throw CreateIssue(
             "binding_type_mismatch",
-            $"Step '{stepId}' input '{inputName}' declares type '{binding.Type}', but the binding is incompatible: {string.Join(" ", issues.Select(issue => issue.Message))}",
+            $"Step '{stepId}' input '{inputName}' declares type '{binding.Type}', but the binding is incompatible: {string.Join(" ", issues.Select(issue => issue.Message))} Bound source schema shape is '{actualShape}'.",
             stepId: stepId,
             inputName: inputName,
             bindingFrom: binding.From,
-            expected: binding.Type);
+            expected: binding.Type,
+            actual: actualShape);
     }
 
     private static JsonElement? TryResolveReferenceSchema(JsonElement currentSchema, ParsedStepReference reference)
@@ -517,6 +520,41 @@ public static partial class PlanValidator
             ["type"] = "array",
             ["items"] = JsonNode.Parse(itemSchema.GetRawText())
         });
+
+    private static string DescribeSchemaShape(JsonElement schema)
+    {
+        if (!PlanStepOutputContractResolver.TryGetSchemaTypes(schema, out var types) || types.Count == 0)
+            return "unknown";
+
+        var nonNullTypes = types
+            .Where(type => !string.Equals(type, "null", StringComparison.Ordinal))
+            .Distinct(StringComparer.Ordinal)
+            .ToList();
+        var isNullable = nonNullTypes.Count != types.Count;
+
+        string shape;
+        if (nonNullTypes.Count == 0)
+        {
+            shape = "null";
+        }
+        else if (nonNullTypes.Count == 1)
+        {
+            shape = nonNullTypes[0];
+            if (string.Equals(shape, "array", StringComparison.Ordinal)
+                && schema.TryGetProperty("items", out var itemsSchema))
+            {
+                shape = $"array<{DescribeSchemaShape(itemsSchema)}>";
+            }
+        }
+        else
+        {
+            shape = string.Join("|", nonNullTypes);
+        }
+
+        return isNullable && !string.Equals(shape, "null", StringComparison.Ordinal)
+            ? $"{shape}|null"
+            : shape;
+    }
 
     private static bool TargetAcceptsSourceType(IReadOnlyList<string> targetTypes, string sourceType) =>
         targetTypes.Contains(sourceType, StringComparer.Ordinal)

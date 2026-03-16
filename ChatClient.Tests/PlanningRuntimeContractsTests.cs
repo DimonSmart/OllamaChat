@@ -893,6 +893,72 @@ public class PlanningRuntimeContractsTests
     }
 
     [Fact]
+    public void PlanValidator_DescribesNestedCollectedArrayShape_WhenDownstreamBindingTypeMismatches()
+    {
+        var plan = new PlanDefinition
+        {
+            Goal = "Collect mapped arrays, then bind them as a flat array.",
+            Steps =
+            [
+                new PlanStep
+                {
+                    Id = "searchPages",
+                    Tool = SearchToolName,
+                    In = new Dictionary<string, JsonNode?>
+                    {
+                        ["query"] = JsonValue.Create("maze generator nuget")
+                    }
+                },
+                new PlanStep
+                {
+                    Id = "extractPackages",
+                    Llm = "extractor",
+                    SystemPrompt = "Return JSON only.",
+                    UserPrompt = "Extract package candidates from the current page.",
+                    In = new Dictionary<string, JsonNode?>
+                    {
+                        ["result"] = Ref("$searchPages.results", mode: "map", type: "object")
+                    },
+                    Out = JsonOut(new JsonObject
+                    {
+                        ["type"] = "array",
+                        ["items"] = new JsonObject
+                        {
+                            ["type"] = "object",
+                            ["required"] = new JsonArray("name"),
+                            ["properties"] = new JsonObject
+                            {
+                                ["name"] = new JsonObject
+                                {
+                                    ["type"] = "string"
+                                }
+                            }
+                        }
+                    }, aggregate: PlanStepOutputAggregates.Collect)
+                },
+                new PlanStep
+                {
+                    Id = "reviewPackages",
+                    Llm = "review",
+                    SystemPrompt = "Return JSON only.",
+                    UserPrompt = "Review the extracted packages.",
+                    In = new Dictionary<string, JsonNode?>
+                    {
+                        ["packages"] = Ref("$extractPackages", type: "array<object>")
+                    },
+                    Out = StringOut()
+                }
+            ]
+        };
+
+        Assert.False(PlanValidator.TryValidate(plan, [CreateStaticSearchDescriptor()], out var issue));
+        Assert.NotNull(issue);
+        Assert.Equal("binding_type_mismatch", issue!.Code);
+        Assert.Equal("array<array<object>>", issue.Actual);
+        Assert.Contains("array<array<object>>", issue.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void PlanValidator_RejectsLlmBindingType_WhenValueModeClaimsObjectForArraySource()
     {
         var plan = new PlanDefinition
@@ -1343,6 +1409,48 @@ public class PlanningRuntimeContractsTests
         Assert.Equal("llm_input_contract_failed", trace.ErrorCode);
         Assert.Contains("declared binding types", trace.ErrorMessage ?? string.Empty, StringComparison.Ordinal);
         Assert.Contains("expected 'array<object>'", trace.ErrorDetails?.GetProperty("issues")[0].GetProperty("message").GetString() ?? string.Empty, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void AgentStepRunner_BuildExecutionContract_ClarifiesCollectPerCallSemantics()
+    {
+        var callSchema = JsonSerializer.SerializeToElement(new
+        {
+            type = "object",
+            properties = new
+            {
+                name = new
+                {
+                    type = "string"
+                }
+            }
+        });
+        var finalSchema = JsonSerializer.SerializeToElement(new
+        {
+            type = "array",
+            items = new
+            {
+                type = "object",
+                properties = new
+                {
+                    name = new
+                    {
+                        type = "string"
+                    }
+                }
+            }
+        });
+
+        var prompt = AgentStepRunner.BuildExecutionContract(new ResolvedPlanStepOutputContract(
+            Format: PlanStepOutputFormats.Json,
+            Aggregate: PlanStepOutputAggregates.Collect,
+            CallSchema: callSchema,
+            FinalSchema: finalSchema,
+            IsExplicit: true));
+
+        Assert.Contains("runtime collects those per-call values into the final array", prompt, StringComparison.Ordinal);
+        Assert.Contains("schema below describes the single-call value, not the final collected array", prompt, StringComparison.Ordinal);
+        Assert.Contains("Do not wrap the value in an extra array", prompt, StringComparison.Ordinal);
     }
 
     [Fact]
