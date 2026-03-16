@@ -7,15 +7,43 @@ namespace ChatClient.Api.PlanningRuntime.Planning;
 
 public static partial class PlanValidator
 {
+    public static bool TryValidate(
+        PlanDefinition plan,
+        IReadOnlyCollection<AppToolDescriptor>? tools,
+        out PlanValidationIssue? issue)
+    {
+        try
+        {
+            ValidateCore(plan, tools);
+            issue = null;
+            return true;
+        }
+        catch (PlanValidationException ex)
+        {
+            issue = ex.Issue;
+            return false;
+        }
+    }
+
     public static void ValidateOrThrow(
         PlanDefinition plan,
         IReadOnlyCollection<AppToolDescriptor>? tools = null)
     {
+        if (TryValidate(plan, tools, out var issue))
+            return;
+
+        throw new InvalidOperationException(issue!.Message, new PlanValidationException(issue));
+    }
+
+    private static void ValidateCore(
+        PlanDefinition plan,
+        IReadOnlyCollection<AppToolDescriptor>? tools)
+    {
         if (string.IsNullOrWhiteSpace(plan.Goal))
-            throw new InvalidOperationException("Plan.goal is required.");
+            throw CreateIssue("plan_goal_missing", "Plan.goal is required.", path: "goal");
 
         if (plan.Steps.Count == 0)
-            throw new InvalidOperationException("Plan.steps must contain at least one step.");
+            throw CreateIssue("plan_steps_empty", "Plan.steps must contain at least one step.", path: "steps");
 
         var seenIds = new HashSet<string>(StringComparer.Ordinal);
         var validatedSteps = new Dictionary<string, PlanStep>(StringComparer.Ordinal);
@@ -26,28 +54,28 @@ public static partial class PlanValidator
         foreach (var step in plan.Steps)
         {
             if (string.IsNullOrWhiteSpace(step.Id))
-                throw new InvalidOperationException("Each step must have an id.");
+                throw CreateIssue("step_id_missing", "Each step must have an id.", path: "steps[].id");
 
             if (!seenIds.Add(step.Id))
-                throw new InvalidOperationException($"Duplicate step id '{step.Id}'.");
+                throw CreateIssue("step_id_duplicate", $"Duplicate step id '{step.Id}'.", stepId: step.Id, path: $"{step.Id}.id");
 
             var hasTool = !string.IsNullOrWhiteSpace(step.Tool);
             var hasLlm = !string.IsNullOrWhiteSpace(step.Llm);
             if (hasTool == hasLlm)
-                throw new InvalidOperationException($"Step '{step.Id}' must have exactly one of 'tool' or 'llm'.");
+                throw CreateIssue("step_kind_invalid", $"Step '{step.Id}' must have exactly one of 'tool' or 'llm'.", stepId: step.Id);
 
             if (!IsValidStatus(step.Status))
-                throw new InvalidOperationException($"Step '{step.Id}' has invalid status '{step.Status}'.");
+                throw CreateIssue("step_status_invalid", $"Step '{step.Id}' has invalid status '{step.Status}'.", stepId: step.Id, actual: step.Status);
 
             if (step.In.Count == 0)
-                throw new InvalidOperationException($"Step '{step.Id}' must declare its inputs in 'in'.");
+                throw CreateIssue("step_inputs_missing", $"Step '{step.Id}' must declare its inputs in 'in'.", stepId: step.Id, path: $"{step.Id}.in");
 
             AppToolDescriptor? toolMetadata = null;
             Dictionary<string, JsonElement>? toolInputProperties = null;
             if (hasTool && knownTools is not null)
             {
                 if (!knownTools.TryGetValue(step.Tool!, out toolMetadata))
-                    throw new InvalidOperationException($"Step '{step.Id}' references unknown tool '{step.Tool}'.");
+                    throw CreateIssue("tool_unknown", $"Step '{step.Id}' references unknown tool '{step.Tool}'.", stepId: step.Id, toolName: step.Tool);
 
                 toolInputProperties = ValidateToolInputs(step, toolMetadata);
             }
@@ -77,17 +105,19 @@ public static partial class PlanValidator
             if (hasLlm)
             {
                 if (string.IsNullOrWhiteSpace(step.SystemPrompt))
-                    throw new InvalidOperationException($"LLM step '{step.Id}' must provide systemPrompt.");
+                    throw CreateIssue("llm_system_prompt_missing", $"LLM step '{step.Id}' must provide systemPrompt.", stepId: step.Id, path: $"{step.Id}.systemPrompt");
                 if (string.IsNullOrWhiteSpace(step.UserPrompt))
-                    throw new InvalidOperationException($"LLM step '{step.Id}' must provide userPrompt.");
+                    throw CreateIssue("llm_user_prompt_missing", $"LLM step '{step.Id}' must provide userPrompt.", stepId: step.Id, path: $"{step.Id}.userPrompt");
                 if (ContainsPromptRef(step.SystemPrompt!))
-                    throw new InvalidOperationException($"LLM step '{step.Id}' must not embed step refs inside systemPrompt.");
+                    throw CreateIssue("llm_system_prompt_ref", $"LLM step '{step.Id}' must not embed step refs inside systemPrompt.", stepId: step.Id, path: $"{step.Id}.systemPrompt");
                 if (ContainsPromptRef(step.UserPrompt!))
-                    throw new InvalidOperationException($"LLM step '{step.Id}' must not embed step refs inside userPrompt.");
+                    throw CreateIssue("llm_user_prompt_ref", $"LLM step '{step.Id}' must not embed step refs inside userPrompt.", stepId: step.Id, path: $"{step.Id}.userPrompt");
                 if (ContainsTemplatePlaceholder(step.SystemPrompt!) || ContainsTemplatePlaceholder(step.UserPrompt!))
                 {
-                    throw new InvalidOperationException(
-                        $"LLM step '{step.Id}' must not contain unresolved template placeholders like '{{name}}', '{{{{name}}}}', '[[name]]', '<<name>>', or '${{name}}' in prompts.");
+                    throw CreateIssue(
+                        "llm_prompt_template_placeholder",
+                        $"LLM step '{step.Id}' must not contain unresolved template placeholders like '{{name}}', '{{{{name}}}}', '[[name]]', '<<name>>', or '${{name}}' in prompts.",
+                        stepId: step.Id);
                 }
             }
         }
@@ -99,8 +129,10 @@ public static partial class PlanValidator
             || !toolMetadata.InputSchema.TryGetProperty("properties", out var propertiesNode)
             || propertiesNode.ValueKind != JsonValueKind.Object)
         {
-            throw new InvalidOperationException(
-                $"Tool '{toolMetadata.QualifiedName}' has invalid input schema. It must define an object 'properties' map.");
+            throw CreateIssue(
+                "tool_schema_invalid",
+                $"Tool '{toolMetadata.QualifiedName}' has invalid input schema. It must define an object 'properties' map.",
+                toolName: toolMetadata.QualifiedName);
         }
 
         var properties = propertiesNode.EnumerateObject()
@@ -117,8 +149,12 @@ public static partial class PlanValidator
 
                 if (!step.In.ContainsKey(propertyName))
                 {
-                    throw new InvalidOperationException(
-                        $"Tool step '{step.Id}' is missing required input '{propertyName}' for tool '{toolMetadata.QualifiedName}'.");
+                    throw CreateIssue(
+                        "tool_input_missing_required",
+                        $"Tool step '{step.Id}' is missing required input '{propertyName}' for tool '{toolMetadata.QualifiedName}'.",
+                        stepId: step.Id,
+                        inputName: propertyName,
+                        toolName: toolMetadata.QualifiedName);
                 }
             }
         }
@@ -127,8 +163,12 @@ public static partial class PlanValidator
         {
             if (!properties.TryGetValue(input.Key, out var propertySchema))
             {
-                throw new InvalidOperationException(
-                    $"Tool step '{step.Id}' passes unknown input '{input.Key}' to tool '{toolMetadata.QualifiedName}'.");
+                throw CreateIssue(
+                    "tool_input_unknown",
+                    $"Tool step '{step.Id}' passes unknown input '{input.Key}' to tool '{toolMetadata.QualifiedName}'.",
+                    stepId: step.Id,
+                    inputName: input.Key,
+                    toolName: toolMetadata.QualifiedName);
             }
 
             if (PlanInputBindingSyntax.TryGetLegacyStringReference(input.Value, out _))
@@ -141,8 +181,12 @@ public static partial class PlanValidator
             if (issues.Count == 0)
                 continue;
 
-            throw new InvalidOperationException(
-                $"Tool step '{step.Id}' input '{input.Key}' does not match tool schema: {string.Join(" ", issues.Select(issue => issue.Message))}");
+            throw CreateIssue(
+                "tool_input_schema_mismatch",
+                $"Tool step '{step.Id}' input '{input.Key}' does not match tool schema: {string.Join(" ", issues.Select(issue => issue.Message))}",
+                stepId: step.Id,
+                inputName: input.Key,
+                toolName: toolMetadata.QualifiedName);
         }
 
         var wholeInputSchemaIssues = ToolInputSchemaValidator.ValidateLiteralInput(
@@ -156,8 +200,11 @@ public static partial class PlanValidator
                 .ToList();
             if (missingRequired.Count > 0)
             {
-                throw new InvalidOperationException(
-                    $"Tool step '{step.Id}' does not match tool schema: {string.Join(" ", missingRequired)}");
+                throw CreateIssue(
+                    "tool_input_schema_mismatch",
+                    $"Tool step '{step.Id}' does not match tool schema: {string.Join(" ", missingRequired)}",
+                    stepId: step.Id,
+                    toolName: toolMetadata.QualifiedName);
             }
         }
 
@@ -176,26 +223,39 @@ public static partial class PlanValidator
         var stepId = step.Id;
         if (PlanInputBindingSyntax.TryGetLegacyStringReference(value, out var legacyReference))
         {
-            throw new InvalidOperationException(
-                $"Step '{stepId}' input '{inputName}' uses legacy string ref syntax '{legacyReference}'. Use a binding object like {{\"from\":\"{legacyReference}\",\"mode\":\"value\"}}.");
+            throw CreateIssue(
+                "binding_legacy_ref",
+                $"Step '{stepId}' input '{inputName}' uses legacy string ref syntax '{legacyReference}'. Use a binding object like {{\"from\":\"{legacyReference}\",\"mode\":\"value\"}}.",
+                stepId: stepId,
+                inputName: inputName,
+                bindingFrom: legacyReference);
         }
 
         if (!PlanInputBindingSyntax.TryParseBinding(value, out var binding, out var bindingError))
             return;
 
         if (!string.IsNullOrWhiteSpace(bindingError))
-            throw new InvalidOperationException($"Step '{stepId}' has invalid binding in input '{inputName}': {bindingError}");
+            throw CreateIssue("binding_invalid", $"Step '{stepId}' has invalid binding in input '{inputName}': {bindingError}", stepId: stepId, inputName: inputName);
 
         if (!PlanInputBindingSyntax.TryParseReference(binding!.From, out var reference, out var refError))
         {
-            throw new InvalidOperationException(
-                $"Step '{stepId}' has invalid ref syntax in input '{inputName}': '{binding.From}'. {refError}");
+            throw CreateIssue(
+                "binding_ref_invalid",
+                $"Step '{stepId}' has invalid ref syntax in input '{inputName}': '{binding.From}'. {refError}",
+                stepId: stepId,
+                inputName: inputName,
+                bindingFrom: binding.From);
         }
 
         if (!knownStepIds.Contains(reference!.StepId))
         {
-            throw new InvalidOperationException(
-                $"Step '{stepId}' references '{binding.From}' before step '{reference.StepId}' is available.");
+            throw CreateIssue(
+                "binding_ref_future_step",
+                $"Step '{stepId}' references '{binding.From}' before step '{reference.StepId}' is available.",
+                stepId: stepId,
+                inputName: inputName,
+                bindingFrom: binding.From,
+                sourceStepId: reference.StepId);
         }
 
         if (targetInputSchema is not null
@@ -224,8 +284,7 @@ public static partial class PlanValidator
         if (issues.Count == 0)
             return;
 
-        throw new InvalidOperationException(
-            $"Step '{step.Id}' has invalid out contract: {string.Join(" ", issues)}");
+        throw CreateIssue("step_out_contract_invalid", $"Step '{step.Id}' has invalid out contract: {string.Join(" ", issues)}", stepId: step.Id, path: $"{step.Id}.out");
     }
 
     [GeneratedRegex(@"\$[A-Za-z_][A-Za-z0-9_\-.\[\]]*")]
@@ -287,8 +346,13 @@ public static partial class PlanValidator
         if (sourceTypes.Contains("null", StringComparer.Ordinal)
             && !targetTypes.Contains("null", StringComparer.Ordinal))
         {
-            throw new InvalidOperationException(
-                $"Step '{stepId}' input '{inputName}' binds from '{binding.From}', which may resolve to null, but the target tool input requires a non-null value.");
+            throw CreateIssue(
+                "binding_nullable_incompatible",
+                $"Step '{stepId}' input '{inputName}' binds from '{binding.From}', which may resolve to null, but the target tool input requires a non-null value.",
+                stepId: stepId,
+                inputName: inputName,
+                bindingFrom: binding.From,
+                sourceStepId: sourceStep.Id);
         }
 
         var nonNullSourceTypes = sourceTypes
@@ -303,8 +367,15 @@ public static partial class PlanValidator
         if (incompatibleSourceTypes.Count == 0)
             return;
 
-        throw new InvalidOperationException(
-            $"Step '{stepId}' input '{inputName}' binds from '{binding.From}', but source step '{sourceStep.Id}' produces {string.Join("|", nonNullSourceTypes)} while the target tool input expects {string.Join("|", targetTypes)}.");
+        throw CreateIssue(
+            "binding_tool_schema_mismatch",
+            $"Step '{stepId}' input '{inputName}' binds from '{binding.From}', but source step '{sourceStep.Id}' produces {string.Join("|", nonNullSourceTypes)} while the target tool input expects {string.Join("|", targetTypes)}.",
+            stepId: stepId,
+            inputName: inputName,
+            bindingFrom: binding.From,
+            sourceStepId: sourceStep.Id,
+            expected: string.Join("|", targetTypes),
+            actual: string.Join("|", nonNullSourceTypes));
     }
 
     private static JsonElement ResolveBoundSourceSchemaOrThrow(
@@ -321,8 +392,13 @@ public static partial class PlanValidator
         var sourceSchema = TryResolveReferenceSchema(finalSchema, reference);
         if (sourceSchema is null)
         {
-            throw new InvalidOperationException(
-                $"Step '{stepId}' input '{inputName}' binds from '{binding.From}', but that path does not exist in the output schema of step '{sourceStep.Id}'.");
+            throw CreateIssue(
+                "binding_path_missing",
+                $"Step '{stepId}' input '{inputName}' binds from '{binding.From}', but that path does not exist in the output schema of step '{sourceStep.Id}'.",
+                stepId: stepId,
+                inputName: inputName,
+                bindingFrom: binding.From,
+                sourceStepId: sourceStep.Id);
         }
 
         if (binding.Mode != PlanInputBindingMode.Map)
@@ -331,8 +407,13 @@ public static partial class PlanValidator
         if (!PlanStepOutputContractResolver.SchemaDefinesArray(sourceSchema.Value)
             || !sourceSchema.Value.TryGetProperty("items", out var itemsSchema))
         {
-            throw new InvalidOperationException(
-                $"Step '{stepId}' input '{inputName}' uses mode='map', but '{binding.From}' does not resolve to an array in the output schema of step '{sourceStep.Id}'.");
+            throw CreateIssue(
+                "binding_map_non_array",
+                $"Step '{stepId}' input '{inputName}' uses mode='map', but '{binding.From}' does not resolve to an array in the output schema of step '{sourceStep.Id}'.",
+                stepId: stepId,
+                inputName: inputName,
+                bindingFrom: binding.From,
+                sourceStepId: sourceStep.Id);
         }
 
         return itemsSchema.Clone();
@@ -346,16 +427,26 @@ public static partial class PlanValidator
     {
         if (!StepInputTypeValidator.TryParse(binding.Type, out var expectedType, out var typeError) || expectedType is null)
         {
-            throw new InvalidOperationException(
-                $"Step '{stepId}' input '{inputName}' declares invalid type '{binding.Type}'. {typeError}");
+            throw CreateIssue(
+                "binding_type_invalid",
+                $"Step '{stepId}' input '{inputName}' declares invalid type '{binding.Type}'. {typeError}",
+                stepId: stepId,
+                inputName: inputName,
+                bindingFrom: binding.From,
+                actual: binding.Type);
         }
 
         var issues = StepInputTypeValidator.ValidateSourceSchema(sourceSchema, expectedType, inputName);
         if (issues.Count == 0)
             return;
 
-        throw new InvalidOperationException(
-            $"Step '{stepId}' input '{inputName}' declares type '{binding.Type}', but the binding is incompatible: {string.Join(" ", issues.Select(issue => issue.Message))}");
+        throw CreateIssue(
+            "binding_type_mismatch",
+            $"Step '{stepId}' input '{inputName}' declares type '{binding.Type}', but the binding is incompatible: {string.Join(" ", issues.Select(issue => issue.Message))}",
+            stepId: stepId,
+            inputName: inputName,
+            bindingFrom: binding.From,
+            expected: binding.Type);
     }
 
     private static JsonElement? TryResolveReferenceSchema(JsonElement currentSchema, ParsedStepReference reference)
@@ -431,4 +522,27 @@ public static partial class PlanValidator
         targetTypes.Contains(sourceType, StringComparer.Ordinal)
         || (string.Equals(sourceType, "integer", StringComparison.Ordinal)
             && targetTypes.Contains("number", StringComparer.Ordinal));
+
+    private static PlanValidationException CreateIssue(
+        string code,
+        string message,
+        string? stepId = null,
+        string? inputName = null,
+        string? toolName = null,
+        string? bindingFrom = null,
+        string? sourceStepId = null,
+        string? path = null,
+        string? expected = null,
+        string? actual = null) =>
+        new(new PlanValidationIssue(
+            code,
+            message,
+            StepId: stepId,
+            InputName: inputName,
+            ToolName: toolName,
+            BindingFrom: bindingFrom,
+            SourceStepId: sourceStepId,
+            Path: path,
+            Expected: expected,
+            Actual: actual));
 }

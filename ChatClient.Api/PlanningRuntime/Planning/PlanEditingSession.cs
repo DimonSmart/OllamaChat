@@ -1,5 +1,6 @@
-﻿using System.Text.Json;
+using System.Text.Json;
 using System.Text.Json.Nodes;
+using ChatClient.Api.PlanningRuntime.Common;
 
 namespace ChatClient.Api.PlanningRuntime.Planning;
 
@@ -50,6 +51,7 @@ public sealed class PlanEditingSession
     private JsonNode? ReplaceStep(string stepId, JsonNode? stepNode)
     {
         var stepIndex = FindStepIndex(stepId);
+        var existingStep = _plan.Steps[stepIndex];
         var replacementStep = DeserializeStep(stepNode);
 
         EnsureUniqueStepId(replacementStep.Id, stepIndex);
@@ -59,7 +61,10 @@ public sealed class PlanEditingSession
         return new JsonObject
         {
             ["stepId"] = replacementStep.Id,
-            ["position"] = stepIndex
+            ["position"] = stepIndex,
+            ["before"] = PlanningLogFormatter.SummarizeStep(existingStep),
+            ["after"] = PlanningLogFormatter.SummarizeStep(replacementStep),
+            ["diff"] = BuildStepDiff(existingStep, replacementStep)
         };
     }
 
@@ -88,7 +93,8 @@ public sealed class PlanEditingSession
         return new JsonObject
         {
             ["insertedCount"] = newSteps.Count,
-            ["insertIndex"] = insertIndex
+            ["insertIndex"] = insertIndex,
+            ["insertedSteps"] = new JsonArray(newSteps.Select(PlanningLogFormatter.SummarizeStep).ToArray())
         };
     }
 
@@ -100,6 +106,7 @@ public sealed class PlanEditingSession
 
         return new JsonObject
         {
+            ["fromStepId"] = stepId,
             ["resetCount"] = resetSteps.Count,
             ["resetStepIds"] = new JsonArray(resetSteps.Select(resetStepId => JsonValue.Create(resetStepId)).ToArray())
         };
@@ -163,5 +170,86 @@ public sealed class PlanEditingSession
             ["message"] = message
         }
     };
-}
 
+    private static JsonObject BuildStepDiff(PlanStep before, PlanStep after)
+    {
+        var diff = new JsonObject();
+
+        if (!string.Equals(before.Tool, after.Tool, StringComparison.Ordinal)
+            || !string.Equals(before.Llm, after.Llm, StringComparison.Ordinal))
+        {
+            diff["kind"] = new JsonObject
+            {
+                ["before"] = before.Tool ?? before.Llm,
+                ["after"] = after.Tool ?? after.Llm
+            };
+        }
+
+        if (!string.Equals(before.SystemPrompt, after.SystemPrompt, StringComparison.Ordinal))
+        {
+            diff["systemPrompt"] = new JsonObject
+            {
+                ["before"] = PlanningLogFormatter.SummarizeText(before.SystemPrompt, 120),
+                ["after"] = PlanningLogFormatter.SummarizeText(after.SystemPrompt, 120)
+            };
+        }
+
+        if (!string.Equals(before.UserPrompt, after.UserPrompt, StringComparison.Ordinal))
+        {
+            diff["userPrompt"] = new JsonObject
+            {
+                ["before"] = PlanningLogFormatter.SummarizeText(before.UserPrompt, 120),
+                ["after"] = PlanningLogFormatter.SummarizeText(after.UserPrompt, 120)
+            };
+        }
+
+        var beforeOut = JsonSerializer.SerializeToNode(before.Out, JsonOptions);
+        var afterOut = JsonSerializer.SerializeToNode(after.Out, JsonOptions);
+        if (!NodesEqual(beforeOut, afterOut))
+        {
+            diff["output"] = new JsonObject
+            {
+                ["before"] = PlanningLogFormatter.SummarizeNode(beforeOut),
+                ["after"] = PlanningLogFormatter.SummarizeNode(afterOut)
+            };
+        }
+
+        var beforeKeys = before.In.Keys.OrderBy(static key => key, StringComparer.Ordinal).ToArray();
+        var afterKeys = after.In.Keys.OrderBy(static key => key, StringComparer.Ordinal).ToArray();
+        if (!beforeKeys.SequenceEqual(afterKeys, StringComparer.Ordinal))
+        {
+            diff["inputKeys"] = new JsonObject
+            {
+                ["before"] = new JsonArray(beforeKeys.Select(static key => JsonValue.Create(key)).ToArray()),
+                ["after"] = new JsonArray(afterKeys.Select(static key => JsonValue.Create(key)).ToArray())
+            };
+        }
+
+        var changedInputs = new JsonArray();
+        foreach (var key in before.In.Keys.Concat(after.In.Keys).Distinct(StringComparer.Ordinal).OrderBy(static key => key, StringComparer.Ordinal))
+        {
+            before.In.TryGetValue(key, out var beforeValue);
+            after.In.TryGetValue(key, out var afterValue);
+            if (NodesEqual(beforeValue, afterValue))
+                continue;
+
+            changedInputs.Add(new JsonObject
+            {
+                ["name"] = key,
+                ["before"] = PlanningLogFormatter.SummarizeNode(beforeValue),
+                ["after"] = PlanningLogFormatter.SummarizeNode(afterValue)
+            });
+        }
+
+        if (changedInputs.Count > 0)
+            diff["changedInputs"] = changedInputs;
+
+        return diff;
+    }
+
+    private static bool NodesEqual(JsonNode? left, JsonNode? right) =>
+        string.Equals(
+            left?.ToJsonString(PlanningJson.CompactOptions),
+            right?.ToJsonString(PlanningJson.CompactOptions),
+            StringComparison.Ordinal);
+}

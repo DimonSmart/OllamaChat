@@ -700,7 +700,7 @@ public sealed class PlanExecutor(
         element?.Clone();
 
     private static string SerializeElement(JsonElement? element) =>
-        PlanningJson.SerializeElementCompact(element);
+        PlanningLogFormatter.SummarizeElement(element);
 
     private static string Shorten(string? value, int maxLength)
     {

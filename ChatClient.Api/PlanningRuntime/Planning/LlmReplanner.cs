@@ -46,11 +46,11 @@ public sealed class LlmReplanner(
             var reason = actionBatch.Reason.Trim();
 
             _log.Log($"[replan] round={round} done={done} actions={actionBatch.Actions.Count} reason={Shorten(reason, 240)}");
-            _log.Log($"[replan] round={round} actionBatch={PlanningJson.SerializeIndented(actionBatch)}");
+            _log.Log($"[replan] round={round} actionBatch={PlanningLogFormatter.SummarizeNode(JsonSerializer.SerializeToNode(actionBatch))}");
 
             lastActionResults = ExecuteActions(session, request, actionBatch.Actions);
             AppendDraftValidationResult(session, workflowTools, lastActionResults);
-            _log.Log($"[replan] round={round} actionResults={PlanningJson.SerializeNodeIndented(lastActionResults)}");
+            _log.Log($"[replan] round={round} actionResults={PlanningLogFormatter.SummarizeNode(lastActionResults)}");
             _observer.OnEvent(new ReplanRoundCompletedEvent(
                 round,
                 done,
@@ -78,7 +78,7 @@ public sealed class LlmReplanner(
 
             var replanned = session.BuildPlan();
             _log.Log($"[replan] success steps={replanned.Steps.Count} goal={Shorten(replanned.Goal, 240)}");
-            _log.Log($"[replan] json {PlanningJson.SerializeIndented(replanned)}");
+            _log.Log($"[replan] summary {PlanningLogFormatter.SummarizeNode(PlanningLogFormatter.SummarizePlan(replanned))}");
             _observer.OnEvent(new ReplanAppliedEvent(ClonePlan(replanned)));
             return replanned;
         }
@@ -384,12 +384,28 @@ public sealed class LlmReplanner(
         try
         {
             var draft = session.BuildPlan();
-            PlanValidator.ValidateOrThrow(draft, workflowTools);
-            actionResults.Add(new JsonObject
+            if (PlanValidator.TryValidate(draft, workflowTools, out var validationIssue))
             {
-                ["tool"] = "plan.validateDraft",
-                ["ok"] = true
-            });
+                actionResults.Add(new JsonObject
+                {
+                    ["tool"] = "plan.validateDraft",
+                    ["ok"] = true
+                });
+            }
+            else
+            {
+                actionResults.Add(new JsonObject
+                {
+                    ["tool"] = "plan.validateDraft",
+                    ["ok"] = false,
+                    ["error"] = new JsonObject
+                    {
+                        ["code"] = "invalid_plan",
+                        ["message"] = validationIssue!.Message,
+                        ["details"] = JsonSerializer.SerializeToNode(validationIssue, JsonOptions)
+                    }
+                });
+            }
         }
         catch (Exception ex)
         {
