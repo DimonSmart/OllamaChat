@@ -109,7 +109,7 @@ public class McpFunctionIndexService
 
     private async Task BuildOrUpdatePersistedIndexAsync(Guid targetServerId, CancellationToken cancellationToken)
     {
-        var clients = await _clientService.GetMcpClientsAsync(cancellationToken);
+        var clients = await _clientService.GetMcpClientsAsync(cancellationToken: cancellationToken);
         var activeServers = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
         foreach (var client in clients)

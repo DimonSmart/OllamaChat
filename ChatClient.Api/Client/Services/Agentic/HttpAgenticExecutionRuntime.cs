@@ -78,9 +78,11 @@ public sealed class HttpAgenticExecutionRuntime(
         }
 
         var messages = BuildProviderMessages(request);
+        var toolRequestContext = BuildToolRequestContext(request);
         var toolRegistry = supportsFunctions
             ? await ResolveToolRegistryAsync(
                 requestedFunctions,
+                toolRequestContext,
                 request.Whiteboard,
                 request.Configuration.UseWhiteboard,
                 cancellationToken)
@@ -787,6 +789,7 @@ public sealed class HttpAgenticExecutionRuntime(
 
     private async Task<ToolRegistry> ResolveToolRegistryAsync(
         IReadOnlyCollection<string> requestedFunctions,
+        McpClientRequestContext requestContext,
         WhiteboardState? whiteboard,
         bool useWhiteboard,
         CancellationToken cancellationToken)
@@ -802,9 +805,9 @@ public sealed class HttpAgenticExecutionRuntime(
                 requestedFunctions.Select(AgenticToolUtility.ExtractToolName),
                 StringComparer.OrdinalIgnoreCase);
 
-            var availableTools = await appToolCatalog.ListToolsAsync(cancellationToken);
-            foreach (var tool in availableTools)
-            {
+              var availableTools = await appToolCatalog.ListToolsAsync(requestContext, cancellationToken);
+              foreach (var tool in availableTools)
+              {
                 cancellationToken.ThrowIfCancellationRequested();
                 bool selected = requestedQualified.Contains(tool.QualifiedName) || requestedByToolName.Contains(tool.ToolName);
                 if (!selected)
@@ -919,6 +922,17 @@ public sealed class HttpAgenticExecutionRuntime(
     private string ResolveOpenAiApiKey(LlmServerConfig server)
     {
         return LlmServerConfigHelper.GetConfiguredOpenAiApiKey(configuration, server);
+    }
+
+    private static McpClientRequestContext BuildToolRequestContext(AgenticExecutionRuntimeRequest request)
+    {
+        var mergedBindings = McpServerSessionBindingMerger.Merge(
+            request.Agent.McpServerBindings,
+            request.Configuration.McpServerBindings);
+
+        return mergedBindings.Count == 0
+            ? McpClientRequestContext.Empty
+            : new McpClientRequestContext(mergedBindings);
     }
 
     private static async Task<string> SafeReadBodyAsync(HttpResponseMessage response, CancellationToken cancellationToken)

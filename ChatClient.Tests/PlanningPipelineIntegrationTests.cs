@@ -28,6 +28,13 @@ public sealed class PlanningPipelineIntegrationTests(ITestOutputHelper output)
     public static TheoryData<string, string> RealWebExplorationQueries => new()
     {
         {
+            "maze-nuget-review-ru-markdown",
+            """
+            Найди минимум 3 NuGet пакета которые умеют генерировать лабиринты. Оцени их с точки зрения простоты использования и сделай итоговый мини-обзор на несколько вариантов.
+            Результат оформи как markdown
+            """
+        },
+        {
             "maze-nuget-review",
             "Find 3 NuGet packages that can generate mazes. For each package, locate its NuGet page and a GitHub or documentation page, compare ease of use and documentation quality, and write a short review with a recommendation."
         },

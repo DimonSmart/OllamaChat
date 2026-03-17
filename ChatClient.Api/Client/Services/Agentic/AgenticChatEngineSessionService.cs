@@ -393,6 +393,9 @@ public sealed class AgenticChatEngineSessionService(
                 AutoSelectCount = source.FunctionSettings.AutoSelectCount,
                 SelectedFunctions = [.. source.FunctionSettings.SelectedFunctions]
             },
+            McpServerBindings = source.McpServerBindings
+                .Select(static binding => binding.Clone())
+                .ToList(),
             CreatedAt = source.CreatedAt,
             UpdatedAt = source.UpdatedAt
         };

@@ -116,7 +116,7 @@
     private readonly Dictionary<string, string> serverDescriptions = new(StringComparer.OrdinalIgnoreCase);
     private readonly List<McpToolInfo> tools = [];
     private readonly Dictionary<string, McpClientTool> toolMap = new(StringComparer.OrdinalIgnoreCase);
-    private readonly List<FieldInfo> fields = [];
+    private readonly List<McpPlaygroundToolFormHelper.FieldDefinition> fields = [];
     private readonly Dictionary<string, object?> parameters = new(StringComparer.OrdinalIgnoreCase);
     private McpClient? currentClient;
     private string? selectedServer;
@@ -301,27 +301,10 @@
         if (tool.JsonSchema.ValueKind == JsonValueKind.Undefined)
             return;
 
-        var requiredParams = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        if (tool.JsonSchema.TryGetProperty("required", out var requiredNode) && requiredNode.ValueKind == JsonValueKind.Array)
+        fields.AddRange(McpPlaygroundToolFormHelper.CreateFields(tool.JsonSchema));
+        foreach (var field in fields)
         {
-            foreach (var required in requiredNode.EnumerateArray())
-            {
-                if (required.ValueKind == JsonValueKind.String && !string.IsNullOrWhiteSpace(required.GetString()))
-                    requiredParams.Add(required.GetString()!);
-            }
-        }
-
-        if (tool.JsonSchema.TryGetProperty("properties", out var props) && props.ValueKind == JsonValueKind.Object)
-        {
-            foreach (var prop in props.EnumerateObject())
-            {
-                var type = prop.Value.TryGetProperty("type", out var t) ? t.GetString() : "string";
-                var description = prop.Value.TryGetProperty("description", out var d) && d.ValueKind == JsonValueKind.String
-                    ? d.GetString()
-                    : null;
-                fields.Add(new FieldInfo(prop.Name, type ?? "string", description, requiredParams.Contains(prop.Name)));
-                parameters[prop.Name] = null;
-            }
+            parameters[field.Name] = null;
         }
     }
 
@@ -333,24 +316,7 @@
             return;
         try
         {
-            var args = new Dictionary<string, object?>();
-            foreach (var f in fields)
-            {
-                if (!parameters.TryGetValue(f.Name, out var val))
-                    continue;
-                if (val is string s && (f.Type == "array" || f.Type == "object"))
-                {
-                    try
-                    {
-                        val = JsonSerializer.Deserialize<JsonElement>(s);
-                    }
-                    catch
-                    {
-                        continue;
-                    }
-                }
-                args[f.Name] = val;
-            }
+            var args = McpPlaygroundToolFormHelper.BuildArguments(fields, parameters);
             using var interactionScope = McpUserInteractionService.BeginInteractionScope(McpInteractionScope.Playground);
             var obj = await tool.CallAsync(args, null, null);
             var elem = JsonSerializer.SerializeToElement(obj);
@@ -358,8 +324,18 @@
             contentResult = FormatContent(elem);
             showRaw = contentResult is null;
         }
+        catch (McpPlaygroundToolFormHelper.InvalidPlaygroundInputException ex)
+        {
+            rawResult = ex.Message;
+            contentResult = ex.Message;
+            showRaw = false;
+            Snackbar.Add(ex.Message, Severity.Warning);
+        }
         catch (Exception ex)
         {
+            rawResult = ex.Message;
+            contentResult = ex.Message;
+            showRaw = false;
             Snackbar.Add($"Error calling function: {ex.Message}", Severity.Error);
         }
     }
@@ -503,24 +479,28 @@
         return null;
     }
 
-    private static string GetFieldLabel(FieldInfo field)
+    private static string GetFieldLabel(McpPlaygroundToolFormHelper.FieldDefinition field)
         => field.IsRequired ? $"{field.Name} *" : field.Name;
 
-    private static string GetFieldMetadata(FieldInfo field)
+    private static string GetFieldMetadata(McpPlaygroundToolFormHelper.FieldDefinition field)
     {
         var typePart = $"Type: {field.Type}";
         var requiredPart = field.IsRequired ? "Required." : "Optional.";
+        var jsonHint = field.Type switch
+        {
+            "array" => " Enter JSON array syntax, for example [\"Readme\"].",
+            "object" => " Enter JSON object syntax, for example {\"key\":\"value\"}.",
+            _ => string.Empty
+        };
 
         if (string.IsNullOrWhiteSpace(field.Description))
-            return $"{typePart}. {requiredPart}";
+            return $"{typePart}. {requiredPart}{jsonHint}";
 
-        return $"{field.Description} ({typePart}). {requiredPart}";
+        return $"{field.Description} ({typePart}). {requiredPart}{jsonHint}";
     }
 
     public void Dispose()
     {
         elicitationHandlerRegistration?.Dispose();
     }
-
-    private sealed record FieldInfo(string Name, string Type, string? Description, bool IsRequired);
 }

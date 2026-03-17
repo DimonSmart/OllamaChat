@@ -21,17 +21,21 @@ public sealed record AppToolDescriptor(
 
 public interface IAppToolCatalog
 {
-    Task<IReadOnlyList<AppToolDescriptor>> ListToolsAsync(CancellationToken cancellationToken = default);
+    Task<IReadOnlyList<AppToolDescriptor>> ListToolsAsync(
+        McpClientRequestContext? requestContext = null,
+        CancellationToken cancellationToken = default);
 }
 
 public sealed class AppToolCatalog(IMcpClientService mcpClientService) : IAppToolCatalog
 {
     private static readonly JsonElement EmptyObjectSchema = CreateEmptyObjectSchema();
 
-    public async Task<IReadOnlyList<AppToolDescriptor>> ListToolsAsync(CancellationToken cancellationToken = default)
+    public async Task<IReadOnlyList<AppToolDescriptor>> ListToolsAsync(
+        McpClientRequestContext? requestContext = null,
+        CancellationToken cancellationToken = default)
     {
         var result = new List<AppToolDescriptor>();
-        var clients = await mcpClientService.GetMcpClientsAsync(cancellationToken);
+        var clients = await mcpClientService.GetMcpClientsAsync(requestContext, cancellationToken);
 
         foreach (var client in clients)
         {

@@ -2,6 +2,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using ModelContextProtocol.Protocol;
+using ChatClient.Domain.Models;
 
 namespace ChatClient.Api.Services.BuiltIn;
 
@@ -14,7 +15,8 @@ public static class BuiltInMcpServerHost
         if (!TryGetBuiltInKey(args, out var key))
             return false;
 
-        await RunBuiltInServerAsync(key, cancellationToken);
+        McpSessionBindingTransport.TryReadBinding(args, out var binding);
+        await RunBuiltInServerAsync(key, args, binding, cancellationToken);
         return true;
     }
 
@@ -36,12 +38,16 @@ public static class BuiltInMcpServerHost
         return false;
     }
 
-    private static async Task RunBuiltInServerAsync(string key, CancellationToken cancellationToken)
+    private static async Task RunBuiltInServerAsync(
+        string key,
+        string[] args,
+        McpServerSessionBinding? binding,
+        CancellationToken cancellationToken)
     {
         if (!BuiltInMcpServerCatalog.TryGetDefinition(key, out var definition) || definition is null)
             throw new InvalidOperationException($"Unknown built-in MCP server key '{key}'.");
 
-        var builder = Host.CreateApplicationBuilder([]);
+        var builder = Host.CreateApplicationBuilder(args);
         builder.Logging.ClearProviders();
         builder.Logging.AddConsole(options =>
         {
@@ -49,6 +55,8 @@ public static class BuiltInMcpServerHost
             options.LogToStandardErrorThreshold = LogLevel.Trace;
         });
         builder.Services.AddHttpClient();
+        builder.Services.AddSingleton(new McpServerSessionContext(binding));
+        builder.Services.AddSingleton<KnowledgeBookStore>();
 
         var mcpBuilder = builder.Services
             .AddMcpServer(options =>

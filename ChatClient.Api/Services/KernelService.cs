@@ -37,7 +37,7 @@ public class KernelService(
 
         try
         {
-            var tools = await _appToolCatalog.ListToolsAsync(cancellationToken);
+            var tools = await _appToolCatalog.ListToolsAsync(cancellationToken: cancellationToken);
             if (tools.Count == 0)
                 return [];
 

@@ -8,7 +8,7 @@ public class AppChatConfigurationTests
     [Fact]
     public void ToString_IncludesWhiteboardSetting()
     {
-        var configuration = new AppChatConfiguration("test-model", ["fn1"], UseWhiteboard: false);
+        var configuration = new AppChatConfiguration("test-model", ["fn1"], useWhiteboard: false);
 
         var text = configuration.ToString();
 

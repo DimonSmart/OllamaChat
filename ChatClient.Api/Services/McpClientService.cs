@@ -15,26 +15,33 @@ public class McpClientService(
     ILoggerFactory loggerFactory) : IMcpClientService
 {
     private readonly SemaphoreSlim _syncLock = new(1, 1);
-    private List<McpClient>? _mcpClients = null;
-    private string? _configFingerprint = null;
+    private readonly Dictionary<string, CachedClientSet> _clientSets = new(StringComparer.Ordinal);
+    private const int MaxCachedClientSets = 12;
 
-    public async Task<IReadOnlyCollection<McpClient>> GetMcpClientsAsync(CancellationToken cancellationToken = default)
+    private sealed class CachedClientSet(List<McpClient> clients)
+    {
+        public List<McpClient> Clients { get; } = clients;
+
+        public DateTime LastAccessUtc { get; set; } = DateTime.UtcNow;
+    }
+
+    public async Task<IReadOnlyCollection<McpClient>> GetMcpClientsAsync(
+        McpClientRequestContext? requestContext = null,
+        CancellationToken cancellationToken = default)
     {
         var mcpServerDescriptors = (await mcpServerConfigService.GetAllAsync())
             .OrderBy(s => s.Name, StringComparer.OrdinalIgnoreCase)
             .ToList();
-        var fingerprint = BuildFingerprint(mcpServerDescriptors);
+        var normalizedContext = requestContext ?? McpClientRequestContext.Empty;
+        var fingerprint = BuildFingerprint(mcpServerDescriptors, normalizedContext);
 
         await _syncLock.WaitAsync(cancellationToken);
         try
         {
-            if (_mcpClients != null && string.Equals(_configFingerprint, fingerprint, StringComparison.Ordinal))
-                return _mcpClients;
-
-            if (_mcpClients != null)
+            if (_clientSets.TryGetValue(fingerprint, out var cachedClientSet))
             {
-                await DisposeClientsAsync(_mcpClients);
-                _mcpClients = null;
+                cachedClientSet.LastAccessUtc = DateTime.UtcNow;
+                return cachedClientSet.Clients;
             }
 
             var newClients = new List<McpClient>();
@@ -42,9 +49,8 @@ public class McpClientService(
             if (mcpServerDescriptors.Count == 0)
             {
                 logger.LogWarning("No MCP server configurations found");
-                _mcpClients = newClients;
-                _configFingerprint = fingerprint;
-                return _mcpClients;
+                _clientSets[fingerprint] = new CachedClientSet(newClients);
+                return newClients;
             }
 
             foreach (var serverDescriptor in mcpServerDescriptors)
@@ -61,14 +67,18 @@ public class McpClientService(
 
                 try
                 {
+                    var binding = normalizedContext.FindBindingFor(serverDescriptor);
                     if (serverDescriptor is IBuiltInMcpServerDescriptor builtInDefinition)
                     {
-                        var builtInClient = await CreateBuiltInMcpClientAsync(builtInDefinition, cancellationToken);
+                        var builtInClient = await CreateBuiltInMcpClientAsync(
+                            builtInDefinition,
+                            binding,
+                            cancellationToken);
                         newClients.Add(builtInClient);
                     }
                     else if (serverDescriptor is McpServerConfig serverConfig && !string.IsNullOrWhiteSpace(serverConfig.Command))
                     {
-                        newClients.Add(await CreateLocalMcpClientAsync(serverConfig, cancellationToken));
+                        newClients.Add(await CreateLocalMcpClientAsync(serverConfig, binding, cancellationToken));
                     }
                     else if (serverDescriptor is McpServerConfig sseServerConfig && !string.IsNullOrWhiteSpace(sseServerConfig.Sse))
                     {
@@ -98,9 +108,9 @@ public class McpClientService(
                 }
             }
 
-            _mcpClients = newClients;
-            _configFingerprint = fingerprint;
-            return _mcpClients;
+            _clientSets[fingerprint] = new CachedClientSet(newClients);
+            await EvictIfNeededAsync(fingerprint);
+            return newClients;
         }
         finally
         {
@@ -134,9 +144,12 @@ public class McpClientService(
         }
     }
 
-    private async Task<McpClient> CreateBuiltInMcpClientAsync(IBuiltInMcpServerDescriptor definition, CancellationToken cancellationToken)
+    private async Task<McpClient> CreateBuiltInMcpClientAsync(
+        IBuiltInMcpServerDescriptor definition,
+        McpServerSessionBinding? binding,
+        CancellationToken cancellationToken)
     {
-        var (command, arguments) = GetBuiltInLaunchCommand(definition.Key);
+        var (command, arguments) = GetBuiltInLaunchCommand(definition.Key, binding);
         var applicationDirectory = AppContext.BaseDirectory;
         var clientOptions = CreateClientOptions(definition);
 
@@ -155,7 +168,10 @@ public class McpClientService(
             cancellationToken: cancellationToken);
     }
 
-    private async Task<McpClient> CreateLocalMcpClientAsync(McpServerConfig serverConfig, CancellationToken cancellationToken)
+    private async Task<McpClient> CreateLocalMcpClientAsync(
+        McpServerConfig serverConfig,
+        McpServerSessionBinding? binding,
+        CancellationToken cancellationToken)
     {
         if (string.IsNullOrEmpty(serverConfig.Command))
         {
@@ -173,7 +189,7 @@ public class McpClientService(
                 {
                     Name = serverConfig.Name,
                     Command = serverConfig.Command,
-                    Arguments = serverConfig.Arguments ?? [],
+                    Arguments = McpSessionBindingTransport.AppendArguments(serverConfig.Arguments, binding),
                     WorkingDirectory = applicationDirectory // Use fixed application directory
                 },
                 loggerFactory),
@@ -204,13 +220,12 @@ public class McpClientService(
         await _syncLock.WaitAsync();
         try
         {
-            if (_mcpClients != null)
+            foreach (var clientSet in _clientSets.Values)
             {
-                await DisposeClientsAsync(_mcpClients);
-                _mcpClients = null;
+                await DisposeClientsAsync(clientSet.Clients);
             }
 
-            _configFingerprint = null;
+            _clientSets.Clear();
         }
         finally
         {
@@ -235,7 +250,9 @@ public class McpClientService(
         }
     }
 
-    private static (string Command, string[] Arguments) GetBuiltInLaunchCommand(string builtInKey)
+    private static (string Command, string[] Arguments) GetBuiltInLaunchCommand(
+        string builtInKey,
+        McpServerSessionBinding? binding)
     {
         var processPath = Environment.ProcessPath;
         var processFileName = Path.GetFileName(processPath);
@@ -244,7 +261,7 @@ public class McpClientService(
 
         if (!string.IsNullOrWhiteSpace(processPath) && !isDotnetHost)
         {
-            return (processPath, ["--mcp-builtin", builtInKey]);
+            return (processPath, McpSessionBindingTransport.AppendArguments(["--mcp-builtin", builtInKey], binding));
         }
 
         var assemblyPath = Assembly.GetEntryAssembly()?.Location;
@@ -252,10 +269,12 @@ public class McpClientService(
             throw new InvalidOperationException("Unable to determine application assembly path for built-in MCP server launch.");
 
         var command = string.IsNullOrWhiteSpace(processPath) ? "dotnet" : processPath;
-        return (command, [assemblyPath, "--mcp-builtin", builtInKey]);
+        return (command, McpSessionBindingTransport.AppendArguments([assemblyPath, "--mcp-builtin", builtInKey], binding));
     }
 
-    private static string BuildFingerprint(IEnumerable<IMcpServerDescriptor> serverDescriptors)
+    private static string BuildFingerprint(
+        IEnumerable<IMcpServerDescriptor> serverDescriptors,
+        McpClientRequestContext requestContext)
     {
         return string.Join(
             "||",
@@ -269,7 +288,27 @@ public class McpClientService(
                         McpServerConfig external =>
                             $"{external.Id}|{external.Name}|external|{external.Command}|{external.Sse}|{external.UpdatedAt:O}",
                         _ => $"{s.Id}|{s.Name}|unknown"
-                    }));
+                    })
+                .Append($"ctx:{requestContext.BuildFingerprint()}"));
+    }
+
+    private async Task EvictIfNeededAsync(string currentFingerprint)
+    {
+        while (_clientSets.Count > MaxCachedClientSets)
+        {
+            var evicted = _clientSets
+                .Where(entry => !string.Equals(entry.Key, currentFingerprint, StringComparison.Ordinal))
+                .OrderBy(entry => entry.Value.LastAccessUtc)
+                .FirstOrDefault();
+
+            if (string.IsNullOrWhiteSpace(evicted.Key))
+            {
+                break;
+            }
+
+            _clientSets.Remove(evicted.Key);
+            await DisposeClientsAsync(evicted.Value.Clients);
+        }
     }
 
 

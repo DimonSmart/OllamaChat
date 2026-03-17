@@ -385,7 +385,8 @@
             {
                 AutoSelectCount = 0,
                 SelectedFunctions = []
-            }
+            },
+            McpServerBindings = []
         };
         editingServerModel = new ServerModelSelection(null, null);
         ragFiles = new();
@@ -502,7 +503,10 @@
             {
                 AutoSelectCount = agent.FunctionSettings.AutoSelectCount,
                 SelectedFunctions = new List<string>(agent.FunctionSettings.SelectedFunctions)
-            }
+            },
+            McpServerBindings = agent.McpServerBindings
+                .Select(static binding => binding.Clone())
+                .ToList()
         };
 
         editingServerModel = new ServerModelSelection(agent.LlmId, agent.ModelName);

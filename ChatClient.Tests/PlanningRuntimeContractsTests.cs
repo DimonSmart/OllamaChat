@@ -1514,7 +1514,7 @@ public class PlanningRuntimeContractsTests
         var appToolCatalog = new Mock<IAppToolCatalog>();
         var mcpUserInteractionService = new Mock<IMcpUserInteractionService>();
         appToolCatalog
-            .Setup(catalog => catalog.ListToolsAsync(It.IsAny<CancellationToken>()))
+            .Setup(catalog => catalog.ListToolsAsync(It.IsAny<McpClientRequestContext?>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(Array.Empty<AppToolDescriptor>());
 
         return new PlanningSessionService(

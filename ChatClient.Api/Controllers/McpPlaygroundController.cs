@@ -14,14 +14,14 @@ public class McpPlaygroundController(IMcpClientService clientService) : Controll
     [HttpGet("servers")]
     public async Task<ActionResult<IEnumerable<string>>> GetServers(CancellationToken cancellationToken)
     {
-        var clients = await clientService.GetMcpClientsAsync(cancellationToken);
+        var clients = await clientService.GetMcpClientsAsync(cancellationToken: cancellationToken);
         return Ok(clients.Select(c => c.ServerInfo.Name));
     }
 
     [HttpGet("tools/{server}")]
     public async Task<ActionResult<IEnumerable<McpToolInfo>>> GetTools(string server, CancellationToken cancellationToken)
     {
-        var clients = await clientService.GetMcpClientsAsync(cancellationToken);
+        var clients = await clientService.GetMcpClientsAsync(cancellationToken: cancellationToken);
         var client = clients.FirstOrDefault(c => string.Equals(c.ServerInfo.Name, server, StringComparison.OrdinalIgnoreCase));
         if (client == null)
             return NotFound();
@@ -33,7 +33,7 @@ public class McpPlaygroundController(IMcpClientService clientService) : Controll
     [HttpPost("call")]
     public async Task<ActionResult<JsonElement>> Call(McpFunctionCallRequest request, CancellationToken cancellationToken)
     {
-        var clients = await clientService.GetMcpClientsAsync(cancellationToken);
+        var clients = await clientService.GetMcpClientsAsync(cancellationToken: cancellationToken);
         var client = clients.FirstOrDefault(c => string.Equals(c.ServerInfo.Name, request.Server, StringComparison.OrdinalIgnoreCase));
         if (client == null)
             return NotFound($"Server {request.Server} not found");
