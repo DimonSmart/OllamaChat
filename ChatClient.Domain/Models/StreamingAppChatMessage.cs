@@ -64,6 +64,12 @@ public class StreamingAppChatMessage(string initialContent, DateTime msgDateTime
         _functionCalls.Add(record);
     }
 
+    public void SetFunctionCalls(IEnumerable<FunctionCallRecord> records)
+    {
+        _functionCalls.Clear();
+        _functionCalls.AddRange(records);
+    }
+
     public void SetCanceled()
     {
         IsCanceled = true;

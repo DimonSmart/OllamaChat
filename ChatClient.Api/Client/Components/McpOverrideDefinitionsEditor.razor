@@ -1,0 +1,145 @@
+@using ChatClient.Domain.Models
+@using MudBlazor
+
+<MudStack Spacing="2">
+    <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2">
+        <MudText Typo="Typo.subtitle2">@Title</MudText>
+        <MudSpacer />
+        <MudButton Variant="Variant.Outlined"
+                   Size="Size.Small"
+                   StartIcon="@Icons.Material.Filled.Add"
+                   OnClick="AddDefinition"
+                   Disabled="@Disabled">
+            Add Override
+        </MudButton>
+    </MudStack>
+
+    @if (Definitions.Count == 0)
+    {
+        <MudAlert Severity="Severity.Info" Dense="true" Variant="Variant.Outlined">
+            No per-usage overrides are configured for this server.
+        </MudAlert>
+    }
+    else
+    {
+        @foreach (var definition in Definitions)
+        {
+            <MudPaper Outlined="true" Class="pa-3">
+                <MudGrid>
+                    <MudItem xs="12" md="4">
+                        <MudTextField T="string"
+                                      Value="@definition.Key"
+                                      ValueChanged="@(value => UpdateDefinition(definition, value, nameof(McpOverrideDefinition.Key)))"
+                                      Label="Key"
+                                      Immediate="true"
+                                      Disabled="@Disabled" />
+                    </MudItem>
+                    <MudItem xs="12" md="4">
+                        <MudTextField T="string"
+                                      Value="@definition.Label"
+                                      ValueChanged="@(value => UpdateDefinition(definition, value, nameof(McpOverrideDefinition.Label)))"
+                                      Label="Label"
+                                      Immediate="true"
+                                      Disabled="@Disabled" />
+                    </MudItem>
+                    <MudItem xs="12" md="4">
+                        <MudSelect T="string"
+                                   Label="Type"
+                                   Value="@definition.Kind"
+                                   ValueChanged="@(value => UpdateDefinition(definition, value, nameof(McpOverrideDefinition.Kind)))"
+                                   Dense="true"
+                                   Disabled="@Disabled">
+                            <MudSelectItem Value="@("string")">String</MudSelectItem>
+                            <MudSelectItem Value="@("int")">Integer</MudSelectItem>
+                            <MudSelectItem Value="@("bool")">Boolean</MudSelectItem>
+                        </MudSelect>
+                    </MudItem>
+                    <MudItem xs="12" md="8">
+                        <MudTextField T="string"
+                                      Value="@definition.Description"
+                                      ValueChanged="@(value => UpdateDefinition(definition, value, nameof(McpOverrideDefinition.Description)))"
+                                      Label="Description"
+                                      Immediate="true"
+                                      Disabled="@Disabled" />
+                    </MudItem>
+                    <MudItem xs="12" md="2">
+                        <MudCheckBox T="bool"
+                                     Value="@definition.Required"
+                                     ValueChanged="@(value => UpdateDefinition(definition, value, nameof(McpOverrideDefinition.Required)))"
+                                     Label="Required"
+                                     Dense="true"
+                                     Disabled="@Disabled" />
+                    </MudItem>
+                    <MudItem xs="12" md="2">
+                        <MudStack Row="true" AlignItems="AlignItems.Center" Justify="Justify.SpaceBetween">
+                            <MudCheckBox T="bool"
+                                         Value="@definition.Secret"
+                                         ValueChanged="@(value => UpdateDefinition(definition, value, nameof(McpOverrideDefinition.Secret)))"
+                                         Label="Secret"
+                                         Dense="true"
+                                         Disabled="@Disabled" />
+                            <MudIconButton Icon="@Icons.Material.Filled.Delete"
+                                           Color="Color.Error"
+                                           Size="Size.Small"
+                                           Disabled="@Disabled"
+                                           OnClick="@(() => RemoveDefinition(definition))" />
+                        </MudStack>
+                    </MudItem>
+                </MudGrid>
+            </MudPaper>
+        }
+    }
+</MudStack>
+
+@code {
+    [Parameter] public List<McpOverrideDefinition> Definitions { get; set; } = [];
+    [Parameter] public EventCallback<List<McpOverrideDefinition>> DefinitionsChanged { get; set; }
+    [Parameter] public string Title { get; set; } = "Allowed Per-Usage Overrides";
+    [Parameter] public bool Disabled { get; set; }
+
+    private async Task AddDefinition()
+    {
+        Definitions.Add(new McpOverrideDefinition
+        {
+            Kind = "string"
+        });
+
+        await NotifyChangedAsync();
+    }
+
+    private async Task RemoveDefinition(McpOverrideDefinition definition)
+    {
+        Definitions.Remove(definition);
+        await NotifyChangedAsync();
+    }
+
+    private async Task UpdateDefinition(McpOverrideDefinition definition, object? value, string propertyName)
+    {
+        switch (propertyName)
+        {
+            case nameof(McpOverrideDefinition.Key):
+                definition.Key = value?.ToString() ?? string.Empty;
+                break;
+            case nameof(McpOverrideDefinition.Label):
+                definition.Label = value?.ToString() ?? string.Empty;
+                break;
+            case nameof(McpOverrideDefinition.Description):
+                definition.Description = value?.ToString() ?? string.Empty;
+                break;
+            case nameof(McpOverrideDefinition.Kind):
+                definition.Kind = value?.ToString() ?? "string";
+                break;
+            case nameof(McpOverrideDefinition.Required):
+                definition.Required = value is bool required && required;
+                break;
+            case nameof(McpOverrideDefinition.Secret):
+                definition.Secret = value is bool secret && secret;
+                break;
+        }
+
+        await NotifyChangedAsync();
+    }
+
+    private Task NotifyChangedAsync() =>
+        DefinitionsChanged.InvokeAsync(Definitions);
+}

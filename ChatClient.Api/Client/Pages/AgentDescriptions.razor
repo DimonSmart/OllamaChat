@@ -11,10 +11,10 @@
 @using Microsoft.AspNetCore.Http
 @inject IAgentDescriptionService AgentService
 @inject ISnackbar Snackbar
-@inject KernelService KernelService
 @inject IRagFileService RagFileService
 @inject IEnumerable<IFileConverter> FileConverters
 @inject ILlmServerConfigService LlmServerConfigService
+@inject IMcpServerConfigService McpServerConfigService
 
 <PageTitle>Agent Descriptions Management</PageTitle>
 
@@ -102,20 +102,24 @@
                             @(ragCounts.TryGetValue(context.Item.Id, out var count) ? count : 0)
                         </CellTemplate>
                     </TemplateColumn>
-                    <TemplateColumn Title="Functions" isEditable="false" CellStyle="text-align:center; width:80px;">
+                    <TemplateColumn Title="Tools" isEditable="false" CellStyle="text-align:center; width:120px;">
                         <CellTemplate>
                             @{
-                                var functionSettings = GetFunctionSettings(context.Item);
-                                var displayText = functionSettings.GetDisplayText();
-                                var tooltipText = functionSettings.GetTooltipText();
-                                var isAutoSelect = functionSettings.IsAutoSelectEnabled;
-                                var hasManualFunctions = functionSettings.HasManualFunctions;
+                                var displayText = GetToolingDisplayText(context.Item);
+                                var tooltipText = GetToolingTooltip(context.Item);
+                                var hasAttachments = HasConfiguredMcpBindings(context.Item);
+                                var isAutoSelect = context.Item.FunctionSettings.IsAutoSelectEnabled;
+                                var hasLegacyManualFunctions = context.Item.FunctionSettings.HasManualFunctions;
                             }
-                            @if (isAutoSelect)
+                            @if (hasAttachments)
+                            {
+                                <span style="color: #1976d2; font-size: 16px; font-weight: 600;" title="@tooltipText">@displayText</span>
+                            }
+                            else if (isAutoSelect)
                             {
                                 <span title="@tooltipText">@displayText</span>
                             }
-                            else if (hasManualFunctions)
+                            else if (hasLegacyManualFunctions)
                             {
                                 <span style="color: #4caf50; font-size: 18px; font-weight: bold;" title="@tooltipText">@displayText</span>
                             }
@@ -213,13 +217,19 @@
             <MudNumericField T="double?" @bind-Value="editingAgent.RepeatPenalty" Label="Repeat Penalty (Optional)" Class="mt-4" Immediate="true" Min="0" Max="2" Step="0.1" />
             <MudText Typo="Typo.caption">Leave blank to use chat defaults.</MudText>
 
-            <div class="mt-4">
-                <FunctionSettingsSelector AvailableFunctions="@availableFunctions"
-                                          FunctionSettings="@editingAgent.FunctionSettings"
-                                          FunctionSettingsChanged="@OnFunctionSettingsChanged"
-                                          Expanded="true"
-                                          ExpandedChanged="@(v => functionsExpanded = v)" />
-            </div>
+            <MudDivider Class="my-4" />
+            <MudText Typo="Typo.subtitle1">Tooling</MudText>
+            <MudNumericField T="int"
+                             @bind-Value="editingAgent.FunctionSettings.AutoSelectCount"
+                             Label="Auto-select count"
+                             Class="mt-2"
+                             Immediate="true"
+                             Min="0"
+                             Max="10"
+                             HelperText="Set 0 to use only tools exposed by attached MCP servers." />
+            <McpServerBindingsEditor Bindings="@editingAgent.McpServerBindings"
+                                     BindingsChanged="OnMcpBindingsChanged"
+                                     Class="mt-4" />
 
             <MudTextField @bind-Value="editingAgent.Content"
                           Label="Agent Description"
@@ -288,12 +298,11 @@
     private string searchString = string.Empty;
     private MudForm? editAgentForm;
     private MudDataGrid<AgentDescription>? dataGrid;
-    private List<FunctionInfo> availableFunctions = new();
-    private bool functionsExpanded;
     private Dictionary<Guid, int> ragCounts = new();
     private List<RagFile> ragFiles = new();
     private ServerModelSelection editingServerModel = new(null, null);
     private List<LlmServerConfig> servers = new();
+    private List<IMcpServerDescriptor> mcpServers = new();
     private DialogOptions dialogOptions = new()
     {
         CloseOnEscapeKey = true,
@@ -313,7 +322,7 @@
     {
         await LoadAgents();
         servers = (await LlmServerConfigService.GetAllAsync()).ToList();
-        await LoadAvailableFunctions();
+        mcpServers = (await McpServerConfigService.GetAllAsync()).ToList();
     }
 
     private async Task LoadAgents()
@@ -342,18 +351,6 @@
         {
             loading = false;
             StateHasChanged();
-        }
-    }
-
-    private async Task LoadAvailableFunctions()
-    {
-        try
-        {
-            availableFunctions = (await KernelService.GetAvailableFunctionsAsync(CancellationToken.None)).ToList();
-        }
-        catch (Exception)
-        {
-            availableFunctions = new();
         }
     }
 
@@ -504,9 +501,7 @@
                 AutoSelectCount = agent.FunctionSettings.AutoSelectCount,
                 SelectedFunctions = new List<string>(agent.FunctionSettings.SelectedFunctions)
             },
-            McpServerBindings = agent.McpServerBindings
-                .Select(static binding => binding.Clone())
-                .ToList()
+            McpServerBindings = await BuildEditableBindingsAsync(agent)
         };
 
         editingServerModel = new ServerModelSelection(agent.LlmId, agent.ModelName);
@@ -564,12 +559,219 @@
         return string.Empty;
     }
 
-    private FunctionSettings GetFunctionSettings(AgentDescription agent)
-        => agent.FunctionSettings;
-
-    private void OnFunctionSettingsChanged(FunctionSettings settings)
+    private bool HasConfiguredMcpBindings(AgentDescription agent)
     {
-        editingAgent.FunctionSettings = settings;
+        return agent.McpServerBindings.Any(binding => binding.Enabled && binding.HasIdentity);
+    }
+
+    private string GetToolingDisplayText(AgentDescription agent)
+    {
+        var activeBindings = agent.McpServerBindings.Count(binding => binding.Enabled && binding.HasIdentity);
+        if (activeBindings > 0)
+        {
+            return activeBindings == 1 ? "1 MCP" : $"{activeBindings} MCP";
+        }
+
+        return agent.FunctionSettings.GetDisplayText();
+    }
+
+    private string GetToolingTooltip(AgentDescription agent)
+    {
+        var activeBindings = agent.McpServerBindings.Where(binding => binding.Enabled && binding.HasIdentity).ToList();
+        if (activeBindings.Count == 0)
+        {
+            return agent.FunctionSettings.GetTooltipText();
+        }
+
+        var explicitToolCount = activeBindings
+            .Where(binding => !binding.SelectAllTools)
+            .Sum(binding => binding.SelectedTools.Count);
+        var hasSelectAll = activeBindings.Any(binding => binding.SelectAllTools);
+        var attachmentSummary = hasSelectAll
+            ? "At least one attachment exposes all tools."
+            : $"{explicitToolCount} tools explicitly selected across attachments.";
+
+        return $"{activeBindings.Count} MCP attachments configured. {attachmentSummary}";
+    }
+
+    private void OnMcpBindingsChanged(List<McpServerSessionBinding> bindings)
+    {
+        editingAgent.McpServerBindings = bindings;
+    }
+
+    private async Task<List<McpServerSessionBinding>> BuildEditableBindingsAsync(AgentDescription agent)
+    {
+        await EnsureMcpServersLoadedAsync();
+
+        if (agent.McpServerBindings.Count > 0)
+        {
+            return agent.McpServerBindings
+                .Select(static binding => binding.Clone())
+                .ToList();
+        }
+
+        if (agent.FunctionSettings.SelectedFunctions.Count == 0)
+        {
+            return [];
+        }
+
+        var serverLookup = mcpServers
+            .Where(static server => !string.IsNullOrWhiteSpace(server.Name))
+            .GroupBy(static server => server.Name, StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(static group => group.Key, static group => group.First(), StringComparer.OrdinalIgnoreCase);
+
+        return agent.FunctionSettings.SelectedFunctions
+            .Select(ParseLegacyFunctionSelection)
+            .Where(static entry => !string.IsNullOrWhiteSpace(entry.ServerName) && !string.IsNullOrWhiteSpace(entry.ToolName))
+            .GroupBy(static entry => entry.ServerName!, StringComparer.OrdinalIgnoreCase)
+            .Select(group =>
+            {
+                serverLookup.TryGetValue(group.Key, out var serverDescriptor);
+                serverDescriptor ??= mcpServers.FirstOrDefault(server => new McpServerSessionBinding { ServerName = group.Key }.Matches(server));
+                return new McpServerSessionBinding
+                {
+                    BindingId = Guid.NewGuid(),
+                    ServerId = serverDescriptor?.Id,
+                    ServerName = serverDescriptor?.Name ?? group.Key,
+                    DisplayName = "Imported",
+                    Enabled = true,
+                    SelectAllTools = false,
+                    SelectedTools = group
+                        .Select(static entry => entry.ToolName!)
+                        .Distinct(StringComparer.OrdinalIgnoreCase)
+                        .ToList()
+                };
+            })
+            .ToList();
+    }
+
+    private async Task EnsureMcpServersLoadedAsync()
+    {
+        if (mcpServers.Count == 0)
+        {
+            mcpServers = (await McpServerConfigService.GetAllAsync()).ToList();
+        }
+    }
+
+    private async Task<string?> PrepareBindingsForSaveAsync()
+    {
+        await EnsureMcpServersLoadedAsync();
+
+        var normalizedBindings = new List<McpServerSessionBinding>();
+        foreach (var originalBinding in editingAgent.McpServerBindings)
+        {
+            var binding = originalBinding.Clone();
+            if (!binding.HasIdentity)
+            {
+                if (IsEmptyBinding(binding))
+                {
+                    continue;
+                }
+
+                return "Each MCP attachment must reference a server from the registry.";
+            }
+
+            var serverDescriptor = ResolveServerDescriptor(binding);
+            if (serverDescriptor is null)
+            {
+                return $"MCP server '{binding.ServerName ?? binding.ServerId?.ToString() ?? "unknown"}' is not registered.";
+            }
+
+            binding.BindingId ??= Guid.NewGuid();
+            binding.ServerId = serverDescriptor.Id;
+            binding.ServerName = serverDescriptor.Name;
+            binding.DisplayName = string.IsNullOrWhiteSpace(binding.DisplayName) ? null : binding.DisplayName.Trim();
+            binding.Roots = binding.Roots
+                .Select(static root => root?.Trim())
+                .Where(static root => !string.IsNullOrWhiteSpace(root))
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .Cast<string>()
+                .ToList();
+            binding.SelectedTools = binding.SelectedTools
+                .Select(static toolName => toolName?.Trim())
+                .Where(static toolName => !string.IsNullOrWhiteSpace(toolName))
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .Cast<string>()
+                .ToList();
+
+            var allowedKeys = serverDescriptor.OverrideDefinitions
+                .Select(static definition => definition.Key)
+                .Where(static key => !string.IsNullOrWhiteSpace(key))
+                .ToHashSet(StringComparer.OrdinalIgnoreCase);
+            binding.Parameters = binding.Parameters
+                .Where(pair => allowedKeys.Contains(pair.Key) && !string.IsNullOrWhiteSpace(pair.Value))
+                .ToDictionary(pair => pair.Key, pair => pair.Value, StringComparer.OrdinalIgnoreCase);
+
+            if (binding.Enabled)
+            {
+                foreach (var definition in serverDescriptor.OverrideDefinitions.Where(static definition => definition.Required))
+                {
+                    if (binding.Parameters.TryGetValue(definition.Key, out var value) &&
+                        !string.IsNullOrWhiteSpace(value))
+                    {
+                        continue;
+                    }
+
+                    var label = string.IsNullOrWhiteSpace(definition.Label) ? definition.Key : definition.Label;
+                    return $"Attachment '{GetBindingDisplayName(binding, serverDescriptor)}' requires override '{label}'.";
+                }
+
+                if (!binding.SelectAllTools && binding.SelectedTools.Count == 0)
+                {
+                    return $"Attachment '{GetBindingDisplayName(binding, serverDescriptor)}' must either expose all tools or select at least one tool.";
+                }
+            }
+
+            normalizedBindings.Add(binding);
+        }
+
+        editingAgent.McpServerBindings = normalizedBindings;
+        editingAgent.FunctionSettings.SelectedFunctions = [];
+        return null;
+    }
+
+    private IMcpServerDescriptor? ResolveServerDescriptor(McpServerSessionBinding binding)
+    {
+        if (binding.ServerId is Guid serverId && serverId != Guid.Empty)
+        {
+            return mcpServers.FirstOrDefault(server => server.Id == serverId);
+        }
+
+        return mcpServers.FirstOrDefault(binding.Matches);
+    }
+
+    private static bool IsEmptyBinding(McpServerSessionBinding binding)
+    {
+        return !binding.HasIdentity &&
+               string.IsNullOrWhiteSpace(binding.DisplayName) &&
+               binding.Roots.Count == 0 &&
+               binding.Parameters.Count == 0 &&
+               binding.SelectedTools.Count == 0;
+    }
+
+    private static string GetBindingDisplayName(McpServerSessionBinding binding, IMcpServerDescriptor serverDescriptor)
+    {
+        return string.IsNullOrWhiteSpace(binding.DisplayName)
+            ? serverDescriptor.Name
+            : $"{serverDescriptor.Name} / {binding.DisplayName.Trim()}";
+    }
+
+    private static (string? ServerName, string? ToolName) ParseLegacyFunctionSelection(string functionName)
+    {
+        if (string.IsNullOrWhiteSpace(functionName))
+        {
+            return (null, null);
+        }
+
+        var separatorIndex = functionName.IndexOf(':');
+        if (separatorIndex <= 0 || separatorIndex >= functionName.Length - 1)
+        {
+            return (null, null);
+        }
+
+        return (
+            functionName[..separatorIndex].Trim(),
+            functionName[(separatorIndex + 1)..].Trim());
     }
 
     private void CancelEdit()
@@ -586,6 +788,13 @@
             {
                 editingAgent.LlmId = editingServerModel.ServerId;
                 editingAgent.ModelName = editingServerModel.ModelName;
+                var validationError = await PrepareBindingsForSaveAsync();
+                if (!string.IsNullOrWhiteSpace(validationError))
+                {
+                    Snackbar.Add(validationError, Severity.Error);
+                    return;
+                }
+
                 if (editingAgent.Id == Guid.Empty)
                 {
                     await AgentService.CreateAsync(editingAgent);

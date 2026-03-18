@@ -1,5 +1,6 @@
 using ChatClient.Api.Services;
 using ChatClient.Api.Services.BuiltIn;
+using ChatClient.Domain.Models;
 using ChatClient.Infrastructure.Repositories;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
@@ -53,6 +54,66 @@ public class McpServerConfigServiceBuiltInTests
         var ex = await Assert.ThrowsAsync<InvalidOperationException>(() => service.UpdateAsync(externalLikeBuiltIn));
 
         Assert.Contains("cannot be edited", ex.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task CreateAsync_NormalizesOverrideDefinitions()
+    {
+        await using var fixture = new TestFixture();
+        var service = fixture.CreateService();
+        var serverId = Guid.NewGuid();
+
+        var config = new McpServerConfig
+        {
+            Id = serverId,
+            Name = "SQL MCP",
+            Command = "sql-mcp",
+            OverrideDefinitions =
+            [
+                new McpOverrideDefinition
+                {
+                    Key = " connectionString ",
+                    Label = "",
+                    Description = "  main connection string  ",
+                    Kind = "STRING",
+                    Required = true,
+                    Secret = true
+                }
+            ]
+        };
+
+        await service.CreateAsync(config);
+        var savedServer = Assert.IsType<McpServerConfig>(await service.GetByIdAsync(serverId));
+        var definition = Assert.Single(savedServer.OverrideDefinitions);
+
+        Assert.Equal("connectionString", definition.Key);
+        Assert.Equal("connectionString", definition.Label);
+        Assert.Equal("main connection string", definition.Description);
+        Assert.Equal("string", definition.Kind);
+        Assert.True(definition.Required);
+        Assert.True(definition.Secret);
+    }
+
+    [Fact]
+    public async Task CreateAsync_DuplicateOverrideDefinitionKeys_Throws()
+    {
+        await using var fixture = new TestFixture();
+        var service = fixture.CreateService();
+
+        var config = new McpServerConfig
+        {
+            Name = "Duplicate Override MCP",
+            Command = "dup-mcp",
+            OverrideDefinitions =
+            [
+                new McpOverrideDefinition { Key = "path" },
+                new McpOverrideDefinition { Key = "PATH" }
+            ]
+        };
+
+        var ex = await Assert.ThrowsAsync<InvalidOperationException>(() => service.CreateAsync(config));
+
+        Assert.Contains("Duplicate override definition key", ex.Message, StringComparison.OrdinalIgnoreCase);
     }
 
     private sealed class TestFixture : IAsyncDisposable

@@ -1,5 +1,6 @@
 using System.ComponentModel;
 using System.Text.Json;
+using ChatClient.Domain.Models;
 using ModelContextProtocol.Server;
 using ModelContextProtocol.Protocol;
 
@@ -13,7 +14,19 @@ public sealed class BuiltInKnowledgeBookMcpServerTools
         key: "built-in-knowledge-book",
         name: "Built-in Knowledge Book MCP Server",
         description: "Stores and navigates hierarchical knowledge in a book-like outline backed by one sandboxed knowledge file.",
-        registerTools: static builder => builder.WithTools<BuiltInKnowledgeBookMcpServerTools>());
+        registerTools: static builder => builder.WithTools<BuiltInKnowledgeBookMcpServerTools>(),
+        overrideDefinitions:
+        [
+            new McpOverrideDefinition
+            {
+                Key = KnowledgeBookStore.KnowledgeFileParameter,
+                Label = "Knowledge File",
+                Description = "Absolute or relative path to the JSON knowledge file used by this MCP attachment.",
+                Kind = "string",
+                Required = false,
+                Secret = false
+            }
+        ]);
 
     [McpServerTool(Name = "kb_get_context", ReadOnly = true, UseStructuredContent = true)]
     [Description("Returns the resolved knowledge file path for this MCP session.")]

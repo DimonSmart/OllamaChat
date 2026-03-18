@@ -1,0 +1,830 @@
+@using System.Globalization
+@using ChatClient.Application.Services
+@using ChatClient.Domain.Models
+@using ChatClient.Api.Services
+@using MudBlazor
+@inject IMcpServerConfigService McpServerConfigService
+@inject IAppToolCatalog AppToolCatalog
+@inject ISnackbar Snackbar
+
+<MudCard Outlined="true" Class="@Class">
+    <MudCardContent>
+        <MudStack Row="true" AlignItems="AlignItems.Start" Spacing="2">
+            <div style="flex-grow: 1;">
+                <MudText Typo="Typo.h6">@Title</MudText>
+                <MudText Typo="Typo.caption" Color="Color.Secondary">
+                    Attach MCP servers from the registry and configure per-usage overrides for this agent.
+                </MudText>
+            </div>
+            <MudButton Variant="Variant.Outlined"
+                       Size="Size.Small"
+                       StartIcon="@Icons.Material.Filled.Add"
+                       OnClick="AddBindingAsync"
+                       Disabled="@(_loadingServers || _availableServers.Count == 0 || Disabled)">
+                Add MCP
+            </MudButton>
+        </MudStack>
+
+        @if (_loadingServers)
+        {
+            <MudStack AlignItems="AlignItems.Center" Class="my-4">
+                <MudProgressCircular Indeterminate="true" Color="Color.Primary" />
+            </MudStack>
+        }
+        else if (_availableServers.Count == 0)
+        {
+            <MudAlert Severity="Severity.Warning" Dense="true" Variant="Variant.Outlined" Class="mt-3">
+                No MCP servers are registered yet.
+            </MudAlert>
+        }
+        else if (Bindings.Count == 0)
+        {
+            <MudAlert Severity="Severity.Info" Dense="true" Variant="Variant.Outlined" Class="mt-3">
+                This agent has no MCP attachments yet.
+            </MudAlert>
+        }
+        else
+        {
+            <MudExpansionPanels MultiExpansion="true" Class="mt-3">
+                @for (var i = 0; i < Bindings.Count; i++)
+                {
+                    var binding = Bindings[i];
+                    var bindingIndex = i;
+                    var selectedServer = GetSelectedServer(binding);
+                    var toolOptions = GetToolOptions(binding);
+                    var isLoadingTools = IsLoadingTools(binding);
+                    var toolLoadError = GetToolLoadError(binding);
+
+                    <MudExpansionPanel Text="@GetBindingHeader(binding, selectedServer, bindingIndex)">
+                        <div @key="binding.GetBindingKey()">
+                            <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="1" Class="mb-3">
+                                <MudChip T="string"
+                                         Size="Size.Small"
+                                         Color="@(binding.Enabled ? Color.Success : Color.Default)"
+                                         Variant="Variant.Outlined">
+                                    @(binding.Enabled ? "Enabled" : "Disabled")
+                                </MudChip>
+                                @if (selectedServer is not null && selectedServer.OverrideDefinitions.Count > 0)
+                                {
+                                    <MudChip T="string" Size="Size.Small" Variant="Variant.Outlined">
+                                        @($"{selectedServer.OverrideDefinitions.Count} overrides")
+                                    </MudChip>
+                                }
+                                <MudSpacer />
+                                <MudIconButton Icon="@Icons.Material.Filled.KeyboardArrowUp"
+                                               Size="Size.Small"
+                                               Disabled="@(Disabled || bindingIndex == 0)"
+                                               OnClick="@(() => MoveBindingAsync(bindingIndex, -1))" />
+                                <MudIconButton Icon="@Icons.Material.Filled.KeyboardArrowDown"
+                                               Size="Size.Small"
+                                               Disabled="@(Disabled || bindingIndex >= Bindings.Count - 1)"
+                                               OnClick="@(() => MoveBindingAsync(bindingIndex, 1))" />
+                                <MudIconButton Icon="@Icons.Material.Filled.ContentCopy"
+                                               Size="Size.Small"
+                                               Disabled="@Disabled"
+                                               OnClick="@(() => DuplicateBindingAsync(binding))" />
+                                <MudIconButton Icon="@Icons.Material.Filled.Delete"
+                                               Color="Color.Error"
+                                               Size="Size.Small"
+                                               Disabled="@Disabled"
+                                               OnClick="@(() => RemoveBindingAsync(binding))" />
+                            </MudStack>
+
+                            <MudGrid>
+                                <MudItem xs="12" md="6">
+                                    <MudSelect T="Guid?"
+                                               Label="MCP Server"
+                                               Value="@binding.ServerId"
+                                               ValueChanged="@(value => OnServerChangedAsync(binding, value))"
+                                               Dense="true"
+                                               Disabled="@Disabled">
+                                        @foreach (var server in _availableServers.Where(static server => server.Id.HasValue))
+                                        {
+                                            <MudSelectItem Value="@server.Id">@server.Name</MudSelectItem>
+                                        }
+                                    </MudSelect>
+                                </MudItem>
+                                <MudItem xs="12" md="4">
+                                    <MudTextField T="string"
+                                                  Label="Alias"
+                                                  Value="@binding.DisplayName"
+                                                  ValueChanged="@(value => OnDisplayNameChangedAsync(binding, value))"
+                                                  Immediate="true"
+                                                  Disabled="@Disabled"
+                                                  HelperText="Optional label to distinguish multiple attachments of the same server." />
+                                </MudItem>
+                                <MudItem xs="12" md="2">
+                                    <MudSwitch T="bool"
+                                               Value="@binding.Enabled"
+                                               ValueChanged="@(value => OnEnabledChangedAsync(binding, value))"
+                                               Disabled="@Disabled"
+                                               Color="Color.Primary">
+                                        Enabled
+                                    </MudSwitch>
+                                </MudItem>
+                            </MudGrid>
+
+                            @if (selectedServer is null)
+                            {
+                                <MudAlert Severity="Severity.Warning" Dense="true" Variant="Variant.Outlined" Class="mt-3">
+                                    Choose a server from the registry to configure this MCP attachment.
+                                </MudAlert>
+                            }
+                            else
+                            {
+                                <MudDivider Class="my-4" />
+
+                                <MudText Typo="Typo.subtitle2">Per-Usage Overrides</MudText>
+                                @if (selectedServer.OverrideDefinitions.Count == 0)
+                                {
+                                    <MudAlert Severity="Severity.Info" Dense="true" Variant="Variant.Outlined" Class="mt-2">
+                                        This server does not define any per-usage overrides.
+                                    </MudAlert>
+                                }
+                                else
+                                {
+                                    <MudGrid Class="mt-1">
+                                        @foreach (var definition in selectedServer.OverrideDefinitions)
+                                        {
+                                            <MudItem xs="12" md="6">
+                                                @switch (definition.GetNormalizedKind())
+                                                {
+                                                    case "int":
+                                                        <MudNumericField T="int?"
+                                                                         Value="@GetIntOverrideValue(binding, definition.Key)"
+                                                                         ValueChanged="@(value => OnIntOverrideChangedAsync(binding, definition.Key, value))"
+                                                                         Label="@GetOverrideLabel(definition)"
+                                                                         HelperText="@definition.Description"
+                                                                         Immediate="true"
+                                                                         Dense="true"
+                                                                         Disabled="@Disabled" />
+                                                        break;
+                                                    case "bool":
+                                                        <MudSwitch T="bool"
+                                                                   Value="@GetBoolOverrideValue(binding, definition.Key)"
+                                                                   ValueChanged="@(value => OnBoolOverrideChangedAsync(binding, definition.Key, value))"
+                                                                   Disabled="@Disabled"
+                                                                   Color="Color.Primary">
+                                                            @GetOverrideLabel(definition)
+                                                        </MudSwitch>
+                                                        @if (!string.IsNullOrWhiteSpace(definition.Description))
+                                                        {
+                                                            <MudText Typo="Typo.caption" Color="Color.Secondary">@definition.Description</MudText>
+                                                        }
+                                                        break;
+                                                    default:
+                                                        <MudTextField T="string"
+                                                                      Value="@GetStringOverrideValue(binding, definition.Key)"
+                                                                      ValueChanged="@(value => OnStringOverrideChangedAsync(binding, definition.Key, value))"
+                                                                      Label="@GetOverrideLabel(definition)"
+                                                                      HelperText="@definition.Description"
+                                                                      InputType="@(definition.Secret ? InputType.Password : InputType.Text)"
+                                                                      Immediate="true"
+                                                                      Disabled="@Disabled" />
+                                                        break;
+                                                }
+                                            </MudItem>
+                                        }
+                                    </MudGrid>
+                                }
+
+                                <MudDivider Class="my-4" />
+
+                                <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="1">
+                                    <MudText Typo="Typo.subtitle2">Roots</MudText>
+                                    <MudSpacer />
+                                    <MudButton Variant="Variant.Text"
+                                               Size="Size.Small"
+                                               StartIcon="@Icons.Material.Filled.CreateNewFolder"
+                                               OnClick="@(() => AddRootAsync(binding))"
+                                               Disabled="@Disabled">
+                                        Add Root
+                                    </MudButton>
+                                </MudStack>
+
+                                @if (binding.Roots.Count == 0)
+                                {
+                                    <MudAlert Severity="Severity.Info" Dense="true" Variant="Variant.Outlined" Class="mt-2">
+                                        No roots configured for this attachment.
+                                    </MudAlert>
+                                }
+                                else
+                                {
+                                    @for (var rootIndex = 0; rootIndex < binding.Roots.Count; rootIndex++)
+                                    {
+                                        var currentRootIndex = rootIndex;
+                                        <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="1" Class="mt-2">
+                                            <MudTextField T="string"
+                                                          Value="@binding.Roots[currentRootIndex]"
+                                                          ValueChanged="@(value => OnRootChangedAsync(binding, currentRootIndex, value))"
+                                                          Label="@($"Root {currentRootIndex + 1}")"
+                                                          Immediate="true"
+                                                          Disabled="@Disabled"
+                                                          Style="flex-grow: 1;" />
+                                            <MudIconButton Icon="@Icons.Material.Filled.Delete"
+                                                           Color="Color.Error"
+                                                           Size="Size.Small"
+                                                           Disabled="@Disabled"
+                                                           OnClick="@(() => RemoveRootAsync(binding, currentRootIndex))" />
+                                        </MudStack>
+                                    }
+                                }
+
+                                <MudDivider Class="my-4" />
+
+                                <MudText Typo="Typo.subtitle2">Tools</MudText>
+                                <MudSwitch T="bool"
+                                           Value="@binding.SelectAllTools"
+                                           ValueChanged="@(value => OnSelectAllToolsChangedAsync(binding, value))"
+                                           Disabled="@Disabled"
+                                           Color="Color.Primary"
+                                           Class="mt-2">
+                                    Expose all tools from this attachment
+                                </MudSwitch>
+
+                                @if (isLoadingTools)
+                                {
+                                    <MudStack AlignItems="AlignItems.Center" Class="my-3">
+                                        <MudProgressCircular Indeterminate="true" Color="Color.Primary" Size="Size.Small" />
+                                    </MudStack>
+                                }
+                                else if (!string.IsNullOrWhiteSpace(toolLoadError))
+                                {
+                                    <MudAlert Severity="Severity.Warning" Dense="true" Variant="Variant.Outlined" Class="mt-2">
+                                        @toolLoadError
+                                    </MudAlert>
+                                }
+                                else if (toolOptions.Count == 0)
+                                {
+                                    <MudAlert Severity="Severity.Info" Dense="true" Variant="Variant.Outlined" Class="mt-2">
+                                        No tools were returned for this attachment.
+                                    </MudAlert>
+                                }
+                                else if (!binding.SelectAllTools)
+                                {
+                                    <MudStack Spacing="1" Class="mt-2">
+                                        @foreach (var tool in toolOptions)
+                                        {
+                                            <MudStack Row="true" AlignItems="AlignItems.Start" Spacing="1">
+                                                <MudCheckBox T="bool"
+                                                             Value="@IsToolSelected(binding, tool.ToolName)"
+                                                             ValueChanged="@(value => OnToolSelectionChangedAsync(binding, tool.ToolName, value))"
+                                                             Dense="true"
+                                                             Disabled="@Disabled" />
+                                                <div style="flex-grow: 1;">
+                                                    <MudText Typo="Typo.body2">
+                                                        <strong>@tool.ToolName</strong>
+                                                        @if (!string.Equals(tool.DisplayName, tool.ToolName, StringComparison.OrdinalIgnoreCase))
+                                                        {
+                                                            <span> (@tool.DisplayName)</span>
+                                                        }
+                                                    </MudText>
+                                                    @if (!string.IsNullOrWhiteSpace(tool.Description))
+                                                    {
+                                                        <MudText Typo="Typo.caption" Color="Color.Secondary">
+                                                            @tool.Description
+                                                        </MudText>
+                                                    }
+                                                </div>
+                                            </MudStack>
+                                        }
+                                    </MudStack>
+                                }
+                            }
+                        </div>
+                    </MudExpansionPanel>
+                }
+            </MudExpansionPanels>
+        }
+    </MudCardContent>
+</MudCard>
+
+@code {
+    [Parameter] public List<McpServerSessionBinding> Bindings { get; set; } = [];
+    [Parameter] public EventCallback<List<McpServerSessionBinding>> BindingsChanged { get; set; }
+    [Parameter] public string Title { get; set; } = "MCP Attachments";
+    [Parameter] public string? Class { get; set; }
+    [Parameter] public bool Disabled { get; set; }
+
+    private readonly Dictionary<Guid, List<AppToolDescriptor>> _toolsByBindingId = new();
+    private readonly Dictionary<Guid, string> _toolCacheKeys = new();
+    private readonly Dictionary<Guid, string> _toolErrors = new();
+    private readonly HashSet<Guid> _loadingToolBindings = [];
+    private List<IMcpServerDescriptor> _availableServers = [];
+    private bool _loadingServers;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadServersAsync();
+    }
+
+    protected override async Task OnParametersSetAsync()
+    {
+        var changed = NormalizeBindings();
+        if (changed)
+        {
+            await NotifyChangedAsync();
+        }
+
+        await RefreshToolsAsync();
+    }
+
+    private async Task LoadServersAsync()
+    {
+        try
+        {
+            _loadingServers = true;
+            _availableServers = (await McpServerConfigService.GetAllAsync())
+                .OrderBy(static server => server.Name, StringComparer.OrdinalIgnoreCase)
+                .ToList();
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Failed to load MCP servers: {ex.Message}", Severity.Error);
+            _availableServers = [];
+        }
+        finally
+        {
+            _loadingServers = false;
+        }
+    }
+
+    private bool NormalizeBindings()
+    {
+        var changed = false;
+        foreach (var binding in Bindings)
+        {
+            if (binding.BindingId is not Guid bindingId || bindingId == Guid.Empty)
+            {
+                binding.BindingId = Guid.NewGuid();
+                changed = true;
+            }
+
+            var trimmedDisplayName = binding.DisplayName?.Trim();
+            if (!string.Equals(binding.DisplayName, trimmedDisplayName, StringComparison.Ordinal))
+            {
+                binding.DisplayName = trimmedDisplayName;
+                changed = true;
+            }
+
+            var selectedServer = GetSelectedServer(binding);
+            if (selectedServer is not null)
+            {
+                if (binding.ServerId != selectedServer.Id)
+                {
+                    binding.ServerId = selectedServer.Id;
+                    changed = true;
+                }
+
+                if (!string.Equals(binding.ServerName, selectedServer.Name, StringComparison.Ordinal))
+                {
+                    binding.ServerName = selectedServer.Name;
+                    changed = true;
+                }
+
+                var allowedKeys = selectedServer.OverrideDefinitions
+                    .Select(static definition => definition.Key)
+                    .Where(static key => !string.IsNullOrWhiteSpace(key))
+                    .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+                foreach (var parameterKey in binding.Parameters.Keys.ToArray())
+                {
+                    if (allowedKeys.Contains(parameterKey))
+                    {
+                        continue;
+                    }
+
+                    binding.Parameters.Remove(parameterKey);
+                    changed = true;
+                }
+            }
+
+            var normalizedRoots = binding.Roots
+                .Select(static root => root?.Trim())
+                .Where(static root => !string.IsNullOrWhiteSpace(root))
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .Cast<string>()
+                .ToList();
+            if (!binding.Roots.SequenceEqual(normalizedRoots, StringComparer.OrdinalIgnoreCase))
+            {
+                binding.Roots = normalizedRoots;
+                changed = true;
+            }
+
+            var normalizedSelectedTools = binding.SelectedTools
+                .Select(static toolName => toolName?.Trim())
+                .Where(static toolName => !string.IsNullOrWhiteSpace(toolName))
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .Cast<string>()
+                .ToList();
+            if (!binding.SelectedTools.SequenceEqual(normalizedSelectedTools, StringComparer.OrdinalIgnoreCase))
+            {
+                binding.SelectedTools = normalizedSelectedTools;
+                changed = true;
+            }
+        }
+
+        return changed;
+    }
+
+    private async Task AddBindingAsync()
+    {
+        Bindings.Add(new McpServerSessionBinding
+        {
+            BindingId = Guid.NewGuid(),
+            Enabled = true,
+            SelectAllTools = true
+        });
+
+        await NotifyChangedAsync();
+    }
+
+    private async Task RemoveBindingAsync(McpServerSessionBinding binding)
+    {
+        Bindings.Remove(binding);
+        if (binding.BindingId is Guid bindingId)
+        {
+            _toolsByBindingId.Remove(bindingId);
+            _toolCacheKeys.Remove(bindingId);
+            _toolErrors.Remove(bindingId);
+            _loadingToolBindings.Remove(bindingId);
+        }
+
+        await NotifyChangedAsync();
+    }
+
+    private async Task DuplicateBindingAsync(McpServerSessionBinding binding)
+    {
+        var duplicate = binding.Clone();
+        duplicate.BindingId = Guid.NewGuid();
+        duplicate.DisplayName = CreateDuplicateDisplayName(binding.DisplayName);
+        Bindings.Add(duplicate);
+
+        await NotifyChangedAsync();
+        await EnsureToolsAsync(duplicate, forceReload: true);
+    }
+
+    private async Task MoveBindingAsync(int index, int delta)
+    {
+        var targetIndex = index + delta;
+        if (index < 0 || index >= Bindings.Count || targetIndex < 0 || targetIndex >= Bindings.Count)
+        {
+            return;
+        }
+
+        (Bindings[index], Bindings[targetIndex]) = (Bindings[targetIndex], Bindings[index]);
+        await NotifyChangedAsync();
+    }
+
+    private async Task OnServerChangedAsync(McpServerSessionBinding binding, Guid? serverId)
+    {
+        if (serverId is not Guid resolvedServerId || resolvedServerId == Guid.Empty)
+        {
+            binding.ServerId = null;
+            binding.ServerName = null;
+            binding.Parameters.Clear();
+            binding.SelectedTools.Clear();
+            await NotifyChangedAsync();
+            return;
+        }
+
+        var selectedServer = _availableServers.FirstOrDefault(server => server.Id == resolvedServerId);
+        binding.ServerId = selectedServer?.Id;
+        binding.ServerName = selectedServer?.Name;
+        binding.Parameters = FilterParameters(binding.Parameters, selectedServer?.OverrideDefinitions);
+        binding.SelectedTools.Clear();
+
+        await NotifyChangedAsync();
+        await EnsureToolsAsync(binding, forceReload: true);
+    }
+
+    private async Task OnDisplayNameChangedAsync(McpServerSessionBinding binding, string? value)
+    {
+        binding.DisplayName = string.IsNullOrWhiteSpace(value) ? null : value.Trim();
+        await NotifyChangedAsync();
+    }
+
+    private async Task OnEnabledChangedAsync(McpServerSessionBinding binding, bool value)
+    {
+        binding.Enabled = value;
+        await NotifyChangedAsync();
+    }
+
+    private async Task OnStringOverrideChangedAsync(McpServerSessionBinding binding, string key, string? value)
+    {
+        UpdateParameter(binding, key, string.IsNullOrWhiteSpace(value) ? null : value);
+        await NotifyChangedAsync();
+        await EnsureToolsAsync(binding, forceReload: true);
+    }
+
+    private async Task OnIntOverrideChangedAsync(McpServerSessionBinding binding, string key, int? value)
+    {
+        UpdateParameter(binding, key, value?.ToString(CultureInfo.InvariantCulture));
+        await NotifyChangedAsync();
+        await EnsureToolsAsync(binding, forceReload: true);
+    }
+
+    private async Task OnBoolOverrideChangedAsync(McpServerSessionBinding binding, string key, bool value)
+    {
+        UpdateParameter(binding, key, value ? "true" : "false");
+        await NotifyChangedAsync();
+        await EnsureToolsAsync(binding, forceReload: true);
+    }
+
+    private async Task AddRootAsync(McpServerSessionBinding binding)
+    {
+        binding.Roots.Add(string.Empty);
+        await NotifyChangedAsync();
+    }
+
+    private async Task OnRootChangedAsync(McpServerSessionBinding binding, int index, string? value)
+    {
+        if (index < 0 || index >= binding.Roots.Count)
+        {
+            return;
+        }
+
+        binding.Roots[index] = value ?? string.Empty;
+        await NotifyChangedAsync();
+        await EnsureToolsAsync(binding, forceReload: true);
+    }
+
+    private async Task RemoveRootAsync(McpServerSessionBinding binding, int index)
+    {
+        if (index < 0 || index >= binding.Roots.Count)
+        {
+            return;
+        }
+
+        binding.Roots.RemoveAt(index);
+        await NotifyChangedAsync();
+        await EnsureToolsAsync(binding, forceReload: true);
+    }
+
+    private async Task OnSelectAllToolsChangedAsync(McpServerSessionBinding binding, bool value)
+    {
+        binding.SelectAllTools = value;
+        if (value)
+        {
+            binding.SelectedTools.Clear();
+        }
+
+        await NotifyChangedAsync();
+    }
+
+    private async Task OnToolSelectionChangedAsync(McpServerSessionBinding binding, string toolName, bool value)
+    {
+        if (value)
+        {
+            if (!binding.SelectedTools.Contains(toolName, StringComparer.OrdinalIgnoreCase))
+            {
+                binding.SelectedTools.Add(toolName);
+            }
+        }
+        else
+        {
+            binding.SelectedTools.RemoveAll(selectedTool => string.Equals(selectedTool, toolName, StringComparison.OrdinalIgnoreCase));
+        }
+
+        await NotifyChangedAsync();
+    }
+
+    private async Task RefreshToolsAsync()
+    {
+        foreach (var binding in Bindings.ToArray())
+        {
+            await EnsureToolsAsync(binding);
+        }
+    }
+
+    private async Task EnsureToolsAsync(McpServerSessionBinding binding, bool forceReload = false)
+    {
+        if (binding.BindingId is not Guid bindingId || bindingId == Guid.Empty)
+        {
+            return;
+        }
+
+        var selectedServer = GetSelectedServer(binding);
+        if (selectedServer is null)
+        {
+            _toolsByBindingId.Remove(bindingId);
+            _toolCacheKeys.Remove(bindingId);
+            _toolErrors.Remove(bindingId);
+            return;
+        }
+
+        var cacheKey = BuildToolCacheKey(binding);
+        if (!forceReload &&
+            _toolCacheKeys.TryGetValue(bindingId, out var existingCacheKey) &&
+            string.Equals(existingCacheKey, cacheKey, StringComparison.Ordinal))
+        {
+            return;
+        }
+
+        _loadingToolBindings.Add(bindingId);
+        StateHasChanged();
+
+        try
+        {
+            var requestContext = new McpClientRequestContext([binding.Clone()]);
+            var tools = await AppToolCatalog.ListToolsAsync(requestContext);
+            var filteredTools = tools
+                .Where(tool => MatchesBinding(tool, binding))
+                .OrderBy(static tool => tool.ToolName, StringComparer.OrdinalIgnoreCase)
+                .ToList();
+
+            _toolsByBindingId[bindingId] = filteredTools;
+            _toolCacheKeys[bindingId] = cacheKey;
+            _toolErrors.Remove(bindingId);
+
+            if (!binding.SelectAllTools)
+            {
+                var availableToolNames = filteredTools
+                    .Select(static tool => tool.ToolName)
+                    .ToHashSet(StringComparer.OrdinalIgnoreCase);
+                var pruned = binding.SelectedTools
+                    .Where(availableToolNames.Contains)
+                    .Distinct(StringComparer.OrdinalIgnoreCase)
+                    .ToList();
+                if (!binding.SelectedTools.SequenceEqual(pruned, StringComparer.OrdinalIgnoreCase))
+                {
+                    binding.SelectedTools = pruned;
+                    await NotifyChangedAsync();
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            _toolErrors[bindingId] = ex.Message;
+            _toolsByBindingId[bindingId] = [];
+        }
+        finally
+        {
+            _loadingToolBindings.Remove(bindingId);
+            StateHasChanged();
+        }
+    }
+
+    private IMcpServerDescriptor? GetSelectedServer(McpServerSessionBinding binding)
+    {
+        if (binding.ServerId is Guid serverId && serverId != Guid.Empty)
+        {
+            return _availableServers.FirstOrDefault(server => server.Id == serverId);
+        }
+
+        return _availableServers.FirstOrDefault(binding.Matches);
+    }
+
+    private List<AppToolDescriptor> GetToolOptions(McpServerSessionBinding binding)
+    {
+        if (binding.BindingId is Guid bindingId &&
+            _toolsByBindingId.TryGetValue(bindingId, out var tools))
+        {
+            return tools;
+        }
+
+        return [];
+    }
+
+    private bool IsLoadingTools(McpServerSessionBinding binding)
+    {
+        return binding.BindingId is Guid bindingId && _loadingToolBindings.Contains(bindingId);
+    }
+
+    private string? GetToolLoadError(McpServerSessionBinding binding)
+    {
+        return binding.BindingId is Guid bindingId && _toolErrors.TryGetValue(bindingId, out var error)
+            ? error
+            : null;
+    }
+
+    private static string GetBindingHeader(McpServerSessionBinding binding, IMcpServerDescriptor? server, int index)
+    {
+        var serverName = server?.Name ?? binding.ServerName ?? $"Attachment {index + 1}";
+        var alias = string.IsNullOrWhiteSpace(binding.DisplayName) ? null : binding.DisplayName.Trim();
+        var status = binding.Enabled ? string.Empty : " (disabled)";
+
+        return string.IsNullOrWhiteSpace(alias)
+            ? $"{serverName}{status}"
+            : $"{serverName} / {alias}{status}";
+    }
+
+    private static string GetOverrideLabel(McpOverrideDefinition definition)
+    {
+        var label = string.IsNullOrWhiteSpace(definition.Label) ? definition.Key : definition.Label.Trim();
+        return definition.Required ? $"{label} *" : label;
+    }
+
+    private static string GetStringOverrideValue(McpServerSessionBinding binding, string key)
+    {
+        return binding.Parameters.TryGetValue(key, out var value) ? value ?? string.Empty : string.Empty;
+    }
+
+    private static int? GetIntOverrideValue(McpServerSessionBinding binding, string key)
+    {
+        if (!binding.Parameters.TryGetValue(key, out var value) || string.IsNullOrWhiteSpace(value))
+        {
+            return null;
+        }
+
+        return int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsed)
+            ? parsed
+            : null;
+    }
+
+    private static bool GetBoolOverrideValue(McpServerSessionBinding binding, string key)
+    {
+        return binding.Parameters.TryGetValue(key, out var value) &&
+               bool.TryParse(value, out var parsed) &&
+               parsed;
+    }
+
+    private static void UpdateParameter(McpServerSessionBinding binding, string key, string? value)
+    {
+        if (string.IsNullOrWhiteSpace(key))
+        {
+            return;
+        }
+
+        if (value is null)
+        {
+            binding.Parameters.Remove(key);
+            return;
+        }
+
+        binding.Parameters[key] = value;
+    }
+
+    private static Dictionary<string, string?> FilterParameters(
+        IDictionary<string, string?> parameters,
+        IReadOnlyList<McpOverrideDefinition>? definitions)
+    {
+        if (definitions is null || definitions.Count == 0)
+        {
+            return new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase);
+        }
+
+        var allowedKeys = definitions
+            .Select(static definition => definition.Key)
+            .Where(static key => !string.IsNullOrWhiteSpace(key))
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        Dictionary<string, string?> filtered = new(StringComparer.OrdinalIgnoreCase);
+        foreach (var (key, value) in parameters)
+        {
+            if (allowedKeys.Contains(key))
+            {
+                filtered[key] = value;
+            }
+        }
+
+        return filtered;
+    }
+
+    private static string CreateDuplicateDisplayName(string? currentDisplayName)
+    {
+        return string.IsNullOrWhiteSpace(currentDisplayName)
+            ? "Copy"
+            : $"{currentDisplayName.Trim()} Copy";
+    }
+
+    private static string BuildToolCacheKey(McpServerSessionBinding binding)
+    {
+        var parameters = binding.Parameters
+            .OrderBy(static pair => pair.Key, StringComparer.OrdinalIgnoreCase)
+            .Select(static pair => $"{pair.Key}={pair.Value}")
+            .ToArray();
+        var roots = binding.Roots
+            .OrderBy(static root => root, StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+
+        return string.Join(
+            "|",
+            binding.ServerId?.ToString("D") ?? binding.ServerName ?? string.Empty,
+            string.Join(";", roots),
+            string.Join(";", parameters));
+    }
+
+    private static bool MatchesBinding(AppToolDescriptor tool, McpServerSessionBinding binding)
+    {
+        if (binding.BindingId is Guid bindingId && bindingId != Guid.Empty)
+        {
+            return tool.BindingId == bindingId;
+        }
+
+        if (!string.IsNullOrWhiteSpace(binding.ServerName))
+        {
+            return string.Equals(tool.BaseServerName, binding.ServerName.Trim(), StringComparison.OrdinalIgnoreCase);
+        }
+
+        return false;
+    }
+
+    private static bool IsToolSelected(McpServerSessionBinding binding, string toolName)
+    {
+        return binding.SelectedTools.Contains(toolName, StringComparer.OrdinalIgnoreCase);
+    }
+
+    private Task NotifyChangedAsync() =>
+        BindingsChanged.InvokeAsync(Bindings);
+}

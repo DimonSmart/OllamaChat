@@ -15,17 +15,17 @@ public class McpPlaygroundController(IMcpClientService clientService) : Controll
     public async Task<ActionResult<IEnumerable<string>>> GetServers(CancellationToken cancellationToken)
     {
         var clients = await clientService.GetMcpClientsAsync(cancellationToken: cancellationToken);
-        return Ok(clients.Select(c => c.ServerInfo.Name));
+        return Ok(clients.Select(c => c.DisplayName));
     }
 
     [HttpGet("tools/{server}")]
     public async Task<ActionResult<IEnumerable<McpToolInfo>>> GetTools(string server, CancellationToken cancellationToken)
     {
         var clients = await clientService.GetMcpClientsAsync(cancellationToken: cancellationToken);
-        var client = clients.FirstOrDefault(c => string.Equals(c.ServerInfo.Name, server, StringComparison.OrdinalIgnoreCase));
+        var client = clients.FirstOrDefault(c => string.Equals(c.DisplayName, server, StringComparison.OrdinalIgnoreCase));
         if (client == null)
             return NotFound();
-        var tools = await clientService.GetMcpTools(client, cancellationToken);
+        var tools = await clientService.GetMcpTools(client.Client, cancellationToken);
         var result = tools.Select(t => new McpToolInfo(t.Name, t.Description, t.JsonSchema));
         return Ok(result);
     }
@@ -34,10 +34,10 @@ public class McpPlaygroundController(IMcpClientService clientService) : Controll
     public async Task<ActionResult<JsonElement>> Call(McpFunctionCallRequest request, CancellationToken cancellationToken)
     {
         var clients = await clientService.GetMcpClientsAsync(cancellationToken: cancellationToken);
-        var client = clients.FirstOrDefault(c => string.Equals(c.ServerInfo.Name, request.Server, StringComparison.OrdinalIgnoreCase));
+        var client = clients.FirstOrDefault(c => string.Equals(c.DisplayName, request.Server, StringComparison.OrdinalIgnoreCase));
         if (client == null)
             return NotFound($"Server {request.Server} not found");
-        var tool = (await clientService.GetMcpTools(client, cancellationToken))
+        var tool = (await clientService.GetMcpTools(client.Client, cancellationToken))
             .FirstOrDefault(t => string.Equals(t.Name, request.Function, StringComparison.OrdinalIgnoreCase));
         if (tool == null)
             return NotFound($"Function {request.Function} not found");

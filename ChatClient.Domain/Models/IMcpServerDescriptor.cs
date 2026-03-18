@@ -5,4 +5,5 @@ public interface IMcpServerDescriptor
     Guid? Id { get; }
     string Name { get; }
     string Description { get; }
+    IReadOnlyList<McpOverrideDefinition> OverrideDefinitions { get; }
 }

@@ -199,11 +199,13 @@ public sealed class AgenticChatEngineSessionService(
                 Whiteboard = _chat.Whiteboard
             };
 
-            IReadOnlyList<FunctionCallRecord> functionCalls = [];
             string? retrievedContext = null;
 
             await foreach (var chunk in orchestrator.StreamAsync(request, cancellationToken))
             {
+                bool shouldUpdateStream = false;
+                bool forceRender = false;
+
                 if (!string.IsNullOrWhiteSpace(chunk.RetrievedContext))
                 {
                     retrievedContext = chunk.RetrievedContext;
@@ -211,7 +213,9 @@ public sealed class AgenticChatEngineSessionService(
 
                 if (chunk.FunctionCalls is { Count: > 0 })
                 {
-                    functionCalls = chunk.FunctionCalls;
+                    stream.SetFunctionCalls(chunk.FunctionCalls);
+                    shouldUpdateStream = true;
+                    forceRender = true;
                 }
 
                 if (chunk.IsError)
@@ -231,7 +235,12 @@ public sealed class AgenticChatEngineSessionService(
                     }
 
                     streamingBridge.Append(stream, chunk.Content);
-                    await (MessageUpdated?.Invoke(stream, false) ?? Task.CompletedTask);
+                    shouldUpdateStream = true;
+                }
+
+                if (shouldUpdateStream)
+                {
+                    await (MessageUpdated?.Invoke(stream, forceRender) ?? Task.CompletedTask);
                 }
 
                 if (chunk.IsFinal)
@@ -244,10 +253,6 @@ public sealed class AgenticChatEngineSessionService(
             var final = streamingBridge.Complete(
                 stream,
                 BuildStatistics(startedAt, resolvedAgent.Model.ModelName, stream.ApproximateTokenCount));
-            if (functionCalls.Count > 0)
-            {
-                final.FunctionCalls = functionCalls;
-            }
 
             ReplaceMessage(stream, final);
             await (MessageUpdated?.Invoke(final, true) ?? Task.CompletedTask);

@@ -67,7 +67,12 @@ public sealed class HttpAgenticExecutionRuntime(
             resolvedModel,
             cancellationToken);
 
-        var requestedFunctions = await ResolveRequestedFunctionNamesAsync(request, cancellationToken);
+        var messages = BuildProviderMessages(request);
+        var toolRequestContext = BuildToolRequestContext(request);
+        var availableTools = supportsFunctions
+            ? await appToolCatalog.ListToolsAsync(toolRequestContext, cancellationToken)
+            : [];
+        var requestedFunctions = await ResolveRequestedFunctionNamesAsync(request, availableTools, cancellationToken);
         if (!supportsFunctions && requestedFunctions.Count > 0)
         {
             logger.LogInformation(
@@ -77,15 +82,12 @@ public sealed class HttpAgenticExecutionRuntime(
                 requestedFunctions.Count);
         }
 
-        var messages = BuildProviderMessages(request);
-        var toolRequestContext = BuildToolRequestContext(request);
         var toolRegistry = supportsFunctions
-            ? await ResolveToolRegistryAsync(
+            ? ResolveToolRegistry(
                 requestedFunctions,
-                toolRequestContext,
+                availableTools,
                 request.Whiteboard,
-                request.Configuration.UseWhiteboard,
-                cancellationToken)
+                request.Configuration.UseWhiteboard)
             : ToolRegistry.Empty;
 
         if (requestedFunctions.Count > 0 && !toolRegistry.HasTools)
@@ -278,6 +280,11 @@ public sealed class HttpAgenticExecutionRuntime(
                     var execution = await ExecuteToolCallAsync(toolCall, toolRegistry, cancellationToken);
                     functionCalls.Add(execution.Record);
                     messages.Add(execution.ToolMessage);
+
+                    yield return new ChatEngineStreamChunk(
+                        agent.AgentName,
+                        string.Empty,
+                        FunctionCalls: functionCalls.ToArray());
 
                     if (!hasNameLookup && IsNameLookupCall(execution.Record))
                     {
@@ -745,6 +752,7 @@ public sealed class HttpAgenticExecutionRuntime(
 
     private async Task<IReadOnlyList<string>> ResolveRequestedFunctionNamesAsync(
         AgenticExecutionRuntimeRequest request,
+        IReadOnlyCollection<AppToolDescriptor> availableTools,
         CancellationToken cancellationToken)
     {
         HashSet<string> requested = new(StringComparer.OrdinalIgnoreCase);
@@ -757,11 +765,17 @@ public sealed class HttpAgenticExecutionRuntime(
             requested.Add(function.Trim());
         }
 
+        foreach (var function in ResolveFunctionsFromBindings(request.Agent.McpServerBindings, availableTools))
+        {
+            requested.Add(function);
+        }
+
         try
         {
             var fromAgentSettings = await kernelService.GetFunctionsToRegisterAsync(
                 request.Agent.FunctionSettings,
                 request.UserMessage,
+                availableTools,
                 cancellationToken);
 
             foreach (var function in fromAgentSettings)
@@ -787,12 +801,11 @@ public sealed class HttpAgenticExecutionRuntime(
         return requested.ToList();
     }
 
-    private async Task<ToolRegistry> ResolveToolRegistryAsync(
+    private ToolRegistry ResolveToolRegistry(
         IReadOnlyCollection<string> requestedFunctions,
-        McpClientRequestContext requestContext,
+        IReadOnlyCollection<AppToolDescriptor> availableTools,
         WhiteboardState? whiteboard,
-        bool useWhiteboard,
-        CancellationToken cancellationToken)
+        bool useWhiteboard)
     {
         List<ToolBinding> tools = [];
         Dictionary<string, ToolBinding> toolsByProviderName = new(StringComparer.OrdinalIgnoreCase);
@@ -805,10 +818,8 @@ public sealed class HttpAgenticExecutionRuntime(
                 requestedFunctions.Select(AgenticToolUtility.ExtractToolName),
                 StringComparer.OrdinalIgnoreCase);
 
-              var availableTools = await appToolCatalog.ListToolsAsync(requestContext, cancellationToken);
-              foreach (var tool in availableTools)
-              {
-                cancellationToken.ThrowIfCancellationRequested();
+            foreach (var tool in availableTools)
+            {
                 bool selected = requestedQualified.Contains(tool.QualifiedName) || requestedByToolName.Contains(tool.ToolName);
                 if (!selected)
                 {
@@ -846,6 +857,52 @@ public sealed class HttpAgenticExecutionRuntime(
         return tools.Count == 0
             ? ToolRegistry.Empty
             : new ToolRegistry(tools, toolsByProviderName);
+    }
+
+    private static IReadOnlyCollection<string> ResolveFunctionsFromBindings(
+        IReadOnlyCollection<McpServerSessionBinding> bindings,
+        IReadOnlyCollection<AppToolDescriptor> availableTools)
+    {
+        if (bindings.Count == 0 || availableTools.Count == 0)
+        {
+            return [];
+        }
+
+        HashSet<string> requested = new(StringComparer.OrdinalIgnoreCase);
+        foreach (var binding in bindings.Where(static binding => binding.Enabled && binding.HasIdentity))
+        {
+            var matchingTools = availableTools.Where(tool => ToolMatchesBinding(tool, binding));
+            foreach (var tool in matchingTools)
+            {
+                if (binding.SelectAllTools || binding.SelectedTools.Count == 0)
+                {
+                    requested.Add(tool.QualifiedName);
+                    continue;
+                }
+
+                if (binding.SelectedTools.Contains(tool.ToolName, StringComparer.OrdinalIgnoreCase))
+                {
+                    requested.Add(tool.QualifiedName);
+                }
+            }
+        }
+
+        return requested.ToArray();
+    }
+
+    private static bool ToolMatchesBinding(AppToolDescriptor tool, McpServerSessionBinding binding)
+    {
+        if (binding.BindingId is Guid bindingId && bindingId != Guid.Empty)
+        {
+            return tool.BindingId == bindingId;
+        }
+
+        if (!string.IsNullOrWhiteSpace(binding.ServerName))
+        {
+            return string.Equals(tool.BaseServerName, binding.ServerName.Trim(), StringComparison.OrdinalIgnoreCase);
+        }
+
+        return false;
     }
 
     private static IReadOnlyList<ToolBinding> BuildWhiteboardTools(

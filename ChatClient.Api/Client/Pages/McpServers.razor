@@ -275,6 +275,10 @@
             <MudText Typo="Typo.caption" Class="mud-text-secondary mt-1">
                 If not specified, the user's default model will be used for sampling requests from this server.
             </MudText>
+
+            <MudDivider Class="my-4" />
+            <McpOverrideDefinitionsEditor Definitions="@editingServer.OverrideDefinitions"
+                                          DefinitionsChanged="OnOverrideDefinitionsChanged" />
         </MudForm>    </DialogContent>
     <DialogActions>
         <MudButton OnClick="CancelEdit" Size="Size.Medium">Cancel</MudButton>
@@ -391,7 +395,8 @@
             Name = "",
             IsBuiltIn = false,
             BuiltInKey = null,
-            Command = ""
+            Command = "",
+            OverrideDefinitions = []
         };
         
         serverType = "local";
@@ -459,6 +464,17 @@
             Arguments = externalServer.Arguments,
             Sse = externalServer.Sse,
             SamplingModel = externalServer.SamplingModel,
+            OverrideDefinitions = externalServer.OverrideDefinitions
+                .Select(definition => new McpOverrideDefinition
+                {
+                    Key = definition.Key,
+                    Label = definition.Label,
+                    Description = definition.Description,
+                    Kind = definition.Kind,
+                    Required = definition.Required,
+                    Secret = definition.Secret
+                })
+                .ToList(),
             CreatedAt = externalServer.CreatedAt,
             UpdatedAt = externalServer.UpdatedAt
         };
@@ -597,6 +613,11 @@
     private void CancelEdit()
     {
         showEditServerDialog = false;
+    }
+
+    private void OnOverrideDefinitionsChanged(List<McpOverrideDefinition> definitions)
+    {
+        editingServer.OverrideDefinitions = definitions;
     }
 
     private async Task SaveServer()

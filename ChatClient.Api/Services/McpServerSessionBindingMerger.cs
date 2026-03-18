@@ -34,11 +34,16 @@ public static class McpServerSessionBindingMerger
                 continue;
             }
 
-            var key = binding.GetIdentityKey();
+            var key = binding.GetBindingKey();
             if (!merged.TryGetValue(key, out var existing))
             {
                 merged[key] = binding.Clone();
                 continue;
+            }
+
+            if (binding.BindingId is Guid bindingId && bindingId != Guid.Empty)
+            {
+                existing.BindingId = bindingId;
             }
 
             if (binding.ServerId is Guid serverId && serverId != Guid.Empty)
@@ -49,6 +54,19 @@ public static class McpServerSessionBindingMerger
             if (!string.IsNullOrWhiteSpace(binding.ServerName))
             {
                 existing.ServerName = binding.ServerName.Trim();
+            }
+
+            if (!string.IsNullOrWhiteSpace(binding.DisplayName))
+            {
+                existing.DisplayName = binding.DisplayName.Trim();
+            }
+
+            existing.Enabled = binding.Enabled;
+            existing.SelectAllTools = binding.SelectAllTools;
+
+            if (binding.SelectedTools.Count > 0 || !binding.SelectAllTools)
+            {
+                existing.SelectedTools = [.. binding.SelectedTools];
             }
 
             if (binding.Roots.Count > 0)

@@ -6,7 +6,7 @@ namespace ChatClient.Api.Services;
 
 public interface IMcpClientService : IAsyncDisposable
 {
-    Task<IReadOnlyCollection<McpClient>> GetMcpClientsAsync(
+    Task<IReadOnlyCollection<McpClientHandle>> GetMcpClientsAsync(
         McpClientRequestContext? requestContext = null,
         CancellationToken cancellationToken = default);
 

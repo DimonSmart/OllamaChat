@@ -16,11 +16,24 @@ public class KernelService(
     public async Task<IReadOnlyCollection<string>> GetFunctionsToRegisterAsync(
         FunctionSettings functionSettings,
         string? userQuery,
+        IReadOnlyCollection<AppToolDescriptor>? availableTools = null,
         CancellationToken cancellationToken = default)
     {
         if (functionSettings.AutoSelectCount > 0 && !string.IsNullOrWhiteSpace(userQuery))
         {
-            return await _indexService.SelectRelevantFunctionsAsync(userQuery, functionSettings.AutoSelectCount, cancellationToken);
+            var selected = await _indexService.SelectRelevantFunctionsAsync(userQuery, functionSettings.AutoSelectCount, cancellationToken);
+            if (availableTools is null || availableTools.Count == 0)
+            {
+                return selected;
+            }
+
+            return availableTools
+                .Where(tool =>
+                    selected.Contains(tool.BaseQualifiedName ?? tool.QualifiedName, StringComparer.OrdinalIgnoreCase) ||
+                    selected.Contains(tool.QualifiedName, StringComparer.OrdinalIgnoreCase))
+                .Select(tool => tool.QualifiedName)
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToArray();
         }
 
         if (functionSettings.SelectedFunctions.Any())

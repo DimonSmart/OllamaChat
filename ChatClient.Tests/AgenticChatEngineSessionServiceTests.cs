@@ -124,6 +124,52 @@ public class AgenticChatEngineSessionServiceTests
     }
 
     [Fact]
+    public async Task SendAsync_UpdatesStreamingMessageWhenFunctionCallsArriveBeforeFinalChunk()
+    {
+        var calls = new List<FunctionCallRecord>
+        {
+            new("srv", "tool", "{\"q\":\"ping\"}", "status=ok;attempt=1;durationMs=12;response={\"ok\":true}")
+        };
+        var releaseFinalChunk = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        var orchestrator = new StubOrchestrator
+        {
+            Handler = (request, cancellationToken) => StreamWithInterimFunctionCalls(
+                request.Agent.AgentName,
+                calls,
+                releaseFinalChunk.Task,
+                cancellationToken)
+        };
+        var service = CreateService(orchestrator);
+        var agent = CreateAgent("Agentic");
+
+        await service.StartAsync(new ChatEngineSessionStartRequest
+        {
+            Configuration = new AppChatConfiguration("model-a", []),
+            Agents = ResolveAgents(agent)
+        });
+
+        var sendTask = service.SendAsync("ping");
+
+        await WaitUntilAsync(
+            () => service.Messages
+                .Any(m => m.Role == ChatRole.Assistant && m.IsStreaming && m.FunctionCalls.Count == 1),
+            TimeSpan.FromSeconds(2));
+
+        var streamingAssistant = service.Messages.Last(m => m.Role == ChatRole.Assistant);
+        Assert.True(streamingAssistant.IsStreaming);
+        Assert.Single(streamingAssistant.FunctionCalls);
+        Assert.Equal("srv", streamingAssistant.FunctionCalls.First().Server);
+
+        releaseFinalChunk.SetResult();
+        await sendTask;
+
+        var finalAssistant = service.Messages.Last(m => m.Role == ChatRole.Assistant);
+        Assert.False(finalAssistant.IsStreaming);
+        Assert.Single(finalAssistant.FunctionCalls);
+    }
+
+    [Fact]
     public async Task CancelAsync_MarksStreamingMessageAsCanceled()
     {
         var orchestrator = new StubOrchestrator
@@ -428,6 +474,25 @@ public class AgenticChatEngineSessionServiceTests
             IsFinal: true,
             FunctionCalls: functionCalls,
             RetrievedContext: retrievedContext);
+    }
+
+    private static async IAsyncEnumerable<ChatEngineStreamChunk> StreamWithInterimFunctionCalls(
+        string agentName,
+        IReadOnlyList<FunctionCallRecord> functionCalls,
+        Task waitBeforeFinalChunk,
+        [EnumeratorCancellation] CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        await Task.Yield();
+        yield return new ChatEngineStreamChunk(agentName, string.Empty, FunctionCalls: functionCalls);
+
+        await waitBeforeFinalChunk.WaitAsync(cancellationToken);
+
+        yield return new ChatEngineStreamChunk(
+            agentName,
+            "Answer",
+            FunctionCalls: functionCalls);
+        yield return new ChatEngineStreamChunk(agentName, string.Empty, IsFinal: true, FunctionCalls: functionCalls);
     }
 
     private static async Task WaitUntilAsync(Func<bool> predicate, TimeSpan timeout)

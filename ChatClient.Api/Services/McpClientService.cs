@@ -4,6 +4,8 @@ using ChatClient.Domain.Models;
 using ModelContextProtocol.Client;
 using ModelContextProtocol.Protocol;
 using System.Reflection;
+using System.Security.Cryptography;
+using System.Text;
 
 namespace ChatClient.Api.Services;
 
@@ -18,14 +20,14 @@ public class McpClientService(
     private readonly Dictionary<string, CachedClientSet> _clientSets = new(StringComparer.Ordinal);
     private const int MaxCachedClientSets = 12;
 
-    private sealed class CachedClientSet(List<McpClient> clients)
+    private sealed class CachedClientSet(List<McpClientHandle> clients)
     {
-        public List<McpClient> Clients { get; } = clients;
+        public List<McpClientHandle> Clients { get; } = clients;
 
         public DateTime LastAccessUtc { get; set; } = DateTime.UtcNow;
     }
 
-    public async Task<IReadOnlyCollection<McpClient>> GetMcpClientsAsync(
+    public async Task<IReadOnlyCollection<McpClientHandle>> GetMcpClientsAsync(
         McpClientRequestContext? requestContext = null,
         CancellationToken cancellationToken = default)
     {
@@ -44,7 +46,7 @@ public class McpClientService(
                 return cachedClientSet.Clients;
             }
 
-            var newClients = new List<McpClient>();
+            var newClients = new List<McpClientHandle>();
 
             if (mcpServerDescriptors.Count == 0)
             {
@@ -67,37 +69,33 @@ public class McpClientService(
 
                 try
                 {
-                    var binding = normalizedContext.FindBindingFor(serverDescriptor);
-                    if (serverDescriptor is IBuiltInMcpServerDescriptor builtInDefinition)
+                    var bindings = normalizedContext.FindBindingsFor(serverDescriptor);
+                    if (bindings.Count == 0)
                     {
-                        var builtInClient = await CreateBuiltInMcpClientAsync(
-                            builtInDefinition,
-                            binding,
-                            cancellationToken);
-                        newClients.Add(builtInClient);
-                    }
-                    else if (serverDescriptor is McpServerConfig serverConfig && !string.IsNullOrWhiteSpace(serverConfig.Command))
-                    {
-                        newClients.Add(await CreateLocalMcpClientAsync(serverConfig, binding, cancellationToken));
-                    }
-                    else if (serverDescriptor is McpServerConfig sseServerConfig && !string.IsNullOrWhiteSpace(sseServerConfig.Sse))
-                    {
-                        await AddSseClient(newClients, sseServerConfig, cancellationToken);
-                    }
-                    else if (serverDescriptor is McpServerConfig unsupportedServerConfig)
-                    {
-                        logger.LogWarning(
-                            "Skipping MCP server {ServerName} because neither Command nor Sse is configured.",
-                            unsupportedServerConfig.Name);
-                        continue;
+                        if (normalizedContext.HasBindings)
+                        {
+                            logger.LogDebug(
+                                "Skipping unbound MCP server {ServerName} because request context already specifies explicit bindings.",
+                                serverDescriptor.Name);
+                            continue;
+                        }
+
+                        var defaultHandle = await CreateClientHandleAsync(serverDescriptor, null, cancellationToken);
+                        if (defaultHandle is not null)
+                        {
+                            newClients.Add(defaultHandle);
+                        }
                     }
                     else
                     {
-                        logger.LogWarning(
-                            "Skipping MCP server {ServerName} because server type is unsupported: {ServerType}",
-                            serverDescriptor.Name,
-                            serverDescriptor.GetType().FullName ?? "Unknown");
-                        continue;
+                        foreach (var binding in bindings)
+                        {
+                            var boundHandle = await CreateClientHandleAsync(serverDescriptor, binding, cancellationToken);
+                            if (boundHandle is not null)
+                            {
+                                newClients.Add(boundHandle);
+                            }
+                        }
                     }
 
                     logger.LogInformation("MCP client created successfully for server: {ServerName}", serverDescriptor.Name);
@@ -118,7 +116,48 @@ public class McpClientService(
         }
     }
 
-    private async Task AddSseClient(List<McpClient> clients, McpServerConfig serverConfig, CancellationToken cancellationToken)
+    private async Task<McpClientHandle?> CreateClientHandleAsync(
+        IMcpServerDescriptor serverDescriptor,
+        McpServerSessionBinding? binding,
+        CancellationToken cancellationToken)
+    {
+        if (serverDescriptor is IBuiltInMcpServerDescriptor builtInDefinition)
+        {
+            return await CreateBuiltInMcpClientAsync(
+                builtInDefinition,
+                binding,
+                cancellationToken);
+        }
+
+        if (serverDescriptor is McpServerConfig serverConfig && !string.IsNullOrWhiteSpace(serverConfig.Command))
+        {
+            return await CreateLocalMcpClientAsync(serverConfig, binding, cancellationToken);
+        }
+
+        if (serverDescriptor is McpServerConfig sseServerConfig && !string.IsNullOrWhiteSpace(sseServerConfig.Sse))
+        {
+            return await CreateSseClientAsync(sseServerConfig, binding, cancellationToken);
+        }
+
+        if (serverDescriptor is McpServerConfig unsupportedServerConfig)
+        {
+            logger.LogWarning(
+                "Skipping MCP server {ServerName} because neither Command nor Sse is configured.",
+                unsupportedServerConfig.Name);
+            return null;
+        }
+
+        logger.LogWarning(
+            "Skipping MCP server {ServerName} because server type is unsupported: {ServerType}",
+            serverDescriptor.Name,
+            serverDescriptor.GetType().FullName ?? "Unknown");
+        return null;
+    }
+
+    private async Task<McpClientHandle?> CreateSseClientAsync(
+        McpServerConfig serverConfig,
+        McpServerSessionBinding? binding,
+        CancellationToken cancellationToken)
     {
         try
         {
@@ -135,16 +174,18 @@ public class McpClientService(
             var client = await McpClient.CreateAsync(httpTransport, clientOptions, loggerFactory, cancellationToken);
             if (client != null)
             {
-                clients.Add(client);
+                return new McpClientHandle(client, serverConfig, binding?.Clone());
             }
         }
         catch (Exception ex)
         {
             logger.LogError(ex, "Failed to add network client for server: {ServerName}", serverConfig.Name);
         }
+
+        return null;
     }
 
-    private async Task<McpClient> CreateBuiltInMcpClientAsync(
+    private async Task<McpClientHandle> CreateBuiltInMcpClientAsync(
         IBuiltInMcpServerDescriptor definition,
         McpServerSessionBinding? binding,
         CancellationToken cancellationToken)
@@ -153,7 +194,7 @@ public class McpClientService(
         var applicationDirectory = AppContext.BaseDirectory;
         var clientOptions = CreateClientOptions(definition);
 
-        return await McpClient.CreateAsync(
+        var client = await McpClient.CreateAsync(
             clientTransport: new StdioClientTransport(
                 new StdioClientTransportOptions
                 {
@@ -166,9 +207,11 @@ public class McpClientService(
             clientOptions: clientOptions,
             loggerFactory: loggerFactory,
             cancellationToken: cancellationToken);
+
+        return new McpClientHandle(client, definition, binding?.Clone());
     }
 
-    private async Task<McpClient> CreateLocalMcpClientAsync(
+    private async Task<McpClientHandle> CreateLocalMcpClientAsync(
         McpServerConfig serverConfig,
         McpServerSessionBinding? binding,
         CancellationToken cancellationToken)
@@ -183,7 +226,7 @@ public class McpClientService(
         var applicationDirectory = AppContext.BaseDirectory;
         var clientOptions = CreateClientOptions(serverConfig, serverConfig);
 
-        return await McpClient.CreateAsync(
+        var client = await McpClient.CreateAsync(
             clientTransport: new StdioClientTransport(
                 new StdioClientTransportOptions
                 {
@@ -196,6 +239,8 @@ public class McpClientService(
             clientOptions: clientOptions,
             loggerFactory: loggerFactory,
             cancellationToken: cancellationToken);
+
+        return new McpClientHandle(client, serverConfig, binding?.Clone());
     }
 
     public async Task<IReadOnlyList<McpClientTool>> GetMcpTools(McpClient mcpClient, CancellationToken cancellationToken = default)
@@ -235,9 +280,9 @@ public class McpClientService(
         GC.SuppressFinalize(this);
     }
 
-    private async Task DisposeClientsAsync(IEnumerable<McpClient> clients)
+    private async Task DisposeClientsAsync(IEnumerable<McpClientHandle> clients)
     {
-        foreach (var mcpClient in clients)
+        foreach (var mcpClient in clients.Select(static client => client.Client).Distinct())
         {
             try
             {
@@ -276,7 +321,7 @@ public class McpClientService(
         IEnumerable<IMcpServerDescriptor> serverDescriptors,
         McpClientRequestContext requestContext)
     {
-        return string.Join(
+        var payload = string.Join(
             "||",
             serverDescriptors
                 .OrderBy(s => s.Id)
@@ -290,6 +335,8 @@ public class McpClientService(
                         _ => $"{s.Id}|{s.Name}|unknown"
                     })
                 .Append($"ctx:{requestContext.BuildFingerprint()}"));
+
+        return Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(payload)));
     }
 
     private async Task EvictIfNeededAsync(string currentFingerprint)

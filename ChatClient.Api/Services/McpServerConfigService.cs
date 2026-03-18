@@ -128,6 +128,50 @@ public class McpServerConfigService(IMcpServerConfigRepository repository) : IMc
 
         if (string.IsNullOrWhiteSpace(serverConfig.Command) && string.IsNullOrWhiteSpace(serverConfig.Sse))
             throw new InvalidOperationException("Either Command or Sse must be specified.");
+
+        NormalizeOverrideDefinitions(serverConfig);
+    }
+
+    private static void NormalizeOverrideDefinitions(McpServerConfig serverConfig)
+    {
+        if (serverConfig.OverrideDefinitions.Count == 0)
+        {
+            return;
+        }
+
+        HashSet<string> seenKeys = new(StringComparer.OrdinalIgnoreCase);
+        List<McpOverrideDefinition> normalized = [];
+
+        foreach (var definition in serverConfig.OverrideDefinitions)
+        {
+            if (definition is null)
+            {
+                continue;
+            }
+
+            var key = definition.Key?.Trim() ?? string.Empty;
+            if (string.IsNullOrWhiteSpace(key))
+            {
+                throw new InvalidOperationException("Override definition key is required.");
+            }
+
+            if (!seenKeys.Add(key))
+            {
+                throw new InvalidOperationException($"Duplicate override definition key '{key}' is not allowed.");
+            }
+
+            normalized.Add(new McpOverrideDefinition
+            {
+                Key = key,
+                Label = string.IsNullOrWhiteSpace(definition.Label) ? key : definition.Label.Trim(),
+                Description = definition.Description?.Trim() ?? string.Empty,
+                Kind = definition.GetNormalizedKind(),
+                Required = definition.Required,
+                Secret = definition.Secret
+            });
+        }
+
+        serverConfig.OverrideDefinitions = normalized;
     }
 
     private static bool IsBuiltInServer(McpServerConfig serverConfig)

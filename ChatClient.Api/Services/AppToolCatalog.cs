@@ -17,7 +17,11 @@ public sealed record AppToolDescriptor(
     bool DestructiveHint,
     bool IdempotentHint,
     bool OpenWorldHint,
-    Func<Dictionary<string, object?>, CancellationToken, Task<object>> ExecuteAsync);
+    Func<Dictionary<string, object?>, CancellationToken, Task<object>> ExecuteAsync,
+    string? BaseQualifiedName = null,
+    string? BaseServerName = null,
+    Guid? BindingId = null,
+    string? BindingDisplayName = null);
 
 public interface IAppToolCatalog
 {
@@ -37,15 +41,24 @@ public sealed class AppToolCatalog(IMcpClientService mcpClientService) : IAppToo
         var result = new List<AppToolDescriptor>();
         var clients = await mcpClientService.GetMcpClientsAsync(requestContext, cancellationToken);
 
-        foreach (var client in clients)
+        foreach (var clientHandle in clients)
         {
             cancellationToken.ThrowIfCancellationRequested();
 
-            var serverName = client.ServerInfo.Name?.Trim();
+            var serverName = clientHandle.DisplayName?.Trim();
             if (string.IsNullOrWhiteSpace(serverName))
                 continue;
 
-            var tools = await mcpClientService.GetMcpTools(client, cancellationToken);
+            var baseServerName = clientHandle.BaseServerName?.Trim();
+            if (string.IsNullOrWhiteSpace(baseServerName))
+            {
+                continue;
+            }
+
+            var bindingId = clientHandle.BindingId;
+            var bindingDisplayName = clientHandle.Binding?.DisplayName?.Trim();
+
+            var tools = await mcpClientService.GetMcpTools(clientHandle.Client, cancellationToken);
             foreach (var tool in tools)
             {
                 var toolName = tool.Name?.Trim();
@@ -63,7 +76,9 @@ public sealed class AppToolCatalog(IMcpClientService mcpClientService) : IAppToo
                 var annotations = tool.ProtocolTool.Annotations;
 
                 result.Add(new AppToolDescriptor(
-                    QualifiedName: $"{serverName}:{toolName}",
+                    QualifiedName: bindingId is Guid value && value != Guid.Empty
+                        ? $"binding:{value:N}:{toolName}"
+                        : $"{baseServerName}:{toolName}",
                     ServerName: serverName,
                     ToolName: toolName,
                     DisplayName: string.IsNullOrWhiteSpace(tool.Title) ? toolName : tool.Title,
@@ -75,7 +90,11 @@ public sealed class AppToolCatalog(IMcpClientService mcpClientService) : IAppToo
                     DestructiveHint: annotations?.DestructiveHint ?? false,
                     IdempotentHint: annotations?.IdempotentHint ?? false,
                     OpenWorldHint: annotations?.OpenWorldHint ?? false,
-                    ExecuteAsync: async (arguments, token) => await tool.CallAsync(arguments, null, null, token)));
+                    ExecuteAsync: async (arguments, token) => await tool.CallAsync(arguments, null, null, token),
+                    BaseQualifiedName: $"{baseServerName}:{toolName}",
+                    BaseServerName: baseServerName,
+                    BindingId: bindingId,
+                    BindingDisplayName: bindingDisplayName));
             }
         }
 

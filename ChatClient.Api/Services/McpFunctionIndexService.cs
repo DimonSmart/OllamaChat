@@ -112,11 +112,11 @@ public class McpFunctionIndexService
         var clients = await _clientService.GetMcpClientsAsync(cancellationToken: cancellationToken);
         var activeServers = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
-        foreach (var client in clients)
+        foreach (var clientHandle in clients.Where(static handle => handle.BindingId is null))
         {
             cancellationToken.ThrowIfCancellationRequested();
 
-            var serverName = NormalizeServerName(client.ServerInfo.Name);
+            var serverName = NormalizeServerName(clientHandle.BaseServerName);
             if (serverName is null)
             {
                 _logger.LogWarning("Skipping MCP indexing for a client with empty server name.");
@@ -124,7 +124,7 @@ public class McpFunctionIndexService
             }
 
             activeServers.Add(serverName);
-            var tools = await _clientService.GetMcpTools(client, cancellationToken);
+            var tools = await _clientService.GetMcpTools(clientHandle.Client, cancellationToken);
             var orderedTools = tools
                 .OrderBy(static t => t.Name, StringComparer.OrdinalIgnoreCase)
                 .ThenBy(static t => t.Description ?? string.Empty, StringComparer.Ordinal)

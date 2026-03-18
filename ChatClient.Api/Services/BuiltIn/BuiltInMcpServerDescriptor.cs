@@ -14,7 +14,8 @@ public sealed class BuiltInMcpServerDescriptor(
     string key,
     string name,
     string description,
-    Action<IMcpServerBuilder> registerTools) : IBuiltInMcpServerDescriptor
+    Action<IMcpServerBuilder> registerTools,
+    IReadOnlyList<McpOverrideDefinition>? overrideDefinitions = null) : IBuiltInMcpServerDescriptor
 {
     private readonly Action<IMcpServerBuilder> _registerTools =
         registerTools ?? throw new ArgumentNullException(nameof(registerTools));
@@ -23,6 +24,8 @@ public sealed class BuiltInMcpServerDescriptor(
     public string Key { get; } = key ?? throw new ArgumentNullException(nameof(key));
     public string Name { get; } = name ?? throw new ArgumentNullException(nameof(name));
     public string Description { get; } = description ?? string.Empty;
+    public IReadOnlyList<McpOverrideDefinition> OverrideDefinitions { get; } =
+        overrideDefinitions?.ToArray() ?? [];
 
     public void RegisterTools(IMcpServerBuilder builder)
     {

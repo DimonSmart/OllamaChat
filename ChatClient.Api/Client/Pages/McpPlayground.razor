@@ -118,7 +118,7 @@
     private readonly Dictionary<string, McpClientTool> toolMap = new(StringComparer.OrdinalIgnoreCase);
     private readonly List<McpPlaygroundToolFormHelper.FieldDefinition> fields = [];
     private readonly Dictionary<string, object?> parameters = new(StringComparer.OrdinalIgnoreCase);
-    private McpClient? currentClient;
+    private McpClientHandle? currentClient;
     private string? selectedServer;
     private string? selectedServerDescription;
     private string? selectedFunction;
@@ -141,7 +141,7 @@
         {
             var clients = await McpClientService.GetMcpClientsAsync();
             servers.AddRange(clients
-                .Select(c => c.ServerInfo.Name)
+                .Select(c => c.DisplayName)
                 .Where(name => !string.IsNullOrWhiteSpace(name))
                 .Distinct(StringComparer.OrdinalIgnoreCase));
 
@@ -271,10 +271,10 @@
         try
         {
             var clients = await McpClientService.GetMcpClientsAsync();
-            currentClient = clients.FirstOrDefault(c => string.Equals(c.ServerInfo.Name, selectedServer, StringComparison.OrdinalIgnoreCase));
+            currentClient = clients.FirstOrDefault(c => string.Equals(c.DisplayName, selectedServer, StringComparison.OrdinalIgnoreCase));
             if (currentClient == null)
                 return;
-            var list = await McpClientService.GetMcpTools(currentClient);
+            var list = await McpClientService.GetMcpTools(currentClient.Client);
             foreach (var t in list)
             {
                 tools.Add(new McpToolInfo(t.Name, t.Description, t.JsonSchema));

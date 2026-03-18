@@ -18,6 +18,9 @@ public class McpServerConfig : IMcpServerDescriptor
 
     public string? SamplingModel { get; set; }
 
+    public List<McpOverrideDefinition> OverrideDefinitions { get; set; } = [];
+    IReadOnlyList<McpOverrideDefinition> IMcpServerDescriptor.OverrideDefinitions => OverrideDefinitions;
+
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
     public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
 }
