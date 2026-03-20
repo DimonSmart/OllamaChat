@@ -29,7 +29,12 @@ public sealed class PlanningSessionService(
         if (request.EnabledToolNames.Count == 0)
             throw new InvalidOperationException("At least one planning tool must be enabled.");
 
-        var toolSnapshot = await appToolCatalog.ListToolsAsync();
+        var requestContext = request.McpServerBindings.Count == 0
+            ? McpClientRequestContext.Empty
+            : new McpClientRequestContext(request.McpServerBindings);
+        var toolSnapshot = McpBindingToolSelectionResolver.FilterAvailableTools(
+            request.McpServerBindings,
+            await appToolCatalog.ListToolsAsync(requestContext));
         var availableTools = toolSnapshot.ToDictionary(tool => tool.QualifiedName, StringComparer.OrdinalIgnoreCase);
         var enabledTools = request.EnabledToolNames
             .Distinct(StringComparer.OrdinalIgnoreCase)

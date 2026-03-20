@@ -61,34 +61,45 @@
                 }
                 else
                 {
-                    <MudSelect T="AgentDescription" Label="Select Agent" Value="selectedAgent" ValueChanged="OnAgentChanged" Variant="Variant.Outlined" FullWidth="true" Dense="true">
-                        @foreach (var agent in agents)
+                    <MudStack Spacing="3">
+                        <MudSelect T="AgentDescription" Label="Select Agent" Value="selectedAgent" ValueChanged="OnAgentChanged" Variant="Variant.Outlined" FullWidth="true" Dense="true">
+                            @foreach (var agent in agents)
+                            {
+                                <MudSelectItem Value="@agent">@agent.AgentName</MudSelectItem>
+                            }
+                        </MudSelect>
+
+                        @if (selectedAgentDraft is not null)
                         {
-                            <MudSelectItem Value="@agent">@agent.AgentName</MudSelectItem>
+                            <McpServerBindingsEditor Bindings="@selectedAgentDraft.McpServerBindings"
+                                                     BindingsChanged="OnDraftMcpBindingsChanged"
+                                                     Title=""
+                                                     Description=""
+                                                     EmptyBindingsText="" />
                         }
-                    </MudSelect>
 
-                    <MudCheckBox @bind-Value="whiteboardEnabled"
-                                 Label="Use whiteboard"
-                                 Dense="true"
-                                 Disabled="@(!isWhiteboardSupported)"
-                                 Class="mt-2" />
-                    @if (!isWhiteboardSupported && !string.IsNullOrWhiteSpace(whiteboardSupportHint))
-                    {
-                        <MudText Typo="Typo.caption" Color="Color.Warning" Class="ml-1">@whiteboardSupportHint</MudText>
-                    }
+                        <div>
+                            <MudCheckBox @bind-Value="whiteboardEnabled"
+                                         Label="Use whiteboard"
+                                         Dense="true"
+                                         Disabled="@(!isWhiteboardSupported)" />
+                            @if (!isWhiteboardSupported && !string.IsNullOrWhiteSpace(whiteboardSupportHint))
+                            {
+                                <MudText Typo="Typo.caption" Color="Color.Warning" Class="ml-1">@whiteboardSupportHint</MudText>
+                            }
+                        </div>
 
-                    <MudTooltip Text="Select server and model" Disabled="@CanStartChat">
-                        <MudButton Variant="Variant.Filled"
-                                   Color="Color.Primary"
-                                   FullWidth="true"
-                                   Class="mt-4"
-                                   Size="Size.Medium"
-                                   Disabled="@(!CanStartChat)"
-                                   OnClick="StartChat">
-                            Start Chat
-                        </MudButton>
-                    </MudTooltip>
+                        <MudTooltip Text="Select server and model" Disabled="@CanStartChat">
+                            <MudButton Variant="Variant.Filled"
+                                       Color="Color.Primary"
+                                       FullWidth="true"
+                                       Size="Size.Medium"
+                                       Disabled="@(!CanStartChat)"
+                                       OnClick="StartChat">
+                                Start Chat
+                            </MudButton>
+                        </MudTooltip>
+                    </MudStack>
                 }
             </MudCardContent>
         </MudCard>
@@ -250,6 +261,7 @@
 
     private List<AgentDescription> agents = new();
     private AgentDescription? selectedAgent { get; set; }
+    private AgentDescription? selectedAgentDraft;
     private bool whiteboardEnabled = true;
     private bool isWhiteboardSupported = true;
     private string? whiteboardSupportHint;
@@ -263,8 +275,8 @@
     private Guid CurrentServerId => effectiveModel!.ServerId;
 
     private bool CanStartChat =>
-        selectedAgent != null &&
-        TryResolveEffectiveModel(selectedAgent, out _);
+        selectedAgentDraft != null &&
+        TryResolveEffectiveModel(selectedAgentDraft, out _);
 
     private UserSettings userSettings = new();
 
@@ -350,6 +362,7 @@
     {
         agents = (await AgentService.GetAllAsync()).ToList();
         selectedAgent = null;
+        selectedAgentDraft = null;
     }
 
     private async Task LoadUserSettings()
@@ -385,9 +398,10 @@
         }
 
         selectedAgent = agentsForChat[0];
-        if (!TryResolveEffectiveModel(selectedAgent, out var resolvedModel))
+        selectedAgentDraft = CloneAgentDraft(selectedAgent);
+        if (!TryResolveEffectiveModel(selectedAgentDraft, out var resolvedModel))
         {
-            throw new InvalidOperationException($"Model selection for Agent: {selectedAgent.AgentName} is incomplete.");
+            throw new InvalidOperationException($"Model selection for Agent: {selectedAgentDraft.AgentName} is incomplete.");
         }
 
         effectiveModel = resolvedModel;
@@ -395,7 +409,7 @@
         await UpdateWhiteboardSupportAsync(effectiveModel);
 
         var resolvedAgents = agentsForChat
-            .Select(a => a.Id == selectedAgent.Id ? CloneWithResolvedModel(a, effectiveModel) : a)
+            .Select(a => a.Id == selectedAgent.Id ? CloneWithResolvedModel(selectedAgentDraft, effectiveModel) : a)
             .ToList();
         var runtimeAgents = resolvedAgents
             .Select(agent => new ResolvedChatAgent(
@@ -404,7 +418,7 @@
             .ToList();
 
         var functions = resolvedAgents[0].FunctionSettings.SelectedFunctions ?? [];
-        var chatConfiguration = new AppChatConfiguration(CurrentModelName, functions, whiteboardEnabled);
+        var chatConfiguration = new AppChatConfiguration(CurrentModelName, functions, whiteboardEnabled, []);
         var savedMessages = saved.Messages
             .Select(m =>
             {
@@ -436,26 +450,26 @@
 
     private async Task StartChat()
     {
-        if (selectedAgent is null)
+        if (selectedAgentDraft is null)
             return;
 
-        if (!TryResolveEffectiveModel(selectedAgent, out var resolvedModel))
+        if (!TryResolveEffectiveModel(selectedAgentDraft, out var resolvedModel))
         {
-            throw new InvalidOperationException($"Model selection for Agent: {selectedAgent.AgentName} is incomplete.");
+            throw new InvalidOperationException($"Model selection for Agent: {selectedAgentDraft.AgentName} is incomplete.");
         }
 
         effectiveModel = resolvedModel;
 
         await UpdateWhiteboardSupportAsync(effectiveModel);
 
-        var resolvedAgent = CloneWithResolvedModel(selectedAgent, effectiveModel);
+        var resolvedAgent = CloneWithResolvedModel(selectedAgentDraft, effectiveModel);
         var runtimeAgents = new[]
         {
             new ResolvedChatAgent(resolvedAgent, effectiveModel)
         };
 
         var functions = resolvedAgent.FunctionSettings.SelectedFunctions ?? [];
-        var chatConfiguration = new AppChatConfiguration(CurrentModelName, functions, whiteboardEnabled);
+        var chatConfiguration = new AppChatConfiguration(CurrentModelName, functions, whiteboardEnabled, []);
         var request = new ChatEngineSessionStartRequest
         {
             Configuration = chatConfiguration,
@@ -583,12 +597,24 @@
     private async Task OnAgentChanged(AgentDescription? agent)
     {
         selectedAgent = agent;
+        selectedAgentDraft = agent is null ? null : CloneAgentDraft(agent);
         await RefreshWhiteboardSupportAsync();
+    }
+
+    private Task OnDraftMcpBindingsChanged(List<McpServerSessionBinding> bindings)
+    {
+        if (selectedAgentDraft is not null)
+        {
+            selectedAgentDraft.McpServerBindings = bindings
+                .Select(static binding => binding.Clone())
+                .ToList();
+        }
+        return Task.CompletedTask;
     }
 
     private async Task RefreshWhiteboardSupportAsync()
     {
-        if (selectedAgent is null)
+        if (selectedAgentDraft is null)
         {
             isWhiteboardSupported = true;
             whiteboardSupportHint = null;
@@ -596,7 +622,7 @@
             return;
         }
 
-        if (TryResolveEffectiveModel(selectedAgent, out var model))
+        if (TryResolveEffectiveModel(selectedAgentDraft, out var model))
         {
             await UpdateWhiteboardSupportAsync(model);
         }
@@ -665,6 +691,31 @@
             ShortName = source.ShortName,
             ModelName = model.ModelName,
             LlmId = model.ServerId,
+            Temperature = source.Temperature,
+            RepeatPenalty = source.RepeatPenalty,
+            FunctionSettings = new FunctionSettings
+            {
+                AutoSelectCount = source.FunctionSettings.AutoSelectCount,
+                SelectedFunctions = [.. source.FunctionSettings.SelectedFunctions]
+            },
+            McpServerBindings = source.McpServerBindings
+                .Select(static binding => binding.Clone())
+                .ToList(),
+            CreatedAt = source.CreatedAt,
+            UpdatedAt = source.UpdatedAt
+        };
+    }
+
+    private static AgentDescription CloneAgentDraft(AgentDescription source)
+    {
+        return new AgentDescription
+        {
+            Id = source.Id,
+            AgentName = source.AgentName,
+            Content = source.Content,
+            ShortName = source.ShortName,
+            ModelName = source.ModelName,
+            LlmId = source.LlmId,
             Temperature = source.Temperature,
             RepeatPenalty = source.RepeatPenalty,
             FunctionSettings = new FunctionSettings

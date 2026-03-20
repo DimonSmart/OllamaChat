@@ -765,7 +765,7 @@ public sealed class HttpAgenticExecutionRuntime(
             requested.Add(function.Trim());
         }
 
-        foreach (var function in ResolveFunctionsFromBindings(request.Agent.McpServerBindings, availableTools))
+        foreach (var function in McpBindingToolSelectionResolver.ResolveQualifiedToolNames(request.Agent.McpServerBindings, availableTools))
         {
             requested.Add(function);
         }
@@ -857,52 +857,6 @@ public sealed class HttpAgenticExecutionRuntime(
         return tools.Count == 0
             ? ToolRegistry.Empty
             : new ToolRegistry(tools, toolsByProviderName);
-    }
-
-    private static IReadOnlyCollection<string> ResolveFunctionsFromBindings(
-        IReadOnlyCollection<McpServerSessionBinding> bindings,
-        IReadOnlyCollection<AppToolDescriptor> availableTools)
-    {
-        if (bindings.Count == 0 || availableTools.Count == 0)
-        {
-            return [];
-        }
-
-        HashSet<string> requested = new(StringComparer.OrdinalIgnoreCase);
-        foreach (var binding in bindings.Where(static binding => binding.Enabled && binding.HasIdentity))
-        {
-            var matchingTools = availableTools.Where(tool => ToolMatchesBinding(tool, binding));
-            foreach (var tool in matchingTools)
-            {
-                if (binding.SelectAllTools || binding.SelectedTools.Count == 0)
-                {
-                    requested.Add(tool.QualifiedName);
-                    continue;
-                }
-
-                if (binding.SelectedTools.Contains(tool.ToolName, StringComparer.OrdinalIgnoreCase))
-                {
-                    requested.Add(tool.QualifiedName);
-                }
-            }
-        }
-
-        return requested.ToArray();
-    }
-
-    private static bool ToolMatchesBinding(AppToolDescriptor tool, McpServerSessionBinding binding)
-    {
-        if (binding.BindingId is Guid bindingId && bindingId != Guid.Empty)
-        {
-            return tool.BindingId == bindingId;
-        }
-
-        if (!string.IsNullOrWhiteSpace(binding.ServerName))
-        {
-            return string.Equals(tool.BaseServerName, binding.ServerName.Trim(), StringComparison.OrdinalIgnoreCase);
-        }
-
-        return false;
     }
 
     private static IReadOnlyList<ToolBinding> BuildWhiteboardTools(

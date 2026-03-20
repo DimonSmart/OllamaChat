@@ -63,56 +63,63 @@
                 }
                 else
                 {
-                    <MudSelect T="AgentDescription" Label="Select Agents" SelectedValues="selectedAgents" SelectedValuesChanged="OnSelectedAgentsChanged" MultiSelection="true" Variant="Variant.Outlined" FullWidth="true" Dense="true">
-                        @foreach (var agent in agents)
-                        {
-                            <MudSelectItem Value="@agent">@agent.AgentName</MudSelectItem>
-                        }
-                    </MudSelect>
+                    <MudStack Spacing="3">
+                        <MudSelect T="AgentDescription" Label="Select Agents" SelectedValues="selectedAgents" SelectedValuesChanged="OnSelectedAgentsChanged" MultiSelection="true" Variant="Variant.Outlined" FullWidth="true" Dense="true">
+                            @foreach (var agent in agents)
+                            {
+                                <MudSelectItem Value="@agent">@agent.AgentName</MudSelectItem>
+                            }
+                        </MudSelect>
 
-                    <MudSelect T="string"
-                               Label="Chat Strategy"
-                               Value="chatStrategyName"
-                               ValueChanged="OnChatStrategyChanged"
-                               Variant="Variant.Outlined"
-                               FullWidth="true"
-                               Class="mt-4"
-                               Dense="true">
-                        @foreach (var strategy in chatStrategies)
-                        {
-                            <MudSelectItem Value="@strategy">@strategy</MudSelectItem>
-                        }
-                    </MudSelect>
-                    @if (editorType is not null)
-                    {
-                        <DynamicComponent Type="editorType" Parameters="editorParams" />
-                    }
-                    else
-                    {
-                        <em>Editor for '@chatStrategyOptions.GetType().Name' not found</em>
-                    }
-
-                    <MudCheckBox @bind-Value="whiteboardEnabled"
-                                 Label="Use whiteboard"
-                                 Dense="true"
-                                 Disabled="@(!isWhiteboardSupported)"
-                                 Class="mt-2" />
-                    @if (!isWhiteboardSupported && !string.IsNullOrWhiteSpace(whiteboardSupportHint))
-                    {
-                        <MudText Typo="Typo.caption" Color="Color.Warning" Class="ml-1">@whiteboardSupportHint</MudText>
-                    }
-
-                    <MudTooltip Text="Select server and model" Disabled="@CanStartChat">
-                        <MudButton Variant="Variant.Filled"
-                                   Color="Color.Primary"
+                        <MudSelect T="string"
+                                   Label="Chat Strategy"
+                                   Value="chatStrategyName"
+                                   ValueChanged="OnChatStrategyChanged"
+                                   Variant="Variant.Outlined"
                                    FullWidth="true"
-                                   Class="mt-4"
-                                   Size="Size.Medium"
-                                   Disabled="@(!CanStartChat)"
-                                   OnClick="StartChat">
-                            Start Chat
-                        </MudButton>
-                    </MudTooltip>
+                                   Dense="true">
+                            @foreach (var strategy in chatStrategies)
+                            {
+                                <MudSelectItem Value="@strategy">@strategy</MudSelectItem>
+                            }
+                        </MudSelect>
+                        @if (editorType is not null)
+                        {
+                            <DynamicComponent Type="editorType" Parameters="editorParams" />
+                        }
+                        else
+                        {
+                            <em>Editor for '@chatStrategyOptions.GetType().Name' not found</em>
+                        }
+
+                        <McpServerBindingsEditor Bindings="@runMcpBindings"
+                                                 BindingsChanged="OnRunMcpBindingsChanged"
+                                                 Title=""
+                                                 Description=""
+                                                 EmptyBindingsText="" />
+
+                        <div>
+                            <MudCheckBox @bind-Value="whiteboardEnabled"
+                                         Label="Use whiteboard"
+                                         Dense="true"
+                                         Disabled="@(!isWhiteboardSupported)" />
+                            @if (!isWhiteboardSupported && !string.IsNullOrWhiteSpace(whiteboardSupportHint))
+                            {
+                                <MudText Typo="Typo.caption" Color="Color.Warning" Class="ml-1">@whiteboardSupportHint</MudText>
+                            }
+                        </div>
+
+                        <MudTooltip Text="Select server and model" Disabled="@CanStartChat">
+                            <MudButton Variant="Variant.Filled"
+                                       Color="Color.Primary"
+                                       FullWidth="true"
+                                       Size="Size.Medium"
+                                       Disabled="@(!CanStartChat)"
+                                       OnClick="StartChat">
+                                Start Chat
+                            </MudButton>
+                        </MudTooltip>
+                    </MudStack>
                 }
             </MudCardContent>
         </MudCard>
@@ -271,6 +278,7 @@
 
     private List<AgentDescription> agents = new();
     private List<AgentDescription> selectedAgents { get; set; } = new();
+    private List<McpServerSessionBinding> runMcpBindings = [];
     private bool whiteboardEnabled = true;
     private bool isWhiteboardSupported = true;
     private string? whiteboardSupportHint;
@@ -477,7 +485,7 @@
         await EvaluateWhiteboardSupportAsync(modelsForSupport);
 
         var allFunctions = selectedAgents.SelectMany(a => a.FunctionSettings.SelectedFunctions ?? []).ToList();
-        var chatConfiguration = new AppChatConfiguration(currentModelName, allFunctions, whiteboardEnabled);
+        var chatConfiguration = new AppChatConfiguration(currentModelName, allFunctions, whiteboardEnabled, CloneRunMcpBindings());
 
         var savedMessages = saved.Messages
             .Select(m =>
@@ -544,7 +552,7 @@
             .Select(a => (a, new ServerModel(a.LlmId!.Value, a.ModelName!)));
         await EvaluateWhiteboardSupportAsync(modelsForSupport);
 
-        var chatConfiguration = new AppChatConfiguration(currentModelName!, allFunctions, whiteboardEnabled);
+        var chatConfiguration = new AppChatConfiguration(currentModelName!, allFunctions, whiteboardEnabled, CloneRunMcpBindings());
         var request = new ChatEngineSessionStartRequest
         {
             Configuration = chatConfiguration,
@@ -675,6 +683,14 @@
         await RefreshWhiteboardSupportAsync();
     }
 
+    private Task OnRunMcpBindingsChanged(List<McpServerSessionBinding> bindings)
+    {
+        runMcpBindings = bindings
+            .Select(static binding => binding.Clone())
+            .ToList();
+        return Task.CompletedTask;
+    }
+
     private async Task RefreshWhiteboardSupportAsync()
     {
         if (selectedAgents.Count == 0)
@@ -734,6 +750,13 @@
             Logger.LogWarning(ex, "Failed to determine function support for model {ModelName}", model.ModelName);
             return true;
         }
+    }
+
+    private List<McpServerSessionBinding> CloneRunMcpBindings()
+    {
+        return runMcpBindings
+            .Select(static binding => binding.Clone())
+            .ToList();
     }
 
     private bool UiSelectionChanged() =>

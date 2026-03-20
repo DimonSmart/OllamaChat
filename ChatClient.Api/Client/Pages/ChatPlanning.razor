@@ -1,4 +1,5 @@
 @page "/chat-planning"
+@using ChatClient.Api.Client.Components
 @using ChatClient.Api.Client.Components.Planning
 @using ChatClient.Api.PlanningRuntime.Common
 @using ChatClient.Api.PlanningRuntime.Execution
@@ -12,7 +13,7 @@
 @inject ISnackbar Snackbar
 @inject IDialogService DialogService
 @inject IMcpUserInteractionService McpUserInteractionService
-@inject KernelService KernelService
+@inject IAppToolCatalog AppToolCatalog
 @inject ILogger<ChatPlanning> Logger
 
 <PageTitle>Planning Chat</PageTitle>
@@ -71,12 +72,20 @@
                           Immediate="true"
                           Disabled="@UsingPreviewScenario" />
 
+            <McpServerBindingsEditor Bindings="@planningMcpBindings"
+                                     BindingsChanged="OnPlanningMcpBindingsChanged"
+                                     Title="Planner MCP Servers"
+                                     Description="Add planner-specific MCP bindings or adjust run-specific settings without changing saved server definitions."
+                                     EmptyBindingsText="This planning run will use the shared MCP catalog until you add a planner-specific binding."
+                                     Class="mt-2"
+                                     Disabled="@(UsingPreviewScenario || PlanningSessionService.State.IsRunning)" />
+
             <FunctionSelector AvailableFunctions="@availablePlanningFunctions"
                               SelectedFunctions="@selectedPlanningFunctions"
                               SelectedFunctionsChanged="OnSelectedPlanningFunctionsChanged"
                               Expanded="true"
                               ShowAutoSelectCount="false"
-                              Disabled="@UsingPreviewScenario"
+                              Disabled="@(UsingPreviewScenario || PlanningSessionService.State.IsRunning)"
                               Title="Planner MCP Servers and Tools"
                               EmptyText="No MCP tools are currently available for planning." />
 
@@ -132,6 +141,7 @@
     private string? selectedStepContextKey;
 
     private List<FunctionInfo> availablePlanningFunctions = [];
+    private List<McpServerSessionBinding> planningMcpBindings = [];
     private List<string> selectedPlanningFunctions = [];
     private IDisposable? elicitationHandlerRegistration;
 
@@ -223,7 +233,8 @@
         {
             Model = new ServerModel(UiModelSelection.ServerId!.Value, UiModelSelection.ModelName!),
             UserQuery = userQuery,
-            EnabledToolNames = selectedPlanningFunctions
+            EnabledToolNames = selectedPlanningFunctions,
+            McpServerBindings = ClonePlanningMcpBindings()
         });
     }
 
@@ -356,7 +367,21 @@
     {
         try
         {
-            availablePlanningFunctions = (await KernelService.GetAvailableFunctionsAsync()).ToList();
+            var requestContext = planningMcpBindings.Count == 0
+                ? McpClientRequestContext.Empty
+                : new McpClientRequestContext(ClonePlanningMcpBindings());
+            var availableTools = McpBindingToolSelectionResolver.FilterAvailableTools(
+                planningMcpBindings,
+                await AppToolCatalog.ListToolsAsync(requestContext));
+            availablePlanningFunctions = availableTools
+                .Select(static tool => new FunctionInfo
+                {
+                    Name = tool.QualifiedName,
+                    ServerName = tool.ServerName,
+                    DisplayName = tool.DisplayName,
+                    Description = tool.Description
+                })
+                .ToList();
             var enabledByName = selectedPlanningFunctions
                 .ToHashSet(StringComparer.OrdinalIgnoreCase);
             selectedPlanningFunctions = availablePlanningFunctions
@@ -371,10 +396,26 @@
         }
     }
 
+    private async Task OnPlanningMcpBindingsChanged(List<McpServerSessionBinding> bindings)
+    {
+        planningMcpBindings = bindings
+            .Select(static binding => binding.Clone())
+            .ToList();
+        await RefreshToolSelectionsAsync();
+        await InvokeAsync(StateHasChanged);
+    }
+
     private Task OnSelectedPlanningFunctionsChanged(List<string> selectedFunctions)
     {
         selectedPlanningFunctions = selectedFunctions;
         return Task.CompletedTask;
+    }
+
+    private List<McpServerSessionBinding> ClonePlanningMcpBindings()
+    {
+        return planningMcpBindings
+            .Select(static binding => binding.Clone())
+            .ToList();
     }
 
     private static bool ShouldEnableByDefault(FunctionInfo function)

@@ -53,8 +53,11 @@
 - все MCP инструменты собираются в общий `AppToolCatalog`;
 - planning runtime и agentic runtime используют один и тот же каталог инструментов;
 - в коде уже есть session-scoped binding модель: `McpServerSessionBinding`, `McpClientRequestContext`, `McpSessionBindingTransport`;
+- `IMcpServerDescriptor` уже несет `OverrideDefinitions`, а built-in и external MCP серверы уже могут объявлять overridable-параметры рядом со своей регистрацией/конфигурацией;
 - `McpClientService` уже строит fingerprint по `server config + request context` и поднимает отдельные client sets для разных binding-контекстов;
 - `AgentDescription` и `AppChatConfiguration` уже умеют хранить `McpServerBindings`;
+- binding-модель уже поддерживает несколько attachment одного и того же сервера через `BindingId`, а `AppToolCatalog` уже выдает binding-scoped qualified names вида `binding:{id}:{tool}`;
+- в UI уже есть first-class editor для agent-level MCP attachments (`McpServerBindingsEditor`) и editor для override definitions в реестре MCP серверов;
 - agentic runtime уже умеет мерджить agent-level bindings и run-level bindings;
 - built-in `built-in-knowledge-book` уже существует как рабочий MCP сервер с отдельным `knowledgeFile`, CRUD/search/export tools и автотестами.
 
@@ -64,6 +67,7 @@
 
 - фаза про shared tool catalog уже завершена и не требует отдельной архитектурной ветки;
 - фаза про session-scoped launch overrides больше не greenfield: транспорт и кэширование уже сделаны, осталось довести их до planning runtime и UI;
+- фаза про override definitions и instance-based attachments уже в значительной степени сделана, поэтому не нужно проектировать новую сущность поверх `McpServerSessionBinding`;
 - knowledge MCP тоже уже не гипотеза: в проекте есть готовая knowledge book, которую можно привязывать к агенту или запуску;
 - новые cursor/file/domain MCP серверы надо строить поверх существующего built-in host и общего каталога, а не через отдельный planner-only или agent-only слой.
 
@@ -71,11 +75,12 @@
 
 Ключевые пробелы на текущий момент:
 
-- `PlanningRunRequest` пока не принимает `McpServerBindings`, поэтому planning runtime не умеет per-run bindings;
-- в UI пока нет first-class редактора agent bindings и run-level overrides для chat/planning;
+- `PlanningRunRequest` уже принимает `McpServerBindings`, а `PlanningSessionService` строит binding-specific tool catalog через `McpClientRequestContext`;
+- в UI уже есть переиспользуемый `McpServerBindingsEditor` для agent-level, single-agent chat, multi-agent chat и planning run-level конфигурации;
 - built-in `file-sandbox` пока не реализован, хотя модель bindings и `roots` уже подготовлены;
 - `PlanStep.Result` и `PlanningSessionState` все еще держат результаты inline, без `preview + artifactRef`;
 - shared cursor runtime, built-in `cursor` MCP, `cursor-agent` и persisted progress/resume пока отсутствуют;
+- planning runtime пока не умеет вызывать заранее настроенных агентов (`AgentDescription`) и делегировать им подзадачи; LLM step там сейчас только ad-hoc prompt без agent registry;
 - текущий knowledge book полезен как иерархическое хранилище разделов, но не заменяет generic entity/evidence слой с merge/matching правилами.
 
 ## Что берем из AITextEditor
@@ -378,9 +383,14 @@
 
 - runtime binding сущность называется `McpServerSessionBinding`, а не `McpSessionBinding`;
 - binding умеет адресовать сервер по `ServerId` или `ServerName` и несет `Roots` плюс произвольные `Parameters`;
+- `BindingId` уже позволяет держать несколько usage attachments одного и того же сервера;
 - `McpClientRequestContext` подбирает binding для конкретного сервера и включает его в fingerprint;
 - `McpSessionBindingTransport` сериализует binding в `--mcp-session-binding` для built-in и локальных stdio MCP серверов;
 - `McpClientService` уже создает отдельные cached client sets для разных binding-контекстов и умеет их вытеснять;
+- fingerprint на runtime-стороне уже строится как hash от нормализованного binding context, то есть реальные override-значения не попадают в ключ кэша в открытом виде;
+- override definitions уже объявляются через `IMcpServerDescriptor.OverrideDefinitions` и редактируются в UI для external MCP серверов;
+- `McpServerBindingsEditor` уже позволяет задавать alias, roots, per-usage overrides, выбор инструментов и дублирование attachment;
+- `AppToolCatalog` уже различает binding-specific tool descriptors, поэтому один и тот же MCP сервер может присутствовать несколько раз в одном runtime context;
 - agentic runtime уже мерджит bindings агента и запуска;
 - `KnowledgeBookStore` уже читает `knowledgeFile` из binding и намеренно игнорирует `Roots`.
 
@@ -388,30 +398,29 @@
 
 Незавершенная часть сейчас не в транспорте, а в end-to-end plumbing:
 
-- текущий binding-моделью считается "один binding на сервер", а не "несколько usage attachments одного сервера";
-- `PlanningRunRequest` и `PlanningSessionService` пока работают только с default MCP context;
-- UI пока не дает явно редактировать bindings агента и задавать run-level overrides;
+- `PlanningRunRequest` и `PlanningSessionService` уже умеют принимать run-level bindings и строить binding-specific tool catalog;
+- agent-level UI уже есть, и run-level UI тоже уже выведен в single-agent chat, multi-agent chat и planning;
 - нет удобного слоя валидации и пресетов по типам серверов, например `roots` для file sandbox или `knowledgeFile` для knowledge book;
-- нигде рядом с регистрацией MCP сервера не объявлено, какие параметры вообще можно override-ить по месту;
-- кэш-фингерпринт должен учитывать overrides, но не должен раскрывать реальные значения путей, connection strings и других секретов;
+- planning runtime пока не умеет вызывать заранее настроенных агентов и делегировать им bounded sub-workflow;
 - нет e2e теста для planning run с bindings и проверкой приоритетов merge.
 
 ### Обновленная цель
 
 1. Использовать существующий термин `McpServerSessionBinding` как единый контракт.
-2. Перевести binding-модель от "один binding на сервер" к "много usage attachments на один сервер реестра".
+2. Опереться на уже существующую instance-based binding-модель через `BindingId`, а не вводить параллельную сущность поверх нее.
 3. Добавить bindings в `PlanningRunRequest` и пропустить их в `AppToolCatalog`/tool execution path planning runtime.
 4. Вывести bindings в UI на двух уровнях:
    - agent-level defaults;
    - run-level overrides для single-agent, multi-agent и planning сценариев.
-5. Ввести override definitions рядом с регистрацией MCP сервера и использовать их в UI и валидации.
-6. Сохранить текущую модель fingerprint-based caching, но строить fingerprint по обезличенному hash от нормализованных overrides, без raw значений в ключе и логах.
+5. Переиспользовать уже существующие `OverrideDefinitions` рядом с регистрацией MCP сервера и довести их использование до planning/chat run UX и валидации.
+6. Если planner потребуется вызывать заранее настроенных агентов, делать это через tool/gateway слой поверх существующего agentic runtime, а не через новый planner-only step kind.
 
 Практический вывод:
 
 - разделение saved server config и per-run launch parameters уже есть на инфраструктурном уровне;
 - оставшаяся работа это доведение до planning runtime, UX и тестов;
-- но для поддержки двух одинаковых MCP серверов с разной конфигурацией надо расширить текущую binding-модель до instance-based usage attachments.
+- поддержка двух одинаковых MCP серверов с разной конфигурацией уже заложена в `BindingId` + binding-scoped tool catalog;
+- расширять нужно не transport-модель, а пути planning/runtime/UI поверх уже существующей модели.
 
 ## Интеграция идеи книжного редактирования из AITextEditor
 
@@ -475,6 +484,68 @@
 - UI для run progress и resume;
 - договоренности по storage lifecycle.
 
+### Нужна ли planner-делегация в заранее настроенных агентов
+
+Сейчас planning runtime этого не умеет:
+
+- `PlanStep` поддерживает только `tool` и `llm`;
+- `AgentStepRunner` выполняет ad-hoc LLM шаг по prompt, а не вызов заранее настроенного `AgentDescription`;
+- planner не имеет registry настроенных агентов и не может сказать "поручи это character-agent" или "вызови cursor-specialist".
+
+Для целевого книжного сценария это не является обязательным первым шагом.
+
+Минимально достаточный путь:
+
+- оставить planner tool-centric;
+- дать ему инструменты `file-sandbox`, `cursor`, `cursor-agent`, `knowledge-book` и затем `entity/character-knowledge`;
+- завернуть bounded sub-workflow чтения книги в `cursor-agent` MCP, чтобы planner вызывал его как обычный tool step.
+
+Если позже понадобится именно переиспользование заранее настроенных агентов, правильнее добавить не новый step kind, а gateway/tool слой поверх существующего agentic runtime, например:
+
+- `invoke_agent(agentId, task, inputs?, bindings?)`
+- `get_agent_run(runId)`
+- `resume_agent_run(runId)`
+
+Тогда planner останется tool-oriented, а делегация станет еще одним MCP-backed capability.
+
+### Минимальный целевой сценарий: markdown-книга -> досье персонажей
+
+Чтобы planning runtime смог пройти сценарий:
+
+1. настроить MCP и агентов;
+2. получить доступ к книге в markdown;
+3. по команде "составь досье на персонажей" читать книгу порциями и постепенно обновлять knowledge/dossier state,
+
+нужна следующая минимальная цепочка:
+
+- источник книги: `file-sandbox` или специализированный `document-linear/document-chunks` MCP;
+- long-running чтение: `cursor` + `cursor-agent`;
+- накопление результата: `artifact-store`;
+- целевое состояние: сначала `knowledge-book`, затем `entity-knowledge`/`character-knowledge`;
+- orchestration: planning runtime с per-run bindings, чтобы один run видел конкретную книгу и конкретный knowledge file.
+
+Практически это означает такой execution path:
+
+1. planning run стартует с `McpServerBindings`, где заданы:
+   - root до папки/файла книги;
+   - `knowledgeFile` для файла досье/knowledge state.
+2. planner строит план:
+   - создать курсор по книге;
+   - запустить cursor-agent на extraction задачи;
+   - сохранить/прочитать artifact с evidence;
+   - обновить knowledge/dossier store;
+   - вернуть итог или продолжить scan по `nextToken`.
+3. knowledge layer экспортирует итог в markdown-досье персонажей.
+
+Что мешает этому сценарию прямо сейчас:
+
+- нет `file-sandbox`;
+- нет `cursor`/`cursor-agent`;
+- нет artifact indirection;
+- planning run не умеет принимать bindings;
+- planning run не умеет резюмировать прогресс/resume для длинного чтения;
+- knowledge book годится как output surface, но не как полноценный entity/evidence store для merge персонажей.
+
 ### Почему это хороший тест
 
 Если система сможет устойчиво поддержать сценарий:
@@ -536,6 +607,15 @@
    - merge precedence;
    - два одинаковых MCP сервера с разной конфигурацией;
    - planning + knowledge-book bindings.
+
+Статус по шагам:
+
+- п.1 уже реализован;
+- п.2 уже реализован;
+- п.3 уже в основном реализован через `BindingId`, `McpServerBindingsEditor` и binding-scoped tools;
+- п.4-п.7 остаются основными незавершенными задачами;
+- п.8 на runtime-стороне уже в основном закрыт, но стоит избегать raw-value cache keys и в вспомогательных UI/service слоях, если они начнут логироваться;
+- из п.9 уже есть тесты на merge precedence и несколько attachment одного сервера, но нет planning e2e с bindings.
 
 Результат:
 
@@ -736,18 +816,20 @@
 
 - общий tool catalog для chat и planning;
 - session-scoped MCP binding transport и request context;
+- override definitions и instance-based MCP attachments;
 - рабочий built-in knowledge book.
 
 Поэтому следующий шаг это не "изобрести knowledge/MCP заново", а закрыть оставшийся разрыв:
 
 - сохранить реестр MCP серверов и перенести сложность в usage-level attachments;
-- объявлять overridable-параметры рядом с регистрацией MCP сервера;
+- переиспользовать уже объявленные overridable-параметры рядом с регистрацией MCP сервера;
 - довести bindings до planning runtime и UI;
-- разрешить несколько экземпляров одного MCP сервера на одном usage-context;
-- обезличить fingerprint кэша по параметрам;
+- использовать уже существующую поддержку нескольких экземпляров одного MCP сервера на одном usage-context;
+- при необходимости довести обезличивание cache keys до всех вспомогательных слоев;
 - добавить file sandbox;
 - ввести artifact store и `artifactRef`;
 - построить cursor runtime и cursor-agent;
+- при необходимости добавить tool-based gateway для вызова заранее настроенных агентов из planning runtime;
 - расширить knowledge layer от knowledge book к entity/character workflows.
 
 Именно это создаст основу и для обработки 1000 пакетов, и для анализа файловых папок, и для книжного редактирования в стиле `AITextEditor`, не ломая уже существующую архитектуру проекта.

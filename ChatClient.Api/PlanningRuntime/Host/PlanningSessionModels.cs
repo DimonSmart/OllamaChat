@@ -13,6 +13,8 @@ public sealed class PlanningRunRequest
     public required string UserQuery { get; init; }
 
     public required IReadOnlyCollection<string> EnabledToolNames { get; init; }
+
+    public IReadOnlyCollection<McpServerSessionBinding> McpServerBindings { get; init; } = [];
 }
 
 public sealed class PlanningToolOption
