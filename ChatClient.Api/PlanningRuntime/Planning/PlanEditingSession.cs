@@ -27,7 +27,7 @@ public sealed class PlanEditingSession
             return toolName switch
             {
                 "plan.readStep" => CreateSuccess(toolName, ReadStep(GetRequiredString(input, "stepId"))),
-                "plan.replaceStep" => CreateSuccess(toolName, ReplaceStep(GetRequiredString(input, "stepId"), input["step"])),
+                "plan.replaceStep" => CreateSuccess(toolName, ReplaceStep(GetReplaceStepId(input), GetReplaceStepNode(input))),
                 "plan.addSteps" => CreateSuccess(toolName, AddSteps(GetOptionalString(input, "afterStepId"), input["steps"])),
                 "plan.resetFrom" => CreateSuccess(toolName, ResetFrom(GetRequiredString(input, "stepId"))),
                 _ => CreateFailure("unknown_tool", $"Unknown replanning tool '{toolName ?? "<null>"}'.", toolName)
@@ -139,6 +139,19 @@ public sealed class PlanEditingSession
 
     private static string? GetOptionalString(JsonObject input, string propertyName) =>
         input[propertyName]?.GetValue<string>()?.Trim();
+
+    private static string GetReplaceStepId(JsonObject input)
+    {
+        return GetRequiredString(input, "stepId");
+    }
+
+    private static JsonNode? GetReplaceStepNode(JsonObject input)
+    {
+        if (input.TryGetPropertyValue("step", out var stepNode) && stepNode is not null)
+            return stepNode;
+
+        throw new InvalidOperationException("Action input 'step' must be a valid plan step object.");
+    }
 
     private static PlanStep DeserializeStep(JsonNode? stepNode) =>
         stepNode?.Deserialize<PlanStep>(JsonOptions)

@@ -1,7 +1,6 @@
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
-using System.Text.Json.Serialization;
 using Microsoft.Agents.AI;
 using Microsoft.Extensions.AI;
 using ChatClient.Api.PlanningRuntime.Common;
@@ -18,10 +17,8 @@ public sealed class LlmReplanner(
     IPlanRunObserver? planRunObserver = null) : IReplanner
 {
     private const int MaxRounds = 10;
-    private const int MaxResponseAttempts = 3;
     private readonly IExecutionLogger _log = executionLogger ?? NullExecutionLogger.Instance;
     private readonly IPlanRunObserver _observer = planRunObserver ?? NullPlanRunObserver.Instance;
-
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
         PropertyNameCaseInsensitive = true
@@ -32,108 +29,98 @@ public sealed class LlmReplanner(
         var workflowTools = toolCatalog.ListTools();
         var session = new PlanEditingSession(request.Plan);
         var systemPrompt = BuildSystemPrompt(workflowTools);
-        var agent = new ChatClientAgent(chatClient, systemPrompt, "replanner", null, null, null, null);
-        JsonArray? lastActionResults = null;
+        JsonArray? lastToolResults = null;
+        string? retryMessage = null;
 
         _log.Log($"[replan] start attempt={request.AttemptNumber} reason={Shorten(request.GoalVerdict.Reason, 240)}");
         _observer.OnEvent(new ReplanStartedEvent(CloneRequest(request)));
 
         for (var round = 1; round <= MaxRounds; round++)
         {
-            var roundPrompt = BuildRoundPrompt(request, session, round, lastActionResults);
-            var actionBatch = await GenerateActionBatchAsync(agent, roundPrompt, cancellationToken);
-            var done = actionBatch.Done;
-            var reason = actionBatch.Reason.Trim();
-
-            _log.Log($"[replan] round={round} done={done} actions={actionBatch.Actions.Count} reason={Shorten(reason, 240)}");
-            _log.Log($"[replan] round={round} actionBatch={SerializeDetailedSummary(JsonSerializer.SerializeToNode(actionBatch))}");
-
-            lastActionResults = ExecuteActions(session, request, actionBatch.Actions);
-            AppendDraftValidationResult(session, workflowTools, lastActionResults);
-            _log.Log($"[replan] round={round} actionResults={SerializeDetailedSummary(lastActionResults)}");
-            _observer.OnEvent(new ReplanRoundCompletedEvent(
+            var runtime = new PlanToolCallingRuntime(
+                session,
+                workflowTools,
+                "replan",
                 round,
-                done,
-                reason,
-                JsonSerializer.SerializeToElement(actionBatch, JsonOptions),
-                JsonSerializer.SerializeToElement(lastActionResults, JsonOptions)));
+                _log,
+                stepId => ExecuteRuntimeReadFailedTrace(request, stepId));
+            var agent = new ChatClientAgent(
+                chatClient,
+                systemPrompt,
+                "replanner",
+                null,
+                runtime.CreateTools(includeRuntimeReadFailedTrace: true).ToList(),
+                null,
+                null);
+            var roundPrompt = BuildRoundPrompt(request, session, round, lastToolResults, retryMessage);
 
-            if (!done)
-                continue;
-
-            var validationError = lastActionResults
-                .OfType<JsonObject>()
-                .Where(result => string.Equals(result["tool"]?.GetValue<string>(), "plan.validateDraft", StringComparison.Ordinal))
-                .Where(result => result["ok"]?.GetValue<bool>() == false)
-                .Select(result => result["error"]?["message"]?.GetValue<string>())
-                .FirstOrDefault(message => !string.IsNullOrWhiteSpace(message));
-
-            if (!string.IsNullOrWhiteSpace(validationError))
+            try
             {
-                if (round < MaxRounds)
-                    continue;
+                var completionText = await GenerateRoundCompletionAsync(agent, roundPrompt, cancellationToken);
+                lastToolResults = runtime.GetInvocationResultsSnapshot();
 
-                throw new InvalidOperationException($"Replanner draft is still invalid after {MaxRounds} rounds. Last validation error: {validationError}");
+                if (runtime.InvocationCount == 0)
+                    throw new InvalidOperationException("Replanner must use at least one plan-editing or runtime inspection tool before replying.");
+
+                _log.Log($"[replan] round={round} toolCalls={runtime.InvocationCount} completion={Shorten(completionText, 240)}");
+                _log.Log($"[replan] round={round} toolResults={SerializeDetailedSummary(lastToolResults)}");
+
+                var validationResult = PlanDraftValidationTool.CreateValidationResult(session, workflowTools);
+                lastToolResults.Add(validationResult);
+                _log.Log($"[replan] round={round} validation={SerializeDetailedSummary(validationResult)}");
+                _observer.OnEvent(new ReplanRoundCompletedEvent(
+                    round,
+                    validationResult["ok"]?.GetValue<bool>() == true,
+                    completionText,
+                    JsonSerializer.SerializeToElement(new { completion = completionText }),
+                    JsonSerializer.SerializeToElement(lastToolResults, JsonOptions)));
+
+                if (validationResult["ok"]?.GetValue<bool>() == true)
+                {
+                    var replanned = session.BuildPlan();
+                    _log.Log($"[replan] success steps={replanned.Steps.Count} goal={Shorten(replanned.Goal, 240)}");
+                    _log.Log($"[replan] summary {PlanningJson.SerializeNodeCompact(PlanningLogFormatter.SummarizePlan(replanned))}");
+                    _observer.OnEvent(new ReplanAppliedEvent(ClonePlan(replanned)));
+                    return replanned;
+                }
+
+                retryMessage = validationResult["error"]?["message"]?.GetValue<string>()
+                    ?? "The working draft is still invalid.";
             }
-
-            var replanned = session.BuildPlan();
-            _log.Log($"[replan] success steps={replanned.Steps.Count} goal={Shorten(replanned.Goal, 240)}");
-            _log.Log($"[replan] summary {PlanningJson.SerializeNodeCompact(PlanningLogFormatter.SummarizePlan(replanned))}");
-            _observer.OnEvent(new ReplanAppliedEvent(ClonePlan(replanned)));
-            return replanned;
+            catch (Exception ex) when (round < MaxRounds)
+            {
+                lastToolResults = runtime.GetInvocationResultsSnapshot();
+                retryMessage = ex.Message;
+                _log.Log($"[replan] round={round} error={Shorten(ex.Message, 240)}");
+                _observer.OnEvent(new DiagnosticPlanRunEvent("replanner", $"Round {round} failed: {Shorten(ex.Message, 240)}"));
+            }
+            catch (Exception ex)
+            {
+                throw new InvalidOperationException(
+                    $"Replanner could not produce a valid plan after {round} rounds. Last error: {ex.Message}",
+                    ex);
+            }
         }
 
         throw new InvalidOperationException($"Replanner could not produce a valid plan after {MaxRounds} rounds.");
     }
 
-    private async Task<ReplanActionBatch> GenerateActionBatchAsync(
+    private static async Task<string> GenerateRoundCompletionAsync(
         ChatClientAgent agent,
         string roundPrompt,
         CancellationToken cancellationToken)
     {
-        Exception? lastError = null;
-        var currentPrompt = roundPrompt;
-
-        for (var attempt = 1; attempt <= MaxResponseAttempts; attempt++)
+        var runOptions = new ChatClientAgentRunOptions(new ChatOptions
         {
-            try
-            {
-                var response = await agent.RunAsync<ResultEnvelope<ReplanActionBatch>>(currentPrompt, null, JsonOptions, null, cancellationToken);
-                var envelope = response.Result
-                    ?? throw new InvalidOperationException("Replanner returned an empty response envelope.");
-                var actionBatch = envelope.GetRequiredDataOrThrow("Replanner");
-                ValidateActionBatch(actionBatch);
-                return actionBatch;
-            }
-            catch (Exception ex) when (attempt < MaxResponseAttempts)
-            {
-                lastError = ex;
-                _log.Log($"[replan] response:retry attempt={attempt} error={Shorten(ex.Message, 240)}");
-                _observer.OnEvent(new DiagnosticPlanRunEvent("replanner", $"Response retry {attempt}: {Shorten(ex.Message, 240)}"));
-                currentPrompt = BuildRepairPrompt(roundPrompt, ex.Message);
-            }
-            catch (Exception ex)
-            {
-                lastError = ex;
-                break;
-            }
-        }
-
-        throw new InvalidOperationException(
-            $"Replanner did not return a valid action batch after {MaxResponseAttempts} attempts. Last error: {lastError?.Message}",
-            lastError);
-    }
-
-    private static void ValidateActionBatch(ReplanActionBatch actionBatch)
-    {
-        if (!actionBatch.Done && actionBatch.Actions.Count == 0)
-            throw new InvalidOperationException("Replanner must return at least one action when 'done' is false.");
-
-        foreach (var action in actionBatch.Actions)
-        {
-            if (string.IsNullOrWhiteSpace(action.Tool))
-                throw new InvalidOperationException("Each action must include 'tool'.");
-        }
+            ToolMode = ChatToolMode.RequireAny,
+            AllowMultipleToolCalls = true
+        });
+        var response = await agent.RunAsync(
+            roundPrompt,
+            null,
+            runOptions,
+            cancellationToken);
+        return response.Text?.Trim() ?? string.Empty;
     }
 
     private static string BuildSystemPrompt(IReadOnlyCollection<AppToolDescriptor> workflowTools)
@@ -141,39 +128,29 @@ public sealed class LlmReplanner(
         var sb = new StringBuilder();
         sb.AppendLine("You are a replanning agent.");
         sb.AppendLine("You do NOT generate a full plan directly.");
-        sb.AppendLine("You repair the working plan by calling plan-editing tools.");
-        sb.AppendLine("Return ONLY JSON. No markdown. No prose outside the JSON.");
+        sb.AppendLine("You repair the working plan by using real plan-editing tools and runtime inspection tools.");
+        sb.AppendLine("Use the tools directly, then finish with one short plain-text completion note. Do not return JSON.");
         sb.AppendLine();
-        sb.AppendLine("Your response must use this exact top-level shape:");
-        sb.AppendLine("{");
-        sb.AppendLine("  \"ok\": true|false,");
-        sb.AppendLine("  \"data\": <action-batch|null>,");
-        sb.AppendLine("  \"error\": null|{");
-        sb.AppendLine("    \"code\": \"string\",");
-        sb.AppendLine("    \"message\": \"string\",");
-        sb.AppendLine("    \"details\": { }|null");
-        sb.AppendLine("  }");
-        sb.AppendLine("}");
+        sb.AppendLine("You MUST inspect or edit the working plan by calling tools. Do not describe edit actions in JSON.");
         sb.AppendLine();
-        sb.AppendLine("When replanning succeeds, return ok=true, error=null, and put the action batch into data.");
-        sb.AppendLine("When replanning fails, return ok=false, data=null, and put the failure reason into error.");
-        sb.AppendLine();
-        sb.AppendLine("The action batch inside data must have this exact shape:");
-        sb.AppendLine("{");
-        sb.AppendLine("  \"done\": true|false,");
-        sb.AppendLine("  \"reason\": \"short explanation\",");
-        sb.AppendLine("  \"actions\": [");
-        sb.AppendLine("    { \"tool\": \"plan.readStep|plan.replaceStep|plan.addSteps|plan.resetFrom|runtime.readFailedTrace\", \"in\": { ... } }");
-        sb.AppendLine("  ]");
-        sb.AppendLine("}");
+        sb.AppendLine("Available tools:");
+        sb.AppendLine($"- {PlanningAgentToolNames.PlanReadStep}(stepId)");
+        sb.AppendLine($"- {PlanningAgentToolNames.PlanReplaceStep}(stepId, step)");
+        sb.AppendLine($"- {PlanningAgentToolNames.PlanAddSteps}(afterStepId, steps)");
+        sb.AppendLine($"- {PlanningAgentToolNames.PlanResetFrom}(stepId)");
+        sb.AppendLine($"- {PlanningAgentToolNames.PlanValidateDraft}()");
+        sb.AppendLine($"- {PlanningAgentToolNames.RuntimeReadFailedTrace}(stepId)");
         sb.AppendLine();
         sb.AppendLine("Rules:");
         sb.AppendLine("- Use the existing working plan as the source of truth.");
         sb.AppendLine("- The working plan already contains per-step execution state in s/res/err.");
         sb.AppendLine("- Prefer the smallest correct repair.");
         sb.AppendLine("- Reuse successful upstream steps whenever possible.");
+        sb.AppendLine($"- The ONLY valid way to mutate the draft is by calling {PlanningAgentToolNames.PlanReplaceStep} or {PlanningAgentToolNames.PlanAddSteps}.");
+        sb.AppendLine($"- For {PlanningAgentToolNames.PlanReplaceStep}, the 'step' argument must be the FULL replacement plan step object, not a diff and not a summary.");
+        sb.AppendLine("- Never paste previous tool outputs like before/after/diff/position back into a replacement step.");
         sb.AppendLine("- Do not repeat a failed extraction/comparison prompt unchanged when the failure data explains what was missing.");
-        sb.AppendLine("- Use runtime.readFailedTrace(stepId) when you need the compact structured details of a failed step.");
+        sb.AppendLine($"- Use {PlanningAgentToolNames.RuntimeReadFailedTrace}(stepId) when you need the compact structured details of a failed step.");
         sb.AppendLine("- Do not add, estimate, normalize, or impute exact factual values that are missing from executed evidence.");
         sb.AppendLine("- When the user request needs precise facts and those facts are missing, repair the plan by retrieving better evidence, narrowing scope, or preserving a blocked/missing contract.");
         sb.AppendLine("- Search and download steps return pages/documents, not chosen entities. If the failure indicates ambiguity or multiple candidates, repair the entity-selection strategy, not just the extraction schema.");
@@ -183,12 +160,10 @@ public sealed class LlmReplanner(
         sb.AppendLine("- Unless the user explicitly asked for official pages, docs pages, or repo pages, do NOT add that requirement during repair.");
         sb.AppendLine("- If a failed shortlist/select step demanded official pages but the user did not ask for them, repair by reusing current candidate result URLs or by loosening that unnecessary requirement instead of adding more searches.");
         sb.AppendLine("- Do not weaken an upstream field from required/non-null to nullable if a downstream tool input still requires a non-null value. Repair the evidence plan instead.");
-        sb.AppendLine("- If the failed trace has type='missing' and your edit removes that requirement or makes it optional, finish with done=true instead of iterating further.");
-        sb.AppendLine("- plan.resetFrom(stepId) resets execution state for that step and all downstream steps so the executor will rerun them.");
-        sb.AppendLine("- plan.replaceStep(stepId, step) replaces exactly one existing step in place.");
-        sb.AppendLine("- plan.addSteps(afterStepId, steps) inserts new steps after the specified step. Use afterStepId=null only when rebuilding from an empty draft.");
-        sb.AppendLine("- plan.readStep(stepId) returns the current JSON of one step.");
-        sb.AppendLine("- When you are confident the working draft is ready, set done=true. You may include final edit actions in the same response.");
+        sb.AppendLine("- If the failed trace has type='missing' and your edit removes that requirement or makes it optional, stop iterating and finish with a short completion note.");
+        sb.AppendLine($"- {PlanningAgentToolNames.PlanResetFrom}(stepId) resets execution state for that step and all downstream steps so the executor will rerun them.");
+        sb.AppendLine($"- {PlanningAgentToolNames.PlanValidateDraft}() returns whether the current working draft passes structural validation.");
+        sb.AppendLine("- When you are confident the working draft is ready, return one short plain-text sentence like 'Replan repaired.'");
         sb.AppendLine();
         sb.AppendLine("Plan step rules:");
         sb.AppendLine("- A step must have exactly one of 'tool' or 'llm'.");
@@ -202,8 +177,9 @@ public sealed class LlmReplanner(
         sb.AppendLine("- mode='map' means run the step once per array element.");
         sb.AppendLine("- If a tool returns an object containing an array field, bind from that field directly (for example, {\"from\":\"$search.results\",\"mode\":\"map\"}).");
         sb.AppendLine("- If a downstream tool needs a projected array field, express it explicitly in the ref (for example, {\"from\":\"$search.results[].url\",\"mode\":\"map\"}).");
-        sb.AppendLine("- When chaining search-style results into download-style tools, prefer binding the whole array field into input key 'page' so download preserves metadata and adds content.");
-        sb.AppendLine("- Download-style tools may return the original page object enriched with 'content'.");
+        sb.AppendLine("- When chaining search-style results into download-style tools, use input key 'page' when you have full page-reference objects, or input key 'url' when you only have raw URLs.");
+        sb.AppendLine("- A download-style tool's 'page' input is a page-reference object that must contain at least 'url'; title and other search metadata may be optional.");
+        sb.AppendLine("- Download-style tools may return the page reference enriched with 'content'.");
         sb.AppendLine("- For download-style tools, pass exactly one of 'page' or 'url'. Do not send both.");
         sb.AppendLine("- For extraction tasks, prefer a per-item binding with mode='map'.");
         sb.AppendLine("- If a page may mention multiple entities and the extractor must return one entity, provide an explicit target entity input (for example model/package/library name).");
@@ -234,7 +210,8 @@ public sealed class LlmReplanner(
         PlannerReplanRequest request,
         PlanEditingSession session,
         int round,
-        JsonArray? lastActionResults)
+        JsonArray? lastToolResults,
+        string? retryMessage)
     {
         var context = new JsonObject
         {
@@ -245,35 +222,20 @@ public sealed class LlmReplanner(
             ["executionSummary"] = BuildExecutionSummary(request.ExecutionResult),
             ["failedTraceHints"] = BuildFailedTraceHints(request.ExecutionResult),
             ["workingPlan"] = session.GetCurrentPlanJson(),
-            ["lastActionResults"] = lastActionResults?.DeepClone() ?? new JsonArray()
+            ["lastToolResults"] = lastToolResults?.DeepClone() ?? new JsonArray()
         };
 
-        return $"Repair the working plan using the plan-editing tools.\n\nReplanning context:\n{PlanningJson.SerializeNodeIndented(context)}";
-    }
-
-    private static string BuildRepairPrompt(string originalPrompt, string errorMessage) =>
-        $"{originalPrompt}\n\nYour previous response was invalid.\nValidation error: {errorMessage}\n\nReturn a corrected ResultEnvelope<ReplanActionBatch> as JSON only and follow the exact schema.\nWhen rewriting step inputs, keep dynamic refs inside binding objects. For llm steps, if input shape matters, you may add inline field \"type\" inside the binding object, for example {{\"from\":\"$search.results\",\"mode\":\"value\",\"type\":\"array<object>\"}}. Do not invent helper wrappers like {{\"value\":...}}.";
-
-    private static JsonArray ExecuteActions(
-        PlanEditingSession session,
-        PlannerReplanRequest request,
-        IReadOnlyCollection<ReplanAction> actions)
-    {
-        var results = new JsonArray();
-
-        foreach (var action in actions)
+        var prompt = $"Repair the working plan using the plan-editing tools.\n\nReplanning context:\n{PlanningJson.SerializeNodeIndented(context)}";
+        if (!string.IsNullOrWhiteSpace(retryMessage))
         {
-            results.Add(string.Equals(action.Tool, "runtime.readFailedTrace", StringComparison.Ordinal)
-                ? ExecuteRuntimeReadFailedTrace(request, action)
-                : session.ExecuteAction(action.Tool, action.Input));
+            prompt += $"\n\nPrevious round issue:\n{retryMessage}\nContinue from the CURRENT working plan above. Do not restart from the original failed draft.";
         }
 
-        return results;
+        return prompt;
     }
 
-    private static JsonObject ExecuteRuntimeReadFailedTrace(PlannerReplanRequest request, ReplanAction action)
+    private static JsonObject ExecuteRuntimeReadFailedTrace(PlannerReplanRequest request, string? stepId)
     {
-        var stepId = action.Input["stepId"]?.GetValue<string>()?.Trim();
         if (string.IsNullOrWhiteSpace(stepId))
             return CreateToolFailure("tool_error", "Action input 'stepId' is required.", "runtime.readFailedTrace");
 
@@ -376,52 +338,6 @@ public sealed class LlmReplanner(
         }
     };
 
-    private static void AppendDraftValidationResult(
-        PlanEditingSession session,
-        IReadOnlyCollection<AppToolDescriptor> workflowTools,
-        JsonArray actionResults)
-    {
-        try
-        {
-            var draft = session.BuildPlan();
-            if (PlanValidator.TryValidate(draft, workflowTools, out var validationIssue))
-            {
-                actionResults.Add(new JsonObject
-                {
-                    ["tool"] = "plan.validateDraft",
-                    ["ok"] = true
-                });
-            }
-            else
-            {
-                actionResults.Add(new JsonObject
-                {
-                    ["tool"] = "plan.validateDraft",
-                    ["ok"] = false,
-                    ["error"] = new JsonObject
-                    {
-                        ["code"] = "invalid_plan",
-                        ["message"] = validationIssue!.Message,
-                        ["details"] = JsonSerializer.SerializeToNode(validationIssue, JsonOptions)
-                    }
-                });
-            }
-        }
-        catch (Exception ex)
-        {
-            actionResults.Add(new JsonObject
-            {
-                ["tool"] = "plan.validateDraft",
-                ["ok"] = false,
-                ["error"] = new JsonObject
-                {
-                    ["code"] = "invalid_plan",
-                    ["message"] = ex.Message
-                }
-            });
-        }
-    }
-
     private static JsonNode? SerializeElementToNode(JsonElement? element) =>
         element is null ? null : JsonSerializer.SerializeToNode(element.Value);
 
@@ -453,27 +369,4 @@ public sealed class LlmReplanner(
             GoalVerdict = request.GoalVerdict
         };
 
-    private sealed class ReplanActionBatch
-    {
-        [JsonRequired]
-        [JsonPropertyName("done")]
-        public bool Done { get; init; }
-
-        [JsonPropertyName("reason")]
-        public string Reason { get; init; } = string.Empty;
-
-        [JsonRequired]
-        [JsonPropertyName("actions")]
-        public List<ReplanAction> Actions { get; init; } = [];
-    }
-
-    private sealed class ReplanAction
-    {
-        [JsonRequired]
-        [JsonPropertyName("tool")]
-        public string Tool { get; init; } = string.Empty;
-
-        [JsonPropertyName("in")]
-        public JsonObject Input { get; init; } = [];
-    }
 }

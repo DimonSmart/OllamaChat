@@ -14,6 +14,7 @@ using ChatClient.Api.Services.BuiltIn;
 using ChatClient.Domain.Models;
 using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
+using ModelContextProtocol.Protocol;
 
 namespace ChatClient.Tests;
 
@@ -546,7 +547,7 @@ public class PlanningRuntimeContractsTests
         var result = await BuiltInWebToolLogic.DownloadAsync(
             httpClientFactory.Object,
             NullLogger.Instance,
-            new WebDownloadInput(new WebSearchResult(
+            new WebDownloadInput(new WebDownloadPageRef(
                 Url: "https://example.com/item-a",
                 Title: "Search title",
                 Snippet: "Search snippet",
@@ -561,6 +562,66 @@ public class PlanningRuntimeContractsTests
         Assert.Equal("Search snippet", result.Snippet);
         Assert.Equal("Example", result.SiteName);
         Assert.Equal("Downloaded page title Example body text.", result.Content);
+    }
+
+    [Fact]
+    public async Task BuiltInWebDownloadLogic_ThrowsStructuredHttpError_WhenRemoteSiteRejectsRequest()
+    {
+        var handler = new SequenceHttpMessageHandler(
+        [
+            _ => new HttpResponseMessage(HttpStatusCode.Forbidden),
+            _ => new HttpResponseMessage(HttpStatusCode.Forbidden),
+            _ => new HttpResponseMessage(HttpStatusCode.Forbidden)
+        ]);
+
+        var httpClientFactory = new Mock<IHttpClientFactory>();
+        httpClientFactory
+            .Setup(factory => factory.CreateClient(It.IsAny<string>()))
+            .Returns(new HttpClient(handler));
+
+        var exception = await Assert.ThrowsAsync<WebToolException>(() => BuiltInWebToolLogic.DownloadAsync(
+            httpClientFactory.Object,
+            NullLogger.Instance,
+            new WebDownloadInput(Url: "https://example.com/protected")));
+
+        Assert.Equal("download_http_error", exception.Code);
+        Assert.Equal("download", exception.Details.Operation);
+        Assert.Equal("example.com", exception.Details.Host);
+        Assert.Equal(403, exception.Details.HttpStatusCode);
+        Assert.False(exception.Details.Retryable);
+        Assert.True(exception.Details.NeedsReplan);
+        Assert.Contains(exception.Details.Details, detail => string.Equals(detail, "httpStatusCode=403", StringComparison.Ordinal));
+        Assert.Contains(exception.Details.Details, detail => string.Equals(detail, "retryable=false", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task BuiltInWebMcpServerTools_DownloadAsync_ReturnsStructuredErrorResult_WhenDownloadFails()
+    {
+        var handler = new SequenceHttpMessageHandler(
+        [
+            _ => new HttpResponseMessage(HttpStatusCode.Forbidden),
+            _ => new HttpResponseMessage(HttpStatusCode.Forbidden),
+            _ => new HttpResponseMessage(HttpStatusCode.Forbidden)
+        ]);
+
+        var httpClientFactory = new Mock<IHttpClientFactory>();
+        httpClientFactory
+            .Setup(factory => factory.CreateClient(It.IsAny<string>()))
+            .Returns(new HttpClient(handler));
+
+        var result = await BuiltInWebMcpServerTools.DownloadAsync(
+            httpClientFactory.Object,
+            NullLogger<BuiltInWebMcpServerTools>.Instance,
+            url: "https://example.com/protected");
+
+        var toolResult = Assert.IsType<CallToolResult>(result);
+        Assert.True(toolResult.IsError);
+        var structured = Assert.IsType<JsonObject>(toolResult.StructuredContent);
+        Assert.Equal("download_http_error", structured["code"]?.GetValue<string>());
+        Assert.Equal("example.com", structured["host"]?.GetValue<string>());
+        Assert.Equal(false, structured["retryable"]?.GetValue<bool>());
+        Assert.Equal(403, structured["httpStatusCode"]?.GetValue<int>());
+        Assert.Equal(true, structured["needsReplan"]?.GetValue<bool>());
     }
 
     [Fact]
@@ -641,6 +702,77 @@ public class PlanningRuntimeContractsTests
 
         Assert.All(result.StepTraces, trace => Assert.True(trace.Success));
         Assert.Equal(["Item A", "Item B"], downloadTool.ReceivedTitles);
+    }
+
+    [Fact]
+    public void PlanValidator_AcceptsPageBinding_WhenToolSchemaUsesOneOfAndPageRequiresUrlOnly()
+    {
+        var plan = new PlanDefinition
+        {
+            Goal = "Download full search result objects.",
+            Steps =
+            [
+                new PlanStep
+                {
+                    Id = "searchPages",
+                    Tool = SearchToolName,
+                    In = new Dictionary<string, JsonNode?>
+                    {
+                        ["query"] = JsonValue.Create("example")
+                    }
+                },
+                new PlanStep
+                {
+                    Id = "downloadPages",
+                    Tool = DownloadToolName,
+                    In = new Dictionary<string, JsonNode?>
+                    {
+                        ["page"] = Ref("$searchPages.results", mode: "map")
+                    }
+                }
+            ]
+        };
+
+        PlanValidator.ValidateOrThrow(
+            plan,
+            [CreateStaticSearchDescriptor(), CreateStrictDownloadDescriptor()]);
+    }
+
+    [Fact]
+    public void PlanValidator_RejectsDownloadInput_WhenOneOfMatchesMultipleAlternatives()
+    {
+        var plan = new PlanDefinition
+        {
+            Goal = "Download search result.",
+            Steps =
+            [
+                new PlanStep
+                {
+                    Id = "searchPages",
+                    Tool = SearchToolName,
+                    In = new Dictionary<string, JsonNode?>
+                    {
+                        ["query"] = JsonValue.Create("example")
+                    }
+                },
+                new PlanStep
+                {
+                    Id = "downloadPages",
+                    Tool = DownloadToolName,
+                    In = new Dictionary<string, JsonNode?>
+                    {
+                        ["page"] = Ref("$searchPages.results[0]"),
+                        ["url"] = JsonValue.Create("https://example.com/item-a")
+                    }
+                }
+            ]
+        };
+
+        var exception = Assert.Throws<InvalidOperationException>(() => PlanValidator.ValidateOrThrow(
+            plan,
+            [CreateStaticSearchDescriptor(), CreateStrictDownloadDescriptor()]));
+
+        Assert.Contains("multiple oneOf schema alternatives", exception.Message, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -748,7 +880,7 @@ public class PlanningRuntimeContractsTests
 
         var exception = Assert.Throws<InvalidOperationException>(() => PlanValidator.ValidateOrThrow(plan, [CreateStaticSearchDescriptor()]));
 
-        Assert.Contains("source step 'searchPages' produces object", exception.Message, StringComparison.Ordinal);
+        Assert.Contains("bound source schema produces object", exception.Message, StringComparison.Ordinal);
         Assert.Contains("expects string", exception.Message, StringComparison.Ordinal);
     }
 
@@ -1762,6 +1894,49 @@ public class PlanningRuntimeContractsTests
 
         return new PageRecordingDownloadDescriptor(descriptor, receivedTitles);
     }
+
+    private static AppToolDescriptor CreateStrictDownloadDescriptor() =>
+        CreateDescriptor(
+            serverName: "mock-web",
+            toolName: "download",
+            description: "Download by page reference or URL.",
+            inputSchemaJson: """
+                {
+                  "type": "object",
+                  "properties": {
+                    "page": {
+                      "type": "object",
+                      "properties": {
+                        "url": { "type": "string" },
+                        "title": { "type": ["string", "null"] }
+                      },
+                      "required": ["url"]
+                    },
+                    "url": { "type": "string" }
+                  },
+                  "oneOf": [
+                    { "required": ["page"] },
+                    { "required": ["url"] }
+                  ]
+                }
+                """,
+            outputSchemaJson: """
+                {
+                  "type": "object",
+                  "properties": {
+                    "url": { "type": "string" },
+                    "title": { "type": "string" },
+                    "content": { "type": "string" }
+                  },
+                  "required": ["url", "title", "content"]
+                }
+                """,
+            execute: arguments => new
+            {
+                url = GetRequiredString(arguments, "url"),
+                title = "Example title",
+                content = "content"
+            });
 
     private static AppToolDescriptor CreateDescriptor(
         string serverName,

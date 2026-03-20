@@ -119,7 +119,11 @@ internal static class BuiltInWebToolLogic
         CancellationToken cancellationToken = default)
     {
         if (!TryResolveSource(input, out var targetUri, out var page, out var errorMessage))
-            throw new InvalidOperationException(errorMessage);
+            throw CreateDownloadFailure(
+                code: "download_invalid_input",
+                message: errorMessage,
+                targetUri: null,
+                retryable: false);
 
         try
         {
@@ -154,16 +158,111 @@ internal static class BuiltInWebToolLogic
                 ThumbnailUrl: page?.ThumbnailUrl,
                 Position: page?.Position);
         }
+        catch (WebToolException)
+        {
+            throw;
+        }
         catch (TaskCanceledException ex) when (!cancellationToken.IsCancellationRequested)
         {
             logger.LogWarning(ex, "Web download timed out for URL {Url}", targetUri);
-            throw new InvalidOperationException("Timed out while downloading the page.", ex);
+            throw CreateDownloadFailure(
+                code: "download_timeout",
+                message: "Timed out while downloading the page.",
+                targetUri: targetUri,
+                retryable: true,
+                exception: ex);
+        }
+        catch (HttpRequestException ex)
+        {
+            logger.LogWarning(ex, "Web download failed for URL {Url}", targetUri);
+            throw CreateDownloadFailure(
+                code: ex.StatusCode is HttpStatusCode.TooManyRequests
+                    ? "download_rate_limited"
+                    : "download_http_error",
+                message: BuildHttpErrorMessage(ex, targetUri),
+                targetUri: targetUri,
+                retryable: IsRetryableHttpFailure(ex.StatusCode),
+                exception: ex,
+                statusCode: ex.StatusCode);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
             logger.LogWarning(ex, "Web download failed for URL {Url}", targetUri);
-            throw new InvalidOperationException(ex.Message, ex);
+            throw CreateDownloadFailure(
+                code: "download_failed",
+                message: string.IsNullOrWhiteSpace(ex.Message)
+                    ? "Download failed for an unknown reason."
+                    : ex.Message,
+                targetUri: targetUri,
+                retryable: false,
+                exception: ex);
         }
+    }
+
+    private static WebToolException CreateDownloadFailure(
+        string code,
+        string message,
+        Uri? targetUri,
+        bool retryable,
+        Exception? exception = null,
+        HttpStatusCode? statusCode = null)
+    {
+        var detailItems = new List<string>();
+        if (targetUri is not null)
+        {
+            detailItems.Add($"url={targetUri}");
+            detailItems.Add($"host={targetUri.Host}");
+        }
+
+        if (statusCode is not null)
+            detailItems.Add($"httpStatusCode={(int)statusCode.Value}");
+
+        detailItems.Add($"retryable={retryable.ToString().ToLowerInvariant()}");
+
+        if (!string.IsNullOrWhiteSpace(exception?.Message))
+            detailItems.Add($"technical={NormalizeDiagnosticText(exception.Message)}");
+
+        var details = new WebToolErrorDetails(
+            Operation: "download",
+            Status: "blocked",
+            NeedsReplan: !retryable,
+            Type: "error",
+            Details: detailItems,
+            Url: targetUri?.ToString(),
+            Host: targetUri?.Host,
+            Retryable: retryable,
+            HttpStatusCode: statusCode is null ? null : (int)statusCode.Value,
+            TechnicalMessage: NormalizeDiagnosticText(exception?.Message),
+            ExceptionType: exception?.GetType().Name);
+
+        return new WebToolException(code, message, details, exception);
+    }
+
+    private static string BuildHttpErrorMessage(HttpRequestException exception, Uri targetUri)
+    {
+        if (exception.StatusCode is null)
+            return $"HTTP request failed while downloading '{targetUri}'.";
+
+        return $"Download failed with HTTP {(int)exception.StatusCode.Value} {exception.StatusCode.Value}.";
+    }
+
+    private static bool IsRetryableHttpFailure(HttpStatusCode? statusCode) =>
+        statusCode switch
+        {
+            null => true,
+            HttpStatusCode.RequestTimeout => true,
+            HttpStatusCode.TooManyRequests => true,
+            HttpStatusCode.BadGateway => true,
+            HttpStatusCode.ServiceUnavailable => true,
+            HttpStatusCode.GatewayTimeout => true,
+            _ when (int)statusCode.Value >= 500 => true,
+            _ => false
+        };
+
+    private static string? NormalizeDiagnosticText(string? value)
+    {
+        var normalized = NormalizeText(value);
+        return string.IsNullOrWhiteSpace(normalized) ? null : normalized;
     }
 
     private static List<WebSearchResult> ExtractStructuredResults(string html, int limit)
@@ -225,7 +324,7 @@ internal static class BuiltInWebToolLogic
     private static bool TryResolveSource(
         WebDownloadInput input,
         out Uri targetUri,
-        out WebSearchResult? page,
+        out WebDownloadPageRef? page,
         out string errorMessage)
     {
         targetUri = default!;
@@ -606,11 +705,20 @@ internal static class BuiltInWebToolLogic
 
                 if (response.StatusCode == HttpStatusCode.TooManyRequests)
                 {
-                    throw new InvalidOperationException(
-                        $"Web request to '{url}' was rate-limited (HTTP 429) after {maxAttempts} attempts.");
+                    throw new HttpRequestException(
+                        $"Web request to '{url}' was rate-limited (HTTP 429) after {maxAttempts} attempts.",
+                        inner: null,
+                        statusCode: HttpStatusCode.TooManyRequests);
                 }
 
-                response.EnsureSuccessStatusCode();
+                if (!response.IsSuccessStatusCode)
+                {
+                    throw new HttpRequestException(
+                        $"Web request to '{url}' failed with HTTP {(int)response.StatusCode} {response.StatusCode}.",
+                        inner: null,
+                        statusCode: response.StatusCode);
+                }
+
                 return response;
             }
             catch (TaskCanceledException ex) when (!cancellationToken.IsCancellationRequested && attempt < maxAttempts)

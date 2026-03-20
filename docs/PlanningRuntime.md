@@ -201,7 +201,9 @@ The app now exposes web search/download as a built-in MCP server, and those tool
 
 - Implementation: built-in MCP server `BuiltInWebMcpServerTools` backed by `BuiltInWebToolLogic`
 - Purpose: download one page and return the original page description object enriched with normalized `content`
-- Input: either a full search-result object under `page`, or an absolute HTTP/HTTPS `url`
+- Input: exactly one of:
+  - a page-reference object under `page` that must contain at least `url` and may also include optional metadata such as `title`, `snippet`, or `siteName`
+  - an absolute HTTP/HTTPS `url`
 - Current implementation: fetches HTML, strips script/style/noscript/svg nodes with HtmlAgilityPack, normalizes whitespace, truncates text to `12000` characters, and returns a structured object with `url`, `title`, `content`, and preserved search metadata when available
 
 Both tools publish MCP output schemas and structured content, so the planner can reuse MCP metadata directly instead of maintaining a separate planner-specific schema model.

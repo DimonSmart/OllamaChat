@@ -117,7 +117,8 @@ public sealed class PlanningSessionService(
             var observer = new ActionPlanRunObserver(HandleEvent);
             var loggerSink = new ActionExecutionLogger(HandleLogLine);
             var registry = new PlanningToolCatalog(enabledTools);
-            var planner = new LlmPlanner(chatClient, registry, loggerSink, observer);
+            var initialDraftRepairer = new LlmInitialDraftRepairer(chatClient, registry, loggerSink, observer);
+            var planner = new LlmPlanner(chatClient, registry, loggerSink, observer, initialDraftRepairer);
             var replanner = new LlmReplanner(chatClient, registry, loggerSink, observer);
             var runner = new AgentStepRunner(chatClient, observer);
             var executor = new PlanExecutor(registry, runner, loggerSink, observer, mcpUserInteractionService);

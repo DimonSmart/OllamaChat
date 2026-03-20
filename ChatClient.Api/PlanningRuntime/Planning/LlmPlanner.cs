@@ -18,11 +18,13 @@ public sealed class LlmPlanner(
     IChatClient chatClient,
     PlanningToolCatalog toolCatalog,
     IExecutionLogger? executionLogger = null,
-    IPlanRunObserver? planRunObserver = null) : IPlanner
+    IPlanRunObserver? planRunObserver = null,
+    IInitialDraftRepairer? initialDraftRepairer = null) : IPlanner
 {
-    private const int MaxPlanningAttempts = 8;
+    private const int MaxDraftGenerations = 2;
     private readonly IExecutionLogger _log = executionLogger ?? NullExecutionLogger.Instance;
     private readonly IPlanRunObserver _observer = planRunObserver ?? NullPlanRunObserver.Instance;
+    private readonly IInitialDraftRepairer? _initialDraftRepairer = initialDraftRepairer;
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
         PropertyNameCaseInsensitive = true
@@ -44,8 +46,9 @@ public sealed class LlmPlanner(
         var agent = new ChatClientAgent(chatClient, systemPrompt, "planner", null, null, null, null);
         var planningPrompt = userPrompt;
         Exception? lastError = null;
+        string? previousDraftJson = null;
 
-        for (var attempt = 1; attempt <= MaxPlanningAttempts; attempt++)
+        for (var attempt = 1; attempt <= MaxDraftGenerations; attempt++)
         {
             try
             {
@@ -53,27 +56,73 @@ public sealed class LlmPlanner(
                 var envelope = response.Result
                     ?? throw new InvalidOperationException("Planner returned an empty response envelope.");
                 var plan = envelope.GetRequiredDataOrThrow("Planner");
+                previousDraftJson = PlanningJson.SerializeIndented(plan);
                 if (!PlanValidator.TryValidate(plan, tools, out var validationIssue))
-                    throw new PlanValidationException(validationIssue!);
+                {
+                    var validationException = new PlanValidationException(validationIssue!);
+                    _log.Log($"[plan] create:invalid attempt={attempt} error={Shorten(validationException.Message, 240)} issue={PlanningJson.SerializeCompact(validationIssue)}");
+                    _observer.OnEvent(new DiagnosticPlanRunEvent("planner", $"Retry {attempt}: {Shorten(validationException.Message, 240)}"));
+
+                    if (_initialDraftRepairer is not null && attempt == 1)
+                    {
+                        try
+                        {
+                            _log.Log($"[plan] create:repair attempt={attempt} issue={PlanningJson.SerializeCompact(validationIssue)}");
+                            var repaired = await _initialDraftRepairer.RepairAsync(new InitialDraftRepairRequest
+                            {
+                                UserQuery = userPrompt,
+                                AttemptNumber = attempt,
+                                DraftPlan = ClonePlan(plan),
+                                ValidationIssue = validationIssue!
+                            }, cancellationToken);
+
+                            if (!PlanValidator.TryValidate(repaired, tools, out var repairedValidationIssue))
+                                throw new PlanValidationException(repairedValidationIssue!);
+
+                            _log.Log($"[plan] create:success steps={repaired.Steps.Count} goal={Shorten(repaired.Goal, 240)}");
+                            _log.Log($"[plan] create:summary {PlanningJson.SerializeNodeCompact(PlanningLogFormatter.SummarizePlan(repaired))}");
+                            _observer.OnEvent(new PlanCreatedEvent(attempt, "plan", ClonePlan(repaired)));
+                            return repaired;
+                        }
+                        catch (Exception repairEx) when (attempt < MaxDraftGenerations)
+                        {
+                            lastError = repairEx;
+                            _log.Log($"[plan] create:repair-failed attempt={attempt} error={Shorten(repairEx.Message, 240)}");
+                            _observer.OnEvent(new DiagnosticPlanRunEvent("planner", $"Repair {attempt} failed: {Shorten(repairEx.Message, 240)}"));
+                            planningPrompt = BuildRepairPrompt(userPrompt, repairEx, previousDraftJson);
+                            continue;
+                        }
+                        catch (Exception repairEx)
+                        {
+                            lastError = repairEx;
+                            break;
+                        }
+                    }
+
+                    if (attempt < MaxDraftGenerations)
+                    {
+                        lastError = validationException;
+                        _log.Log($"[plan] create:fallback attempt={attempt + 1} reason={Shorten(validationException.Message, 240)}");
+                        _observer.OnEvent(new DiagnosticPlanRunEvent("planner", $"Fallback {attempt + 1}: {Shorten(validationException.Message, 240)}"));
+                        planningPrompt = BuildRepairPrompt(userPrompt, validationException, previousDraftJson);
+                        continue;
+                    }
+
+                    lastError = validationException;
+                    break;
+                }
 
                 _log.Log($"[plan] create:success steps={plan.Steps.Count} goal={Shorten(plan.Goal, 240)}");
                 _log.Log($"[plan] create:summary {PlanningJson.SerializeNodeCompact(PlanningLogFormatter.SummarizePlan(plan))}");
                 _observer.OnEvent(new PlanCreatedEvent(attempt, "plan", ClonePlan(plan)));
                 return plan;
             }
-            catch (PlanValidationException ex) when (attempt < MaxPlanningAttempts)
-            {
-                lastError = ex;
-                _log.Log($"[plan] create:retry attempt={attempt} error={Shorten(ex.Message, 240)} issue={PlanningJson.SerializeCompact(ex.Issue)}");
-                _observer.OnEvent(new DiagnosticPlanRunEvent("planner", $"Retry {attempt}: {Shorten(ex.Message, 240)}"));
-                planningPrompt = BuildRepairPrompt(userPrompt, ex);
-            }
-            catch (Exception ex) when (attempt < MaxPlanningAttempts)
+            catch (Exception ex) when (attempt < MaxDraftGenerations)
             {
                 lastError = ex;
                 _log.Log($"[plan] create:retry attempt={attempt} error={Shorten(ex.Message, 240)}");
                 _observer.OnEvent(new DiagnosticPlanRunEvent("planner", $"Retry {attempt}: {Shorten(ex.Message, 240)}"));
-                planningPrompt = BuildRepairPrompt(userPrompt, ex);
+                planningPrompt = BuildRepairPrompt(userPrompt, ex, previousDraftJson);
             }
             catch (Exception ex)
             {
@@ -83,7 +132,7 @@ public sealed class LlmPlanner(
         }
 
         throw new InvalidOperationException(
-            $"Planner could not produce a valid plan after {MaxPlanningAttempts} attempts. Last error: {lastError?.Message}",
+            $"Planner could not produce a valid plan after {MaxDraftGenerations} draft generations. Last error: {lastError?.Message}",
             lastError);
     }
 
@@ -166,8 +215,9 @@ public sealed class LlmPlanner(
         sb.AppendLine("- Supported binding types are: string, number, integer, boolean, object, array, array<string>, array<number>, array<integer>, array<boolean>, array<object>.");
         sb.AppendLine("- If a tool returns an object containing an array field, bind from that field directly (for example: {\"from\":\"$search.results\",\"mode\":\"map\"}).");
         sb.AppendLine("- If a downstream tool needs a projected array field, express it explicitly in the ref (for example: {\"from\":\"$search.results[].url\",\"mode\":\"map\"}).");
-        sb.AppendLine("- When chaining search-style results into download-style tools, prefer binding the whole array field into input key 'page' so metadata is preserved and download can add content.");
-        sb.AppendLine("- Download-style tools may return the original page object enriched with 'content'. Prefer consuming title/content from the download result, and keep search metadata when it adds value.");
+        sb.AppendLine("- When chaining search-style results into download-style tools, use input key 'page' when you have full page-reference objects, or input key 'url' when you only have raw URLs.");
+        sb.AppendLine("- A download-style tool's 'page' input is a page-reference object that must contain at least 'url'; title and other search metadata may be optional.");
+        sb.AppendLine("- Download-style tools may return the page reference enriched with 'content'. Prefer consuming title/content from the download result, and keep search metadata when it adds value.");
         sb.AppendLine("- For download-style tools, pass exactly one of 'page' or 'url'. Do not send both.");
         sb.AppendLine("- Tool steps must use the exact tool name listed below, including any server prefix.");
         sb.AppendLine("- Do not invent, estimate, or fill in exact factual values when the user request requires precise facts.");
@@ -226,14 +276,17 @@ public sealed class LlmPlanner(
 
     private static string BuildPlanningUserPrompt(string userQuery) => userQuery;
 
-    private static string BuildRepairPrompt(string originalUserPrompt, Exception error)
+    private static string BuildRepairPrompt(string originalUserPrompt, Exception error, string? previousDraftJson)
     {
         var errorMessage = error.Message;
         var issueBlock = error is PlanValidationException validationException
             ? $"\nValidation issue details:\n{PlanningJson.SerializeIndented(validationException.Issue)}"
             : string.Empty;
+        var previousDraftBlock = string.IsNullOrWhiteSpace(previousDraftJson)
+            ? string.Empty
+            : $"\nPrevious invalid draft plan:\n{previousDraftJson}";
 
-        return $"{originalUserPrompt}\n\nYour previous plan was invalid.\nValidation error: {errorMessage}{issueBlock}\n\nReturn a corrected ResultEnvelope<PlanDefinition> as JSON only.\nNon-negotiable requirements:\n- Follow the exact ok/data/error envelope schema.\n- Put the full plan inside data when ok=true.\n- Each step must include id, in, s, res, and err.\n- A step must have exactly one of tool or llm.\n- Every llm step must include BOTH systemPrompt AND userPrompt, including shortlist/select/extract/compare steps.\n- Each llm step must include an out object with format/aggregate/schema.\n- Do not embed $step refs inside prompts.\n- Put dynamic inputs under in using binding objects like {{\"from\":\"$step.ref\",\"mode\":\"value|map\"}}.\n- If an llm input is shape-sensitive, add inline field \"type\" inside the binding object, for example {{\"from\":\"$search.results\",\"mode\":\"value\",\"type\":\"array<object>\"}}.\n- The inline binding field \"type\" describes one resolved call input. With {{\"mode\":\"value\"}} on $search.results this is often array<object>; with {{\"mode\":\"map\"}} on $search.results this is often object.\n- Supported inline binding types are string, number, integer, boolean, object, array, array<string>, array<number>, array<integer>, array<boolean>, array<object>.\n- Literal tool inputs must be plain JSON literals, never wrapper objects like {{\"value\":...}}.\n- Search/download steps return pages, not chosen entities. If the task compares or reviews a few entities, add shortlist/selection and targeted retrieval instead of assuming top pages equal the final entities.\n- If an extraction step would read a page that may mention multiple entities, either add an explicit target entity input or add a shortlist/select step first.\n- Preserve explicit user deliverables such as links, package pages, docs pages, repo URLs, ranking, and recommendation fields.\n- Unless the user explicitly asked for official pages, documentation pages, repo URLs, or extra evidence sources, do NOT require them in shortlist/select prompts.\n- If current search results already point to usable candidate pages, shortlist and download those URLs directly instead of adding another search just to find a more official-looking page.\n- Use collect for mapped single-item extraction, flatten for mapped multi-item extraction, and single otherwise.\n- Every schema node must declare type or enum.\n- Every object property schema must declare type or enum.\n- For string outputs, either omit schema or use {{\"type\":\"string\"}}.\n- Use the exact field names from the schema.\n- Use only refs to earlier steps.\nDo not repeat the same mistake.";
+        return $"{originalUserPrompt}\n\nYour previous plan was invalid.\nValidation error: {errorMessage}{issueBlock}{previousDraftBlock}\n\nReturn a corrected ResultEnvelope<PlanDefinition> as JSON only.\nEdit the previous draft minimally when possible. Preserve correct step ids, bindings, and working structure instead of rewriting unrelated parts.\nNon-negotiable requirements:\n- Follow the exact ok/data/error envelope schema.\n- Put the full plan inside data when ok=true.\n- Each step must include id, in, s, res, and err.\n- A step must have exactly one of tool or llm.\n- Every llm step must include BOTH systemPrompt AND userPrompt, including shortlist/select/extract/compare steps.\n- Each llm step must include an out object with format/aggregate/schema.\n- Do not embed $step refs inside prompts.\n- Put dynamic inputs under in using binding objects like {{\"from\":\"$step.ref\",\"mode\":\"value|map\"}}.\n- If an llm input is shape-sensitive, add inline field \"type\" inside the binding object, for example {{\"from\":\"$search.results\",\"mode\":\"value\",\"type\":\"array<object>\"}}.\n- The inline binding field \"type\" describes one resolved call input. With {{\"mode\":\"value\"}} on $search.results this is often array<object>; with {{\"mode\":\"map\"}} on $search.results this is often object.\n- Supported inline binding types are string, number, integer, boolean, object, array, array<string>, array<number>, array<integer>, array<boolean>, array<object>.\n- Literal tool inputs must be plain JSON literals, never wrapper objects like {{\"value\":...}}.\n- Search/download steps return pages, not chosen entities. If the task compares or reviews a few entities, add shortlist/selection and targeted retrieval instead of assuming top pages equal the final entities.\n- If an extraction step would read a page that may mention multiple entities, either add an explicit target entity input or add a shortlist/select step first.\n- Preserve explicit user deliverables such as links, package pages, docs pages, repo URLs, ranking, and recommendation fields.\n- Unless the user explicitly asked for official pages, documentation pages, repo URLs, or extra evidence sources, do NOT require them in shortlist/select prompts.\n- If current search results already point to usable candidate pages, shortlist and download those URLs directly instead of adding another search just to find a more official-looking page.\n- Use collect for mapped single-item extraction, flatten for mapped multi-item extraction, and single otherwise.\n- Every schema node must declare type or enum.\n- Every object property schema must declare type or enum.\n- For string outputs, either omit schema or use {{\"type\":\"string\"}}.\n- Use the exact field names from the schema.\n- Use only refs to earlier steps.\nDo not repeat the same mistake.";
     }
 
     private static string BuildFewShotExamples() =>

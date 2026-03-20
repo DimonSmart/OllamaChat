@@ -423,9 +423,26 @@ public sealed class PlanningPipelineIntegrationTests(ITestOutputHelper output)
                     {
                       "type": "object",
                       "properties": {
-                        "page": { "type": "object" },
+                        "page": {
+                          "type": "object",
+                          "properties": {
+                            "url": { "type": "string" },
+                            "title": { "type": ["string", "null"] },
+                            "snippet": { "type": ["string", "null"] },
+                            "siteName": { "type": ["string", "null"] },
+                            "displayUrl": { "type": ["string", "null"] },
+                            "age": { "type": ["string", "null"] },
+                            "thumbnailUrl": { "type": ["string", "null"] },
+                            "position": { "type": ["integer", "null"] }
+                          },
+                          "required": ["url"]
+                        },
                         "url": { "type": "string" }
-                      }
+                      },
+                      "oneOf": [
+                        { "required": ["page"] },
+                        { "required": ["url"] }
+                      ]
                     }
                     """,
                 outputSchemaJson: """
@@ -450,9 +467,9 @@ public sealed class PlanningPipelineIntegrationTests(ITestOutputHelper output)
                     NullLogger.Instance,
                     new WebDownloadInput(
                         Page: TryGetObjectProperty(arguments, "page") is { } page
-                            ? new WebSearchResult(
+                            ? new WebDownloadPageRef(
                                 Url: TryGetStringProperty(page, "url") ?? string.Empty,
-                                Title: TryGetStringProperty(page, "title") ?? string.Empty,
+                                Title: TryGetStringProperty(page, "title"),
                                 Snippet: TryGetStringProperty(page, "snippet"),
                                 SiteName: TryGetStringProperty(page, "siteName"),
                                 DisplayUrl: TryGetStringProperty(page, "displayUrl"),

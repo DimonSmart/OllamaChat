@@ -189,23 +189,16 @@ public static partial class PlanValidator
                 toolName: toolMetadata.QualifiedName);
         }
 
-        var wholeInputSchemaIssues = ToolInputSchemaValidator.ValidateLiteralInput(
+        var wholeInputSchemaIssues = ToolInputSchemaValidator.ValidateDraftInput(
             JsonSerializer.SerializeToNode(step.In),
             toolMetadata.InputSchema);
         if (wholeInputSchemaIssues.Count > 0)
         {
-            var missingRequired = wholeInputSchemaIssues
-                .Where(issue => string.Equals(issue.Code, "input_contract_missing_required", StringComparison.Ordinal))
-                .Select(issue => issue.Message)
-                .ToList();
-            if (missingRequired.Count > 0)
-            {
-                throw CreateIssue(
-                    "tool_input_schema_mismatch",
-                    $"Tool step '{step.Id}' does not match tool schema: {string.Join(" ", missingRequired)}",
-                    stepId: step.Id,
-                    toolName: toolMetadata.QualifiedName);
-            }
+            throw CreateIssue(
+                "tool_input_schema_mismatch",
+                $"Tool step '{step.Id}' does not match tool schema: {string.Join(" ", wholeInputSchemaIssues.Select(issue => issue.Message).Distinct(StringComparer.Ordinal))}",
+                stepId: step.Id,
+                toolName: toolMetadata.QualifiedName);
         }
 
         return properties;
@@ -337,8 +330,45 @@ public static partial class PlanValidator
         JsonElement sourceSchema,
         JsonElement targetInputSchema)
     {
+        var compatibilityIssues = new List<string>();
+        ValidateSchemaCompatibility(sourceSchema, targetInputSchema, inputName, compatibilityIssues);
+        if (compatibilityIssues.Count == 0)
+            return;
+
+        throw CreateIssue(
+            "binding_tool_schema_mismatch",
+            $"Step '{stepId}' input '{inputName}' binds from '{binding.From}', but the bound source schema is incompatible with the target tool input: {string.Join(" ", compatibilityIssues)}",
+            stepId: stepId,
+            inputName: inputName,
+            bindingFrom: binding.From,
+            sourceStepId: sourceStep.Id,
+            expected: DescribeSchemaShape(targetInputSchema),
+            actual: DescribeSchemaShape(sourceSchema));
+    }
+
+    private static void ValidateSchemaCompatibility(
+        JsonElement sourceSchema,
+        JsonElement targetSchema,
+        string path,
+        List<string> issues)
+    {
+        if (TryGetCompositeVariants(targetSchema, "oneOf", out var oneOfVariants)
+            || TryGetCompositeVariants(targetSchema, "anyOf", out oneOfVariants))
+        {
+            foreach (var variant in oneOfVariants)
+            {
+                var variantIssues = new List<string>();
+                ValidateSchemaCompatibility(sourceSchema, variant, path, variantIssues);
+                if (variantIssues.Count == 0)
+                    return;
+            }
+
+            issues.Add($"Source schema at '{path}' does not satisfy any allowed input schema alternative.");
+            return;
+        }
+
         if (!PlanStepOutputContractResolver.TryGetSchemaTypes(sourceSchema, out var sourceTypes)
-            || !PlanStepOutputContractResolver.TryGetSchemaTypes(targetInputSchema, out var targetTypes))
+            || !PlanStepOutputContractResolver.TryGetSchemaTypes(targetSchema, out var targetTypes))
         {
             return;
         }
@@ -346,13 +376,8 @@ public static partial class PlanValidator
         if (sourceTypes.Contains("null", StringComparer.Ordinal)
             && !targetTypes.Contains("null", StringComparer.Ordinal))
         {
-            throw CreateIssue(
-                "binding_nullable_incompatible",
-                $"Step '{stepId}' input '{inputName}' binds from '{binding.From}', which may resolve to null, but the target tool input requires a non-null value.",
-                stepId: stepId,
-                inputName: inputName,
-                bindingFrom: binding.From,
-                sourceStepId: sourceStep.Id);
+            issues.Add($"Input '{path}' may resolve to null, but the target tool input requires a non-null value.");
+            return;
         }
 
         var nonNullSourceTypes = sourceTypes
@@ -364,18 +389,95 @@ public static partial class PlanValidator
         var incompatibleSourceTypes = nonNullSourceTypes
             .Where(sourceType => !TargetAcceptsSourceType(targetTypes, sourceType))
             .ToList();
-        if (incompatibleSourceTypes.Count == 0)
+        if (incompatibleSourceTypes.Count > 0)
+        {
+            issues.Add($"Input '{path}' expects {string.Join("|", targetTypes)}, but the bound source schema produces {string.Join("|", incompatibleSourceTypes)}.");
             return;
+        }
 
-        throw CreateIssue(
-            "binding_tool_schema_mismatch",
-            $"Step '{stepId}' input '{inputName}' binds from '{binding.From}', but source step '{sourceStep.Id}' produces {string.Join("|", nonNullSourceTypes)} while the target tool input expects {string.Join("|", targetTypes)}.",
-            stepId: stepId,
-            inputName: inputName,
-            bindingFrom: binding.From,
-            sourceStepId: sourceStep.Id,
-            expected: string.Join("|", targetTypes),
-            actual: string.Join("|", nonNullSourceTypes));
+        if (targetTypes.Contains("object", StringComparer.Ordinal)
+            && nonNullSourceTypes.Contains("object", StringComparer.Ordinal))
+        {
+            ValidateObjectSchemaCompatibility(sourceSchema, targetSchema, path, issues);
+        }
+
+        if (targetTypes.Contains("array", StringComparer.Ordinal)
+            && nonNullSourceTypes.Contains("array", StringComparer.Ordinal)
+            && sourceSchema.TryGetProperty("items", out var sourceItems)
+            && targetSchema.TryGetProperty("items", out var targetItems))
+        {
+            ValidateSchemaCompatibility(sourceItems, targetItems, $"{path}[]", issues);
+        }
+    }
+
+    private static void ValidateObjectSchemaCompatibility(
+        JsonElement sourceSchema,
+        JsonElement targetSchema,
+        string path,
+        List<string> issues)
+    {
+        if (!targetSchema.TryGetProperty("required", out var requiredElement)
+            || requiredElement.ValueKind != JsonValueKind.Array
+            || !TryGetPropertySchemas(sourceSchema, out var sourceProperties)
+            || !TryGetPropertySchemas(targetSchema, out var targetProperties))
+        {
+            return;
+        }
+
+        foreach (var requiredProperty in requiredElement.EnumerateArray())
+        {
+            var propertyName = requiredProperty.GetString();
+            if (string.IsNullOrWhiteSpace(propertyName))
+                continue;
+
+            if (!targetProperties.TryGetValue(propertyName, out var targetPropertySchema))
+                continue;
+
+            if (!sourceProperties.TryGetValue(propertyName, out var sourcePropertySchema))
+            {
+                issues.Add($"Required property '{propertyName}' is not guaranteed by the bound source schema at '{path}'.");
+                continue;
+            }
+
+            ValidateSchemaCompatibility(sourcePropertySchema, targetPropertySchema, $"{path}.{propertyName}", issues);
+        }
+    }
+
+    private static bool TryGetPropertySchemas(
+        JsonElement schema,
+        out IReadOnlyDictionary<string, JsonElement> properties)
+    {
+        if (schema.TryGetProperty("properties", out var propertiesElement)
+            && propertiesElement.ValueKind == JsonValueKind.Object)
+        {
+            properties = propertiesElement.EnumerateObject()
+                .ToDictionary(property => property.Name, property => property.Value.Clone(), StringComparer.OrdinalIgnoreCase);
+            return true;
+        }
+
+        properties = new Dictionary<string, JsonElement>(StringComparer.OrdinalIgnoreCase);
+        return false;
+    }
+
+    private static bool TryGetCompositeVariants(
+        JsonElement schema,
+        string propertyName,
+        out IReadOnlyList<JsonElement> variants)
+    {
+        variants = Array.Empty<JsonElement>();
+        if (!schema.TryGetProperty(propertyName, out var variantsElement)
+            || variantsElement.ValueKind != JsonValueKind.Array)
+        {
+            return false;
+        }
+
+        variants = variantsElement
+            .EnumerateArray()
+            .Where(static item => item.ValueKind == JsonValueKind.Object)
+            .Select(static item => item.Clone())
+            .ToArray();
+
+        return variants.Count > 0;
     }
 
     private static JsonElement ResolveBoundSourceSchemaOrThrow(
