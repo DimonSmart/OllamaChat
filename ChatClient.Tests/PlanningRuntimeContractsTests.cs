@@ -2,6 +2,7 @@ using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Net;
 using System.Net.Http.Headers;
+using ChatClient.Application.Services.Agentic;
 using ChatClient.Api.PlanningRuntime.Agents;
 using ChatClient.Api.PlanningRuntime.Common;
 using ChatClient.Api.PlanningRuntime.Execution;
@@ -209,12 +210,17 @@ public class PlanningRuntimeContractsTests
     public async Task PlanningSessionService_StartAsync_RequiresEnabledTools()
     {
         var service = CreateSessionService();
+        var plannerModel = new ServerModel(Guid.NewGuid(), "model-a");
 
         var exception = await Assert.ThrowsAsync<InvalidOperationException>(() => service.StartAsync(new PlanningRunRequest
         {
-            Model = new ServerModel(Guid.NewGuid(), "model-a"),
+            Planner = AgentDescriptionFactory.CreateResolved(
+                new AgentDescription
+                {
+                    AgentName = "Planner"
+                },
+                plannerModel),
             UserQuery = "Compare two products",
-            EnabledToolNames = []
         }));
 
         Assert.Equal("At least one planning tool must be enabled.", exception.Message);

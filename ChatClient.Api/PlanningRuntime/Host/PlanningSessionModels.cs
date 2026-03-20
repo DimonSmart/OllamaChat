@@ -1,20 +1,16 @@
 using System.Text.Json;
+using ChatClient.Application.Services.Agentic;
 using ChatClient.Api.PlanningRuntime.Common;
 using ChatClient.Api.PlanningRuntime.Execution;
 using ChatClient.Api.PlanningRuntime.Planning;
-using ChatClient.Domain.Models;
 
 namespace ChatClient.Api.PlanningRuntime.Host;
 
 public sealed class PlanningRunRequest
 {
-    public required ServerModel Model { get; init; }
+    public required ResolvedChatAgent Planner { get; init; }
 
     public required string UserQuery { get; init; }
-
-    public required IReadOnlyCollection<string> EnabledToolNames { get; init; }
-
-    public IReadOnlyCollection<McpServerSessionBinding> McpServerBindings { get; init; } = [];
 }
 
 public sealed class PlanningToolOption

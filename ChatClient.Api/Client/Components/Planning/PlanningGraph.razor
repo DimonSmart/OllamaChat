@@ -55,7 +55,7 @@
     private const double HorizontalGap = 120d;
     private const double VerticalGap = 54d;
     private const double Margin = 32d;
-    private const double ZoomMin = 0.6d;
+    private const double ZoomMin = 0.1d;
     private const double ZoomMax = 1.6d;
     private const double DefaultZoom = 1.0d;
     private const double ZoomStepFactor = 1.15d;
@@ -487,35 +487,21 @@
         if (!_fitPending || _diagram.Container is null)
             return;
 
-        var nodes = _diagram.Nodes.OfType<NodeModel>()
-            .Where(node => node.Size is not null)
-            .ToList();
-
-        if (nodes.Count == 0)
+        if (!PlanningGraphBounds.TryCreate(_diagram.Nodes.OfType<NodeModel>(), out var bounds))
             return;
-
-        var left = nodes.Min(node => node.Position.X);
-        var top = nodes.Min(node => node.Position.Y);
-        var right = nodes.Max(node => node.Position.X + node.Size!.Width);
-        var bottom = nodes.Max(node => node.Position.Y + node.Size!.Height);
-
-        var contentWidth = Math.Max(1d, right - left);
-        var contentHeight = Math.Max(1d, bottom - top);
         var viewport = _diagram.Container;
-
-        var zoom = Math.Min(
-            (viewport.Width - ViewportPadding * 2d) / contentWidth,
-            (viewport.Height - ViewportPadding * 2d) / contentHeight);
-
-        zoom = Math.Clamp(zoom, ZoomMin, ZoomMax);
-
-        var panX = (viewport.Width - contentWidth * zoom) / 2d - left * zoom;
-        var panY = (viewport.Height - contentHeight * zoom) / 2d - top * zoom;
+        var transform = PlanningGraphViewportCalculator.Fit(
+            bounds,
+            viewport.Width,
+            viewport.Height,
+            ViewportPadding,
+            ZoomMin,
+            ZoomMax);
 
         _diagram.Batch(() =>
         {
-            _diagram.SetZoom(zoom);
-            _diagram.SetPan(panX, panY);
+            _diagram.SetZoom(transform.Zoom);
+            _diagram.SetPan(transform.PanX, transform.PanY);
         });
 
         _fitPending = false;
@@ -528,11 +514,7 @@
         if (_diagram.Container is null)
             return;
 
-        var nodes = _diagram.Nodes.OfType<NodeModel>()
-            .Where(node => node.Size is not null)
-            .ToList();
-
-        if (nodes.Count == 0)
+        if (!PlanningGraphBounds.TryCreate(_diagram.Nodes.OfType<NodeModel>(), out var bounds))
         {
             _diagram.Batch(() =>
             {
@@ -542,21 +524,19 @@
             return;
         }
 
-        var left = nodes.Min(node => node.Position.X);
-        var top = nodes.Min(node => node.Position.Y);
-        var right = nodes.Max(node => node.Position.X + node.Size!.Width);
-        var bottom = nodes.Max(node => node.Position.Y + node.Size!.Height);
-        var contentWidth = Math.Max(1d, right - left);
-        var contentHeight = Math.Max(1d, bottom - top);
         var viewport = _diagram.Container;
-        var clampedZoom = Math.Clamp(zoom, ZoomMin, ZoomMax);
-        var panX = (viewport.Width - contentWidth * clampedZoom) / 2d - left * clampedZoom;
-        var panY = (viewport.Height - contentHeight * clampedZoom) / 2d - top * clampedZoom;
+        var transform = PlanningGraphViewportCalculator.Center(
+            bounds,
+            viewport.Width,
+            viewport.Height,
+            zoom,
+            ZoomMin,
+            ZoomMax);
 
         _diagram.Batch(() =>
         {
-            _diagram.SetZoom(clampedZoom);
-            _diagram.SetPan(panX, panY);
+            _diagram.SetZoom(transform.Zoom);
+            _diagram.SetPan(transform.PanX, transform.PanY);
         });
     }
 

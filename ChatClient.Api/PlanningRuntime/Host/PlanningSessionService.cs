@@ -6,6 +6,7 @@ using ChatClient.Api.PlanningRuntime.Planning;
 using ChatClient.Api.PlanningRuntime.Tools;
 using ChatClient.Api.PlanningRuntime.Verification;
 using ChatClient.Api.Services;
+using ChatClient.Domain.Models;
 
 namespace ChatClient.Api.PlanningRuntime.Host;
 
@@ -26,22 +27,18 @@ public sealed class PlanningSessionService(
     {
         if (string.IsNullOrWhiteSpace(request.UserQuery))
             throw new InvalidOperationException("User query is required.");
-        if (request.EnabledToolNames.Count == 0)
-            throw new InvalidOperationException("At least one planning tool must be enabled.");
+        var planner = request.Planner;
 
-        var requestContext = request.McpServerBindings.Count == 0
-            ? McpClientRequestContext.Empty
-            : new McpClientRequestContext(request.McpServerBindings);
-        var toolSnapshot = McpBindingToolSelectionResolver.FilterAvailableTools(
-            request.McpServerBindings,
-            await appToolCatalog.ListToolsAsync(requestContext));
-        var availableTools = toolSnapshot.ToDictionary(tool => tool.QualifiedName, StringComparer.OrdinalIgnoreCase);
-        var enabledTools = request.EnabledToolNames
-            .Distinct(StringComparer.OrdinalIgnoreCase)
-            .Select(name => availableTools.TryGetValue(name, out var tool)
-                ? tool
-                : throw new InvalidOperationException($"Planning tool '{name}' is not available."))
-            .ToList();
+        var plannerBindings = planner.Agent.McpServerBindings;
+        var hasConfiguredBindings = plannerBindings.Any(static binding => binding.Enabled && binding.HasIdentity);
+        var enabledTools = hasConfiguredBindings
+            ? McpBindingToolSelectionResolver.FilterAvailableTools(
+                plannerBindings,
+                await appToolCatalog.ListToolsAsync(new McpClientRequestContext(plannerBindings)))
+                .ToList()
+            : [];
+        if (enabledTools.Count == 0)
+            throw new InvalidOperationException("At least one planning tool must be enabled.");
         var enabledToolOptions = enabledTools
             .Select(tool => new PlanningToolOption
             {
@@ -65,7 +62,9 @@ public sealed class PlanningSessionService(
         }
         NotifyStateChanged();
 
-        _runTask = Task.Run(() => ExecuteRunAsync(request, enabledTools, _runCts.Token), _runCts.Token);
+        _runTask = Task.Run(
+            () => ExecuteRunAsync(request.UserQuery, planner.Model, enabledTools, _runCts.Token),
+            _runCts.Token);
     }
 
     public async Task CancelAsync()
@@ -107,13 +106,14 @@ public sealed class PlanningSessionService(
     }
 
     private async Task ExecuteRunAsync(
-        PlanningRunRequest request,
+        string userQuery,
+        ServerModel model,
         IReadOnlyCollection<AppToolDescriptor> enabledTools,
         CancellationToken cancellationToken)
     {
         try
         {
-            var chatClient = await chatClientFactory.CreateAsync(request.Model, cancellationToken);
+            var chatClient = await chatClientFactory.CreateAsync(model, cancellationToken);
             var observer = new ActionPlanRunObserver(HandleEvent);
             var loggerSink = new ActionExecutionLogger(HandleLogLine);
             var registry = new PlanningToolCatalog(enabledTools);
@@ -132,7 +132,7 @@ public sealed class PlanningSessionService(
                 finalAnswerVerifier: finalAnswerVerifier,
                 planRunObserver: observer);
 
-            var result = await orchestrator.RunAsync(request.UserQuery, cancellationToken);
+            var result = await orchestrator.RunAsync(userQuery, cancellationToken);
             State.FinalResult = CloneEnvelope(result);
         }
         catch (OperationCanceledException)

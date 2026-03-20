@@ -92,11 +92,22 @@
                             <em>Editor for '@chatStrategyOptions.GetType().Name' not found</em>
                         }
 
-                        <McpServerBindingsEditor Bindings="@runMcpBindings"
-                                                 BindingsChanged="OnRunMcpBindingsChanged"
-                                                 Title=""
-                                                 Description=""
-                                                 EmptyBindingsText="" />
+                        @if (selectedAgentDrafts.Count > 0)
+                        {
+                            @foreach (var agentDraft in selectedAgentDrafts)
+                            {
+                                <MudPaper Outlined="true" Class="pa-3">
+                                    <MudStack Spacing="2">
+                                        <MudText Typo="Typo.subtitle2">@agentDraft.AgentName</MudText>
+                                        <McpServerBindingsEditor Bindings="@agentDraft.McpServerBindings"
+                                                                 BindingsChanged="@(bindings => OnDraftMcpBindingsChanged(agentDraft, bindings))"
+                                                                 Title=""
+                                                                 Description=""
+                                                                 EmptyBindingsText="" />
+                                    </MudStack>
+                                </MudPaper>
+                            }
+                        }
 
                         <div>
                             <MudCheckBox @bind-Value="whiteboardEnabled"
@@ -278,7 +289,7 @@
 
     private List<AgentDescription> agents = new();
     private List<AgentDescription> selectedAgents { get; set; } = new();
-    private List<McpServerSessionBinding> runMcpBindings = [];
+    private List<AgentDescription> selectedAgentDrafts { get; set; } = new();
     private bool whiteboardEnabled = true;
     private bool isWhiteboardSupported = true;
     private string? whiteboardSupportHint;
@@ -290,12 +301,8 @@
     private string? currentModelName;
 
     private bool CanStartChat =>
-        selectedAgents.Count > 0 &&
-        selectedAgents.All(agent =>
-            ModelSelectionHelper.TryGetEffectiveModel(
-                new ServerModelSelection(agent.LlmId, agent.ModelName),
-                UiModelSelection,
-                out _));
+        selectedAgentDrafts.Count > 0 &&
+        selectedAgentDrafts.All(agent => TryResolveEffectiveModel(agent, out _));
 
     private const string RoundRobinChatStrategy = "RoundRobin";
     private const string RoundRobinSummaryChatStrategy = "RoundRobinWithSummary";
@@ -409,7 +416,8 @@
     private async Task LoadAgents()
     {
         agents = (await AgentService.GetAllAsync()).ToList();
-        selectedAgents = new List<AgentDescription>();
+        selectedAgents = [];
+        selectedAgentDrafts = [];
     }
 
     private async Task LoadUserSettings()
@@ -428,11 +436,13 @@
 
         if (userSettings.MultiAgentSelectedAgents?.Count > 0)
         {
-            selectedAgents = userSettings.MultiAgentSelectedAgents
+            var persistedAgents = userSettings.MultiAgentSelectedAgents
                 .Select(name => agents.FirstOrDefault(a => a.AgentName == name))
                 .Where(a => a is not null)
                 .Select(a => a!)
                 .ToList();
+
+            UpdateSelectedAgents(persistedAgents);
         }
     }
 
@@ -453,39 +463,30 @@
             .Select(p => p.Id)
             .ToHashSet(StringComparer.OrdinalIgnoreCase);
 
-        selectedAgents = agents
+        var savedAgents = agents
             .Where(a => assistantIds.Contains(a.AgentId))
             .ToList();
 
-        if (selectedAgents.Count == 0)
+        if (savedAgents.Count == 0)
         {
             Snackbar.Add("Agents for saved chat not found", Severity.Error);
             return;
         }
 
-        foreach (var agent in selectedAgents)
-        {
-            var configured = new ServerModelSelection(agent.LlmId, agent.ModelName);
-            var effective = ModelSelectionHelper.GetEffectiveModel(configured, UiModelSelection, $"Agent: {agent.AgentName}", Logger);
-            agent.ModelName = effective.ModelName;
-            agent.LlmId = effective.ServerId;
-        }
+        UpdateSelectedAgents(savedAgents);
 
-        var runtimeAgents = selectedAgents
-            .Select(agent => new ResolvedChatAgent(
-                agent,
-                new ServerModel(agent.LlmId!.Value, agent.ModelName!)))
-            .ToList();
+        var runtimeAgents = BuildRuntimeAgents(selectedAgentDrafts);
 
         currentModelName = runtimeAgents[0].Model.ModelName;
 
-        var modelsForSupport = selectedAgents
-            .Where(a => a.LlmId.HasValue && !string.IsNullOrWhiteSpace(a.ModelName))
-            .Select(a => (a, new ServerModel(a.LlmId!.Value, a.ModelName!)));
+        var modelsForSupport = runtimeAgents
+            .Select(static agent => (agent.Agent, agent.Model));
         await EvaluateWhiteboardSupportAsync(modelsForSupport);
 
-        var allFunctions = selectedAgents.SelectMany(a => a.FunctionSettings.SelectedFunctions ?? []).ToList();
-        var chatConfiguration = new AppChatConfiguration(currentModelName, allFunctions, whiteboardEnabled, CloneRunMcpBindings());
+        var allFunctions = runtimeAgents
+            .SelectMany(static agent => agent.Agent.FunctionSettings.SelectedFunctions ?? [])
+            .ToList();
+        var chatConfiguration = new AppChatConfiguration(currentModelName, allFunctions, whiteboardEnabled, []);
 
         var savedMessages = saved.Messages
             .Select(m =>
@@ -521,38 +522,21 @@
         if (!CanStartChat)
             return;
 
-        foreach (var agent in selectedAgents)
-        {
-            var configured = new ServerModelSelection(agent.LlmId, agent.ModelName);
-            var effectiveModel = ModelSelectionHelper.GetEffectiveModel(
-                configured,
-                UiModelSelection,
-                $"Agent: {agent.AgentName}",
-                Logger);
-
-            agent.ModelName = effectiveModel.ModelName;
-            agent.LlmId = effectiveModel.ServerId;
-        }
-
         userSettings.ChatStrategyName = chatStrategyName;
-        userSettings.MultiAgentSelectedAgents = selectedAgents.Select(a => a.AgentName).ToList();
+        userSettings.MultiAgentSelectedAgents = selectedAgentDrafts.Select(a => a.AgentName).ToList();
         await UserSettingsService.SaveSettingsAsync(userSettings);
 
-        var agentsForChat = selectedAgents.ToList();
-        var runtimeAgents = agentsForChat
-            .Select(agent => new ResolvedChatAgent(
-                agent,
-                new ServerModel(agent.LlmId!.Value, agent.ModelName!)))
-            .ToList();
+        var runtimeAgents = BuildRuntimeAgents(selectedAgentDrafts);
         currentModelName = runtimeAgents[0].Model.ModelName;
 
-        var allFunctions = agentsForChat.SelectMany(a => a.FunctionSettings.SelectedFunctions ?? []).ToList();
-        var modelsForSupport = agentsForChat
-            .Where(a => a.LlmId.HasValue && !string.IsNullOrWhiteSpace(a.ModelName))
-            .Select(a => (a, new ServerModel(a.LlmId!.Value, a.ModelName!)));
+        var allFunctions = runtimeAgents
+            .SelectMany(static agent => agent.Agent.FunctionSettings.SelectedFunctions ?? [])
+            .ToList();
+        var modelsForSupport = runtimeAgents
+            .Select(static agent => (agent.Agent, agent.Model));
         await EvaluateWhiteboardSupportAsync(modelsForSupport);
 
-        var chatConfiguration = new AppChatConfiguration(currentModelName!, allFunctions, whiteboardEnabled, CloneRunMcpBindings());
+        var chatConfiguration = new AppChatConfiguration(currentModelName!, allFunctions, whiteboardEnabled, []);
         var request = new ChatEngineSessionStartRequest
         {
             Configuration = chatConfiguration,
@@ -679,13 +663,13 @@
 
     private async Task OnSelectedAgentsChanged(IEnumerable<AgentDescription> agents)
     {
-        selectedAgents = agents.ToList();
+        UpdateSelectedAgents(agents);
         await RefreshWhiteboardSupportAsync();
     }
 
-    private Task OnRunMcpBindingsChanged(List<McpServerSessionBinding> bindings)
+    private Task OnDraftMcpBindingsChanged(AgentDescription agentDraft, List<McpServerSessionBinding> bindings)
     {
-        runMcpBindings = bindings
+        agentDraft.McpServerBindings = bindings
             .Select(static binding => binding.Clone())
             .ToList();
         return Task.CompletedTask;
@@ -693,7 +677,7 @@
 
     private async Task RefreshWhiteboardSupportAsync()
     {
-        if (selectedAgents.Count == 0)
+        if (selectedAgentDrafts.Count == 0)
         {
             isWhiteboardSupported = true;
             whiteboardSupportHint = null;
@@ -701,9 +685,9 @@
             return;
         }
 
-        var models = selectedAgents
+        var models = selectedAgentDrafts
             .Select(agent =>
-                ModelSelectionHelper.TryGetEffectiveModel(new ServerModelSelection(agent.LlmId, agent.ModelName), UiModelSelection, out var model)
+                TryResolveEffectiveModel(agent, out var model)
                     ? (agent, model)
                     : (agent, (ServerModel?)null))
             .Where(pair => pair.Item2 is not null)
@@ -752,10 +736,45 @@
         }
     }
 
-    private List<McpServerSessionBinding> CloneRunMcpBindings()
+    private bool TryResolveEffectiveModel(AgentDescription agent, out ServerModel model)
     {
-        return runMcpBindings
-            .Select(static binding => binding.Clone())
+        return ModelSelectionHelper.TryGetEffectiveModel(
+            new ServerModelSelection(agent.LlmId, agent.ModelName),
+            UiModelSelection,
+            out model);
+    }
+
+    private ServerModel GetEffectiveModel(AgentDescription agent)
+    {
+        return ModelSelectionHelper.GetEffectiveModel(
+            new ServerModelSelection(agent.LlmId, agent.ModelName),
+            UiModelSelection,
+            $"Agent: {agent.AgentName}",
+            Logger);
+    }
+
+    private List<ResolvedChatAgent> BuildRuntimeAgents(IReadOnlyCollection<AgentDescription> drafts)
+    {
+        return drafts
+            .Select(agent =>
+            {
+                var effectiveModel = GetEffectiveModel(agent);
+                return AgentDescriptionFactory.CreateResolved(agent, effectiveModel);
+            })
+            .ToList();
+    }
+
+    private void UpdateSelectedAgents(IEnumerable<AgentDescription> selected)
+    {
+        var selectedList = selected.ToList();
+        var existingDrafts = selectedAgentDrafts
+            .ToDictionary(static agent => agent.Id);
+
+        selectedAgents = selectedList;
+        selectedAgentDrafts = selectedList
+            .Select(agent => existingDrafts.TryGetValue(agent.Id, out var existingDraft)
+                ? existingDraft
+                : AgentDescriptionFactory.CreateDraft(agent))
             .ToList();
     }
 

@@ -398,7 +398,7 @@
         }
 
         selectedAgent = agentsForChat[0];
-        selectedAgentDraft = CloneAgentDraft(selectedAgent);
+        selectedAgentDraft = AgentDescriptionFactory.CreateDraft(selectedAgent);
         if (!TryResolveEffectiveModel(selectedAgentDraft, out var resolvedModel))
         {
             throw new InvalidOperationException($"Model selection for Agent: {selectedAgentDraft.AgentName} is incomplete.");
@@ -409,10 +409,10 @@
         await UpdateWhiteboardSupportAsync(effectiveModel);
 
         var resolvedAgents = agentsForChat
-            .Select(a => a.Id == selectedAgent.Id ? CloneWithResolvedModel(selectedAgentDraft, effectiveModel) : a)
+            .Select(a => a.Id == selectedAgent.Id ? AgentDescriptionFactory.CreateRuntime(selectedAgentDraft, effectiveModel) : a)
             .ToList();
         var runtimeAgents = resolvedAgents
-            .Select(agent => new ResolvedChatAgent(
+            .Select(agent => AgentDescriptionFactory.CreateResolved(
                 agent,
                 new ServerModel(agent.LlmId!.Value, agent.ModelName!)))
             .ToList();
@@ -462,10 +462,10 @@
 
         await UpdateWhiteboardSupportAsync(effectiveModel);
 
-        var resolvedAgent = CloneWithResolvedModel(selectedAgentDraft, effectiveModel);
+        var resolvedAgent = AgentDescriptionFactory.CreateRuntime(selectedAgentDraft, effectiveModel);
         var runtimeAgents = new[]
         {
-            new ResolvedChatAgent(resolvedAgent, effectiveModel)
+            AgentDescriptionFactory.CreateResolved(selectedAgentDraft, effectiveModel)
         };
 
         var functions = resolvedAgent.FunctionSettings.SelectedFunctions ?? [];
@@ -597,7 +597,7 @@
     private async Task OnAgentChanged(AgentDescription? agent)
     {
         selectedAgent = agent;
-        selectedAgentDraft = agent is null ? null : CloneAgentDraft(agent);
+        selectedAgentDraft = agent is null ? null : AgentDescriptionFactory.CreateDraft(agent);
         await RefreshWhiteboardSupportAsync();
     }
 
@@ -679,56 +679,6 @@
         }
 
         return ModelSelectionHelper.TryGetEffectiveModel(configured, UiModelSelection, out model);
-    }
-
-    private static AgentDescription CloneWithResolvedModel(AgentDescription source, ServerModel model)
-    {
-        return new AgentDescription
-        {
-            Id = source.Id,
-            AgentName = source.AgentName,
-            Content = source.Content,
-            ShortName = source.ShortName,
-            ModelName = model.ModelName,
-            LlmId = model.ServerId,
-            Temperature = source.Temperature,
-            RepeatPenalty = source.RepeatPenalty,
-            FunctionSettings = new FunctionSettings
-            {
-                AutoSelectCount = source.FunctionSettings.AutoSelectCount,
-                SelectedFunctions = [.. source.FunctionSettings.SelectedFunctions]
-            },
-            McpServerBindings = source.McpServerBindings
-                .Select(static binding => binding.Clone())
-                .ToList(),
-            CreatedAt = source.CreatedAt,
-            UpdatedAt = source.UpdatedAt
-        };
-    }
-
-    private static AgentDescription CloneAgentDraft(AgentDescription source)
-    {
-        return new AgentDescription
-        {
-            Id = source.Id,
-            AgentName = source.AgentName,
-            Content = source.Content,
-            ShortName = source.ShortName,
-            ModelName = source.ModelName,
-            LlmId = source.LlmId,
-            Temperature = source.Temperature,
-            RepeatPenalty = source.RepeatPenalty,
-            FunctionSettings = new FunctionSettings
-            {
-                AutoSelectCount = source.FunctionSettings.AutoSelectCount,
-                SelectedFunctions = [.. source.FunctionSettings.SelectedFunctions]
-            },
-            McpServerBindings = source.McpServerBindings
-                .Select(static binding => binding.Clone())
-                .ToList(),
-            CreatedAt = source.CreatedAt,
-            UpdatedAt = source.UpdatedAt
-        };
     }
 
     private async Task<McpElicitationResponse> HandleElicitationAsync(

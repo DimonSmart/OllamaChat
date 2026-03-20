@@ -380,30 +380,7 @@ public sealed class AgenticChatEngineSessionService(
 
     private static AgentDescription CreateRuntimeAgentDescription(ResolvedChatAgent resolvedAgent)
     {
-        var source = resolvedAgent.Agent;
-        var model = resolvedAgent.Model;
-
-        return new AgentDescription
-        {
-            Id = source.Id,
-            AgentName = source.AgentName,
-            Content = source.Content,
-            ShortName = source.ShortName,
-            ModelName = model.ModelName,
-            LlmId = model.ServerId,
-            Temperature = source.Temperature,
-            RepeatPenalty = source.RepeatPenalty,
-            FunctionSettings = new FunctionSettings
-            {
-                AutoSelectCount = source.FunctionSettings.AutoSelectCount,
-                SelectedFunctions = [.. source.FunctionSettings.SelectedFunctions]
-            },
-            McpServerBindings = source.McpServerBindings
-                .Select(static binding => binding.Clone())
-                .ToList(),
-            CreatedAt = source.CreatedAt,
-            UpdatedAt = source.UpdatedAt
-        };
+        return AgentDescriptionFactory.CreateRuntime(resolvedAgent.Agent, resolvedAgent.Model);
     }
 
     private static string BuildStatistics(DateTime startedAt, string modelName, int tokenCount)
