@@ -36,11 +36,6 @@ public class KernelService(
                 .ToArray();
         }
 
-        if (functionSettings.SelectedFunctions.Any())
-        {
-            return functionSettings.SelectedFunctions;
-        }
-
         return [];
     }
 

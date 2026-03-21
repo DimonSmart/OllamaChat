@@ -417,8 +417,7 @@
                 new ServerModel(agent.LlmId!.Value, agent.ModelName!)))
             .ToList();
 
-        var functions = resolvedAgents[0].FunctionSettings.SelectedFunctions ?? [];
-        var chatConfiguration = new AppChatConfiguration(CurrentModelName, functions, whiteboardEnabled, []);
+        var chatConfiguration = new AppChatConfiguration(CurrentModelName, [], whiteboardEnabled, []);
         var savedMessages = saved.Messages
             .Select(m =>
             {
@@ -468,8 +467,7 @@
             AgentDescriptionFactory.CreateResolved(selectedAgentDraft, effectiveModel)
         };
 
-        var functions = resolvedAgent.FunctionSettings.SelectedFunctions ?? [];
-        var chatConfiguration = new AppChatConfiguration(CurrentModelName, functions, whiteboardEnabled, []);
+        var chatConfiguration = new AppChatConfiguration(CurrentModelName, [], whiteboardEnabled, []);
         var request = new ChatEngineSessionStartRequest
         {
             Configuration = chatConfiguration,

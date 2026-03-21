@@ -3,6 +3,7 @@ using ChatClient.Domain.Models;
 using ChatClient.Infrastructure.Repositories;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
+using System.Text.RegularExpressions;
 
 namespace ChatClient.Tests;
 
@@ -52,10 +53,36 @@ public class AgentDescriptionServiceTests
     }
 
     [Fact]
-    public async Task CreatePrompt_PersistsModelNameFunctionsAndAutoSelectCount()
+    public async Task GetAllAsync_AssignsBindingIdsToExistingBindingsWithoutIds()
     {
         var tempFile = Path.GetTempFileName();
-        File.WriteAllText(tempFile, "[]");
+        File.WriteAllText(tempFile, """
+[
+  {
+    "Id": "24d79938-c3a3-44ae-86ed-22e4f43d9c35",
+    "AgentName": "Test",
+    "Content": "Test content",
+    "ModelName": "test-model",
+    "LlmId": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
+    "FunctionSettings": {
+      "AutoSelectCount": 3
+    },
+    "McpServerBindings": [
+      {
+        "ServerName": "srv",
+        "Enabled": true,
+        "SelectAllTools": false,
+        "SelectedTools": [
+          "fn1",
+          "fn2"
+        ],
+        "Roots": [],
+        "Parameters": {}
+      }
+    ]
+  }
+]
+""");
         try
         {
             var config = new ConfigurationBuilder()
@@ -68,33 +95,21 @@ public class AgentDescriptionServiceTests
             var repoLogger = new LoggerFactory().CreateLogger<AgentDescriptionRepository>();
             var repository = new AgentDescriptionRepository(config, repoLogger);
             var service = new AgentDescriptionService(repository);
-
-            var serverId = Guid.NewGuid();
-            var prompt = new AgentDescription
-            {
-                AgentName = "Test",
-                Content = "Test content",
-                ModelName = "test-model",
-                LlmId = serverId,
-                FunctionSettings = new FunctionSettings
-                {
-                    SelectedFunctions = ["srv:fn1", "srv:fn2"],
-                    AutoSelectCount = 3
-                }
-            };
-
-            await service.CreateAsync(prompt);
-
-            var repoReloadedLogger = new LoggerFactory().CreateLogger<AgentDescriptionRepository>();
-            var repositoryReloaded = new AgentDescriptionRepository(config, repoReloadedLogger);
-            var serviceReloaded = new AgentDescriptionService(repositoryReloaded);
-            var retrieved = await serviceReloaded.GetByIdAsync(prompt.Id);
+            var retrieved = await service.GetByIdAsync(Guid.Parse("24d79938-c3a3-44ae-86ed-22e4f43d9c35"));
 
             Assert.NotNull(retrieved);
             Assert.Equal("test-model", retrieved!.ModelName);
-            Assert.Equal(serverId, retrieved.LlmId);
-            Assert.Equal(["srv:fn1", "srv:fn2"], retrieved.FunctionSettings.SelectedFunctions);
+            Assert.Equal(Guid.Parse("3fa85f64-5717-4562-b3fc-2c963f66afa6"), retrieved.LlmId);
             Assert.Equal(3, retrieved.FunctionSettings.AutoSelectCount);
+            var binding = Assert.Single(retrieved.McpServerBindings);
+            Assert.NotNull(binding.BindingId);
+            Assert.NotEqual(Guid.Empty, binding.BindingId);
+            Assert.Equal("srv", binding.ServerName);
+            Assert.False(binding.SelectAllTools);
+            Assert.Equal(["fn1", "fn2"], binding.SelectedTools);
+
+            var persistedJson = await File.ReadAllTextAsync(tempFile);
+            Assert.Contains("\"BindingId\"", persistedJson);
         }
         finally
         {
@@ -217,6 +232,96 @@ public class AgentDescriptionServiceTests
 
             Assert.DoesNotContain(persistedAgents, static agent => agent.Id == Guid.Empty);
             Assert.Equal(3, persistedAgents.Select(static agent => agent.Id).Distinct().Count());
+        }
+        finally
+        {
+            File.Delete(tempFile);
+        }
+    }
+
+    [Fact]
+    public async Task GetAllAsync_AssignsBindingIdsAcrossMultipleBindings()
+    {
+        var tempFile = Path.GetTempFileName();
+        File.WriteAllText(tempFile, """
+[
+  {
+    "Id": "24d79938-c3a3-44ae-86ed-22e4f43d9c35",
+    "AgentName": "C# Code Assistant",
+    "Content": "Test content",
+    "FunctionSettings": {
+      "AutoSelectCount": 10
+    },
+    "McpServerBindings": [
+      {
+        "ServerId": "da46c3f1-6bc6-4f0b-bd7b-6176daf6f6d8",
+        "ServerName": "Built-in Knowledge Book MCP Server",
+        "DisplayName": "Notebook",
+        "Enabled": true,
+        "SelectAllTools": true,
+        "SelectedTools": [],
+        "Roots": [],
+        "Parameters": {
+          "knowledgeFile": "CSharp.md"
+        }
+      },
+      {
+        "ServerName": "NugetMcpServer",
+        "Enabled": true,
+        "SelectAllTools": false,
+        "SelectedTools": [
+          "SearchPackages",
+          "GetClassDefinition"
+        ],
+        "Roots": [],
+        "Parameters": {}
+      }
+    ]
+  }
+]
+""");
+
+        try
+        {
+            var config = new ConfigurationBuilder()
+                .AddInMemoryCollection(new Dictionary<string, string?>
+                {
+                    ["AgentDescriptions:FilePath"] = tempFile
+                })
+                .Build();
+
+            var repoLogger = new LoggerFactory().CreateLogger<AgentDescriptionRepository>();
+            var repository = new AgentDescriptionRepository(config, repoLogger);
+            var service = new AgentDescriptionService(repository);
+
+            var agents = (await service.GetAllAsync()).ToList();
+
+            var agent = Assert.Single(agents);
+            Assert.Equal(2, agent.McpServerBindings.Count);
+            Assert.All(agent.McpServerBindings, static binding =>
+            {
+                Assert.NotNull(binding.BindingId);
+                Assert.NotEqual(Guid.Empty, binding.BindingId);
+            });
+
+            var knowledgeBinding = Assert.Single(
+                agent.McpServerBindings,
+                binding => string.Equals(binding.ServerName, "Built-in Knowledge Book MCP Server", StringComparison.OrdinalIgnoreCase));
+            Assert.True(knowledgeBinding.SelectAllTools);
+
+            var nugetBinding = Assert.Single(
+                agent.McpServerBindings,
+                binding => string.Equals(binding.ServerName, "NugetMcpServer", StringComparison.OrdinalIgnoreCase));
+            Assert.False(nugetBinding.SelectAllTools);
+            Assert.Equal(["SearchPackages", "GetClassDefinition"], nugetBinding.SelectedTools);
+
+            var repoReloadedLogger = new LoggerFactory().CreateLogger<AgentDescriptionRepository>();
+            var repositoryReloaded = new AgentDescriptionRepository(config, repoReloadedLogger);
+            var persistedAgent = Assert.Single(await repositoryReloaded.GetAllAsync());
+            Assert.Equal(2, persistedAgent.McpServerBindings.Count);
+
+            var persistedJson = await File.ReadAllTextAsync(tempFile);
+            Assert.Equal(2, Regex.Matches(persistedJson, "\"BindingId\"").Count);
         }
         finally
         {

@@ -483,10 +483,7 @@
             .Select(static agent => (agent.Agent, agent.Model));
         await EvaluateWhiteboardSupportAsync(modelsForSupport);
 
-        var allFunctions = runtimeAgents
-            .SelectMany(static agent => agent.Agent.FunctionSettings.SelectedFunctions ?? [])
-            .ToList();
-        var chatConfiguration = new AppChatConfiguration(currentModelName, allFunctions, whiteboardEnabled, []);
+        var chatConfiguration = new AppChatConfiguration(currentModelName, [], whiteboardEnabled, []);
 
         var savedMessages = saved.Messages
             .Select(m =>
@@ -529,14 +526,11 @@
         var runtimeAgents = BuildRuntimeAgents(selectedAgentDrafts);
         currentModelName = runtimeAgents[0].Model.ModelName;
 
-        var allFunctions = runtimeAgents
-            .SelectMany(static agent => agent.Agent.FunctionSettings.SelectedFunctions ?? [])
-            .ToList();
         var modelsForSupport = runtimeAgents
             .Select(static agent => (agent.Agent, agent.Model));
         await EvaluateWhiteboardSupportAsync(modelsForSupport);
 
-        var chatConfiguration = new AppChatConfiguration(currentModelName!, allFunctions, whiteboardEnabled, []);
+        var chatConfiguration = new AppChatConfiguration(currentModelName!, [], whiteboardEnabled, []);
         var request = new ChatEngineSessionStartRequest
         {
             Configuration = chatConfiguration,

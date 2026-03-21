@@ -109,7 +109,6 @@
                                 var tooltipText = GetToolingTooltip(context.Item);
                                 var hasAttachments = HasConfiguredMcpBindings(context.Item);
                                 var isAutoSelect = context.Item.FunctionSettings.IsAutoSelectEnabled;
-                                var hasLegacyManualFunctions = context.Item.FunctionSettings.HasManualFunctions;
                             }
                             @if (hasAttachments)
                             {
@@ -118,10 +117,6 @@
                             else if (isAutoSelect)
                             {
                                 <span title="@tooltipText">@displayText</span>
-                            }
-                            else if (hasLegacyManualFunctions)
-                            {
-                                <span style="color: #4caf50; font-size: 18px; font-weight: bold;" title="@tooltipText">@displayText</span>
                             }
                             else
                             {
@@ -380,8 +375,7 @@
             RepeatPenalty = null,
             FunctionSettings = new FunctionSettings
             {
-                AutoSelectCount = 0,
-                SelectedFunctions = []
+                AutoSelectCount = 0
             },
             McpServerBindings = []
         };
@@ -498,10 +492,11 @@
             UpdatedAt = agent.UpdatedAt,
             FunctionSettings = new FunctionSettings
             {
-                AutoSelectCount = agent.FunctionSettings.AutoSelectCount,
-                SelectedFunctions = new List<string>(agent.FunctionSettings.SelectedFunctions)
+                AutoSelectCount = agent.FunctionSettings.AutoSelectCount
             },
-            McpServerBindings = await BuildEditableBindingsAsync(agent)
+            McpServerBindings = agent.McpServerBindings
+                .Select(static binding => binding.Clone())
+                .ToList()
         };
 
         editingServerModel = new ServerModelSelection(agent.LlmId, agent.ModelName);
@@ -599,52 +594,6 @@
         editingAgent.McpServerBindings = bindings;
     }
 
-    private async Task<List<McpServerSessionBinding>> BuildEditableBindingsAsync(AgentDescription agent)
-    {
-        await EnsureMcpServersLoadedAsync();
-
-        if (agent.McpServerBindings.Count > 0)
-        {
-            return agent.McpServerBindings
-                .Select(static binding => binding.Clone())
-                .ToList();
-        }
-
-        if (agent.FunctionSettings.SelectedFunctions.Count == 0)
-        {
-            return [];
-        }
-
-        var serverLookup = mcpServers
-            .Where(static server => !string.IsNullOrWhiteSpace(server.Name))
-            .GroupBy(static server => server.Name, StringComparer.OrdinalIgnoreCase)
-            .ToDictionary(static group => group.Key, static group => group.First(), StringComparer.OrdinalIgnoreCase);
-
-        return agent.FunctionSettings.SelectedFunctions
-            .Select(ParseLegacyFunctionSelection)
-            .Where(static entry => !string.IsNullOrWhiteSpace(entry.ServerName) && !string.IsNullOrWhiteSpace(entry.ToolName))
-            .GroupBy(static entry => entry.ServerName!, StringComparer.OrdinalIgnoreCase)
-            .Select(group =>
-            {
-                serverLookup.TryGetValue(group.Key, out var serverDescriptor);
-                serverDescriptor ??= mcpServers.FirstOrDefault(server => new McpServerSessionBinding { ServerName = group.Key }.Matches(server));
-                return new McpServerSessionBinding
-                {
-                    BindingId = Guid.NewGuid(),
-                    ServerId = serverDescriptor?.Id,
-                    ServerName = serverDescriptor?.Name ?? group.Key,
-                    DisplayName = "Imported",
-                    Enabled = true,
-                    SelectAllTools = false,
-                    SelectedTools = group
-                        .Select(static entry => entry.ToolName!)
-                        .Distinct(StringComparer.OrdinalIgnoreCase)
-                        .ToList()
-                };
-            })
-            .ToList();
-    }
-
     private async Task EnsureMcpServersLoadedAsync()
     {
         if (mcpServers.Count == 0)
@@ -726,7 +675,6 @@
         }
 
         editingAgent.McpServerBindings = normalizedBindings;
-        editingAgent.FunctionSettings.SelectedFunctions = [];
         return null;
     }
 
@@ -752,24 +700,6 @@
     private static string GetBindingDisplayName(McpServerSessionBinding binding, IMcpServerDescriptor serverDescriptor)
     {
         return McpBindingPresentation.GetServerDisplayName(serverDescriptor, binding);
-    }
-
-    private static (string? ServerName, string? ToolName) ParseLegacyFunctionSelection(string functionName)
-    {
-        if (string.IsNullOrWhiteSpace(functionName))
-        {
-            return (null, null);
-        }
-
-        var separatorIndex = functionName.IndexOf(':');
-        if (separatorIndex <= 0 || separatorIndex >= functionName.Length - 1)
-        {
-            return (null, null);
-        }
-
-        return (
-            functionName[..separatorIndex].Trim(),
-            functionName[(separatorIndex + 1)..].Trim());
     }
 
     private void CancelEdit()

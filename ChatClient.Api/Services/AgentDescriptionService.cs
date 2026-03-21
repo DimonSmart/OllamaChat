@@ -22,6 +22,7 @@ public class AgentDescriptionService(IAgentDescriptionRepository repository) : I
     public async Task CreateAsync(AgentDescription agentDescription)
     {
         var agents = await GetNormalizedAgentsAsync();
+        EnsureBindingIds(agentDescription);
         var usedIds = agents
             .Select(static agent => agent.Id)
             .Where(static id => id != Guid.Empty)
@@ -42,6 +43,7 @@ public class AgentDescriptionService(IAgentDescriptionRepository repository) : I
     public async Task UpdateAsync(AgentDescription agentDescription)
     {
         var agents = await GetNormalizedAgentsAsync();
+        EnsureBindingIds(agentDescription);
         var index = agents.FindIndex(p => p.Id == agentDescription.Id);
         if (index == -1)
             throw new KeyNotFoundException($"Agent with ID {agentDescription.Id} not found");
@@ -62,7 +64,9 @@ public class AgentDescriptionService(IAgentDescriptionRepository repository) : I
     private async Task<List<AgentDescription>> GetNormalizedAgentsAsync()
     {
         var agents = (await _repository.GetAllAsync()).ToList();
-        if (!NormalizeIds(agents))
+        var hasChanges = NormalizeIds(agents);
+        hasChanges = EnsureBindingIds(agents) || hasChanges;
+        if (!hasChanges)
         {
             return agents;
         }
@@ -84,6 +88,35 @@ public class AgentDescriptionService(IAgentDescriptionRepository repository) : I
             }
 
             agent.Id = GenerateUniqueId(usedIds);
+            hasChanges = true;
+        }
+
+        return hasChanges;
+    }
+
+    private static bool EnsureBindingIds(List<AgentDescription> agents)
+    {
+        var hasChanges = false;
+        foreach (var agent in agents)
+        {
+            hasChanges = EnsureBindingIds(agent) || hasChanges;
+        }
+
+        return hasChanges;
+    }
+
+    private static bool EnsureBindingIds(AgentDescription agent)
+    {
+        var hasChanges = false;
+
+        foreach (var binding in agent.McpServerBindings)
+        {
+            if (binding.BindingId is Guid bindingId && bindingId != Guid.Empty)
+            {
+                continue;
+            }
+
+            binding.BindingId = Guid.NewGuid();
             hasChanges = true;
         }
 

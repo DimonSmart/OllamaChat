@@ -112,18 +112,19 @@ Built-in MCP server `built-in-knowledge-book` хранит иерархичес�
   "AgentName": "Book Knowledge Agent",
   "ShortName": "BKA",
   "FunctionSettings": {
-    "AutoSelectCount": 0,
-    "SelectedFunctions": [
-      "Built-in Knowledge Book MCP Server:kb_list_headings",
-      "Built-in Knowledge Book MCP Server:kb_get_section",
-      "Built-in Knowledge Book MCP Server:kb_insert_section",
-      "Built-in Knowledge Book MCP Server:kb_update_section",
-      "Built-in Knowledge Book MCP Server:kb_search_sections"
-    ]
+    "AutoSelectCount": 0
   },
   "McpServerBindings": [
     {
       "ServerId": "da46c3f1-6bc6-4f0b-bd7b-6176daf6f6d8",
+      "SelectAllTools": false,
+      "SelectedTools": [
+        "kb_list_headings",
+        "kb_get_section",
+        "kb_insert_section",
+        "kb_update_section",
+        "kb_search_sections"
+      ],
       "Parameters": {
         "knowledgeFile": "C:\\Work\\Cookbook\\knowledge\\cookbook.json"
       }

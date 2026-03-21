@@ -52,8 +52,7 @@ public static class AgentDescriptionFactory
             RepeatPenalty = source.RepeatPenalty,
             FunctionSettings = new FunctionSettings
             {
-                AutoSelectCount = source.FunctionSettings.AutoSelectCount,
-                SelectedFunctions = [.. source.FunctionSettings.SelectedFunctions]
+                AutoSelectCount = source.FunctionSettings.AutoSelectCount
             },
             McpServerBindings = source.McpServerBindings
                 .Select(static binding => binding.Clone())
