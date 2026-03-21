@@ -766,7 +766,7 @@
     private static string GetBindingHeader(McpServerSessionBinding binding, IMcpServerDescriptor? server, int index)
     {
         var serverName = server?.Name ?? binding.ServerName ?? $"MCP Server {index + 1}";
-        var displayName = string.IsNullOrWhiteSpace(binding.DisplayName) ? null : binding.DisplayName.Trim();
+        var displayName = McpBindingPresentation.GetBindingLabel(binding);
 
         if (string.IsNullOrWhiteSpace(displayName) ||
             string.Equals(displayName, serverName, StringComparison.OrdinalIgnoreCase))

@@ -81,6 +81,7 @@
 - нет end-to-end покрытия для planning сценариев с реальными `McpServerBindings`, knowledge-book/file конфигурацией и проверкой merge precedence;
 - нет удобного слоя валидации и пресетов по типам серверов, например `roots` для file sandbox или `knowledgeFile` для knowledge book;
 - built-in `file-sandbox` пока не реализован, хотя модель bindings и `roots` уже подготовлены;
+- для книжного сценария пока нет отдельного file-bound markdown/document MCP с параметром вида `sourceFile`, который можно дать planner run напрямую без generic `roots`;
 - `PlanStep.Result` и `PlanningSessionState` все еще держат результаты inline, без `preview + artifactRef`;
 - shared cursor runtime, built-in `cursor` MCP, `cursor-agent` и persisted progress/resume пока отсутствуют;
 - planning runtime пока не умеет вызывать заранее настроенных агентов (`AgentDescription`) и делегировать им подзадачи; LLM step там сейчас только ad-hoc prompt без agent registry;
@@ -275,7 +276,7 @@
 
 5. `built-in-entity-knowledge`
 6. `built-in-character-knowledge`
-7. `built-in-document-linear` или `built-in-document-chunks`
+7. `built-in-markdown-document` или `built-in-document-chunks`
 
 ## Что должен уметь каждый сервер
 
@@ -448,7 +449,7 @@
 - finalizer;
 - artifact store.
 
-### Этап B. Перенести document-linear инструменты
+### Этап B. Перенести markdown-document инструменты
 
 После этого можно добавить документно-ориентированные MCP серверы:
 
@@ -529,7 +530,7 @@
 
 нужна следующая минимальная цепочка:
 
-- источник книги: `file-sandbox` или специализированный `document-linear/document-chunks` MCP;
+- источник книги: специализированный `markdown-document/document-chunks` MCP с конкретным `sourceFile`;
 - long-running чтение: `cursor` + `cursor-agent`;
 - накопление результата: `artifact-store`;
 - целевое состояние: сначала `knowledge-book`, затем `entity-knowledge`/`character-knowledge`;
@@ -538,7 +539,7 @@
 Практически это означает такой execution path:
 
 1. planning run стартует с `McpServerBindings`, где заданы:
-   - root до папки/файла книги;
+   - `sourceFile` для markdown-книги;
    - `knowledgeFile` для файла досье/knowledge state.
 2. planner строит план:
    - создать курсор по книге;
@@ -550,7 +551,7 @@
 
 Что мешает этому сценарию прямо сейчас:
 
-- нет `file-sandbox`;
+- нет `markdown-document`/`document-chunks` MCP с `sourceFile`;
 - нет `cursor`/`cursor-agent`;
 - нет artifact indirection;
 - planning run уже принимает bindings через `Planner.Agent.McpServerBindings`, но нет e2e покрытия и типовых пресетов/validation для книжного сценария;
@@ -641,6 +642,12 @@
 
 - дать безопасный доступ к файловому дереву внутри разрешенных `roots`.
 
+Примечание:
+
+- для ближайшего книжного сценария эта фаза не является обязательной;
+- если при запуске planner/document MCP получает конкретный `sourceFile`, generic `roots` не нужны;
+- `file-sandbox` остается полезным как более общий capability для папок, наборов файлов и небуквенных сценариев.
+
 Шаги:
 
 1. Реализовать built-in `file-sandbox` сервер.
@@ -715,7 +722,44 @@
 
 - LLM сможет анализировать большие корпуса, не видя их целиком.
 
-### Фаза 6. Эволюция knowledge layer поверх существующего knowledge book
+### Фаза 6. Markdown document layer для книги
+
+Цель:
+
+- дать системе не только knowledge-output surface, но и отдельный слой адресного чтения и редактирования markdown-книги.
+- в первой книжной итерации работать от конкретного `sourceFile`, переданного через binding, без обязательного `roots`.
+
+Шаги:
+
+1. Добавить `built-in-markdown-document` или `built-in-document-chunks`.
+   - session-scoped параметр: `sourceFile`
+   - этот MCP открывает только один явно заданный markdown-файл книги
+2. Определить стабильные pointer/reference модели для книги:
+   - chapter/section pointer;
+   - paragraph pointer;
+   - chunk pointer;
+   - optional semantic pointer.
+3. Добавить инструменты чтения/навигации:
+   - `open_document(source)`
+   - `list_document_nodes(documentId, scope?)`
+   - `read_document_chunk(documentId, pointer)`
+   - `create_document_cursor(documentId, scope?, batchSize?, byteBudget?)`
+4. Добавить bounded edit operations поверх markdown:
+   - `replace_section(pointer, markdown)`
+   - `insert_after(pointer, markdown)`
+   - `append_child(pointer, markdown)`
+   - `apply_patch(pointer, patch)`
+5. Определить связь document pointers с cursor runtime и artifact store, чтобы planner мог:
+   - читать книгу кусочками;
+   - копить evidence отдельно;
+   - применять адресные изменения обратно в документ.
+6. Добавить e2e сценарий "прочитай главу -> обнови раздел досье -> внеси адресную правку в markdown".
+
+Результат:
+
+- платформа получает прямую поддержку AITextEditor-подобного сценария работы с markdown-книгой, а не только побочный export через knowledge-book.
+
+### Фаза 7. Эволюция knowledge layer поверх существующего knowledge book
 
 Цель:
 
@@ -736,7 +780,7 @@
 
 - текущая knowledge book остается полезной, а extracted facts и сущности получают более правильный machine-oriented store.
 
-### Фаза 7. Character knowledge maturity test
+### Фаза 8. Character knowledge maturity test
 
 Цель:
 
@@ -762,7 +806,7 @@
 
 - система проходит зрелый stateful MCP + agents сценарий.
 
-### Фаза 8. Глубокая интеграция в planning runtime
+### Фаза 9. Глубокая интеграция в planning runtime
 
 Цель:
 
@@ -788,15 +832,31 @@
 
 ## Что делать сначала
 
+### Согласованный scope ближайшей итерации
+
+Делаем первые четыре блока, которые непосредственно двигают сценарий "markdown-книга -> досье персонажей":
+
+1. хвост по session-scoped bindings: presets/validation + planning e2e;
+2. artifact/result indirection;
+3. shared cursor runtime и built-in `cursor`;
+4. built-in `cursor-agent` вместе с file-bound markdown/document MCP, который получает конкретный `sourceFile`.
+
+Что сознательно не включаем в этот scope:
+
+- generic `file-sandbox` с `roots`;
+- папочные/мультифайловые сценарии;
+- planner-native agent delegation;
+- full entity/character maturity layer поверх knowledge artifacts.
+
 Рекомендуемый порядок внедрения:
 
 1. Закрыть хвост фазы 1: validation/presets + planning e2e для bindings
 2. Artifact/result indirection
 3. Shared cursor runtime MVP и built-in `cursor` для `search-result`/`chunk` источников
-4. Cursor Agent MCP
-5. File sandbox MCP + file cursor как расширение cursor runtime
-6. Эволюция knowledge layer поверх существующего knowledge book
-7. Character knowledge maturity test
+4. Cursor Agent MCP + file-bound markdown document layer (`markdown-document`/`document-chunks` с `sourceFile`)
+5. Эволюция knowledge layer поверх существующего knowledge book
+6. Character knowledge maturity test
+7. Generic file sandbox MCP + file cursor как расширение cursor runtime
 8. Planner-native cursor patterns
 
 Это самый прагматичный путь, потому что:
@@ -807,6 +867,8 @@
 - сохраняет существующий реестр MCP серверов как source of truth;
 - не требует сложной типовой системы для override-параметров;
 - дает пользу уже после первых трех фаз;
+- для книжного кейса использует прямой `sourceFile` binding вместо избыточного generic `roots`;
+- отделяет прямую работу с markdown-документом от knowledge-store, что ближе к модели `AITextEditor`;
 - вводит `artifactRef` до полного cursor/file сценария, чтобы не раздувать planning state;
 - позволяет использовать текущий knowledge book как ранний knowledge surface, пока machine-oriented слой еще строится;
 - не требует сразу ломать plan contract.
@@ -845,6 +907,7 @@
 - ввести artifact store и `artifactRef`;
 - построить cursor runtime и cursor-agent сначала поверх web/artifact источников, а затем расширить их file-sandbox/file cursor сценарием;
 - добавить file sandbox;
+- добавить отдельный markdown document layer для адресного чтения и редактирования книги;
 - при необходимости добавить tool-based gateway для вызова заранее настроенных агентов из planning runtime;
 - расширить knowledge layer от knowledge book к entity/character workflows.
 

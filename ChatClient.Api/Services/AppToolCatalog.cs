@@ -56,7 +56,7 @@ public sealed class AppToolCatalog(IMcpClientService mcpClientService) : IAppToo
             }
 
             var bindingId = clientHandle.BindingId;
-            var bindingDisplayName = clientHandle.Binding?.DisplayName?.Trim();
+            var bindingDisplayName = clientHandle.BindingDisplayName?.Trim();
 
             var tools = await mcpClientService.GetMcpTools(clientHandle.Client, cancellationToken);
             foreach (var tool in tools)
@@ -65,7 +65,7 @@ public sealed class AppToolCatalog(IMcpClientService mcpClientService) : IAppToo
                 if (string.IsNullOrWhiteSpace(toolName))
                     continue;
 
-                var description = tool.Description?.Trim() ?? string.Empty;
+                var description = McpBindingPresentation.BuildToolDescription(tool.Description, clientHandle.Binding);
                 var inputSchema = tool.JsonSchema.ValueKind == JsonValueKind.Undefined
                     ? EmptyObjectSchema.Clone()
                     : tool.JsonSchema.Clone();

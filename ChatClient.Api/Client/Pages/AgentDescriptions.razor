@@ -751,9 +751,7 @@
 
     private static string GetBindingDisplayName(McpServerSessionBinding binding, IMcpServerDescriptor serverDescriptor)
     {
-        return string.IsNullOrWhiteSpace(binding.DisplayName)
-            ? serverDescriptor.Name
-            : $"{serverDescriptor.Name} / {binding.DisplayName.Trim()}";
+        return McpBindingPresentation.GetServerDisplayName(serverDescriptor, binding);
     }
 
     private static (string? ServerName, string? ToolName) ParseLegacyFunctionSelection(string functionName)

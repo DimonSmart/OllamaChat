@@ -12,21 +12,7 @@ public sealed record McpClientHandle(
 
     public Guid? BindingId => Binding?.BindingId;
 
-    public string DisplayName
-    {
-        get
-        {
-            if (!string.IsNullOrWhiteSpace(Binding?.DisplayName))
-            {
-                return $"{ServerDescriptor.Name} / {Binding.DisplayName.Trim()}";
-            }
+    public string? BindingDisplayName => McpBindingPresentation.GetBindingLabel(Binding);
 
-            if (Binding?.BindingId is Guid bindingId && bindingId != Guid.Empty)
-            {
-                return $"{ServerDescriptor.Name} / {bindingId.ToString("N")[..8]}";
-            }
-
-            return ServerDescriptor.Name;
-        }
-    }
+    public string DisplayName => McpBindingPresentation.GetServerDisplayName(ServerDescriptor, Binding);
 }

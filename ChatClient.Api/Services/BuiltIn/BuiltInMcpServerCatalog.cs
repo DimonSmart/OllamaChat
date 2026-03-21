@@ -8,7 +8,8 @@ public static class BuiltInMcpServerCatalog
         BuiltInFormattedTimeServerTools.Descriptor,
         BuiltInMathServerTools.Descriptor,
         BuiltInUserProfilePrefsServerTools.Descriptor,
-        BuiltInKnowledgeBookMcpServerTools.Descriptor
+        BuiltInKnowledgeBookMcpServerTools.Descriptor,
+        BuiltInMarkdownDocumentMcpServerTools.Descriptor
     ];
 
     public static bool TryGetDefinition(string? key, out IBuiltInMcpServerDescriptor? definition)

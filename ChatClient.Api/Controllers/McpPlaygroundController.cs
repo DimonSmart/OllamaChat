@@ -26,7 +26,10 @@ public class McpPlaygroundController(IMcpClientService clientService) : Controll
         if (client == null)
             return NotFound();
         var tools = await clientService.GetMcpTools(client.Client, cancellationToken);
-        var result = tools.Select(t => new McpToolInfo(t.Name, t.Description, t.JsonSchema));
+        var result = tools.Select(t => new McpToolInfo(
+            t.Name,
+            McpBindingPresentation.BuildToolDescription(t.Description, client.Binding),
+            t.JsonSchema));
         return Ok(result);
     }
 
