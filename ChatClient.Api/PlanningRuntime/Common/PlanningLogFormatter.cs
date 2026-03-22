@@ -87,8 +87,8 @@ public static class PlanningLogFormatter
     public static JsonObject SummarizeStep(PlanStep step) => new()
     {
         ["id"] = step.Id,
-        ["kind"] = string.IsNullOrWhiteSpace(step.Tool) ? "llm" : "tool",
-        ["name"] = step.Tool ?? step.Llm,
+        ["kind"] = PlanStepKinds.GetKind(step),
+        ["name"] = PlanStepKinds.GetName(step),
         ["inputKeys"] = new JsonArray(step.In.Keys.OrderBy(static key => key, StringComparer.Ordinal).Select(static key => JsonValue.Create(key)).ToArray()),
         ["output"] = step.Out is null
             ? null

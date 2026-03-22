@@ -1,11 +1,15 @@
 using System.Text.Json;
 using ChatClient.Api.PlanningRuntime.Agents;
+using ChatClient.Api.PlanningRuntime.Common;
 using ChatClient.Api.PlanningRuntime.Execution;
 using ChatClient.Api.PlanningRuntime.Orchestration;
 using ChatClient.Api.PlanningRuntime.Planning;
+using ChatClient.Api.Client.Services.Agentic;
 using ChatClient.Api.PlanningRuntime.Tools;
 using ChatClient.Api.PlanningRuntime.Verification;
 using ChatClient.Api.Services;
+using ChatClient.Application.Services;
+using ChatClient.Application.Services.Agentic;
 using ChatClient.Domain.Models;
 
 namespace ChatClient.Api.PlanningRuntime.Host;
@@ -14,6 +18,9 @@ public sealed class PlanningSessionService(
     ILlmChatClientFactory chatClientFactory,
     IAppToolCatalog appToolCatalog,
     IMcpUserInteractionService mcpUserInteractionService,
+    IAgentDescriptionService agentDescriptionService,
+    IModelCapabilityService modelCapabilityService,
+    IAgenticExecutionInvoker agenticExecutionInvoker,
     ILogger<PlanningSessionService> logger) : IPlanningSessionService
 {
     private CancellationTokenSource? _runCts;
@@ -37,8 +44,6 @@ public sealed class PlanningSessionService(
                 await appToolCatalog.ListToolsAsync(new McpClientRequestContext(plannerBindings)))
                 .ToList()
             : [];
-        if (enabledTools.Count == 0)
-            throw new InvalidOperationException("At least one planning tool must be enabled.");
         var enabledToolOptions = enabledTools
             .Select(tool => new PlanningToolOption
             {
@@ -49,9 +54,13 @@ public sealed class PlanningSessionService(
                 Description = tool.Description
             })
             .ToList();
+        var callableAgents = await BuildCallableAgentCatalogAsync(planner, CancellationToken.None);
 
         _runCts?.Cancel();
         _runCts = new CancellationTokenSource();
+
+        if (enabledTools.Count == 0 && callableAgents.ListAgents().Count == 0)
+            throw new InvalidOperationException("At least one planning tool or callable saved agent must be enabled.");
 
         Reset();
         State.UserQuery = request.UserQuery.Trim();
@@ -63,7 +72,7 @@ public sealed class PlanningSessionService(
         NotifyStateChanged();
 
         _runTask = Task.Run(
-            () => ExecuteRunAsync(request.UserQuery, planner.Model, enabledTools, _runCts.Token),
+            () => ExecuteRunAsync(request.UserQuery, planner.Model, enabledTools, callableAgents, _runCts.Token),
             _runCts.Token);
     }
 
@@ -109,6 +118,7 @@ public sealed class PlanningSessionService(
         string userQuery,
         ServerModel model,
         IReadOnlyCollection<AppToolDescriptor> enabledTools,
+        PlanningCallableAgentCatalog callableAgents,
         CancellationToken cancellationToken)
     {
         try
@@ -117,10 +127,10 @@ public sealed class PlanningSessionService(
             var observer = new ActionPlanRunObserver(HandleEvent);
             var loggerSink = new ActionExecutionLogger(HandleLogLine);
             var registry = new PlanningToolCatalog(enabledTools);
-            var initialDraftRepairer = new LlmInitialDraftRepairer(chatClient, registry, loggerSink, observer);
-            var planner = new LlmPlanner(chatClient, registry, loggerSink, observer, initialDraftRepairer);
-            var replanner = new LlmReplanner(chatClient, registry, loggerSink, observer);
-            var runner = new AgentStepRunner(chatClient, observer);
+            var initialDraftRepairer = new LlmInitialDraftRepairer(chatClient, registry, loggerSink, observer, callableAgents);
+            var planner = new LlmPlanner(chatClient, registry, loggerSink, observer, initialDraftRepairer, callableAgents);
+            var replanner = new LlmReplanner(chatClient, registry, loggerSink, observer, callableAgents);
+            var runner = new AgentStepRunner(chatClient, agenticExecutionInvoker, callableAgents, observer);
             var executor = new PlanExecutor(registry, runner, loggerSink, observer, mcpUserInteractionService);
             var finalAnswerVerifier = new LlmFinalAnswerVerifier(chatClient);
             var orchestrator = new PlanningOrchestrator(
@@ -266,4 +276,73 @@ public sealed class PlanningSessionService(
                 result.Error?.Code ?? "planning_failed",
                 result.Error?.Message ?? "Planning failed.",
                 result.Error?.Details?.Clone());
+
+    private async Task<PlanningCallableAgentCatalog> BuildCallableAgentCatalogAsync(
+        ResolvedChatAgent planner,
+        CancellationToken cancellationToken)
+    {
+        var savedAgents = await agentDescriptionService.GetAllAsync();
+        List<ResolvedChatAgent> resolvedAgents = [];
+
+        foreach (var agent in savedAgents)
+        {
+            if (agent.Id == planner.Agent.Id)
+                continue;
+
+            if (agent.LlmId is not Guid serverId || string.IsNullOrWhiteSpace(agent.ModelName))
+                continue;
+
+            var model = new ServerModel(serverId, agent.ModelName.Trim());
+
+            try
+            {
+                await modelCapabilityService.EnsureModelSupportedByServerAsync(model, cancellationToken);
+                resolvedAgents.Add(AgentDescriptionFactory.CreateResolved(agent, model));
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                logger.LogDebug(
+                    ex,
+                    "Skipping callable saved agent {AgentName} because its model could not be resolved for planning.",
+                    agent.AgentName);
+            }
+        }
+
+        if (resolvedAgents.Count == 0)
+            return PlanningCallableAgentCatalog.Empty;
+
+        var preferredNames = resolvedAgents.ToDictionary(
+            resolvedAgent => resolvedAgent.Agent.Id,
+            static resolvedAgent => string.IsNullOrWhiteSpace(resolvedAgent.Agent.ShortName)
+                ? resolvedAgent.Agent.Id.ToString("D")
+                : resolvedAgent.Agent.ShortName.Trim());
+        var duplicateNames = preferredNames.Values
+            .GroupBy(static value => value, StringComparer.OrdinalIgnoreCase)
+            .Where(static group => group.Count() > 1)
+            .Select(static group => group.Key)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        var descriptors = resolvedAgents
+            .Select(resolvedAgent =>
+            {
+                var name = preferredNames[resolvedAgent.Agent.Id];
+                if (duplicateNames.Contains(name))
+                    name = resolvedAgent.Agent.Id.ToString("D");
+
+                var description = PlanningLogFormatter.SummarizeText(resolvedAgent.Agent.Content, 220);
+                if (string.IsNullOrWhiteSpace(description) || string.Equals(description, "<empty>", StringComparison.Ordinal))
+                    description = $"Saved agent using model '{resolvedAgent.Model.ModelName}'.";
+
+                return new PlanningCallableAgentDescriptor
+                {
+                    Name = name,
+                    DisplayName = resolvedAgent.Agent.AgentName,
+                    Description = description,
+                    Agent = resolvedAgent
+                };
+            })
+            .ToList();
+
+        return new PlanningCallableAgentCatalog(descriptors);
+    }
 }

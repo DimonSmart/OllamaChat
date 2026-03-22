@@ -69,9 +69,7 @@ public sealed class PlanningStepNodeModel : NodeModel
         HiddenDescendantCount = hiddenDescendantCount;
         VisualKind = PlanningVisualNodeKind.Step;
         Title = step.Id;
-        MetaText = string.IsNullOrWhiteSpace(step.Tool)
-            ? $"llm: {step.Llm ?? string.Empty}"
-            : $"tool: {step.Tool}";
+        MetaText = $"{PlanStepKinds.GetKind(step)}: {PlanStepKinds.GetName(step)}";
         StatusValue = step.Status;
         StatusText = $"status: {step.Status}";
         Refresh();

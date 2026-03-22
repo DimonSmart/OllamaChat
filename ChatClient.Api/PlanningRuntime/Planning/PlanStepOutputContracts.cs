@@ -114,9 +114,9 @@ public static class PlanStepOutputContractResolver
         var hasFanOut = HasMappedInputs(step);
         var explicitContract = step.Out;
 
-        if (!string.IsNullOrWhiteSpace(step.Llm) && explicitContract is null)
+        if ((!string.IsNullOrWhiteSpace(step.Llm) || !string.IsNullOrWhiteSpace(step.Agent)) && explicitContract is null)
         {
-            issues.Add("LLM steps must declare an 'out' contract.");
+            issues.Add("LLM and saved-agent steps must declare an 'out' contract.");
             return issues;
         }
 
@@ -138,8 +138,12 @@ public static class PlanStepOutputContractResolver
         if (!hasFanOut && aggregate != PlanStepOutputAggregates.Single)
             issues.Add("Steps without mapped inputs must use out.aggregate='single'.");
 
-        if (!string.IsNullOrWhiteSpace(step.Llm) && format == PlanStepOutputFormats.Json && explicitContract.Schema is null)
-            issues.Add("LLM steps with out.format='json' must provide out.schema.");
+        if ((!string.IsNullOrWhiteSpace(step.Llm) || !string.IsNullOrWhiteSpace(step.Agent))
+            && format == PlanStepOutputFormats.Json
+            && explicitContract.Schema is null)
+        {
+            issues.Add("LLM and saved-agent steps with out.format='json' must provide out.schema.");
+        }
 
         if (format == PlanStepOutputFormats.String && explicitContract.Schema is { } stringSchema)
         {

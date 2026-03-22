@@ -83,6 +83,7 @@ public static class ServiceCollectionExtensions
     private static IServiceCollection AddAgenticServices(this IServiceCollection services)
     {
         services.AddScoped<IAgenticExecutionRuntime, HttpAgenticExecutionRuntime>();
+        services.AddScoped<IAgenticExecutionInvoker, AgenticExecutionInvoker>();
         services.AddScoped<AgenticChatEngineOrchestrator>();
         services.AddScoped<IAgenticRagContextService, AgenticRagContextService>();
         services.AddScoped<AgenticChatEngineHistoryBuilder>();

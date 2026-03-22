@@ -43,6 +43,10 @@ public class BuiltInMarkdownDocumentMcpServerIntegrationTests
         Assert.Contains(tools, static tool => string.Equals(tool.Name, "doc_get_section", StringComparison.Ordinal));
         Assert.Contains(tools, static tool => string.Equals(tool.Name, "doc_list_items", StringComparison.Ordinal));
         Assert.Contains(tools, static tool => string.Equals(tool.Name, "doc_search_sections", StringComparison.Ordinal));
+        Assert.Contains(tools, static tool => string.Equals(tool.Name, "cursor_create", StringComparison.Ordinal));
+        Assert.Contains(tools, static tool => string.Equals(tool.Name, "cursor_get_state", StringComparison.Ordinal));
+        Assert.Contains(tools, static tool => string.Equals(tool.Name, "cursor_next", StringComparison.Ordinal));
+        Assert.Contains(tools, static tool => string.Equals(tool.Name, "cursor_reset", StringComparison.Ordinal));
         Assert.Contains(tools, static tool => string.Equals(tool.Name, "doc_apply_operations", StringComparison.Ordinal));
         Assert.Contains(tools, static tool => string.Equals(tool.Name, "doc_export_markdown", StringComparison.Ordinal));
 
@@ -103,6 +107,67 @@ public class BuiltInMarkdownDocumentMcpServerIntegrationTests
         var firstHit = Assert.Single(hits);
         Assert.Equal("Bob", GetProperty(firstHit, "title").GetString());
         Assert.Equal("1.2", GetProperty(firstHit, "outline").GetString());
+
+        var cursorCreated = GetStructuredContent(await CallToolAsync(
+            toolMap["cursor_create"],
+            new Dictionary<string, object?>
+            {
+                ["cursorName"] = "chapter-one-reader",
+                ["outline"] = "1",
+                ["batchSize"] = 1,
+                ["includeHeadings"] = false
+            }));
+        Assert.Equal("chapter-one-reader", GetProperty(cursorCreated, "cursorName").GetString());
+        Assert.True(GetProperty(cursorCreated, "hasMore").GetBoolean());
+
+        var firstBatch = GetStructuredContent(await CallToolAsync(
+            toolMap["cursor_next"],
+            new Dictionary<string, object?>
+            {
+                ["cursorName"] = "chapter-one-reader"
+            }));
+        var firstBatchItems = GetProperty(firstBatch, "items").EnumerateArray().ToArray();
+        Assert.Single(firstBatchItems);
+        Assert.Equal("1.p1", GetProperty(firstBatchItems[0], "pointer").GetString());
+        Assert.True(GetProperty(firstBatch, "hasMore").GetBoolean());
+
+        var secondBatch = GetStructuredContent(await CallToolAsync(
+            toolMap["cursor_next"],
+            new Dictionary<string, object?>
+            {
+                ["cursorName"] = "chapter-one-reader"
+            }));
+        var secondBatchItems = GetProperty(secondBatch, "items").EnumerateArray().ToArray();
+        Assert.Single(secondBatchItems);
+        Assert.Equal("1.1.p1", GetProperty(secondBatchItems[0], "pointer").GetString());
+
+        var cursorState = GetStructuredContent(await CallToolAsync(
+            toolMap["cursor_get_state"],
+            new Dictionary<string, object?>
+            {
+                ["cursorName"] = "chapter-one-reader"
+            }));
+        Assert.Equal(2, GetProperty(cursorState, "batchesRead").GetInt32());
+        Assert.Equal(2, GetProperty(cursorState, "itemsRead").GetInt32());
+
+        var resetState = GetStructuredContent(await CallToolAsync(
+            toolMap["cursor_reset"],
+            new Dictionary<string, object?>
+            {
+                ["cursorName"] = "chapter-one-reader"
+            }));
+        Assert.Equal(0, GetProperty(resetState, "batchesRead").GetInt32());
+        Assert.Equal(0, GetProperty(resetState, "itemsRead").GetInt32());
+
+        var afterResetBatch = GetStructuredContent(await CallToolAsync(
+            toolMap["cursor_next"],
+            new Dictionary<string, object?>
+            {
+                ["cursorName"] = "chapter-one-reader"
+            }));
+        var afterResetItems = GetProperty(afterResetBatch, "items").EnumerateArray().ToArray();
+        Assert.Single(afterResetItems);
+        Assert.Equal("1.p1", GetProperty(afterResetItems[0], "pointer").GetString());
 
         var applyResult = GetStructuredContent(await CallToolAsync(
             toolMap["doc_apply_operations"],
@@ -180,6 +245,32 @@ public class BuiltInMarkdownDocumentMcpServerIntegrationTests
 
         var details = GetStructuredContent(result);
         Assert.Equal("invalid_pointer", GetProperty(details, "code").GetString());
+    }
+
+    [Fact]
+    public async Task MarkdownCursorTools_ReturnHelpfulError_WhenCursorIsMissing()
+    {
+        await using var fixture = new MarkdownDocumentMcpFixture();
+        await fixture.WriteSourceAsync("# Chapter");
+        var client = await fixture.CreateClientAsync();
+        var tool = (await client.ListToolsAsync())
+            .First(static candidate => string.Equals(candidate.Name, "cursor_next", StringComparison.Ordinal));
+
+        var result = await CallToolAsync(
+            tool,
+            new Dictionary<string, object?>
+            {
+                ["cursorName"] = "missing-cursor"
+            });
+
+        Assert.True(GetBooleanProperty(result, "isError"));
+        Assert.Contains(
+            "does not exist in the current MCP session",
+            GetTextContent(result),
+            StringComparison.OrdinalIgnoreCase);
+
+        var details = GetStructuredContent(result);
+        Assert.Equal("cursor_not_found", GetProperty(details, "code").GetString());
     }
 
     private static async Task<JsonElement> CallToolAsync(

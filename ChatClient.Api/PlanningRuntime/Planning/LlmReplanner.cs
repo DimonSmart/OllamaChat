@@ -3,6 +3,7 @@ using System.Text.Json;
 using System.Text.Json.Nodes;
 using Microsoft.Agents.AI;
 using Microsoft.Extensions.AI;
+using ChatClient.Api.PlanningRuntime.Agents;
 using ChatClient.Api.PlanningRuntime.Common;
 using ChatClient.Api.PlanningRuntime.Execution;
 using ChatClient.Api.PlanningRuntime.Tools;
@@ -14,11 +15,13 @@ public sealed class LlmReplanner(
     IChatClient chatClient,
     PlanningToolCatalog toolCatalog,
     IExecutionLogger? executionLogger = null,
-    IPlanRunObserver? planRunObserver = null) : IReplanner
+    IPlanRunObserver? planRunObserver = null,
+    PlanningCallableAgentCatalog? agentCatalog = null) : IReplanner
 {
     private const int MaxRounds = 10;
     private readonly IExecutionLogger _log = executionLogger ?? NullExecutionLogger.Instance;
     private readonly IPlanRunObserver _observer = planRunObserver ?? NullPlanRunObserver.Instance;
+    private readonly PlanningCallableAgentCatalog _agentCatalog = agentCatalog ?? PlanningCallableAgentCatalog.Empty;
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
         PropertyNameCaseInsensitive = true
@@ -40,6 +43,7 @@ public sealed class LlmReplanner(
             var runtime = new PlanToolCallingRuntime(
                 session,
                 workflowTools,
+                _agentCatalog,
                 "replan",
                 round,
                 _log,
@@ -65,7 +69,7 @@ public sealed class LlmReplanner(
                 _log.Log($"[replan] round={round} toolCalls={runtime.InvocationCount} completion={Shorten(completionText, 240)}");
                 _log.Log($"[replan] round={round} toolResults={SerializeDetailedSummary(lastToolResults)}");
 
-                var validationResult = PlanDraftValidationTool.CreateValidationResult(session, workflowTools);
+                var validationResult = PlanDraftValidationTool.CreateValidationResult(session, workflowTools, _agentCatalog);
                 lastToolResults.Add(validationResult);
                 _log.Log($"[replan] round={round} validation={SerializeDetailedSummary(validationResult)}");
                 _observer.OnEvent(new ReplanRoundCompletedEvent(
@@ -123,7 +127,7 @@ public sealed class LlmReplanner(
         return response.Text?.Trim() ?? string.Empty;
     }
 
-    private static string BuildSystemPrompt(IReadOnlyCollection<AppToolDescriptor> workflowTools)
+    private string BuildSystemPrompt(IReadOnlyCollection<AppToolDescriptor> workflowTools)
     {
         var sb = new StringBuilder();
         sb.AppendLine("You are a replanning agent.");
@@ -166,11 +170,12 @@ public sealed class LlmReplanner(
         sb.AppendLine("- When you are confident the working draft is ready, return one short plain-text sentence like 'Replan repaired.'");
         sb.AppendLine();
         sb.AppendLine("Plan step rules:");
-        sb.AppendLine("- A step must have exactly one of 'tool' or 'llm'.");
+        sb.AppendLine("- A step must have exactly one of 'tool', 'llm', or 'agent'.");
         sb.AppendLine("- LLM steps must have systemPrompt and userPrompt.");
+        sb.AppendLine("- Saved-agent steps must have userPrompt, must not have systemPrompt, and must use one callable agent id listed below.");
         sb.AppendLine("- Tool steps must use the exact workflow tool name listed below, including any server prefix.");
         sb.AppendLine("- Put dynamic inputs under 'in' using binding objects like {\"from\":\"$step.ref\",\"mode\":\"value|map\"}.");
-        sb.AppendLine("- For LLM steps, when input shape matters, add inline field 'type' inside the binding object. Example: {\"from\":\"$search.results\",\"mode\":\"value\",\"type\":\"array<object>\"}.");
+        sb.AppendLine("- For LLM or saved-agent steps, when input shape matters, add inline field 'type' inside the binding object. Example: {\"from\":\"$search.results\",\"mode\":\"value\",\"type\":\"array<object>\"}.");
         sb.AppendLine("- The binding field 'type' describes one resolved call input. Example: mode='value' with $search.results usually means type='array<object>', while mode='map' with $search.results usually means type='object'.");
         sb.AppendLine("- Supported binding types are: string, number, integer, boolean, object, array, array<string>, array<number>, array<integer>, array<boolean>, array<object>.");
         sb.AppendLine("- Literal tool inputs must be plain JSON literals. Never wrap them in helper objects like {\"value\":...}.");
@@ -183,7 +188,7 @@ public sealed class LlmReplanner(
         sb.AppendLine("- For download-style tools, pass exactly one of 'page' or 'url'. Do not send both.");
         sb.AppendLine("- For extraction tasks, prefer a per-item binding with mode='map'.");
         sb.AppendLine("- If a page may mention multiple entities and the extractor must return one entity, provide an explicit target entity input (for example model/package/library name).");
-        sb.AppendLine("- LLM steps must declare out.format, out.aggregate, and when out.format='json', out.schema.");
+        sb.AppendLine("- LLM and saved-agent steps must declare out.format, out.aggregate, and when out.format='json', out.schema.");
         sb.AppendLine("- Every schema node must declare either type or enum.");
         sb.AppendLine("- If out.schema.type='object', every entry inside out.schema.properties must itself declare type or enum.");
         sb.AppendLine("- If out.schema.type='array', out.schema.items must declare type or enum.");
@@ -201,6 +206,22 @@ public sealed class LlmReplanner(
             sb.AppendLine($"  description: {tool.Description}");
             sb.AppendLine($"  inputSchema: {PlanningJson.SerializeElementCompact(tool.InputSchema)}");
             sb.AppendLine($"  outputSchema: {PlanningJson.SerializeElementCompact(tool.OutputSchema)}");
+        }
+
+        sb.AppendLine();
+        sb.AppendLine("Available callable saved agents:");
+        if (_agentCatalog.ListAgents().Count == 0)
+        {
+            sb.AppendLine("- none");
+        }
+        else
+        {
+            foreach (var agent in _agentCatalog.ListAgents())
+            {
+                sb.AppendLine($"- id: {agent.Name}");
+                sb.AppendLine($"  name: {agent.DisplayName}");
+                sb.AppendLine($"  description: {agent.Description}");
+            }
         }
 
         return sb.ToString();

@@ -1039,7 +1039,7 @@
             var dependencies = GetDependencies(step)
                 .OrderBy(value => value, StringComparer.Ordinal);
 
-            parts.Add($"{step.Id}:{step.Tool}:{step.Llm}:{string.Join(",", dependencies)}");
+            parts.Add($"{step.Id}:{PlanStepKinds.GetKind(step)}:{PlanStepKinds.GetName(step)}:{string.Join(",", dependencies)}");
         }
 
         return string.Join("|", parts);

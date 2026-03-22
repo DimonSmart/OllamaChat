@@ -379,6 +379,56 @@ public sealed record MarkdownDocumentItemBatch(
     string? NextAfterPointer,
     IReadOnlyList<MarkdownDocumentItemSnapshot> Items);
 
+internal sealed class MarkdownDocumentCursorState
+{
+    public required string CursorName { get; init; }
+
+    public required string Outline { get; set; }
+
+    public required bool IncludeHeadings { get; set; }
+
+    public required int BatchSize { get; set; }
+
+    public string? InitialStartAfterPointer { get; init; }
+
+    public string? CurrentStartAfterPointer { get; set; }
+
+    public bool IsCompleted { get; set; }
+
+    public int BatchesRead { get; set; }
+
+    public int ItemsRead { get; set; }
+
+    public DateTime CreatedAtUtc { get; init; } = DateTime.UtcNow;
+
+    public DateTime UpdatedAtUtc { get; set; } = DateTime.UtcNow;
+}
+
+public sealed record MarkdownDocumentCursorSnapshot(
+    string CursorName,
+    string Outline,
+    int BatchSize,
+    bool IncludeHeadings,
+    string? InitialStartAfterPointer,
+    string? CurrentStartAfterPointer,
+    bool HasMore,
+    int BatchesRead,
+    int ItemsRead,
+    DateTime CreatedAtUtc,
+    DateTime UpdatedAtUtc);
+
+public sealed record MarkdownDocumentCursorBatch(
+    string CursorName,
+    string Outline,
+    int MaxItems,
+    bool IncludeHeadings,
+    string? StartAfterPointer,
+    bool HasMore,
+    string? NextAfterPointer,
+    int BatchesRead,
+    int ItemsRead,
+    IReadOnlyList<MarkdownDocumentItemSnapshot> Items);
+
 public sealed record MarkdownDocumentApplyOperationsResult(
     string SourceFile,
     string Title,

@@ -441,10 +441,10 @@ else
     }
 
     private static string GetKind(PlanStep step) =>
-        string.IsNullOrWhiteSpace(step.Tool) ? "llm" : "tool";
+        PlanStepKinds.GetKind(step);
 
     private static string GetName(PlanStep step) =>
-        string.IsNullOrWhiteSpace(step.Tool) ? step.Llm ?? string.Empty : step.Tool;
+        PlanStepKinds.GetName(step);
 
     private static string GetLinkTitle(PlanningGraphLinkDescriptor link) =>
         $"{link.SourceId} -> {GetTargetLabel(link)}";

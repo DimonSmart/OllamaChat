@@ -1,4 +1,5 @@
 using ChatClient.Domain.Models;
+using System.Collections.Concurrent;
 
 namespace ChatClient.Api.Services.BuiltIn;
 
@@ -10,6 +11,7 @@ public sealed class MarkdownDocumentSession
     private readonly McpServerSessionContext _sessionContext;
     private readonly MarkdownDocumentRepository _repository;
     private readonly MarkdownDocumentEditor _editor;
+    private readonly ConcurrentDictionary<string, MarkdownDocumentCursorState> _cursors = new(StringComparer.OrdinalIgnoreCase);
 
     public MarkdownDocumentSession(
         McpServerSessionContext sessionContext,
@@ -102,57 +104,13 @@ public sealed class MarkdownDocumentSession
     {
         cancellationToken.ThrowIfCancellationRequested();
 
-        var normalizedOutline = ParseOutlineReference(outline);
-        var document = Load();
-        var section = FindSection(document.RootSection, normalizedOutline);
-        if (section is null)
-        {
-            throw new InvalidOperationException("section_not_found");
-        }
-
-        var boundedMaxItems = Math.Clamp(maxItems, 1, 100);
-        var startRange = Math.Max(0, section.StartItemIndex);
-        var endRange = section.EndItemIndex >= section.StartItemIndex
-            ? Math.Min(document.Items.Count - 1, section.EndItemIndex)
-            : document.Items.Count - 1;
-        var scopedItems = document.Items
-            .Where(item => item.Index >= startRange && item.Index <= endRange)
-            .ToList();
-
-        var startIndex = 0;
+        var normalizedOutline = ParseOutlineReferenceOrDefault(outline);
         var normalizedStartPointer = NormalizePointerOrThrow(startAfterPointer);
-        if (!string.IsNullOrWhiteSpace(normalizedStartPointer))
-        {
-            startIndex = scopedItems.FindIndex(item =>
-                string.Equals(item.Pointer.ToCompactString(), normalizedStartPointer, StringComparison.Ordinal));
-            if (startIndex < 0)
-            {
-                throw new InvalidOperationException("pointer_not_found");
-            }
-
-            startIndex++;
-        }
-
-        var filteredItems = scopedItems
-            .Skip(startIndex)
-            .Where(item => includeHeadings || item.Type != MarkdownDocumentItemType.Heading)
-            .ToList();
-
-        var selectedItems = filteredItems
-            .Take(boundedMaxItems)
-            .Select(CreateItemSnapshot)
-            .ToArray();
-
-        var hasMore = filteredItems.Count > boundedMaxItems;
-        var nextAfterPointer = selectedItems.Length > 0 ? selectedItems[^1].Pointer : normalizedStartPointer;
-        return Task.FromResult(new MarkdownDocumentItemBatch(
-            Outline: normalizedOutline.Count == 0 ? RootOutlineReference : string.Join('.', normalizedOutline),
-            MaxItems: boundedMaxItems,
-            IncludeHeadings: includeHeadings,
-            StartAfterPointer: normalizedStartPointer,
-            HasMore: hasMore,
-            NextAfterPointer: hasMore ? nextAfterPointer : null,
-            Items: selectedItems));
+        return Task.FromResult(ListItemsCore(
+            normalizedOutline,
+            normalizedStartPointer,
+            maxItems,
+            includeHeadings));
     }
 
     public Task<MarkdownDocumentApplyOperationsResult> ApplyOperationsAsync(
@@ -179,6 +137,132 @@ public sealed class MarkdownDocumentSession
             updatedDocument.Id,
             updatedDocument.Items.Count,
             operations.Length));
+    }
+
+    public Task<MarkdownDocumentCursorSnapshot> CreateCursorAsync(
+        string? cursorName,
+        string? outline,
+        int batchSize,
+        bool includeHeadings,
+        string? startAfterPointer,
+        CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+
+        var normalizedCursorName = string.IsNullOrWhiteSpace(cursorName)
+            ? $"cursor-{Guid.NewGuid():N}"[..15]
+            : cursorName.Trim();
+        var normalizedOutline = ParseOutlineReferenceOrDefault(outline);
+        var normalizedStartAfterPointer = NormalizePointerOrThrow(startAfterPointer);
+        var effectiveBatchSize = Math.Clamp(batchSize, 1, 100);
+
+        var preview = ListItemsCore(
+            normalizedOutline,
+            normalizedStartAfterPointer,
+            effectiveBatchSize,
+            includeHeadings);
+
+        var now = DateTime.UtcNow;
+        var cursor = new MarkdownDocumentCursorState
+        {
+            CursorName = normalizedCursorName,
+            Outline = normalizedOutline,
+            IncludeHeadings = includeHeadings,
+            BatchSize = effectiveBatchSize,
+            InitialStartAfterPointer = normalizedStartAfterPointer,
+            CurrentStartAfterPointer = normalizedStartAfterPointer,
+            IsCompleted = preview.Items.Count == 0 && !preview.HasMore,
+            BatchesRead = 0,
+            ItemsRead = 0,
+            CreatedAtUtc = now,
+            UpdatedAtUtc = now
+        };
+
+        _cursors[normalizedCursorName] = cursor;
+        return Task.FromResult(CreateCursorSnapshot(cursor));
+    }
+
+    public Task<MarkdownDocumentCursorSnapshot> GetCursorStateAsync(
+        string cursorName,
+        CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+
+        var cursor = GetCursor(cursorName);
+        return Task.FromResult(CreateCursorSnapshot(cursor));
+    }
+
+    public Task<MarkdownDocumentCursorSnapshot> ResetCursorAsync(
+        string cursorName,
+        CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+
+        var cursor = GetCursor(cursorName);
+        var preview = ListItemsCore(
+            cursor.Outline,
+            cursor.InitialStartAfterPointer,
+            cursor.BatchSize,
+            cursor.IncludeHeadings);
+
+        cursor.CurrentStartAfterPointer = cursor.InitialStartAfterPointer;
+        cursor.IsCompleted = preview.Items.Count == 0 && !preview.HasMore;
+        cursor.BatchesRead = 0;
+        cursor.ItemsRead = 0;
+        cursor.UpdatedAtUtc = DateTime.UtcNow;
+
+        return Task.FromResult(CreateCursorSnapshot(cursor));
+    }
+
+    public Task<MarkdownDocumentCursorBatch> ReadCursorNextAsync(
+        string cursorName,
+        int? maxItems,
+        CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+
+        var cursor = GetCursor(cursorName);
+        var effectiveMaxItems = Math.Clamp(maxItems ?? cursor.BatchSize, 1, 100);
+        if (cursor.IsCompleted)
+        {
+            return Task.FromResult(new MarkdownDocumentCursorBatch(
+                CursorName: cursor.CursorName,
+                Outline: cursor.Outline,
+                MaxItems: effectiveMaxItems,
+                IncludeHeadings: cursor.IncludeHeadings,
+                StartAfterPointer: cursor.CurrentStartAfterPointer,
+                HasMore: false,
+                NextAfterPointer: cursor.CurrentStartAfterPointer,
+                BatchesRead: cursor.BatchesRead,
+                ItemsRead: cursor.ItemsRead,
+                Items: []));
+        }
+
+        var batch = ListItemsCore(
+            cursor.Outline,
+            cursor.CurrentStartAfterPointer,
+            effectiveMaxItems,
+            cursor.IncludeHeadings);
+
+        cursor.CurrentStartAfterPointer = batch.Items.Count > 0
+            ? batch.Items[^1].Pointer
+            : cursor.CurrentStartAfterPointer;
+        cursor.IsCompleted = !batch.HasMore;
+        cursor.BatchesRead++;
+        cursor.ItemsRead += batch.Items.Count;
+        cursor.UpdatedAtUtc = DateTime.UtcNow;
+
+        return Task.FromResult(new MarkdownDocumentCursorBatch(
+            CursorName: cursor.CursorName,
+            Outline: batch.Outline,
+            MaxItems: batch.MaxItems,
+            IncludeHeadings: batch.IncludeHeadings,
+            StartAfterPointer: batch.StartAfterPointer,
+            HasMore: batch.HasMore,
+            NextAfterPointer: batch.NextAfterPointer,
+            BatchesRead: cursor.BatchesRead,
+            ItemsRead: cursor.ItemsRead,
+            Items: batch.Items));
     }
 
     public Task<string> ExportMarkdownAsync(CancellationToken cancellationToken)
@@ -307,6 +391,101 @@ public sealed class MarkdownDocumentSession
         }
 
         return parsed.ToCompactString();
+    }
+
+    private MarkdownDocumentItemBatch ListItemsCore(
+        string normalizedOutline,
+        string? normalizedStartPointer,
+        int maxItems,
+        bool includeHeadings)
+    {
+        var document = Load();
+        var outlineSegments = ParseOutlineReference(normalizedOutline);
+        var section = FindSection(document.RootSection, outlineSegments);
+        if (section is null)
+        {
+            throw new InvalidOperationException("section_not_found");
+        }
+
+        var boundedMaxItems = Math.Clamp(maxItems, 1, 100);
+        var startRange = Math.Max(0, section.StartItemIndex);
+        var endRange = section.EndItemIndex >= section.StartItemIndex
+            ? Math.Min(document.Items.Count - 1, section.EndItemIndex)
+            : document.Items.Count - 1;
+        var scopedItems = document.Items
+            .Where(item => item.Index >= startRange && item.Index <= endRange)
+            .ToList();
+
+        var startIndex = 0;
+        if (!string.IsNullOrWhiteSpace(normalizedStartPointer))
+        {
+            startIndex = scopedItems.FindIndex(item =>
+                string.Equals(item.Pointer.ToCompactString(), normalizedStartPointer, StringComparison.Ordinal));
+            if (startIndex < 0)
+            {
+                throw new InvalidOperationException("pointer_not_found");
+            }
+
+            startIndex++;
+        }
+
+        var filteredItems = scopedItems
+            .Skip(startIndex)
+            .Where(item => includeHeadings || item.Type != MarkdownDocumentItemType.Heading)
+            .ToList();
+
+        var selectedItems = filteredItems
+            .Take(boundedMaxItems)
+            .Select(CreateItemSnapshot)
+            .ToArray();
+
+        var hasMore = filteredItems.Count > boundedMaxItems;
+        var nextAfterPointer = selectedItems.Length > 0 ? selectedItems[^1].Pointer : normalizedStartPointer;
+        return new MarkdownDocumentItemBatch(
+            Outline: normalizedOutline,
+            MaxItems: boundedMaxItems,
+            IncludeHeadings: includeHeadings,
+            StartAfterPointer: normalizedStartPointer,
+            HasMore: hasMore,
+            NextAfterPointer: hasMore ? nextAfterPointer : null,
+            Items: selectedItems);
+    }
+
+    private MarkdownDocumentCursorState GetCursor(string? cursorName)
+    {
+        if (string.IsNullOrWhiteSpace(cursorName))
+        {
+            throw new InvalidOperationException("cursor_name_required");
+        }
+
+        if (_cursors.TryGetValue(cursorName.Trim(), out var cursor))
+        {
+            return cursor;
+        }
+
+        throw new InvalidOperationException("cursor_not_found");
+    }
+
+    private static MarkdownDocumentCursorSnapshot CreateCursorSnapshot(MarkdownDocumentCursorState cursor)
+    {
+        return new MarkdownDocumentCursorSnapshot(
+            CursorName: cursor.CursorName,
+            Outline: cursor.Outline,
+            BatchSize: cursor.BatchSize,
+            IncludeHeadings: cursor.IncludeHeadings,
+            InitialStartAfterPointer: cursor.InitialStartAfterPointer,
+            CurrentStartAfterPointer: cursor.CurrentStartAfterPointer,
+            HasMore: !cursor.IsCompleted,
+            BatchesRead: cursor.BatchesRead,
+            ItemsRead: cursor.ItemsRead,
+            CreatedAtUtc: cursor.CreatedAtUtc,
+            UpdatedAtUtc: cursor.UpdatedAtUtc);
+    }
+
+    private static string ParseOutlineReferenceOrDefault(string? outline)
+    {
+        var segments = ParseOutlineReference(outline);
+        return segments.Count == 0 ? RootOutlineReference : string.Join('.', segments);
     }
 
     private static List<int> ParseOutlineReference(string? outline)

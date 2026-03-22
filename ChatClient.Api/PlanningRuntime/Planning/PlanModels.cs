@@ -26,10 +26,11 @@ public sealed class PlanDefinition
 
 /// <summary>
 /// A single step in the execution plan.
-/// Use <see cref="Tool"/> for registered workflow building blocks (tools), or <see cref="Llm"/> for an ad-hoc LLM call.
+/// Use <see cref="Tool"/> for registered workflow building blocks (tools), <see cref="Llm"/> for an ad-hoc LLM call,
+/// or <see cref="Agent"/> for invoking a preconfigured saved agent.
 /// When <see cref="Llm"/> is set, the planner must supply <see cref="SystemPrompt"/> and <see cref="UserPrompt"/>.
-/// The executor simply forwards them to the LLM; there is no pre-registered agent registry.
-/// LLM steps have NO access to external systems; they can only process data from earlier tool steps.
+/// When <see cref="Agent"/> is set, the planner must supply <see cref="UserPrompt"/> and inputs; the saved agent provides
+/// its own system prompt, tool access, and execution settings.
 /// </summary>
 public sealed class PlanStep
 {
@@ -44,6 +45,10 @@ public sealed class PlanStep
     /// <summary>Logical label for an LLM reasoning call (free text; used only for tracing).</summary>
     [JsonPropertyName("llm")]
     public string? Llm { get; init; }
+
+    /// <summary>Identifier of a preconfigured saved agent callable from planner.</summary>
+    [JsonPropertyName("agent")]
+    public string? Agent { get; init; }
 
     /// <summary>System prompt for the LLM step. Required when Llm is set.</summary>
     [JsonPropertyName("systemPrompt")]
@@ -64,7 +69,7 @@ public sealed class PlanStep
 
     /// <summary>
     /// Output contract for this step.
-    /// LLM steps must declare the expected result format/shape explicitly.
+    /// LLM and saved-agent steps must declare the expected result format/shape explicitly.
     /// Tool steps may omit it and rely on the tool output schema.
     /// </summary>
     [JsonPropertyName("out")]

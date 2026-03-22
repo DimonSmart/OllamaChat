@@ -2,6 +2,7 @@
 using System.Text.Json;
 using Microsoft.Agents.AI;
 using Microsoft.Extensions.AI;
+using ChatClient.Api.PlanningRuntime.Agents;
 using ChatClient.Api.PlanningRuntime.Common;
 using ChatClient.Api.PlanningRuntime.Execution;
 using ChatClient.Api.PlanningRuntime.Tools;
@@ -19,12 +20,14 @@ public sealed class LlmPlanner(
     PlanningToolCatalog toolCatalog,
     IExecutionLogger? executionLogger = null,
     IPlanRunObserver? planRunObserver = null,
-    IInitialDraftRepairer? initialDraftRepairer = null) : IPlanner
+    IInitialDraftRepairer? initialDraftRepairer = null,
+    PlanningCallableAgentCatalog? agentCatalog = null) : IPlanner
 {
     private const int MaxDraftGenerations = 2;
     private readonly IExecutionLogger _log = executionLogger ?? NullExecutionLogger.Instance;
     private readonly IPlanRunObserver _observer = planRunObserver ?? NullPlanRunObserver.Instance;
     private readonly IInitialDraftRepairer? _initialDraftRepairer = initialDraftRepairer;
+    private readonly PlanningCallableAgentCatalog _agentCatalog = agentCatalog ?? PlanningCallableAgentCatalog.Empty;
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
         PropertyNameCaseInsensitive = true
@@ -57,7 +60,7 @@ public sealed class LlmPlanner(
                     ?? throw new InvalidOperationException("Planner returned an empty response envelope.");
                 var plan = envelope.GetRequiredDataOrThrow("Planner");
                 previousDraftJson = PlanningJson.SerializeIndented(plan);
-                if (!PlanValidator.TryValidate(plan, tools, out var validationIssue))
+                if (!PlanValidator.TryValidate(plan, tools, _agentCatalog.ListAgents(), out var validationIssue))
                 {
                     var validationException = new PlanValidationException(validationIssue!);
                     _log.Log($"[plan] create:invalid attempt={attempt} error={Shorten(validationException.Message, 240)} issue={PlanningJson.SerializeCompact(validationIssue)}");
@@ -76,7 +79,7 @@ public sealed class LlmPlanner(
                                 ValidationIssue = validationIssue!
                             }, cancellationToken);
 
-                            if (!PlanValidator.TryValidate(repaired, tools, out var repairedValidationIssue))
+                            if (!PlanValidator.TryValidate(repaired, tools, _agentCatalog.ListAgents(), out var repairedValidationIssue))
                                 throw new PlanValidationException(repairedValidationIssue!);
 
                             _log.Log($"[plan] create:success steps={repaired.Steps.Count} goal={Shorten(repaired.Goal, 240)}");
@@ -136,18 +139,22 @@ public sealed class LlmPlanner(
             lastError);
     }
 
-    private static string BuildSystemPrompt(IReadOnlyCollection<AppToolDescriptor> tools)
+    private string BuildSystemPrompt(IReadOnlyCollection<AppToolDescriptor> tools)
     {
         var sb = new StringBuilder();
         sb.AppendLine("You are a planning agent. Given a user request, produce an execution plan.");
         sb.AppendLine("Return a COMPLETE and VALID plan envelope on the first try.");
-        sb.AppendLine("A plan is an ordered list of workflow steps. There are exactly two kinds of steps:");
+        sb.AppendLine("A plan is an ordered list of workflow steps. There are exactly three kinds of steps:");
         sb.AppendLine();
         sb.AppendLine("1. Tool steps: use field \"tool\": \"<name>\".");
-        sb.AppendLine("   Tool steps are the ONLY way to access external data.");
+        sb.AppendLine("   Tool steps call one workflow capability directly.");
         sb.AppendLine("2. LLM steps: use field \"llm\": \"<free label>\".");
         sb.AppendLine("   LLM steps have NO tool access and NO internet access.");
         sb.AppendLine("   They can only reason over outputs produced by earlier tool steps.");
+        sb.AppendLine("3. Saved-agent steps: use field \"agent\": \"<callable-agent-id>\".");
+        sb.AppendLine("   Saved-agent steps invoke a preconfigured agent that may call its own tools internally.");
+        sb.AppendLine("   Saved-agent steps must provide userPrompt and out. Do not set systemPrompt on saved-agent steps.");
+        sb.AppendLine("   Tool steps and saved-agent steps are the only plan capabilities that may touch external systems.");
         sb.AppendLine();
         sb.AppendLine("Required top-level JSON shape:");
         sb.AppendLine("{");
@@ -189,6 +196,20 @@ public sealed class LlmPlanner(
         sb.AppendLine("      \"s\": \"todo\",");
         sb.AppendLine("      \"res\": null,");
         sb.AppendLine("      \"err\": null");
+        sb.AppendLine("    },");
+        sb.AppendLine("    {");
+        sb.AppendLine("      \"id\": \"string\",");
+        sb.AppendLine("      \"agent\": \"callable-agent-id\",");
+        sb.AppendLine("      \"userPrompt\": \"string\",");
+        sb.AppendLine("      \"in\": { \"param\": \"literal or {\\\"from\\\":\\\"$ref\\\",\\\"mode\\\":\\\"value|map\\\",\\\"type\\\":\\\"string|object|array<object>|...\\\"}\" },");
+        sb.AppendLine("      \"out\": {");
+        sb.AppendLine("        \"format\": \"json|string\",");
+        sb.AppendLine("        \"aggregate\": \"single|collect|flatten\",");
+        sb.AppendLine("        \"schema\": { }");
+        sb.AppendLine("      },");
+        sb.AppendLine("      \"s\": \"todo\",");
+        sb.AppendLine("      \"res\": null,");
+        sb.AppendLine("      \"err\": null");
         sb.AppendLine("    }");
         sb.AppendLine("  ]");
         sb.AppendLine("}");
@@ -220,10 +241,27 @@ public sealed class LlmPlanner(
         sb.AppendLine("- Download-style tools may return the page reference enriched with 'content'. Prefer consuming title/content from the download result, and keep search metadata when it adds value.");
         sb.AppendLine("- For download-style tools, pass exactly one of 'page' or 'url'. Do not send both.");
         sb.AppendLine("- Tool steps must use the exact tool name listed below, including any server prefix.");
+        sb.AppendLine("- Saved-agent steps must use the exact agent id listed below.");
         sb.AppendLine("- Do not invent, estimate, or fill in exact factual values when the user request requires precise facts.");
         sb.AppendLine("- If exact values are missing, add retrieval/narrowing steps or let the downstream step fail through the structured execution error contract instead of guessing.");
         sb.AppendLine("- For extraction steps, if the source does not contain the requested entity or the critical facts are absent, rely on the structured execution error contract instead of guessing.");
         sb.AppendLine("- Do not wrap literal tool arguments in helper objects like {\"value\":...}. Tool inputs must be plain literals or binding objects with exactly 'from' and optional 'mode'. LLM bindings may additionally include optional field 'type'.");
+        sb.AppendLine();
+        sb.AppendLine("Available saved agents:");
+        if (_agentCatalog.ListAgents().Count == 0)
+        {
+            sb.AppendLine("- none");
+        }
+        else
+        {
+            foreach (var agent in _agentCatalog.ListAgents())
+            {
+                sb.AppendLine($"- id: {agent.Name}");
+                sb.AppendLine($"  name: {agent.DisplayName}");
+                sb.AppendLine($"  description: {agent.Description}");
+            }
+        }
+
         sb.AppendLine();
         sb.AppendLine("Available tools:");
         foreach (var tool in tools)
@@ -267,6 +305,13 @@ public sealed class LlmPlanner(
         sb.AppendLine("- Put step parameters under \"in\". Do not place tool args as top-level step properties.");
         sb.AppendLine("- Every step must include id, in, s, res, and err.");
         sb.AppendLine();
+        sb.AppendLine("Saved-agent step rules:");
+        sb.AppendLine("- Saved-agent steps MUST provide userPrompt.");
+        sb.AppendLine("- Saved-agent steps MUST NOT provide systemPrompt.");
+        sb.AppendLine("- Saved-agent steps must declare out.format, out.aggregate, and when out.format='json', out.schema.");
+        sb.AppendLine("- Saved-agent steps use the same binding rules under 'in' as LLM steps.");
+        sb.AppendLine("- Use saved-agent steps when the task needs a preconfigured agent identity, its own tools, or long-running internal tool-calling.");
+        sb.AppendLine();
         sb.AppendLine("Few-shot examples:");
         sb.AppendLine(BuildFewShotExamples());
         sb.AppendLine();
@@ -286,7 +331,7 @@ public sealed class LlmPlanner(
             ? string.Empty
             : $"\nPrevious invalid draft plan:\n{previousDraftJson}";
 
-        return $"{originalUserPrompt}\n\nYour previous plan was invalid.\nValidation error: {errorMessage}{issueBlock}{previousDraftBlock}\n\nReturn a corrected ResultEnvelope<PlanDefinition> as JSON only.\nEdit the previous draft minimally when possible. Preserve correct step ids, bindings, and working structure instead of rewriting unrelated parts.\nNon-negotiable requirements:\n- Follow the exact ok/data/error envelope schema.\n- Put the full plan inside data when ok=true.\n- Each step must include id, in, s, res, and err.\n- A step must have exactly one of tool or llm.\n- Every llm step must include BOTH systemPrompt AND userPrompt, including shortlist/select/extract/compare steps.\n- Each llm step must include an out object with format/aggregate/schema.\n- Do not embed $step refs inside prompts.\n- Put dynamic inputs under in using binding objects like {{\"from\":\"$step.ref\",\"mode\":\"value|map\"}}.\n- If an llm input is shape-sensitive, add inline field \"type\" inside the binding object, for example {{\"from\":\"$search.results\",\"mode\":\"value\",\"type\":\"array<object>\"}}.\n- The inline binding field \"type\" describes one resolved call input. With {{\"mode\":\"value\"}} on $search.results this is often array<object>; with {{\"mode\":\"map\"}} on $search.results this is often object.\n- Supported inline binding types are string, number, integer, boolean, object, array, array<string>, array<number>, array<integer>, array<boolean>, array<object>.\n- Literal tool inputs must be plain JSON literals, never wrapper objects like {{\"value\":...}}.\n- Search/download steps return pages, not chosen entities. If the task compares or reviews a few entities, add shortlist/selection and targeted retrieval instead of assuming top pages equal the final entities.\n- If an extraction step would read a page that may mention multiple entities, either add an explicit target entity input or add a shortlist/select step first.\n- Preserve explicit user deliverables such as links, package pages, docs pages, repo URLs, ranking, and recommendation fields.\n- Unless the user explicitly asked for official pages, documentation pages, repo URLs, or extra evidence sources, do NOT require them in shortlist/select prompts.\n- If current search results already point to usable candidate pages, shortlist and download those URLs directly instead of adding another search just to find a more official-looking page.\n- Use collect for mapped single-item extraction, flatten for mapped multi-item extraction, and single otherwise.\n- Every schema node must declare type or enum.\n- Every object property schema must declare type or enum.\n- For string outputs, either omit schema or use {{\"type\":\"string\"}}.\n- Use the exact field names from the schema.\n- Use only refs to earlier steps.\nDo not repeat the same mistake.";
+        return $"{originalUserPrompt}\n\nYour previous plan was invalid.\nValidation error: {errorMessage}{issueBlock}{previousDraftBlock}\n\nReturn a corrected ResultEnvelope<PlanDefinition> as JSON only.\nEdit the previous draft minimally when possible. Preserve correct step ids, bindings, and working structure instead of rewriting unrelated parts.\nNon-negotiable requirements:\n- Follow the exact ok/data/error envelope schema.\n- Put the full plan inside data when ok=true.\n- Each step must include id, in, s, res, and err.\n- A step must have exactly one of tool, llm, or agent.\n- Every llm step must include BOTH systemPrompt AND userPrompt, including shortlist/select/extract/compare steps.\n- Every saved-agent step must include userPrompt, must NOT include systemPrompt, and must reference one callable agent id from the system prompt.\n- Each llm or saved-agent step must include an out object with format/aggregate/schema.\n- Do not embed $step refs inside prompts.\n- Put dynamic inputs under in using binding objects like {{\"from\":\"$step.ref\",\"mode\":\"value|map\"}}.\n- If an llm or saved-agent input is shape-sensitive, add inline field \"type\" inside the binding object, for example {{\"from\":\"$search.results\",\"mode\":\"value\",\"type\":\"array<object>\"}}.\n- The inline binding field \"type\" describes one resolved call input. With {{\"mode\":\"value\"}} on $search.results this is often array<object>; with {{\"mode\":\"map\"}} on $search.results this is often object.\n- Supported inline binding types are string, number, integer, boolean, object, array, array<string>, array<number>, array<integer>, array<boolean>, array<object>.\n- Literal tool inputs must be plain JSON literals, never wrapper objects like {{\"value\":...}}.\n- Search/download steps return pages, not chosen entities. If the task compares or reviews a few entities, add shortlist/selection and targeted retrieval instead of assuming top pages equal the final entities.\n- If an extraction step would read a page that may mention multiple entities, either add an explicit target entity input or add a shortlist/select step first.\n- Preserve explicit user deliverables such as links, package pages, docs pages, repo URLs, ranking, and recommendation fields.\n- Unless the user explicitly asked for official pages, documentation pages, repo URLs, or extra evidence sources, do NOT require them in shortlist/select prompts.\n- If current search results already point to usable candidate pages, shortlist and download those URLs directly instead of adding another search just to find a more official-looking page.\n- Use collect for mapped single-item extraction, flatten for mapped multi-item extraction, and single otherwise.\n- Every schema node must declare type or enum.\n- Every object property schema must declare type or enum.\n- For string outputs, either omit schema or use {{\"type\":\"string\"}}.\n- Use the exact field names from the schema.\n- Use only refs to earlier steps.\nDo not repeat the same mistake.";
     }
 
     private static string BuildFewShotExamples() =>

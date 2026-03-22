@@ -1,5 +1,6 @@
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using ChatClient.Api.PlanningRuntime.Agents;
 using ChatClient.Api.Services;
 
 namespace ChatClient.Api.PlanningRuntime.Planning;
@@ -10,12 +11,13 @@ internal static class PlanDraftValidationTool
 
     public static JsonObject CreateValidationResult(
         PlanEditingSession session,
-        IReadOnlyCollection<AppToolDescriptor> workflowTools)
+        IReadOnlyCollection<AppToolDescriptor> workflowTools,
+        PlanningCallableAgentCatalog? agentCatalog = null)
     {
         try
         {
             var draft = session.BuildPlan();
-            if (PlanValidator.TryValidate(draft, workflowTools, out var validationIssue))
+            if (PlanValidator.TryValidate(draft, workflowTools, agentCatalog?.ListAgents(), out var validationIssue))
             {
                 return new JsonObject
                 {

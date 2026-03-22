@@ -6,7 +6,10 @@ using ChatClient.Api.Services;
 using ChatClient.Application.Services;
 using ChatClient.Application.Services.Agentic;
 using ChatClient.Domain.Models;
+#pragma warning disable MAAI001
 using Microsoft.Agents.AI;
+using Microsoft.Agents.AI.Compaction;
+#pragma warning restore MAAI001
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Options;
 using ModelContextProtocol.Client;
@@ -192,15 +195,22 @@ public sealed class HttpAgenticExecutionRuntime(
         AgenticToolSet toolSet,
         List<FunctionCallRecord> functionCalls)
     {
+        var historyCompaction = AgentHistoryCompactionFactory.Create(
+            request.Agent,
+            toolSet,
+            loggerFactory,
+            logger);
+
         var agentOptions = new ChatClientAgentOptions
         {
             Id = string.IsNullOrWhiteSpace(request.Agent.AgentId) ? null : request.Agent.AgentId.Trim(),
             Name = string.IsNullOrWhiteSpace(request.Agent.AgentName) ? null : request.Agent.AgentName.Trim(),
             ChatOptions = new ChatOptions
             {
-                Instructions = string.IsNullOrWhiteSpace(request.Agent.Content) ? null : request.Agent.Content.Trim(),
+                Instructions = BuildInstructions(request.Agent, historyCompaction),
                 Tools = toolSet.Tools.ToList()
             },
+            AIContextProviders = historyCompaction is null ? null : [historyCompaction.Provider],
             UseProvidedChatClientAsIs = false
         };
 
@@ -380,6 +390,24 @@ public sealed class HttpAgenticExecutionRuntime(
         }
 
         return new ChatClientAgentRunOptions(chatOptions);
+    }
+
+    private static string? BuildInstructions(
+        AgentDescription agent,
+        AgentHistoryCompactionAttachment? historyCompaction)
+    {
+        var content = agent.Content?.Trim();
+        if (historyCompaction is null)
+        {
+            return string.IsNullOrWhiteSpace(content) ? null : content;
+        }
+
+        if (string.IsNullOrWhiteSpace(content))
+        {
+            return historyCompaction.InstructionNote;
+        }
+
+        return $"{content}\n\n{historyCompaction.InstructionNote}";
     }
 
     private static List<ChatMessage> BuildChatMessages(AgenticExecutionRuntimeRequest request)

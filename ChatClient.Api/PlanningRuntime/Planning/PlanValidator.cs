@@ -1,6 +1,7 @@
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Text.RegularExpressions;
+using ChatClient.Api.PlanningRuntime.Agents;
 using ChatClient.Api.Services;
 
 namespace ChatClient.Api.PlanningRuntime.Planning;
@@ -11,10 +12,17 @@ public static partial class PlanValidator
         PlanDefinition plan,
         IReadOnlyCollection<AppToolDescriptor>? tools,
         out PlanValidationIssue? issue)
+        => TryValidate(plan, tools, callableAgents: null, out issue);
+
+    public static bool TryValidate(
+        PlanDefinition plan,
+        IReadOnlyCollection<AppToolDescriptor>? tools,
+        IReadOnlyCollection<PlanningCallableAgentDescriptor>? callableAgents,
+        out PlanValidationIssue? issue)
     {
         try
         {
-            ValidateCore(plan, tools);
+            ValidateCore(plan, tools, callableAgents);
             issue = null;
             return true;
         }
@@ -28,8 +36,14 @@ public static partial class PlanValidator
     public static void ValidateOrThrow(
         PlanDefinition plan,
         IReadOnlyCollection<AppToolDescriptor>? tools = null)
+        => ValidateOrThrow(plan, tools, callableAgents: null);
+
+    public static void ValidateOrThrow(
+        PlanDefinition plan,
+        IReadOnlyCollection<AppToolDescriptor>? tools,
+        IReadOnlyCollection<PlanningCallableAgentDescriptor>? callableAgents)
     {
-        if (TryValidate(plan, tools, out var issue))
+        if (TryValidate(plan, tools, callableAgents, out var issue))
             return;
 
         throw new InvalidOperationException(issue!.Message, new PlanValidationException(issue));
@@ -37,7 +51,8 @@ public static partial class PlanValidator
 
     private static void ValidateCore(
         PlanDefinition plan,
-        IReadOnlyCollection<AppToolDescriptor>? tools)
+        IReadOnlyCollection<AppToolDescriptor>? tools,
+        IReadOnlyCollection<PlanningCallableAgentDescriptor>? callableAgents)
     {
         if (string.IsNullOrWhiteSpace(plan.Goal))
             throw CreateIssue("plan_goal_missing", "Plan.goal is required.", path: "goal");
@@ -50,6 +65,8 @@ public static partial class PlanValidator
         var resolvedOutputContracts = new Dictionary<string, ResolvedPlanStepOutputContract>(StringComparer.Ordinal);
         var knownTools = tools?
             .ToDictionary(tool => tool.QualifiedName, StringComparer.OrdinalIgnoreCase);
+        var knownAgents = callableAgents?
+            .ToDictionary(agent => agent.Name, StringComparer.OrdinalIgnoreCase);
 
         foreach (var step in plan.Steps)
         {
@@ -61,8 +78,15 @@ public static partial class PlanValidator
 
             var hasTool = !string.IsNullOrWhiteSpace(step.Tool);
             var hasLlm = !string.IsNullOrWhiteSpace(step.Llm);
-            if (hasTool == hasLlm)
-                throw CreateIssue("step_kind_invalid", $"Step '{step.Id}' must have exactly one of 'tool' or 'llm'.", stepId: step.Id);
+            var hasAgent = !string.IsNullOrWhiteSpace(step.Agent);
+            var selectedKindCount = (hasTool ? 1 : 0) + (hasLlm ? 1 : 0) + (hasAgent ? 1 : 0);
+            if (selectedKindCount != 1)
+            {
+                throw CreateIssue(
+                    "step_kind_invalid",
+                    $"Step '{step.Id}' must have exactly one of 'tool', 'llm', or 'agent'.",
+                    stepId: step.Id);
+            }
 
             if (!IsValidStatus(step.Status))
                 throw CreateIssue("step_status_invalid", $"Step '{step.Id}' has invalid status '{step.Status}'.", stepId: step.Id, actual: step.Status);
@@ -78,6 +102,15 @@ public static partial class PlanValidator
                     throw CreateIssue("tool_unknown", $"Step '{step.Id}' references unknown tool '{step.Tool}'.", stepId: step.Id, toolName: step.Tool);
 
                 toolInputProperties = ValidateToolInputs(step, toolMetadata);
+            }
+
+            if (hasAgent && knownAgents is not null && !knownAgents.ContainsKey(step.Agent!))
+            {
+                throw CreateIssue(
+                    "agent_unknown",
+                    $"Step '{step.Id}' references unknown callable agent '{step.Agent}'.",
+                    stepId: step.Id,
+                    actual: step.Agent);
             }
 
             foreach (var input in step.In)
@@ -117,6 +150,43 @@ public static partial class PlanValidator
                     throw CreateIssue(
                         "llm_prompt_template_placeholder",
                         $"LLM step '{step.Id}' must not contain unresolved template placeholders like '{{name}}', '{{{{name}}}}', '[[name]]', '<<name>>', or '${{name}}' in prompts.",
+                        stepId: step.Id);
+                }
+            }
+            else if (hasAgent)
+            {
+                if (!string.IsNullOrWhiteSpace(step.SystemPrompt))
+                {
+                    throw CreateIssue(
+                        "agent_system_prompt_forbidden",
+                        $"Saved-agent step '{step.Id}' must not provide systemPrompt.",
+                        stepId: step.Id,
+                        path: $"{step.Id}.systemPrompt");
+                }
+
+                if (string.IsNullOrWhiteSpace(step.UserPrompt))
+                {
+                    throw CreateIssue(
+                        "agent_user_prompt_missing",
+                        $"Saved-agent step '{step.Id}' must provide userPrompt.",
+                        stepId: step.Id,
+                        path: $"{step.Id}.userPrompt");
+                }
+
+                if (ContainsPromptRef(step.UserPrompt!))
+                {
+                    throw CreateIssue(
+                        "agent_user_prompt_ref",
+                        $"Saved-agent step '{step.Id}' must not embed step refs inside userPrompt.",
+                        stepId: step.Id,
+                        path: $"{step.Id}.userPrompt");
+                }
+
+                if (ContainsTemplatePlaceholder(step.UserPrompt!))
+                {
+                    throw CreateIssue(
+                        "agent_prompt_template_placeholder",
+                        $"Saved-agent step '{step.Id}' must not contain unresolved template placeholders like '{{name}}', '{{{{name}}}}', '[[name]]', '<<name>>', or '${{name}}' in prompts.",
                         stepId: step.Id);
                 }
             }

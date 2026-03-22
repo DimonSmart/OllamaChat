@@ -17,6 +17,7 @@ public class AgentDescription
     public string AgentId => string.IsNullOrWhiteSpace(ShortName) ? AgentName : ShortName;
 
     public FunctionSettings FunctionSettings { get; set; } = new();
+    public AgentExecutionSettings ExecutionSettings { get; set; } = new();
     public List<McpServerSessionBinding> McpServerBindings { get; set; } = [];
 
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;

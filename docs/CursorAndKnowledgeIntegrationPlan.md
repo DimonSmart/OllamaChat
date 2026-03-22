@@ -84,9 +84,9 @@
 - нет удобного слоя валидации и пресетов по типам серверов, например `roots` для file sandbox или `knowledgeFile` для knowledge book;
 - built-in `file-sandbox` пока не реализован, хотя модель bindings и `roots` уже подготовлены;
 - для книжного сценария уже есть отдельный file-bound `built-in-markdown-document` с параметром `sourceFile`, но пока нет document-to-cursor bridge (`document-chunks`/`create_document_cursor`) для bounded чтения тем же runtime;
-- `PlanStep.Result` и `PlanningSessionState` все еще держат результаты inline, без `preview + artifactRef`;
-- shared cursor runtime, built-in `cursor` MCP, `cursor-agent` и persisted progress/resume пока отсутствуют;
-- planning runtime пока не умеет вызывать заранее настроенных агентов (`AgentDescription`) и делегировать им подзадачи; LLM step там сейчас только ad-hoc prompt без agent registry;
+- `PlanStep.Result` и `PlanningSessionState` все еще держат результаты inline, без `preview + artifactRef`; это остается полезным улучшением, но уже не считается первым блокером для книжного cursor-сценария;
+- shared cursor runtime, built-in `cursor` MCP, document-to-cursor bridge и persisted progress/resume пока отсутствуют;
+- planning runtime пока не умеет вызывать заранее настроенных агентов (`AgentDescription`) как шаг плана; LLM step там сейчас только ad-hoc prompt без agent registry, а политика history compaction для длительных прогонов еще нигде не описана;
 - текущий knowledge book полезен как иерархическое хранилище разделов, но не заменяет generic entity/evidence слой с merge/matching правилами.
 
 ### Практический срез на сегодня
@@ -96,7 +96,7 @@
 - фаза 0 остается частично выполненной, потому что базовые runtime термины уже есть, но `ArtifactRef`/`CursorDescriptor`/`CursorBatch` как общие DTO еще не введены;
 - фаза 1 уже в основном выполнена: bindings работают в chat, multi-agent и planning, включая binding-scoped tool catalog;
 - knowledge book уже не "цель", а готовая опорная capability;
-- ближайший технический разрыв для cursor-driven сценариев теперь не в transport-слое, а в трех местах: `artifactRef`, shared cursor runtime и bounded cursor-agent loop.
+- ближайший технический разрыв для cursor-driven сценариев теперь не в transport-слое, а в трех местах: planner-native вызов сохраненных агентов, history compaction внутри agentic runtime и shared cursor runtime поверх markdown-document.
 
 ## Что берем из AITextEditor
 
@@ -500,27 +500,37 @@
 
 ### Нужна ли planner-делегация в заранее настроенных агентов
 
-Сейчас planning runtime этого не умеет:
+Да. Для cursor-driven длительных операций это теперь считается целевой архитектурой.
 
-- `PlanStep` поддерживает только `tool` и `llm`;
-- `AgentStepRunner` выполняет ad-hoc LLM шаг по prompt, а не вызов заранее настроенного `AgentDescription`;
-- planner не имеет registry настроенных агентов и не может сказать "поручи это character-agent" или "вызови cursor-specialist".
+Базовый принцип:
 
-Для целевого книжного сценария это не является обязательным первым шагом.
+- planner не крутит `cursor loop` сам;
+- planner вызывает заранее настроенного сохраненного агента;
+- этот агент внутри себя делает tool-calling по курсору и по соседним domain tools;
+- политика history compaction хранится в настройках самого сохраненного агента, а не выставляется наружу как per-step run option.
 
-Минимально достаточный путь:
+Почему это лучше для текущего проекта:
 
-- оставить planner tool-centric;
-- дать ему инструменты `file-sandbox`, `cursor`, `cursor-agent`, `knowledge-book` и затем `entity/character-knowledge`;
-- завернуть bounded sub-workflow чтения книги в `cursor-agent` MCP, чтобы planner вызывал его как обычный tool step.
+- текущий planner не приспособлен к длинному batch-by-batch loop;
+- существующий agentic runtime уже умеет tool-calling loop и является естественным местом для compaction;
+- разные длительные агенты будут требовать разные правила окна истории, и это ближе к identity/behavior самого агента, чем к отдельному шагу плана.
 
-Если позже понадобится именно переиспользование заранее настроенных агентов, правильнее добавить не новый step kind, а gateway/tool слой поверх существующего agentic runtime, например:
+Что нужно добавить:
 
-- `invoke_agent(agentId, task, inputs?, bindings?)`
-- `get_agent_run(runId)`
-- `resume_agent_run(runId)`
+- новый step kind `agent` в `PlanStep`;
+- planner-visible registry callable сохраненных агентов;
+- resolver `AgentDescription -> ResolvedChatAgent`;
+- non-streaming invoker поверх существующего agentic runtime с максимальным переиспользованием имеющегося кода;
+- execution policy внутри сохраненного агента для history compaction;
+- executor branch, который запускает сохраненного агента и передает ему plan inputs.
 
-Тогда planner останется tool-oriented, а делегация станет еще одним MCP-backed capability.
+Отдельный открытый вопрос:
+
+- нужно развести два паттерна:
+- вызов сохраненного агента, который принимает именованный cursor как input и сам управляет чтением;
+- executor-level fan-out, когда обычный tool принимает содержимое cursor-а, а исполнитель плана сам бежит по cursor подобно `mode=map`.
+
+Для первой итерации приоритет отдается первому паттерну. Второй остается отдельной поздней capability.
 
 ### Минимальный целевой сценарий: markdown-книга -> досье персонажей
 
@@ -533,8 +543,8 @@
 нужна следующая минимальная цепочка:
 
 - источник книги: специализированный `markdown-document/document-chunks` MCP с конкретным `sourceFile`;
-- long-running чтение: `cursor` + `cursor-agent`;
-- накопление результата: `artifact-store`;
+- long-running чтение: `cursor` + заранее настроенный агент, вызванный planner-ом как отдельный `agent` step;
+- накопление результата: domain-specific store/tool, который агент вызывает по месту;
 - целевое состояние: сначала `knowledge-book`, затем `entity-knowledge`/`character-knowledge`;
 - orchestration: planning runtime с per-run bindings, чтобы один run видел конкретную книгу и конкретный knowledge file.
 
@@ -545,17 +555,18 @@
    - `knowledgeFile` для файла досье/knowledge state.
 2. planner строит план:
    - создать курсор по книге;
-   - запустить cursor-agent на extraction задачи;
-   - сохранить/прочитать artifact с evidence;
-   - обновить knowledge/dossier store;
-   - вернуть итог или продолжить scan по `nextToken`.
+   - вызвать заранее настроенного агента для extraction/update задачи;
+   - передать агенту входы (`cursorName`, `registryId` или аналогичные handles);
+   - агент внутри себя читает курсор, вызывает нужные инструменты сохранения/обновления и завершает длительный проход;
+   - planner получает компактный итог шага и решает, нужен ли следующий coarse-grained шаг.
 3. knowledge layer экспортирует итог в markdown-досье персонажей.
 
 Что мешает этому сценарию прямо сейчас:
 
 - нет связки `markdown-document` -> `cursor` (`document-chunks`, `create_document_cursor`, chunk projections);
-- нет `cursor`/`cursor-agent`;
-- нет artifact indirection;
+- нет `cursor` и document-to-cursor bridge;
+- нет planner-native вызова заранее настроенных агентов;
+- нет history compaction policy внутри сохраненного агента и соответствующего hook в agentic runtime;
 - planning run уже принимает bindings через `Planner.Agent.McpServerBindings`, но нет e2e покрытия и типовых пресетов/validation для книжного сценария;
 - planning run не умеет резюмировать прогресс/resume для длинного чтения;
 - knowledge book годится как output surface, но не как полноценный entity/evidence store для merge персонажей.
@@ -662,67 +673,66 @@
 
 - система может работать с реальными файлами, не выходя за пределы root.
 
-### Фаза 3. Artifact/result indirection
+### Фаза 3. Planner-native делегация в сохраненных агентов
 
 Цель:
 
-- вынести большие результаты из plan state и chat state до внедрения курсоров.
+- сделать вызов заранее настроенного агента first-class шагом planner-а и перенести внутрь него cursor loop.
 
 Шаги:
 
-1. Реализовать `IPlanningArtifactStore` или аналогичный application-level artifact store.
-2. Ввести `preview + artifactRef` как контракт для больших результатов.
-3. Изменить planning UI/state так, чтобы step details показывали preview и ссылались на artifact.
-4. Определить storage lifecycle для evidence, summaries и финальных artifacts.
+1. Добавить новый step kind `agent` в `PlanStep` и обновить validator/serializer/planner prompt.
+2. Добавить planner-visible registry callable сохраненных агентов.
+3. Реализовать resolver `AgentDescription -> ResolvedChatAgent`.
+4. Добавить non-streaming invoker поверх существующего agentic runtime, не дублируя его цикл.
+5. Добавить executor branch для `agent` step и mapping plan inputs -> agent inputs.
 
 Результат:
 
-- large payloads перестают раздувать `PlanStep.Result`, `PlanningSessionState` и UI.
+- planner получает возможность вызывать заранее настроенного агента как отдельный шаг пайплайна.
 
-### Фаза 4. Shared cursor runtime и `built-in-cursor`
+### Фаза 4. History compaction внутри сохраненного агента
 
 Цель:
 
-- получить универсальный слой batch processing поверх разных источников.
+- дать сохраненному агенту возможность долго читать курсор через tool-calling без бесконтрольного роста истории.
+
+Шаги:
+
+1. Добавить execution policy в настройки сохраненного агента, а не в step-level run options.
+2. Сначала обновить `Microsoft.Agents.AI` и `Microsoft.Extensions.AI` до последних совместимых версий и проверить, какие extension points уже дает framework.
+3. Встроить history compaction в `HttpAgenticExecutionRuntime` с максимальным переиспользованием существующего agentic loop.
+4. Разрешить максимум нейтральную системную пометку, что история чата может быть сокращена; не добавлять автоматических рекомендаций по сохранению состояния.
+5. Отдельно оставить на потом лимиты tool-вызовов как возможную часть настроек агента.
+
+Результат:
+
+- сохраненный агент может проходить длинный cursor-driven workflow в скользящем окне истории.
+
+### Фаза 5. Shared cursor runtime и document-to-cursor bridge
+
+Цель:
+
+- дать сохраненным агентам stateful cursor source поверх markdown-document и других источников.
 
 Шаги:
 
 1. Добавить `ICursorStore`/`ICursorRuntime` в приложение.
 2. Реализовать persistent cursor progress store.
-3. Как первую поставку реализовать search-result cursor и chunk cursor поверх уже существующих web/artifact источников.
-4. После появления `file-sandbox` добавить file cursor как дополнительный источник.
-5. Добавить built-in `cursor` MCP:
+3. Добавить built-in `cursor` MCP:
    - `create_*_cursor`
    - `read_cursor_batch`
    - `describe_cursor`
    - `dispose_cursor`
-6. Интегрировать cursor runtime с artifact store там, где источники или результаты большие.
+4. В первой книжной итерации добавить bridge `markdown-document -> cursor`:
+   - `create_document_cursor(...)`
+   - `read_document_chunk(...)`
+   - именованные cursor handles для передачи в `agent` step
+5. Отдельно сохранить открытым более поздний паттерн executor-level fan-out по cursor input, аналогичный `mode=map`.
 
 Результат:
 
-- источник читается порциями независимо от planning runtime и без раздувания памяти.
-
-### Фаза 5. Cursor Agent MCP
-
-Цель:
-
-- внедрить bounded loop как инструмент, а не как новый step type planner.
-
-Шаги:
-
-1. Добавить built-in `cursor-agent` MCP.
-2. Реализовать цикл:
-   - read batch
-   - send batch + snapshot to LLM
-   - append evidence
-   - stop/continue
-   - finalize
-3. Добавить persisted run record.
-4. Добавить resume и progress API.
-
-Результат:
-
-- LLM сможет анализировать большие корпуса, не видя их целиком.
+- заранее настроенный агент получает порционное чтение документа как входную capability.
 
 ### Фаза 6. Markdown document layer для книги `[частично выполнено]`
 
@@ -794,9 +804,8 @@
 1. Добавить `character-knowledge` MCP как specialization над entity knowledge.
 2. Завести dedicated agent description.
 3. Ограничить агенту инструменты:
-   - file sandbox
+   - markdown-document
    - cursor
-   - cursor-agent
    - character-knowledge
    - при необходимости knowledge-book
 4. Сделать e2e tests:
@@ -813,18 +822,17 @@
 
 Цель:
 
-- научить planner осознанно использовать cursor/artifact/knowledge patterns после того, как они доказали свою полезность как tools.
+- научить planner осознанно использовать `agent` steps, cursor patterns и knowledge workflows после того, как они доказали свою полезность.
 
 Шаги:
 
-1. Добавить few-shot examples для cursor/file/entity workflows.
+1. Добавить few-shot examples для cursor/file/entity workflows и planner-driven agent delegation.
 2. Добавить в planner/replanner guidance паттерны:
    - create cursor
-   - run cursor agent
-   - read artifact
+   - invoke saved agent
    - update/query knowledge
-   - synthesize from artifact
-3. Только при реальной необходимости позже добавить first-class step kinds:
+   - synthesize final answer
+3. Отдельно и только при реальной необходимости позже рассмотреть executor-level fan-out и специальные step kinds:
    - `cursor`
    - `reduce`
    - `artifact`.
@@ -837,44 +845,50 @@
 
 ### Согласованный scope ближайшей итерации
 
-Делаем первые четыре блока, которые непосредственно двигают сценарий "markdown-книга -> досье персонажей":
+Делаем первые пять блоков, которые непосредственно двигают сценарий "markdown-книга -> досье персонажей":
 
 1. хвост по session-scoped bindings: presets/validation + planning e2e;
-2. artifact/result indirection;
-3. shared cursor runtime и built-in `cursor`;
-4. built-in `cursor-agent` вместе с document-to-cursor bridge поверх уже существующего `built-in-markdown-document`.
+2. planner-native `agent` step и callable saved agents;
+3. execution policy сохраненного агента + history compaction внутри agentic runtime;
+4. non-streaming invocation поверх существующего agentic runtime и executor branch для `agent` step;
+5. shared cursor runtime вместе с document-to-cursor bridge поверх уже существующего `built-in-markdown-document`.
 
 Что сознательно не включаем в этот scope:
 
 - generic `file-sandbox` с `roots`;
 - папочные/мультифайловые сценарии;
-- planner-native agent delegation;
+- executor-level fan-out по cursor input;
+- отдельный generic `cursor-reader` агент как готовый к использованию артефакт без domain tools;
 - full entity/character maturity layer поверх knowledge artifacts.
 
 Рекомендуемый порядок внедрения:
 
 1. Закрыть хвост фазы 1: validation/presets + planning e2e для bindings
-2. Artifact/result indirection
-3. Shared cursor runtime MVP и built-in `cursor` для `search-result`/`chunk` источников
-4. Cursor Agent MCP + document-to-cursor bridge (`document-chunks`/`create_document_cursor`) поверх существующего `built-in-markdown-document`
-5. Эволюция knowledge layer поверх существующего knowledge book
-6. Character knowledge maturity test
-7. Generic file sandbox MCP + file cursor как расширение cursor runtime
-8. Planner-native cursor patterns
+2. Planner-native `agent` step + callable saved agents
+3. History compaction внутри сохраненного агента с максимальным переиспользованием agentic runtime
+4. Non-streaming invocation и executor branch для `agent` step
+5. Shared cursor runtime MVP + document-to-cursor bridge поверх существующего `built-in-markdown-document`
+6. Эволюция knowledge layer поверх существующего knowledge book
+7. Character knowledge maturity test
+8. Generic file sandbox MCP + file cursor как расширение cursor runtime
+9. Artifact/result indirection как отдельное улучшение состояния и UI
+10. Planner-native cursor patterns и, при необходимости, executor-level fan-out
 
 Это самый прагматичный путь, потому что:
 
 - опирается на уже реализованный transport/binding foundation, а не пытается строить его заново;
 - закрывает последний разрыв в bindings через тесты и UX, а не через новую модель;
-- дает первый cursor vertical поверх уже существующих `built-in-web` и artifact/chunk источников, не дожидаясь file-sandbox;
+- переиспользует уже существующий agentic runtime как движок исполнения сохраненного агента, а не строит второй цикл;
+- переносит history compaction туда, где реально живет tool-calling loop;
+- дает первый cursor vertical поверх `built-in-markdown-document`, который уже есть в проекте;
 - сохраняет существующий реестр MCP серверов как source of truth;
-- не требует сложной типовой системы для override-параметров;
-- дает пользу уже после первых трех фаз;
+- не требует выставлять history compaction наружу как отдельный step-level DSL;
+- дает пользу уже после первых четырех фаз;
 - для книжного кейса использует прямой `sourceFile` binding вместо избыточного generic `roots`;
 - отделяет прямую работу с markdown-документом от knowledge-store, что ближе к модели `AITextEditor`;
-- вводит `artifactRef` до полного cursor/file сценария, чтобы не раздувать planning state;
+- не блокирует первую итерацию на `artifactRef`, который можно ввести позже отдельной фазой;
 - позволяет использовать текущий knowledge book как ранний knowledge surface, пока machine-oriented слой еще строится;
-- не требует сразу ломать plan contract.
+- осознанно расширяет plan contract ровно в одной точке: новым `agent` step.
 
 ## Критерии успеха
 
@@ -886,10 +900,12 @@
 4. Строить fingerprint кэша по обезличенным override-значениям без утечки путей, connection strings и других секретов.
 5. Запускать sandboxed file MCP с `roots`, заданными только для текущего run, и безопасно читать сотни файлов внутри root.
 6. Создавать cursor и проходить данные батчами с resume/progress.
-7. Держать большие intermediate results вне `PlanStep.Result`, используя `preview + artifactRef`.
-8. Использовать существующий knowledge book как knowledge surface и при этом строить machine-oriented knowledge artifacts поверх cursor-driven evidence.
-9. Поддержать отдельного knowledge-агента через текущую схему `AgentDescription + FunctionSettings + Mcp bindings`.
-10. Пройти e2e сценарий наподобие character dossier extraction.
+7. Вызывать заранее настроенного сохраненного агента из planner-а как отдельный `agent` step с входами, резолвящимися из результатов предыдущих шагов.
+8. Поддерживать history compaction как внутреннюю execution policy сохраненного агента при его запуске через planning runtime.
+9. Держать большие intermediate results вне `PlanStep.Result`, используя `preview + artifactRef`, когда это действительно понадобится отдельным сценариям.
+10. Использовать существующий knowledge book как knowledge surface и при этом строить machine-oriented knowledge artifacts поверх cursor-driven evidence.
+11. Поддержать отдельного knowledge-агента через текущую схему `AgentDescription + FunctionSettings + Mcp bindings`.
+12. Пройти e2e сценарий наподобие character dossier extraction.
 
 ## Практический вывод
 
@@ -907,11 +923,13 @@
 - не переделывать bindings заново, а добить presets, validation и planning e2e вокруг уже существующего plumbing;
 - использовать уже существующую поддержку нескольких экземпляров одного MCP сервера на одном usage-context;
 - при необходимости довести обезличивание cache keys до всех вспомогательных слоев;
-- ввести artifact store и `artifactRef`;
-- построить cursor runtime и cursor-agent сначала поверх web/artifact источников, а затем расширить их file-sandbox/file cursor сценарием;
-- добавить file sandbox;
-- добавить отдельный markdown document layer для адресного чтения и редактирования книги;
-- при необходимости добавить tool-based gateway для вызова заранее настроенных агентов из planning runtime;
+- добавить first-class `agent` step и planner-visible registry callable сохраненных агентов;
+- переиспользовать существующий agentic runtime как execution core для `agent` step;
+- добавить history compaction как внутреннюю настройку сохраненного агента, а не как внешний step option;
+- обновить `Microsoft.Agents.AI` и `Microsoft.Extensions.AI` до последних совместимых версий перед встраиванием compaction;
+- построить cursor runtime и document-to-cursor bridge поверх уже существующего `built-in-markdown-document`;
+- позже вернуться к `artifactRef` как отдельному улучшению состояния и UI;
+- добавить file sandbox как отдельное расширение общего cursor runtime, а не как обязательную часть первой книжной итерации;
 - расширить knowledge layer от knowledge book к entity/character workflows.
 
 Именно это создаст основу и для обработки 1000 пакетов, и для анализа файловых папок, и для книжного редактирования в стиле `AITextEditor`, не ломая уже существующую архитектуру проекта.

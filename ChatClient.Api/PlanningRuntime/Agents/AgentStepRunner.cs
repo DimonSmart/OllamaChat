@@ -1,10 +1,11 @@
-﻿using System.Text.Json;
-using Microsoft.Agents.AI;
-using Microsoft.Extensions.AI;
+using System.Text.Json;
+using ChatClient.Api.Client.Services.Agentic;
 using ChatClient.Api.PlanningRuntime.Common;
 using ChatClient.Api.PlanningRuntime.Execution;
 using ChatClient.Api.PlanningRuntime.Planning;
 using ChatClient.Api.PlanningRuntime.Verification;
+using Microsoft.Agents.AI;
+using Microsoft.Extensions.AI;
 
 namespace ChatClient.Api.PlanningRuntime.Agents;
 
@@ -17,8 +18,9 @@ public interface IAgentStepRunner
 }
 
 /// <summary>
-/// Executes an agent step by calling the LLM with the prompts embedded in the plan step.
-/// There is no agent registry - the planner decides system/user prompts when it creates the plan.
+/// Executes planner non-tool steps.
+/// Ad-hoc LLM steps use prompts embedded in the plan step, while saved-agent steps invoke a
+/// preconfigured callable agent from the planning catalog.
 /// </summary>
 public sealed class AgentStepRunner(IChatClient chatClient) : IAgentStepRunner
 {
@@ -28,9 +30,22 @@ public sealed class AgentStepRunner(IChatClient chatClient) : IAgentStepRunner
     };
 
     private readonly IPlanRunObserver _observer = NullPlanRunObserver.Instance;
+    private readonly IAgenticExecutionInvoker? _agenticInvoker;
+    private readonly PlanningCallableAgentCatalog _callableAgents = PlanningCallableAgentCatalog.Empty;
 
     public AgentStepRunner(IChatClient chatClient, IPlanRunObserver? planRunObserver = null) : this(chatClient)
     {
+        _observer = planRunObserver ?? NullPlanRunObserver.Instance;
+    }
+
+    public AgentStepRunner(
+        IChatClient chatClient,
+        IAgenticExecutionInvoker agenticInvoker,
+        PlanningCallableAgentCatalog callableAgents,
+        IPlanRunObserver? planRunObserver = null) : this(chatClient)
+    {
+        _agenticInvoker = agenticInvoker ?? throw new ArgumentNullException(nameof(agenticInvoker));
+        _callableAgents = callableAgents ?? throw new ArgumentNullException(nameof(callableAgents));
         _observer = planRunObserver ?? NullPlanRunObserver.Instance;
     }
 
@@ -38,6 +53,17 @@ public sealed class AgentStepRunner(IChatClient chatClient) : IAgentStepRunner
         PlanStep step,
         JsonElement resolvedInputs,
         CancellationToken cancellationToken = default)
+    {
+        if (!string.IsNullOrWhiteSpace(step.Agent))
+            return await ExecuteSavedAgentAsync(step, resolvedInputs, cancellationToken);
+
+        return await ExecuteLlmAsync(step, resolvedInputs, cancellationToken);
+    }
+
+    private async Task<ResultEnvelope<JsonElement?>> ExecuteLlmAsync(
+        PlanStep step,
+        JsonElement resolvedInputs,
+        CancellationToken cancellationToken)
     {
         if (string.IsNullOrEmpty(step.Llm))
             return ResultEnvelope<JsonElement?>.Failure("llm_missing", $"Step '{step.Id}' has no llm label.");
@@ -90,6 +116,107 @@ public sealed class AgentStepRunner(IChatClient chatClient) : IAgentStepRunner
                 null,
                 new ErrorInfo("llm_error", ex.Message)));
             return ResultEnvelope<JsonElement?>.Failure("llm_error", ex.Message);
+        }
+    }
+
+    private async Task<ResultEnvelope<JsonElement?>> ExecuteSavedAgentAsync(
+        PlanStep step,
+        JsonElement resolvedInputs,
+        CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(step.Agent))
+            return ResultEnvelope<JsonElement?>.Failure("agent_missing", $"Step '{step.Id}' has no saved agent reference.");
+        if (string.IsNullOrWhiteSpace(step.UserPrompt))
+            return ResultEnvelope<JsonElement?>.Failure("agent_invalid_step", $"Step '{step.Id}' has no userPrompt.");
+        if (_agenticInvoker is null)
+        {
+            return ResultEnvelope<JsonElement?>.Failure(
+                "agent_runtime_missing",
+                $"Saved-agent step '{step.Id}' cannot run because the planning agentic invoker is not configured.");
+        }
+
+        if (!_callableAgents.TryGet(step.Agent, out var callableAgent))
+            return ResultEnvelope<JsonElement?>.Failure("agent_unknown", $"Step '{step.Id}' references unknown callable agent '{step.Agent}'.");
+
+        var outputContract = PlanStepOutputContractResolver.Resolve(step, toolMetadata: null, hasFanOut: false);
+        var fullUserPrompt = $"{step.UserPrompt}\n\nInput:\n{PlanningJson.SerializeIndented(new { inputs = resolvedInputs })}{BuildExecutionContract(outputContract)}";
+
+        _observer.OnEvent(new AgentPromptPreparedEvent(
+            step.Id,
+            callableAgent.Agent.Agent.AgentName,
+            callableAgent.Agent.Agent.Content,
+            step.UserPrompt,
+            fullUserPrompt,
+            resolvedInputs.Clone()));
+
+        try
+        {
+            var response = await _agenticInvoker.InvokeAsync(new AgenticExecutionRuntimeRequest
+            {
+                Agent = callableAgent.Agent.Agent,
+                ResolvedModel = callableAgent.Agent.Model,
+                Configuration = new ChatClient.Domain.Models.AppChatConfiguration(
+                    callableAgent.Agent.Model.ModelName,
+                    []),
+                Conversation = [],
+                UserMessage = fullUserPrompt
+            }, cancellationToken);
+
+            if (response.IsError)
+            {
+                _observer.OnEvent(new AgentResponseReceivedEvent(
+                    step.Id,
+                    callableAgent.Agent.Agent.AgentName,
+                    response.FinalText,
+                    false,
+                    null,
+                    new ErrorInfo("agent_error", response.ErrorMessage ?? "Agent execution failed.")));
+                return ResultEnvelope<JsonElement?>.Failure("agent_error", response.ErrorMessage ?? "Agent execution failed.");
+            }
+
+            ResultEnvelope<JsonElement?> envelope;
+            try
+            {
+                envelope = JsonSerializer.Deserialize<ResultEnvelope<JsonElement?>>(response.FinalText, JsonOptions)
+                    ?? throw new InvalidOperationException($"Step '{step.Id}' returned an empty response envelope.");
+            }
+            catch (Exception ex)
+            {
+                _observer.OnEvent(new AgentResponseReceivedEvent(
+                    step.Id,
+                    callableAgent.Agent.Agent.AgentName,
+                    response.FinalText,
+                    false,
+                    null,
+                    new ErrorInfo("agent_invalid_contract", ex.Message)));
+                return ResultEnvelope<JsonElement?>.Failure(
+                    "agent_invalid_contract",
+                    $"Saved-agent step '{step.Id}' did not return a valid JSON envelope. {ex.Message}");
+            }
+
+            var validatedEnvelope = ValidateEnvelope(step, outputContract, envelope);
+            _observer.OnEvent(new AgentResponseReceivedEvent(
+                step.Id,
+                callableAgent.Agent.Agent.AgentName,
+                response.FinalText,
+                validatedEnvelope.Ok,
+                validatedEnvelope.Data?.Clone(),
+                validatedEnvelope.Error is null
+                    ? null
+                    : new ErrorInfo(validatedEnvelope.Error.Code, validatedEnvelope.Error.Message, validatedEnvelope.Error.Details?.Clone())));
+
+            return validatedEnvelope;
+        }
+        catch (Exception ex)
+        {
+            _observer.OnEvent(new AgentResponseReceivedEvent(
+                step.Id,
+                callableAgent.Agent.Agent.AgentName,
+                string.Empty,
+                false,
+                null,
+                new ErrorInfo("agent_error", ex.Message)));
+            return ResultEnvelope<JsonElement?>.Failure("agent_error", ex.Message);
         }
     }
 
@@ -156,7 +283,7 @@ public sealed class AgentStepRunner(IChatClient chatClient) : IAgentStepRunner
 
             if (string.Equals(outputContract.Format, PlanStepOutputFormats.String, StringComparison.OrdinalIgnoreCase))
             {
-                if (envelope.Data is not { ValueKind: JsonValueKind.String } stringResult)
+                if (envelope.Data is not { ValueKind: JsonValueKind.String })
                 {
                     return ResultEnvelope<JsonElement?>.Failure(
                         "llm_invalid_contract",
@@ -253,4 +380,3 @@ public sealed class AgentStepRunner(IChatClient chatClient) : IAgentStepRunner
         return details.Value.Clone();
     }
 }
-

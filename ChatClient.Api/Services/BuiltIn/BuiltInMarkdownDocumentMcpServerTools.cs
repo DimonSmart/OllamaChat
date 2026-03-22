@@ -13,7 +13,7 @@ public sealed class BuiltInMarkdownDocumentMcpServerTools
         id: Guid.Parse("6d2ce2af-b2eb-4c52-b4ef-8df1bbcaf7c2"),
         key: "built-in-markdown-document",
         name: "Built-in Markdown Document MCP Server",
-        description: "Reads and updates one markdown document bound to the MCP session through a Markdig-based document model.",
+        description: "Reads, updates, and cursor-scans one markdown document bound to the MCP session through a Markdig-based document model.",
         registerTools: static builder => builder.WithTools<BuiltInMarkdownDocumentMcpServerTools>(),
         overrideDefinitions:
         [
@@ -125,6 +125,102 @@ public sealed class BuiltInMarkdownDocumentMcpServerTools
         };
     }
 
+    [McpServerTool(Name = "cursor_create", ReadOnly = true, UseStructuredContent = true)]
+    [Description("Creates or replaces a stateful reading cursor over the bound markdown document. Use this before calling cursor_next repeatedly.")]
+    public static async Task<object> CreateCursorAsync(
+        MarkdownDocumentSession session,
+        [Description("Cursor name. If omitted, the server generates one.")] string? cursorName = null,
+        [Description("Outline reference to scope the cursor. Use 0 for the whole document.")] string outline = "0",
+        [Description("Default batch size for cursor_next when maxItems is not provided.")] int batchSize = 5,
+        [Description("Whether heading items should be included in cursor batches.")] bool includeHeadings = false,
+        [Description("Optional pointer to resume after when creating the cursor.")] string? startAfterPointer = null,
+        CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            return await session.CreateCursorAsync(
+                cursorName,
+                outline,
+                batchSize,
+                includeHeadings,
+                startAfterPointer,
+                cancellationToken);
+        }
+        catch (InvalidOperationException ex)
+        {
+            return CreateKnownError(ex.Message, new
+            {
+                cursorName,
+                outline,
+                batchSize,
+                includeHeadings,
+                startAfterPointer
+            });
+        }
+    }
+
+    [McpServerTool(Name = "cursor_get_state", ReadOnly = true, UseStructuredContent = true)]
+    [Description("Returns the current state of a previously created markdown cursor.")]
+    public static async Task<object> GetCursorStateAsync(
+        MarkdownDocumentSession session,
+        [Description("Cursor name returned by cursor_create.")] string cursorName,
+        CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            return await session.GetCursorStateAsync(cursorName, cancellationToken);
+        }
+        catch (InvalidOperationException ex)
+        {
+            return CreateKnownError(ex.Message, new
+            {
+                cursorName
+            });
+        }
+    }
+
+    [McpServerTool(Name = "cursor_next", ReadOnly = true, UseStructuredContent = true)]
+    [Description("Returns the next batch from a previously created markdown cursor and advances it.")]
+    public static async Task<object> ReadCursorNextAsync(
+        MarkdownDocumentSession session,
+        [Description("Cursor name returned by cursor_create.")] string cursorName,
+        [Description("Optional batch size override for this read.")] int? maxItems = null,
+        CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            return await session.ReadCursorNextAsync(cursorName, maxItems, cancellationToken);
+        }
+        catch (InvalidOperationException ex)
+        {
+            return CreateKnownError(ex.Message, new
+            {
+                cursorName,
+                maxItems
+            });
+        }
+    }
+
+    [McpServerTool(Name = "cursor_reset", ReadOnly = true, UseStructuredContent = true)]
+    [Description("Resets a previously created markdown cursor back to its initial position.")]
+    public static async Task<object> ResetCursorAsync(
+        MarkdownDocumentSession session,
+        [Description("Cursor name returned by cursor_create.")] string cursorName,
+        CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            return await session.ResetCursorAsync(cursorName, cancellationToken);
+        }
+        catch (InvalidOperationException ex)
+        {
+            return CreateKnownError(ex.Message, new
+            {
+                cursorName
+            });
+        }
+    }
+
     [McpServerTool(Name = "doc_apply_operations", UseStructuredContent = true)]
     [Description("Applies ordered markdown edit operations to the bound source file using semantic pointers or item indices.")]
     public static async Task<object> ApplyOperationsAsync(
@@ -161,6 +257,8 @@ public sealed class BuiltInMarkdownDocumentMcpServerTools
             "section_not_found" => "Section not found for the specified outline reference.",
             "invalid_pointer" => "Invalid semantic pointer. Use labels like 1.2 or 1.2.p3.",
             "pointer_not_found" => "The requested semantic pointer does not exist in the current document.",
+            "cursor_name_required" => "Provide a cursorName returned by cursor_create.",
+            "cursor_not_found" => "The requested cursor does not exist in the current MCP session.",
             "edit_operations_required" => "Provide at least one edit operation.",
             "invalid_edit_action" => "Invalid edit action. Use replace, insert_before, insert_after, remove, split, merge_with_next, or merge_with_previous.",
             "edit_target_required" => "Each edit operation must define targetPointer or targetIndex.",

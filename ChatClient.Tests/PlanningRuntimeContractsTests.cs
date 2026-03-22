@@ -2,6 +2,8 @@ using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Net;
 using System.Net.Http.Headers;
+using ChatClient.Api.Client.Services.Agentic;
+using ChatClient.Application.Services;
 using ChatClient.Application.Services.Agentic;
 using ChatClient.Api.PlanningRuntime.Agents;
 using ChatClient.Api.PlanningRuntime.Common;
@@ -12,6 +14,7 @@ using ChatClient.Api.PlanningRuntime.Tools;
 using ChatClient.Api.Services;
 using ChatClient.Api.Services.BuiltIn;
 using ChatClient.Domain.Models;
+using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
 using ModelContextProtocol.Protocol;
@@ -154,6 +157,157 @@ public class PlanningRuntimeContractsTests
     }
 
     [Fact]
+    public void PlanValidator_AcceptsSavedAgentStep_WhenCallableAgentExists()
+    {
+        var callableAgent = CreateCallableAgentDescriptor("character-reader", "Character Reader");
+        var plan = new PlanDefinition
+        {
+            Goal = "Build a character registry.",
+            Steps =
+            [
+                new PlanStep
+                {
+                    Id = "scanCharacters",
+                    Agent = callableAgent.Name,
+                    UserPrompt = "Read the cursor and update the character registry.",
+                    In = new Dictionary<string, JsonNode?>
+                    {
+                        ["cursorName"] = JsonValue.Create("book-cursor"),
+                        ["registryId"] = JsonValue.Create("characters")
+                    },
+                    Out = StringOut()
+                }
+            ]
+        };
+
+        PlanValidator.ValidateOrThrow(plan, tools: null, [callableAgent]);
+    }
+
+    [Fact]
+    public void PlanValidator_RejectsSavedAgentStep_WhenCallableAgentIsUnknown()
+    {
+        var plan = new PlanDefinition
+        {
+            Goal = "Build a character registry.",
+            Steps =
+            [
+                new PlanStep
+                {
+                    Id = "scanCharacters",
+                    Agent = "missing-agent",
+                    UserPrompt = "Read the cursor and update the character registry.",
+                    In = new Dictionary<string, JsonNode?>
+                    {
+                        ["cursorName"] = JsonValue.Create("book-cursor")
+                    },
+                    Out = StringOut()
+                }
+            ]
+        };
+
+        var exception = Assert.Throws<InvalidOperationException>(() =>
+            PlanValidator.ValidateOrThrow(plan, tools: null, [CreateCallableAgentDescriptor("known-agent", "Known Agent")]));
+
+        Assert.Contains("unknown callable agent", exception.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void PlanValidator_RejectsSavedAgentStep_WithSystemPrompt()
+    {
+        var callableAgent = CreateCallableAgentDescriptor("character-reader", "Character Reader");
+        var plan = new PlanDefinition
+        {
+            Goal = "Build a character registry.",
+            Steps =
+            [
+                new PlanStep
+                {
+                    Id = "scanCharacters",
+                    Agent = callableAgent.Name,
+                    SystemPrompt = "Do not use this.",
+                    UserPrompt = "Read the cursor and update the character registry.",
+                    In = new Dictionary<string, JsonNode?>
+                    {
+                        ["cursorName"] = JsonValue.Create("book-cursor")
+                    },
+                    Out = StringOut()
+                }
+            ]
+        };
+
+        var exception = Assert.Throws<InvalidOperationException>(() => PlanValidator.ValidateOrThrow(plan, tools: null, [callableAgent]));
+
+        Assert.Contains("must not provide systemPrompt", exception.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task AgentStepRunner_InvokesSavedAgent_FromCallableCatalog()
+    {
+        var callableAgent = CreateCallableAgentDescriptor("character-reader", "Character Reader");
+        var invoker = new Mock<IAgenticExecutionInvoker>();
+        invoker
+            .Setup(service => service.InvokeAsync(It.IsAny<AgenticExecutionRuntimeRequest>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new AgenticExecutionInvocationResult(
+                FinalText: """
+                    {"ok":true,"data":{"status":"ok","characterCount":3},"error":null}
+                    """,
+                IsError: false,
+                ErrorMessage: null,
+                FunctionCalls: []));
+
+        var runner = new AgentStepRunner(
+            Mock.Of<IChatClient>(),
+            invoker.Object,
+            new PlanningCallableAgentCatalog([callableAgent]));
+
+        var step = new PlanStep
+        {
+            Id = "scanCharacters",
+            Agent = callableAgent.Name,
+            UserPrompt = "Read the cursor and update the character registry.",
+            In = new Dictionary<string, JsonNode?>
+            {
+                ["cursorName"] = JsonValue.Create("book-cursor")
+            },
+            Out = JsonOut(new JsonObject
+            {
+                ["type"] = "object",
+                ["required"] = new JsonArray("status", "characterCount"),
+                ["properties"] = new JsonObject
+                {
+                    ["status"] = new JsonObject
+                    {
+                        ["type"] = "string"
+                    },
+                    ["characterCount"] = new JsonObject
+                    {
+                        ["type"] = "integer"
+                    }
+                }
+            })
+        };
+
+        var result = await runner.ExecuteAsync(
+            step,
+            JsonSerializer.SerializeToElement(new
+            {
+                cursorName = "book-cursor"
+            }));
+
+        Assert.True(result.Ok);
+        Assert.NotNull(result.Data);
+        Assert.Equal("ok", result.Data.Value.GetProperty("status").GetString());
+        Assert.Equal(3, result.Data.Value.GetProperty("characterCount").GetInt32());
+        invoker.Verify(service => service.InvokeAsync(
+            It.Is<AgenticExecutionRuntimeRequest>(request =>
+                string.Equals(request.Agent.AgentName, "Character Reader", StringComparison.Ordinal)
+                && request.UserMessage.Contains("book-cursor", StringComparison.Ordinal)
+                && request.UserMessage.Contains("Read the cursor", StringComparison.Ordinal)),
+            It.IsAny<CancellationToken>()),
+            Times.Once);
+    }
+
+    [Fact]
     public void PlanValidator_RejectsToolStepMissingRequiredInput()
     {
         var plan = new PlanDefinition
@@ -208,7 +362,7 @@ public class PlanningRuntimeContractsTests
     }
 
     [Fact]
-    public async Task PlanningSessionService_StartAsync_RequiresEnabledTools()
+    public async Task PlanningSessionService_StartAsync_RequiresEnabledCapabilities()
     {
         var service = CreateSessionService();
         var plannerModel = new ServerModel(Guid.NewGuid(), "model-a");
@@ -224,7 +378,7 @@ public class PlanningRuntimeContractsTests
             UserQuery = "Compare two products",
         }));
 
-        Assert.Equal("At least one planning tool must be enabled.", exception.Message);
+        Assert.Equal("At least one planning tool or callable saved agent must be enabled.", exception.Message);
     }
 
     [Fact]
@@ -1651,15 +1805,46 @@ public class PlanningRuntimeContractsTests
         var chatClientFactory = new Mock<ILlmChatClientFactory>();
         var appToolCatalog = new Mock<IAppToolCatalog>();
         var mcpUserInteractionService = new Mock<IMcpUserInteractionService>();
+        var agentDescriptionService = new Mock<IAgentDescriptionService>();
+        var modelCapabilityService = new Mock<IModelCapabilityService>();
+        var agenticExecutionInvoker = new Mock<IAgenticExecutionInvoker>();
         appToolCatalog
             .Setup(catalog => catalog.ListToolsAsync(It.IsAny<McpClientRequestContext?>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(Array.Empty<AppToolDescriptor>());
+        agentDescriptionService
+            .Setup(service => service.GetAllAsync())
+            .ReturnsAsync(Array.Empty<AgentDescription>());
 
         return new PlanningSessionService(
             chatClientFactory.Object,
             appToolCatalog.Object,
             mcpUserInteractionService.Object,
+            agentDescriptionService.Object,
+            modelCapabilityService.Object,
+            agenticExecutionInvoker.Object,
             NullLogger<PlanningSessionService>.Instance);
+    }
+
+    private static PlanningCallableAgentDescriptor CreateCallableAgentDescriptor(string name, string displayName)
+    {
+        var serverId = Guid.NewGuid();
+        var agent = new AgentDescription
+        {
+            Id = Guid.NewGuid(),
+            AgentName = displayName,
+            ShortName = name,
+            Content = $"Agent {displayName} can work on long-running cursor tasks.",
+            ModelName = "model-a",
+            LlmId = serverId
+        };
+
+        return new PlanningCallableAgentDescriptor
+        {
+            Name = name,
+            DisplayName = displayName,
+            Description = $"Callable agent {displayName}",
+            Agent = AgentDescriptionFactory.CreateResolved(agent, new ServerModel(serverId, "model-a"))
+        };
     }
 
     private static AppToolDescriptor CreateStaticSearchDescriptor() =>

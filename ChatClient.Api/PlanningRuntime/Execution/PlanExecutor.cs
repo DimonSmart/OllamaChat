@@ -70,16 +70,17 @@ public sealed class PlanExecutor(
 
         var (resolved, fanOutInputs) = ResolveInputs(step, stepMap);
         var resolvedInput = SerializeObject(resolved);
-        var isTool = !string.IsNullOrWhiteSpace(step.Tool);
+        var stepKind = PlanStepKinds.GetKind(step);
+        var isTool = string.Equals(stepKind, PlanStepKinds.Tool, StringComparison.Ordinal);
         var toolMetadata = isTool ? toolCatalog.GetRequired(step.Tool!) : null;
         var fanOutCount = fanOutInputs?.Values.FirstOrDefault()?.Length ?? 0;
         var outputContract = PlanStepOutputContractResolver.Resolve(step, toolMetadata, fanOutInputs is not null);
 
-        _log.Log($"[exec] step:start id={step.Id} kind={(isTool ? "tool" : "llm")} name={(isTool ? step.Tool : step.Llm)} fanOut={(fanOutInputs is null ? "no" : fanOutCount.ToString())} aggregate={outputContract.Aggregate} resolvedInputs={SerializeElement(resolvedInput)}");
+        _log.Log($"[exec] step:start id={step.Id} kind={stepKind} name={PlanStepKinds.GetName(step)} fanOut={(fanOutInputs is null ? "no" : fanOutCount.ToString())} aggregate={outputContract.Aggregate} resolvedInputs={SerializeElement(resolvedInput)}");
         _observer.OnEvent(new StepStartedEvent(
             step.Id,
-            isTool ? "tool" : "llm",
-            isTool ? step.Tool! : step.Llm!,
+            stepKind,
+            PlanStepKinds.GetName(step),
             resolvedInput.Clone(),
             fanOutInputs is null ? null : fanOutCount));
 
@@ -243,12 +244,13 @@ public sealed class PlanExecutor(
         List<JsonElement> calls,
         CancellationToken cancellationToken)
     {
-        var inputFailure = ValidateLlmInputContract(step, input);
+        var inputFailure = ValidateNonToolInputContract(step, input);
         if (inputFailure is not null)
         {
             calls.Add(JsonSerializer.SerializeToElement(new
             {
-                llm = step.Llm,
+                kind = PlanStepKinds.GetKind(step),
+                name = PlanStepKinds.GetName(step),
                 ok = false,
                 output = (JsonElement?)null,
                 error = SerializeError(inputFailure.Error)
@@ -260,7 +262,8 @@ public sealed class PlanExecutor(
         var envelope = await agentStepRunner.ExecuteAsync(step, input, cancellationToken);
         calls.Add(JsonSerializer.SerializeToElement(new
         {
-            llm = step.Llm,
+            kind = PlanStepKinds.GetKind(step),
+            name = PlanStepKinds.GetName(step),
             ok = envelope.Ok,
             output = CloneElement(envelope.Data),
             error = SerializeError(envelope.Error)
@@ -269,7 +272,7 @@ public sealed class PlanExecutor(
         return envelope;
     }
 
-    private static ResultEnvelope<JsonElement?>? ValidateLlmInputContract(PlanStep step, JsonElement input)
+    private static ResultEnvelope<JsonElement?>? ValidateNonToolInputContract(PlanStep step, JsonElement input)
     {
         var issues = new List<StepInputTypeIssue>();
 
@@ -304,9 +307,13 @@ public sealed class PlanExecutor(
         if (issues.Count == 0)
             return null;
 
+        var stepKind = PlanStepKinds.GetKind(step);
+        var errorCode = string.Equals(stepKind, PlanStepKinds.Agent, StringComparison.Ordinal)
+            ? "agent_input_contract_failed"
+            : "llm_input_contract_failed";
         return ResultEnvelope<JsonElement?>.Failure(
-            "llm_input_contract_failed",
-            $"LLM step '{step.Id}' received input that does not match its declared binding types.",
+            errorCode,
+            $"{stepKind} step '{step.Id}' received input that does not match its declared binding types.",
             JsonSerializer.SerializeToElement(new
             {
                 issues = issues.Select(issue => new

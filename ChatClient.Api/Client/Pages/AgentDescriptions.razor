@@ -122,6 +122,23 @@
                             }
                         </CellTemplate>
                     </TemplateColumn>
+                    <TemplateColumn Title="Execution" isEditable="false" CellStyle="width:180px;">
+                        <CellTemplate>
+                            @{
+                                var executionSummary = GetExecutionSummary(context.Item);
+                            }
+                            @if (!string.IsNullOrWhiteSpace(executionSummary))
+                            {
+                                <MudChip T="string" Color="Color.Info" Size="Size.Small">
+                                    @executionSummary
+                                </MudChip>
+                            }
+                            else
+                            {
+                                <MudText Typo="Typo.caption" Class="mud-text-secondary">Default</MudText>
+                            }
+                        </CellTemplate>
+                    </TemplateColumn>
                     <PropertyColumn Property="x => x.UpdatedAt" Title="Updated" Format="g" />
                     <PropertyColumn Property="x => x.CreatedAt" Title="Created" Format="g" />
                     <TemplateColumn Title="Content" isEditable="false">
@@ -224,6 +241,42 @@
                                      BindingsChanged="OnMcpBindingsChanged"
                                      Class="mt-4" />
 
+            <MudDivider Class="my-4" />
+            <MudText Typo="Typo.subtitle1">Execution</MudText>
+            <MudSwitch T="bool"
+                       Value="editingAgent.ExecutionSettings.HistoryCompaction.Enabled"
+                       ValueChanged="OnHistoryCompactionEnabledChanged"
+                       Color="Color.Primary"
+                       Class="mt-2"
+                       Label="Compact selected tool-call history during long-running execution" />
+            @if (editingAgent.ExecutionSettings.HistoryCompaction.Enabled)
+            {
+                <MudSelect T="string"
+                           @bind-Value="editingAgent.ExecutionSettings.HistoryCompaction.Mode"
+                           Label="History compaction mode"
+                           Class="mt-4"
+                           Dense="true">
+                    <MudSelectItem T="string" Value="@AgentHistoryCompactionModes.ToolWindow">tool_window</MudSelectItem>
+                </MudSelect>
+                <MudNumericField T="int"
+                                 @bind-Value="editingAgent.ExecutionSettings.HistoryCompaction.KeepLastToolPairs"
+                                 Label="Keep last tool result pairs"
+                                 Class="mt-4"
+                                 Immediate="true"
+                                 Min="1"
+                                 Max="100"
+                                 HelperText="Only the most recent matching tool-call/result pairs remain visible to the model." />
+                <MudTextField T="string"
+                              Value="editingHistoryCompactionToolNames"
+                              ValueChanged="OnHistoryCompactionToolNamesChanged"
+                              Label="Compacted tool names"
+                              Lines="3"
+                              Class="mt-4"
+                              Immediate="true"
+                              HelperText="Comma or newline separated runtime tool names, for example cursor_next."
+                              Placeholder="cursor_next" />
+            }
+
             <MudTextField @bind-Value="editingAgent.Content"
                           Label="Agent Description"
                           Lines="10"
@@ -294,6 +347,7 @@
     private Dictionary<Guid, int> ragCounts = new();
     private List<RagFile> ragFiles = new();
     private ServerModelSelection editingServerModel = new(null, null);
+    private string editingHistoryCompactionToolNames = string.Empty;
     private List<LlmServerConfig> servers = new();
     private List<IMcpServerDescriptor> mcpServers = new();
     private DialogOptions dialogOptions = new()
@@ -375,8 +429,19 @@
             {
                 AutoSelectCount = 0
             },
+            ExecutionSettings = new AgentExecutionSettings
+            {
+                HistoryCompaction = new AgentHistoryCompactionSettings
+                {
+                    Enabled = false,
+                    Mode = AgentHistoryCompactionModes.None,
+                    KeepLastToolPairs = 5,
+                    ToolNames = []
+                }
+            },
             McpServerBindings = []
         };
+        editingHistoryCompactionToolNames = string.Empty;
         editingServerModel = new ServerModelSelection(null, null);
         ragFiles = new();
         showEditAgentDialog = true;
@@ -486,11 +551,23 @@
             {
                 AutoSelectCount = agent.FunctionSettings.AutoSelectCount
             },
+            ExecutionSettings = new AgentExecutionSettings
+            {
+                MaxToolCalls = agent.ExecutionSettings.MaxToolCalls,
+                HistoryCompaction = new AgentHistoryCompactionSettings
+                {
+                    Enabled = agent.ExecutionSettings.HistoryCompaction.Enabled,
+                    Mode = agent.ExecutionSettings.HistoryCompaction.Mode,
+                    KeepLastToolPairs = agent.ExecutionSettings.HistoryCompaction.KeepLastToolPairs,
+                    ToolNames = [.. agent.ExecutionSettings.HistoryCompaction.ToolNames]
+                }
+            },
             McpServerBindings = agent.McpServerBindings
                 .Select(static binding => binding.Clone())
                 .ToList()
         };
 
+        editingHistoryCompactionToolNames = FormatHistoryCompactionToolNames(editingAgent.ExecutionSettings.HistoryCompaction.ToolNames);
         editingServerModel = new ServerModelSelection(agent.LlmId, agent.ModelName);
         await LoadRagFiles(agent.Id);
         showEditAgentDialog = true;
@@ -581,9 +658,60 @@
         return $"{activeBindings.Count} MCP attachments configured. {attachmentSummary}";
     }
 
+    private string GetExecutionSummary(AgentDescription agent)
+    {
+        var history = agent.ExecutionSettings.HistoryCompaction;
+        if (!history.Enabled)
+        {
+            return string.Empty;
+        }
+
+        var toolCount = history.ToolNames.Count;
+        var toolSummary = toolCount switch
+        {
+            <= 0 => "no tools",
+            1 => "1 tool",
+            _ => $"{toolCount} tools"
+        };
+
+        return $"tool_window / {history.KeepLastToolPairs} / {toolSummary}";
+    }
+
     private void OnMcpBindingsChanged(List<McpServerSessionBinding> bindings)
     {
         editingAgent.McpServerBindings = bindings;
+    }
+
+    private Task OnHistoryCompactionEnabledChanged(bool value)
+    {
+        editingAgent.ExecutionSettings.HistoryCompaction.Enabled = value;
+        if (value)
+        {
+            if (string.IsNullOrWhiteSpace(editingAgent.ExecutionSettings.HistoryCompaction.Mode) ||
+                string.Equals(editingAgent.ExecutionSettings.HistoryCompaction.Mode, AgentHistoryCompactionModes.None, StringComparison.OrdinalIgnoreCase))
+            {
+                editingAgent.ExecutionSettings.HistoryCompaction.Mode = AgentHistoryCompactionModes.ToolWindow;
+            }
+
+            if (editingAgent.ExecutionSettings.HistoryCompaction.KeepLastToolPairs <= 0)
+            {
+                editingAgent.ExecutionSettings.HistoryCompaction.KeepLastToolPairs = 5;
+            }
+        }
+        else
+        {
+            editingAgent.ExecutionSettings.HistoryCompaction.Mode = AgentHistoryCompactionModes.None;
+            editingAgent.ExecutionSettings.HistoryCompaction.ToolNames.Clear();
+            editingHistoryCompactionToolNames = string.Empty;
+        }
+
+        return Task.CompletedTask;
+    }
+
+    private Task OnHistoryCompactionToolNamesChanged(string? value)
+    {
+        editingHistoryCompactionToolNames = value?.Trim() ?? string.Empty;
+        return Task.CompletedTask;
     }
 
     private async Task EnsureMcpServersLoadedAsync()
@@ -670,6 +798,39 @@
         return null;
     }
 
+    private string? PrepareExecutionSettingsForSave()
+    {
+        var history = editingAgent.ExecutionSettings.HistoryCompaction;
+        if (!history.Enabled)
+        {
+            history.Mode = AgentHistoryCompactionModes.None;
+            history.ToolNames = [];
+            history.KeepLastToolPairs = Math.Max(0, history.KeepLastToolPairs);
+            return null;
+        }
+
+        history.Mode = string.IsNullOrWhiteSpace(history.Mode)
+            ? AgentHistoryCompactionModes.ToolWindow
+            : history.Mode.Trim();
+        if (!string.Equals(history.Mode, AgentHistoryCompactionModes.ToolWindow, StringComparison.OrdinalIgnoreCase))
+        {
+            return "Only tool_window history compaction is currently supported.";
+        }
+
+        if (history.KeepLastToolPairs <= 0)
+        {
+            return "Keep last tool result pairs must be greater than 0.";
+        }
+
+        history.ToolNames = ParseHistoryCompactionToolNames(editingHistoryCompactionToolNames);
+        if (history.ToolNames.Count == 0)
+        {
+            return "Provide at least one tool name for history compaction, for example cursor_next.";
+        }
+
+        return null;
+    }
+
     private IMcpServerDescriptor? ResolveServerDescriptor(McpServerSessionBinding binding)
     {
         if (binding.ServerId is Guid serverId && serverId != Guid.Empty)
@@ -715,6 +876,13 @@
                     return;
                 }
 
+                validationError = PrepareExecutionSettingsForSave();
+                if (!string.IsNullOrWhiteSpace(validationError))
+                {
+                    Snackbar.Add(validationError, Severity.Error);
+                    return;
+                }
+
                 if (editingAgent.Id == Guid.Empty)
                 {
                     await AgentService.CreateAsync(editingAgent);
@@ -740,5 +908,29 @@
                 Snackbar.Add($"Error saving agent: {ex.Message}", Severity.Error);
             }
         }
+    }
+
+    private static string FormatHistoryCompactionToolNames(IReadOnlyCollection<string> toolNames)
+    {
+        if (toolNames.Count == 0)
+        {
+            return string.Empty;
+        }
+
+        return string.Join(Environment.NewLine, toolNames);
+    }
+
+    private static List<string> ParseHistoryCompactionToolNames(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return [];
+        }
+
+        return value
+            .Split([',', '\r', '\n'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Where(static toolName => !string.IsNullOrWhiteSpace(toolName))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
     }
 }

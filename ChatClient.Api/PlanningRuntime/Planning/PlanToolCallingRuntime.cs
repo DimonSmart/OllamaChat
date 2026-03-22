@@ -2,6 +2,7 @@ using System.ComponentModel;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Text.Json.Serialization.Metadata;
+using ChatClient.Api.PlanningRuntime.Agents;
 using ChatClient.Api.PlanningRuntime.Common;
 using ChatClient.Api.PlanningRuntime.Execution;
 using ChatClient.Api.Services;
@@ -12,6 +13,7 @@ namespace ChatClient.Api.PlanningRuntime.Planning;
 internal sealed class PlanToolCallingRuntime(
     PlanEditingSession session,
     IReadOnlyCollection<AppToolDescriptor> workflowTools,
+    PlanningCallableAgentCatalog? agentCatalog,
     string logPrefix,
     int round,
     IExecutionLogger executionLogger,
@@ -82,7 +84,7 @@ internal sealed class PlanToolCallingRuntime(
     [Description("Replace one existing step in place. Provide the existing stepId and the FULL replacement plan step object.")]
     public JsonObject ReplaceStep(
         [Description("Existing step id to replace.")] string? stepId = null,
-        [Description("Full replacement plan step object with id, tool or llm, inputs, and optional prompts/output schema.")] JsonElement? step = null)
+        [Description("Full replacement plan step object with id, tool or llm or agent, inputs, and optional prompts/output schema.")] JsonElement? step = null)
         => ExecuteSessionTool(
             PlanningAgentToolNames.PlanReplaceStep,
             "plan.replaceStep",
@@ -122,7 +124,7 @@ internal sealed class PlanToolCallingRuntime(
             PlanningAgentToolNames.PlanValidateDraft,
             "plan.validateDraft",
             new JsonObject(),
-            static (session, workflowTools, _) => PlanDraftValidationTool.CreateValidationResult(session, workflowTools));
+            (session, workflowTools, _) => PlanDraftValidationTool.CreateValidationResult(session, workflowTools, agentCatalog));
 
     [Description("Read a compact structured summary of one failed execution trace.")]
     public JsonObject ReadFailedTrace(
