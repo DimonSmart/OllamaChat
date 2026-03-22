@@ -61,7 +61,9 @@
 - agentic runtime уже умеет мерджить agent-level bindings и run-level bindings;
 - planning UI уже конфигурирует bindings через `plannerDraft.McpServerBindings`, а `PlanningSessionService` уже строит tool catalog через `planner.Agent.McpServerBindings`;
 - built-in `built-in-web` уже существует как рабочий MCP сервер с `search`/`download`, так что первый cursor MVP можно строить не только поверх файлов, но и поверх web/artifact источников;
-- built-in `built-in-knowledge-book` уже существует как рабочий MCP сервер с отдельным `knowledgeFile`, CRUD/search/export tools и автотестами.
+- built-in `built-in-knowledge-book` уже существует как рабочий MCP сервер с отдельным `knowledgeFile`, CRUD/search/export tools и автотестами;
+- built-in `built-in-markdown-document` уже существует как file-bound MCP сервер с `sourceFile`, Markdig-based item model, pointer-based read/edit tools и автотестами;
+- tool catalog уже умеет binding-aware display/description, поэтому planner и UI могут различать несколько attachment одного markdown/knowledge MCP по имени файла.
 
 ### Что это меняет для дальнейшего плана
 
@@ -81,7 +83,7 @@
 - нет end-to-end покрытия для planning сценариев с реальными `McpServerBindings`, knowledge-book/file конфигурацией и проверкой merge precedence;
 - нет удобного слоя валидации и пресетов по типам серверов, например `roots` для file sandbox или `knowledgeFile` для knowledge book;
 - built-in `file-sandbox` пока не реализован, хотя модель bindings и `roots` уже подготовлены;
-- для книжного сценария пока нет отдельного file-bound markdown/document MCP с параметром вида `sourceFile`, который можно дать planner run напрямую без generic `roots`;
+- для книжного сценария уже есть отдельный file-bound `built-in-markdown-document` с параметром `sourceFile`, но пока нет document-to-cursor bridge (`document-chunks`/`create_document_cursor`) для bounded чтения тем же runtime;
 - `PlanStep.Result` и `PlanningSessionState` все еще держат результаты inline, без `preview + artifactRef`;
 - shared cursor runtime, built-in `cursor` MCP, `cursor-agent` и persisted progress/resume пока отсутствуют;
 - planning runtime пока не умеет вызывать заранее настроенных агентов (`AgentDescription`) и делегировать им подзадачи; LLM step там сейчас только ad-hoc prompt без agent registry;
@@ -551,7 +553,7 @@
 
 Что мешает этому сценарию прямо сейчас:
 
-- нет `markdown-document`/`document-chunks` MCP с `sourceFile`;
+- нет связки `markdown-document` -> `cursor` (`document-chunks`, `create_document_cursor`, chunk projections);
 - нет `cursor`/`cursor-agent`;
 - нет artifact indirection;
 - planning run уже принимает bindings через `Planner.Agent.McpServerBindings`, но нет e2e покрытия и типовых пресетов/validation для книжного сценария;
@@ -722,7 +724,7 @@
 
 - LLM сможет анализировать большие корпуса, не видя их целиком.
 
-### Фаза 6. Markdown document layer для книги
+### Фаза 6. Markdown document layer для книги `[частично выполнено]`
 
 Цель:
 
@@ -731,24 +733,25 @@
 
 Шаги:
 
-1. Добавить `built-in-markdown-document` или `built-in-document-chunks`.
+1. `built-in-markdown-document` уже добавлен.
    - session-scoped параметр: `sourceFile`
-   - этот MCP открывает только один явно заданный markdown-файл книги
+   - есть Markdig-based parse, item pointers, read/search/export и bounded edit operations
+   - еще нет `document-chunks`/`create_document_cursor` поверх общего cursor runtime
 2. Определить стабильные pointer/reference модели для книги:
    - chapter/section pointer;
    - paragraph pointer;
    - chunk pointer;
    - optional semantic pointer.
-3. Добавить инструменты чтения/навигации:
-   - `open_document(source)`
-   - `list_document_nodes(documentId, scope?)`
-   - `read_document_chunk(documentId, pointer)`
-   - `create_document_cursor(documentId, scope?, batchSize?, byteBudget?)`
-4. Добавить bounded edit operations поверх markdown:
-   - `replace_section(pointer, markdown)`
-   - `insert_after(pointer, markdown)`
-   - `append_child(pointer, markdown)`
-   - `apply_patch(pointer, patch)`
+3. Инструменты чтения/навигации частично уже есть:
+   - `doc_get_context`
+   - `doc_list_headings`
+   - `doc_get_section`
+   - `doc_list_items`
+   - `doc_export_markdown`
+   - еще нужны `read_document_chunk(...)` и `create_document_cursor(...)`
+4. Bounded edit operations поверх markdown уже частично есть через `doc_apply_operations`.
+   - этого достаточно для item-level replace/insert/remove
+   - позже можно добавить более семантические alias-tools уровня section/chunk
 5. Определить связь document pointers с cursor runtime и artifact store, чтобы planner мог:
    - читать книгу кусочками;
    - копить evidence отдельно;
@@ -839,7 +842,7 @@
 1. хвост по session-scoped bindings: presets/validation + planning e2e;
 2. artifact/result indirection;
 3. shared cursor runtime и built-in `cursor`;
-4. built-in `cursor-agent` вместе с file-bound markdown/document MCP, который получает конкретный `sourceFile`.
+4. built-in `cursor-agent` вместе с document-to-cursor bridge поверх уже существующего `built-in-markdown-document`.
 
 Что сознательно не включаем в этот scope:
 
@@ -853,7 +856,7 @@
 1. Закрыть хвост фазы 1: validation/presets + planning e2e для bindings
 2. Artifact/result indirection
 3. Shared cursor runtime MVP и built-in `cursor` для `search-result`/`chunk` источников
-4. Cursor Agent MCP + file-bound markdown document layer (`markdown-document`/`document-chunks` с `sourceFile`)
+4. Cursor Agent MCP + document-to-cursor bridge (`document-chunks`/`create_document_cursor`) поверх существующего `built-in-markdown-document`
 5. Эволюция knowledge layer поверх существующего knowledge book
 6. Character knowledge maturity test
 7. Generic file sandbox MCP + file cursor как расширение cursor runtime

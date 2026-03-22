@@ -1,12 +1,12 @@
-using System.Net.Http.Headers;
 using System.Text.Encodings.Web;
-using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using ChatClient.Api.PlanningRuntime.Host;
 using ChatClient.Api.Services;
 using ChatClient.Application.Services;
 using ChatClient.Application.Services.Agentic;
 using ChatClient.Domain.Models;
+using Microsoft.Agents.AI;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Options;
 using ModelContextProtocol.Client;
@@ -15,33 +15,26 @@ namespace ChatClient.Api.Client.Services.Agentic;
 
 public sealed class HttpAgenticExecutionRuntime(
     ILlmServerConfigService llmServerConfigService,
+    ILlmChatClientFactory llmChatClientFactory,
     IModelCapabilityService modelCapabilityService,
     IAppToolCatalog appToolCatalog,
     IMcpUserInteractionService mcpUserInteractionService,
     KernelService kernelService,
-    IConfiguration configuration,
     IOptions<ChatEngineOptions> chatEngineOptions,
+    ILoggerFactory loggerFactory,
+    IServiceProvider serviceProvider,
     ILogger<HttpAgenticExecutionRuntime> logger) : IAgenticExecutionRuntime
 {
-    private const int MaxToolRounds = 8;
     private const int MaxLoggedPayloadLength = 4000;
-    private const int MaxNameLookupReminders = 1;
-    private const string UserProfilePrefsToolName = "prefs_get";
-    private const string UserProfilePrefsGetAllToolName = "prefs_get_all";
-    private const string UserProfileDisplayNameKey = "displayName";
 
-    private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web)
-    {
-        DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull
-    };
     private static readonly JsonSerializerOptions ToolResultJsonOptions = new(JsonSerializerDefaults.Web)
     {
         DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
         Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping
     };
 
-    private static readonly JsonElement EmptyToolSchema = CreateEmptyToolSchema();
-    private readonly AgenticToolInvocationPolicyOptions _toolPolicy = NormalizeToolPolicy(chatEngineOptions.Value.ToolPolicy);
+    private readonly AgenticToolInvocationPolicyOptions _toolPolicy =
+        NormalizeToolPolicy(chatEngineOptions.Value.ToolPolicy);
 
     public async IAsyncEnumerable<ChatEngineStreamChunk> StreamAsync(
         AgenticExecutionRuntimeRequest request,
@@ -49,25 +42,48 @@ public sealed class HttpAgenticExecutionRuntime(
     {
         ArgumentNullException.ThrowIfNull(request);
 
-        var resolvedModel = request.ResolvedModel;
-        string modelName = resolvedModel.ModelName;
-        LlmServerConfig? server = await llmServerConfigService.GetByIdAsync(resolvedModel.ServerId);
-
+        LlmServerConfig? server = await llmServerConfigService.GetByIdAsync(request.ResolvedModel.ServerId);
         if (server is null)
         {
-            yield return new ChatEngineStreamChunk(
+            yield return ErrorChunk(
                 request.Agent.AgentName,
-                $"Configured LLM server '{resolvedModel.ServerId}' was not found.",
-                IsFinal: true,
-                IsError: true);
+                $"Configured LLM server '{request.ResolvedModel.ServerId}' was not found.");
+            yield break;
+        }
+
+        IChatClient? chatClient = null;
+        string? startupError = null;
+        try
+        {
+            chatClient = await llmChatClientFactory.CreateAsync(request.ResolvedModel, cancellationToken);
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(
+                ex,
+                "Failed to create chat client for agent {AgentName} using model {ModelName}",
+                request.Agent.AgentName,
+                request.ResolvedModel.ModelName);
+            startupError = ex.Message;
+        }
+
+        if (!string.IsNullOrWhiteSpace(startupError) || chatClient is null)
+        {
+            yield return ErrorChunk(
+                request.Agent.AgentName,
+                startupError ?? "Failed to create the chat client.");
             yield break;
         }
 
         bool supportsFunctions = await modelCapabilityService.SupportsFunctionCallingAsync(
-            resolvedModel,
+            request.ResolvedModel,
             cancellationToken);
 
-        var messages = BuildProviderMessages(request);
+        var messages = BuildChatMessages(request);
         var toolRequestContext = BuildToolRequestContext(request);
         var availableTools = supportsFunctions
             ? await appToolCatalog.ListToolsAsync(toolRequestContext, cancellationToken)
@@ -77,20 +93,20 @@ public sealed class HttpAgenticExecutionRuntime(
         {
             logger.LogInformation(
                 "Model {ModelName} for agent {AgentName} does not support function calling. Skipping {FunctionCount} configured tools.",
-                modelName,
+                request.ResolvedModel.ModelName,
                 request.Agent.AgentName,
                 requestedFunctions.Count);
         }
 
-        var toolRegistry = supportsFunctions
-            ? ResolveToolRegistry(
+        var toolSet = supportsFunctions
+            ? AgenticToolSetBuilder.Build(
                 requestedFunctions,
                 availableTools,
                 request.Whiteboard,
                 request.Configuration.UseWhiteboard)
-            : ToolRegistry.Empty;
+            : AgenticToolSet.Empty;
 
-        if (requestedFunctions.Count > 0 && !toolRegistry.HasTools)
+        if (requestedFunctions.Count > 0 && !toolSet.HasTools)
         {
             logger.LogWarning(
                 "No MCP tools matched the configured function set for agent {AgentName}. Requested: [{RequestedFunctions}]",
@@ -98,398 +114,30 @@ public sealed class HttpAgenticExecutionRuntime(
                 string.Join(", ", requestedFunctions));
         }
 
-        if (toolRegistry.HasTools)
+        List<FunctionCallRecord> functionCalls = [];
+        var runtimeAgent = CreateRuntimeAgent(chatClient, server, request, toolSet, functionCalls);
+        var runOptions = BuildRunOptions(request, server, toolSet);
+        var streamedText = false;
+        string? streamError = null;
+
+        await using var updates = runtimeAgent.RunStreamingAsync(
+                messages,
+                null,
+                runOptions,
+                cancellationToken)
+            .GetAsyncEnumerator(cancellationToken);
+
+        while (true)
         {
-            await foreach (var chunk in StreamWithToolsAsync(
-                               server,
-                               request.Agent,
-                               modelName,
-                               messages,
-                               toolRegistry,
-                               cancellationToken))
-            {
-                yield return chunk;
-            }
-
-            yield break;
-        }
-
-        if (server.ServerType == ServerType.ChatGpt)
-        {
-            await foreach (var chunk in StreamOpenAiCompatibleAsync(
-                               server,
-                               request.Agent,
-                               modelName,
-                               messages,
-                               cancellationToken))
-            {
-                yield return chunk;
-            }
-
-            yield break;
-        }
-
-        await foreach (var chunk in StreamOllamaAsync(
-                           server,
-                           request.Agent,
-                           modelName,
-                           messages,
-                           cancellationToken))
-        {
-            yield return chunk;
-        }
-    }
-
-    private async IAsyncEnumerable<ChatEngineStreamChunk> StreamWithToolsAsync(
-        LlmServerConfig server,
-        AgentDescription agent,
-        string modelName,
-        List<ProviderMessage> messages,
-        ToolRegistry toolRegistry,
-        [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken)
-    {
-        var requiresNameLookup = RequiresNameLookupBeforeReply(agent, toolRegistry);
-        var hasNameLookup = false;
-        var nameLookupReminderCount = 0;
-
-        string? apiKey = null;
-        string endpoint;
-        HttpClient client;
-
-        if (server.ServerType == ServerType.ChatGpt)
-        {
-            apiKey = ResolveOpenAiApiKey(server);
-            if (string.IsNullOrWhiteSpace(apiKey))
-            {
-                yield return new ChatEngineStreamChunk(
-                    agent.AgentName,
-                    "OpenAI API key is required but not configured.",
-                    IsFinal: true,
-                    IsError: true);
-                yield break;
-            }
-
-            client = LlmServerConfigHelper.CreateHttpClient(server, "https://api.openai.com");
-            endpoint = LlmChatEndpointHelper.BuildOpenAiChatEndpoint(server);
-        }
-        else
-        {
-            client = LlmServerConfigHelper.CreateHttpClient(server, LlmServerConfig.DefaultOllamaUrl);
-            endpoint = LlmChatEndpointHelper.BuildOllamaChatEndpoint(server);
-        }
-
-        using (client)
-        {
-            List<FunctionCallRecord> functionCalls = [];
-
-            for (int round = 0; round < MaxToolRounds; round++)
-            {
-                cancellationToken.ThrowIfCancellationRequested();
-
-                ProviderAssistantResponse completion = server.ServerType == ServerType.ChatGpt
-                    ? await CompleteOpenAiWithToolsAsync(
-                        client,
-                        endpoint,
-                        apiKey!,
-                        modelName,
-                        agent,
-                        messages,
-                        toolRegistry,
-                        cancellationToken)
-                    : await CompleteOllamaWithToolsAsync(
-                        client,
-                        endpoint,
-                        modelName,
-                        agent,
-                        messages,
-                        toolRegistry,
-                        cancellationToken);
-
-                if (completion.HasError)
-                {
-                    yield return new ChatEngineStreamChunk(
-                        agent.AgentName,
-                        completion.Error ?? "Tool-enabled completion failed.",
-                        IsFinal: true,
-                        IsError: true);
-                    yield break;
-                }
-
-                logger.LogDebug(
-                    "Tool round {Round}/{MaxRounds} for agent {AgentName}: contentLength={ContentLength}, toolCalls={ToolCallCount}, requiresNameLookup={RequiresNameLookup}, hasNameLookup={HasNameLookup}.",
-                    round + 1,
-                    MaxToolRounds,
-                    agent.AgentName,
-                    completion.Content?.Length ?? 0,
-                    completion.ToolCalls.Count,
-                    requiresNameLookup,
-                    hasNameLookup);
-
-                if (completion.ToolCalls.Count == 0)
-                {
-                    if (requiresNameLookup && !hasNameLookup && nameLookupReminderCount < MaxNameLookupReminders)
-                    {
-                        nameLookupReminderCount++;
-                        messages.Add(new ProviderMessage(
-                            "system",
-                            "Before answering, call tool `prefs_get` with argument {\"key\":\"displayName\"} to get the user's preferred name. Then answer and address the user by that name.",
-                            null,
-                            null,
-                            null));
-
-                        logger.LogDebug(
-                            "Enforcing profile name lookup for agent {AgentName}. Reminder {Reminder}/{MaxReminders}.",
-                            agent.AgentName,
-                            nameLookupReminderCount,
-                            MaxNameLookupReminders);
-                        continue;
-                    }
-
-                    messages.Add(ToAssistantMessage(completion));
-
-                    if (string.IsNullOrWhiteSpace(completion.Content))
-                    {
-                        yield return new ChatEngineStreamChunk(
-                            agent.AgentName,
-                            "Model returned an empty response in tool mode.",
-                            IsFinal: true,
-                            IsError: true,
-                            FunctionCalls: functionCalls.Count > 0 ? functionCalls : null);
-                        yield break;
-                    }
-
-                    if (!string.IsNullOrEmpty(completion.Content))
-                    {
-                        yield return new ChatEngineStreamChunk(agent.AgentName, completion.Content);
-                    }
-
-                    yield return new ChatEngineStreamChunk(
-                        agent.AgentName,
-                        string.Empty,
-                        IsFinal: true,
-                        FunctionCalls: functionCalls.Count > 0 ? functionCalls : null);
-                    yield break;
-                }
-
-                messages.Add(ToAssistantMessage(completion));
-
-                foreach (var toolCall in completion.ToolCalls)
-                {
-                    cancellationToken.ThrowIfCancellationRequested();
-
-                    var execution = await ExecuteToolCallAsync(toolCall, toolRegistry, cancellationToken);
-                    functionCalls.Add(execution.Record);
-                    messages.Add(execution.ToolMessage);
-
-                    yield return new ChatEngineStreamChunk(
-                        agent.AgentName,
-                        string.Empty,
-                        FunctionCalls: functionCalls.ToArray());
-
-                    if (!hasNameLookup && IsNameLookupCall(execution.Record))
-                    {
-                        hasNameLookup = true;
-                    }
-                }
-            }
-        }
-
-        yield return new ChatEngineStreamChunk(
-            agent.AgentName,
-            $"Tool calling exceeded safety limit ({MaxToolRounds} rounds).",
-            IsFinal: true,
-            IsError: true);
-    }
-
-    private async Task<ProviderAssistantResponse> CompleteOpenAiWithToolsAsync(
-        HttpClient client,
-        string endpoint,
-        string apiKey,
-        string modelName,
-        AgentDescription agent,
-        IReadOnlyList<ProviderMessage> messages,
-        ToolRegistry toolRegistry,
-        CancellationToken cancellationToken)
-    {
-        string payload = AgenticProviderPayloadBuilder.BuildOpenAiPayload(
-            modelName,
-            agent,
-            messages,
-            stream: false,
-            tools: toolRegistry.Tools,
-            JsonOptions,
-            EmptyToolSchema);
-
-        using var request = new HttpRequestMessage(HttpMethod.Post, endpoint)
-        {
-            Content = new StringContent(payload, Encoding.UTF8, "application/json")
-        };
-        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", apiKey);
-
-        using var response = await client.SendAsync(request, cancellationToken);
-        if (!response.IsSuccessStatusCode)
-        {
-            string errorText = await SafeReadBodyAsync(response, cancellationToken);
-            return ProviderAssistantResponse.FromError(
-                $"OpenAI-compatible request failed ({(int)response.StatusCode} {response.ReasonPhrase}): {errorText}");
-        }
-
-        string body = await response.Content.ReadAsStringAsync(cancellationToken);
-        return AgenticProviderResponseParser.ParseOpenAiCompletion(body);
-    }
-
-    private async Task<ProviderAssistantResponse> CompleteOllamaWithToolsAsync(
-        HttpClient client,
-        string endpoint,
-        string modelName,
-        AgentDescription agent,
-        IReadOnlyList<ProviderMessage> messages,
-        ToolRegistry toolRegistry,
-        CancellationToken cancellationToken)
-    {
-        string payload = AgenticProviderPayloadBuilder.BuildOllamaPayload(
-            modelName,
-            agent,
-            messages,
-            stream: false,
-            tools: toolRegistry.Tools,
-            JsonOptions,
-            EmptyToolSchema);
-
-        using var request = new HttpRequestMessage(HttpMethod.Post, endpoint)
-        {
-            Content = new StringContent(payload, Encoding.UTF8, "application/json")
-        };
-
-        using var response = await client.SendAsync(request, cancellationToken);
-        if (!response.IsSuccessStatusCode)
-        {
-            string errorText = await SafeReadBodyAsync(response, cancellationToken);
-            return ProviderAssistantResponse.FromError(
-                $"Ollama request failed ({(int)response.StatusCode} {response.ReasonPhrase}): {errorText}");
-        }
-
-        string body = await response.Content.ReadAsStringAsync(cancellationToken);
-        return AgenticProviderResponseParser.ParseOllamaCompletion(body);
-    }
-
-    private async Task<ToolExecutionResult> ExecuteToolCallAsync(
-        ProviderToolCall toolCall,
-        ToolRegistry toolRegistry,
-        CancellationToken cancellationToken)
-    {
-        if (!toolRegistry.ToolsByProviderName.TryGetValue(toolCall.Name, out var tool))
-        {
-            string errorMessage = $"Tool '{toolCall.Name}' is not registered for this request.";
-            logger.LogWarning(errorMessage);
-
-            string errorPayload = JsonSerializer.Serialize(new { error = errorMessage }, ToolResultJsonOptions);
-            return new ToolExecutionResult(
-                new ProviderMessage("tool", errorPayload, toolCall.Name, toolCall.Id, null),
-                new FunctionCallRecord("unknown", toolCall.Name, toolCall.Arguments, $"status=error;response={errorPayload}"));
-        }
-
-        if (!ToolArgumentSchemaValidator.TryValidateAndParse(
-                toolCall.Arguments,
-                tool.JsonSchema,
-                out var arguments,
-                out var normalizedRequest,
-                out var validationError))
-        {
-            logger.LogWarning(
-                "Tool argument validation failed for {Server}:{ToolName}. Provider name: {ProviderToolName}. Error: {Error}. Arguments: {Arguments}",
-                tool.ServerName,
-                tool.ToolName,
-                tool.ProviderName,
-                validationError,
-                FormatForLog(toolCall.Arguments, MaxLoggedPayloadLength));
-
-            string errorPayload = JsonSerializer.Serialize(new { error = validationError }, ToolResultJsonOptions);
-            return new ToolExecutionResult(
-                new ProviderMessage("tool", errorPayload, tool.ProviderName, toolCall.Id, null),
-                new FunctionCallRecord(
-                    tool.ServerName,
-                    tool.ToolName,
-                    normalizedRequest,
-                    $"status=validation_error;attempt=1;durationMs=0;response={errorPayload}"));
-        }
-
-        int maxAttempts = Math.Max(1, _toolPolicy.MaxRetries + 1);
-        Exception? lastException = null;
-        var requestForLog = FormatForLog(normalizedRequest, MaxLoggedPayloadLength);
-
-        for (int attempt = 1; attempt <= maxAttempts; attempt++)
-        {
-            var startedAt = DateTime.UtcNow;
-            if (attempt == 1)
-            {
-                logger.LogInformation(
-                    "Calling MCP tool {Server}:{ToolName} for provider tool {ProviderToolName}. Arguments: {Arguments}",
-                    tool.ServerName,
-                    tool.ToolName,
-                    tool.ProviderName,
-                    requestForLog);
-            }
-            else
-            {
-                logger.LogInformation(
-                    "Retrying MCP tool {Server}:{ToolName} for provider tool {ProviderToolName} (attempt {Attempt}/{MaxAttempts}).",
-                    tool.ServerName,
-                    tool.ToolName,
-                    tool.ProviderName,
-                    attempt,
-                    maxAttempts);
-            }
-
+            AgentResponseUpdate update;
             try
             {
-                var timeoutSeconds = tool.MayRequireUserInput
-                    ? Math.Max(_toolPolicy.TimeoutSeconds, _toolPolicy.InteractiveTimeoutSeconds)
-                    : _toolPolicy.TimeoutSeconds;
-
-                using var timeoutCts = timeoutSeconds > 0
-                    ? CancellationTokenSource.CreateLinkedTokenSource(cancellationToken)
-                    : null;
-                if (timeoutSeconds > 0)
+                if (!await updates.MoveNextAsync())
                 {
-                    timeoutCts!.CancelAfter(TimeSpan.FromSeconds(timeoutSeconds));
+                    break;
                 }
 
-                var executionToken = timeoutCts?.Token ?? cancellationToken;
-                using var interactionScope = mcpUserInteractionService.BeginInteractionScope(McpInteractionScope.Chat);
-                var result = await tool.ExecuteAsync(arguments, executionToken);
-                string responsePayload = AgenticToolUtility.SerializeForToolTransport(result, ToolResultJsonOptions);
-                int durationMs = (int)Math.Max(0, (DateTime.UtcNow - startedAt).TotalMilliseconds);
-
-                logger.LogInformation(
-                    "MCP tool {Server}:{ToolName} completed for provider tool {ProviderToolName} (attempt {Attempt}/{MaxAttempts}, {DurationMs} ms). Response: {Response}",
-                    tool.ServerName,
-                    tool.ToolName,
-                    tool.ProviderName,
-                    attempt,
-                    maxAttempts,
-                    durationMs,
-                    FormatForLog(responsePayload, MaxLoggedPayloadLength));
-
-                return new ToolExecutionResult(
-                    new ProviderMessage("tool", responsePayload, tool.ProviderName, toolCall.Id, null),
-                    new FunctionCallRecord(
-                        tool.ServerName,
-                        tool.ToolName,
-                        normalizedRequest,
-                        $"status=ok;attempt={attempt};durationMs={durationMs};response={responsePayload}"));
-            }
-            catch (OperationCanceledException ex) when (!cancellationToken.IsCancellationRequested)
-            {
-                lastException = ex;
-                int durationMs = (int)Math.Max(0, (DateTime.UtcNow - startedAt).TotalMilliseconds);
-                logger.LogWarning(
-                    "Tool {Server}:{ToolName} timed out on attempt {Attempt}/{MaxAttempts} after {DurationMs} ms.",
-                    tool.ServerName,
-                    tool.ToolName,
-                    attempt,
-                    maxAttempts,
-                    durationMs);
+                update = updates.Current;
             }
             catch (OperationCanceledException)
             {
@@ -497,224 +145,248 @@ public sealed class HttpAgenticExecutionRuntime(
             }
             catch (Exception ex)
             {
-                lastException = ex;
-                int durationMs = (int)Math.Max(0, (DateTime.UtcNow - startedAt).TotalMilliseconds);
-                logger.LogWarning(
-                    ex,
-                    "Tool {Server}:{ToolName} failed on attempt {Attempt}/{MaxAttempts} after {DurationMs} ms.",
+                logger.LogError(ex, "Agentic session failed for agent {AgentName}", request.Agent.AgentName);
+                streamError = ex.Message;
+                break;
+            }
+
+            if (string.IsNullOrEmpty(update.Text))
+            {
+                continue;
+            }
+
+            if (!string.IsNullOrWhiteSpace(update.Text))
+            {
+                streamedText = true;
+            }
+
+            yield return new ChatEngineStreamChunk(request.Agent.AgentName, update.Text);
+        }
+
+        if (!string.IsNullOrWhiteSpace(streamError))
+        {
+            yield return ErrorChunk(request.Agent.AgentName, streamError);
+            yield break;
+        }
+
+        if (!streamedText)
+        {
+            yield return new ChatEngineStreamChunk(
+                request.Agent.AgentName,
+                "Model returned an empty response.",
+                IsFinal: true,
+                IsError: true,
+                FunctionCalls: functionCalls.Count > 0 ? functionCalls.ToArray() : null);
+            yield break;
+        }
+
+        yield return new ChatEngineStreamChunk(
+            request.Agent.AgentName,
+            string.Empty,
+            IsFinal: true,
+            FunctionCalls: functionCalls.Count > 0 ? functionCalls.ToArray() : null);
+    }
+
+    private AIAgent CreateRuntimeAgent(
+        IChatClient chatClient,
+        LlmServerConfig server,
+        AgenticExecutionRuntimeRequest request,
+        AgenticToolSet toolSet,
+        List<FunctionCallRecord> functionCalls)
+    {
+        var agentOptions = new ChatClientAgentOptions
+        {
+            Id = string.IsNullOrWhiteSpace(request.Agent.AgentId) ? null : request.Agent.AgentId.Trim(),
+            Name = string.IsNullOrWhiteSpace(request.Agent.AgentName) ? null : request.Agent.AgentName.Trim(),
+            ChatOptions = new ChatOptions
+            {
+                Instructions = string.IsNullOrWhiteSpace(request.Agent.Content) ? null : request.Agent.Content.Trim(),
+                Tools = toolSet.Tools.ToList()
+            },
+            UseProvidedChatClientAsIs = false
+        };
+
+        var baseAgent = new ChatClientAgent(
+            chatClient,
+            agentOptions,
+            loggerFactory,
+            serviceProvider);
+
+        if (!toolSet.HasTools)
+        {
+            return baseAgent;
+        }
+
+        return baseAgent
+            .AsBuilder()
+            .Use(async (_, context, next, cancellationToken) =>
+            {
+                if (!toolSet.MetadataByName.TryGetValue(context.Function.Name, out var tool))
+                {
+                    return await next(context, cancellationToken);
+                }
+
+                var requestPayload = SerializeArguments(context.Arguments);
+                var requestForLog = FormatForLog(requestPayload, MaxLoggedPayloadLength);
+                int maxAttempts = Math.Max(1, _toolPolicy.MaxRetries + 1);
+                Exception? lastException = null;
+
+                for (int attempt = 1; attempt <= maxAttempts; attempt++)
+                {
+                    var startedAt = DateTime.UtcNow;
+
+                    try
+                    {
+                        if (attempt == 1)
+                        {
+                            logger.LogInformation(
+                                "Calling MCP tool {Server}:{ToolName} via framework tool {RegisteredName}. Arguments: {Arguments}",
+                                tool.ServerName,
+                                tool.ToolName,
+                                tool.RegisteredName,
+                                requestForLog);
+                        }
+                        else
+                        {
+                            logger.LogInformation(
+                                "Retrying MCP tool {Server}:{ToolName} via framework tool {RegisteredName} (attempt {Attempt}/{MaxAttempts}).",
+                                tool.ServerName,
+                                tool.ToolName,
+                                tool.RegisteredName,
+                                attempt,
+                                maxAttempts);
+                        }
+
+                        var timeoutSeconds = tool.MayRequireUserInput
+                            ? Math.Max(_toolPolicy.TimeoutSeconds, _toolPolicy.InteractiveTimeoutSeconds)
+                            : _toolPolicy.TimeoutSeconds;
+
+                        using var timeoutCts = timeoutSeconds > 0
+                            ? CancellationTokenSource.CreateLinkedTokenSource(cancellationToken)
+                            : null;
+                        if (timeoutSeconds > 0)
+                        {
+                            timeoutCts!.CancelAfter(TimeSpan.FromSeconds(timeoutSeconds));
+                        }
+
+                        var executionToken = timeoutCts?.Token ?? cancellationToken;
+                        using var interactionScope = mcpUserInteractionService.BeginInteractionScope(McpInteractionScope.Chat);
+                        var result = await next(context, executionToken);
+                        var responsePayload = AgenticToolUtility.SerializeForToolTransport(result, ToolResultJsonOptions);
+                        var durationMs = (int)Math.Max(0, (DateTime.UtcNow - startedAt).TotalMilliseconds);
+
+                        logger.LogInformation(
+                            "MCP tool {Server}:{ToolName} completed via framework tool {RegisteredName} (attempt {Attempt}/{MaxAttempts}, {DurationMs} ms). Response: {Response}",
+                            tool.ServerName,
+                            tool.ToolName,
+                            tool.RegisteredName,
+                            attempt,
+                            maxAttempts,
+                            durationMs,
+                            FormatForLog(responsePayload, MaxLoggedPayloadLength));
+
+                        functionCalls.Add(new FunctionCallRecord(
+                            tool.ServerName,
+                            tool.ToolName,
+                            requestPayload,
+                            $"status=ok;attempt={attempt};durationMs={durationMs};response={responsePayload}"));
+
+                        return result;
+                    }
+                    catch (OperationCanceledException ex) when (!cancellationToken.IsCancellationRequested)
+                    {
+                        lastException = ex;
+                        var durationMs = (int)Math.Max(0, (DateTime.UtcNow - startedAt).TotalMilliseconds);
+                        logger.LogWarning(
+                            "Tool {Server}:{ToolName} timed out on attempt {Attempt}/{MaxAttempts} after {DurationMs} ms.",
+                            tool.ServerName,
+                            tool.ToolName,
+                            attempt,
+                            maxAttempts,
+                            durationMs);
+                    }
+                    catch (OperationCanceledException)
+                    {
+                        throw;
+                    }
+                    catch (Exception ex)
+                    {
+                        lastException = ex;
+                        var durationMs = (int)Math.Max(0, (DateTime.UtcNow - startedAt).TotalMilliseconds);
+                        logger.LogWarning(
+                            ex,
+                            "Tool {Server}:{ToolName} failed on attempt {Attempt}/{MaxAttempts} after {DurationMs} ms.",
+                            tool.ServerName,
+                            tool.ToolName,
+                            attempt,
+                            maxAttempts,
+                            durationMs);
+                    }
+
+                    if (attempt < maxAttempts && _toolPolicy.RetryDelayMs > 0)
+                    {
+                        await Task.Delay(_toolPolicy.RetryDelayMs, cancellationToken);
+                    }
+                }
+
+                var finalMessage = lastException?.Message ?? "Unknown tool execution failure.";
+                var errorPayload = new Dictionary<string, object?>
+                {
+                    ["error"] = finalMessage
+                };
+                var serializedPayload = JsonSerializer.Serialize(errorPayload, ToolResultJsonOptions);
+
+                logger.LogError(
+                    lastException,
+                    "Tool execution failed for {Server}:{ToolName} (framework tool {RegisteredName}) after {MaxAttempts} attempts. Arguments: {Arguments}",
                     tool.ServerName,
                     tool.ToolName,
-                    attempt,
+                    tool.RegisteredName,
                     maxAttempts,
-                    durationMs);
-            }
+                    requestForLog);
 
-            if (attempt < maxAttempts && _toolPolicy.RetryDelayMs > 0)
-            {
-                await Task.Delay(_toolPolicy.RetryDelayMs, cancellationToken);
-            }
-        }
+                functionCalls.Add(new FunctionCallRecord(
+                    tool.ServerName,
+                    tool.ToolName,
+                    requestPayload,
+                    $"status=error;attempt={maxAttempts};response={serializedPayload}"));
 
-        string finalMessage = lastException?.Message ?? "Unknown tool execution failure.";
-        string finalPayload = JsonSerializer.Serialize(new { error = finalMessage }, ToolResultJsonOptions);
-        logger.LogError(
-            lastException,
-            "Tool execution failed for {Server}:{ToolName} (provider tool {ProviderToolName}) after {MaxAttempts} attempts. Arguments: {Arguments}",
-            tool.ServerName,
-            tool.ToolName,
-            tool.ProviderName,
-            maxAttempts,
-            requestForLog);
-
-        return new ToolExecutionResult(
-            new ProviderMessage("tool", finalPayload, tool.ProviderName, toolCall.Id, null),
-            new FunctionCallRecord(
-                tool.ServerName,
-                tool.ToolName,
-                normalizedRequest,
-                $"status=error;attempt={maxAttempts};response={finalPayload}"));
+                return errorPayload;
+            })
+            .Build();
     }
 
-    private async IAsyncEnumerable<ChatEngineStreamChunk> StreamOllamaAsync(
+    private static ChatClientAgentRunOptions BuildRunOptions(
+        AgenticExecutionRuntimeRequest request,
         LlmServerConfig server,
-        AgentDescription agent,
-        string modelName,
-        IReadOnlyList<ProviderMessage> messages,
-        [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken)
+        AgenticToolSet toolSet)
     {
-        using var client = LlmServerConfigHelper.CreateHttpClient(server, LlmServerConfig.DefaultOllamaUrl);
-        var endpoint = LlmChatEndpointHelper.BuildOllamaChatEndpoint(server);
-        var payload = AgenticProviderPayloadBuilder.BuildOllamaPayload(
-            modelName,
-            agent,
-            messages,
-            stream: true,
-            tools: null,
-            JsonOptions,
-            EmptyToolSchema);
-
-        using var request = new HttpRequestMessage(HttpMethod.Post, endpoint)
+        var chatOptions = new ChatOptions
         {
-            Content = new StringContent(payload, Encoding.UTF8, "application/json")
+            ModelId = request.ResolvedModel.ModelName,
+            Temperature = request.Agent.Temperature is double temperature
+                ? (float)temperature
+                : null
         };
 
-        using var response = await client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
-        if (!response.IsSuccessStatusCode)
+        if (toolSet.HasTools)
         {
-            var errorText = await SafeReadBodyAsync(response, cancellationToken);
-            yield return new ChatEngineStreamChunk(
-                agent.AgentName,
-                $"Ollama request failed ({(int)response.StatusCode} {response.ReasonPhrase}): {errorText}",
-                IsFinal: true,
-                IsError: true);
-            yield break;
+            chatOptions.AllowMultipleToolCalls = true;
+            chatOptions.ToolMode = ChatToolMode.Auto;
         }
 
-        await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
-        using var reader = new StreamReader(stream, Encoding.UTF8);
-
-        bool completed = false;
-        while (true)
+        if (server.ServerType == ServerType.Ollama && request.Agent.RepeatPenalty.HasValue)
         {
-            cancellationToken.ThrowIfCancellationRequested();
-            var line = await reader.ReadLineAsync(cancellationToken);
-            if (line is null)
-            {
-                break;
-            }
-
-            if (string.IsNullOrWhiteSpace(line))
-            {
-                continue;
-            }
-
-            if (!AgenticProviderResponseParser.TryReadOllamaChunk(line, out var content, out var done, out var error))
-            {
-                continue;
-            }
-
-            if (!string.IsNullOrWhiteSpace(error))
-            {
-                yield return new ChatEngineStreamChunk(agent.AgentName, error, IsFinal: true, IsError: true);
-                yield break;
-            }
-
-            if (!string.IsNullOrEmpty(content))
-            {
-                yield return new ChatEngineStreamChunk(agent.AgentName, content);
-            }
-
-            if (done)
-            {
-                completed = true;
-                break;
-            }
+            chatOptions.AdditionalProperties ??= [];
+            chatOptions.AdditionalProperties["repeat_penalty"] = request.Agent.RepeatPenalty.Value;
         }
 
-        if (!completed)
-        {
-            logger.LogDebug("Ollama streaming ended without explicit done=true marker for agent {AgentName}.", agent.AgentName);
-        }
-
-        yield return new ChatEngineStreamChunk(agent.AgentName, string.Empty, IsFinal: true);
+        return new ChatClientAgentRunOptions(chatOptions);
     }
 
-    private async IAsyncEnumerable<ChatEngineStreamChunk> StreamOpenAiCompatibleAsync(
-        LlmServerConfig server,
-        AgentDescription agent,
-        string modelName,
-        IReadOnlyList<ProviderMessage> messages,
-        [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken)
+    private static List<ChatMessage> BuildChatMessages(AgenticExecutionRuntimeRequest request)
     {
-        string apiKey = ResolveOpenAiApiKey(server);
-        if (string.IsNullOrWhiteSpace(apiKey))
-        {
-            yield return new ChatEngineStreamChunk(
-                agent.AgentName,
-                "OpenAI API key is required but not configured.",
-                IsFinal: true,
-                IsError: true);
-            yield break;
-        }
-
-        using var client = LlmServerConfigHelper.CreateHttpClient(server, "https://api.openai.com");
-        var endpoint = LlmChatEndpointHelper.BuildOpenAiChatEndpoint(server);
-        var payload = AgenticProviderPayloadBuilder.BuildOpenAiPayload(
-            modelName,
-            agent,
-            messages,
-            stream: true,
-            tools: null,
-            JsonOptions,
-            EmptyToolSchema);
-
-        using var request = new HttpRequestMessage(HttpMethod.Post, endpoint)
-        {
-            Content = new StringContent(payload, Encoding.UTF8, "application/json")
-        };
-        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", apiKey);
-
-        using var response = await client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
-        if (!response.IsSuccessStatusCode)
-        {
-            var errorText = await SafeReadBodyAsync(response, cancellationToken);
-            yield return new ChatEngineStreamChunk(
-                agent.AgentName,
-                $"OpenAI-compatible request failed ({(int)response.StatusCode} {response.ReasonPhrase}): {errorText}",
-                IsFinal: true,
-                IsError: true);
-            yield break;
-        }
-
-        await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
-        using var reader = new StreamReader(stream, Encoding.UTF8);
-
-        while (true)
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-            var line = await reader.ReadLineAsync(cancellationToken);
-            if (line is null)
-            {
-                break;
-            }
-
-            if (string.IsNullOrWhiteSpace(line) || !line.StartsWith("data:", StringComparison.OrdinalIgnoreCase))
-            {
-                continue;
-            }
-
-            var data = line["data:".Length..].Trim();
-            if (string.Equals(data, "[DONE]", StringComparison.OrdinalIgnoreCase))
-            {
-                break;
-            }
-
-            if (AgenticProviderResponseParser.TryReadOpenAiChunk(data, out var content, out var error))
-            {
-                if (!string.IsNullOrWhiteSpace(error))
-                {
-                    yield return new ChatEngineStreamChunk(agent.AgentName, error, IsFinal: true, IsError: true);
-                    yield break;
-                }
-
-                if (!string.IsNullOrEmpty(content))
-                {
-                    yield return new ChatEngineStreamChunk(agent.AgentName, content);
-                }
-            }
-        }
-
-        yield return new ChatEngineStreamChunk(agent.AgentName, string.Empty, IsFinal: true);
-    }
-
-    private static List<ProviderMessage> BuildProviderMessages(AgenticExecutionRuntimeRequest request)
-    {
-        var result = new List<ProviderMessage>();
-
-        if (!string.IsNullOrWhiteSpace(request.Agent.Content))
-        {
-            result.Add(new ProviderMessage("system", request.Agent.Content.Trim(), null, null, null));
-        }
+        List<ChatMessage> result = [];
 
         foreach (var message in request.Conversation)
         {
@@ -724,30 +396,16 @@ public sealed class HttpAgenticExecutionRuntime(
                 continue;
             }
 
-            result.Add(new ProviderMessage(ToProviderRole(message.Role), text, null, null, null));
+            result.Add(new ChatMessage(message.Role, text));
         }
 
-        if (!result.Any(m => string.Equals(m.Role, "user", StringComparison.OrdinalIgnoreCase)) &&
+        if (!result.Any(static message => message.Role == ChatRole.User) &&
             !string.IsNullOrWhiteSpace(request.UserMessage))
         {
-            result.Add(new ProviderMessage("user", request.UserMessage.Trim(), null, null, null));
+            result.Add(new ChatMessage(ChatRole.User, request.UserMessage.Trim()));
         }
 
         return result;
-    }
-
-    private static string ToProviderRole(ChatRole role)
-    {
-        if (role == ChatRole.User)
-            return "user";
-        if (role == ChatRole.Assistant)
-            return "assistant";
-        if (role == ChatRole.System)
-            return "system";
-        if (role == ChatRole.Tool)
-            return "tool";
-
-        return "user";
     }
 
     private async Task<IReadOnlyList<string>> ResolveRequestedFunctionNamesAsync(
@@ -760,12 +418,16 @@ public sealed class HttpAgenticExecutionRuntime(
         foreach (var function in request.Configuration.Functions)
         {
             if (string.IsNullOrWhiteSpace(function))
+            {
                 continue;
+            }
 
             requested.Add(function.Trim());
         }
 
-        foreach (var function in McpBindingToolSelectionResolver.ResolveQualifiedToolNames(request.Agent.McpServerBindings, availableTools))
+        foreach (var function in McpBindingToolSelectionResolver.ResolveQualifiedToolNames(
+                     request.Agent.McpServerBindings,
+                     availableTools))
         {
             requested.Add(function);
         }
@@ -781,7 +443,9 @@ public sealed class HttpAgenticExecutionRuntime(
             foreach (var function in fromAgentSettings)
             {
                 if (string.IsNullOrWhiteSpace(function))
+                {
                     continue;
+                }
 
                 requested.Add(function.Trim());
             }
@@ -801,140 +465,6 @@ public sealed class HttpAgenticExecutionRuntime(
         return requested.ToList();
     }
 
-    private ToolRegistry ResolveToolRegistry(
-        IReadOnlyCollection<string> requestedFunctions,
-        IReadOnlyCollection<AppToolDescriptor> availableTools,
-        WhiteboardState? whiteboard,
-        bool useWhiteboard)
-    {
-        List<ToolBinding> tools = [];
-        Dictionary<string, ToolBinding> toolsByProviderName = new(StringComparer.OrdinalIgnoreCase);
-        HashSet<string> usedProviderToolNames = new(StringComparer.OrdinalIgnoreCase);
-
-        if (requestedFunctions.Count > 0)
-        {
-            HashSet<string> requestedQualified = new(requestedFunctions, StringComparer.OrdinalIgnoreCase);
-            HashSet<string> requestedByToolName = new(
-                requestedFunctions.Select(AgenticToolUtility.ExtractToolName),
-                StringComparer.OrdinalIgnoreCase);
-
-            foreach (var tool in availableTools)
-            {
-                bool selected = requestedQualified.Contains(tool.QualifiedName) || requestedByToolName.Contains(tool.ToolName);
-                if (!selected)
-                {
-                    continue;
-                }
-
-                string providerName = AgenticToolUtility.CreateProviderToolName(tool.ServerName, tool.ToolName, usedProviderToolNames);
-                var schema = tool.InputSchema.ValueKind == JsonValueKind.Undefined
-                    ? EmptyToolSchema
-                    : tool.InputSchema.Clone();
-
-                var binding = new ToolBinding(
-                    tool.ServerName,
-                    tool.ToolName,
-                    providerName,
-                    tool.Description,
-                    schema,
-                    async (arguments, token) => await tool.ExecuteAsync(arguments, token),
-                    MayRequireUserInput: tool.MayRequireUserInput);
-
-                tools.Add(binding);
-                toolsByProviderName[providerName] = binding;
-            }
-        }
-
-        if (useWhiteboard && whiteboard is not null)
-        {
-            foreach (var whiteboardTool in BuildWhiteboardTools(whiteboard, usedProviderToolNames))
-            {
-                tools.Add(whiteboardTool);
-                toolsByProviderName[whiteboardTool.ProviderName] = whiteboardTool;
-            }
-        }
-
-        return tools.Count == 0
-            ? ToolRegistry.Empty
-            : new ToolRegistry(tools, toolsByProviderName);
-    }
-
-    private static IReadOnlyList<ToolBinding> BuildWhiteboardTools(
-        WhiteboardState whiteboard,
-        HashSet<string> usedProviderToolNames)
-    {
-        var addNoteSchema = AgenticToolUtility.ParseToolSchema("""
-            {
-              "type": "object",
-              "properties": {
-                "note": { "type": "string" },
-                "author": { "type": ["string", "null"] }
-              },
-              "required": ["note"],
-              "additionalProperties": false
-            }
-            """);
-
-        var emptySchema = AgenticToolUtility.ParseToolSchema("""
-            {
-              "type": "object",
-              "properties": {},
-              "additionalProperties": false
-            }
-            """);
-
-        var addNoteProviderName = AgenticToolUtility.CreateProviderToolName("whiteboard", "add_note", usedProviderToolNames);
-        var getNotesProviderName = AgenticToolUtility.CreateProviderToolName("whiteboard", "get_notes", usedProviderToolNames);
-        var clearProviderName = AgenticToolUtility.CreateProviderToolName("whiteboard", "clear", usedProviderToolNames);
-
-        return
-        [
-            new ToolBinding(
-                "whiteboard",
-                "add_note",
-                addNoteProviderName,
-                "Add or update a note on the shared whiteboard for this chat session.",
-                addNoteSchema,
-                (arguments, _) =>
-                {
-                    var note = AgenticToolUtility.ReadRequiredStringArgument(arguments, "note");
-                    var author = AgenticToolUtility.ReadOptionalStringArgument(arguments, "author");
-                    whiteboard.Add(note, author);
-                    return Task.FromResult<object>(AgenticToolUtility.BuildWhiteboardSnapshot(whiteboard));
-                }),
-            new ToolBinding(
-                "whiteboard",
-                "get_notes",
-                getNotesProviderName,
-                "Return all whiteboard notes as a markdown list.",
-                emptySchema,
-                (_, _) => Task.FromResult<object>(AgenticToolUtility.BuildWhiteboardSnapshot(whiteboard))),
-            new ToolBinding(
-                "whiteboard",
-                "clear",
-                clearProviderName,
-                "Clear every note from the shared whiteboard.",
-                emptySchema,
-                (_, _) =>
-                {
-                    whiteboard.Clear();
-                    return Task.FromResult<object>("Whiteboard cleared.");
-                })
-        ];
-    }
-
-    private static ProviderMessage ToAssistantMessage(ProviderAssistantResponse completion)
-    {
-        return completion.ToolCalls.Count == 0
-            ? new ProviderMessage("assistant", completion.Content, null, null, null)
-            : new ProviderMessage("assistant", completion.Content, null, null, completion.ToolCalls);
-    }
-
-    private string ResolveOpenAiApiKey(LlmServerConfig server)
-    {
-        return LlmServerConfigHelper.GetConfiguredOpenAiApiKey(configuration, server);
-    }
-
     private static McpClientRequestContext BuildToolRequestContext(AgenticExecutionRuntimeRequest request)
     {
         var mergedBindings = McpServerSessionBindingMerger.Merge(
@@ -944,19 +474,6 @@ public sealed class HttpAgenticExecutionRuntime(
         return mergedBindings.Count == 0
             ? McpClientRequestContext.Empty
             : new McpClientRequestContext(mergedBindings);
-    }
-
-    private static async Task<string> SafeReadBodyAsync(HttpResponseMessage response, CancellationToken cancellationToken)
-    {
-        try
-        {
-            var body = await response.Content.ReadAsStringAsync(cancellationToken);
-            return string.IsNullOrWhiteSpace(body) ? "<empty>" : body;
-        }
-        catch
-        {
-            return "<failed to read response body>";
-        }
     }
 
     private static AgenticToolInvocationPolicyOptions NormalizeToolPolicy(AgenticToolInvocationPolicyOptions? policy)
@@ -971,77 +488,35 @@ public sealed class HttpAgenticExecutionRuntime(
             RetryDelayMs = Math.Max(0, policy.RetryDelayMs)
         };
     }
-    private static JsonElement CreateEmptyToolSchema()
+
+    private static string SerializeArguments(IReadOnlyDictionary<string, object?> arguments)
     {
-        using var document = JsonDocument.Parse("{\"type\":\"object\",\"properties\":{}}");
-        return document.RootElement.Clone();
+        try
+        {
+            return JsonSerializer.Serialize(arguments, ToolResultJsonOptions);
+        }
+        catch
+        {
+            return "{}";
+        }
     }
+
+    private static ChatEngineStreamChunk ErrorChunk(string agentName, string message) =>
+        new(agentName, message, IsFinal: true, IsError: true);
 
     private static string FormatForLog(string? payload, int maxLength)
     {
         if (string.IsNullOrWhiteSpace(payload))
+        {
             return "<empty>";
+        }
 
         var singleLine = payload.Replace("\r", " ").Replace("\n", " ").Trim();
         if (singleLine.Length <= maxLength)
+        {
             return singleLine;
+        }
 
         return $"{singleLine[..maxLength]}... (truncated, {singleLine.Length} chars)";
-    }
-
-    private static bool RequiresNameLookupBeforeReply(AgentDescription agent, ToolRegistry toolRegistry)
-    {
-        if (!toolRegistry.HasTools)
-            return false;
-
-        var prompt = agent.Content ?? string.Empty;
-        var promptRequiresName = prompt.Contains("preferred name", StringComparison.OrdinalIgnoreCase) ||
-                                 prompt.Contains("address the user by", StringComparison.OrdinalIgnoreCase) ||
-                                 prompt.Contains("обращай", StringComparison.OrdinalIgnoreCase) ||
-                                 prompt.Contains("по имени", StringComparison.OrdinalIgnoreCase);
-        promptRequiresName = promptRequiresName ||
-                             prompt.Contains("обращай", StringComparison.OrdinalIgnoreCase) ||
-                             prompt.Contains("по имени", StringComparison.OrdinalIgnoreCase);
-        if (!promptRequiresName)
-            return false;
-
-        return toolRegistry.Tools.Any(static tool =>
-            string.Equals(tool.ToolName, UserProfilePrefsToolName, StringComparison.OrdinalIgnoreCase));
-    }
-
-    private static bool IsNameLookupCall(FunctionCallRecord record)
-    {
-        if (string.Equals(record.Function, UserProfilePrefsGetAllToolName, StringComparison.OrdinalIgnoreCase))
-            return true;
-
-        if (!string.Equals(record.Function, UserProfilePrefsToolName, StringComparison.OrdinalIgnoreCase))
-            return false;
-
-        if (string.IsNullOrWhiteSpace(record.Request))
-            return false;
-
-        try
-        {
-            using var doc = JsonDocument.Parse(record.Request);
-            if (!doc.RootElement.TryGetProperty("key", out var keyProperty) ||
-                keyProperty.ValueKind != JsonValueKind.String)
-            {
-                return false;
-            }
-
-            var key = keyProperty.GetString();
-            if (string.IsNullOrWhiteSpace(key))
-                return false;
-
-            return string.Equals(key, UserProfileDisplayNameKey, StringComparison.OrdinalIgnoreCase) ||
-                   string.Equals(key, "name", StringComparison.OrdinalIgnoreCase) ||
-                   string.Equals(key, "preferred_name", StringComparison.OrdinalIgnoreCase) ||
-                   string.Equals(key, "preferredName", StringComparison.OrdinalIgnoreCase) ||
-                   string.Equals(key, "userName", StringComparison.OrdinalIgnoreCase);
-        }
-        catch
-        {
-            return false;
-        }
     }
 }

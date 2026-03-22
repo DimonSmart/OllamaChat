@@ -97,6 +97,7 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IChatEngineSessionService>(sp => sp.GetRequiredService<AgenticChatEngineSessionService>());
         services.AddScoped<IAgenticChatViewModelService, AgenticChatViewModelService>();
         services.AddScoped<IPlanningChatClientFactory, PlanningChatClientFactory>();
+        services.AddScoped<ILlmChatClientFactory>(sp => sp.GetRequiredService<PlanningChatClientFactory>());
         services.AddScoped<IPlanningSessionService, PlanningSessionService>();
         services.AddSingleton<IChatFormatter, TextChatFormatter>();
         services.AddSingleton<IChatFormatter, MarkdownChatFormatter>();

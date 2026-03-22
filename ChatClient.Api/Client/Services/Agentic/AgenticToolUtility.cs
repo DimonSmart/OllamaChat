@@ -80,7 +80,7 @@ internal static class AgenticToolUtility
         return builder.ToString().Trim();
     }
 
-    public static string SerializeForToolTransport(object value, JsonSerializerOptions jsonOptions)
+    public static string SerializeForToolTransport(object? value, JsonSerializerOptions jsonOptions)
     {
         try
         {
@@ -92,63 +92,4 @@ internal static class AgenticToolUtility
         }
     }
 
-    public static string ExtractToolName(string qualifiedName)
-    {
-        if (string.IsNullOrWhiteSpace(qualifiedName))
-        {
-            return string.Empty;
-        }
-
-        int separatorIndex = qualifiedName.LastIndexOf(':');
-        return separatorIndex >= 0
-            ? qualifiedName[(separatorIndex + 1)..]
-            : qualifiedName;
-    }
-
-    public static string CreateProviderToolName(
-        string serverName,
-        string toolName,
-        HashSet<string> usedNames)
-    {
-        const int maxLength = 64;
-        string baseName = $"{SanitizeToolNamePart(serverName)}__{SanitizeToolNamePart(toolName)}";
-        if (baseName.Length > maxLength)
-        {
-            baseName = baseName[..maxLength];
-        }
-
-        string candidate = baseName;
-        int suffix = 1;
-        while (!usedNames.Add(candidate))
-        {
-            string suffixText = $"_{suffix++}";
-            int prefixLength = Math.Max(1, maxLength - suffixText.Length);
-            candidate = $"{baseName[..Math.Min(baseName.Length, prefixLength)]}{suffixText}";
-        }
-
-        return candidate;
-    }
-
-    private static string SanitizeToolNamePart(string value)
-    {
-        if (string.IsNullOrWhiteSpace(value))
-        {
-            return "tool";
-        }
-
-        var builder = new StringBuilder(value.Length);
-        foreach (char ch in value)
-        {
-            if (char.IsLetterOrDigit(ch) || ch == '_' || ch == '-')
-            {
-                builder.Append(ch);
-            }
-            else
-            {
-                builder.Append('_');
-            }
-        }
-
-        return builder.Length == 0 ? "tool" : builder.ToString();
-    }
 }

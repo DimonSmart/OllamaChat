@@ -7,6 +7,11 @@ using System.ClientModel;
 
 namespace ChatClient.Api.PlanningRuntime.Host;
 
+public interface ILlmChatClientFactory
+{
+    Task<IChatClient> CreateAsync(ServerModel model, CancellationToken cancellationToken = default);
+}
+
 public interface IPlanningChatClientFactory
 {
     Task<IChatClient> CreateAsync(ServerModel model, CancellationToken cancellationToken = default);
@@ -15,7 +20,7 @@ public interface IPlanningChatClientFactory
 public sealed class PlanningChatClientFactory(
     ILlmServerConfigService llmServerConfigService,
     IUserSettingsService userSettingsService,
-    IConfiguration configuration) : IPlanningChatClientFactory
+    IConfiguration configuration) : IPlanningChatClientFactory, ILlmChatClientFactory
 {
     public async Task<IChatClient> CreateAsync(ServerModel model, CancellationToken cancellationToken = default)
     {
