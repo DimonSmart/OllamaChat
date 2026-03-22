@@ -17,6 +17,4 @@ public sealed class ChatEngineOrchestrationRequest
     public IReadOnlyList<AppChatMessageFile> Files { get; init; } = [];
 
     public bool EnableRagContext { get; init; } = true;
-
-    public WhiteboardState? Whiteboard { get; init; }
 }

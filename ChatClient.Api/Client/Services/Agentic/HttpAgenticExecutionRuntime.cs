@@ -101,9 +101,7 @@ public sealed class HttpAgenticExecutionRuntime(
         var toolSet = supportsFunctions
             ? AgenticToolSetBuilder.Build(
                 requestedFunctions,
-                availableTools,
-                request.Whiteboard,
-                request.Configuration.UseWhiteboard)
+                availableTools)
             : AgenticToolSet.Empty;
 
         if (requestedFunctions.Count > 0 && !toolSet.HasTools)

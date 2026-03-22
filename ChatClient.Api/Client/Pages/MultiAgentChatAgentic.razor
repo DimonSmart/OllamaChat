@@ -37,8 +37,6 @@
 @inject ILogger<MultiAgentChatAgentic> Logger
 @inject ISavedChatService SavedChatService
 @inject ISnackbar Snackbar
-@inject ILlmServerConfigService LlmServerConfigService
-@inject IOllamaClientService OllamaClientService
 @inject IMcpUserInteractionService McpUserInteractionService
 
 <PageTitle>Multi-Agentic Chat</PageTitle>
@@ -108,17 +106,6 @@
                                 </MudPaper>
                             }
                         }
-
-                        <div>
-                            <MudCheckBox @bind-Value="whiteboardEnabled"
-                                         Label="Use whiteboard"
-                                         Dense="true"
-                                         Disabled="@(!isWhiteboardSupported)" />
-                            @if (!isWhiteboardSupported && !string.IsNullOrWhiteSpace(whiteboardSupportHint))
-                            {
-                                <MudText Typo="Typo.caption" Color="Color.Warning" Class="ml-1">@whiteboardSupportHint</MudText>
-                            }
-                        </div>
 
                         <MudTooltip Text="Select server and model" Disabled="@CanStartChat">
                             <MudButton Variant="Variant.Filled"
@@ -290,10 +277,6 @@
     private List<AgentDescription> agents = new();
     private List<AgentDescription> selectedAgents { get; set; } = new();
     private List<AgentDescription> selectedAgentDrafts { get; set; } = new();
-    private bool whiteboardEnabled = true;
-    private bool isWhiteboardSupported = true;
-    private string? whiteboardSupportHint;
-    private ServerModelSelection lastUiModelSelection = new(null, null);
 
     [CascadingParameter(Name = "UiModelSelection")]
     public ServerModelSelection UiModelSelection { get; set; } = new(null, null);
@@ -362,12 +345,6 @@
     {
         if (SavedChatId.HasValue && SavedChatId != lastSavedChatId)
             await LoadSavedChat(SavedChatId.Value);
-
-        if (!chatStarted && UiSelectionChanged())
-        {
-            lastUiModelSelection = new(UiModelSelection.ServerId, UiModelSelection.ModelName);
-            await RefreshWhiteboardSupportAsync();
-        }
     }
 
     private void OnAnsweringStateChanged(bool answering)
@@ -396,9 +373,6 @@
         chatStarted = false;
         lastSavedChatId = null;
         lastSavedChatTitle = string.Empty;
-        whiteboardEnabled = true;
-        isWhiteboardSupported = true;
-        whiteboardSupportHint = null;
         StateHasChanged();
     }
 
@@ -478,12 +452,7 @@
         var runtimeAgents = BuildRuntimeAgents(selectedAgentDrafts);
 
         currentModelName = runtimeAgents[0].Model.ModelName;
-
-        var modelsForSupport = runtimeAgents
-            .Select(static agent => (agent.Agent, agent.Model));
-        await EvaluateWhiteboardSupportAsync(modelsForSupport);
-
-        var chatConfiguration = new AppChatConfiguration(currentModelName, [], whiteboardEnabled, []);
+        var chatConfiguration = new AppChatConfiguration(currentModelName, []);
 
         var savedMessages = saved.Messages
             .Select(m =>
@@ -525,12 +494,7 @@
 
         var runtimeAgents = BuildRuntimeAgents(selectedAgentDrafts);
         currentModelName = runtimeAgents[0].Model.ModelName;
-
-        var modelsForSupport = runtimeAgents
-            .Select(static agent => (agent.Agent, agent.Model));
-        await EvaluateWhiteboardSupportAsync(modelsForSupport);
-
-        var chatConfiguration = new AppChatConfiguration(currentModelName!, [], whiteboardEnabled, []);
+        var chatConfiguration = new AppChatConfiguration(currentModelName!, []);
         var request = new ChatEngineSessionStartRequest
         {
             Configuration = chatConfiguration,
@@ -655,10 +619,10 @@
         await JSRuntime.InvokeVoidAsync("copyText", text);
     }
 
-    private async Task OnSelectedAgentsChanged(IEnumerable<AgentDescription> agents)
+    private Task OnSelectedAgentsChanged(IEnumerable<AgentDescription> agents)
     {
         UpdateSelectedAgents(agents);
-        await RefreshWhiteboardSupportAsync();
+        return Task.CompletedTask;
     }
 
     private Task OnDraftMcpBindingsChanged(AgentDescription agentDraft, List<McpServerSessionBinding> bindings)
@@ -667,67 +631,6 @@
             .Select(static binding => binding.Clone())
             .ToList();
         return Task.CompletedTask;
-    }
-
-    private async Task RefreshWhiteboardSupportAsync()
-    {
-        if (selectedAgentDrafts.Count == 0)
-        {
-            isWhiteboardSupported = true;
-            whiteboardSupportHint = null;
-            StateHasChanged();
-            return;
-        }
-
-        var models = selectedAgentDrafts
-            .Select(agent =>
-                TryResolveEffectiveModel(agent, out var model)
-                    ? (agent, model)
-                    : (agent, (ServerModel?)null))
-            .Where(pair => pair.Item2 is not null)
-            .Select(pair => (pair.agent, pair.Item2!));
-
-        await EvaluateWhiteboardSupportAsync(models);
-    }
-
-    private async Task EvaluateWhiteboardSupportAsync(IEnumerable<(AgentDescription agent, ServerModel model)> agentModels)
-    {
-        isWhiteboardSupported = true;
-        whiteboardSupportHint = null;
-
-        foreach (var (agent, model) in agentModels)
-        {
-            if (!await SupportsFunctionCallingAsync(model))
-            {
-                isWhiteboardSupported = false;
-                whiteboardEnabled = false;
-                whiteboardSupportHint = $"Whiteboard disabled because {agent.AgentName} uses {model.ModelName} without function support.";
-                break;
-            }
-        }
-
-        StateHasChanged();
-    }
-
-    private async Task<bool> SupportsFunctionCallingAsync(ServerModel model)
-    {
-        var server = await LlmServerConfigService.GetByIdAsync(model.ServerId);
-        if (server?.ServerType != ServerType.Ollama)
-        {
-            return true;
-        }
-
-        try
-        {
-            var models = await OllamaClientService.GetModelsAsync(model.ServerId);
-            var ollamaModel = models.FirstOrDefault(m => string.Equals(m.Name, model.ModelName, StringComparison.OrdinalIgnoreCase));
-            return ollamaModel?.SupportsFunctionCalling != false;
-        }
-        catch (Exception ex)
-        {
-            Logger.LogWarning(ex, "Failed to determine function support for model {ModelName}", model.ModelName);
-            return true;
-        }
     }
 
     private bool TryResolveEffectiveModel(AgentDescription agent, out ServerModel model)
@@ -771,10 +674,6 @@
                 : AgentDescriptionFactory.CreateDraft(agent))
             .ToList();
     }
-
-    private bool UiSelectionChanged() =>
-        UiModelSelection.ServerId != lastUiModelSelection.ServerId ||
-        UiModelSelection.ModelName != lastUiModelSelection.ModelName;
 
     private async Task<McpElicitationResponse> HandleElicitationAsync(
         McpElicitationPrompt prompt,

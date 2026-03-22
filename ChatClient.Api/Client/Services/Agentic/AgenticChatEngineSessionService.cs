@@ -195,8 +195,7 @@ public sealed class AgenticChatEngineSessionService(
                 Messages = history,
                 UserMessage = userMessageText,
                 Files = files,
-                EnableRagContext = enableRagContext,
-                Whiteboard = _chat.Whiteboard
+                EnableRagContext = enableRagContext
             };
 
             string? retrievedContext = null;

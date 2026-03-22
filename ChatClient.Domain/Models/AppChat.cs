@@ -12,7 +12,6 @@ public class AppChat
     public ObservableCollection<IAppChatMessage> Messages { get; } = [];
     public string? FirstUserMessage { get; set; }
     public ServerModelSelection? InitialModel { get; set; }
-    public WhiteboardState Whiteboard { get; } = new();
 
     public IReadOnlyDictionary<string, AgentDescription> AgentsByName => _agentsByName;
     public IReadOnlyCollection<AgentDescription> AgentDescriptions => _agentsByName.Values;
@@ -33,7 +32,6 @@ public class AppChat
         _agentsByName.Clear();
         FirstUserMessage = null;
         InitialModel = null;
-        Whiteboard.Clear();
     }
 }
 

@@ -17,9 +17,7 @@ public class AgenticToolSetBuilderTests
 
         var toolSet = AgenticToolSetBuilder.Build(
             ["server-a:search"],
-            tools,
-            whiteboard: null,
-            useWhiteboard: false);
+            tools);
 
         var registered = Assert.Single(toolSet.MetadataByName);
         Assert.Equal("search", registered.Key);
@@ -37,9 +35,7 @@ public class AgenticToolSetBuilderTests
 
         var toolSet = AgenticToolSetBuilder.Build(
             ["get_page"],
-            tools,
-            whiteboard: null,
-            useWhiteboard: false);
+            tools);
 
         var registered = Assert.Single(toolSet.MetadataByName);
         Assert.Equal("get_page", registered.Key);
@@ -57,9 +53,7 @@ public class AgenticToolSetBuilderTests
 
         var toolSet = AgenticToolSetBuilder.Build(
             ["search"],
-            tools,
-            whiteboard: null,
-            useWhiteboard: false);
+            tools);
 
         Assert.Equal(2, toolSet.MetadataByName.Count);
         Assert.Contains("Docs_A__search", toolSet.MetadataByName.Keys);

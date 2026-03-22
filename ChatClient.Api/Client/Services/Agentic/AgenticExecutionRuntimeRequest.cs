@@ -14,6 +14,4 @@ public sealed class AgenticExecutionRuntimeRequest
     public required IReadOnlyList<ChatMessage> Conversation { get; init; }
 
     public required string UserMessage { get; init; }
-
-    public WhiteboardState? Whiteboard { get; init; }
 }

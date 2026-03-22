@@ -1,7 +1,6 @@
 using System.Text;
 using System.Text.Json;
 using ChatClient.Api.Services;
-using ChatClient.Domain.Models;
 using Microsoft.Extensions.AI;
 
 namespace ChatClient.Api.Client.Services.Agentic;
@@ -29,9 +28,7 @@ internal static class AgenticToolSetBuilder
 
     public static AgenticToolSet Build(
         IReadOnlyCollection<string> requestedFunctions,
-        IReadOnlyCollection<AppToolDescriptor> availableTools,
-        WhiteboardState? whiteboard,
-        bool useWhiteboard)
+        IReadOnlyCollection<AppToolDescriptor> availableTools)
     {
         List<AgenticToolSpec> specs = [];
 
@@ -60,11 +57,6 @@ internal static class AgenticToolSetBuilder
 
                 specs.Add(AgenticToolSpec.FromAppTool(tool));
             }
-        }
-
-        if (useWhiteboard && whiteboard is not null)
-        {
-            specs.AddRange(BuildWhiteboardSpecs(whiteboard));
         }
 
         if (specs.Count == 0)
@@ -167,76 +159,6 @@ internal static class AgenticToolSetBuilder
         }
 
         return $"{description}\n\nSource server: {spec.ServerName}. Original tool name: {spec.ToolName}.";
-    }
-
-    private static IReadOnlyList<AgenticToolSpec> BuildWhiteboardSpecs(WhiteboardState whiteboard)
-    {
-        var addNoteSchema = AgenticToolUtility.ParseToolSchema("""
-            {
-              "type": "object",
-              "properties": {
-                "note": { "type": "string" },
-                "author": { "type": ["string", "null"] }
-              },
-              "required": ["note"],
-              "additionalProperties": false
-            }
-            """);
-
-        var emptySchema = AgenticToolUtility.ParseToolSchema("""
-            {
-              "type": "object",
-              "properties": {},
-              "additionalProperties": false
-            }
-            """);
-
-        var stringSchema = AgenticToolUtility.ParseToolSchema("""
-            {
-              "type": "string"
-            }
-            """);
-
-        return
-        [
-            new AgenticToolSpec(
-                "whiteboard",
-                "whiteboard",
-                "add_note",
-                "Add or update a note on the shared whiteboard for this chat session.",
-                addNoteSchema,
-                stringSchema,
-                false,
-                (arguments, _) =>
-                {
-                    var note = AgenticToolUtility.ReadRequiredStringArgument(arguments, "note");
-                    var author = AgenticToolUtility.ReadOptionalStringArgument(arguments, "author");
-                    whiteboard.Add(note, author);
-                    return Task.FromResult<object>(AgenticToolUtility.BuildWhiteboardSnapshot(whiteboard));
-                }),
-            new AgenticToolSpec(
-                "whiteboard",
-                "whiteboard",
-                "get_notes",
-                "Return all whiteboard notes as a markdown list.",
-                emptySchema,
-                stringSchema,
-                false,
-                (_, _) => Task.FromResult<object>(AgenticToolUtility.BuildWhiteboardSnapshot(whiteboard))),
-            new AgenticToolSpec(
-                "whiteboard",
-                "whiteboard",
-                "clear",
-                "Clear every note from the shared whiteboard.",
-                emptySchema,
-                stringSchema,
-                false,
-                (_, _) =>
-                {
-                    whiteboard.Clear();
-                    return Task.FromResult<object>("Whiteboard cleared.");
-                })
-        ];
     }
 
     private static bool ContainsQualifier(string value) =>
