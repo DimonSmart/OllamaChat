@@ -1,6 +1,5 @@
 using ChatClient.Api.Client.Services;
 using ChatClient.Api.Client.Services.Agentic;
-using ChatClient.Api.Client.Services.Formatters;
 using ChatClient.Api.PlanningRuntime.Host;
 using ChatClient.Api.Services;
 using ChatClient.Api.Services.Rag;
@@ -63,8 +62,6 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<ISavedChatRepository, SavedChatRepository>();
         services.AddSingleton<IUserSettingsService, UserSettingsService>();
         services.AddSingleton<ISavedChatService, SavedChatService>();
-        services.AddSingleton<IFileConverter, MarkdownFileConverter>();
-        services.AddSingleton<IFileConverter, FileConverter>();
 
         return services;
     }
@@ -96,12 +93,8 @@ public static class ServiceCollectionExtensions
         services.AddScoped<AgenticChatEngineSessionService>();
         services.AddScoped<IChatEngineSessionService>(sp => sp.GetRequiredService<AgenticChatEngineSessionService>());
         services.AddScoped<IAgenticChatViewModelService, AgenticChatViewModelService>();
-        services.AddScoped<IPlanningChatClientFactory, PlanningChatClientFactory>();
-        services.AddScoped<ILlmChatClientFactory>(sp => sp.GetRequiredService<PlanningChatClientFactory>());
+        services.AddScoped<ILlmChatClientFactory, PlanningChatClientFactory>();
         services.AddScoped<IPlanningSessionService, PlanningSessionService>();
-        services.AddSingleton<IChatFormatter, TextChatFormatter>();
-        services.AddSingleton<IChatFormatter, MarkdownChatFormatter>();
-        services.AddSingleton<IChatFormatter, HtmlChatFormatter>();
 
         return services;
     }
@@ -125,11 +118,6 @@ public static class ServiceCollectionExtensions
         services.AddMudServices();
 
         services.AddSingleton<CircuitHandler, AutoShutdownCircuitHandler>();
-
-        services.AddControllers(options =>
-        {
-            options.Filters.Add<ApiExceptionFilter>();
-        });
 
         return services;
     }

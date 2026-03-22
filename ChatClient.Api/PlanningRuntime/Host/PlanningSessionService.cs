@@ -11,7 +11,7 @@ using ChatClient.Domain.Models;
 namespace ChatClient.Api.PlanningRuntime.Host;
 
 public sealed class PlanningSessionService(
-    IPlanningChatClientFactory chatClientFactory,
+    ILlmChatClientFactory chatClientFactory,
     IAppToolCatalog appToolCatalog,
     IMcpUserInteractionService mcpUserInteractionService,
     ILogger<PlanningSessionService> logger) : IPlanningSessionService

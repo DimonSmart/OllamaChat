@@ -2,42 +2,16 @@
 @page "/multi-agent-chat-agentic"
 @using System.Collections.Generic
 @using System.Collections.Immutable
-@using System.Collections.ObjectModel
-@using System.Globalization
 @using System.Linq
-@using System.Text
-@using System.Text.Json
-@using System.Text.RegularExpressions
-@using System.Threading
 @using ChatClient.Api.Client.Components
-@using ChatClient.Api.Client.Services
-@using ChatClient.Api.Client.Services.Agentic
-@using ChatClient.Api.Client.Services.Formatters
-@using ChatClient.Api.Client.ViewModels
-@using ChatClient.Api.Services
-@using ChatClient.Domain.Models
-@using ChatClient.Application.Services
-@using ChatClient.Application.Services.Agentic
 @using ChatClient.Application.Helpers
+@using ChatClient.Application.Services.Agentic
+@using ChatClient.Domain.Models
 @using ChatClient.Domain.Models.ChatStrategies
-@using Microsoft.Extensions.AI
 @using Microsoft.AspNetCore.Components
-@using Microsoft.AspNetCore.Components.Web
+@using Microsoft.Extensions.AI
 @using MudBlazor
-
-@implements IAsyncDisposable
-@inject IJSRuntime JSRuntime
-@inject NavigationManager NavigationManager
-@inject IDialogService DialogService
-@inject IAgenticChatViewModelService ChatViewModelService
-@inject IChatEngineSessionService ChatService
-@inject IAgentDescriptionService AgentService
-@inject IUserSettingsService UserSettingsService
-@inject IEnumerable<IChatFormatter> ChatFormatters
-@inject ILogger<MultiAgentChatAgentic> Logger
-@inject ISavedChatService SavedChatService
-@inject ISnackbar Snackbar
-@inject IMcpUserInteractionService McpUserInteractionService
+@inherits AgenticChatPageBase
 
 <PageTitle>Multi-Agentic Chat</PageTitle>
 
@@ -81,6 +55,7 @@
                                 <MudSelectItem Value="@strategy">@strategy</MudSelectItem>
                             }
                         </MudSelect>
+
                         @if (editorType is not null)
                         {
                             <DynamicComponent Type="editorType" Parameters="editorParams" />
@@ -124,174 +99,41 @@
     }
     else
     {
-        <div class="chat-actions">
-            <MudMenu Icon="@Icons.Material.Filled.ContentCopy" AnchorOrigin="Origin.TopRight" TransformOrigin="Origin.TopRight">
-                <MudMenuItem OnClick="@(() => CopyChatAsync(ChatFormat.Text))">Copy as Text</MudMenuItem>
-                <MudMenuItem OnClick="@(() => CopyChatAsync(ChatFormat.Markdown))">Copy as Markdown</MudMenuItem>
-                <MudMenuItem OnClick="@(() => CopyChatAsync(ChatFormat.Html))">Copy as HTML</MudMenuItem>
-            </MudMenu>
-            <MudIconButton Icon="@Icons.Material.Filled.Save" Color="Color.Primary" OnClick="SaveCurrentChat" />
-        </div>
-        <div class="chat-messages-container" @ref="messagesElement">
-            @foreach (var message in ChatViewModelService.Messages)
-            {
-                if (message.Role == Microsoft.Extensions.AI.ChatRole.System)
-                {
-                    continue;
-                }
-
-                @if (message.Role == Microsoft.Extensions.AI.ChatRole.Tool)
-                {
-                    <RagDisplay Text="@message.Content" />
-                }
-                else
-                {
-                    <MudChat Dense="true" ChatPosition="@(message.Role == Microsoft.Extensions.AI.ChatRole.Assistant ? ChatBubblePosition.Start : ChatBubblePosition.End)" @key="message.Id">
-                         <MudChatHeader>
-                             <time>@message.MsgDateTime.ToString("g")</time>
-                             <span class="copy-button" title="Copy answer" @onclick="(() => CopyVisibleMessage(message))">📋</span>
-                             <span class="copy-button" title="Copy raw" @onclick="(() => CopyRawMessage(message))">🚪</span>
-                             @if (!isLLMAnswering)
-                             {
-                                 <span class="delete-button" title="Delete" @onclick="(() => DeleteMessage(message))">🗑</span>
-                             }
-                         </MudChatHeader>
-
-                        @{
-                            var avatarText = message.Role == Microsoft.Extensions.AI.ChatRole.Assistant
-                                ? GetAssistantAvatarText(message.AgentName)
-                                : GetAvatarText(userSettings.UserName);
-                        }
-
-                            @if (!string.IsNullOrEmpty(avatarText))
-                        {
-                            <MudAvatar Color="@(message.Role == Microsoft.Extensions.AI.ChatRole.Assistant ? Color.Primary : Color.Secondary)">
-                                @avatarText
-                            </MudAvatar>
-                        }
-                        
-                        <MudChatBubble>
-                            @if (message.Files.Any())
-                            {
-                                <div class="mb-2">
-                                    @foreach (var file in message.Files)
-                                    {
-                                        @if (IsImageFile(file.ContentType))
-                                        {
-                                            <div class="image-thumbnail">
-                                                <img src="@GetImageDataUrl(file)" 
-                                                     alt="@file.Name" 
-                                                     style="max-width: 150px; max-height: 150px; object-fit: cover;"
-                                                     @onclick="@(() => ShowFullSizeImage(file))" />
-                                                <MudText Typo="Typo.caption" Class="image-caption mt-1 text-center">
-                                                    @file.Name (@FormatFileSize(file.Size))
-                                                </MudText>
-                                            </div>
-                                        }
-                                        else
-                                        {
-                                            <MudChip T="string" 
-                                                     Color="Color.Info" 
-                                                     Size="Size.Small"
-                                                     Class="mb-1 mr-1">
-                                                <MudIcon Icon="@GetFileIcon(file.ContentType)" Class="mr-1" />
-                                                @file.Name (@FormatFileSize(file.Size))
-                                            </MudChip>
-                                        }
-                                    }
-                                </div>
-                            }
-                            @((MarkupString)message.HtmlContent)
-                        </MudChatBubble>
-                        @if (message.ThinkSegments.Any())
-                        {
-                            var validThoughts = message.ThinkSegments
-                                .Select((segment, index) => new { segment, html = message.HtmlThinkSegments.ElementAt(index) })
-                                .Where(x => !string.IsNullOrWhiteSpace(x.segment))
-                                .ToList();
-
-                            foreach (var thought in validThoughts)
-                            {
-                                <ThoughtDisplay PlainText="@thought.segment" HtmlText="@thought.html" />
-                            }
-                        }
-
-                        @if (message.FunctionCalls.Any())
-                        {
-                            foreach (var call in message.FunctionCalls)
-                            {
-                                <McpCallDisplay Call="@call" />
-                            }
-                        }
-
-                        @if (message.IsStreaming || message.IsCanceled || !string.IsNullOrEmpty(message.Statistics))
-                        {
-                            <MudChatFooter>
-                                @if (message.IsStreaming)
-                                {
-                                    <MudText Typo="Typo.caption" Class="typing-indicator">typing...</MudText>
-                                }
-                                @if (message.IsCanceled)
-                                {
-                                    <MudAlert Severity="Severity.Error" Dense="true" Class="mt-1">
-                                        Canceled
-                                    </MudAlert>                                }
-                                @if (!string.IsNullOrEmpty(message.Statistics))
-                                {
-                                    <div class="mt-1">
-                                        <MudText Typo="Typo.caption" Class="mud-text-secondary">
-                                            @((MarkupString)message.Statistics)
-                                        </MudText>
-                                    </div>
-                                }
-                            </MudChatFooter>
-                        }
-                    </MudChat>
-                }
-            }
-          </div>
-        
-        <!-- Fixed input panel at bottom -->
-        <div class="chat-input-panel">
-            <MudStack>
-                <ChatInput OnSend="SendChatMessageAsync"
-                          ShowStopButton="isLLMAnswering"
-                          OnStopClick="Cancel"
-                          IsMultiAgent="true" />
-            </MudStack>
-        </div>
+        <AgenticChatSession @ref="chatSessionView"
+                            Messages="ChatViewModelService.Messages"
+                            Agents="agents"
+                            IsLlmAnswering="isLLMAnswering"
+                            UserName="userSettings.UserName"
+                            IsMultiAgent="true"
+                            OnSaveChat="SaveCurrentChat"
+                            OnSendMessage="SendChatMessageAsync"
+                            OnStop="Cancel"
+                            OnDeleteMessage="DeleteMessage"
+                            OnCopyVisibleMessage="CopyVisibleMessage"
+                            OnCopyRawMessage="CopyRawMessage"
+                            OnCopyChat="CopyChatAsync" />
     }
-</MudStack>
+    </MudStack>
 </OllamaCheck>
 
 @code {
-    private bool isLLMAnswering { get; set; } = false;
-    private const int UpdateIntervalMs = 500;
-
-    private bool isLoadingInitialData = true;
-    private bool chatStarted = false;
-    private Guid? lastSavedChatId;
-    private string lastSavedChatTitle = string.Empty;
-    private ElementReference messagesElement;
+    private const string RoundRobinChatStrategy = "RoundRobin";
+    private const string RoundRobinSummaryChatStrategy = "RoundRobinWithSummary";
 
     private List<AgentDescription> agents = new();
     private List<AgentDescription> selectedAgents { get; set; } = new();
     private List<AgentDescription> selectedAgentDrafts { get; set; } = new();
+    private List<string> chatStrategies = new();
+    private IChatStrategyOptions chatStrategyOptions = new RoundRobinChatStrategyOptions();
+    private string chatStrategyName = RoundRobinChatStrategy;
+    private string? currentModelName;
 
     [CascadingParameter(Name = "UiModelSelection")]
     public ServerModelSelection UiModelSelection { get; set; } = new(null, null);
 
-    private string? currentModelName;
-
     private bool CanStartChat =>
         selectedAgentDrafts.Count > 0 &&
         selectedAgentDrafts.All(agent => TryResolveEffectiveModel(agent, out _));
-
-    private const string RoundRobinChatStrategy = "RoundRobin";
-    private const string RoundRobinSummaryChatStrategy = "RoundRobinWithSummary";
-    private List<string> chatStrategies = new();
-    private IChatStrategyOptions chatStrategyOptions = new RoundRobinChatStrategyOptions();
-    private string chatStrategyName = RoundRobinChatStrategy;
 
     private static readonly IReadOnlyDictionary<Type, Type> Editors = new Dictionary<Type, Type>
     {
@@ -299,102 +141,27 @@
         { typeof(RoundRobinSummaryChatStrategyOptions), typeof(RoundRobinSummaryChatStrategyParameters) },
     }.ToImmutableDictionary();
 
-    private Type? editorType => Editors.TryGetValue(chatStrategyOptions.GetType(), out var t) ? t : null;
+    private Type? editorType => Editors.TryGetValue(chatStrategyOptions.GetType(), out var editor) ? editor : null;
 
     private Dictionary<string, object?> editorParams =>
         new() { ["Context"] = new ChatStrategyEditorContext(chatStrategyOptions, agents) };
 
-    private UserSettings userSettings = new();
+    protected override string ElicitationLogContext => "multi-agent chat";
 
-    private StreamingDebouncer _renderDebouncer = null!;
-
-    private Func<AppChatMessageViewModel, Task>? _messageAddedHandler;
-    private Func<AppChatMessageViewModel, MessageUpdateOptions, Task>? _messageUpdatedHandler;
-    private Func<AppChatMessageViewModel, Task>? _messageDeletedHandler;
-    private IDisposable? elicitationHandlerRegistration;
-
-    protected override async Task OnInitializedAsync()
+    protected override Task OnBeforeInitialLoadAsync()
     {
         chatStrategies = new() { RoundRobinChatStrategy, RoundRobinSummaryChatStrategy };
-
-        isLoadingInitialData = true;
-        StateHasChanged();
-
-        elicitationHandlerRegistration = McpUserInteractionService.RegisterElicitationHandler(
-            McpInteractionScope.Chat,
-            HandleElicitationAsync);
-
-        await LoadAgents();
-        await LoadUserSettings();
-
-        ChatService.AnsweringStateChanged += OnAnsweringStateChanged;
-        ChatViewModelService.ChatReset += OnChatReset;
-        _renderDebouncer = new StreamingDebouncer(UpdateIntervalMs, () => InvokeAsync(StateHasChanged));
-        _messageAddedHandler = msg => InvokeAsync(() => OnMessageAdded(msg));
-        _messageUpdatedHandler = (msg, opts) => InvokeAsync(() => OnMessageUpdated(msg, opts));
-        _messageDeletedHandler = msg => InvokeAsync(() => OnMessageDeleted(msg));
-        ChatViewModelService.MessageAdded += _messageAddedHandler;
-       ChatViewModelService.MessageUpdated += _messageUpdatedHandler;
-       ChatViewModelService.MessageDeleted += _messageDeletedHandler;
-
-        isLoadingInitialData = false;
-        StateHasChanged();
+        return Task.CompletedTask;
     }
 
-    protected override async Task OnParametersSetAsync()
-    {
-        if (SavedChatId.HasValue && SavedChatId != lastSavedChatId)
-            await LoadSavedChat(SavedChatId.Value);
-    }
-
-    private void OnAnsweringStateChanged(bool answering)
-    {
-        isLLMAnswering = answering;
-        StateHasChanged();
-    }
-
-    private async Task OnMessageAdded(AppChatMessageViewModel message)
-    {
-        StateHasChanged();
-        await ScrollToBottom();
-    }    
-    private Task OnMessageUpdated(AppChatMessageViewModel message, MessageUpdateOptions options)
-    {
-        return _renderDebouncer.TriggerAsync(options);
-    }
-
-    private void OnMessageDeleted(AppChatMessageViewModel message)
-    {
-        StateHasChanged();
-    }
-
-    private void OnChatReset()
-    {
-        chatStarted = false;
-        lastSavedChatId = null;
-        lastSavedChatTitle = string.Empty;
-        StateHasChanged();
-    }
-
-    private void OnChatStrategyChanged(string name)
-    {
-        chatStrategyName = name;
-        chatStrategyOptions = name switch
-        {
-            RoundRobinChatStrategy => new RoundRobinChatStrategyOptions(),
-            RoundRobinSummaryChatStrategy => new RoundRobinSummaryChatStrategyOptions(),
-            _ => new RoundRobinChatStrategyOptions()
-        };
-    }
-
-    private async Task LoadAgents()
+    protected override async Task LoadAgentsAsync()
     {
         agents = (await AgentService.GetAllAsync()).ToList();
         selectedAgents = [];
         selectedAgentDrafts = [];
     }
 
-    private async Task LoadUserSettings()
+    protected override async Task LoadUserSettingsAsync()
     {
         userSettings = await UserSettingsService.GetSettingsAsync();
         chatStrategyName = string.IsNullOrWhiteSpace(userSettings.ChatStrategyName)
@@ -411,19 +178,16 @@
         if (userSettings.MultiAgentSelectedAgents?.Count > 0)
         {
             var persistedAgents = userSettings.MultiAgentSelectedAgents
-                .Select(name => agents.FirstOrDefault(a => a.AgentName == name))
-                .Where(a => a is not null)
-                .Select(a => a!)
+                .Select(name => agents.FirstOrDefault(agent => agent.AgentName == name))
+                .Where(agent => agent is not null)
+                .Select(agent => agent!)
                 .ToList();
 
             UpdateSelectedAgents(persistedAgents);
         }
     }
 
-    [Parameter, SupplyParameterFromQuery(Name = "saved")]
-    public Guid? SavedChatId { get; set; }
-
-    private async Task LoadSavedChat(Guid savedChatId)
+    protected override async Task LoadSavedChatAsync(Guid savedChatId)
     {
         var saved = await SavedChatService.GetByIdAsync(savedChatId);
         if (saved is null)
@@ -433,12 +197,12 @@
         }
 
         var assistantIds = saved.Participants
-            .Where(p => p.Role == ChatRole.Assistant)
-            .Select(p => p.Id)
+            .Where(participant => participant.Role == ChatRole.Assistant)
+            .Select(participant => participant.Id)
             .ToHashSet(StringComparer.OrdinalIgnoreCase);
 
         var savedAgents = agents
-            .Where(a => assistantIds.Contains(a.AgentId))
+            .Where(agent => assistantIds.Contains(agent.AgentId))
             .ToList();
 
         if (savedAgents.Count == 0)
@@ -450,17 +214,17 @@
         UpdateSelectedAgents(savedAgents);
 
         var runtimeAgents = BuildRuntimeAgents(selectedAgentDrafts);
-
         currentModelName = runtimeAgents[0].Model.ModelName;
-        var chatConfiguration = new AppChatConfiguration(currentModelName, []);
 
+        var chatConfiguration = new AppChatConfiguration(currentModelName, []);
         var savedMessages = saved.Messages
-            .Select(m =>
+            .Select(message =>
             {
-                var msg = new AppChatMessage(m.Content, m.MsgDateTime, m.Role, agentName: m.AgentName);
-                msg.Id = m.Id;
-                return (IAppChatMessage)msg;
-            }).ToList();
+                var chatMessage = new AppChatMessage(message.Content, message.MsgDateTime, message.Role, agentName: message.AgentName);
+                chatMessage.Id = message.Id;
+                return (IAppChatMessage)chatMessage;
+            })
+            .ToList();
 
         var request = new ChatEngineSessionStartRequest
         {
@@ -470,6 +234,7 @@
             ChatStrategyName = chatStrategyName,
             ChatStrategyOptions = chatStrategyOptions
         };
+
         try
         {
             await ChatService.StartAsync(request);
@@ -482,19 +247,31 @@
             Snackbar.Add(ex.Message, Severity.Error);
         }
     }
-    
+
+    private void OnChatStrategyChanged(string name)
+    {
+        chatStrategyName = name;
+        chatStrategyOptions = name switch
+        {
+            RoundRobinChatStrategy => new RoundRobinChatStrategyOptions(),
+            RoundRobinSummaryChatStrategy => new RoundRobinSummaryChatStrategyOptions(),
+            _ => new RoundRobinChatStrategyOptions()
+        };
+    }
+
     private async Task StartChat()
     {
         if (!CanStartChat)
             return;
 
         userSettings.ChatStrategyName = chatStrategyName;
-        userSettings.MultiAgentSelectedAgents = selectedAgentDrafts.Select(a => a.AgentName).ToList();
+        userSettings.MultiAgentSelectedAgents = selectedAgentDrafts.Select(agent => agent.AgentName).ToList();
         await UserSettingsService.SaveSettingsAsync(userSettings);
 
         var runtimeAgents = BuildRuntimeAgents(selectedAgentDrafts);
         currentModelName = runtimeAgents[0].Model.ModelName;
-        var chatConfiguration = new AppChatConfiguration(currentModelName!, []);
+
+        var chatConfiguration = new AppChatConfiguration(currentModelName, []);
         var request = new ChatEngineSessionStartRequest
         {
             Configuration = chatConfiguration,
@@ -502,6 +279,7 @@
             ChatStrategyName = chatStrategyName,
             ChatStrategyOptions = chatStrategyOptions
         };
+
         try
         {
             await ChatService.StartAsync(request);
@@ -512,111 +290,6 @@
         {
             Snackbar.Add(ex.Message, Severity.Error);
         }
-    }
-
-    private async Task SaveCurrentChat()
-    {
-        if (!ChatService.Messages.Any())
-        {
-            Snackbar.Add("Nothing to save", Severity.Info);
-            return;
-        }
-
-        var parameters = new DialogParameters
-        {
-            ["InitialTitle"] = SavedChatId.HasValue ? lastSavedChatTitle : string.Empty
-        };
-        var dialog = await DialogService.ShowAsync<SaveChatDialog>("Save Chat", parameters);
-        var result = await dialog.Result;
-        if (result?.Canceled != false)
-            return;
-
-        var title = result.Data as string ?? string.Empty;
-
-        var participants = ChatService.AgentDescriptions
-            .Select(a => new SavedChatParticipant(a.AgentId, a.AgentName, ChatRole.Assistant))
-            .ToList();
-        participants.Add(new SavedChatParticipant(userSettings.UserName.ToLowerInvariant(), userSettings.UserName, ChatRole.User));
-
-        var agentMap = ChatService.AgentDescriptions.ToDictionary(a => a.AgentName, a => a.AgentId, StringComparer.OrdinalIgnoreCase);
-
-        var messages = ChatService.Messages
-            .Where(m => !m.IsStreaming && !m.IsCanceled && m.Role != ChatRole.System)
-            .Where(m => !string.IsNullOrWhiteSpace(m.Content) || m.Files.Count > 0)
-            .Select(m => new SavedChatMessage(
-                m.Id,
-                m.Content,
-                m.MsgDateTime,
-                m.Role,
-                m.Role == ChatRole.Assistant && m.AgentName != null && agentMap.TryGetValue(m.AgentName, out var aid) ? aid : null,
-                m.AgentName))
-            .ToList();
-
-        var chatId = SavedChatId ?? Guid.NewGuid();
-        var chat = new SavedChat(chatId, title, DateTime.UtcNow, messages, participants);
-        await SavedChatService.SaveAsync(chat);
-
-        var isNew = !SavedChatId.HasValue;
-        SavedChatId = chatId;
-        lastSavedChatTitle = title;
-        Snackbar.Add("Chat saved", Severity.Success);
-        if (isNew)
-            NavigationManager.NavigateTo(NavigationManager.GetUriWithQueryParameter("saved", chatId));
-    }
-
-    private async Task SendChatMessageAsync((string text, IReadOnlyList<AppChatMessageFile> files) messageData)
-    {
-        if (string.IsNullOrWhiteSpace(messageData.text) || isLLMAnswering)
-            return;
-
-        await ChatService.SendAsync(messageData.text.Trim(), messageData.files);
-        await ScrollToBottom();
-    }
-
-    private async Task ScrollToBottom()
-    {
-        try
-        {
-            await JSRuntime.InvokeVoidAsync("scrollToBottom", messagesElement);
-        }        
-        catch (Exception ex)
-        {
-            Logger.LogWarning(ex, "Failed to scroll to bottom");
-        }
-    }
-
-    private async Task Cancel()
-    {
-        await ChatService.CancelAsync();
-    }
-
-    private async Task DeleteMessage(AppChatMessageViewModel message)
-    {
-        if (isLLMAnswering)
-            return;
-
-        await ChatService.DeleteMessageAsync(message.Id);
-    }
-
-    private async Task CopyVisibleMessage(AppChatMessageViewModel message)
-    {
-        await JSRuntime.InvokeVoidAsync("copyText", message.Content);
-    }
-
-    private async Task CopyRawMessage(AppChatMessageViewModel message)
-    {
-        if (!string.IsNullOrEmpty(message.RawContent))
-        {
-            await JSRuntime.InvokeVoidAsync("copyText", message.RawContent);
-        }
-    }
-
-    private async Task CopyChatAsync(ChatFormat format)
-    {
-        var formatter = ChatFormatters.FirstOrDefault(f => f.FormatType == format);
-        if (formatter is null) return;
-        var text = formatter.Format(ChatViewModelService.Messages);
-        await JSRuntime.InvokeVoidAsync("copyText", text);
     }
 
     private Task OnSelectedAgentsChanged(IEnumerable<AgentDescription> agents)
@@ -630,42 +303,36 @@
         agentDraft.McpServerBindings = bindings
             .Select(static binding => binding.Clone())
             .ToList();
+
         return Task.CompletedTask;
     }
 
-    private bool TryResolveEffectiveModel(AgentDescription agent, out ServerModel model)
-    {
-        return ModelSelectionHelper.TryGetEffectiveModel(
+    private bool TryResolveEffectiveModel(AgentDescription agent, out ServerModel model) =>
+        ModelSelectionHelper.TryGetEffectiveModel(
             new ServerModelSelection(agent.LlmId, agent.ModelName),
             UiModelSelection,
             out model);
-    }
 
-    private ServerModel GetEffectiveModel(AgentDescription agent)
-    {
-        return ModelSelectionHelper.GetEffectiveModel(
+    private ServerModel GetEffectiveModel(AgentDescription agent) =>
+        ModelSelectionHelper.GetEffectiveModel(
             new ServerModelSelection(agent.LlmId, agent.ModelName),
             UiModelSelection,
             $"Agent: {agent.AgentName}",
             Logger);
-    }
 
-    private List<ResolvedChatAgent> BuildRuntimeAgents(IReadOnlyCollection<AgentDescription> drafts)
-    {
-        return drafts
+    private List<ResolvedChatAgent> BuildRuntimeAgents(IReadOnlyCollection<AgentDescription> drafts) =>
+        drafts
             .Select(agent =>
             {
                 var effectiveModel = GetEffectiveModel(agent);
                 return AgentDescriptionFactory.CreateResolved(agent, effectiveModel);
             })
             .ToList();
-    }
 
     private void UpdateSelectedAgents(IEnumerable<AgentDescription> selected)
     {
         var selectedList = selected.ToList();
-        var existingDrafts = selectedAgentDrafts
-            .ToDictionary(static agent => agent.Id);
+        var existingDrafts = selectedAgentDrafts.ToDictionary(static agent => agent.Id);
 
         selectedAgents = selectedList;
         selectedAgentDrafts = selectedList
@@ -673,168 +340,5 @@
                 ? existingDraft
                 : AgentDescriptionFactory.CreateDraft(agent))
             .ToList();
-    }
-
-    private async Task<McpElicitationResponse> HandleElicitationAsync(
-        McpElicitationPrompt prompt,
-        CancellationToken cancellationToken)
-    {
-        try
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-
-            var parameters = new DialogParameters
-            {
-                ["Prompt"] = prompt
-            };
-            var options = new DialogOptions
-            {
-                MaxWidth = MaxWidth.Small,
-                FullWidth = true,
-                BackdropClick = false,
-                CloseOnEscapeKey = true,
-                CloseButton = true
-            };
-
-            IDialogReference? dialog = null;
-            await InvokeAsync(async () =>
-            {
-                dialog = await DialogService.ShowAsync<McpElicitationDialog>(
-                    $"MCP input: {prompt.ServerName}",
-                    parameters,
-                    options);
-            });
-
-            if (dialog is null)
-                return McpElicitationResponse.Cancel;
-
-            Logger.LogInformation(
-                "Elicitation dialog opened in multi-agent chat. Server: {ServerName}. Mode: {Mode}. Fields: {FieldCount}.",
-                prompt.ServerName,
-                prompt.Mode,
-                prompt.Fields.Count);
-
-            using var registration = cancellationToken.Register(() =>
-            {
-                _ = InvokeAsync(() => dialog.Close(DialogResult.Ok(McpElicitationResponse.Cancel)));
-            });
-
-            var result = await dialog.Result;
-            if (result?.Canceled != false)
-            {
-                Logger.LogInformation(
-                    "Elicitation dialog closed in multi-agent chat with cancel. Server: {ServerName}.",
-                    prompt.ServerName);
-                return McpElicitationResponse.Cancel;
-            }
-
-            var response = result.Data as McpElicitationResponse ?? McpElicitationResponse.Cancel;
-            Logger.LogInformation(
-                "Elicitation dialog completed in multi-agent chat. Server: {ServerName}. Action: {Action}.",
-                prompt.ServerName,
-                response.Action);
-            return response;
-        }
-        catch (OperationCanceledException)
-        {
-            Logger.LogInformation(
-                "Elicitation dialog canceled by token in multi-agent chat. Server: {ServerName}.",
-                prompt.ServerName);
-            return McpElicitationResponse.Cancel;
-        }
-        catch (Exception ex)
-        {
-            Logger.LogWarning(ex, "Failed to render elicitation dialog in multi-agent chat.");
-            Snackbar.Add($"Failed to handle MCP user prompt: {ex.Message}", Severity.Warning);
-            return McpElicitationResponse.Cancel;
-        }
-    }
-
-    public async ValueTask DisposeAsync()
-    {
-        ChatService.AnsweringStateChanged -= OnAnsweringStateChanged;
-        ChatViewModelService.ChatReset -= OnChatReset;
-        if (_messageAddedHandler != null)
-            ChatViewModelService.MessageAdded -= _messageAddedHandler;
-        if (_messageUpdatedHandler != null)
-            ChatViewModelService.MessageUpdated -= _messageUpdatedHandler;
-        if (_messageDeletedHandler != null)
-            ChatViewModelService.MessageDeleted -= _messageDeletedHandler;
-        elicitationHandlerRegistration?.Dispose();
-
-        await ChatService.CancelAsync();
-        ChatService.ResetChat();
-    }
-
-    private string GetFileIcon(string contentType)
-    {
-        return contentType.ToLower() switch
-        {
-            var ct when ct.StartsWith("image/") => Icons.Material.Filled.Image,
-            var ct when ct.Contains("pdf") => Icons.Material.Filled.PictureAsPdf,
-            var ct when ct.Contains("text") => Icons.Material.Filled.Description,
-            var ct when ct.Contains("word") || ct.Contains("document") => Icons.Material.Filled.Description,
-            _ => Icons.Material.Filled.AttachFile
-        };
-    }    
-
-    private string FormatFileSize(long bytes)
-    {
-        string[] suffixes = ["B", "KB", "MB", "GB"];
-        int counter = 0;
-        decimal number = bytes;
-        while (Math.Round(number / 1024) >= 1)
-        {
-            number /= 1024;
-            counter++;
-        }
-        return $"{number:n1} {suffixes[counter]}";
-    }
-
-    private bool IsImageFile(string contentType)
-    {
-        return contentType.ToLower().StartsWith("image/");
-    }
-
-    private string GetImageDataUrl(AppChatMessageFile file)
-    {
-        return $"data:{file.ContentType};base64,{Convert.ToBase64String(file.Data)}";
-    }    private async Task ShowFullSizeImage(AppChatMessageFile file)
-    {
-        var parameters = new DialogParameters
-        {
-            ["ImageFile"] = file
-        };
-
-        var options = new DialogOptions
-        {
-            MaxWidth = MaxWidth.Large,
-            FullWidth = true,
-            CloseButton = true,
-            BackdropClick = true
-        };
-
-        await DialogService.ShowAsync<ImageViewerDialog>("Image Viewer", parameters, options);
-    }
-
-    private string GetAvatarText(string? name) => string.IsNullOrWhiteSpace(name) ? string.Empty : name;
-
-    private string GetAssistantAvatarText(string? agentName)
-    {
-        if (string.IsNullOrWhiteSpace(agentName))
-            return string.Empty;
-
-        var configuredShortName = agents
-            .FirstOrDefault(a => string.Equals(a.AgentName, agentName, StringComparison.OrdinalIgnoreCase))
-            ?.ShortName;
-
-        if (!string.IsNullOrWhiteSpace(configuredShortName))
-            return configuredShortName.Trim();
-
-        var compactName = new string(agentName.Trim().Where(c => !char.IsWhiteSpace(c)).ToArray());
-        if (compactName.Length == 0)
-            return string.Empty;
-
-        return compactName.Length <= 3 ? compactName : compactName[..3];
     }
 }

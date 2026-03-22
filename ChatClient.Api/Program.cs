@@ -72,12 +72,9 @@ app.UseStaticFiles();
 
 app.UseRouting();
 
-app.MapControllers();
 app.MapRazorPages();
 app.MapBlazorHub();
 app.MapFallbackToPage("/_Host");
-
-app.MapGet("/api", () => "ChatClient API is running! Use /api/chat endpoint for chat communication.");
 app.RegisterBrowserLaunch();
 
 await app.RunAsync();

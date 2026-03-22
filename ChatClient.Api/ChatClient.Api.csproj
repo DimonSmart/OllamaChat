@@ -7,7 +7,6 @@
   </PropertyGroup>
             <ItemGroup>
         <PackageReference Include="HtmlAgilityPack" Version="1.12.4" />
-        <PackageReference Include="Microsoft.AspNetCore.OpenApi" Version="10.0.3" />
         <PackageReference Include="Microsoft.Agents.AI" Version="1.0.0-rc4" />
         <PackageReference Include="Microsoft.Extensions.AI" Version="10.4.1" />
         <PackageReference Include="Microsoft.Extensions.AI.OpenAI" Version="10.4.1" />

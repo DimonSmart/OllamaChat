@@ -1648,7 +1648,7 @@ public class PlanningRuntimeContractsTests
 
     private static PlanningSessionService CreateSessionService()
     {
-        var chatClientFactory = new Mock<IPlanningChatClientFactory>();
+        var chatClientFactory = new Mock<ILlmChatClientFactory>();
         var appToolCatalog = new Mock<IAppToolCatalog>();
         var mcpUserInteractionService = new Mock<IMcpUserInteractionService>();
         appToolCatalog

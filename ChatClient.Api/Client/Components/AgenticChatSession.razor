@@ -1,0 +1,253 @@
+@using System.Linq
+@using ChatClient.Api.Client.Services
+@using ChatClient.Api.Client.ViewModels
+@using ChatClient.Domain.Models
+@using Microsoft.AspNetCore.Components
+@using Microsoft.Extensions.AI
+@using Microsoft.Extensions.Logging
+@using Microsoft.JSInterop
+@using MudBlazor
+@inject IJSRuntime JSRuntime
+@inject IDialogService DialogService
+@inject ILogger<AgenticChatSession> Logger
+
+<div class="chat-actions">
+    <MudMenu Icon="@Icons.Material.Filled.ContentCopy" AnchorOrigin="Origin.TopRight" TransformOrigin="Origin.TopRight">
+        <MudMenuItem OnClick="@(() => OnCopyChat.InvokeAsync(ChatFormat.Text))">Copy as Text</MudMenuItem>
+        <MudMenuItem OnClick="@(() => OnCopyChat.InvokeAsync(ChatFormat.Markdown))">Copy as Markdown</MudMenuItem>
+        <MudMenuItem OnClick="@(() => OnCopyChat.InvokeAsync(ChatFormat.Html))">Copy as HTML</MudMenuItem>
+    </MudMenu>
+    <MudIconButton Icon="@Icons.Material.Filled.Save" Color="Color.Primary" OnClick="@(() => OnSaveChat.InvokeAsync())" />
+</div>
+
+<div class="chat-messages-container" @ref="messagesElement">
+    @{
+        var messageIndex = 0;
+    }
+    @foreach (var message in Messages)
+    {
+        if (message.Role == ChatRole.System)
+        {
+            continue;
+        }
+
+        if (message.Role == ChatRole.Tool)
+        {
+            <RagDisplay Text="@message.Content" />
+        }
+        else
+        {
+            messageIndex++;
+            <MudChat Dense="true" ChatPosition="@(message.Role == ChatRole.Assistant ? ChatBubblePosition.Start : ChatBubblePosition.End)" @key="@($"{messageIndex}_{message.Id}")">
+                <MudChatHeader>
+                    <time>@message.MsgDateTime.ToString("g")</time>
+                    <span class="copy-button" title="Copy answer" @onclick="@(() => OnCopyVisibleMessage.InvokeAsync(message))">📋</span>
+                    <span class="copy-button" title="Copy raw" @onclick="@(() => OnCopyRawMessage.InvokeAsync(message))">🚪</span>
+                    @if (!IsLlmAnswering)
+                    {
+                        <span class="delete-button" title="Delete" @onclick="@(() => OnDeleteMessage.InvokeAsync(message))">🗑</span>
+                    }
+                </MudChatHeader>
+
+                @{
+                    var avatarText = message.Role == ChatRole.Assistant
+                        ? GetAssistantAvatarText(message.AgentName)
+                        : GetAvatarText(UserName);
+                }
+
+                @if (!string.IsNullOrEmpty(avatarText))
+                {
+                    <MudAvatar Color="@(message.Role == ChatRole.Assistant ? Color.Primary : Color.Secondary)">
+                        @avatarText
+                    </MudAvatar>
+                }
+
+                <MudChatBubble>
+                    @if (message.Files.Any())
+                    {
+                        <div class="mb-2">
+                            @foreach (var file in message.Files)
+                            {
+                                @if (IsImageFile(file.ContentType))
+                                {
+                                    <div class="image-thumbnail">
+                                        <img src="@GetImageDataUrl(file)"
+                                             alt="@file.Name"
+                                             style="max-width: 150px; max-height: 150px; object-fit: cover;"
+                                             @onclick="@(() => ShowFullSizeImage(file))" />
+                                        <MudText Typo="Typo.caption" Class="image-caption mt-1 text-center">
+                                            @file.Name (@FormatFileSize(file.Size))
+                                        </MudText>
+                                    </div>
+                                }
+                                else
+                                {
+                                    <MudChip T="string"
+                                             Color="Color.Info"
+                                             Size="Size.Small"
+                                             Class="mb-1 mr-1">
+                                        <MudIcon Icon="@GetFileIcon(file.ContentType)" Class="mr-1" />
+                                        @file.Name (@FormatFileSize(file.Size))
+                                    </MudChip>
+                                }
+                            }
+                        </div>
+                    }
+                    @((MarkupString)message.HtmlContent)
+                </MudChatBubble>
+
+                @if (message.ThinkSegments.Any())
+                {
+                    foreach (var thought in GetValidThoughts(message))
+                    {
+                        <ThoughtDisplay PlainText="@thought.PlainText" HtmlText="@thought.HtmlText" />
+                    }
+                }
+
+                @if (message.FunctionCalls.Any())
+                {
+                    foreach (var call in message.FunctionCalls)
+                    {
+                        <McpCallDisplay Call="@call" />
+                    }
+                }
+
+                @if (message.IsStreaming || message.IsCanceled || !string.IsNullOrEmpty(message.Statistics))
+                {
+                    <MudChatFooter>
+                        @if (message.IsStreaming)
+                        {
+                            <MudText Typo="Typo.caption" Class="typing-indicator">typing...</MudText>
+                        }
+                        @if (message.IsCanceled)
+                        {
+                            <MudAlert Severity="Severity.Error" Dense="true" Class="mt-1">
+                                Canceled
+                            </MudAlert>
+                        }
+                        @if (!string.IsNullOrEmpty(message.Statistics))
+                        {
+                            <div class="mt-1">
+                                <MudText Typo="Typo.caption" Class="mud-text-secondary">
+                                    @((MarkupString)message.Statistics)
+                                </MudText>
+                            </div>
+                        }
+                    </MudChatFooter>
+                }
+            </MudChat>
+        }
+    }
+</div>
+
+<div class="chat-input-panel">
+    <MudStack>
+        <ChatInput OnSend="OnSendMessage"
+                   ShowStopButton="IsLlmAnswering"
+                   OnStopClick="OnStop"
+                   IsMultiAgent="IsMultiAgent" />
+    </MudStack>
+</div>
+
+@code {
+    [Parameter, EditorRequired]
+    public IReadOnlyList<AppChatMessageViewModel> Messages { get; set; } = Array.Empty<AppChatMessageViewModel>();
+
+    [Parameter, EditorRequired]
+    public IReadOnlyCollection<AgentDescription> Agents { get; set; } = Array.Empty<AgentDescription>();
+
+    [Parameter]
+    public bool IsLlmAnswering { get; set; }
+
+    [Parameter]
+    public string UserName { get; set; } = string.Empty;
+
+    [Parameter]
+    public bool IsMultiAgent { get; set; }
+
+    [Parameter]
+    public EventCallback OnSaveChat { get; set; }
+
+    [Parameter]
+    public EventCallback<(string text, IReadOnlyList<AppChatMessageFile> files)> OnSendMessage { get; set; }
+
+    [Parameter]
+    public EventCallback OnStop { get; set; }
+
+    [Parameter]
+    public EventCallback<AppChatMessageViewModel> OnDeleteMessage { get; set; }
+
+    [Parameter]
+    public EventCallback<AppChatMessageViewModel> OnCopyVisibleMessage { get; set; }
+
+    [Parameter]
+    public EventCallback<AppChatMessageViewModel> OnCopyRawMessage { get; set; }
+
+    [Parameter]
+    public EventCallback<ChatFormat> OnCopyChat { get; set; }
+
+    private ElementReference messagesElement;
+
+    public async Task ScrollToBottomAsync()
+    {
+        try
+        {
+            await JSRuntime.InvokeVoidAsync("scrollToBottom", messagesElement);
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "Failed to scroll to bottom");
+        }
+    }
+
+    private static IEnumerable<(string PlainText, string HtmlText)> GetValidThoughts(AppChatMessageViewModel message)
+    {
+        var plainSegments = message.ThinkSegments.ToList();
+        var htmlSegments = message.HtmlThinkSegments.ToList();
+        var count = Math.Min(plainSegments.Count, htmlSegments.Count);
+
+        for (var index = 0; index < count; index++)
+        {
+            if (string.IsNullOrWhiteSpace(plainSegments[index]))
+                continue;
+
+            yield return (plainSegments[index], htmlSegments[index]);
+        }
+    }
+
+    private async Task ShowFullSizeImage(AppChatMessageFile file)
+    {
+        var parameters = new DialogParameters
+        {
+            ["ImageFile"] = file
+        };
+
+        var options = new DialogOptions
+        {
+            MaxWidth = MaxWidth.Large,
+            FullWidth = true,
+            CloseButton = true,
+            BackdropClick = true
+        };
+
+        await DialogService.ShowAsync<ImageViewerDialog>("Image Viewer", parameters, options);
+    }
+
+    private static string GetFileIcon(string contentType) =>
+        ChatDisplayHelper.GetFileIcon(contentType);
+
+    private static string FormatFileSize(long bytes) =>
+        ChatDisplayHelper.FormatFileSize(bytes);
+
+    private static bool IsImageFile(string contentType) =>
+        ChatDisplayHelper.IsImageFile(contentType);
+
+    private static string GetImageDataUrl(AppChatMessageFile file) =>
+        ChatDisplayHelper.GetImageDataUrl(file);
+
+    private static string GetAvatarText(string? name) =>
+        ChatDisplayHelper.GetAvatarText(name);
+
+    private string GetAssistantAvatarText(string? agentName) =>
+        ChatDisplayHelper.GetAssistantAvatarText(Agents, agentName);
+}

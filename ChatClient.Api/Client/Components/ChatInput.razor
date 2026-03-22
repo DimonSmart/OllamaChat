@@ -1,5 +1,6 @@
 ﻿@using Microsoft.AspNetCore.Components.Web
 @using Microsoft.AspNetCore.Components.Forms
+@using ChatClient.Api.Client.Services
 @using ChatClient.Application.Services
 @using ChatClient.Domain.Models
 @using MudBlazor
@@ -53,8 +54,8 @@
                              CloseIcon="@Icons.Material.Filled.Clear"
                              Color="Color.Info"
                              Size="Size.Small">
-                        <MudIcon Icon="@GetFileIcon(file.ContentType)" Class="mr-1" />
-                        @file.Name (@FormatFileSize(file.Size))
+                        <MudIcon Icon="@ChatDisplayHelper.GetFileIcon(file.ContentType)" Class="mr-1" />
+                        @file.Name (@ChatDisplayHelper.FormatFileSize(file.Size))
                     </MudChip>
                 }
             </MudStack>
@@ -153,31 +154,6 @@
     {
         attachedFiles.Remove(file);
         StateHasChanged();
-    }
-
-    private string GetFileIcon(string contentType)
-    {
-        return contentType.ToLower() switch
-        {
-            var ct when ct.StartsWith("image/") => Icons.Material.Filled.Image,
-            var ct when ct.Contains("pdf") => Icons.Material.Filled.PictureAsPdf,
-            var ct when ct.Contains("text") => Icons.Material.Filled.Description,
-            var ct when ct.Contains("word") || ct.Contains("document") => Icons.Material.Filled.Description,
-            _ => Icons.Material.Filled.AttachFile
-        };
-    }
-
-    private string FormatFileSize(long bytes)
-    {
-        string[] suffixes = ["B", "KB", "MB", "GB"];
-        int counter = 0;
-        decimal number = bytes;
-        while (Math.Round(number / 1024) >= 1)
-        {
-            number /= 1024;
-            counter++;
-        }
-        return $"{number:n1} {suffixes[counter]}";
     }
 
     private async Task HandleAdornmentClick()

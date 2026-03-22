@@ -8,11 +8,9 @@
 @using ChatClient.Api.Services
 @using ChatClient.Api.Client.Components
 @using Microsoft.AspNetCore.Components.Forms
-@using Microsoft.AspNetCore.Http
 @inject IAgentDescriptionService AgentService
 @inject ISnackbar Snackbar
 @inject IRagFileService RagFileService
-@inject IEnumerable<IFileConverter> FileConverters
 @inject ILlmServerConfigService LlmServerConfigService
 @inject IMcpServerConfigService McpServerConfigService
 
@@ -427,19 +425,13 @@
                 await using var ms = new MemoryStream();
                 await file.OpenReadStream(maxFileSize).CopyToAsync(ms);
                 ms.Position = 0;
-                var formFile = new FormFile(ms, 0, ms.Length, file.Name, file.Name)
+                if (!FileTextExtractor.Supports(file.Name))
                 {
-                    Headers = new HeaderDictionary(),
-                    ContentType = file.ContentType
-                };
-                var ext = Path.GetExtension(file.Name);
-                var converter = FileConverters.FirstOrDefault(c => c.GetSupportedExtensions().Contains(ext, StringComparer.OrdinalIgnoreCase));
-                if (converter is null)
-                {
-                    Snackbar.Add($"Unsupported file type {ext}", Severity.Error);
+                    Snackbar.Add($"Unsupported file type {Path.GetExtension(file.Name)}", Severity.Error);
                     continue;
                 }
-                var content = await converter.ConvertToTextAsync(formFile);
+
+                var content = await FileTextExtractor.ExtractTextAsync(file.Name, ms);
                 await RagFileService.AddOrUpdateFileAsync(editingAgent.Id, new RagFile { FileName = file.Name, Content = content });
             }
             catch (Exception ex)

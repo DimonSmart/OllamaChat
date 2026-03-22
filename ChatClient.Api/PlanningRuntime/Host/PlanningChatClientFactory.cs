@@ -12,15 +12,10 @@ public interface ILlmChatClientFactory
     Task<IChatClient> CreateAsync(ServerModel model, CancellationToken cancellationToken = default);
 }
 
-public interface IPlanningChatClientFactory
-{
-    Task<IChatClient> CreateAsync(ServerModel model, CancellationToken cancellationToken = default);
-}
-
 public sealed class PlanningChatClientFactory(
     ILlmServerConfigService llmServerConfigService,
     IUserSettingsService userSettingsService,
-    IConfiguration configuration) : IPlanningChatClientFactory, ILlmChatClientFactory
+    IConfiguration configuration) : ILlmChatClientFactory
 {
     public async Task<IChatClient> CreateAsync(ServerModel model, CancellationToken cancellationToken = default)
     {
