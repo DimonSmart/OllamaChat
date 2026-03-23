@@ -42,11 +42,11 @@ public class AppChatMessageViewModel
 
         ThinkSegments = result.ThoughtSegments;
         HtmlThinkSegments = result.ThoughtSegments
-            .Select(AppMarkdown.ToHtml)
+            .Select(AppMarkdown.ToHtmlModelOutput)
             .ToList()
             .AsReadOnly();
         Content = result.Answer;
-        HtmlContent = AppMarkdown.ToHtml(result.Answer);
+        HtmlContent = AppMarkdown.ToHtmlModelOutput(result.Answer);
 
         HtmlFunctionCalls = FunctionCalls
             .Select(call =>
