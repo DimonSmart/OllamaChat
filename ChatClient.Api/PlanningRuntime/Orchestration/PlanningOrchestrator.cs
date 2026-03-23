@@ -36,7 +36,7 @@ public sealed class PlanningOrchestrator(
             _observer.OnEvent(new PlanningAttemptStartedEvent(attempt, plan is null ? "plan" : "replan", userQuery));
 
             plan = plan is null
-                ? await planner.CreatePlanAsync(userQuery, cancellationToken)
+                ? PlanRuntimeHydrator.CreateRuntimePlan(await planner.CreatePlanAsync(userQuery, cancellationToken))
                 : await CreateReplanAsync(replanRequest!, cancellationToken);
 
             var result = await executor.ExecuteAsync(plan, cancellationToken);

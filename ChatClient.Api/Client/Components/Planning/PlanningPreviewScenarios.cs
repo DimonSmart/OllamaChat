@@ -111,7 +111,8 @@ public static class PlanningPreviewScenarios
                 new PlanStep
                 {
                     Id = "search1",
-                    Tool = "search",
+                    Kind = PlanStepKinds.Tool,
+                    Name = "search",
                     In = new Dictionary<string, JsonNode?>
                     {
                         ["query"] = JsonValue.Create("best robot vacuum cleaners for pets and mopping 2026"),
@@ -123,7 +124,8 @@ public static class PlanningPreviewScenarios
                 new PlanStep
                 {
                     Id = "shortlist",
-                    Llm = "catalog-filter",
+                    Kind = PlanStepKinds.Llm,
+                    Name = "catalog-filter",
                     SystemPrompt = "You normalize product names and pick two current retail models with enough public specs to compare.",
                     UserPrompt = "From the search results, identify two widely available robot vacuums worth comparing. Return JSON only.",
                     In = new Dictionary<string, JsonNode?>
@@ -159,7 +161,8 @@ public static class PlanningPreviewScenarios
                 new PlanStep
                 {
                     Id = "fetch_eufy",
-                    Tool = "download",
+                    Kind = PlanStepKinds.Tool,
+                    Name = "download",
                     In = new Dictionary<string, JsonNode?>
                     {
                         ["url"] = JsonValue.Create("https://support.eufy.com/s/article/X10-Pro-Omni-full-specifications-and-setup-guide"),
@@ -177,7 +180,8 @@ public static class PlanningPreviewScenarios
                 new PlanStep
                 {
                     Id = "fetch_roborock",
-                    Tool = "download",
+                    Kind = PlanStepKinds.Tool,
+                    Name = "download",
                     In = new Dictionary<string, JsonNode?>
                     {
                         ["url"] = JsonValue.Create("https://us.roborock.com/pages/qrevo-curv-specifications"),
@@ -195,7 +199,8 @@ public static class PlanningPreviewScenarios
                 new PlanStep
                 {
                     Id = "compare",
-                    Llm = "spec-compare",
+                    Kind = PlanStepKinds.Llm,
+                    Name = "spec-compare",
                     SystemPrompt = "You compare robot vacuums based only on the supplied structured specs.",
                     UserPrompt = "Summarize the strongest pros, the notable trade-offs, and the best pick for a buyer who wants low-maintenance cleaning.",
                     In = new Dictionary<string, JsonNode?>
@@ -347,7 +352,8 @@ public static class PlanningPreviewScenarios
                 new PlanStep
                 {
                     Id = "search1",
-                    Tool = "search",
+                    Kind = PlanStepKinds.Tool,
+                    Name = "search",
                     In = new Dictionary<string, JsonNode?>
                     {
                         ["query"] = JsonValue.Create("best robot vacuum cleaners 2024 detailed comparison pet hair mop dock"),
@@ -359,7 +365,8 @@ public static class PlanningPreviewScenarios
                 new PlanStep
                 {
                     Id = "extract1",
-                    Llm = "spec-extractor",
+                    Kind = PlanStepKinds.Llm,
+                    Name = "spec-extractor",
                     SystemPrompt = "Extract a single product spec sheet from the supplied article text.",
                     UserPrompt = "Read the article and extract one robot vacuum specification object only.",
                     In = new Dictionary<string, JsonNode?>
@@ -388,7 +395,8 @@ public static class PlanningPreviewScenarios
                 new PlanStep
                 {
                     Id = "replan_models",
-                    Llm = "replanner",
+                    Kind = PlanStepKinds.Llm,
+                    Name = "replanner",
                     SystemPrompt = "Split ambiguous extraction into one step per model candidate and keep all dependencies explicit.",
                     UserPrompt = "Generate a safer plan after the extractor failed because the page described multiple products.",
                     In = new Dictionary<string, JsonNode?>
@@ -425,7 +433,8 @@ public static class PlanningPreviewScenarios
                 new PlanStep
                 {
                     Id = "extract2",
-                    Llm = "spec-extractor",
+                    Kind = PlanStepKinds.Llm,
+                    Name = "spec-extractor",
                     SystemPrompt = "Extract a single product spec sheet from the supplied article text.",
                     UserPrompt = "Extract one specific vacuum model only. If the page contains multiple models, fail with a precise blocking reason.",
                     In = new Dictionary<string, JsonNode?>
@@ -632,3 +641,7 @@ public static class PlanningPreviewScenarios
     private static JsonElement Element<T>(T value) =>
         JsonSerializer.SerializeToElement(value, PlanningJson.CompactOptions);
 }
+
+
+
+

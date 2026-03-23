@@ -30,7 +30,7 @@ public sealed class LlmReplanner(
     public async Task<PlanDefinition> ReplanAsync(PlannerReplanRequest request, CancellationToken cancellationToken = default)
     {
         var workflowTools = toolCatalog.ListTools();
-        var session = new PlanEditingSession(request.Plan);
+        var session = new PlanEditingSession(request.Plan, PlanModelProfile.Runtime);
         var systemPrompt = BuildSystemPrompt(workflowTools);
         JsonArray? lastToolResults = null;
         string? retryMessage = null;
@@ -170,7 +170,9 @@ public sealed class LlmReplanner(
         sb.AppendLine("- When you are confident the working draft is ready, return one short plain-text sentence like 'Replan repaired.'");
         sb.AppendLine();
         sb.AppendLine("Plan step rules:");
-        sb.AppendLine("- A step must have exactly one of 'tool', 'llm', or 'agent'.");
+        sb.AppendLine("- Every step must include id, kind, name, and in.");
+        sb.AppendLine("- kind must be exactly one of 'tool', 'llm', or 'agent'.");
+        sb.AppendLine("- name must be the exact tool name, llm label, or saved-agent id for the selected kind.");
         sb.AppendLine("- LLM steps must have systemPrompt and userPrompt.");
         sb.AppendLine("- Saved-agent steps must have userPrompt, must not have systemPrompt, and must use one callable agent id listed below.");
         sb.AppendLine("- Tool steps must use the exact workflow tool name listed below, including any server prefix.");
@@ -199,30 +201,9 @@ public sealed class LlmReplanner(
         sb.AppendLine("- If out.aggregate='collect', out.schema must describe one call result item, not the final collected array.");
         sb.AppendLine("- If out.aggregate='flatten', out.schema must describe the per-call array shape that will be flattened.");
         sb.AppendLine();
-        sb.AppendLine("Available workflow tools:");
-        foreach (var tool in workflowTools)
-        {
-            sb.AppendLine($"- name: {tool.QualifiedName}");
-            sb.AppendLine($"  description: {tool.Description}");
-            sb.AppendLine($"  inputSchema: {PlanningJson.SerializeElementCompact(tool.InputSchema)}");
-            sb.AppendLine($"  outputSchema: {PlanningJson.SerializeElementCompact(tool.OutputSchema)}");
-        }
-
+        PlanningCapabilityPromptFormatter.AppendTools(sb, workflowTools);
         sb.AppendLine();
-        sb.AppendLine("Available callable saved agents:");
-        if (_agentCatalog.ListAgents().Count == 0)
-        {
-            sb.AppendLine("- none");
-        }
-        else
-        {
-            foreach (var agent in _agentCatalog.ListAgents())
-            {
-                sb.AppendLine($"- id: {agent.Name}");
-                sb.AppendLine($"  name: {agent.DisplayName}");
-                sb.AppendLine($"  description: {agent.Description}");
-            }
-        }
+        PlanningCapabilityPromptFormatter.AppendAgents(sb, _agentCatalog.ListAgents());
 
         return sb.ToString();
     }

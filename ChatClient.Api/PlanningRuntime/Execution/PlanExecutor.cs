@@ -72,7 +72,7 @@ public sealed class PlanExecutor(
         var resolvedInput = SerializeObject(resolved);
         var stepKind = PlanStepKinds.GetKind(step);
         var isTool = string.Equals(stepKind, PlanStepKinds.Tool, StringComparison.Ordinal);
-        var toolMetadata = isTool ? toolCatalog.GetRequired(step.Tool!) : null;
+        var toolMetadata = isTool ? toolCatalog.GetRequired(step.Name) : null;
         var fanOutCount = fanOutInputs?.Values.FirstOrDefault()?.Length ?? 0;
         var outputContract = PlanStepOutputContractResolver.Resolve(step, toolMetadata, fanOutInputs is not null);
 

@@ -55,7 +55,7 @@ public sealed class AgentStepRunner(IChatClient chatClient) : IAgentStepRunner
         JsonElement resolvedInputs,
         CancellationToken cancellationToken = default)
     {
-        if (!string.IsNullOrWhiteSpace(step.Agent))
+        if (PlanStepKinds.IsAgent(step))
             return await ExecuteSavedAgentAsync(step, resolvedInputs, cancellationToken);
 
         return await ExecuteLlmAsync(step, resolvedInputs, cancellationToken);
@@ -66,7 +66,7 @@ public sealed class AgentStepRunner(IChatClient chatClient) : IAgentStepRunner
         JsonElement resolvedInputs,
         CancellationToken cancellationToken)
     {
-        if (string.IsNullOrEmpty(step.Llm))
+        if (string.IsNullOrWhiteSpace(step.Name))
             return ResultEnvelope<JsonElement?>.Failure("llm_missing", $"Step '{step.Id}' has no llm label.");
         if (string.IsNullOrWhiteSpace(step.SystemPrompt))
             return ResultEnvelope<JsonElement?>.Failure("llm_invalid_step", $"Step '{step.Id}' has no systemPrompt.");
@@ -82,12 +82,12 @@ public sealed class AgentStepRunner(IChatClient chatClient) : IAgentStepRunner
         var fullUserPrompt = $"{step.UserPrompt}\n\nInput:\n{PlanningJson.SerializeIndented(new { inputs = resolvedInputs })}";
         _observer.OnEvent(new AgentPromptPreparedEvent(
             step.Id,
-            step.Llm,
+            step.Name,
             systemPrompt,
             step.UserPrompt,
             fullUserPrompt,
             resolvedInputs.Clone()));
-        var agent = new ChatClientAgent(chatClient, systemPrompt, step.Llm, null, null, null, null);
+        var agent = new ChatClientAgent(chatClient, systemPrompt, step.Name, null, null, null, null);
 
         try
         {
@@ -97,7 +97,7 @@ public sealed class AgentStepRunner(IChatClient chatClient) : IAgentStepRunner
             var validatedEnvelope = ValidateEnvelope(step, outputContract, envelope);
             _observer.OnEvent(new AgentResponseReceivedEvent(
                 step.Id,
-                step.Llm,
+                step.Name,
                 response.Text ?? string.Empty,
                 validatedEnvelope.Ok,
                 validatedEnvelope.Data?.Clone(),
@@ -111,7 +111,7 @@ public sealed class AgentStepRunner(IChatClient chatClient) : IAgentStepRunner
         {
             _observer.OnEvent(new AgentResponseReceivedEvent(
                 step.Id,
-                step.Llm,
+                step.Name,
                 string.Empty,
                 false,
                 null,
@@ -125,7 +125,7 @@ public sealed class AgentStepRunner(IChatClient chatClient) : IAgentStepRunner
         JsonElement resolvedInputs,
         CancellationToken cancellationToken)
     {
-        if (string.IsNullOrWhiteSpace(step.Agent))
+        if (string.IsNullOrWhiteSpace(step.Name))
             return ResultEnvelope<JsonElement?>.Failure("agent_missing", $"Step '{step.Id}' has no saved agent reference.");
         if (string.IsNullOrWhiteSpace(step.UserPrompt))
             return ResultEnvelope<JsonElement?>.Failure("agent_invalid_step", $"Step '{step.Id}' has no userPrompt.");
@@ -136,8 +136,8 @@ public sealed class AgentStepRunner(IChatClient chatClient) : IAgentStepRunner
                 $"Saved-agent step '{step.Id}' cannot run because the planning agentic invoker is not configured.");
         }
 
-        if (!_callableAgents.TryGet(step.Agent, out var callableAgent))
-            return ResultEnvelope<JsonElement?>.Failure("agent_unknown", $"Step '{step.Id}' references unknown callable agent '{step.Agent}'.");
+        if (!_callableAgents.TryGet(step.Name, out var callableAgent))
+            return ResultEnvelope<JsonElement?>.Failure("agent_unknown", $"Step '{step.Id}' references unknown callable agent '{step.Name}'.");
 
         var outputContract = PlanStepOutputContractResolver.Resolve(step, toolMetadata: null, hasFanOut: false);
         var fullUserPrompt = $"{step.UserPrompt}\n\nInput:\n{PlanningJson.SerializeIndented(new { inputs = resolvedInputs })}{BuildExecutionContract(outputContract)}";

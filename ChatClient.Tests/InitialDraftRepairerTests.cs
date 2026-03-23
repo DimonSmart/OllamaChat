@@ -19,7 +19,7 @@ public sealed class InitialDraftRepairerTests
         var invalidPlan = CreateInvalidSearchPlan();
         var repairedPlan = CreateValidSearchPlan();
         var toolCatalog = new PlanningToolCatalog([CreateSearchDescriptor()]);
-        var chatClient = CreateMockChatClient(SerializeEnvelope(invalidPlan));
+        var chatClient = CreateMockChatClient(SerializePlan(invalidPlan));
         var repairer = new RecordingInitialDraftRepairer(repairedPlan);
         var planner = new LlmPlanner(chatClient.Object, toolCatalog, initialDraftRepairer: repairer);
 
@@ -45,8 +45,8 @@ public sealed class InitialDraftRepairerTests
         var validFallbackPlan = CreateValidSearchPlan();
         var toolCatalog = new PlanningToolCatalog([CreateSearchDescriptor()]);
         var chatClient = CreateMockChatClient(
-            SerializeEnvelope(invalidPlan),
-            SerializeEnvelope(validFallbackPlan));
+            SerializePlan(invalidPlan),
+            SerializePlan(validFallbackPlan));
         var repairer = new ThrowingInitialDraftRepairer(new InvalidOperationException("Repair failed."));
         var planner = new LlmPlanner(chatClient.Object, toolCatalog, initialDraftRepairer: repairer);
 
@@ -68,9 +68,9 @@ public sealed class InitialDraftRepairerTests
         var invalidPlan = CreateInvalidSearchPlan();
         var toolCatalog = new PlanningToolCatalog([CreateSearchDescriptor()]);
         var chatClient = CreateMockChatClient(
-            SerializeEnvelope(invalidPlan),
-            SerializeEnvelope(invalidPlan),
-            SerializeEnvelope(CreateValidSearchPlan()));
+            SerializePlan(invalidPlan),
+            SerializePlan(invalidPlan),
+            SerializePlan(CreateValidSearchPlan()));
         var repairer = new ThrowingInitialDraftRepairer(new InvalidOperationException("Repair failed."));
         var planner = new LlmPlanner(chatClient.Object, toolCatalog, initialDraftRepairer: repairer);
 
@@ -84,6 +84,53 @@ public sealed class InitialDraftRepairerTests
                 It.IsAny<ChatOptions?>(),
                 It.IsAny<CancellationToken>()),
             Times.Exactly(2));
+    }
+
+    [Fact]
+    public async Task LlmPlanner_UsesTypedPlanResponse_AndDraftPrompt()
+    {
+        var validPlan = CreateValidSearchPlan();
+        var toolCatalog = new PlanningToolCatalog([CreateSearchDescriptor()]);
+        IEnumerable<ChatMessage>? capturedMessages = null;
+        ChatOptions? capturedOptions = null;
+        var chatClient = new Mock<IChatClient>(MockBehavior.Strict);
+        chatClient
+            .Setup(client => client.GetResponseAsync(
+                It.IsAny<IEnumerable<ChatMessage>>(),
+                It.IsAny<ChatOptions?>(),
+                It.IsAny<CancellationToken>()))
+            .Callback<IEnumerable<ChatMessage>, ChatOptions?, CancellationToken>((messages, options, _) =>
+            {
+                capturedMessages = messages.ToArray();
+                capturedOptions = options;
+            })
+            .ReturnsAsync(CreateTextResponse(SerializePlan(validPlan)));
+        chatClient
+            .Setup(client => client.GetStreamingResponseAsync(
+                It.IsAny<IEnumerable<ChatMessage>>(),
+                It.IsAny<ChatOptions?>(),
+                It.IsAny<CancellationToken>()))
+            .Returns(AsyncEnumerable.Empty<ChatResponseUpdate>());
+        chatClient
+            .Setup(client => client.GetService(It.IsAny<Type>(), It.IsAny<object?>()))
+            .Returns((object?)null);
+        chatClient
+            .Setup(client => client.Dispose());
+        var planner = new LlmPlanner(chatClient.Object, toolCatalog);
+
+        var result = await planner.CreatePlanAsync("Find a robot vacuum.");
+
+        Assert.Equal(validPlan.Goal, result.Goal);
+        var messages = Assert.IsAssignableFrom<IEnumerable<ChatMessage>>(capturedMessages);
+        var systemPrompt = capturedOptions?.Instructions
+            ?? messages.SingleOrDefault(message => message.Role == ChatRole.System)?.Text;
+
+        Assert.NotNull(systemPrompt);
+        Assert.DoesNotContain("JSON envelope", systemPrompt, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("ok=true", systemPrompt, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("s, res, and err", systemPrompt, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("Few-shot", systemPrompt, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("out must include format", systemPrompt, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
@@ -244,7 +291,8 @@ public sealed class InitialDraftRepairerTests
                 new PlanStep
                 {
                     Id = "search_vacuums",
-                    Tool = "mock:web:search",
+                    Kind = PlanStepKinds.Tool,
+                    Name = "mock:web:search",
                     In = new Dictionary<string, JsonNode?>
                     {
                         ["url"] = JsonValue.Create("https://example.com/robot-vacuums")
@@ -262,7 +310,8 @@ public sealed class InitialDraftRepairerTests
                 new PlanStep
                 {
                     Id = "search_vacuums",
-                    Tool = "mock:web:search",
+                    Kind = PlanStepKinds.Tool,
+                    Name = "mock:web:search",
                     In = new Dictionary<string, JsonNode?>
                     {
                         ["query"] = JsonValue.Create("robot vacuums")
@@ -317,13 +366,8 @@ public sealed class InitialDraftRepairerTests
                 new FunctionCallContent(callId, toolName, arguments)
             }));
 
-    private static string SerializeEnvelope(object data) =>
-        JsonSerializer.Serialize(new
-        {
-            ok = true,
-            data,
-            error = (object?)null
-        });
+    private static string SerializePlan(PlanDefinition plan) =>
+        PlanJsonProfiles.SerializeCompact(plan, PlanModelProfile.Draft);
 
     private static AppToolDescriptor CreateSearchDescriptor() =>
         new(
@@ -401,3 +445,7 @@ public sealed class InitialDraftRepairerTests
         }
     }
 }
+
+
+
+

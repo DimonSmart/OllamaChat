@@ -1,4 +1,3 @@
-using System.Text.Json;
 using System.Text.Json.Nodes;
 using ChatClient.Api.PlanningRuntime.Common;
 
@@ -6,19 +5,27 @@ namespace ChatClient.Api.PlanningRuntime.Planning;
 
 public sealed class PlanEditingSession
 {
-    private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
     private readonly PlanDefinition _plan;
+    private readonly PlanModelProfile _profile;
 
-    public PlanEditingSession(PlanDefinition sourcePlan)
+    public PlanEditingSession(PlanDefinition sourcePlan, PlanModelProfile profile = PlanModelProfile.Runtime)
     {
         _plan = sourcePlan;
+        _profile = profile;
+        PlanSanitizer.Sanitize(_plan, _profile);
     }
 
+    public PlanModelProfile Profile => _profile;
+
     public JsonObject GetCurrentPlanJson() =>
-        JsonSerializer.SerializeToNode(_plan, JsonOptions)?.AsObject()
+        PlanJsonProfiles.SerializeToNode(_plan, _profile)?.AsObject()
         ?? throw new InvalidOperationException("Failed to serialize the working plan.");
 
-    public PlanDefinition BuildPlan() => _plan;
+    public PlanDefinition BuildPlan()
+    {
+        PlanSanitizer.Sanitize(_plan, _profile);
+        return _plan;
+    }
 
     public JsonObject ExecuteAction(string toolName, JsonObject input)
     {
@@ -45,7 +52,7 @@ public sealed class PlanEditingSession
         if (step is null)
             throw new InvalidOperationException($"Step '{stepId}' was not found.");
 
-        return JsonSerializer.SerializeToNode(step, JsonOptions);
+        return PlanJsonProfiles.SerializeToNode(step, _profile);
     }
 
     private JsonNode? ReplaceStep(string stepId, JsonNode? stepNode)
@@ -62,8 +69,8 @@ public sealed class PlanEditingSession
         {
             ["stepId"] = replacementStep.Id,
             ["position"] = stepIndex,
-            ["before"] = PlanningLogFormatter.SummarizeStep(existingStep),
-            ["after"] = PlanningLogFormatter.SummarizeStep(replacementStep),
+            ["before"] = PlanningLogFormatter.SummarizeStep(existingStep, _profile),
+            ["after"] = PlanningLogFormatter.SummarizeStep(replacementStep, _profile),
             ["diff"] = BuildStepDiff(existingStep, replacementStep)
         };
     }
@@ -94,7 +101,7 @@ public sealed class PlanEditingSession
         {
             ["insertedCount"] = newSteps.Count,
             ["insertIndex"] = insertIndex,
-            ["insertedSteps"] = new JsonArray(newSteps.Select(PlanningLogFormatter.SummarizeStep).ToArray())
+            ["insertedSteps"] = new JsonArray(newSteps.Select(step => PlanningLogFormatter.SummarizeStep(step, _profile)).ToArray())
         };
     }
 
@@ -153,17 +160,29 @@ public sealed class PlanEditingSession
         throw new InvalidOperationException("Action input 'step' must be a valid plan step object.");
     }
 
-    private static PlanStep DeserializeStep(JsonNode? stepNode) =>
-        stepNode?.Deserialize<PlanStep>(JsonOptions)
-        ?? throw new InvalidOperationException("Action input 'step' must be a valid plan step object.");
+    private PlanStep DeserializeStep(JsonNode? stepNode) =>
+        SanitizeStep(
+            PlanJsonProfiles.Deserialize<PlanStep>(stepNode, _profile)
+            ?? throw new InvalidOperationException("Action input 'step' must be a valid plan step object."));
 
-    private static IReadOnlyList<PlanStep> DeserializeSteps(JsonNode? stepsNode)
+    private IReadOnlyList<PlanStep> DeserializeSteps(JsonNode? stepsNode)
     {
-        var steps = stepsNode?.Deserialize<List<PlanStep>>(JsonOptions);
+        var steps = PlanJsonProfiles.Deserialize<List<PlanStep>>(stepsNode, _profile);
         if (steps is not { Count: > 0 })
             throw new InvalidOperationException("Action input 'steps' must contain at least one plan step.");
 
+        foreach (var step in steps)
+            SanitizeStep(step);
+
         return steps;
+    }
+
+    private PlanStep SanitizeStep(PlanStep step)
+    {
+        if (_profile == PlanModelProfile.Draft)
+            PlanExecutionState.ResetStep(step);
+
+        return step;
     }
 
     private static JsonObject CreateSuccess(string? toolName, JsonNode? output) => new()
@@ -184,17 +203,17 @@ public sealed class PlanEditingSession
         }
     };
 
-    private static JsonObject BuildStepDiff(PlanStep before, PlanStep after)
+    private JsonObject BuildStepDiff(PlanStep before, PlanStep after)
     {
         var diff = new JsonObject();
 
-        if (!string.Equals(before.Tool, after.Tool, StringComparison.Ordinal)
-            || !string.Equals(before.Llm, after.Llm, StringComparison.Ordinal))
+        if (!string.Equals(before.Kind, after.Kind, StringComparison.Ordinal)
+            || !string.Equals(before.Name, after.Name, StringComparison.Ordinal))
         {
-            diff["kind"] = new JsonObject
+            diff["capability"] = new JsonObject
             {
-                ["before"] = before.Tool ?? before.Llm,
-                ["after"] = after.Tool ?? after.Llm
+                ["before"] = $"{PlanStepKinds.GetKind(before)}:{PlanStepKinds.GetName(before)}",
+                ["after"] = $"{PlanStepKinds.GetKind(after)}:{PlanStepKinds.GetName(after)}"
             };
         }
 
@@ -216,8 +235,8 @@ public sealed class PlanEditingSession
             };
         }
 
-        var beforeOut = JsonSerializer.SerializeToNode(before.Out, JsonOptions);
-        var afterOut = JsonSerializer.SerializeToNode(after.Out, JsonOptions);
+        var beforeOut = PlanJsonProfiles.SerializeToNode(before.Out, _profile);
+        var afterOut = PlanJsonProfiles.SerializeToNode(after.Out, _profile);
         if (!NodesEqual(beforeOut, afterOut))
         {
             diff["output"] = new JsonObject

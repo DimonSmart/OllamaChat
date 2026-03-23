@@ -38,7 +38,8 @@ public class PlanningRuntimeContractsTests
                 new PlanStep
                 {
                     Id = "searchPages",
-                    Tool = SearchToolName,
+                    Kind = PlanStepKinds.Tool,
+                    Name = SearchToolName,
                     In = new Dictionary<string, JsonNode?>
                     {
                         ["query"] = JsonValue.Create("best robot vacuum")
@@ -47,7 +48,8 @@ public class PlanningRuntimeContractsTests
                 new PlanStep
                 {
                     Id = "answer",
-                    Llm = "synthesizer",
+                    Kind = PlanStepKinds.Llm,
+                    Name = "synthesizer",
                     SystemPrompt = "Use $searchPages.results to answer the user.",
                     UserPrompt = "Write the final answer.",
                     In = new Dictionary<string, JsonNode?>
@@ -75,7 +77,8 @@ public class PlanningRuntimeContractsTests
                 new PlanStep
                 {
                     Id = "searchPages",
-                    Tool = SearchToolName,
+                    Kind = PlanStepKinds.Tool,
+                    Name = SearchToolName,
                     In = new Dictionary<string, JsonNode?>
                     {
                         ["query"] = JsonValue.Create("example")
@@ -84,7 +87,8 @@ public class PlanningRuntimeContractsTests
                 new PlanStep
                 {
                     Id = "downloadPages",
-                    Tool = DownloadToolName,
+                    Kind = PlanStepKinds.Tool,
+                    Name = DownloadToolName,
                     In = new Dictionary<string, JsonNode?>
                     {
                         ["url"] = JsonValue.Create("$searchPages.results[].url")
@@ -110,7 +114,8 @@ public class PlanningRuntimeContractsTests
                 new PlanStep
                 {
                     Id = "answer",
-                    Llm = "synthesizer",
+                    Kind = PlanStepKinds.Llm,
+                    Name = "synthesizer",
                     SystemPrompt = "Summarize the selected model {model_name}. Return JSON only.",
                     UserPrompt = "Write the final answer.",
                     In = new Dictionary<string, JsonNode?>
@@ -138,7 +143,8 @@ public class PlanningRuntimeContractsTests
                 new PlanStep
                 {
                     Id = "answer",
-                    Llm = "synthesizer",
+                    Kind = PlanStepKinds.Llm,
+                    Name = "synthesizer",
                     SystemPrompt = "Summarize the selected model. Return JSON only.",
                     UserPrompt = "Compare [[model_a]] against [[model_b]].",
                     In = new Dictionary<string, JsonNode?>
@@ -157,6 +163,284 @@ public class PlanningRuntimeContractsTests
     }
 
     [Fact]
+    public void PlanJsonProfiles_DraftSerialization_ExcludesRuntimeFields()
+    {
+        var plan = new PlanDefinition
+        {
+            Goal = "Download search result pages.",
+            Steps =
+            [
+                new PlanStep
+                {
+                    Id = "searchPages",
+                    Kind = PlanStepKinds.Tool,
+                    Name = SearchToolName,
+                    In = new Dictionary<string, JsonNode?>
+                    {
+                        ["query"] = JsonValue.Create("example")
+                    },
+                    Status = PlanStepStatuses.Done,
+                    Result = JsonSerializer.SerializeToElement(new { ok = true }),
+                    Error = new PlanStepError
+                    {
+                        Code = "ignored",
+                        Message = "ignored"
+                    }
+                }
+            ]
+        };
+
+        var json = PlanJsonProfiles.SerializeCompact(plan, PlanModelProfile.Draft);
+
+        Assert.Contains("\"goal\"", json, StringComparison.Ordinal);
+        Assert.DoesNotContain("\"s\":", json, StringComparison.Ordinal);
+        Assert.DoesNotContain("\"res\":", json, StringComparison.Ordinal);
+        Assert.DoesNotContain("\"err\":", json, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void PlanJsonProfiles_DraftDeserialization_AllowsOutputContractWithoutFormat_ForValidatorToCatch()
+    {
+        var json = """
+              {
+                "goal": "Answer the user question.",
+                "steps": [
+                  {
+                    "id": "answer",
+                    "kind": "llm",
+                    "name": "synthesizer",
+                    "systemPrompt": "Summarize the evidence.",
+                    "userPrompt": "Write the final answer.",
+                    "in": {
+                      "question": "example"
+                    },
+                  "out": {}
+                }
+              ]
+            }
+            """;
+
+        var node = JsonNode.Parse(json);
+        var plan = PlanJsonProfiles.Deserialize<PlanDefinition>(node, PlanModelProfile.Draft);
+
+        Assert.NotNull(plan);
+        Assert.NotNull(plan.Steps[0].Out);
+        Assert.Equal(PlanStepOutputFormats.Json, plan.Steps[0].Out!.Format);
+        Assert.False(PlanValidator.TryValidate(plan, tools: null, callableAgents: null, PlanModelProfile.Draft, out var issue));
+        Assert.Contains("out.schema", issue?.Message ?? string.Empty, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void PlanJsonProfiles_DraftDeserialization_AllowsStepWithoutIn_ForValidatorToCatch()
+    {
+        var json = """
+              {
+                "goal": "Answer the user question.",
+                "steps": [
+                  {
+                    "id": "answer",
+                    "kind": "llm",
+                    "name": "synthesizer",
+                    "systemPrompt": "Summarize the evidence.",
+                    "userPrompt": "Write the final answer.",
+                    "out": { "format": "string", "aggregate": "single" }
+                  }
+                ]
+            }
+            """;
+
+        var node = JsonNode.Parse(json);
+        var plan = PlanJsonProfiles.Deserialize<PlanDefinition>(node, PlanModelProfile.Draft);
+
+        Assert.NotNull(plan);
+        Assert.False(PlanValidator.TryValidate(plan, tools: null, callableAgents: null, PlanModelProfile.Draft, out var issue));
+        Assert.Contains("must declare its inputs in 'in'", issue?.Message ?? string.Empty, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void PlanSanitizer_DraftProfile_ClearsRuntimeFields()
+    {
+        var plan = new PlanDefinition
+        {
+            Goal = "Download search result pages.",
+            Steps =
+            [
+                new PlanStep
+                {
+                    Id = "searchPages",
+                    Kind = PlanStepKinds.Tool,
+                    Name = SearchToolName,
+                    In = new Dictionary<string, JsonNode?>
+                    {
+                        ["query"] = JsonValue.Create("example")
+                    },
+                    Status = PlanStepStatuses.Done,
+                    Result = JsonSerializer.SerializeToElement(new { ok = true }),
+                    Error = new PlanStepError
+                    {
+                        Code = "failed",
+                        Message = "failed"
+                    }
+                }
+            ]
+        };
+
+        PlanSanitizer.Sanitize(plan, PlanModelProfile.Draft);
+
+        Assert.Equal(PlanStepStatuses.Todo, plan.Steps[0].Status);
+        Assert.Null(plan.Steps[0].Result);
+        Assert.Null(plan.Steps[0].Error);
+    }
+
+    [Fact]
+    public void PlanRuntimeHydrator_CreateRuntimePlan_ResetsRuntimeFields_AndPreservesBindings()
+    {
+        var source = new PlanDefinition
+        {
+            Goal = "Answer the user question.",
+            Steps =
+            [
+                new PlanStep
+                {
+                    Id = "searchPages",
+                    Kind = PlanStepKinds.Tool,
+                    Name = SearchToolName,
+                    In = new Dictionary<string, JsonNode?>
+                    {
+                        ["query"] = JsonValue.Create("example")
+                    },
+                    Status = PlanStepStatuses.Done,
+                    Result = JsonSerializer.SerializeToElement(new { results = new[] { new { url = "https://example.com" } } })
+                },
+                new PlanStep
+                {
+                    Id = "answer",
+                    Kind = PlanStepKinds.Llm,
+                    Name = "synthesizer",
+                    SystemPrompt = "Summarize the evidence.",
+                    UserPrompt = "Write the final answer.",
+                    In = new Dictionary<string, JsonNode?>
+                    {
+                        ["pages"] = Ref("$searchPages.results")
+                    },
+                    Out = StringOut(),
+                    Status = PlanStepStatuses.Fail,
+                    Error = new PlanStepError
+                    {
+                        Code = "old_error",
+                        Message = "old error"
+                    }
+                }
+            ]
+        };
+
+        var runtime = PlanRuntimeHydrator.CreateRuntimePlan(source);
+
+        Assert.NotSame(source, runtime);
+        Assert.Equal(source.Goal, runtime.Goal);
+        Assert.Equal(source.Steps[1].In["pages"]?.ToJsonString(), runtime.Steps[1].In["pages"]?.ToJsonString());
+        Assert.Equal(PlanStepStatuses.Todo, runtime.Steps[0].Status);
+        Assert.Null(runtime.Steps[0].Result);
+        Assert.Null(runtime.Steps[0].Error);
+        Assert.Equal(PlanStepStatuses.Todo, runtime.Steps[1].Status);
+        Assert.Null(runtime.Steps[1].Result);
+        Assert.Null(runtime.Steps[1].Error);
+    }
+
+    [Fact]
+    public void PlanValidator_DraftProfile_IgnoresRuntimeStatus_WhileRuntimeProfileRejectsIt()
+    {
+        var plan = new PlanDefinition
+        {
+            Goal = "Download search result pages.",
+            Steps =
+            [
+                new PlanStep
+                {
+                    Id = "searchPages",
+                    Kind = PlanStepKinds.Tool,
+                    Name = SearchToolName,
+                    In = new Dictionary<string, JsonNode?>
+                    {
+                        ["query"] = JsonValue.Create("example")
+                    },
+                    Status = "broken"
+                }
+            ]
+        };
+
+        var isValidDraft = PlanValidator.TryValidate(
+            plan,
+            [CreateStaticSearchDescriptor()],
+            null,
+            PlanModelProfile.Draft,
+            out var draftIssue);
+        var isValidRuntime = PlanValidator.TryValidate(
+            plan,
+            [CreateStaticSearchDescriptor()],
+            null,
+            PlanModelProfile.Runtime,
+            out var runtimeIssue);
+
+        Assert.True(isValidDraft, draftIssue?.Message);
+        Assert.False(isValidRuntime);
+        Assert.Contains("invalid status", runtimeIssue?.Message ?? string.Empty, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void PlanEditingSession_ReadStep_UsesSameActionsForDraftAndRuntimeProfiles()
+    {
+        var plan = new PlanDefinition
+        {
+            Goal = "Download search result pages.",
+            Steps =
+            [
+                new PlanStep
+                {
+                    Id = "searchPages",
+                    Kind = PlanStepKinds.Tool,
+                    Name = SearchToolName,
+                    In = new Dictionary<string, JsonNode?>
+                    {
+                        ["query"] = JsonValue.Create("example")
+                    },
+                    Status = PlanStepStatuses.Done,
+                    Result = JsonSerializer.SerializeToElement(new { ok = true }),
+                    Error = new PlanStepError
+                    {
+                        Code = "old_error",
+                        Message = "old error"
+                    }
+                }
+            ]
+        };
+
+        var draftSession = new PlanEditingSession(PlanSanitizer.CloneSanitized(plan, PlanModelProfile.Runtime), PlanModelProfile.Draft);
+        var draftResult = draftSession.ExecuteAction("plan.readStep", new JsonObject
+        {
+            ["stepId"] = "searchPages"
+        });
+        var draftOutput = draftResult["output"]!.AsObject();
+
+        var runtimeSession = new PlanEditingSession(PlanSanitizer.CloneSanitized(plan, PlanModelProfile.Runtime), PlanModelProfile.Runtime);
+        var runtimeResult = runtimeSession.ExecuteAction("plan.readStep", new JsonObject
+        {
+            ["stepId"] = "searchPages"
+        });
+        var runtimeOutput = runtimeResult["output"]!.AsObject();
+
+        Assert.True(draftResult["ok"]?.GetValue<bool>() == true);
+        Assert.False(draftOutput.ContainsKey("s"));
+        Assert.False(draftOutput.ContainsKey("res"));
+        Assert.False(draftOutput.ContainsKey("err"));
+
+        Assert.True(runtimeResult["ok"]?.GetValue<bool>() == true);
+        Assert.True(runtimeOutput.ContainsKey("s"));
+        Assert.True(runtimeOutput.ContainsKey("res"));
+        Assert.True(runtimeOutput.ContainsKey("err"));
+    }
+
+    [Fact]
     public void PlanValidator_AcceptsSavedAgentStep_WhenCallableAgentExists()
     {
         var callableAgent = CreateCallableAgentDescriptor("character-reader", "Character Reader");
@@ -168,7 +452,8 @@ public class PlanningRuntimeContractsTests
                 new PlanStep
                 {
                     Id = "scanCharacters",
-                    Agent = callableAgent.Name,
+                    Kind = PlanStepKinds.Agent,
+                    Name = callableAgent.Name,
                     UserPrompt = "Read the cursor and update the character registry.",
                     In = new Dictionary<string, JsonNode?>
                     {
@@ -194,7 +479,8 @@ public class PlanningRuntimeContractsTests
                 new PlanStep
                 {
                     Id = "scanCharacters",
-                    Agent = "missing-agent",
+                    Kind = PlanStepKinds.Agent,
+                    Name = "missing-agent",
                     UserPrompt = "Read the cursor and update the character registry.",
                     In = new Dictionary<string, JsonNode?>
                     {
@@ -223,7 +509,8 @@ public class PlanningRuntimeContractsTests
                 new PlanStep
                 {
                     Id = "scanCharacters",
-                    Agent = callableAgent.Name,
+                    Kind = PlanStepKinds.Agent,
+                    Name = callableAgent.Name,
                     SystemPrompt = "Do not use this.",
                     UserPrompt = "Read the cursor and update the character registry.",
                     In = new Dictionary<string, JsonNode?>
@@ -263,7 +550,8 @@ public class PlanningRuntimeContractsTests
         var step = new PlanStep
         {
             Id = "scanCharacters",
-            Agent = callableAgent.Name,
+            Kind = PlanStepKinds.Agent,
+            Name = callableAgent.Name,
             UserPrompt = "Read the cursor and update the character registry.",
             In = new Dictionary<string, JsonNode?>
             {
@@ -318,7 +606,8 @@ public class PlanningRuntimeContractsTests
                 new PlanStep
                 {
                     Id = "searchPages",
-                    Tool = SearchToolName,
+                    Kind = PlanStepKinds.Tool,
+                    Name = SearchToolName,
                     In = new Dictionary<string, JsonNode?>
                     {
                         ["limit"] = JsonValue.Create(3)
@@ -343,7 +632,8 @@ public class PlanningRuntimeContractsTests
                 new PlanStep
                 {
                     Id = "searchPages",
-                    Tool = SearchToolName,
+                    Kind = PlanStepKinds.Tool,
+                    Name = SearchToolName,
                     In = new Dictionary<string, JsonNode?>
                     {
                         ["query"] = new JsonObject
@@ -397,7 +687,8 @@ public class PlanningRuntimeContractsTests
                 new PlanStep
                 {
                     Id = "answer",
-                    Llm = "synthesizer",
+                    Kind = PlanStepKinds.Llm,
+                    Name = "synthesizer",
                     SystemPrompt = "sys",
                     UserPrompt = "user",
                     In = [],
@@ -793,7 +1084,8 @@ public class PlanningRuntimeContractsTests
                 new PlanStep
                 {
                     Id = "searchPages",
-                    Tool = SearchToolName,
+                    Kind = PlanStepKinds.Tool,
+                    Name = SearchToolName,
                     In = new Dictionary<string, JsonNode?>
                     {
                         ["query"] = JsonValue.Create("example")
@@ -802,7 +1094,8 @@ public class PlanningRuntimeContractsTests
                 new PlanStep
                 {
                     Id = "downloadPages",
-                    Tool = DownloadToolName,
+                    Kind = PlanStepKinds.Tool,
+                    Name = DownloadToolName,
                     In = new Dictionary<string, JsonNode?>
                     {
                         ["url"] = Ref("$searchPages.results[].url", mode: "map")
@@ -834,7 +1127,8 @@ public class PlanningRuntimeContractsTests
                 new PlanStep
                 {
                     Id = "searchPages",
-                    Tool = SearchToolName,
+                    Kind = PlanStepKinds.Tool,
+                    Name = SearchToolName,
                     In = new Dictionary<string, JsonNode?>
                     {
                         ["query"] = JsonValue.Create("example")
@@ -843,7 +1137,8 @@ public class PlanningRuntimeContractsTests
                 new PlanStep
                 {
                     Id = "downloadPages",
-                    Tool = DownloadToolName,
+                    Kind = PlanStepKinds.Tool,
+                    Name = DownloadToolName,
                     In = new Dictionary<string, JsonNode?>
                     {
                         ["page"] = Ref("$searchPages.results", mode: "map")
@@ -869,7 +1164,8 @@ public class PlanningRuntimeContractsTests
                 new PlanStep
                 {
                     Id = "searchPages",
-                    Tool = SearchToolName,
+                    Kind = PlanStepKinds.Tool,
+                    Name = SearchToolName,
                     In = new Dictionary<string, JsonNode?>
                     {
                         ["query"] = JsonValue.Create("example")
@@ -878,7 +1174,8 @@ public class PlanningRuntimeContractsTests
                 new PlanStep
                 {
                     Id = "downloadPages",
-                    Tool = DownloadToolName,
+                    Kind = PlanStepKinds.Tool,
+                    Name = DownloadToolName,
                     In = new Dictionary<string, JsonNode?>
                     {
                         ["page"] = Ref("$searchPages.results", mode: "map")
@@ -903,7 +1200,8 @@ public class PlanningRuntimeContractsTests
                 new PlanStep
                 {
                     Id = "searchPages",
-                    Tool = SearchToolName,
+                    Kind = PlanStepKinds.Tool,
+                    Name = SearchToolName,
                     In = new Dictionary<string, JsonNode?>
                     {
                         ["query"] = JsonValue.Create("example")
@@ -912,7 +1210,8 @@ public class PlanningRuntimeContractsTests
                 new PlanStep
                 {
                     Id = "downloadPages",
-                    Tool = DownloadToolName,
+                    Kind = PlanStepKinds.Tool,
+                    Name = DownloadToolName,
                     In = new Dictionary<string, JsonNode?>
                     {
                         ["page"] = Ref("$searchPages.results[0]"),
@@ -943,7 +1242,8 @@ public class PlanningRuntimeContractsTests
                 new PlanStep
                 {
                     Id = "searchPages",
-                    Tool = SearchToolName,
+                    Kind = PlanStepKinds.Tool,
+                    Name = SearchToolName,
                     In = new Dictionary<string, JsonNode?>
                     {
                         ["query"] = JsonValue.Create("example")
@@ -952,7 +1252,8 @@ public class PlanningRuntimeContractsTests
                 new PlanStep
                 {
                     Id = "downloadPages",
-                    Tool = DownloadToolName,
+                    Kind = PlanStepKinds.Tool,
+                    Name = DownloadToolName,
                     In = new Dictionary<string, JsonNode?>
                     {
                         ["url"] = JsonValue.Create("$searchPages.results[].url")
@@ -980,7 +1281,8 @@ public class PlanningRuntimeContractsTests
                 new PlanStep
                 {
                     Id = "searchPages",
-                    Tool = SearchToolName,
+                    Kind = PlanStepKinds.Tool,
+                    Name = SearchToolName,
                     In = new Dictionary<string, JsonNode?>
                     {
                         ["query"] = JsonValue.Create("example")
@@ -989,7 +1291,8 @@ public class PlanningRuntimeContractsTests
                 new PlanStep
                 {
                     Id = "downloadPages",
-                    Tool = DownloadToolName,
+                    Kind = PlanStepKinds.Tool,
+                    Name = DownloadToolName,
                     In = new Dictionary<string, JsonNode?>
                     {
                         ["url"] = Ref("$searchPages.query", mode: "map")
@@ -1014,7 +1317,8 @@ public class PlanningRuntimeContractsTests
                 new PlanStep
                 {
                     Id = "searchPages",
-                    Tool = SearchToolName,
+                    Kind = PlanStepKinds.Tool,
+                    Name = SearchToolName,
                     In = new Dictionary<string, JsonNode?>
                     {
                         ["query"] = JsonValue.Create("example")
@@ -1023,7 +1327,8 @@ public class PlanningRuntimeContractsTests
                 new PlanStep
                 {
                     Id = "searchAgain",
-                    Tool = SearchToolName,
+                    Kind = PlanStepKinds.Tool,
+                    Name = SearchToolName,
                     In = new Dictionary<string, JsonNode?>
                     {
                         ["query"] = Ref("$searchPages.results[0]")
@@ -1049,7 +1354,8 @@ public class PlanningRuntimeContractsTests
                 new PlanStep
                 {
                     Id = "searchPages",
-                    Tool = SearchToolName,
+                    Kind = PlanStepKinds.Tool,
+                    Name = SearchToolName,
                     In = new Dictionary<string, JsonNode?>
                     {
                         ["query"] = JsonValue.Create("maze generator nuget")
@@ -1058,7 +1364,8 @@ public class PlanningRuntimeContractsTests
                 new PlanStep
                 {
                     Id = "shortlistPackages",
-                    Llm = "shortlist",
+                    Kind = PlanStepKinds.Llm,
+                    Name = "shortlist",
                     SystemPrompt = "Return JSON only.",
                     UserPrompt = "Choose three packages.",
                     In = new Dictionary<string, JsonNode?>
@@ -1100,7 +1407,8 @@ public class PlanningRuntimeContractsTests
                 new PlanStep
                 {
                     Id = "searchPages",
-                    Tool = SearchToolName,
+                    Kind = PlanStepKinds.Tool,
+                    Name = SearchToolName,
                     In = new Dictionary<string, JsonNode?>
                     {
                         ["query"] = JsonValue.Create("maze generator nuget")
@@ -1109,7 +1417,8 @@ public class PlanningRuntimeContractsTests
                 new PlanStep
                 {
                     Id = "extractPackage",
-                    Llm = "extractor",
+                    Kind = PlanStepKinds.Llm,
+                    Name = "extractor",
                     SystemPrompt = "Return JSON only.",
                     UserPrompt = "Extract one package.",
                     In = new Dictionary<string, JsonNode?>
@@ -1146,7 +1455,8 @@ public class PlanningRuntimeContractsTests
                 new PlanStep
                 {
                     Id = "searchPages",
-                    Tool = SearchToolName,
+                    Kind = PlanStepKinds.Tool,
+                    Name = SearchToolName,
                     In = new Dictionary<string, JsonNode?>
                     {
                         ["query"] = JsonValue.Create("maze generator nuget")
@@ -1155,7 +1465,8 @@ public class PlanningRuntimeContractsTests
                 new PlanStep
                 {
                     Id = "extractPackage",
-                    Llm = "extractor",
+                    Kind = PlanStepKinds.Llm,
+                    Name = "extractor",
                     SystemPrompt = "Return JSON only.",
                     UserPrompt = "Extract one package.",
                     In = new Dictionary<string, JsonNode?>
@@ -1195,7 +1506,8 @@ public class PlanningRuntimeContractsTests
                 new PlanStep
                 {
                     Id = "searchPages",
-                    Tool = SearchToolName,
+                    Kind = PlanStepKinds.Tool,
+                    Name = SearchToolName,
                     In = new Dictionary<string, JsonNode?>
                     {
                         ["query"] = JsonValue.Create("maze generator nuget")
@@ -1204,7 +1516,8 @@ public class PlanningRuntimeContractsTests
                 new PlanStep
                 {
                     Id = "extractPackages",
-                    Llm = "extractor",
+                    Kind = PlanStepKinds.Llm,
+                    Name = "extractor",
                     SystemPrompt = "Return JSON only.",
                     UserPrompt = "Extract package candidates from the current page.",
                     In = new Dictionary<string, JsonNode?>
@@ -1231,7 +1544,8 @@ public class PlanningRuntimeContractsTests
                 new PlanStep
                 {
                     Id = "reviewPackages",
-                    Llm = "review",
+                    Kind = PlanStepKinds.Llm,
+                    Name = "review",
                     SystemPrompt = "Return JSON only.",
                     UserPrompt = "Review the extracted packages.",
                     In = new Dictionary<string, JsonNode?>
@@ -1261,7 +1575,8 @@ public class PlanningRuntimeContractsTests
                 new PlanStep
                 {
                     Id = "searchPages",
-                    Tool = SearchToolName,
+                    Kind = PlanStepKinds.Tool,
+                    Name = SearchToolName,
                     In = new Dictionary<string, JsonNode?>
                     {
                         ["query"] = JsonValue.Create("maze generator nuget")
@@ -1270,7 +1585,8 @@ public class PlanningRuntimeContractsTests
                 new PlanStep
                 {
                     Id = "shortlistPackages",
-                    Llm = "shortlist",
+                    Kind = PlanStepKinds.Llm,
+                    Name = "shortlist",
                     SystemPrompt = "Return JSON only.",
                     UserPrompt = "Choose three packages.",
                     In = new Dictionary<string, JsonNode?>
@@ -1318,7 +1634,8 @@ public class PlanningRuntimeContractsTests
                 new PlanStep
                 {
                     Id = "opaqueSource",
-                    Tool = "mock-web:opaque",
+                    Kind = PlanStepKinds.Tool,
+                    Name = "mock-web:opaque",
                     In = new Dictionary<string, JsonNode?>
                     {
                         ["seed"] = JsonValue.Create("example")
@@ -1327,7 +1644,8 @@ public class PlanningRuntimeContractsTests
                 new PlanStep
                 {
                     Id = "searchAgain",
-                    Tool = SearchToolName,
+                    Kind = PlanStepKinds.Tool,
+                    Name = SearchToolName,
                     In = new Dictionary<string, JsonNode?>
                     {
                         ["query"] = Ref("$opaqueSource.payload")
@@ -1359,7 +1677,8 @@ public class PlanningRuntimeContractsTests
                 new PlanStep
                 {
                     Id = "manyResults",
-                    Tool = SearchToolName,
+                    Kind = PlanStepKinds.Tool,
+                    Name = SearchToolName,
                     In = new Dictionary<string, JsonNode?>
                     {
                         ["query"] = JsonValue.Create("many")
@@ -1368,7 +1687,8 @@ public class PlanningRuntimeContractsTests
                 new PlanStep
                 {
                     Id = "singleResult",
-                    Tool = SearchToolName,
+                    Kind = PlanStepKinds.Tool,
+                    Name = SearchToolName,
                     In = new Dictionary<string, JsonNode?>
                     {
                         ["query"] = JsonValue.Create("single")
@@ -1377,7 +1697,8 @@ public class PlanningRuntimeContractsTests
                 new PlanStep
                 {
                     Id = "pairResults",
-                    Tool = PairToolName,
+                    Kind = PlanStepKinds.Tool,
+                    Name = PairToolName,
                     In = new Dictionary<string, JsonNode?>
                     {
                         ["first"] = Ref("$manyResults.results[].url", mode: "map"),
@@ -1404,7 +1725,8 @@ public class PlanningRuntimeContractsTests
                 new PlanStep
                 {
                     Id = "answer",
-                    Llm = "extractor",
+                    Kind = PlanStepKinds.Llm,
+                    Name = "extractor",
                     SystemPrompt = "Return JSON only.",
                     UserPrompt = "Extract the requested fields.",
                     In = new Dictionary<string, JsonNode?>
@@ -1436,7 +1758,8 @@ public class PlanningRuntimeContractsTests
                 new PlanStep
                 {
                     Id = "searchPages",
-                    Tool = SearchToolName,
+                    Kind = PlanStepKinds.Tool,
+                    Name = SearchToolName,
                     In = new Dictionary<string, JsonNode?>
                     {
                         ["query"] = JsonValue.Create("example")
@@ -1445,7 +1768,8 @@ public class PlanningRuntimeContractsTests
                 new PlanStep
                 {
                     Id = "extractFacts",
-                    Llm = "extractor",
+                    Kind = PlanStepKinds.Llm,
+                    Name = "extractor",
                     SystemPrompt = "Return JSON only.",
                     UserPrompt = "Extract one package per page.",
                     In = new Dictionary<string, JsonNode?>
@@ -1486,7 +1810,8 @@ public class PlanningRuntimeContractsTests
                 new PlanStep
                 {
                     Id = "extractFacts",
-                    Llm = "extractor",
+                    Kind = PlanStepKinds.Llm,
+                    Name = "extractor",
                     SystemPrompt = "Return JSON only.",
                     UserPrompt = "Extract the product facts.",
                     In = new Dictionary<string, JsonNode?>
@@ -1543,7 +1868,8 @@ public class PlanningRuntimeContractsTests
                 new PlanStep
                 {
                     Id = "searchPages",
-                    Tool = SearchToolName,
+                    Kind = PlanStepKinds.Tool,
+                    Name = SearchToolName,
                     In = new Dictionary<string, JsonNode?>
                     {
                         ["query"] = JsonValue.Create("example")
@@ -1552,7 +1878,8 @@ public class PlanningRuntimeContractsTests
                 new PlanStep
                 {
                     Id = "extractFacts",
-                    Llm = "extractor",
+                    Kind = PlanStepKinds.Llm,
+                    Name = "extractor",
                     SystemPrompt = "Return JSON only.",
                     UserPrompt = "Extract all package names from the page.",
                     In = new Dictionary<string, JsonNode?>
@@ -1615,7 +1942,8 @@ public class PlanningRuntimeContractsTests
                 new PlanStep
                 {
                     Id = "extractFacts",
-                    Llm = "extractor",
+                    Kind = PlanStepKinds.Llm,
+                    Name = "extractor",
                     SystemPrompt = "Return JSON only.",
                     UserPrompt = "Extract the package.",
                     In = new Dictionary<string, JsonNode?>
@@ -1661,7 +1989,8 @@ public class PlanningRuntimeContractsTests
                 new PlanStep
                 {
                     Id = "opaqueSource",
-                    Tool = "mock-web:opaque",
+                    Kind = PlanStepKinds.Tool,
+                    Name = "mock-web:opaque",
                     In = new Dictionary<string, JsonNode?>
                     {
                         ["seed"] = JsonValue.Create("example")
@@ -1670,7 +1999,8 @@ public class PlanningRuntimeContractsTests
                 new PlanStep
                 {
                     Id = "extractFacts",
-                    Llm = "extractor",
+                    Kind = PlanStepKinds.Llm,
+                    Name = "extractor",
                     SystemPrompt = "Return JSON only.",
                     UserPrompt = "Extract package facts.",
                     In = new Dictionary<string, JsonNode?>
@@ -1767,7 +2097,8 @@ public class PlanningRuntimeContractsTests
                 new PlanStep
                 {
                     Id = "extractFacts",
-                    Llm = "extractor",
+                    Kind = PlanStepKinds.Llm,
+                    Name = "extractor",
                     SystemPrompt = "Return JSON only.",
                     UserPrompt = "Extract the package.",
                     In = new Dictionary<string, JsonNode?>
@@ -2245,3 +2576,7 @@ public class PlanningRuntimeContractsTests
             Task.FromResult(execute(step, resolvedInputs));
     }
 }
+
+
+
+

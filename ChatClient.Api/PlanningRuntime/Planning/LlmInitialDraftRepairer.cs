@@ -32,7 +32,7 @@ public sealed class LlmInitialDraftRepairer(
         CancellationToken cancellationToken = default)
     {
         var workflowTools = toolCatalog.ListTools();
-        var session = new PlanEditingSession(ClonePlan(request.DraftPlan));
+        var session = new PlanEditingSession(ClonePlan(request.DraftPlan), PlanModelProfile.Draft);
         var systemPrompt = BuildSystemPrompt(workflowTools);
         JsonArray? lastToolResults = null;
         string? retryMessage = null;
@@ -78,7 +78,7 @@ public sealed class LlmInitialDraftRepairer(
                 {
                     var repaired = session.BuildPlan();
                     _log.Log($"[draft-repair] success steps={repaired.Steps.Count} goal={Shorten(repaired.Goal, 240)}");
-                    _log.Log($"[draft-repair] summary {PlanningJson.SerializeNodeCompact(PlanningLogFormatter.SummarizePlan(repaired))}");
+                    _log.Log($"[draft-repair] summary {PlanningJson.SerializeNodeCompact(PlanningLogFormatter.SummarizePlan(repaired, PlanModelProfile.Draft))}");
                     return repaired;
                 }
 
@@ -159,7 +159,9 @@ public sealed class LlmInitialDraftRepairer(
         sb.AppendLine("- When you are confident the draft is ready, return one short plain-text sentence like 'Draft repaired.'");
         sb.AppendLine();
         sb.AppendLine("Plan step rules:");
-        sb.AppendLine("- A step must have exactly one of 'tool', 'llm', or 'agent'.");
+        sb.AppendLine("- Every step must include id, kind, name, and in.");
+        sb.AppendLine("- kind must be exactly one of 'tool', 'llm', or 'agent'.");
+        sb.AppendLine("- name must be the exact tool name, llm label, or saved-agent id for the selected kind.");
         sb.AppendLine("- LLM steps must have systemPrompt and userPrompt.");
         sb.AppendLine("- Saved-agent steps must have userPrompt, must not have systemPrompt, and must use one callable agent id listed below.");
         sb.AppendLine("- Tool steps must use the exact workflow tool name listed below, including any server prefix.");
@@ -178,30 +180,9 @@ public sealed class LlmInitialDraftRepairer(
         sb.AppendLine("- Use out.aggregate='collect' for mapped single-item extraction and out.aggregate='flatten' for mapped multi-item extraction.");
         sb.AppendLine("- Use out.aggregate='single' when the step has no mapped inputs.");
         sb.AppendLine();
-        sb.AppendLine("Available workflow tools:");
-        foreach (var tool in workflowTools)
-        {
-            sb.AppendLine($"- name: {tool.QualifiedName}");
-            sb.AppendLine($"  description: {tool.Description}");
-            sb.AppendLine($"  inputSchema: {PlanningJson.SerializeElementCompact(tool.InputSchema)}");
-            sb.AppendLine($"  outputSchema: {PlanningJson.SerializeElementCompact(tool.OutputSchema)}");
-        }
-
+        PlanningCapabilityPromptFormatter.AppendTools(sb, workflowTools);
         sb.AppendLine();
-        sb.AppendLine("Available callable saved agents:");
-        if (_agentCatalog.ListAgents().Count == 0)
-        {
-            sb.AppendLine("- none");
-        }
-        else
-        {
-            foreach (var agent in _agentCatalog.ListAgents())
-            {
-                sb.AppendLine($"- id: {agent.Name}");
-                sb.AppendLine($"  name: {agent.DisplayName}");
-                sb.AppendLine($"  description: {agent.Description}");
-            }
-        }
+        PlanningCapabilityPromptFormatter.AppendAgents(sb, _agentCatalog.ListAgents());
 
         return sb.ToString();
     }

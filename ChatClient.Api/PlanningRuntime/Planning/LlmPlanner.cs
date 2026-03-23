@@ -1,5 +1,5 @@
-﻿using System.Text;
 using System.Diagnostics;
+using System.Text;
 using System.Text.Json;
 using Microsoft.Agents.AI;
 using Microsoft.Extensions.AI;
@@ -13,8 +13,8 @@ namespace ChatClient.Api.PlanningRuntime.Planning;
 
 /// <summary>
 /// Generates a PlanDefinition from a natural-language user query by asking the LLM.
-/// The planner lists available workflow building blocks (tool steps) and LLM reasoning
-/// steps, making it clear that only tool steps can access external systems.
+/// The planner returns the canonical plan model through a draft serialization profile,
+/// then validation and runtime hydration happen outside of the model type itself.
 /// </summary>
 public sealed class LlmPlanner(
     IChatClient chatClient,
@@ -30,15 +30,10 @@ public sealed class LlmPlanner(
     private readonly IPlanRunObserver _observer = planRunObserver ?? NullPlanRunObserver.Instance;
     private readonly IInitialDraftRepairer? _initialDraftRepairer = initialDraftRepairer;
     private readonly PlanningCallableAgentCatalog _agentCatalog = agentCatalog ?? PlanningCallableAgentCatalog.Empty;
-    private static readonly JsonSerializerOptions JsonOptions = new()
-    {
-        PropertyNameCaseInsensitive = true
-    };
 
     public async Task<PlanDefinition> CreatePlanAsync(string userQuery, CancellationToken cancellationToken = default)
     {
         _log.Log($"[plan] create:start toolCount={toolCatalog.ListTools().Count} query={Shorten(userQuery, 240)}");
-        _observer.OnEvent(new PlanningAttemptStartedEvent(1, "plan", userQuery));
         return await GeneratePlanCoreAsync(BuildPlanningUserPrompt(userQuery), cancellationToken);
     }
 
@@ -55,6 +50,8 @@ public sealed class LlmPlanner(
 
         for (var attempt = 1; attempt <= MaxDraftGenerations; attempt++)
         {
+            string? rawResponseText = null;
+
             try
             {
                 _observer.OnEvent(new DiagnosticPlanRunEvent(
@@ -69,49 +66,33 @@ public sealed class LlmPlanner(
                     CreateEmptyObject()));
 
                 var stopwatch = Stopwatch.StartNew();
-                var response = await agent.RunAsync(planningPrompt, null, null, cancellationToken);
-                var rawResponseText = response.Text?.Trim() ?? string.Empty;
+                var response = await agent.RunAsync<PlanDefinition>(
+                    planningPrompt,
+                    null,
+                    PlanJsonProfiles.DraftCompactOptions,
+                    null,
+                    cancellationToken);
+                rawResponseText = response.Text?.Trim() ?? string.Empty;
                 stopwatch.Stop();
 
                 _observer.OnEvent(new DiagnosticPlanRunEvent(
                     "planner",
                     $"Attempt {attempt}: response received after {stopwatch.Elapsed:mm\\:ss} ({rawResponseText.Length} chars)."));
 
-                ResultEnvelope<PlanDefinition> envelope;
-                try
-                {
-                    envelope = JsonSerializer.Deserialize<ResultEnvelope<PlanDefinition>>(rawResponseText, JsonOptions)
-                        ?? throw new InvalidOperationException("Planner returned an empty response envelope.");
-                }
-                catch (Exception ex)
-                {
-                    _observer.OnEvent(new AgentResponseReceivedEvent(
-                        PlannerStepId,
-                        "planner",
-                        rawResponseText,
-                        false,
-                        null,
-                        new ErrorInfo("planner_invalid_contract", ex.Message)));
-                    throw new InvalidOperationException($"Planner returned invalid JSON envelope. {ex.Message}", ex);
-                }
+                var plan = response.Result
+                    ?? throw new InvalidOperationException("Planner returned an empty typed plan result.");
+                PlanSanitizer.Sanitize(plan, PlanModelProfile.Draft);
 
                 _observer.OnEvent(new AgentResponseReceivedEvent(
                     PlannerStepId,
                     "planner",
                     rawResponseText,
-                    envelope.Ok,
-                    envelope.Data is null
-                        ? null
-                        : JsonSerializer.SerializeToElement(envelope.Data, JsonOptions),
-                    envelope.Error is null
-                        ? null
-                        : new ErrorInfo(
-                            envelope.Error.Code,
-                            envelope.Error.Message,
-                            envelope.Error.Details?.Clone())));
-                var plan = envelope.GetRequiredDataOrThrow("Planner");
-                previousDraftJson = PlanningJson.SerializeIndented(plan);
-                if (!PlanValidator.TryValidate(plan, tools, _agentCatalog.ListAgents(), out var validationIssue))
+                    true,
+                    PlanJsonProfiles.SerializeToElement(plan, PlanModelProfile.Draft),
+                    null));
+
+                previousDraftJson = PlanJsonProfiles.SerializeIndented(plan, PlanModelProfile.Draft);
+                if (!PlanValidator.TryValidate(plan, tools, _agentCatalog.ListAgents(), PlanModelProfile.Draft, out var validationIssue))
                 {
                     var validationException = new PlanValidationException(validationIssue!);
                     _log.Log($"[plan] create:invalid attempt={attempt} error={Shorten(validationException.Message, 240)} issue={PlanningJson.SerializeCompact(validationIssue)}");
@@ -126,16 +107,17 @@ public sealed class LlmPlanner(
                             {
                                 UserQuery = userPrompt,
                                 AttemptNumber = attempt,
-                                DraftPlan = ClonePlan(plan),
+                                DraftPlan = ClonePlan(plan, PlanModelProfile.Draft),
                                 ValidationIssue = validationIssue!
                             }, cancellationToken);
 
-                            if (!PlanValidator.TryValidate(repaired, tools, _agentCatalog.ListAgents(), out var repairedValidationIssue))
+                            PlanSanitizer.Sanitize(repaired, PlanModelProfile.Draft);
+                            if (!PlanValidator.TryValidate(repaired, tools, _agentCatalog.ListAgents(), PlanModelProfile.Draft, out var repairedValidationIssue))
                                 throw new PlanValidationException(repairedValidationIssue!);
 
                             _log.Log($"[plan] create:success steps={repaired.Steps.Count} goal={Shorten(repaired.Goal, 240)}");
-                            _log.Log($"[plan] create:summary {PlanningJson.SerializeNodeCompact(PlanningLogFormatter.SummarizePlan(repaired))}");
-                            _observer.OnEvent(new PlanCreatedEvent(attempt, "plan", ClonePlan(repaired)));
+                            _log.Log($"[plan] create:summary {PlanningJson.SerializeNodeCompact(PlanningLogFormatter.SummarizePlan(repaired, PlanModelProfile.Draft))}");
+                            _observer.OnEvent(new PlanCreatedEvent(attempt, "plan", ClonePlan(repaired, PlanModelProfile.Draft)));
                             return repaired;
                         }
                         catch (OperationCanceledException)
@@ -171,8 +153,8 @@ public sealed class LlmPlanner(
                 }
 
                 _log.Log($"[plan] create:success steps={plan.Steps.Count} goal={Shorten(plan.Goal, 240)}");
-                _log.Log($"[plan] create:summary {PlanningJson.SerializeNodeCompact(PlanningLogFormatter.SummarizePlan(plan))}");
-                _observer.OnEvent(new PlanCreatedEvent(attempt, "plan", ClonePlan(plan)));
+                _log.Log($"[plan] create:summary {PlanningJson.SerializeNodeCompact(PlanningLogFormatter.SummarizePlan(plan, PlanModelProfile.Draft))}");
+                _observer.OnEvent(new PlanCreatedEvent(attempt, "plan", ClonePlan(plan, PlanModelProfile.Draft)));
                 return plan;
             }
             catch (OperationCanceledException)
@@ -181,6 +163,17 @@ public sealed class LlmPlanner(
             }
             catch (Exception ex) when (attempt < MaxDraftGenerations)
             {
+                if (!string.IsNullOrWhiteSpace(rawResponseText))
+                {
+                    _observer.OnEvent(new AgentResponseReceivedEvent(
+                        PlannerStepId,
+                        "planner",
+                        rawResponseText,
+                        false,
+                        null,
+                        new ErrorInfo("planner_invalid_contract", ex.Message)));
+                }
+
                 lastError = ex;
                 _log.Log($"[plan] create:retry attempt={attempt} error={Shorten(ex.Message, 240)}");
                 _observer.OnEvent(new DiagnosticPlanRunEvent("planner", $"Retry {attempt}: {Shorten(ex.Message, 240)}"));
@@ -188,6 +181,17 @@ public sealed class LlmPlanner(
             }
             catch (Exception ex)
             {
+                if (!string.IsNullOrWhiteSpace(rawResponseText))
+                {
+                    _observer.OnEvent(new AgentResponseReceivedEvent(
+                        PlannerStepId,
+                        "planner",
+                        rawResponseText,
+                        false,
+                        null,
+                        new ErrorInfo("planner_invalid_contract", ex.Message)));
+                }
+
                 lastError = ex;
                 break;
             }
@@ -201,136 +205,31 @@ public sealed class LlmPlanner(
     private string BuildSystemPrompt(IReadOnlyCollection<AppToolDescriptor> tools)
     {
         var sb = new StringBuilder();
-        sb.AppendLine("You are a planning agent. Given a user request, produce an execution plan.");
-        sb.AppendLine("Return a COMPLETE and VALID plan envelope on the first try.");
-        sb.AppendLine("A plan is an ordered list of workflow steps. There are exactly three kinds of steps:");
+        sb.AppendLine("You are a planning agent.");
+        sb.AppendLine("Build the shortest correct plan that satisfies the user request.");
         sb.AppendLine();
-        sb.AppendLine("1. Tool steps: use field \"tool\": \"<name>\".");
-        sb.AppendLine("   Tool steps call one workflow capability directly.");
-        sb.AppendLine("2. LLM steps: use field \"llm\": \"<free label>\".");
-        sb.AppendLine("   LLM steps have NO tool access and NO internet access.");
-        sb.AppendLine("   They can only reason over outputs produced by earlier tool steps.");
-        sb.AppendLine("3. Saved-agent steps: use field \"agent\": \"<callable-agent-id>\".");
-        sb.AppendLine("   Saved-agent steps invoke a preconfigured agent that may call its own tools internally.");
-        sb.AppendLine("   Saved-agent steps must provide userPrompt and out. Do not set systemPrompt on saved-agent steps.");
-        sb.AppendLine("   Tool steps and saved-agent steps are the only plan capabilities that may touch external systems.");
-        sb.AppendLine();
-        sb.AppendLine("Required top-level JSON shape:");
-        sb.AppendLine("{");
-        sb.AppendLine("  \"ok\": true|false,");
-        sb.AppendLine("  \"data\": <plan|null>,");
-        sb.AppendLine("  \"error\": null|{");
-        sb.AppendLine("    \"code\": \"string\",");
-        sb.AppendLine("    \"message\": \"string\",");
-        sb.AppendLine("    \"details\": { }|null");
-        sb.AppendLine("  }");
-        sb.AppendLine("}");
-        sb.AppendLine();
-        sb.AppendLine("When planning succeeds, return ok=true, error=null, and put the complete plan into data.");
-        sb.AppendLine("When planning fails, return ok=false, data=null, and put the failure reason into error.");
-        sb.AppendLine();
-        sb.AppendLine("The plan inside data must use this exact JSON shape:");
-        sb.AppendLine("{");
-        sb.AppendLine("  \"goal\": \"string\",");
-        sb.AppendLine("  \"steps\": [");
-        sb.AppendLine("    {");
-        sb.AppendLine("      \"id\": \"string\",");
-        sb.AppendLine("      \"tool\": \"tool-name\",");
-        sb.AppendLine("      \"in\": { \"param\": \"literal or {\\\"from\\\":\\\"$ref\\\",\\\"mode\\\":\\\"value|map\\\",\\\"type\\\":\\\"string|object|array<object>|...\\\"}\" },");
-        sb.AppendLine("      \"s\": \"todo\",");
-        sb.AppendLine("      \"res\": null,");
-        sb.AppendLine("      \"err\": null");
-        sb.AppendLine("    },");
-        sb.AppendLine("    {");
-        sb.AppendLine("      \"id\": \"string\",");
-        sb.AppendLine("      \"llm\": \"step-label\",");
-        sb.AppendLine("      \"systemPrompt\": \"string\",");
-        sb.AppendLine("      \"userPrompt\": \"string\",");
-        sb.AppendLine("      \"in\": { \"param\": \"literal or {\\\"from\\\":\\\"$ref\\\",\\\"mode\\\":\\\"value|map\\\",\\\"type\\\":\\\"string|object|array<object>|...\\\"}\" },");
-        sb.AppendLine("      \"out\": {");
-        sb.AppendLine("        \"format\": \"json|string\",");
-        sb.AppendLine("        \"aggregate\": \"single|collect|flatten\",");
-        sb.AppendLine("        \"schema\": { }");
-        sb.AppendLine("      },");
-        sb.AppendLine("      \"s\": \"todo\",");
-        sb.AppendLine("      \"res\": null,");
-        sb.AppendLine("      \"err\": null");
-        sb.AppendLine("    },");
-        sb.AppendLine("    {");
-        sb.AppendLine("      \"id\": \"string\",");
-        sb.AppendLine("      \"agent\": \"callable-agent-id\",");
-        sb.AppendLine("      \"userPrompt\": \"string\",");
-        sb.AppendLine("      \"in\": { \"param\": \"literal or {\\\"from\\\":\\\"$ref\\\",\\\"mode\\\":\\\"value|map\\\",\\\"type\\\":\\\"string|object|array<object>|...\\\"}\" },");
-        sb.AppendLine("      \"out\": {");
-        sb.AppendLine("        \"format\": \"json|string\",");
-        sb.AppendLine("        \"aggregate\": \"single|collect|flatten\",");
-        sb.AppendLine("        \"schema\": { }");
-        sb.AppendLine("      },");
-        sb.AppendLine("      \"s\": \"todo\",");
-        sb.AppendLine("      \"res\": null,");
-        sb.AppendLine("      \"err\": null");
-        sb.AppendLine("    }");
-        sb.AppendLine("  ]");
-        sb.AppendLine("}");
-        sb.AppendLine();
-        sb.AppendLine("General planning rules:");
-        sb.AppendLine("- Prefer the SHORTEST plan that can succeed.");
-        sb.AppendLine("- Search and download steps retrieve PAGES or DOCUMENTS, not selected entities. Do not assume 'N pages' means 'N products/packages/libraries'.");
-        sb.AppendLine("- When the user asks to compare, rank, review, or recommend a small number of discovered entities, prefer this shape:");
-        sb.AppendLine("  discovery search -> shortlist exact entities -> targeted retrieval for each chosen entity -> extract facts for that entity -> synthesize final answer.");
-        sb.AppendLine("- Use shortlist/select steps whenever a discovery page, roundup article, search result, or catalog page may mention multiple entities.");
-        sb.AppendLine("- If a page can mention multiple entities, do not feed it into a single-entity extractor unless that extractor also receives an explicit target entity name/id/model.");
-        sb.AppendLine("- For final comparison or recommendation steps, instruct the LLM to explicitly mention the compared item names and the reason for the choice.");
-        sb.AppendLine("- Preserve explicit deliverables from the user request, such as official docs links, NuGet/package pages, GitHub URLs, ranked lists, pros/cons, or citations.");
-        sb.AppendLine("- If the user explicitly asks for official pages, package pages, repo links, docs links, or multiple evidence sources per entity, plan separate retrieval for those sources.");
-        sb.AppendLine("- Unless the user explicitly asked for official pages, documentation pages, repo URLs, or extra evidence sources, do NOT require them in shortlist/select prompts.");
-        sb.AppendLine("- If the current search results already appear to point at candidate entity pages that downstream download can inspect, shortlist those result URLs directly and carry them forward as evidence.");
-        sb.AppendLine("- Avoid a second search unless the first downloaded pages clearly cannot contain the requested facts, but DO use targeted follow-up searches when precise entity-level evidence is required.");
-        sb.AppendLine("- If the user asks for two or three items, discovery may over-fetch a little, but do not stop at arbitrary top-N pages. First identify the best entity candidates, then retrieve evidence for those entities.");
-        sb.AppendLine("- Use input binding objects for every dynamic dependency: {\"from\":\"$step.ref\",\"mode\":\"value|map\"}.");
+        sb.AppendLine("Rules:");
+        sb.AppendLine("- Return one JSON plan object with top-level goal and steps.");
+        sb.AppendLine("- Use only the tools and saved agents listed below. Never invent capabilities.");
+        sb.AppendLine("- Every step must include id, kind, name, and in.");
+        sb.AppendLine("- kind must be exactly one of 'tool', 'llm', or 'agent'.");
+        sb.AppendLine("- name must be the exact tool name, llm label, or saved-agent id for the selected kind.");
+        sb.AppendLine("- Tool and saved-agent steps are the only capabilities that may touch external systems.");
+        sb.AppendLine("- Put dynamic dependencies only under in using binding objects like {\"from\":\"$step.ref\",\"mode\":\"value|map\"}.");
+        sb.AppendLine("- A binding object is a VALUE inside in. Example: in={\"url\":{\"from\":\"$search.results[0].url\",\"mode\":\"value\"}}. Never use binding fields like from or mode as input names.");
+        sb.AppendLine("- Steps may reference only earlier steps.");
         sb.AppendLine("- mode='value' passes one resolved value into one call.");
-        sb.AppendLine("- mode='map' means run the step once per array element.");
-        sb.AppendLine("- For LLM steps, when input shape matters, add a compact declared type directly inside the binding object using field 'type'. Example: {\"from\":\"$search.results\",\"mode\":\"value\",\"type\":\"array<object>\"}.");
-        sb.AppendLine("- The binding field 'type' describes the single-call resolved input. Example: mode='value' with $search.results usually means type='array<object>', while mode='map' with $search.results usually means type='object'.");
-        sb.AppendLine("- Supported binding types are: string, number, integer, boolean, object, array, array<string>, array<number>, array<integer>, array<boolean>, array<object>.");
-        sb.AppendLine("- If a tool returns an object containing an array field, bind from that field directly (for example: {\"from\":\"$search.results\",\"mode\":\"map\"}).");
-        sb.AppendLine("- If a downstream tool needs a projected array field, express it explicitly in the ref (for example: {\"from\":\"$search.results[].url\",\"mode\":\"map\"}).");
-        sb.AppendLine("- When chaining search-style results into download-style tools, use input key 'page' when you have full page-reference objects, or input key 'url' when you only have raw URLs.");
-        sb.AppendLine("- A download-style tool's 'page' input is a page-reference object that must contain at least 'url'; title and other search metadata may be optional.");
-        sb.AppendLine("- Download-style tools may return the page reference enriched with 'content'. Prefer consuming title/content from the download result, and keep search metadata when it adds value.");
-        sb.AppendLine("- For download-style tools, pass exactly one of 'page' or 'url'. Do not send both.");
-        sb.AppendLine("- Tool steps must use the exact tool name listed below, including any server prefix.");
-        sb.AppendLine("- Saved-agent steps must use the exact agent id listed below.");
-        sb.AppendLine("- Do not invent, estimate, or fill in exact factual values when the user request requires precise facts.");
-        sb.AppendLine("- If exact values are missing, add retrieval/narrowing steps or let the downstream step fail through the structured execution error contract instead of guessing.");
-        sb.AppendLine("- For extraction steps, if the source does not contain the requested entity or the critical facts are absent, rely on the structured execution error contract instead of guessing.");
-        sb.AppendLine("- Do not wrap literal tool arguments in helper objects like {\"value\":...}. Tool inputs must be plain literals or binding objects with exactly 'from' and optional 'mode'. LLM bindings may additionally include optional field 'type'.");
-        sb.AppendLine();
-        sb.AppendLine("Available saved agents:");
-        if (_agentCatalog.ListAgents().Count == 0)
-        {
-            sb.AppendLine("- none");
-        }
-        else
-        {
-            foreach (var agent in _agentCatalog.ListAgents())
-            {
-                sb.AppendLine($"- id: {agent.Name}");
-                sb.AppendLine($"  name: {agent.DisplayName}");
-                sb.AppendLine($"  description: {agent.Description}");
-            }
-        }
-
-        sb.AppendLine();
-        sb.AppendLine("Available tools:");
-        foreach (var tool in tools)
-        {
-            sb.AppendLine($"- name: {tool.QualifiedName}");
-            sb.AppendLine($"  description: {tool.Description}");
-            sb.AppendLine($"  inputSchema: {PlanningJson.SerializeElementCompact(tool.InputSchema)}");
-            sb.AppendLine($"  outputSchema: {PlanningJson.SerializeElementCompact(tool.OutputSchema)}");
-        }
-
+        sb.AppendLine("- mode='map' runs the step once per array element.");
+        sb.AppendLine("- Do not wrap literal tool inputs in helper objects like {\"value\":...}.");
+        sb.AppendLine("- If input shape matters for an llm or saved-agent step, add binding field type.");
+        sb.AppendLine("- LLM steps must provide systemPrompt, userPrompt, and out.");
+        sb.AppendLine("- Saved-agent steps must provide userPrompt and out, and must not provide systemPrompt.");
+        sb.AppendLine("- For llm and saved-agent steps, out must include format ('json' or 'string') and aggregate ('single', 'collect', or 'flatten').");
+        sb.AppendLine("- When out.format='json', include out.schema. When out.format='string', schema may be omitted or set to {\"type\":\"string\"}.");
+        sb.AppendLine("- Use out.aggregate='collect' for mapped single-item outputs, 'flatten' for mapped array outputs, and 'single' otherwise.");
+        sb.AppendLine("- Prompts must be complete literal instructions. Do not embed $step refs or unresolved template placeholders like {name}, {{name}}, [[name]], <<name>>, or ${name} inside prompts.");
+        sb.AppendLine("- Use the exact tool names and exact saved-agent ids from the catalog.");
+        sb.AppendLine("- Add only the steps required to reach the user goal.");
         sb.AppendLine();
         sb.AppendLine("Reference syntax allowed inside binding objects:");
         sb.AppendLine("- {\"from\":\"$stepId\"}");
@@ -339,42 +238,12 @@ public sealed class LlmPlanner(
         sb.AppendLine("- {\"from\":\"$stepId.field[].nested\"}");
         sb.AppendLine("- {\"from\":\"$stepId.field[n]\"}");
         sb.AppendLine("- {\"from\":\"$stepId.field[n].nested\"}");
-        sb.AppendLine("- Add \"mode\":\"map\" when the resolved value is an array and the step must run once per item.");
         sb.AppendLine();
-        sb.AppendLine("LLM step rules:");
-        sb.AppendLine("- LLM steps MUST provide both systemPrompt and userPrompt.");
-        sb.AppendLine("- Never omit userPrompt, even for shortlist/select/extract/compare steps. If needed, use a short literal sentence.");
-        sb.AppendLine("- The executor appends an Input section with all resolved 'in' values.");
-        sb.AppendLine("- Do NOT use template placeholders such as {var} or {{var}} in prompts.");
-        sb.AppendLine("- Do NOT put step refs like $stepId or $stepId.field inside systemPrompt or userPrompt. All dynamic data must come through binding objects in 'in'.");
-        sb.AppendLine("- out must be an object with format, aggregate, and optional schema.");
-        sb.AppendLine("- Prefer out.format='json' unless the final answer is intentionally plain text.");
-        sb.AppendLine("- If out.format='json', include out.schema that describes the expected JSON shape.");
-        sb.AppendLine("- Every schema node must declare either type or enum.");
-        sb.AppendLine("- If out.schema.type='object', every entry inside out.schema.properties must itself declare type or enum.");
-        sb.AppendLine("- If out.schema.type='array', out.schema.items must declare type or enum.");
-        sb.AppendLine("- If out.format='string', either omit out.schema or use out.schema={\"type\":\"string\"}.");
-        sb.AppendLine("- If your extraction prompt says a field should be null when missing, reflect that in the schema with nullable=true or type=[\"<base>\",\"null\"].");
-        sb.AppendLine("- If the step uses mode='map' and each call returns one item, use out.aggregate='collect'.");
-        sb.AppendLine("- If the step uses mode='map' and each call returns an array of items, use out.aggregate='flatten'.");
-        sb.AppendLine("- If the step does not use mode='map', use out.aggregate='single'.");
-        sb.AppendLine("- If out.aggregate='collect', out.schema must describe one call result item, not the final collected array.");
-        sb.AppendLine("- If out.aggregate='flatten', out.schema must describe the per-call array shape that will be flattened.");
-        sb.AppendLine("- Use the exact field name \"userPrompt\". Do not use aliases like \"prompt\" or \"instruction\".");
-        sb.AppendLine("- Put step parameters under \"in\". Do not place tool args as top-level step properties.");
-        sb.AppendLine("- Every step must include id, in, s, res, and err.");
+        PlanningCapabilityPromptFormatter.AppendAgents(sb, _agentCatalog.ListAgents());
         sb.AppendLine();
-        sb.AppendLine("Saved-agent step rules:");
-        sb.AppendLine("- Saved-agent steps MUST provide userPrompt.");
-        sb.AppendLine("- Saved-agent steps MUST NOT provide systemPrompt.");
-        sb.AppendLine("- Saved-agent steps must declare out.format, out.aggregate, and when out.format='json', out.schema.");
-        sb.AppendLine("- Saved-agent steps use the same binding rules under 'in' as LLM steps.");
-        sb.AppendLine("- Use saved-agent steps when the task needs a preconfigured agent identity, its own tools, or long-running internal tool-calling.");
+        PlanningCapabilityPromptFormatter.AppendTools(sb, tools);
         sb.AppendLine();
-        sb.AppendLine("Few-shot examples:");
-        sb.AppendLine(BuildFewShotExamples());
-        sb.AppendLine();
-        sb.AppendLine("Return only the JSON envelope. No markdown fences. No prose outside the JSON.");
+        sb.AppendLine("Return only the JSON plan object. No markdown fences. No prose.");
         return sb.ToString();
     }
 
@@ -390,44 +259,8 @@ public sealed class LlmPlanner(
             ? string.Empty
             : $"\nPrevious invalid draft plan:\n{previousDraftJson}";
 
-        return $"{originalUserPrompt}\n\nYour previous plan was invalid.\nValidation error: {errorMessage}{issueBlock}{previousDraftBlock}\n\nReturn a corrected ResultEnvelope<PlanDefinition> as JSON only.\nEdit the previous draft minimally when possible. Preserve correct step ids, bindings, and working structure instead of rewriting unrelated parts.\nNon-negotiable requirements:\n- Follow the exact ok/data/error envelope schema.\n- Put the full plan inside data when ok=true.\n- Each step must include id, in, s, res, and err.\n- A step must have exactly one of tool, llm, or agent.\n- Every llm step must include BOTH systemPrompt AND userPrompt, including shortlist/select/extract/compare steps.\n- Every saved-agent step must include userPrompt, must NOT include systemPrompt, and must reference one callable agent id from the system prompt.\n- Each llm or saved-agent step must include an out object with format/aggregate/schema.\n- Do not embed $step refs inside prompts.\n- Put dynamic inputs under in using binding objects like {{\"from\":\"$step.ref\",\"mode\":\"value|map\"}}.\n- If an llm or saved-agent input is shape-sensitive, add inline field \"type\" inside the binding object, for example {{\"from\":\"$search.results\",\"mode\":\"value\",\"type\":\"array<object>\"}}.\n- The inline binding field \"type\" describes one resolved call input. With {{\"mode\":\"value\"}} on $search.results this is often array<object>; with {{\"mode\":\"map\"}} on $search.results this is often object.\n- Supported inline binding types are string, number, integer, boolean, object, array, array<string>, array<number>, array<integer>, array<boolean>, array<object>.\n- Literal tool inputs must be plain JSON literals, never wrapper objects like {{\"value\":...}}.\n- Search/download steps return pages, not chosen entities. If the task compares or reviews a few entities, add shortlist/selection and targeted retrieval instead of assuming top pages equal the final entities.\n- If an extraction step would read a page that may mention multiple entities, either add an explicit target entity input or add a shortlist/select step first.\n- Preserve explicit user deliverables such as links, package pages, docs pages, repo URLs, ranking, and recommendation fields.\n- Unless the user explicitly asked for official pages, documentation pages, repo URLs, or extra evidence sources, do NOT require them in shortlist/select prompts.\n- If current search results already point to usable candidate pages, shortlist and download those URLs directly instead of adding another search just to find a more official-looking page.\n- Use collect for mapped single-item extraction, flatten for mapped multi-item extraction, and single otherwise.\n- Every schema node must declare type or enum.\n- Every object property schema must declare type or enum.\n- For string outputs, either omit schema or use {{\"type\":\"string\"}}.\n- Use the exact field names from the schema.\n- Use only refs to earlier steps.\nDo not repeat the same mistake.";
+        return $"{originalUserPrompt}\n\nYour previous plan was invalid.\nValidation error: {errorMessage}{issueBlock}{previousDraftBlock}\n\nReturn a corrected JSON plan object only.\nEdit the previous draft minimally when possible.\nPreserve working step ids, bindings, and structure unless the validation issue requires a change.\nNon-negotiable requirements:\n- Top-level object must include goal and steps.\n- Use only listed tools and saved agents.\n- Keep the plan as short as possible.\n- Every step must include id, kind, name, and in.\n- kind must be exactly one of 'tool', 'llm', or 'agent'.\n- name must be the exact tool name, llm label, or saved-agent id for the selected kind.\n- Put dynamic dependencies under in using binding objects as VALUES. Example: in={{\"url\":{{\"from\":\"$search.results[0].url\",\"mode\":\"value\"}}}}. Never use from or mode as input names.\n- Use only refs to earlier steps.\n- LLM steps must provide systemPrompt, userPrompt, and out.\n- Saved-agent steps must provide userPrompt and out, and must not provide systemPrompt.\n- For llm and saved-agent steps, out must include format ('json' or 'string') and aggregate ('single', 'collect', or 'flatten').\n- When out.format='json', include out.schema.\n- Use out.aggregate='collect' for mapped single-item outputs, 'flatten' for mapped array outputs, and 'single' otherwise.\n- Prompts must be literal text. Do not embed $step refs or unresolved template placeholders like {{name}}, {{{{name}}}}, [[name]], <<name>>, or ${{name}}.\n- Do not return markdown fences or prose.\nDo not repeat the same mistake.";
     }
-
-    private static string BuildFewShotExamples() =>
-        """
-        Example A:
-        User request: "Find two popular markdown parsers for .NET, extract license and GitHub repo URL, then recommend one."
-        Good plan shape:
-        1. search discovery pages
-        2. shortlist exactly two parser packages using the best current result URL for each package
-        3. retrieve package/repo evidence for each shortlisted parser
-        4. extract structured facts for each targeted parser
-        5. compare extracted facts in one final LLM step
-
-        Example B:
-        User request: "Compare two USB microphones by specs and summarize which is better for streaming."
-        Good plan shape:
-        1. search product discovery pages
-        2. shortlist two specific microphone models using the best current result URL for each model
-        3. retrieve one evidence page per shortlisted model
-        4. extract model name, pickup pattern, sample rate, connectivity, and price for each explicit model
-        5. synthesize a recommendation that names both products and states reasons
-
-        Example C:
-        User request: "Look up two train-route planning libraries and tell me which one better matches small hobby projects."
-        Good plan shape:
-        1. search discovery pages
-        2. shortlist two specific libraries using the best current result URL for each library
-        3. retrieve docs or repo pages for each shortlisted library
-        4. extract maintenance and onboarding facts for each explicit library
-        5. return a final recommendation
-
-        Example output contracts:
-        - one object: {"format":"json","aggregate":"single","schema":{"type":"object","required":["name"],"properties":{"name":{"type":"string"}}}}
-        - mapped objects collected into an array: {"format":"json","aggregate":"collect","schema":{"type":"object","required":["name"],"properties":{"name":{"type":"string"}}}}
-        - mapped arrays flattened into one array: {"format":"json","aggregate":"flatten","schema":{"type":"array","items":{"type":"object","required":["name"],"properties":{"name":{"type":"string"}}}}}
-        - final plain text: {"format":"string","aggregate":"single","schema":{"type":"string"}}
-        """;
 
     private static JsonElement CreateEmptyObject()
     {
@@ -446,8 +279,6 @@ public sealed class LlmPlanner(
             : $"{normalized[..maxLength]}...";
     }
 
-    private static PlanDefinition ClonePlan(PlanDefinition plan) =>
-        JsonSerializer.Deserialize<PlanDefinition>(JsonSerializer.Serialize(plan))
-        ?? throw new InvalidOperationException("Failed to clone plan.");
+    private static PlanDefinition ClonePlan(PlanDefinition plan, PlanModelProfile profile) =>
+        PlanSanitizer.CloneSanitized(plan, profile);
 }
-

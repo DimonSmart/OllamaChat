@@ -12,17 +12,25 @@ public static partial class PlanValidator
         PlanDefinition plan,
         IReadOnlyCollection<AppToolDescriptor>? tools,
         out PlanValidationIssue? issue)
-        => TryValidate(plan, tools, callableAgents: null, out issue);
+        => TryValidate(plan, tools, callableAgents: null, PlanModelProfile.Runtime, out issue);
 
     public static bool TryValidate(
         PlanDefinition plan,
         IReadOnlyCollection<AppToolDescriptor>? tools,
         IReadOnlyCollection<PlanningCallableAgentDescriptor>? callableAgents,
         out PlanValidationIssue? issue)
+        => TryValidate(plan, tools, callableAgents, PlanModelProfile.Runtime, out issue);
+
+    public static bool TryValidate(
+        PlanDefinition plan,
+        IReadOnlyCollection<AppToolDescriptor>? tools,
+        IReadOnlyCollection<PlanningCallableAgentDescriptor>? callableAgents,
+        PlanModelProfile profile,
+        out PlanValidationIssue? issue)
     {
         try
         {
-            ValidateCore(plan, tools, callableAgents);
+            ValidateCore(plan, tools, callableAgents, profile);
             issue = null;
             return true;
         }
@@ -36,14 +44,23 @@ public static partial class PlanValidator
     public static void ValidateOrThrow(
         PlanDefinition plan,
         IReadOnlyCollection<AppToolDescriptor>? tools = null)
-        => ValidateOrThrow(plan, tools, callableAgents: null);
+        => ValidateOrThrow(plan, tools, callableAgents: null, PlanModelProfile.Runtime);
 
     public static void ValidateOrThrow(
         PlanDefinition plan,
         IReadOnlyCollection<AppToolDescriptor>? tools,
         IReadOnlyCollection<PlanningCallableAgentDescriptor>? callableAgents)
     {
-        if (TryValidate(plan, tools, callableAgents, out var issue))
+        ValidateOrThrow(plan, tools, callableAgents, PlanModelProfile.Runtime);
+    }
+
+    public static void ValidateOrThrow(
+        PlanDefinition plan,
+        IReadOnlyCollection<AppToolDescriptor>? tools,
+        IReadOnlyCollection<PlanningCallableAgentDescriptor>? callableAgents,
+        PlanModelProfile profile)
+    {
+        if (TryValidate(plan, tools, callableAgents, profile, out var issue))
             return;
 
         throw new InvalidOperationException(issue!.Message, new PlanValidationException(issue));
@@ -52,7 +69,8 @@ public static partial class PlanValidator
     private static void ValidateCore(
         PlanDefinition plan,
         IReadOnlyCollection<AppToolDescriptor>? tools,
-        IReadOnlyCollection<PlanningCallableAgentDescriptor>? callableAgents)
+        IReadOnlyCollection<PlanningCallableAgentDescriptor>? callableAgents,
+        PlanModelProfile profile)
     {
         if (string.IsNullOrWhiteSpace(plan.Goal))
             throw CreateIssue("plan_goal_missing", "Plan.goal is required.", path: "goal");
@@ -76,41 +94,51 @@ public static partial class PlanValidator
             if (!seenIds.Add(step.Id))
                 throw CreateIssue("step_id_duplicate", $"Duplicate step id '{step.Id}'.", stepId: step.Id, path: $"{step.Id}.id");
 
-            var hasTool = !string.IsNullOrWhiteSpace(step.Tool);
-            var hasLlm = !string.IsNullOrWhiteSpace(step.Llm);
-            var hasAgent = !string.IsNullOrWhiteSpace(step.Agent);
-            var selectedKindCount = (hasTool ? 1 : 0) + (hasLlm ? 1 : 0) + (hasAgent ? 1 : 0);
-            if (selectedKindCount != 1)
+            if (!PlanStepKinds.TryNormalize(step.Kind, out var stepKind))
             {
                 throw CreateIssue(
                     "step_kind_invalid",
-                    $"Step '{step.Id}' must have exactly one of 'tool', 'llm', or 'agent'.",
-                    stepId: step.Id);
+                    $"Step '{step.Id}' must declare kind as 'tool', 'llm', or 'agent'.",
+                    stepId: step.Id,
+                    path: $"{step.Id}.kind",
+                    actual: step.Kind);
             }
 
-            if (!IsValidStatus(step.Status))
+            if (string.IsNullOrWhiteSpace(step.Name))
+            {
+                throw CreateIssue(
+                    "step_name_missing",
+                    $"Step '{step.Id}' must declare name.",
+                    stepId: step.Id,
+                    path: $"{step.Id}.name");
+            }
+
+            if (profile == PlanModelProfile.Runtime && !IsValidStatus(step.Status))
                 throw CreateIssue("step_status_invalid", $"Step '{step.Id}' has invalid status '{step.Status}'.", stepId: step.Id, actual: step.Status);
 
             if (step.In.Count == 0)
                 throw CreateIssue("step_inputs_missing", $"Step '{step.Id}' must declare its inputs in 'in'.", stepId: step.Id, path: $"{step.Id}.in");
 
+            var hasTool = string.Equals(stepKind, PlanStepKinds.Tool, StringComparison.Ordinal);
+            var hasLlm = string.Equals(stepKind, PlanStepKinds.Llm, StringComparison.Ordinal);
+            var hasAgent = string.Equals(stepKind, PlanStepKinds.Agent, StringComparison.Ordinal);
             AppToolDescriptor? toolMetadata = null;
             Dictionary<string, JsonElement>? toolInputProperties = null;
             if (hasTool && knownTools is not null)
             {
-                if (!knownTools.TryGetValue(step.Tool!, out toolMetadata))
-                    throw CreateIssue("tool_unknown", $"Step '{step.Id}' references unknown tool '{step.Tool}'.", stepId: step.Id, toolName: step.Tool);
+                if (!knownTools.TryGetValue(step.Name, out toolMetadata))
+                    throw CreateIssue("tool_unknown", $"Step '{step.Id}' references unknown tool '{step.Name}'.", stepId: step.Id, toolName: step.Name);
 
                 toolInputProperties = ValidateToolInputs(step, toolMetadata);
             }
 
-            if (hasAgent && knownAgents is not null && !knownAgents.ContainsKey(step.Agent!))
+            if (hasAgent && knownAgents is not null && !knownAgents.ContainsKey(step.Name))
             {
                 throw CreateIssue(
                     "agent_unknown",
-                    $"Step '{step.Id}' references unknown callable agent '{step.Agent}'.",
+                    $"Step '{step.Id}' references unknown callable agent '{step.Name}'.",
                     stepId: step.Id,
-                    actual: step.Agent);
+                    actual: step.Name);
             }
 
             foreach (var input in step.In)

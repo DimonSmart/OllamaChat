@@ -84,7 +84,7 @@ internal sealed class PlanToolCallingRuntime(
     [Description("Replace one existing step in place. Provide the existing stepId and the FULL replacement plan step object.")]
     public JsonObject ReplaceStep(
         [Description("Existing step id to replace.")] string? stepId = null,
-        [Description("Full replacement plan step object with id, tool or llm or agent, inputs, and optional prompts/output schema.")] JsonElement? step = null)
+        [Description("Full replacement plan step object with id, kind, name, inputs, and optional prompts/output schema.")] JsonElement? step = null)
         => ExecuteSessionTool(
             PlanningAgentToolNames.PlanReplaceStep,
             "plan.replaceStep",

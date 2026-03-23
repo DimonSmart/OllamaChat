@@ -21,7 +21,15 @@ public sealed record AppToolDescriptor(
     string? BaseQualifiedName = null,
     string? BaseServerName = null,
     Guid? BindingId = null,
-    string? BindingDisplayName = null);
+    string? BindingDisplayName = null,
+    AppToolPlanningMetadata? PlanningMetadata = null);
+
+public sealed record AppToolPlanningMetadata(
+    string? Purpose = null,
+    string? UseWhen = null,
+    string? AvoidWhen = null,
+    string? Returns = null,
+    string? Constraints = null);
 
 public interface IAppToolCatalog
 {

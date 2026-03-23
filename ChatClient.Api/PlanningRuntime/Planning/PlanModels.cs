@@ -15,46 +15,39 @@ public static class PlanStepStatuses
 
 public sealed class PlanDefinition
 {
-    [JsonRequired]
     [JsonPropertyName("goal")]
     public string Goal { get; init; } = string.Empty;
 
-    [JsonRequired]
     [JsonPropertyName("steps")]
     public List<PlanStep> Steps { get; init; } = new();
 }
 
 /// <summary>
 /// A single step in the execution plan.
-/// Use <see cref="Tool"/> for registered workflow building blocks (tools), <see cref="Llm"/> for an ad-hoc LLM call,
-/// or <see cref="Agent"/> for invoking a preconfigured saved agent.
-/// When <see cref="Llm"/> is set, the planner must supply <see cref="SystemPrompt"/> and <see cref="UserPrompt"/>.
-/// When <see cref="Agent"/> is set, the planner must supply <see cref="UserPrompt"/> and inputs; the saved agent provides
+/// Use <see cref="Kind"/> to declare whether the step invokes a registered tool, an ad-hoc LLM call,
+/// or a preconfigured saved agent. <see cref="Name"/> identifies the concrete capability for that kind.
+/// When <see cref="Kind"/> is <c>llm</c>, the planner must supply <see cref="SystemPrompt"/> and <see cref="UserPrompt"/>.
+/// When <see cref="Kind"/> is <c>agent</c>, the planner must supply <see cref="UserPrompt"/> and inputs; the saved agent provides
 /// its own system prompt, tool access, and execution settings.
 /// </summary>
 public sealed class PlanStep
 {
-    [JsonRequired]
     [JsonPropertyName("id")]
     public string Id { get; init; } = string.Empty;
 
-    /// <summary>Name of a registered workflow building block (tool) to invoke.</summary>
-    [JsonPropertyName("tool")]
-    public string? Tool { get; init; }
+    /// <summary>Step kind: tool, llm, or agent.</summary>
+    [JsonPropertyName("kind")]
+    public string Kind { get; init; } = string.Empty;
 
-    /// <summary>Logical label for an LLM reasoning call (free text; used only for tracing).</summary>
-    [JsonPropertyName("llm")]
-    public string? Llm { get; init; }
+    /// <summary>Capability identifier for the selected kind.</summary>
+    [JsonPropertyName("name")]
+    public string Name { get; init; } = string.Empty;
 
-    /// <summary>Identifier of a preconfigured saved agent callable from planner.</summary>
-    [JsonPropertyName("agent")]
-    public string? Agent { get; init; }
-
-    /// <summary>System prompt for the LLM step. Required when Llm is set.</summary>
+    /// <summary>System prompt for an LLM step. Required when kind is llm.</summary>
     [JsonPropertyName("systemPrompt")]
     public string? SystemPrompt { get; init; }
 
-    /// <summary>User-level instruction for the LLM step. Required when Llm is set.</summary>
+    /// <summary>User-level instruction for the LLM or saved-agent step.</summary>
     [JsonPropertyName("userPrompt")]
     public string? UserPrompt { get; init; }
 
@@ -63,7 +56,6 @@ public sealed class PlanStep
     /// - a literal JSON value, passed as-is
     /// - a binding object { "from": "$step.ref", "mode": "value|map" }
     /// </summary>
-    [JsonRequired]
     [JsonPropertyName("in")]
     public Dictionary<string, JsonNode?> In { get; init; } = new();
 

@@ -61,7 +61,6 @@ public static class PlanStepOutputAggregates
 
 public sealed class PlanStepOutputContract
 {
-    [JsonRequired]
     [JsonPropertyName("format")]
     public string Format { get; init; } = PlanStepOutputFormats.Json;
 
@@ -113,8 +112,10 @@ public static class PlanStepOutputContractResolver
         var issues = new List<string>();
         var hasFanOut = HasMappedInputs(step);
         var explicitContract = step.Out;
+        var isLlm = PlanStepKinds.IsLlm(step);
+        var isAgent = PlanStepKinds.IsAgent(step);
 
-        if ((!string.IsNullOrWhiteSpace(step.Llm) || !string.IsNullOrWhiteSpace(step.Agent)) && explicitContract is null)
+        if ((isLlm || isAgent) && explicitContract is null)
         {
             issues.Add("LLM and saved-agent steps must declare an 'out' contract.");
             return issues;
@@ -138,7 +139,7 @@ public static class PlanStepOutputContractResolver
         if (!hasFanOut && aggregate != PlanStepOutputAggregates.Single)
             issues.Add("Steps without mapped inputs must use out.aggregate='single'.");
 
-        if ((!string.IsNullOrWhiteSpace(step.Llm) || !string.IsNullOrWhiteSpace(step.Agent))
+        if ((isLlm || isAgent)
             && format == PlanStepOutputFormats.Json
             && explicitContract.Schema is null)
         {

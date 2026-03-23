@@ -77,28 +77,35 @@ public static class PlanningLogFormatter
             maxObjectProperties,
             maxStringLength);
 
-    public static JsonObject SummarizePlan(PlanDefinition plan) => new()
+    public static JsonObject SummarizePlan(PlanDefinition plan, PlanModelProfile profile = PlanModelProfile.Runtime) => new()
     {
         ["goal"] = SummarizeText(plan.Goal, 120),
         ["stepCount"] = plan.Steps.Count,
-        ["steps"] = new JsonArray(plan.Steps.Select(SummarizeStep).ToArray())
+        ["steps"] = new JsonArray(plan.Steps.Select(step => SummarizeStep(step, profile)).ToArray())
     };
 
-    public static JsonObject SummarizeStep(PlanStep step) => new()
+    public static JsonObject SummarizeStep(PlanStep step, PlanModelProfile profile = PlanModelProfile.Runtime)
     {
-        ["id"] = step.Id,
-        ["kind"] = PlanStepKinds.GetKind(step),
-        ["name"] = PlanStepKinds.GetName(step),
-        ["inputKeys"] = new JsonArray(step.In.Keys.OrderBy(static key => key, StringComparer.Ordinal).Select(static key => JsonValue.Create(key)).ToArray()),
-        ["output"] = step.Out is null
-            ? null
-            : new JsonObject
-            {
-                ["format"] = step.Out.Format,
-                ["aggregate"] = step.Out.Aggregate
-            },
-        ["status"] = step.Status
-    };
+        var summary = new JsonObject
+        {
+            ["id"] = step.Id,
+            ["kind"] = PlanStepKinds.GetKind(step),
+            ["name"] = PlanStepKinds.GetName(step),
+            ["inputKeys"] = new JsonArray(step.In.Keys.OrderBy(static key => key, StringComparer.Ordinal).Select(static key => JsonValue.Create(key)).ToArray()),
+            ["output"] = step.Out is null
+                ? null
+                : new JsonObject
+                {
+                    ["format"] = step.Out.Format,
+                    ["aggregate"] = step.Out.Aggregate
+                }
+        };
+
+        if (profile == PlanModelProfile.Runtime)
+            summary["status"] = step.Status;
+
+        return summary;
+    }
 
     public static JsonNode? SummarizeForLog(
         JsonNode? value,

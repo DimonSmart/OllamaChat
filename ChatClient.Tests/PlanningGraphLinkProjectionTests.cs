@@ -65,14 +65,16 @@ public class PlanningGraphLinkProjectionTests
                 new PlanStep
                 {
                     Id = "step1",
-                    Tool = "search",
+                    Kind = PlanStepKinds.Tool,
+                    Name = "search",
                     In = new Dictionary<string, JsonNode?>(),
                     Status = PlanStepStatuses.Done
                 },
                 new PlanStep
                 {
                     Id = "step2",
-                    Llm = "summarize",
+                    Kind = PlanStepKinds.Llm,
+                    Name = "summarize",
                     In = new Dictionary<string, JsonNode?>
                     {
                         ["searchResults"] = new JsonObject
@@ -86,3 +88,7 @@ public class PlanningGraphLinkProjectionTests
             ]
         };
 }
+
+
+
+

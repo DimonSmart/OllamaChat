@@ -53,10 +53,15 @@ public class PlanningVirtualNodeProjectionTests
                 new PlanStep
                 {
                     Id = "step1",
-                    Tool = "search",
+                    Kind = PlanStepKinds.Tool,
+                    Name = "search",
                     In = new Dictionary<string, System.Text.Json.Nodes.JsonNode?>(),
                     Status = PlanStepStatuses.Done
                 }
             ]
         };
 }
+
+
+
+
