@@ -48,12 +48,9 @@ var builder = runFromSelfContainedLayout
 builder.Host.UseSerilog();
 builder.Services.Configure<ChatEngineOptions>(builder.Configuration.GetSection(ChatEngineOptions.SectionName));
 
-if (builder.Environment.IsDevelopment())
-{
-    builder.Configuration.AddUserSecrets<Program>(optional: true);
-}
+builder.Configuration.AddUserSecrets<Program>(optional: true);
 
-builder.Services.AddApplicationServices(builder.Environment);
+builder.Services.AddApplicationServices(builder.Configuration, builder.Environment);
 
 var app = builder.Build();
 await app.InitializeApplicationAsync();

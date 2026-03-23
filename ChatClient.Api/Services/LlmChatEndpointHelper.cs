@@ -14,12 +14,8 @@ public static class LlmChatEndpointHelper
 
     public static string BuildOpenAiChatEndpoint(LlmServerConfig server)
     {
-        if (string.IsNullOrWhiteSpace(server.BaseUrl))
-        {
-            return "https://api.openai.com/v1/chat/completions";
-        }
-
-        var baseUrl = server.BaseUrl.TrimEnd('/');
+        var baseUrl = LlmServerConfigHelper.GetNormalizedOpenAiBaseUrl(server, LlmServerConfig.DefaultOpenAiUrl);
+        baseUrl = baseUrl.TrimEnd('/');
         return baseUrl.EndsWith("/v1", StringComparison.OrdinalIgnoreCase)
             ? $"{baseUrl}/chat/completions"
             : $"{baseUrl}/v1/chat/completions";

@@ -106,13 +106,11 @@ public class ServerConnectionTestService(ILogger<ServerConnectionTestService> lo
 
     private static string BuildOpenAIApiUrl(LlmServerConfig server)
     {
-        if (!string.IsNullOrWhiteSpace(server.BaseUrl))
-        {
-            var baseUrl = server.BaseUrl.TrimEnd('/');
-            return baseUrl.EndsWith("/v1") ? $"{baseUrl}/models" : $"{baseUrl}/v1/models";
-        }
+        var baseUrl = LlmServerConfigHelper.GetNormalizedOpenAiBaseUrl(server, LlmServerConfig.DefaultOpenAiUrl);
 
-        return "https://api.openai.com/v1/models";
+        return baseUrl.EndsWith("/v1", StringComparison.OrdinalIgnoreCase)
+            ? $"{baseUrl}/models"
+            : $"{baseUrl}/v1/models";
     }
 
     private async Task<ServerConnectionTestResult> ProcessOpenAIResponse(HttpResponseMessage response, string fullUrl, CancellationToken cancellationToken)

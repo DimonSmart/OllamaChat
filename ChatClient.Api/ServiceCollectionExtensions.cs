@@ -9,6 +9,7 @@ using ChatClient.Application.Repositories;
 using ChatClient.Application.Services;
 using ChatClient.Infrastructure.Repositories;
 using Microsoft.AspNetCore.Components.Server.Circuits;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using MudBlazor.Services;
@@ -20,6 +21,7 @@ public static class ServiceCollectionExtensions
 {
     public static IServiceCollection AddApplicationServices(
         this IServiceCollection services,
+        IConfiguration configuration,
         IHostEnvironment environment)
     {
         services.AddCoreServices();
@@ -27,7 +29,7 @@ public static class ServiceCollectionExtensions
         services.AddRagServices();
         services.AddAgenticServices();
         services.AddSeeders();
-        services.AddUiServices(environment);
+        services.AddUiServices(configuration, environment);
         services.AddHttpClients();
 
         return services;
@@ -110,11 +112,33 @@ public static class ServiceCollectionExtensions
         return services;
     }
 
-    private static IServiceCollection AddUiServices(this IServiceCollection services, IHostEnvironment environment)
+    private static IServiceCollection AddUiServices(
+        this IServiceCollection services,
+        IConfiguration configuration,
+        IHostEnvironment environment)
     {
+        var signalRTimeouts = BlazorSignalRTimeoutOptions.FromConfiguration(configuration);
+
+        services.AddOptions<BlazorSignalRTimeoutOptions>()
+            .BindConfiguration(BlazorSignalRTimeoutOptions.SectionName)
+            .PostConfigure(static options =>
+            {
+                var normalized = options.Normalize();
+                options.ServerTimeoutSeconds = normalized.ServerTimeoutSeconds;
+                options.ClientTimeoutSeconds = normalized.ClientTimeoutSeconds;
+                options.HandshakeTimeoutSeconds = normalized.HandshakeTimeoutSeconds;
+                options.KeepAliveIntervalSeconds = normalized.KeepAliveIntervalSeconds;
+            });
+
         services.AddRazorPages();
         services.AddServerSideBlazor()
-            .AddCircuitOptions(options => options.DetailedErrors = environment.IsDevelopment());
+            .AddCircuitOptions(options => options.DetailedErrors = environment.IsDevelopment())
+            .AddHubOptions(options =>
+            {
+                options.ClientTimeoutInterval = signalRTimeouts.ClientTimeout;
+                options.HandshakeTimeout = signalRTimeouts.HandshakeTimeout;
+                options.KeepAliveInterval = signalRTimeouts.KeepAliveInterval;
+            });
 
         services.AddMudServices();
 

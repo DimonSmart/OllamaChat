@@ -41,11 +41,18 @@ public sealed class PlanningChatClientFactory(
 
     private Uri BuildEndpoint(LlmServerConfig server)
     {
-        var baseUrl = string.IsNullOrWhiteSpace(server.BaseUrl)
-            ? LlmServerConfig.DefaultOllamaUrl
-            : server.BaseUrl.Trim();
-        if (server.ServerType == ServerType.Ollama && !baseUrl.EndsWith("/v1", StringComparison.OrdinalIgnoreCase) && !baseUrl.EndsWith("/v1/", StringComparison.OrdinalIgnoreCase))
+        var baseUrl = server.ServerType == ServerType.ChatGpt
+            ? LlmServerConfigHelper.GetNormalizedOpenAiBaseUrl(server, LlmServerConfig.DefaultOpenAiUrl)
+            : string.IsNullOrWhiteSpace(server.BaseUrl)
+                ? LlmServerConfig.DefaultOllamaUrl
+                : server.BaseUrl.Trim();
+
+        if (server.ServerType == ServerType.Ollama &&
+            !baseUrl.EndsWith("/v1", StringComparison.OrdinalIgnoreCase) &&
+            !baseUrl.EndsWith("/v1/", StringComparison.OrdinalIgnoreCase))
+        {
             baseUrl = $"{baseUrl.TrimEnd('/')}/v1";
+        }
 
         return new Uri(baseUrl.EndsWith("/", StringComparison.Ordinal) ? baseUrl : $"{baseUrl}/");
     }

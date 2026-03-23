@@ -1,6 +1,7 @@
 using ChatClient.Application.Services;
 using ChatClient.Domain.Models;
 using OpenAI;
+using System.ClientModel.Primitives;
 using System.Net.Http.Headers;
 using System.Text;
 
@@ -58,7 +59,39 @@ public static class LlmServerConfigHelper
         if (!string.IsNullOrWhiteSpace(server.ApiKey))
             return server.ApiKey;
 
-        return configuration["OpenAI:ApiKey"] ?? string.Empty;
+        foreach (var key in GetOpenAiApiKeyConfigKeys(server))
+        {
+            var configuredValue = configuration[key];
+            if (!string.IsNullOrWhiteSpace(configuredValue))
+                return configuredValue;
+        }
+
+        return string.Empty;
+    }
+
+    public static string GetNormalizedOpenAiBaseUrl(LlmServerConfig server, string? defaultBaseUrl = null)
+    {
+        var baseUrl = string.IsNullOrWhiteSpace(server.BaseUrl)
+            ? defaultBaseUrl ?? LlmServerConfig.DefaultOpenAiUrl
+            : server.BaseUrl.Trim();
+
+        if (server.ServerType != ServerType.ChatGpt ||
+            !Uri.TryCreate(baseUrl, UriKind.Absolute, out var uri) ||
+            !uri.Host.EndsWith(".openai.azure.com", StringComparison.OrdinalIgnoreCase))
+        {
+            return baseUrl.TrimEnd('/');
+        }
+
+        var authority = uri.GetLeftPart(UriPartial.Authority);
+        var path = uri.AbsolutePath.TrimEnd('/');
+
+        if (string.IsNullOrEmpty(path) || path == "/")
+            return $"{authority}/openai/v1";
+
+        if (string.Equals(path, "/openai", StringComparison.OrdinalIgnoreCase))
+            return $"{authority}/openai/v1";
+
+        return $"{authority}{path}";
     }
 
     public static HttpClient CreateHttpClient(
@@ -94,7 +127,25 @@ public static class LlmServerConfigHelper
         if (endpoint is not null)
             options.Endpoint = endpoint;
 
+        options.Transport = new HttpClientPipelineTransport(CreateOpenAITransportHttpClient(server, endpoint));
         return options;
+    }
+
+    public static HttpClient CreateOpenAITransportHttpClient(LlmServerConfig server, Uri? endpoint = null)
+    {
+        var handler = new HttpClientHandler();
+        if (server.IgnoreSslErrors)
+            handler.ServerCertificateCustomValidationCallback = (_, _, _, _) => true;
+
+        var client = new HttpClient(handler)
+        {
+            Timeout = GetRequestTimeout(server)
+        };
+
+        if (endpoint is not null)
+            client.BaseAddress = endpoint;
+
+        return client;
     }
 
     public static TimeSpan GetRequestTimeout(LlmServerConfig server)
@@ -127,5 +178,17 @@ public static class LlmServerConfigHelper
         return defaultLlmId.HasValue
             ? servers.FirstOrDefault(s => s.Id == defaultLlmId.Value)
             : null;
+    }
+
+    private static IEnumerable<string> GetOpenAiApiKeyConfigKeys(LlmServerConfig server)
+    {
+        var secretName = server.ApiKeySecretName?.Trim();
+        if (!string.IsNullOrWhiteSpace(secretName))
+            yield return $"LlmServers:ApiKeys:{secretName}";
+
+        if (server.Id is { } serverId && serverId != Guid.Empty)
+            yield return $"LlmServers:ApiKeys:{serverId}";
+
+        yield return "OpenAI:ApiKey";
     }
 }

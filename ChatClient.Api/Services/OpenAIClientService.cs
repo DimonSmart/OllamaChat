@@ -80,7 +80,7 @@ public class OpenAIClientService(
         var credential = new ApiKeyCredential(apiKey);
         var endpoint = string.IsNullOrWhiteSpace(server.BaseUrl)
             ? null
-            : new Uri(server.BaseUrl);
+            : new Uri(LlmServerConfigHelper.GetNormalizedOpenAiBaseUrl(server, LlmServerConfig.DefaultOpenAiUrl));
         var options = LlmServerConfigHelper.CreateOpenAIClientOptions(server, endpoint);
         return new OpenAIClient(credential, options);
     }

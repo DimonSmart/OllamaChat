@@ -1,3 +1,9 @@
+@using ChatClient.Api
+@using Microsoft.Extensions.Options
+@inject IOptions<BlazorSignalRTimeoutOptions> BlazorSignalRTimeoutOptionsAccessor
+@{
+    var signalRTimeouts = BlazorSignalRTimeoutOptionsAccessor.Value.Normalize();
+}
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -31,7 +37,16 @@
         <span class="dismiss">🗙</span>
     </div>
 
-    <script src="_framework/blazor.server.js"></script>
+    <script src="_framework/blazor.server.js" autostart="false"></script>
+    <script>
+        Blazor.start({
+            configureSignalR: function (builder) {
+                builder
+                    .withServerTimeout(@signalRTimeouts.ServerTimeoutMilliseconds)
+                    .withKeepAliveInterval(@signalRTimeouts.KeepAliveIntervalMilliseconds);
+            }
+        });
+    </script>
     <script src="_content/MudBlazor/MudBlazor.min.js"></script>
     <script src="_content/Z.Blazor.Diagrams/script.min.js"></script>
     <script src="js/planning-graph.js" asp-append-version="true"></script>

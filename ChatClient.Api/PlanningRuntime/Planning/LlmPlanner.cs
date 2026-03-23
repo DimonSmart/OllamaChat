@@ -1,4 +1,5 @@
 ﻿using System.Text;
+using System.Diagnostics;
 using System.Text.Json;
 using Microsoft.Agents.AI;
 using Microsoft.Extensions.AI;
@@ -24,6 +25,7 @@ public sealed class LlmPlanner(
     PlanningCallableAgentCatalog? agentCatalog = null) : IPlanner
 {
     private const int MaxDraftGenerations = 2;
+    private const string PlannerStepId = "__planning__";
     private readonly IExecutionLogger _log = executionLogger ?? NullExecutionLogger.Instance;
     private readonly IPlanRunObserver _observer = planRunObserver ?? NullPlanRunObserver.Instance;
     private readonly IInitialDraftRepairer? _initialDraftRepairer = initialDraftRepairer;
@@ -55,9 +57,58 @@ public sealed class LlmPlanner(
         {
             try
             {
-                var response = await agent.RunAsync<ResultEnvelope<PlanDefinition>>(planningPrompt, null, JsonOptions, null, cancellationToken);
-                var envelope = response.Result
-                    ?? throw new InvalidOperationException("Planner returned an empty response envelope.");
+                _observer.OnEvent(new DiagnosticPlanRunEvent(
+                    "planner",
+                    $"Attempt {attempt}: requesting draft (systemChars={systemPrompt.Length}, userChars={planningPrompt.Length}, tools={tools.Count})."));
+                _observer.OnEvent(new AgentPromptPreparedEvent(
+                    PlannerStepId,
+                    "planner",
+                    systemPrompt,
+                    planningPrompt,
+                    planningPrompt,
+                    CreateEmptyObject()));
+
+                var stopwatch = Stopwatch.StartNew();
+                var response = await agent.RunAsync(planningPrompt, null, null, cancellationToken);
+                var rawResponseText = response.Text?.Trim() ?? string.Empty;
+                stopwatch.Stop();
+
+                _observer.OnEvent(new DiagnosticPlanRunEvent(
+                    "planner",
+                    $"Attempt {attempt}: response received after {stopwatch.Elapsed:mm\\:ss} ({rawResponseText.Length} chars)."));
+
+                ResultEnvelope<PlanDefinition> envelope;
+                try
+                {
+                    envelope = JsonSerializer.Deserialize<ResultEnvelope<PlanDefinition>>(rawResponseText, JsonOptions)
+                        ?? throw new InvalidOperationException("Planner returned an empty response envelope.");
+                }
+                catch (Exception ex)
+                {
+                    _observer.OnEvent(new AgentResponseReceivedEvent(
+                        PlannerStepId,
+                        "planner",
+                        rawResponseText,
+                        false,
+                        null,
+                        new ErrorInfo("planner_invalid_contract", ex.Message)));
+                    throw new InvalidOperationException($"Planner returned invalid JSON envelope. {ex.Message}", ex);
+                }
+
+                _observer.OnEvent(new AgentResponseReceivedEvent(
+                    PlannerStepId,
+                    "planner",
+                    rawResponseText,
+                    envelope.Ok,
+                    envelope.Data is null
+                        ? null
+                        : JsonSerializer.SerializeToElement(envelope.Data, JsonOptions),
+                    envelope.Error is null
+                        ? null
+                        : new ErrorInfo(
+                            envelope.Error.Code,
+                            envelope.Error.Message,
+                            envelope.Error.Details?.Clone())));
                 var plan = envelope.GetRequiredDataOrThrow("Planner");
                 previousDraftJson = PlanningJson.SerializeIndented(plan);
                 if (!PlanValidator.TryValidate(plan, tools, _agentCatalog.ListAgents(), out var validationIssue))
@@ -86,6 +137,10 @@ public sealed class LlmPlanner(
                             _log.Log($"[plan] create:summary {PlanningJson.SerializeNodeCompact(PlanningLogFormatter.SummarizePlan(repaired))}");
                             _observer.OnEvent(new PlanCreatedEvent(attempt, "plan", ClonePlan(repaired)));
                             return repaired;
+                        }
+                        catch (OperationCanceledException)
+                        {
+                            throw;
                         }
                         catch (Exception repairEx) when (attempt < MaxDraftGenerations)
                         {
@@ -119,6 +174,10 @@ public sealed class LlmPlanner(
                 _log.Log($"[plan] create:summary {PlanningJson.SerializeNodeCompact(PlanningLogFormatter.SummarizePlan(plan))}");
                 _observer.OnEvent(new PlanCreatedEvent(attempt, "plan", ClonePlan(plan)));
                 return plan;
+            }
+            catch (OperationCanceledException)
+            {
+                throw;
             }
             catch (Exception ex) when (attempt < MaxDraftGenerations)
             {
@@ -369,6 +428,12 @@ public sealed class LlmPlanner(
         - mapped arrays flattened into one array: {"format":"json","aggregate":"flatten","schema":{"type":"array","items":{"type":"object","required":["name"],"properties":{"name":{"type":"string"}}}}}
         - final plain text: {"format":"string","aggregate":"single","schema":{"type":"string"}}
         """;
+
+    private static JsonElement CreateEmptyObject()
+    {
+        using var document = JsonDocument.Parse("{}");
+        return document.RootElement.Clone();
+    }
 
     private static string Shorten(string? value, int maxLength)
     {

@@ -23,9 +23,14 @@
                   Label="API Key"
                   Variant="Variant.Outlined"
                   Class="mt-4"
-                  Required="true"
                   InputType="InputType.Password"
-                  HelperText="OpenAI API key (required)" />
+                  HelperText="Optional inline key. Leave empty to use the local secret store." />
+
+    <MudTextField @bind-Value="Server.ApiKeySecretName"
+                  Label="API Key Secret Name"
+                  Variant="Variant.Outlined"
+                  Class="mt-4"
+                  HelperText="Optional secret alias. The app resolves LlmServers:ApiKeys:<name> from dotnet user-secrets." />
 }
 
 @if (Server.ServerType == ServerType.Ollama)
@@ -59,7 +64,7 @@
         return Server.ServerType switch
         {
             ServerType.Ollama => "Ollama server URL (e.g., http://localhost:11434)",
-            ServerType.ChatGpt => "Optional custom OpenAI API base URL (leave empty for default)",
+            ServerType.ChatGpt => "OpenAI-compatible base URL. For Azure you can use the resource root URL and the app will map it to /openai/v1/.",
             _ => ""
         };
     }

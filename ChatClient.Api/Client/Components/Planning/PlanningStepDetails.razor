@@ -114,6 +114,27 @@ else if (SelectedVirtualNode is not null)
                     </MudPaper>
                 }
 
+                @foreach (var promptEvent in PlanningPromptEvents)
+                {
+                    <MudText Typo="Typo.subtitle2">Planner System Prompt</MudText>
+                    <PlanningValueDisplay Text="@promptEvent.SystemPrompt" AutoDetectMarkdown="false" />
+
+                    <MudText Typo="Typo.subtitle2">Planner User Prompt</MudText>
+                    <PlanningValueDisplay Text="@promptEvent.FullUserPrompt" AutoDetectMarkdown="false" />
+                }
+
+                @foreach (var responseEvent in PlanningResponseEvents)
+                {
+                    <MudText Typo="Typo.subtitle2">Raw Planner Response</MudText>
+                    <PlanningValueDisplay Text="@responseEvent.RawResponseText" AutoDetectMarkdown="false" />
+
+                    @if (responseEvent.Error is not null)
+                    {
+                        <MudText Typo="Typo.subtitle2">Planner Response Error</MudText>
+                        <PlanningValueDisplay Text="@SerializeJson(responseEvent.Error)" AutoDetectMarkdown="false" />
+                    }
+                }
+
                 @if (SelectedVirtualNode.PlannedDraft is not null)
                 {
                     <MudText Typo="Typo.subtitle2">Raw Plan</MudText>
@@ -365,10 +386,24 @@ else
             .Where(evt => string.Equals(evt.StepId, EffectiveStepId, StringComparison.Ordinal))
             .ToList();
 
+    private IReadOnlyList<AgentPromptPreparedEvent> PlanningPromptEvents =>
+        SelectedVirtualNode?.Kind == PlanningVirtualNodeKind.Planning
+            ? Events.OfType<AgentPromptPreparedEvent>()
+                .Where(evt => string.Equals(evt.StepId, PlanningVirtualNodeDescriptor.PlanningNodeId, StringComparison.Ordinal))
+                .ToList()
+            : [];
+
     private IReadOnlyList<AgentResponseReceivedEvent> ResponseEvents =>
         Events.OfType<AgentResponseReceivedEvent>()
             .Where(evt => string.Equals(evt.StepId, EffectiveStepId, StringComparison.Ordinal))
             .ToList();
+
+    private IReadOnlyList<AgentResponseReceivedEvent> PlanningResponseEvents =>
+        SelectedVirtualNode?.Kind == PlanningVirtualNodeKind.Planning
+            ? Events.OfType<AgentResponseReceivedEvent>()
+                .Where(evt => string.Equals(evt.StepId, PlanningVirtualNodeDescriptor.PlanningNodeId, StringComparison.Ordinal))
+                .ToList()
+            : [];
 
     private IReadOnlyList<StepCallCompletedEvent> CallEvents =>
         Events.OfType<StepCallCompletedEvent>()

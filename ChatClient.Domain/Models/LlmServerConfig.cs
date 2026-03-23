@@ -9,6 +9,7 @@ public enum ServerType
 public class LlmServerConfig
 {
     public const string DefaultOllamaUrl = "http://localhost:11434";
+    public const string DefaultOpenAiUrl = "https://api.openai.com/v1";
     public const string DefaultEmbeddingModel = "nomic-embed-text";
 
     public Guid? Id { get; set; }
@@ -16,6 +17,7 @@ public class LlmServerConfig
     public ServerType ServerType { get; set; }
     public string BaseUrl { get; set; } = string.Empty;
     public string? ApiKey { get; set; }
+    public string? ApiKeySecretName { get; set; }
     public string? Password { get; set; }
     public bool IgnoreSslErrors { get; set; } = false;
     public int HttpTimeoutSeconds { get; set; } = 600;
