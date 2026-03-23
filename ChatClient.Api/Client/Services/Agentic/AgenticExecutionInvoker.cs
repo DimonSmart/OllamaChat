@@ -6,7 +6,7 @@ namespace ChatClient.Api.Client.Services.Agentic;
 public sealed class AgenticExecutionInvoker(IAgenticExecutionRuntime runtime) : IAgenticExecutionInvoker
 {
     public async Task<AgenticExecutionInvocationResult> InvokeAsync(
-        AgenticExecutionRuntimeRequest request,
+        AgentRunRequest request,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(request);

@@ -1,5 +1,6 @@
 using System.Text.Json;
 using ChatClient.Api.Client.Services.Agentic;
+using ChatClient.Application.Services.Agentic;
 using ChatClient.Api.PlanningRuntime.Common;
 using ChatClient.Api.PlanningRuntime.Execution;
 using ChatClient.Api.PlanningRuntime.Planning;
@@ -151,16 +152,13 @@ public sealed class AgentStepRunner(IChatClient chatClient) : IAgentStepRunner
 
         try
         {
-            var response = await _agenticInvoker.InvokeAsync(new AgenticExecutionRuntimeRequest
-            {
-                Agent = callableAgent.Agent.Agent,
-                ResolvedModel = callableAgent.Agent.Model,
-                Configuration = new ChatClient.Domain.Models.AppChatConfiguration(
-                    callableAgent.Agent.Model.ModelName,
-                    []),
-                Conversation = [],
-                UserMessage = fullUserPrompt
-            }, cancellationToken);
+            var response = await _agenticInvoker.InvokeAsync(
+                callableAgent.Agent.Agent
+                    .ForRun()
+                    .UsingModel(callableAgent.Agent.Model)
+                    .WithUserMessage(fullUserPrompt)
+                    .Build(),
+                cancellationToken);
 
             if (response.IsError)
             {

@@ -40,7 +40,7 @@ public sealed class HttpAgenticExecutionRuntime(
         NormalizeToolPolicy(chatEngineOptions.Value.ToolPolicy);
 
     public async IAsyncEnumerable<ChatEngineStreamChunk> StreamAsync(
-        AgenticExecutionRuntimeRequest request,
+        AgentRunRequest request,
         [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(request);
@@ -191,7 +191,7 @@ public sealed class HttpAgenticExecutionRuntime(
     private AIAgent CreateRuntimeAgent(
         IChatClient chatClient,
         LlmServerConfig server,
-        AgenticExecutionRuntimeRequest request,
+        AgentRunRequest request,
         AgenticToolSet toolSet,
         List<FunctionCallRecord> functionCalls)
     {
@@ -365,7 +365,7 @@ public sealed class HttpAgenticExecutionRuntime(
     }
 
     private static ChatClientAgentRunOptions BuildRunOptions(
-        AgenticExecutionRuntimeRequest request,
+        AgentRunRequest request,
         LlmServerConfig server,
         AgenticToolSet toolSet)
     {
@@ -393,7 +393,7 @@ public sealed class HttpAgenticExecutionRuntime(
     }
 
     private static string? BuildInstructions(
-        AgentDescription agent,
+        AgentDefinition agent,
         AgentHistoryCompactionAttachment? historyCompaction)
     {
         var content = agent.Content?.Trim();
@@ -410,7 +410,7 @@ public sealed class HttpAgenticExecutionRuntime(
         return $"{content}\n\n{historyCompaction.InstructionNote}";
     }
 
-    private static List<ChatMessage> BuildChatMessages(AgenticExecutionRuntimeRequest request)
+    private static List<ChatMessage> BuildChatMessages(AgentRunRequest request)
     {
         List<ChatMessage> result = [];
 
@@ -435,7 +435,7 @@ public sealed class HttpAgenticExecutionRuntime(
     }
 
     private async Task<IReadOnlyList<string>> ResolveRequestedFunctionNamesAsync(
-        AgenticExecutionRuntimeRequest request,
+        AgentRunRequest request,
         IReadOnlyCollection<AppToolDescriptor> availableTools,
         CancellationToken cancellationToken)
     {
@@ -491,7 +491,7 @@ public sealed class HttpAgenticExecutionRuntime(
         return requested.ToList();
     }
 
-    private static McpClientRequestContext BuildToolRequestContext(AgenticExecutionRuntimeRequest request)
+    private static McpClientRequestContext BuildToolRequestContext(AgentRunRequest request)
     {
         var mergedBindings = McpServerSessionBindingMerger.Merge(
             request.Agent.McpServerBindings,

@@ -4,24 +4,54 @@ namespace ChatClient.Application.Services.Agentic;
 
 public static class AgentDescriptionFactory
 {
+    public static AgentDefinition CreateDefinition(AgentDescription source)
+    {
+        ArgumentNullException.ThrowIfNull(source);
+        return AgentDefinitionMapper.ToDefinition(source);
+    }
+
     public static AgentDescription CreateDraft(AgentDescription source)
     {
         ArgumentNullException.ThrowIfNull(source);
-        return Clone(source, source.ModelName, source.LlmId);
+        return AgentDefinitionMapper.ToDescription(CreateDefinition(source));
+    }
+
+    public static AgentDescription CreateDraft(AgentDefinition source)
+    {
+        ArgumentNullException.ThrowIfNull(source);
+        return AgentDefinitionMapper.ToDescription(source.Clone());
     }
 
     public static AgentDescription CreateRuntime(AgentDescription source, ServerModel model)
     {
         ArgumentNullException.ThrowIfNull(source);
         ArgumentNullException.ThrowIfNull(model);
-        return Clone(source, model.ModelName, model.ServerId);
+        return CreateRuntime(CreateDefinition(source), model);
+    }
+
+    public static AgentDescription CreateRuntime(AgentDefinition source, ServerModel model)
+    {
+        ArgumentNullException.ThrowIfNull(source);
+        ArgumentNullException.ThrowIfNull(model);
+
+        var runtime = source.Clone();
+        runtime.ModelName = model.ModelName;
+        runtime.LlmId = model.ServerId;
+        return AgentDefinitionMapper.ToDescription(runtime);
     }
 
     public static ResolvedChatAgent CreateResolved(AgentDescription source, ServerModel model)
     {
         ArgumentNullException.ThrowIfNull(source);
         ArgumentNullException.ThrowIfNull(model);
-        return new ResolvedChatAgent(CreateRuntime(source, model), model);
+        return CreateResolved(CreateDefinition(source), model);
+    }
+
+    public static ResolvedChatAgent CreateResolved(AgentDefinition source, ServerModel model)
+    {
+        ArgumentNullException.ThrowIfNull(source);
+        ArgumentNullException.ThrowIfNull(model);
+        return new ResolvedChatAgent(AgentDefinitionMapper.ToDefinition(CreateRuntime(source, model)), model);
     }
 
     public static AgentDescription CreateTransient(string agentName, string? shortName = null)
@@ -31,45 +61,6 @@ public static class AgentDescriptionFactory
             throw new ArgumentException("Agent name is required.", nameof(agentName));
         }
 
-        return new AgentDescription
-        {
-            AgentName = agentName.Trim(),
-            ShortName = string.IsNullOrWhiteSpace(shortName) ? null : shortName.Trim()
-        };
-    }
-
-    private static AgentDescription Clone(AgentDescription source, string? modelName, Guid? llmId)
-    {
-        return new AgentDescription
-        {
-            Id = source.Id,
-            AgentName = source.AgentName,
-            Content = source.Content,
-            ShortName = source.ShortName,
-            ModelName = modelName,
-            LlmId = llmId,
-            Temperature = source.Temperature,
-            RepeatPenalty = source.RepeatPenalty,
-            FunctionSettings = new FunctionSettings
-            {
-                AutoSelectCount = source.FunctionSettings.AutoSelectCount
-            },
-            ExecutionSettings = new AgentExecutionSettings
-            {
-                MaxToolCalls = source.ExecutionSettings.MaxToolCalls,
-                HistoryCompaction = new AgentHistoryCompactionSettings
-                {
-                    Enabled = source.ExecutionSettings.HistoryCompaction.Enabled,
-                    Mode = source.ExecutionSettings.HistoryCompaction.Mode,
-                    KeepLastToolPairs = source.ExecutionSettings.HistoryCompaction.KeepLastToolPairs,
-                    ToolNames = source.ExecutionSettings.HistoryCompaction.ToolNames.ToList()
-                }
-            },
-            McpServerBindings = source.McpServerBindings
-                .Select(static binding => binding.Clone())
-                .ToList(),
-            CreatedAt = source.CreatedAt,
-            UpdatedAt = source.UpdatedAt
-        };
+        return AgentDefinitionBuilder.New(agentName, shortName).BuildDescription();
     }
 }

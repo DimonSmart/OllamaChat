@@ -4,7 +4,7 @@ namespace ChatClient.Application.Services.Agentic;
 
 public sealed class ChatEngineOrchestrationRequest
 {
-    public required AgentDescription Agent { get; init; }
+    public required AgentDefinition Agent { get; init; }
 
     public required ServerModel ResolvedModel { get; init; }
 

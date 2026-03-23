@@ -1,4 +1,5 @@
 #pragma warning disable MAAI001
+using ChatClient.Application.Services.Agentic;
 using ChatClient.Domain.Models;
 using Microsoft.Agents.AI;
 using Microsoft.Agents.AI.Compaction;
@@ -15,7 +16,7 @@ internal static class AgentHistoryCompactionFactory
     private const string StateKeyPrefix = "agentic:history-compaction";
 
     public static AgentHistoryCompactionAttachment? Create(
-        AgentDescription agent,
+        AgentDefinition agent,
         AgenticToolSet toolSet,
         ILoggerFactory loggerFactory,
         ILogger logger)
@@ -72,6 +73,21 @@ internal static class AgentHistoryCompactionFactory
             RegisteredToolNames: registeredToolNames);
     }
 
+    public static AgentHistoryCompactionAttachment? Create(
+        AgentDescription agent,
+        AgenticToolSet toolSet,
+        ILoggerFactory loggerFactory,
+        ILogger logger)
+    {
+        ArgumentNullException.ThrowIfNull(agent);
+
+        return Create(
+            AgentDefinitionMapper.ToDefinition(agent),
+            toolSet,
+            loggerFactory,
+            logger);
+    }
+
     internal static IReadOnlyCollection<string> ResolveRegisteredToolNames(
         IReadOnlyCollection<string> configuredToolNames,
         IReadOnlyDictionary<string, AgenticRegisteredTool> metadataByName)
@@ -118,7 +134,7 @@ internal static class AgentHistoryCompactionFactory
         return $"Some earlier chat history for tool calls ({toolList}) may be compacted during execution. Only the most recent {keepLastToolPairs} matching tool result pair(s) remain visible.";
     }
 
-    private static string BuildStateKey(AgentDescription agent)
+    private static string BuildStateKey(AgentDefinition agent)
     {
         var agentKey = agent.Id != Guid.Empty
             ? agent.Id.ToString("N")

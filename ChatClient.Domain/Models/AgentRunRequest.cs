@@ -1,11 +1,10 @@
-using ChatClient.Domain.Models;
 using Microsoft.Extensions.AI;
 
-namespace ChatClient.Api.Client.Services.Agentic;
+namespace ChatClient.Domain.Models;
 
-public sealed class AgenticExecutionRuntimeRequest
+public sealed class AgentRunRequest
 {
-    public required AgentDescription Agent { get; init; }
+    public required AgentDefinition Agent { get; init; }
 
     public required ServerModel ResolvedModel { get; init; }
 

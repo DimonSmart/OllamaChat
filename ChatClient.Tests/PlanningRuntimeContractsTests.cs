@@ -246,7 +246,7 @@ public class PlanningRuntimeContractsTests
         var callableAgent = CreateCallableAgentDescriptor("character-reader", "Character Reader");
         var invoker = new Mock<IAgenticExecutionInvoker>();
         invoker
-            .Setup(service => service.InvokeAsync(It.IsAny<AgenticExecutionRuntimeRequest>(), It.IsAny<CancellationToken>()))
+            .Setup(service => service.InvokeAsync(It.IsAny<AgentRunRequest>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(new AgenticExecutionInvocationResult(
                 FinalText: """
                     {"ok":true,"data":{"status":"ok","characterCount":3},"error":null}
@@ -299,7 +299,7 @@ public class PlanningRuntimeContractsTests
         Assert.Equal("ok", result.Data.Value.GetProperty("status").GetString());
         Assert.Equal(3, result.Data.Value.GetProperty("characterCount").GetInt32());
         invoker.Verify(service => service.InvokeAsync(
-            It.Is<AgenticExecutionRuntimeRequest>(request =>
+            It.Is<AgentRunRequest>(request =>
                 string.Equals(request.Agent.AgentName, "Character Reader", StringComparison.Ordinal)
                 && request.UserMessage.Contains("book-cursor", StringComparison.Ordinal)
                 && request.UserMessage.Contains("Read the cursor", StringComparison.Ordinal)),

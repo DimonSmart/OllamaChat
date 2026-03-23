@@ -26,14 +26,13 @@ public sealed class AgenticChatEngineOrchestrator(
         {
             ragContext = await TryInjectRagContextAsync(request, conversation, cancellationToken);
         }
-        var runtimeRequest = new AgenticExecutionRuntimeRequest
-        {
-            Agent = request.Agent,
-            ResolvedModel = request.ResolvedModel,
-            Configuration = request.Configuration,
-            Conversation = conversation,
-            UserMessage = request.UserMessage
-        };
+        var runtimeRequest = request.Agent
+            .ForRun()
+            .UsingModel(request.ResolvedModel)
+            .WithConfiguration(request.Configuration)
+            .WithConversation(conversation)
+            .WithUserMessage(request.UserMessage)
+            .Build();
 
         await foreach (var chunk in runtime.StreamAsync(runtimeRequest, cancellationToken))
         {
