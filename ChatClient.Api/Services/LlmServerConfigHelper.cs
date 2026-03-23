@@ -1,5 +1,6 @@
 using ChatClient.Application.Services;
 using ChatClient.Domain.Models;
+using OpenAI;
 using System.Net.Http.Headers;
 using System.Text;
 
@@ -75,12 +76,34 @@ public static class LlmServerConfigHelper
 
         var client = new HttpClient(handler)
         {
-            Timeout = TimeSpan.FromSeconds(server.HttpTimeoutSeconds),
+            Timeout = GetRequestTimeout(server),
             BaseAddress = new Uri(baseUrl)
         };
 
         client.DefaultRequestHeaders.Authorization = authorization ?? CreateBasicAuthentication(server.Password);
         return client;
+    }
+
+    public static OpenAIClientOptions CreateOpenAIClientOptions(LlmServerConfig server, Uri? endpoint = null)
+    {
+        var options = new OpenAIClientOptions
+        {
+            NetworkTimeout = GetRequestTimeout(server)
+        };
+
+        if (endpoint is not null)
+            options.Endpoint = endpoint;
+
+        return options;
+    }
+
+    public static TimeSpan GetRequestTimeout(LlmServerConfig server)
+    {
+        var timeoutSeconds = server.HttpTimeoutSeconds > 0
+            ? server.HttpTimeoutSeconds
+            : 600;
+
+        return TimeSpan.FromSeconds(timeoutSeconds);
     }
 
     public static AuthenticationHeaderValue? CreateBasicAuthentication(string? password)

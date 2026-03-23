@@ -77,19 +77,12 @@ public class OpenAIClientService(
     private OpenAIClient CreateOpenAIClient(LlmServerConfig server)
     {
         var apiKey = GetEffectiveApiKey(server);
-
         var credential = new ApiKeyCredential(apiKey);
-
-        if (!string.IsNullOrWhiteSpace(server.BaseUrl))
-        {
-            var options = new OpenAIClientOptions
-            {
-                Endpoint = new Uri(server.BaseUrl)
-            };
-            return new OpenAIClient(credential, options);
-        }
-
-        return new OpenAIClient(credential);
+        var endpoint = string.IsNullOrWhiteSpace(server.BaseUrl)
+            ? null
+            : new Uri(server.BaseUrl);
+        var options = LlmServerConfigHelper.CreateOpenAIClientOptions(server, endpoint);
+        return new OpenAIClient(credential, options);
     }
 
     private string GetEffectiveApiKey(LlmServerConfig server)

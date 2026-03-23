@@ -30,20 +30,11 @@ public sealed class PlanningChatClientFactory(
 
         var apiKey = ResolveApiKey(server);
         var credential = new ApiKeyCredential(apiKey);
-
-        OpenAIClient client;
-        if (server.ServerType == ServerType.Ollama || !string.IsNullOrWhiteSpace(server.BaseUrl))
-        {
-            var endpoint = BuildEndpoint(server);
-            client = new OpenAIClient(credential, new OpenAIClientOptions
-            {
-                Endpoint = endpoint
-            });
-        }
-        else
-        {
-            client = new OpenAIClient(credential);
-        }
+        var endpoint = server.ServerType == ServerType.Ollama || !string.IsNullOrWhiteSpace(server.BaseUrl)
+            ? BuildEndpoint(server)
+            : null;
+        var options = LlmServerConfigHelper.CreateOpenAIClientOptions(server, endpoint);
+        var client = new OpenAIClient(credential, options);
 
         return client.GetChatClient(model.ModelName).AsIChatClient();
     }
