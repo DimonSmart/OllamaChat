@@ -1,5 +1,7 @@
 using System.Text;
+using ChatClient.Api.Client.Markdown;
 using ChatClient.Api.Client.ViewModels;
+using ChatClient.Domain.Models;
 using Microsoft.Extensions.AI;
 
 namespace ChatClient.Api.Client.Services;
@@ -119,14 +121,54 @@ public static class ChatTranscriptFormatter
                 builder.Append("<div class=\"think\"><em>").Append(thought).AppendLine("</em></div>");
             }
 
-            foreach (var call in message.HtmlFunctionCalls.Where(static segment => !string.IsNullOrWhiteSpace(segment)))
+            foreach (var call in message.FunctionCalls)
             {
-                builder.Append("<div class=\"function-call\">").Append(call).AppendLine("</div>");
+                builder
+                    .Append("<div class=\"function-call\">")
+                    .Append(FormatFunctionCallHtml(call))
+                    .AppendLine("</div>");
             }
         }
 
         builder.AppendLine("</div>");
         return builder.ToString();
+    }
+
+    private static string FormatFunctionCallHtml(FunctionCallRecord call)
+    {
+        var builder = new StringBuilder();
+
+        if (!string.IsNullOrEmpty(call.Server) || !string.IsNullOrEmpty(call.Function))
+        {
+            builder.Append("**");
+            if (!string.IsNullOrEmpty(call.Server))
+            {
+                builder.Append(call.Server);
+            }
+
+            if (!string.IsNullOrEmpty(call.Function))
+            {
+                if (!string.IsNullOrEmpty(call.Server))
+                {
+                    builder.Append('.');
+                }
+
+                builder.Append(call.Function);
+            }
+
+            builder.AppendLine("**  ");
+        }
+
+        builder.AppendLine("**Request:**");
+        builder.AppendLine("```");
+        builder.AppendLine(call.Request);
+        builder.AppendLine("```");
+        builder.AppendLine("**Response:**");
+        builder.AppendLine("```");
+        builder.AppendLine(call.Response);
+        builder.AppendLine("```");
+
+        return AppMarkdown.ToHtml(builder.ToString());
     }
 
     private static string ResolveSpeakerName(AppChatMessageViewModel message)
