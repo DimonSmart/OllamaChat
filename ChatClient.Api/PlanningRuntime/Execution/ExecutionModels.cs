@@ -3,11 +3,19 @@ using ChatClient.Api.PlanningRuntime.Common;
 
 namespace ChatClient.Api.PlanningRuntime.Execution;
 
+public enum StepTraceOutcome
+{
+    Done,
+    Partial,
+    Failed,
+    Skipped
+}
+
 public sealed record StepExecutionTrace
 {
     public string StepId { get; init; } = string.Empty;
 
-    public bool Success { get; init; }
+    public StepTraceOutcome Outcome { get; init; }
 
     public bool Reused { get; init; }
 
@@ -33,7 +41,7 @@ public sealed class ExecutionResult
 {
     public List<StepExecutionTrace> StepTraces { get; init; } = new();
 
-    public bool HasErrors => StepTraces.Any(x => !x.Success);
+    public bool HasErrors => StepTraces.Any(x => x.Outcome == StepTraceOutcome.Failed);
 
     public bool HasVerificationIssues => StepTraces.Any(x => x.VerificationIssues.Count > 0);
 

@@ -399,6 +399,7 @@ public static partial class PlanValidator
     private static bool IsValidStatus(string? status) =>
         string.Equals(status, PlanStepStatuses.Todo, StringComparison.Ordinal)
         || string.Equals(status, PlanStepStatuses.Done, StringComparison.Ordinal)
+        || string.Equals(status, PlanStepStatuses.Partial, StringComparison.Ordinal)
         || string.Equals(status, PlanStepStatuses.Fail, StringComparison.Ordinal)
         || string.Equals(status, PlanStepStatuses.Skip, StringComparison.Ordinal);
 

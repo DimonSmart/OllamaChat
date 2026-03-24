@@ -255,7 +255,9 @@ public sealed class LlmReplanner(
             return CreateToolFailure("tool_error", "Action input 'stepId' is required.", "runtime.readFailedTrace");
 
         var failedTrace = request.ExecutionResult.StepTraces
-            .FirstOrDefault(trace => string.Equals(trace.StepId, stepId, StringComparison.Ordinal) && !trace.Success);
+            .FirstOrDefault(trace =>
+                string.Equals(trace.StepId, stepId, StringComparison.Ordinal)
+                && trace.Outcome == StepTraceOutcome.Failed);
         if (failedTrace is null)
         {
             return CreateToolFailure(
@@ -280,7 +282,7 @@ public sealed class LlmReplanner(
             summary.Add(new JsonObject
             {
                 ["stepId"] = trace.StepId,
-                ["success"] = trace.Success,
+                ["outcome"] = trace.Outcome.ToString().ToLowerInvariant(),
                 ["errorCode"] = trace.ErrorCode,
                 ["verificationIssues"] = new JsonArray(trace.VerificationIssues.Select(issue => JsonValue.Create(issue.Code)).ToArray())
             });
@@ -292,7 +294,7 @@ public sealed class LlmReplanner(
     private static JsonArray BuildFailedTraceHints(ExecutionResult executionResult)
     {
         var failedTraces = new JsonArray();
-        foreach (var trace in executionResult.StepTraces.Where(trace => !trace.Success))
+        foreach (var trace in executionResult.StepTraces.Where(trace => trace.Outcome == StepTraceOutcome.Failed))
             failedTraces.Add(BuildFailedTraceSummary(trace));
 
         return failedTraces;

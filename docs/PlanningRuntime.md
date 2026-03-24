@@ -122,8 +122,11 @@ Current step statuses:
 - `todo`
 - `running`
 - `done`
+- `partial`
 - `fail`
 - `skip`
+
+Mapped (`mode=map`) steps now tolerate per-item failures when at least one item completed successfully. In that case the step is marked `partial`, preserves the aggregated partial result, records the failed call diagnostics, and execution continues. A mapped step still fails when every mapped call fails and no usable result was produced.
 
 ## Input Bindings and Fan-Out
 

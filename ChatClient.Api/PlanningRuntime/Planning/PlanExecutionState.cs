@@ -3,7 +3,13 @@
 public static class PlanExecutionState
 {
     public static bool IsDone(PlanStep step) =>
-        string.Equals(step.Status, PlanStepStatuses.Done, StringComparison.Ordinal) && step.Error is null;
+        string.Equals(step.Status, PlanStepStatuses.Done, StringComparison.Ordinal);
+
+    public static bool IsPartial(PlanStep step) =>
+        string.Equals(step.Status, PlanStepStatuses.Partial, StringComparison.Ordinal);
+
+    public static bool HasCompletedResult(PlanStep step) =>
+        (IsDone(step) || IsPartial(step)) && step.Result is not null;
 
     public static bool IsFailed(PlanStep step) =>
         string.Equals(step.Status, PlanStepStatuses.Fail, StringComparison.Ordinal);

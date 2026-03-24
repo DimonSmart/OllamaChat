@@ -189,12 +189,7 @@ public sealed class PlanningSessionService(
                 break;
 
             case StepReusedEvent reused:
-                UpdateStepFromTrace(new StepExecutionTrace
-                {
-                    StepId = reused.StepId,
-                    Success = true,
-                    Reused = true
-                }, null);
+                PreserveReusedStepState(reused.StepId);
                 break;
 
             case StepCompletedEvent completed:
@@ -228,22 +223,44 @@ public sealed class PlanningSessionService(
             return;
 
         step.Result = result?.Clone();
-        if (trace.Success)
+        switch (trace.Outcome)
         {
-            step.Status = PlanStepStatuses.Done;
-            step.Error = null;
-            return;
-        }
+            case StepTraceOutcome.Partial:
+                step.Status = PlanStepStatuses.Partial;
+                step.Error = new PlanStepError
+                {
+                    Code = trace.ErrorCode ?? "partial_failure",
+                    Message = trace.ErrorMessage ?? "Step completed partially.",
+                    Details = trace.ErrorDetails?.Clone()
+                };
+                return;
 
-        step.Status = PlanStepStatuses.Fail;
-        if (!string.IsNullOrWhiteSpace(trace.ErrorCode) || !string.IsNullOrWhiteSpace(trace.ErrorMessage))
-        {
-            step.Error = new PlanStepError
-            {
-                Code = trace.ErrorCode ?? "execution_failed",
-                Message = trace.ErrorMessage ?? "Execution failed.",
-                Details = trace.ErrorDetails?.Clone()
-            };
+            case StepTraceOutcome.Done:
+                step.Status = PlanStepStatuses.Done;
+                step.Error = null;
+                return;
+
+            case StepTraceOutcome.Skipped:
+                step.Status = PlanStepStatuses.Skip;
+                step.Error = null;
+                return;
+
+            case StepTraceOutcome.Failed:
+                step.Status = PlanStepStatuses.Fail;
+                if (!string.IsNullOrWhiteSpace(trace.ErrorCode) || !string.IsNullOrWhiteSpace(trace.ErrorMessage))
+                {
+                    step.Error = new PlanStepError
+                    {
+                        Code = trace.ErrorCode ?? "execution_failed",
+                        Message = trace.ErrorMessage ?? "Execution failed.",
+                        Details = trace.ErrorDetails?.Clone()
+                    };
+                }
+
+                return;
+
+            default:
+                throw new InvalidOperationException($"Unsupported trace outcome '{trace.Outcome}'.");
         }
     }
 
@@ -257,6 +274,22 @@ public sealed class PlanningSessionService(
             return;
 
         step.Status = PlanStepStatuses.Running;
+        step.Error = null;
+    }
+
+    private void PreserveReusedStepState(string stepId)
+    {
+        if (State.CurrentPlan is null)
+            return;
+
+        var step = State.CurrentPlan.Steps.FirstOrDefault(candidate => string.Equals(candidate.Id, stepId, StringComparison.Ordinal));
+        if (step is null)
+            return;
+
+        if (PlanExecutionState.HasCompletedResult(step) || string.Equals(step.Status, PlanStepStatuses.Skip, StringComparison.Ordinal))
+            return;
+
+        step.Status = PlanStepStatuses.Done;
         step.Error = null;
     }
 

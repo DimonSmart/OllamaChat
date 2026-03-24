@@ -259,7 +259,7 @@ public sealed class InitialDraftRepairerTests
                     new StepExecutionTrace
                     {
                         StepId = "search_vacuums",
-                        Success = false,
+                        Outcome = StepTraceOutcome.Failed,
                         ErrorCode = "tool_error",
                         ErrorMessage = "Execution failed."
                     }
@@ -316,7 +316,7 @@ public sealed class InitialDraftRepairerTests
                     new StepExecutionTrace
                     {
                         StepId = "search_vacuums",
-                        Success = false,
+                        Outcome = StepTraceOutcome.Failed,
                         ErrorCode = "tool_error",
                         ErrorMessage = "Execution failed."
                     }

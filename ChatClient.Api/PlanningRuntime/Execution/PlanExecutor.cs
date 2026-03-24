@@ -34,12 +34,7 @@ public sealed class PlanExecutor(
             {
                 _log.Log($"[exec] step:reuse id={step.Id}");
                 _observer.OnEvent(new StepReusedEvent(step.Id));
-                traces.Add(new StepExecutionTrace
-                {
-                    StepId = step.Id,
-                    Success = true,
-                    Reused = true
-                });
+                traces.Add(CreateTrace(step, reused: true, calls: [], verificationIssues: []));
                 continue;
             }
 
@@ -53,7 +48,7 @@ public sealed class PlanExecutor(
             traces.Add(trace);
             lastEnvelope = envelope;
 
-            if (!trace.Success)
+            if (trace.Outcome == StepTraceOutcome.Failed)
                 return new ExecutionResult { StepTraces = traces, LastEnvelope = lastEnvelope };
         }
 
@@ -67,6 +62,7 @@ public sealed class PlanExecutor(
     {
         var calls = new List<JsonElement>();
         var outputs = new List<JsonElement?>();
+        var partialFailures = new List<PartialCallFailure>();
 
         var (resolved, fanOutInputs) = ResolveInputs(step, stepMap);
         var resolvedInput = SerializeObject(resolved);
@@ -131,7 +127,14 @@ public sealed class PlanExecutor(
                         : new ErrorInfo(envelope.Error.Code, envelope.Error.Message, CloneElement(envelope.Error.Details))));
 
                 if (!envelope.Ok)
-                    break;
+                {
+                    partialFailures.Add(new PartialCallFailure(
+                        callIndex,
+                        envelope.Error?.Code ?? "execution_failed",
+                        envelope.Error?.Message ?? "Execution failed.",
+                        CloneElement(envelope.Error?.Details)));
+                    continue;
+                }
 
                 outputs.Add(CloneElement(envelope.Data));
             }
@@ -147,18 +150,18 @@ public sealed class PlanExecutor(
                 step.Error = CreateOutputContractError(step.Id, contractIssues, "final");
                 envelope = ResultEnvelope<JsonElement?>.Failure(step.Error.Code, step.Error.Message, CloneElement(step.Error.Details));
                 _log.Log($"[exec] step:end id={step.Id} success=False calls={calls.Count} error={Shorten(step.Error.Message, 240)} details={SerializeElement(step.Error.Details)}");
-                var trace = CreateTrace(step, success: false, reused: false, calls, contractIssues);
+                var trace = CreateTrace(step, false, calls, contractIssues);
                 _observer.OnEvent(new StepCompletedEvent(trace, CloneElement(step.Result)));
                 return (trace, envelope);
             }
         }
 
-        if (!envelope.Ok)
+        if (!envelope.Ok && outputs.Count == 0)
         {
             step.Status = PlanStepStatuses.Fail;
             step.Error = CreatePlanStepError(envelope.Error);
             _log.Log($"[exec] step:end id={step.Id} success=False calls={calls.Count} error={Shorten(step.Error?.Message, 240)} details={SerializeElement(step.Error?.Details)}");
-            var trace = CreateTrace(step, success: false, reused: false, calls, []);
+            var trace = CreateTrace(step, false, calls, []);
             _observer.OnEvent(new StepCompletedEvent(trace, CloneElement(step.Result)));
             return (trace, envelope);
         }
@@ -173,16 +176,28 @@ public sealed class PlanExecutor(
 
             envelope = ResultEnvelope<JsonElement?>.Failure(step.Error.Code, step.Error.Message, CloneElement(step.Error.Details));
             _log.Log($"[exec] step:end id={step.Id} success=False calls={calls.Count} error={Shorten(step.Error.Message, 240)} details={SerializeElement(step.Error.Details)}");
-            var trace = CreateTrace(step, success: false, reused: false, calls, verificationIssues);
+            var trace = CreateTrace(step, false, calls, verificationIssues);
             _observer.OnEvent(new StepCompletedEvent(trace, CloneElement(step.Result)));
             return (trace, envelope);
+        }
+
+        if (partialFailures.Count > 0)
+        {
+            step.Status = PlanStepStatuses.Partial;
+            step.Error = CreatePartialFailureError(step.Id, fanOutCount, outputs.Count, partialFailures);
+            var partialEnvelope = ResultEnvelope<JsonElement?>.Success(step.Result?.Clone());
+            _log.Log($"[exec] step:stored id={step.Id} output={SerializeElement(step.Result)}");
+            _log.Log($"[exec] step:end id={step.Id} success=True partial=True calls={calls.Count} error={Shorten(step.Error.Message, 240)} details={SerializeElement(step.Error.Details)}");
+            var partialTrace = CreateTrace(step, false, calls, []);
+            _observer.OnEvent(new StepCompletedEvent(partialTrace, CloneElement(step.Result)));
+            return (partialTrace, partialEnvelope);
         }
 
         step.Status = PlanStepStatuses.Done;
         step.Error = null;
         _log.Log($"[exec] step:stored id={step.Id} output={SerializeElement(step.Result)}");
         _log.Log($"[exec] step:end id={step.Id} success=True calls={calls.Count} error=<none> details=null");
-        var successTrace = CreateTrace(step, success: true, reused: false, calls, []);
+        var successTrace = CreateTrace(step, false, calls, []);
         _observer.OnEvent(new StepCompletedEvent(successTrace, CloneElement(step.Result)));
         return (successTrace, envelope);
     }
@@ -222,9 +237,27 @@ public sealed class PlanExecutor(
 
         var arguments = ConvertInputToArguments(input);
 
-        using var interactionScope = mcpUserInteractionService?.BeginInteractionScope(McpInteractionScope.Planning);
-        var result = await tool.ExecuteAsync(arguments, cancellationToken);
-        var envelope = NormalizeToolResult(tool, result);
+        ResultEnvelope<JsonElement?> envelope;
+        try
+        {
+            using var interactionScope = mcpUserInteractionService?.BeginInteractionScope(McpInteractionScope.Planning);
+            var result = await tool.ExecuteAsync(arguments, cancellationToken);
+            envelope = NormalizeToolResult(tool, result);
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            envelope = ResultEnvelope<JsonElement?>.Failure(
+                "tool_error",
+                ex.Message,
+                JsonSerializer.SerializeToElement(new
+                {
+                    exception = ex.GetType().Name
+                }));
+        }
 
         calls.Add(JsonSerializer.SerializeToElement(new
         {
@@ -375,7 +408,7 @@ public sealed class PlanExecutor(
     }
 
     private static bool IsReusable(PlanStep step) =>
-        PlanExecutionState.IsDone(step)
+        PlanExecutionState.HasCompletedResult(step)
         || string.Equals(step.Status, PlanStepStatuses.Skip, StringComparison.Ordinal);
 
     private static JsonElement SubstituteScalars(
@@ -486,8 +519,7 @@ public sealed class PlanExecutor(
                 continue;
 
             if (!stepMap.TryGetValue(reference!.StepId, out var dependency)
-                || !PlanExecutionState.IsDone(dependency)
-                || dependency.Result is null)
+                || !PlanExecutionState.HasCompletedResult(dependency))
             {
                 missing.Add(binding.From);
             }
@@ -498,18 +530,17 @@ public sealed class PlanExecutor(
 
     private static StepExecutionTrace CreateTrace(
         PlanStep step,
-        bool success,
         bool reused,
         IEnumerable<JsonElement> calls,
         IReadOnlyCollection<StepVerificationIssue> verificationIssues) =>
         new()
         {
             StepId = step.Id,
-            Success = success,
+            Outcome = ResolveTraceOutcome(step.Status),
             Reused = reused,
-            ErrorCode = success ? null : step.Error?.Code,
-            ErrorMessage = success ? null : step.Error?.Message,
-            ErrorDetails = success ? null : CloneElement(step.Error?.Details),
+            ErrorCode = step.Error?.Code,
+            ErrorMessage = step.Error?.Message,
+            ErrorDetails = CloneElement(step.Error?.Details),
             Calls = calls.Select(call => call.Clone()).ToList(),
             VerificationIssues = verificationIssues
                 .Select(issue => new StepVerificationIssue
@@ -518,6 +549,17 @@ public sealed class PlanExecutor(
                     Message = issue.Message
                 })
                 .ToList()
+        };
+
+    private static StepTraceOutcome ResolveTraceOutcome(string? stepStatus) =>
+        stepStatus switch
+        {
+            PlanStepStatuses.Done => StepTraceOutcome.Done,
+            PlanStepStatuses.Partial => StepTraceOutcome.Partial,
+            PlanStepStatuses.Fail => StepTraceOutcome.Failed,
+            PlanStepStatuses.Skip => StepTraceOutcome.Skipped,
+            _ => throw new InvalidOperationException(
+                $"Step trace cannot be created for non-terminal status '{stepStatus ?? "<null>"}'.")
         };
 
     private static PlanStepError? CreatePlanStepError(ErrorInfo? error)
@@ -544,6 +586,30 @@ public sealed class PlanExecutor(
                 {
                     code = issue.Code,
                     message = issue.Message
+                })
+            })
+        };
+
+    private static PlanStepError CreatePartialFailureError(
+        string stepId,
+        int totalCalls,
+        int successfulCalls,
+        IReadOnlyList<PartialCallFailure> failures) =>
+        new()
+        {
+            Code = "partial_failure",
+            Message = $"Step '{stepId}' completed partially: {successfulCalls} of {totalCalls} calls succeeded.",
+            Details = JsonSerializer.SerializeToElement(new
+            {
+                totalCalls,
+                successfulCalls,
+                failedCalls = failures.Count,
+                failures = failures.Select(failure => new
+                {
+                    callIndex = failure.CallIndex,
+                    code = failure.Code,
+                    message = failure.Message,
+                    details = CloneElement(failure.Details)
                 })
             })
         };
@@ -719,4 +785,10 @@ public sealed class PlanExecutor(
             ? normalized
             : $"{normalized[..maxLength]}...";
     }
+
+    private sealed record PartialCallFailure(
+        int CallIndex,
+        string Code,
+        string Message,
+        JsonElement? Details);
 }

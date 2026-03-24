@@ -71,14 +71,7 @@ public sealed class PlanningOrchestrator(
 
             if (attempt == _maxAttempts || _replanner is null)
             {
-                return CompleteRun(ResultEnvelope<JsonElement?>.Failure(
-                    result.LastEnvelope?.Error?.Code ?? "goal_not_achieved",
-                    verdict.Reason,
-                    JsonSerializer.SerializeToElement(new
-                    {
-                        missing = verdict.Missing,
-                        attempt
-                    })), plan);
+                return CompleteRun(BuildFinalFailureResult(plan, result, verdict, attempt), plan);
             }
 
             replanRequest = new PlannerReplanRequest
@@ -110,16 +103,92 @@ public sealed class PlanningOrchestrator(
         if (_finalAnswerVerifier is null)
             return null;
 
-        var verificationResult = await _finalAnswerVerifier.VerifyAsync(userQuery, finalAnswer, cancellationToken);
-        _observer.OnEvent(new FinalAnswerVerifiedEvent(verificationResult));
-        _log.Log($"[verify] answer:isAnswer={verificationResult.IsAnswer} reason={verificationResult.Reason}");
-        return verificationResult;
+        try
+        {
+            var verificationResult = await _finalAnswerVerifier.VerifyAsync(userQuery, finalAnswer, cancellationToken);
+            _observer.OnEvent(new FinalAnswerVerifiedEvent(verificationResult));
+            _log.Log($"[verify] answer:isAnswer={verificationResult.IsAnswer} reason={verificationResult.Reason}");
+            return verificationResult;
+        }
+        catch (Exception ex)
+        {
+            _observer.OnEvent(new FinalAnswerVerificationFailedEvent(ex.GetType().Name, ex.Message));
+            _log.Log($"[verify] answer:error={ex.GetType().Name} message={ex.Message}");
+            return null;
+        }
     }
 
     private ResultEnvelope<JsonElement?> CompleteRun(ResultEnvelope<JsonElement?> result, PlanDefinition? plan)
     {
         _observer.OnEvent(new RunCompletedEvent(result, plan is null ? null : ClonePlan(plan)));
         return result;
+    }
+
+    private static ResultEnvelope<JsonElement?> BuildFinalFailureResult(
+        PlanDefinition? plan,
+        ExecutionResult executionResult,
+        GoalVerdict verdict,
+        int attempt)
+    {
+        var failedSteps = plan?.Steps
+            .Where(PlanExecutionState.IsFailed)
+            .Select(step => new
+            {
+                id = step.Id,
+                kind = step.Kind,
+                name = step.Name,
+                code = step.Error?.Code,
+                message = step.Error?.Message
+            })
+            .ToList()
+            ?? [];
+        var partialSteps = plan?.Steps
+            .Where(PlanExecutionState.IsPartial)
+            .Select(step => new
+            {
+                id = step.Id,
+                kind = step.Kind,
+                name = step.Name,
+                code = step.Error?.Code,
+                message = step.Error?.Message
+            })
+            .ToList()
+            ?? [];
+        var completedStepIds = plan?.Steps
+            .Where(PlanExecutionState.IsDone)
+            .Select(step => step.Id)
+            .ToList()
+            ?? [];
+        var lastAvailableStep = plan?.Steps.LastOrDefault(PlanExecutionState.HasCompletedResult);
+        var hasPartialData = partialSteps.Count > 0 || lastAvailableStep is not null;
+        var errorCode = hasPartialData
+            ? "partial_execution"
+            : executionResult.LastEnvelope?.Error?.Code ?? "goal_not_achieved";
+        var errorMessage = hasPartialData
+            ? "Execution completed with partial data: one or more aggregated steps failed for some inputs, so the result may be incomplete."
+            : verdict.Reason;
+
+        return ResultEnvelope<JsonElement?>.Failure(
+            errorCode,
+            errorMessage,
+            JsonSerializer.SerializeToElement(new
+            {
+                attempt,
+                reason = verdict.Reason,
+                missing = verdict.Missing,
+                hasPartialData,
+                completedSteps = completedStepIds,
+                partialSteps,
+                failedSteps,
+                lastAvailableStep = lastAvailableStep is null
+                    ? null
+                    : new
+                    {
+                        id = lastAvailableStep.Id,
+                        status = lastAvailableStep.Status
+                    },
+                lastAvailableResult = lastAvailableStep?.Result?.Clone()
+            }));
     }
 
     private static PlanDefinition ClonePlan(PlanDefinition plan) =>

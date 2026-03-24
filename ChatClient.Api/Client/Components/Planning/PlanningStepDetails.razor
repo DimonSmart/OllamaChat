@@ -377,7 +377,7 @@ else
 
     private IReadOnlyList<StepExecutionTrace> FailedReplanTraces =>
         SelectedVirtualNode?.ReplanStarted?.Request.ExecutionResult.StepTraces
-            .Where(trace => !trace.Success)
+            .Where(trace => trace.Outcome == StepTraceOutcome.Failed)
             .ToList()
         ?? [];
 

@@ -35,7 +35,7 @@ public sealed class GoalVerifier(bool askUserEnabled = false)
         }
 
         var finalStep = plan.Steps[^1];
-        if (!PlanExecutionState.IsDone(finalStep) || finalStep.Result is null)
+        if (!PlanExecutionState.HasCompletedResult(finalStep))
         {
             return new GoalVerdict
             {
@@ -45,8 +45,8 @@ public sealed class GoalVerifier(bool askUserEnabled = false)
             };
         }
 
-        var finalNode = finalStep.Result;
-        if (finalNode.Value.ValueKind == JsonValueKind.Object && !finalNode.Value.EnumerateObject().Any())
+        var finalNode = finalStep.Result!.Value;
+        if (finalNode.ValueKind == JsonValueKind.Object && !finalNode.EnumerateObject().Any())
         {
             return new GoalVerdict
             {
@@ -56,7 +56,7 @@ public sealed class GoalVerifier(bool askUserEnabled = false)
             };
         }
 
-        if (finalNode.Value.ValueKind == JsonValueKind.Array && !finalNode.Value.EnumerateArray().Any())
+        if (finalNode.ValueKind == JsonValueKind.Array && !finalNode.EnumerateArray().Any())
         {
             return new GoalVerdict
             {
@@ -66,8 +66,8 @@ public sealed class GoalVerifier(bool askUserEnabled = false)
             };
         }
 
-        if (finalNode.Value.ValueKind == JsonValueKind.String
-            && string.IsNullOrWhiteSpace(finalNode.Value.GetString()))
+        if (finalNode.ValueKind == JsonValueKind.String
+            && string.IsNullOrWhiteSpace(finalNode.GetString()))
         {
             return new GoalVerdict
             {
@@ -78,15 +78,15 @@ public sealed class GoalVerifier(bool askUserEnabled = false)
         }
 
         if (askUserEnabled
-            && finalNode.Value.ValueKind == JsonValueKind.Object
-            && finalNode.Value.TryGetProperty("needUserInput", out var needUserInput)
+            && finalNode.ValueKind == JsonValueKind.Object
+            && finalNode.TryGetProperty("needUserInput", out var needUserInput)
             && needUserInput.ValueKind == JsonValueKind.True)
         {
             return new GoalVerdict
             {
                 Action = GoalAction.AskUser,
                 Reason = "Need clarification from user.",
-                UserQuestion = finalNode.Value.TryGetProperty("question", out var question)
+                UserQuestion = finalNode.TryGetProperty("question", out var question)
                     && question.ValueKind == JsonValueKind.String
                     ? question.GetString()
                     : null
@@ -96,7 +96,9 @@ public sealed class GoalVerifier(bool askUserEnabled = false)
         return new GoalVerdict
         {
             Action = GoalAction.Done,
-            Reason = "Execution produced a non-empty final result."
+            Reason = PlanExecutionState.IsPartial(finalStep)
+                ? "Execution produced a partial final result."
+                : "Execution produced a non-empty final result."
         };
     }
 

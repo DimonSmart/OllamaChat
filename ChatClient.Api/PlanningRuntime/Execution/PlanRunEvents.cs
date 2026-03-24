@@ -95,6 +95,10 @@ public sealed record GoalVerifiedEvent(
 public sealed record FinalAnswerVerifiedEvent(
     FinalAnswerVerificationResult VerificationResult) : PlanRunEvent(DateTimeOffset.UtcNow);
 
+public sealed record FinalAnswerVerificationFailedEvent(
+    string ErrorType,
+    string Message) : PlanRunEvent(DateTimeOffset.UtcNow);
+
 public sealed record ReplanStartedEvent(
     PlannerReplanRequest Request) : PlanRunEvent(DateTimeOffset.UtcNow);
 

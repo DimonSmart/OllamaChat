@@ -525,7 +525,7 @@ public static class PlanningPreviewScenarios
                             new StepExecutionTrace
                             {
                                 StepId = "extract1",
-                                Success = false,
+                                Outcome = StepTraceOutcome.Failed,
                                 ErrorCode = "multiple_models",
                                 ErrorMessage = "Multiple robot vacuum models are described in the input; unable to extract a single specification object.",
                                 ErrorDetails = Element(new

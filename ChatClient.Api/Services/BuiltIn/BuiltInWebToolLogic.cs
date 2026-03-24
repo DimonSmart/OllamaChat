@@ -19,7 +19,7 @@ internal static class BuiltInWebToolLogic
     private const int SearchMaxAttempts = 5;
     private const int DownloadMaxAttempts = 3;
     private const string SearchCachePathConfigKey = "BuiltInWeb:SearchCachePath";
-    private const string SearchCacheVersion = "v2";
+    private const string SearchCacheVersion = "v4";
     private static readonly TimeSpan SearchCacheTtl = TimeSpan.FromDays(1);
     private static readonly TimeSpan BraveSearchMinInterval = TimeSpan.FromSeconds(5);
     private static readonly TimeSpan DefaultMaxRetryDelay = TimeSpan.FromSeconds(30);
@@ -301,7 +301,7 @@ internal static class BuiltInWebToolLogic
 
             var siteName = NormalizeText(node.SelectSingleNode(".//div[contains(@class,'site-name-content')]//div[contains(@class,'desktop-small-semibold')]")?.InnerText);
             var displayUrl = NormalizeText(node.SelectSingleNode(".//cite[contains(@class,'snippet-url')]")?.InnerText);
-            var thumbnailUrl = NormalizeText(node.SelectSingleNode(".//a[contains(@class,'thumbnail')]//img[@src]")?.GetAttributeValue("src", string.Empty));
+            var thumbnailUrl = NormalizeThumbnailUrl(node.SelectSingleNode(".//a[contains(@class,'thumbnail')]//img[@src]")?.GetAttributeValue("src", string.Empty));
             var position = TryParsePosition(node.GetAttributeValue("data-pos", string.Empty));
 
             results.Add(new WebSearchResult(
@@ -311,7 +311,7 @@ internal static class BuiltInWebToolLogic
                 NullIfWhiteSpace(siteName),
                 NullIfWhiteSpace(displayUrl),
                 NullIfWhiteSpace(age),
-                NullIfWhiteSpace(thumbnailUrl),
+                thumbnailUrl,
                 position));
 
             if (results.Count >= limit)
@@ -408,6 +408,60 @@ internal static class BuiltInWebToolLogic
 
         targetUri = parsedUri;
         return true;
+    }
+
+    private static string? NormalizeThumbnailUrl(string? value)
+    {
+        var normalized = NullIfWhiteSpace(NormalizeText(value));
+        if (normalized is null)
+            return null;
+
+        if (!Uri.TryCreate(normalized, UriKind.Absolute, out var uri))
+            return normalized;
+
+        if (uri.Host.Equals("imgs.search.brave.com", StringComparison.OrdinalIgnoreCase)
+            && TryDecodeBraveImageProxyUrl(uri, out var decodedUrl))
+        {
+            return decodedUrl;
+        }
+
+        return normalized;
+    }
+
+    private static bool TryDecodeBraveImageProxyUrl(Uri uri, out string decodedUrl)
+    {
+        decodedUrl = string.Empty;
+
+        var marker = "/g:ce/";
+        var markerIndex = uri.AbsolutePath.LastIndexOf(marker, StringComparison.Ordinal);
+        if (markerIndex < 0)
+            return false;
+
+        var encodedCandidate = uri.AbsolutePath[(markerIndex + marker.Length)..];
+        if (string.IsNullOrWhiteSpace(encodedCandidate))
+            return false;
+
+        var base64 = encodedCandidate
+            .Replace('-', '+')
+            .Replace('_', '/');
+        var padding = base64.Length % 4;
+        if (padding is > 0)
+            base64 = base64.PadRight(base64.Length + (4 - padding), '=');
+
+        try
+        {
+            var bytes = Convert.FromBase64String(base64);
+            var candidate = Encoding.UTF8.GetString(bytes);
+            if (!TryCreateHttpUri(candidate, out var decodedUri))
+                return false;
+
+            decodedUrl = decodedUri.ToString();
+            return true;
+        }
+        catch (FormatException)
+        {
+            return false;
+        }
     }
 
     private static int? TryParsePosition(string? value) =>

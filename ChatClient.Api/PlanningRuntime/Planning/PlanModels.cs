@@ -9,6 +9,7 @@ public static class PlanStepStatuses
     public const string Todo = "todo";
     public const string Running = "running";
     public const string Done = "done";
+    public const string Partial = "partial";
     public const string Fail = "fail";
     public const string Skip = "skip";
 }

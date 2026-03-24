@@ -779,6 +779,45 @@ public class PlanningRuntimeContractsTests
     }
 
     [Fact]
+    public async Task BuiltInWebSearchLogic_DecodesBraveThumbnailProxyUrls()
+    {
+        BuiltInWebToolLogic.ResetSearchStateForTests(CreateTempSearchCacheDirectory());
+
+        const string originalThumbnailUrl = "https://www.sunfounder.com/cdn/shop/products/Pisloth_1_1024x.jpg?v=1638512159";
+        const string braveThumbnailUrl = "https://imgs.search.brave.com/JSVectvQTRixEX4yvuOS250QZINSrqMkmk9El8rp240/rs:fit:200:200:1:0/g:ce/aHR0cHM6Ly93d3cuc3VuZm91bmRlci5j/b20vY2RuL3Nob3AvcHJvZHVjdHMvUGlzbG90aF8xXzEwMjR4LmpwZz92PTE2Mzg1MTIxNTk";
+        var html = $$"""
+            <html>
+              <body>
+                <div id="results">
+                  <div class="snippet" data-type="web" data-pos="0">
+                    <a href="https://example.com/item-a" class="l1">
+                      <div class="title" title="Item A title">Item A title</div>
+                    </a>
+                    <div class="generic-snippet">
+                      <div class="content">Item A summary.</div>
+                      <a href="https://example.com/item-a" class="thumbnail"><img src="{{braveThumbnailUrl}}" /></a>
+                    </div>
+                  </div>
+                </div>
+              </body>
+            </html>
+            """;
+
+        var httpClientFactory = new Mock<IHttpClientFactory>();
+        httpClientFactory
+            .Setup(factory => factory.CreateClient(It.IsAny<string>()))
+            .Returns(new HttpClient(new StubHttpMessageHandler(html)));
+
+        var result = await BuiltInWebToolLogic.SearchAsync(
+            httpClientFactory.Object,
+            NullLogger.Instance,
+            new WebSearchInput("item a"));
+
+        var item = Assert.Single(result.Results);
+        Assert.Equal(originalThumbnailUrl, item.ThumbnailUrl);
+    }
+
+    [Fact]
     public async Task BuiltInWebSearchLogic_Fails_WhenStructuredMarkupIsMissing()
     {
         BuiltInWebToolLogic.ResetSearchStateForTests(CreateTempSearchCacheDirectory());
@@ -1106,7 +1145,7 @@ public class PlanningRuntimeContractsTests
 
         var result = await executor.ExecuteAsync(plan);
 
-        Assert.All(result.StepTraces, trace => Assert.True(trace.Success));
+        Assert.All(result.StepTraces, trace => Assert.Equal(StepTraceOutcome.Done, trace.Outcome));
         Assert.Equal(
             ["https://example.com/item-a", "https://example.com/item-b"],
             downloadTool.ReceivedUrls);
@@ -1149,7 +1188,7 @@ public class PlanningRuntimeContractsTests
 
         var result = await executor.ExecuteAsync(plan);
 
-        Assert.All(result.StepTraces, trace => Assert.True(trace.Success));
+        Assert.All(result.StepTraces, trace => Assert.Equal(StepTraceOutcome.Done, trace.Outcome));
         Assert.Equal(["Item A", "Item B"], downloadTool.ReceivedTitles);
     }
 
@@ -1657,7 +1696,7 @@ public class PlanningRuntimeContractsTests
         PlanValidator.ValidateOrThrow(plan, [opaqueTool, CreateStaticSearchDescriptor()]);
 
         var result = await executor.ExecuteAsync(plan);
-        var trace = Assert.Single(result.StepTraces, trace => !trace.Success);
+        var trace = Assert.Single(result.StepTraces, trace => trace.Outcome == StepTraceOutcome.Failed);
         Assert.Equal("searchAgain", trace.StepId);
         Assert.Equal("input_contract_failed", trace.ErrorCode);
         Assert.Contains("does not match its input schema", trace.ErrorMessage ?? string.Empty, StringComparison.Ordinal);
@@ -1910,7 +1949,7 @@ public class PlanningRuntimeContractsTests
 
         var result = await executor.ExecuteAsync(plan);
 
-        Assert.All(result.StepTraces, trace => Assert.True(trace.Success));
+        Assert.All(result.StepTraces, trace => Assert.Equal(StepTraceOutcome.Done, trace.Outcome));
         var extractStep = Assert.Single(plan.Steps, step => step.Id == "extractFacts");
         var items = extractStep.Result!.Value.EnumerateArray().Select(item => item.GetProperty("name").GetString()).ToArray();
         Assert.Collection(
@@ -1968,7 +2007,7 @@ public class PlanningRuntimeContractsTests
 
         var result = await executor.ExecuteAsync(plan);
         var trace = Assert.Single(result.StepTraces);
-        Assert.False(trace.Success);
+        Assert.Equal(StepTraceOutcome.Failed, trace.Outcome);
         Assert.Equal("output_contract_failed", trace.ErrorCode);
         Assert.Contains("declared output contract", trace.ErrorMessage ?? string.Empty, StringComparison.Ordinal);
         Assert.Contains("call output", trace.ErrorDetails?.GetProperty("issues")[0].GetProperty("message").GetString() ?? string.Empty, StringComparison.Ordinal);
@@ -2026,7 +2065,7 @@ public class PlanningRuntimeContractsTests
         PlanValidator.ValidateOrThrow(plan, [opaqueTool]);
 
         var result = await executor.ExecuteAsync(plan);
-        var trace = Assert.Single(result.StepTraces, candidate => !candidate.Success);
+        var trace = Assert.Single(result.StepTraces, candidate => candidate.Outcome == StepTraceOutcome.Failed);
         Assert.Equal("extractFacts", trace.StepId);
         Assert.Equal("llm_input_contract_failed", trace.ErrorCode);
         Assert.Contains("declared binding types", trace.ErrorMessage ?? string.Empty, StringComparison.Ordinal);
@@ -2127,8 +2166,206 @@ public class PlanningRuntimeContractsTests
 
         var result = await executor.ExecuteAsync(plan);
         var trace = Assert.Single(result.StepTraces);
-        Assert.True(trace.Success);
+        Assert.Equal(StepTraceOutcome.Done, trace.Outcome);
         Assert.Null(trace.ErrorCode);
+    }
+
+    [Fact]
+    public async Task PlanExecutor_ContinuesMappedStep_WhenSomeCallsFailAndPartialDataExists()
+    {
+        var collectDescriptor = CreateDescriptor(
+            serverName: "mock-web",
+            toolName: "collect",
+            description: "Collect one mapped item.",
+            inputSchemaJson: """
+                {
+                  "type": "object",
+                  "properties": {
+                    "item": { "type": "string" }
+                  },
+                  "required": ["item"]
+                }
+                """,
+            outputSchemaJson: """
+                {
+                  "type": "object",
+                  "properties": {
+                    "value": { "type": "string" }
+                  },
+                  "required": ["value"]
+                }
+                """,
+            execute: arguments =>
+            {
+                var item = GetRequiredString(arguments, "item");
+                if (string.Equals(item, "item-b", StringComparison.Ordinal))
+                    throw new InvalidOperationException("synthetic mapped failure");
+
+                return new
+                {
+                    value = item.ToUpperInvariant()
+                };
+            });
+
+        var executor = new PlanExecutor(
+            new PlanningToolCatalog([CreateStaticSearchDescriptor(), collectDescriptor]),
+            new ThrowingAgentStepRunner());
+
+        var plan = new PlanDefinition
+        {
+            Goal = "Collect mapped items even when one call fails.",
+            Steps =
+            [
+                new PlanStep
+                {
+                    Id = "searchItems",
+                    Kind = PlanStepKinds.Tool,
+                    Name = SearchToolName,
+                    In = new Dictionary<string, JsonNode?>
+                    {
+                        ["query"] = JsonValue.Create("example")
+                    }
+                },
+                new PlanStep
+                {
+                    Id = "collectItems",
+                    Kind = PlanStepKinds.Tool,
+                    Name = "mock-web:collect",
+                    In = new Dictionary<string, JsonNode?>
+                    {
+                        ["item"] = Ref("$searchItems.results[].title", "map")
+                    },
+                    Out = JsonOut(new JsonObject
+                    {
+                        ["type"] = "object",
+                        ["required"] = new JsonArray("value"),
+                        ["properties"] = new JsonObject
+                        {
+                            ["value"] = new JsonObject
+                            {
+                                ["type"] = "string"
+                            }
+                        }
+                    }, aggregate: PlanStepOutputAggregates.Collect)
+                }
+            ]
+        };
+
+        plan.Steps[0].Result = JsonSerializer.SerializeToElement(new
+        {
+            query = "example",
+            results = new[]
+            {
+                new { url = "https://example.com/a", title = "item-a" },
+                new { url = "https://example.com/b", title = "item-b" },
+                new { url = "https://example.com/c", title = "item-c" }
+            }
+        });
+        plan.Steps[0].Status = PlanStepStatuses.Done;
+
+        var result = await executor.ExecuteAsync(plan);
+
+        Assert.False(result.HasErrors);
+        var collectStep = plan.Steps[1];
+        Assert.Equal(PlanStepStatuses.Partial, collectStep.Status);
+        Assert.Equal("partial_failure", collectStep.Error?.Code);
+        Assert.NotNull(collectStep.Result);
+        Assert.Equal(JsonValueKind.Array, collectStep.Result?.ValueKind);
+        Assert.Equal(2, collectStep.Result?.GetArrayLength());
+
+        var collectTrace = result.StepTraces.Single(trace => trace.StepId == "collectItems");
+        Assert.Equal(StepTraceOutcome.Partial, collectTrace.Outcome);
+        Assert.Equal("partial_failure", collectTrace.ErrorCode);
+    }
+
+    [Fact]
+    public async Task PlanExecutor_FailsMappedStep_WhenAllMappedCallsFail()
+    {
+        var failingCollectDescriptor = CreateDescriptor(
+            serverName: "mock-web",
+            toolName: "collect",
+            description: "Always fail mapped item collection.",
+            inputSchemaJson: """
+                {
+                  "type": "object",
+                  "properties": {
+                    "item": { "type": "string" }
+                  },
+                  "required": ["item"]
+                }
+                """,
+            outputSchemaJson: """
+                {
+                  "type": "object",
+                  "properties": {
+                    "value": { "type": "string" }
+                  },
+                  "required": ["value"]
+                }
+                """,
+            execute: _ => throw new InvalidOperationException("synthetic mapped failure"));
+
+        var executor = new PlanExecutor(
+            new PlanningToolCatalog([CreateStaticSearchDescriptor(), failingCollectDescriptor]),
+            new ThrowingAgentStepRunner());
+
+        var plan = new PlanDefinition
+        {
+            Goal = "Fail when no mapped call succeeds.",
+            Steps =
+            [
+                new PlanStep
+                {
+                    Id = "searchItems",
+                    Kind = PlanStepKinds.Tool,
+                    Name = SearchToolName,
+                    In = new Dictionary<string, JsonNode?>
+                    {
+                        ["query"] = JsonValue.Create("example")
+                    }
+                },
+                new PlanStep
+                {
+                    Id = "collectItems",
+                    Kind = PlanStepKinds.Tool,
+                    Name = "mock-web:collect",
+                    In = new Dictionary<string, JsonNode?>
+                    {
+                        ["item"] = Ref("$searchItems.results[].title", "map")
+                    },
+                    Out = JsonOut(new JsonObject
+                    {
+                        ["type"] = "object",
+                        ["required"] = new JsonArray("value"),
+                        ["properties"] = new JsonObject
+                        {
+                            ["value"] = new JsonObject
+                            {
+                                ["type"] = "string"
+                            }
+                        }
+                    }, aggregate: PlanStepOutputAggregates.Collect)
+                }
+            ]
+        };
+
+        plan.Steps[0].Result = JsonSerializer.SerializeToElement(new
+        {
+            query = "example",
+            results = new[]
+            {
+                new { url = "https://example.com/a", title = "item-a" }
+            }
+        });
+        plan.Steps[0].Status = PlanStepStatuses.Done;
+
+        var result = await executor.ExecuteAsync(plan);
+
+        Assert.True(result.HasErrors);
+        var collectStep = plan.Steps[1];
+        Assert.Equal(PlanStepStatuses.Fail, collectStep.Status);
+        Assert.Equal("tool_error", collectStep.Error?.Code);
+        Assert.Null(collectStep.Result);
     }
 
     private static PlanningSessionService CreateSessionService()

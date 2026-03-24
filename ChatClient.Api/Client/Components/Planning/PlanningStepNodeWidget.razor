@@ -66,6 +66,7 @@
             return node.StatusValue switch
             {
                 PlanStepStatuses.Done => "#166f69",
+                PlanStepStatuses.Partial => "#9c6a18",
                 PlanStepStatuses.Fail => "#8f2f37",
                 _ => "#2d5a72"
             };
@@ -75,6 +76,7 @@
         {
             PlanStepStatuses.Running => "#ff8c42",
             PlanStepStatuses.Done => "#227c57",
+            PlanStepStatuses.Partial => "#b67818",
             PlanStepStatuses.Fail => "#9f2d2d",
             PlanStepStatuses.Skip => "#666680",
             _ => "#2f3b66"
@@ -111,6 +113,7 @@
             return node.StatusValue switch
             {
                 PlanStepStatuses.Done => "#86efe2",
+                PlanStepStatuses.Partial => "#ffd28a",
                 PlanStepStatuses.Fail => "#ffb6be",
                 _ => "#9fd5eb"
             };
@@ -120,6 +123,7 @@
         {
             PlanStepStatuses.Running => "#ffd8a8",
             PlanStepStatuses.Done => "#6de0b8",
+            PlanStepStatuses.Partial => "#ffd28a",
             PlanStepStatuses.Fail => "#ff9a9a",
             PlanStepStatuses.Skip => "#c8c8d8",
             _ => "#9ca8d6"

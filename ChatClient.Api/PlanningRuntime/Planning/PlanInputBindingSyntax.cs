@@ -224,10 +224,10 @@ public static class PlanInputBindingSyntax
         if (!stepMap.TryGetValue(reference!.StepId, out var referencedStep))
             throw new InvalidOperationException($"Step '{currentStepId}': ref '{expression}' - step '{reference.StepId}' not found.");
 
-        if (!PlanExecutionState.IsDone(referencedStep) || referencedStep.Result is null)
+        if (!PlanExecutionState.HasCompletedResult(referencedStep))
             throw new InvalidOperationException($"Step '{currentStepId}': ref '{expression}' - step '{reference.StepId}' has no completed result.");
 
-        var current = referencedStep.Result.Value.Clone();
+        var current = referencedStep.Result!.Value.Clone();
         foreach (var segment in reference.Segments)
         {
             current = segment.Kind switch
