@@ -42,7 +42,7 @@ public sealed class PlanningOrchestrator(
             var result = await executor.ExecuteAsync(plan, cancellationToken);
             var verdict = _goalVerifier.Check(plan, result);
 
-            _log.Log($"[verify] goal:action={verdict.Action} reason={verdict.Reason}");
+            _log.Log($"[verify] execution:action={verdict.Action} reason={verdict.Reason}");
             _observer.OnEvent(new GoalVerifiedEvent(verdict));
 
             if (verdict.Action == GoalAction.Done)
@@ -58,7 +58,7 @@ public sealed class PlanningOrchestrator(
                     Missing = finalVerification.Missing.ToList()
                 };
                 _observer.OnEvent(new GoalVerifiedEvent(verdict));
-                _log.Log($"[verify] goal:action={verdict.Action} reason={verdict.Reason}");
+                _log.Log($"[verify] answer:action={verdict.Action} reason={verdict.Reason}");
             }
 
             if (verdict.Action == GoalAction.AskUser)
@@ -112,7 +112,7 @@ public sealed class PlanningOrchestrator(
 
         var verificationResult = await _finalAnswerVerifier.VerifyAsync(userQuery, finalAnswer, cancellationToken);
         _observer.OnEvent(new FinalAnswerVerifiedEvent(verificationResult));
-        _log.Log($"[verify] final:isAnswer={verificationResult.IsAnswer} reason={verificationResult.Reason}");
+        _log.Log($"[verify] answer:isAnswer={verificationResult.IsAnswer} reason={verificationResult.Reason}");
         return verificationResult;
     }
 

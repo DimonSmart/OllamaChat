@@ -282,6 +282,63 @@ public sealed class InitialDraftRepairerTests
             Times.Exactly(2));
     }
 
+    [Fact]
+    public async Task LlmReplanner_DoesNotAcceptValidationOnlyRound_AsRepairedPlan()
+    {
+        var invalidPlan = CreateInvalidSearchPlan();
+        var repairedPlan = CreateValidSearchPlan();
+        var toolCatalog = new PlanningToolCatalog([CreateSearchDescriptor()]);
+        var chatClient = CreateMockChatClient(
+            CreateToolCallResponse(
+                PlanningAgentToolNames.PlanValidateDraft,
+                new Dictionary<string, object?>()),
+            CreateTextResponse("Replan repaired."),
+            CreateToolCallResponse(
+                PlanningAgentToolNames.PlanReplaceStep,
+                new Dictionary<string, object?>
+                {
+                    ["stepId"] = "search_vacuums",
+                    ["step"] = JsonSerializer.SerializeToElement(repairedPlan.Steps[0])
+                },
+                callId: "call-2"),
+            CreateTextResponse("Replan repaired."));
+        var replanner = new LlmReplanner(chatClient.Object, toolCatalog);
+
+        var result = await replanner.ReplanAsync(new PlannerReplanRequest
+        {
+            UserQuery = "Find a robot vacuum.",
+            AttemptNumber = 1,
+            Plan = invalidPlan,
+            ExecutionResult = new ExecutionResult
+            {
+                StepTraces =
+                [
+                    new StepExecutionTrace
+                    {
+                        StepId = "search_vacuums",
+                        Success = false,
+                        ErrorCode = "tool_error",
+                        ErrorMessage = "Execution failed."
+                    }
+                ]
+            },
+            GoalVerdict = new GoalVerdict
+            {
+                Action = GoalAction.Replan,
+                Reason = "Execution has failed steps."
+            }
+        });
+
+        Assert.True(PlanValidator.TryValidate(result, toolCatalog.ListTools(), out var issue), issue?.Message);
+        Assert.Equal("robot vacuums", result.Steps[0].In["query"]?.GetValue<string>());
+        chatClient.Verify(
+            client => client.GetResponseAsync(
+                It.IsAny<IEnumerable<ChatMessage>>(),
+                It.IsAny<ChatOptions?>(),
+                It.IsAny<CancellationToken>()),
+            Times.Exactly(4));
+    }
+
     private static PlanDefinition CreateInvalidSearchPlan() =>
         new()
         {

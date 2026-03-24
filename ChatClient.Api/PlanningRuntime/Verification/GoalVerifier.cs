@@ -96,7 +96,7 @@ public sealed class GoalVerifier(bool askUserEnabled = false)
         return new GoalVerdict
         {
             Action = GoalAction.Done,
-            Reason = "Goal achieved."
+            Reason = "Execution produced a non-empty final result."
         };
     }
 

@@ -40,6 +40,7 @@ public sealed class LlmReplanner(
 
         for (var round = 1; round <= MaxRounds; round++)
         {
+            var roundStartSnapshot = SerializeWorkingPlan(session);
             var runtime = new PlanToolCallingRuntime(
                 session,
                 workflowTools,
@@ -72,15 +73,27 @@ public sealed class LlmReplanner(
                 var validationResult = PlanDraftValidationTool.CreateValidationResult(session, workflowTools, _agentCatalog);
                 lastToolResults.Add(validationResult);
                 _log.Log($"[replan] round={round} validation={SerializeDetailedSummary(validationResult)}");
+                var hasEffectivePlanChange = !string.Equals(roundStartSnapshot, SerializeWorkingPlan(session), StringComparison.Ordinal);
+                var roundCompleted = validationResult["ok"]?.GetValue<bool>() == true && hasEffectivePlanChange;
+                var roundReason = validationResult["ok"]?.GetValue<bool>() == true && !hasEffectivePlanChange
+                    ? "Replan made no effective changes to the working plan."
+                    : completionText;
                 _observer.OnEvent(new ReplanRoundCompletedEvent(
                     round,
-                    validationResult["ok"]?.GetValue<bool>() == true,
-                    completionText,
+                    roundCompleted,
+                    roundReason,
                     JsonSerializer.SerializeToElement(new { completion = completionText }),
                     JsonSerializer.SerializeToElement(lastToolResults, JsonOptions)));
 
                 if (validationResult["ok"]?.GetValue<bool>() == true)
                 {
+                    if (!hasEffectivePlanChange)
+                    {
+                        retryMessage = "The working draft is still unchanged. Apply a real repair with plan.replaceStep, plan.addSteps, or plan.resetFrom before finishing.";
+                        _log.Log($"[replan] round={round} no-op");
+                        continue;
+                    }
+
                     var replanned = session.BuildPlan();
                     _log.Log($"[replan] success steps={replanned.Steps.Count} goal={Shorten(replanned.Goal, 240)}");
                     _log.Log($"[replan] summary {PlanningJson.SerializeNodeCompact(PlanningLogFormatter.SummarizePlan(replanned))}");
@@ -356,6 +369,9 @@ public sealed class LlmReplanner(
 
     private static string SerializeDetailedSummary(JsonNode? value) =>
         PlanningJson.SerializeNodeCompact(PlanningLogFormatter.SummarizeForLog(value));
+
+    private static string SerializeWorkingPlan(PlanEditingSession session) =>
+        session.GetCurrentPlanJson().ToJsonString(PlanningJson.CompactOptions);
 
     private static PlanDefinition ClonePlan(PlanDefinition plan) =>
         JsonSerializer.Deserialize<PlanDefinition>(JsonSerializer.Serialize(plan))
