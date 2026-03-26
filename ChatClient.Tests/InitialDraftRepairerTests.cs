@@ -132,14 +132,21 @@ public sealed class InitialDraftRepairerTests
         Assert.DoesNotContain("Few-shot", systemPrompt, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("Tool steps must not declare out", systemPrompt, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("out must include format", systemPrompt, StringComparison.OrdinalIgnoreCase);
-        Assert.Contains("Omit out.aggregate", systemPrompt, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("out.schema is optional", systemPrompt, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("out must include format ('json' or 'string') and aggregate", systemPrompt, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("concat", systemPrompt, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("Never use 'flatten' as a binding mode", systemPrompt, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("do not assume a fixed workflow", systemPrompt, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("actual description, schema, and compatibility metadata", systemPrompt, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("preserve those exact records", systemPrompt, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("directly compatible with another tool input", systemPrompt, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("do not reduce them to lossy summaries first", systemPrompt, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("a limit is only a maximum", systemPrompt, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("maximum supported set plus an insufficiency field", systemPrompt, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
-    public async Task LlmPlanner_NormalizesDraftContracts_AndLegacyBindings_BeforeValidation()
+    public async Task LlmPlanner_NormalizesDraftContracts_BeforeValidation()
     {
         var draft = new PlanDefinition
         {
@@ -158,7 +165,6 @@ public sealed class InitialDraftRepairerTests
                     Out = new PlanStepOutputContract
                     {
                         Format = PlanStepOutputFormats.Json,
-                        Aggregate = PlanStepOutputAggregates.Single,
                         Schema = ParseJson(
                             """
                             {
@@ -179,7 +185,15 @@ public sealed class InitialDraftRepairerTests
                     UserPrompt = "Write the final answer.",
                     In = new Dictionary<string, JsonNode?>
                     {
-                        ["pages"] = JsonValue.Create("$search_vacuums.results")
+                        ["pages"] = new JsonObject
+                        {
+                            ["from"] = "$search_vacuums.results",
+                            ["mode"] = "value"
+                        }
+                    },
+                    Out = new PlanStepOutputContract
+                    {
+                        Format = "STRING"
                     }
                 }
             ]
@@ -194,7 +208,6 @@ public sealed class InitialDraftRepairerTests
         Assert.Equal(PlanStepKinds.Llm, result.Steps[1].Kind);
         Assert.Null(result.Steps[1].CapabilityId);
         Assert.Equal(PlanStepOutputFormats.String, result.Steps[1].Out?.Format);
-        Assert.Equal(PlanStepOutputAggregates.Single, result.Steps[1].Out?.Aggregate);
         var binding = Assert.IsType<JsonObject>(result.Steps[1].In["pages"]);
         Assert.Equal("$search_vacuums.results", binding["from"]?.GetValue<string>());
         Assert.Equal("value", binding["mode"]?.GetValue<string>());
@@ -239,6 +252,77 @@ public sealed class InitialDraftRepairerTests
                 It.IsAny<ChatOptions?>(),
                 It.IsAny<CancellationToken>()),
             Times.Exactly(2));
+    }
+
+    [Fact]
+    public async Task LlmInitialDraftRepairer_PromptRequiresPreservingSourceRecords()
+    {
+        var invalidPlan = CreateInvalidSearchPlan();
+        var repairedPlan = CreateValidSearchPlan();
+        var toolCatalog = new PlanningToolCatalog([CreateSearchDescriptor()]);
+        IEnumerable<ChatMessage>? capturedMessages = null;
+        ChatOptions? capturedOptions = null;
+        var queue = new Queue<ChatResponse>(
+        [
+            CreateToolCallResponse(
+                PlanningAgentToolNames.PlanReplaceStep,
+                new Dictionary<string, object?>
+                {
+                    ["stepId"] = "search_vacuums",
+                    ["step"] = JsonSerializer.SerializeToElement(repairedPlan.Steps[0])
+                }),
+            CreateTextResponse("Draft repaired.")
+        ]);
+        var chatClient = new Mock<IChatClient>(MockBehavior.Strict);
+        chatClient
+            .Setup(client => client.GetResponseAsync(
+                It.IsAny<IEnumerable<ChatMessage>>(),
+                It.IsAny<ChatOptions?>(),
+                It.IsAny<CancellationToken>()))
+            .Callback<IEnumerable<ChatMessage>, ChatOptions?, CancellationToken>((messages, options, _) =>
+            {
+                capturedMessages ??= messages.ToArray();
+                capturedOptions ??= options;
+            })
+            .ReturnsAsync(() => queue.Dequeue());
+        chatClient
+            .Setup(client => client.GetStreamingResponseAsync(
+                It.IsAny<IEnumerable<ChatMessage>>(),
+                It.IsAny<ChatOptions?>(),
+                It.IsAny<CancellationToken>()))
+            .Returns(AsyncEnumerable.Empty<ChatResponseUpdate>());
+        chatClient
+            .Setup(client => client.GetService(It.IsAny<Type>(), It.IsAny<object?>()))
+            .Returns((object?)null);
+        chatClient
+            .Setup(client => client.Dispose());
+
+        var repairer = new LlmInitialDraftRepairer(chatClient.Object, toolCatalog);
+
+        var result = await repairer.RepairAsync(new InitialDraftRepairRequest
+        {
+            UserQuery = "Find a robot vacuum.",
+            AttemptNumber = 1,
+            DraftPlan = invalidPlan,
+            ValidationIssue = new PlanValidationIssue(
+                "tool_input_missing_required",
+                "Tool step 'search_vacuums' is missing required input 'query' for tool 'mock:web:search'.",
+                StepId: "search_vacuums",
+                InputName: "query",
+                ToolName: "mock:web:search")
+        });
+
+        Assert.True(PlanValidator.TryValidate(result, toolCatalog.ListTools(), out var issue), issue?.Message);
+        var messages = Assert.IsAssignableFrom<IEnumerable<ChatMessage>>(capturedMessages);
+        var systemPrompt = capturedOptions?.Instructions
+            ?? messages.SingleOrDefault(message => message.Role == ChatRole.System)?.Text;
+
+        Assert.NotNull(systemPrompt);
+        Assert.Contains("instead of assuming a fixed workflow", systemPrompt, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("preserving the required source records", systemPrompt, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("directly compatible with a downstream tool input", systemPrompt, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("Do not solve a count gap by only weakening the final writer", systemPrompt, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("increasing a tool limit", systemPrompt, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
@@ -474,6 +558,8 @@ public sealed class InitialDraftRepairerTests
         Assert.Contains(PlanningAgentToolNames.PlanRemoveStep, systemPrompt, StringComparison.Ordinal);
         Assert.Contains("Diagnosis:", systemPrompt, StringComparison.Ordinal);
         Assert.Contains("First identify what is actually wrong", systemPrompt, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("instead of assuming a fixed workflow", systemPrompt, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("increase a tool limit", systemPrompt, StringComparison.OrdinalIgnoreCase);
     }
 
     private static PlanDefinition CreateInvalidSearchPlan() =>

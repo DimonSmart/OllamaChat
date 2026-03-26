@@ -79,8 +79,7 @@ public static partial class PlanValidator
             throw CreateIssue("plan_steps_empty", "Plan.steps must contain at least one step.", path: "steps");
 
         var seenIds = new HashSet<string>(StringComparer.Ordinal);
-        var validatedSteps = new Dictionary<string, PlanStep>(StringComparer.Ordinal);
-        var resolvedOutputContracts = new Dictionary<string, ResolvedPlanStepOutputContract>(StringComparer.Ordinal);
+        var toolInputSchemasByStepId = new Dictionary<string, Dictionary<string, JsonElement>>(StringComparer.Ordinal);
         var knownTools = tools?
             .ToDictionary(tool => tool.QualifiedName, StringComparer.OrdinalIgnoreCase);
         var knownAgents = callableAgents?
@@ -132,6 +131,7 @@ public static partial class PlanValidator
                     throw CreateIssue("tool_unknown", $"Step '{step.Id}' references unknown tool '{step.CapabilityId}'.", stepId: step.Id, toolName: step.CapabilityId);
 
                 toolInputProperties = ValidateToolInputs(step, toolMetadata);
+                toolInputSchemasByStepId[step.Id] = toolInputProperties;
             }
 
             if (hasAgent && knownAgents is not null && !knownAgents.ContainsKey(capabilityId!))
@@ -143,27 +143,7 @@ public static partial class PlanValidator
                     actual: step.CapabilityId);
             }
 
-            foreach (var input in step.In)
-            {
-                JsonElement? targetInputSchema = null;
-                if (toolInputProperties is not null && toolInputProperties.TryGetValue(input.Key, out var propertySchema))
-                    targetInputSchema = propertySchema;
-                ValidateInputOrThrow(
-                    step,
-                    input.Key,
-                    input.Value,
-                    seenIds,
-                    validatedSteps,
-                    resolvedOutputContracts,
-                    targetInputSchema);
-            }
-
             ValidateOutputContractOrThrow(step, toolMetadata);
-            resolvedOutputContracts[step.Id] = PlanStepOutputContractResolver.Resolve(
-                step,
-                toolMetadata,
-                PlanStepOutputContractResolver.HasMappedInputs(step));
-            validatedSteps[step.Id] = step;
 
             if (hasLlm)
             {
@@ -220,6 +200,30 @@ public static partial class PlanValidator
                         stepId: step.Id);
                 }
             }
+        }
+
+        var resolvedOutputContracts = DerivedStepOutputContractBuilder.Build(plan, tools);
+        var validatedSteps = new Dictionary<string, PlanStep>(StringComparer.Ordinal);
+        foreach (var step in plan.Steps)
+        {
+            toolInputSchemasByStepId.TryGetValue(step.Id, out var toolInputProperties);
+            foreach (var input in step.In)
+            {
+                JsonElement? targetInputSchema = null;
+                if (toolInputProperties is not null && toolInputProperties.TryGetValue(input.Key, out var propertySchema))
+                    targetInputSchema = propertySchema;
+
+                ValidateInputOrThrow(
+                    step,
+                    input.Key,
+                    input.Value,
+                    validatedSteps.Keys.ToHashSet(StringComparer.Ordinal),
+                    validatedSteps,
+                    resolvedOutputContracts,
+                    targetInputSchema);
+            }
+
+            validatedSteps[step.Id] = step;
         }
 
         ValidateGraphShapeOrThrow(plan);
@@ -392,19 +396,24 @@ public static partial class PlanValidator
             && validatedSteps.TryGetValue(reference.StepId, out var sourceStep)
             && resolvedOutputContracts.TryGetValue(reference.StepId, out var sourceOutputContract))
         {
-            var sourceSchema = ResolveBoundSourceSchemaOrThrow(stepId, inputName, binding, reference, sourceStep, sourceOutputContract);
+            var sourceSchema = TryResolveBoundSourceSchema(stepId, inputName, binding, reference, sourceStep, sourceOutputContract);
+            if (sourceSchema is null)
+                return;
 
             if (!string.IsNullOrWhiteSpace(binding.Type))
-                ValidateBindingDeclaredTypeOrThrow(stepId, inputName, binding, sourceSchema);
+                ValidateBindingDeclaredTypeOrThrow(stepId, inputName, binding, sourceSchema.Value);
 
-            ValidateBindingCompatibilityOrThrow(stepId, inputName, binding, sourceStep, sourceSchema, targetInputSchema.Value);
+            ValidateBindingCompatibilityOrThrow(stepId, inputName, binding, sourceStep, sourceSchema.Value, targetInputSchema.Value);
         }
         else if (!string.IsNullOrWhiteSpace(binding.Type)
             && validatedSteps.TryGetValue(reference.StepId, out var typedSourceStep)
             && resolvedOutputContracts.TryGetValue(reference.StepId, out var typedSourceOutputContract))
         {
-            var sourceSchema = ResolveBoundSourceSchemaOrThrow(stepId, inputName, binding, reference, typedSourceStep, typedSourceOutputContract);
-            ValidateBindingDeclaredTypeOrThrow(stepId, inputName, binding, sourceSchema);
+            var sourceSchema = TryResolveBoundSourceSchema(stepId, inputName, binding, reference, typedSourceStep, typedSourceOutputContract);
+            if (sourceSchema is null)
+                return;
+
+            ValidateBindingDeclaredTypeOrThrow(stepId, inputName, binding, sourceSchema.Value);
         }
     }
 
@@ -483,9 +492,12 @@ public static partial class PlanValidator
                 continue;
             }
 
-            var sourceSchema = ResolveBoundSourceSchemaOrThrow(stepId, inputName, binding, reference, sourceStep, sourceOutputContract);
-            if (sourceSchema.ValueKind is not JsonValueKind.Undefined and not JsonValueKind.Null
-                && !PlanStepOutputContractResolver.SchemaDefinesArray(sourceSchema))
+            var sourceSchema = TryResolveBoundSourceSchema(stepId, inputName, binding, reference, sourceStep, sourceOutputContract);
+            if (sourceSchema is null)
+                continue;
+
+            if (sourceSchema.Value.ValueKind is not JsonValueKind.Undefined and not JsonValueKind.Null
+                && !PlanStepOutputContractResolver.SchemaDefinesArray(sourceSchema.Value))
             {
                 throw CreateIssue(
                     "binding_concat_non_array",
@@ -495,7 +507,7 @@ public static partial class PlanValidator
                     bindingFrom: binding.From,
                     sourceStepId: sourceStep.Id,
                     expected: "array",
-                    actual: DescribeSchemaShape(sourceSchema));
+                    actual: DescribeSchemaShape(sourceSchema.Value));
             }
 
             if (!string.IsNullOrWhiteSpace(concatBinding.Type))
@@ -504,7 +516,7 @@ public static partial class PlanValidator
                     stepId,
                     inputName,
                     new PlanInputBindingSpec(binding.From, binding.Mode, concatBinding.Type),
-                    sourceSchema);
+                    sourceSchema.Value);
             }
 
             if (targetInputSchema is not null)
@@ -514,7 +526,7 @@ public static partial class PlanValidator
                     inputName,
                     binding,
                     sourceStep,
-                    sourceSchema,
+                    sourceSchema.Value,
                     targetInputSchema.Value);
             }
         }
@@ -730,7 +742,7 @@ public static partial class PlanValidator
         return variants.Count > 0;
     }
 
-    private static JsonElement ResolveBoundSourceSchemaOrThrow(
+    private static JsonElement? TryResolveBoundSourceSchema(
         string stepId,
         string inputName,
         PlanInputBindingSpec binding,
@@ -738,8 +750,8 @@ public static partial class PlanValidator
         PlanStep sourceStep,
         ResolvedPlanStepOutputContract sourceOutputContract)
     {
-        if (sourceOutputContract.FinalSchema is not { } finalSchema)
-            return default;
+        if (sourceOutputContract.IsOpaque || sourceOutputContract.FinalSchema is not { } finalSchema)
+            return null;
 
         var sourceSchema = TryResolveReferenceSchema(finalSchema, reference);
         if (sourceSchema is null)

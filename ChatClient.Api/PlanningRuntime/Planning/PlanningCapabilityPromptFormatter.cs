@@ -1,6 +1,5 @@
 using System.Text;
 using ChatClient.Api.PlanningRuntime.Agents;
-using ChatClient.Api.PlanningRuntime.Common;
 using ChatClient.Api.Services;
 
 namespace ChatClient.Api.PlanningRuntime.Planning;
@@ -47,11 +46,10 @@ internal static class PlanningCapabilityPromptFormatter
                 sb.AppendLine($"  avoidWhen: {tool.PlanningMetadata.AvoidWhen}");
             if (!string.IsNullOrWhiteSpace(tool.PlanningMetadata?.Returns))
                 sb.AppendLine($"  returns: {tool.PlanningMetadata.Returns}");
+            if (!string.IsNullOrWhiteSpace(tool.PlanningMetadata?.Limits))
+                sb.AppendLine($"  limits: {tool.PlanningMetadata.Limits}");
             if (!string.IsNullOrWhiteSpace(tool.PlanningMetadata?.Constraints))
                 sb.AppendLine($"  constraints: {tool.PlanningMetadata.Constraints}");
-
-            sb.AppendLine($"  inputSchema: {PlanningJson.SerializeElementCompact(tool.InputSchema)}");
-            sb.AppendLine($"  outputSchema: {PlanningJson.SerializeElementCompact(tool.OutputSchema)}");
         }
     }
 

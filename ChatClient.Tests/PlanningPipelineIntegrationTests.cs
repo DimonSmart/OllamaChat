@@ -1,4 +1,4 @@
-using System.Security.Cryptography;
+﻿using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
@@ -66,7 +66,8 @@ public sealed class PlanningPipelineIntegrationTests(ITestOutputHelper output)
         await RunFullPipelineAsync(userQuery, CreateMockToolCatalog());
     }
 
-    [Fact]
+    [RealWebFact]
+    [Trait("Category", "RealWebExploration")]
     public async Task FullPipeline_PlannerAndOrchestrator_WithRealWebSearchAndDownload_ReturnsSystemOutcome()
     {
         const string userQuery = "Compare Markdig and CommonMark.NET using their GitHub or documentation pages, and tell me which one is better for a small .NET app.";
@@ -74,7 +75,7 @@ public sealed class PlanningPipelineIntegrationTests(ITestOutputHelper output)
         await RunWithRetriesAsync(() => RunFullPipelineAsync(userQuery, CreateRealWebToolCatalog(httpClientFactory)));
     }
 
-    [Theory]
+    [RealWebTheory]
     [Trait("Category", "RealWebExploration")]
     [MemberData(nameof(RealWebExplorationQueries))]
     public async Task FullPipeline_PlannerAndOrchestrator_WithRealWebExplorationQueries_CapturesArtifacts(
@@ -92,6 +93,130 @@ public sealed class PlanningPipelineIntegrationTests(ITestOutputHelper output)
 
         output.WriteLine($"Saved exploration summary: {savedPaths.SummaryPath}");
         output.WriteLine($"Saved exploration log: {savedPaths.LogPath}");
+    }
+
+    [RealWebFact]
+    [Trait("Category", "RealWebExploration")]
+    public async Task FullPipeline_PlannerAndOrchestrator_WithRobotKitsPythonMarkdownImages_CapturesMarkdownReportWithImages()
+    {
+        const string scenarioId = "robot-kits-python-markdown-images";
+        const string userQuery =
+            "Find at least 3 robot kits or robot construction kits that can be programmed with Python. " +
+            "Use official product pages or official documentation when possible. " +
+            "Produce a polished Markdown report with a short comparison table, one subsection per kit, " +
+            "and Markdown image embeds for the kits using image URLs from the collected evidence when available. " +
+            "Do not invent image URLs.";
+
+        var httpClientFactory = new TestHttpClientFactory();
+        var artifact = await RunFullPipelineInspectionAsync(
+            scenarioId,
+            userQuery,
+            CreateRealWebToolCatalog(httpClientFactory));
+
+        var artifactWriter = new PlanningExplorationArtifactWriter();
+        var savedPaths = await artifactWriter.SaveAsync(artifact);
+
+        output.WriteLine($"Saved exploration summary: {savedPaths.SummaryPath}");
+        output.WriteLine($"Saved exploration log: {savedPaths.LogPath}");
+
+        AssertSuccessfulWebPlanningArtifact(artifact);
+
+        var markdown = ExtractMarkdownReport(artifact.ResultJson);
+        Assert.Contains("#", markdown, StringComparison.Ordinal);
+        Assert.Contains("|", markdown, StringComparison.Ordinal);
+        Assert.Contains("![", markdown, StringComparison.Ordinal);
+        Assert.Contains("](", markdown, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task FullPipeline_PlannerAndOrchestrator_WithRobotKitsPythonMarkdownImages_UsingMockCatalog_ReturnsMarkdownReportWithImages()
+    {
+        const string scenarioId = "robot-kits-python-markdown-images-mock";
+        const string userQuery =
+            "Find at least 3 robot kits or robot construction kits that can be programmed with Python. " +
+            "Produce a polished Markdown report with a short comparison table, one subsection per kit, " +
+            "and Markdown image embeds using the image URLs available in the collected evidence. " +
+            "Do not invent image URLs.";
+
+        var artifact = await RunFullPipelineInspectionAsync(
+            scenarioId,
+            userQuery,
+            CreateRobotKitsMockToolCatalog());
+
+        AssertSuccessfulPlanningArtifact(
+            artifact,
+            searchCapabilityId: "mock-web:search",
+            downloadCapabilityId: "mock-web:download");
+
+        var markdown = ExtractMarkdownReport(artifact.ResultJson);
+        Assert.Contains("#", markdown, StringComparison.Ordinal);
+        Assert.Contains("|", markdown, StringComparison.Ordinal);
+        Assert.Contains("![", markdown, StringComparison.Ordinal);
+        Assert.Contains("Python", markdown, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [RealWebFact]
+    [Trait("Category", "RealWebExploration")]
+    public async Task PlannerOnly_WithRussianDiyPythonRobotsQuery_CapturesPlanAndPlanningLog()
+    {
+        const string scenarioId = "planner-only-diy-python-robots-ru";
+        const string userQuery =
+            """
+            Я ищу DIY робота которого можно программировать на Python. Найди минимум 7  разных.
+            Интересуют как колесные платформы так и роботы необычных конфигураций.
+            Ответ: 
+            Название робота,
+            Его ключевые особенности.
+            Фотографии (до 3) если есть (ссылками markdown)
+
+            Выведи список роботов как документ в формате markdown.
+            """;
+
+        var httpClientFactory = new TestHttpClientFactory();
+        var artifact = await RunPlannerInspectionAsync(
+            scenarioId,
+            userQuery,
+            CreateRealWebToolCatalog(httpClientFactory));
+
+        var artifactWriter = new PlanningExplorationArtifactWriter();
+        var savedPaths = await artifactWriter.SaveAsync(artifact);
+
+        output.WriteLine($"Saved planner summary: {savedPaths.SummaryPath}");
+        output.WriteLine($"Saved planner log: {savedPaths.LogPath}");
+
+        Assert.Contains("[plan] create:", artifact.LogText, StringComparison.Ordinal);
+        Assert.Contains("built-in-web:search", artifact.LogText, StringComparison.Ordinal);
+        Assert.True(
+            string.Equals(artifact.Status, "ok", StringComparison.Ordinal)
+            || string.Equals(artifact.Status, "exception", StringComparison.Ordinal),
+            $"Unexpected planner inspection status '{artifact.Status}'.");
+    }
+
+    [RealWebFact]
+    [Trait("Category", "RealWebExploration")]
+    public async Task PlannerOnly_WithRobotVacuumComparisonQuery_CapturesPlanAndPlanningLog()
+    {
+        const string scenarioId = "planner-only-robot-vacuum-comparison";
+        const string userQuery = "Find two popular robot vacuum cleaners, compare their specs, and recommend which one is better.";
+
+        var httpClientFactory = new TestHttpClientFactory();
+        var artifact = await RunPlannerInspectionAsync(
+            scenarioId,
+            userQuery,
+            CreateRealWebToolCatalog(httpClientFactory));
+
+        var artifactWriter = new PlanningExplorationArtifactWriter();
+        var savedPaths = await artifactWriter.SaveAsync(artifact);
+
+        output.WriteLine($"Saved planner summary: {savedPaths.SummaryPath}");
+        output.WriteLine($"Saved planner log: {savedPaths.LogPath}");
+
+        Assert.Contains("[plan] create:", artifact.LogText, StringComparison.Ordinal);
+        Assert.Contains("built-in-web:search", artifact.LogText, StringComparison.Ordinal);
+        Assert.True(
+            string.Equals(artifact.Status, "ok", StringComparison.Ordinal)
+            || string.Equals(artifact.Status, "exception", StringComparison.Ordinal),
+            $"Unexpected planner inspection status '{artifact.Status}'.");
     }
 
     private async Task RunFullPipelineAsync(string userQuery, PlanningToolCatalog tools)
@@ -209,6 +334,104 @@ public sealed class PlanningPipelineIntegrationTests(ITestOutputHelper output)
         }
     }
 
+    private async Task<PlanningExplorationArtifact> RunPlannerInspectionAsync(
+        string scenarioId,
+        string userQuery,
+        PlanningToolCatalog tools)
+    {
+        var chatClient = BuildChatClient();
+        var sink = new TestArtifactLogSink();
+        var logger = new TestLogger(output, sink);
+        var events = new List<PlanRunEvent>();
+        var observer = new ActionPlanRunObserver(events.Add);
+        var planner = new LlmPlanner(chatClient, tools, logger, observer);
+
+        void WriteLine(string message)
+        {
+            output.WriteLine(message);
+            sink.WriteLine(message);
+        }
+
+        WriteLine($"Scenario: {scenarioId}");
+        WriteLine($"User query: {userQuery}");
+
+        try
+        {
+            var plan = await planner.CreatePlanAsync(userQuery);
+            var planJson = PlanJsonProfiles.SerializeIndented(plan, PlanModelProfile.Draft);
+            var eventsJson = SerializePlanRunEvents(events);
+
+            WriteLine($"\n=== PLANNER RESULT ===\n{planJson}");
+            WriteLine($"\n=== PLANNER EVENTS ===\n{eventsJson}");
+
+            return new PlanningExplorationArtifact
+            {
+                ScenarioId = scenarioId,
+                UserQuery = userQuery,
+                Status = "ok",
+                ErrorCode = null,
+                ErrorMessage = null,
+                ErrorDetailsJson = eventsJson,
+                ResultJson = planJson,
+                AnsweredQuestion = null,
+                AnswerAssertionComment = null,
+                LogText = sink.GetText()
+            };
+        }
+        catch (Exception ex)
+        {
+            var eventsJson = SerializePlanRunEvents(events);
+            WriteLine($"\n=== PLANNER EVENTS ===\n{eventsJson}");
+            WriteLine($"\n=== PLANNER EXCEPTION ===\n{ex}");
+
+            return new PlanningExplorationArtifact
+            {
+                ScenarioId = scenarioId,
+                UserQuery = userQuery,
+                Status = "exception",
+                ErrorCode = ex.GetType().Name,
+                ErrorMessage = ex.Message,
+                ErrorDetailsJson = JsonSerializer.Serialize(
+                    new
+                    {
+                        exception = ex.ToString(),
+                        events = JsonSerializer.Deserialize<JsonElement>(eventsJson)
+                    },
+                    new JsonSerializerOptions { WriteIndented = true }),
+                ResultJson = null,
+                AnsweredQuestion = null,
+                AnswerAssertionComment = null,
+                LogText = sink.GetText()
+            };
+        }
+    }
+
+    private static string SerializePlanRunEvents(IReadOnlyList<PlanRunEvent> events) =>
+        JsonSerializer.Serialize(
+            events.Select(SerializePlanRunEvent),
+            new JsonSerializerOptions { WriteIndented = true });
+
+    private static JsonObject SerializePlanRunEvent(PlanRunEvent planRunEvent)
+    {
+        var serialized = JsonSerializer.SerializeToNode(
+                (object)planRunEvent,
+                planRunEvent.GetType(),
+                PlanningJson.IndentedOptions) as JsonObject
+            ?? new JsonObject();
+
+        var result = new JsonObject
+        {
+            ["eventType"] = planRunEvent.GetType().Name
+        };
+
+        foreach (var property in serialized)
+        {
+            result[property.Key] = property.Value?.DeepClone();
+        }
+
+        return result;
+    }
+
     private async Task RunWithRetriesAsync(Func<Task> action, int maxAttempts = 3)
     {
         Exception? lastException = null;
@@ -234,7 +457,7 @@ public sealed class PlanningPipelineIntegrationTests(ITestOutputHelper output)
             CreateDescriptor(
                 serverName: "mock-web",
                 toolName: "search",
-                description: "Search the web and return raw structured search results with URL, title, snippet, and site metadata. The output may be noisy or partially irrelevant and must be checked for relevance before relying on it.",
+                description: "Search the web and return object { query, results[] }. Each results[] item is a candidate record with url, title, snippet, siteName, displayUrl, and position. The output may be noisy or partially irrelevant and must be checked for relevance before relying on it.",
                 inputSchemaJson: """
                     {
                       "type": "object",
@@ -297,7 +520,7 @@ public sealed class PlanningPipelineIntegrationTests(ITestOutputHelper output)
             CreateDescriptor(
                 serverName: "mock-web",
                 toolName: "download",
-                description: "Download a single web page. Prefer passing a full search-result object via 'page'; the tool returns the same object enriched with 'content'. If only a raw absolute URL is available, pass it via 'url' and the tool returns a minimal object with url, title, and content.",
+                description: "Download a single web page. Use input key 'page' when you have a full search-result object; use input key 'url' only for a raw URL string. The tool returns object { url, title, content } and preserves search metadata when page is used.",
                 inputSchemaJson: """
                     {
                       "type": "object",
@@ -363,22 +586,25 @@ public sealed class PlanningPipelineIntegrationTests(ITestOutputHelper output)
                         };
                     }
 
+                    payload["url"] ??= url;
+                    payload["title"] ??= InferMockTitleFromUrl(url);
+
                     return payload;
                 })
         ]);
 
-    private static PlanningToolCatalog CreateRealWebToolCatalog(IHttpClientFactory httpClientFactory) =>
+    private static PlanningToolCatalog CreateRobotKitsMockToolCatalog() =>
         new([
             CreateDescriptor(
-                serverName: "built-in-web",
+                serverName: "mock-web",
                 toolName: "search",
-                description: "Search the web and return structured search results with metadata.",
+                description: "Search the web and return object { query, results[] }. Each results[] item is a product candidate with url, title, snippet, siteName, displayUrl, thumbnailUrl, and position.",
                 inputSchemaJson: """
                     {
                       "type": "object",
                       "properties": {
                         "query": { "type": "string" },
-                        "limit": { "type": "integer" }
+                        "limit": { "type": "number" }
                       },
                       "required": ["query"]
                     }
@@ -395,6 +621,192 @@ public sealed class PlanningPipelineIntegrationTests(ITestOutputHelper output)
                             "properties": {
                               "url": { "type": "string" },
                               "title": { "type": "string" },
+                              "snippet": { "type": "string" },
+                              "siteName": { "type": "string" },
+                              "displayUrl": { "type": "string" },
+                              "thumbnailUrl": { "type": "string" },
+                              "position": { "type": "integer" }
+                            },
+                            "required": ["url", "title", "thumbnailUrl"]
+                          }
+                        }
+                      },
+                      "required": ["query", "results"]
+                    }
+                    """,
+                execute: _ => new
+                {
+                    query = "python robot kits",
+                    results = new[]
+                    {
+                        new
+                        {
+                            url = "https://www.makeblock.com/products/mbot2",
+                            title = "Makeblock mBot2",
+                            snippet = "Educational robot kit with Python support, sensors, and expansion options.",
+                            siteName = "Makeblock",
+                            displayUrl = "www.makeblock.com/products/mbot2",
+                            thumbnailUrl = "https://www.makeblock.com/cdn/shop/files/mbot2.jpg",
+                            position = 1
+                        },
+                        new
+                        {
+                            url = "https://www.sunfounder.com/products/picrawler",
+                            title = "SunFounder PiCrawler",
+                            snippet = "Raspberry Pi robot kit programmed in Python with computer-vision demos.",
+                            siteName = "SunFounder",
+                            displayUrl = "www.sunfounder.com/products/picrawler",
+                            thumbnailUrl = "https://www.sunfounder.com/cdn/shop/files/picrawler.jpg",
+                            position = 2
+                        },
+                        new
+                        {
+                            url = "https://education.lego.com/en-us/products/lego-education-spike-prime-set/45678/",
+                            title = "LEGO Education SPIKE Prime",
+                            snippet = "Classroom robotics kit with block coding and Python progression path.",
+                            siteName = "LEGO Education",
+                            displayUrl = "education.lego.com/en-us/products/lego-education-spike-prime-set/45678/",
+                            thumbnailUrl = "https://education.lego.com/cdn/shop/files/spike-prime.jpg",
+                            position = 3
+                        }
+                    }
+                }),
+            CreateDescriptor(
+                serverName: "mock-web",
+                toolName: "download",
+                description: "Download one product page. Use input key 'page' for a full search-result object or 'url' for a raw URL string. The tool returns object { url, title, thumbnailUrl, content } and preserves search metadata including image URLs.",
+                inputSchemaJson: """
+                    {
+                      "type": "object",
+                      "properties": {
+                        "page": {
+                          "type": "object",
+                          "properties": {
+                            "url": { "type": "string" },
+                            "title": { "type": "string" },
+                            "snippet": { "type": "string" },
+                            "siteName": { "type": "string" },
+                            "displayUrl": { "type": "string" },
+                            "thumbnailUrl": { "type": "string" },
+                            "position": { "type": "integer" }
+                          }
+                        },
+                        "url": { "type": "string" }
+                      }
+                    }
+                    """,
+                outputSchemaJson: """
+                    {
+                      "type": "object",
+                      "properties": {
+                        "url": { "type": "string" },
+                        "title": { "type": "string" },
+                        "snippet": { "type": "string" },
+                        "siteName": { "type": "string" },
+                        "displayUrl": { "type": "string" },
+                        "thumbnailUrl": { "type": "string" },
+                        "position": { "type": "integer" },
+                        "content": { "type": "string" }
+                      },
+                      "required": ["url", "title", "thumbnailUrl", "content"]
+                    }
+                    """,
+                execute: arguments =>
+                {
+                    var pageObject = TryGetObjectProperty(arguments, "page");
+                    var url = pageObject is not null
+                        ? TryGetStringProperty(pageObject, "url")
+                        : TryGetStringProperty(arguments, "page") ?? TryGetStringProperty(arguments, "url");
+                    if (string.IsNullOrWhiteSpace(url))
+                        throw new InvalidOperationException("Download URL is required.");
+
+                    var content = url switch
+                    {
+                        "https://www.makeblock.com/products/mbot2" =>
+                            "Makeblock mBot2 is a beginner-friendly educational robot kit. It supports Python programming, includes line-following and ultrasonic sensors, uses a CyberPi controller, and is strong for classroom projects. Typical bundle price is around $149.",
+                        "https://www.sunfounder.com/products/picrawler" =>
+                            "SunFounder PiCrawler is a Raspberry Pi hexapod robot kit programmed in Python. It emphasizes computer vision, servo control, and advanced tinkering. It is better for hobbyists comfortable with Raspberry Pi setup. Typical kit price is around $269.",
+                        "https://education.lego.com/en-us/products/lego-education-spike-prime-set/45678/" =>
+                            "LEGO Education SPIKE Prime is a classroom robotics kit with a transition from block coding to Python. It focuses on lessons, sturdy hardware, and team projects. Typical education pack pricing starts much higher than hobby kits, around $399.",
+                        _ => throw new InvalidOperationException($"Unexpected mock URL '{url}'.")
+                    };
+
+                    JsonObject payload;
+                    if (pageObject is not null)
+                    {
+                        payload = JsonNode.Parse(JsonSerializer.Serialize(pageObject))?.AsObject() ?? new JsonObject();
+                        payload["content"] = content;
+                    }
+                    else
+                    {
+                        payload = new JsonObject
+                        {
+                            ["url"] = url,
+                            ["title"] = url.Contains("mbot2", StringComparison.OrdinalIgnoreCase)
+                                ? "Makeblock mBot2"
+                                : url.Contains("picrawler", StringComparison.OrdinalIgnoreCase)
+                                    ? "SunFounder PiCrawler"
+                                    : "LEGO Education SPIKE Prime",
+                            ["thumbnailUrl"] = url.Contains("mbot2", StringComparison.OrdinalIgnoreCase)
+                                ? "https://www.makeblock.com/cdn/shop/files/mbot2.jpg"
+                                : url.Contains("picrawler", StringComparison.OrdinalIgnoreCase)
+                                    ? "https://www.sunfounder.com/cdn/shop/files/picrawler.jpg"
+                                    : "https://education.lego.com/cdn/shop/files/spike-prime.jpg",
+                            ["content"] = content
+                        };
+                    }
+
+                    payload["url"] ??= url;
+                    payload["title"] ??= InferMockTitleFromUrl(url);
+                    payload["thumbnailUrl"] ??= url.Contains("mbot2", StringComparison.OrdinalIgnoreCase)
+                        ? "https://www.makeblock.com/cdn/shop/files/mbot2.jpg"
+                        : url.Contains("picrawler", StringComparison.OrdinalIgnoreCase)
+                            ? "https://www.sunfounder.com/cdn/shop/files/picrawler.jpg"
+                            : url.Contains("spike-prime", StringComparison.OrdinalIgnoreCase)
+                                ? "https://education.lego.com/cdn/shop/files/spike-prime.jpg"
+                                : null;
+
+                    return payload;
+                })
+        ]);
+
+    private static PlanningToolCatalog CreateRealWebToolCatalog(IHttpClientFactory httpClientFactory) =>
+        new([
+            CreateDescriptor(
+                serverName: "built-in-web",
+                toolName: "search",
+                description: "Search the web with required 'query' and optional 'limit', then return structured candidate page references under 'results'. 'limit' is only a maximum, not a guarantee: the tool may return fewer results, and some results may be partially relevant. For broader coverage, especially when many distinct entities are needed, prefer multiple searches with different phrasings and/or a higher 'limit'. Each result includes a URL, title, provider, and optional search metadata such as thumbnailUrl. Each search.results[] item is directly compatible with the download tool's 'page' input, so downstream plans can pass page objects without projecting to '.url' first. Results are candidate pages, not verified entities.",
+                inputSchemaJson: """
+                    {
+                      "type": "object",
+                      "properties": {
+                        "query": {
+                          "type": "string",
+                          "description": "Search query to submit to the search engine."
+                        },
+                        "limit": {
+                          "type": "integer",
+                          "minimum": 1,
+                          "maximum": 10,
+                          "description": "Maximum number of results requested, not guaranteed. Search may return fewer results. Default 8, max 10."
+                        }
+                      },
+                      "required": ["query"]
+                    }
+                    """,
+                outputSchemaJson: """
+                    {
+                      "type": "object",
+                      "properties": {
+                        "query": { "type": "string" },
+                        "results": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "provider": { "type": ["string", "null"] },
+                              "url": { "type": "string" },
+                              "title": { "type": "string" },
                               "snippet": { "type": ["string", "null"] },
                               "siteName": { "type": ["string", "null"] },
                               "displayUrl": { "type": ["string", "null"] },
@@ -402,7 +814,7 @@ public sealed class PlanningPipelineIntegrationTests(ITestOutputHelper output)
                               "thumbnailUrl": { "type": ["string", "null"] },
                               "position": { "type": ["integer", "null"] }
                             },
-                            "required": ["url", "title"]
+                            "required": ["provider", "url", "title"]
                           }
                         }
                       },
@@ -418,16 +830,18 @@ public sealed class PlanningPipelineIntegrationTests(ITestOutputHelper output)
             CreateDescriptor(
                 serverName: "built-in-web",
                 toolName: "download",
-                description: "Download a single web page while preserving search metadata when available.",
+                description: "Download a single web page. Provide exactly one of 'page' or 'url'. Prefer 'page' when you already have a search result object: each search.results[] item is directly compatible with 'page' and preserves search metadata such as title, provider, snippet, or thumbnailUrl. Use 'url' only when you have a raw absolute URL string. To download multiple search results, bind 'page' from search.results with mode=map so the step runs once per result.",
                 inputSchemaJson: """
                     {
                       "type": "object",
                       "properties": {
                         "page": {
                           "type": "object",
+                          "description": "Page-reference object. Prefer passing one search.results[] item directly here; for multiple results, bind page from search.results with mode=map.",
                           "properties": {
                             "url": { "type": "string" },
                             "title": { "type": ["string", "null"] },
+                            "provider": { "type": ["string", "null"] },
                             "snippet": { "type": ["string", "null"] },
                             "siteName": { "type": ["string", "null"] },
                             "displayUrl": { "type": ["string", "null"] },
@@ -437,7 +851,10 @@ public sealed class PlanningPipelineIntegrationTests(ITestOutputHelper output)
                           },
                           "required": ["url"]
                         },
-                        "url": { "type": "string" }
+                        "url": {
+                          "type": "string",
+                          "description": "Raw absolute URL. Use this only when a full page object is not available."
+                        }
                       },
                       "oneOf": [
                         { "required": ["page"] },
@@ -449,6 +866,7 @@ public sealed class PlanningPipelineIntegrationTests(ITestOutputHelper output)
                     {
                       "type": "object",
                       "properties": {
+                        "provider": { "type": ["string", "null"] },
                         "url": { "type": "string" },
                         "title": { "type": "string" },
                         "content": { "type": "string" },
@@ -486,27 +904,300 @@ public sealed class PlanningPipelineIntegrationTests(ITestOutputHelper output)
         string description,
         string inputSchemaJson,
         string outputSchemaJson,
-        Func<Dictionary<string, object?>, object> execute) =>
-        new(
+        Func<Dictionary<string, object?>, object> execute)
+    {
+        var inputSchema = ParseJsonElement(inputSchemaJson);
+        var outputSchema = ParseJsonElement(outputSchemaJson);
+
+        return new AppToolDescriptor(
             QualifiedName: $"{serverName}:{toolName}",
             ServerName: serverName,
             ToolName: toolName,
             DisplayName: toolName,
             Description: description,
-            InputSchema: ParseJsonElement(inputSchemaJson),
-            OutputSchema: ParseJsonElement(outputSchemaJson),
+            InputSchema: inputSchema,
+            OutputSchema: outputSchema,
             MayRequireUserInput: false,
             ReadOnlyHint: true,
             DestructiveHint: false,
             IdempotentHint: true,
             OpenWorldHint: true,
-            ExecuteAsync: (arguments, _) => Task.FromResult(execute(arguments)));
+            ExecuteAsync: (arguments, _) => Task.FromResult(execute(arguments)),
+            PlanningMetadata: CreatePlanningMetadata(inputSchema, outputSchema, description));
+    }
 
     private static JsonElement ParseJsonElement(string json)
     {
         using var document = JsonDocument.Parse(json);
         return document.RootElement.Clone();
     }
+
+    private static AppToolPlanningMetadata CreatePlanningMetadata(
+        JsonElement inputSchema,
+        JsonElement outputSchema,
+        string description)
+    {
+        var producesKind = InferProducesKind(outputSchema);
+        return new AppToolPlanningMetadata(
+            Purpose: ExtractPurpose(description),
+            Returns: BuildSchemaSummary(outputSchema),
+            Limits: BuildLimitHint(inputSchema),
+            Constraints: BuildConstraintHint(description, producesKind),
+            PlannerRole: InferPlannerRole(producesKind),
+            ProducesKind: producesKind);
+    }
+
+    private static string? ExtractPurpose(string description)
+    {
+        if (string.IsNullOrWhiteSpace(description))
+            return null;
+
+        var normalized = description.ReplaceLineEndings(" ").Trim();
+        if (ShouldPreserveFullPlanningDescription(normalized))
+            return normalized;
+
+        var sentenceEnd = normalized.IndexOfAny(['.', '!', '?']);
+        return sentenceEnd > 0
+            ? normalized[..sentenceEnd].Trim()
+            : normalized;
+    }
+
+    private static bool ShouldPreserveFullPlanningDescription(string normalizedDescription) =>
+        normalizedDescription.Contains("directly compatible with the download tool's 'page' input", StringComparison.OrdinalIgnoreCase)
+        || normalizedDescription.Contains("bind page from search.results with mode=map", StringComparison.OrdinalIgnoreCase);
+
+    private static AppToolPlannerRole InferPlannerRole(AppToolProducesKind producesKind) =>
+        producesKind switch
+        {
+            AppToolProducesKind.Reference => AppToolPlannerRole.Discover,
+            AppToolProducesKind.Document => AppToolPlannerRole.Acquire,
+            AppToolProducesKind.StructuredData => AppToolPlannerRole.Transform,
+            _ => AppToolPlannerRole.Act
+        };
+
+    private static AppToolProducesKind InferProducesKind(JsonElement outputSchema)
+    {
+        if (TryGetSchemaProperty(outputSchema, "results", out var resultsSchema)
+            && SchemaAllowsType(resultsSchema, "array"))
+        {
+            return AppToolProducesKind.Reference;
+        }
+
+        if (TryGetSchemaProperty(outputSchema, "content", out var contentSchema)
+            && SchemaAllowsType(contentSchema, "string"))
+        {
+            return AppToolProducesKind.Document;
+        }
+
+        return AppToolProducesKind.StructuredData;
+    }
+
+    private static string? BuildLimitHint(JsonElement inputSchema)
+    {
+        if (inputSchema.ValueKind != JsonValueKind.Object
+            || !inputSchema.TryGetProperty("properties", out var propertiesElement)
+            || propertiesElement.ValueKind != JsonValueKind.Object)
+        {
+            return null;
+        }
+
+        var limits = new List<string>();
+        foreach (var property in propertiesElement.EnumerateObject())
+        {
+            if (property.Value.ValueKind != JsonValueKind.Object)
+                continue;
+
+            if (property.Value.TryGetProperty("maximum", out var maximum)
+                && maximum.ValueKind == JsonValueKind.Number)
+            {
+                limits.Add($"{property.Name} <= {maximum.GetRawText()}");
+            }
+
+            if (property.Value.TryGetProperty("maxItems", out var maxItems)
+                && maxItems.ValueKind == JsonValueKind.Number)
+            {
+                limits.Add($"{property.Name}.count <= {maxItems.GetRawText()}");
+            }
+
+            if (property.Value.TryGetProperty("maxLength", out var maxLength)
+                && maxLength.ValueKind == JsonValueKind.Number)
+            {
+                limits.Add($"{property.Name}.length <= {maxLength.GetRawText()}");
+            }
+        }
+
+        return limits.Count == 0
+            ? null
+            : string.Join("; ", limits);
+    }
+
+    private static string? BuildConstraintHint(string description, AppToolProducesKind producesKind)
+    {
+        if (producesKind == AppToolProducesKind.Reference)
+            return "Produces candidate references and records, not verified conclusions.";
+        if (producesKind == AppToolProducesKind.Document)
+            return "Produces raw page content or enriched source records, not final conclusions.";
+
+        return description.Contains("candidate", StringComparison.OrdinalIgnoreCase)
+            ? "Returned items are candidates and may require validation."
+            : null;
+    }
+
+    private static string BuildSchemaSummary(JsonElement schema) =>
+        DescribeSchema(schema, includeNestedObjectProperties: true);
+
+    private static string DescribeSchema(JsonElement schema, bool includeNestedObjectProperties)
+    {
+        if (schema.ValueKind != JsonValueKind.Object)
+            return "unknown";
+
+        if (TryGetSchemaTypes(schema, out var types))
+        {
+            var nonNullTypes = types
+                .Where(type => !string.Equals(type, "null", StringComparison.Ordinal))
+                .Distinct(StringComparer.Ordinal)
+                .ToArray();
+            if (nonNullTypes.Length == 1)
+            {
+                return nonNullTypes[0] switch
+                {
+                    "object" => DescribeObjectSchema(schema, includeNestedObjectProperties),
+                    "array" => $"array<{DescribeArrayItems(schema)}>",
+                    _ => nonNullTypes[0]
+                };
+            }
+
+            return string.Join("|", nonNullTypes);
+        }
+
+        if (schema.TryGetProperty("properties", out _))
+            return DescribeObjectSchema(schema, includeNestedObjectProperties);
+        if (schema.TryGetProperty("items", out _))
+            return $"array<{DescribeArrayItems(schema)}>";
+
+        return "unknown";
+    }
+
+    private static string DescribeObjectSchema(JsonElement schema, bool includeNestedObjectProperties)
+    {
+        if (!schema.TryGetProperty("properties", out var properties)
+            || properties.ValueKind != JsonValueKind.Object)
+        {
+            return "object";
+        }
+
+        var parts = new List<string>();
+        foreach (var property in properties.EnumerateObject())
+        {
+            var suffix = includeNestedObjectProperties
+                ? DescribePropertySuffix(property.Value)
+                : string.Empty;
+            parts.Add($"{property.Name}{suffix}");
+        }
+
+        return parts.Count == 0
+            ? "object"
+            : $"object {{ {string.Join(", ", parts)} }}";
+    }
+
+    private static string DescribePropertySuffix(JsonElement schema)
+    {
+        if (SchemaAllowsType(schema, "array"))
+            return $"[]<{DescribeArrayItems(schema)}>";
+        if (SchemaAllowsType(schema, "object"))
+            return " { ... }";
+
+        return string.Empty;
+    }
+
+    private static string DescribeArrayItems(JsonElement schema)
+    {
+        if (!schema.TryGetProperty("items", out var itemsSchema))
+            return "unknown";
+
+        return DescribeSchema(itemsSchema, includeNestedObjectProperties: false);
+    }
+
+    private static bool TryGetSchemaProperty(JsonElement schema, string propertyName, out JsonElement propertySchema)
+    {
+        propertySchema = default;
+        if (schema.ValueKind != JsonValueKind.Object
+            || !schema.TryGetProperty("properties", out var properties)
+            || properties.ValueKind != JsonValueKind.Object
+            || !properties.TryGetProperty(propertyName, out propertySchema))
+        {
+            return false;
+        }
+
+        propertySchema = propertySchema.Clone();
+        return true;
+    }
+
+    private static bool SchemaAllowsType(JsonElement schema, string expectedType)
+    {
+        if (!TryGetSchemaTypes(schema, out var types))
+            return false;
+
+        return types.Contains(expectedType, StringComparer.Ordinal);
+    }
+
+    private static bool TryGetSchemaTypes(JsonElement schema, out IReadOnlyList<string> types)
+    {
+        types = Array.Empty<string>();
+        if (schema.ValueKind != JsonValueKind.Object)
+            return false;
+
+        var collected = new List<string>();
+        if (schema.TryGetProperty("type", out var typeElement))
+        {
+            switch (typeElement.ValueKind)
+            {
+                case JsonValueKind.String:
+                    AddSchemaType(collected, typeElement.GetString());
+                    break;
+                case JsonValueKind.Array:
+                    foreach (var candidate in typeElement.EnumerateArray())
+                    {
+                        if (candidate.ValueKind == JsonValueKind.String)
+                            AddSchemaType(collected, candidate.GetString());
+                    }
+
+                    break;
+            }
+        }
+
+        if (collected.Count == 0)
+        {
+            if (schema.TryGetProperty("properties", out _))
+                AddSchemaType(collected, "object");
+            if (schema.TryGetProperty("items", out _))
+                AddSchemaType(collected, "array");
+        }
+
+        types = collected;
+        return types.Count > 0;
+    }
+
+    private static void AddSchemaType(List<string> types, string? candidate)
+    {
+        if (string.IsNullOrWhiteSpace(candidate))
+            return;
+
+        var normalized = candidate.Trim().ToLowerInvariant();
+        if (!types.Contains(normalized, StringComparer.Ordinal))
+            types.Add(normalized);
+    }
+
+    private static string InferMockTitleFromUrl(string url) =>
+        url switch
+        {
+            var value when value.Contains("item-a", StringComparison.OrdinalIgnoreCase) => "RoboClean A1 Max",
+            var value when value.Contains("item-b", StringComparison.OrdinalIgnoreCase) => "HomeSweep S5",
+            var value when value.Contains("mbot2", StringComparison.OrdinalIgnoreCase) => "Makeblock mBot2",
+            var value when value.Contains("picrawler", StringComparison.OrdinalIgnoreCase) => "SunFounder PiCrawler",
+            var value when value.Contains("spike-prime", StringComparison.OrdinalIgnoreCase) => "LEGO Education SPIKE Prime",
+            _ => url
+        };
 
     private static string? TryGetStringProperty(Dictionary<string, object?> source, string propertyName) =>
         source.TryGetValue(propertyName, out var value) && value is string text
@@ -552,6 +1243,109 @@ public sealed class PlanningPipelineIntegrationTests(ITestOutputHelper output)
         var verdict = await answerAsserter.EvaluateAsync(userQuery, answer);
         output.WriteLine($"LLM asserter verdict: isAnswer={verdict.IsAnswer} cache={verdict.FromCache} comment={verdict.Comment}");
         Assert.True(verdict.IsAnswer, verdict.Comment);
+    }
+
+    private static void AssertSuccessfulWebPlanningArtifact(PlanningExplorationArtifact artifact) =>
+        AssertSuccessfulPlanningArtifact(
+            artifact,
+            searchCapabilityId: "built-in-web:search",
+            downloadCapabilityId: "built-in-web:download");
+
+    private static void AssertSuccessfulPlanningArtifact(
+        PlanningExplorationArtifact artifact,
+        string searchCapabilityId,
+        string downloadCapabilityId)
+    {
+        Assert.Equal("ok", artifact.Status);
+        Assert.True(
+            artifact.AnsweredQuestion ?? false,
+            artifact.AnswerAssertionComment ?? "The final answer did not satisfy the answer asserter.");
+        Assert.Contains("[plan] create:success", artifact.LogText, StringComparison.Ordinal);
+        Assert.Contains($"capabilityId={searchCapabilityId}", artifact.LogText, StringComparison.Ordinal);
+        Assert.Contains($"capabilityId={downloadCapabilityId}", artifact.LogText, StringComparison.Ordinal);
+        Assert.Contains("[exec] step:end", artifact.LogText, StringComparison.Ordinal);
+    }
+
+    private static string ExtractMarkdownReport(string? resultJson)
+    {
+        Assert.False(string.IsNullOrWhiteSpace(resultJson));
+
+        using var document = JsonDocument.Parse(resultJson!);
+        return TryExtractMarkdownReport(document.RootElement)
+            ?? throw new InvalidOperationException($"Expected a Markdown-like report result, got: {resultJson}");
+    }
+
+    private static string? TryExtractMarkdownReport(JsonElement element)
+    {
+        switch (element.ValueKind)
+        {
+            case JsonValueKind.String:
+            {
+                var text = element.GetString();
+                return LooksLikeMarkdown(text) ? text : null;
+            }
+            case JsonValueKind.Object:
+            {
+                foreach (var propertyName in new[] { "markdown", "report", "answer", "content", "text", "message" })
+                {
+                    if (!TryGetPropertyIgnoreCase(element, propertyName, out var propertyValue))
+                        continue;
+
+                    var extracted = TryExtractMarkdownReport(propertyValue);
+                    if (!string.IsNullOrWhiteSpace(extracted))
+                        return extracted;
+                }
+
+                foreach (var property in element.EnumerateObject())
+                {
+                    var extracted = TryExtractMarkdownReport(property.Value);
+                    if (!string.IsNullOrWhiteSpace(extracted))
+                        return extracted;
+                }
+
+                return null;
+            }
+            case JsonValueKind.Array:
+            {
+                foreach (var item in element.EnumerateArray())
+                {
+                    var extracted = TryExtractMarkdownReport(item);
+                    if (!string.IsNullOrWhiteSpace(extracted))
+                        return extracted;
+                }
+
+                return null;
+            }
+            default:
+                return null;
+        }
+    }
+
+    private static bool TryGetPropertyIgnoreCase(JsonElement element, string propertyName, out JsonElement value)
+    {
+        foreach (var property in element.EnumerateObject())
+        {
+            if (string.Equals(property.Name, propertyName, StringComparison.OrdinalIgnoreCase))
+            {
+                value = property.Value;
+                return true;
+            }
+        }
+
+        value = default;
+        return false;
+    }
+
+    private static bool LooksLikeMarkdown(string? text)
+    {
+        if (string.IsNullOrWhiteSpace(text))
+            return false;
+
+        return text.Contains("#", StringComparison.Ordinal)
+            || text.Contains("|", StringComparison.Ordinal)
+            || text.Contains("![", StringComparison.Ordinal)
+            || text.Contains("- ", StringComparison.Ordinal)
+            || text.Contains("1. ", StringComparison.Ordinal);
     }
 
     private static string SerializeJson(JsonElement? element) =>

@@ -585,13 +585,12 @@ public sealed class PlanningDataflowTests
     private static PlanStepOutputContract StringOut() =>
         new()
         {
-            Format = PlanStepOutputFormats.String,
-            Aggregate = PlanStepOutputAggregates.Single
+            Format = PlanStepOutputFormats.String
         };
 
     private sealed class ThrowingAgentStepRunner : IAgentStepRunner
     {
-        public Task<ResultEnvelope<JsonElement?>> ExecuteAsync(PlanStep step, JsonElement resolvedInputs, CancellationToken cancellationToken = default) =>
+        public Task<ResultEnvelope<JsonElement?>> ExecuteAsync(PlanStep step, JsonElement resolvedInputs, ResolvedPlanStepOutputContract outputContract, CancellationToken cancellationToken = default) =>
             throw new InvalidOperationException("Agent execution is not expected in this test.");
     }
 }

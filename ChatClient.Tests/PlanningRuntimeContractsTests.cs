@@ -105,7 +105,7 @@ public class PlanningRuntimeContractsTests
     }
 
     [Fact]
-    public void PlanNormalizer_RewritesLegacyBindings_RemovesToolOut_AndDefaultsMissingJsonSchema()
+    public void PlanNormalizer_DoesNotRewriteLegacyBindings_RemovesToolOut_AndKeepsMissingJsonSchemaOptional()
     {
         var plan = new PlanDefinition
         {
@@ -147,13 +147,11 @@ public class PlanningRuntimeContractsTests
         Assert.Null(plan.Steps[0].Out);
         Assert.Equal(PlanStepKinds.Llm, plan.Steps[1].Kind);
         Assert.Null(plan.Steps[1].CapabilityId);
-        var binding = Assert.IsType<JsonObject>(plan.Steps[1].In["page"]);
-        Assert.Equal("$searchPages.results[0]", binding["from"]?.GetValue<string>());
-        Assert.Equal("value", binding["mode"]?.GetValue<string>());
-        var schema = plan.Steps[1].Out?.Schema;
-        Assert.True(schema.HasValue);
-        Assert.Equal("object", schema.Value.GetProperty("type").GetString());
-        PlanValidator.ValidateOrThrow(plan, [CreateStaticSearchDescriptor()]);
+        var legacyBinding = Assert.IsAssignableFrom<JsonValue>(plan.Steps[1].In["page"]);
+        Assert.Equal("$searchPages.results[0]", legacyBinding.GetValue<string>());
+        Assert.False(plan.Steps[1].Out?.Schema.HasValue ?? false);
+        var exception = Assert.Throws<InvalidOperationException>(() => PlanValidator.ValidateOrThrow(plan, [CreateStaticSearchDescriptor()]));
+        Assert.Contains("uses legacy string ref syntax", exception.Message, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -278,8 +276,7 @@ public class PlanningRuntimeContractsTests
         Assert.NotNull(plan);
         Assert.NotNull(plan.Steps[0].Out);
         Assert.Equal(PlanStepOutputFormats.Json, plan.Steps[0].Out!.Format);
-        Assert.False(PlanValidator.TryValidate(plan, tools: null, callableAgents: null, PlanModelProfile.Draft, out var issue));
-        Assert.Contains("out.schema", issue?.Message ?? string.Empty, StringComparison.OrdinalIgnoreCase);
+        Assert.True(PlanValidator.TryValidate(plan, tools: null, callableAgents: null, PlanModelProfile.Draft, out var issue), issue?.Message);
     }
 
     [Fact]
@@ -530,7 +527,6 @@ public class PlanningRuntimeContractsTests
                     Out = new PlanStepOutputContract
                     {
                         Format = PlanStepOutputFormats.String,
-                        Aggregate = PlanStepOutputAggregates.Single,
                         Schema = JsonSerializer.SerializeToElement(new { type = "string" })
                     },
                     Status = PlanStepStatuses.Done,
@@ -555,7 +551,6 @@ public class PlanningRuntimeContractsTests
                     Out = new PlanStepOutputContract
                     {
                         Format = PlanStepOutputFormats.String,
-                        Aggregate = PlanStepOutputAggregates.Single,
                         Schema = JsonSerializer.SerializeToElement(new { type = "string" })
                     },
                     Status = PlanStepStatuses.Done,
@@ -720,13 +715,21 @@ public class PlanningRuntimeContractsTests
                 }
             })
         };
+        var outputContract = DerivedStepOutputContractBuilder.Build(
+            new PlanDefinition
+            {
+                Goal = "Read and summarize characters.",
+                Steps = [step]
+            },
+            tools: null)["scanCharacters"];
 
         var result = await runner.ExecuteAsync(
             step,
             JsonSerializer.SerializeToElement(new
             {
                 cursorName = "book-cursor"
-            }));
+            }),
+            outputContract);
 
         Assert.True(result.Ok);
         Assert.NotNull(result.Data);
@@ -914,6 +917,7 @@ public class PlanningRuntimeContractsTests
 
         Assert.Equal("item a", result.Query);
         var item = Assert.Single(result.Results);
+        Assert.Equal("brave", item.Provider);
         Assert.Equal("https://example.com/item-a", item.Url);
         Assert.Equal("Item A title", item.Title);
         Assert.Equal("Item A summary.", item.Snippet);
@@ -960,6 +964,7 @@ public class PlanningRuntimeContractsTests
             new WebSearchInput("item a"));
 
         var item = Assert.Single(result.Results);
+        Assert.Equal("brave", item.Provider);
         Assert.Equal(originalThumbnailUrl, item.ThumbnailUrl);
     }
 
@@ -987,13 +992,15 @@ public class PlanningRuntimeContractsTests
             NullLogger.Instance,
             new WebSearchInput("item")));
 
-        Assert.Equal("search_no_results", exception.Code);
+        Assert.Equal("search_unavailable", exception.Code);
         Assert.Equal("search", exception.Details.Operation);
         Assert.Equal("duckduckgo", exception.Details.Provider);
         Assert.True(exception.Details.FallbackTried);
-        Assert.True(exception.Details.NeedsReplan);
-        Assert.Contains(exception.Details.Details, detail => string.Equals(detail, "primaryProvider=brave", StringComparison.Ordinal));
-        Assert.Contains(exception.Details.Details, detail => string.Equals(detail, "fallbackProvider=duckduckgo", StringComparison.Ordinal));
+        Assert.False(exception.Details.NeedsReplan);
+        Assert.Equal("error", exception.Details.Type);
+        Assert.NotNull(exception.Details.ProviderAttempts);
+        Assert.Equal(2, exception.Details.ProviderAttempts!.Count);
+        Assert.All(exception.Details.ProviderAttempts, attempt => Assert.Equal("provider_failed", attempt.Outcome));
     }
 
     [Fact]
@@ -1053,6 +1060,7 @@ public class PlanningRuntimeContractsTests
 
         Assert.Equal(2, handler.CallCount);
         var item = Assert.Single(result.Results);
+        Assert.Equal("duckduckgo", item.Provider);
         Assert.Equal("https://example.com/item-a", item.Url);
         Assert.Equal("Item A title", item.Title);
         Assert.Equal("Item A summary.", item.Snippet);
@@ -1061,7 +1069,7 @@ public class PlanningRuntimeContractsTests
     }
 
     [Fact]
-    public async Task BuiltInWebSearchLogic_FallsBackQuicklyToDuckDuckGo_WhenBraveIsRateLimited()
+    public async Task BuiltInWebSearchLogic_RetriesBraveBeforeFallingBackToDuckDuckGo_WhenBraveIsRateLimited()
     {
         BuiltInWebToolLogic.ResetSearchStateForTests(CreateTempSearchCacheDirectory());
 
@@ -1090,7 +1098,19 @@ public class PlanningRuntimeContractsTests
             _ =>
             {
                 var response = new HttpResponseMessage(HttpStatusCode.TooManyRequests);
-                response.Headers.RetryAfter = new RetryConditionHeaderValue(TimeSpan.FromMinutes(1));
+                response.Headers.RetryAfter = new RetryConditionHeaderValue(TimeSpan.FromMilliseconds(20));
+                return response;
+            },
+            _ =>
+            {
+                var response = new HttpResponseMessage(HttpStatusCode.TooManyRequests);
+                response.Headers.RetryAfter = new RetryConditionHeaderValue(TimeSpan.FromMilliseconds(20));
+                return response;
+            },
+            _ =>
+            {
+                var response = new HttpResponseMessage(HttpStatusCode.TooManyRequests);
+                response.Headers.RetryAfter = new RetryConditionHeaderValue(TimeSpan.FromMilliseconds(20));
                 return response;
             },
             _ => new HttpResponseMessage(HttpStatusCode.OK)
@@ -1111,10 +1131,77 @@ public class PlanningRuntimeContractsTests
             new WebSearchInput("item a"));
         var elapsed = Stopwatch.GetElapsedTime(startedAt);
 
-        Assert.Equal(2, handler.CallCount);
-        Assert.True(elapsed < TimeSpan.FromSeconds(5), $"Search fallback should stay interactive, actual elapsed={elapsed}.");
+        Assert.Equal(4, handler.CallCount);
+        Assert.True(elapsed >= TimeSpan.FromMilliseconds(35), $"Search should respect provider retry delays before fallback, actual elapsed={elapsed}.");
         Assert.Single(result.Results);
+        Assert.Equal("duckduckgo", result.Results[0].Provider);
         Assert.Equal("https://example.com/item-a", result.Results[0].Url);
+    }
+
+    [Fact]
+    public async Task BuiltInWebSearchLogic_ReturnsNoResults_WhenProvidersSucceedWithoutNormalizedResults()
+    {
+        BuiltInWebToolLogic.ResetSearchStateForTests(CreateTempSearchCacheDirectory());
+
+        const string braveHtml = """
+            <html>
+              <body>
+                <div id="results">
+                  <div class="snippet" data-type="web" data-pos="0">
+                    <a href="https://search.brave.com/result" class="l1">
+                      <div class="title" title="Ignored host">Ignored host</div>
+                    </a>
+                  </div>
+                </div>
+              </body>
+            </html>
+            """;
+
+        const string duckHtml = """
+            <html>
+              <body>
+                <div class="result results_links results_links_deep web-result">
+                  <div class="links_main links_deep result__body">
+                    <h2 class="result__title">
+                      <a class="result__a" href="//duckduckgo.com/l/?uddg=https%3A%2F%2Fsearch.brave.com%2Fresult">Ignored host</a>
+                    </h2>
+                    <a class="result__snippet" href="//duckduckgo.com/l/?uddg=https%3A%2F%2Fsearch.brave.com%2Fresult">Ignored result.</a>
+                  </div>
+                </div>
+              </body>
+            </html>
+            """;
+
+        var handler = new SequenceHttpMessageHandler(
+        [
+            _ => new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent(braveHtml)
+            },
+            _ => new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent(duckHtml)
+            }
+        ]);
+
+        var httpClientFactory = new Mock<IHttpClientFactory>();
+        httpClientFactory
+            .Setup(factory => factory.CreateClient(It.IsAny<string>()))
+            .Returns(new HttpClient(handler));
+
+        var exception = await Assert.ThrowsAsync<WebToolException>(() => BuiltInWebToolLogic.SearchAsync(
+            httpClientFactory.Object,
+            NullLogger.Instance,
+            new WebSearchInput("item")));
+
+        Assert.Equal("search_no_results", exception.Code);
+        Assert.Equal("duckduckgo", exception.Details.Provider);
+        Assert.True(exception.Details.NeedsReplan);
+        Assert.Equal("missing", exception.Details.Type);
+        Assert.NotNull(exception.Details.ProviderAttempts);
+        Assert.Equal(
+            ["success_no_results", "success_no_results"],
+            exception.Details.ProviderAttempts!.Select(attempt => attempt.Outcome).ToArray());
     }
 
     [Fact]
@@ -1292,11 +1379,14 @@ public class PlanningRuntimeContractsTests
         var toolResult = Assert.IsType<CallToolResult>(result);
         Assert.True(toolResult.IsError);
         var structured = Assert.IsType<JsonObject>(toolResult.StructuredContent);
-        Assert.Equal("search_no_results", structured["code"]?.GetValue<string>());
+        Assert.Equal("search_unavailable", structured["code"]?.GetValue<string>());
         Assert.Equal("duckduckgo", structured["provider"]?.GetValue<string>());
         Assert.Equal("item", structured["query"]?.GetValue<string>());
         Assert.Equal(true, structured["fallbackTried"]?.GetValue<bool>());
-        Assert.Equal(true, structured["needsReplan"]?.GetValue<bool>());
+        Assert.Equal(false, structured["needsReplan"]?.GetValue<bool>());
+        Assert.Equal("error", structured["type"]?.GetValue<string>());
+        var providerAttempts = Assert.IsType<JsonArray>(structured["providerAttempts"]);
+        Assert.Equal(2, providerAttempts.Count);
     }
 
     [Fact]
@@ -1666,7 +1756,7 @@ public class PlanningRuntimeContractsTests
                                 ["type"] = "string"
                             }
                         }
-                    }, aggregate: PlanStepOutputAggregates.Collect)
+                    }, aggregate: "collect")
                 }
             ]
         };
@@ -1714,7 +1804,7 @@ public class PlanningRuntimeContractsTests
                                 ["type"] = "string"
                             }
                         }
-                    }, aggregate: PlanStepOutputAggregates.Collect)
+                    }, aggregate: "collect")
                 }
             ]
         };
@@ -1726,7 +1816,7 @@ public class PlanningRuntimeContractsTests
     }
 
     [Fact]
-    public void PlanValidator_DescribesNestedCollectedArrayShape_WhenDownstreamBindingTypeMismatches()
+    public void PlanValidator_AcceptsMappedLlmStep_WhenDownstreamBindsFlatArray()
     {
         var plan = new PlanDefinition
         {
@@ -1769,7 +1859,7 @@ public class PlanningRuntimeContractsTests
                                 }
                             }
                         }
-                    }, aggregate: PlanStepOutputAggregates.Collect)
+                    }, aggregate: "collect")
                 },
                 new PlanStep
                 {
@@ -1787,11 +1877,7 @@ public class PlanningRuntimeContractsTests
             ]
         };
 
-        Assert.False(PlanValidator.TryValidate(plan, [CreateStaticSearchDescriptor()], out var issue));
-        Assert.NotNull(issue);
-        Assert.Equal("binding_type_mismatch", issue!.Code);
-        Assert.Equal("array<array<object>>", issue.Actual);
-        Assert.Contains("array<array<object>>", issue.Message, StringComparison.Ordinal);
+        PlanValidator.ValidateOrThrow(plan, [CreateStaticSearchDescriptor()]);
     }
 
     [Fact]
@@ -1945,7 +2031,7 @@ public class PlanningRuntimeContractsTests
     }
 
     [Fact]
-    public void PlanValidator_RejectsJsonLlmStepWithoutOutputSchema()
+    public void PlanValidator_AllowsJsonLlmStepWithoutOutputSchema()
     {
         var plan = new PlanDefinition
         {
@@ -1965,20 +2051,17 @@ public class PlanningRuntimeContractsTests
                     },
                     Out = new PlanStepOutputContract
                     {
-                        Format = PlanStepOutputFormats.Json,
-                        Aggregate = PlanStepOutputAggregates.Single
+                        Format = PlanStepOutputFormats.Json
                     }
                 }
             ]
         };
 
-        var exception = Assert.Throws<InvalidOperationException>(() => PlanValidator.ValidateOrThrow(plan));
-
-        Assert.Contains("must provide out.schema", exception.Message, StringComparison.Ordinal);
+        PlanValidator.ValidateOrThrow(plan);
     }
 
     [Fact]
-    public void PlanValidator_RejectsMappedLlmStepWithSingleAggregate()
+    public void PlanValidator_AllowsMappedLlmStepWithoutAuthoredAggregate()
     {
         var plan = new PlanDefinition
         {
@@ -2019,18 +2102,16 @@ public class PlanningRuntimeContractsTests
                                 }
                             }
                         },
-                        aggregate: PlanStepOutputAggregates.Single)
+                        aggregate: "single")
                 }
             ]
         };
 
-        var exception = Assert.Throws<InvalidOperationException>(() => PlanValidator.ValidateOrThrow(plan));
-
-        Assert.Contains("out.aggregate='collect' or 'flatten'", exception.Message, StringComparison.Ordinal);
+        PlanValidator.ValidateOrThrow(plan);
     }
 
     [Fact]
-    public void PlanStepOutputContractResolver_IgnoresToolOut_AndInfersFlatten_ForMappedArrayTool()
+    public void DerivedStepOutputContractBuilder_UsesToolSchema_ForMappedArrayTool()
     {
         var collectArrayTool = CreateDescriptor(
             serverName: "mock-web",
@@ -2061,32 +2142,38 @@ public class PlanningRuntimeContractsTests
             {
                 new { value = "a" }
             });
-        var step = new PlanStep
+        var plan = new PlanDefinition
         {
-            Id = "collectItems",
-            Kind = PlanStepKinds.Tool,
-            CapabilityId = "mock-web:collect-array",
-            In = new Dictionary<string, JsonNode?>
-            {
-                ["item"] = Ref("$searchPages.results[].title", "map")
-            },
-            Out = JsonOut(new JsonObject
-            {
-                ["type"] = "object",
-                ["properties"] = new JsonObject
+            Goal = "Collect mapped items.",
+            Steps =
+            [
+                new PlanStep
                 {
-                    ["value"] = new JsonObject
+                    Id = "searchPages",
+                    Kind = PlanStepKinds.Tool,
+                    CapabilityId = SearchToolName,
+                    In = new Dictionary<string, JsonNode?>
                     {
-                        ["type"] = "string"
+                        ["query"] = JsonValue.Create("example")
+                    }
+                },
+                new PlanStep
+                {
+                    Id = "collectItems",
+                    Kind = PlanStepKinds.Tool,
+                    CapabilityId = "mock-web:collect-array",
+                    In = new Dictionary<string, JsonNode?>
+                    {
+                        ["item"] = Ref("$searchPages.results[].title", "map")
                     }
                 }
-            }, aggregate: PlanStepOutputAggregates.Collect)
+            ]
         };
 
-        var contract = PlanStepOutputContractResolver.Resolve(step, collectArrayTool, hasFanOut: true);
+        var contract = DerivedStepOutputContractBuilder.Build(plan, [CreateStaticSearchDescriptor(), collectArrayTool])["collectItems"];
 
-        Assert.Equal(PlanStepOutputAggregates.Flatten, contract.Aggregate);
-        Assert.False(contract.IsExplicit);
+        Assert.True(contract.IsMapped);
+        Assert.Equal(DerivedStepOutputContractSource.ToolOutputSchema, contract.Source);
         Assert.True(contract.CallSchema.HasValue);
         Assert.True(PlanStepOutputContractResolver.SchemaDefinesArray(contract.CallSchema.Value));
         Assert.True(contract.FinalSchema.HasValue);
@@ -2197,7 +2284,7 @@ public class PlanningRuntimeContractsTests
                                 }
                             }
                         },
-                        aggregate: PlanStepOutputAggregates.Flatten)
+                        aggregate: "flatten")
                 }
             ]
         };
@@ -2264,7 +2351,7 @@ public class PlanningRuntimeContractsTests
         var trace = Assert.Single(result.StepTraces);
         Assert.Equal(StepTraceOutcome.Failed, trace.Outcome);
         Assert.Equal("output_contract_failed", trace.ErrorCode);
-        Assert.Contains("declared output contract", trace.ErrorMessage ?? string.Empty, StringComparison.Ordinal);
+        Assert.Contains("derived output contract", trace.ErrorMessage ?? string.Empty, StringComparison.Ordinal);
         Assert.Contains("call output", trace.ErrorDetails?.GetProperty("issues")[0].GetProperty("message").GetString() ?? string.Empty, StringComparison.Ordinal);
     }
 
@@ -2323,12 +2410,12 @@ public class PlanningRuntimeContractsTests
         var trace = Assert.Single(result.StepTraces, candidate => candidate.Outcome == StepTraceOutcome.Failed);
         Assert.Equal("extractFacts", trace.StepId);
         Assert.Equal("llm_input_contract_failed", trace.ErrorCode);
-        Assert.Contains("declared binding types", trace.ErrorMessage ?? string.Empty, StringComparison.Ordinal);
+        Assert.Contains("declared input type hints", trace.ErrorMessage ?? string.Empty, StringComparison.Ordinal);
         Assert.Contains("expected 'array<object>'", trace.ErrorDetails?.GetProperty("issues")[0].GetProperty("message").GetString() ?? string.Empty, StringComparison.Ordinal);
     }
 
     [Fact]
-    public void AgentStepRunner_BuildExecutionContract_ClarifiesCollectPerCallSemantics()
+    public void AgentStepRunner_BuildExecutionContract_ClarifiesMappedItemSemantics()
     {
         var callSchema = JsonSerializer.SerializeToElement(new
         {
@@ -2359,14 +2446,15 @@ public class PlanningRuntimeContractsTests
 
         var prompt = AgentStepRunner.BuildExecutionContract(new ResolvedPlanStepOutputContract(
             Format: PlanStepOutputFormats.Json,
-            Aggregate: PlanStepOutputAggregates.Collect,
+            IsMapped: true,
             CallSchema: callSchema,
             FinalSchema: finalSchema,
-            IsExplicit: true));
+            Source: DerivedStepOutputContractSource.ExplicitOutputSchema,
+            IsOpaque: false));
 
-        Assert.Contains("runtime collects those per-call values into the final array", prompt, StringComparison.Ordinal);
-        Assert.Contains("schema below describes the single-call value, not the final collected array", prompt, StringComparison.Ordinal);
-        Assert.Contains("Do not wrap the value in an extra array", prompt, StringComparison.Ordinal);
+        Assert.Contains("return one logical item or an array of logical items", prompt, StringComparison.Ordinal);
+        Assert.Contains("flat final array of logical items", prompt, StringComparison.Ordinal);
+        Assert.Contains("schema below describes one logical item", prompt, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -2501,7 +2589,7 @@ public class PlanningRuntimeContractsTests
                                 ["type"] = "string"
                             }
                         }
-                    }, aggregate: PlanStepOutputAggregates.Collect)
+                    }, aggregate: "collect")
                 }
             ]
         };
@@ -2599,7 +2687,7 @@ public class PlanningRuntimeContractsTests
                                 ["type"] = "string"
                             }
                         }
-                    }, aggregate: PlanStepOutputAggregates.Collect)
+                    }, aggregate: "collect")
                 }
             ]
         };
@@ -2997,19 +3085,17 @@ public class PlanningRuntimeContractsTests
         return binding;
     }
 
-    private static PlanStepOutputContract JsonOut(JsonObject schema, string aggregate = PlanStepOutputAggregates.Single) =>
+    private static PlanStepOutputContract JsonOut(JsonObject schema, string? aggregate = null) =>
         new()
         {
             Format = PlanStepOutputFormats.Json,
-            Aggregate = aggregate,
             Schema = JsonSerializer.SerializeToElement(schema)
         };
 
-    private static PlanStepOutputContract StringOut(string aggregate = PlanStepOutputAggregates.Single) =>
+    private static PlanStepOutputContract StringOut(string? aggregate = null) =>
         new()
         {
-            Format = PlanStepOutputFormats.String,
-            Aggregate = aggregate
+            Format = PlanStepOutputFormats.String
         };
 
     private static string CreateTempSearchCacheDirectory()
@@ -3051,13 +3137,13 @@ public class PlanningRuntimeContractsTests
 
     private sealed class ThrowingAgentStepRunner : IAgentStepRunner
     {
-        public Task<ResultEnvelope<JsonElement?>> ExecuteAsync(PlanStep step, JsonElement resolvedInputs, CancellationToken cancellationToken = default) =>
+        public Task<ResultEnvelope<JsonElement?>> ExecuteAsync(PlanStep step, JsonElement resolvedInputs, ResolvedPlanStepOutputContract outputContract, CancellationToken cancellationToken = default) =>
             throw new InvalidOperationException("LLM execution is not expected in this test.");
     }
 
     private sealed class DelegateAgentStepRunner(Func<PlanStep, JsonElement, ResultEnvelope<JsonElement?>> execute) : IAgentStepRunner
     {
-        public Task<ResultEnvelope<JsonElement?>> ExecuteAsync(PlanStep step, JsonElement resolvedInputs, CancellationToken cancellationToken = default) =>
+        public Task<ResultEnvelope<JsonElement?>> ExecuteAsync(PlanStep step, JsonElement resolvedInputs, ResolvedPlanStepOutputContract outputContract, CancellationToken cancellationToken = default) =>
             Task.FromResult(execute(step, resolvedInputs));
     }
 }

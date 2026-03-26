@@ -11,9 +11,28 @@ namespace ChatClient.Api.Services.BuiltIn;
 public sealed class BuiltInWebMcpServerTools
 {
     private const string SearchDescription =
-        "Search the web and return structured candidate page references under 'results'. Each result includes a URL and title plus optional search metadata. Each search.results[] item is directly compatible with the download tool's 'page' input, so downstream plans can pass page objects without projecting to '.url' first. Results are candidate pages, not verified entities. On failure, the tool returns a structured error payload with code, provider, query, retryability, fallback usage, and technical diagnostics.";
+        "Search the web with required 'query' and optional 'limit', then return structured candidate page references under 'results'. 'limit' is only a maximum, not a guarantee: the tool may return fewer results, and some results may be partially relevant. For broader coverage, especially when many distinct entities are needed, prefer multiple searches with different phrasings and/or a higher 'limit'. Each result includes a URL, title, provider, and optional search metadata such as thumbnailUrl. Each search.results[] item is directly compatible with the download tool's 'page' input, so downstream plans can pass page objects without projecting to '.url' first. Results are candidate pages, not verified entities. On failure, the tool returns a structured error payload with code, provider, providerAttempts, query, retryability, fallback usage, and technical diagnostics.";
     private const string DownloadDescription =
-        "Download a single web page. Provide exactly one of 'page' or 'url'. Prefer 'page' when you already have a search result object: each search.results[] item is directly compatible with 'page' and preserves search metadata such as title or snippet. Use 'url' only when you have a raw absolute URL string. To download multiple search results, bind 'page' from search.results with mode=map so the step runs once per result. On failure, the tool returns a structured error payload with code, host, retryability, and technical diagnostics.";
+        "Download a single web page. Provide exactly one of 'page' or 'url'. Prefer 'page' when you already have a search result object: each search.results[] item is directly compatible with 'page' and preserves search metadata such as title, provider, snippet, or thumbnailUrl. Use 'url' only when you have a raw absolute URL string. To download multiple search results, bind 'page' from search.results with mode=map so the step runs once per result. On failure, the tool returns a structured error payload with code, host, retryability, and technical diagnostics.";
+    private static readonly JsonElement SearchInputSchema = ParseJsonElement(
+        """
+        {
+          "type": "object",
+          "properties": {
+            "query": {
+              "type": "string",
+              "description": "Search query to submit to the search engine."
+            },
+            "limit": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 10,
+              "description": "Maximum number of results requested, not guaranteed. Search may return fewer results. Default 8, max 10."
+            }
+          },
+          "required": ["query"]
+        }
+        """);
     private static readonly JsonElement SearchOutputSchema = ParseJsonElement(
         """
         {
@@ -25,6 +44,7 @@ public sealed class BuiltInWebMcpServerTools
               "items": {
                 "type": "object",
                 "properties": {
+                  "provider": { "type": "string" },
                   "url": { "type": "string" },
                   "title": { "type": "string" },
                   "snippet": { "type": ["string", "null"] },
@@ -34,7 +54,7 @@ public sealed class BuiltInWebMcpServerTools
                   "thumbnailUrl": { "type": ["string", "null"] },
                   "position": { "type": ["integer", "null"] }
                 },
-                "required": ["url", "title"]
+                "required": ["provider", "url", "title"]
               }
             }
           },
@@ -52,6 +72,7 @@ public sealed class BuiltInWebMcpServerTools
               "properties": {
                 "url": { "type": "string" },
                 "title": { "type": ["string", "null"] },
+                "provider": { "type": ["string", "null"] },
                 "snippet": { "type": ["string", "null"] },
                 "siteName": { "type": ["string", "null"] },
                 "displayUrl": { "type": ["string", "null"] },
@@ -80,6 +101,7 @@ public sealed class BuiltInWebMcpServerTools
             "url": { "type": "string" },
             "title": { "type": "string" },
             "content": { "type": "string" },
+            "provider": { "type": ["string", "null"] },
             "snippet": { "type": ["string", "null"] },
             "siteName": { "type": ["string", "null"] },
             "displayUrl": { "type": ["string", "null"] },
@@ -113,6 +135,7 @@ public sealed class BuiltInWebMcpServerTools
                 OpenWorld = true,
                 UseStructuredContent = true
             });
+        searchTool.ProtocolTool.InputSchema = SearchInputSchema.Clone();
         searchTool.ProtocolTool.OutputSchema = SearchOutputSchema.Clone();
 
         var downloadTool = McpServerTool.Create(
@@ -148,7 +171,7 @@ public sealed class BuiltInWebMcpServerTools
         IHttpClientFactory httpClientFactory,
         ILogger<BuiltInWebMcpServerTools> logger,
         [Description("Search query to submit to the search engine.")] string query,
-        [Description("Maximum number of results to return. Default 4, max 6.")] int? limit = null,
+        [Description("Maximum number of results to return. Default 8, max 10.")] int? limit = null,
         CancellationToken cancellationToken = default)
     {
         try
@@ -209,6 +232,7 @@ public sealed class BuiltInWebMcpServerTools
                 details = exception.Details.Details,
                 query = exception.Details.Query,
                 provider = exception.Details.Provider,
+                providerAttempts = exception.Details.ProviderAttempts,
                 fallbackTried = exception.Details.FallbackTried,
                 operation = exception.Details.Operation,
                 url = exception.Details.Url,
@@ -233,7 +257,7 @@ public sealed class BuiltInWebMcpServerTools
         [Description(SearchDescription)]
         public async Task<CallToolResult> SearchAsync(
             [Description("Search query to submit to the search engine.")] string query,
-            [Description("Maximum number of results to return. Default 4, max 6.")] int? limit = null,
+            [Description("Maximum number of results to return. Default 8, max 10.")] int? limit = null,
             CancellationToken cancellationToken = default)
         {
             try

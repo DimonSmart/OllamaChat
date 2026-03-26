@@ -630,11 +630,10 @@ public static class PlanningPreviewScenarios
         ["mode"] = mode
     };
 
-    private static PlanStepOutputContract JsonOut(JsonObject schema, string aggregate = PlanStepOutputAggregates.Single) =>
+    private static PlanStepOutputContract JsonOut(JsonObject schema) =>
         new()
         {
             Format = PlanStepOutputFormats.Json,
-            Aggregate = aggregate,
             Schema = JsonSerializer.SerializeToElement(schema, PlanningJson.CompactOptions)
         };
 

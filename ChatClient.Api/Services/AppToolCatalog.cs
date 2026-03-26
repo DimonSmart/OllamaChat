@@ -1,4 +1,5 @@
 using System.Text.Json;
+using ChatClient.Api.PlanningRuntime.Planning;
 using ChatClient.Domain.Models;
 using ModelContextProtocol.Client;
 
@@ -45,6 +46,7 @@ public sealed record AppToolPlanningMetadata(
     string? UseWhen = null,
     string? AvoidWhen = null,
     string? Returns = null,
+    string? Limits = null,
     string? Constraints = null,
     AppToolPlannerRole? PlannerRole = null,
     AppToolProducesKind? ProducesKind = null);
@@ -123,7 +125,7 @@ public sealed class AppToolCatalog(IMcpClientService mcpClientService) : IAppToo
                     BaseServerName: baseServerName,
                     BindingId: bindingId,
                     BindingDisplayName: bindingDisplayName,
-                    PlanningMetadata: InferPlanningMetadata(outputSchema, readOnlyHint, destructiveHint, openWorldHint, description)));
+                    PlanningMetadata: InferPlanningMetadata(inputSchema, outputSchema, readOnlyHint, destructiveHint, openWorldHint, description)));
             }
         }
 
@@ -134,6 +136,7 @@ public sealed class AppToolCatalog(IMcpClientService mcpClientService) : IAppToo
     }
 
     private static AppToolPlanningMetadata? InferPlanningMetadata(
+        JsonElement inputSchema,
         JsonElement? outputSchema,
         bool readOnlyHint,
         bool destructiveHint,
@@ -146,10 +149,35 @@ public sealed class AppToolCatalog(IMcpClientService mcpClientService) : IAppToo
             return null;
 
         return new AppToolPlanningMetadata(
+            Purpose: ExtractPurpose(description),
+            Returns: outputSchema is JsonElement schema
+                ? BuildSchemaSummary(schema)
+                : null,
+            Limits: BuildLimitHint(inputSchema),
             Constraints: BuildConstraintHint(description, producesKind),
             PlannerRole: plannerRole,
             ProducesKind: producesKind);
     }
+
+    private static string? ExtractPurpose(string description)
+    {
+        if (string.IsNullOrWhiteSpace(description))
+            return null;
+
+        var normalized = description.ReplaceLineEndings(" ").Trim();
+        if (ShouldPreserveFullPlanningDescription(normalized))
+            return normalized;
+
+        var sentenceEnd = normalized.IndexOfAny(['.', '!', '?']);
+        if (sentenceEnd > 0)
+            return normalized[..sentenceEnd].Trim();
+
+        return normalized;
+    }
+
+    private static bool ShouldPreserveFullPlanningDescription(string normalizedDescription) =>
+        normalizedDescription.Contains("directly compatible with the download tool's 'page' input", StringComparison.OrdinalIgnoreCase)
+        || normalizedDescription.Contains("bind page from search.results with mode=map", StringComparison.OrdinalIgnoreCase);
 
     private static AppToolPlannerRole? InferPlannerRole(
         AppToolProducesKind? producesKind,
@@ -200,6 +228,120 @@ public sealed class AppToolCatalog(IMcpClientService mcpClientService) : IAppToo
             return "Returned items are candidates and may require verification.";
 
         return null;
+    }
+
+    private static string? BuildLimitHint(JsonElement inputSchema)
+    {
+        if (inputSchema.ValueKind != JsonValueKind.Object
+            || !inputSchema.TryGetProperty("properties", out var propertiesElement)
+            || propertiesElement.ValueKind != JsonValueKind.Object)
+        {
+            return null;
+        }
+
+        var limits = new List<string>();
+        foreach (var property in propertiesElement.EnumerateObject())
+        {
+            if (property.Value.ValueKind != JsonValueKind.Object)
+                continue;
+
+            if (property.Value.TryGetProperty("maximum", out var maximum)
+                && maximum.ValueKind == JsonValueKind.Number)
+            {
+                limits.Add($"{property.Name} <= {maximum.GetRawText()}");
+            }
+
+            if (property.Value.TryGetProperty("maxItems", out var maxItems)
+                && maxItems.ValueKind == JsonValueKind.Number)
+            {
+                limits.Add($"{property.Name}.count <= {maxItems.GetRawText()}");
+            }
+
+            if (property.Value.TryGetProperty("maxLength", out var maxLength)
+                && maxLength.ValueKind == JsonValueKind.Number)
+            {
+                limits.Add($"{property.Name}.length <= {maxLength.GetRawText()}");
+            }
+        }
+
+        return limits.Count == 0
+            ? null
+            : string.Join("; ", limits);
+    }
+
+    private static string BuildSchemaSummary(JsonElement schema) =>
+        DescribeSchema(schema, includeNestedObjectProperties: true);
+
+    private static string DescribeSchema(JsonElement schema, bool includeNestedObjectProperties)
+    {
+        if (schema.ValueKind != JsonValueKind.Object)
+            return "unknown";
+
+        if (PlanStepOutputContractResolver.TryGetSchemaTypes(schema, out var types))
+        {
+            var nonNullTypes = types
+                .Where(type => !string.Equals(type, "null", StringComparison.Ordinal))
+                .Distinct(StringComparer.Ordinal)
+                .ToArray();
+            if (nonNullTypes.Length == 1)
+            {
+                return nonNullTypes[0] switch
+                {
+                    "object" => DescribeObjectSchema(schema, includeNestedObjectProperties),
+                    "array" => $"array<{DescribeArrayItems(schema)}>",
+                    _ => nonNullTypes[0]
+                };
+            }
+
+            return string.Join("|", nonNullTypes);
+        }
+
+        if (schema.TryGetProperty("properties", out _))
+            return DescribeObjectSchema(schema, includeNestedObjectProperties);
+        if (schema.TryGetProperty("items", out _))
+            return $"array<{DescribeArrayItems(schema)}>";
+
+        return "unknown";
+    }
+
+    private static string DescribeObjectSchema(JsonElement schema, bool includeNestedObjectProperties)
+    {
+        if (!schema.TryGetProperty("properties", out var properties)
+            || properties.ValueKind != JsonValueKind.Object)
+        {
+            return "object";
+        }
+
+        var parts = new List<string>();
+        foreach (var property in properties.EnumerateObject())
+        {
+            var suffix = includeNestedObjectProperties
+                ? DescribePropertySuffix(property.Value)
+                : string.Empty;
+            parts.Add($"{property.Name}{suffix}");
+        }
+
+        return parts.Count == 0
+            ? "object"
+            : $"object {{ {string.Join(", ", parts)} }}";
+    }
+
+    private static string DescribePropertySuffix(JsonElement schema)
+    {
+        if (SchemaAllowsType(schema, "array"))
+            return $"[]<{DescribeArrayItems(schema)}>";
+        if (SchemaAllowsType(schema, "object"))
+            return " { ... }";
+
+        return string.Empty;
+    }
+
+    private static string DescribeArrayItems(JsonElement schema)
+    {
+        if (!schema.TryGetProperty("items", out var itemsSchema))
+            return "unknown";
+
+        return DescribeSchema(itemsSchema, includeNestedObjectProperties: false);
     }
 
     private static bool HasArrayProperty(JsonElement schema, string propertyName)

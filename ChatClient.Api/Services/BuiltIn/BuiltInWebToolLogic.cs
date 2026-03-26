@@ -1,5 +1,6 @@
 using System.Net;
 using System.Security.Cryptography;
+using System.Runtime.ExceptionServices;
 using System.Text;
 using System.Text.Json;
 using System.Text.Encodings.Web;
@@ -14,14 +15,16 @@ namespace ChatClient.Api.Services.BuiltIn;
 
 internal static class BuiltInWebToolLogic
 {
-    private const int DefaultLimit = 4;
-    private const int MaxLimit = 6;
+    private const int DefaultLimit = 8;
+    private const int MaxLimit = 10;
     private const int MaxContentLength = 12000;
-    private const int BraveSearchMaxAttempts = 1;
-    private const int SearchFallbackMaxAttempts = 5;
+    private const int BraveSearchMaxAttempts = 3;
+    private const int SearchFallbackMaxAttempts = 3;
     private const int DownloadMaxAttempts = 3;
     private const string SearchCachePathConfigKey = "BuiltInWeb:SearchCachePath";
-    private const string SearchCacheVersion = "v5";
+    private const string SearchCacheVersion = "v6";
+    private const string BraveProviderName = "brave";
+    private const string DuckDuckGoProviderName = "duckduckgo";
     private static readonly TimeSpan SearchCacheTtl = TimeSpan.FromDays(1);
     private static readonly TimeSpan BraveSearchMinInterval = TimeSpan.FromSeconds(5);
     private static readonly TimeSpan DefaultMaxRetryDelay = TimeSpan.FromSeconds(30);
@@ -46,6 +49,81 @@ internal static class BuiltInWebToolLogic
         string Query,
         DateTimeOffset CachedAtUtc,
         List<WebSearchResult> Results);
+
+    private enum SearchProviderOutcomeKind
+    {
+        SuccessWithResults,
+        SuccessNoResults,
+        ProviderFailed
+    }
+
+    private sealed record SearchExtractionResult(
+        IReadOnlyList<WebSearchResult> Results,
+        bool HasStructuredMarkup);
+
+    private sealed record SearchProviderExecutionResult(
+        string Provider,
+        SearchProviderOutcomeKind Kind,
+        IReadOnlyList<WebSearchResult>? Results,
+        WebToolException? Failure,
+        int AttemptCount)
+    {
+        public static SearchProviderExecutionResult SuccessWithResults(
+            string provider,
+            IReadOnlyList<WebSearchResult> results,
+            int attemptCount) =>
+            new(provider, SearchProviderOutcomeKind.SuccessWithResults, results, null, attemptCount);
+
+        public static SearchProviderExecutionResult SuccessNoResults(
+            string provider,
+            int attemptCount) =>
+            new(provider, SearchProviderOutcomeKind.SuccessNoResults, null, null, attemptCount);
+
+        public static SearchProviderExecutionResult ProviderFailed(
+            string provider,
+            WebToolException failure,
+            int attemptCount) =>
+            new(provider, SearchProviderOutcomeKind.ProviderFailed, null, failure, attemptCount);
+    }
+
+    private readonly record struct RetriedHttpResponse(HttpResponseMessage Response, int AttemptCount);
+
+    private interface IWebSearchProvider
+    {
+        string Name { get; }
+        bool RequiresExclusiveGate { get; }
+        Task<SearchProviderExecutionResult> SearchAsync(
+            HttpClient client,
+            ILogger logger,
+            string query,
+            CancellationToken cancellationToken);
+    }
+
+    private sealed class BraveSearchProvider : IWebSearchProvider
+    {
+        public string Name => BraveProviderName;
+        public bool RequiresExclusiveGate => true;
+
+        public Task<SearchProviderExecutionResult> SearchAsync(
+            HttpClient client,
+            ILogger logger,
+            string query,
+            CancellationToken cancellationToken) =>
+            SearchWithBraveAsync(client, logger, query, cancellationToken);
+    }
+
+    private sealed class DuckDuckGoSearchProvider : IWebSearchProvider
+    {
+        public string Name => DuckDuckGoProviderName;
+        public bool RequiresExclusiveGate => false;
+
+        public Task<SearchProviderExecutionResult> SearchAsync(
+            HttpClient client,
+            ILogger logger,
+            string query,
+            CancellationToken cancellationToken) =>
+            SearchWithDuckDuckGoAsync(client, logger, query, cancellationToken);
+    }
 
     public static async Task<WebSearchData> SearchAsync(
         IHttpClientFactory httpClientFactory,
@@ -75,44 +153,55 @@ internal static class BuiltInWebToolLogic
         {
             using var client = httpClientFactory.CreateClient();
             client.DefaultRequestHeaders.UserAgent.ParseAdd("Mozilla/5.0 (compatible; OllamaChatWebMcp/1.0)");
-            List<WebSearchResult>? results = null;
-            WebToolException? braveFailure = null;
-
-            await BraveSearchGate.WaitAsync(cancellationToken);
-            try
+            var outcomes = new List<SearchProviderExecutionResult>();
+            foreach (var provider in CreateSearchProviders())
             {
-                if (await TryGetCachedSearchResultAsync(cacheKey, query, limit, cancellationToken) is { } cachedWhileHoldingGate)
-                    return cachedWhileHoldingGate;
+                SearchProviderExecutionResult outcome;
+                if (provider.RequiresExclusiveGate)
+                {
+                    await BraveSearchGate.WaitAsync(cancellationToken);
+                    try
+                    {
+                        if (await TryGetCachedSearchResultAsync(cacheKey, query, limit, cancellationToken) is { } cachedWhileHoldingGate)
+                            return cachedWhileHoldingGate;
 
-                try
-                {
-                    results = await SearchWithBraveAsync(client, logger, query, cancellationToken);
+                        outcome = await provider.SearchAsync(client, logger, query, cancellationToken);
+                    }
+                    finally
+                    {
+                        BraveSearchGate.Release();
+                    }
                 }
-                catch (WebToolException ex)
+                else
                 {
-                    braveFailure = ex;
-                    logger.LogWarning(ex, "Brave search failed for query {Query}. Falling back to DuckDuckGo HTML results.", query);
+                    outcome = await provider.SearchAsync(client, logger, query, cancellationToken);
+                }
+
+                outcomes.Add(outcome);
+                switch (outcome.Kind)
+                {
+                    case SearchProviderOutcomeKind.SuccessWithResults:
+                        await StoreCachedSearchResultAsync(cacheKey, query, outcome.Results!, cancellationToken);
+                        return new WebSearchData(query, outcome.Results!.Take(limit).ToList());
+                    case SearchProviderOutcomeKind.SuccessNoResults:
+                        logger.LogInformation(
+                            "Search provider {Provider} completed after {AttemptCount} attempts but returned no normalized results for query {Query}.",
+                            outcome.Provider,
+                            outcome.AttemptCount,
+                            query);
+                        break;
+                    case SearchProviderOutcomeKind.ProviderFailed:
+                        logger.LogWarning(
+                            outcome.Failure,
+                            "Search provider {Provider} failed after {AttemptCount} attempts for query {Query}. Trying the next provider if available.",
+                            outcome.Provider,
+                            outcome.AttemptCount,
+                            query);
+                        break;
                 }
             }
-            finally
-            {
-                BraveSearchGate.Release();
-            }
 
-            if (results is null)
-            {
-                try
-                {
-                    results = await SearchWithDuckDuckGoAsync(client, logger, query, cancellationToken);
-                }
-                catch (WebToolException ex)
-                {
-                    throw CreateSearchAggregateFailure(query, braveFailure, ex);
-                }
-            }
-
-            await StoreCachedSearchResultAsync(cacheKey, query, results, cancellationToken);
-            return new WebSearchData(query, results.Take(limit).ToList());
+            throw CreateSearchAggregateFailure(query, outcomes);
         }
         catch (WebToolException)
         {
@@ -159,7 +248,8 @@ internal static class BuiltInWebToolLogic
             using var client = httpClientFactory.CreateClient();
             client.DefaultRequestHeaders.UserAgent.ParseAdd("Mozilla/5.0 (compatible; OllamaChatWebMcp/1.0)");
 
-            using var response = await GetWithRetriesAsync(client, logger, targetUri, DownloadMaxAttempts, cancellationToken);
+            var retryResult = await GetWithRetriesAsync(client, logger, targetUri, DownloadMaxAttempts, cancellationToken);
+            using var response = retryResult.Response;
             var html = await response.Content.ReadAsStringAsync(cancellationToken);
 
             var document = new HtmlDocument();
@@ -180,6 +270,7 @@ internal static class BuiltInWebToolLogic
                 Url: targetUri.ToString(),
                 Title: title,
                 Content: content,
+                Provider: page?.Provider,
                 Snippet: page?.Snippet,
                 SiteName: page?.SiteName,
                 DisplayUrl: page?.DisplayUrl,
@@ -276,7 +367,10 @@ internal static class BuiltInWebToolLogic
         bool retryable,
         Exception? exception = null,
         HttpStatusCode? statusCode = null,
-        IReadOnlyList<string>? extraDetails = null)
+        IReadOnlyList<string>? extraDetails = null,
+        bool? needsReplan = null,
+        string? type = null,
+        IReadOnlyList<WebToolProviderAttempt>? providerAttempts = null)
     {
         var detailItems = new List<string>();
         var normalizedQuery = NormalizeDiagnosticText(query);
@@ -306,15 +400,18 @@ internal static class BuiltInWebToolLogic
         if (!string.IsNullOrWhiteSpace(exception?.Message))
             detailItems.Add($"technical={NormalizeDiagnosticText(exception.Message)}");
 
-        var type = string.Equals(code, "search_no_results", StringComparison.Ordinal)
-            ? "missing"
-            : "error";
+        var resolvedType = type
+            ?? (string.Equals(code, "search_no_results", StringComparison.Ordinal)
+                ? "missing"
+                : "error");
+        var resolvedNeedsReplan = needsReplan
+            ?? (string.Equals(code, "search_no_results", StringComparison.Ordinal) || !retryable);
 
         var details = new WebToolErrorDetails(
             Operation: "search",
             Status: "blocked",
-            NeedsReplan: !retryable,
-            Type: type,
+            NeedsReplan: resolvedNeedsReplan,
+            Type: resolvedType,
             Details: detailItems,
             Query: normalizedQuery,
             Provider: provider,
@@ -322,52 +419,53 @@ internal static class BuiltInWebToolLogic
             Retryable: retryable,
             HttpStatusCode: statusCode is null ? null : (int)statusCode.Value,
             TechnicalMessage: NormalizeDiagnosticText(exception?.Message),
-            ExceptionType: exception?.GetType().Name);
+            ExceptionType: exception?.GetType().Name,
+            ProviderAttempts: providerAttempts);
 
         return new WebToolException(code, message, details, exception);
     }
 
     private static WebToolException CreateSearchAggregateFailure(
         string query,
-        WebToolException? primaryFailure,
-        WebToolException fallbackFailure)
+        IReadOnlyList<SearchProviderExecutionResult> outcomes)
     {
-        var detailItems = new List<string>();
-        if (primaryFailure is not null)
+        var providerAttempts = outcomes
+            .Select((outcome, index) => CreateProviderAttempt(outcome, fallbackUsed: index > 0))
+            .ToArray();
+        var detailItems = providerAttempts.Select(FormatProviderAttemptDetail).ToArray();
+        var fallbackTried = outcomes.Count > 1;
+        var lastSuccessfulNoResults = outcomes.LastOrDefault(outcome => outcome.Kind == SearchProviderOutcomeKind.SuccessNoResults);
+        if (lastSuccessfulNoResults is not null)
         {
-            detailItems.Add($"primaryCode={primaryFailure.Code}");
-            if (!string.IsNullOrWhiteSpace(primaryFailure.Details.Provider))
-                detailItems.Add($"primaryProvider={primaryFailure.Details.Provider}");
+            return CreateSearchFailure(
+                code: "search_no_results",
+                message: "Search completed successfully but returned no structured candidate results.",
+                query: query,
+                provider: lastSuccessfulNoResults.Provider,
+                fallbackTried: fallbackTried,
+                retryable: false,
+                extraDetails: detailItems,
+                needsReplan: true,
+                type: "missing",
+                providerAttempts: providerAttempts);
         }
 
-        detailItems.Add($"fallbackCode={fallbackFailure.Code}");
-        if (!string.IsNullOrWhiteSpace(fallbackFailure.Details.Provider))
-            detailItems.Add($"fallbackProvider={fallbackFailure.Details.Provider}");
-
-        var code = fallbackFailure.Code;
-        var message = fallbackFailure.Message;
-        if (string.Equals(code, "search_no_results", StringComparison.Ordinal)
-            && primaryFailure is not null)
-        {
-            message = "Search returned no structured candidate results after the fallback provider was used.";
-        }
-
+        var lastFailure = outcomes.LastOrDefault(outcome => outcome.Kind == SearchProviderOutcomeKind.ProviderFailed)?.Failure;
         return CreateSearchFailure(
-            code: code,
-            message: message,
+            code: "search_unavailable",
+            message: "Search providers were exhausted without returning usable structured results.",
             query: query,
-            provider: fallbackFailure.Details.Provider,
-            fallbackTried: true,
-            retryable: fallbackFailure.Details.Retryable ?? false,
-            exception: fallbackFailure,
-            statusCode: fallbackFailure.Details.HttpStatusCode is int httpStatusCode
+            provider: outcomes.LastOrDefault()?.Provider,
+            fallbackTried: fallbackTried,
+            retryable: false,
+            exception: lastFailure,
+            statusCode: lastFailure?.Details.HttpStatusCode is int httpStatusCode
                 ? (HttpStatusCode)httpStatusCode
                 : null,
-            extraDetails:
-            [
-                .. detailItems,
-                .. fallbackFailure.Details.Details
-            ]);
+            extraDetails: detailItems,
+            needsReplan: false,
+            type: "error",
+            providerAttempts: providerAttempts);
     }
 
     private static string BuildHttpErrorMessage(HttpRequestException exception, Uri targetUri)
@@ -405,14 +503,14 @@ internal static class BuiltInWebToolLogic
         return string.IsNullOrWhiteSpace(normalized) ? null : normalized;
     }
 
-    private static List<WebSearchResult> ExtractStructuredResults(string html, int limit)
+    private static SearchExtractionResult ExtractBraveResults(string html, int limit)
     {
         var document = new HtmlDocument();
         document.LoadHtml(html);
 
         var resultNodes = document.DocumentNode.SelectNodes("//div[@id='results']//div[@data-type='web' and @data-pos]");
         if (resultNodes is null)
-            return [];
+            return new SearchExtractionResult([], HasStructuredBraveMarkup(document));
 
         var results = new List<WebSearchResult>();
         var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -445,21 +543,78 @@ internal static class BuiltInWebToolLogic
             var position = TryParsePosition(node.GetAttributeValue("data-pos", string.Empty));
 
             results.Add(new WebSearchResult(
-                normalizedUrl,
-                title,
-                NullIfWhiteSpace(snippet),
-                NullIfWhiteSpace(siteName),
-                NullIfWhiteSpace(displayUrl),
-                NullIfWhiteSpace(age),
-                thumbnailUrl,
-                position));
+                Url: normalizedUrl,
+                Title: title,
+                Provider: BraveProviderName,
+                Snippet: NullIfWhiteSpace(snippet),
+                SiteName: NullIfWhiteSpace(siteName),
+                DisplayUrl: NullIfWhiteSpace(displayUrl),
+                Age: NullIfWhiteSpace(age),
+                ThumbnailUrl: thumbnailUrl,
+                Position: position));
 
             if (results.Count >= limit)
                 break;
         }
 
-        return results;
+        return new SearchExtractionResult(results, true);
     }
+
+    private static IReadOnlyList<IWebSearchProvider> CreateSearchProviders() =>
+    [
+        new BraveSearchProvider(),
+        new DuckDuckGoSearchProvider()
+    ];
+
+    private static WebToolProviderAttempt CreateProviderAttempt(SearchProviderExecutionResult outcome, bool fallbackUsed) =>
+        outcome.Kind switch
+        {
+            SearchProviderOutcomeKind.SuccessWithResults => new WebToolProviderAttempt(
+                Provider: outcome.Provider,
+                Outcome: "success_with_results",
+                AttemptCount: outcome.AttemptCount,
+                FallbackUsed: fallbackUsed),
+            SearchProviderOutcomeKind.SuccessNoResults => new WebToolProviderAttempt(
+                Provider: outcome.Provider,
+                Outcome: "success_no_results",
+                AttemptCount: outcome.AttemptCount,
+                FallbackUsed: fallbackUsed),
+            _ => new WebToolProviderAttempt(
+                Provider: outcome.Provider,
+                Outcome: "provider_failed",
+                Code: outcome.Failure?.Code,
+                Retryable: outcome.Failure?.Details.Retryable,
+                HttpStatusCode: outcome.Failure?.Details.HttpStatusCode,
+                TechnicalMessage: outcome.Failure?.Details.TechnicalMessage,
+                AttemptCount: outcome.AttemptCount,
+                FallbackUsed: fallbackUsed)
+        };
+
+    private static string FormatProviderAttemptDetail(WebToolProviderAttempt attempt)
+    {
+        var detail = $"provider={attempt.Provider}; outcome={attempt.Outcome}";
+        if (!string.IsNullOrWhiteSpace(attempt.Code))
+            detail += $"; code={attempt.Code}";
+        if (attempt.Retryable is not null)
+            detail += $"; retryable={attempt.Retryable.Value.ToString().ToLowerInvariant()}";
+        if (attempt.HttpStatusCode is not null)
+            detail += $"; httpStatusCode={attempt.HttpStatusCode.Value}";
+        if (attempt.AttemptCount is not null)
+            detail += $"; attempts={attempt.AttemptCount.Value}";
+        if (attempt.FallbackUsed is not null)
+            detail += $"; fallbackUsed={attempt.FallbackUsed.Value.ToString().ToLowerInvariant()}";
+        if (!string.IsNullOrWhiteSpace(attempt.TechnicalMessage))
+            detail += $"; technical={attempt.TechnicalMessage}";
+
+        return detail;
+    }
+
+    private static bool HasStructuredBraveMarkup(HtmlDocument document) =>
+        document.DocumentNode.SelectSingleNode("//div[@id='results']") is not null;
+
+    private static bool HasStructuredDuckDuckGoMarkup(HtmlDocument document) =>
+        document.DocumentNode.SelectSingleNode("//div[contains(@class,'results')]") is not null
+        || document.DocumentNode.SelectSingleNode("//div[contains(@class,'result')]") is not null;
 
     private static bool TryResolveSource(
         WebDownloadInput input,
@@ -730,7 +885,7 @@ internal static class BuiltInWebToolLogic
     private static string? NullIfWhiteSpace(string? value) =>
         string.IsNullOrWhiteSpace(value) ? null : value;
 
-    private static async Task<List<WebSearchResult>> SearchWithBraveAsync(
+    private static async Task<SearchProviderExecutionResult> SearchWithBraveAsync(
         HttpClient client,
         ILogger logger,
         string query,
@@ -742,75 +897,89 @@ internal static class BuiltInWebToolLogic
         var url = $"https://search.brave.com/search?q={UrlEncoder.Default.Encode(query)}";
         try
         {
-            using var response = await GetWithRetriesAsync(client, logger, url, BraveSearchMaxAttempts, cancellationToken);
+            var retryResult = await GetWithRetriesAsync(client, logger, url, BraveSearchMaxAttempts, cancellationToken, BraveProviderName);
+            using var response = retryResult.Response;
             var html = await response.Content.ReadAsStringAsync(cancellationToken);
-            var results = ExtractStructuredResults(html, MaxLimit);
+            var extraction = ExtractBraveResults(html, MaxLimit);
 
-            if (results.Count == 0)
+            if (extraction.Results.Count > 0)
+                return SearchProviderExecutionResult.SuccessWithResults(BraveProviderName, extraction.Results, retryResult.AttemptCount);
+
+            if (extraction.HasStructuredMarkup)
             {
-                throw CreateSearchFailure(
-                    code: "search_no_results",
-                    message: "Brave search returned no structured candidate results.",
+                return SearchProviderExecutionResult.SuccessNoResults(
+                    BraveProviderName,
+                    retryResult.AttemptCount);
+            }
+
+            return SearchProviderExecutionResult.ProviderFailed(
+                BraveProviderName,
+                CreateSearchFailure(
+                    code: "search_provider_invalid_markup",
+                    message: "Brave search returned markup that could not be normalized into structured results.",
                     query: query,
-                    provider: "brave",
+                    provider: BraveProviderName,
                     fallbackTried: false,
                     retryable: false,
                     extraDetails:
                     [
-                        "providerFailed=brave"
-                    ]);
-            }
-
-            return results;
-        }
-        catch (WebToolException)
-        {
-            throw;
+                        $"providerFailed={BraveProviderName}"
+                    ]),
+                retryResult.AttemptCount);
         }
         catch (TaskCanceledException ex) when (!cancellationToken.IsCancellationRequested)
         {
             logger.LogWarning(ex, "Brave web search timed out for query {Query}", query);
-            throw CreateSearchFailure(
-                code: "search_timeout",
-                message: "Timed out while searching the web.",
-                query: query,
-                provider: "brave",
-                fallbackTried: false,
-                retryable: true,
-                exception: ex);
+            return SearchProviderExecutionResult.ProviderFailed(
+                BraveProviderName,
+                CreateSearchFailure(
+                    code: "search_timeout",
+                    message: "Timed out while searching the web.",
+                    query: query,
+                    provider: BraveProviderName,
+                    fallbackTried: false,
+                    retryable: true,
+                    exception: ex),
+                BraveSearchMaxAttempts);
         }
         catch (HttpRequestException ex)
         {
             logger.LogWarning(ex, "Brave web search failed for query {Query}", query);
-            throw CreateSearchFailure(
-                code: ex.StatusCode is HttpStatusCode.TooManyRequests
-                    ? "search_rate_limited"
-                    : "search_http_error",
-                message: BuildSearchHttpErrorMessage(ex),
-                query: query,
-                provider: "brave",
-                fallbackTried: false,
-                retryable: IsRetryableHttpFailure(ex.StatusCode),
-                exception: ex,
-                statusCode: ex.StatusCode);
+            return SearchProviderExecutionResult.ProviderFailed(
+                BraveProviderName,
+                CreateSearchFailure(
+                    code: ex.StatusCode is HttpStatusCode.TooManyRequests
+                        ? "search_rate_limited"
+                        : "search_http_error",
+                    message: BuildSearchHttpErrorMessage(ex),
+                    query: query,
+                    provider: BraveProviderName,
+                    fallbackTried: false,
+                    retryable: IsRetryableHttpFailure(ex.StatusCode),
+                    exception: ex,
+                    statusCode: ex.StatusCode),
+                BraveSearchMaxAttempts);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
             logger.LogWarning(ex, "Brave web search failed for query {Query}", query);
-            throw CreateSearchFailure(
-                code: "search_failed",
-                message: string.IsNullOrWhiteSpace(ex.Message)
-                    ? "Search failed for an unknown reason."
-                    : ex.Message,
-                query: query,
-                provider: "brave",
-                fallbackTried: false,
-                retryable: false,
-                exception: ex);
+            return SearchProviderExecutionResult.ProviderFailed(
+                BraveProviderName,
+                CreateSearchFailure(
+                    code: "search_failed",
+                    message: string.IsNullOrWhiteSpace(ex.Message)
+                        ? "Search failed for an unknown reason."
+                        : ex.Message,
+                    query: query,
+                    provider: BraveProviderName,
+                    fallbackTried: false,
+                    retryable: false,
+                    exception: ex),
+                BraveSearchMaxAttempts);
         }
     }
 
-    private static async Task<List<WebSearchResult>> SearchWithDuckDuckGoAsync(
+    private static async Task<SearchProviderExecutionResult> SearchWithDuckDuckGoAsync(
         HttpClient client,
         ILogger logger,
         string query,
@@ -819,82 +988,96 @@ internal static class BuiltInWebToolLogic
         var url = $"https://html.duckduckgo.com/html/?q={UrlEncoder.Default.Encode(query)}";
         try
         {
-            using var response = await GetWithRetriesAsync(client, logger, url, SearchFallbackMaxAttempts, cancellationToken);
+            var retryResult = await GetWithRetriesAsync(client, logger, url, SearchFallbackMaxAttempts, cancellationToken, DuckDuckGoProviderName);
+            using var response = retryResult.Response;
             var html = await response.Content.ReadAsStringAsync(cancellationToken);
-            var results = ExtractDuckDuckGoResults(html, MaxLimit);
+            var extraction = ExtractDuckDuckGoResults(html, MaxLimit);
 
-            if (results.Count == 0)
+            if (extraction.Results.Count > 0)
+                return SearchProviderExecutionResult.SuccessWithResults(DuckDuckGoProviderName, extraction.Results, retryResult.AttemptCount);
+
+            if (extraction.HasStructuredMarkup)
             {
-                throw CreateSearchFailure(
-                    code: "search_no_results",
-                    message: "DuckDuckGo HTML search returned no structured candidate results.",
+                return SearchProviderExecutionResult.SuccessNoResults(
+                    DuckDuckGoProviderName,
+                    retryResult.AttemptCount);
+            }
+
+            return SearchProviderExecutionResult.ProviderFailed(
+                DuckDuckGoProviderName,
+                CreateSearchFailure(
+                    code: "search_provider_invalid_markup",
+                    message: "DuckDuckGo HTML search returned markup that could not be normalized into structured results.",
                     query: query,
-                    provider: "duckduckgo",
+                    provider: DuckDuckGoProviderName,
                     fallbackTried: true,
                     retryable: false,
                     extraDetails:
                     [
-                        "providerFailed=duckduckgo"
-                    ]);
-            }
-
-            return results;
-        }
-        catch (WebToolException)
-        {
-            throw;
+                        $"providerFailed={DuckDuckGoProviderName}"
+                    ]),
+                retryResult.AttemptCount);
         }
         catch (TaskCanceledException ex) when (!cancellationToken.IsCancellationRequested)
         {
             logger.LogWarning(ex, "DuckDuckGo web search timed out for query {Query}", query);
-            throw CreateSearchFailure(
-                code: "search_timeout",
-                message: "Timed out while searching the web.",
-                query: query,
-                provider: "duckduckgo",
-                fallbackTried: true,
-                retryable: true,
-                exception: ex);
+            return SearchProviderExecutionResult.ProviderFailed(
+                DuckDuckGoProviderName,
+                CreateSearchFailure(
+                    code: "search_timeout",
+                    message: "Timed out while searching the web.",
+                    query: query,
+                    provider: DuckDuckGoProviderName,
+                    fallbackTried: true,
+                    retryable: true,
+                    exception: ex),
+                SearchFallbackMaxAttempts);
         }
         catch (HttpRequestException ex)
         {
             logger.LogWarning(ex, "DuckDuckGo web search failed for query {Query}", query);
-            throw CreateSearchFailure(
-                code: ex.StatusCode is HttpStatusCode.TooManyRequests
-                    ? "search_rate_limited"
-                    : "search_http_error",
-                message: BuildSearchHttpErrorMessage(ex),
-                query: query,
-                provider: "duckduckgo",
-                fallbackTried: true,
-                retryable: IsRetryableHttpFailure(ex.StatusCode),
-                exception: ex,
-                statusCode: ex.StatusCode);
+            return SearchProviderExecutionResult.ProviderFailed(
+                DuckDuckGoProviderName,
+                CreateSearchFailure(
+                    code: ex.StatusCode is HttpStatusCode.TooManyRequests
+                        ? "search_rate_limited"
+                        : "search_http_error",
+                    message: BuildSearchHttpErrorMessage(ex),
+                    query: query,
+                    provider: DuckDuckGoProviderName,
+                    fallbackTried: true,
+                    retryable: IsRetryableHttpFailure(ex.StatusCode),
+                    exception: ex,
+                    statusCode: ex.StatusCode),
+                SearchFallbackMaxAttempts);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
             logger.LogWarning(ex, "DuckDuckGo web search failed for query {Query}", query);
-            throw CreateSearchFailure(
-                code: "search_failed",
-                message: string.IsNullOrWhiteSpace(ex.Message)
-                    ? "Search failed for an unknown reason."
-                    : ex.Message,
-                query: query,
-                provider: "duckduckgo",
-                fallbackTried: true,
-                retryable: false,
-                exception: ex);
+            return SearchProviderExecutionResult.ProviderFailed(
+                DuckDuckGoProviderName,
+                CreateSearchFailure(
+                    code: "search_failed",
+                    message: string.IsNullOrWhiteSpace(ex.Message)
+                        ? "Search failed for an unknown reason."
+                        : ex.Message,
+                    query: query,
+                    provider: DuckDuckGoProviderName,
+                    fallbackTried: true,
+                    retryable: false,
+                    exception: ex),
+                SearchFallbackMaxAttempts);
         }
     }
 
-    private static List<WebSearchResult> ExtractDuckDuckGoResults(string html, int limit)
+    private static SearchExtractionResult ExtractDuckDuckGoResults(string html, int limit)
     {
         var document = new HtmlDocument();
         document.LoadHtml(html);
 
         var resultNodes = document.DocumentNode.SelectNodes("//div[contains(@class,'result') and contains(@class,'results_links')]");
         if (resultNodes is null)
-            return [];
+            return new SearchExtractionResult([], HasStructuredDuckDuckGoMarkup(document));
 
         var results = new List<WebSearchResult>();
         var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -919,6 +1102,7 @@ internal static class BuiltInWebToolLogic
             results.Add(new WebSearchResult(
                 Url: normalizedUrl,
                 Title: title,
+                Provider: DuckDuckGoProviderName,
                 Snippet: NullIfWhiteSpace(snippet),
                 SiteName: NullIfWhiteSpace(siteName),
                 DisplayUrl: NullIfWhiteSpace(displayUrl),
@@ -930,25 +1114,28 @@ internal static class BuiltInWebToolLogic
                 break;
         }
 
-        return results;
+        return new SearchExtractionResult(results, true);
     }
 
-    private static async Task<HttpResponseMessage> GetWithRetriesAsync(
+    private static async Task<RetriedHttpResponse> GetWithRetriesAsync(
         HttpClient client,
         ILogger logger,
         string url,
         int maxAttempts,
-        CancellationToken cancellationToken) =>
-        await GetWithRetriesAsync(client, logger, new Uri(url), maxAttempts, cancellationToken);
+        CancellationToken cancellationToken,
+        string? requestLabel = null) =>
+        await GetWithRetriesAsync(client, logger, new Uri(url), maxAttempts, cancellationToken, requestLabel);
 
-    private static async Task<HttpResponseMessage> GetWithRetriesAsync(
+    private static async Task<RetriedHttpResponse> GetWithRetriesAsync(
         HttpClient client,
         ILogger logger,
         Uri url,
         int maxAttempts,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        string? requestLabel = null)
     {
         Exception? lastError = null;
+        var requestTarget = string.IsNullOrWhiteSpace(requestLabel) ? url.ToString() : requestLabel;
 
         for (var attempt = 1; attempt <= maxAttempts; attempt++)
         {
@@ -962,8 +1149,8 @@ internal static class BuiltInWebToolLogic
                     if (IsBraveSearchUri(url))
                         RegisterBraveSearchCooldown(delay);
                     logger.LogInformation(
-                        "Web request to {Url} hit rate limit on attempt {Attempt}/{MaxAttempts}. Retrying after {DelayMs} ms.",
-                        url,
+                        "Web request to {RequestTarget} hit rate limit on attempt {Attempt}/{MaxAttempts}. Retrying after {DelayMs} ms.",
+                        requestTarget,
                         attempt,
                         maxAttempts,
                         (int)delay.TotalMilliseconds);
@@ -988,31 +1175,37 @@ internal static class BuiltInWebToolLogic
                         statusCode: response.StatusCode);
                 }
 
-                return response;
+                return new RetriedHttpResponse(response, attempt);
             }
-            catch (TaskCanceledException ex) when (!cancellationToken.IsCancellationRequested && attempt < maxAttempts)
+            catch (TaskCanceledException ex) when (!cancellationToken.IsCancellationRequested)
             {
                 lastError = ex;
                 response?.Dispose();
+                if (attempt == maxAttempts)
+                    break;
+
                 var delay = GetRetryDelay(response, attempt);
                 logger.LogInformation(
                     ex,
-                    "Web request to {Url} timed out on attempt {Attempt}/{MaxAttempts}. Retrying after {DelayMs} ms.",
-                    url,
+                    "Web request to {RequestTarget} timed out on attempt {Attempt}/{MaxAttempts}. Retrying after {DelayMs} ms.",
+                    requestTarget,
                     attempt,
                     maxAttempts,
                     (int)delay.TotalMilliseconds);
                 await Task.Delay(delay, cancellationToken);
             }
-            catch (HttpRequestException ex) when (attempt < maxAttempts)
+            catch (HttpRequestException ex)
             {
                 lastError = ex;
                 response?.Dispose();
+                if (attempt == maxAttempts)
+                    break;
+
                 var delay = GetRetryDelay(response, attempt);
                 logger.LogInformation(
                     ex,
-                    "Web request to {Url} failed on attempt {Attempt}/{MaxAttempts}. Retrying after {DelayMs} ms.",
-                    url,
+                    "Web request to {RequestTarget} failed on attempt {Attempt}/{MaxAttempts}. Retrying after {DelayMs} ms.",
+                    requestTarget,
                     attempt,
                     maxAttempts,
                     (int)delay.TotalMilliseconds);
@@ -1025,6 +1218,15 @@ internal static class BuiltInWebToolLogic
                 throw;
             }
         }
+
+        logger.LogWarning(
+            lastError,
+            "Web request to {RequestTarget} exhausted {MaxAttempts} attempts without a successful response.",
+            requestTarget,
+            maxAttempts);
+
+        if (lastError is not null)
+            ExceptionDispatchInfo.Capture(lastError).Throw();
 
         throw new InvalidOperationException(
             $"Web request failed for '{url}' after {maxAttempts} attempts.",

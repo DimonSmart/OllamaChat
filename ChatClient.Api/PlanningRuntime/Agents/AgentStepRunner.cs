@@ -15,6 +15,7 @@ public interface IAgentStepRunner
     Task<ResultEnvelope<JsonElement?>> ExecuteAsync(
         PlanStep step,
         JsonElement resolvedInputs,
+        ResolvedPlanStepOutputContract outputContract,
         CancellationToken cancellationToken = default);
 }
 
@@ -53,17 +54,19 @@ public sealed class AgentStepRunner(IChatClient chatClient) : IAgentStepRunner
     public async Task<ResultEnvelope<JsonElement?>> ExecuteAsync(
         PlanStep step,
         JsonElement resolvedInputs,
+        ResolvedPlanStepOutputContract outputContract,
         CancellationToken cancellationToken = default)
     {
         if (PlanStepKinds.IsAgent(step))
-            return await ExecuteSavedAgentAsync(step, resolvedInputs, cancellationToken);
+            return await ExecuteSavedAgentAsync(step, resolvedInputs, outputContract, cancellationToken);
 
-        return await ExecuteLlmAsync(step, resolvedInputs, cancellationToken);
+        return await ExecuteLlmAsync(step, resolvedInputs, outputContract, cancellationToken);
     }
 
     private async Task<ResultEnvelope<JsonElement?>> ExecuteLlmAsync(
         PlanStep step,
         JsonElement resolvedInputs,
+        ResolvedPlanStepOutputContract outputContract,
         CancellationToken cancellationToken)
     {
         if (string.IsNullOrWhiteSpace(step.SystemPrompt))
@@ -71,7 +74,6 @@ public sealed class AgentStepRunner(IChatClient chatClient) : IAgentStepRunner
         if (string.IsNullOrWhiteSpace(step.UserPrompt))
             return ResultEnvelope<JsonElement?>.Failure("llm_invalid_step", $"Step '{step.Id}' has no userPrompt.");
 
-        var outputContract = PlanStepOutputContractResolver.Resolve(step, toolMetadata: null, hasFanOut: false);
         var llmLabel = PlanStepKinds.GetCapabilityId(step);
         var systemPrompt = step.SystemPrompt;
         if (!systemPrompt.Contains("JSON", StringComparison.OrdinalIgnoreCase))
@@ -122,6 +124,7 @@ public sealed class AgentStepRunner(IChatClient chatClient) : IAgentStepRunner
     private async Task<ResultEnvelope<JsonElement?>> ExecuteSavedAgentAsync(
         PlanStep step,
         JsonElement resolvedInputs,
+        ResolvedPlanStepOutputContract outputContract,
         CancellationToken cancellationToken)
     {
         if (string.IsNullOrWhiteSpace(step.CapabilityId))
@@ -138,7 +141,6 @@ public sealed class AgentStepRunner(IChatClient chatClient) : IAgentStepRunner
         if (!_callableAgents.TryGet(step.CapabilityId, out var callableAgent))
             return ResultEnvelope<JsonElement?>.Failure("agent_unknown", $"Step '{step.Id}' references unknown callable agent '{step.CapabilityId}'.");
 
-        var outputContract = PlanStepOutputContractResolver.Resolve(step, toolMetadata: null, hasFanOut: false);
         var fullUserPrompt = $"{step.UserPrompt}\n\nInput:\n{PlanningJson.SerializeIndented(new { inputs = resolvedInputs })}{BuildExecutionContract(outputContract)}";
 
         _observer.OnEvent(new AgentPromptPreparedEvent(
@@ -219,42 +221,36 @@ public sealed class AgentStepRunner(IChatClient chatClient) : IAgentStepRunner
 
     internal static string BuildExecutionContract(ResolvedPlanStepOutputContract outputContract)
     {
-        var resultHint = string.Equals(outputContract.Format, PlanStepOutputFormats.String, StringComparison.OrdinalIgnoreCase)
-            ? "a JSON string value"
-            : "the requested JSON value";
-
-        var aggregateHint = BuildAggregationHint(outputContract);
+        var resultHint = BuildResultHint(outputContract);
+        var mappedHint = BuildMappedHint(outputContract);
         var contractHint = BuildContractHint(outputContract);
-        return $"\n\nAlways return ONLY valid JSON using this exact top-level shape: {{\"ok\":true|false,\"data\":{resultHint}|null,\"error\":null|{{\"code\":\"short_code\",\"message\":\"human readable message\",\"details\":{{\"status\":\"blocked|partial\",\"needsReplan\":true|false,\"type\":\"missing|error|insufficient_capability\",\"details\":[\"short detail\"]}}}}}}. If the task can be completed reliably, return ok=true, error=null, and put the full answer into data. If reliable completion is impossible, return ok=false, data=null, and fill error. Use status='blocked' when the requested entity, critical facts, or required capability are absent. Use status='partial' when some useful context exists but the task is still incomplete. When ok=false, set needsReplan=true when a different plan could plausibly continue with the currently available capabilities. Set needsReplan=false only when the available capabilities are fundamentally insufficient for the requested task. Use type='missing' when critical input facts are absent. Use type='error' when the step is blocked by another execution problem. Use type='insufficient_capability' when the currently available tools and agents cannot obtain or verify the required deliverable. Put short factual details into details, such as missing field names, observed evidence, or concrete failure notes. Do not invent exact factual values that are not explicitly present in the provided inputs. If the task requires precise numbers, specs, dates, prices, names, or quotes and they are missing, return ok=false with a blocked or partial error instead of estimating. Do not return markdown or prose outside the JSON envelope.{aggregateHint}{contractHint}";
+        return $"\n\nAlways return ONLY valid JSON using this exact top-level shape: {{\"ok\":true|false,\"data\":{resultHint}|null,\"error\":null|{{\"code\":\"short_code\",\"message\":\"human readable message\",\"details\":{{\"status\":\"blocked|partial\",\"needsReplan\":true|false,\"type\":\"missing|error|insufficient_capability\",\"details\":[\"short detail\"]}}}}}}. If the task can be completed reliably, return ok=true, error=null, and put the full answer into data. If reliable completion is impossible, return ok=false, data=null, and fill error. Use status='blocked' when the requested entity, critical facts, or required capability are absent. Use status='partial' when some useful context exists but the task is still incomplete. When ok=false, set needsReplan=true when a different plan could plausibly continue with the currently available capabilities. Set needsReplan=false only when the available capabilities are fundamentally insufficient for the requested task. Use type='missing' when critical input facts are absent. Use type='error' when the step is blocked by another execution problem. Use type='insufficient_capability' when the currently available tools and agents cannot obtain or verify the required deliverable. Put short factual details into details, such as missing field names, observed evidence, or concrete failure notes. Do not invent exact factual values that are not explicitly present in the provided inputs. If the task requires precise numbers, specs, dates, prices, names, or quotes and they are missing, return ok=false with a blocked or partial error instead of estimating. Do not return markdown or prose outside the JSON envelope.{mappedHint}{contractHint}";
     }
 
-    private static string BuildAggregationHint(ResolvedPlanStepOutputContract outputContract)
+    private static string BuildResultHint(ResolvedPlanStepOutputContract outputContract)
     {
-        if (string.Equals(outputContract.Aggregate, PlanStepOutputAggregates.Collect, StringComparison.OrdinalIgnoreCase))
+        if (!outputContract.IsMapped)
         {
-            var hint = " Aggregation semantics for this call: return one result value for the CURRENT input. After all mapped calls finish, the runtime collects those per-call values into the final array. The schema below describes the single-call value, not the final collected array.";
-            if (outputContract.CallSchema is { } callSchema
-                && !PlanStepOutputContractResolver.SchemaDefinesArray(callSchema))
-            {
-                hint += " Do not wrap the value in an extra array.";
-            }
-
-            return hint;
+            return string.Equals(outputContract.Format, PlanStepOutputFormats.String, StringComparison.OrdinalIgnoreCase)
+                ? "a JSON string value"
+                : "the requested JSON value";
         }
 
-        if (string.Equals(outputContract.Aggregate, PlanStepOutputAggregates.Flatten, StringComparison.OrdinalIgnoreCase))
-        {
-            var hint = " Aggregation semantics for this call: return an array value for the CURRENT input. After all mapped calls finish, the runtime flattens the per-call arrays into the final array. The schema below describes the per-call array value that will be flattened.";
-            if (outputContract.CallSchema is { } callSchema
-                && PlanStepOutputContractResolver.SchemaDefinesArray(callSchema))
-            {
-                hint += " Do not collapse the array to a single object.";
-            }
+        return string.Equals(outputContract.Format, PlanStepOutputFormats.String, StringComparison.OrdinalIgnoreCase)
+            ? "one JSON string value or an array of JSON string values for the CURRENT input"
+            : "one JSON item or an array of JSON items for the CURRENT input";
+    }
 
-            return hint;
-        }
+    private static string BuildMappedHint(ResolvedPlanStepOutputContract outputContract)
+    {
+        if (!outputContract.IsMapped)
+            return string.Empty;
 
-        return string.Empty;
+        var hint = " Mapped step semantics for this call: return one logical item or an array of logical items for the CURRENT input. After all mapped calls finish, the runtime stores one flat final array of logical items.";
+        if (PlanStepOutputContractResolver.TryGetItemSchema(outputContract, out _))
+            hint += " The schema below describes one logical item, not the final accumulated array.";
+
+        return hint;
     }
 
     private static ResultEnvelope<JsonElement?> ValidateEnvelope(
@@ -278,7 +274,8 @@ public sealed class AgentStepRunner(IChatClient chatClient) : IAgentStepRunner
                     $"Step '{step.Id}' returned ok=true with null data.");
             }
 
-            if (string.Equals(outputContract.Format, PlanStepOutputFormats.String, StringComparison.OrdinalIgnoreCase))
+            if (string.Equals(outputContract.Format, PlanStepOutputFormats.String, StringComparison.OrdinalIgnoreCase)
+                && !outputContract.IsMapped)
             {
                 if (envelope.Data is not { ValueKind: JsonValueKind.String })
                 {
@@ -293,7 +290,7 @@ public sealed class AgentStepRunner(IChatClient chatClient) : IAgentStepRunner
             {
                 return ResultEnvelope<JsonElement?>.Failure(
                     "llm_invalid_contract",
-                    $"Step '{step.Id}' returned data that does not match its declared output contract.",
+                    $"Step '{step.Id}' returned data that does not match its derived output contract.",
                     JsonSerializer.SerializeToElement(new
                     {
                         issues = callIssues.Select(issue => new
@@ -335,10 +332,18 @@ public sealed class AgentStepRunner(IChatClient chatClient) : IAgentStepRunner
 
     private static string BuildContractHint(ResolvedPlanStepOutputContract outputContract)
     {
+        if (outputContract.IsMapped)
+        {
+            if (!PlanStepOutputContractResolver.TryGetItemSchema(outputContract, out var itemSchema))
+                return string.Empty;
+
+            return $"\nExpected logical item contract for this call: format='{outputContract.Format}', schema={itemSchema.GetRawText()}.";
+        }
+
         if (outputContract.CallSchema is null)
             return string.Empty;
 
-        return $"\nExpected data contract for this call: format='{outputContract.Format}', aggregate='{outputContract.Aggregate}', schema={outputContract.CallSchema.Value.GetRawText()}.";
+        return $"\nExpected data contract for this call: format='{outputContract.Format}', schema={outputContract.CallSchema.Value.GetRawText()}.";
     }
 
     private static JsonElement ValidateFailureDetails(string stepId, JsonElement? details)

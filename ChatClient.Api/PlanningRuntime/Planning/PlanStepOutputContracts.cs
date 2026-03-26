@@ -30,75 +30,40 @@ public static class PlanStepOutputFormats
     }
 }
 
-public static class PlanStepOutputAggregates
-{
-    public const string Single = "single";
-    public const string Collect = "collect";
-    public const string Flatten = "flatten";
-
-    public static bool TryNormalize(string? value, out string normalized)
-    {
-        normalized = Single;
-        if (string.IsNullOrWhiteSpace(value))
-            return false;
-
-        switch (value.Trim().ToLowerInvariant())
-        {
-            case Single:
-                normalized = Single;
-                return true;
-            case Collect:
-                normalized = Collect;
-                return true;
-            case Flatten:
-                normalized = Flatten;
-                return true;
-            default:
-                return false;
-        }
-    }
-}
-
 public sealed class PlanStepOutputContract
 {
     [JsonPropertyName("format")]
     public string Format { get; init; } = PlanStepOutputFormats.Json;
 
-    [JsonPropertyName("aggregate")]
-    public string Aggregate { get; init; } = PlanStepOutputAggregates.Single;
-
     [JsonPropertyName("schema")]
     public JsonElement? Schema { get; init; }
 }
 
+public enum DerivedStepOutputContractSource
+{
+    ToolOutputSchema,
+    ExplicitOutputSchema,
+    DerivedFromToolConsumer,
+    DerivedFromBindingPath,
+    Opaque
+}
+
 public sealed record ResolvedPlanStepOutputContract(
     string Format,
-    string Aggregate,
+    bool IsMapped,
     JsonElement? CallSchema,
     JsonElement? FinalSchema,
-    bool IsExplicit);
+    DerivedStepOutputContractSource Source,
+    bool IsOpaque)
+{
+    public JsonElement? ItemSchema =>
+        PlanStepOutputContractResolver.TryGetItemSchema(this, out var itemSchema)
+            ? itemSchema
+            : null;
+}
 
 public static class PlanStepOutputContractResolver
 {
-    public static ResolvedPlanStepOutputContract Resolve(
-        PlanStep step,
-        AppToolDescriptor? toolMetadata,
-        bool hasFanOut)
-    {
-        var explicitContract = PlanStepKinds.IsTool(step) ? null : step.Out;
-        var format = ResolveFormat(explicitContract, toolMetadata);
-        var callSchema = ResolveCallSchema(explicitContract, toolMetadata, format);
-        var aggregate = ResolveAggregate(explicitContract, hasFanOut, callSchema);
-        var finalSchema = ResolveFinalSchema(callSchema, aggregate);
-
-        return new ResolvedPlanStepOutputContract(
-            Format: format,
-            Aggregate: aggregate,
-            CallSchema: callSchema,
-            FinalSchema: finalSchema,
-            IsExplicit: explicitContract is not null);
-    }
-
     public static bool HasMappedInputs(PlanStep step) =>
         step.In.Values.Any(value =>
             PlanInputBindingSyntax.TryParseBinding(value, out var bindingExpression, out var bindingError)
@@ -112,10 +77,18 @@ public static class PlanStepOutputContractResolver
         AppToolDescriptor? toolMetadata = null)
     {
         var issues = new List<string>();
-        var hasFanOut = HasMappedInputs(step);
         var explicitContract = step.Out;
+        var isTool = PlanStepKinds.IsTool(step);
         var isLlm = PlanStepKinds.IsLlm(step);
         var isAgent = PlanStepKinds.IsAgent(step);
+
+        if (isTool)
+        {
+            if (explicitContract is not null)
+                issues.Add("Tool steps must not declare 'out'.");
+
+            return issues;
+        }
 
         if ((isLlm || isAgent) && explicitContract is null)
         {
@@ -129,24 +102,8 @@ public static class PlanStepOutputContractResolver
         if (!PlanStepOutputFormats.TryNormalize(explicitContract.Format, out var format))
             issues.Add("out.format must be 'json' or 'string'.");
 
-        if (!PlanStepOutputAggregates.TryNormalize(explicitContract.Aggregate, out var aggregate))
-            issues.Add("out.aggregate must be 'single', 'collect', or 'flatten'.");
-
         if (issues.Count > 0)
             return issues;
-
-        if (hasFanOut && aggregate == PlanStepOutputAggregates.Single)
-            issues.Add("Mapped steps must use out.aggregate='collect' or 'flatten'.");
-
-        if (!hasFanOut && aggregate != PlanStepOutputAggregates.Single)
-            issues.Add("Steps without mapped inputs must use out.aggregate='single'.");
-
-        if ((isLlm || isAgent)
-            && format == PlanStepOutputFormats.Json
-            && explicitContract.Schema is null)
-        {
-            issues.Add("LLM and saved-agent steps with out.format='json' must provide out.schema.");
-        }
 
         if (format == PlanStepOutputFormats.String && explicitContract.Schema is { } stringSchema)
         {
@@ -157,15 +114,6 @@ public static class PlanStepOutputContractResolver
         if (explicitContract.Schema is { } schema)
             issues.AddRange(ValidateSchemaDefinition(schema, "out.schema"));
 
-        if (aggregate == PlanStepOutputAggregates.Flatten)
-        {
-            var schemaToCheck = explicitContract.Schema
-                ?? toolMetadata?.OutputSchema;
-
-            if (schemaToCheck is null || !SchemaDefinesArray(schemaToCheck.Value))
-                issues.Add("out.aggregate='flatten' requires an array schema for each call.");
-        }
-
         return issues;
     }
 
@@ -175,6 +123,42 @@ public static class PlanStepOutputContractResolver
     public static bool SchemaAcceptsType(JsonElement schema, JsonValueKind kind) =>
         !TryGetSchemaTypes(schema, out var types)
         || types.Contains(MapJsonKindToSchemaType(kind), StringComparer.Ordinal);
+
+    public static bool TryGetItemSchema(
+        ResolvedPlanStepOutputContract contract,
+        out JsonElement itemSchema)
+    {
+        itemSchema = default;
+        if (!contract.IsMapped)
+            return false;
+
+        if (contract.FinalSchema is { } finalSchema
+            && TryGetArrayItemSchema(finalSchema, out itemSchema))
+        {
+            return true;
+        }
+
+        if (contract.CallSchema is { } callSchema)
+        {
+            if (TryGetArrayItemSchema(callSchema, out itemSchema))
+                return true;
+
+            itemSchema = callSchema.Clone();
+            return true;
+        }
+
+        return false;
+    }
+
+    public static bool TryGetArrayItemSchema(JsonElement schema, out JsonElement itemSchema)
+    {
+        itemSchema = default;
+        if (!SchemaDefinesArray(schema) || !schema.TryGetProperty("items", out var itemsSchema))
+            return false;
+
+        itemSchema = itemsSchema.Clone();
+        return true;
+    }
 
     public static bool TryGetSchemaType(JsonElement schema, out string? type)
     {
@@ -207,13 +191,16 @@ public static class PlanStepOutputContractResolver
                         if (candidate.ValueKind == JsonValueKind.String)
                             AddType(collected, candidate.GetString());
                     }
+
                     break;
             }
         }
 
         if (schema.TryGetProperty("nullable", out var nullableElement)
             && nullableElement.ValueKind == JsonValueKind.True)
+        {
             AddType(collected, "null");
+        }
 
         if (collected.Count == 0)
         {
@@ -261,6 +248,7 @@ public static class PlanStepOutputContractResolver
                     {
                         issues.Add($"{path}.type array must contain only non-empty strings.");
                     }
+
                     break;
                 default:
                     issues.Add($"{path}.type must be a string or array of strings.");
@@ -270,7 +258,9 @@ public static class PlanStepOutputContractResolver
 
         if (schema.TryGetProperty("nullable", out var nullableElement)
             && nullableElement.ValueKind is not JsonValueKind.True and not JsonValueKind.False)
+        {
             issues.Add($"{path}.nullable must be a boolean when present.");
+        }
 
         if (!TryGetSchemaTypes(schema, out var types)
             && !schema.TryGetProperty("enum", out _))
@@ -319,79 +309,16 @@ public static class PlanStepOutputContractResolver
         return issues;
     }
 
-    private static string ResolveFormat(PlanStepOutputContract? explicitContract, AppToolDescriptor? toolMetadata)
-    {
-        if (explicitContract is not null && PlanStepOutputFormats.TryNormalize(explicitContract.Format, out var explicitFormat))
-            return explicitFormat;
-
-        if (toolMetadata?.OutputSchema is { } toolOutputSchema
-            && TryGetSchemaTypes(toolOutputSchema, out var schemaTypes)
-            && schemaTypes.Contains("string", StringComparer.Ordinal)
-            && schemaTypes.All(static type => type is "string" or "null"))
-        {
-            return PlanStepOutputFormats.String;
-        }
-
-        return PlanStepOutputFormats.Json;
-    }
-
-    private static string ResolveAggregate(
-        PlanStepOutputContract? explicitContract,
-        bool hasFanOut,
-        JsonElement? callSchema)
-    {
-        if (explicitContract is not null
-            && PlanStepOutputAggregates.TryNormalize(explicitContract.Aggregate, out var explicitAggregate))
-        {
-            return explicitAggregate;
-        }
-
-        if (!hasFanOut)
-            return PlanStepOutputAggregates.Single;
-
-        return callSchema is { } schema && SchemaDefinesArray(schema)
-            ? PlanStepOutputAggregates.Flatten
-            : PlanStepOutputAggregates.Collect;
-    }
-
-    private static JsonElement? ResolveCallSchema(
-        PlanStepOutputContract? explicitContract,
-        AppToolDescriptor? toolMetadata,
-        string format)
-    {
-        if (explicitContract?.Schema is { } explicitSchema)
-            return explicitSchema.Clone();
-
-        if (toolMetadata?.OutputSchema is { } toolOutputSchema)
-            return toolOutputSchema.Clone();
-
-        if (format == PlanStepOutputFormats.String)
-            return CreateStringSchema();
-
-        return null;
-    }
-
-    private static JsonElement? ResolveFinalSchema(JsonElement? callSchema, string aggregate)
-    {
-        if (callSchema is null)
-            return null;
-
-        return aggregate switch
-        {
-            PlanStepOutputAggregates.Single => callSchema.Value.Clone(),
-            PlanStepOutputAggregates.Collect => CreateArraySchema(callSchema.Value),
-            PlanStepOutputAggregates.Flatten => callSchema.Value.Clone(),
-            _ => callSchema.Value.Clone()
-        };
-    }
-
-    private static JsonElement CreateStringSchema() =>
+    public static JsonElement CreateStringSchema() =>
         JsonSerializer.SerializeToElement(new JsonObject
         {
             ["type"] = "string"
         });
 
-    private static JsonElement CreateArraySchema(JsonElement itemSchema) =>
+    public static JsonElement CreateOpaqueSchema() =>
+        JsonSerializer.SerializeToElement(new JsonObject());
+
+    public static JsonElement CreateArraySchema(JsonElement itemSchema) =>
         JsonSerializer.SerializeToElement(new JsonObject
         {
             ["type"] = "array",

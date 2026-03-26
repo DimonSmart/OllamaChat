@@ -9,14 +9,47 @@ public static class StepOutputContractValidator
     public static List<StepVerificationIssue> ValidateCallOutput(
         string stepId,
         ResolvedPlanStepOutputContract contract,
-        JsonElement? output) =>
-        Validate(stepId, contract.CallSchema, output, $"call output ({contract.Format}/{contract.Aggregate})");
+        JsonElement? output)
+    {
+        if (contract.IsMapped)
+            return ValidateMappedCallOutput(stepId, contract, output);
+
+        return Validate(stepId, contract.CallSchema, output, $"call output ({DescribeContract(contract)})");
+    }
 
     public static List<StepVerificationIssue> ValidateFinalOutput(
         string stepId,
         ResolvedPlanStepOutputContract contract,
         JsonElement? output) =>
-        Validate(stepId, contract.FinalSchema, output, $"final output ({contract.Format}/{contract.Aggregate})");
+        Validate(stepId, contract.FinalSchema, output, $"final output ({DescribeContract(contract)})");
+
+    private static List<StepVerificationIssue> ValidateMappedCallOutput(
+        string stepId,
+        ResolvedPlanStepOutputContract contract,
+        JsonElement? output)
+    {
+        var issues = new List<StepVerificationIssue>();
+        if (output is null)
+            return issues;
+
+        if (!PlanStepOutputContractResolver.TryGetItemSchema(contract, out var itemSchema))
+            return issues;
+
+        if (output.Value.ValueKind == JsonValueKind.Array)
+        {
+            var index = 0;
+            foreach (var item in output.Value.EnumerateArray())
+            {
+                ValidateNode(stepId, item, itemSchema, $"$[{index}]", $"call output ({DescribeContract(contract)})", issues);
+                index++;
+            }
+
+            return issues;
+        }
+
+        ValidateNode(stepId, output.Value, itemSchema, "$", $"call output ({DescribeContract(contract)})", issues);
+        return issues;
+    }
 
     private static List<StepVerificationIssue> Validate(
         string stepId,
@@ -134,6 +167,11 @@ public static class StepOutputContractValidator
             index++;
         }
     }
+
+    private static string DescribeContract(ResolvedPlanStepOutputContract contract) =>
+        contract.IsMapped
+            ? $"{contract.Format}/mapped"
+            : $"{contract.Format}/single";
 
     private static StepVerificationIssue CreateIssue(string stepId, string code, string message) =>
         new()

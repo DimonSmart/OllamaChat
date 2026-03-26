@@ -14,6 +14,8 @@ public sealed record WebSearchResult(
     string Url,
     [property: JsonPropertyName("title"), Description("Title of the candidate page.")]
     string Title,
+    [property: JsonPropertyName("provider"), Description("Search provider that returned the candidate page.")]
+    string Provider,
     [property: JsonPropertyName("snippet"), Description("Snippet or summary returned by the search engine.")]
     string? Snippet = null,
     [property: JsonPropertyName("siteName"), Description("Site or publisher name when available.")]
@@ -38,6 +40,8 @@ public sealed record WebDownloadPageRef(
     string Url,
     [property: JsonPropertyName("title"), Description("Optional title already known for the page.")]
     string? Title = null,
+    [property: JsonPropertyName("provider"), Description("Optional search provider that originally returned the page reference.")]
+    string? Provider = null,
     [property: JsonPropertyName("snippet"), Description("Optional snippet already known for the page.")]
     string? Snippet = null,
     [property: JsonPropertyName("siteName"), Description("Optional site or publisher name already known for the page.")]
@@ -64,6 +68,8 @@ public sealed record WebDownloadData(
     string Title,
     [property: JsonPropertyName("content"), Description("Normalized plain-text content extracted from the page.")]
     string Content,
+    [property: JsonPropertyName("provider"), Description("Original search provider if one was available.")]
+    string? Provider = null,
     [property: JsonPropertyName("snippet"), Description("Original search snippet if one was available.")]
     string? Snippet = null,
     [property: JsonPropertyName("siteName"), Description("Original search site name if one was available.")]
@@ -76,6 +82,16 @@ public sealed record WebDownloadData(
     string? ThumbnailUrl = null,
     [property: JsonPropertyName("position"), Description("Original search result position if one was available.")]
     int? Position = null);
+
+internal sealed record WebToolProviderAttempt(
+    [property: JsonPropertyName("provider")] string Provider,
+    [property: JsonPropertyName("outcome")] string Outcome,
+    [property: JsonPropertyName("code")] string? Code = null,
+    [property: JsonPropertyName("retryable")] bool? Retryable = null,
+    [property: JsonPropertyName("httpStatusCode")] int? HttpStatusCode = null,
+    [property: JsonPropertyName("technicalMessage")] string? TechnicalMessage = null,
+    [property: JsonPropertyName("attemptCount")] int? AttemptCount = null,
+    [property: JsonPropertyName("fallbackUsed")] bool? FallbackUsed = null);
 
 internal sealed record WebToolErrorDetails(
     [property: JsonPropertyName("operation")] string Operation,
@@ -91,7 +107,8 @@ internal sealed record WebToolErrorDetails(
     [property: JsonPropertyName("retryable")] bool? Retryable = null,
     [property: JsonPropertyName("httpStatusCode")] int? HttpStatusCode = null,
     [property: JsonPropertyName("technicalMessage")] string? TechnicalMessage = null,
-    [property: JsonPropertyName("exceptionType")] string? ExceptionType = null);
+    [property: JsonPropertyName("exceptionType")] string? ExceptionType = null,
+    [property: JsonPropertyName("providerAttempts")] IReadOnlyList<WebToolProviderAttempt>? ProviderAttempts = null);
 
 internal sealed class WebToolException(
     string code,

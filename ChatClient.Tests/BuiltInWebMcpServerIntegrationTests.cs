@@ -28,6 +28,39 @@ public class BuiltInWebMcpServerIntegrationTests
     }
 
     [Fact]
+    public async Task BuiltInWebServer_AdvertisesSearchInputSchema_WithLimitMetadata()
+    {
+        await using var fixture = new BuiltInWebMcpFixture();
+        var client = await fixture.CreateClientAsync();
+        var tool = (await client.ListToolsAsync())
+            .First(candidate => string.Equals(candidate.Name, "search", StringComparison.Ordinal));
+
+        var schema = tool.JsonSchema;
+        Assert.Equal(JsonValueKind.Object, schema.ValueKind);
+        Assert.True(schema.TryGetProperty("properties", out var properties));
+        Assert.True(properties.TryGetProperty("query", out _));
+        Assert.True(properties.TryGetProperty("limit", out var limitSchema));
+        Assert.Equal("integer", limitSchema.GetProperty("type").GetString());
+        Assert.Equal(10, limitSchema.GetProperty("maximum").GetInt32());
+        Assert.Contains("not guaranteed", limitSchema.GetProperty("description").GetString(), StringComparison.OrdinalIgnoreCase);
+        Assert.True(schema.TryGetProperty("required", out var required));
+        Assert.Contains(required.EnumerateArray(), item => string.Equals(item.GetString(), "query", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task BuiltInWebServer_AdvertisesSearchDescription_WithRecallGuidance()
+    {
+        await using var fixture = new BuiltInWebMcpFixture();
+        var client = await fixture.CreateClientAsync();
+        var tool = (await client.ListToolsAsync())
+            .First(candidate => string.Equals(candidate.Name, "search", StringComparison.Ordinal));
+
+        Assert.Contains("not a guarantee", tool.Description, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("partially relevant", tool.Description, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("multiple searches with different phrasings", tool.Description, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
     public async Task BuiltInWebServer_AdvertisesDownloadInputSchema()
     {
         await using var fixture = new BuiltInWebMcpFixture();

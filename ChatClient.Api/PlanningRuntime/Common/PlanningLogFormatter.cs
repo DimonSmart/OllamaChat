@@ -96,8 +96,7 @@ public static class PlanningLogFormatter
                 ? null
                 : new JsonObject
                 {
-                    ["format"] = step.Out.Format,
-                    ["aggregate"] = step.Out.Aggregate
+                    ["format"] = step.Out.Format
                 }
         };
 

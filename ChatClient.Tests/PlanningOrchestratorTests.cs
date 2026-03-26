@@ -104,23 +104,6 @@ public sealed class PlanningOrchestratorTests
                     In = new Dictionary<string, JsonNode?>
                     {
                         ["item"] = Ref("$seed.items", "map")
-                    },
-                    Out = new PlanStepOutputContract
-                    {
-                        Format = PlanStepOutputFormats.Json,
-                        Aggregate = PlanStepOutputAggregates.Collect,
-                        Schema = JsonSerializer.SerializeToElement(new
-                        {
-                            type = "object",
-                            required = new[] { "value" },
-                            properties = new
-                            {
-                                value = new
-                                {
-                                    type = "string"
-                                }
-                            }
-                        })
                     }
                 }
             ]
@@ -247,7 +230,6 @@ public sealed class PlanningOrchestratorTests
                     Out = new PlanStepOutputContract
                     {
                         Format = PlanStepOutputFormats.Json,
-                        Aggregate = PlanStepOutputAggregates.Single,
                         Schema = JsonSerializer.SerializeToElement(new
                         {
                             type = "object",
@@ -316,7 +298,6 @@ public sealed class PlanningOrchestratorTests
                     Out = new PlanStepOutputContract
                     {
                         Format = PlanStepOutputFormats.Json,
-                        Aggregate = PlanStepOutputAggregates.Single,
                         Schema = JsonSerializer.SerializeToElement(new
                         {
                             type = "object",
@@ -364,6 +345,80 @@ public sealed class PlanningOrchestratorTests
         Assert.Contains(
             details.GetProperty("missing").EnumerateArray().Select(item => item.GetString()),
             value => string.Equals(value, "no external retrieval capability is available", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task RunAsync_ReturnsSearchUnavailable_WhenFinalStepBlocksWithoutReplan()
+    {
+        var plan = new PlanDefinition
+        {
+            Goal = "Search the web.",
+            Steps =
+            [
+                new PlanStep
+                {
+                    Id = "search",
+                    Kind = PlanStepKinds.Llm,
+                    SystemPrompt = "Return a blocked result when search providers are exhausted.",
+                    UserPrompt = "Return the search availability status.",
+                    In = new Dictionary<string, JsonNode?>
+                    {
+                        ["query"] = JsonValue.Create("robot kits")
+                    },
+                    Out = new PlanStepOutputContract
+                    {
+                        Format = PlanStepOutputFormats.Json,
+                        Schema = JsonSerializer.SerializeToElement(new
+                        {
+                            type = "object",
+                            properties = new
+                            {
+                                message = new
+                                {
+                                    type = "string"
+                                }
+                            }
+                        })
+                    }
+                }
+            ]
+        };
+
+        var blockedDetails = JsonSerializer.SerializeToElement(new
+        {
+            status = "blocked",
+            needsReplan = false,
+            type = "error",
+            details = new[]
+            {
+                "provider=brave; outcome=provider_failed",
+                "provider=duckduckgo; outcome=provider_failed"
+            }
+        });
+        var executor = new PlanExecutor(
+            new PlanningToolCatalog([]),
+            new DelegateAgentStepRunner((_, _) => ResultEnvelope<JsonElement?>.Failure(
+                "search_unavailable",
+                "Search providers were exhausted without returning usable structured results.",
+                blockedDetails)));
+        var orchestrator = new PlanningOrchestrator(
+            new StubPlanner(plan),
+            executor,
+            new GoalVerifier(),
+            maxAttempts: 3);
+
+        var result = await orchestrator.RunAsync("example");
+
+        Assert.False(result.Ok);
+        Assert.Equal("search_unavailable", result.Error?.Code);
+        Assert.Equal("Search providers were exhausted without returning usable structured results.", result.Error?.Message);
+
+        var details = result.Error?.Details ?? throw new InvalidOperationException("Expected error details.");
+        Assert.Equal("Search providers were exhausted without returning usable structured results.", details.GetProperty("reason").GetString());
+        Assert.False(details.GetProperty("hasPartialData").GetBoolean());
+        Assert.Contains(
+            details.GetProperty("missing").EnumerateArray().Select(item => item.GetString()),
+            value => string.Equals(value, "provider=duckduckgo; outcome=provider_failed", StringComparison.Ordinal));
     }
 
     private static AppToolDescriptor CreateDescriptor(
@@ -428,13 +483,13 @@ public sealed class PlanningOrchestratorTests
 
     private sealed class ThrowingAgentStepRunner : IAgentStepRunner
     {
-        public Task<ResultEnvelope<JsonElement?>> ExecuteAsync(PlanStep step, JsonElement resolvedInputs, CancellationToken cancellationToken = default) =>
+        public Task<ResultEnvelope<JsonElement?>> ExecuteAsync(PlanStep step, JsonElement resolvedInputs, ResolvedPlanStepOutputContract outputContract, CancellationToken cancellationToken = default) =>
             throw new InvalidOperationException("Agent execution is not expected in this test.");
     }
 
     private sealed class DelegateAgentStepRunner(Func<PlanStep, JsonElement, ResultEnvelope<JsonElement?>> execute) : IAgentStepRunner
     {
-        public Task<ResultEnvelope<JsonElement?>> ExecuteAsync(PlanStep step, JsonElement resolvedInputs, CancellationToken cancellationToken = default) =>
+        public Task<ResultEnvelope<JsonElement?>> ExecuteAsync(PlanStep step, JsonElement resolvedInputs, ResolvedPlanStepOutputContract outputContract, CancellationToken cancellationToken = default) =>
             Task.FromResult(execute(step, resolvedInputs));
     }
 }

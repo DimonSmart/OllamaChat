@@ -26,6 +26,7 @@ public sealed class PlanExecutor(
     {
         var traces = new List<StepExecutionTrace>();
         var stepMap = plan.Steps.ToDictionary(step => step.Id, StringComparer.Ordinal);
+        var outputContracts = DerivedStepOutputContractBuilder.Build(plan, toolCatalog.ListTools());
         ResultEnvelope<JsonElement?>? lastEnvelope = null;
 
         foreach (var step in plan.Steps)
@@ -44,7 +45,8 @@ public sealed class PlanExecutor(
 
             PlanExecutionState.ResetStep(step);
 
-            var (trace, envelope) = await ExecuteStepAsync(step, stepMap, cancellationToken);
+            var outputContract = outputContracts[step.Id];
+            var (trace, envelope) = await ExecuteStepAsync(step, stepMap, outputContract, cancellationToken);
             traces.Add(trace);
             lastEnvelope = envelope;
 
@@ -58,6 +60,7 @@ public sealed class PlanExecutor(
     private async Task<(StepExecutionTrace trace, ResultEnvelope<JsonElement?> envelope)> ExecuteStepAsync(
         PlanStep step,
         IReadOnlyDictionary<string, PlanStep> stepMap,
+        ResolvedPlanStepOutputContract outputContract,
         CancellationToken cancellationToken)
     {
         var calls = new List<JsonElement>();
@@ -72,9 +75,8 @@ public sealed class PlanExecutor(
             ? toolCatalog.GetRequired(step.CapabilityId ?? throw new InvalidOperationException($"Tool step '{step.Id}' is missing capabilityId."))
             : null;
         var fanOutCount = fanOutInputs?.Values.FirstOrDefault()?.Length ?? 0;
-        var outputContract = PlanStepOutputContractResolver.Resolve(step, toolMetadata, fanOutInputs is not null);
 
-        _log.Log($"[exec] step:start id={step.Id} kind={stepKind} capabilityId={PlanStepKinds.GetCapabilityId(step)} fanOut={(fanOutInputs is null ? "no" : fanOutCount.ToString())} aggregate={outputContract.Aggregate} resolvedInputs={SerializeElement(resolvedInput)}");
+        _log.Log($"[exec] step:start id={step.Id} kind={stepKind} capabilityId={PlanStepKinds.GetCapabilityId(step)} fanOut={(fanOutInputs is null ? "no" : fanOutCount.ToString())} mapped={outputContract.IsMapped.ToString().ToLowerInvariant()} contractSource={outputContract.Source} opaque={outputContract.IsOpaque.ToString().ToLowerInvariant()} resolvedInputs={SerializeElement(resolvedInput)}");
         _observer.OnEvent(new StepStartedEvent(
             step.Id,
             stepKind,
@@ -89,7 +91,7 @@ public sealed class PlanExecutor(
             _observer.OnEvent(new StepCallStartedEvent(step.Id, 0, resolvedInput.Clone()));
             envelope = isTool
                 ? await RunToolAsync(toolMetadata!, resolvedInput, calls, cancellationToken)
-                : await RunAgentAsync(step, resolvedInput, calls, cancellationToken);
+                : await RunAgentAsync(step, resolvedInput, outputContract, calls, cancellationToken);
             if (envelope.Ok)
                 envelope = ValidateCallOutput(step, outputContract, envelope);
             _log.Log($"[exec] call:end step={step.Id} callIndex=0 ok={envelope.Ok} output={SerializeElement(envelope.Data)} error={Shorten(envelope.Error?.Message, 240)} details={SerializeElement(envelope.Error?.Details)}");
@@ -115,7 +117,7 @@ public sealed class PlanExecutor(
                 _observer.OnEvent(new StepCallStartedEvent(step.Id, callIndex, singleInput.Clone()));
                 envelope = isTool
                     ? await RunToolAsync(toolMetadata!, singleInput, calls, cancellationToken)
-                    : await RunAgentAsync(step, singleInput, calls, cancellationToken);
+                    : await RunAgentAsync(step, singleInput, outputContract, calls, cancellationToken);
                 if (envelope.Ok)
                     envelope = ValidateCallOutput(step, outputContract, envelope);
                 _log.Log($"[exec] call:end step={step.Id} callIndex={callIndex} ok={envelope.Ok} output={SerializeElement(envelope.Data)} error={Shorten(envelope.Error?.Message, 240)} details={SerializeElement(envelope.Error?.Details)}");
@@ -276,6 +278,7 @@ public sealed class PlanExecutor(
     private async Task<ResultEnvelope<JsonElement?>> RunAgentAsync(
         PlanStep step,
         JsonElement input,
+        ResolvedPlanStepOutputContract outputContract,
         List<JsonElement> calls,
         CancellationToken cancellationToken)
     {
@@ -294,7 +297,7 @@ public sealed class PlanExecutor(
             return inputFailure;
         }
 
-        var envelope = await agentStepRunner.ExecuteAsync(step, input, cancellationToken);
+        var envelope = await agentStepRunner.ExecuteAsync(step, input, outputContract, cancellationToken);
         calls.Add(JsonSerializer.SerializeToElement(new
             {
                 kind = PlanStepKinds.GetKind(step),
@@ -349,7 +352,7 @@ public sealed class PlanExecutor(
             : "llm_input_contract_failed";
         return ResultEnvelope<JsonElement?>.Failure(
             errorCode,
-            $"{stepKind} step '{step.Id}' received input that does not match its declared binding types.",
+            $"{stepKind} step '{step.Id}' received input that does not match its declared input type hints.",
             JsonSerializer.SerializeToElement(new
             {
                 issues = issues.Select(issue => new
@@ -498,7 +501,7 @@ public sealed class PlanExecutor(
 
         return ResultEnvelope<JsonElement?>.Failure(
             "output_contract_failed",
-            $"Step '{step.Id}' returned data that does not match its declared output contract.",
+            $"Step '{step.Id}' returned data that does not match its derived output contract.",
             JsonSerializer.SerializeToElement(new
             {
                 scope = "call",
@@ -515,29 +518,25 @@ public sealed class PlanExecutor(
         ResolvedPlanStepOutputContract outputContract,
         IReadOnlyList<JsonElement?> outputs)
     {
-        if (outputContract.Aggregate == PlanStepOutputAggregates.Single)
+        if (!outputContract.IsMapped)
             return outputs[0]!.Value.Clone();
 
-        if (outputContract.Aggregate == PlanStepOutputAggregates.Collect)
-            return JsonSerializer.SerializeToElement(outputs.Select(CloneElement).ToArray());
-
-        if (outputContract.Aggregate == PlanStepOutputAggregates.Flatten)
+        var logicalItems = new List<JsonElement>();
+        foreach (var output in outputs)
         {
-            var flattened = new List<JsonElement>();
-            for (var index = 0; index < outputs.Count; index++)
-            {
-                var output = outputs[index];
-                if (output is not { ValueKind: JsonValueKind.Array } arrayOutput)
-                    throw new InvalidOperationException(
-                        $"Step '{step.Id}' uses out.aggregate='flatten' but call {index} returned {DescribeValueKind(output)} instead of an array.");
+            if (output is not { } value)
+                continue;
 
-                flattened.AddRange(arrayOutput.EnumerateArray().Select(item => item.Clone()));
+            if (value.ValueKind == JsonValueKind.Array)
+            {
+                logicalItems.AddRange(value.EnumerateArray().Select(item => item.Clone()));
+                continue;
             }
 
-            return JsonSerializer.SerializeToElement(flattened.ToArray());
+            logicalItems.Add(value.Clone());
         }
 
-        throw new InvalidOperationException($"Step '{step.Id}' has unsupported out.aggregate='{outputContract.Aggregate}'.");
+        return JsonSerializer.SerializeToElement(logicalItems.ToArray());
     }
 
     private static PlanStepError CreateOutputContractError(
@@ -547,7 +546,7 @@ public sealed class PlanExecutor(
         new()
         {
             Code = "output_contract_failed",
-            Message = $"Step '{stepId}' produced {scope} output that does not match its declared contract.",
+            Message = $"Step '{stepId}' produced {scope} output that does not match its derived contract.",
             Details = JsonSerializer.SerializeToElement(new
             {
                 scope,
