@@ -66,7 +66,7 @@ public class PlanningGraphLinkProjectionTests
                 {
                     Id = "step1",
                     Kind = PlanStepKinds.Tool,
-                    Name = "search",
+                    CapabilityId = "search",
                     In = new Dictionary<string, JsonNode?>(),
                     Status = PlanStepStatuses.Done
                 },
@@ -74,7 +74,7 @@ public class PlanningGraphLinkProjectionTests
                 {
                     Id = "step2",
                     Kind = PlanStepKinds.Llm,
-                    Name = "summarize",
+                    CapabilityId = "summarize",
                     In = new Dictionary<string, JsonNode?>
                     {
                         ["searchResults"] = new JsonObject

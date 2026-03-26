@@ -17,6 +17,7 @@ internal static class PlanDraftValidationTool
         try
         {
             var draft = session.BuildPlan();
+            PlanNormalizer.Normalize(draft, workflowTools);
             if (PlanValidator.TryValidate(draft, workflowTools, agentCatalog?.ListAgents(), session.Profile, out var validationIssue))
             {
                 return new JsonObject

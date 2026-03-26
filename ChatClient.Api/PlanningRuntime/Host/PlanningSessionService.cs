@@ -8,8 +8,6 @@ using ChatClient.Api.Client.Services.Agentic;
 using ChatClient.Api.PlanningRuntime.Tools;
 using ChatClient.Api.PlanningRuntime.Verification;
 using ChatClient.Api.Services;
-using ChatClient.Application.Services;
-using ChatClient.Application.Services.Agentic;
 using ChatClient.Domain.Models;
 
 namespace ChatClient.Api.PlanningRuntime.Host;
@@ -18,8 +16,6 @@ public sealed class PlanningSessionService(
     ILlmChatClientFactory chatClientFactory,
     IAppToolCatalog appToolCatalog,
     IMcpUserInteractionService mcpUserInteractionService,
-    IAgentDescriptionService agentDescriptionService,
-    IModelCapabilityService modelCapabilityService,
     IAgenticExecutionInvoker agenticExecutionInvoker,
     ILogger<PlanningSessionService> logger) : IPlanningSessionService
 {
@@ -54,13 +50,14 @@ public sealed class PlanningSessionService(
                 Description = tool.Description
             })
             .ToList();
-        var callableAgents = await BuildCallableAgentCatalogAsync(planner, CancellationToken.None);
+        // Saved agents are intentionally not exposed to planning until the UI can opt in explicitly.
+        var callableAgents = PlanningCallableAgentCatalog.Empty;
 
         _runCts?.Cancel();
         _runCts = new CancellationTokenSource();
 
-        if (enabledTools.Count == 0 && callableAgents.ListAgents().Count == 0)
-            throw new InvalidOperationException("At least one planning tool or callable saved agent must be enabled.");
+        if (enabledTools.Count == 0)
+            throw new InvalidOperationException("At least one planning tool must be enabled.");
 
         Reset();
         State.UserQuery = request.UserQuery.Trim();
@@ -309,73 +306,4 @@ public sealed class PlanningSessionService(
                 result.Error?.Code ?? "planning_failed",
                 result.Error?.Message ?? "Planning failed.",
                 result.Error?.Details?.Clone());
-
-    private async Task<PlanningCallableAgentCatalog> BuildCallableAgentCatalogAsync(
-        ResolvedChatAgent planner,
-        CancellationToken cancellationToken)
-    {
-        var savedAgents = await agentDescriptionService.GetAllAsync();
-        List<ResolvedChatAgent> resolvedAgents = [];
-
-        foreach (var agent in savedAgents)
-        {
-            if (agent.Id == planner.Agent.Id)
-                continue;
-
-            if (agent.LlmId is not Guid serverId || string.IsNullOrWhiteSpace(agent.ModelName))
-                continue;
-
-            var model = new ServerModel(serverId, agent.ModelName.Trim());
-
-            try
-            {
-                await modelCapabilityService.EnsureModelSupportedByServerAsync(model, cancellationToken);
-                resolvedAgents.Add(AgentDescriptionFactory.CreateResolved(agent, model));
-            }
-            catch (Exception ex) when (ex is not OperationCanceledException)
-            {
-                logger.LogDebug(
-                    ex,
-                    "Skipping callable saved agent {AgentName} because its model could not be resolved for planning.",
-                    agent.AgentName);
-            }
-        }
-
-        if (resolvedAgents.Count == 0)
-            return PlanningCallableAgentCatalog.Empty;
-
-        var preferredNames = resolvedAgents.ToDictionary(
-            resolvedAgent => resolvedAgent.Agent.Id,
-            static resolvedAgent => string.IsNullOrWhiteSpace(resolvedAgent.Agent.ShortName)
-                ? resolvedAgent.Agent.Id.ToString("D")
-                : resolvedAgent.Agent.ShortName.Trim());
-        var duplicateNames = preferredNames.Values
-            .GroupBy(static value => value, StringComparer.OrdinalIgnoreCase)
-            .Where(static group => group.Count() > 1)
-            .Select(static group => group.Key)
-            .ToHashSet(StringComparer.OrdinalIgnoreCase);
-
-        var descriptors = resolvedAgents
-            .Select(resolvedAgent =>
-            {
-                var name = preferredNames[resolvedAgent.Agent.Id];
-                if (duplicateNames.Contains(name))
-                    name = resolvedAgent.Agent.Id.ToString("D");
-
-                var description = PlanningLogFormatter.SummarizeText(resolvedAgent.Agent.Content, 220);
-                if (string.IsNullOrWhiteSpace(description) || string.Equals(description, "<empty>", StringComparison.Ordinal))
-                    description = $"Saved agent using model '{resolvedAgent.Model.ModelName}'.";
-
-                return new PlanningCallableAgentDescriptor
-                {
-                    Name = name,
-                    DisplayName = resolvedAgent.Agent.AgentName,
-                    Description = description,
-                    Agent = resolvedAgent
-                };
-            })
-            .ToList();
-
-        return new PlanningCallableAgentCatalog(descriptors);
-    }
 }

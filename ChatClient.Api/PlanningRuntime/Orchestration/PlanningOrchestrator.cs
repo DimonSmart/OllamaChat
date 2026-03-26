@@ -69,6 +69,9 @@ public sealed class PlanningOrchestrator(
                     JsonSerializer.SerializeToElement(new { question = verdict.UserQuestion })), plan);
             }
 
+            if (verdict.Action == GoalAction.Blocked)
+                return CompleteRun(BuildFinalFailureResult(plan, result, verdict, attempt), plan);
+
             if (attempt == _maxAttempts || _replanner is null)
             {
                 return CompleteRun(BuildFinalFailureResult(plan, result, verdict, attempt), plan);
@@ -136,7 +139,7 @@ public sealed class PlanningOrchestrator(
             {
                 id = step.Id,
                 kind = step.Kind,
-                name = step.Name,
+                capabilityId = step.CapabilityId,
                 code = step.Error?.Code,
                 message = step.Error?.Message
             })
@@ -148,7 +151,7 @@ public sealed class PlanningOrchestrator(
             {
                 id = step.Id,
                 kind = step.Kind,
-                name = step.Name,
+                capabilityId = step.CapabilityId,
                 code = step.Error?.Code,
                 message = step.Error?.Message
             })
@@ -160,12 +163,17 @@ public sealed class PlanningOrchestrator(
             .ToList()
             ?? [];
         var lastAvailableStep = plan?.Steps.LastOrDefault(PlanExecutionState.HasCompletedResult);
-        var hasPartialData = partialSteps.Count > 0 || lastAvailableStep is not null;
-        var errorCode = hasPartialData
-            ? "partial_execution"
+        var hasPartialData = partialSteps.Count > 0;
+        var isBlocked = verdict.Action == GoalAction.Blocked;
+        var errorCode = isBlocked
+            ? ResolveBlockedErrorCode(executionResult.LastEnvelope?.Error)
+            : hasPartialData
+                ? "partial_execution"
             : executionResult.LastEnvelope?.Error?.Code ?? "goal_not_achieved";
-        var errorMessage = hasPartialData
-            ? "Execution completed with partial data: one or more aggregated steps failed for some inputs, so the result may be incomplete."
+        var errorMessage = isBlocked
+            ? verdict.Reason
+            : hasPartialData
+                ? "Execution completed with partial data: one or more aggregated steps failed for some inputs, so the result may be incomplete."
             : verdict.Reason;
 
         return ResultEnvelope<JsonElement?>.Failure(
@@ -194,5 +202,21 @@ public sealed class PlanningOrchestrator(
     private static PlanDefinition ClonePlan(PlanDefinition plan) =>
         JsonSerializer.Deserialize<PlanDefinition>(JsonSerializer.Serialize(plan))
         ?? throw new InvalidOperationException("Failed to clone final plan.");
+
+    private static string ResolveBlockedErrorCode(ErrorInfo? error)
+    {
+        if (string.Equals(error?.Code, "insufficient_capabilities", StringComparison.Ordinal))
+            return "insufficient_capabilities";
+
+        if (error?.Details is { ValueKind: JsonValueKind.Object } details
+            && details.TryGetProperty("type", out var type)
+            && type.ValueKind == JsonValueKind.String
+            && string.Equals(type.GetString(), "insufficient_capability", StringComparison.Ordinal))
+        {
+            return "insufficient_capabilities";
+        }
+
+        return error?.Code ?? "insufficient_capabilities";
+    }
 }
 

@@ -104,13 +104,18 @@ public static partial class PlanValidator
                     actual: step.Kind);
             }
 
-            if (string.IsNullOrWhiteSpace(step.Name))
+            var hasTool = string.Equals(stepKind, PlanStepKinds.Tool, StringComparison.Ordinal);
+            var hasLlm = string.Equals(stepKind, PlanStepKinds.Llm, StringComparison.Ordinal);
+            var hasAgent = string.Equals(stepKind, PlanStepKinds.Agent, StringComparison.Ordinal);
+            var capabilityId = step.CapabilityId?.Trim();
+
+            if ((hasTool || hasAgent) && string.IsNullOrWhiteSpace(capabilityId))
             {
                 throw CreateIssue(
-                    "step_name_missing",
-                    $"Step '{step.Id}' must declare name.",
+                    "step_capability_id_missing",
+                    $"Step '{step.Id}' must declare capabilityId.",
                     stepId: step.Id,
-                    path: $"{step.Id}.name");
+                    path: $"{step.Id}.capabilityId");
             }
 
             if (profile == PlanModelProfile.Runtime && !IsValidStatus(step.Status))
@@ -119,26 +124,23 @@ public static partial class PlanValidator
             if (step.In.Count == 0)
                 throw CreateIssue("step_inputs_missing", $"Step '{step.Id}' must declare its inputs in 'in'.", stepId: step.Id, path: $"{step.Id}.in");
 
-            var hasTool = string.Equals(stepKind, PlanStepKinds.Tool, StringComparison.Ordinal);
-            var hasLlm = string.Equals(stepKind, PlanStepKinds.Llm, StringComparison.Ordinal);
-            var hasAgent = string.Equals(stepKind, PlanStepKinds.Agent, StringComparison.Ordinal);
             AppToolDescriptor? toolMetadata = null;
             Dictionary<string, JsonElement>? toolInputProperties = null;
             if (hasTool && knownTools is not null)
             {
-                if (!knownTools.TryGetValue(step.Name, out toolMetadata))
-                    throw CreateIssue("tool_unknown", $"Step '{step.Id}' references unknown tool '{step.Name}'.", stepId: step.Id, toolName: step.Name);
+                if (!knownTools.TryGetValue(capabilityId!, out toolMetadata))
+                    throw CreateIssue("tool_unknown", $"Step '{step.Id}' references unknown tool '{step.CapabilityId}'.", stepId: step.Id, toolName: step.CapabilityId);
 
                 toolInputProperties = ValidateToolInputs(step, toolMetadata);
             }
 
-            if (hasAgent && knownAgents is not null && !knownAgents.ContainsKey(step.Name))
+            if (hasAgent && knownAgents is not null && !knownAgents.ContainsKey(capabilityId!))
             {
                 throw CreateIssue(
                     "agent_unknown",
-                    $"Step '{step.Id}' references unknown callable agent '{step.Name}'.",
+                    $"Step '{step.Id}' references unknown callable agent '{step.CapabilityId}'.",
                     stepId: step.Id,
-                    actual: step.Name);
+                    actual: step.CapabilityId);
             }
 
             foreach (var input in step.In)
@@ -219,6 +221,8 @@ public static partial class PlanValidator
                 }
             }
         }
+
+        ValidateGraphShapeOrThrow(plan);
     }
 
     private static Dictionary<string, JsonElement> ValidateToolInputs(PlanStep step, AppToolDescriptor toolMetadata)
@@ -322,20 +326,55 @@ public static partial class PlanValidator
                 bindingFrom: legacyReference);
         }
 
-        if (!PlanInputBindingSyntax.TryParseBinding(value, out var binding, out var bindingError))
+        if (!PlanInputBindingSyntax.TryParseBinding(value, out var bindingExpression, out var bindingError))
             return;
 
         if (!string.IsNullOrWhiteSpace(bindingError))
             throw CreateIssue("binding_invalid", $"Step '{stepId}' has invalid binding in input '{inputName}': {bindingError}", stepId: stepId, inputName: inputName);
 
-        if (!PlanInputBindingSyntax.TryParseReference(binding!.From, out var reference, out var refError))
+        switch (bindingExpression)
+        {
+            case PlanInputBindingSpec binding:
+                ValidateSingleBindingOrThrow(
+                    stepId,
+                    inputName,
+                    binding,
+                    knownStepIds,
+                    validatedSteps,
+                    resolvedOutputContracts,
+                    targetInputSchema);
+                return;
+            case PlanInputConcatBindingSpec concatBinding:
+                ValidateConcatBindingOrThrow(
+                    stepId,
+                    inputName,
+                    concatBinding,
+                    knownStepIds,
+                    validatedSteps,
+                    resolvedOutputContracts,
+                    targetInputSchema);
+                return;
+        }
+    }
+
+    private static void ValidateSingleBindingOrThrow(
+        string stepId,
+        string inputName,
+        PlanInputBindingSpec binding,
+        HashSet<string> knownStepIds,
+        IReadOnlyDictionary<string, PlanStep> validatedSteps,
+        IReadOnlyDictionary<string, ResolvedPlanStepOutputContract> resolvedOutputContracts,
+        JsonElement? targetInputSchema)
+    {
+        if (!PlanInputBindingSyntax.TryParseReference(binding.From, out var reference, out var refError))
         {
             throw CreateIssue(
                 "binding_ref_invalid",
                 $"Step '{stepId}' has invalid ref syntax in input '{inputName}': '{binding.From}'. {refError}",
                 stepId: stepId,
                 inputName: inputName,
-                bindingFrom: binding.From);
+                bindingFrom: binding.From,
+                sourceStepId: reference?.StepId);
         }
 
         if (!knownStepIds.Contains(reference!.StepId))
@@ -366,6 +405,118 @@ public static partial class PlanValidator
         {
             var sourceSchema = ResolveBoundSourceSchemaOrThrow(stepId, inputName, binding, reference, typedSourceStep, typedSourceOutputContract);
             ValidateBindingDeclaredTypeOrThrow(stepId, inputName, binding, sourceSchema);
+        }
+    }
+
+    private static void ValidateConcatBindingOrThrow(
+        string stepId,
+        string inputName,
+        PlanInputConcatBindingSpec concatBinding,
+        HashSet<string> knownStepIds,
+        IReadOnlyDictionary<string, PlanStep> validatedSteps,
+        IReadOnlyDictionary<string, ResolvedPlanStepOutputContract> resolvedOutputContracts,
+        JsonElement? targetInputSchema)
+    {
+        if (concatBinding.Concat.Count == 0)
+        {
+            throw CreateIssue(
+                "binding_concat_empty",
+                $"Step '{stepId}' input '{inputName}' uses concat but does not declare any sources.",
+                stepId: stepId,
+                inputName: inputName);
+        }
+
+        if (!string.IsNullOrWhiteSpace(concatBinding.Type)
+            && (!StepInputTypeValidator.TryParse(concatBinding.Type, out var concatType, out var concatTypeError) || concatType is null))
+        {
+            throw CreateIssue(
+                "binding_type_invalid",
+                $"Step '{stepId}' input '{inputName}' declares invalid type '{concatBinding.Type}'. {concatTypeError}",
+                stepId: stepId,
+                inputName: inputName,
+                actual: concatBinding.Type);
+        }
+
+        if (!string.IsNullOrWhiteSpace(concatBinding.Type)
+            && StepInputTypeValidator.TryParse(concatBinding.Type, out var parsedConcatType, out _)
+            && parsedConcatType is not null
+            && parsedConcatType.Kind != StepInputTypeKind.Array)
+        {
+            throw CreateIssue(
+                "binding_concat_type_invalid",
+                $"Step '{stepId}' input '{inputName}' uses concat, so its declared type must be 'array' or 'array<...>', but got '{concatBinding.Type}'.",
+                stepId: stepId,
+                inputName: inputName,
+                expected: "array",
+                actual: concatBinding.Type);
+        }
+
+        foreach (var binding in concatBinding.Concat)
+        {
+            if (binding.Mode != PlanInputBindingMode.Value)
+            {
+                throw CreateIssue(
+                    "binding_concat_mode_invalid",
+                    $"Step '{stepId}' input '{inputName}' uses concat, so every source must use mode='value'. Source '{binding.From}' uses '{binding.Mode.ToString().ToLowerInvariant()}'.",
+                    stepId: stepId,
+                    inputName: inputName,
+                    bindingFrom: binding.From,
+                    expected: "value",
+                    actual: binding.Mode.ToString().ToLowerInvariant());
+            }
+
+            ValidateSingleBindingOrThrow(
+                stepId,
+                inputName,
+                binding,
+                knownStepIds,
+                validatedSteps,
+                resolvedOutputContracts,
+                targetInputSchema: null);
+
+            if (!PlanInputBindingSyntax.TryParseReference(binding.From, out var reference, out _))
+                continue;
+
+            if (!validatedSteps.TryGetValue(reference!.StepId, out var sourceStep)
+                || !resolvedOutputContracts.TryGetValue(reference.StepId, out var sourceOutputContract))
+            {
+                continue;
+            }
+
+            var sourceSchema = ResolveBoundSourceSchemaOrThrow(stepId, inputName, binding, reference, sourceStep, sourceOutputContract);
+            if (sourceSchema.ValueKind is not JsonValueKind.Undefined and not JsonValueKind.Null
+                && !PlanStepOutputContractResolver.SchemaDefinesArray(sourceSchema))
+            {
+                throw CreateIssue(
+                    "binding_concat_non_array",
+                    $"Step '{stepId}' input '{inputName}' uses concat, but source '{binding.From}' does not resolve to an array in the output schema of step '{sourceStep.Id}'.",
+                    stepId: stepId,
+                    inputName: inputName,
+                    bindingFrom: binding.From,
+                    sourceStepId: sourceStep.Id,
+                    expected: "array",
+                    actual: DescribeSchemaShape(sourceSchema));
+            }
+
+            if (!string.IsNullOrWhiteSpace(concatBinding.Type))
+            {
+                ValidateBindingDeclaredTypeOrThrow(
+                    stepId,
+                    inputName,
+                    new PlanInputBindingSpec(binding.From, binding.Mode, concatBinding.Type),
+                    sourceSchema);
+            }
+
+            if (targetInputSchema is not null)
+            {
+                ValidateBindingCompatibilityOrThrow(
+                    stepId,
+                    inputName,
+                    binding,
+                    sourceStep,
+                    sourceSchema,
+                    targetInputSchema.Value);
+            }
         }
     }
 
@@ -784,4 +935,29 @@ public static partial class PlanValidator
             Path: path,
             Expected: expected,
             Actual: actual));
+
+    private static void ValidateGraphShapeOrThrow(PlanDefinition plan)
+    {
+        var dependentsLookup = PlanDependencyGraph.BuildDependentsLookup(plan.Steps);
+        foreach (var step in plan.Steps.Take(plan.Steps.Count - 1))
+        {
+            if (dependentsLookup.TryGetValue(step.Id, out var children) && children.Count > 0)
+                continue;
+
+            throw CreateIssue(
+                "step_output_unused",
+                $"Step '{step.Id}' does not feed any downstream step. Every step except the last must have at least one downstream consumer.",
+                stepId: step.Id);
+        }
+
+        var terminalStepIds = PlanDependencyGraph.GetTerminalStepIds(plan.Steps);
+        var lastStepId = plan.Steps[^1].Id;
+        if (terminalStepIds.Count != 1 || !string.Equals(terminalStepIds[0], lastStepId, StringComparison.Ordinal))
+        {
+            throw CreateIssue(
+                "plan_terminal_step_invalid",
+                $"Plan must end with exactly one terminal step, and it must be the last step '{lastStepId}'. Found terminal steps: {string.Join(", ", terminalStepIds)}.",
+                stepId: lastStepId);
+        }
+    }
 }

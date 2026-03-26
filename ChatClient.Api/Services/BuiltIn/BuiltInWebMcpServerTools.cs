@@ -11,9 +11,36 @@ namespace ChatClient.Api.Services.BuiltIn;
 public sealed class BuiltInWebMcpServerTools
 {
     private const string SearchDescription =
-        "Search the web and return structured candidate page references under 'results'. Each result includes a URL and title plus optional search metadata. Results are candidate pages, not verified entities.";
+        "Search the web and return structured candidate page references under 'results'. Each result includes a URL and title plus optional search metadata. Each search.results[] item is directly compatible with the download tool's 'page' input, so downstream plans can pass page objects without projecting to '.url' first. Results are candidate pages, not verified entities. On failure, the tool returns a structured error payload with code, provider, query, retryability, fallback usage, and technical diagnostics.";
     private const string DownloadDescription =
-        "Download a single web page. Provide exactly one of 'page' or 'url'. 'page' is a page-reference object that must contain at least 'url' and may also carry optional metadata such as title or snippet; the tool returns that metadata together with downloaded 'content'. If only a raw absolute URL is available, pass it via 'url'. On failure, the tool returns a structured error payload with code, host, retryability, and technical diagnostics.";
+        "Download a single web page. Provide exactly one of 'page' or 'url'. Prefer 'page' when you already have a search result object: each search.results[] item is directly compatible with 'page' and preserves search metadata such as title or snippet. Use 'url' only when you have a raw absolute URL string. To download multiple search results, bind 'page' from search.results with mode=map so the step runs once per result. On failure, the tool returns a structured error payload with code, host, retryability, and technical diagnostics.";
+    private static readonly JsonElement SearchOutputSchema = ParseJsonElement(
+        """
+        {
+          "type": "object",
+          "properties": {
+            "query": { "type": "string" },
+            "results": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "url": { "type": "string" },
+                  "title": { "type": "string" },
+                  "snippet": { "type": ["string", "null"] },
+                  "siteName": { "type": ["string", "null"] },
+                  "displayUrl": { "type": ["string", "null"] },
+                  "age": { "type": ["string", "null"] },
+                  "thumbnailUrl": { "type": ["string", "null"] },
+                  "position": { "type": ["integer", "null"] }
+                },
+                "required": ["url", "title"]
+              }
+            }
+          },
+          "required": ["query", "results"]
+        }
+        """);
     private static readonly JsonElement DownloadInputSchema = ParseJsonElement(
         """
         {
@@ -21,6 +48,7 @@ public sealed class BuiltInWebMcpServerTools
           "properties": {
             "page": {
               "type": "object",
+              "description": "Page-reference object. Prefer passing one search.results[] item directly here; for multiple results, bind page from search.results with mode=map.",
               "properties": {
                 "url": { "type": "string" },
                 "title": { "type": ["string", "null"] },
@@ -33,7 +61,10 @@ public sealed class BuiltInWebMcpServerTools
               },
               "required": ["url"]
             },
-            "url": { "type": "string" }
+            "url": {
+              "type": "string",
+              "description": "Raw absolute URL. Use this only when a full page object is not available."
+            }
           },
           "oneOf": [
             { "required": ["page"] },
@@ -82,6 +113,7 @@ public sealed class BuiltInWebMcpServerTools
                 OpenWorld = true,
                 UseStructuredContent = true
             });
+        searchTool.ProtocolTool.OutputSchema = SearchOutputSchema.Clone();
 
         var downloadTool = McpServerTool.Create(
             invokerType.GetMethod(nameof(ToolInvoker.DownloadAsync), BindingFlags.Instance | BindingFlags.Public)!
@@ -112,18 +144,25 @@ public sealed class BuiltInWebMcpServerTools
 
     [McpServerTool(Name = "search", ReadOnly = true, OpenWorld = true, UseStructuredContent = true)]
     [Description(SearchDescription)]
-    public static Task<WebSearchData> SearchAsync(
+    public static async Task<object> SearchAsync(
         IHttpClientFactory httpClientFactory,
         ILogger<BuiltInWebMcpServerTools> logger,
         [Description("Search query to submit to the search engine.")] string query,
         [Description("Maximum number of results to return. Default 4, max 6.")] int? limit = null,
         CancellationToken cancellationToken = default)
     {
-        return BuiltInWebToolLogic.SearchAsync(
-            httpClientFactory,
-            logger,
-            new WebSearchInput(query, limit),
-            cancellationToken);
+        try
+        {
+            return await BuiltInWebToolLogic.SearchAsync(
+                httpClientFactory,
+                logger,
+                new WebSearchInput(query, limit),
+                cancellationToken);
+        }
+        catch (WebToolException ex)
+        {
+            return CreateKnownError(ex);
+        }
     }
 
     [McpServerTool(Name = "download", ReadOnly = true, OpenWorld = true, UseStructuredContent = true)]
@@ -168,6 +207,9 @@ public sealed class BuiltInWebMcpServerTools
                 needsReplan = exception.Details.NeedsReplan,
                 type = exception.Details.Type,
                 details = exception.Details.Details,
+                query = exception.Details.Query,
+                provider = exception.Details.Provider,
+                fallbackTried = exception.Details.FallbackTried,
                 operation = exception.Details.Operation,
                 url = exception.Details.Url,
                 host = exception.Details.Host,
@@ -189,15 +231,26 @@ public sealed class BuiltInWebMcpServerTools
         ILogger<BuiltInWebMcpServerTools> logger)
     {
         [Description(SearchDescription)]
-        public Task<WebSearchData> SearchAsync(
+        public async Task<CallToolResult> SearchAsync(
             [Description("Search query to submit to the search engine.")] string query,
             [Description("Maximum number of results to return. Default 4, max 6.")] int? limit = null,
-            CancellationToken cancellationToken = default) =>
-            BuiltInWebToolLogic.SearchAsync(
-                httpClientFactory,
-                logger,
-                new WebSearchInput(query, limit),
-                cancellationToken);
+            CancellationToken cancellationToken = default)
+        {
+            try
+            {
+                var result = await BuiltInWebToolLogic.SearchAsync(
+                    httpClientFactory,
+                    logger,
+                    new WebSearchInput(query, limit),
+                    cancellationToken);
+
+                return CreateSuccessResult(result);
+            }
+            catch (WebToolException ex)
+            {
+                return CreateKnownError(ex);
+            }
+        }
 
         [Description(DownloadDescription)]
         public async Task<CallToolResult> DownloadAsync(
@@ -224,4 +277,10 @@ public sealed class BuiltInWebMcpServerTools
             }
         }
     }
+
+    private static CallToolResult CreateSuccessResult<T>(T result) =>
+        new()
+        {
+            StructuredContent = JsonSerializer.SerializeToNode(result)
+        };
 }

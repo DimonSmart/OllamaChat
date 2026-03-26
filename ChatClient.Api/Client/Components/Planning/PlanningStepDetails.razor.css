@@ -5,7 +5,6 @@
     overflow: hidden;
 }
 
-.planning-step-details ::deep .mud-paper,
 .planning-step-details ::deep .mud-stack,
 .planning-step-details ::deep .mud-typography {
     min-width: 0;
@@ -20,27 +19,149 @@
     min-width: 0;
 }
 
-::deep .planning-step-block,
-::deep .planning-step-call {
-    width: 100%;
-    max-width: 100%;
+.planning-link-summary {
+    display: flex;
+    flex-direction: column;
+    gap: 0.9rem;
+    padding: 0.95rem;
+    border: 1px solid rgba(120, 136, 198, 0.22);
+    border-radius: 18px;
+    background: rgba(11, 16, 29, 0.46);
+}
+
+.planning-link-route {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+    gap: 0.8rem;
+    align-items: stretch;
+}
+
+.planning-link-step-card {
     min-width: 0;
-    overflow: auto;
+    padding: 0.85rem 0.95rem;
+    border: 1px solid rgba(140, 153, 198, 0.28);
+    border-radius: 14px;
+    background: rgba(18, 24, 44, 0.58);
     box-sizing: border-box;
+}
+
+.planning-link-step-label {
+    font-size: 0.72rem;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: #9fb4d9;
+}
+
+.planning-link-step-main {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.45rem;
+    align-items: center;
+    margin-top: 0.45rem;
+}
+
+.planning-link-step-id {
+    display: inline-flex;
+    align-items: center;
+    padding: 0.14rem 0.42rem;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.08);
+    color: #ebefff;
+    font-size: 0.74rem;
+    line-height: 1.2;
+}
+
+.planning-link-step-name {
+    font-size: 1rem;
+    font-weight: 600;
+    color: #ffffff;
+    overflow-wrap: anywhere;
+    word-break: break-word;
+}
+
+.planning-link-step-meta {
+    margin-top: 0.38rem;
+    font-size: 0.78rem;
+    color: #c6d0ec;
+}
+
+.planning-link-route-arrow {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #ffd8a8;
+    font-size: 1rem;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+}
+
+.planning-link-flow-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.7rem;
+}
+
+.planning-link-summary .planning-link-flow-list {
+    padding-top: 0.85rem;
+    border-top: 1px solid rgba(140, 153, 198, 0.16);
+}
+
+.planning-link-flow-card {
+    min-width: 0;
+    padding: 0.8rem 0.95rem;
+    border: 1px solid rgba(120, 136, 198, 0.22);
+    border-radius: 14px;
+    background: rgba(13, 18, 34, 0.62);
+    box-sizing: border-box;
+}
+
+.planning-link-flow-binding {
+    display: block;
+    color: #f6f8ff;
+    font-family: Consolas, "Courier New", monospace;
+    font-size: 0.94rem;
+    line-height: 1.45;
     white-space: pre-wrap;
     overflow-wrap: anywhere;
     word-break: break-word;
 }
 
-.planning-step-code {
-    display: block;
-    width: 100%;
-    max-width: 100%;
-    min-width: 0;
-    overflow: auto;
-    box-sizing: border-box;
-    margin: 0.35rem 0 0;
+.planning-link-flow-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.45rem;
+    margin-top: 0.6rem;
+}
+
+.planning-link-chip {
+    display: inline-flex;
+    align-items: center;
+    padding: 0.18rem 0.5rem;
+    border-radius: 999px;
+    background: rgba(157, 191, 255, 0.12);
+    color: #d9e6ff;
+    font-size: 0.75rem;
+    line-height: 1.2;
+}
+
+.planning-link-flow-reference {
+    margin-top: 0.55rem;
+    color: #9aa8c8;
+    font-family: Consolas, "Courier New", monospace;
+    font-size: 0.76rem;
+    line-height: 1.4;
     white-space: pre-wrap;
     overflow-wrap: anywhere;
     word-break: break-word;
+}
+
+@media (max-width: 960px) {
+    .planning-link-route {
+        grid-template-columns: minmax(0, 1fr);
+    }
+
+    .planning-link-route-arrow {
+        min-height: 1.4rem;
+    }
 }

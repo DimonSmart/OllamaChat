@@ -1,5 +1,6 @@
 @using Blazor.Diagrams
 @using Blazor.Diagrams.Components.Renderers
+@using Blazor.Diagrams.Core.Geometry
 @using Blazor.Diagrams.Core.Behaviors
 @using Microsoft.AspNetCore.Components.Web
 @using System.Globalization
@@ -38,14 +39,18 @@
 
 @if (Link.SourceMarker != null && result.SourceMarkerAngle != null && result.SourceMarkerPosition != null)
 {
-    <g transform="@(FormattableString.Invariant($"translate({result.SourceMarkerPosition.X}, {result.SourceMarkerPosition.Y}) rotate({result.SourceMarkerAngle})"))">
+    var sourceMarkerOrigin = GetMarkerOrigin(result.SourceMarkerPosition, result.SourceMarkerAngle.Value);
+
+    <g transform="@(FormattableString.Invariant($"translate({sourceMarkerOrigin.X}, {sourceMarkerOrigin.Y}) rotate({result.SourceMarkerAngle})"))">
         <path d="@Link.SourceMarker.Path" fill="@color"></path>
     </g>
 }
 
 @if (Link.TargetMarker != null && result.TargetMarkerAngle != null && result.TargetMarkerPosition != null)
 {
-    <g transform="@(FormattableString.Invariant($"translate({result.TargetMarkerPosition.X}, {result.TargetMarkerPosition.Y}) rotate({result.TargetMarkerAngle})"))">
+    var targetMarkerOrigin = GetMarkerOrigin(result.TargetMarkerPosition, result.TargetMarkerAngle.Value);
+
+    <g transform="@(FormattableString.Invariant($"translate({targetMarkerOrigin.X}, {targetMarkerOrigin.Y}) rotate({result.TargetMarkerAngle})"))">
         <path d="@Link.TargetMarker.Path" fill="@color"></path>
     </g>
 }
@@ -56,10 +61,19 @@
 }
 
 @code {
+    private const double ArrowMarkerTipOffset = 10d;
     private bool _hovered;
 
     [CascadingParameter] public BlazorDiagram BlazorDiagram { get; set; } = null!;
     [Parameter] public PlanningGraphLinkModel Link { get; set; } = null!;
+
+    private static Point GetMarkerOrigin(Point position, double angleDegrees)
+    {
+        var angleRadians = angleDegrees * Math.PI / 180d;
+        return new Point(
+            position.X - Math.Cos(angleRadians) * ArrowMarkerTipOffset,
+            position.Y - Math.Sin(angleRadians) * ArrowMarkerTipOffset);
+    }
 
     private RenderFragment GetSelectionHelperPath(string color, string d, int index)
     {

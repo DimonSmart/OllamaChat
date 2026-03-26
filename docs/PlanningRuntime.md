@@ -198,7 +198,8 @@ The app now exposes web search/download as a built-in MCP server, and those tool
 - Purpose: search the web and return structured candidate page objects
 - Input: `query`, optional `limit`
 - Default/max limit: `4` / `6`
-- Current implementation: fetches Brave Search HTML, parses structured Brave result cards, filters Brave-owned hosts, and returns an object with `query` and `results`
+- Current implementation: tries Brave Search first, falls back quickly to DuckDuckGo HTML when Brave fails, parses structured result cards, filters Brave-owned hosts, and returns an object with `query` and `results`
+- Failure contract: returns a structured error payload with `code`, `provider`, `query`, `retryable`, `fallbackTried`, and technical diagnostics
 
 ### `download`
 

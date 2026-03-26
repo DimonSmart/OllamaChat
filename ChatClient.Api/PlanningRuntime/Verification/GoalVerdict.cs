@@ -6,6 +6,7 @@ public enum GoalAction
 {
     Done,
     Replan,
+    Blocked,
     AskUser
 }
 

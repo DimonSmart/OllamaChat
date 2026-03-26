@@ -6,7 +6,7 @@
 @using MudBlazor
 @inject IJSRuntime JSRuntime
 
-<MudPaper Class="@ComputedPaperClass" Outlined="@Outlined">
+<MudPaper Class="@ComputedPaperClass" Outlined="@Outlined" Style="@PaperStyle">
     @if (ShowActions)
     {
         <div class="planning-value-actions">
@@ -94,10 +94,22 @@
 
     private string PreviewText => ResolvePreviewText();
 
-    private string ComputedPaperClass =>
-        DisplayKind == PlanningValueDisplayKind.Markdown
-            ? $"{PaperClass} planning-step-markdown"
-            : PaperClass;
+    private string ComputedPaperClass
+    {
+        get
+        {
+            var className = DisplayKind == PlanningValueDisplayKind.Markdown
+                ? $"{PaperClass} planning-step-markdown"
+                : PaperClass;
+
+            return ShowActions
+                ? $"{className} planning-value-has-actions"
+                : className;
+        }
+    }
+
+    private static string PaperStyle =>
+        "width:100%;max-width:100%;min-width:0;overflow:hidden;box-sizing:border-box;";
 
     protected override void OnParametersSet()
     {

@@ -82,6 +82,7 @@ public sealed class LlmPlanner(
                 var plan = response.Result
                     ?? throw new InvalidOperationException("Planner returned an empty typed plan result.");
                 PlanSanitizer.Sanitize(plan, PlanModelProfile.Draft);
+                PlanNormalizer.Normalize(plan, tools);
 
                 _observer.OnEvent(new AgentResponseReceivedEvent(
                     PlannerStepId,
@@ -112,6 +113,7 @@ public sealed class LlmPlanner(
                             }, cancellationToken);
 
                             PlanSanitizer.Sanitize(repaired, PlanModelProfile.Draft);
+                            PlanNormalizer.Normalize(repaired, tools);
                             if (!PlanValidator.TryValidate(repaired, tools, _agentCatalog.ListAgents(), PlanModelProfile.Draft, out var repairedValidationIssue))
                                 throw new PlanValidationException(repairedValidationIssue!);
 
@@ -206,29 +208,43 @@ public sealed class LlmPlanner(
     {
         var sb = new StringBuilder();
         sb.AppendLine("You are a planning agent.");
-        sb.AppendLine("Build the shortest correct plan that satisfies the user request.");
+        sb.AppendLine("Build the shortest correct executable plan that can actually satisfy the user request with the listed capabilities.");
         sb.AppendLine();
         sb.AppendLine("Rules:");
         sb.AppendLine("- Return one JSON plan object with top-level goal and steps.");
-        sb.AppendLine("- Use only the tools and saved agents listed below. Never invent capabilities.");
-        sb.AppendLine("- Every step must include id, kind, name, and in.");
+        sb.AppendLine("- Use only the listed tools and saved agents. Never invent capabilities.");
+        sb.AppendLine("- Think in user-visible deliverables first. Identify what the final answer must contain or what external action must happen.");
+        sb.AppendLine("- Map every required external fact or external action to one listed external capability before adding execution steps.");
+        sb.AppendLine("- LLM steps may transform, normalize, deduplicate, compare, rank, summarize, or validate only the evidence already present in their inputs. They must not introduce new facts.");
+        sb.AppendLine("- Separate evidence acquisition from normalization/verification and final synthesis when evidence may be ambiguous, duplicated, incomplete, or candidate-based.");
+        sb.AppendLine("- If the listed capabilities cannot obtain or verify a required deliverable, return the shortest blocked plan instead of pretending the task is executable.");
+        sb.AppendLine("- A blocked plan should usually end with one llm step whose prompt explains the capability gap and instructs the step to return a blocked error with code 'insufficient_capabilities', details.status='blocked', details.needsReplan=false, and details.type='insufficient_capability'.");
+        sb.AppendLine("- Every step must include id, kind, and in.");
         sb.AppendLine("- kind must be exactly one of 'tool', 'llm', or 'agent'.");
-        sb.AppendLine("- name must be the exact tool name, llm label, or saved-agent id for the selected kind.");
+        sb.AppendLine("- Tool and saved-agent steps must include capabilityId.");
+        sb.AppendLine("- For tool or saved-agent steps, capabilityId must be the exact tool id or saved-agent id from the catalog.");
+        sb.AppendLine("- For generic llm steps, capabilityId is optional. Omit it unless a short literal label helps readability.");
         sb.AppendLine("- Tool and saved-agent steps are the only capabilities that may touch external systems.");
-        sb.AppendLine("- Put dynamic dependencies only under in using binding objects like {\"from\":\"$step.ref\",\"mode\":\"value|map\"}.");
-        sb.AppendLine("- A binding object is a VALUE inside in. Example: in={\"url\":{\"from\":\"$search.results[0].url\",\"mode\":\"value\"}}. Never use binding fields like from or mode as input names.");
+        sb.AppendLine("- Put dynamic dependencies only under in using binding objects like {\"from\":\"$step.ref\",\"mode\":\"value|map\"} or concat bindings like {\"concat\":[{\"from\":\"$s1.items\",\"mode\":\"value\"},{\"from\":\"$s2.items\",\"mode\":\"value\"}],\"type\":\"array<object>\"}.");
+        sb.AppendLine("- A binding object is a VALUE inside in. Example: in={\"item\":{\"from\":\"$step1.items[0]\",\"mode\":\"value\"}}. Never use binding fields like from, mode, or concat as input names.");
         sb.AppendLine("- Steps may reference only earlier steps.");
         sb.AppendLine("- mode='value' passes one resolved value into one call.");
         sb.AppendLine("- mode='map' runs the step once per array element.");
+        sb.AppendLine("- binding.mode supports ONLY 'value' or 'map'. Never use 'flatten' as a binding mode.");
+        sb.AppendLine("- Invalid example: {\"from\":\"$s1.results[]\",\"mode\":\"flatten\"}.");
+        sb.AppendLine("- Use concat only when you need to merge several array sources into one array input for a downstream step. Each concat item must resolve to an array and must use mode='value'.");
+        sb.AppendLine("- Every non-final step must feed at least one downstream consumer. The only terminal step must be the last step.");
         sb.AppendLine("- Do not wrap literal tool inputs in helper objects like {\"value\":...}.");
         sb.AppendLine("- If input shape matters for an llm or saved-agent step, add binding field type.");
+        sb.AppendLine("- Tool steps must not declare out. The runtime derives tool output contracts from the tool catalog.");
         sb.AppendLine("- LLM steps must provide systemPrompt, userPrompt, and out.");
         sb.AppendLine("- Saved-agent steps must provide userPrompt and out, and must not provide systemPrompt.");
-        sb.AppendLine("- For llm and saved-agent steps, out must include format ('json' or 'string') and aggregate ('single', 'collect', or 'flatten').");
+        sb.AppendLine("- For llm and saved-agent steps, out must include format ('json' or 'string').");
         sb.AppendLine("- When out.format='json', include out.schema. When out.format='string', schema may be omitted or set to {\"type\":\"string\"}.");
-        sb.AppendLine("- Use out.aggregate='collect' for mapped single-item outputs, 'flatten' for mapped array outputs, and 'single' otherwise.");
+        sb.AppendLine("- Omit out.aggregate unless a repair explicitly asks for it. The runtime infers 'single', 'collect', or 'flatten' from mapped inputs and schema.");
+        sb.AppendLine("- 'flatten' is allowed only in out.aggregate, never in binding.mode.");
         sb.AppendLine("- Prompts must be complete literal instructions. Do not embed $step refs or unresolved template placeholders like {name}, {{name}}, [[name]], <<name>>, or ${name} inside prompts.");
-        sb.AppendLine("- Use the exact tool names and exact saved-agent ids from the catalog.");
+        sb.AppendLine("- Use the exact tool ids and exact saved-agent ids from the catalog.");
         sb.AppendLine("- Add only the steps required to reach the user goal.");
         sb.AppendLine();
         sb.AppendLine("Reference syntax allowed inside binding objects:");
@@ -258,8 +274,48 @@ public sealed class LlmPlanner(
         var previousDraftBlock = string.IsNullOrWhiteSpace(previousDraftJson)
             ? string.Empty
             : $"\nPrevious invalid draft plan:\n{previousDraftJson}";
-
-        return $"{originalUserPrompt}\n\nYour previous plan was invalid.\nValidation error: {errorMessage}{issueBlock}{previousDraftBlock}\n\nReturn a corrected JSON plan object only.\nEdit the previous draft minimally when possible.\nPreserve working step ids, bindings, and structure unless the validation issue requires a change.\nNon-negotiable requirements:\n- Top-level object must include goal and steps.\n- Use only listed tools and saved agents.\n- Keep the plan as short as possible.\n- Every step must include id, kind, name, and in.\n- kind must be exactly one of 'tool', 'llm', or 'agent'.\n- name must be the exact tool name, llm label, or saved-agent id for the selected kind.\n- Put dynamic dependencies under in using binding objects as VALUES. Example: in={{\"url\":{{\"from\":\"$search.results[0].url\",\"mode\":\"value\"}}}}. Never use from or mode as input names.\n- Use only refs to earlier steps.\n- LLM steps must provide systemPrompt, userPrompt, and out.\n- Saved-agent steps must provide userPrompt and out, and must not provide systemPrompt.\n- For llm and saved-agent steps, out must include format ('json' or 'string') and aggregate ('single', 'collect', or 'flatten').\n- When out.format='json', include out.schema.\n- Use out.aggregate='collect' for mapped single-item outputs, 'flatten' for mapped array outputs, and 'single' otherwise.\n- Prompts must be literal text. Do not embed $step refs or unresolved template placeholders like {{name}}, {{{{name}}}}, [[name]], <<name>>, or ${{name}}.\n- Do not return markdown fences or prose.\nDo not repeat the same mistake.";
+        var sb = new StringBuilder();
+        sb.Append(originalUserPrompt);
+        sb.AppendLine();
+        sb.AppendLine();
+        sb.Append("Your previous plan was invalid.");
+        sb.AppendLine();
+        sb.Append($"Validation error: {errorMessage}{issueBlock}{previousDraftBlock}");
+        sb.AppendLine();
+        sb.AppendLine();
+        sb.AppendLine("Return a corrected JSON plan object only.");
+        sb.AppendLine("Edit the previous draft minimally when possible.");
+        sb.AppendLine("Preserve working step ids, bindings, and structure unless the validation issue requires a change.");
+        sb.AppendLine("Non-negotiable requirements:");
+        sb.AppendLine("- Top-level object must include goal and steps.");
+        sb.AppendLine("- Use only listed tools and saved agents.");
+        sb.AppendLine("- Keep the plan as short as possible.");
+        sb.AppendLine("- Every step must include id, kind, and in.");
+        sb.AppendLine("- kind must be exactly one of 'tool', 'llm', or 'agent'.");
+        sb.AppendLine("- Tool and saved-agent steps must include capabilityId.");
+        sb.AppendLine("- For tool or saved-agent steps, capabilityId must be the exact tool id or saved-agent id from the catalog.");
+        sb.AppendLine("- For generic llm steps, capabilityId is optional.");
+        sb.AppendLine("- Map each required external fact or external action to one listed capability before adding execution steps.");
+        sb.AppendLine("- LLM steps may transform or validate only the evidence already present in their inputs.");
+        sb.AppendLine("- If the listed capabilities cannot obtain or verify a required deliverable, return the shortest blocked plan instead of pretending the task is executable.");
+        sb.AppendLine("- A blocked plan should usually end with one llm step that returns code='insufficient_capabilities', details.status='blocked', details.needsReplan=false, and details.type='insufficient_capability'.");
+        sb.AppendLine("- Put dynamic dependencies under in using binding objects as VALUES. Example: in={\"item\":{\"from\":\"$step1.items[0]\",\"mode\":\"value\"}}.");
+        sb.AppendLine("- To merge several array sources into one array input, use concat. Example: {\"concat\":[{\"from\":\"$s1.items\",\"mode\":\"value\"},{\"from\":\"$s2.items\",\"mode\":\"value\"}],\"type\":\"array<object>\"}.");
+        sb.AppendLine("- Never use from, mode, or concat as input names.");
+        sb.AppendLine("- binding.mode supports only 'value' or 'map'. Never use 'flatten' as a binding mode.");
+        sb.AppendLine("- Use only refs to earlier steps.");
+        sb.AppendLine("- Every non-final step must feed at least one downstream consumer. The only terminal step must be the last step.");
+        sb.AppendLine("- Tool steps must not declare out. The runtime derives tool output contracts from the tool catalog.");
+        sb.AppendLine("- LLM steps must provide systemPrompt, userPrompt, and out.");
+        sb.AppendLine("- Saved-agent steps must provide userPrompt and out, and must not provide systemPrompt.");
+        sb.AppendLine("- For llm and saved-agent steps, out must include format ('json' or 'string').");
+        sb.AppendLine("- When out.format='json', include out.schema.");
+        sb.AppendLine("- Omit out.aggregate unless the validation issue specifically requires changing it. The runtime infers 'single', 'collect', or 'flatten' from mapped inputs and schema.");
+        sb.AppendLine("- 'flatten' is allowed only in out.aggregate, never in binding.mode.");
+        sb.AppendLine("- Prompts must be literal text. Do not embed $step refs or unresolved template placeholders like {name}, {{name}}, [[name]], <<name>>, or ${name}.");
+        sb.AppendLine("- Do not return markdown fences or prose.");
+        sb.Append("Do not repeat the same mistake.");
+        return sb.ToString();
     }
 
     private static JsonElement CreateEmptyObject()

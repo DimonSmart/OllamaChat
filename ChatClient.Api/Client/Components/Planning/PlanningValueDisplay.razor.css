@@ -8,18 +8,49 @@
 }
 
 ::deep .planning-value-actions {
+    position: absolute;
+    top: 0.4rem;
+    right: 0.4rem;
     display: flex;
-    justify-content: flex-end;
-    margin: -0.35rem -0.35rem 0.15rem 0;
+    z-index: 2;
 }
 
 ::deep .planning-value-action-button {
-    width: 1.9rem;
-    height: 1.9rem;
+    width: 1.8rem;
+    height: 1.8rem;
+    border: 1px solid rgba(120, 136, 198, 0.28);
+    border-radius: 999px;
+    background: rgba(12, 17, 31, 0.74);
+    backdrop-filter: blur(8px);
+}
+
+::deep .planning-value-has-actions .planning-value-preview,
+::deep .planning-value-has-actions .planning-value-text,
+::deep .planning-value-has-actions .planning-step-code,
+::deep .planning-value-has-actions .planning-value-markdown {
+    padding-right: 2.3rem;
 }
 
 ::deep .planning-value-preview,
 ::deep .planning-value-text {
+    display: block;
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+    box-sizing: border-box;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    word-break: break-word;
+}
+
+.planning-step-code {
+    display: block;
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+    overflow: auto;
+    box-sizing: border-box;
+    margin: 0;
     white-space: pre-wrap;
     overflow-wrap: anywhere;
     word-break: break-word;
@@ -61,6 +92,50 @@
 ::deep .planning-value-markdown {
     white-space: normal;
     line-height: 1.6;
+}
+
+::deep .planning-value-markdown h1,
+::deep .planning-value-markdown h2,
+::deep .planning-value-markdown h3,
+::deep .planning-value-markdown h4,
+::deep .planning-value-markdown h5,
+::deep .planning-value-markdown h6 {
+    margin: 1.15rem 0 0.55rem;
+    line-height: 1.25;
+    font-weight: 700;
+    color: #f5f8ff;
+}
+
+::deep .planning-value-markdown h1 {
+    font-size: 1.55rem;
+    padding-bottom: 0.35rem;
+    border-bottom: 1px solid rgba(132, 200, 255, 0.24);
+}
+
+::deep .planning-value-markdown h2 {
+    font-size: 1.32rem;
+    padding-bottom: 0.25rem;
+    border-bottom: 1px solid rgba(132, 200, 255, 0.18);
+}
+
+::deep .planning-value-markdown h3 {
+    font-size: 1.14rem;
+    color: #e6eeff;
+}
+
+::deep .planning-value-markdown h4 {
+    font-size: 1.03rem;
+    color: #dbe7ff;
+}
+
+::deep .planning-value-markdown h5 {
+    font-size: 0.96rem;
+    color: #d3e0ff;
+}
+
+::deep .planning-value-markdown h6 {
+    font-size: 0.9rem;
+    color: #c9d7ff;
 }
 
 ::deep .planning-value-markdown > :first-child {
@@ -113,6 +188,17 @@
     max-width: 100%;
     overflow: auto;
     border-collapse: collapse;
+}
+
+::deep .planning-value-markdown img {
+    display: block;
+    width: 100%;
+    max-width: 100%;
+    height: auto;
+    margin: 0.8rem 0;
+    border-radius: 10px;
+    box-sizing: border-box;
+    object-fit: contain;
 }
 
 ::deep .planning-value-markdown th,

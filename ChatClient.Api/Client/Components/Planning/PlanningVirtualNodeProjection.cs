@@ -89,7 +89,7 @@ public static class PlanningVirtualNodeProjection
             });
         }
 
-        nodes.AddRange(BuildReplanNodes(events));
+        nodes.AddRange(BuildReplanNodes(events, finalResult));
         var resultNode = BuildResultNode(finalResult);
         if (resultNode is not null)
         {
@@ -158,7 +158,9 @@ public static class PlanningVirtualNodeProjection
             ?? plan?.Steps.FirstOrDefault()?.Id;
     }
 
-    private static IReadOnlyList<PlanningVirtualNodeDescriptor> BuildReplanNodes(IReadOnlyList<PlanRunEvent> events)
+    private static IReadOnlyList<PlanningVirtualNodeDescriptor> BuildReplanNodes(
+        IReadOnlyList<PlanRunEvent> events,
+        ResultEnvelope<JsonElement?>? finalResult)
     {
         var groups = new List<ReplanGroup>();
         ReplanGroup? current = null;
@@ -193,17 +195,28 @@ public static class PlanningVirtualNodeProjection
         }
 
         return groups
-            .Select(group => new PlanningVirtualNodeDescriptor
+            .Select((group, index) =>
             {
-                Id = $"__replan__:{group.Index}",
-                Kind = PlanningVirtualNodeKind.Replanning,
-                Title = $"replanning #{group.Index}",
-                Subtitle = $"after attempt {group.Start.Request.AttemptNumber} | rounds: {group.Rounds.Count}",
-                StatusValue = group.Rounds.LastOrDefault()?.Done == true ? "done" : "running",
-                Summary = Shorten(group.Start.Request.GoalVerdict.Reason, 96),
-                ReplanStarted = group.Start,
-                ReplanRounds = group.Rounds.ToList(),
-                Diagnostics = group.Diagnostics.ToList()
+                var isLastGroup = index == groups.Count - 1;
+                var isRoundCompleted = group.Rounds.LastOrDefault()?.Done == true;
+                var statusValue = isRoundCompleted
+                    ? PlanStepStatuses.Done
+                    : isLastGroup && finalResult is { Ok: false }
+                        ? PlanStepStatuses.Fail
+                        : PlanStepStatuses.Running;
+
+                return new PlanningVirtualNodeDescriptor
+                {
+                    Id = $"__replan__:{group.Index}",
+                    Kind = PlanningVirtualNodeKind.Replanning,
+                    Title = $"replanning #{group.Index}",
+                    Subtitle = $"after attempt {group.Start.Request.AttemptNumber} | rounds: {group.Rounds.Count}",
+                    StatusValue = statusValue,
+                    Summary = Shorten(group.Start.Request.GoalVerdict.Reason, 96),
+                    ReplanStarted = group.Start,
+                    ReplanRounds = group.Rounds.ToList(),
+                    Diagnostics = group.Diagnostics.ToList()
+                };
             })
             .ToList();
     }

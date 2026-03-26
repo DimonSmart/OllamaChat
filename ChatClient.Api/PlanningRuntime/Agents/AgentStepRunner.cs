@@ -66,14 +66,13 @@ public sealed class AgentStepRunner(IChatClient chatClient) : IAgentStepRunner
         JsonElement resolvedInputs,
         CancellationToken cancellationToken)
     {
-        if (string.IsNullOrWhiteSpace(step.Name))
-            return ResultEnvelope<JsonElement?>.Failure("llm_missing", $"Step '{step.Id}' has no llm label.");
         if (string.IsNullOrWhiteSpace(step.SystemPrompt))
             return ResultEnvelope<JsonElement?>.Failure("llm_invalid_step", $"Step '{step.Id}' has no systemPrompt.");
         if (string.IsNullOrWhiteSpace(step.UserPrompt))
             return ResultEnvelope<JsonElement?>.Failure("llm_invalid_step", $"Step '{step.Id}' has no userPrompt.");
 
         var outputContract = PlanStepOutputContractResolver.Resolve(step, toolMetadata: null, hasFanOut: false);
+        var llmLabel = PlanStepKinds.GetCapabilityId(step);
         var systemPrompt = step.SystemPrompt;
         if (!systemPrompt.Contains("JSON", StringComparison.OrdinalIgnoreCase))
             systemPrompt += " Return ONLY valid JSON.";
@@ -82,12 +81,12 @@ public sealed class AgentStepRunner(IChatClient chatClient) : IAgentStepRunner
         var fullUserPrompt = $"{step.UserPrompt}\n\nInput:\n{PlanningJson.SerializeIndented(new { inputs = resolvedInputs })}";
         _observer.OnEvent(new AgentPromptPreparedEvent(
             step.Id,
-            step.Name,
+            llmLabel,
             systemPrompt,
             step.UserPrompt,
             fullUserPrompt,
             resolvedInputs.Clone()));
-        var agent = new ChatClientAgent(chatClient, systemPrompt, step.Name, null, null, null, null);
+        var agent = new ChatClientAgent(chatClient, systemPrompt, llmLabel, null, null, null, null);
 
         try
         {
@@ -97,7 +96,7 @@ public sealed class AgentStepRunner(IChatClient chatClient) : IAgentStepRunner
             var validatedEnvelope = ValidateEnvelope(step, outputContract, envelope);
             _observer.OnEvent(new AgentResponseReceivedEvent(
                 step.Id,
-                step.Name,
+                llmLabel,
                 response.Text ?? string.Empty,
                 validatedEnvelope.Ok,
                 validatedEnvelope.Data?.Clone(),
@@ -111,7 +110,7 @@ public sealed class AgentStepRunner(IChatClient chatClient) : IAgentStepRunner
         {
             _observer.OnEvent(new AgentResponseReceivedEvent(
                 step.Id,
-                step.Name,
+                llmLabel,
                 string.Empty,
                 false,
                 null,
@@ -125,7 +124,7 @@ public sealed class AgentStepRunner(IChatClient chatClient) : IAgentStepRunner
         JsonElement resolvedInputs,
         CancellationToken cancellationToken)
     {
-        if (string.IsNullOrWhiteSpace(step.Name))
+        if (string.IsNullOrWhiteSpace(step.CapabilityId))
             return ResultEnvelope<JsonElement?>.Failure("agent_missing", $"Step '{step.Id}' has no saved agent reference.");
         if (string.IsNullOrWhiteSpace(step.UserPrompt))
             return ResultEnvelope<JsonElement?>.Failure("agent_invalid_step", $"Step '{step.Id}' has no userPrompt.");
@@ -136,8 +135,8 @@ public sealed class AgentStepRunner(IChatClient chatClient) : IAgentStepRunner
                 $"Saved-agent step '{step.Id}' cannot run because the planning agentic invoker is not configured.");
         }
 
-        if (!_callableAgents.TryGet(step.Name, out var callableAgent))
-            return ResultEnvelope<JsonElement?>.Failure("agent_unknown", $"Step '{step.Id}' references unknown callable agent '{step.Name}'.");
+        if (!_callableAgents.TryGet(step.CapabilityId, out var callableAgent))
+            return ResultEnvelope<JsonElement?>.Failure("agent_unknown", $"Step '{step.Id}' references unknown callable agent '{step.CapabilityId}'.");
 
         var outputContract = PlanStepOutputContractResolver.Resolve(step, toolMetadata: null, hasFanOut: false);
         var fullUserPrompt = $"{step.UserPrompt}\n\nInput:\n{PlanningJson.SerializeIndented(new { inputs = resolvedInputs })}{BuildExecutionContract(outputContract)}";
@@ -226,7 +225,7 @@ public sealed class AgentStepRunner(IChatClient chatClient) : IAgentStepRunner
 
         var aggregateHint = BuildAggregationHint(outputContract);
         var contractHint = BuildContractHint(outputContract);
-        return $"\n\nAlways return ONLY valid JSON using this exact top-level shape: {{\"ok\":true|false,\"data\":{resultHint}|null,\"error\":null|{{\"code\":\"short_code\",\"message\":\"human readable message\",\"details\":{{\"status\":\"blocked|partial\",\"needsReplan\":true,\"type\":\"missing|error\",\"details\":[\"short detail\"]}}}}}}. If the task can be completed reliably, return ok=true, error=null, and put the full answer into data. If reliable completion is impossible, return ok=false, data=null, and fill error. Use status='blocked' when the requested entity or critical facts are absent. Use status='partial' when some useful context exists but the task is still incomplete. When ok=false, needsReplan must be true. Use type='missing' when critical input facts are absent. Use type='error' when the step is blocked by another execution problem. Put short factual details into details, such as missing field names, observed evidence, or concrete failure notes. Do not invent exact factual values that are not explicitly present in the provided inputs. If the task requires precise numbers, specs, dates, prices, names, or quotes and they are missing, return ok=false with a blocked or partial error instead of estimating. Do not return markdown or prose outside the JSON envelope.{aggregateHint}{contractHint}";
+        return $"\n\nAlways return ONLY valid JSON using this exact top-level shape: {{\"ok\":true|false,\"data\":{resultHint}|null,\"error\":null|{{\"code\":\"short_code\",\"message\":\"human readable message\",\"details\":{{\"status\":\"blocked|partial\",\"needsReplan\":true|false,\"type\":\"missing|error|insufficient_capability\",\"details\":[\"short detail\"]}}}}}}. If the task can be completed reliably, return ok=true, error=null, and put the full answer into data. If reliable completion is impossible, return ok=false, data=null, and fill error. Use status='blocked' when the requested entity, critical facts, or required capability are absent. Use status='partial' when some useful context exists but the task is still incomplete. When ok=false, set needsReplan=true when a different plan could plausibly continue with the currently available capabilities. Set needsReplan=false only when the available capabilities are fundamentally insufficient for the requested task. Use type='missing' when critical input facts are absent. Use type='error' when the step is blocked by another execution problem. Use type='insufficient_capability' when the currently available tools and agents cannot obtain or verify the required deliverable. Put short factual details into details, such as missing field names, observed evidence, or concrete failure notes. Do not invent exact factual values that are not explicitly present in the provided inputs. If the task requires precise numbers, specs, dates, prices, names, or quotes and they are missing, return ok=false with a blocked or partial error instead of estimating. Do not return markdown or prose outside the JSON envelope.{aggregateHint}{contractHint}";
     }
 
     private static string BuildAggregationHint(ResolvedPlanStepOutputContract outputContract)
@@ -357,17 +356,19 @@ public sealed class AgentStepRunner(IChatClient chatClient) : IAgentStepRunner
                 $"Step '{stepId}' returned error.details.status='{typedDetails.Status}', but only 'blocked' or 'partial' are allowed.");
         }
 
-        if (!typedDetails.NeedsReplan)
+        if (!typedDetails.NeedsReplan
+            && !string.Equals(typedDetails.Type, "insufficient_capability", StringComparison.Ordinal))
         {
             throw new InvalidOperationException(
-                $"Step '{stepId}' returned ok=false with error.details.needsReplan=false.");
+                $"Step '{stepId}' returned ok=false with error.details.needsReplan=false for unsupported type '{typedDetails.Type}'.");
         }
 
         if (!string.Equals(typedDetails.Type, "missing", StringComparison.Ordinal)
-            && !string.Equals(typedDetails.Type, "error", StringComparison.Ordinal))
+            && !string.Equals(typedDetails.Type, "error", StringComparison.Ordinal)
+            && !string.Equals(typedDetails.Type, "insufficient_capability", StringComparison.Ordinal))
         {
             throw new InvalidOperationException(
-                $"Step '{stepId}' returned error.details.type='{typedDetails.Type}', but only 'missing' or 'error' are allowed.");
+                $"Step '{stepId}' returned error.details.type='{typedDetails.Type}', but only 'missing', 'error', or 'insufficient_capability' are allowed.");
         }
 
         if (typedDetails.Details is null)

@@ -21,6 +21,8 @@ public sealed record PlanningGraphLinkMatch
 
     public string? Mode { get; init; }
 
+    public string? DeclaredType { get; init; }
+
     public required string BindingJson { get; init; }
 
     public required string ReferenceJson { get; init; }
@@ -58,12 +60,7 @@ public static class PlanningGraphLinkProjection
 
             foreach (var inputBinding in targetStep.In)
             {
-                CollectMatches(
-                    inputBinding.Key,
-                    inputBinding.Value,
-                    inputBinding.Value,
-                    inputBinding.Key,
-                    matchesBySource);
+                CollectMatches(inputBinding.Key, inputBinding.Value, matchesBySource);
             }
 
             foreach (var (sourceId, matches) in matchesBySource)
@@ -79,21 +76,18 @@ public static class PlanningGraphLinkProjection
             }
         }
 
-        if (finalResult is not null)
+        if (finalResult is not null && steps.Count > 0)
         {
-            foreach (var terminalStepId in GetTerminalStepIds(steps))
+            descriptors.Add(new PlanningGraphLinkDescriptor
             {
-                descriptors.Add(new PlanningGraphLinkDescriptor
-                {
-                    Id = PlanningGraphLinkDescriptor.CreateId(
-                        terminalStepId,
-                        PlanningVirtualNodeDescriptor.ResultNodeId,
-                        PlanningGraphLinkKind.Result),
-                    SourceId = terminalStepId,
-                    TargetId = PlanningVirtualNodeDescriptor.ResultNodeId,
-                    Kind = PlanningGraphLinkKind.Result
-                });
-            }
+                Id = PlanningGraphLinkDescriptor.CreateId(
+                    steps[^1].Id,
+                    PlanningVirtualNodeDescriptor.ResultNodeId,
+                    PlanningGraphLinkKind.Result),
+                SourceId = steps[^1].Id,
+                TargetId = PlanningVirtualNodeDescriptor.ResultNodeId,
+                Kind = PlanningGraphLinkKind.Result
+            });
         }
 
         return descriptors;
@@ -115,63 +109,40 @@ public static class PlanningGraphLinkProjection
     private static void CollectMatches(
         string inputName,
         JsonNode? rootValue,
-        JsonNode? currentValue,
-        string path,
         IDictionary<string, List<PlanningGraphLinkMatch>> matchesBySource)
     {
-        if (currentValue is null)
+        if (!PlanInputBindingSyntax.TryParseBinding(rootValue, out var bindingExpression, out var bindingError)
+            || !string.IsNullOrWhiteSpace(bindingError)
+            || bindingExpression is null)
         {
             return;
         }
 
-        if (currentValue is JsonObject obj && TryReadReference(obj, out var reference, out var mode))
+        switch (bindingExpression)
         {
-            AddMatch(
-                inputName,
-                rootValue,
-                currentValue,
-                path,
-                reference,
-                mode,
-                matchesBySource);
-            return;
-        }
-
-        switch (currentValue)
-        {
-            case JsonValue jsonValue when jsonValue.TryGetValue<string>(out var text) &&
-                                         text.StartsWith("$", StringComparison.Ordinal):
+            case PlanInputBindingSpec binding:
                 AddMatch(
                     inputName,
                     rootValue,
-                    currentValue,
-                    path,
-                    text,
-                    mode: null,
+                    CreateBindingNode(binding),
+                    inputName,
+                    binding.From,
+                    GetModeText(binding.Mode),
+                    binding.Type,
                     matchesBySource);
                 return;
-
-            case JsonArray array:
-                for (var index = 0; index < array.Count; index++)
+            case PlanInputConcatBindingSpec concatBinding:
+                for (var index = 0; index < concatBinding.Concat.Count; index++)
                 {
-                    CollectMatches(
+                    var binding = concatBinding.Concat[index];
+                    AddMatch(
                         inputName,
                         rootValue,
-                        array[index],
-                        $"{path}[{index}]",
-                        matchesBySource);
-                }
-
-                return;
-
-            case JsonObject nestedObject:
-                foreach (var property in nestedObject)
-                {
-                    CollectMatches(
-                        inputName,
-                        rootValue,
-                        property.Value,
-                        $"{path}.{property.Key}",
+                        CreateBindingNode(binding),
+                        $"{inputName}.concat[{index}]",
+                        binding.From,
+                        GetModeText(binding.Mode),
+                        concatBinding.Type,
                         matchesBySource);
                 }
 
@@ -186,6 +157,7 @@ public static class PlanningGraphLinkProjection
         string path,
         string reference,
         string? mode,
+        string? declaredType,
         IDictionary<string, List<PlanningGraphLinkMatch>> matchesBySource)
     {
         if (!reference.StartsWith("$", StringComparison.Ordinal))
@@ -193,7 +165,9 @@ public static class PlanningGraphLinkProjection
             return;
         }
 
-        var sourceId = ExtractBaseStepId(reference[1..]);
+        var sourceId = PlanInputBindingSyntax.TryParseReference(reference, out var parsedReference, out _)
+            ? parsedReference!.StepId
+            : ExtractBaseStepId(reference[1..]);
         if (!matchesBySource.TryGetValue(sourceId, out var matches))
         {
             matches = [];
@@ -206,92 +180,29 @@ public static class PlanningGraphLinkProjection
             Path = path,
             Reference = reference,
             Mode = mode,
+            DeclaredType = declaredType,
             BindingJson = SerializeNode(rootValue),
             ReferenceJson = SerializeNode(currentValue)
         });
     }
 
-    private static bool TryReadReference(JsonObject obj, out string reference, out string? mode)
-    {
-        reference = string.Empty;
-        mode = null;
-
-        if (!obj.TryGetPropertyValue("from", out var fromNode) ||
-            fromNode is not JsonValue fromValue ||
-            !fromValue.TryGetValue<string>(out var parsedReference) ||
-            string.IsNullOrWhiteSpace(parsedReference) ||
-            !parsedReference.StartsWith("$", StringComparison.Ordinal))
-        {
-            return false;
-        }
-
-        reference = parsedReference;
-
-        if (obj.TryGetPropertyValue("mode", out var modeNode) &&
-            modeNode is JsonValue modeValue &&
-            modeValue.TryGetValue<string>(out var parsedMode))
-        {
-            mode = parsedMode;
-        }
-
-        return true;
-    }
-
     private static string SerializeNode(JsonNode? node) =>
         PlanningJson.SerializeNodeIndented(node);
 
-    private static IReadOnlyList<string> GetTerminalStepIds(IReadOnlyList<PlanStep> steps)
+    private static JsonObject CreateBindingNode(PlanInputBindingSpec binding)
     {
-        var dependencyIds = new HashSet<string>(StringComparer.Ordinal);
-        foreach (var step in steps)
+        var node = new JsonObject
         {
-            foreach (var inputValue in step.In.Values)
-            {
-                CollectDependencyIds(inputValue, dependencyIds);
-            }
-        }
+            ["from"] = binding.From,
+            ["mode"] = GetModeText(binding.Mode)
+        };
 
-        return steps
-            .Where(step => !dependencyIds.Contains(step.Id))
-            .Select(step => step.Id)
-            .ToList();
+        if (!string.IsNullOrWhiteSpace(binding.Type))
+            node["type"] = binding.Type;
+
+        return node;
     }
 
-    private static void CollectDependencyIds(JsonNode? value, ISet<string> dependencyIds)
-    {
-        if (value is null)
-        {
-            return;
-        }
-
-        if (value is JsonObject obj && TryReadReference(obj, out var reference, out _))
-        {
-            dependencyIds.Add(ExtractBaseStepId(reference[1..]));
-            return;
-        }
-
-        switch (value)
-        {
-            case JsonValue jsonValue when jsonValue.TryGetValue<string>(out var text) &&
-                                         text.StartsWith("$", StringComparison.Ordinal):
-                dependencyIds.Add(ExtractBaseStepId(text[1..]));
-                return;
-
-            case JsonArray array:
-                foreach (var item in array)
-                {
-                    CollectDependencyIds(item, dependencyIds);
-                }
-
-                return;
-
-            case JsonObject nestedObject:
-                foreach (var property in nestedObject)
-                {
-                    CollectDependencyIds(property.Value, dependencyIds);
-                }
-
-                return;
-        }
-    }
+    private static string GetModeText(PlanInputBindingMode mode) =>
+        mode == PlanInputBindingMode.Map ? "map" : "value";
 }

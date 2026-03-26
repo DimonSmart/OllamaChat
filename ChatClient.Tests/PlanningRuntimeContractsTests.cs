@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Net;
@@ -39,7 +40,7 @@ public class PlanningRuntimeContractsTests
                 {
                     Id = "searchPages",
                     Kind = PlanStepKinds.Tool,
-                    Name = SearchToolName,
+                    CapabilityId = SearchToolName,
                     In = new Dictionary<string, JsonNode?>
                     {
                         ["query"] = JsonValue.Create("best robot vacuum")
@@ -49,7 +50,7 @@ public class PlanningRuntimeContractsTests
                 {
                     Id = "answer",
                     Kind = PlanStepKinds.Llm,
-                    Name = "synthesizer",
+                    CapabilityId = "synthesizer",
                     SystemPrompt = "Use $searchPages.results to answer the user.",
                     UserPrompt = "Write the final answer.",
                     In = new Dictionary<string, JsonNode?>
@@ -78,7 +79,7 @@ public class PlanningRuntimeContractsTests
                 {
                     Id = "searchPages",
                     Kind = PlanStepKinds.Tool,
-                    Name = SearchToolName,
+                    CapabilityId = SearchToolName,
                     In = new Dictionary<string, JsonNode?>
                     {
                         ["query"] = JsonValue.Create("example")
@@ -88,7 +89,7 @@ public class PlanningRuntimeContractsTests
                 {
                     Id = "downloadPages",
                     Kind = PlanStepKinds.Tool,
-                    Name = DownloadToolName,
+                    CapabilityId = DownloadToolName,
                     In = new Dictionary<string, JsonNode?>
                     {
                         ["url"] = JsonValue.Create("$searchPages.results[].url")
@@ -104,6 +105,58 @@ public class PlanningRuntimeContractsTests
     }
 
     [Fact]
+    public void PlanNormalizer_RewritesLegacyBindings_RemovesToolOut_AndDefaultsMissingJsonSchema()
+    {
+        var plan = new PlanDefinition
+        {
+            Goal = "Extract product facts.",
+            Steps =
+            [
+                new PlanStep
+                {
+                    Id = "searchPages",
+                    Kind = PlanStepKinds.Tool,
+                    CapabilityId = SearchToolName,
+                    In = new Dictionary<string, JsonNode?>
+                    {
+                        ["query"] = JsonValue.Create("example")
+                    },
+                    Out = StringOut()
+                },
+                new PlanStep
+                {
+                    Id = "extractFacts",
+                    Kind = "LLM",
+                    CapabilityId = "",
+                    SystemPrompt = "Return JSON only.",
+                    UserPrompt = "Extract the requested fields.",
+                    In = new Dictionary<string, JsonNode?>
+                    {
+                        ["page"] = JsonValue.Create("$searchPages.results[0]")
+                    },
+                    Out = new PlanStepOutputContract
+                    {
+                        Format = PlanStepOutputFormats.Json
+                    }
+                }
+            ]
+        };
+
+        PlanNormalizer.Normalize(plan, [CreateStaticSearchDescriptor()]);
+
+        Assert.Null(plan.Steps[0].Out);
+        Assert.Equal(PlanStepKinds.Llm, plan.Steps[1].Kind);
+        Assert.Null(plan.Steps[1].CapabilityId);
+        var binding = Assert.IsType<JsonObject>(plan.Steps[1].In["page"]);
+        Assert.Equal("$searchPages.results[0]", binding["from"]?.GetValue<string>());
+        Assert.Equal("value", binding["mode"]?.GetValue<string>());
+        var schema = plan.Steps[1].Out?.Schema;
+        Assert.True(schema.HasValue);
+        Assert.Equal("object", schema.Value.GetProperty("type").GetString());
+        PlanValidator.ValidateOrThrow(plan, [CreateStaticSearchDescriptor()]);
+    }
+
+    [Fact]
     public void PlanValidator_RejectsSingleBraceTemplatePlaceholderInsidePrompts()
     {
         var plan = new PlanDefinition
@@ -115,7 +168,7 @@ public class PlanningRuntimeContractsTests
                 {
                     Id = "answer",
                     Kind = PlanStepKinds.Llm,
-                    Name = "synthesizer",
+                    CapabilityId = "synthesizer",
                     SystemPrompt = "Summarize the selected model {model_name}. Return JSON only.",
                     UserPrompt = "Write the final answer.",
                     In = new Dictionary<string, JsonNode?>
@@ -144,7 +197,7 @@ public class PlanningRuntimeContractsTests
                 {
                     Id = "answer",
                     Kind = PlanStepKinds.Llm,
-                    Name = "synthesizer",
+                    CapabilityId = "synthesizer",
                     SystemPrompt = "Summarize the selected model. Return JSON only.",
                     UserPrompt = "Compare [[model_a]] against [[model_b]].",
                     In = new Dictionary<string, JsonNode?>
@@ -174,7 +227,7 @@ public class PlanningRuntimeContractsTests
                 {
                     Id = "searchPages",
                     Kind = PlanStepKinds.Tool,
-                    Name = SearchToolName,
+                    CapabilityId = SearchToolName,
                     In = new Dictionary<string, JsonNode?>
                     {
                         ["query"] = JsonValue.Create("example")
@@ -208,7 +261,6 @@ public class PlanningRuntimeContractsTests
                   {
                     "id": "answer",
                     "kind": "llm",
-                    "name": "synthesizer",
                     "systemPrompt": "Summarize the evidence.",
                     "userPrompt": "Write the final answer.",
                     "in": {
@@ -240,7 +292,6 @@ public class PlanningRuntimeContractsTests
                   {
                     "id": "answer",
                     "kind": "llm",
-                    "name": "synthesizer",
                     "systemPrompt": "Summarize the evidence.",
                     "userPrompt": "Write the final answer.",
                     "out": { "format": "string", "aggregate": "single" }
@@ -269,7 +320,7 @@ public class PlanningRuntimeContractsTests
                 {
                     Id = "searchPages",
                     Kind = PlanStepKinds.Tool,
-                    Name = SearchToolName,
+                    CapabilityId = SearchToolName,
                     In = new Dictionary<string, JsonNode?>
                     {
                         ["query"] = JsonValue.Create("example")
@@ -304,7 +355,7 @@ public class PlanningRuntimeContractsTests
                 {
                     Id = "searchPages",
                     Kind = PlanStepKinds.Tool,
-                    Name = SearchToolName,
+                    CapabilityId = SearchToolName,
                     In = new Dictionary<string, JsonNode?>
                     {
                         ["query"] = JsonValue.Create("example")
@@ -316,7 +367,7 @@ public class PlanningRuntimeContractsTests
                 {
                     Id = "answer",
                     Kind = PlanStepKinds.Llm,
-                    Name = "synthesizer",
+                    CapabilityId = "synthesizer",
                     SystemPrompt = "Summarize the evidence.",
                     UserPrompt = "Write the final answer.",
                     In = new Dictionary<string, JsonNode?>
@@ -359,7 +410,7 @@ public class PlanningRuntimeContractsTests
                 {
                     Id = "searchPages",
                     Kind = PlanStepKinds.Tool,
-                    Name = SearchToolName,
+                    CapabilityId = SearchToolName,
                     In = new Dictionary<string, JsonNode?>
                     {
                         ["query"] = JsonValue.Create("example")
@@ -399,7 +450,7 @@ public class PlanningRuntimeContractsTests
                 {
                     Id = "searchPages",
                     Kind = PlanStepKinds.Tool,
-                    Name = SearchToolName,
+                    CapabilityId = SearchToolName,
                     In = new Dictionary<string, JsonNode?>
                     {
                         ["query"] = JsonValue.Create("example")
@@ -441,6 +492,101 @@ public class PlanningRuntimeContractsTests
     }
 
     [Fact]
+    public void PlanEditingSession_RemoveStep_RemovesStepAndResetsDownstreamState()
+    {
+        var plan = new PlanDefinition
+        {
+            Goal = "Find robot vacuums.",
+            Steps =
+            [
+                new PlanStep
+                {
+                    Id = "searchPages",
+                    Kind = PlanStepKinds.Tool,
+                    CapabilityId = SearchToolName,
+                    In = new Dictionary<string, JsonNode?>
+                    {
+                        ["query"] = JsonValue.Create("robot vacuums")
+                    },
+                    Status = PlanStepStatuses.Done,
+                    Result = JsonSerializer.SerializeToElement(new { ok = true }),
+                    Error = new PlanStepError
+                    {
+                        Code = "old_error",
+                        Message = "old error"
+                    }
+                },
+                new PlanStep
+                {
+                    Id = "deadFormatter",
+                    Kind = PlanStepKinds.Llm,
+                    CapabilityId = "gpt-4.1",
+                    SystemPrompt = "Format text.",
+                    UserPrompt = "Return the provided text unchanged.",
+                    In = new Dictionary<string, JsonNode?>
+                    {
+                        ["text"] = JsonValue.Create("unused")
+                    },
+                    Out = new PlanStepOutputContract
+                    {
+                        Format = PlanStepOutputFormats.String,
+                        Aggregate = PlanStepOutputAggregates.Single,
+                        Schema = JsonSerializer.SerializeToElement(new { type = "string" })
+                    },
+                    Status = PlanStepStatuses.Done,
+                    Result = JsonSerializer.SerializeToElement("formatted"),
+                    Error = new PlanStepError
+                    {
+                        Code = "old_error",
+                        Message = "old error"
+                    }
+                },
+                new PlanStep
+                {
+                    Id = "finalAnswer",
+                    Kind = PlanStepKinds.Llm,
+                    CapabilityId = "gpt-4.1",
+                    SystemPrompt = "Summarize.",
+                    UserPrompt = "Return the summary.",
+                    In = new Dictionary<string, JsonNode?>
+                    {
+                        ["text"] = JsonValue.Create("result")
+                    },
+                    Out = new PlanStepOutputContract
+                    {
+                        Format = PlanStepOutputFormats.String,
+                        Aggregate = PlanStepOutputAggregates.Single,
+                        Schema = JsonSerializer.SerializeToElement(new { type = "string" })
+                    },
+                    Status = PlanStepStatuses.Done,
+                    Result = JsonSerializer.SerializeToElement("done"),
+                    Error = new PlanStepError
+                    {
+                        Code = "old_error",
+                        Message = "old error"
+                    }
+                }
+            ]
+        };
+
+        var session = new PlanEditingSession(plan, PlanModelProfile.Runtime);
+        var removeResult = session.ExecuteAction("plan.removeStep", new JsonObject
+        {
+            ["stepId"] = "deadFormatter"
+        });
+        var updatedPlan = session.BuildPlan();
+
+        Assert.True(removeResult["ok"]?.GetValue<bool>() == true);
+        Assert.Equal(2, updatedPlan.Steps.Count);
+        Assert.Equal(["searchPages", "finalAnswer"], updatedPlan.Steps.Select(step => step.Id).ToArray());
+        Assert.Equal(1, removeResult["output"]?["resetCount"]?.GetValue<int>());
+        Assert.Equal(PlanStepStatuses.Done, updatedPlan.Steps[0].Status);
+        Assert.Equal(PlanStepStatuses.Todo, updatedPlan.Steps[1].Status);
+        Assert.Null(updatedPlan.Steps[1].Result);
+        Assert.Null(updatedPlan.Steps[1].Error);
+    }
+
+    [Fact]
     public void PlanValidator_AcceptsSavedAgentStep_WhenCallableAgentExists()
     {
         var callableAgent = CreateCallableAgentDescriptor("character-reader", "Character Reader");
@@ -453,7 +599,7 @@ public class PlanningRuntimeContractsTests
                 {
                     Id = "scanCharacters",
                     Kind = PlanStepKinds.Agent,
-                    Name = callableAgent.Name,
+                    CapabilityId = callableAgent.Name,
                     UserPrompt = "Read the cursor and update the character registry.",
                     In = new Dictionary<string, JsonNode?>
                     {
@@ -480,7 +626,7 @@ public class PlanningRuntimeContractsTests
                 {
                     Id = "scanCharacters",
                     Kind = PlanStepKinds.Agent,
-                    Name = "missing-agent",
+                    CapabilityId = "missing-agent",
                     UserPrompt = "Read the cursor and update the character registry.",
                     In = new Dictionary<string, JsonNode?>
                     {
@@ -510,7 +656,7 @@ public class PlanningRuntimeContractsTests
                 {
                     Id = "scanCharacters",
                     Kind = PlanStepKinds.Agent,
-                    Name = callableAgent.Name,
+                    CapabilityId = callableAgent.Name,
                     SystemPrompt = "Do not use this.",
                     UserPrompt = "Read the cursor and update the character registry.",
                     In = new Dictionary<string, JsonNode?>
@@ -551,7 +697,7 @@ public class PlanningRuntimeContractsTests
         {
             Id = "scanCharacters",
             Kind = PlanStepKinds.Agent,
-            Name = callableAgent.Name,
+            CapabilityId = callableAgent.Name,
             UserPrompt = "Read the cursor and update the character registry.",
             In = new Dictionary<string, JsonNode?>
             {
@@ -607,7 +753,7 @@ public class PlanningRuntimeContractsTests
                 {
                     Id = "searchPages",
                     Kind = PlanStepKinds.Tool,
-                    Name = SearchToolName,
+                    CapabilityId = SearchToolName,
                     In = new Dictionary<string, JsonNode?>
                     {
                         ["limit"] = JsonValue.Create(3)
@@ -633,7 +779,7 @@ public class PlanningRuntimeContractsTests
                 {
                     Id = "searchPages",
                     Kind = PlanStepKinds.Tool,
-                    Name = SearchToolName,
+                    CapabilityId = SearchToolName,
                     In = new Dictionary<string, JsonNode?>
                     {
                         ["query"] = new JsonObject
@@ -668,7 +814,7 @@ public class PlanningRuntimeContractsTests
             UserQuery = "Compare two products",
         }));
 
-        Assert.Equal("At least one planning tool or callable saved agent must be enabled.", exception.Message);
+        Assert.Equal("At least one planning tool must be enabled.", exception.Message);
     }
 
     [Fact]
@@ -688,7 +834,7 @@ public class PlanningRuntimeContractsTests
                 {
                     Id = "answer",
                     Kind = PlanStepKinds.Llm,
-                    Name = "synthesizer",
+                    CapabilityId = "synthesizer",
                     SystemPrompt = "sys",
                     UserPrompt = "user",
                     In = [],
@@ -784,7 +930,7 @@ public class PlanningRuntimeContractsTests
         BuiltInWebToolLogic.ResetSearchStateForTests(CreateTempSearchCacheDirectory());
 
         const string originalThumbnailUrl = "https://www.sunfounder.com/cdn/shop/products/Pisloth_1_1024x.jpg?v=1638512159";
-        const string braveThumbnailUrl = "https://imgs.search.brave.com/JSVectvQTRixEX4yvuOS250QZINSrqMkmk9El8rp240/rs:fit:200:200:1:0/g:ce/aHR0cHM6Ly93d3cuc3VuZm91bmRlci5j/b20vY2RuL3Nob3AvcHJvZHVjdHMvUGlzbG90aF8xXzEwMjR4LmpwZz92PTE2Mzg1MTIxNTk";
+        const string braveThumbnailUrl = "https://imgs.search.brave.com/JSVectvQTRixEX4yvuOS250QZINSrqMkmk9El8rp240/rs:fit:200:200:1:0/g:ce/aHR0cHM6Ly93d3cu/c3VuZm91bmRlci5j/b20vY2RuL3Nob3AvcHJvZHVjdHMvUGlz/bG90aF8xXzEwMjR4LmpwZz92PTE2Mzg1MTIxNTk";
         var html = $$"""
             <html>
               <body>
@@ -818,7 +964,7 @@ public class PlanningRuntimeContractsTests
     }
 
     [Fact]
-    public async Task BuiltInWebSearchLogic_Fails_WhenStructuredMarkupIsMissing()
+    public async Task BuiltInWebSearchLogic_ReturnsStructuredFailure_WhenStructuredMarkupIsMissing()
     {
         BuiltInWebToolLogic.ResetSearchStateForTests(CreateTempSearchCacheDirectory());
 
@@ -836,12 +982,18 @@ public class PlanningRuntimeContractsTests
             .Setup(factory => factory.CreateClient(It.IsAny<string>()))
             .Returns(new HttpClient(new StubHttpMessageHandler(html)));
 
-        var exception = await Assert.ThrowsAsync<InvalidOperationException>(() => BuiltInWebToolLogic.SearchAsync(
+        var exception = await Assert.ThrowsAsync<WebToolException>(() => BuiltInWebToolLogic.SearchAsync(
             httpClientFactory.Object,
             NullLogger.Instance,
             new WebSearchInput("item")));
 
-        Assert.Contains("structured candidate results", exception.Message, StringComparison.Ordinal);
+        Assert.Equal("search_no_results", exception.Code);
+        Assert.Equal("search", exception.Details.Operation);
+        Assert.Equal("duckduckgo", exception.Details.Provider);
+        Assert.True(exception.Details.FallbackTried);
+        Assert.True(exception.Details.NeedsReplan);
+        Assert.Contains(exception.Details.Details, detail => string.Equals(detail, "primaryProvider=brave", StringComparison.Ordinal));
+        Assert.Contains(exception.Details.Details, detail => string.Equals(detail, "fallbackProvider=duckduckgo", StringComparison.Ordinal));
     }
 
     [Fact]
@@ -909,23 +1061,26 @@ public class PlanningRuntimeContractsTests
     }
 
     [Fact]
-    public async Task BuiltInWebSearchLogic_RetriesAfterRateLimit()
+    public async Task BuiltInWebSearchLogic_FallsBackQuicklyToDuckDuckGo_WhenBraveIsRateLimited()
     {
         BuiltInWebToolLogic.ResetSearchStateForTests(CreateTempSearchCacheDirectory());
 
-        const string html = """
+        const string duckHtml = """
             <html>
               <body>
-                <div id="results">
-                  <div class="snippet" data-type="web" data-pos="0">
-                    <a href="https://example.com/item-a" class="l1">
-                      <div class="title" title="Item A title">Item A title</div>
-                    </a>
-                    <div class="generic-snippet">
-                      <div class="content">Item A summary.</div>
+                <div class="result results_links results_links_deep web-result">
+                  <div class="links_main links_deep result__body">
+                    <h2 class="result__title">
+                      <a class="result__a" href="//duckduckgo.com/l/?uddg=https%3A%2F%2Fexample.com%2Fitem-a">Item A title</a>
+                    </h2>
+                    <div class="result__extras">
+                      <div class="result__extras__url">
+                        <a class="result__url" href="//duckduckgo.com/l/?uddg=https%3A%2F%2Fexample.com%2Fitem-a">example.com/item-a</a>
+                      </div>
                     </div>
+                    <a class="result__snippet" href="//duckduckgo.com/l/?uddg=https%3A%2F%2Fexample.com%2Fitem-a">Item A summary.</a>
                   </div>
-                </div>
+                </div>              
               </body>
             </html>
             """;
@@ -935,12 +1090,12 @@ public class PlanningRuntimeContractsTests
             _ =>
             {
                 var response = new HttpResponseMessage(HttpStatusCode.TooManyRequests);
-                response.Headers.RetryAfter = new RetryConditionHeaderValue(TimeSpan.FromMilliseconds(1));
+                response.Headers.RetryAfter = new RetryConditionHeaderValue(TimeSpan.FromMinutes(1));
                 return response;
             },
             _ => new HttpResponseMessage(HttpStatusCode.OK)
             {
-                Content = new StringContent(html)
+                Content = new StringContent(duckHtml)
             }
         ]);
 
@@ -949,12 +1104,15 @@ public class PlanningRuntimeContractsTests
             .Setup(factory => factory.CreateClient(It.IsAny<string>()))
             .Returns(new HttpClient(handler));
 
+        var startedAt = Stopwatch.GetTimestamp();
         var result = await BuiltInWebToolLogic.SearchAsync(
             httpClientFactory.Object,
             NullLogger.Instance,
             new WebSearchInput("item a"));
+        var elapsed = Stopwatch.GetElapsedTime(startedAt);
 
         Assert.Equal(2, handler.CallCount);
+        Assert.True(elapsed < TimeSpan.FromSeconds(5), $"Search fallback should stay interactive, actual elapsed={elapsed}.");
         Assert.Single(result.Results);
         Assert.Equal("https://example.com/item-a", result.Results[0].Url);
     }
@@ -1109,6 +1267,39 @@ public class PlanningRuntimeContractsTests
     }
 
     [Fact]
+    public async Task BuiltInWebMcpServerTools_SearchAsync_ReturnsStructuredErrorResult_WhenSearchFails()
+    {
+        BuiltInWebToolLogic.ResetSearchStateForTests(CreateTempSearchCacheDirectory());
+
+        const string html = """
+            <html>
+              <body>
+                <a href="https://example.com/item-a">Item A</a>
+              </body>
+            </html>
+            """;
+
+        var httpClientFactory = new Mock<IHttpClientFactory>();
+        httpClientFactory
+            .Setup(factory => factory.CreateClient(It.IsAny<string>()))
+            .Returns(new HttpClient(new StubHttpMessageHandler(html)));
+
+        var result = await BuiltInWebMcpServerTools.SearchAsync(
+            httpClientFactory.Object,
+            NullLogger<BuiltInWebMcpServerTools>.Instance,
+            query: "item");
+
+        var toolResult = Assert.IsType<CallToolResult>(result);
+        Assert.True(toolResult.IsError);
+        var structured = Assert.IsType<JsonObject>(toolResult.StructuredContent);
+        Assert.Equal("search_no_results", structured["code"]?.GetValue<string>());
+        Assert.Equal("duckduckgo", structured["provider"]?.GetValue<string>());
+        Assert.Equal("item", structured["query"]?.GetValue<string>());
+        Assert.Equal(true, structured["fallbackTried"]?.GetValue<bool>());
+        Assert.Equal(true, structured["needsReplan"]?.GetValue<bool>());
+    }
+
+    [Fact]
     public async Task PlanExecutor_MapsProjectedUrlField_WhenBindingUsesMapMode()
     {
         var downloadTool = CreateDownloadByUrlDescriptor();
@@ -1124,7 +1315,7 @@ public class PlanningRuntimeContractsTests
                 {
                     Id = "searchPages",
                     Kind = PlanStepKinds.Tool,
-                    Name = SearchToolName,
+                    CapabilityId = SearchToolName,
                     In = new Dictionary<string, JsonNode?>
                     {
                         ["query"] = JsonValue.Create("example")
@@ -1134,7 +1325,7 @@ public class PlanningRuntimeContractsTests
                 {
                     Id = "downloadPages",
                     Kind = PlanStepKinds.Tool,
-                    Name = DownloadToolName,
+                    CapabilityId = DownloadToolName,
                     In = new Dictionary<string, JsonNode?>
                     {
                         ["url"] = Ref("$searchPages.results[].url", mode: "map")
@@ -1167,7 +1358,7 @@ public class PlanningRuntimeContractsTests
                 {
                     Id = "searchPages",
                     Kind = PlanStepKinds.Tool,
-                    Name = SearchToolName,
+                    CapabilityId = SearchToolName,
                     In = new Dictionary<string, JsonNode?>
                     {
                         ["query"] = JsonValue.Create("example")
@@ -1177,7 +1368,7 @@ public class PlanningRuntimeContractsTests
                 {
                     Id = "downloadPages",
                     Kind = PlanStepKinds.Tool,
-                    Name = DownloadToolName,
+                    CapabilityId = DownloadToolName,
                     In = new Dictionary<string, JsonNode?>
                     {
                         ["page"] = Ref("$searchPages.results", mode: "map")
@@ -1204,7 +1395,7 @@ public class PlanningRuntimeContractsTests
                 {
                     Id = "searchPages",
                     Kind = PlanStepKinds.Tool,
-                    Name = SearchToolName,
+                    CapabilityId = SearchToolName,
                     In = new Dictionary<string, JsonNode?>
                     {
                         ["query"] = JsonValue.Create("example")
@@ -1214,7 +1405,7 @@ public class PlanningRuntimeContractsTests
                 {
                     Id = "downloadPages",
                     Kind = PlanStepKinds.Tool,
-                    Name = DownloadToolName,
+                    CapabilityId = DownloadToolName,
                     In = new Dictionary<string, JsonNode?>
                     {
                         ["page"] = Ref("$searchPages.results", mode: "map")
@@ -1240,7 +1431,7 @@ public class PlanningRuntimeContractsTests
                 {
                     Id = "searchPages",
                     Kind = PlanStepKinds.Tool,
-                    Name = SearchToolName,
+                    CapabilityId = SearchToolName,
                     In = new Dictionary<string, JsonNode?>
                     {
                         ["query"] = JsonValue.Create("example")
@@ -1250,7 +1441,7 @@ public class PlanningRuntimeContractsTests
                 {
                     Id = "downloadPages",
                     Kind = PlanStepKinds.Tool,
-                    Name = DownloadToolName,
+                    CapabilityId = DownloadToolName,
                     In = new Dictionary<string, JsonNode?>
                     {
                         ["page"] = Ref("$searchPages.results[0]"),
@@ -1282,7 +1473,7 @@ public class PlanningRuntimeContractsTests
                 {
                     Id = "searchPages",
                     Kind = PlanStepKinds.Tool,
-                    Name = SearchToolName,
+                    CapabilityId = SearchToolName,
                     In = new Dictionary<string, JsonNode?>
                     {
                         ["query"] = JsonValue.Create("example")
@@ -1292,7 +1483,7 @@ public class PlanningRuntimeContractsTests
                 {
                     Id = "downloadPages",
                     Kind = PlanStepKinds.Tool,
-                    Name = DownloadToolName,
+                    CapabilityId = DownloadToolName,
                     In = new Dictionary<string, JsonNode?>
                     {
                         ["url"] = JsonValue.Create("$searchPages.results[].url")
@@ -1321,7 +1512,7 @@ public class PlanningRuntimeContractsTests
                 {
                     Id = "searchPages",
                     Kind = PlanStepKinds.Tool,
-                    Name = SearchToolName,
+                    CapabilityId = SearchToolName,
                     In = new Dictionary<string, JsonNode?>
                     {
                         ["query"] = JsonValue.Create("example")
@@ -1331,7 +1522,7 @@ public class PlanningRuntimeContractsTests
                 {
                     Id = "downloadPages",
                     Kind = PlanStepKinds.Tool,
-                    Name = DownloadToolName,
+                    CapabilityId = DownloadToolName,
                     In = new Dictionary<string, JsonNode?>
                     {
                         ["url"] = Ref("$searchPages.query", mode: "map")
@@ -1357,7 +1548,7 @@ public class PlanningRuntimeContractsTests
                 {
                     Id = "searchPages",
                     Kind = PlanStepKinds.Tool,
-                    Name = SearchToolName,
+                    CapabilityId = SearchToolName,
                     In = new Dictionary<string, JsonNode?>
                     {
                         ["query"] = JsonValue.Create("example")
@@ -1367,7 +1558,7 @@ public class PlanningRuntimeContractsTests
                 {
                     Id = "searchAgain",
                     Kind = PlanStepKinds.Tool,
-                    Name = SearchToolName,
+                    CapabilityId = SearchToolName,
                     In = new Dictionary<string, JsonNode?>
                     {
                         ["query"] = Ref("$searchPages.results[0]")
@@ -1394,7 +1585,7 @@ public class PlanningRuntimeContractsTests
                 {
                     Id = "searchPages",
                     Kind = PlanStepKinds.Tool,
-                    Name = SearchToolName,
+                    CapabilityId = SearchToolName,
                     In = new Dictionary<string, JsonNode?>
                     {
                         ["query"] = JsonValue.Create("maze generator nuget")
@@ -1404,7 +1595,7 @@ public class PlanningRuntimeContractsTests
                 {
                     Id = "shortlistPackages",
                     Kind = PlanStepKinds.Llm,
-                    Name = "shortlist",
+                    CapabilityId = "shortlist",
                     SystemPrompt = "Return JSON only.",
                     UserPrompt = "Choose three packages.",
                     In = new Dictionary<string, JsonNode?>
@@ -1447,7 +1638,7 @@ public class PlanningRuntimeContractsTests
                 {
                     Id = "searchPages",
                     Kind = PlanStepKinds.Tool,
-                    Name = SearchToolName,
+                    CapabilityId = SearchToolName,
                     In = new Dictionary<string, JsonNode?>
                     {
                         ["query"] = JsonValue.Create("maze generator nuget")
@@ -1457,7 +1648,7 @@ public class PlanningRuntimeContractsTests
                 {
                     Id = "extractPackage",
                     Kind = PlanStepKinds.Llm,
-                    Name = "extractor",
+                    CapabilityId = "extractor",
                     SystemPrompt = "Return JSON only.",
                     UserPrompt = "Extract one package.",
                     In = new Dictionary<string, JsonNode?>
@@ -1495,7 +1686,7 @@ public class PlanningRuntimeContractsTests
                 {
                     Id = "searchPages",
                     Kind = PlanStepKinds.Tool,
-                    Name = SearchToolName,
+                    CapabilityId = SearchToolName,
                     In = new Dictionary<string, JsonNode?>
                     {
                         ["query"] = JsonValue.Create("maze generator nuget")
@@ -1505,7 +1696,7 @@ public class PlanningRuntimeContractsTests
                 {
                     Id = "extractPackage",
                     Kind = PlanStepKinds.Llm,
-                    Name = "extractor",
+                    CapabilityId = "extractor",
                     SystemPrompt = "Return JSON only.",
                     UserPrompt = "Extract one package.",
                     In = new Dictionary<string, JsonNode?>
@@ -1546,7 +1737,7 @@ public class PlanningRuntimeContractsTests
                 {
                     Id = "searchPages",
                     Kind = PlanStepKinds.Tool,
-                    Name = SearchToolName,
+                    CapabilityId = SearchToolName,
                     In = new Dictionary<string, JsonNode?>
                     {
                         ["query"] = JsonValue.Create("maze generator nuget")
@@ -1556,7 +1747,7 @@ public class PlanningRuntimeContractsTests
                 {
                     Id = "extractPackages",
                     Kind = PlanStepKinds.Llm,
-                    Name = "extractor",
+                    CapabilityId = "extractor",
                     SystemPrompt = "Return JSON only.",
                     UserPrompt = "Extract package candidates from the current page.",
                     In = new Dictionary<string, JsonNode?>
@@ -1584,7 +1775,7 @@ public class PlanningRuntimeContractsTests
                 {
                     Id = "reviewPackages",
                     Kind = PlanStepKinds.Llm,
-                    Name = "review",
+                    CapabilityId = "review",
                     SystemPrompt = "Return JSON only.",
                     UserPrompt = "Review the extracted packages.",
                     In = new Dictionary<string, JsonNode?>
@@ -1615,7 +1806,7 @@ public class PlanningRuntimeContractsTests
                 {
                     Id = "searchPages",
                     Kind = PlanStepKinds.Tool,
-                    Name = SearchToolName,
+                    CapabilityId = SearchToolName,
                     In = new Dictionary<string, JsonNode?>
                     {
                         ["query"] = JsonValue.Create("maze generator nuget")
@@ -1625,7 +1816,7 @@ public class PlanningRuntimeContractsTests
                 {
                     Id = "shortlistPackages",
                     Kind = PlanStepKinds.Llm,
-                    Name = "shortlist",
+                    CapabilityId = "shortlist",
                     SystemPrompt = "Return JSON only.",
                     UserPrompt = "Choose three packages.",
                     In = new Dictionary<string, JsonNode?>
@@ -1674,7 +1865,7 @@ public class PlanningRuntimeContractsTests
                 {
                     Id = "opaqueSource",
                     Kind = PlanStepKinds.Tool,
-                    Name = "mock-web:opaque",
+                    CapabilityId = "mock-web:opaque",
                     In = new Dictionary<string, JsonNode?>
                     {
                         ["seed"] = JsonValue.Create("example")
@@ -1684,7 +1875,7 @@ public class PlanningRuntimeContractsTests
                 {
                     Id = "searchAgain",
                     Kind = PlanStepKinds.Tool,
-                    Name = SearchToolName,
+                    CapabilityId = SearchToolName,
                     In = new Dictionary<string, JsonNode?>
                     {
                         ["query"] = Ref("$opaqueSource.payload")
@@ -1717,7 +1908,7 @@ public class PlanningRuntimeContractsTests
                 {
                     Id = "manyResults",
                     Kind = PlanStepKinds.Tool,
-                    Name = SearchToolName,
+                    CapabilityId = SearchToolName,
                     In = new Dictionary<string, JsonNode?>
                     {
                         ["query"] = JsonValue.Create("many")
@@ -1727,7 +1918,7 @@ public class PlanningRuntimeContractsTests
                 {
                     Id = "singleResult",
                     Kind = PlanStepKinds.Tool,
-                    Name = SearchToolName,
+                    CapabilityId = SearchToolName,
                     In = new Dictionary<string, JsonNode?>
                     {
                         ["query"] = JsonValue.Create("single")
@@ -1737,7 +1928,7 @@ public class PlanningRuntimeContractsTests
                 {
                     Id = "pairResults",
                     Kind = PlanStepKinds.Tool,
-                    Name = PairToolName,
+                    CapabilityId = PairToolName,
                     In = new Dictionary<string, JsonNode?>
                     {
                         ["first"] = Ref("$manyResults.results[].url", mode: "map"),
@@ -1765,7 +1956,7 @@ public class PlanningRuntimeContractsTests
                 {
                     Id = "answer",
                     Kind = PlanStepKinds.Llm,
-                    Name = "extractor",
+                    CapabilityId = "extractor",
                     SystemPrompt = "Return JSON only.",
                     UserPrompt = "Extract the requested fields.",
                     In = new Dictionary<string, JsonNode?>
@@ -1798,7 +1989,7 @@ public class PlanningRuntimeContractsTests
                 {
                     Id = "searchPages",
                     Kind = PlanStepKinds.Tool,
-                    Name = SearchToolName,
+                    CapabilityId = SearchToolName,
                     In = new Dictionary<string, JsonNode?>
                     {
                         ["query"] = JsonValue.Create("example")
@@ -1808,7 +1999,7 @@ public class PlanningRuntimeContractsTests
                 {
                     Id = "extractFacts",
                     Kind = PlanStepKinds.Llm,
-                    Name = "extractor",
+                    CapabilityId = "extractor",
                     SystemPrompt = "Return JSON only.",
                     UserPrompt = "Extract one package per page.",
                     In = new Dictionary<string, JsonNode?>
@@ -1839,6 +2030,70 @@ public class PlanningRuntimeContractsTests
     }
 
     [Fact]
+    public void PlanStepOutputContractResolver_IgnoresToolOut_AndInfersFlatten_ForMappedArrayTool()
+    {
+        var collectArrayTool = CreateDescriptor(
+            serverName: "mock-web",
+            toolName: "collect-array",
+            description: "Return multiple values per input.",
+            inputSchemaJson: """
+                {
+                  "type": "object",
+                  "properties": {
+                    "item": { "type": "string" }
+                  },
+                  "required": ["item"]
+                }
+                """,
+            outputSchemaJson: """
+                {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "value": { "type": "string" }
+                    },
+                    "required": ["value"]
+                  }
+                }
+                """,
+            execute: _ => new[]
+            {
+                new { value = "a" }
+            });
+        var step = new PlanStep
+        {
+            Id = "collectItems",
+            Kind = PlanStepKinds.Tool,
+            CapabilityId = "mock-web:collect-array",
+            In = new Dictionary<string, JsonNode?>
+            {
+                ["item"] = Ref("$searchPages.results[].title", "map")
+            },
+            Out = JsonOut(new JsonObject
+            {
+                ["type"] = "object",
+                ["properties"] = new JsonObject
+                {
+                    ["value"] = new JsonObject
+                    {
+                        ["type"] = "string"
+                    }
+                }
+            }, aggregate: PlanStepOutputAggregates.Collect)
+        };
+
+        var contract = PlanStepOutputContractResolver.Resolve(step, collectArrayTool, hasFanOut: true);
+
+        Assert.Equal(PlanStepOutputAggregates.Flatten, contract.Aggregate);
+        Assert.False(contract.IsExplicit);
+        Assert.True(contract.CallSchema.HasValue);
+        Assert.True(PlanStepOutputContractResolver.SchemaDefinesArray(contract.CallSchema.Value));
+        Assert.True(contract.FinalSchema.HasValue);
+        Assert.True(PlanStepOutputContractResolver.SchemaDefinesArray(contract.FinalSchema.Value));
+    }
+
+    [Fact]
     public void PlanValidator_AcceptsNullableJsonPropertySchemas()
     {
         var plan = new PlanDefinition
@@ -1850,7 +2105,7 @@ public class PlanningRuntimeContractsTests
                 {
                     Id = "extractFacts",
                     Kind = PlanStepKinds.Llm,
-                    Name = "extractor",
+                    CapabilityId = "extractor",
                     SystemPrompt = "Return JSON only.",
                     UserPrompt = "Extract the product facts.",
                     In = new Dictionary<string, JsonNode?>
@@ -1908,7 +2163,7 @@ public class PlanningRuntimeContractsTests
                 {
                     Id = "searchPages",
                     Kind = PlanStepKinds.Tool,
-                    Name = SearchToolName,
+                    CapabilityId = SearchToolName,
                     In = new Dictionary<string, JsonNode?>
                     {
                         ["query"] = JsonValue.Create("example")
@@ -1918,7 +2173,7 @@ public class PlanningRuntimeContractsTests
                 {
                     Id = "extractFacts",
                     Kind = PlanStepKinds.Llm,
-                    Name = "extractor",
+                    CapabilityId = "extractor",
                     SystemPrompt = "Return JSON only.",
                     UserPrompt = "Extract all package names from the page.",
                     In = new Dictionary<string, JsonNode?>
@@ -1982,7 +2237,7 @@ public class PlanningRuntimeContractsTests
                 {
                     Id = "extractFacts",
                     Kind = PlanStepKinds.Llm,
-                    Name = "extractor",
+                    CapabilityId = "extractor",
                     SystemPrompt = "Return JSON only.",
                     UserPrompt = "Extract the package.",
                     In = new Dictionary<string, JsonNode?>
@@ -2029,7 +2284,7 @@ public class PlanningRuntimeContractsTests
                 {
                     Id = "opaqueSource",
                     Kind = PlanStepKinds.Tool,
-                    Name = "mock-web:opaque",
+                    CapabilityId = "mock-web:opaque",
                     In = new Dictionary<string, JsonNode?>
                     {
                         ["seed"] = JsonValue.Create("example")
@@ -2039,7 +2294,7 @@ public class PlanningRuntimeContractsTests
                 {
                     Id = "extractFacts",
                     Kind = PlanStepKinds.Llm,
-                    Name = "extractor",
+                    CapabilityId = "extractor",
                     SystemPrompt = "Return JSON only.",
                     UserPrompt = "Extract package facts.",
                     In = new Dictionary<string, JsonNode?>
@@ -2137,7 +2392,7 @@ public class PlanningRuntimeContractsTests
                 {
                     Id = "extractFacts",
                     Kind = PlanStepKinds.Llm,
-                    Name = "extractor",
+                    CapabilityId = "extractor",
                     SystemPrompt = "Return JSON only.",
                     UserPrompt = "Extract the package.",
                     In = new Dictionary<string, JsonNode?>
@@ -2220,7 +2475,7 @@ public class PlanningRuntimeContractsTests
                 {
                     Id = "searchItems",
                     Kind = PlanStepKinds.Tool,
-                    Name = SearchToolName,
+                    CapabilityId = SearchToolName,
                     In = new Dictionary<string, JsonNode?>
                     {
                         ["query"] = JsonValue.Create("example")
@@ -2230,7 +2485,7 @@ public class PlanningRuntimeContractsTests
                 {
                     Id = "collectItems",
                     Kind = PlanStepKinds.Tool,
-                    Name = "mock-web:collect",
+                    CapabilityId = "mock-web:collect",
                     In = new Dictionary<string, JsonNode?>
                     {
                         ["item"] = Ref("$searchItems.results[].title", "map")
@@ -2318,7 +2573,7 @@ public class PlanningRuntimeContractsTests
                 {
                     Id = "searchItems",
                     Kind = PlanStepKinds.Tool,
-                    Name = SearchToolName,
+                    CapabilityId = SearchToolName,
                     In = new Dictionary<string, JsonNode?>
                     {
                         ["query"] = JsonValue.Create("example")
@@ -2328,7 +2583,7 @@ public class PlanningRuntimeContractsTests
                 {
                     Id = "collectItems",
                     Kind = PlanStepKinds.Tool,
-                    Name = "mock-web:collect",
+                    CapabilityId = "mock-web:collect",
                     In = new Dictionary<string, JsonNode?>
                     {
                         ["item"] = Ref("$searchItems.results[].title", "map")
@@ -2373,22 +2628,15 @@ public class PlanningRuntimeContractsTests
         var chatClientFactory = new Mock<ILlmChatClientFactory>();
         var appToolCatalog = new Mock<IAppToolCatalog>();
         var mcpUserInteractionService = new Mock<IMcpUserInteractionService>();
-        var agentDescriptionService = new Mock<IAgentDescriptionService>();
-        var modelCapabilityService = new Mock<IModelCapabilityService>();
         var agenticExecutionInvoker = new Mock<IAgenticExecutionInvoker>();
         appToolCatalog
             .Setup(catalog => catalog.ListToolsAsync(It.IsAny<McpClientRequestContext?>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(Array.Empty<AppToolDescriptor>());
-        agentDescriptionService
-            .Setup(service => service.GetAllAsync())
-            .ReturnsAsync(Array.Empty<AgentDescription>());
 
         return new PlanningSessionService(
             chatClientFactory.Object,
             appToolCatalog.Object,
             mcpUserInteractionService.Object,
-            agentDescriptionService.Object,
-            modelCapabilityService.Object,
             agenticExecutionInvoker.Object,
             NullLogger<PlanningSessionService>.Instance);
     }

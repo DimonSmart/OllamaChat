@@ -26,7 +26,7 @@ public sealed class PlanDefinition
 /// <summary>
 /// A single step in the execution plan.
 /// Use <see cref="Kind"/> to declare whether the step invokes a registered tool, an ad-hoc LLM call,
-/// or a preconfigured saved agent. <see cref="Name"/> identifies the concrete capability for that kind.
+/// or a preconfigured saved agent. <see cref="CapabilityId"/> identifies the concrete capability for that kind.
 /// When <see cref="Kind"/> is <c>llm</c>, the planner must supply <see cref="SystemPrompt"/> and <see cref="UserPrompt"/>.
 /// When <see cref="Kind"/> is <c>agent</c>, the planner must supply <see cref="UserPrompt"/> and inputs; the saved agent provides
 /// its own system prompt, tool access, and execution settings.
@@ -40,9 +40,13 @@ public sealed class PlanStep
     [JsonPropertyName("kind")]
     public string Kind { get; init; } = string.Empty;
 
-    /// <summary>Capability identifier for the selected kind.</summary>
-    [JsonPropertyName("name")]
-    public string Name { get; init; } = string.Empty;
+    /// <summary>
+    /// Capability identifier for the selected kind.
+    /// Required for tool and saved-agent steps.
+    /// Optional for generic llm steps, where it acts only as a display label.
+    /// </summary>
+    [JsonPropertyName("capabilityId")]
+    public string? CapabilityId { get; init; }
 
     /// <summary>System prompt for an LLM step. Required when kind is llm.</summary>
     [JsonPropertyName("systemPrompt")]
@@ -62,8 +66,8 @@ public sealed class PlanStep
 
     /// <summary>
     /// Output contract for this step.
-    /// LLM and saved-agent steps must declare the expected result format/shape explicitly.
-    /// Tool steps may omit it and rely on the tool output schema.
+    /// LLM and saved-agent steps declare the expected result format/shape explicitly.
+    /// Tool steps should omit it and rely on the tool output schema owned by the runtime.
     /// </summary>
     [JsonPropertyName("out")]
     public PlanStepOutputContract? Out { get; init; }

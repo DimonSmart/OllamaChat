@@ -90,7 +90,7 @@ public static class PlanningLogFormatter
         {
             ["id"] = step.Id,
             ["kind"] = PlanStepKinds.GetKind(step),
-            ["name"] = PlanStepKinds.GetName(step),
+            ["capabilityId"] = PlanStepKinds.GetCapabilityId(step),
             ["inputKeys"] = new JsonArray(step.In.Keys.OrderBy(static key => key, StringComparer.Ordinal).Select(static key => JsonValue.Create(key)).ToArray()),
             ["output"] = step.Out is null
                 ? null

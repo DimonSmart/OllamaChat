@@ -36,6 +36,7 @@ public sealed class PlanEditingSession
                 "plan.readStep" => CreateSuccess(toolName, ReadStep(GetRequiredString(input, "stepId"))),
                 "plan.replaceStep" => CreateSuccess(toolName, ReplaceStep(GetReplaceStepId(input), GetReplaceStepNode(input))),
                 "plan.addSteps" => CreateSuccess(toolName, AddSteps(GetOptionalString(input, "afterStepId"), input["steps"])),
+                "plan.removeStep" => CreateSuccess(toolName, RemoveStep(GetRequiredString(input, "stepId"))),
                 "plan.resetFrom" => CreateSuccess(toolName, ResetFrom(GetRequiredString(input, "stepId"))),
                 _ => CreateFailure("unknown_tool", $"Unknown replanning tool '{toolName ?? "<null>"}'.", toolName)
             };
@@ -102,6 +103,29 @@ public sealed class PlanEditingSession
             ["insertedCount"] = newSteps.Count,
             ["insertIndex"] = insertIndex,
             ["insertedSteps"] = new JsonArray(newSteps.Select(step => PlanningLogFormatter.SummarizeStep(step, _profile)).ToArray())
+        };
+    }
+
+    private JsonNode? RemoveStep(string stepId)
+    {
+        var stepIndex = FindStepIndex(stepId);
+        var removedStep = _plan.Steps[stepIndex];
+        _plan.Steps.RemoveAt(stepIndex);
+
+        var resetStepIds = new List<string>();
+        if (stepIndex < _plan.Steps.Count)
+        {
+            resetStepIds = _plan.Steps.Skip(stepIndex).Select(step => step.Id).ToList();
+            PlanExecutionState.ResetFrom(_plan, stepIndex);
+        }
+
+        return new JsonObject
+        {
+            ["stepId"] = stepId,
+            ["position"] = stepIndex,
+            ["removed"] = PlanningLogFormatter.SummarizeStep(removedStep, _profile),
+            ["resetCount"] = resetStepIds.Count,
+            ["resetStepIds"] = new JsonArray(resetStepIds.Select(resetStepId => JsonValue.Create(resetStepId)).ToArray())
         };
     }
 
@@ -208,12 +232,12 @@ public sealed class PlanEditingSession
         var diff = new JsonObject();
 
         if (!string.Equals(before.Kind, after.Kind, StringComparison.Ordinal)
-            || !string.Equals(before.Name, after.Name, StringComparison.Ordinal))
+            || !string.Equals(before.CapabilityId, after.CapabilityId, StringComparison.Ordinal))
         {
             diff["capability"] = new JsonObject
             {
-                ["before"] = $"{PlanStepKinds.GetKind(before)}:{PlanStepKinds.GetName(before)}",
-                ["after"] = $"{PlanStepKinds.GetKind(after)}:{PlanStepKinds.GetName(after)}"
+                ["before"] = $"{PlanStepKinds.GetKind(before)}:{PlanStepKinds.GetCapabilityId(before)}",
+                ["after"] = $"{PlanStepKinds.GetKind(after)}:{PlanStepKinds.GetCapabilityId(after)}"
             };
         }
 

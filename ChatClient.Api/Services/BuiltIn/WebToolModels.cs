@@ -30,7 +30,7 @@ public sealed record WebSearchResult(
 public sealed record WebSearchData(
     [property: JsonPropertyName("query"), Description("The original query used for the search.")]
     string Query,
-    [property: JsonPropertyName("results"), Description("Structured candidate page results returned by the search engine.")]
+    [property: JsonPropertyName("results"), Description("Structured candidate page results returned by the search engine. Each item is directly compatible with the download tool's 'page' input.")]
     IReadOnlyList<WebSearchResult> Results);
 
 public sealed record WebDownloadPageRef(
@@ -52,9 +52,9 @@ public sealed record WebDownloadPageRef(
     int? Position = null);
 
 public sealed record WebDownloadInput(
-    [property: JsonPropertyName("page"), Description("Page reference object. Must contain at least 'url'; other metadata fields are optional.")]
+    [property: JsonPropertyName("page"), Description("Page reference object. Prefer passing one search.results[] item directly here; for multiple search results, bind page from search.results with mode=map.")]
     WebDownloadPageRef? Page = null,
-    [property: JsonPropertyName("url"), Description("Absolute HTTP or HTTPS URL to download when a full page object is not available.")]
+    [property: JsonPropertyName("url"), Description("Absolute HTTP or HTTPS URL to download when a full page object is not available. Use this only when you do not already have a page object.")]
     string? Url = null);
 
 public sealed record WebDownloadData(
@@ -83,6 +83,9 @@ internal sealed record WebToolErrorDetails(
     [property: JsonPropertyName("needsReplan")] bool NeedsReplan,
     [property: JsonPropertyName("type")] string Type,
     [property: JsonPropertyName("details")] IReadOnlyList<string> Details,
+    [property: JsonPropertyName("query")] string? Query = null,
+    [property: JsonPropertyName("provider")] string? Provider = null,
+    [property: JsonPropertyName("fallbackTried")] bool? FallbackTried = null,
     [property: JsonPropertyName("url")] string? Url = null,
     [property: JsonPropertyName("host")] string? Host = null,
     [property: JsonPropertyName("retryable")] bool? Retryable = null,

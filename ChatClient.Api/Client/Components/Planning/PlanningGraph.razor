@@ -965,27 +965,7 @@
     }
 
     private static Dictionary<string, List<string>> BuildDependentsLookup(IEnumerable<PlanStep> steps)
-    {
-        var dependents = new Dictionary<string, List<string>>(StringComparer.Ordinal);
-
-        foreach (var step in steps)
-        {
-            dependents.TryAdd(step.Id, []);
-
-            foreach (var dependency in GetDependencies(step))
-            {
-                if (!dependents.TryGetValue(dependency, out var children))
-                {
-                    children = [];
-                    dependents[dependency] = children;
-                }
-
-                children.Add(step.Id);
-            }
-        }
-
-        return dependents;
-    }
+        => PlanDependencyGraph.BuildDependentsLookup(steps);
 
     private static HashSet<string> CollectDescendants(string stepId, IReadOnlyDictionary<string, List<string>> dependentsLookup)
     {
@@ -1039,7 +1019,7 @@
             var dependencies = GetDependencies(step)
                 .OrderBy(value => value, StringComparer.Ordinal);
 
-            parts.Add($"{step.Id}:{PlanStepKinds.GetKind(step)}:{PlanStepKinds.GetName(step)}:{string.Join(",", dependencies)}");
+            parts.Add($"{step.Id}:{PlanStepKinds.GetKind(step)}:{PlanStepKinds.GetCapabilityId(step)}:{string.Join(",", dependencies)}");
         }
 
         return string.Join("|", parts);
@@ -1112,10 +1092,18 @@
             return new Point(Margin + NodeWidth + HorizontalGap, Margin);
         }
 
-        var terminalStepIds = GetTerminalStepIds(visibleSteps).ToHashSet(StringComparer.Ordinal);
-        var anchorNodes = graphNodes
-            .Where(node => terminalStepIds.Contains(node.Step.Id))
-            .ToList();
+        var finalStepId = visibleSteps.Count > 0 ? visibleSteps[^1].Id : null;
+        var anchorNodes = string.IsNullOrWhiteSpace(finalStepId)
+            ? []
+            : graphNodes.Where(node => string.Equals(node.Step.Id, finalStepId, StringComparison.Ordinal)).ToList();
+
+        if (anchorNodes.Count == 0)
+        {
+            var terminalStepIds = GetTerminalStepIds(visibleSteps).ToHashSet(StringComparer.Ordinal);
+            anchorNodes = graphNodes
+                .Where(node => terminalStepIds.Contains(node.Step.Id))
+                .ToList();
+        }
 
         if (anchorNodes.Count == 0)
         {
@@ -1128,60 +1116,10 @@
     }
 
     private static IReadOnlyList<string> GetTerminalStepIds(IReadOnlyList<PlanStep> visibleSteps)
-    {
-        var dependentsLookup = BuildDependentsLookup(visibleSteps);
-        return visibleSteps
-            .Where(step => !dependentsLookup.TryGetValue(step.Id, out var children) || children.Count == 0)
-            .Select(step => step.Id)
-            .ToList();
-    }
+        => PlanDependencyGraph.GetTerminalStepIds(visibleSteps);
 
     private static IReadOnlyCollection<string> GetDependencies(PlanStep step)
-    {
-        var dependencies = new HashSet<string>(StringComparer.Ordinal);
-
-        foreach (var value in step.In.Values)
-        {
-            CollectDependencies(value, dependencies);
-        }
-
-        return dependencies;
-    }
-
-    private static void CollectDependencies(JsonNode? value, ISet<string> dependencies)
-    {
-        switch (value)
-        {
-            case JsonValue jsonValue when jsonValue.TryGetValue<string>(out var text) && text.StartsWith("$", StringComparison.Ordinal):
-                dependencies.Add(ExtractBaseStepId(text[1..]));
-                break;
-            case JsonArray array:
-                foreach (var item in array)
-                {
-                    CollectDependencies(item, dependencies);
-                }
-                break;
-            case JsonObject obj:
-                foreach (var nested in obj)
-                {
-                    CollectDependencies(nested.Value, dependencies);
-                }
-                break;
-        }
-    }
-
-    private static string ExtractBaseStepId(string expression)
-    {
-        var bracketIndex = expression.IndexOf('[');
-        var dotIndex = expression.IndexOf('.');
-        if (bracketIndex >= 0 && dotIndex >= 0)
-            return expression[..Math.Min(bracketIndex, dotIndex)];
-        if (bracketIndex >= 0)
-            return expression[..bracketIndex];
-        if (dotIndex >= 0)
-            return expression[..dotIndex];
-        return expression;
-    }
+        => PlanDependencyGraph.GetDependencies(step);
 
     private sealed record GraphNode(PlanStep Step, Point Position);
 

@@ -46,11 +46,15 @@ public static class PlanStepKinds
             : string.Empty;
     }
 
-    public static string GetName(PlanStep step)
+    public static string GetCapabilityId(PlanStep step)
     {
         ArgumentNullException.ThrowIfNull(step);
 
-        return step.Name?.Trim() ?? string.Empty;
+        var capabilityId = step.CapabilityId?.Trim();
+        if (!string.IsNullOrWhiteSpace(capabilityId))
+            return capabilityId;
+
+        return IsLlm(step) ? Llm : string.Empty;
     }
 
     private static bool HasKind(PlanStep step, string expectedKind)

@@ -1,4 +1,6 @@
 using Markdig;
+using ChatClient.Api.Search;
+using HtmlAgilityPack;
 
 namespace ChatClient.Api.Client.Markdown;
 
@@ -11,10 +13,48 @@ public static class AppMarkdown
         .Build();
 
     public static string ToHtml(string? markdown) =>
-        Markdig.Markdown.ToHtml(markdown ?? string.Empty, Pipeline);
+        RenderHtml(markdown ?? string.Empty);
 
     public static string ToHtmlModelOutput(string? markdown) =>
-        Markdig.Markdown.ToHtml(UnwrapOuterMarkdownFence(markdown), Pipeline);
+        RenderHtml(UnwrapOuterMarkdownFence(markdown));
+
+    private static string RenderHtml(string markdown) =>
+        NormalizeImageSources(Markdig.Markdown.ToHtml(markdown, Pipeline));
+
+    private static string NormalizeImageSources(string html)
+    {
+        if (string.IsNullOrWhiteSpace(html)
+            || !html.Contains("imgs.search.brave.com", StringComparison.OrdinalIgnoreCase))
+        {
+            return html;
+        }
+
+        var document = new HtmlDocument();
+        document.LoadHtml(html);
+
+        var imageNodes = document.DocumentNode.SelectNodes("//img[@src]");
+        if (imageNodes is null)
+            return html;
+
+        var changed = false;
+        foreach (var imageNode in imageNodes)
+        {
+            var source = imageNode.GetAttributeValue("src", string.Empty);
+            var normalized = SearchResultUrlNormalizer.NormalizeImageUrl(source);
+            if (string.IsNullOrWhiteSpace(normalized)
+                || string.Equals(source, normalized, StringComparison.Ordinal))
+            {
+                continue;
+            }
+
+            imageNode.SetAttributeValue("src", normalized);
+            changed = true;
+        }
+
+        return changed
+            ? document.DocumentNode.SelectSingleNode("//body")?.InnerHtml ?? document.DocumentNode.InnerHtml
+            : html;
+    }
 
     private static string UnwrapOuterMarkdownFence(string? markdown)
     {

@@ -68,15 +68,17 @@ public sealed class PlanExecutor(
         var resolvedInput = SerializeObject(resolved);
         var stepKind = PlanStepKinds.GetKind(step);
         var isTool = string.Equals(stepKind, PlanStepKinds.Tool, StringComparison.Ordinal);
-        var toolMetadata = isTool ? toolCatalog.GetRequired(step.Name) : null;
+        var toolMetadata = isTool
+            ? toolCatalog.GetRequired(step.CapabilityId ?? throw new InvalidOperationException($"Tool step '{step.Id}' is missing capabilityId."))
+            : null;
         var fanOutCount = fanOutInputs?.Values.FirstOrDefault()?.Length ?? 0;
         var outputContract = PlanStepOutputContractResolver.Resolve(step, toolMetadata, fanOutInputs is not null);
 
-        _log.Log($"[exec] step:start id={step.Id} kind={stepKind} name={PlanStepKinds.GetName(step)} fanOut={(fanOutInputs is null ? "no" : fanOutCount.ToString())} aggregate={outputContract.Aggregate} resolvedInputs={SerializeElement(resolvedInput)}");
+        _log.Log($"[exec] step:start id={step.Id} kind={stepKind} capabilityId={PlanStepKinds.GetCapabilityId(step)} fanOut={(fanOutInputs is null ? "no" : fanOutCount.ToString())} aggregate={outputContract.Aggregate} resolvedInputs={SerializeElement(resolvedInput)}");
         _observer.OnEvent(new StepStartedEvent(
             step.Id,
             stepKind,
-            PlanStepKinds.GetName(step),
+            PlanStepKinds.GetCapabilityId(step),
             resolvedInput.Clone(),
             fanOutInputs is null ? null : fanOutCount));
 
@@ -283,7 +285,7 @@ public sealed class PlanExecutor(
             calls.Add(JsonSerializer.SerializeToElement(new
             {
                 kind = PlanStepKinds.GetKind(step),
-                name = PlanStepKinds.GetName(step),
+                capabilityId = PlanStepKinds.GetCapabilityId(step),
                 ok = false,
                 output = (JsonElement?)null,
                 error = SerializeError(inputFailure.Error)
@@ -294,12 +296,12 @@ public sealed class PlanExecutor(
 
         var envelope = await agentStepRunner.ExecuteAsync(step, input, cancellationToken);
         calls.Add(JsonSerializer.SerializeToElement(new
-        {
-            kind = PlanStepKinds.GetKind(step),
-            name = PlanStepKinds.GetName(step),
-            ok = envelope.Ok,
-            output = CloneElement(envelope.Data),
-            error = SerializeError(envelope.Error)
+            {
+                kind = PlanStepKinds.GetKind(step),
+                capabilityId = PlanStepKinds.GetCapabilityId(step),
+                ok = envelope.Ok,
+                output = CloneElement(envelope.Data),
+                error = SerializeError(envelope.Error)
         }));
 
         return envelope;
@@ -313,7 +315,8 @@ public sealed class PlanExecutor(
         {
             if (!PlanInputBindingSyntax.TryParseBinding(entry.Value, out var binding, out var bindingError)
                 || !string.IsNullOrWhiteSpace(bindingError)
-                || string.IsNullOrWhiteSpace(binding?.Type))
+                || binding is null
+                || string.IsNullOrWhiteSpace(binding.Type))
             {
                 continue;
             }
@@ -372,7 +375,7 @@ public sealed class PlanExecutor(
                     $"Step '{step.Id}': input '{input.Key}' uses legacy string ref syntax '{legacyReference}'. Use a binding object like {{\"from\":\"{legacyReference}\",\"mode\":\"value\"}}.");
             }
 
-            if (PlanInputBindingSyntax.TryParseBinding(input.Value, out var binding, out var bindingError))
+            if (PlanInputBindingSyntax.TryParseBinding(input.Value, out var bindingExpression, out var bindingError))
             {
                 if (!string.IsNullOrWhiteSpace(bindingError))
                 {
@@ -380,19 +383,33 @@ public sealed class PlanExecutor(
                         $"Step '{step.Id}': invalid binding for input '{input.Key}'. {bindingError}");
                 }
 
-                var resolution = PlanInputBindingSyntax.EvaluateReferenceOrThrow(binding!.From, step.Id, stepMap);
-                resolved[input.Key] = resolution.Clone();
-
-                if (binding.Mode == PlanInputBindingMode.Map)
+                switch (bindingExpression)
                 {
-                    if (resolution.ValueKind != JsonValueKind.Array)
+                    case PlanInputBindingSpec binding:
                     {
-                        throw new InvalidOperationException(
-                            $"Step '{step.Id}': input '{input.Key}' uses mode='map' but ref '{binding.From}' did not resolve to an array.");
-                    }
+                        var resolution = PlanInputBindingSyntax.EvaluateReferenceOrThrow(binding.From, step.Id, stepMap);
+                        resolved[input.Key] = resolution.Clone();
 
-                    fanOutInputs ??= new Dictionary<string, JsonElement?[]>(StringComparer.Ordinal);
-                    fanOutInputs[input.Key] = resolution.EnumerateArray().Select(item => (JsonElement?)item.Clone()).ToArray();
+                        if (binding.Mode == PlanInputBindingMode.Map)
+                        {
+                            if (resolution.ValueKind != JsonValueKind.Array)
+                            {
+                                throw new InvalidOperationException(
+                                    $"Step '{step.Id}': input '{input.Key}' uses mode='map' but ref '{binding.From}' did not resolve to an array.");
+                            }
+
+                            fanOutInputs ??= new Dictionary<string, JsonElement?[]>(StringComparer.Ordinal);
+                            fanOutInputs[input.Key] = resolution.EnumerateArray().Select(item => (JsonElement?)item.Clone()).ToArray();
+                        }
+
+                        break;
+                    }
+                    case PlanInputConcatBindingSpec concatBinding:
+                        resolved[input.Key] = ResolveConcatBinding(step.Id, input.Key, concatBinding, stepMap);
+                        break;
+                    default:
+                        throw new InvalidOperationException(
+                            $"Step '{step.Id}': input '{input.Key}' uses an unsupported binding expression.");
                 }
 
                 continue;
@@ -405,6 +422,40 @@ public sealed class PlanExecutor(
             ValidateFanOutInputs(step, fanOutInputs);
 
         return (resolved, fanOutInputs);
+    }
+
+    private static JsonElement ResolveConcatBinding(
+        string stepId,
+        string inputName,
+        PlanInputConcatBindingSpec concatBinding,
+        IReadOnlyDictionary<string, PlanStep> stepMap)
+    {
+        if (concatBinding.Concat.Count == 0)
+        {
+            throw new InvalidOperationException(
+                $"Step '{stepId}': input '{inputName}' uses concat but does not declare any sources.");
+        }
+
+        var flattened = new List<JsonElement>();
+        foreach (var binding in concatBinding.Concat)
+        {
+            if (binding.Mode != PlanInputBindingMode.Value)
+            {
+                throw new InvalidOperationException(
+                    $"Step '{stepId}': input '{inputName}' uses concat, but source '{binding.From}' does not use mode='value'.");
+            }
+
+            var resolution = PlanInputBindingSyntax.EvaluateReferenceOrThrow(binding.From, stepId, stepMap);
+            if (resolution.ValueKind != JsonValueKind.Array)
+            {
+                throw new InvalidOperationException(
+                    $"Step '{stepId}': input '{inputName}' uses concat, but ref '{binding.From}' resolved to {DescribeValueKind(resolution)} instead of an array.");
+            }
+
+            flattened.AddRange(resolution.EnumerateArray().Select(item => item.Clone()));
+        }
+
+        return JsonSerializer.SerializeToElement(flattened.ToArray());
     }
 
     private static bool IsReusable(PlanStep step) =>
@@ -513,15 +564,21 @@ public sealed class PlanExecutor(
         var missing = new List<string>();
         foreach (var value in step.In.Values)
         {
-            if (!PlanInputBindingSyntax.TryParseBinding(value, out var binding, out var bindingError)
+            if (!PlanInputBindingSyntax.TryParseBinding(value, out var bindingExpression, out var bindingError)
                 || !string.IsNullOrWhiteSpace(bindingError)
-                || !PlanInputBindingSyntax.TryParseReference(binding!.From, out var reference, out _))
+                || bindingExpression is null)
                 continue;
 
-            if (!stepMap.TryGetValue(reference!.StepId, out var dependency)
-                || !PlanExecutionState.HasCompletedResult(dependency))
+            foreach (var binding in PlanInputBindingSyntax.EnumerateBindings(bindingExpression))
             {
-                missing.Add(binding.From);
+                if (!PlanInputBindingSyntax.TryParseReference(binding.From, out var reference, out _))
+                    continue;
+
+                if (!stepMap.TryGetValue(reference!.StepId, out var dependency)
+                    || !PlanExecutionState.HasCompletedResult(dependency))
+                {
+                    missing.Add(binding.From);
+                }
             }
         }
 

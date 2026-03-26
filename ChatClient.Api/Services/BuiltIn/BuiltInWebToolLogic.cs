@@ -4,6 +4,7 @@ using System.Text;
 using System.Text.Json;
 using System.Text.Encodings.Web;
 using System.Text.RegularExpressions;
+using ChatClient.Api.Search;
 using ChatClient.Infrastructure.Constants;
 using ChatClient.Infrastructure.Helpers;
 using HtmlAgilityPack;
@@ -16,10 +17,11 @@ internal static class BuiltInWebToolLogic
     private const int DefaultLimit = 4;
     private const int MaxLimit = 6;
     private const int MaxContentLength = 12000;
-    private const int SearchMaxAttempts = 5;
+    private const int BraveSearchMaxAttempts = 1;
+    private const int SearchFallbackMaxAttempts = 5;
     private const int DownloadMaxAttempts = 3;
     private const string SearchCachePathConfigKey = "BuiltInWeb:SearchCachePath";
-    private const string SearchCacheVersion = "v4";
+    private const string SearchCacheVersion = "v5";
     private static readonly TimeSpan SearchCacheTtl = TimeSpan.FromDays(1);
     private static readonly TimeSpan BraveSearchMinInterval = TimeSpan.FromSeconds(5);
     private static readonly TimeSpan DefaultMaxRetryDelay = TimeSpan.FromSeconds(30);
@@ -53,7 +55,13 @@ internal static class BuiltInWebToolLogic
     {
         var query = input.Query?.Trim();
         if (string.IsNullOrWhiteSpace(query))
-            throw new InvalidOperationException("Search query is required.");
+            throw CreateSearchFailure(
+                code: "search_invalid_input",
+                message: "Search query is required.",
+                query: input.Query,
+                provider: null,
+                fallbackTried: false,
+                retryable: false);
 
         var limit = input.Limit.HasValue
             ? Math.Clamp(input.Limit.Value, 1, MaxLimit)
@@ -68,7 +76,7 @@ internal static class BuiltInWebToolLogic
             using var client = httpClientFactory.CreateClient();
             client.DefaultRequestHeaders.UserAgent.ParseAdd("Mozilla/5.0 (compatible; OllamaChatWebMcp/1.0)");
             List<WebSearchResult>? results = null;
-            Exception? braveFailure = null;
+            WebToolException? braveFailure = null;
 
             await BraveSearchGate.WaitAsync(cancellationToken);
             try
@@ -80,7 +88,7 @@ internal static class BuiltInWebToolLogic
                 {
                     results = await SearchWithBraveAsync(client, logger, query, cancellationToken);
                 }
-                catch (Exception ex) when (ex is not OperationCanceledException)
+                catch (WebToolException ex)
                 {
                     braveFailure = ex;
                     logger.LogWarning(ex, "Brave search failed for query {Query}. Falling back to DuckDuckGo HTML results.", query);
@@ -91,17 +99,38 @@ internal static class BuiltInWebToolLogic
                 BraveSearchGate.Release();
             }
 
-            results ??= await SearchWithDuckDuckGoAsync(client, logger, query, cancellationToken);
-            if (results.Count == 0)
-                throw braveFailure ?? new InvalidOperationException("Search returned no structured candidate results.");
+            if (results is null)
+            {
+                try
+                {
+                    results = await SearchWithDuckDuckGoAsync(client, logger, query, cancellationToken);
+                }
+                catch (WebToolException ex)
+                {
+                    throw CreateSearchAggregateFailure(query, braveFailure, ex);
+                }
+            }
 
             await StoreCachedSearchResultAsync(cacheKey, query, results, cancellationToken);
             return new WebSearchData(query, results.Take(limit).ToList());
         }
+        catch (WebToolException)
+        {
+            throw;
+        }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
             logger.LogWarning(ex, "Web search failed for query {Query}", query);
-            throw new InvalidOperationException(ex.Message, ex);
+            throw CreateSearchFailure(
+                code: "search_failed",
+                message: string.IsNullOrWhiteSpace(ex.Message)
+                    ? "Search failed for an unknown reason."
+                    : ex.Message,
+                query: query,
+                provider: null,
+                fallbackTried: false,
+                retryable: false,
+                exception: ex);
         }
     }
 
@@ -238,12 +267,123 @@ internal static class BuiltInWebToolLogic
         return new WebToolException(code, message, details, exception);
     }
 
+    private static WebToolException CreateSearchFailure(
+        string code,
+        string message,
+        string? query,
+        string? provider,
+        bool fallbackTried,
+        bool retryable,
+        Exception? exception = null,
+        HttpStatusCode? statusCode = null,
+        IReadOnlyList<string>? extraDetails = null)
+    {
+        var detailItems = new List<string>();
+        var normalizedQuery = NormalizeDiagnosticText(query);
+        if (!string.IsNullOrWhiteSpace(normalizedQuery))
+            detailItems.Add($"query={normalizedQuery}");
+
+        if (!string.IsNullOrWhiteSpace(provider))
+            detailItems.Add($"provider={provider}");
+
+        detailItems.Add($"fallbackTried={fallbackTried.ToString().ToLowerInvariant()}");
+
+        if (statusCode is not null)
+            detailItems.Add($"httpStatusCode={(int)statusCode.Value}");
+
+        detailItems.Add($"retryable={retryable.ToString().ToLowerInvariant()}");
+
+        if (extraDetails is not null)
+        {
+            foreach (var detail in extraDetails)
+            {
+                var normalizedDetail = NormalizeDiagnosticText(detail);
+                if (!string.IsNullOrWhiteSpace(normalizedDetail))
+                    detailItems.Add(normalizedDetail);
+            }
+        }
+
+        if (!string.IsNullOrWhiteSpace(exception?.Message))
+            detailItems.Add($"technical={NormalizeDiagnosticText(exception.Message)}");
+
+        var type = string.Equals(code, "search_no_results", StringComparison.Ordinal)
+            ? "missing"
+            : "error";
+
+        var details = new WebToolErrorDetails(
+            Operation: "search",
+            Status: "blocked",
+            NeedsReplan: !retryable,
+            Type: type,
+            Details: detailItems,
+            Query: normalizedQuery,
+            Provider: provider,
+            FallbackTried: fallbackTried,
+            Retryable: retryable,
+            HttpStatusCode: statusCode is null ? null : (int)statusCode.Value,
+            TechnicalMessage: NormalizeDiagnosticText(exception?.Message),
+            ExceptionType: exception?.GetType().Name);
+
+        return new WebToolException(code, message, details, exception);
+    }
+
+    private static WebToolException CreateSearchAggregateFailure(
+        string query,
+        WebToolException? primaryFailure,
+        WebToolException fallbackFailure)
+    {
+        var detailItems = new List<string>();
+        if (primaryFailure is not null)
+        {
+            detailItems.Add($"primaryCode={primaryFailure.Code}");
+            if (!string.IsNullOrWhiteSpace(primaryFailure.Details.Provider))
+                detailItems.Add($"primaryProvider={primaryFailure.Details.Provider}");
+        }
+
+        detailItems.Add($"fallbackCode={fallbackFailure.Code}");
+        if (!string.IsNullOrWhiteSpace(fallbackFailure.Details.Provider))
+            detailItems.Add($"fallbackProvider={fallbackFailure.Details.Provider}");
+
+        var code = fallbackFailure.Code;
+        var message = fallbackFailure.Message;
+        if (string.Equals(code, "search_no_results", StringComparison.Ordinal)
+            && primaryFailure is not null)
+        {
+            message = "Search returned no structured candidate results after the fallback provider was used.";
+        }
+
+        return CreateSearchFailure(
+            code: code,
+            message: message,
+            query: query,
+            provider: fallbackFailure.Details.Provider,
+            fallbackTried: true,
+            retryable: fallbackFailure.Details.Retryable ?? false,
+            exception: fallbackFailure,
+            statusCode: fallbackFailure.Details.HttpStatusCode is int httpStatusCode
+                ? (HttpStatusCode)httpStatusCode
+                : null,
+            extraDetails:
+            [
+                .. detailItems,
+                .. fallbackFailure.Details.Details
+            ]);
+    }
+
     private static string BuildHttpErrorMessage(HttpRequestException exception, Uri targetUri)
     {
         if (exception.StatusCode is null)
             return $"HTTP request failed while downloading '{targetUri}'.";
 
         return $"Download failed with HTTP {(int)exception.StatusCode.Value} {exception.StatusCode.Value}.";
+    }
+
+    private static string BuildSearchHttpErrorMessage(HttpRequestException exception)
+    {
+        if (exception.StatusCode is null)
+            return "HTTP request failed while searching the web.";
+
+        return $"Search failed with HTTP {(int)exception.StatusCode.Value} {exception.StatusCode.Value}.";
     }
 
     private static bool IsRetryableHttpFailure(HttpStatusCode? statusCode) =>
@@ -416,52 +556,7 @@ internal static class BuiltInWebToolLogic
         if (normalized is null)
             return null;
 
-        if (!Uri.TryCreate(normalized, UriKind.Absolute, out var uri))
-            return normalized;
-
-        if (uri.Host.Equals("imgs.search.brave.com", StringComparison.OrdinalIgnoreCase)
-            && TryDecodeBraveImageProxyUrl(uri, out var decodedUrl))
-        {
-            return decodedUrl;
-        }
-
-        return normalized;
-    }
-
-    private static bool TryDecodeBraveImageProxyUrl(Uri uri, out string decodedUrl)
-    {
-        decodedUrl = string.Empty;
-
-        var marker = "/g:ce/";
-        var markerIndex = uri.AbsolutePath.LastIndexOf(marker, StringComparison.Ordinal);
-        if (markerIndex < 0)
-            return false;
-
-        var encodedCandidate = uri.AbsolutePath[(markerIndex + marker.Length)..];
-        if (string.IsNullOrWhiteSpace(encodedCandidate))
-            return false;
-
-        var base64 = encodedCandidate
-            .Replace('-', '+')
-            .Replace('_', '/');
-        var padding = base64.Length % 4;
-        if (padding is > 0)
-            base64 = base64.PadRight(base64.Length + (4 - padding), '=');
-
-        try
-        {
-            var bytes = Convert.FromBase64String(base64);
-            var candidate = Encoding.UTF8.GetString(bytes);
-            if (!TryCreateHttpUri(candidate, out var decodedUri))
-                return false;
-
-            decodedUrl = decodedUri.ToString();
-            return true;
-        }
-        catch (FormatException)
-        {
-            return false;
-        }
+        return SearchResultUrlNormalizer.NormalizeImageUrl(normalized);
     }
 
     private static int? TryParsePosition(string? value) =>
@@ -645,14 +740,74 @@ internal static class BuiltInWebToolLogic
         RegisterBraveSearchCooldown(BraveSearchMinInterval);
 
         var url = $"https://search.brave.com/search?q={UrlEncoder.Default.Encode(query)}";
-        using var response = await GetWithRetriesAsync(client, logger, url, SearchMaxAttempts, cancellationToken);
-        var html = await response.Content.ReadAsStringAsync(cancellationToken);
-        var results = ExtractStructuredResults(html, MaxLimit);
+        try
+        {
+            using var response = await GetWithRetriesAsync(client, logger, url, BraveSearchMaxAttempts, cancellationToken);
+            var html = await response.Content.ReadAsStringAsync(cancellationToken);
+            var results = ExtractStructuredResults(html, MaxLimit);
 
-        if (results.Count == 0)
-            throw new InvalidOperationException("Brave search returned no structured candidate results.");
+            if (results.Count == 0)
+            {
+                throw CreateSearchFailure(
+                    code: "search_no_results",
+                    message: "Brave search returned no structured candidate results.",
+                    query: query,
+                    provider: "brave",
+                    fallbackTried: false,
+                    retryable: false,
+                    extraDetails:
+                    [
+                        "providerFailed=brave"
+                    ]);
+            }
 
-        return results;
+            return results;
+        }
+        catch (WebToolException)
+        {
+            throw;
+        }
+        catch (TaskCanceledException ex) when (!cancellationToken.IsCancellationRequested)
+        {
+            logger.LogWarning(ex, "Brave web search timed out for query {Query}", query);
+            throw CreateSearchFailure(
+                code: "search_timeout",
+                message: "Timed out while searching the web.",
+                query: query,
+                provider: "brave",
+                fallbackTried: false,
+                retryable: true,
+                exception: ex);
+        }
+        catch (HttpRequestException ex)
+        {
+            logger.LogWarning(ex, "Brave web search failed for query {Query}", query);
+            throw CreateSearchFailure(
+                code: ex.StatusCode is HttpStatusCode.TooManyRequests
+                    ? "search_rate_limited"
+                    : "search_http_error",
+                message: BuildSearchHttpErrorMessage(ex),
+                query: query,
+                provider: "brave",
+                fallbackTried: false,
+                retryable: IsRetryableHttpFailure(ex.StatusCode),
+                exception: ex,
+                statusCode: ex.StatusCode);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            logger.LogWarning(ex, "Brave web search failed for query {Query}", query);
+            throw CreateSearchFailure(
+                code: "search_failed",
+                message: string.IsNullOrWhiteSpace(ex.Message)
+                    ? "Search failed for an unknown reason."
+                    : ex.Message,
+                query: query,
+                provider: "brave",
+                fallbackTried: false,
+                retryable: false,
+                exception: ex);
+        }
     }
 
     private static async Task<List<WebSearchResult>> SearchWithDuckDuckGoAsync(
@@ -662,14 +817,74 @@ internal static class BuiltInWebToolLogic
         CancellationToken cancellationToken)
     {
         var url = $"https://html.duckduckgo.com/html/?q={UrlEncoder.Default.Encode(query)}";
-        using var response = await GetWithRetriesAsync(client, logger, url, SearchMaxAttempts, cancellationToken);
-        var html = await response.Content.ReadAsStringAsync(cancellationToken);
-        var results = ExtractDuckDuckGoResults(html, MaxLimit);
+        try
+        {
+            using var response = await GetWithRetriesAsync(client, logger, url, SearchFallbackMaxAttempts, cancellationToken);
+            var html = await response.Content.ReadAsStringAsync(cancellationToken);
+            var results = ExtractDuckDuckGoResults(html, MaxLimit);
 
-        if (results.Count == 0)
-            throw new InvalidOperationException("DuckDuckGo HTML search returned no structured candidate results.");
+            if (results.Count == 0)
+            {
+                throw CreateSearchFailure(
+                    code: "search_no_results",
+                    message: "DuckDuckGo HTML search returned no structured candidate results.",
+                    query: query,
+                    provider: "duckduckgo",
+                    fallbackTried: true,
+                    retryable: false,
+                    extraDetails:
+                    [
+                        "providerFailed=duckduckgo"
+                    ]);
+            }
 
-        return results;
+            return results;
+        }
+        catch (WebToolException)
+        {
+            throw;
+        }
+        catch (TaskCanceledException ex) when (!cancellationToken.IsCancellationRequested)
+        {
+            logger.LogWarning(ex, "DuckDuckGo web search timed out for query {Query}", query);
+            throw CreateSearchFailure(
+                code: "search_timeout",
+                message: "Timed out while searching the web.",
+                query: query,
+                provider: "duckduckgo",
+                fallbackTried: true,
+                retryable: true,
+                exception: ex);
+        }
+        catch (HttpRequestException ex)
+        {
+            logger.LogWarning(ex, "DuckDuckGo web search failed for query {Query}", query);
+            throw CreateSearchFailure(
+                code: ex.StatusCode is HttpStatusCode.TooManyRequests
+                    ? "search_rate_limited"
+                    : "search_http_error",
+                message: BuildSearchHttpErrorMessage(ex),
+                query: query,
+                provider: "duckduckgo",
+                fallbackTried: true,
+                retryable: IsRetryableHttpFailure(ex.StatusCode),
+                exception: ex,
+                statusCode: ex.StatusCode);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            logger.LogWarning(ex, "DuckDuckGo web search failed for query {Query}", query);
+            throw CreateSearchFailure(
+                code: "search_failed",
+                message: string.IsNullOrWhiteSpace(ex.Message)
+                    ? "Search failed for an unknown reason."
+                    : ex.Message,
+                query: query,
+                provider: "duckduckgo",
+                fallbackTried: true,
+                retryable: false,
+                exception: ex);
+        }
     }
 
     private static List<WebSearchResult> ExtractDuckDuckGoResults(string html, int limit)

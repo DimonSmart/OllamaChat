@@ -130,7 +130,75 @@ public sealed class InitialDraftRepairerTests
         Assert.DoesNotContain("ok=true", systemPrompt, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("s, res, and err", systemPrompt, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("Few-shot", systemPrompt, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("Tool steps must not declare out", systemPrompt, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("out must include format", systemPrompt, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("Omit out.aggregate", systemPrompt, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("out must include format ('json' or 'string') and aggregate", systemPrompt, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("concat", systemPrompt, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("Never use 'flatten' as a binding mode", systemPrompt, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task LlmPlanner_NormalizesDraftContracts_AndLegacyBindings_BeforeValidation()
+    {
+        var draft = new PlanDefinition
+        {
+            Goal = "Find robot vacuums.",
+            Steps =
+            [
+                new PlanStep
+                {
+                    Id = "search_vacuums",
+                    Kind = PlanStepKinds.Tool,
+                    CapabilityId = "mock:web:search",
+                    In = new Dictionary<string, JsonNode?>
+                    {
+                        ["query"] = JsonValue.Create("robot vacuums")
+                    },
+                    Out = new PlanStepOutputContract
+                    {
+                        Format = PlanStepOutputFormats.Json,
+                        Aggregate = PlanStepOutputAggregates.Single,
+                        Schema = ParseJson(
+                            """
+                            {
+                              "type": "object",
+                              "properties": {
+                                "bogus": { "type": "string" }
+                              }
+                            }
+                            """)
+                    }
+                },
+                new PlanStep
+                {
+                    Id = "answer",
+                    Kind = "LLM",
+                    CapabilityId = "   ",
+                    SystemPrompt = "Summarize the evidence.",
+                    UserPrompt = "Write the final answer.",
+                    In = new Dictionary<string, JsonNode?>
+                    {
+                        ["pages"] = JsonValue.Create("$search_vacuums.results")
+                    }
+                }
+            ]
+        };
+        var toolCatalog = new PlanningToolCatalog([CreateSearchDescriptor()]);
+        var chatClient = CreateMockChatClient(SerializePlan(draft));
+        var planner = new LlmPlanner(chatClient.Object, toolCatalog);
+
+        var result = await planner.CreatePlanAsync("Find a robot vacuum.");
+
+        Assert.Null(result.Steps[0].Out);
+        Assert.Equal(PlanStepKinds.Llm, result.Steps[1].Kind);
+        Assert.Null(result.Steps[1].CapabilityId);
+        Assert.Equal(PlanStepOutputFormats.String, result.Steps[1].Out?.Format);
+        Assert.Equal(PlanStepOutputAggregates.Single, result.Steps[1].Out?.Aggregate);
+        var binding = Assert.IsType<JsonObject>(result.Steps[1].In["pages"]);
+        Assert.Equal("$search_vacuums.results", binding["from"]?.GetValue<string>());
+        Assert.Equal("value", binding["mode"]?.GetValue<string>());
+        Assert.True(PlanValidator.TryValidate(result, toolCatalog.ListTools(), out var issue), issue?.Message);
     }
 
     [Fact]
@@ -339,6 +407,75 @@ public sealed class InitialDraftRepairerTests
             Times.Exactly(4));
     }
 
+    [Fact]
+    public async Task LlmReplanner_CanRemoveDeadStep_AndPromptRequiresDiagnosisNote()
+    {
+        var invalidPlan = CreatePlanWithUnusedFinalStep();
+        var toolCatalog = new PlanningToolCatalog([CreateSearchDescriptor()]);
+        IEnumerable<ChatMessage>? capturedMessages = null;
+        ChatOptions? capturedOptions = null;
+        var chatClient = new Mock<IChatClient>(MockBehavior.Strict);
+        var queue = new Queue<ChatResponse>(
+        [
+            CreateToolCallResponse(
+                PlanningAgentToolNames.PlanRemoveStep,
+                new Dictionary<string, object?>
+                {
+                    ["stepId"] = "extra_search"
+                }),
+            CreateTextResponse("Diagnosis: the trailing extra_search step made the earlier search output unused. Changes: removed the redundant extra_search step.")
+        ]);
+
+        chatClient
+            .Setup(client => client.GetResponseAsync(
+                It.IsAny<IEnumerable<ChatMessage>>(),
+                It.IsAny<ChatOptions?>(),
+                It.IsAny<CancellationToken>()))
+            .Callback<IEnumerable<ChatMessage>, ChatOptions?, CancellationToken>((messages, options, _) =>
+            {
+                capturedMessages ??= messages.ToArray();
+                capturedOptions ??= options;
+            })
+            .ReturnsAsync(() => queue.Dequeue());
+        chatClient
+            .Setup(client => client.GetStreamingResponseAsync(
+                It.IsAny<IEnumerable<ChatMessage>>(),
+                It.IsAny<ChatOptions?>(),
+                It.IsAny<CancellationToken>()))
+            .Returns(AsyncEnumerable.Empty<ChatResponseUpdate>());
+        chatClient
+            .Setup(client => client.GetService(It.IsAny<Type>(), It.IsAny<object?>()))
+            .Returns((object?)null);
+        chatClient
+            .Setup(client => client.Dispose());
+        var replanner = new LlmReplanner(chatClient.Object, toolCatalog);
+
+        var result = await replanner.ReplanAsync(new PlannerReplanRequest
+        {
+            UserQuery = "Find a robot vacuum.",
+            AttemptNumber = 1,
+            Plan = invalidPlan,
+            ExecutionResult = new ExecutionResult(),
+            GoalVerdict = new GoalVerdict
+            {
+                Action = GoalAction.Replan,
+                Reason = "Plan is structurally invalid."
+            }
+        });
+
+        Assert.True(PlanValidator.TryValidate(result, toolCatalog.ListTools(), out var issue), issue?.Message);
+        Assert.Equal(["search_vacuums"], result.Steps.Select(step => step.Id).ToArray());
+
+        var messages = Assert.IsAssignableFrom<IEnumerable<ChatMessage>>(capturedMessages);
+        var systemPrompt = capturedOptions?.Instructions
+            ?? messages.SingleOrDefault(message => message.Role == ChatRole.System)?.Text;
+
+        Assert.NotNull(systemPrompt);
+        Assert.Contains(PlanningAgentToolNames.PlanRemoveStep, systemPrompt, StringComparison.Ordinal);
+        Assert.Contains("Diagnosis:", systemPrompt, StringComparison.Ordinal);
+        Assert.Contains("First identify what is actually wrong", systemPrompt, StringComparison.OrdinalIgnoreCase);
+    }
+
     private static PlanDefinition CreateInvalidSearchPlan() =>
         new()
         {
@@ -349,10 +486,30 @@ public sealed class InitialDraftRepairerTests
                 {
                     Id = "search_vacuums",
                     Kind = PlanStepKinds.Tool,
-                    Name = "mock:web:search",
+                    CapabilityId = "mock:web:search",
                     In = new Dictionary<string, JsonNode?>
                     {
                         ["url"] = JsonValue.Create("https://example.com/robot-vacuums")
+                    }
+                }
+            ]
+        };
+
+    private static PlanDefinition CreatePlanWithUnusedFinalStep() =>
+        new()
+        {
+            Goal = "Find robot vacuums.",
+            Steps =
+            [
+                CreateValidSearchPlan().Steps[0],
+                new PlanStep
+                {
+                    Id = "extra_search",
+                    Kind = PlanStepKinds.Tool,
+                    CapabilityId = "mock:web:search",
+                    In = new Dictionary<string, JsonNode?>
+                    {
+                        ["query"] = JsonValue.Create("unused")
                     }
                 }
             ]
@@ -368,7 +525,7 @@ public sealed class InitialDraftRepairerTests
                 {
                     Id = "search_vacuums",
                     Kind = PlanStepKinds.Tool,
-                    Name = "mock:web:search",
+                    CapabilityId = "mock:web:search",
                     In = new Dictionary<string, JsonNode?>
                     {
                         ["query"] = JsonValue.Create("robot vacuums")

@@ -11,6 +11,23 @@ namespace ChatClient.Tests;
 public class BuiltInWebMcpServerIntegrationTests
 {
     [Fact]
+    public async Task BuiltInWebServer_AdvertisesSearchOutputSchema()
+    {
+        await using var fixture = new BuiltInWebMcpFixture();
+        var client = await fixture.CreateClientAsync();
+        var tool = (await client.ListToolsAsync())
+            .First(candidate => string.Equals(candidate.Name, "search", StringComparison.Ordinal));
+
+        Assert.True(tool.ReturnJsonSchema.HasValue);
+        var schema = tool.ReturnJsonSchema.Value;
+        Assert.Equal(JsonValueKind.Object, schema.ValueKind);
+        Assert.True(schema.TryGetProperty("properties", out var properties));
+        Assert.True(properties.TryGetProperty("query", out _));
+        Assert.True(properties.TryGetProperty("results", out var results));
+        Assert.Equal("array", results.GetProperty("type").GetString());
+    }
+
+    [Fact]
     public async Task BuiltInWebServer_AdvertisesDownloadInputSchema()
     {
         await using var fixture = new BuiltInWebMcpFixture();

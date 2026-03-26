@@ -1,4 +1,5 @@
-﻿using System.Text.Json;
+using System.Text.Json;
+using ChatClient.Api.PlanningRuntime.Common;
 using ChatClient.Api.PlanningRuntime.Execution;
 using ChatClient.Api.PlanningRuntime.Planning;
 
@@ -24,6 +25,27 @@ public sealed class GoalVerifier(bool askUserEnabled = false)
         }
 
         var failedSteps = plan.Steps.Where(PlanExecutionState.IsFailed).ToList();
+        var blockedFailure = failedSteps
+            .Select(step => new
+            {
+                Step = step,
+                Details = TryGetFailureDetails(step.Error?.Details)
+            })
+            .FirstOrDefault(candidate =>
+                candidate.Details is not null
+                && (!candidate.Details.NeedsReplan
+                    || string.Equals(candidate.Details.Type, "insufficient_capability", StringComparison.Ordinal)));
+        if (blockedFailure is not null)
+        {
+            return new GoalVerdict
+            {
+                Action = GoalAction.Blocked,
+                Reason = blockedFailure.Step.Error?.Message
+                    ?? "Execution is blocked because the available capabilities are insufficient.",
+                Missing = blockedFailure.Details?.Details?.ToList() ?? [blockedFailure.Step.Id]
+            };
+        }
+
         if (failedSteps.Count > 0)
         {
             return new GoalVerdict
@@ -35,6 +57,24 @@ public sealed class GoalVerifier(bool askUserEnabled = false)
         }
 
         var finalStep = plan.Steps[^1];
+        var terminalStepIds = PlanDependencyGraph.GetTerminalStepIds(plan.Steps);
+        var orphanTerminalStepIds = terminalStepIds
+            .Where(stepId => !string.Equals(stepId, finalStep.Id, StringComparison.Ordinal))
+            .ToList();
+        if (orphanTerminalStepIds.Count > 0 || terminalStepIds.Count != 1)
+        {
+            return new GoalVerdict
+            {
+                Action = GoalAction.Replan,
+                Reason = orphanTerminalStepIds.Count > 0
+                    ? "Plan contains terminal steps whose results are never consumed by the final step."
+                    : $"Plan must end with exactly one terminal step, but found {terminalStepIds.Count}.",
+                Missing = orphanTerminalStepIds.Count > 0
+                    ? orphanTerminalStepIds
+                    : terminalStepIds.ToList()
+            };
+        }
+
         if (!PlanExecutionState.HasCompletedResult(finalStep))
         {
             return new GoalVerdict
@@ -123,5 +163,19 @@ public sealed class GoalVerifier(bool askUserEnabled = false)
             .Select(code => $"{stepId}:{code}")
             .ToList();
     }
-}
 
+    private static LlmFailureDetails? TryGetFailureDetails(JsonElement? details)
+    {
+        if (details is not { ValueKind: JsonValueKind.Object } objectDetails)
+            return null;
+
+        try
+        {
+            return objectDetails.Deserialize<LlmFailureDetails>();
+        }
+        catch
+        {
+            return null;
+        }
+    }
+}

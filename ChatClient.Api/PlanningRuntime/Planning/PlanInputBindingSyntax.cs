@@ -9,10 +9,19 @@ public enum PlanInputBindingMode
     Map
 }
 
+public interface IPlanInputBindingExpression
+{
+    string? Type { get; }
+}
+
 public sealed record PlanInputBindingSpec(
     string From,
     PlanInputBindingMode Mode,
-    string? Type = null);
+    string? Type = null) : IPlanInputBindingExpression;
+
+public sealed record PlanInputConcatBindingSpec(
+    IReadOnlyList<PlanInputBindingSpec> Concat,
+    string? Type = null) : IPlanInputBindingExpression;
 
 public enum StepReferenceSegmentKind
 {
@@ -51,18 +60,51 @@ public static class PlanInputBindingSyntax
         return true;
     }
 
-    public static bool TryParseBinding(JsonNode? node, out PlanInputBindingSpec? binding, out string? error)
+    public static bool TryParseBinding(JsonNode? node, out IPlanInputBindingExpression? binding, out string? error)
     {
         binding = null;
         error = null;
 
-        if (node is not JsonObject obj || !obj.ContainsKey("from"))
+        if (node is not JsonObject obj)
             return false;
 
-        if (obj.Count is < 1 or > 3)
+        if (obj.ContainsKey("from"))
         {
-            error = "Binding objects may contain only 'from' and optional 'mode' and 'type'.";
+            binding = ParseSingleBindingObject(obj, allowType: true, out error);
             return true;
+        }
+
+        if (obj.ContainsKey("concat"))
+        {
+            binding = ParseConcatBindingObject(obj, out error);
+            return true;
+        }
+
+        return false;
+    }
+
+    public static IReadOnlyList<PlanInputBindingSpec> EnumerateBindings(IPlanInputBindingExpression expression) =>
+        expression switch
+        {
+            PlanInputBindingSpec single => [single],
+            PlanInputConcatBindingSpec concat => [.. concat.Concat],
+            _ => []
+        };
+
+    private static PlanInputBindingSpec? ParseSingleBindingObject(
+        JsonObject obj,
+        bool allowType,
+        out string? error)
+    {
+        error = null;
+
+        var maxPropertyCount = allowType ? 3 : 2;
+        if (obj.Count < 1 || obj.Count > maxPropertyCount)
+        {
+            error = allowType
+                ? "Binding objects may contain only 'from' and optional 'mode' and 'type'."
+                : "Concat items may contain only 'from' and optional 'mode'.";
+            return null;
         }
 
         if (!obj.TryGetPropertyValue("from", out var fromNode)
@@ -71,7 +113,7 @@ public static class PlanInputBindingSyntax
             || string.IsNullOrWhiteSpace(from))
         {
             error = "Binding object field 'from' must be a non-empty string.";
-            return true;
+            return null;
         }
 
         var mode = PlanInputBindingMode.Value;
@@ -82,7 +124,7 @@ public static class PlanInputBindingSyntax
                 || string.IsNullOrWhiteSpace(modeText))
             {
                 error = "Binding object field 'mode' must be 'value' or 'map'.";
-                return true;
+                return null;
             }
 
             switch (modeText.Trim().ToLowerInvariant())
@@ -95,32 +137,98 @@ public static class PlanInputBindingSyntax
                     break;
                 default:
                     error = "Binding object field 'mode' must be 'value' or 'map'.";
-                    return true;
+                    return null;
             }
         }
 
-        string? declaredType = null;
-        if (obj.TryGetPropertyValue("type", out var typeNode) && typeNode is not null)
+        var declaredType = ParseDeclaredType(obj, allowType, out error);
+        if (!string.IsNullOrWhiteSpace(error))
+            return null;
+
+        return new PlanInputBindingSpec(from.Trim(), mode, declaredType);
+    }
+
+    private static PlanInputConcatBindingSpec? ParseConcatBindingObject(JsonObject obj, out string? error)
+    {
+        error = null;
+
+        if (obj.Count is < 1 or > 2)
         {
-            if (typeNode is not JsonValue typeValue
-                || !typeValue.TryGetValue<string>(out var typeText)
-                || string.IsNullOrWhiteSpace(typeText))
-            {
-                error = "Binding object field 'type' must be a non-empty string when provided.";
-                return true;
-            }
-
-            if (!StepInputTypeValidator.TryParse(typeText, out _, out var typeError))
-            {
-                error = $"Binding object field 'type' is invalid. {typeError}";
-                return true;
-            }
-
-            declaredType = typeText.Trim();
+            error = "Concat binding objects may contain only 'concat' and optional 'type'.";
+            return null;
         }
 
-        binding = new PlanInputBindingSpec(from.Trim(), mode, declaredType);
-        return true;
+        if (!obj.TryGetPropertyValue("concat", out var concatNode) || concatNode is not JsonArray concatArray)
+        {
+            error = "Concat binding field 'concat' must be a non-empty array of binding objects.";
+            return null;
+        }
+
+        if (concatArray.Count == 0)
+        {
+            error = "Concat binding field 'concat' must contain at least one binding object.";
+            return null;
+        }
+
+        var bindings = new List<PlanInputBindingSpec>(concatArray.Count);
+        for (var index = 0; index < concatArray.Count; index++)
+        {
+            if (concatArray[index] is not JsonObject bindingObject || !bindingObject.ContainsKey("from"))
+            {
+                error = $"Concat binding item at index {index} must be a binding object with a 'from' field.";
+                return null;
+            }
+
+            var parsedBinding = ParseSingleBindingObject(bindingObject, allowType: false, out var itemError);
+            if (!string.IsNullOrWhiteSpace(itemError))
+            {
+                error = $"Concat binding item at index {index} is invalid. {itemError}";
+                return null;
+            }
+
+            if (parsedBinding!.Mode != PlanInputBindingMode.Value)
+            {
+                error = $"Concat binding item at index {index} must use mode='value'.";
+                return null;
+            }
+
+            bindings.Add(parsedBinding);
+        }
+
+        var declaredType = ParseDeclaredType(obj, allowType: true, out error);
+        if (!string.IsNullOrWhiteSpace(error))
+            return null;
+
+        return new PlanInputConcatBindingSpec(bindings, declaredType);
+    }
+
+    private static string? ParseDeclaredType(JsonObject obj, bool allowType, out string? error)
+    {
+        error = null;
+        if (!obj.TryGetPropertyValue("type", out var typeNode) || typeNode is null)
+            return null;
+
+        if (!allowType)
+        {
+            error = "Concat items must not declare 'type'. Put the shared type on the top-level concat binding instead.";
+            return null;
+        }
+
+        if (typeNode is not JsonValue typeValue
+            || !typeValue.TryGetValue<string>(out var typeText)
+            || string.IsNullOrWhiteSpace(typeText))
+        {
+            error = "Binding object field 'type' must be a non-empty string when provided.";
+            return null;
+        }
+
+        if (!StepInputTypeValidator.TryParse(typeText, out _, out var typeError))
+        {
+            error = $"Binding object field 'type' is invalid. {typeError}";
+            return null;
+        }
+
+        return typeText.Trim();
     }
 
     public static bool TryParseReference(string expression, out ParsedStepReference? reference, out string? error)

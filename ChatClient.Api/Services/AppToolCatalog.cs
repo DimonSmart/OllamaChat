@@ -4,6 +4,22 @@ using ModelContextProtocol.Client;
 
 namespace ChatClient.Api.Services;
 
+public enum AppToolPlannerRole
+{
+    Discover,
+    Acquire,
+    Transform,
+    Act
+}
+
+public enum AppToolProducesKind
+{
+    Reference,
+    Document,
+    StructuredData,
+    SideEffect
+}
+
 public sealed record AppToolDescriptor(
     string QualifiedName,
     string ServerName,
@@ -29,7 +45,9 @@ public sealed record AppToolPlanningMetadata(
     string? UseWhen = null,
     string? AvoidWhen = null,
     string? Returns = null,
-    string? Constraints = null);
+    string? Constraints = null,
+    AppToolPlannerRole? PlannerRole = null,
+    AppToolProducesKind? ProducesKind = null);
 
 public interface IAppToolCatalog
 {
@@ -59,9 +77,7 @@ public sealed class AppToolCatalog(IMcpClientService mcpClientService) : IAppToo
 
             var baseServerName = clientHandle.BaseServerName?.Trim();
             if (string.IsNullOrWhiteSpace(baseServerName))
-            {
                 continue;
-            }
 
             var bindingId = clientHandle.BindingId;
             var bindingDisplayName = clientHandle.BindingDisplayName?.Trim();
@@ -82,6 +98,10 @@ public sealed class AppToolCatalog(IMcpClientService mcpClientService) : IAppToo
                     ? returnJsonSchema.Clone()
                     : null;
                 var annotations = tool.ProtocolTool.Annotations;
+                var readOnlyHint = annotations?.ReadOnlyHint ?? false;
+                var destructiveHint = annotations?.DestructiveHint ?? false;
+                var idempotentHint = annotations?.IdempotentHint ?? false;
+                var openWorldHint = annotations?.OpenWorldHint ?? false;
 
                 result.Add(new AppToolDescriptor(
                     QualifiedName: bindingId is Guid value && value != Guid.Empty
@@ -94,15 +114,16 @@ public sealed class AppToolCatalog(IMcpClientService mcpClientService) : IAppToo
                     InputSchema: inputSchema,
                     OutputSchema: outputSchema,
                     MayRequireUserInput: MayRequireUserInput(description),
-                    ReadOnlyHint: annotations?.ReadOnlyHint ?? false,
-                    DestructiveHint: annotations?.DestructiveHint ?? false,
-                    IdempotentHint: annotations?.IdempotentHint ?? false,
-                    OpenWorldHint: annotations?.OpenWorldHint ?? false,
+                    ReadOnlyHint: readOnlyHint,
+                    DestructiveHint: destructiveHint,
+                    IdempotentHint: idempotentHint,
+                    OpenWorldHint: openWorldHint,
                     ExecuteAsync: async (arguments, token) => await tool.CallAsync(arguments, null, null, token),
                     BaseQualifiedName: $"{baseServerName}:{toolName}",
                     BaseServerName: baseServerName,
                     BindingId: bindingId,
-                    BindingDisplayName: bindingDisplayName));
+                    BindingDisplayName: bindingDisplayName,
+                    PlanningMetadata: InferPlanningMetadata(outputSchema, readOnlyHint, destructiveHint, openWorldHint, description)));
             }
         }
 
@@ -110,6 +131,120 @@ public sealed class AppToolCatalog(IMcpClientService mcpClientService) : IAppToo
             .OrderBy(static tool => tool.ServerName, StringComparer.OrdinalIgnoreCase)
             .ThenBy(static tool => tool.ToolName, StringComparer.OrdinalIgnoreCase)
             .ToList();
+    }
+
+    private static AppToolPlanningMetadata? InferPlanningMetadata(
+        JsonElement? outputSchema,
+        bool readOnlyHint,
+        bool destructiveHint,
+        bool openWorldHint,
+        string description)
+    {
+        var producesKind = InferProducesKind(outputSchema, readOnlyHint, destructiveHint);
+        var plannerRole = InferPlannerRole(producesKind, readOnlyHint, destructiveHint, openWorldHint);
+        if (plannerRole is null && producesKind is null)
+            return null;
+
+        return new AppToolPlanningMetadata(
+            Constraints: BuildConstraintHint(description, producesKind),
+            PlannerRole: plannerRole,
+            ProducesKind: producesKind);
+    }
+
+    private static AppToolPlannerRole? InferPlannerRole(
+        AppToolProducesKind? producesKind,
+        bool readOnlyHint,
+        bool destructiveHint,
+        bool openWorldHint)
+    {
+        if (destructiveHint || !readOnlyHint)
+            return AppToolPlannerRole.Act;
+
+        return producesKind switch
+        {
+            AppToolProducesKind.Reference when openWorldHint => AppToolPlannerRole.Discover,
+            AppToolProducesKind.Document => AppToolPlannerRole.Acquire,
+            AppToolProducesKind.StructuredData => AppToolPlannerRole.Transform,
+            AppToolProducesKind.SideEffect => AppToolPlannerRole.Act,
+            _ => null
+        };
+    }
+
+    private static AppToolProducesKind? InferProducesKind(
+        JsonElement? outputSchema,
+        bool readOnlyHint,
+        bool destructiveHint)
+    {
+        if (destructiveHint || !readOnlyHint)
+            return AppToolProducesKind.SideEffect;
+        if (outputSchema is not JsonElement schema)
+            return null;
+        if (HasArrayProperty(schema, "results"))
+            return AppToolProducesKind.Reference;
+        if (HasStringProperty(schema, "content") || HasStringProperty(schema, "text") || HasStringProperty(schema, "markdown"))
+            return AppToolProducesKind.Document;
+
+        return AppToolProducesKind.StructuredData;
+    }
+
+    private static string? BuildConstraintHint(string description, AppToolProducesKind? producesKind)
+    {
+        if (producesKind == AppToolProducesKind.Reference)
+            return "Produces candidate references, not verified entities.";
+        if (producesKind == AppToolProducesKind.Document)
+            return "Produces raw content or documents, not verified conclusions.";
+
+        if (string.IsNullOrWhiteSpace(description))
+            return null;
+        if (description.Contains("candidate", StringComparison.OrdinalIgnoreCase))
+            return "Returned items are candidates and may require verification.";
+
+        return null;
+    }
+
+    private static bool HasArrayProperty(JsonElement schema, string propertyName)
+    {
+        if (!TryGetSchemaProperty(schema, propertyName, out var propertySchema))
+            return false;
+
+        return SchemaAllowsType(propertySchema, "array");
+    }
+
+    private static bool HasStringProperty(JsonElement schema, string propertyName)
+    {
+        if (!TryGetSchemaProperty(schema, propertyName, out var propertySchema))
+            return false;
+
+        return SchemaAllowsType(propertySchema, "string");
+    }
+
+    private static bool TryGetSchemaProperty(JsonElement schema, string propertyName, out JsonElement propertySchema)
+    {
+        propertySchema = default;
+        if (schema.ValueKind != JsonValueKind.Object
+            || !schema.TryGetProperty("properties", out var properties)
+            || properties.ValueKind != JsonValueKind.Object
+            || !properties.TryGetProperty(propertyName, out propertySchema))
+        {
+            return false;
+        }
+
+        propertySchema = propertySchema.Clone();
+        return true;
+    }
+
+    private static bool SchemaAllowsType(JsonElement schema, string expectedType)
+    {
+        if (!schema.TryGetProperty("type", out var typeElement))
+            return false;
+
+        if (typeElement.ValueKind == JsonValueKind.String)
+            return string.Equals(typeElement.GetString(), expectedType, StringComparison.OrdinalIgnoreCase);
+
+        return typeElement.ValueKind == JsonValueKind.Array
+            && typeElement.EnumerateArray().Any(item =>
+                item.ValueKind == JsonValueKind.String
+                && string.Equals(item.GetString(), expectedType, StringComparison.OrdinalIgnoreCase));
     }
 
     private static bool MayRequireUserInput(string description)

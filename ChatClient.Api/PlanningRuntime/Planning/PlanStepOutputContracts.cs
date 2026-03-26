@@ -85,10 +85,10 @@ public static class PlanStepOutputContractResolver
         AppToolDescriptor? toolMetadata,
         bool hasFanOut)
     {
-        var explicitContract = step.Out;
+        var explicitContract = PlanStepKinds.IsTool(step) ? null : step.Out;
         var format = ResolveFormat(explicitContract, toolMetadata);
-        var aggregate = ResolveAggregate(explicitContract, hasFanOut);
         var callSchema = ResolveCallSchema(explicitContract, toolMetadata, format);
+        var aggregate = ResolveAggregate(explicitContract, hasFanOut, callSchema);
         var finalSchema = ResolveFinalSchema(callSchema, aggregate);
 
         return new ResolvedPlanStepOutputContract(
@@ -101,9 +101,11 @@ public static class PlanStepOutputContractResolver
 
     public static bool HasMappedInputs(PlanStep step) =>
         step.In.Values.Any(value =>
-            PlanInputBindingSyntax.TryParseBinding(value, out var binding, out var bindingError)
+            PlanInputBindingSyntax.TryParseBinding(value, out var bindingExpression, out var bindingError)
             && string.IsNullOrWhiteSpace(bindingError)
-            && binding!.Mode == PlanInputBindingMode.Map);
+            && bindingExpression is not null
+            && PlanInputBindingSyntax.EnumerateBindings(bindingExpression)
+                .Any(binding => binding.Mode == PlanInputBindingMode.Map));
 
     public static IReadOnlyList<string> ValidateContractDefinition(
         PlanStep step,
@@ -333,7 +335,10 @@ public static class PlanStepOutputContractResolver
         return PlanStepOutputFormats.Json;
     }
 
-    private static string ResolveAggregate(PlanStepOutputContract? explicitContract, bool hasFanOut)
+    private static string ResolveAggregate(
+        PlanStepOutputContract? explicitContract,
+        bool hasFanOut,
+        JsonElement? callSchema)
     {
         if (explicitContract is not null
             && PlanStepOutputAggregates.TryNormalize(explicitContract.Aggregate, out var explicitAggregate))
@@ -341,9 +346,12 @@ public static class PlanStepOutputContractResolver
             return explicitAggregate;
         }
 
-        return hasFanOut
-            ? PlanStepOutputAggregates.Collect
-            : PlanStepOutputAggregates.Single;
+        if (!hasFanOut)
+            return PlanStepOutputAggregates.Single;
+
+        return callSchema is { } schema && SchemaDefinesArray(schema)
+            ? PlanStepOutputAggregates.Flatten
+            : PlanStepOutputAggregates.Collect;
     }
 
     private static JsonElement? ResolveCallSchema(
@@ -354,12 +362,13 @@ public static class PlanStepOutputContractResolver
         if (explicitContract?.Schema is { } explicitSchema)
             return explicitSchema.Clone();
 
+        if (toolMetadata?.OutputSchema is { } toolOutputSchema)
+            return toolOutputSchema.Clone();
+
         if (format == PlanStepOutputFormats.String)
             return CreateStringSchema();
 
-        return toolMetadata?.OutputSchema is { } toolOutputSchema
-            ? toolOutputSchema.Clone()
-            : null;
+        return null;
     }
 
     private static JsonElement? ResolveFinalSchema(JsonElement? callSchema, string aggregate)

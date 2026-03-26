@@ -47,6 +47,11 @@ internal sealed class PlanToolCallingRuntime(
                 "Insert one or more FULL plan step objects after an existing step. Use afterStepId=null only when rebuilding an empty plan.",
                 JsonOptions),
             AIFunctionFactory.Create(
+                (Func<string?, JsonObject>)RemoveStep,
+                PlanningAgentToolNames.PlanRemoveStep,
+                "Remove one existing step from the working plan. Use this to delete dead, duplicate, or structurally harmful steps.",
+                JsonOptions),
+            AIFunctionFactory.Create(
                 (Func<string?, JsonObject>)ResetFrom,
                 PlanningAgentToolNames.PlanResetFrom,
                 "Reset execution state for the specified step and everything downstream.",
@@ -84,7 +89,7 @@ internal sealed class PlanToolCallingRuntime(
     [Description("Replace one existing step in place. Provide the existing stepId and the FULL replacement plan step object.")]
     public JsonObject ReplaceStep(
         [Description("Existing step id to replace.")] string? stepId = null,
-        [Description("Full replacement plan step object with id, kind, name, inputs, and optional prompts/output schema.")] JsonElement? step = null)
+        [Description("Full replacement plan step object with id, kind, inputs, optional capabilityId, and optional prompts/output schema.")] JsonElement? step = null)
         => ExecuteSessionTool(
             PlanningAgentToolNames.PlanReplaceStep,
             "plan.replaceStep",
@@ -105,6 +110,17 @@ internal sealed class PlanToolCallingRuntime(
             {
                 ["afterStepId"] = afterStepId is null ? null : JsonValue.Create(afterStepId),
                 ["steps"] = SerializeElementToNode(steps)
+            });
+
+    [Description("Remove one existing step from the working plan. Use this to delete dead, duplicate, or structurally harmful steps.")]
+    public JsonObject RemoveStep(
+        [Description("Existing step id to remove.")] string? stepId = null)
+        => ExecuteSessionTool(
+            PlanningAgentToolNames.PlanRemoveStep,
+            "plan.removeStep",
+            new JsonObject
+            {
+                ["stepId"] = stepId
             });
 
     [Description("Reset execution state for the specified step and everything downstream.")]

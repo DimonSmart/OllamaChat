@@ -29,8 +29,17 @@ internal static class PlanningCapabilityPromptFormatter
         sb.AppendLine("Available tools:");
         foreach (var tool in tools)
         {
-            sb.AppendLine($"- name: {tool.QualifiedName}");
+            sb.AppendLine($"- toolId: {tool.QualifiedName}");
             sb.AppendLine($"  description: {ResolvePrimaryDescription(tool)}");
+            if (tool.PlanningMetadata?.PlannerRole is { } plannerRole)
+                sb.AppendLine($"  role: {ToPromptValue(plannerRole)}");
+            if (tool.PlanningMetadata?.ProducesKind is { } producesKind)
+                sb.AppendLine($"  produces: {ToPromptValue(producesKind)}");
+            sb.AppendLine($"  readOnly: {tool.ReadOnlyHint.ToString().ToLowerInvariant()}");
+            sb.AppendLine($"  destructive: {tool.DestructiveHint.ToString().ToLowerInvariant()}");
+            sb.AppendLine($"  openWorld: {tool.OpenWorldHint.ToString().ToLowerInvariant()}");
+            if (tool.MayRequireUserInput)
+                sb.AppendLine("  mayRequireUserInput: true");
 
             if (!string.IsNullOrWhiteSpace(tool.PlanningMetadata?.UseWhen))
                 sb.AppendLine($"  useWhen: {tool.PlanningMetadata.UseWhen}");
@@ -53,4 +62,24 @@ internal static class PlanningCapabilityPromptFormatter
 
         return tool.Description;
     }
+
+    private static string ToPromptValue(AppToolPlannerRole role) =>
+        role switch
+        {
+            AppToolPlannerRole.Discover => "discover",
+            AppToolPlannerRole.Acquire => "acquire",
+            AppToolPlannerRole.Transform => "transform",
+            AppToolPlannerRole.Act => "act",
+            _ => role.ToString().ToLowerInvariant()
+        };
+
+    private static string ToPromptValue(AppToolProducesKind producesKind) =>
+        producesKind switch
+        {
+            AppToolProducesKind.Reference => "reference",
+            AppToolProducesKind.Document => "document",
+            AppToolProducesKind.StructuredData => "structured_data",
+            AppToolProducesKind.SideEffect => "side_effect",
+            _ => producesKind.ToString().ToLowerInvariant()
+        };
 }
