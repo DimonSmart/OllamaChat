@@ -73,11 +73,25 @@ public class BuiltInWebMcpServerIntegrationTests
         Assert.True(schema.TryGetProperty("properties", out var properties));
         Assert.True(properties.TryGetProperty("page", out var pageSchema));
         Assert.True(properties.TryGetProperty("url", out _));
+        Assert.Contains("full source content", pageSchema.GetProperty("description").GetString(), StringComparison.OrdinalIgnoreCase);
         Assert.True(pageSchema.TryGetProperty("required", out var pageRequired));
         Assert.Contains(pageRequired.EnumerateArray(), item => string.Equals(item.GetString(), "url", StringComparison.Ordinal));
         Assert.DoesNotContain(pageRequired.EnumerateArray(), item => string.Equals(item.GetString(), "title", StringComparison.Ordinal));
         Assert.True(schema.TryGetProperty("oneOf", out var oneOf));
         Assert.Equal(2, oneOf.GetArrayLength());
+    }
+
+    [Fact]
+    public async Task BuiltInWebServer_AdvertisesDownloadDescription_WithEvidenceGuidance()
+    {
+        await using var fixture = new BuiltInWebMcpFixture();
+        var client = await fixture.CreateClientAsync();
+        var tool = (await client.ListToolsAsync())
+            .First(candidate => string.Equals(candidate.Name, "download", StringComparison.Ordinal));
+
+        Assert.Contains("full source content", tool.Description, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("lightweight records", tool.Description, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("exact facts", tool.Description, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]

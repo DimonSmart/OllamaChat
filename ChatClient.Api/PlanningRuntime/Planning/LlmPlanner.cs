@@ -221,9 +221,11 @@ public sealed class LlmPlanner(
         sb.AppendLine("- If a downstream tool must act on discovered records, preserve those exact records or a directly compatible projection instead of collapsing them to names or summaries too early.");
         sb.AppendLine("- If tool metadata says one tool's records are directly compatible with another tool input, keep those full compatible records through shortlist or ranking steps unless you truly need a narrower projection.");
         sb.AppendLine("- Example: if one tool returns records directly compatible with a later tool input, shortlist those full records and bind the later tool from that shortlist with mode='map'; do not reduce them to lossy summaries first.");
+        sb.AppendLine("- Do not treat lightweight metadata such as titles, snippets, rankings, ids, or shortlist rationales as if they were the underlying source content.");
+        sb.AppendLine("- If the user needs precise facts, quotes, specs, prices, dates, or side-by-side comparison fields and the current inputs only contain lightweight records, add a step that acquires richer source content when a listed capability can do so.");
         sb.AppendLine("- When the user asks for at least N distinct items, plan enough discovery or acquisition breadth first by using the relevant tool inputs and metadata. If a tool says a limit is only a maximum or that one call may return fewer than requested, reflect that in the plan by increasing breadth or adding another call. Do not make an intermediate llm step guarantee N items unless its inputs already guarantee that count.");
         sb.AppendLine("- If the available evidence may still yield fewer than N items, let the relevant llm step return the maximum supported set plus an insufficiency field or plan more discovery; do not silently force N unsupported items.");
-        sb.AppendLine("- If the listed capabilities cannot obtain or verify a required deliverable, return the shortest blocked plan instead of pretending the task is executable.");
+        sb.AppendLine("- If the listed capabilities truly cannot obtain or verify a required deliverable, return the shortest blocked plan instead of pretending the task is executable. Do not use a blocked plan when an available capability could still fetch or inspect the missing source evidence.");
         sb.AppendLine("- A blocked plan should usually end with one llm step whose prompt explains the capability gap and instructs the step to return a blocked error with code 'insufficient_capabilities', details.status='blocked', details.needsReplan=false, and details.type='insufficient_capability'.");
         sb.AppendLine("- Every step must include id, kind, and in.");
         sb.AppendLine("- kind must be exactly one of 'tool', 'llm', or 'agent'.");
@@ -302,6 +304,7 @@ public sealed class LlmPlanner(
         sb.AppendLine("- Map each required external fact or external action to one listed capability before adding execution steps.");
         sb.AppendLine("- Derive the plan shape from the listed tool descriptions, schemas, and compatibility metadata. Do not assume a fixed workflow unless the catalog implies it.");
         sb.AppendLine("- LLM steps may transform or validate only the evidence already present in their inputs.");
+        sb.AppendLine("- Do not treat titles, snippets, rankings, ids, or shortlist rationales as full source content when the user needs precise facts.");
         sb.AppendLine("- If the listed capabilities cannot obtain or verify a required deliverable, return the shortest blocked plan instead of pretending the task is executable.");
         sb.AppendLine("- A blocked plan should usually end with one llm step that returns code='insufficient_capabilities', details.status='blocked', details.needsReplan=false, and details.type='insufficient_capability'.");
         sb.AppendLine("- Put dynamic dependencies under in using binding objects as VALUES. Example: in={\"item\":{\"from\":\"$step1.items[0]\",\"mode\":\"value\"}}.");

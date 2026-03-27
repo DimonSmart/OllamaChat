@@ -219,6 +219,30 @@ public sealed class PlanningPipelineIntegrationTests(ITestOutputHelper output)
             $"Unexpected planner inspection status '{artifact.Status}'.");
     }
 
+    [RealWebFact]
+    [Trait("Category", "RealWebExploration")]
+    public async Task FullPipeline_WithRobotVacuumComparisonRealWeb_CapturesArtifactAndUsesDownload()
+    {
+        const string scenarioId = "robot-vacuum-comparison-real-web";
+        const string userQuery = "Find two popular robot vacuum cleaners, compare their specs, and recommend which one is better.";
+
+        var httpClientFactory = new TestHttpClientFactory();
+        var artifact = await RunFullPipelineInspectionAsync(
+            scenarioId,
+            userQuery,
+            CreateRealWebToolCatalog(httpClientFactory));
+
+        var artifactWriter = new PlanningExplorationArtifactWriter();
+        var savedPaths = await artifactWriter.SaveAsync(artifact);
+
+        output.WriteLine($"Saved exploration summary: {savedPaths.SummaryPath}");
+        output.WriteLine($"Saved exploration log: {savedPaths.LogPath}");
+
+        Assert.Contains("[plan] create:success", artifact.LogText, StringComparison.Ordinal);
+        Assert.Contains("built-in-web:search", artifact.LogText, StringComparison.Ordinal);
+        Assert.Contains("built-in-web:download", artifact.LogText, StringComparison.Ordinal);
+    }
+
     private async Task RunFullPipelineAsync(string userQuery, PlanningToolCatalog tools)
     {
         var chatClient = BuildChatClient();
@@ -520,7 +544,7 @@ public sealed class PlanningPipelineIntegrationTests(ITestOutputHelper output)
             CreateDescriptor(
                 serverName: "mock-web",
                 toolName: "download",
-                description: "Download a single web page. Use input key 'page' when you have a full search-result object; use input key 'url' only for a raw URL string. The tool returns object { url, title, content } and preserves search metadata when page is used.",
+                description: "Download a single web page to obtain full source content from a candidate reference or raw URL. Use this when search candidates only provide lightweight metadata like titles or snippets and you need exact facts such as specs. Use input key 'page' when you have a full search-result object; use input key 'url' only for a raw URL string. The tool returns object { url, title, content } and preserves search metadata when page is used.",
                 inputSchemaJson: """
                     {
                       "type": "object",
@@ -830,14 +854,14 @@ public sealed class PlanningPipelineIntegrationTests(ITestOutputHelper output)
             CreateDescriptor(
                 serverName: "built-in-web",
                 toolName: "download",
-                description: "Download a single web page. Provide exactly one of 'page' or 'url'. Prefer 'page' when you already have a search result object: each search.results[] item is directly compatible with 'page' and preserves search metadata such as title, provider, snippet, or thumbnailUrl. Use 'url' only when you have a raw absolute URL string. To download multiple search results, bind 'page' from search.results with mode=map so the step runs once per result.",
+                description: "Download a single web page to obtain full source content from a candidate reference or raw URL. Provide exactly one of 'page' or 'url'. Use this when titles, snippets, rankings, or other lightweight records are not enough and you need exact facts, quotes, specs, or detailed extraction from the underlying page. Prefer 'page' when you already have a search result object: each search.results[] item is directly compatible with 'page' and preserves search metadata such as title, provider, snippet, or thumbnailUrl. Use 'url' only when you have a raw absolute URL string. To download multiple search results, bind 'page' from search.results with mode=map so the step runs once per result.",
                 inputSchemaJson: """
                     {
                       "type": "object",
                       "properties": {
                         "page": {
                           "type": "object",
-                          "description": "Page-reference object. Prefer passing one search.results[] item directly here; for multiple results, bind page from search.results with mode=map.",
+                          "description": "Page-reference object for acquiring full source content. Prefer passing one search.results[] item directly here; for multiple results, bind page from search.results with mode=map.",
                           "properties": {
                             "url": { "type": "string" },
                             "title": { "type": ["string", "null"] },

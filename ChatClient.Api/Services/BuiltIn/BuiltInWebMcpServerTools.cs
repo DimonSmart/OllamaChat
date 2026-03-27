@@ -13,7 +13,7 @@ public sealed class BuiltInWebMcpServerTools
     private const string SearchDescription =
         "Search the web with required 'query' and optional 'limit', then return structured candidate page references under 'results'. 'limit' is only a maximum, not a guarantee: the tool may return fewer results, and some results may be partially relevant. For broader coverage, especially when many distinct entities are needed, prefer multiple searches with different phrasings and/or a higher 'limit'. Each result includes a URL, title, provider, and optional search metadata such as thumbnailUrl. Each search.results[] item is directly compatible with the download tool's 'page' input, so downstream plans can pass page objects without projecting to '.url' first. Results are candidate pages, not verified entities. On failure, the tool returns a structured error payload with code, provider, providerAttempts, query, retryability, fallback usage, and technical diagnostics.";
     private const string DownloadDescription =
-        "Download a single web page. Provide exactly one of 'page' or 'url'. Prefer 'page' when you already have a search result object: each search.results[] item is directly compatible with 'page' and preserves search metadata such as title, provider, snippet, or thumbnailUrl. Use 'url' only when you have a raw absolute URL string. To download multiple search results, bind 'page' from search.results with mode=map so the step runs once per result. On failure, the tool returns a structured error payload with code, host, retryability, and technical diagnostics.";
+        "Download a single web page to obtain full source content from a candidate reference or raw URL. Provide exactly one of 'page' or 'url'. Use this when titles, snippets, rankings, or other lightweight records are not enough and you need exact facts, quotes, specs, or detailed extraction from the underlying page. Prefer 'page' when you already have a search result object: each search.results[] item is directly compatible with 'page' and preserves search metadata such as title, provider, snippet, or thumbnailUrl. Use 'url' only when you have a raw absolute URL string. To download multiple search results, bind 'page' from search.results with mode=map so the step runs once per result. On failure, the tool returns a structured error payload with code, host, retryability, and technical diagnostics.";
     private static readonly JsonElement SearchInputSchema = ParseJsonElement(
         """
         {
@@ -68,7 +68,7 @@ public sealed class BuiltInWebMcpServerTools
           "properties": {
             "page": {
               "type": "object",
-              "description": "Page-reference object. Prefer passing one search.results[] item directly here; for multiple results, bind page from search.results with mode=map.",
+              "description": "Page-reference object for acquiring full source content. Prefer passing one search.results[] item directly here; for multiple results, bind page from search.results with mode=map.",
               "properties": {
                 "url": { "type": "string" },
                 "title": { "type": ["string", "null"] },
@@ -193,8 +193,8 @@ public sealed class BuiltInWebMcpServerTools
     public static async Task<object> DownloadAsync(
         IHttpClientFactory httpClientFactory,
         ILogger<BuiltInWebMcpServerTools> logger,
-        [Description("Page-reference object. Must contain at least 'url'; other metadata such as title and snippet are optional.")] WebDownloadPageRef? page = null,
-        [Description("Absolute HTTP or HTTPS URL to download when a full page object is not available.")] string? url = null,
+        [Description("Page-reference object for acquiring full source content. Must contain at least 'url'; other metadata such as title and snippet are optional.")] WebDownloadPageRef? page = null,
+        [Description("Absolute HTTP or HTTPS URL to download when a full page object is not available. Use this when you need the full page content rather than lightweight metadata.")] string? url = null,
         CancellationToken cancellationToken = default)
     {
         try

@@ -141,6 +141,8 @@ public sealed class InitialDraftRepairerTests
         Assert.Contains("preserve those exact records", systemPrompt, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("directly compatible with another tool input", systemPrompt, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("do not reduce them to lossy summaries first", systemPrompt, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("lightweight metadata", systemPrompt, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("source content", systemPrompt, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("a limit is only a maximum", systemPrompt, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("maximum supported set plus an insufficiency field", systemPrompt, StringComparison.OrdinalIgnoreCase);
     }
@@ -319,6 +321,8 @@ public sealed class InitialDraftRepairerTests
 
         Assert.NotNull(systemPrompt);
         Assert.Contains("instead of assuming a fixed workflow", systemPrompt, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("full source content", systemPrompt, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("adding that acquisition step", systemPrompt, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("preserving the required source records", systemPrompt, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("directly compatible with a downstream tool input", systemPrompt, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("Do not solve a count gap by only weakening the final writer", systemPrompt, StringComparison.OrdinalIgnoreCase);
@@ -559,6 +563,9 @@ public sealed class InitialDraftRepairerTests
         Assert.Contains("Diagnosis:", systemPrompt, StringComparison.Ordinal);
         Assert.Contains("First identify what is actually wrong", systemPrompt, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("instead of assuming a fixed workflow", systemPrompt, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("full source content", systemPrompt, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("missing-evidence plan shape problem", systemPrompt, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("partially fails", systemPrompt, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("increase a tool limit", systemPrompt, StringComparison.OrdinalIgnoreCase);
     }
 
