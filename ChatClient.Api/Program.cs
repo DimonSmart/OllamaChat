@@ -1,4 +1,5 @@
 using ChatClient.Api;
+using ChatClient.Api.Diagnostics;
 using ChatClient.Api.Services;
 using ChatClient.Api.Services.BuiltIn;
 using ChatClient.Api.Startup;
@@ -36,6 +37,8 @@ Log.Logger = new LoggerConfiguration()
     .WriteTo.File("Logs/ollamachat-.log", rollingInterval: RollingInterval.Day, fileSizeLimitBytes: 10_000_000, rollOnFileSizeLimit: true, retainedFileCountLimit: 5)
     .WriteTo.Debug()
     .CreateLogger();
+
+SemaphoreFullExceptionDebugHook.Register();
 
 var builder = runFromSelfContainedLayout
     ? WebApplication.CreateBuilder(new WebApplicationOptions

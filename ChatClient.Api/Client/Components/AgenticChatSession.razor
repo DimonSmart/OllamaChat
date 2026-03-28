@@ -53,13 +53,27 @@
                     var avatarText = message.Role == ChatRole.Assistant
                         ? GetAssistantAvatarText(message.AgentName)
                         : GetAvatarText(UserName);
+                    var avatarLabel = message.Role == ChatRole.Assistant
+                        ? message.AgentName
+                        : UserName;
                 }
 
                 @if (!string.IsNullOrEmpty(avatarText))
                 {
-                    <MudAvatar Color="@(message.Role == ChatRole.Assistant ? Color.Primary : Color.Secondary)">
-                        @avatarText
-                    </MudAvatar>
+                    @if (!string.IsNullOrWhiteSpace(avatarLabel))
+                    {
+                        <MudTooltip Text="@avatarLabel">
+                            <MudAvatar Class="chat-avatar" Color="@(message.Role == ChatRole.Assistant ? Color.Primary : Color.Secondary)">
+                                @avatarText
+                            </MudAvatar>
+                        </MudTooltip>
+                    }
+                    else
+                    {
+                        <MudAvatar Class="chat-avatar" Color="@(message.Role == ChatRole.Assistant ? Color.Primary : Color.Secondary)">
+                            @avatarText
+                        </MudAvatar>
+                    }
                 }
 
                 <MudChatBubble>

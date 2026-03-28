@@ -92,13 +92,8 @@ public sealed class AppToolCatalog(IMcpClientService mcpClientService) : IAppToo
                     continue;
 
                 var description = McpBindingPresentation.BuildToolDescription(tool.Description, clientHandle.Binding);
-                var inputSchema = tool.JsonSchema.ValueKind == JsonValueKind.Undefined
-                    ? EmptyObjectSchema.Clone()
-                    : tool.JsonSchema.Clone();
-                JsonElement? outputSchema = tool.ReturnJsonSchema is { } returnJsonSchema &&
-                                            returnJsonSchema.ValueKind != JsonValueKind.Undefined
-                    ? returnJsonSchema.Clone()
-                    : null;
+                var inputSchema = NormalizeInputSchema(tool.JsonSchema);
+                var outputSchema = NormalizeOutputSchema(tool.ReturnJsonSchema);
                 var annotations = tool.ProtocolTool.Annotations;
                 var readOnlyHint = annotations?.ReadOnlyHint ?? false;
                 var destructiveHint = annotations?.DestructiveHint ?? false;
@@ -377,6 +372,9 @@ public sealed class AppToolCatalog(IMcpClientService mcpClientService) : IAppToo
 
     private static bool SchemaAllowsType(JsonElement schema, string expectedType)
     {
+        if (schema.ValueKind != JsonValueKind.Object)
+            return false;
+
         if (!schema.TryGetProperty("type", out var typeElement))
             return false;
 
@@ -400,6 +398,16 @@ public sealed class AppToolCatalog(IMcpClientService mcpClientService) : IAppToo
                description.Contains("asks the user", StringComparison.OrdinalIgnoreCase) ||
                description.Contains("prompt", StringComparison.OrdinalIgnoreCase);
     }
+
+    private static JsonElement NormalizeInputSchema(JsonElement schema) =>
+        schema.ValueKind == JsonValueKind.Object
+            ? schema.Clone()
+            : EmptyObjectSchema.Clone();
+
+    private static JsonElement? NormalizeOutputSchema(JsonElement? schema) =>
+        schema is { ValueKind: JsonValueKind.Object } value
+            ? value.Clone()
+            : null;
 
     private static JsonElement CreateEmptyObjectSchema()
     {

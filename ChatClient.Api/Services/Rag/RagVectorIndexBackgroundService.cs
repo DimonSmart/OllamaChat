@@ -2,6 +2,7 @@ using ChatClient.Application.Services;
 using ChatClient.Domain.Models;
 using ChatClient.Infrastructure.Constants;
 using ChatClient.Infrastructure.Helpers;
+using System.Diagnostics;
 
 namespace ChatClient.Api.Services.Rag;
 
@@ -28,7 +29,7 @@ public sealed class RagVectorIndexBackgroundService(
             return;
         }
         _running = true;
-        _signal.Release();
+        ReleaseSignal("request-rebuild");
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -42,7 +43,7 @@ public sealed class RagVectorIndexBackgroundService(
             if (_rescanRequested && !stoppingToken.IsCancellationRequested)
             {
                 _rescanRequested = false;
-                _signal.Release();
+                ReleaseSignal("rescan-requested");
             }
             else
             {
@@ -101,6 +102,31 @@ public sealed class RagVectorIndexBackgroundService(
         catch (Exception ex)
         {
             _logger.LogError(ex, "Failed to build vector indexes");
+        }
+    }
+
+    private void ReleaseSignal(string reason)
+    {
+        try
+        {
+            _signal.Release();
+        }
+        catch (SemaphoreFullException ex)
+        {
+            _logger.LogError(
+                ex,
+                "SemaphoreFullException while releasing RagVectorIndexBackgroundService signal. Reason={Reason}, Running={Running}, RescanRequested={RescanRequested}, CurrentCount={CurrentCount}",
+                reason,
+                _running,
+                _rescanRequested,
+                _signal.CurrentCount);
+
+            if (Debugger.IsAttached)
+            {
+                Debugger.Break();
+            }
+
+            throw;
         }
     }
 }

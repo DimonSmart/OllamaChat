@@ -1,7 +1,9 @@
 using ChatClient.Api.Client.Services;
 using ChatClient.Api.Client.Services.Agentic;
+using ChatClient.Api.AgentWorkflows;
 using ChatClient.Api.PlanningRuntime.Host;
 using ChatClient.Api.Services;
+using ChatClient.Api.Services.BuiltIn;
 using ChatClient.Api.Services.Rag;
 using ChatClient.Api.Services.Seed;
 using ChatClient.Application.Services.Agentic;
@@ -37,12 +39,16 @@ public static class ServiceCollectionExtensions
 
     private static IServiceCollection AddCoreServices(this IServiceCollection services)
     {
+        services.AddSingleton<IAgentWorkflowCatalog, AgentWorkflowCatalog>();
+        services.AddSingleton(new McpServerSessionContext(null));
         services.AddSingleton<IMcpServerConfigService, McpServerConfigService>();
         services.AddSingleton<ILlmServerConfigService, LlmServerConfigService>();
         services.AddSingleton<IMcpClientService, McpClientService>();
         services.AddSingleton<IAppToolCatalog, AppToolCatalog>();
         services.AddSingleton<McpSamplingService>();
         services.AddSingleton<IMcpUserInteractionService, McpUserInteractionService>();
+        services.AddSingleton<TaskSessionStore>();
+        services.AddSingleton<MarkdownDocumentIntakeService>();
         services.AddSingleton<KernelService>();
         services.AddSingleton<IOllamaClientService, OllamaService>();
         services.AddSingleton<IOpenAIClientService, OpenAIClientService>();
@@ -84,12 +90,15 @@ public static class ServiceCollectionExtensions
 
     private static IServiceCollection AddAgenticServices(this IServiceCollection services)
     {
+        services.AddScoped<AgenticRuntimeAgentFactory>();
         services.AddScoped<IAgenticExecutionRuntime, HttpAgenticExecutionRuntime>();
         services.AddScoped<IAgenticExecutionInvoker, AgenticExecutionInvoker>();
         services.AddScoped<AgenticChatEngineOrchestrator>();
         services.AddScoped<IAgenticRagContextService, AgenticRagContextService>();
         services.AddScoped<AgenticChatEngineHistoryBuilder>();
         services.AddScoped<AgenticChatEngineStreamingBridge>();
+        services.AddScoped<IHandoffWorkflowSessionService, HandoffWorkflowChatSessionService>();
+        services.AddScoped<IHandoffWorkflowChatViewModelService, HandoffWorkflowChatViewModelService>();
         services.AddScoped<IChatEngineOrchestrator>(sp => sp.GetRequiredService<AgenticChatEngineOrchestrator>());
         services.AddScoped<IChatEngineHistoryBuilder>(sp => sp.GetRequiredService<AgenticChatEngineHistoryBuilder>());
         services.AddScoped<IChatEngineStreamingBridge>(sp => sp.GetRequiredService<AgenticChatEngineStreamingBridge>());

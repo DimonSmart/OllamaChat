@@ -95,6 +95,14 @@
     color: var(--mud-palette-text-secondary);
 }
 
+.chat-avatar {
+    width: 2.5rem;
+    height: 2.5rem;
+    font-size: 0.72rem;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+}
+
 @keyframes blink {
     0%, 50% {
         opacity: 1;

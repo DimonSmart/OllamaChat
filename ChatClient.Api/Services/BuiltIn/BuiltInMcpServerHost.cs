@@ -56,6 +56,8 @@ public static class BuiltInMcpServerHost
         });
         builder.Services.AddHttpClient();
         builder.Services.AddSingleton(new McpServerSessionContext(binding));
+        builder.Services.AddSingleton<TaskSessionStore>();
+        builder.Services.AddSingleton<MarkdownDocumentIntakeService>();
         builder.Services.AddSingleton<KnowledgeBookStore>();
         builder.Services.AddSingleton<MarkdownDocumentRepository>();
         builder.Services.AddSingleton<MarkdownDocumentEditor>();

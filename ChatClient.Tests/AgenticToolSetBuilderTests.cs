@@ -60,10 +60,40 @@ public class AgenticToolSetBuilderTests
         Assert.Contains("Docs_B__search", toolSet.MetadataByName.Keys);
     }
 
+    [Fact]
+    public void Build_BooleanInputSchema_NormalizesToEmptyObject()
+    {
+        var toolSet = AgenticToolSetBuilder.Build(
+            ["search"],
+            [CreateTool("docs", "search", inputSchema: JsonSerializer.SerializeToElement(true))]);
+
+        var registered = Assert.Single(toolSet.MetadataByName);
+        var function = Assert.IsType<ConfiguredAgenticFunction>(registered.Value.Tool);
+        var schema = function.JsonSchema;
+
+        Assert.Equal(JsonValueKind.Object, schema.ValueKind);
+        Assert.Equal("object", schema.GetProperty("type").GetString());
+    }
+
+    [Fact]
+    public void Build_BooleanOutputSchema_DropsReturnSchema()
+    {
+        var toolSet = AgenticToolSetBuilder.Build(
+            ["search"],
+            [CreateTool("docs", "search", outputSchema: JsonSerializer.SerializeToElement(true))]);
+
+        var registered = Assert.Single(toolSet.MetadataByName);
+        var function = Assert.IsType<ConfiguredAgenticFunction>(registered.Value.Tool);
+
+        Assert.Null(function.ReturnJsonSchema);
+    }
+
     private static AppToolDescriptor CreateTool(
         string serverName,
         string toolName,
-        string? bindingDisplayName = null)
+        string? bindingDisplayName = null,
+        JsonElement? inputSchema = null,
+        JsonElement? outputSchema = null)
     {
         return new AppToolDescriptor(
             QualifiedName: $"{serverName}:{toolName}",
@@ -71,8 +101,8 @@ public class AgenticToolSetBuilderTests
             ToolName: toolName,
             DisplayName: toolName,
             Description: $"{toolName} tool from {serverName}",
-            InputSchema: CreateSchema(),
-            OutputSchema: null,
+            InputSchema: inputSchema ?? CreateSchema(),
+            OutputSchema: outputSchema,
             MayRequireUserInput: false,
             ReadOnlyHint: true,
             DestructiveHint: false,

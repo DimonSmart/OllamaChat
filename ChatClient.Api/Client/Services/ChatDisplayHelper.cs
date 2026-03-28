@@ -41,7 +41,7 @@ public static class ChatDisplayHelper
         $"data:{file.ContentType};base64,{Convert.ToBase64String(file.Data)}";
 
     public static string GetAvatarText(string? name) =>
-        string.IsNullOrWhiteSpace(name) ? string.Empty : name;
+        BuildAvatarText(name, 2);
 
     public static string GetAssistantAvatarText(
         IEnumerable<AgentDescription> agents,
@@ -55,12 +55,40 @@ public static class ChatDisplayHelper
             ?.ShortName;
 
         if (!string.IsNullOrWhiteSpace(configuredShortName))
-            return configuredShortName.Trim();
+            return BuildAvatarText(configuredShortName, 3);
 
-        var compactName = new string(agentName.Trim().Where(static c => !char.IsWhiteSpace(c)).ToArray());
-        if (compactName.Length == 0)
+        return BuildAvatarText(agentName, 3);
+    }
+
+    private static string BuildAvatarText(string? text, int maxLength)
+    {
+        if (string.IsNullOrWhiteSpace(text))
             return string.Empty;
 
-        return compactName.Length <= 3 ? compactName : compactName[..3];
+        var parts = text
+            .Split([' ', '-', '_'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+
+        if (parts.Length >= 2)
+        {
+            var initials = string.Concat(parts
+                .Where(static part => part.Length > 0)
+                .Take(maxLength)
+                .Select(static part => char.ToUpperInvariant(part[0])));
+            if (initials.Length > 0)
+            {
+                return initials;
+            }
+        }
+
+        var compactText = new string(text
+            .Trim()
+            .Where(static c => char.IsLetterOrDigit(c))
+            .ToArray());
+        if (compactText.Length == 0)
+            return string.Empty;
+
+        return compactText.Length <= maxLength
+            ? compactText.ToUpperInvariant()
+            : compactText[..maxLength].ToUpperInvariant();
     }
 }

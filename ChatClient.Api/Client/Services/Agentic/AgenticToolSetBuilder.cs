@@ -89,9 +89,7 @@ internal static class AgenticToolSetBuilder
 
     private static AITool BuildTool(AgenticToolSpec spec, string registeredName, string description)
     {
-        var schema = spec.InputSchema.ValueKind == JsonValueKind.Undefined
-            ? EmptyObjectSchema
-            : spec.InputSchema.Clone();
+        var schema = NormalizeInputSchema(spec.InputSchema);
         var innerFunction = AIFunctionFactory.Create(
             (AIFunctionArguments arguments, CancellationToken cancellationToken) =>
                 spec.ExecuteAsync(ToDictionary(arguments), cancellationToken),
@@ -210,6 +208,16 @@ internal static class AgenticToolSetBuilder
         return document.RootElement.Clone();
     }
 
+    private static JsonElement NormalizeInputSchema(JsonElement schema) =>
+        schema.ValueKind == JsonValueKind.Object
+            ? schema.Clone()
+            : EmptyObjectSchema.Clone();
+
+    private static JsonElement? NormalizeOutputSchema(JsonElement? schema) =>
+        schema is { ValueKind: JsonValueKind.Object } value
+            ? value.Clone()
+            : null;
+
     private sealed record AgenticToolSpec(
         string ServerName,
         string SourceLabel,
@@ -222,13 +230,8 @@ internal static class AgenticToolSetBuilder
     {
         public static AgenticToolSpec FromAppTool(AppToolDescriptor tool)
         {
-            var inputSchema = tool.InputSchema.ValueKind == JsonValueKind.Undefined
-                ? EmptyObjectSchema.Clone()
-                : tool.InputSchema.Clone();
-            JsonElement? outputSchema = tool.OutputSchema is { } schema &&
-                                        schema.ValueKind != JsonValueKind.Undefined
-                ? schema.Clone()
-                : (JsonElement?)null;
+            var inputSchema = NormalizeInputSchema(tool.InputSchema);
+            var outputSchema = NormalizeOutputSchema(tool.OutputSchema);
             var sourceLabel = string.IsNullOrWhiteSpace(tool.BindingDisplayName)
                 ? tool.BaseServerName ?? tool.ServerName
                 : tool.BindingDisplayName.Trim();

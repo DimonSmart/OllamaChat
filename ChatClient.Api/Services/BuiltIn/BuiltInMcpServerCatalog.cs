@@ -8,6 +8,8 @@ public static class BuiltInMcpServerCatalog
         BuiltInFormattedTimeServerTools.Descriptor,
         BuiltInMathServerTools.Descriptor,
         BuiltInUserProfilePrefsServerTools.Descriptor,
+        BuiltInTaskSessionMcpServerTools.Descriptor,
+        BuiltInDocumentIntakeMcpServerTools.Descriptor,
         BuiltInKnowledgeBookMcpServerTools.Descriptor,
         BuiltInMarkdownDocumentMcpServerTools.Descriptor
     ];
