@@ -1,25 +1,15 @@
-.handoff-workflow-flow {
-    display: flex;
-    align-items: center;
-    gap: 0.75rem;
-    flex-wrap: wrap;
-}
-
-.handoff-workflow-node {
-    min-width: 11rem;
-    flex: 0 1 11rem;
-}
-
-.handoff-workflow-arrow {
-    display: flex;
-    align-items: center;
-    color: var(--mud-palette-text-secondary);
-}
-
 .handoff-workflow-chip-list {
     display: flex;
     flex-wrap: wrap;
     gap: 0.5rem;
+}
+
+.handoff-workflow-agent-panels {
+    width: 100%;
+}
+
+.handoff-workflow-agent-title {
+    flex-wrap: wrap;
 }
 
 .handoff-workflow-prompt {
@@ -40,16 +30,4 @@
 
 .handoff-workflow-start-header {
     flex-wrap: wrap;
-}
-
-@media (max-width: 960px) {
-    .handoff-workflow-flow {
-        align-items: stretch;
-    }
-
-    .handoff-workflow-arrow {
-        transform: rotate(90deg);
-        width: 100%;
-        justify-content: center;
-    }
 }

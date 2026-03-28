@@ -28,15 +28,6 @@
 <PageTitle>Handoff Workflows</PageTitle>
 
 <MudStack Spacing="3">
-    <MudPaper Class="pa-4" Outlined="true">
-        <MudStack Spacing="2">
-            <MudText Typo="Typo.h5">Handoff Workflows</MudText>
-            <MudText Typo="Typo.body2" Class="mud-text-secondary">
-                Fixed workflow templates for multi-agent handoff scenarios. This slice mirrors the article's 5-agent interview coach topology, persists shared task state through MCP, and executes turns through the official workflow runtime.
-            </MudText>
-        </MudStack>
-    </MudPaper>
-
     @if (!string.IsNullOrWhiteSpace(loadError))
     {
         <MudAlert Severity="Severity.Error" Dense="true">
@@ -61,45 +52,6 @@
                         <MudStack Spacing="2">
                             <MudText Typo="Typo.h6">@template.DisplayName</MudText>
                             <MudText Typo="Typo.body2" Class="mud-text-secondary">@template.Description</MudText>
-
-                            <MudAlert Severity="Severity.Info" Dense="true">
-                                Fluent builder is sufficient for these agents: names, prompts, models, execution settings, and per-agent MCP bindings are already expressible with the current DSL.
-                            </MudAlert>
-
-                            <div class="handoff-workflow-flow">
-                                @foreach (var agentId in OrderedAgentIds)
-                                {
-                                    var agent = GetAgent(agentId);
-                                    if (agent is null)
-                                    {
-                                        continue;
-                                    }
-
-                                    <MudPaper Class="handoff-workflow-node pa-3" Outlined="true">
-                                        <MudStack Spacing="1">
-                                            <MudStack Row="true" Spacing="1" AlignItems="AlignItems.Center">
-                                                <MudText Typo="Typo.subtitle2">@agent.AgentDraft.AgentName</MudText>
-                                                @if (string.Equals(agent.Id, template.Workflow.StartAgentId, StringComparison.OrdinalIgnoreCase))
-                                                {
-                                                    <MudChip T="string" Size="Size.Small" Color="Color.Primary" Variant="Variant.Filled">Start</MudChip>
-                                                }
-                                            </MudStack>
-                                            <MudText Typo="Typo.caption" Class="mud-text-secondary">@agent.Role</MudText>
-                                        </MudStack>
-                                    </MudPaper>
-
-                                    @if (!string.Equals(agentId, OrderedAgentIds.Last(), StringComparison.OrdinalIgnoreCase))
-                                    {
-                                        <div class="handoff-workflow-arrow" aria-hidden="true">
-                                            <MudIcon Icon="@Icons.Material.Filled.ArrowForward" />
-                                        </div>
-                                    }
-                                }
-                            </div>
-
-                            <MudText Typo="Typo.caption" Class="mud-text-secondary">
-                                Happy path: triage -> receptionist -> behavioural -> technical -> summarizer. Specialists also expose fallback edges back to triage.
-                            </MudText>
                         </MudStack>
                     </MudPaper>
 
@@ -182,97 +134,71 @@
                             </MudStack>
                         </MudStack>
                     </MudPaper>
-
-                    <MudPaper Class="pa-4" Outlined="true">
-                        <MudStack Spacing="2">
-                            <MudText Typo="Typo.h6">Project Fit</MudText>
-
-                            <MudPaper Class="pa-3" Outlined="true">
-                                <MudText Typo="Typo.subtitle2">Fluent Builder</MudText>
-                                <MudText Typo="Typo.body2">@template.Assessment.FluentBuilderReason</MudText>
-                            </MudPaper>
-
-                            <MudPaper Class="pa-3" Outlined="true">
-                                <MudText Typo="Typo.subtitle2">Existing Saved Agents</MudText>
-                                <MudText Typo="Typo.body2">@template.Assessment.ExistingSavedAgentsReason</MudText>
-                            </MudPaper>
-
-                            <MudPaper Class="pa-3" Outlined="true">
-                                <MudText Typo="Typo.subtitle2">Reusable Project Pieces</MudText>
-                                @foreach (var item in template.Assessment.ReusableProjectPieces)
-                                {
-                                    <MudText Typo="Typo.body2">- @item</MudText>
-                                }
-                            </MudPaper>
-
-                            <MudPaper Class="pa-3" Outlined="true">
-                                <MudText Typo="Typo.subtitle2">Missing Pieces</MudText>
-                                @foreach (var item in template.Assessment.MissingProjectPieces)
-                                {
-                                    <MudText Typo="Typo.body2">- @item</MudText>
-                                }
-                            </MudPaper>
-                        </MudStack>
-                    </MudPaper>
                 </MudStack>
             </MudItem>
 
             <MudItem xs="12" lg="5">
-                <MudStack Spacing="3">
+                <MudExpansionPanels MultiExpansion="true" Outlined="true" Class="handoff-workflow-agent-panels">
                     @foreach (var agent in template.Workflow.Agents)
                     {
-                        <MudPaper Class="pa-4" Outlined="true">
-                            <MudStack Spacing="2">
-                                <MudStack Row="true" Spacing="1" AlignItems="AlignItems.Center">
-                                    <MudText Typo="Typo.h6">@agent.AgentDraft.AgentName</MudText>
-                                    @if (!string.IsNullOrWhiteSpace(agent.AgentDraft.ShortName))
-                                    {
-                                        <MudChip T="string" Size="Size.Small" Variant="Variant.Outlined">@agent.AgentDraft.ShortName</MudChip>
-                                    }
+                        <MudExpansionPanel Expanded="false">
+                            <TitleContent>
+                                <MudStack Spacing="1">
+                                    <MudStack Row="true" Spacing="1" AlignItems="AlignItems.Center" Class="handoff-workflow-agent-title">
+                                        <MudText Typo="Typo.subtitle1">@agent.AgentDraft.AgentName</MudText>
+                                        @if (!string.IsNullOrWhiteSpace(agent.AgentDraft.ShortName))
+                                        {
+                                            <MudChip T="string" Size="Size.Small" Variant="Variant.Outlined">@agent.AgentDraft.ShortName</MudChip>
+                                        }
+                                    </MudStack>
+                                    <MudText Typo="Typo.caption" Class="mud-text-secondary">@agent.Role</MudText>
                                 </MudStack>
+                            </TitleContent>
 
-                                <MudText Typo="Typo.caption" Class="mud-text-secondary">@agent.Role</MudText>
-                                <MudText Typo="Typo.body2">@agent.Summary</MudText>
+                            <ChildContent>
+                                <MudStack Spacing="2">
+                                    <MudText Typo="Typo.body2">@agent.Summary</MudText>
 
-                                <MudDivider />
+                                    <MudDivider />
 
-                                <MudText Typo="Typo.subtitle2">Outgoing Handoffs</MudText>
-                                <div class="handoff-workflow-chip-list">
-                                    @foreach (var handoff in GetOutgoingHandoffs(agent.Id))
+                                    <MudText Typo="Typo.subtitle2">Outgoing Handoffs</MudText>
+                                    <div class="handoff-workflow-chip-list">
+                                        @foreach (var handoff in GetOutgoingHandoffs(agent.Id))
+                                        {
+                                            <MudChip T="string" Size="Size.Small"
+                                                     Color="@(handoff.IsFallback ? Color.Warning : Color.Primary)"
+                                                     Variant="@(handoff.IsFallback ? Variant.Outlined : Variant.Filled)">
+                                                @($"{handoff.ToAgentId} : {handoff.Label}")
+                                            </MudChip>
+                                        }
+                                    </div>
+
+                                    <MudText Typo="Typo.subtitle2">Capability Requirements</MudText>
+                                    @foreach (var capability in agent.CapabilityRequirements)
                                     {
-                                        <MudChip T="string" Size="Size.Small"
-                                                 Color="@(handoff.IsFallback ? Color.Warning : Color.Primary)"
-                                                 Variant="@(handoff.IsFallback ? Variant.Outlined : Variant.Filled)">
-                                            @($"{handoff.ToAgentId} : {handoff.Label}")
-                                        </MudChip>
-                                    }
-                                </div>
-
-                                <MudText Typo="Typo.subtitle2">Capability Requirements</MudText>
-                                @foreach (var capability in agent.CapabilityRequirements)
-                                {
-                                    <MudPaper Class="pa-3" Outlined="true">
-                                        <MudStack Spacing="1">
-                                            <MudStack Row="true" Spacing="1" AlignItems="AlignItems.Center">
-                                                <MudText Typo="Typo.subtitle2">@capability.DisplayName</MudText>
-                                                <MudChip T="string" Size="Size.Small"
-                                                         Color="@GetCapabilityColor(capability.Availability)"
-                                                         Variant="Variant.Filled">
-                                                    @capability.Availability
-                                                </MudChip>
+                                        <MudPaper Class="pa-3" Outlined="true">
+                                            <MudStack Spacing="1">
+                                                <MudStack Row="true" Spacing="1" AlignItems="AlignItems.Center">
+                                                    <MudText Typo="Typo.subtitle2">@capability.DisplayName</MudText>
+                                                    <MudChip T="string" Size="Size.Small"
+                                                             Color="@GetCapabilityColor(capability.Availability)"
+                                                             Variant="Variant.Filled">
+                                                        @capability.Availability
+                                                    </MudChip>
+                                                </MudStack>
+                                                <MudText Typo="Typo.body2">@capability.Purpose</MudText>
+                                                <MudText Typo="Typo.caption" Class="mud-text-secondary">@capability.AvailabilityNote</MudText>
                                             </MudStack>
-                                            <MudText Typo="Typo.body2">@capability.Purpose</MudText>
-                                            <MudText Typo="Typo.caption" Class="mud-text-secondary">@capability.AvailabilityNote</MudText>
-                                        </MudStack>
-                                    </MudPaper>
-                                }
+                                        </MudPaper>
+                                    }
 
-                                <MudText Typo="Typo.subtitle2">Workflow Prompt</MudText>
-                                <pre class="handoff-workflow-prompt">@agent.AgentDraft.Content</pre>
-                            </MudStack>
-                        </MudPaper>
+                                    <MudText Typo="Typo.subtitle2">Workflow Prompt</MudText>
+                                    <pre class="handoff-workflow-prompt">@agent.AgentDraft.Content</pre>
+                                </MudStack>
+                            </ChildContent>
+                        </MudExpansionPanel>
                     }
-                </MudStack>
+                </MudExpansionPanels>
             </MudItem>
         </MudGrid>
 
@@ -384,15 +310,6 @@
         - Experience with document processing pipelines.
         - Experience with payment or billing systems.
         """;
-
-    private static readonly string[] OrderedAgentIds =
-    [
-        "triage",
-        "receptionist",
-        "behavioural",
-        "technical",
-        "summarizer"
-    ];
 
     private AgentWorkflowTemplate? template;
     private string? loadError;
@@ -722,10 +639,6 @@
             return McpElicitationResponse.Cancel;
         }
     }
-
-    private AgentWorkflowAgentDefinition? GetAgent(string agentId) =>
-        template?.Workflow.Agents.FirstOrDefault(agent =>
-            string.Equals(agent.Id, agentId, StringComparison.OrdinalIgnoreCase));
 
     private IReadOnlyList<AgentWorkflowHandoffDefinition> GetOutgoingHandoffs(string agentId) =>
         template?.Workflow.Handoffs
