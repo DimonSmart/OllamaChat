@@ -23,6 +23,8 @@ public sealed class TaskSessionMcpServerIntegrationTests
         Assert.Contains(tools, static tool => string.Equals(tool.Name, "session_set_phase", StringComparison.Ordinal));
         Assert.Contains(tools, static tool => string.Equals(tool.Name, "session_attach_document", StringComparison.Ordinal));
         Assert.Contains(tools, static tool => string.Equals(tool.Name, "session_get_document", StringComparison.Ordinal));
+        Assert.Contains(tools, static tool => string.Equals(tool.Name, "session_set_parameter", StringComparison.Ordinal));
+        Assert.Contains(tools, static tool => string.Equals(tool.Name, "session_get_parameter", StringComparison.Ordinal));
         Assert.Contains(tools, static tool => string.Equals(tool.Name, "session_append_turn", StringComparison.Ordinal));
         Assert.Contains(tools, static tool => string.Equals(tool.Name, "session_list_turns", StringComparison.Ordinal));
         Assert.Contains(tools, static tool => string.Equals(tool.Name, "session_save_summary", StringComparison.Ordinal));
@@ -72,6 +74,26 @@ public sealed class TaskSessionMcpServerIntegrationTests
             }));
         Assert.Contains("Backend engineer", GetProperty(document, "markdown").GetString(), StringComparison.Ordinal);
 
+        var parameter = GetStructuredContent(await CallToolAsync(
+            toolMap["session_set_parameter"],
+            new Dictionary<string, object?>
+            {
+                ["sessionId"] = sessionId,
+                ["key"] = "response_language",
+                ["valueKind"] = "text",
+                ["value"] = "English"
+            }));
+        Assert.Equal("response_language", GetProperty(parameter, "key").GetString());
+
+        var loadedParameter = GetStructuredContent(await CallToolAsync(
+            toolMap["session_get_parameter"],
+            new Dictionary<string, object?>
+            {
+                ["sessionId"] = sessionId,
+                ["key"] = "response_language"
+            }));
+        Assert.Equal("English", GetProperty(loadedParameter, "value").GetString());
+
         await CallToolAsync(
             toolMap["session_append_turn"],
             new Dictionary<string, object?>
@@ -120,6 +142,7 @@ public sealed class TaskSessionMcpServerIntegrationTests
         Assert.Equal("behavioural", GetProperty(snapshot, "phase").GetString());
         Assert.Equal(2, GetProperty(snapshot, "turnCount").GetInt32());
         Assert.Single(GetProperty(snapshot, "documents").EnumerateArray());
+        Assert.Single(GetProperty(snapshot, "parameters").EnumerateArray());
         Assert.Single(GetProperty(snapshot, "summaries").EnumerateArray());
     }
 
@@ -159,10 +182,20 @@ public sealed class TaskSessionMcpServerIntegrationTests
                 ["markdown"] = "# JD\nBuild distributed systems."
             });
 
+        await CallToolAsync(
+            toolMap["session_set_parameter"],
+            new Dictionary<string, object?>
+            {
+                ["key"] = "response_language",
+                ["valueKind"] = "text",
+                ["value"] = "English"
+            });
+
         var snapshot = GetStructuredContent(await CallToolAsync(toolMap["session_get"], []));
         Assert.Equal(sessionId, GetProperty(snapshot, "sessionId").GetString());
         Assert.Equal("technical", GetProperty(snapshot, "phase").GetString());
         Assert.Single(GetProperty(snapshot, "documents").EnumerateArray());
+        Assert.Single(GetProperty(snapshot, "parameters").EnumerateArray());
     }
 
     private static async Task<JsonElement> CallToolAsync(McpClientTool tool, Dictionary<string, object?> arguments)

@@ -39,161 +39,104 @@ public sealed class AgentWorkflowCatalog(IMcpServerConfigService mcpServerConfig
     {
         var capabilityAvailability = EvaluateCapabilities(servers);
 
+        var startInputs = CreateInterviewCoachStartInputs();
         var triage = CreateTriageAgent();
-        var receptionist = CreateReceptionistAgent();
+        var receptionist = CreateReceptionistAgent(startInputs);
         var behavioural = CreateBehaviouralAgent();
         var technical = CreateTechnicalAgent();
         var summarizer = CreateSummarizerAgent();
+        var workflow = HandoffWorkflowDefinitionBuilder
+            .New(InterviewCoachWorkflowId, "Interview Coach Handoff")
+            .Description("Specialized conversational flow with one entry router, sequential specialists, explicit fallback edges to triage, and required start inputs collected before the workflow begins.")
+            .RequireDocument("resume", "Resume", static input => input
+                .Description("Candidate resume in markdown format."))
+            .RequireDocument("job_description", "Job Description", static input => input
+                .Description("Target job description in markdown format."))
+            .StartWith(TriageAgentId)
+            .Agent(TriageAgentId, agent => agent
+                .Role("Router / entry point")
+                .Summary("Owns the first turn, reads the shared session state when needed, decides which specialist should take over next, and receives fallback handoffs when the user goes off script.")
+                .UseDraft(triage)
+                .Capability("task-session-store", "Task session store", capability => capability
+                    .Purpose("Read-only access to current phase and stored inputs so routing stays deterministic across turns.")
+                    .Availability(capabilityAvailability.TaskSessionStoreAvailability)
+                    .AvailabilityNote(capabilityAvailability.TaskSessionStoreNote)))
+            .Agent(ReceptionistAgentId, agent => agent
+                .Role("Start-input validation and session setup")
+                .Summary("Verifies that the required workflow inputs are already attached to the shared session, then marks intake complete and hands over to the behavioural interviewer.")
+                .UseDraft(receptionist)
+                .Capability("task-session-store", "Task session store", capability => capability
+                    .Purpose("Persistent shared state for workflow inputs, transcript turns, phase, and summary.")
+                    .Availability(capabilityAvailability.TaskSessionStoreAvailability)
+                    .AvailabilityNote(capabilityAvailability.TaskSessionStoreNote)))
+            .Agent(BehaviouralAgentId, agent => agent
+                .Role("Behavioural interviewer")
+                .Summary("Runs the behavioural phase, keeps transcript state, and hands over when the user is ready for technical questions.")
+                .UseDraft(behavioural)
+                .Capability("task-session-store", "Task session store", capability => capability
+                    .Purpose("Persistent transcript and phase state across turns.")
+                    .Availability(capabilityAvailability.TaskSessionStoreAvailability)
+                    .AvailabilityNote(capabilityAvailability.TaskSessionStoreNote)))
+            .Agent(TechnicalAgentId, agent => agent
+                .Role("Technical interviewer")
+                .Summary("Runs role-specific technical questions, appends transcript state, and hands over to the summarizer.")
+                .UseDraft(technical)
+                .Capability("task-session-store", "Task session store", capability => capability
+                    .Purpose("Persistent transcript and phase state across turns.")
+                    .Availability(capabilityAvailability.TaskSessionStoreAvailability)
+                    .AvailabilityNote(capabilityAvailability.TaskSessionStoreNote)))
+            .Agent(SummarizerAgentId, agent => agent
+                .Role("Wrap-up and summary")
+                .Summary("Builds the final interview summary, marks the interview complete, and can return control to triage for a new request.")
+                .UseDraft(summarizer)
+                .Capability("task-session-store", "Task session store", capability => capability
+                    .Purpose("Read/write access to the transcript and final summary.")
+                    .Availability(capabilityAvailability.TaskSessionStoreAvailability)
+                    .AvailabilityNote(capabilityAvailability.TaskSessionStoreNote)))
+            .Handoff(TriageAgentId, ReceptionistAgentId, "start / intake")
+            .Handoff(TriageAgentId, BehaviouralAgentId, "resume interview")
+            .Handoff(TriageAgentId, TechnicalAgentId, "resume technical")
+            .Handoff(TriageAgentId, SummarizerAgentId, "wrap up")
+            .Handoff(ReceptionistAgentId, BehaviouralAgentId, "handoff after intake")
+            .Fallback(ReceptionistAgentId, TriageAgentId)
+            .Handoff(BehaviouralAgentId, TechnicalAgentId, "handoff after behavioural")
+            .Fallback(BehaviouralAgentId, TriageAgentId)
+            .Handoff(TechnicalAgentId, SummarizerAgentId, "handoff after technical")
+            .Fallback(TechnicalAgentId, TriageAgentId)
+            .Fallback(SummarizerAgentId, TriageAgentId, "post-summary fallback")
+            .Build();
 
         return new AgentWorkflowTemplate
         {
             Id = InterviewCoachWorkflowId,
             DisplayName = "Interview Coach Handoff",
-            Description = "Fixed 5-agent handoff workflow modeled after the Microsoft Interview Coach sample: triage -> receptionist -> behavioural -> technical -> summarizer with fallback to triage.",
-            Workflow = new AgentWorkflowDefinition
-            {
-                Id = InterviewCoachWorkflowId,
-                DisplayName = "Interview Coach Handoff",
-                Description = "Specialized conversational flow with one entry router, sequential specialists, and explicit fallback edges to triage.",
-                StartAgentId = TriageAgentId,
-                Agents =
-                [
-                    new AgentWorkflowAgentDefinition
-                    {
-                        Id = TriageAgentId,
-                        Role = "Router / entry point",
-                        Summary = "Owns the first turn, reads the shared session state when needed, decides which specialist should take over next, and receives fallback handoffs when the user goes off script.",
-                        AgentDraft = triage,
-                        CapabilityRequirements =
-                        [
-                            CreateCapabilityRequirement(
-                                "task-session-store",
-                                "Task session store",
-                                "Read-only access to current phase and stored documents so routing stays deterministic across turns.",
-                                capabilityAvailability.TaskSessionStoreAvailability,
-                                capabilityAvailability.TaskSessionStoreNote)
-                        ]
-                    },
-                    new AgentWorkflowAgentDefinition
-                    {
-                        Id = ReceptionistAgentId,
-                        Role = "Document intake and session setup",
-                        Summary = "Creates the interview context, gathers resume and job description, and decides when the interview is ready to start.",
-                        AgentDraft = receptionist,
-                        CapabilityRequirements =
-                        [
-                            CreateCapabilityRequirement(
-                                "document-intake",
-                                "Document intake",
-                                "Resume and job description acquisition/parsing for the receptionist workflow.",
-                                capabilityAvailability.DocumentIntakeAvailability,
-                                capabilityAvailability.DocumentIntakeNote),
-                            CreateCapabilityRequirement(
-                                "task-session-store",
-                                "Task session store",
-                                "Persistent shared state for documents, transcript turns, phase, and summary.",
-                                capabilityAvailability.TaskSessionStoreAvailability,
-                                capabilityAvailability.TaskSessionStoreNote)
-                        ]
-                    },
-                    new AgentWorkflowAgentDefinition
-                    {
-                        Id = BehaviouralAgentId,
-                        Role = "Behavioural interviewer",
-                        Summary = "Runs the behavioural phase, keeps transcript state, and hands over when the user is ready for technical questions.",
-                        AgentDraft = behavioural,
-                        CapabilityRequirements =
-                        [
-                            CreateCapabilityRequirement(
-                                "task-session-store",
-                                "Task session store",
-                                "Persistent transcript and phase state across turns.",
-                                capabilityAvailability.TaskSessionStoreAvailability,
-                                capabilityAvailability.TaskSessionStoreNote)
-                        ]
-                    },
-                    new AgentWorkflowAgentDefinition
-                    {
-                        Id = TechnicalAgentId,
-                        Role = "Technical interviewer",
-                        Summary = "Runs role-specific technical questions, appends transcript state, and hands over to the summarizer.",
-                        AgentDraft = technical,
-                        CapabilityRequirements =
-                        [
-                            CreateCapabilityRequirement(
-                                "task-session-store",
-                                "Task session store",
-                                "Persistent transcript and phase state across turns.",
-                                capabilityAvailability.TaskSessionStoreAvailability,
-                                capabilityAvailability.TaskSessionStoreNote)
-                        ]
-                    },
-                    new AgentWorkflowAgentDefinition
-                    {
-                        Id = SummarizerAgentId,
-                        Role = "Wrap-up and summary",
-                        Summary = "Builds the final interview summary, marks the interview complete, and can return control to triage for a new request.",
-                        AgentDraft = summarizer,
-                        CapabilityRequirements =
-                        [
-                            CreateCapabilityRequirement(
-                                "task-session-store",
-                                "Task session store",
-                                "Read/write access to the transcript and final summary.",
-                                capabilityAvailability.TaskSessionStoreAvailability,
-                                capabilityAvailability.TaskSessionStoreNote)
-                        ]
-                    }
-                ],
-                Handoffs =
-                [
-                    CreateHandoff(TriageAgentId, ReceptionistAgentId, "start / intake"),
-                    CreateHandoff(TriageAgentId, BehaviouralAgentId, "resume interview"),
-                    CreateHandoff(TriageAgentId, TechnicalAgentId, "resume technical"),
-                    CreateHandoff(TriageAgentId, SummarizerAgentId, "wrap up"),
-                    CreateHandoff(ReceptionistAgentId, BehaviouralAgentId, "handoff after intake"),
-                    CreateHandoff(ReceptionistAgentId, TriageAgentId, "fallback", isFallback: true),
-                    CreateHandoff(BehaviouralAgentId, TechnicalAgentId, "handoff after behavioural"),
-                    CreateHandoff(BehaviouralAgentId, TriageAgentId, "fallback", isFallback: true),
-                    CreateHandoff(TechnicalAgentId, SummarizerAgentId, "handoff after technical"),
-                    CreateHandoff(TechnicalAgentId, TriageAgentId, "fallback", isFallback: true),
-                    CreateHandoff(SummarizerAgentId, TriageAgentId, "post-summary fallback", isFallback: true)
-                ]
-            },
+            Description = "Builder-defined 5-agent handoff workflow modeled after the Microsoft Interview Coach sample: triage -> receptionist -> behavioural -> technical -> summarizer with fallback to triage.",
+            Workflow = workflow,
             Assessment = CreateAssessment(capabilityAvailability)
         };
     }
 
-    private static AgentWorkflowCapabilityRequirement CreateCapabilityRequirement(
-        string key,
-        string displayName,
-        string purpose,
-        AgentWorkflowCapabilityAvailability availability,
-        string note)
+    private static IReadOnlyList<WorkflowStartInputDefinition> CreateInterviewCoachStartInputs()
     {
-        return new AgentWorkflowCapabilityRequirement
-        {
-            Key = key,
-            DisplayName = displayName,
-            Purpose = purpose,
-            Availability = availability,
-            AvailabilityNote = note
-        };
-    }
-
-    private static AgentWorkflowHandoffDefinition CreateHandoff(
-        string fromAgentId,
-        string toAgentId,
-        string label,
-        bool isFallback = false)
-    {
-        return new AgentWorkflowHandoffDefinition
-        {
-            FromAgentId = fromAgentId,
-            ToAgentId = toAgentId,
-            Label = label,
-            IsFallback = isFallback
-        };
+        return
+        [
+            new WorkflowStartInputDefinition
+            {
+                Key = "resume",
+                DisplayName = "Resume",
+                Description = "Candidate resume in markdown format.",
+                Kind = WorkflowStartInputKind.MarkdownDocument,
+                IsRequired = true
+            },
+            new WorkflowStartInputDefinition
+            {
+                Key = "job_description",
+                DisplayName = "Job Description",
+                Description = "Target job description in markdown format.",
+                Kind = WorkflowStartInputKind.MarkdownDocument,
+                IsRequired = true
+            }
+        ];
     }
 
     private static AgentWorkflowAssessment CreateAssessment(WorkflowCapabilityAvailabilitySummary capabilityAvailability)
@@ -236,14 +179,14 @@ public sealed class AgentWorkflowCatalog(IMcpServerConfigService mcpServerConfig
                 Your only responsibility is routing the conversation to the correct specialist.
 
                 Phases:
-                1. Receptionist: gather resume and job description.
+                1. Receptionist: validate the required workflow start inputs.
                 2. Behavioural interviewer: run behavioural questions.
                 3. Technical interviewer: run technical questions.
                 4. Summarizer: generate the wrap-up.
 
                 Routing rules:
                 - Inspect shared session state with session_get when it is useful.
-                - Start with the receptionist when intake is incomplete or no resume / job description is stored.
+                - Start with the receptionist when intake is incomplete or required workflow start inputs are missing.
                 - Route to the behavioural interviewer once intake is complete and the interview has not started.
                 - Route to the technical interviewer after the behavioural phase is complete.
                 - Route to the summarizer when the user wants to stop or both interview phases are complete.
@@ -255,7 +198,15 @@ public sealed class AgentWorkflowCatalog(IMcpServerConfigService mcpServerConfig
             .AutoSelectTools(0)
             .BuildDescription();
 
-    private static AgentDescription CreateReceptionistAgent() =>
+    private static AgentDescription CreateReceptionistAgent(IReadOnlyList<WorkflowStartInputDefinition> startInputs)
+    {
+        var requiredInputSummary = string.Join(
+            Environment.NewLine,
+            startInputs
+                .Where(static input => input.IsRequired)
+                .Select(input => $"- {input.DisplayName} (kind: {input.Key})"));
+
+        return
         AgentDefinitionBuilder
             .New("Interview Coach Receptionist", ReceptionistAgentId)
             .WithBinding(BuiltInTaskSessionMcpServerTools.Descriptor.Name, static binding => binding
@@ -263,31 +214,30 @@ public sealed class AgentWorkflowCatalog(IMcpServerConfigService mcpServerConfig
                 .OnlyTools(
                     "session_get",
                     "session_set_phase",
-                    "session_attach_document",
                     "session_get_document",
                     "session_append_turn"))
-            .WithBinding(BuiltInDocumentIntakeMcpServerTools.Descriptor.Name, static binding => binding
-                .Enabled()
-                .OnlyTools(
-                    "docintake_read_document",
-                    "docintake_prepare_markdown"))
-            .WithInstructions("""
+            .WithInstructions($$"""
                 You are the receptionist agent for an interview coach workflow.
                 Your job is to prepare the interview context before any questioning begins.
 
+                Required workflow start inputs:
+                {{requiredInputSummary}}
+
                 Responsibilities:
                 - The shared task session already exists before chat starts. Read it with session_get before deciding whether intake is complete.
-                - Ask the user for a resume and a target job description.
-                - When the user provides markdown content, normalize it with docintake_prepare_markdown or docintake_read_document and persist it with session_attach_document.
+                - The workflow start form already collected the required inputs before chat began.
+                - Verify that the required documents are present by inspecting session_get and session_get_document.
                 - Use session_append_turn for concise intake notes or decisions when useful, not as a duplicate log of every utterance.
                 - Set the workflow phase with session_set_phase when intake becomes complete.
-                - Handoff to the behavioural interviewer when both resume and job_description documents are present and the user is ready.
+                - Handoff to the behavioural interviewer when all required start inputs are present and the user is ready.
+                - If a required start input is missing, tell the user exactly which one is missing and ask them to restart the workflow using the start form. Do not ask for or parse missing documents inside the chat.
                 - Fallback to triage only for unexpected requests outside the intake phase.
 
                 Do not conduct the interview yourself. Do not summarize the whole session. Stay in the intake role.
                 """)
             .AutoSelectTools(0)
             .BuildDescription();
+    }
 
     private static AgentDescription CreateBehaviouralAgent() =>
         AgentDefinitionBuilder

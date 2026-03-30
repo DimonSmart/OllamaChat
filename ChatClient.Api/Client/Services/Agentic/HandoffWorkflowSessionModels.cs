@@ -16,16 +16,14 @@ public sealed class HandoffWorkflowSessionStartRequest
 
     public string? SessionDescription { get; init; }
 
-    public IReadOnlyList<HandoffWorkflowDocumentInput> Documents { get; init; } = [];
+    public IReadOnlyList<HandoffWorkflowStartInputValue> StartInputs { get; init; } = [];
 }
 
-public sealed class HandoffWorkflowDocumentInput
+public sealed class HandoffWorkflowStartInputValue
 {
-    public required string Kind { get; init; }
+    public required string Key { get; init; }
 
-    public string? Title { get; init; }
-
-    public string? Markdown { get; init; }
+    public string? Value { get; init; }
 
     public string? SourceFile { get; init; }
 }

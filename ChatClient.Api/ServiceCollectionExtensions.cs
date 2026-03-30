@@ -40,6 +40,7 @@ public static class ServiceCollectionExtensions
     private static IServiceCollection AddCoreServices(this IServiceCollection services)
     {
         services.AddSingleton<IAgentWorkflowCatalog, AgentWorkflowCatalog>();
+        services.AddSingleton<IWorkflowDefinitionCompiler, WorkflowDefinitionCompiler>();
         services.AddSingleton(new McpServerSessionContext(null));
         services.AddSingleton<IMcpServerConfigService, McpServerConfigService>();
         services.AddSingleton<ILlmServerConfigService, LlmServerConfigService>();
@@ -63,10 +64,12 @@ public static class ServiceCollectionExtensions
     private static IServiceCollection AddPersistenceServices(this IServiceCollection services)
     {
         services.AddSingleton<IAgentDescriptionRepository, AgentDescriptionRepository>();
+        services.AddSingleton<IWorkflowDefinitionRepository, WorkflowDefinitionRepository>();
         services.AddSingleton<ILlmServerConfigRepository, LlmServerConfigRepository>();
         services.AddSingleton<IMcpServerConfigRepository, McpServerConfigRepository>();
         services.AddSingleton<IUserSettingsRepository, UserSettingsRepository>();
         services.AddSingleton<IAgentDescriptionService, AgentDescriptionService>();
+        services.AddSingleton<IWorkflowDefinitionService, WorkflowDefinitionService>();
         services.AddSingleton<ISavedChatRepository, SavedChatRepository>();
         services.AddSingleton<IUserSettingsService, UserSettingsService>();
         services.AddSingleton<ISavedChatService, SavedChatService>();

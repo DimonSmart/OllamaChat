@@ -32,6 +32,7 @@ public sealed class AgentWorkflowCatalogTests
         var workflow = template.Workflow;
         Assert.Equal("triage", workflow.StartAgentId);
         Assert.Equal(["triage", "receptionist", "behavioural", "technical", "summarizer"], workflow.Agents.Select(static agent => agent.Id).ToArray());
+        Assert.Equal(["resume", "job_description"], workflow.StartInputs.Select(static input => input.Key).ToArray());
 
         var triage = Assert.Single(workflow.Agents, static agent => agent.Id == "triage");
         Assert.Equal("triage", triage.AgentDraft.ShortName);
@@ -43,6 +44,8 @@ public sealed class AgentWorkflowCatalogTests
             receptionist.AgentDraft.McpServerBindings,
             static binding => string.Equals(binding.ServerName, "Built-in Task Session MCP Server", StringComparison.OrdinalIgnoreCase));
         Assert.DoesNotContain(taskBinding.SelectedTools, static tool => string.Equals(tool, "session_create", StringComparison.OrdinalIgnoreCase));
+        Assert.DoesNotContain(taskBinding.SelectedTools, static tool => string.Equals(tool, "session_attach_document", StringComparison.OrdinalIgnoreCase));
+        Assert.Contains("start form", receptionist.AgentDraft.Content, StringComparison.OrdinalIgnoreCase);
 
         Assert.Contains(workflow.Handoffs, static handoff =>
             handoff.FromAgentId == "triage" &&
@@ -71,13 +74,13 @@ public sealed class AgentWorkflowCatalogTests
         ]));
 
         var template = await catalog.GetRequiredAsync("interview-coach-fixed-handoff");
+        Assert.Contains(
+            template.Assessment.MissingProjectPieces,
+            static note => note.Contains("not full resume parsing like MarkItDown", StringComparison.OrdinalIgnoreCase));
+
         var receptionist = Assert.Single(template.Workflow.Agents, static agent => agent.Id == "receptionist");
-
-        var documentIntake = Assert.Single(receptionist.CapabilityRequirements, static requirement => requirement.Key == "document-intake");
-        Assert.Equal(AgentWorkflowCapabilityAvailability.Partial, documentIntake.Availability);
-        Assert.Contains("not equivalent to MarkItDown", documentIntake.AvailabilityNote, StringComparison.OrdinalIgnoreCase);
-
-        var sessionStore = Assert.Single(receptionist.CapabilityRequirements, static requirement => requirement.Key == "task-session-store");
+        var sessionStore = Assert.Single(receptionist.CapabilityRequirements);
+        Assert.Equal("task-session-store", sessionStore.Key);
         Assert.Equal(AgentWorkflowCapabilityAvailability.Missing, sessionStore.Availability);
     }
 

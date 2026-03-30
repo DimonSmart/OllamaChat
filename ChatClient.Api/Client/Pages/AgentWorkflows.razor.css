@@ -31,3 +31,36 @@
 .handoff-workflow-start-header {
     flex-wrap: wrap;
 }
+
+.handoff-workflow-title-row {
+    flex-wrap: wrap;
+}
+
+.handoff-workflow-command-row {
+    flex-wrap: wrap;
+}
+
+.handoff-workflow-source-editor {
+    width: 100%;
+}
+
+.workflow-load-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+    max-height: 26rem;
+    overflow-y: auto;
+}
+
+.workflow-load-item {
+    transition: border-color 0.15s ease, background-color 0.15s ease;
+}
+
+.workflow-load-item:hover {
+    border-color: var(--mud-palette-primary);
+}
+
+.workflow-load-item-selected {
+    border-color: var(--mud-palette-primary);
+    background: rgba(25, 118, 210, 0.08);
+}

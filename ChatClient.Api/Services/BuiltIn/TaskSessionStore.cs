@@ -66,6 +66,7 @@ public sealed class TaskSessionStore(McpServerSessionContext sessionContext)
         }
 
         var documents = await ListDocumentInfoAsync(connection, normalizedSessionId, cancellationToken);
+        var parameters = await ListParameterInfoAsync(connection, normalizedSessionId, cancellationToken);
         var summaries = await ListSummaryInfoAsync(connection, normalizedSessionId, cancellationToken);
         var turnCount = await GetTurnCountAsync(connection, normalizedSessionId, cancellationToken);
 
@@ -79,6 +80,7 @@ public sealed class TaskSessionStore(McpServerSessionContext sessionContext)
             UpdatedAtUtc: DateTime.Parse(reader.GetString(6)),
             TurnCount: turnCount,
             Documents: documents,
+            Parameters: parameters,
             Summaries: summaries);
     }
 
@@ -183,6 +185,79 @@ public sealed class TaskSessionStore(McpServerSessionContext sessionContext)
             Source: ReadNullableString(reader, 4),
             CreatedAtUtc: DateTime.Parse(reader.GetString(5)),
             UpdatedAtUtc: DateTime.Parse(reader.GetString(6)));
+    }
+
+    public async Task<TaskSessionParameterSnapshot> SetParameterAsync(
+        string? sessionId,
+        string key,
+        string valueKind,
+        string value,
+        CancellationToken cancellationToken)
+    {
+        var normalizedSessionId = ResolveExistingSessionId(sessionId);
+        var normalizedKey = NormalizeRequired(key, "parameter_key_required");
+        var normalizedValueKind = NormalizeRequired(valueKind, "parameter_value_kind_required");
+        var normalizedValue = NormalizeRequired(value, "parameter_value_required");
+        var now = DateTime.UtcNow;
+
+        await using var connection = await OpenConnectionAsync(cancellationToken);
+        await EnsureSessionExistsAsync(connection, normalizedSessionId, cancellationToken);
+
+        await using var command = connection.CreateCommand();
+        command.CommandText =
+            """
+            INSERT INTO task_session_parameters (session_id, parameter_key, value_kind, value_text, created_at_utc, updated_at_utc)
+            VALUES ($sessionId, $key, $valueKind, $value, $createdAtUtc, $updatedAtUtc)
+            ON CONFLICT(session_id, parameter_key) DO UPDATE SET
+                value_kind = excluded.value_kind,
+                value_text = excluded.value_text,
+                updated_at_utc = excluded.updated_at_utc;
+            """;
+        command.Parameters.AddWithValue("$sessionId", normalizedSessionId);
+        command.Parameters.AddWithValue("$key", normalizedKey);
+        command.Parameters.AddWithValue("$valueKind", normalizedValueKind);
+        command.Parameters.AddWithValue("$value", normalizedValue);
+        command.Parameters.AddWithValue("$createdAtUtc", now.ToString("O"));
+        command.Parameters.AddWithValue("$updatedAtUtc", now.ToString("O"));
+        await command.ExecuteNonQueryAsync(cancellationToken);
+
+        return await GetParameterAsync(normalizedSessionId, normalizedKey, cancellationToken);
+    }
+
+    public async Task<TaskSessionParameterSnapshot> GetParameterAsync(
+        string? sessionId,
+        string key,
+        CancellationToken cancellationToken)
+    {
+        var normalizedSessionId = ResolveExistingSessionId(sessionId);
+        var normalizedKey = NormalizeRequired(key, "parameter_key_required");
+
+        await using var connection = await OpenConnectionAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText =
+            """
+            SELECT session_id, parameter_key, value_kind, value_text, created_at_utc, updated_at_utc
+            FROM task_session_parameters
+            WHERE session_id = $sessionId
+              AND parameter_key = $key
+            LIMIT 1;
+            """;
+        command.Parameters.AddWithValue("$sessionId", normalizedSessionId);
+        command.Parameters.AddWithValue("$key", normalizedKey);
+
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        if (!await reader.ReadAsync(cancellationToken))
+        {
+            throw new InvalidOperationException("parameter_not_found");
+        }
+
+        return new TaskSessionParameterSnapshot(
+            SessionId: reader.GetString(0),
+            Key: reader.GetString(1),
+            ValueKind: reader.GetString(2),
+            Value: reader.GetString(3),
+            CreatedAtUtc: DateTime.Parse(reader.GetString(4)),
+            UpdatedAtUtc: DateTime.Parse(reader.GetString(5)));
     }
 
     public async Task<TaskSessionTurnSnapshot> AppendTurnAsync(
@@ -382,6 +457,17 @@ public sealed class TaskSessionStore(McpServerSessionContext sessionContext)
                     FOREIGN KEY (session_id) REFERENCES task_sessions(session_id) ON DELETE CASCADE
                 );
 
+                CREATE TABLE IF NOT EXISTS task_session_parameters (
+                    session_id TEXT NOT NULL,
+                    parameter_key TEXT NOT NULL,
+                    value_kind TEXT NOT NULL,
+                    value_text TEXT NOT NULL,
+                    created_at_utc TEXT NOT NULL,
+                    updated_at_utc TEXT NOT NULL,
+                    PRIMARY KEY (session_id, parameter_key),
+                    FOREIGN KEY (session_id) REFERENCES task_sessions(session_id) ON DELETE CASCADE
+                );
+
                 CREATE TABLE IF NOT EXISTS task_session_summaries (
                     session_id TEXT NOT NULL,
                     label TEXT NOT NULL,
@@ -507,6 +593,35 @@ public sealed class TaskSessionStore(McpServerSessionContext sessionContext)
         }
 
         return documents;
+    }
+
+    private static async Task<IReadOnlyList<TaskSessionParameterInfo>> ListParameterInfoAsync(
+        SqliteConnection connection,
+        string sessionId,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.CommandText =
+            """
+            SELECT parameter_key, value_kind, created_at_utc, updated_at_utc
+            FROM task_session_parameters
+            WHERE session_id = $sessionId
+            ORDER BY parameter_key ASC;
+            """;
+        command.Parameters.AddWithValue("$sessionId", sessionId);
+
+        List<TaskSessionParameterInfo> parameters = [];
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            parameters.Add(new TaskSessionParameterInfo(
+                Key: reader.GetString(0),
+                ValueKind: reader.GetString(1),
+                CreatedAtUtc: DateTime.Parse(reader.GetString(2)),
+                UpdatedAtUtc: DateTime.Parse(reader.GetString(3))));
+        }
+
+        return parameters;
     }
 
     private static async Task<IReadOnlyList<TaskSessionSummaryInfo>> ListSummaryInfoAsync(

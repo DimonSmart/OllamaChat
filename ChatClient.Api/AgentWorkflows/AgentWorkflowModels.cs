@@ -25,9 +25,37 @@ public sealed class AgentWorkflowDefinition
 
     public required string StartAgentId { get; init; }
 
+    public List<WorkflowStartInputDefinition> StartInputs { get; init; } = [];
+
     public List<AgentWorkflowAgentDefinition> Agents { get; init; } = [];
 
     public List<AgentWorkflowHandoffDefinition> Handoffs { get; init; } = [];
+}
+
+public sealed class WorkflowStartInputDefinition
+{
+    public required string Key { get; init; }
+
+    public required string DisplayName { get; init; }
+
+    public string Description { get; init; } = string.Empty;
+
+    public WorkflowStartInputKind Kind { get; init; }
+
+    public bool IsRequired { get; init; } = true;
+
+    public string? Placeholder { get; init; }
+
+    public string? DefaultValue { get; init; }
+}
+
+public enum WorkflowStartInputKind
+{
+    MarkdownDocument,
+    Text,
+    Number,
+    Boolean,
+    Json
 }
 
 public sealed class AgentWorkflowAgentDefinition

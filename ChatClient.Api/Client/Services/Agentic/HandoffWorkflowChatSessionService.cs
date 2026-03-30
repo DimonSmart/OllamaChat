@@ -64,6 +64,7 @@ public sealed class HandoffWorkflowChatSessionService(
 
             stage = "validate-workflow";
             ValidateWorkflowDefinition(request.Workflow, request.Agents);
+            var normalizedStartInputs = NormalizeStartInputs(request.Workflow, request.StartInputs);
 
             stage = "create-task-session";
             var session = await taskSessionStore.CreateSessionAsync(
@@ -75,22 +76,37 @@ public sealed class HandoffWorkflowChatSessionService(
             stage = "set-initial-phase";
             await taskSessionStore.SetPhaseAsync(TaskSessionId, "intake", cancellationToken);
 
-            foreach (var document in request.Documents)
+            foreach (var startInput in normalizedStartInputs)
             {
-                stage = $"prepare-document:{document.Kind}";
-                var prepared = await PrepareDocumentAsync(document, cancellationToken);
-                if (prepared is null)
+                var definition = request.Workflow.StartInputs.First(input =>
+                    string.Equals(input.Key, startInput.Key, StringComparison.OrdinalIgnoreCase));
+
+                if (definition.Kind == WorkflowStartInputKind.MarkdownDocument)
                 {
+                    stage = $"prepare-document:{definition.Key}";
+                    var prepared = await PrepareDocumentAsync(definition, startInput, cancellationToken);
+                    if (prepared is null)
+                    {
+                        continue;
+                    }
+
+                    stage = $"attach-document:{definition.Key}";
+                    await taskSessionStore.AttachDocumentAsync(
+                        TaskSessionId,
+                        definition.Key,
+                        prepared.Markdown,
+                        prepared.Title,
+                        prepared.SourceFile,
+                        cancellationToken);
                     continue;
                 }
 
-                stage = $"attach-document:{document.Kind}";
-                await taskSessionStore.AttachDocumentAsync(
+                stage = $"attach-parameter:{definition.Key}";
+                await taskSessionStore.SetParameterAsync(
                     TaskSessionId,
-                    document.Kind,
-                    prepared.Markdown,
-                    prepared.Title,
-                    prepared.SourceFile,
+                    definition.Key,
+                    MapParameterValueKind(definition.Kind),
+                    NormalizeParameterValue(definition, startInput),
                     cancellationToken);
             }
 
@@ -129,7 +145,7 @@ public sealed class HandoffWorkflowChatSessionService(
                 Configuration = request.Configuration,
                 SessionTitle = request.SessionTitle,
                 SessionDescription = request.SessionDescription,
-                Documents = request.Documents
+                StartInputs = normalizedStartInputs
             };
 
             stage = "reset-chat";
@@ -621,12 +637,13 @@ public sealed class HandoffWorkflowChatSessionService(
     }
 
     private async Task<MarkdownDocumentIntakeResult?> PrepareDocumentAsync(
-        HandoffWorkflowDocumentInput input,
+        WorkflowStartInputDefinition definition,
+        HandoffWorkflowStartInputValue input,
         CancellationToken cancellationToken)
     {
-        if (!string.IsNullOrWhiteSpace(input.Markdown))
+        if (!string.IsNullOrWhiteSpace(input.Value))
         {
-            return documentIntakeService.PrepareMarkdown(input.Markdown, input.Title);
+            return documentIntakeService.PrepareMarkdown(input.Value, definition.DisplayName);
         }
 
         if (!string.IsNullOrWhiteSpace(input.SourceFile))
@@ -654,6 +671,121 @@ public sealed class HandoffWorkflowChatSessionService(
                 "Resolved workflow agents do not match the workflow definition.");
         }
     }
+
+    private static IReadOnlyList<HandoffWorkflowStartInputValue> NormalizeStartInputs(
+        AgentWorkflowDefinition workflow,
+        IReadOnlyList<HandoffWorkflowStartInputValue> providedInputs)
+    {
+        var definitionsByKey = workflow.StartInputs.ToDictionary(
+            static input => input.Key,
+            StringComparer.OrdinalIgnoreCase);
+        var providedByKey = providedInputs.ToDictionary(
+            static input => input.Key,
+            StringComparer.OrdinalIgnoreCase);
+
+        var unknownKey = providedByKey.Keys.FirstOrDefault(key => !definitionsByKey.ContainsKey(key));
+        if (unknownKey is not null)
+        {
+            throw new InvalidOperationException(
+                $"Workflow start input '{unknownKey}' is not defined.");
+        }
+
+        List<HandoffWorkflowStartInputValue> normalizedInputs = [];
+
+        foreach (var definition in workflow.StartInputs)
+        {
+            providedByKey.TryGetValue(definition.Key, out var provided);
+
+            if (definition.Kind == WorkflowStartInputKind.MarkdownDocument)
+            {
+                if (provided is not null &&
+                    (!string.IsNullOrWhiteSpace(provided.Value) ||
+                     !string.IsNullOrWhiteSpace(provided.SourceFile)))
+                {
+                    normalizedInputs.Add(new HandoffWorkflowStartInputValue
+                    {
+                        Key = definition.Key,
+                        Value = provided.Value,
+                        SourceFile = provided.SourceFile
+                    });
+                    continue;
+                }
+
+                if (definition.IsRequired)
+                {
+                    throw new InvalidOperationException(
+                        $"Workflow start input '{definition.DisplayName}' is required.");
+                }
+
+                continue;
+            }
+
+            var value = provided?.Value;
+            if (string.IsNullOrWhiteSpace(value))
+            {
+                value = definition.DefaultValue;
+            }
+
+            if (string.IsNullOrWhiteSpace(value))
+            {
+                if (definition.IsRequired)
+                {
+                    throw new InvalidOperationException(
+                        $"Workflow start input '{definition.DisplayName}' is required.");
+                }
+
+                continue;
+            }
+
+            normalizedInputs.Add(new HandoffWorkflowStartInputValue
+            {
+                Key = definition.Key,
+                Value = value
+            });
+        }
+
+        return normalizedInputs;
+    }
+
+    private static string NormalizeParameterValue(
+        WorkflowStartInputDefinition definition,
+        HandoffWorkflowStartInputValue input)
+    {
+        var value = input.Value?.Trim();
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            throw new InvalidOperationException(
+                $"Workflow start input '{definition.DisplayName}' requires a value.");
+        }
+
+        return definition.Kind switch
+        {
+            WorkflowStartInputKind.Text => value,
+            WorkflowStartInputKind.Number => value,
+            WorkflowStartInputKind.Boolean => bool.TryParse(value, out var boolValue)
+                ? boolValue ? bool.TrueString.ToLowerInvariant() : bool.FalseString.ToLowerInvariant()
+                : throw new InvalidOperationException(
+                    $"Workflow start input '{definition.DisplayName}' expects a boolean value."),
+            WorkflowStartInputKind.Json => value,
+            WorkflowStartInputKind.MarkdownDocument => throw new InvalidOperationException(
+                $"Workflow start input '{definition.DisplayName}' is a document and cannot be stored as a parameter."),
+            _ => throw new InvalidOperationException(
+                $"Workflow start input '{definition.DisplayName}' uses an unsupported input kind '{definition.Kind}'.")
+        };
+    }
+
+    private static string MapParameterValueKind(WorkflowStartInputKind kind) =>
+        kind switch
+        {
+            WorkflowStartInputKind.Text => "text",
+            WorkflowStartInputKind.Number => "number",
+            WorkflowStartInputKind.Boolean => "boolean",
+            WorkflowStartInputKind.Json => "json",
+            WorkflowStartInputKind.MarkdownDocument => throw new InvalidOperationException(
+                "Document inputs must be stored as task session documents."),
+            _ => throw new InvalidOperationException(
+                $"Unsupported workflow start input kind '{kind}'.")
+        };
 
     private async Task ValidateResolvedAgentsAsync(
         IReadOnlyList<ResolvedChatAgent> resolvedAgents,

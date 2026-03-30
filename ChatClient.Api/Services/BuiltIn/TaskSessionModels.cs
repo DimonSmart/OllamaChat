@@ -12,6 +12,7 @@ public sealed record TaskSessionSnapshot(
     DateTime UpdatedAtUtc,
     int TurnCount,
     IReadOnlyList<TaskSessionDocumentInfo> Documents,
+    IReadOnlyList<TaskSessionParameterInfo> Parameters,
     IReadOnlyList<TaskSessionSummaryInfo> Summaries);
 
 public sealed record TaskSessionDocumentInfo(
@@ -27,6 +28,20 @@ public sealed record TaskSessionDocumentSnapshot(
     string? Title,
     string Markdown,
     string? Source,
+    DateTime CreatedAtUtc,
+    DateTime UpdatedAtUtc);
+
+public sealed record TaskSessionParameterInfo(
+    string Key,
+    string ValueKind,
+    DateTime CreatedAtUtc,
+    DateTime UpdatedAtUtc);
+
+public sealed record TaskSessionParameterSnapshot(
+    string SessionId,
+    string Key,
+    string ValueKind,
+    string Value,
     DateTime CreatedAtUtc,
     DateTime UpdatedAtUtc);
 

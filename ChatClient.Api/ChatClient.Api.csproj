@@ -9,6 +9,7 @@
         <PackageReference Include="HtmlAgilityPack" Version="1.12.4" />
         <PackageReference Include="Microsoft.Agents.AI" Version="1.0.0-rc4" />
         <PackageReference Include="Microsoft.Agents.AI.Workflows" Version="1.0.0-rc4" />
+        <PackageReference Include="Microsoft.CodeAnalysis.CSharp.Scripting" Version="4.14.0" />
         <PackageReference Include="Microsoft.Extensions.AI" Version="10.4.1" />
         <PackageReference Include="Microsoft.Extensions.AI.OpenAI" Version="10.4.1" />
         <PackageReference Include="Microsoft.Data.Sqlite" Version="10.0.3" />

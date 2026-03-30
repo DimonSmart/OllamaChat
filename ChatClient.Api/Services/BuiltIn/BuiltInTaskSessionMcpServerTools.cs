@@ -56,7 +56,7 @@ public sealed class BuiltInTaskSessionMcpServerTools
     }
 
     [McpServerTool(Name = "session_get", ReadOnly = true, UseStructuredContent = true)]
-    [Description("Returns the current session snapshot including phase, document inventory, summary inventory, and turn count.")]
+    [Description("Returns the current session snapshot including phase, document inventory, parameter inventory, summary inventory, and turn count.")]
     public static async Task<object> GetSessionAsync(
         TaskSessionStore store,
         [Description("Task session id returned by session_create. Optional when the MCP binding already defines a sessionId parameter.")] string? sessionId = null,
@@ -126,6 +126,44 @@ public sealed class BuiltInTaskSessionMcpServerTools
         catch (InvalidOperationException ex)
         {
             return CreateKnownError(ex.Message, new { sessionId, kind });
+        }
+    }
+
+    [McpServerTool(Name = "session_set_parameter", UseStructuredContent = true)]
+    [Description("Stores or replaces one named scalar or structured parameter in the task session, for example response_language, budget, seniority, or article_outline_json.")]
+    public static async Task<object> SetParameterAsync(
+        TaskSessionStore store,
+        [Description("Parameter key to store or replace.")] string key,
+        [Description("Logical value kind, for example text, number, boolean, or json.")] string valueKind,
+        [Description("Parameter value stored as text. Json values should be passed as serialized JSON text.")] string value,
+        [Description("Task session id returned by session_create. Optional when the MCP binding already defines a sessionId parameter.")] string? sessionId = null,
+        CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            return await store.SetParameterAsync(sessionId, key, valueKind, value, cancellationToken);
+        }
+        catch (InvalidOperationException ex)
+        {
+            return CreateKnownError(ex.Message, new { sessionId, key, valueKind });
+        }
+    }
+
+    [McpServerTool(Name = "session_get_parameter", ReadOnly = true, UseStructuredContent = true)]
+    [Description("Returns one stored parameter by key from the task session.")]
+    public static async Task<object> GetParameterAsync(
+        TaskSessionStore store,
+        [Description("Parameter key to retrieve.")] string key,
+        [Description("Task session id returned by session_create. Optional when the MCP binding already defines a sessionId parameter.")] string? sessionId = null,
+        CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            return await store.GetParameterAsync(sessionId, key, cancellationToken);
+        }
+        catch (InvalidOperationException ex)
+        {
+            return CreateKnownError(ex.Message, new { sessionId, key });
         }
     }
 
@@ -204,6 +242,10 @@ public sealed class BuiltInTaskSessionMcpServerTools
             "document_kind_required" => "Provide a semantic document kind.",
             "document_markdown_required" => "Provide non-empty markdown content for the document.",
             "document_not_found" => "The requested document was not found in the task session.",
+            "parameter_key_required" => "Provide a non-empty parameter key.",
+            "parameter_value_kind_required" => "Provide a non-empty parameter value kind.",
+            "parameter_value_required" => "Provide a non-empty parameter value.",
+            "parameter_not_found" => "The requested parameter was not found in the task session.",
             "turn_role_required" => "Provide a non-empty turn role.",
             "turn_content_required" => "Provide non-empty turn content.",
             "summary_label_required" => "Provide a non-empty summary label.",

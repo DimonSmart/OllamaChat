@@ -15,7 +15,8 @@
 @using Microsoft.Extensions.AI
 @using Microsoft.JSInterop
 @using MudBlazor
-@inject IAgentWorkflowCatalog WorkflowCatalog
+@inject IWorkflowDefinitionCompiler WorkflowCompiler
+@inject IWorkflowDefinitionService WorkflowDefinitionService
 @inject IHandoffWorkflowSessionService WorkflowSessionService
 @inject IHandoffWorkflowChatViewModelService WorkflowChatViewModelService
 @inject IUserSettingsService UserSettingsService
@@ -34,12 +35,12 @@
             @loadError
         </MudAlert>
     }
-    else if (template is null)
+    else if (isPageLoading)
     {
         <MudPaper Class="pa-6" Outlined="true">
             <MudStack Row="true" Spacing="2" AlignItems="AlignItems.Center">
                 <MudProgressCircular Indeterminate="true" Size="Size.Small" />
-                <MudText Typo="Typo.body2">Loading workflow template...</MudText>
+                <MudText Typo="Typo.body2">Loading workflow editor...</MudText>
             </MudStack>
         </MudPaper>
     }
@@ -50,31 +51,122 @@
                 <MudStack Spacing="3">
                     <MudPaper Class="pa-4" Outlined="true">
                         <MudStack Spacing="2">
-                            <MudText Typo="Typo.h6">@template.DisplayName</MudText>
-                            <MudText Typo="Typo.body2" Class="mud-text-secondary">@template.Description</MudText>
+                            <MudStack Row="true" Spacing="1" AlignItems="AlignItems.Center" Class="handoff-workflow-title-row">
+                                <MudText Typo="Typo.h6">@CurrentWorkflowDisplayName</MudText>
+                                @if (currentSavedWorkflowId.HasValue)
+                                {
+                                    <MudChip T="string" Size="Size.Small" Variant="Variant.Outlined">Saved</MudChip>
+                                }
+                                @if (workflowSourceDirty)
+                                {
+                                    <MudChip T="string" Size="Size.Small" Color="Color.Warning" Variant="Variant.Outlined">Modified</MudChip>
+                                }
+                            </MudStack>
+                            @if (!string.IsNullOrWhiteSpace(CurrentWorkflowDescription))
+                            {
+                                <MudText Typo="Typo.body2" Class="mud-text-secondary">@CurrentWorkflowDescription</MudText>
+                            }
+                            @if (!string.IsNullOrWhiteSpace(workflowCompileError))
+                            {
+                                <MudAlert Severity="Severity.Error" Dense="true">
+                                    @workflowCompileError
+                                </MudAlert>
+                            }
                         </MudStack>
                     </MudPaper>
 
                     <MudPaper Class="pa-4" Outlined="true">
                         <MudStack Spacing="2">
                             <MudStack Row="true" Spacing="2" AlignItems="AlignItems.Center" Justify="Justify.SpaceBetween" Class="handoff-workflow-start-header">
-                                <MudText Typo="Typo.h6">Start Fixed Workflow</MudText>
+                                <MudText Typo="Typo.h6">Workflow Source</MudText>
+                                <MudButton Variant="Variant.Text"
+                                           Color="Color.Default"
+                                           Size="Size.Small"
+                                           OnClick="ToggleWorkflowSourceEditor">
+                                    @(isWorkflowSourceExpanded ? "Hide Source" : "Show Source")
+                                </MudButton>
+                            </MudStack>
+
+                            <MudStack Row="true" Spacing="2" Class="handoff-workflow-command-row">
                                 <MudButton Variant="Variant.Outlined"
                                            Color="Color.Default"
                                            Size="Size.Small"
-                                           Disabled="@isStartingWorkflow"
+                                           Disabled="@workflowStarted"
+                                           OnClick="OpenLoadWorkflowDialogAsync">
+                                    Load Workflow
+                                </MudButton>
+                                <MudButton Variant="Variant.Outlined"
+                                           Color="Color.Primary"
+                                           Size="Size.Small"
+                                           Disabled="@(workflowStarted || string.IsNullOrWhiteSpace(workflowSourceCode))"
+                                           OnClick="SaveWorkflowAsync">
+                                    Save Workflow
+                                </MudButton>
+                                <MudButton Variant="Variant.Outlined"
+                                           Color="Color.Error"
+                                           Size="Size.Small"
+                                           Disabled="@(!currentSavedWorkflowId.HasValue || workflowStarted)"
+                                           OnClick="OpenDeleteWorkflowDialog">
+                                    Delete Workflow
+                                </MudButton>
+                                <MudButton Variant="Variant.Outlined"
+                                           Color="Color.Default"
+                                           Size="Size.Small"
+                                           Disabled="@workflowStarted"
+                                           OnClick="LoadStarterWorkflowAsync">
+                                    Load Starter Workflow
+                                </MudButton>
+                            </MudStack>
+
+                            <MudCollapse Expanded="@isWorkflowSourceExpanded">
+                                <MudTextField T="string"
+                                              Label="Workflow Source Code"
+                                              Value="workflowSourceCode"
+                                              ValueChanged="OnWorkflowSourceChanged"
+                                              Variant="Variant.Outlined"
+                                              Margin="Margin.Dense"
+                                              Lines="28"
+                                              AutoGrow="true"
+                                              Immediate="true"
+                                              Disabled="@workflowStarted"
+                                              Class="handoff-workflow-source-editor" />
+                            </MudCollapse>
+                        </MudStack>
+                    </MudPaper>
+
+                    <MudPaper Class="pa-4" Outlined="true">
+                        <MudStack Spacing="2">
+                            <MudStack Row="true" Spacing="2" AlignItems="AlignItems.Center" Justify="Justify.SpaceBetween" Class="handoff-workflow-start-header">
+                                <MudText Typo="Typo.h6">Start Workflow</MudText>
+                                <MudButton Variant="Variant.Outlined"
+                                           Color="Color.Default"
+                                           Size="Size.Small"
+                                           Disabled="@(isStartingWorkflow || currentWorkflow is null)"
                                            OnClick="LoadSampleData">
                                     Load Sample Data
                                 </MudButton>
                             </MudStack>
                             <MudText Typo="Typo.body2" Class="mud-text-secondary">
-                                Step 1 prepares the shared task session and optional markdown documents. Step 2 starts a separate handoff chat on top of that state.
+                                Step 1 prepares the shared task session and the workflow-defined start inputs. Step 2 starts a separate handoff chat on top of that state.
                             </MudText>
 
                             @if (!HasSelectedModel)
                             {
                                 <MudAlert Severity="Severity.Warning" Dense="true">
                                     Select a model in the global UI model selector before starting the workflow.
+                                </MudAlert>
+                            }
+
+                            @if (currentWorkflow is null)
+                            {
+                                <MudAlert Severity="Severity.Warning" Dense="true">
+                                    Compile a valid workflow source to inspect its required inputs and start it.
+                                </MudAlert>
+                            }
+                            else if (!AreRequiredStartInputsSatisfied)
+                            {
+                                <MudAlert Severity="Severity.Warning" Dense="true">
+                                    Fill in all required workflow inputs before starting the workflow.
                                 </MudAlert>
                             }
 
@@ -101,23 +193,54 @@
                                           Lines="4"
                                           AutoGrow="true" />
 
-                            <MudTextField T="string"
-                                          Label="Resume Markdown"
-                                          Value="resumeMarkdown"
-                                          ValueChanged="value => resumeMarkdown = value"
-                                          Variant="Variant.Outlined"
-                                          Margin="Margin.Dense"
-                                          Lines="8"
-                                          AutoGrow="true" />
+                            @if (currentWorkflow is not null)
+                            {
+                                @foreach (var input in currentWorkflow.StartInputs)
+                                {
+                                    <MudStack Spacing="1">
+                                        @switch (input.Kind)
+                                        {
+                                            case WorkflowStartInputKind.MarkdownDocument:
+                                            case WorkflowStartInputKind.Json:
+                                                <MudTextField T="string"
+                                                              Label="@GetStartInputLabel(input)"
+                                                              HelperText="@input.Description"
+                                                              Value="GetStartInputValue(input.Key)"
+                                                              ValueChanged="value => SetStartInputValue(input.Key, value)"
+                                                              Variant="Variant.Outlined"
+                                                              Margin="Margin.Dense"
+                                                              Placeholder="@input.Placeholder"
+                                                              Lines="8"
+                                                              AutoGrow="true" />
+                                                break;
 
-                            <MudTextField T="string"
-                                          Label="Job Description Markdown"
-                                          Value="jobDescriptionMarkdown"
-                                          ValueChanged="value => jobDescriptionMarkdown = value"
-                                          Variant="Variant.Outlined"
-                                          Margin="Margin.Dense"
-                                          Lines="8"
-                                          AutoGrow="true" />
+                                            case WorkflowStartInputKind.Boolean:
+                                                <MudSwitch T="bool"
+                                                           Label="@GetStartInputLabel(input)"
+                                                           Value="GetBooleanStartInputValue(input)"
+                                                           ValueChanged="value => SetBooleanStartInputValue(input.Key, value)"
+                                                           Color="Color.Primary" />
+                                                if (!string.IsNullOrWhiteSpace(input.Description))
+                                                {
+                                                    <MudText Typo="Typo.caption" Class="mud-text-secondary">@input.Description</MudText>
+                                                }
+                                                break;
+
+                                            default:
+                                                <MudTextField T="string"
+                                                              Label="@GetStartInputLabel(input)"
+                                                              HelperText="@input.Description"
+                                                              Value="GetStartInputValue(input.Key)"
+                                                              ValueChanged="value => SetStartInputValue(input.Key, value)"
+                                                              Variant="Variant.Outlined"
+                                                              Margin="Margin.Dense"
+                                                              Placeholder="@input.Placeholder"
+                                                              InputType="@(input.Kind == WorkflowStartInputKind.Number ? InputType.Number : InputType.Text)" />
+                                                break;
+                                        }
+                                    </MudStack>
+                                }
+                            }
 
                             <MudStack Row="true" Spacing="2">
                                 <MudButton Variant="Variant.Filled"
@@ -139,64 +262,67 @@
 
             <MudItem xs="12" lg="5">
                 <MudExpansionPanels MultiExpansion="true" Outlined="true" Class="handoff-workflow-agent-panels">
-                    @foreach (var agent in template.Workflow.Agents)
+                    @if (currentWorkflow is not null)
                     {
-                        <MudExpansionPanel Expanded="false">
-                            <TitleContent>
-                                <MudStack Spacing="1">
-                                    <MudStack Row="true" Spacing="1" AlignItems="AlignItems.Center" Class="handoff-workflow-agent-title">
-                                        <MudText Typo="Typo.subtitle1">@agent.AgentDraft.AgentName</MudText>
-                                        @if (!string.IsNullOrWhiteSpace(agent.AgentDraft.ShortName))
-                                        {
-                                            <MudChip T="string" Size="Size.Small" Variant="Variant.Outlined">@agent.AgentDraft.ShortName</MudChip>
-                                        }
+                        @foreach (var agent in currentWorkflow.Agents)
+                        {
+                            <MudExpansionPanel Expanded="false">
+                                <TitleContent>
+                                    <MudStack Spacing="1">
+                                        <MudStack Row="true" Spacing="1" AlignItems="AlignItems.Center" Class="handoff-workflow-agent-title">
+                                            <MudText Typo="Typo.subtitle1">@agent.AgentDraft.AgentName</MudText>
+                                            @if (!string.IsNullOrWhiteSpace(agent.AgentDraft.ShortName))
+                                            {
+                                                <MudChip T="string" Size="Size.Small" Variant="Variant.Outlined">@agent.AgentDraft.ShortName</MudChip>
+                                            }
+                                        </MudStack>
+                                        <MudText Typo="Typo.caption" Class="mud-text-secondary">@agent.Role</MudText>
                                     </MudStack>
-                                    <MudText Typo="Typo.caption" Class="mud-text-secondary">@agent.Role</MudText>
-                                </MudStack>
-                            </TitleContent>
+                                </TitleContent>
 
-                            <ChildContent>
-                                <MudStack Spacing="2">
-                                    <MudText Typo="Typo.body2">@agent.Summary</MudText>
+                                <ChildContent>
+                                    <MudStack Spacing="2">
+                                        <MudText Typo="Typo.body2">@agent.Summary</MudText>
 
-                                    <MudDivider />
+                                        <MudDivider />
 
-                                    <MudText Typo="Typo.subtitle2">Outgoing Handoffs</MudText>
-                                    <div class="handoff-workflow-chip-list">
-                                        @foreach (var handoff in GetOutgoingHandoffs(agent.Id))
+                                        <MudText Typo="Typo.subtitle2">Outgoing Handoffs</MudText>
+                                        <div class="handoff-workflow-chip-list">
+                                            @foreach (var handoff in GetOutgoingHandoffs(agent.Id))
+                                            {
+                                                <MudChip T="string" Size="Size.Small"
+                                                         Color="@(handoff.IsFallback ? Color.Warning : Color.Primary)"
+                                                         Variant="@(handoff.IsFallback ? Variant.Outlined : Variant.Filled)">
+                                                    @($"{handoff.ToAgentId} : {handoff.Label}")
+                                                </MudChip>
+                                            }
+                                        </div>
+
+                                        <MudText Typo="Typo.subtitle2">Capability Requirements</MudText>
+                                        @foreach (var capability in agent.CapabilityRequirements)
                                         {
-                                            <MudChip T="string" Size="Size.Small"
-                                                     Color="@(handoff.IsFallback ? Color.Warning : Color.Primary)"
-                                                     Variant="@(handoff.IsFallback ? Variant.Outlined : Variant.Filled)">
-                                                @($"{handoff.ToAgentId} : {handoff.Label}")
-                                            </MudChip>
-                                        }
-                                    </div>
-
-                                    <MudText Typo="Typo.subtitle2">Capability Requirements</MudText>
-                                    @foreach (var capability in agent.CapabilityRequirements)
-                                    {
-                                        <MudPaper Class="pa-3" Outlined="true">
-                                            <MudStack Spacing="1">
-                                                <MudStack Row="true" Spacing="1" AlignItems="AlignItems.Center">
-                                                    <MudText Typo="Typo.subtitle2">@capability.DisplayName</MudText>
-                                                    <MudChip T="string" Size="Size.Small"
-                                                             Color="@GetCapabilityColor(capability.Availability)"
-                                                             Variant="Variant.Filled">
-                                                        @capability.Availability
-                                                    </MudChip>
+                                            <MudPaper Class="pa-3" Outlined="true">
+                                                <MudStack Spacing="1">
+                                                    <MudStack Row="true" Spacing="1" AlignItems="AlignItems.Center">
+                                                        <MudText Typo="Typo.subtitle2">@capability.DisplayName</MudText>
+                                                        <MudChip T="string" Size="Size.Small"
+                                                                 Color="@GetCapabilityColor(capability.Availability)"
+                                                                 Variant="Variant.Filled">
+                                                            @capability.Availability
+                                                        </MudChip>
+                                                    </MudStack>
+                                                    <MudText Typo="Typo.body2">@capability.Purpose</MudText>
+                                                    <MudText Typo="Typo.caption" Class="mud-text-secondary">@capability.AvailabilityNote</MudText>
                                                 </MudStack>
-                                                <MudText Typo="Typo.body2">@capability.Purpose</MudText>
-                                                <MudText Typo="Typo.caption" Class="mud-text-secondary">@capability.AvailabilityNote</MudText>
-                                            </MudStack>
-                                        </MudPaper>
-                                    }
+                                            </MudPaper>
+                                        }
 
-                                    <MudText Typo="Typo.subtitle2">Workflow Prompt</MudText>
-                                    <pre class="handoff-workflow-prompt">@agent.AgentDraft.Content</pre>
-                                </MudStack>
-                            </ChildContent>
-                        </MudExpansionPanel>
+                                        <MudText Typo="Typo.subtitle2">Workflow Prompt</MudText>
+                                        <pre class="handoff-workflow-prompt">@agent.AgentDraft.Content</pre>
+                                    </MudStack>
+                                </ChildContent>
+                            </MudExpansionPanel>
+                        }
                     }
                 </MudExpansionPanels>
             </MudItem>
@@ -233,9 +359,83 @@
     }
 </MudStack>
 
+<MudDialog @bind-Visible="@showLoadWorkflowDialog" Options="loadWorkflowDialogOptions">
+    <TitleContent>
+        <MudText Typo="Typo.h6">Load Workflow</MudText>
+    </TitleContent>
+    <DialogContent>
+        <MudStack Spacing="2">
+            <MudTextField T="string"
+                          Value="workflowSearchText"
+                          ValueChanged="OnWorkflowSearchChanged"
+                          Placeholder="Filter workflows..."
+                          Adornment="Adornment.Start"
+                          AdornmentIcon="@Icons.Material.Filled.Search"
+                          Immediate="true"
+                          DebounceInterval="200" />
+
+            @if (filteredSavedWorkflows.Count == 0)
+            {
+                <MudText Typo="Typo.body2" Class="mud-text-secondary">No saved workflows found.</MudText>
+            }
+            else
+            {
+                <div class="workflow-load-list">
+                    @foreach (var workflow in filteredSavedWorkflows)
+                    {
+                        var isSelected = workflow.Id == selectedWorkflowIdToLoad;
+                        <MudPaper Class="@($"pa-3 workflow-load-item {(isSelected ? "workflow-load-item-selected" : string.Empty)}")"
+                                  Outlined="true"
+                                  Style="cursor:pointer;"
+                                  @onclick="() => SelectWorkflowToLoad(workflow.Id)"
+                                  @ondblclick="ConfirmLoadWorkflowAsync">
+                            <MudStack Spacing="1">
+                                <MudStack Row="true" Spacing="1" AlignItems="AlignItems.Center" Class="handoff-workflow-title-row">
+                                    <MudText Typo="Typo.subtitle2">@workflow.DisplayName</MudText>
+                                    <MudChip T="string" Size="Size.Small" Variant="Variant.Outlined">@workflow.Kind</MudChip>
+                                </MudStack>
+                                @if (!string.IsNullOrWhiteSpace(workflow.Description))
+                                {
+                                    <MudText Typo="Typo.caption" Class="mud-text-secondary">@workflow.Description</MudText>
+                                }
+                                <MudText Typo="Typo.caption" Class="mud-text-secondary">Id: @workflow.WorkflowId</MudText>
+                            </MudStack>
+                        </MudPaper>
+                    }
+                </div>
+            }
+        </MudStack>
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="CloseLoadWorkflowDialog" Size="Size.Medium">Cancel</MudButton>
+        <MudButton Color="Color.Primary"
+                   OnClick="ConfirmLoadWorkflowAsync"
+                   Size="Size.Medium"
+                   Disabled="@(!selectedWorkflowIdToLoad.HasValue)">
+            OK
+        </MudButton>
+    </DialogActions>
+</MudDialog>
+
+<MudDialog @bind-Visible="@showDeleteWorkflowDialog" Options="deleteWorkflowDialogOptions">
+    <TitleContent>
+        <MudText Typo="Typo.h6">Delete Workflow</MudText>
+    </TitleContent>
+    <DialogContent>
+        <MudText>Delete saved workflow "@(currentSavedWorkflow?.DisplayName ?? CurrentWorkflowDisplayName)"?</MudText>
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="CloseDeleteWorkflowDialog" Size="Size.Medium">Cancel</MudButton>
+        <MudButton Color="Color.Error"
+                   OnClick="DeleteCurrentWorkflowAsync"
+                   Size="Size.Medium">
+            Delete
+        </MudButton>
+    </DialogActions>
+</MudDialog>
+
 @code {
     private const int UpdateIntervalMs = 500;
-    private const string WorkflowTemplateId = "interview-coach-fixed-handoff";
     private const string SampleSessionTitle = "Senior .NET Interview Practice";
 
     private static readonly string SampleSessionDescription =
@@ -311,18 +511,46 @@
         - Experience with payment or billing systems.
         """;
 
-    private AgentWorkflowTemplate? template;
+    private readonly Dictionary<string, string?> startInputValues = new(StringComparer.OrdinalIgnoreCase);
+    private readonly DialogOptions loadWorkflowDialogOptions = new()
+    {
+        MaxWidth = MaxWidth.Medium,
+        FullWidth = true,
+        CloseOnEscapeKey = true,
+        CloseButton = true
+    };
+
+    private readonly DialogOptions deleteWorkflowDialogOptions = new()
+    {
+        MaxWidth = MaxWidth.ExtraSmall,
+        FullWidth = true,
+        CloseOnEscapeKey = true,
+        CloseButton = true
+    };
+
+    private CompiledWorkflowDefinition? compiledWorkflow;
+    private SavedWorkflowDefinition? currentSavedWorkflow;
     private string? loadError;
+    private string workflowSourceCode = string.Empty;
+    private string? workflowCompileError;
+    private string workflowSearchText = string.Empty;
     private string? sessionTitle;
     private string? sessionDescription;
-    private string? resumeMarkdown;
-    private string? jobDescriptionMarkdown;
+    private bool isPageLoading = true;
+    private bool isWorkflowSourceExpanded;
+    private bool workflowSourceDirty;
     private bool workflowStarted;
     private bool isStartingWorkflow;
     private bool isLlmAnswering;
+    private bool showLoadWorkflowDialog;
+    private bool showDeleteWorkflowDialog;
     private Guid? lastSavedChatId;
+    private Guid? currentSavedWorkflowId;
+    private Guid? selectedWorkflowIdToLoad;
     private string lastSavedChatTitle = string.Empty;
     private UserSettings userSettings = new();
+    private List<SavedWorkflowDefinition> savedWorkflows = [];
+    private List<SavedWorkflowDefinition> filteredSavedWorkflows = [];
     private AgenticChatSession? chatSessionView;
     private StreamingDebouncer? renderDebouncer;
     private Func<AppChatMessageViewModel, Task>? messageAddedHandler;
@@ -333,24 +561,57 @@
     [CascadingParameter(Name = "UiModelSelection")]
     public ServerModelSelection UiModelSelection { get; set; } = new(null, null);
 
+    private AgentWorkflowDefinition? currentWorkflow => compiledWorkflow?.HandoffWorkflow;
+
+    private string CurrentWorkflowDisplayName =>
+        currentWorkflow?.DisplayName ??
+        currentSavedWorkflow?.DisplayName ??
+        "No Workflow Loaded";
+
+    private string CurrentWorkflowDescription =>
+        currentWorkflow?.Description ??
+        currentSavedWorkflow?.Description ??
+        "Load a saved workflow or open the source editor and define one. Start inputs appear only after a workflow is compiled.";
+
     private bool HasSelectedModel => TryResolveEffectiveModel(out _);
 
+    private bool AreRequiredStartInputsSatisfied =>
+        currentWorkflow?.StartInputs.All(IsStartInputSatisfied) ?? true;
+
     private bool CanStartWorkflow =>
-        template is not null &&
         HasSelectedModel &&
         !isStartingWorkflow &&
+        !string.IsNullOrWhiteSpace(workflowSourceCode) &&
+        (currentWorkflow is null || AreRequiredStartInputsSatisfied) &&
         !workflowStarted;
 
     protected override async Task OnInitializedAsync()
     {
+        isPageLoading = true;
+
         try
         {
-            template = await WorkflowCatalog.GetRequiredAsync(WorkflowTemplateId);
-            userSettings = await UserSettingsService.GetSettingsAsync();
+            var userSettingsTask = UserSettingsService.GetSettingsAsync();
+            var savedWorkflowsTask = WorkflowDefinitionService.GetAllAsync();
+
+            userSettings = await userSettingsTask;
+            savedWorkflows = (await savedWorkflowsTask).ToList();
+            ApplyWorkflowFilter();
+
+            workflowSourceCode = string.Empty;
+            workflowSourceDirty = false;
         }
         catch (Exception ex)
         {
             loadError = ex.Message;
+        }
+        finally
+        {
+            isPageLoading = false;
+        }
+
+        if (!string.IsNullOrWhiteSpace(loadError))
+        {
             return;
         }
 
@@ -371,7 +632,7 @@
 
     private async Task StartWorkflowAsync()
     {
-        if (template is null || !TryResolveEffectiveModel(out var model))
+        if (!TryResolveEffectiveModel(out var model))
         {
             return;
         }
@@ -380,19 +641,36 @@
 
         try
         {
-            var runtimeAgents = template.Workflow.Agents
+            if (!await CompileWorkflowSourceAsync(expandEditorOnError: true))
+            {
+                return;
+            }
+
+            if (currentWorkflow is null)
+            {
+                Snackbar.Add("Workflow source did not produce a handoff workflow definition.", Severity.Error);
+                return;
+            }
+
+            if (!AreRequiredStartInputsSatisfied)
+            {
+                Snackbar.Add("Fill in all required workflow inputs before starting the workflow.", Severity.Warning);
+                return;
+            }
+
+            var runtimeAgents = currentWorkflow.Agents
                 .Select(agent => AgentDescriptionFactory.CreateResolved(agent.AgentDraft, model))
                 .ToList();
 
-            var documents = BuildDocumentInputs();
+            var startInputs = BuildStartInputs();
             var request = new HandoffWorkflowSessionStartRequest
             {
-                Workflow = template.Workflow,
+                Workflow = currentWorkflow,
                 Agents = runtimeAgents,
                 Configuration = new AppChatConfiguration(model.ModelName, []),
                 SessionTitle = sessionTitle,
                 SessionDescription = sessionDescription,
-                Documents = documents
+                StartInputs = startInputs
             };
 
             await WorkflowSessionService.StartAsync(request);
@@ -421,37 +699,50 @@
 
     private void LoadSampleData()
     {
+        if (currentWorkflow is null)
+        {
+            return;
+        }
+
         sessionTitle = SampleSessionTitle;
         sessionDescription = SampleSessionDescription;
-        resumeMarkdown = SampleResumeMarkdown;
-        jobDescriptionMarkdown = SampleJobDescriptionMarkdown;
+
+        if (currentWorkflow.StartInputs.Any(input => string.Equals(input.Key, "resume", StringComparison.OrdinalIgnoreCase)))
+        {
+            SetStartInputValue("resume", SampleResumeMarkdown);
+        }
+
+        if (currentWorkflow.StartInputs.Any(input => string.Equals(input.Key, "job_description", StringComparison.OrdinalIgnoreCase)))
+        {
+            SetStartInputValue("job_description", SampleJobDescriptionMarkdown);
+        }
     }
 
-    private IReadOnlyList<HandoffWorkflowDocumentInput> BuildDocumentInputs()
+    private IReadOnlyList<HandoffWorkflowStartInputValue> BuildStartInputs()
     {
-        List<HandoffWorkflowDocumentInput> documents = [];
-
-        if (!string.IsNullOrWhiteSpace(resumeMarkdown))
+        if (currentWorkflow is null)
         {
-            documents.Add(new HandoffWorkflowDocumentInput
+            return [];
+        }
+
+        List<HandoffWorkflowStartInputValue> inputs = [];
+
+        foreach (var definition in currentWorkflow.StartInputs)
+        {
+            var value = GetStartInputValue(definition.Key);
+            if (string.IsNullOrWhiteSpace(value))
             {
-                Kind = "resume",
-                Title = "Resume",
-                Markdown = resumeMarkdown
+                continue;
+            }
+
+            inputs.Add(new HandoffWorkflowStartInputValue
+            {
+                Key = definition.Key,
+                Value = value
             });
         }
 
-        if (!string.IsNullOrWhiteSpace(jobDescriptionMarkdown))
-        {
-            documents.Add(new HandoffWorkflowDocumentInput
-            {
-                Kind = "job_description",
-                Title = "Job Description",
-                Markdown = jobDescriptionMarkdown
-            });
-        }
-
-        return documents;
+        return inputs;
     }
 
     private bool TryResolveEffectiveModel(out ServerModel model) =>
@@ -459,6 +750,263 @@
             new ServerModelSelection(null, null),
             UiModelSelection,
             out model);
+
+    private async Task<bool> CompileWorkflowSourceAsync(bool expandEditorOnError)
+    {
+        workflowCompileError = null;
+
+        try
+        {
+            compiledWorkflow = await WorkflowCompiler.CompileAsync(workflowSourceCode);
+            SynchronizeStartInputValues(compiledWorkflow.HandoffWorkflow);
+            return true;
+        }
+        catch (WorkflowCompilationException ex)
+        {
+            compiledWorkflow = null;
+            workflowCompileError = ex.Message;
+        }
+        catch (Exception ex)
+        {
+            compiledWorkflow = null;
+            workflowCompileError = ex.Message;
+        }
+
+        if (expandEditorOnError)
+        {
+            isWorkflowSourceExpanded = true;
+        }
+
+        return false;
+    }
+
+    private async Task RefreshSavedWorkflowsAsync()
+    {
+        savedWorkflows = (await WorkflowDefinitionService.GetAllAsync()).ToList();
+        ApplyWorkflowFilter();
+    }
+
+    private void ApplyWorkflowFilter()
+    {
+        var filter = workflowSearchText.Trim();
+        if (string.IsNullOrWhiteSpace(filter))
+        {
+            filteredSavedWorkflows = savedWorkflows.ToList();
+            return;
+        }
+
+        filteredSavedWorkflows = savedWorkflows
+            .Where(workflow =>
+                workflow.DisplayName.Contains(filter, StringComparison.OrdinalIgnoreCase) ||
+                workflow.WorkflowId.Contains(filter, StringComparison.OrdinalIgnoreCase) ||
+                workflow.Description.Contains(filter, StringComparison.OrdinalIgnoreCase))
+            .ToList();
+    }
+
+    private void SynchronizeStartInputValues(AgentWorkflowDefinition workflow)
+    {
+        var validKeys = workflow.StartInputs
+            .Select(static input => input.Key)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var existingKey in startInputValues.Keys.Except(validKeys, StringComparer.OrdinalIgnoreCase).ToList())
+        {
+            startInputValues.Remove(existingKey);
+        }
+
+        foreach (var input in workflow.StartInputs)
+        {
+            if (!startInputValues.ContainsKey(input.Key))
+            {
+                startInputValues[input.Key] = input.DefaultValue;
+            }
+        }
+    }
+
+    private string? GetStartInputValue(string key) =>
+        startInputValues.TryGetValue(key, out var value) ? value : null;
+
+    private void SetStartInputValue(string key, string? value)
+    {
+        startInputValues[key] = string.IsNullOrWhiteSpace(value) ? null : value;
+    }
+
+    private bool GetBooleanStartInputValue(WorkflowStartInputDefinition input) =>
+        bool.TryParse(GetStartInputValue(input.Key) ?? input.DefaultValue, out var value) && value;
+
+    private void SetBooleanStartInputValue(string key, bool value)
+    {
+        startInputValues[key] = value
+            ? bool.TrueString.ToLowerInvariant()
+            : bool.FalseString.ToLowerInvariant();
+    }
+
+    private string GetStartInputLabel(WorkflowStartInputDefinition input) =>
+        input.IsRequired
+            ? $"{input.DisplayName} *"
+            : input.DisplayName;
+
+    private bool IsStartInputSatisfied(WorkflowStartInputDefinition input)
+    {
+        if (!input.IsRequired)
+        {
+            return true;
+        }
+
+        if (input.Kind == WorkflowStartInputKind.Boolean)
+        {
+            return true;
+        }
+
+        var value = GetStartInputValue(input.Key) ?? input.DefaultValue;
+        return !string.IsNullOrWhiteSpace(value);
+    }
+
+    private void ToggleWorkflowSourceEditor()
+    {
+        isWorkflowSourceExpanded = !isWorkflowSourceExpanded;
+    }
+
+    private void OnWorkflowSourceChanged(string? value)
+    {
+        workflowSourceCode = value ?? string.Empty;
+        workflowSourceDirty = true;
+        workflowCompileError = null;
+        compiledWorkflow = null;
+    }
+
+    private async Task LoadStarterWorkflowAsync()
+    {
+        workflowSourceCode = WorkflowCodeTemplates.InterviewCoachHandoff;
+        currentSavedWorkflow = null;
+        currentSavedWorkflowId = null;
+        workflowSourceDirty = false;
+        workflowCompileError = null;
+        isWorkflowSourceExpanded = false;
+        await CompileWorkflowSourceAsync(expandEditorOnError: true);
+    }
+
+    private async Task OpenLoadWorkflowDialogAsync()
+    {
+        await RefreshSavedWorkflowsAsync();
+        workflowSearchText = string.Empty;
+        ApplyWorkflowFilter();
+        selectedWorkflowIdToLoad = currentSavedWorkflowId;
+        showLoadWorkflowDialog = true;
+    }
+
+    private void CloseLoadWorkflowDialog()
+    {
+        showLoadWorkflowDialog = false;
+    }
+
+    private void OnWorkflowSearchChanged(string? value)
+    {
+        workflowSearchText = value?.Trim() ?? string.Empty;
+        ApplyWorkflowFilter();
+    }
+
+    private void SelectWorkflowToLoad(Guid workflowId)
+    {
+        selectedWorkflowIdToLoad = workflowId;
+    }
+
+    private async Task ConfirmLoadWorkflowAsync()
+    {
+        if (!selectedWorkflowIdToLoad.HasValue)
+        {
+            return;
+        }
+
+        var savedWorkflow = savedWorkflows.FirstOrDefault(workflow => workflow.Id == selectedWorkflowIdToLoad.Value);
+        if (savedWorkflow is null)
+        {
+            Snackbar.Add("Selected workflow was not found.", Severity.Warning);
+            return;
+        }
+
+        workflowSourceCode = savedWorkflow.SourceCode;
+        currentSavedWorkflow = savedWorkflow;
+        currentSavedWorkflowId = savedWorkflow.Id;
+        workflowSourceDirty = false;
+        workflowCompileError = null;
+        isWorkflowSourceExpanded = false;
+        showLoadWorkflowDialog = false;
+        await CompileWorkflowSourceAsync(expandEditorOnError: true);
+    }
+
+    private void OpenDeleteWorkflowDialog()
+    {
+        if (!currentSavedWorkflowId.HasValue)
+        {
+            return;
+        }
+
+        showDeleteWorkflowDialog = true;
+    }
+
+    private void CloseDeleteWorkflowDialog()
+    {
+        showDeleteWorkflowDialog = false;
+    }
+
+    private async Task SaveWorkflowAsync()
+    {
+        if (!await CompileWorkflowSourceAsync(expandEditorOnError: true) || compiledWorkflow is null)
+        {
+            Snackbar.Add("Workflow compilation failed. Fix the source code before saving.", Severity.Error);
+            return;
+        }
+
+        SavedWorkflowDefinition savedWorkflow;
+        if (currentSavedWorkflowId.HasValue)
+        {
+            savedWorkflow = await WorkflowDefinitionService.GetByIdAsync(currentSavedWorkflowId.Value) ??
+                            new SavedWorkflowDefinition { Id = currentSavedWorkflowId.Value };
+        }
+        else
+        {
+            savedWorkflow = new SavedWorkflowDefinition();
+        }
+
+        savedWorkflow.Kind = compiledWorkflow.Kind;
+        savedWorkflow.WorkflowId = compiledWorkflow.WorkflowId;
+        savedWorkflow.DisplayName = compiledWorkflow.DisplayName;
+        savedWorkflow.Description = compiledWorkflow.Description;
+        savedWorkflow.SourceCode = workflowSourceCode;
+
+        if (currentSavedWorkflowId.HasValue &&
+            await WorkflowDefinitionService.GetByIdAsync(currentSavedWorkflowId.Value) is not null)
+        {
+            await WorkflowDefinitionService.UpdateAsync(savedWorkflow);
+        }
+        else
+        {
+            await WorkflowDefinitionService.CreateAsync(savedWorkflow);
+        }
+
+        currentSavedWorkflow = savedWorkflow;
+        currentSavedWorkflowId = savedWorkflow.Id;
+        workflowSourceDirty = false;
+        await RefreshSavedWorkflowsAsync();
+        Snackbar.Add($"Workflow '{savedWorkflow.DisplayName}' saved.", Severity.Success);
+    }
+
+    private async Task DeleteCurrentWorkflowAsync()
+    {
+        if (!currentSavedWorkflowId.HasValue)
+        {
+            return;
+        }
+
+        await WorkflowDefinitionService.DeleteAsync(currentSavedWorkflowId.Value);
+        currentSavedWorkflow = null;
+        currentSavedWorkflowId = null;
+        workflowSourceDirty = false;
+        showDeleteWorkflowDialog = false;
+        await RefreshSavedWorkflowsAsync();
+        Snackbar.Add("Saved workflow deleted.", Severity.Success);
+    }
 
     private async Task SaveCurrentChat()
     {
@@ -641,7 +1189,7 @@
     }
 
     private IReadOnlyList<AgentWorkflowHandoffDefinition> GetOutgoingHandoffs(string agentId) =>
-        template?.Workflow.Handoffs
+        currentWorkflow?.Handoffs
             .Where(handoff => string.Equals(handoff.FromAgentId, agentId, StringComparison.OrdinalIgnoreCase))
             .ToList()
         ?? [];
