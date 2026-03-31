@@ -1,6 +1,8 @@
 using System.Collections.ObjectModel;
+using System.Reflection;
 using System.Text;
 using ChatClient.Api.AgentWorkflows;
+using ChatClient.Api.AgentWorkflows.Runtime;
 using ChatClient.Api.Services;
 using ChatClient.Api.Services.BuiltIn;
 using ChatClient.Application.Services.Agentic;
@@ -13,21 +15,38 @@ using Microsoft.Extensions.AI;
 
 namespace ChatClient.Api.Client.Services.Agentic;
 
-public sealed class HandoffWorkflowChatSessionService(
-    ILogger<HandoffWorkflowChatSessionService> logger,
+public sealed class OrchestrationWorkflowChatSessionService(
+    ILogger<OrchestrationWorkflowChatSessionService> logger,
     IModelCapabilityService modelCapabilityService,
     TaskSessionStore taskSessionStore,
     MarkdownDocumentIntakeService documentIntakeService,
     AgenticRuntimeAgentFactory runtimeAgentFactory,
-    IChatEngineStreamingBridge streamingBridge) : IHandoffWorkflowSessionService
+    IEnumerable<IOrchestrationRuntimeWorkflowBuilder> runtimeWorkflowBuilders,
+    IChatEngineStreamingBridge streamingBridge) : IOrchestrationWorkflowSessionService
 {
     private readonly AppChat _chat = new();
     private readonly Dictionary<Guid, StreamingAppChatMessage> _activeStreams = [];
     private readonly Dictionary<Guid, string?> _activeSpeakerIdsByStreamId = [];
     private readonly Dictionary<string, AIAgent> _workflowAgentsById = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<string, string> _agentIdsByExecutorId = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<string, string> _agentIdsByName = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, string> _agentNamesById = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<Guid, string?> _speakerIdsByMessageId = [];
+    private readonly List<string> _assistantSpeakerIds = [];
     private CancellationTokenSource? _cancellationTokenSource;
-    private HandoffWorkflowSessionStartRequest? _parameters;
+    private OrchestrationWorkflowSessionStartRequest? _parameters;
+    private readonly IReadOnlyList<IOrchestrationRuntimeWorkflowBuilder> _runtimeWorkflowBuilders =
+        runtimeWorkflowBuilders.ToArray();
+    private static readonly Lazy<MethodInfo?> GetDescriptiveIdMethod = new(static () =>
+        Type.GetType(
+                "Microsoft.Agents.AI.Workflows.AIAgentExtensions, Microsoft.Agents.AI.Workflows",
+                throwOnError: false)?
+            .GetMethod(
+                "GetDescriptiveId",
+                BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static,
+                binder: null,
+                types: [typeof(AIAgent)],
+                modifiers: null));
 
     public event Action<bool>? AnsweringStateChanged;
     public event Action? ChatReset;
@@ -47,7 +66,7 @@ public sealed class HandoffWorkflowChatSessionService(
     IReadOnlyCollection<IAppChatMessage> IChatEngineSessionService.Messages => _chat.Messages;
 
     public async Task StartAsync(
-        HandoffWorkflowSessionStartRequest request,
+        OrchestrationWorkflowSessionStartRequest request,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(request);
@@ -116,7 +135,11 @@ public sealed class HandoffWorkflowChatSessionService(
                 .ToList();
 
             _workflowAgentsById.Clear();
+            _agentIdsByExecutorId.Clear();
+            _agentIdsByName.Clear();
             _agentNamesById.Clear();
+            _speakerIdsByMessageId.Clear();
+            _assistantSpeakerIds.Clear();
 
             foreach (var sessionBoundAgent in sessionBoundAgents)
             {
@@ -134,11 +157,19 @@ public sealed class HandoffWorkflowChatSessionService(
                     cancellationToken: cancellationToken);
 
                 _workflowAgentsById[sessionBoundAgent.Agent.AgentId] = builtAgent.Agent;
+                _agentIdsByExecutorId[sessionBoundAgent.Agent.AgentId] = sessionBoundAgent.Agent.AgentId;
+                var executorId = TryGetAgentExecutorId(builtAgent.Agent);
+                if (!string.IsNullOrWhiteSpace(executorId))
+                {
+                    _agentIdsByExecutorId[executorId] = sessionBoundAgent.Agent.AgentId;
+                }
+
+                _agentIdsByName[sessionBoundAgent.Agent.AgentName] = sessionBoundAgent.Agent.AgentId;
                 _agentNamesById[sessionBoundAgent.Agent.AgentId] = sessionBoundAgent.Agent.AgentName;
             }
 
             stage = "store-parameters";
-            _parameters = new HandoffWorkflowSessionStartRequest
+            _parameters = new OrchestrationWorkflowSessionStartRequest
             {
                 Workflow = request.Workflow,
                 Agents = sessionBoundAgents,
@@ -152,6 +183,8 @@ public sealed class HandoffWorkflowChatSessionService(
             _chat.Reset();
             _activeStreams.Clear();
             _activeSpeakerIdsByStreamId.Clear();
+            _speakerIdsByMessageId.Clear();
+            _assistantSpeakerIds.Clear();
             _chat.SetAgents(sessionBoundAgents.Select(CreateRuntimeAgentDescription));
             ChatReset?.Invoke();
         }
@@ -159,7 +192,7 @@ public sealed class HandoffWorkflowChatSessionService(
         {
             logger.LogError(
                 ex,
-                "Failed to start handoff workflow session at stage {Stage}. WorkflowId={WorkflowId}, AgentCount={AgentCount}, TaskSessionId={TaskSessionId}",
+                "Failed to start orchestration workflow session at stage {Stage}. WorkflowId={WorkflowId}, AgentCount={AgentCount}, TaskSessionId={TaskSessionId}",
                 stage,
                 request.Workflow.Id,
                 request.Agents.Count,
@@ -174,7 +207,7 @@ public sealed class HandoffWorkflowChatSessionService(
     {
         await Task.Yield();
         throw new InvalidOperationException(
-            "This session service is workflow-specific. Use StartAsync(HandoffWorkflowSessionStartRequest).");
+            "This session service is workflow-specific. Use StartAsync(OrchestrationWorkflowSessionStartRequest).");
     }
 
     public void ResetChat()
@@ -183,7 +216,11 @@ public sealed class HandoffWorkflowChatSessionService(
         _activeStreams.Clear();
         _activeSpeakerIdsByStreamId.Clear();
         _workflowAgentsById.Clear();
+        _agentIdsByExecutorId.Clear();
+        _agentIdsByName.Clear();
         _agentNamesById.Clear();
+        _speakerIdsByMessageId.Clear();
+        _assistantSpeakerIds.Clear();
         _parameters = null;
         TaskSessionId = null;
         ChatReset?.Invoke();
@@ -222,6 +259,16 @@ public sealed class HandoffWorkflowChatSessionService(
         return GenerateAnswerAsync(text, files ?? [], cancellationToken);
     }
 
+    public Task KickoffAsync(CancellationToken cancellationToken = default)
+    {
+        if (_parameters is null || string.IsNullOrWhiteSpace(TaskSessionId))
+        {
+            throw new InvalidOperationException("Workflow session not started.");
+        }
+
+        return ExecuteWorkflowTurnAsync(null, [], includeUserMessage: false, cancellationToken);
+    }
+
     public ChatEngineSessionState GetState()
     {
         if (_parameters is null)
@@ -234,7 +281,7 @@ public sealed class HandoffWorkflowChatSessionService(
             Configuration = _parameters.Configuration,
             Agents = _chat.AgentDescriptions.ToList(),
             Messages = _chat.Messages.ToList(),
-            ChatStrategyName = "HandoffWorkflow"
+            ChatStrategyName = $"AgentOrchestration:{_parameters.Workflow.Kind}"
         };
     }
 
@@ -252,6 +299,12 @@ public sealed class HandoffWorkflowChatSessionService(
         }
 
         _chat.Messages.Remove(message);
+        if (message.Role == ChatRole.Assistant)
+        {
+            _speakerIdsByMessageId.Remove(message.Id);
+            RebuildAssistantSpeakerHistory();
+        }
+
         await (MessageDeleted?.Invoke(messageId) ?? Task.CompletedTask);
     }
 
@@ -260,14 +313,36 @@ public sealed class HandoffWorkflowChatSessionService(
         IReadOnlyList<AppChatMessageFile> files,
         CancellationToken cancellationToken)
     {
-        if (string.IsNullOrWhiteSpace(text) || IsAnswering || _parameters is null || string.IsNullOrWhiteSpace(TaskSessionId))
+        await ExecuteWorkflowTurnAsync(text, files, includeUserMessage: true, cancellationToken);
+    }
+
+    private async Task ExecuteWorkflowTurnAsync(
+        string? text,
+        IReadOnlyList<AppChatMessageFile> files,
+        bool includeUserMessage,
+        CancellationToken cancellationToken)
+    {
+        if (IsAnswering || _parameters is null || string.IsNullOrWhiteSpace(TaskSessionId))
         {
             return;
         }
 
-        var userMessage = new AppChatMessage(text, DateTime.Now, ChatRole.User, files: files);
-        await AddMessageAsync(userMessage);
-        await taskSessionStore.AppendTurnAsync(TaskSessionId, "user", BuildUserMessage(text, files), "user", cancellationToken);
+        if (includeUserMessage)
+        {
+            if (string.IsNullOrWhiteSpace(text))
+            {
+                return;
+            }
+
+            var userMessage = new AppChatMessage(text, DateTime.Now, ChatRole.User, files: files);
+            await AddMessageAsync(userMessage);
+            await taskSessionStore.AppendTurnAsync(
+                TaskSessionId,
+                "user",
+                BuildUserMessage(text, files),
+                "user",
+                cancellationToken);
+        }
 
         _cancellationTokenSource = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         UpdateAnsweringState(true);
@@ -288,70 +363,141 @@ public sealed class HandoffWorkflowChatSessionService(
     }
 
     private async Task RunWorkflowTurnAsync(
-        HandoffWorkflowSessionStartRequest parameters,
+        OrchestrationWorkflowSessionStartRequest parameters,
+        CancellationToken cancellationToken)
+    {
+        var execution = parameters.Workflow.Execution;
+        var automaticAssistantTurnsUsed = 0;
+        var passNumber = 0;
+
+        while (true)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            if (execution.Mode == AgentWorkflowExecutionMode.Autonomous &&
+                await IsWorkflowExecutionCompleteAsync(execution, cancellationToken))
+            {
+                return;
+            }
+
+            if (execution.Mode == AgentWorkflowExecutionMode.Interactive && passNumber > 0)
+            {
+                return;
+            }
+
+            if (execution.Mode == AgentWorkflowExecutionMode.Autonomous &&
+                automaticAssistantTurnsUsed >= execution.MaxAutomaticTurns)
+            {
+                throw new InvalidOperationException(
+                    $"Autonomous workflow '{parameters.Workflow.DisplayName}' reached its automatic turn limit ({execution.MaxAutomaticTurns}) before completion.");
+            }
+
+            passNumber++;
+            var passResult = await ExecuteWorkflowPassAsync(parameters, cancellationToken);
+
+            if (passResult.CompletedAssistantMessages.Count == 0)
+            {
+                if (execution.Mode == AgentWorkflowExecutionMode.Autonomous &&
+                    await IsWorkflowExecutionCompleteAsync(execution, cancellationToken))
+                {
+                    return;
+                }
+
+                await HandleError("Workflow returned an empty response.");
+                return;
+            }
+
+            await ProcessCompletedAssistantMessagesAsync(
+                passResult.CompletedAssistantMessages,
+                cancellationToken);
+
+            automaticAssistantTurnsUsed += passResult.CompletedAssistantMessages.Count;
+
+            if (execution.Mode == AgentWorkflowExecutionMode.Autonomous &&
+                automaticAssistantTurnsUsed > execution.MaxAutomaticTurns)
+            {
+                throw new InvalidOperationException(
+                    $"Autonomous workflow '{parameters.Workflow.DisplayName}' exceeded its automatic turn limit ({execution.MaxAutomaticTurns}).");
+            }
+
+            if (execution.Mode != AgentWorkflowExecutionMode.Autonomous)
+            {
+                return;
+            }
+
+            if (await IsWorkflowExecutionCompleteAsync(execution, cancellationToken))
+            {
+                return;
+            }
+
+            if (automaticAssistantTurnsUsed >= execution.MaxAutomaticTurns)
+            {
+                throw new InvalidOperationException(
+                    $"Autonomous workflow '{parameters.Workflow.DisplayName}' reached its automatic turn limit ({execution.MaxAutomaticTurns}) before completion.");
+            }
+        }
+    }
+
+    private async Task<WorkflowPassResult> ExecuteWorkflowPassAsync(
+        OrchestrationWorkflowSessionStartRequest parameters,
         CancellationToken cancellationToken)
     {
         var workflow = BuildWorkflow(parameters.Workflow);
         var conversation = BuildConversation(_chat.Messages);
         var sessionId = TaskSessionId ?? Guid.NewGuid().ToString("N");
 
-        await using var run = await InProcessExecution.RunAsync(
+        // Microsoft.Agents.AI.Workflows 1.0.0-rc4 drives chat-protocol runs by enqueueing the
+        // initial conversation and an implicit TurnToken back-to-back inside RunAsync(). With the
+        // rc4 input waiter this can overflow its binary semaphore. Drive the same protocol in
+        // two explicit batches instead so each signal is consumed before the next one is sent.
+        await using var run = await InProcessExecution.OpenStreamingAsync(
             workflow,
-            conversation,
             sessionId,
             cancellationToken);
         var completedAssistantMessages = new List<CompletedWorkflowAssistantMessage>();
-        var assistantOutputObserved = await ProcessWorkflowEventsAsync(
-            run.NewEvents,
+        var assistantOutputObserved = false;
+
+        if (conversation.Count > 0)
+        {
+            assistantOutputObserved |= await ExecuteWorkflowBatchAsync(
+                run,
+                conversation,
+                parameters.Configuration.ModelName,
+                completedAssistantMessages,
+                cancellationToken);
+        }
+
+        assistantOutputObserved |= await ExecuteWorkflowBatchAsync(
+            run,
+            new TurnToken(emitEvents: true),
             parameters.Configuration.ModelName,
             completedAssistantMessages,
             cancellationToken);
-        var turnTokenSent = false;
 
-        while (true)
+        var status = await run.GetStatusAsync(cancellationToken);
+        logger.LogDebug(
+            "Workflow pass completed. Status={Status}, AssistantOutputObserved={AssistantOutputObserved}, CompletedAssistantMessages={CompletedAssistantMessages}",
+            status,
+            assistantOutputObserved,
+            completedAssistantMessages.Count);
+
+        switch (status)
         {
-            var status = await run.GetStatusAsync(cancellationToken);
-            logger.LogDebug(
-                "Workflow run batch completed. Status={Status}, NewEventCount={NewEventCount}, TurnTokenSent={TurnTokenSent}, AssistantOutputObserved={AssistantOutputObserved}",
-                status,
-                run.NewEventCount,
-                turnTokenSent,
-                assistantOutputObserved);
+            case RunStatus.Ended:
+            case RunStatus.Idle:
+                break;
 
-            switch (status)
-            {
-                case RunStatus.Ended:
-                    break;
+            case RunStatus.PendingRequests:
+                throw new InvalidOperationException(
+                    "Workflow requested unsupported external input.");
 
-                case RunStatus.PendingRequests:
-                    throw new InvalidOperationException(
-                        "Workflow requested unsupported external input.");
-
-                case RunStatus.Idle when assistantOutputObserved || turnTokenSent:
-                    goto WorkflowTurnComplete;
-
-                case RunStatus.Idle:
-                    turnTokenSent = true;
-                    logger.LogDebug("Resuming workflow run with a turn token.");
-                    _ = await run.ResumeAsync(cancellationToken, new[] { new TurnToken(emitEvents: true) });
-                    assistantOutputObserved |= await ProcessWorkflowEventsAsync(
-                        run.NewEvents,
-                        parameters.Configuration.ModelName,
-                        completedAssistantMessages,
-                        cancellationToken);
-                    continue;
-
-                case RunStatus.NotStarted:
-                case RunStatus.Running:
-                default:
-                    throw new InvalidOperationException(
-                        $"Workflow returned unexpected run status '{status}'.");
-            }
-
-            break;
+            case RunStatus.NotStarted:
+            case RunStatus.Running:
+            default:
+                throw new InvalidOperationException(
+                    $"Workflow returned unexpected run status '{status}'.");
         }
 
-    WorkflowTurnComplete:
         foreach (var stream in _activeStreams.Values.ToList())
         {
             await FinalizeStreamAsync(
@@ -363,21 +509,7 @@ public sealed class HandoffWorkflowChatSessionService(
         _activeStreams.Clear();
         _activeSpeakerIdsByStreamId.Clear();
 
-        if (completedAssistantMessages.Count == 0)
-        {
-            await HandleError("Workflow returned an empty response.");
-            return;
-        }
-
-        foreach (var completedMessage in completedAssistantMessages)
-        {
-            await taskSessionStore.AppendTurnAsync(
-                TaskSessionId,
-                "assistant",
-                completedMessage.Message.Content,
-                completedMessage.SpeakerId,
-                cancellationToken);
-        }
+        return new WorkflowPassResult(completedAssistantMessages);
     }
 
     private async Task<bool> ProcessWorkflowEventsAsync(
@@ -450,34 +582,87 @@ public sealed class HandoffWorkflowChatSessionService(
         return assistantOutputObserved;
     }
 
-    private Workflow BuildWorkflow(AgentWorkflowDefinition definition)
+    private async Task<bool> ExecuteWorkflowBatchAsync<TInput>(
+        StreamingRun run,
+        TInput input,
+        string modelName,
+        List<CompletedWorkflowAssistantMessage> completedAssistantMessages,
+        CancellationToken cancellationToken)
+        where TInput : notnull
     {
-        if (!_workflowAgentsById.TryGetValue(definition.StartAgentId, out var startAgent))
+        cancellationToken.ThrowIfCancellationRequested();
+
+        var accepted = await run.TrySendMessageAsync(input);
+        if (!accepted)
         {
             throw new InvalidOperationException(
-                $"Workflow start agent '{definition.StartAgentId}' was not prepared.");
+                $"Workflow rejected input of type '{typeof(TInput).Name}'.");
         }
 
-        var builder = AgentWorkflowBuilder.CreateHandoffBuilderWith(startAgent);
+        var workflowEvents = await CollectWorkflowEventsAsync(run, cancellationToken);
+        return await ProcessWorkflowEventsAsync(
+            workflowEvents,
+            modelName,
+            completedAssistantMessages,
+            cancellationToken);
+    }
 
-        foreach (var handoff in definition.Handoffs)
+    private static async Task<List<WorkflowEvent>> CollectWorkflowEventsAsync(
+        StreamingRun run,
+        CancellationToken cancellationToken)
+    {
+        List<WorkflowEvent> workflowEvents = [];
+
+        await foreach (var workflowEvent in run.WatchStreamAsync(cancellationToken))
         {
-            if (!_workflowAgentsById.TryGetValue(handoff.FromAgentId, out var fromAgent))
-            {
-                throw new InvalidOperationException(
-                    $"Workflow source agent '{handoff.FromAgentId}' was not prepared.");
-            }
+            workflowEvents.Add(workflowEvent);
 
-            if (!_workflowAgentsById.TryGetValue(handoff.ToAgentId, out var toAgent))
+            if (workflowEvent is RequestInfoEvent)
             {
-                throw new InvalidOperationException(
-                    $"Workflow target agent '{handoff.ToAgentId}' was not prepared.");
+                break;
             }
-
-            builder.WithHandoff(fromAgent, toAgent, handoff.Label);
         }
 
-        return builder.Build();
+        return workflowEvents;
+    }
+
+    private async Task ProcessCompletedAssistantMessagesAsync(
+        IReadOnlyList<CompletedWorkflowAssistantMessage> completedAssistantMessages,
+        CancellationToken cancellationToken)
+    {
+        foreach (var completedMessage in completedAssistantMessages)
+        {
+            await taskSessionStore.AppendTurnAsync(
+                TaskSessionId,
+                "assistant",
+                completedMessage.Message.Content,
+                completedMessage.SpeakerId,
+                cancellationToken);
+
+            _speakerIdsByMessageId[completedMessage.Message.Id] = completedMessage.SpeakerId;
+            if (!string.IsNullOrWhiteSpace(completedMessage.SpeakerId))
+            {
+                _assistantSpeakerIds.Add(completedMessage.SpeakerId);
+            }
+        }
+    }
+
+    private Workflow BuildWorkflow(IOrchestrationWorkflowDefinition definition)
+    {
+        var builder = _runtimeWorkflowBuilders.FirstOrDefault(candidate => candidate.CanBuild(definition));
+        if (builder is null)
+        {
+            throw new InvalidOperationException(
+                $"Workflow kind '{definition.Kind}' does not have a registered runtime builder.");
+        }
+
+        return builder.Build(
+            definition,
+            _workflowAgentsById,
+            new OrchestrationRuntimeBuildContext
+            {
+                AssistantSpeakerIds = _assistantSpeakerIds.ToList()
+            });
     }
 
     private static IEnumerable<ChatMessage> ExtractOutputMessages(WorkflowOutputEvent outputEvent)
@@ -507,6 +692,12 @@ public sealed class HandoffWorkflowChatSessionService(
 
     private string? ResolveSpeakerId(WorkflowOutputEvent outputEvent)
     {
+        if (!string.IsNullOrWhiteSpace(outputEvent.ExecutorId) &&
+            _agentIdsByExecutorId.TryGetValue(outputEvent.ExecutorId, out var speakerId))
+        {
+            return speakerId;
+        }
+
         if (!string.IsNullOrWhiteSpace(outputEvent.ExecutorId) &&
             _agentNamesById.ContainsKey(outputEvent.ExecutorId))
         {
@@ -586,9 +777,17 @@ public sealed class HandoffWorkflowChatSessionService(
         ReplaceMessage(stream, finalMessage);
         _activeStreams.Remove(stream.Id);
         _activeSpeakerIdsByStreamId.Remove(stream.Id);
+
+        var resolvedSpeakerId = speakerId;
+        if (string.IsNullOrWhiteSpace(resolvedSpeakerId) &&
+            !string.IsNullOrWhiteSpace(finalMessage.AgentName))
+        {
+            _agentIdsByName.TryGetValue(finalMessage.AgentName, out resolvedSpeakerId);
+        }
+
         completedAssistantMessages.Add(new CompletedWorkflowAssistantMessage(
             finalMessage,
-            speakerId ?? finalMessage.AgentName));
+            resolvedSpeakerId ?? finalMessage.AgentName));
         await (MessageUpdated?.Invoke(finalMessage, true) ?? Task.CompletedTask);
     }
 
@@ -638,7 +837,7 @@ public sealed class HandoffWorkflowChatSessionService(
 
     private async Task<MarkdownDocumentIntakeResult?> PrepareDocumentAsync(
         WorkflowStartInputDefinition definition,
-        HandoffWorkflowStartInputValue input,
+        OrchestrationWorkflowStartInputValue input,
         CancellationToken cancellationToken)
     {
         if (!string.IsNullOrWhiteSpace(input.Value))
@@ -655,7 +854,7 @@ public sealed class HandoffWorkflowChatSessionService(
     }
 
     private static void ValidateWorkflowDefinition(
-        AgentWorkflowDefinition workflow,
+        IOrchestrationWorkflowDefinition workflow,
         IReadOnlyList<ResolvedChatAgent> agents)
     {
         var workflowAgentIds = workflow.Agents
@@ -672,9 +871,9 @@ public sealed class HandoffWorkflowChatSessionService(
         }
     }
 
-    private static IReadOnlyList<HandoffWorkflowStartInputValue> NormalizeStartInputs(
-        AgentWorkflowDefinition workflow,
-        IReadOnlyList<HandoffWorkflowStartInputValue> providedInputs)
+    private static IReadOnlyList<OrchestrationWorkflowStartInputValue> NormalizeStartInputs(
+        IOrchestrationWorkflowDefinition workflow,
+        IReadOnlyList<OrchestrationWorkflowStartInputValue> providedInputs)
     {
         var definitionsByKey = workflow.StartInputs.ToDictionary(
             static input => input.Key,
@@ -690,7 +889,7 @@ public sealed class HandoffWorkflowChatSessionService(
                 $"Workflow start input '{unknownKey}' is not defined.");
         }
 
-        List<HandoffWorkflowStartInputValue> normalizedInputs = [];
+        List<OrchestrationWorkflowStartInputValue> normalizedInputs = [];
 
         foreach (var definition in workflow.StartInputs)
         {
@@ -702,7 +901,7 @@ public sealed class HandoffWorkflowChatSessionService(
                     (!string.IsNullOrWhiteSpace(provided.Value) ||
                      !string.IsNullOrWhiteSpace(provided.SourceFile)))
                 {
-                    normalizedInputs.Add(new HandoffWorkflowStartInputValue
+                    normalizedInputs.Add(new OrchestrationWorkflowStartInputValue
                     {
                         Key = definition.Key,
                         Value = provided.Value,
@@ -737,7 +936,7 @@ public sealed class HandoffWorkflowChatSessionService(
                 continue;
             }
 
-            normalizedInputs.Add(new HandoffWorkflowStartInputValue
+            normalizedInputs.Add(new OrchestrationWorkflowStartInputValue
             {
                 Key = definition.Key,
                 Value = value
@@ -749,7 +948,7 @@ public sealed class HandoffWorkflowChatSessionService(
 
     private static string NormalizeParameterValue(
         WorkflowStartInputDefinition definition,
-        HandoffWorkflowStartInputValue input)
+        OrchestrationWorkflowStartInputValue input)
     {
         var value = input.Value?.Trim();
         if (string.IsNullOrWhiteSpace(value))
@@ -786,6 +985,57 @@ public sealed class HandoffWorkflowChatSessionService(
             _ => throw new InvalidOperationException(
                 $"Unsupported workflow start input kind '{kind}'.")
         };
+
+    private static string? TryGetAgentExecutorId(AIAgent agent)
+    {
+        if (GetDescriptiveIdMethod.Value?.Invoke(null, [agent]) is string descriptiveId &&
+            !string.IsNullOrWhiteSpace(descriptiveId))
+        {
+            return descriptiveId;
+        }
+
+        return TryGetStringProperty(agent, "Id") ?? TryGetStringProperty(agent, "Name");
+    }
+
+    private static string? TryGetStringProperty(object value, string propertyName)
+    {
+        var property = value.GetType().GetProperty(
+            propertyName,
+            BindingFlags.Public | BindingFlags.Instance);
+        if (property?.PropertyType != typeof(string))
+        {
+            return null;
+        }
+
+        return property.GetValue(value) as string;
+    }
+
+    private async Task<bool> IsWorkflowExecutionCompleteAsync(
+        AgentWorkflowExecutionDefinition execution,
+        CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(TaskSessionId))
+        {
+            return false;
+        }
+
+        var snapshot = await taskSessionStore.GetSessionAsync(TaskSessionId, cancellationToken);
+
+        if (!string.IsNullOrWhiteSpace(execution.CompletionPhase) &&
+            string.Equals(snapshot.Phase, execution.CompletionPhase, StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
+        if (!string.IsNullOrWhiteSpace(execution.CompletionSummaryLabel) &&
+            snapshot.Summaries.Any(summary =>
+                string.Equals(summary.Label, execution.CompletionSummaryLabel, StringComparison.OrdinalIgnoreCase)))
+        {
+            return true;
+        }
+
+        return false;
+    }
 
     private async Task ValidateResolvedAgentsAsync(
         IReadOnlyList<ResolvedChatAgent> resolvedAgents,
@@ -872,6 +1122,25 @@ public sealed class HandoffWorkflowChatSessionService(
         }
     }
 
+    private void RebuildAssistantSpeakerHistory()
+    {
+        _assistantSpeakerIds.Clear();
+
+        foreach (var message in _chat.Messages)
+        {
+            if (message.IsStreaming || message.Role != ChatRole.Assistant)
+            {
+                continue;
+            }
+
+            if (_speakerIdsByMessageId.TryGetValue(message.Id, out var speakerId) &&
+                !string.IsNullOrWhiteSpace(speakerId))
+            {
+                _assistantSpeakerIds.Add(speakerId);
+            }
+        }
+    }
+
     private async Task HandleError(string text)
     {
         await AddMessageAsync(new AppChatMessage(text, DateTime.Now, ChatRole.Assistant));
@@ -887,10 +1156,10 @@ public sealed class HandoffWorkflowChatSessionService(
     {
         if (string.IsNullOrWhiteSpace(agentName))
         {
-            return $"workflow handoff | model {modelName}";
+            return $"workflow orchestration | model {modelName}";
         }
 
-        return $"workflow handoff | speaker {agentName} | model {modelName}";
+        return $"workflow orchestration | speaker {agentName} | model {modelName}";
     }
 
     private static bool IsSameSpeaker(
@@ -911,4 +1180,7 @@ public sealed class HandoffWorkflowChatSessionService(
     private sealed record CompletedWorkflowAssistantMessage(
         AppChatMessage Message,
         string? SpeakerId);
+
+    private sealed record WorkflowPassResult(
+        IReadOnlyList<CompletedWorkflowAssistantMessage> CompletedAssistantMessages);
 }

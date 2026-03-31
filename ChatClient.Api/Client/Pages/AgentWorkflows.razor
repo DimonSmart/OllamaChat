@@ -16,9 +16,10 @@
 @using Microsoft.JSInterop
 @using MudBlazor
 @inject IWorkflowDefinitionCompiler WorkflowCompiler
+@inject IWorkflowAgentDraftMaterializer WorkflowAgentDraftMaterializer
 @inject IWorkflowDefinitionService WorkflowDefinitionService
-@inject IHandoffWorkflowSessionService WorkflowSessionService
-@inject IHandoffWorkflowChatViewModelService WorkflowChatViewModelService
+@inject IOrchestrationWorkflowSessionService WorkflowSessionService
+@inject IOrchestrationWorkflowChatViewModelService WorkflowChatViewModelService
 @inject IUserSettingsService UserSettingsService
 @inject ISavedChatService SavedChatService
 @inject IMcpUserInteractionService McpUserInteractionService
@@ -26,7 +27,7 @@
 @inject IDialogService DialogService
 @inject ISnackbar Snackbar
 
-<PageTitle>Handoff Workflows</PageTitle>
+<PageTitle>Agent Orchestrations</PageTitle>
 
 <MudStack Spacing="3">
     @if (!string.IsNullOrWhiteSpace(loadError))
@@ -147,7 +148,7 @@
                                 </MudButton>
                             </MudStack>
                             <MudText Typo="Typo.body2" Class="mud-text-secondary">
-                                Step 1 prepares the shared task session and the workflow-defined start inputs. Step 2 starts a separate handoff chat on top of that state.
+                                Step 1 prepares the shared task session and the orchestration-defined start inputs. Step 2 starts the compiled agent orchestration on top of that state.
                             </MudText>
 
                             @if (!HasSelectedModel)
@@ -261,70 +262,137 @@
             </MudItem>
 
             <MudItem xs="12" lg="5">
-                <MudExpansionPanels MultiExpansion="true" Outlined="true" Class="handoff-workflow-agent-panels">
+                <MudStack Spacing="3">
                     @if (currentWorkflow is not null)
                     {
-                        @foreach (var agent in currentWorkflow.Agents)
-                        {
-                            <MudExpansionPanel Expanded="false">
-                                <TitleContent>
-                                    <MudStack Spacing="1">
-                                        <MudStack Row="true" Spacing="1" AlignItems="AlignItems.Center" Class="handoff-workflow-agent-title">
-                                            <MudText Typo="Typo.subtitle1">@agent.AgentDraft.AgentName</MudText>
-                                            @if (!string.IsNullOrWhiteSpace(agent.AgentDraft.ShortName))
-                                            {
-                                                <MudChip T="string" Size="Size.Small" Variant="Variant.Outlined">@agent.AgentDraft.ShortName</MudChip>
-                                            }
-                                        </MudStack>
-                                        <MudText Typo="Typo.caption" Class="mud-text-secondary">@agent.Role</MudText>
-                                    </MudStack>
-                                </TitleContent>
+                        <MudPaper Class="pa-4" Outlined="true">
+                            <MudStack Spacing="2">
+                                <MudStack Row="true" Spacing="1" AlignItems="AlignItems.Center">
+                                    <MudText Typo="Typo.h6">Orchestration Preview</MudText>
+                                    <MudChip T="string" Size="Size.Small" Variant="Variant.Outlined">@currentWorkflow.Kind</MudChip>
+                                </MudStack>
 
-                                <ChildContent>
-                                    <MudStack Spacing="2">
-                                        <MudText Typo="Typo.body2">@agent.Summary</MudText>
-
-                                        <MudDivider />
-
-                                        <MudText Typo="Typo.subtitle2">Outgoing Handoffs</MudText>
-                                        <div class="handoff-workflow-chip-list">
-                                            @foreach (var handoff in GetOutgoingHandoffs(agent.Id))
-                                            {
-                                                <MudChip T="string" Size="Size.Small"
-                                                         Color="@(handoff.IsFallback ? Color.Warning : Color.Primary)"
-                                                         Variant="@(handoff.IsFallback ? Variant.Outlined : Variant.Filled)">
-                                                    @($"{handoff.ToAgentId} : {handoff.Label}")
-                                                </MudChip>
-                                            }
-                                        </div>
-
-                                        <MudText Typo="Typo.subtitle2">Capability Requirements</MudText>
-                                        @foreach (var capability in agent.CapabilityRequirements)
+                                @if (currentWorkflow is AgentWorkflowDefinition handoffWorkflow)
+                                {
+                                    <MudText Typo="Typo.body2" Class="mud-text-secondary">Start agent: @handoffWorkflow.StartAgentId</MudText>
+                                    <div class="handoff-workflow-chip-list">
+                                        @foreach (var handoff in handoffWorkflow.Handoffs)
                                         {
-                                            <MudPaper Class="pa-3" Outlined="true">
-                                                <MudStack Spacing="1">
-                                                    <MudStack Row="true" Spacing="1" AlignItems="AlignItems.Center">
-                                                        <MudText Typo="Typo.subtitle2">@capability.DisplayName</MudText>
-                                                        <MudChip T="string" Size="Size.Small"
-                                                                 Color="@GetCapabilityColor(capability.Availability)"
-                                                                 Variant="Variant.Filled">
-                                                            @capability.Availability
-                                                        </MudChip>
-                                                    </MudStack>
-                                                    <MudText Typo="Typo.body2">@capability.Purpose</MudText>
-                                                    <MudText Typo="Typo.caption" Class="mud-text-secondary">@capability.AvailabilityNote</MudText>
-                                                </MudStack>
-                                            </MudPaper>
+                                            <MudChip T="string" Size="Size.Small"
+                                                     Color="@(handoff.IsFallback ? Color.Warning : Color.Primary)"
+                                                     Variant="@(handoff.IsFallback ? Variant.Outlined : Variant.Filled)">
+                                                @($"{handoff.FromAgentId} -> {handoff.ToAgentId} : {handoff.Label}")
+                                            </MudChip>
                                         }
-
-                                        <MudText Typo="Typo.subtitle2">Workflow Prompt</MudText>
-                                        <pre class="handoff-workflow-prompt">@agent.AgentDraft.Content</pre>
-                                    </MudStack>
-                                </ChildContent>
-                            </MudExpansionPanel>
-                        }
+                                    </div>
+                                }
+                                else if (currentWorkflow is GroupChatWorkflowDefinition groupChatWorkflow)
+                                {
+                                    <MudText Typo="Typo.body2" Class="mud-text-secondary">
+                                        Manager: @GetGroupChatManagerLabel(groupChatWorkflow)
+                                    </MudText>
+                                    <div class="handoff-workflow-chip-list">
+                                        @foreach (var participant in groupChatWorkflow.ParticipantAgentIds)
+                                        {
+                                            <MudChip T="string" Size="Size.Small" Variant="Variant.Outlined">@participant</MudChip>
+                                        }
+                                    </div>
+                                }
+                                else if (currentWorkflow is SequentialWorkflowDefinition sequentialWorkflow)
+                                {
+                                    <MudText Typo="Typo.body2" Class="mud-text-secondary">Sequential order</MudText>
+                                    <div class="handoff-workflow-chip-list">
+                                        @foreach (var agentId in sequentialWorkflow.AgentOrder)
+                                        {
+                                            <MudChip T="string" Size="Size.Small" Variant="Variant.Outlined">@agentId</MudChip>
+                                        }
+                                    </div>
+                                }
+                                else if (currentWorkflow is ConcurrentWorkflowDefinition concurrentWorkflow)
+                                {
+                                    <MudText Typo="Typo.body2" Class="mud-text-secondary">
+                                        Aggregation: @GetConcurrentAggregationLabel(concurrentWorkflow)
+                                    </MudText>
+                                    <div class="handoff-workflow-chip-list">
+                                        @foreach (var participant in concurrentWorkflow.ParticipantAgentIds)
+                                        {
+                                            <MudChip T="string" Size="Size.Small" Variant="Variant.Outlined">@participant</MudChip>
+                                        }
+                                    </div>
+                                }
+                            </MudStack>
+                        </MudPaper>
                     }
-                </MudExpansionPanels>
+
+                    <MudExpansionPanels MultiExpansion="true" Outlined="true" Class="handoff-workflow-agent-panels">
+                        @if (currentWorkflow is not null)
+                        {
+                            @foreach (var agent in currentWorkflow.Agents)
+                            {
+                                var agentDraft = GetRequiredAgentDraft(agent);
+                                <MudExpansionPanel Expanded="false">
+                                    <TitleContent>
+                                        <MudStack Spacing="1">
+                                            <MudStack Row="true" Spacing="1" AlignItems="AlignItems.Center" Class="handoff-workflow-agent-title">
+                                                <MudText Typo="Typo.subtitle1">@agentDraft.AgentName</MudText>
+                                                @if (!string.IsNullOrWhiteSpace(agentDraft.ShortName))
+                                                {
+                                                    <MudChip T="string" Size="Size.Small" Variant="Variant.Outlined">@agentDraft.ShortName</MudChip>
+                                                }
+                                            </MudStack>
+                                            <MudText Typo="Typo.caption" Class="mud-text-secondary">@agent.Role</MudText>
+                                        </MudStack>
+                                    </TitleContent>
+
+                                    <ChildContent>
+                                        <MudStack Spacing="2">
+                                            <MudText Typo="Typo.body2">@agent.Summary</MudText>
+
+                                            @if (currentWorkflow is AgentWorkflowDefinition)
+                                            {
+                                                <MudDivider />
+
+                                                <MudText Typo="Typo.subtitle2">Outgoing Handoffs</MudText>
+                                                <div class="handoff-workflow-chip-list">
+                                                    @foreach (var handoff in GetOutgoingHandoffs(agent.Id))
+                                                    {
+                                                        <MudChip T="string" Size="Size.Small"
+                                                                 Color="@(handoff.IsFallback ? Color.Warning : Color.Primary)"
+                                                                 Variant="@(handoff.IsFallback ? Variant.Outlined : Variant.Filled)">
+                                                            @($"{handoff.ToAgentId} : {handoff.Label}")
+                                                        </MudChip>
+                                                    }
+                                                </div>
+                                            }
+
+                                            <MudText Typo="Typo.subtitle2">Capability Requirements</MudText>
+                                            @foreach (var capability in agent.CapabilityRequirements)
+                                            {
+                                                <MudPaper Class="pa-3" Outlined="true">
+                                                    <MudStack Spacing="1">
+                                                        <MudStack Row="true" Spacing="1" AlignItems="AlignItems.Center">
+                                                            <MudText Typo="Typo.subtitle2">@capability.DisplayName</MudText>
+                                                            <MudChip T="string" Size="Size.Small"
+                                                                     Color="@GetCapabilityColor(capability.Availability)"
+                                                                     Variant="Variant.Filled">
+                                                                @capability.Availability
+                                                            </MudChip>
+                                                        </MudStack>
+                                                        <MudText Typo="Typo.body2">@capability.Purpose</MudText>
+                                                        <MudText Typo="Typo.caption" Class="mud-text-secondary">@capability.AvailabilityNote</MudText>
+                                                    </MudStack>
+                                                </MudPaper>
+                                            }
+
+                                            <MudText Typo="Typo.subtitle2">Workflow Prompt</MudText>
+                                            <pre class="handoff-workflow-prompt">@agentDraft.Content</pre>
+                                        </MudStack>
+                                    </ChildContent>
+                                </MudExpansionPanel>
+                            }
+                        }
+                    </MudExpansionPanels>
+                </MudStack>
             </MudItem>
         </MudGrid>
 
@@ -437,6 +505,7 @@
 @code {
     private const int UpdateIntervalMs = 500;
     private const string SampleSessionTitle = "Senior .NET Interview Practice";
+    private const string SampleBattleSessionTitle = "Philosopher Battle Group Chat";
 
     private static readonly string SampleSessionDescription =
         """
@@ -445,6 +514,16 @@
         then a technical round, and finish with a concise summary.
         Respond in English.
         """;
+
+    private static readonly string SampleBattleSessionDescription =
+        """
+        Start an autonomous philosopher battle. The user provides only the opening topic and high-level battle settings.
+        The host should keep the exchange moving without waiting for user follow-up, switch topics when the debate gets stale,
+        and end with a very detailed quoted verdict.
+        """;
+
+    private const string SampleBattleOpeningTopic =
+        "Should a person submit to moral law when doing so makes life less powerful and less joyful?";
 
     private static readonly string SampleResumeMarkdown =
         """
@@ -561,7 +640,7 @@
     [CascadingParameter(Name = "UiModelSelection")]
     public ServerModelSelection UiModelSelection { get; set; } = new(null, null);
 
-    private AgentWorkflowDefinition? currentWorkflow => compiledWorkflow?.HandoffWorkflow;
+    private IOrchestrationWorkflowDefinition? currentWorkflow => compiledWorkflow?.Workflow;
 
     private string CurrentWorkflowDisplayName =>
         currentWorkflow?.DisplayName ??
@@ -582,7 +661,8 @@
         HasSelectedModel &&
         !isStartingWorkflow &&
         !string.IsNullOrWhiteSpace(workflowSourceCode) &&
-        (currentWorkflow is null || AreRequiredStartInputsSatisfied) &&
+        currentWorkflow is not null &&
+        AreRequiredStartInputsSatisfied &&
         !workflowStarted;
 
     protected override async Task OnInitializedAsync()
@@ -648,7 +728,7 @@
 
             if (currentWorkflow is null)
             {
-                Snackbar.Add("Workflow source did not produce a handoff workflow definition.", Severity.Error);
+                Snackbar.Add("Workflow source did not produce a valid orchestration workflow definition.", Severity.Error);
                 return;
             }
 
@@ -659,11 +739,11 @@
             }
 
             var runtimeAgents = currentWorkflow.Agents
-                .Select(agent => AgentDescriptionFactory.CreateResolved(agent.AgentDraft, model))
+                .Select(agent => AgentDescriptionFactory.CreateResolved(GetRequiredAgentDraft(agent), model))
                 .ToList();
 
             var startInputs = BuildStartInputs();
-            var request = new HandoffWorkflowSessionStartRequest
+            var request = new OrchestrationWorkflowSessionStartRequest
             {
                 Workflow = currentWorkflow,
                 Agents = runtimeAgents,
@@ -675,6 +755,12 @@
 
             await WorkflowSessionService.StartAsync(request);
             workflowStarted = true;
+
+            if (currentWorkflow.Execution.Mode == AgentWorkflowExecutionMode.Autonomous)
+            {
+                await WorkflowSessionService.KickoffAsync();
+            }
+
             await InvokeAsync(StateHasChanged);
         }
         catch (InvalidOperationException ex)
@@ -704,6 +790,35 @@
             return;
         }
 
+        if (currentWorkflow.StartInputs.Any(input => string.Equals(input.Key, "opening_topic", StringComparison.OrdinalIgnoreCase)))
+        {
+            sessionTitle = SampleBattleSessionTitle;
+            sessionDescription = SampleBattleSessionDescription;
+            SetStartInputValue("opening_topic", SampleBattleOpeningTopic);
+
+            if (currentWorkflow.StartInputs.Any(input => string.Equals(input.Key, "themes_to_cover", StringComparison.OrdinalIgnoreCase)))
+            {
+                SetStartInputValue("themes_to_cover", "3");
+            }
+
+            if (currentWorkflow.StartInputs.Any(input => string.Equals(input.Key, "battle_language", StringComparison.OrdinalIgnoreCase)))
+            {
+                SetStartInputValue("battle_language", "English");
+            }
+
+            if (currentWorkflow.StartInputs.Any(input => string.Equals(input.Key, "final_summary_focus", StringComparison.OrdinalIgnoreCase)))
+            {
+                SetStartInputValue("final_summary_focus", "Quote the strongest lines, rhetorical turns, reversals, unresolved tensions, and the most memorable formulations.");
+            }
+
+            if (currentWorkflow.StartInputs.Any(input => string.Equals(input.Key, "verdict_focus", StringComparison.OrdinalIgnoreCase)))
+            {
+                SetStartInputValue("verdict_focus", "Name the strongest argument, the weakest move, and the unresolved tension.");
+            }
+
+            return;
+        }
+
         sessionTitle = SampleSessionTitle;
         sessionDescription = SampleSessionDescription;
 
@@ -718,14 +833,14 @@
         }
     }
 
-    private IReadOnlyList<HandoffWorkflowStartInputValue> BuildStartInputs()
+    private IReadOnlyList<OrchestrationWorkflowStartInputValue> BuildStartInputs()
     {
         if (currentWorkflow is null)
         {
             return [];
         }
 
-        List<HandoffWorkflowStartInputValue> inputs = [];
+        List<OrchestrationWorkflowStartInputValue> inputs = [];
 
         foreach (var definition in currentWorkflow.StartInputs)
         {
@@ -735,7 +850,7 @@
                 continue;
             }
 
-            inputs.Add(new HandoffWorkflowStartInputValue
+            inputs.Add(new OrchestrationWorkflowStartInputValue
             {
                 Key = definition.Key,
                 Value = value
@@ -757,8 +872,29 @@
 
         try
         {
-            compiledWorkflow = await WorkflowCompiler.CompileAsync(workflowSourceCode);
-            SynchronizeStartInputValues(compiledWorkflow.HandoffWorkflow);
+            var compiled = await WorkflowCompiler.CompileAsync(workflowSourceCode);
+            var workflow = compiled.Workflow;
+            if (workflow is null)
+            {
+                compiledWorkflow = null;
+                workflowCompileError = "Workflow source did not produce an orchestration definition.";
+                return false;
+            }
+
+            var materializedWorkflow = await WorkflowAgentDraftMaterializer.MaterializeAsync(workflow);
+            compiledWorkflow = new CompiledWorkflowDefinition
+            {
+                Kind = compiled.Kind,
+                WorkflowId = materializedWorkflow.Id,
+                DisplayName = materializedWorkflow.DisplayName,
+                Description = materializedWorkflow.Description,
+                Workflow = materializedWorkflow,
+                HandoffWorkflow = materializedWorkflow as AgentWorkflowDefinition,
+                SequentialWorkflow = materializedWorkflow as SequentialWorkflowDefinition,
+                ConcurrentWorkflow = materializedWorkflow as ConcurrentWorkflowDefinition,
+                GroupChatWorkflow = materializedWorkflow as GroupChatWorkflowDefinition
+            };
+            SynchronizeStartInputValues(materializedWorkflow);
             return true;
         }
         catch (WorkflowCompilationException ex)
@@ -803,7 +939,7 @@
             .ToList();
     }
 
-    private void SynchronizeStartInputValues(AgentWorkflowDefinition workflow)
+    private void SynchronizeStartInputValues(IOrchestrationWorkflowDefinition workflow)
     {
         var validKeys = workflow.StartInputs
             .Select(static input => input.Key)
@@ -877,7 +1013,7 @@
 
     private async Task LoadStarterWorkflowAsync()
     {
-        workflowSourceCode = WorkflowCodeTemplates.InterviewCoachHandoff;
+        workflowSourceCode = WorkflowCodeTemplates.DefaultStarter.SourceCode;
         currentSavedWorkflow = null;
         currentSavedWorkflowId = null;
         workflowSourceDirty = false;
@@ -1189,10 +1325,25 @@
     }
 
     private IReadOnlyList<AgentWorkflowHandoffDefinition> GetOutgoingHandoffs(string agentId) =>
-        currentWorkflow?.Handoffs
+        (currentWorkflow as AgentWorkflowDefinition)?.Handoffs
             .Where(handoff => string.Equals(handoff.FromAgentId, agentId, StringComparison.OrdinalIgnoreCase))
             .ToList()
         ?? [];
+
+    private static string GetGroupChatManagerLabel(GroupChatWorkflowDefinition workflow)
+    {
+        return workflow.Manager.Kind == GroupChatWorkflowManagerKind.Custom &&
+               !string.IsNullOrWhiteSpace(workflow.Manager.ImplementationKey)
+            ? $"{workflow.Manager.Kind} ({workflow.Manager.ImplementationKey}, max {workflow.Manager.MaximumIterations})"
+            : $"{workflow.Manager.Kind} (max {workflow.Manager.MaximumIterations})";
+    }
+
+    private static string GetConcurrentAggregationLabel(ConcurrentWorkflowDefinition workflow)
+        => workflow.Aggregation.Kind.ToString();
+
+    private static AgentDescription GetRequiredAgentDraft(AgentWorkflowAgentDefinition agent) =>
+        agent.AgentDraft ?? throw new InvalidOperationException(
+            $"Workflow agent '{agent.Id}' was not materialized.");
 
     private static Color GetCapabilityColor(AgentWorkflowCapabilityAvailability availability) =>
         availability switch

@@ -389,6 +389,41 @@ public sealed class TaskSessionStore(McpServerSessionContext sessionContext)
             UpdatedAtUtc: now);
     }
 
+    public async Task<TaskSessionSummarySnapshot> GetSummaryAsync(
+        string? sessionId,
+        string label,
+        CancellationToken cancellationToken)
+    {
+        var normalizedSessionId = ResolveExistingSessionId(sessionId);
+        var normalizedLabel = NormalizeRequired(label, "summary_label_required");
+
+        await using var connection = await OpenConnectionAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText =
+            """
+            SELECT session_id, label, markdown, created_at_utc, updated_at_utc
+            FROM task_session_summaries
+            WHERE session_id = $sessionId
+              AND label = $label
+            LIMIT 1;
+            """;
+        command.Parameters.AddWithValue("$sessionId", normalizedSessionId);
+        command.Parameters.AddWithValue("$label", normalizedLabel);
+
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        if (!await reader.ReadAsync(cancellationToken))
+        {
+            throw new InvalidOperationException("summary_not_found");
+        }
+
+        return new TaskSessionSummarySnapshot(
+            SessionId: reader.GetString(0),
+            Label: reader.GetString(1),
+            Markdown: reader.GetString(2),
+            CreatedAtUtc: DateTime.Parse(reader.GetString(3)),
+            UpdatedAtUtc: DateTime.Parse(reader.GetString(4)));
+    }
+
     private async Task<SqliteConnection> OpenConnectionAsync(CancellationToken cancellationToken)
     {
         var storage = ResolveStorage();

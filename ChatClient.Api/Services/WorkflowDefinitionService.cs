@@ -122,13 +122,25 @@ public sealed class WorkflowDefinitionService(IWorkflowDefinitionRepository repo
     {
         var hasChanges = false;
 
-        hasChanges = NormalizeString(workflow.Kind, WorkflowDefinitionKinds.Handoff, value => workflow.Kind = value) || hasChanges;
+        hasChanges = NormalizeWorkflowKind(workflow.Kind, value => workflow.Kind = value) || hasChanges;
         hasChanges = NormalizeString(workflow.WorkflowId, string.Empty, value => workflow.WorkflowId = value) || hasChanges;
         hasChanges = NormalizeString(workflow.DisplayName, string.Empty, value => workflow.DisplayName = value) || hasChanges;
         hasChanges = NormalizeString(workflow.Description, string.Empty, value => workflow.Description = value) || hasChanges;
         hasChanges = NormalizeString(workflow.SourceCode, string.Empty, value => workflow.SourceCode = value) || hasChanges;
 
         return hasChanges;
+    }
+
+    private static bool NormalizeWorkflowKind(string? current, Action<string> assign)
+    {
+        var normalized = WorkflowDefinitionKinds.Normalize(current);
+        if (string.Equals(current, normalized, StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        assign(normalized);
+        return true;
     }
 
     private static bool NormalizeString(string? current, string fallback, Action<string> assign)

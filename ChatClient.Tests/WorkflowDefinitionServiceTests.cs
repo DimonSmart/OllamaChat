@@ -119,6 +119,39 @@ public sealed class WorkflowDefinitionServiceTests
         }
     }
 
+    [Fact]
+    public async Task CreateAsync_NormalizesGroupChatWorkflowKind()
+    {
+        var tempFile = Path.GetTempFileName();
+        await File.WriteAllTextAsync(tempFile, "[]");
+
+        try
+        {
+            var service = CreateService(tempFile);
+            var workflow = new SavedWorkflowDefinition
+            {
+                WorkflowId = "debate",
+                Kind = " Group Chat ",
+                DisplayName = "Debate Workflow",
+                SourceCode = "source"
+            };
+
+            await service.CreateAsync(workflow);
+
+            Assert.Equal(WorkflowDefinitionKinds.GroupChat, workflow.Kind);
+
+            var reloaded = CreateService(tempFile);
+            var persisted = await reloaded.GetByIdAsync(workflow.Id);
+
+            Assert.NotNull(persisted);
+            Assert.Equal(WorkflowDefinitionKinds.GroupChat, persisted!.Kind);
+        }
+        finally
+        {
+            File.Delete(tempFile);
+        }
+    }
+
     private static WorkflowDefinitionService CreateService(string filePath)
     {
         var configuration = new ConfigurationBuilder()

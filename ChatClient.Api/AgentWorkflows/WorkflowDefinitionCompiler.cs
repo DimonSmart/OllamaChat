@@ -56,16 +56,20 @@ public sealed class WorkflowDefinitionCompiler : IWorkflowDefinitionCompiler
             if (workflow is null)
             {
                 throw new WorkflowCompilationException(
-                    "Workflow source must return an AgentWorkflowDefinition or assign it to a variable named 'workflow'.");
+                    "Workflow source must return a supported orchestration workflow definition or assign it to a variable named 'workflow'.");
             }
 
             return new CompiledWorkflowDefinition
             {
-                Kind = WorkflowDefinitionKinds.Handoff,
+                Kind = workflow.Kind,
                 WorkflowId = workflow.Id,
                 DisplayName = workflow.DisplayName,
                 Description = workflow.Description,
-                HandoffWorkflow = workflow
+                Workflow = workflow,
+                HandoffWorkflow = workflow as AgentWorkflowDefinition,
+                SequentialWorkflow = workflow as SequentialWorkflowDefinition,
+                ConcurrentWorkflow = workflow as ConcurrentWorkflowDefinition,
+                GroupChatWorkflow = workflow as GroupChatWorkflowDefinition
             };
         }
         catch (CompilationErrorException ex)
@@ -74,16 +78,16 @@ public sealed class WorkflowDefinitionCompiler : IWorkflowDefinitionCompiler
         }
     }
 
-    private static AgentWorkflowDefinition? ExtractWorkflow(ScriptState<object?> state)
+    private static IOrchestrationWorkflowDefinition? ExtractWorkflow(ScriptState<object?> state)
     {
-        if (state.ReturnValue is AgentWorkflowDefinition workflow)
+        if (state.ReturnValue is IOrchestrationWorkflowDefinition workflow)
         {
             return workflow;
         }
 
         var workflowVariable = state.Variables.FirstOrDefault(variable =>
             string.Equals(variable.Name, "workflow", StringComparison.Ordinal));
-        return workflowVariable?.Value as AgentWorkflowDefinition;
+        return workflowVariable?.Value as IOrchestrationWorkflowDefinition;
     }
 
     private static IReadOnlyList<Assembly> GetScriptReferences()
@@ -129,7 +133,15 @@ public sealed class CompiledWorkflowDefinition
 
     public string Description { get; init; } = string.Empty;
 
-    public required AgentWorkflowDefinition HandoffWorkflow { get; init; }
+    public IOrchestrationWorkflowDefinition? Workflow { get; init; }
+
+    public AgentWorkflowDefinition? HandoffWorkflow { get; init; }
+
+    public SequentialWorkflowDefinition? SequentialWorkflow { get; init; }
+
+    public ConcurrentWorkflowDefinition? ConcurrentWorkflow { get; init; }
+
+    public GroupChatWorkflowDefinition? GroupChatWorkflow { get; init; }
 }
 
 public sealed class WorkflowCompilationException : Exception

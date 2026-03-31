@@ -45,14 +45,13 @@ public sealed class AgentWorkflowCatalog(IMcpServerConfigService mcpServerConfig
         var behavioural = CreateBehaviouralAgent();
         var technical = CreateTechnicalAgent();
         var summarizer = CreateSummarizerAgent();
-        var workflow = HandoffWorkflowDefinitionBuilder
+        var workflow = WorkflowDefinitionBuilder
             .New(InterviewCoachWorkflowId, "Interview Coach Handoff")
             .Description("Specialized conversational flow with one entry router, sequential specialists, explicit fallback edges to triage, and required start inputs collected before the workflow begins.")
             .RequireDocument("resume", "Resume", static input => input
                 .Description("Candidate resume in markdown format."))
             .RequireDocument("job_description", "Job Description", static input => input
                 .Description("Target job description in markdown format."))
-            .StartWith(TriageAgentId)
             .Agent(TriageAgentId, agent => agent
                 .Role("Router / entry point")
                 .Summary("Owns the first turn, reads the shared session state when needed, decides which specialist should take over next, and receives fallback handoffs when the user goes off script.")
@@ -93,18 +92,22 @@ public sealed class AgentWorkflowCatalog(IMcpServerConfigService mcpServerConfig
                     .Purpose("Read/write access to the transcript and final summary.")
                     .Availability(capabilityAvailability.TaskSessionStoreAvailability)
                     .AvailabilityNote(capabilityAvailability.TaskSessionStoreNote)))
-            .Handoff(TriageAgentId, ReceptionistAgentId, "start / intake")
-            .Handoff(TriageAgentId, BehaviouralAgentId, "resume interview")
-            .Handoff(TriageAgentId, TechnicalAgentId, "resume technical")
-            .Handoff(TriageAgentId, SummarizerAgentId, "wrap up")
-            .Handoff(ReceptionistAgentId, BehaviouralAgentId, "handoff after intake")
-            .Fallback(ReceptionistAgentId, TriageAgentId)
-            .Handoff(BehaviouralAgentId, TechnicalAgentId, "handoff after behavioural")
-            .Fallback(BehaviouralAgentId, TriageAgentId)
-            .Handoff(TechnicalAgentId, SummarizerAgentId, "handoff after technical")
-            .Fallback(TechnicalAgentId, TriageAgentId)
-            .Fallback(SummarizerAgentId, TriageAgentId, "post-summary fallback")
-            .Build();
+            .UseHandoff(handoff => handoff
+                .StartWith(TriageAgentId)
+                .Handoff(TriageAgentId, ReceptionistAgentId, "start / intake")
+                .Handoff(TriageAgentId, BehaviouralAgentId, "resume interview")
+                .Handoff(TriageAgentId, TechnicalAgentId, "resume technical")
+                .Handoff(TriageAgentId, SummarizerAgentId, "wrap up")
+                .Handoff(ReceptionistAgentId, BehaviouralAgentId, "handoff after intake")
+                .Fallback(ReceptionistAgentId, TriageAgentId)
+                .Handoff(BehaviouralAgentId, TechnicalAgentId, "handoff after behavioural")
+                .Fallback(BehaviouralAgentId, TriageAgentId)
+                .Handoff(TechnicalAgentId, SummarizerAgentId, "handoff after technical")
+                .Fallback(TechnicalAgentId, TriageAgentId)
+                .Fallback(SummarizerAgentId, TriageAgentId, "post-summary fallback"))
+            .Build() as AgentWorkflowDefinition
+            ?? throw new InvalidOperationException(
+                "Interview coach template must materialize as a handoff workflow.");
 
         return new AgentWorkflowTemplate
         {
@@ -163,7 +166,7 @@ public sealed class AgentWorkflowCatalog(IMcpServerConfigService mcpServerConfig
                         : "MarkItDown-style non-markdown conversion is still deferred for a later slice.",
                 capabilityAvailability.TaskSessionStoreAvailability == AgentWorkflowCapabilityAvailability.Missing
                     ? "The project does not currently expose a generic task session MCP store for shared workflow state."
-                    : "The remaining missing piece is an official handoff runtime wired into the UI session flow."
+                    : "No critical blocking gaps remain for this workflow. Remaining work is mostly broader starter coverage and authoring UX polish."
             ]
         };
     }

@@ -15,7 +15,7 @@ public sealed class AgentWorkflowTemplate
     public required AgentWorkflowAssessment Assessment { get; init; }
 }
 
-public sealed class AgentWorkflowDefinition
+public sealed class AgentWorkflowDefinition : IOrchestrationWorkflowDefinition
 {
     public required string Id { get; init; }
 
@@ -23,13 +23,34 @@ public sealed class AgentWorkflowDefinition
 
     public string Description { get; init; } = string.Empty;
 
+    public string Kind => WorkflowDefinitionKinds.Handoff;
+
     public required string StartAgentId { get; init; }
+
+    public AgentWorkflowExecutionDefinition Execution { get; init; } = new();
 
     public List<WorkflowStartInputDefinition> StartInputs { get; init; } = [];
 
     public List<AgentWorkflowAgentDefinition> Agents { get; init; } = [];
 
     public List<AgentWorkflowHandoffDefinition> Handoffs { get; init; } = [];
+}
+
+public sealed class AgentWorkflowExecutionDefinition
+{
+    public AgentWorkflowExecutionMode Mode { get; init; } = AgentWorkflowExecutionMode.Interactive;
+
+    public int MaxAutomaticTurns { get; init; }
+
+    public string CompletionPhase { get; init; } = "complete";
+
+    public string? CompletionSummaryLabel { get; init; }
+}
+
+public enum AgentWorkflowExecutionMode
+{
+    Interactive,
+    Autonomous
 }
 
 public sealed class WorkflowStartInputDefinition
@@ -66,9 +87,29 @@ public sealed class AgentWorkflowAgentDefinition
 
     public string Summary { get; init; } = string.Empty;
 
-    public required AgentDescription AgentDraft { get; init; }
+    public AgentDescription? AgentDraft { get; init; }
+
+    public AgentWorkflowSavedAgentTemplate? SavedAgentTemplate { get; init; }
+
+    public AgentWorkflowAgentDraftOverrides DraftOverrides { get; init; } = new();
 
     public List<AgentWorkflowCapabilityRequirement> CapabilityRequirements { get; init; } = [];
+
+    public int MaxTurnsPerSession { get; init; }
+
+    public int MinAssistantTurnsBetweenTurns { get; init; }
+}
+
+public sealed class AgentWorkflowSavedAgentTemplate
+{
+    public required string SavedAgentName { get; init; }
+}
+
+public sealed class AgentWorkflowAgentDraftOverrides
+{
+    public string? AgentName { get; init; }
+
+    public string? Instructions { get; init; }
 }
 
 public sealed class AgentWorkflowHandoffDefinition

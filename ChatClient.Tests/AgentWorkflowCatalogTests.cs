@@ -35,13 +35,15 @@ public sealed class AgentWorkflowCatalogTests
         Assert.Equal(["resume", "job_description"], workflow.StartInputs.Select(static input => input.Key).ToArray());
 
         var triage = Assert.Single(workflow.Agents, static agent => agent.Id == "triage");
-        Assert.Equal("triage", triage.AgentDraft.ShortName);
+        Assert.NotNull(triage.AgentDraft);
+        Assert.Equal("triage", triage.AgentDraft!.ShortName);
         Assert.Contains("routing", triage.AgentDraft.Content, StringComparison.OrdinalIgnoreCase);
         Assert.Contains(triage.CapabilityRequirements, static capability => capability.Key == "task-session-store");
 
         var receptionist = Assert.Single(workflow.Agents, static agent => agent.Id == "receptionist");
+        Assert.NotNull(receptionist.AgentDraft);
         var taskBinding = Assert.Single(
-            receptionist.AgentDraft.McpServerBindings,
+            receptionist.AgentDraft!.McpServerBindings,
             static binding => string.Equals(binding.ServerName, "Built-in Task Session MCP Server", StringComparison.OrdinalIgnoreCase));
         Assert.DoesNotContain(taskBinding.SelectedTools, static tool => string.Equals(tool, "session_create", StringComparison.OrdinalIgnoreCase));
         Assert.DoesNotContain(taskBinding.SelectedTools, static tool => string.Equals(tool, "session_attach_document", StringComparison.OrdinalIgnoreCase));
@@ -108,7 +110,7 @@ public sealed class AgentWorkflowCatalogTests
             Assert.Equal(AgentWorkflowCapabilityAvailability.Available, requirement.Availability));
         Assert.Contains(
             template.Assessment.MissingProjectPieces,
-            static note => note.Contains("official handoff runtime", StringComparison.OrdinalIgnoreCase));
+            static note => note.Contains("No critical blocking gaps remain", StringComparison.OrdinalIgnoreCase));
     }
 
     private sealed class StubMcpServerConfigService(IReadOnlyCollection<IMcpServerDescriptor> servers) : IMcpServerConfigService

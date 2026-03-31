@@ -8,6 +8,7 @@ public sealed class HandoffWorkflowDefinitionBuilder
     private string _displayName;
     private string _description = string.Empty;
     private string? _startAgentId;
+    private AgentWorkflowExecutionDefinition _execution = new();
     private readonly List<WorkflowStartInputDefinition> _startInputs = [];
     private readonly List<AgentWorkflowAgentDefinition> _agents = [];
     private readonly List<AgentWorkflowHandoffDefinition> _handoffs = [];
@@ -36,6 +37,38 @@ public sealed class HandoffWorkflowDefinitionBuilder
     public HandoffWorkflowDefinitionBuilder StartWith(string agentId)
     {
         _startAgentId = RequireValue(agentId, nameof(agentId));
+        return this;
+    }
+
+    public HandoffWorkflowDefinitionBuilder RunInteractively()
+    {
+        _execution = new AgentWorkflowExecutionDefinition
+        {
+            Mode = AgentWorkflowExecutionMode.Interactive
+        };
+        return this;
+    }
+
+    public HandoffWorkflowDefinitionBuilder RunAutonomously(
+        int maxAutomaticTurns,
+        string completionPhase = "complete",
+        string? completionSummaryLabel = null)
+    {
+        if (maxAutomaticTurns <= 0)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(maxAutomaticTurns),
+                maxAutomaticTurns,
+                "Automatic turn limit must be greater than zero.");
+        }
+
+        _execution = new AgentWorkflowExecutionDefinition
+        {
+            Mode = AgentWorkflowExecutionMode.Autonomous,
+            MaxAutomaticTurns = maxAutomaticTurns,
+            CompletionPhase = RequireValue(completionPhase, nameof(completionPhase)),
+            CompletionSummaryLabel = NormalizeOptional(completionSummaryLabel)
+        };
         return this;
     }
 
@@ -99,12 +132,25 @@ public sealed class HandoffWorkflowDefinitionBuilder
         Action<WorkflowStartInputBuilder>? configure = null) =>
         AddStartInput(key, displayName, WorkflowStartInputKind.Json, required: false, configure);
 
-    public HandoffWorkflowDefinitionBuilder Agent(string id, Action<HandoffWorkflowAgentBuilder> configure)
+    public HandoffWorkflowDefinitionBuilder Agent(string id, Action<WorkflowAgentBuilder> configure)
     {
         ArgumentNullException.ThrowIfNull(configure);
 
-        var builder = new HandoffWorkflowAgentBuilder(id);
+        var builder = new WorkflowAgentBuilder(id);
         configure(builder);
+
+        var agent = builder.Build();
+        UpsertAgent(agent);
+        return this;
+    }
+
+    public HandoffWorkflowDefinitionBuilder AgentFromSaved(
+        string savedAgentName,
+        Action<WorkflowAgentBuilder>? configure = null)
+    {
+        var builder = new WorkflowAgentBuilder(savedAgentName)
+            .UseSavedTemplate(savedAgentName);
+        configure?.Invoke(builder);
 
         var agent = builder.Build();
         UpsertAgent(agent);
@@ -175,6 +221,7 @@ public sealed class HandoffWorkflowDefinitionBuilder
             DisplayName = _displayName,
             Description = _description,
             StartAgentId = _startAgentId,
+            Execution = _execution,
             StartInputs = _startInputs.ToList(),
             Agents = _agents.ToList(),
             Handoffs = _handoffs.ToList()
@@ -219,6 +266,9 @@ public sealed class HandoffWorkflowDefinitionBuilder
 
         return value.Trim();
     }
+
+    private static string? NormalizeOptional(string? value) =>
+        string.IsNullOrWhiteSpace(value) ? null : value.Trim();
 }
 
 public sealed class WorkflowStartInputBuilder
@@ -299,39 +349,96 @@ public sealed class WorkflowStartInputBuilder
         string.IsNullOrWhiteSpace(value) ? null : value.Trim();
 }
 
-public sealed class HandoffWorkflowAgentBuilder
+public sealed class WorkflowAgentBuilder
 {
-    private readonly string _id;
+    private string _id;
     private string _role = string.Empty;
     private string _summary = string.Empty;
     private AgentDescription? _agentDraft;
+    private string? _savedAgentTemplateName;
+    private string? _overrideAgentName;
+    private string? _overrideInstructions;
     private readonly List<AgentWorkflowCapabilityRequirement> _capabilities = [];
+    private int _maxTurnsPerSession;
+    private int _minAssistantTurnsBetweenTurns;
 
-    internal HandoffWorkflowAgentBuilder(string id)
+    internal WorkflowAgentBuilder(string id)
     {
         _id = RequireValue(id, nameof(id));
     }
 
-    public HandoffWorkflowAgentBuilder Role(string role)
+    public WorkflowAgentBuilder Id(string id)
+    {
+        _id = RequireValue(id, nameof(id));
+        return this;
+    }
+
+    public WorkflowAgentBuilder Role(string role)
     {
         _role = RequireValue(role, nameof(role));
         return this;
     }
 
-    public HandoffWorkflowAgentBuilder Summary(string summary)
+    public WorkflowAgentBuilder Summary(string summary)
     {
         _summary = summary?.Trim() ?? string.Empty;
         return this;
     }
 
-    public HandoffWorkflowAgentBuilder UseDraft(AgentDescription draft)
+    public WorkflowAgentBuilder UseDraft(AgentDescription draft)
     {
         ArgumentNullException.ThrowIfNull(draft);
         _agentDraft = draft;
         return this;
     }
 
-    public HandoffWorkflowAgentBuilder Capability(
+    public WorkflowAgentBuilder UseSavedTemplate(string savedAgentName)
+    {
+        _savedAgentTemplateName = RequireValue(savedAgentName, nameof(savedAgentName));
+        return this;
+    }
+
+    public WorkflowAgentBuilder Name(string agentName)
+    {
+        _overrideAgentName = RequireValue(agentName, nameof(agentName));
+        return this;
+    }
+
+    public WorkflowAgentBuilder Instructions(string instructions)
+    {
+        _overrideInstructions = RequireValue(instructions, nameof(instructions));
+        return this;
+    }
+
+    public WorkflowAgentBuilder MaxTurnsPerSession(int maxTurnsPerSession)
+    {
+        if (maxTurnsPerSession <= 0)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(maxTurnsPerSession),
+                maxTurnsPerSession,
+                "Per-agent turn limit must be greater than zero.");
+        }
+
+        _maxTurnsPerSession = maxTurnsPerSession;
+        return this;
+    }
+
+    public WorkflowAgentBuilder MinAssistantTurnsBetweenTurns(int minAssistantTurnsBetweenTurns)
+    {
+        if (minAssistantTurnsBetweenTurns < 0)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(minAssistantTurnsBetweenTurns),
+                minAssistantTurnsBetweenTurns,
+                "Minimum assistant turns between repeated turns cannot be negative.");
+        }
+
+        _minAssistantTurnsBetweenTurns = minAssistantTurnsBetweenTurns;
+        return this;
+    }
+
+    public WorkflowAgentBuilder Capability(
         string key,
         string displayName,
         Action<WorkflowCapabilityRequirementBuilder> configure)
@@ -346,14 +453,29 @@ public sealed class HandoffWorkflowAgentBuilder
 
     internal AgentWorkflowAgentDefinition Build()
     {
-        if (string.IsNullOrWhiteSpace(_role))
+        var usesSavedTemplate = !string.IsNullOrWhiteSpace(_savedAgentTemplateName);
+        if (_agentDraft is not null && usesSavedTemplate)
         {
-            throw new InvalidOperationException($"Workflow agent '{_id}' requires a role.");
+            throw new InvalidOperationException(
+                $"Workflow agent '{_id}' cannot use both an inline draft and a saved-agent template.");
         }
 
-        if (_agentDraft is null)
+        if (_agentDraft is null && !usesSavedTemplate)
         {
-            throw new InvalidOperationException($"Workflow agent '{_id}' requires an agent draft.");
+            throw new InvalidOperationException(
+                $"Workflow agent '{_id}' requires either an inline agent draft or a saved-agent template.");
+        }
+
+        if (string.IsNullOrWhiteSpace(_role))
+        {
+            if (usesSavedTemplate)
+            {
+                _role = _overrideAgentName ?? _savedAgentTemplateName ?? "Saved agent";
+            }
+            else
+            {
+                throw new InvalidOperationException($"Workflow agent '{_id}' requires a role.");
+            }
         }
 
         return new AgentWorkflowAgentDefinition
@@ -362,7 +484,20 @@ public sealed class HandoffWorkflowAgentBuilder
             Role = _role,
             Summary = _summary,
             AgentDraft = _agentDraft,
-            CapabilityRequirements = _capabilities.ToList()
+            SavedAgentTemplate = usesSavedTemplate
+                ? new AgentWorkflowSavedAgentTemplate
+                {
+                    SavedAgentName = _savedAgentTemplateName!
+                }
+                : null,
+            DraftOverrides = new AgentWorkflowAgentDraftOverrides
+            {
+                AgentName = _overrideAgentName,
+                Instructions = _overrideInstructions
+            },
+            CapabilityRequirements = _capabilities.ToList(),
+            MaxTurnsPerSession = _maxTurnsPerSession,
+            MinAssistantTurnsBetweenTurns = _minAssistantTurnsBetweenTurns
         };
     }
 

@@ -4,7 +4,7 @@ public sealed class SavedWorkflowDefinition
 {
     public Guid Id { get; set; }
 
-    public string Kind { get; set; } = WorkflowDefinitionKinds.Handoff;
+    public string Kind { get; set; } = string.Empty;
 
     public string WorkflowId { get; set; } = string.Empty;
 
@@ -22,4 +22,24 @@ public sealed class SavedWorkflowDefinition
 public static class WorkflowDefinitionKinds
 {
     public const string Handoff = "handoff";
+
+    public const string Sequential = "sequential";
+
+    public const string Concurrent = "concurrent";
+
+    public const string GroupChat = "group-chat";
+
+    public static string Normalize(string? value)
+    {
+        var normalized = value?.Trim().ToLowerInvariant();
+        return normalized switch
+        {
+            Handoff => Handoff,
+            Sequential => Sequential,
+            Concurrent => Concurrent,
+            GroupChat or "group chat" or "group_chat" or "groupchat" => GroupChat,
+            null or "" => Handoff,
+            _ => Handoff
+        };
+    }
 }

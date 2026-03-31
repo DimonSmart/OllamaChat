@@ -11,6 +11,7 @@ public sealed class HandoffWorkflowDefinitionBuilderTests
         var workflow = HandoffWorkflowDefinitionBuilder
             .New("demo", "Demo Workflow")
             .Description("A test workflow.")
+            .RunAutonomously(maxAutomaticTurns: 6, completionPhase: "complete", completionSummaryLabel: "final")
             .RequireDocument("resume", "Resume", static input => input.Description("Candidate resume."))
             .OptionalText("response_language", "Response Language", static input => input.DefaultValue("English"))
             .StartWith("triage")
@@ -33,6 +34,10 @@ public sealed class HandoffWorkflowDefinitionBuilderTests
         Assert.Equal("demo", workflow.Id);
         Assert.Equal("Demo Workflow", workflow.DisplayName);
         Assert.Equal("triage", workflow.StartAgentId);
+        Assert.Equal(AgentWorkflowExecutionMode.Autonomous, workflow.Execution.Mode);
+        Assert.Equal(6, workflow.Execution.MaxAutomaticTurns);
+        Assert.Equal("complete", workflow.Execution.CompletionPhase);
+        Assert.Equal("final", workflow.Execution.CompletionSummaryLabel);
 
         var resume = Assert.Single(workflow.StartInputs, static input => input.Key == "resume");
         Assert.Equal(WorkflowStartInputKind.MarkdownDocument, resume.Kind);
@@ -70,6 +75,43 @@ public sealed class HandoffWorkflowDefinitionBuilderTests
                 .Build());
 
         Assert.Contains("start agent 'missing' is not defined", exception.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void Build_CreatesSavedAgentTemplateReferenceWithOverrides()
+    {
+        var workflow = HandoffWorkflowDefinitionBuilder
+            .New("demo", "Demo Workflow")
+            .StartWith("technical")
+            .AgentFromSaved("Saved Technical Agent", agent => agent
+                .Id("technical")
+                .Role("Technical interviewer")
+                .Name("Technical Interviewer")
+                .Instructions("Run a technical interview."))
+            .Build();
+
+        var technical = Assert.Single(workflow.Agents);
+        Assert.Equal("technical", technical.Id);
+        Assert.Equal("Technical interviewer", technical.Role);
+        Assert.Null(technical.AgentDraft);
+        Assert.NotNull(technical.SavedAgentTemplate);
+        Assert.Equal("Saved Technical Agent", technical.SavedAgentTemplate!.SavedAgentName);
+        Assert.Equal("Technical Interviewer", technical.DraftOverrides.AgentName);
+        Assert.Equal("Run a technical interview.", technical.DraftOverrides.Instructions);
+    }
+
+    [Fact]
+    public void Build_DefaultsSavedAgentRoleToTemplateNameWhenRoleIsOmitted()
+    {
+        var workflow = HandoffWorkflowDefinitionBuilder
+            .New("demo", "Demo Workflow")
+            .StartWith("Saved Router")
+            .AgentFromSaved("Saved Router")
+            .Build();
+
+        var agent = Assert.Single(workflow.Agents);
+        Assert.Equal("Saved Router", agent.Id);
+        Assert.Equal("Saved Router", agent.Role);
     }
 
     private static Domain.Models.AgentDescription CreateDraft(string name, string shortName) =>

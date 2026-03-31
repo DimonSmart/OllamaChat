@@ -3,9 +3,9 @@ using ChatClient.Domain.Models;
 
 namespace ChatClient.Api.Client.Services.Agentic;
 
-public sealed class HandoffWorkflowChatViewModelService : IHandoffWorkflowChatViewModelService, IAsyncDisposable
+public sealed class OrchestrationWorkflowChatViewModelService : IOrchestrationWorkflowChatViewModelService, IAsyncDisposable
 {
-    private readonly IHandoffWorkflowSessionService _chatService;
+    private readonly IOrchestrationWorkflowSessionService _chatService;
     private readonly List<AppChatMessageViewModel> _messages = [];
     private readonly Action<bool> _answeringStateChangedHandler;
     private readonly Action _chatResetHandler;
@@ -23,7 +23,7 @@ public sealed class HandoffWorkflowChatViewModelService : IHandoffWorkflowChatVi
 
     public bool IsAnswering => _chatService.IsAnswering;
 
-    public HandoffWorkflowChatViewModelService(IHandoffWorkflowSessionService chatService)
+    public OrchestrationWorkflowChatViewModelService(IOrchestrationWorkflowSessionService chatService)
     {
         _chatService = chatService;
 

@@ -4,9 +4,9 @@ using ChatClient.Domain.Models;
 
 namespace ChatClient.Api.Client.Services.Agentic;
 
-public sealed class HandoffWorkflowSessionStartRequest
+public sealed class OrchestrationWorkflowSessionStartRequest
 {
-    public required AgentWorkflowDefinition Workflow { get; init; }
+    public required IOrchestrationWorkflowDefinition Workflow { get; init; }
 
     public required IReadOnlyList<ResolvedChatAgent> Agents { get; init; }
 
@@ -16,10 +16,10 @@ public sealed class HandoffWorkflowSessionStartRequest
 
     public string? SessionDescription { get; init; }
 
-    public IReadOnlyList<HandoffWorkflowStartInputValue> StartInputs { get; init; } = [];
+    public IReadOnlyList<OrchestrationWorkflowStartInputValue> StartInputs { get; init; } = [];
 }
 
-public sealed class HandoffWorkflowStartInputValue
+public sealed class OrchestrationWorkflowStartInputValue
 {
     public required string Key { get; init; }
 
