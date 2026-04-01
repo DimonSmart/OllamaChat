@@ -9,5 +9,6 @@ public interface IGroupChatManagerFactory
 
     GroupChatManager Create(
         IReadOnlyList<AIAgent> agents,
-        GroupChatWorkflowDefinition workflow);
+        GroupChatWorkflowDefinition workflow,
+        IReadOnlyList<string> priorAssistantSpeakerIds);
 }

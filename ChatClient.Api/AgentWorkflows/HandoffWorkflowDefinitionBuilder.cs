@@ -359,6 +359,7 @@ public sealed class WorkflowAgentBuilder
     private string? _overrideAgentName;
     private string? _overrideAvatarText;
     private string? _overrideInstructions;
+    private string? _appendedInstructions;
     private readonly List<AgentWorkflowCapabilityRequirement> _capabilities = [];
     private int _maxTurnsPerSession;
     private int _minAssistantTurnsBetweenTurns;
@@ -414,6 +415,12 @@ public sealed class WorkflowAgentBuilder
     public WorkflowAgentBuilder Instructions(string instructions)
     {
         _overrideInstructions = RequireValue(instructions, nameof(instructions));
+        return this;
+    }
+
+    public WorkflowAgentBuilder AppendInstructions(string instructions)
+    {
+        _appendedInstructions = RequireValue(instructions, nameof(instructions));
         return this;
     }
 
@@ -473,6 +480,13 @@ public sealed class WorkflowAgentBuilder
                 $"Workflow agent '{_id}' requires either an inline agent draft or a saved-agent template.");
         }
 
+        if (!string.IsNullOrWhiteSpace(_overrideInstructions) &&
+            !string.IsNullOrWhiteSpace(_appendedInstructions))
+        {
+            throw new InvalidOperationException(
+                $"Workflow agent '{_id}' cannot use both Instructions and AppendInstructions.");
+        }
+
         if (string.IsNullOrWhiteSpace(_role))
         {
             if (usesSavedTemplate)
@@ -501,7 +515,8 @@ public sealed class WorkflowAgentBuilder
             {
                 AgentName = _overrideAgentName,
                 AvatarText = _overrideAvatarText,
-                Instructions = _overrideInstructions
+                Instructions = _overrideInstructions,
+                AppendedInstructions = _appendedInstructions
             },
             CapabilityRequirements = _capabilities.ToList(),
             MaxTurnsPerSession = _maxTurnsPerSession,

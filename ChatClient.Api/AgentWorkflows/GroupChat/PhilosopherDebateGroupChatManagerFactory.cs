@@ -9,10 +9,12 @@ public sealed class PhilosopherDebateGroupChatManagerFactory : IGroupChatManager
 
     public GroupChatManager Create(
         IReadOnlyList<AIAgent> agents,
-        GroupChatWorkflowDefinition workflow)
+        GroupChatWorkflowDefinition workflow,
+        IReadOnlyList<string> priorAssistantSpeakerIds)
     {
         return new PhilosopherDebateGroupChatManager(
             agents,
-            workflow.Manager.MaximumIterations);
+            workflow.Manager.MaximumIterations,
+            priorAssistantSpeakerIds.Count);
     }
 }

@@ -112,6 +112,8 @@ public sealed class AgentWorkflowAgentDraftOverrides
     public string? AvatarText { get; init; }
 
     public string? Instructions { get; init; }
+
+    public string? AppendedInstructions { get; init; }
 }
 
 public sealed class AgentWorkflowHandoffDefinition

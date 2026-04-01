@@ -7,16 +7,23 @@ namespace ChatClient.Api.AgentWorkflows.GroupChat;
 public sealed class PhilosopherDebateGroupChatManager : GroupChatManager
 {
     private readonly IReadOnlyDictionary<string, AIAgent> _agentsBySpeakerId;
+    private readonly int _assistantMessagesBeforeRun;
 
     public PhilosopherDebateGroupChatManager(
         IReadOnlyList<AIAgent> agents,
-        int maximumIterations)
+        int maximumIterations,
+        int assistantMessagesBeforeRun = 0)
     {
         ArgumentNullException.ThrowIfNull(agents);
         if (maximumIterations < 8)
         {
             throw new InvalidOperationException(
                 "Philosopher debate group chat requires at least 8 iterations.");
+        }
+
+        if (assistantMessagesBeforeRun < 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(assistantMessagesBeforeRun));
         }
 
         _agentsBySpeakerId = new Dictionary<string, AIAgent>(StringComparer.OrdinalIgnoreCase)
@@ -26,14 +33,17 @@ public sealed class PhilosopherDebateGroupChatManager : GroupChatManager
             ["nietzsche"] = FindRequiredAgent(agents, "nietzsche"),
             ["judge"] = FindRequiredAgent(agents, "judge")
         };
+        _assistantMessagesBeforeRun = assistantMessagesBeforeRun;
         MaximumIterationCount = maximumIterations;
     }
+
+    internal int AssistantMessagesBeforeRun => _assistantMessagesBeforeRun;
 
     protected override ValueTask<AIAgent> SelectNextAgentAsync(
         IReadOnlyList<ChatMessage> history,
         CancellationToken cancellationToken)
     {
-        var assistantMessageCount = CountAssistantMessages(history);
+        var assistantMessageCount = _assistantMessagesBeforeRun + CountAssistantMessages(history);
         var speakerId = PhilosopherDebateTurnSchedule.ResolveSpeakerId(
             assistantMessageCount,
             MaximumIterationCount);
@@ -50,7 +60,7 @@ public sealed class PhilosopherDebateGroupChatManager : GroupChatManager
         IReadOnlyList<ChatMessage> history,
         CancellationToken cancellationToken)
     {
-        var assistantMessageCount = CountAssistantMessages(history);
+        var assistantMessageCount = _assistantMessagesBeforeRun + CountAssistantMessages(history);
         return ValueTask.FromResult(assistantMessageCount >= MaximumIterationCount);
     }
 

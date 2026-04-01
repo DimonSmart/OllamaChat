@@ -101,6 +101,40 @@ public sealed class HandoffWorkflowDefinitionBuilderTests
     }
 
     [Fact]
+    public void Build_CreatesSavedAgentTemplateReferenceWithAppendedInstructions()
+    {
+        var workflow = HandoffWorkflowDefinitionBuilder
+            .New("demo", "Demo Workflow")
+            .StartWith("technical")
+            .AgentFromSaved("Saved Technical Agent", agent => agent
+                .Id("technical")
+                .Role("Technical interviewer")
+                .AppendInstructions("Stay focused on the current workflow step."))
+            .Build();
+
+        var technical = Assert.Single(workflow.Agents);
+        Assert.Equal("Stay focused on the current workflow step.", technical.DraftOverrides.AppendedInstructions);
+        Assert.Null(technical.DraftOverrides.Instructions);
+    }
+
+    [Fact]
+    public void Build_ThrowsWhenInstructionsAndAppendInstructionsAreCombined()
+    {
+        var exception = Assert.Throws<InvalidOperationException>(() =>
+            HandoffWorkflowDefinitionBuilder
+                .New("demo", "Demo Workflow")
+                .StartWith("technical")
+                .AgentFromSaved("Saved Technical Agent", agent => agent
+                    .Id("technical")
+                    .Role("Technical interviewer")
+                    .Instructions("Replace prompt.")
+                    .AppendInstructions("Append prompt."))
+                .Build());
+
+        Assert.Contains("cannot use both Instructions and AppendInstructions", exception.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
     public void Build_DefaultsSavedAgentRoleToTemplateNameWhenRoleIsOmitted()
     {
         var workflow = HandoffWorkflowDefinitionBuilder

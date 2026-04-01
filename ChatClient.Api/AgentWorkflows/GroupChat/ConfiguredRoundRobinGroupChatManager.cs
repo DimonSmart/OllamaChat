@@ -7,10 +7,12 @@ namespace ChatClient.Api.AgentWorkflows.GroupChat;
 public sealed class ConfiguredRoundRobinGroupChatManager : GroupChatManager
 {
     private readonly IReadOnlyList<AIAgent> _agents;
+    private readonly int _assistantMessagesBeforeRun;
 
     public ConfiguredRoundRobinGroupChatManager(
         IReadOnlyList<AIAgent> agents,
-        int maximumIterations)
+        int maximumIterations,
+        int assistantMessagesBeforeRun = 0)
     {
         ArgumentNullException.ThrowIfNull(agents);
         if (agents.Count == 0)
@@ -26,15 +28,23 @@ public sealed class ConfiguredRoundRobinGroupChatManager : GroupChatManager
                 "Maximum iterations must be greater than zero.");
         }
 
+        if (assistantMessagesBeforeRun < 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(assistantMessagesBeforeRun));
+        }
+
         _agents = agents;
+        _assistantMessagesBeforeRun = assistantMessagesBeforeRun;
         MaximumIterationCount = maximumIterations;
     }
+
+    internal int AssistantMessagesBeforeRun => _assistantMessagesBeforeRun;
 
     protected override ValueTask<AIAgent> SelectNextAgentAsync(
         IReadOnlyList<ChatMessage> history,
         CancellationToken cancellationToken)
     {
-        var assistantMessageCount = CountAssistantMessages(history);
+        var assistantMessageCount = _assistantMessagesBeforeRun + CountAssistantMessages(history);
         var nextAgent = _agents[assistantMessageCount % _agents.Count];
         return ValueTask.FromResult(nextAgent);
     }
@@ -48,7 +58,7 @@ public sealed class ConfiguredRoundRobinGroupChatManager : GroupChatManager
         IReadOnlyList<ChatMessage> history,
         CancellationToken cancellationToken)
     {
-        var assistantMessageCount = CountAssistantMessages(history);
+        var assistantMessageCount = _assistantMessagesBeforeRun + CountAssistantMessages(history);
         return ValueTask.FromResult(assistantMessageCount >= MaximumIterationCount);
     }
 

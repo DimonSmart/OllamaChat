@@ -169,7 +169,8 @@ public sealed class WorkflowAgentDraftMaterializer(
             {
                 AgentName = agent.DraftOverrides.AgentName,
                 AvatarText = agent.DraftOverrides.AvatarText,
-                Instructions = agent.DraftOverrides.Instructions
+                Instructions = agent.DraftOverrides.Instructions,
+                AppendedInstructions = agent.DraftOverrides.AppendedInstructions
             },
             CapabilityRequirements = agent.CapabilityRequirements
                 .Select(capability => new AgentWorkflowCapabilityRequirement
@@ -236,5 +237,23 @@ public sealed class WorkflowAgentDraftMaterializer(
         {
             draft.Content = overrides.Instructions.Trim();
         }
+
+        if (!string.IsNullOrWhiteSpace(overrides.AppendedInstructions))
+        {
+            draft.Content = AppendInstructions(draft.Content, overrides.AppendedInstructions);
+        }
+    }
+
+    private static string AppendInstructions(string baseInstructions, string appendedInstructions)
+    {
+        var normalizedBase = baseInstructions?.Trim() ?? string.Empty;
+        var normalizedAppendix = appendedInstructions.Trim();
+
+        if (string.IsNullOrWhiteSpace(normalizedBase))
+        {
+            return normalizedAppendix;
+        }
+
+        return $"{normalizedBase}\n\n{normalizedAppendix}";
     }
 }

@@ -288,34 +288,28 @@ public static class WorkflowCodeTemplates
                             """)
                         .AutoSelectTools(0)
                         .BuildDescription()))
-            .Agent("kant", agent => agent
+            .AgentFromSaved("Immanuel Kant", agent => agent
+                .Id("kant")
                 .Role("Kantian philosopher")
                 .AvatarText("K")
                 .Summary("Defends duty, autonomy, universality, and moral law.")
-                .UseDraft(
-                    AgentDefinitionBuilder
-                        .New("Immanuel Kant", "kant")
-                        .WithInstructions("""
-                            You are Immanuel Kant in a live philosophical debate.
-                            Answer the previous claim directly, defend duty and rational consistency, and keep each intervention compact and forceful.
-                            Do not ask the user for input. Speak to the other participants.
-                            """)
-                        .AutoSelectTools(0)
-                        .BuildDescription()))
-            .Agent("nietzsche", agent => agent
+                .AppendInstructions("""
+                    Workflow mode:
+                    - This is an autonomous philosopher debate.
+                    - Speak to the other participants, not to the user.
+                    - Do not ask the user for input or summarize the whole debate.
+                    """))
+            .AgentFromSaved("Friedrich Nietzsche", agent => agent
+                .Id("nietzsche")
                 .Role("Nietzschean philosopher")
                 .AvatarText("N")
                 .Summary("Attacks herd morality, comfort, and universal rules.")
-                .UseDraft(
-                    AgentDefinitionBuilder
-                        .New("Friedrich Nietzsche", "nietzsche")
-                        .WithInstructions("""
-                            You are Friedrich Nietzsche in a live philosophical debate.
-                            Attack the previous claim directly, challenge timid abstractions, and keep each intervention vivid and sharp.
-                            Do not ask the user for input. Speak to the other participants.
-                            """)
-                        .AutoSelectTools(0)
-                        .BuildDescription()))
+                .AppendInstructions("""
+                    Workflow mode:
+                    - This is an autonomous philosopher debate.
+                    - Speak to the other participants, not to the user.
+                    - Do not ask the user for input or summarize the whole debate.
+                    """))
             .Agent("judge", agent => agent
                 .Role("Debate judge")
                 .AvatarText("J")
@@ -432,42 +426,26 @@ public static class WorkflowCodeTemplates
             .AgentFromSaved("Immanuel Kant", agent => agent
                 .Id("kant")
                 .Role("Kantian philosopher")
-                .Name("Immanuel Kant")
                 .MaxTurnsPerSession(6)
                 .MinAssistantTurnsBetweenTurns(2)
-                .Instructions("""
-                    You are Immanuel Kant in a live philosophical battle against Friedrich Nietzsche.
-
-                    Battle rules:
-                    - Speak to Nietzsche or to the host, not to the user.
-                    - Answer the last philosophical claim directly before advancing your own.
-                    - Defend duty, autonomy, dignity, universality, and the discipline of reason.
-                    - Use concrete examples when possible, not lecture-hall abstractions.
-                    - Keep each intervention compact but forceful: usually 3-5 sentences.
-                    - Do not summarize the entire debate.
-                    - If Nietzsche repeats himself or glorifies force without principle, expose the contradiction sharply.
-                    - If the topic is exhausted, say so in one crisp line and push the host to sharpen or replace it.
-                    - Never ask the user for input. This is an autonomous battle.
+                .AppendInstructions("""
+                    Workflow mode:
+                    - This is an autonomous debate against Nietzsche moderated by the host.
+                    - Speak to Nietzsche or the host, not to the user.
+                    - Do not ask the user for input or summarize the whole debate.
+                    - If the topic is exhausted, say so briefly and push for a sharper reformulation.
                     """))
             .AgentFromSaved("Friedrich Nietzsche", agent => agent
                 .Id("nietzsche")
                 .Role("Nietzschean philosopher")
-                .Name("Friedrich Nietzsche")
                 .MaxTurnsPerSession(6)
                 .MinAssistantTurnsBetweenTurns(2)
-                .Instructions("""
-                    You are Friedrich Nietzsche in a live philosophical battle against Immanuel Kant.
-
-                    Battle rules:
-                    - Speak to Kant or to the host, not to the user.
-                    - Attack the last claim directly before launching your own counterstrike.
-                    - Challenge duty, universal rules, herd morality, and timid abstractions.
-                    - Prefer sharp images, pressure points, and unsettling reversals over polite exposition.
-                    - Keep each intervention compact but vivid: usually 3-5 sentences.
-                    - Do not summarize the whole debate.
-                    - If Kant hides behind formality or universal law, expose the life-denying impulse behind it.
-                    - If the topic is exhausted, say so brutally and force the host to raise the stakes.
-                    - Never ask the user for input. This is an autonomous battle.
+                .AppendInstructions("""
+                    Workflow mode:
+                    - This is an autonomous debate against Kant moderated by the host.
+                    - Speak to Kant or the host, not to the user.
+                    - Do not ask the user for input or summarize the whole debate.
+                    - If the topic is exhausted, say so brutally and force a sharper reformulation.
                     """))
             .UseHandoff(handoff => handoff
                 .StartWith("host")

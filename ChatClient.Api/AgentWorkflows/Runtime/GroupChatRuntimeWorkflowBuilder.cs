@@ -29,7 +29,7 @@ public sealed class GroupChatRuntimeWorkflowBuilder(
             .ToList();
 
         var builder = AgentWorkflowBuilder.CreateGroupChatBuilderWith(
-                agents => CreateManager(agents, groupChatWorkflow))
+                agents => CreateManager(agents, groupChatWorkflow, context))
             .WithName(groupChatWorkflow.DisplayName)
             .WithDescription(groupChatWorkflow.Description)
             .AddParticipants(participantAgents);
@@ -37,19 +37,22 @@ public sealed class GroupChatRuntimeWorkflowBuilder(
         return builder.Build();
     }
 
-    private GroupChatManager CreateManager(
+    internal GroupChatManager CreateManager(
         IReadOnlyList<AIAgent> agents,
-        GroupChatWorkflowDefinition workflow) =>
+        GroupChatWorkflowDefinition workflow,
+        OrchestrationRuntimeBuildContext context) =>
         workflow.Manager.Kind switch
         {
             GroupChatWorkflowManagerKind.RoundRobin => new ConfiguredRoundRobinGroupChatManager(
                 agents,
-                workflow.Manager.MaximumIterations),
+                workflow.Manager.MaximumIterations,
+                context.AssistantSpeakerIds.Count),
             GroupChatWorkflowManagerKind.Custom => _managerRegistry.Create(
                 workflow.Manager.ImplementationKey
                 ?? throw new InvalidOperationException("Custom group chat managers require an implementation key."),
                 agents,
-                workflow),
+                workflow,
+                context.AssistantSpeakerIds),
             _ => throw new InvalidOperationException(
                 $"Unsupported group chat manager kind '{workflow.Manager.Kind}'.")
         };

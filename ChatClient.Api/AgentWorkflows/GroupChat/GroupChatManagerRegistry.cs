@@ -13,7 +13,8 @@ public sealed class GroupChatManagerRegistry(
     public GroupChatManager Create(
         string key,
         IReadOnlyList<AIAgent> agents,
-        GroupChatWorkflowDefinition workflow)
+        GroupChatWorkflowDefinition workflow,
+        IReadOnlyList<string> priorAssistantSpeakerIds)
     {
         if (!_factories.TryGetValue(key, out var factory))
         {
@@ -21,6 +22,6 @@ public sealed class GroupChatManagerRegistry(
                 $"Group chat manager '{key}' is not registered.");
         }
 
-        return factory.Create(agents, workflow);
+        return factory.Create(agents, workflow, priorAssistantSpeakerIds);
     }
 }

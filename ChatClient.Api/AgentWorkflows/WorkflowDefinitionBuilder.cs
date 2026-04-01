@@ -444,7 +444,8 @@ public sealed class WorkflowDefinitionBuilder
             {
                 AgentName = agent.DraftOverrides.AgentName,
                 AvatarText = agent.DraftOverrides.AvatarText,
-                Instructions = agent.DraftOverrides.Instructions
+                Instructions = agent.DraftOverrides.Instructions,
+                AppendedInstructions = agent.DraftOverrides.AppendedInstructions
             },
             CapabilityRequirements = agent.CapabilityRequirements
                 .Select(capability => new AgentWorkflowCapabilityRequirement

@@ -69,6 +69,35 @@ public sealed class WorkflowAgentDraftMaterializerTests
     }
 
     [Fact]
+    public async Task MaterializeAsync_AppendsSavedAgentInstructionsWhenRequested()
+    {
+        var savedAgent = new AgentDescription
+        {
+            Id = Guid.NewGuid(),
+            AgentName = "Saved Technical Agent",
+            ShortName = "saved-tech",
+            Content = "Base prompt"
+        };
+
+        var workflow = WorkflowDefinitionBuilder
+            .New("demo", "Demo Workflow")
+            .AgentFromSaved("Saved Technical Agent", agent => agent
+                .Id("technical")
+                .Role("Technical interviewer")
+                .AppendInstructions("Workflow mode:\n- Stay concise."))
+            .UseHandoff(handoff => handoff
+                .StartWith("technical"))
+            .Build();
+
+        var materializer = new WorkflowAgentDraftMaterializer(new StubAgentDescriptionService([savedAgent]));
+
+        var materialized = await materializer.MaterializeAsync(workflow);
+
+        var technical = Assert.Single(materialized.Agents);
+        Assert.Equal("Base prompt\n\nWorkflow mode:\n- Stay concise.", technical.AgentDraft!.Content);
+    }
+
+    [Fact]
     public async Task MaterializeAsync_PreservesGroupChatSpecificFields()
     {
         var workflow = WorkflowDefinitionBuilder

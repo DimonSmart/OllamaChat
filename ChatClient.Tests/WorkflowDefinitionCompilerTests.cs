@@ -37,8 +37,14 @@ public sealed class WorkflowDefinitionCompilerTests
         Assert.Equal(18, workflow.Execution.MaxAutomaticTurns);
         Assert.Equal("final", workflow.Execution.CompletionSummaryLabel);
         Assert.Contains(workflow.StartInputs, static input => input.Key == "opening_topic");
-        Assert.Contains(workflow.Agents, static agent => agent.Id == "kant");
-        Assert.Contains(workflow.Agents, static agent => agent.Id == "nietzsche");
+        var kant = Assert.Single(workflow.Agents, static agent => agent.Id == "kant");
+        var nietzsche = Assert.Single(workflow.Agents, static agent => agent.Id == "nietzsche");
+        Assert.Equal("Immanuel Kant", kant.SavedAgentTemplate!.SavedAgentName);
+        Assert.Equal("Friedrich Nietzsche", nietzsche.SavedAgentTemplate!.SavedAgentName);
+        Assert.NotNull(kant.DraftOverrides.AppendedInstructions);
+        Assert.NotNull(nietzsche.DraftOverrides.AppendedInstructions);
+        Assert.Contains("Workflow mode:", kant.DraftOverrides.AppendedInstructions, StringComparison.Ordinal);
+        Assert.Contains("Workflow mode:", nietzsche.DraftOverrides.AppendedInstructions, StringComparison.Ordinal);
         Assert.Single(workflow.Handoffs, static handoff =>
             handoff.FromAgentId == "kant" &&
             handoff.ToAgentId == "host");
@@ -136,7 +142,8 @@ public sealed class WorkflowDefinitionCompilerTests
                 .New("demo", "Demo Workflow")
                 .AgentFromSaved("Saved Router", agent => agent
                     .Name("Workflow Router")
-                    .AvatarText("WR"))
+                    .AvatarText("WR")
+                    .AppendInstructions("Workflow mode only."))
                 .UseHandoff(handoff => handoff
                     .StartWith("Saved Router"))
                 .Build();
@@ -152,6 +159,7 @@ public sealed class WorkflowDefinitionCompilerTests
         Assert.Equal("Saved Router", agent.SavedAgentTemplate!.SavedAgentName);
         Assert.Equal("Workflow Router", agent.DraftOverrides.AgentName);
         Assert.Equal("WR", agent.DraftOverrides.AvatarText);
+        Assert.Equal("Workflow mode only.", agent.DraftOverrides.AppendedInstructions);
     }
 
     [Fact]
@@ -171,6 +179,8 @@ public sealed class WorkflowDefinitionCompilerTests
         Assert.Equal("K", kant.DraftOverrides.AvatarText);
         Assert.Equal("N", nietzsche.DraftOverrides.AvatarText);
         Assert.Equal("J", judge.DraftOverrides.AvatarText);
+        Assert.Equal("Immanuel Kant", kant.SavedAgentTemplate!.SavedAgentName);
+        Assert.Equal("Friedrich Nietzsche", nietzsche.SavedAgentTemplate!.SavedAgentName);
     }
 
     [Fact]

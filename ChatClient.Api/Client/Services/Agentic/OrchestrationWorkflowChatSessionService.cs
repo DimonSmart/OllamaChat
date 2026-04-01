@@ -157,20 +157,11 @@ public sealed class OrchestrationWorkflowChatSessionService(
                     cancellationToken: cancellationToken);
 
                 _workflowAgentsById[sessionBoundAgent.Agent.AgentId] = builtAgent.Agent;
-                _agentIdsByExecutorId[sessionBoundAgent.Agent.AgentId] = sessionBoundAgent.Agent.AgentId;
                 var executorId = TryGetAgentExecutorId(builtAgent.Agent);
-                if (!string.IsNullOrWhiteSpace(executorId))
-                {
-                    _agentIdsByExecutorId[executorId] = sessionBoundAgent.Agent.AgentId;
-                }
-
-                if (!string.IsNullOrWhiteSpace(sessionBoundAgent.Agent.AgentName))
-                {
-                    _agentIdsByExecutorId[sessionBoundAgent.Agent.AgentName] = sessionBoundAgent.Agent.AgentId;
-                }
-
-                _agentIdsByName[sessionBoundAgent.Agent.AgentName] = sessionBoundAgent.Agent.AgentId;
-                _agentNamesById[sessionBoundAgent.Agent.AgentId] = sessionBoundAgent.Agent.AgentName;
+                RegisterAgentIdentity(
+                    sessionBoundAgent.Agent.AgentId,
+                    sessionBoundAgent.Agent.AgentName,
+                    executorId);
             }
 
             stage = "store-parameters";
@@ -393,8 +384,11 @@ public sealed class OrchestrationWorkflowChatSessionService(
             if (execution.Mode == AgentWorkflowExecutionMode.Autonomous &&
                 automaticAssistantTurnsUsed >= execution.MaxAutomaticTurns)
             {
-                throw new InvalidOperationException(
-                    $"Autonomous workflow '{parameters.Workflow.DisplayName}' reached its automatic turn limit ({execution.MaxAutomaticTurns}) before completion.");
+                await LogAutonomousWorkflowStoppedWithoutCompletionMarkersAsync(
+                    parameters.Workflow.DisplayName,
+                    execution,
+                    cancellationToken);
+                return;
             }
 
             passNumber++;
@@ -402,6 +396,11 @@ public sealed class OrchestrationWorkflowChatSessionService(
 
             if (passResult.CompletedAssistantMessages.Count == 0)
             {
+                if (passResult.Status == RunStatus.Ended)
+                {
+                    return;
+                }
+
                 if (execution.Mode == AgentWorkflowExecutionMode.Autonomous &&
                     await IsWorkflowExecutionCompleteAsync(execution, cancellationToken))
                 {
@@ -417,6 +416,24 @@ public sealed class OrchestrationWorkflowChatSessionService(
                 cancellationToken);
 
             automaticAssistantTurnsUsed += passResult.CompletedAssistantMessages.Count;
+
+            if (execution.Mode == AgentWorkflowExecutionMode.Autonomous &&
+                passResult.Status == RunStatus.Ended)
+            {
+                var completedByMarkers = await IsWorkflowExecutionCompleteAsync(execution, cancellationToken);
+                if (!completedByMarkers &&
+                    (!string.IsNullOrWhiteSpace(execution.CompletionPhase) ||
+                     !string.IsNullOrWhiteSpace(execution.CompletionSummaryLabel)))
+                {
+                    logger.LogWarning(
+                        "Autonomous workflow '{WorkflowDisplayName}' ended without reaching completion markers. CompletionPhase={CompletionPhase}, CompletionSummaryLabel={CompletionSummaryLabel}",
+                        parameters.Workflow.DisplayName,
+                        execution.CompletionPhase,
+                        execution.CompletionSummaryLabel);
+                }
+
+                return;
+            }
 
             if (execution.Mode == AgentWorkflowExecutionMode.Autonomous &&
                 automaticAssistantTurnsUsed > execution.MaxAutomaticTurns)
@@ -437,8 +454,11 @@ public sealed class OrchestrationWorkflowChatSessionService(
 
             if (automaticAssistantTurnsUsed >= execution.MaxAutomaticTurns)
             {
-                throw new InvalidOperationException(
-                    $"Autonomous workflow '{parameters.Workflow.DisplayName}' reached its automatic turn limit ({execution.MaxAutomaticTurns}) before completion.");
+                await LogAutonomousWorkflowStoppedWithoutCompletionMarkersAsync(
+                    parameters.Workflow.DisplayName,
+                    execution,
+                    cancellationToken);
+                return;
             }
         }
     }
@@ -482,6 +502,11 @@ public sealed class OrchestrationWorkflowChatSessionService(
             completedAssistantMessages,
             cancellationToken);
 
+        if (cancellationToken.IsCancellationRequested)
+        {
+            throw new OperationCanceledException(cancellationToken);
+        }
+
         var status = await run.GetStatusAsync(cancellationToken);
         logger.LogDebug(
             "Workflow pass completed. Status={Status}, AssistantOutputObserved={AssistantOutputObserved}, CompletedAssistantMessages={CompletedAssistantMessages}",
@@ -501,27 +526,43 @@ public sealed class OrchestrationWorkflowChatSessionService(
 
             case RunStatus.NotStarted:
             case RunStatus.Running:
+                if (cancellationToken.IsCancellationRequested)
+                {
+                    throw new OperationCanceledException(cancellationToken);
+                }
+
+                throw new InvalidOperationException(
+                    $"Workflow returned unexpected run status '{status}'.");
+
             default:
                 throw new InvalidOperationException(
                     $"Workflow returned unexpected run status '{status}'.");
         }
 
-        foreach (var stream in _activeStreams.Values.ToList())
-        {
-            await FinalizeStreamAsync(
-                stream,
-                parameters.Configuration.ModelName,
-                completedAssistantMessages);
-        }
+        await FinalizeActiveStreamsAsync(
+            parameters.Configuration.ModelName,
+            completedAssistantMessages);
 
-        _activeStreams.Clear();
-        _activeSpeakerIdsByStreamId.Clear();
-
-        return new WorkflowPassResult(completedAssistantMessages);
+        return new WorkflowPassResult(status, completedAssistantMessages);
     }
 
-    private async Task<bool> ProcessWorkflowEventsAsync(
-        IEnumerable<WorkflowEvent> workflowEvents,
+    internal Task<bool> DrainWorkflowEventsAsync(
+        IAsyncEnumerable<WorkflowEvent> workflowEvents,
+        string modelName,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(workflowEvents);
+
+        return DrainWorkflowEventsAsync(
+            workflowEvents,
+            modelName,
+            new WorkflowPassStreamingState(_assistantSpeakerIds.Count),
+            [],
+            cancellationToken);
+    }
+
+    private async Task<bool> DrainWorkflowEventsAsync(
+        IAsyncEnumerable<WorkflowEvent> workflowEvents,
         string modelName,
         WorkflowPassStreamingState streamingState,
         List<CompletedWorkflowAssistantMessage> completedAssistantMessages,
@@ -529,65 +570,85 @@ public sealed class OrchestrationWorkflowChatSessionService(
     {
         var assistantOutputObserved = false;
 
-        foreach (var workflowEvent in workflowEvents)
+        await foreach (var workflowEvent in workflowEvents.WithCancellation(cancellationToken))
         {
-            switch (workflowEvent)
-            {
-                case AgentResponseUpdateEvent updateEvent:
-                    var updateText = ExtractUpdateText(updateEvent);
-                    if (string.IsNullOrWhiteSpace(updateText))
-                    {
-                        break;
-                    }
-
-                    var stream = await GetOrCreateStreamAsync(
-                        updateEvent.ExecutorId,
-                        updateText,
-                        modelName,
-                        streamingState,
-                        completedAssistantMessages,
-                        cancellationToken);
-
-                    assistantOutputObserved = true;
-                    streamingBridge.Append(stream, updateText);
-                    await (MessageUpdated?.Invoke(stream, true) ?? Task.CompletedTask);
-                    break;
-
-                case WorkflowOutputEvent outputEvent:
-                    foreach (var chatMessage in ExtractOutputMessages(outputEvent))
-                    {
-                        var outputText = chatMessage.Text;
-                        if (string.IsNullOrWhiteSpace(outputText))
-                        {
-                            continue;
-                        }
-
-                        if (chatMessage.Role != ChatRole.Assistant)
-                        {
-                            continue;
-                        }
-
-                        assistantOutputObserved = true;
-                        await PublishCompletedOutputMessageAsync(
-                            chatMessage,
-                            modelName,
-                            completedAssistantMessages,
-                            cancellationToken);
-                    }
-                    break;
-
-                case ExecutorFailedEvent failedEvent:
-                    throw failedEvent.Data ?? new InvalidOperationException(
-                        $"Workflow executor '{failedEvent.ExecutorId}' failed without an exception payload.");
-
-                case RequestInfoEvent requestInfoEvent:
-                    throw new InvalidOperationException(
-                        $"Workflow requested unsupported external input: {requestInfoEvent.Request}");
-
-            }
+            assistantOutputObserved |= await ProcessWorkflowEventAsync(
+                workflowEvent,
+                modelName,
+                streamingState,
+                completedAssistantMessages,
+                cancellationToken);
         }
 
         return assistantOutputObserved;
+    }
+
+    private async Task<bool> ProcessWorkflowEventAsync(
+        WorkflowEvent workflowEvent,
+        string modelName,
+        WorkflowPassStreamingState streamingState,
+        List<CompletedWorkflowAssistantMessage> completedAssistantMessages,
+        CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+
+        switch (workflowEvent)
+        {
+            case AgentResponseUpdateEvent updateEvent:
+                var updateText = ExtractUpdateText(updateEvent);
+                if (string.IsNullOrWhiteSpace(updateText))
+                {
+                    return false;
+                }
+
+                var stream = await GetOrCreateStreamAsync(
+                    updateEvent.ExecutorId,
+                    updateText,
+                    modelName,
+                    streamingState,
+                    completedAssistantMessages,
+                    cancellationToken);
+
+                streamingBridge.Append(stream, updateText);
+                await (MessageUpdated?.Invoke(stream, false) ?? Task.CompletedTask);
+                return true;
+
+            case WorkflowOutputEvent outputEvent:
+                var assistantMessages = ExtractOutputMessages(outputEvent)
+                    .Where(static chatMessage => chatMessage.Role == ChatRole.Assistant)
+                    .Where(static chatMessage => !string.IsNullOrWhiteSpace(chatMessage.Text))
+                    .ToList();
+                if (assistantMessages.Count == 0)
+                {
+                    return false;
+                }
+
+                foreach (var chatMessage in GetUndeliveredOutputMessages(
+                             assistantMessages,
+                             completedAssistantMessages))
+                {
+                    await PublishCompletedOutputMessageAsync(
+                        chatMessage,
+                        modelName,
+                        completedAssistantMessages,
+                        cancellationToken);
+                }
+
+                return true;
+
+            case ExecutorFailedEvent failedEvent:
+                await FinalizeActiveStreamsAsync(modelName, completedAssistantMessages);
+                throw failedEvent.Data ?? new InvalidOperationException(
+                    $"Workflow executor '{failedEvent.ExecutorId}' failed without an exception payload.");
+
+            case RequestInfoEvent requestInfoEvent:
+                await FinalizeActiveStreamsAsync(modelName, completedAssistantMessages);
+                throw new InvalidOperationException(
+                    $"Workflow requested unsupported external input: {requestInfoEvent.Request}");
+
+            default:
+                return false;
+        }
     }
 
     private async Task<bool> ExecuteWorkflowBatchAsync<TInput>(
@@ -608,32 +669,12 @@ public sealed class OrchestrationWorkflowChatSessionService(
                 $"Workflow rejected input of type '{typeof(TInput).Name}'.");
         }
 
-        var workflowEvents = await CollectWorkflowEventsAsync(run, cancellationToken);
-        return await ProcessWorkflowEventsAsync(
-            workflowEvents,
+        return await DrainWorkflowEventsAsync(
+            run.WatchStreamAsync(cancellationToken),
             modelName,
             streamingState,
             completedAssistantMessages,
             cancellationToken);
-    }
-
-    private static async Task<List<WorkflowEvent>> CollectWorkflowEventsAsync(
-        StreamingRun run,
-        CancellationToken cancellationToken)
-    {
-        List<WorkflowEvent> workflowEvents = [];
-
-        await foreach (var workflowEvent in run.WatchStreamAsync(cancellationToken))
-        {
-            workflowEvents.Add(workflowEvent);
-
-            if (workflowEvent is RequestInfoEvent)
-            {
-                break;
-            }
-        }
-
-        return workflowEvents;
     }
 
     private async Task ProcessCompletedAssistantMessagesAsync(
@@ -792,6 +833,47 @@ public sealed class OrchestrationWorkflowChatSessionService(
         completedAssistantMessages.Add(new CompletedWorkflowAssistantMessage(
             finalMessage,
             speakerId ?? speakerName));
+    }
+
+    private IEnumerable<ChatMessage> GetUndeliveredOutputMessages(
+        IReadOnlyList<ChatMessage> outputMessages,
+        IReadOnlyList<CompletedWorkflowAssistantMessage> completedAssistantMessages)
+    {
+        var skipCount = 0;
+        var comparableMessageCount = Math.Min(outputMessages.Count, completedAssistantMessages.Count);
+
+        while (skipCount < comparableMessageCount &&
+               IsSameDeliveredAssistantMessage(outputMessages[skipCount], completedAssistantMessages[skipCount]))
+        {
+            skipCount++;
+        }
+
+        for (var index = skipCount; index < outputMessages.Count; index++)
+        {
+            yield return outputMessages[index];
+        }
+    }
+
+    private bool IsSameDeliveredAssistantMessage(
+        ChatMessage outputMessage,
+        CompletedWorkflowAssistantMessage completedMessage)
+    {
+        if (!string.Equals(
+                outputMessage.Text?.Trim(),
+                completedMessage.Message.Content?.Trim(),
+                StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        var outputSpeakerId = ResolveSpeakerIdFromAuthorName(outputMessage.AuthorName);
+        var outputSpeakerName = ResolveSpeakerName(outputSpeakerId) ?? outputMessage.AuthorName;
+
+        return IsSameSpeaker(
+            completedMessage.Message.AgentId,
+            completedMessage.Message.AgentName,
+            outputSpeakerId,
+            outputSpeakerName);
     }
 
     private async Task<StreamingAppChatMessage> GetOrCreateStreamAsync(
@@ -1122,6 +1204,29 @@ public sealed class OrchestrationWorkflowChatSessionService(
         return false;
     }
 
+    private async Task LogAutonomousWorkflowStoppedWithoutCompletionMarkersAsync(
+        string workflowDisplayName,
+        AgentWorkflowExecutionDefinition execution,
+        CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(execution.CompletionPhase) &&
+            string.IsNullOrWhiteSpace(execution.CompletionSummaryLabel))
+        {
+            return;
+        }
+
+        if (await IsWorkflowExecutionCompleteAsync(execution, cancellationToken))
+        {
+            return;
+        }
+
+        logger.LogWarning(
+            "Autonomous workflow '{WorkflowDisplayName}' stopped after reaching its automatic turn limit without reaching completion markers. CompletionPhase={CompletionPhase}, CompletionSummaryLabel={CompletionSummaryLabel}",
+            workflowDisplayName,
+            execution.CompletionPhase,
+            execution.CompletionSummaryLabel);
+    }
+
     private async Task ValidateResolvedAgentsAsync(
         IReadOnlyList<ResolvedChatAgent> resolvedAgents,
         CancellationToken cancellationToken)
@@ -1183,6 +1288,25 @@ public sealed class OrchestrationWorkflowChatSessionService(
         return AgentDescriptionFactory.CreateRuntime(resolvedAgent.Agent, resolvedAgent.Model);
     }
 
+    internal void RegisterAgentIdentity(
+        string agentId,
+        string agentName,
+        string? executorId)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(agentId);
+        ArgumentException.ThrowIfNullOrWhiteSpace(agentName);
+
+        _agentIdsByExecutorId[agentId] = agentId;
+        if (!string.IsNullOrWhiteSpace(executorId))
+        {
+            _agentIdsByExecutorId[executorId] = agentId;
+        }
+
+        _agentIdsByExecutorId[agentName] = agentId;
+        _agentIdsByName[agentName] = agentId;
+        _agentNamesById[agentId] = agentName;
+    }
+
     private async Task AddMessageAsync(IAppChatMessage message)
     {
         if (_chat.Messages.Any(m => m.Id == message.Id))
@@ -1229,6 +1353,22 @@ public sealed class OrchestrationWorkflowChatSessionService(
     private async Task HandleError(string text)
     {
         await AddMessageAsync(new AppChatMessage(text, DateTime.Now, ChatRole.Assistant));
+    }
+
+    private async Task FinalizeActiveStreamsAsync(
+        string modelName,
+        List<CompletedWorkflowAssistantMessage> completedAssistantMessages)
+    {
+        foreach (var stream in _activeStreams.Values.ToList())
+        {
+            await FinalizeStreamAsync(
+                stream,
+                modelName,
+                completedAssistantMessages);
+        }
+
+        _activeStreams.Clear();
+        _activeSpeakerIdsByStreamId.Clear();
     }
 
     private void UpdateAnsweringState(bool isAnswering)
@@ -1325,5 +1465,6 @@ public sealed class OrchestrationWorkflowChatSessionService(
     }
 
     private sealed record WorkflowPassResult(
+        RunStatus Status,
         IReadOnlyList<CompletedWorkflowAssistantMessage> CompletedAssistantMessages);
 }
