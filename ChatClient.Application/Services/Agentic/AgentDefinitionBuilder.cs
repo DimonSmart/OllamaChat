@@ -61,6 +61,12 @@ public sealed class AgentDefinitionBuilder
         return this;
     }
 
+    public AgentDefinitionBuilder WithAvatarText(string? avatarText)
+    {
+        _definition.AvatarText = string.IsNullOrWhiteSpace(avatarText) ? null : avatarText.Trim();
+        return this;
+    }
+
     public AgentDefinitionBuilder WithInstructions(string content)
     {
         _definition.Content = content?.Trim() ?? string.Empty;

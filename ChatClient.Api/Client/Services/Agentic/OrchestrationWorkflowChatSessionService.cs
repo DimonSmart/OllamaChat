@@ -164,6 +164,11 @@ public sealed class OrchestrationWorkflowChatSessionService(
                     _agentIdsByExecutorId[executorId] = sessionBoundAgent.Agent.AgentId;
                 }
 
+                if (!string.IsNullOrWhiteSpace(sessionBoundAgent.Agent.AgentName))
+                {
+                    _agentIdsByExecutorId[sessionBoundAgent.Agent.AgentName] = sessionBoundAgent.Agent.AgentId;
+                }
+
                 _agentIdsByName[sessionBoundAgent.Agent.AgentName] = sessionBoundAgent.Agent.AgentId;
                 _agentNamesById[sessionBoundAgent.Agent.AgentId] = sessionBoundAgent.Agent.AgentName;
             }
@@ -455,6 +460,7 @@ public sealed class OrchestrationWorkflowChatSessionService(
             sessionId,
             cancellationToken);
         var completedAssistantMessages = new List<CompletedWorkflowAssistantMessage>();
+        var streamingState = new WorkflowPassStreamingState(_assistantSpeakerIds.Count);
         var assistantOutputObserved = false;
 
         if (conversation.Count > 0)
@@ -463,6 +469,7 @@ public sealed class OrchestrationWorkflowChatSessionService(
                 run,
                 conversation,
                 parameters.Configuration.ModelName,
+                streamingState,
                 completedAssistantMessages,
                 cancellationToken);
         }
@@ -471,6 +478,7 @@ public sealed class OrchestrationWorkflowChatSessionService(
             run,
             new TurnToken(emitEvents: true),
             parameters.Configuration.ModelName,
+            streamingState,
             completedAssistantMessages,
             cancellationToken);
 
@@ -515,6 +523,7 @@ public sealed class OrchestrationWorkflowChatSessionService(
     private async Task<bool> ProcessWorkflowEventsAsync(
         IEnumerable<WorkflowEvent> workflowEvents,
         string modelName,
+        WorkflowPassStreamingState streamingState,
         List<CompletedWorkflowAssistantMessage> completedAssistantMessages,
         CancellationToken cancellationToken)
     {
@@ -524,6 +533,26 @@ public sealed class OrchestrationWorkflowChatSessionService(
         {
             switch (workflowEvent)
             {
+                case AgentResponseUpdateEvent updateEvent:
+                    var updateText = ExtractUpdateText(updateEvent);
+                    if (string.IsNullOrWhiteSpace(updateText))
+                    {
+                        break;
+                    }
+
+                    var stream = await GetOrCreateStreamAsync(
+                        updateEvent.ExecutorId,
+                        updateText,
+                        modelName,
+                        streamingState,
+                        completedAssistantMessages,
+                        cancellationToken);
+
+                    assistantOutputObserved = true;
+                    streamingBridge.Append(stream, updateText);
+                    await (MessageUpdated?.Invoke(stream, true) ?? Task.CompletedTask);
+                    break;
+
                 case WorkflowOutputEvent outputEvent:
                     foreach (var chatMessage in ExtractOutputMessages(outputEvent))
                     {
@@ -538,33 +567,12 @@ public sealed class OrchestrationWorkflowChatSessionService(
                             continue;
                         }
 
-                        var speakerId = ResolveSpeakerId(outputEvent);
-                        var speakerName = ResolveSpeakerName(speakerId);
-                        await FinalizePreviousStreamIfNeededAsync(
-                            speakerId,
-                            speakerName,
-                            modelName,
-                            completedAssistantMessages);
-
-                        var stream = await GetOrCreateStreamAsync(
-                            speakerId,
-                            speakerName,
-                            cancellationToken);
-                        if (!string.IsNullOrWhiteSpace(speakerName) &&
-                            !string.Equals(stream.AgentName, speakerName, StringComparison.Ordinal))
-                        {
-                            stream.SetAgentName(speakerName);
-                        }
-
-                        var appendText = WorkflowStreamingTextDelta.GetAppendText(stream.Content, outputText);
-                        if (string.IsNullOrEmpty(appendText))
-                        {
-                            continue;
-                        }
-
                         assistantOutputObserved = true;
-                        streamingBridge.Append(stream, appendText);
-                        await (MessageUpdated?.Invoke(stream, true) ?? Task.CompletedTask);
+                        await PublishCompletedOutputMessageAsync(
+                            chatMessage,
+                            modelName,
+                            completedAssistantMessages,
+                            cancellationToken);
                     }
                     break;
 
@@ -586,6 +594,7 @@ public sealed class OrchestrationWorkflowChatSessionService(
         StreamingRun run,
         TInput input,
         string modelName,
+        WorkflowPassStreamingState streamingState,
         List<CompletedWorkflowAssistantMessage> completedAssistantMessages,
         CancellationToken cancellationToken)
         where TInput : notnull
@@ -603,6 +612,7 @@ public sealed class OrchestrationWorkflowChatSessionService(
         return await ProcessWorkflowEventsAsync(
             workflowEvents,
             modelName,
+            streamingState,
             completedAssistantMessages,
             cancellationToken);
     }
@@ -690,21 +700,14 @@ public sealed class OrchestrationWorkflowChatSessionService(
         return [];
     }
 
-    private string? ResolveSpeakerId(WorkflowOutputEvent outputEvent)
+    private static string? ExtractUpdateText(AgentResponseUpdateEvent updateEvent)
     {
-        if (!string.IsNullOrWhiteSpace(outputEvent.ExecutorId) &&
-            _agentIdsByExecutorId.TryGetValue(outputEvent.ExecutorId, out var speakerId))
+        if (!string.IsNullOrWhiteSpace(updateEvent.Update.Text))
         {
-            return speakerId;
+            return updateEvent.Update.Text;
         }
 
-        if (!string.IsNullOrWhiteSpace(outputEvent.ExecutorId) &&
-            _agentNamesById.ContainsKey(outputEvent.ExecutorId))
-        {
-            return outputEvent.ExecutorId;
-        }
-
-        return null;
+        return updateEvent.Update.ToString();
     }
 
     private string? ResolveSpeakerName(string? speakerId)
@@ -719,45 +722,121 @@ public sealed class OrchestrationWorkflowChatSessionService(
             : speakerId;
     }
 
-    private async Task FinalizePreviousStreamIfNeededAsync(
-        string? speakerId,
-        string? speakerName,
-        string modelName,
-        List<CompletedWorkflowAssistantMessage> completedAssistantMessages)
+    private string? ResolveSpeakerIdFromAuthorName(string? authorName)
     {
+        if (string.IsNullOrWhiteSpace(authorName))
+        {
+            return null;
+        }
+
+        if (_agentIdsByName.TryGetValue(authorName, out var speakerId))
+        {
+            return speakerId;
+        }
+
+        return _agentIdsByExecutorId.TryGetValue(authorName, out speakerId)
+            ? speakerId
+            : null;
+    }
+
+    private async Task PublishCompletedOutputMessageAsync(
+        ChatMessage chatMessage,
+        string modelName,
+        List<CompletedWorkflowAssistantMessage> completedAssistantMessages,
+        CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+
+        var outputText = chatMessage.Text;
+        if (string.IsNullOrWhiteSpace(outputText))
+        {
+            return;
+        }
+
+        var speakerId = ResolveSpeakerIdFromAuthorName(chatMessage.AuthorName);
+        var speakerName = ResolveSpeakerName(speakerId) ?? chatMessage.AuthorName;
         var existing = _activeStreams.Values.LastOrDefault();
-        if (existing is null)
+
+        if (existing is not null)
         {
-            return;
+            _activeSpeakerIdsByStreamId.TryGetValue(existing.Id, out var existingSpeakerId);
+            if (IsSameSpeaker(existingSpeakerId, existing.AgentName, speakerId, speakerName))
+            {
+                UpdateStreamSpeaker(existing, speakerId, speakerName);
+                if (!string.IsNullOrWhiteSpace(speakerId))
+                {
+                    _activeSpeakerIdsByStreamId[existing.Id] = speakerId;
+                }
+
+                if (!string.Equals(existing.Content, outputText, StringComparison.Ordinal))
+                {
+                    existing.ResetContent();
+                    existing.Append(outputText);
+                }
+
+                await FinalizeStreamAsync(existing, modelName, completedAssistantMessages);
+                return;
+            }
+
+            await FinalizeStreamAsync(existing, modelName, completedAssistantMessages);
         }
 
-        _activeSpeakerIdsByStreamId.TryGetValue(existing.Id, out var existingSpeakerId);
-        if (IsSameSpeaker(existingSpeakerId, existing.AgentName, speakerId, speakerName))
-        {
-            return;
-        }
-
-        await FinalizeStreamAsync(existing, modelName, completedAssistantMessages);
+        var finalMessage = new AppChatMessage(
+            outputText,
+            DateTime.Now,
+            ChatRole.Assistant,
+            BuildStatistics(speakerName, modelName),
+            agentId: speakerId,
+            agentName: speakerName);
+        await AddMessageAsync(finalMessage);
+        completedAssistantMessages.Add(new CompletedWorkflowAssistantMessage(
+            finalMessage,
+            speakerId ?? speakerName));
     }
 
     private async Task<StreamingAppChatMessage> GetOrCreateStreamAsync(
-        string? speakerId,
-        string? agentName,
+        string? executorId,
+        string outputText,
+        string modelName,
+        WorkflowPassStreamingState streamingState,
+        List<CompletedWorkflowAssistantMessage> completedAssistantMessages,
         CancellationToken cancellationToken)
     {
+        var resolvedSpeakerId = WorkflowSpeakerResolver.ResolveFromExecutorId(
+            executorId,
+            _agentIdsByExecutorId);
+        var resolvedSpeakerName = ResolveSpeakerName(resolvedSpeakerId);
         var existing = _activeStreams.Values.LastOrDefault();
         if (existing is not null)
         {
             _activeSpeakerIdsByStreamId.TryGetValue(existing.Id, out var existingSpeakerId);
-            if (IsSameSpeaker(existingSpeakerId, existing.AgentName, speakerId, agentName))
+            if (ShouldContinueCurrentStream(
+                    existing,
+                    existingSpeakerId,
+                    resolvedSpeakerId,
+                    resolvedSpeakerName,
+                    outputText))
             {
+                UpdateStreamSpeaker(existing, resolvedSpeakerId, resolvedSpeakerName);
+                if (!string.IsNullOrWhiteSpace(resolvedSpeakerId))
+                {
+                    _activeSpeakerIdsByStreamId[existing.Id] = resolvedSpeakerId;
+                }
+
                 return existing;
             }
+
+            await FinalizeStreamAsync(existing, modelName, completedAssistantMessages);
         }
 
-        var stream = streamingBridge.Create(agentName ?? "Workflow");
+        var speakerId = resolvedSpeakerId ?? WorkflowSpeakerResolver.ResolveFromWorkflow(
+            _parameters?.Workflow,
+            streamingState.NextAssistantMessageIndex);
+        var speakerName = resolvedSpeakerName ?? ResolveSpeakerName(speakerId);
+        var stream = streamingBridge.Create(speakerId, speakerName);
         _activeStreams[stream.Id] = stream;
-        _activeSpeakerIdsByStreamId[stream.Id] = speakerId ?? agentName;
+        _activeSpeakerIdsByStreamId[stream.Id] = speakerId;
+        streamingState.RegisterStartedAssistantMessage();
         await AddMessageAsync(stream);
         cancellationToken.ThrowIfCancellationRequested();
         return stream;
@@ -783,6 +862,12 @@ public sealed class OrchestrationWorkflowChatSessionService(
             !string.IsNullOrWhiteSpace(finalMessage.AgentName))
         {
             _agentIdsByName.TryGetValue(finalMessage.AgentName, out resolvedSpeakerId);
+        }
+
+        if (!string.IsNullOrWhiteSpace(resolvedSpeakerId) &&
+            !string.Equals(finalMessage.AgentId, resolvedSpeakerId, StringComparison.OrdinalIgnoreCase))
+        {
+            finalMessage.AgentId = resolvedSpeakerId;
         }
 
         completedAssistantMessages.Add(new CompletedWorkflowAssistantMessage(
@@ -1162,16 +1247,62 @@ public sealed class OrchestrationWorkflowChatSessionService(
         return $"workflow orchestration | speaker {agentName} | model {modelName}";
     }
 
+    private static void UpdateStreamSpeaker(
+        StreamingAppChatMessage stream,
+        string? speakerId,
+        string? speakerName)
+    {
+        if (!string.IsNullOrWhiteSpace(speakerId) &&
+            !string.Equals(stream.AgentId, speakerId, StringComparison.Ordinal))
+        {
+            stream.SetAgentId(speakerId);
+        }
+
+        if (!string.IsNullOrWhiteSpace(speakerName) &&
+            !string.Equals(stream.AgentName, speakerName, StringComparison.Ordinal))
+        {
+            stream.SetAgentName(speakerName);
+        }
+    }
+
+    private static bool ShouldContinueCurrentStream(
+        StreamingAppChatMessage existing,
+        string? existingSpeakerId,
+        string? nextSpeakerId,
+        string? nextSpeakerName,
+        string outputText)
+    {
+        if (!string.IsNullOrWhiteSpace(nextSpeakerId) ||
+            !string.IsNullOrWhiteSpace(nextSpeakerName))
+        {
+            return IsSameSpeaker(
+                existingSpeakerId,
+                existing.AgentName,
+                nextSpeakerId,
+                nextSpeakerName);
+        }
+
+        return WorkflowStreamingTextDelta.IsDuplicateOfCurrentMessage(existing.Content, outputText);
+    }
+
     private static bool IsSameSpeaker(
         string? existingSpeakerId,
         string? existingSpeakerName,
         string? nextSpeakerId,
         string? nextSpeakerName)
     {
-        if (!string.IsNullOrWhiteSpace(existingSpeakerId) ||
+        if (!string.IsNullOrWhiteSpace(existingSpeakerId) &&
             !string.IsNullOrWhiteSpace(nextSpeakerId))
         {
             return string.Equals(existingSpeakerId, nextSpeakerId, StringComparison.OrdinalIgnoreCase);
+        }
+
+        if ((!string.IsNullOrWhiteSpace(existingSpeakerId) ||
+             !string.IsNullOrWhiteSpace(nextSpeakerId)) &&
+            !string.IsNullOrWhiteSpace(existingSpeakerName) &&
+            !string.IsNullOrWhiteSpace(nextSpeakerName))
+        {
+            return string.Equals(existingSpeakerName, nextSpeakerName, StringComparison.OrdinalIgnoreCase);
         }
 
         return string.Equals(existingSpeakerName, nextSpeakerName, StringComparison.OrdinalIgnoreCase);
@@ -1180,6 +1311,18 @@ public sealed class OrchestrationWorkflowChatSessionService(
     private sealed record CompletedWorkflowAssistantMessage(
         AppChatMessage Message,
         string? SpeakerId);
+
+    private sealed class WorkflowPassStreamingState(int assistantMessagesBeforePass)
+    {
+        private int _startedAssistantMessages;
+
+        public int NextAssistantMessageIndex => assistantMessagesBeforePass + _startedAssistantMessages;
+
+        public void RegisterStartedAssistantMessage()
+        {
+            _startedAssistantMessages++;
+        }
+    }
 
     private sealed record WorkflowPassResult(
         IReadOnlyList<CompletedWorkflowAssistantMessage> CompletedAssistantMessages);

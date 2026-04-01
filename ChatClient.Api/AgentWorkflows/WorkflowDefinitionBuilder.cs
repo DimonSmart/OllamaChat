@@ -443,6 +443,7 @@ public sealed class WorkflowDefinitionBuilder
             DraftOverrides = new AgentWorkflowAgentDraftOverrides
             {
                 AgentName = agent.DraftOverrides.AgentName,
+                AvatarText = agent.DraftOverrides.AvatarText,
                 Instructions = agent.DraftOverrides.Instructions
             },
             CapabilityRequirements = agent.CapabilityRequirements

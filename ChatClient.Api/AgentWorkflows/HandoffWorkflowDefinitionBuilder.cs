@@ -357,6 +357,7 @@ public sealed class WorkflowAgentBuilder
     private AgentDescription? _agentDraft;
     private string? _savedAgentTemplateName;
     private string? _overrideAgentName;
+    private string? _overrideAvatarText;
     private string? _overrideInstructions;
     private readonly List<AgentWorkflowCapabilityRequirement> _capabilities = [];
     private int _maxTurnsPerSession;
@@ -401,6 +402,12 @@ public sealed class WorkflowAgentBuilder
     public WorkflowAgentBuilder Name(string agentName)
     {
         _overrideAgentName = RequireValue(agentName, nameof(agentName));
+        return this;
+    }
+
+    public WorkflowAgentBuilder AvatarText(string avatarText)
+    {
+        _overrideAvatarText = RequireValue(avatarText, nameof(avatarText));
         return this;
     }
 
@@ -493,6 +500,7 @@ public sealed class WorkflowAgentBuilder
             DraftOverrides = new AgentWorkflowAgentDraftOverrides
             {
                 AgentName = _overrideAgentName,
+                AvatarText = _overrideAvatarText,
                 Instructions = _overrideInstructions
             },
             CapabilityRequirements = _capabilities.ToList(),

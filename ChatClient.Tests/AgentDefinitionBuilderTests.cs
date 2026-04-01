@@ -13,6 +13,7 @@ public class AgentDefinitionBuilderTests
 
         var definition = AgentDefinitionBuilder
             .New("Character Reader", "character-reader")
+            .WithAvatarText("CR")
             .WithInstructions("Read the cursor and update the registry.")
             .WithDefaultModel(serverId, "model-a")
             .WithTemperature(0.2)
@@ -30,6 +31,7 @@ public class AgentDefinitionBuilderTests
 
         Assert.Equal("Character Reader", definition.AgentName);
         Assert.Equal("character-reader", definition.ShortName);
+        Assert.Equal("CR", definition.AvatarText);
         Assert.Equal("Read the cursor and update the registry.", definition.Content);
         Assert.Equal(serverId, definition.LlmId);
         Assert.Equal("model-a", definition.ModelName);

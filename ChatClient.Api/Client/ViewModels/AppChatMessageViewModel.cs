@@ -22,6 +22,7 @@ public class AppChatMessageViewModel
     public bool IsStreaming { get; set; }
     public bool IsCanceled { get; set; }
     public IReadOnlyList<AppChatMessageFile> Files { get; set; } = [];
+    public string? AgentId { get; set; }
     public string? AgentName { get; set; }
 
     public AppChatMessageViewModel UpdateFromDomainModel(IAppChatMessage message)
@@ -30,6 +31,7 @@ public class AppChatMessageViewModel
         RawContent = message.Content;
         MsgDateTime = message.MsgDateTime;
         Role = message.Role;
+        AgentId = message.AgentId;
         AgentName = message.AgentName;
         Statistics = message.Statistics;
         IsStreaming = message.IsStreaming;

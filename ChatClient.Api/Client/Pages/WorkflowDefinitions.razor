@@ -1,0 +1,494 @@
+@page "/workflow-definitions"
+@using ChatClient.Api.AgentWorkflows
+@using ChatClient.Application.Services
+@using ChatClient.Domain.Models
+@using MudBlazor
+@inject IWorkflowDefinitionService WorkflowDefinitionService
+@inject IWorkflowDefinitionCompiler WorkflowCompiler
+@inject ISnackbar Snackbar
+
+<PageTitle>Workflow Definitions Management</PageTitle>
+
+<MudContainer MaxWidth="MaxWidth.ExtraLarge" Class="mt-3">
+    <MudText Class="page-header">Workflow Definitions</MudText>
+
+    <MudPaper Elevation="3" Class="pa-3 rounded-lg">
+        <MudToolBar Dense="true">
+            <MudButton Variant="Variant.Filled"
+                       Color="Color.Primary"
+                       StartIcon="@Icons.Material.Filled.Add"
+                       OnClick="AddNewWorkflowAsync"
+                       Class="px-4"
+                       Size="Size.Small">
+                Add Workflow
+            </MudButton>
+            <MudSpacer />
+            <MudTextField T="string"
+                          ValueChanged="OnSearch"
+                          Placeholder="Search workflows..."
+                          Adornment="Adornment.Start"
+                          AdornmentIcon="@Icons.Material.Filled.Search"
+                          IconSize="Size.Medium"
+                          Class="mt-0"
+                          Style="min-width: 300px;"
+                          Immediate="true"
+                          DebounceInterval="300" />
+        </MudToolBar>
+
+        @if (loading)
+        {
+            <MudStack Justify="Justify.Center" Class="my-4">
+                <MudProgressCircular Color="Color.Primary" Indeterminate="true" />
+            </MudStack>
+        }
+        else
+        {
+            <MudDataGrid T="SavedWorkflowDefinition"
+                         Items="@filteredWorkflows"
+                         ReadOnly="true"
+                         Bordered="true"
+                         Hover="true"
+                         Striped="true"
+                         Dense="true"
+                         FixedHeader="true"
+                         Height="100%"
+                         Class="mt-4">
+                <Columns>
+                    <TemplateColumn Title="Name" isEditable="false">
+                        <CellTemplate>
+                            <MudStack Spacing="1">
+                                <MudText Typo="Typo.body2">@context.Item.DisplayName</MudText>
+                                @if (!string.IsNullOrWhiteSpace(context.Item.Description))
+                                {
+                                    <MudText Typo="Typo.caption" Class="mud-text-secondary">@context.Item.Description</MudText>
+                                }
+                            </MudStack>
+                        </CellTemplate>
+                    </TemplateColumn>
+                    <TemplateColumn Title="Workflow Id" isEditable="false">
+                        <CellTemplate>
+                            <MudText Typo="Typo.body2">@context.Item.WorkflowId</MudText>
+                        </CellTemplate>
+                    </TemplateColumn>
+                    <TemplateColumn Title="Kind" isEditable="false">
+                        <CellTemplate>
+                            <MudChip T="string"
+                                     Size="Size.Small"
+                                     Color="@GetWorkflowKindColor(context.Item.Kind)"
+                                     Variant="Variant.Outlined">
+                                @context.Item.Kind
+                            </MudChip>
+                        </CellTemplate>
+                    </TemplateColumn>
+                    <PropertyColumn Property="x => x.UpdatedAt" Title="Updated" Format="g" />
+                    <PropertyColumn Property="x => x.CreatedAt" Title="Created" Format="g" />
+                    <TemplateColumn Title="Source" isEditable="false">
+                        <CellTemplate>
+                            <MudText Typo="Typo.body2" Class="mud-text-truncate">
+                                @GetSourcePreview(context.Item.SourceCode)
+                            </MudText>
+                        </CellTemplate>
+                    </TemplateColumn>
+                    <TemplateColumn CellStyle="display:flex; justify-content:flex-end;">
+                        <CellTemplate>
+                            <MudIconButton Icon="@Icons.Material.Filled.Edit"
+                                           Size="Size.Small"
+                                           OnClick="@(() => StartEditingWorkflowAsync(context.Item))" />
+                            <MudIconButton Icon="@Icons.Material.Filled.Delete"
+                                           Size="Size.Small"
+                                           Color="Color.Error"
+                                           OnClick="@(() => ConfirmDeleteWorkflow(context.Item))" />
+                        </CellTemplate>
+                    </TemplateColumn>
+                </Columns>
+                <PagerContent>
+                    <MudDataGridPager T="SavedWorkflowDefinition" PageSizeOptions="new[] { 10, 25, 50, 100 }" />
+                </PagerContent>
+                <NoRecordsContent>
+                    <MudPaper Elevation="0">
+                        <MudStack AlignItems="AlignItems.Center" Justify="Justify.Center" Class="py-8">
+                            <MudIcon Icon="@Icons.Material.Filled.Description" Color="Color.Secondary" Size="Size.Large" />
+                            <MudText Typo="Typo.h6" Class="mt-4">No workflow definitions found</MudText>
+                            <MudText Typo="Typo.body2" Class="mud-text-secondary">Click "Add Workflow" to create one.</MudText>
+                        </MudStack>
+                    </MudPaper>
+                </NoRecordsContent>
+                <LoadingContent>
+                    <MudPaper Elevation="0">
+                        <MudStack AlignItems="AlignItems.Center" Justify="Justify.Center" Class="pa-8">
+                            <MudProgressCircular Color="Color.Primary" Indeterminate="true" Size="Size.Medium" />
+                            <MudText Typo="Typo.body1" Class="ml-4">Loading workflow definitions...</MudText>
+                        </MudStack>
+                    </MudPaper>
+                </LoadingContent>
+            </MudDataGrid>
+        }
+    </MudPaper>
+</MudContainer>
+
+<MudDialog @bind-Visible="@showDeleteDialog" Options="deleteDialogOptions">
+    <TitleContent>
+        <MudText Typo="Typo.h6">Delete Workflow</MudText>
+    </TitleContent>
+    <DialogContent>
+        <MudText>Delete workflow "@workflowToDelete?.DisplayName"?</MudText>
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="CancelDelete" Size="Size.Medium">Cancel</MudButton>
+        <MudButton Color="Color.Error"
+                   OnClick="DeleteWorkflowAsync"
+                   Size="Size.Medium">
+            Delete
+        </MudButton>
+    </DialogActions>
+</MudDialog>
+
+<MudDialog @bind-Visible="@showEditWorkflowDialog" Options="editDialogOptions">
+    <TitleContent>
+        <MudText Typo="Typo.h6">@(editingWorkflowIsNew ? "Create Workflow" : "Edit Workflow")</MudText>
+    </TitleContent>
+    <DialogContent>
+        <MudForm @ref="editWorkflowForm">
+            <MudStack Spacing="2">
+                <MudText Typo="Typo.body2" Class="mud-text-secondary">
+                    Workflow name, description, kind, and id are derived from the compiled source code. Update the scaffold before saving.
+                </MudText>
+
+                @if (!string.IsNullOrWhiteSpace(editWorkflowCompileError))
+                {
+                    <MudAlert Severity="Severity.Error" Dense="true">
+                        @editWorkflowCompileError
+                    </MudAlert>
+                }
+
+                @if (compiledEditingWorkflow is not null)
+                {
+                    <MudPaper Class="pa-3" Outlined="true">
+                        <MudStack Spacing="1">
+                            <MudStack Row="true" Spacing="1" AlignItems="AlignItems.Center">
+                                <MudText Typo="Typo.subtitle2">@compiledEditingWorkflow.DisplayName</MudText>
+                                <MudChip T="string"
+                                         Size="Size.Small"
+                                         Color="@GetWorkflowKindColor(compiledEditingWorkflow.Kind)"
+                                         Variant="Variant.Outlined">
+                                    @compiledEditingWorkflow.Kind
+                                </MudChip>
+                            </MudStack>
+                            <MudText Typo="Typo.caption" Class="mud-text-secondary">Workflow Id: @compiledEditingWorkflow.WorkflowId</MudText>
+                            @if (!string.IsNullOrWhiteSpace(compiledEditingWorkflow.Description))
+                            {
+                                <MudText Typo="Typo.body2" Class="mud-text-secondary">@compiledEditingWorkflow.Description</MudText>
+                            }
+                        </MudStack>
+                    </MudPaper>
+                }
+
+                <MudTextField T="string"
+                              Label="Workflow Source Code"
+                              Value="editingWorkflowSource"
+                              ValueChanged="OnEditingWorkflowSourceChanged"
+                              Variant="Variant.Outlined"
+                              Margin="Margin.Dense"
+                              Lines="28"
+                              AutoGrow="true"
+                              Immediate="true"
+                              Required="true" />
+            </MudStack>
+        </MudForm>
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="CancelEdit" Size="Size.Medium">Cancel</MudButton>
+        <MudButton Variant="Variant.Outlined"
+                   Color="Color.Default"
+                   OnClick="ValidateWorkflowAsync"
+                   Size="Size.Medium"
+                   Disabled="@string.IsNullOrWhiteSpace(editingWorkflowSource)">
+            Validate
+        </MudButton>
+        <MudButton Color="Color.Primary"
+                   OnClick="SaveWorkflowAsync"
+                   Size="Size.Medium"
+                   Disabled="@string.IsNullOrWhiteSpace(editingWorkflowSource)">
+            Save
+        </MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    private readonly DialogOptions deleteDialogOptions = new()
+    {
+        CloseOnEscapeKey = true,
+        CloseButton = true,
+        MaxWidth = MaxWidth.ExtraSmall
+    };
+
+    private readonly DialogOptions editDialogOptions = new()
+    {
+        CloseOnEscapeKey = true,
+        CloseButton = true,
+        MaxWidth = MaxWidth.Large,
+        FullWidth = true
+    };
+
+    private List<SavedWorkflowDefinition> workflows = [];
+    private List<SavedWorkflowDefinition> filteredWorkflows = [];
+    private SavedWorkflowDefinition editingWorkflow = new();
+    private SavedWorkflowDefinition? workflowToDelete;
+    private CompiledWorkflowDefinition? compiledEditingWorkflow;
+    private MudForm? editWorkflowForm;
+    private bool loading = true;
+    private bool showDeleteDialog;
+    private bool showEditWorkflowDialog;
+    private bool editingWorkflowIsNew;
+    private string searchString = string.Empty;
+    private string editingWorkflowSource = string.Empty;
+    private string? editWorkflowCompileError;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadWorkflowsAsync();
+    }
+
+    private async Task LoadWorkflowsAsync()
+    {
+        try
+        {
+            loading = true;
+            StateHasChanged();
+
+            workflows = (await WorkflowDefinitionService.GetAllAsync()).ToList();
+            ApplySearch();
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Error loading workflow definitions: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            loading = false;
+            StateHasChanged();
+        }
+    }
+
+    private void OnSearch(string? text)
+    {
+        searchString = text?.Trim() ?? string.Empty;
+        ApplySearch();
+    }
+
+    private void ApplySearch()
+    {
+        if (string.IsNullOrWhiteSpace(searchString))
+        {
+            filteredWorkflows = workflows.ToList();
+            return;
+        }
+
+        filteredWorkflows = workflows
+            .Where(workflow =>
+                workflow.DisplayName.Contains(searchString, StringComparison.OrdinalIgnoreCase) ||
+                workflow.WorkflowId.Contains(searchString, StringComparison.OrdinalIgnoreCase) ||
+                workflow.Kind.Contains(searchString, StringComparison.OrdinalIgnoreCase) ||
+                workflow.Description.Contains(searchString, StringComparison.OrdinalIgnoreCase) ||
+                workflow.SourceCode.Contains(searchString, StringComparison.OrdinalIgnoreCase))
+            .ToList();
+    }
+
+    private async Task AddNewWorkflowAsync()
+    {
+        editingWorkflowIsNew = true;
+        editingWorkflow = new SavedWorkflowDefinition();
+        editingWorkflowSource = WorkflowCodeTemplates.NewWorkflowScaffold;
+        editWorkflowCompileError = null;
+        compiledEditingWorkflow = null;
+        showEditWorkflowDialog = true;
+        editWorkflowForm?.ResetValidation();
+        await TryCompileEditingWorkflowAsync();
+    }
+
+    private async Task StartEditingWorkflowAsync(SavedWorkflowDefinition workflow)
+    {
+        editingWorkflowIsNew = false;
+        editingWorkflow = CloneWorkflow(workflow);
+        editingWorkflowSource = workflow.SourceCode;
+        editWorkflowCompileError = null;
+        compiledEditingWorkflow = null;
+        showEditWorkflowDialog = true;
+        editWorkflowForm?.ResetValidation();
+        await TryCompileEditingWorkflowAsync();
+    }
+
+    private void ConfirmDeleteWorkflow(SavedWorkflowDefinition workflow)
+    {
+        workflowToDelete = workflow;
+        showDeleteDialog = true;
+    }
+
+    private void CancelDelete()
+    {
+        workflowToDelete = null;
+        showDeleteDialog = false;
+    }
+
+    private async Task DeleteWorkflowAsync()
+    {
+        if (workflowToDelete is null)
+        {
+            return;
+        }
+
+        try
+        {
+            await WorkflowDefinitionService.DeleteAsync(workflowToDelete.Id);
+            workflows.RemoveAll(existing => existing.Id == workflowToDelete.Id);
+            ApplySearch();
+            Snackbar.Add("Workflow deleted.", Severity.Success);
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Error deleting workflow: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            workflowToDelete = null;
+            showDeleteDialog = false;
+        }
+    }
+
+    private void CancelEdit()
+    {
+        showEditWorkflowDialog = false;
+        editWorkflowCompileError = null;
+        compiledEditingWorkflow = null;
+    }
+
+    private void OnEditingWorkflowSourceChanged(string? value)
+    {
+        editingWorkflowSource = value ?? string.Empty;
+        editWorkflowCompileError = null;
+        compiledEditingWorkflow = null;
+    }
+
+    private async Task ValidateWorkflowAsync()
+    {
+        var compiled = await TryCompileEditingWorkflowAsync();
+        if (compiled is not null)
+        {
+            Snackbar.Add("Workflow compiled successfully.", Severity.Success);
+        }
+    }
+
+    private async Task SaveWorkflowAsync()
+    {
+        if (editWorkflowForm is not null)
+        {
+            await editWorkflowForm.Validate();
+            if (!editWorkflowForm.IsValid)
+            {
+                return;
+            }
+        }
+
+        var compiled = await TryCompileEditingWorkflowAsync();
+        if (compiled is null)
+        {
+            Snackbar.Add("Workflow compilation failed. Fix the source code before saving.", Severity.Error);
+            return;
+        }
+
+        editingWorkflow.Kind = compiled.Kind;
+        editingWorkflow.WorkflowId = compiled.WorkflowId;
+        editingWorkflow.DisplayName = compiled.DisplayName;
+        editingWorkflow.Description = compiled.Description;
+        editingWorkflow.SourceCode = editingWorkflowSource;
+
+        try
+        {
+            if (editingWorkflowIsNew)
+            {
+                await WorkflowDefinitionService.CreateAsync(editingWorkflow);
+            }
+            else
+            {
+                await WorkflowDefinitionService.UpdateAsync(editingWorkflow);
+            }
+
+            showEditWorkflowDialog = false;
+            await LoadWorkflowsAsync();
+            Snackbar.Add(
+                editingWorkflowIsNew
+                    ? $"Workflow '{editingWorkflow.DisplayName}' created."
+                    : $"Workflow '{editingWorkflow.DisplayName}' updated.",
+                Severity.Success);
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Error saving workflow: {ex.Message}", Severity.Error);
+        }
+    }
+
+    private async Task<CompiledWorkflowDefinition?> TryCompileEditingWorkflowAsync()
+    {
+        editWorkflowCompileError = null;
+        compiledEditingWorkflow = null;
+
+        try
+        {
+            compiledEditingWorkflow = await WorkflowCompiler.CompileAsync(editingWorkflowSource);
+            return compiledEditingWorkflow;
+        }
+        catch (WorkflowCompilationException ex)
+        {
+            editWorkflowCompileError = ex.Message;
+        }
+        catch (Exception ex)
+        {
+            editWorkflowCompileError = ex.Message;
+        }
+
+        return null;
+    }
+
+    private static SavedWorkflowDefinition CloneWorkflow(SavedWorkflowDefinition workflow)
+    {
+        return new SavedWorkflowDefinition
+        {
+            Id = workflow.Id,
+            Kind = workflow.Kind,
+            WorkflowId = workflow.WorkflowId,
+            DisplayName = workflow.DisplayName,
+            Description = workflow.Description,
+            SourceCode = workflow.SourceCode,
+            CreatedAt = workflow.CreatedAt,
+            UpdatedAt = workflow.UpdatedAt
+        };
+    }
+
+    private static string GetSourcePreview(string sourceCode)
+    {
+        if (string.IsNullOrWhiteSpace(sourceCode))
+        {
+            return string.Empty;
+        }
+
+        var firstLine = sourceCode
+            .Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries)
+            .FirstOrDefault()?
+            .Trim();
+
+        return string.IsNullOrWhiteSpace(firstLine)
+            ? string.Empty
+            : firstLine;
+    }
+
+    private static Color GetWorkflowKindColor(string kind)
+    {
+        return WorkflowDefinitionKinds.Normalize(kind) switch
+        {
+            WorkflowDefinitionKinds.Sequential => Color.Secondary,
+            WorkflowDefinitionKinds.Concurrent => Color.Warning,
+            WorkflowDefinitionKinds.GroupChat => Color.Info,
+            _ => Color.Primary
+        };
+    }
+}

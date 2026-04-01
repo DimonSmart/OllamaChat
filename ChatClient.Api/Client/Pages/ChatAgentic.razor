@@ -157,7 +157,12 @@
         var savedMessages = saved.Messages
             .Select(message =>
             {
-                var chatMessage = new AppChatMessage(message.Content, message.MsgDateTime, message.Role, agentName: message.AgentName);
+                var chatMessage = new AppChatMessage(
+                    message.Content,
+                    message.MsgDateTime,
+                    message.Role,
+                    agentId: message.AgentId,
+                    agentName: message.AgentName);
                 chatMessage.Id = message.Id;
                 return (IAppChatMessage)chatMessage;
             })

@@ -24,6 +24,7 @@ public sealed class WorkflowAgentDraftMaterializerTests
                 .Id("technical")
                 .Role("Technical interviewer")
                 .Name("Override name")
+                .AvatarText("TA")
                 .Instructions("Override prompt"))
             .UseHandoff(handoff => handoff
                 .StartWith("technical"))
@@ -36,6 +37,7 @@ public sealed class WorkflowAgentDraftMaterializerTests
         var technical = Assert.Single(materialized.Agents);
         Assert.NotNull(technical.AgentDraft);
         Assert.Equal("Override name", technical.AgentDraft!.AgentName);
+        Assert.Equal("TA", technical.AgentDraft.AvatarText);
         Assert.Equal("Override prompt", technical.AgentDraft.Content);
         Assert.Equal("technical", technical.AgentDraft.ShortName);
         Assert.Equal(AgentWorkflowExecutionMode.Autonomous, materialized.Execution.Mode);
@@ -75,6 +77,7 @@ public sealed class WorkflowAgentDraftMaterializerTests
             .RequireText("opening_topic", "Opening Topic")
             .Agent("host", agent => agent
                 .Role("Host")
+                .AvatarText("H")
                 .UseDraft(new AgentDescription
                 {
                     Id = Guid.NewGuid(),
@@ -108,6 +111,7 @@ public sealed class WorkflowAgentDraftMaterializerTests
         Assert.Equal(9, groupChat.Manager.MaximumIterations);
         Assert.All(groupChat.Agents, static agent => Assert.NotNull(agent.AgentDraft));
         Assert.All(groupChat.Agents, static agent => Assert.Equal(agent.Id, agent.AgentDraft!.ShortName));
+        Assert.Equal("H", groupChat.Agents[0].AgentDraft!.AvatarText);
     }
 
     private sealed class StubAgentDescriptionService(

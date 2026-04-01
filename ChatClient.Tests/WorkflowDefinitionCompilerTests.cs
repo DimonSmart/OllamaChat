@@ -85,6 +85,21 @@ public sealed class WorkflowDefinitionCompilerTests
     }
 
     [Fact]
+    public async Task CompileAsync_CompilesNewWorkflowScaffold()
+    {
+        var compiler = new WorkflowDefinitionCompiler();
+
+        var result = await compiler.CompileAsync(WorkflowCodeTemplates.NewWorkflowScaffold);
+        var workflow = Assert.IsType<AgentWorkflowDefinition>(result.Workflow);
+
+        Assert.Equal(WorkflowDefinitionKinds.Handoff, result.Kind);
+        Assert.Equal("new-workflow", result.WorkflowId);
+        Assert.Equal("New Workflow", result.DisplayName);
+        Assert.Equal("triage", workflow.StartAgentId);
+        Assert.Single(workflow.Agents, static agent => agent.Id == "triage");
+    }
+
+    [Fact]
     public async Task CompileAsync_UsesWorkflowVariableWhenScriptDoesNotReturnValue()
     {
         var compiler = new WorkflowDefinitionCompiler();
@@ -120,7 +135,8 @@ public sealed class WorkflowDefinitionCompilerTests
             var workflow = WorkflowDefinitionBuilder
                 .New("demo", "Demo Workflow")
                 .AgentFromSaved("Saved Router", agent => agent
-                    .Name("Workflow Router"))
+                    .Name("Workflow Router")
+                    .AvatarText("WR"))
                 .UseHandoff(handoff => handoff
                     .StartWith("Saved Router"))
                 .Build();
@@ -135,6 +151,26 @@ public sealed class WorkflowDefinitionCompilerTests
         Assert.NotNull(agent.SavedAgentTemplate);
         Assert.Equal("Saved Router", agent.SavedAgentTemplate!.SavedAgentName);
         Assert.Equal("Workflow Router", agent.DraftOverrides.AgentName);
+        Assert.Equal("WR", agent.DraftOverrides.AvatarText);
+    }
+
+    [Fact]
+    public async Task CompileAsync_CompilesGroupChatAvatarTextOverrides()
+    {
+        var compiler = new WorkflowDefinitionCompiler();
+
+        var result = await compiler.CompileAsync(WorkflowCodeTemplates.PhilosopherBattleGroupChat);
+        var workflow = Assert.IsType<GroupChatWorkflowDefinition>(result.Workflow);
+
+        var host = workflow.Agents.Single(agent => agent.Id == "host");
+        var kant = workflow.Agents.Single(agent => agent.Id == "kant");
+        var nietzsche = workflow.Agents.Single(agent => agent.Id == "nietzsche");
+        var judge = workflow.Agents.Single(agent => agent.Id == "judge");
+
+        Assert.Equal("H", host.DraftOverrides.AvatarText);
+        Assert.Equal("K", kant.DraftOverrides.AvatarText);
+        Assert.Equal("N", nietzsche.DraftOverrides.AvatarText);
+        Assert.Equal("J", judge.DraftOverrides.AvatarText);
     }
 
     [Fact]

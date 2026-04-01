@@ -51,10 +51,10 @@
 
                 @{
                     var avatarText = message.Role == ChatRole.Assistant
-                        ? GetAssistantAvatarText(message.AgentName)
+                        ? GetAssistantAvatarText(message.AgentId)
                         : GetAvatarText(UserName);
                     var avatarLabel = message.Role == ChatRole.Assistant
-                        ? message.AgentName
+                        ? GetAssistantLabel(message)
                         : UserName;
                 }
 
@@ -77,6 +77,13 @@
                 }
 
                 <MudChatBubble>
+                    @if (ShouldShowSpeakerLabel(message))
+                    {
+                        <MudText Typo="Typo.caption" Class="chat-speaker-label">
+                            @GetSpeakerLabel(message)
+                        </MudText>
+                    }
+
                     @if (message.Files.Any())
                     {
                         <div class="mb-2">
@@ -262,6 +269,17 @@
     private static string GetAvatarText(string? name) =>
         ChatDisplayHelper.GetAvatarText(name);
 
-    private string GetAssistantAvatarText(string? agentName) =>
-        ChatDisplayHelper.GetAssistantAvatarText(Agents, agentName);
+    private string GetAssistantAvatarText(string? agentId) =>
+        ChatDisplayHelper.GetAssistantAvatarText(Agents, agentId);
+
+    private string? GetAssistantLabel(AppChatMessageViewModel message) =>
+        ChatDisplayHelper.GetAssistantDisplayName(Agents, message.AgentId);
+
+    private bool ShouldShowSpeakerLabel(AppChatMessageViewModel message) =>
+        IsMultiAgent &&
+        message.Role == ChatRole.Assistant &&
+        !string.IsNullOrWhiteSpace(GetSpeakerLabel(message));
+
+    private string? GetSpeakerLabel(AppChatMessageViewModel message) =>
+        GetAssistantLabel(message);
 }

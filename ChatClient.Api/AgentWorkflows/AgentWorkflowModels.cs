@@ -109,6 +109,8 @@ public sealed class AgentWorkflowAgentDraftOverrides
 {
     public string? AgentName { get; init; }
 
+    public string? AvatarText { get; init; }
+
     public string? Instructions { get; init; }
 }
 

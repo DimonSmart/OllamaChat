@@ -51,102 +51,74 @@
             <MudItem xs="12" lg="7">
                 <MudStack Spacing="3">
                     <MudPaper Class="pa-4" Outlined="true">
-                        <MudStack Spacing="2">
-                            <MudStack Row="true" Spacing="1" AlignItems="AlignItems.Center" Class="handoff-workflow-title-row">
-                                <MudText Typo="Typo.h6">@CurrentWorkflowDisplayName</MudText>
-                                @if (currentSavedWorkflowId.HasValue)
+                        <MudStack Spacing="3">
+                            <MudStack Spacing="2">
+                                <MudStack Row="true" Spacing="1" AlignItems="AlignItems.Center" Class="handoff-workflow-title-row">
+                                    <MudText Typo="Typo.h6">@CurrentWorkflowDisplayName</MudText>
+                                    @if (currentSavedWorkflowId.HasValue)
+                                    {
+                                        <MudChip T="string" Size="Size.Small" Variant="Variant.Outlined">Saved</MudChip>
+                                    }
+                                    @if (workflowSourceDirty)
+                                    {
+                                        <MudChip T="string" Size="Size.Small" Color="Color.Warning" Variant="Variant.Outlined">Modified</MudChip>
+                                    }
+                                </MudStack>
+                                @if (!string.IsNullOrWhiteSpace(CurrentWorkflowDescription))
                                 {
-                                    <MudChip T="string" Size="Size.Small" Variant="Variant.Outlined">Saved</MudChip>
+                                    <MudText Typo="Typo.body2" Class="mud-text-secondary">@CurrentWorkflowDescription</MudText>
                                 }
-                                @if (workflowSourceDirty)
+                                @if (!string.IsNullOrWhiteSpace(workflowCompileError))
                                 {
-                                    <MudChip T="string" Size="Size.Small" Color="Color.Warning" Variant="Variant.Outlined">Modified</MudChip>
+                                    <MudAlert Severity="Severity.Error" Dense="true">
+                                        @workflowCompileError
+                                    </MudAlert>
                                 }
                             </MudStack>
-                            @if (!string.IsNullOrWhiteSpace(CurrentWorkflowDescription))
-                            {
-                                <MudText Typo="Typo.body2" Class="mud-text-secondary">@CurrentWorkflowDescription</MudText>
-                            }
-                            @if (!string.IsNullOrWhiteSpace(workflowCompileError))
-                            {
-                                <MudAlert Severity="Severity.Error" Dense="true">
-                                    @workflowCompileError
-                                </MudAlert>
-                            }
+
+                            <MudDivider />
+
+                            <MudStack Spacing="2">
+                                <MudStack Row="true" Spacing="2" AlignItems="AlignItems.Center" Justify="Justify.SpaceBetween" Class="handoff-workflow-start-header">
+                                    <MudText Typo="Typo.h6">Workflow Source</MudText>
+                                    <MudButton Variant="Variant.Text"
+                                               Color="Color.Default"
+                                               Size="Size.Small"
+                                               OnClick="ToggleWorkflowSourceEditor">
+                                        @(isWorkflowSourceExpanded ? "Hide Source" : "Show Source")
+                                    </MudButton>
+                                </MudStack>
+
+                                <MudStack Row="true" Spacing="2" Class="handoff-workflow-command-row">
+                                    <MudButton Variant="Variant.Outlined"
+                                               Color="Color.Default"
+                                               Size="Size.Small"
+                                               Disabled="@workflowStarted"
+                                               OnClick="OpenLoadWorkflowDialogAsync">
+                                        Load Workflow
+                                    </MudButton>
+                                </MudStack>
+
+                                <MudCollapse Expanded="@isWorkflowSourceExpanded">
+                                    <MudTextField T="string"
+                                                  Label="Workflow Source Code"
+                                                  Value="workflowSourceCode"
+                                                  ValueChanged="OnWorkflowSourceChanged"
+                                                  Variant="Variant.Outlined"
+                                                  Margin="Margin.Dense"
+                                                  Lines="28"
+                                                  AutoGrow="true"
+                                                  Immediate="true"
+                                                  Disabled="@workflowStarted"
+                                                  Class="handoff-workflow-source-editor" />
+                                </MudCollapse>
+                            </MudStack>
                         </MudStack>
                     </MudPaper>
 
                     <MudPaper Class="pa-4" Outlined="true">
                         <MudStack Spacing="2">
-                            <MudStack Row="true" Spacing="2" AlignItems="AlignItems.Center" Justify="Justify.SpaceBetween" Class="handoff-workflow-start-header">
-                                <MudText Typo="Typo.h6">Workflow Source</MudText>
-                                <MudButton Variant="Variant.Text"
-                                           Color="Color.Default"
-                                           Size="Size.Small"
-                                           OnClick="ToggleWorkflowSourceEditor">
-                                    @(isWorkflowSourceExpanded ? "Hide Source" : "Show Source")
-                                </MudButton>
-                            </MudStack>
-
-                            <MudStack Row="true" Spacing="2" Class="handoff-workflow-command-row">
-                                <MudButton Variant="Variant.Outlined"
-                                           Color="Color.Default"
-                                           Size="Size.Small"
-                                           Disabled="@workflowStarted"
-                                           OnClick="OpenLoadWorkflowDialogAsync">
-                                    Load Workflow
-                                </MudButton>
-                                <MudButton Variant="Variant.Outlined"
-                                           Color="Color.Primary"
-                                           Size="Size.Small"
-                                           Disabled="@(workflowStarted || string.IsNullOrWhiteSpace(workflowSourceCode))"
-                                           OnClick="SaveWorkflowAsync">
-                                    Save Workflow
-                                </MudButton>
-                                <MudButton Variant="Variant.Outlined"
-                                           Color="Color.Error"
-                                           Size="Size.Small"
-                                           Disabled="@(!currentSavedWorkflowId.HasValue || workflowStarted)"
-                                           OnClick="OpenDeleteWorkflowDialog">
-                                    Delete Workflow
-                                </MudButton>
-                                <MudButton Variant="Variant.Outlined"
-                                           Color="Color.Default"
-                                           Size="Size.Small"
-                                           Disabled="@workflowStarted"
-                                           OnClick="LoadStarterWorkflowAsync">
-                                    Load Starter Workflow
-                                </MudButton>
-                            </MudStack>
-
-                            <MudCollapse Expanded="@isWorkflowSourceExpanded">
-                                <MudTextField T="string"
-                                              Label="Workflow Source Code"
-                                              Value="workflowSourceCode"
-                                              ValueChanged="OnWorkflowSourceChanged"
-                                              Variant="Variant.Outlined"
-                                              Margin="Margin.Dense"
-                                              Lines="28"
-                                              AutoGrow="true"
-                                              Immediate="true"
-                                              Disabled="@workflowStarted"
-                                              Class="handoff-workflow-source-editor" />
-                            </MudCollapse>
-                        </MudStack>
-                    </MudPaper>
-
-                    <MudPaper Class="pa-4" Outlined="true">
-                        <MudStack Spacing="2">
-                            <MudStack Row="true" Spacing="2" AlignItems="AlignItems.Center" Justify="Justify.SpaceBetween" Class="handoff-workflow-start-header">
-                                <MudText Typo="Typo.h6">Start Workflow</MudText>
-                                <MudButton Variant="Variant.Outlined"
-                                           Color="Color.Default"
-                                           Size="Size.Small"
-                                           Disabled="@(isStartingWorkflow || currentWorkflow is null)"
-                                           OnClick="LoadSampleData">
-                                    Load Sample Data
-                                </MudButton>
-                            </MudStack>
+                            <MudText Typo="Typo.h6">Start Workflow</MudText>
                             <MudText Typo="Typo.body2" Class="mud-text-secondary">
                                 Step 1 prepares the shared task session and the orchestration-defined start inputs. Step 2 starts the compiled agent orchestration on top of that state.
                             </MudText>
@@ -485,123 +457,12 @@
     </DialogActions>
 </MudDialog>
 
-<MudDialog @bind-Visible="@showDeleteWorkflowDialog" Options="deleteWorkflowDialogOptions">
-    <TitleContent>
-        <MudText Typo="Typo.h6">Delete Workflow</MudText>
-    </TitleContent>
-    <DialogContent>
-        <MudText>Delete saved workflow "@(currentSavedWorkflow?.DisplayName ?? CurrentWorkflowDisplayName)"?</MudText>
-    </DialogContent>
-    <DialogActions>
-        <MudButton OnClick="CloseDeleteWorkflowDialog" Size="Size.Medium">Cancel</MudButton>
-        <MudButton Color="Color.Error"
-                   OnClick="DeleteCurrentWorkflowAsync"
-                   Size="Size.Medium">
-            Delete
-        </MudButton>
-    </DialogActions>
-</MudDialog>
-
 @code {
     private const int UpdateIntervalMs = 500;
-    private const string SampleSessionTitle = "Senior .NET Interview Practice";
-    private const string SampleBattleSessionTitle = "Philosopher Battle Group Chat";
-
-    private static readonly string SampleSessionDescription =
-        """
-        I want to practice for a Senior .NET Backend Engineer interview.
-        Please review the resume and the job description first, then run a behavioural round,
-        then a technical round, and finish with a concise summary.
-        Respond in English.
-        """;
-
-    private static readonly string SampleBattleSessionDescription =
-        """
-        Start an autonomous philosopher battle. The user provides only the opening topic and high-level battle settings.
-        The host should keep the exchange moving without waiting for user follow-up, switch topics when the debate gets stale,
-        and end with a very detailed quoted verdict.
-        """;
-
-    private const string SampleBattleOpeningTopic =
-        "Should a person submit to moral law when doing so makes life less powerful and less joyful?";
-
-    private static readonly string SampleResumeMarkdown =
-        """
-        # Alex Carter
-        
-        Senior .NET backend engineer with 9+ years of experience building distributed systems.
-        
-        ## Summary
-        
-        I design backend platforms with ASP.NET Core, PostgreSQL, Redis, RabbitMQ, and Kubernetes.
-        I have worked on billing systems, document ingestion pipelines, and internal developer platforms.
-        
-        ## Experience
-        
-        ### Lead Backend Engineer, Northwind Payments
-        - Designed payment orchestration services for card and bank transfer flows.
-        - Improved P95 API latency by 32% through caching and query optimization.
-        - Introduced the outbox pattern and idempotent consumers for asynchronous processing.
-        - Mentored 5 backend engineers and led architecture reviews.
-        
-        ### Senior Software Engineer, Fabrikam Documents
-        - Built document intake and search services with ASP.NET Core and PostgreSQL.
-        - Added observability with traces, structured logs, and service-level dashboards.
-        - Reduced failed background jobs by improving retries and dead-letter handling.
-        
-        ## Skills
-        
-        - C#
-        - ASP.NET Core
-        - PostgreSQL
-        - Redis
-        - RabbitMQ
-        - Docker
-        - Kubernetes
-        - Distributed systems
-        - System design
-        - Observability
-        """;
-
-    private static readonly string SampleJobDescriptionMarkdown =
-        """
-        # Senior .NET Backend Engineer
-        
-        We are hiring a Senior .NET Backend Engineer to build scalable services for a multi-product platform.
-        
-        ## Responsibilities
-        
-        - Design and implement backend services in ASP.NET Core.
-        - Work with PostgreSQL, Redis, and asynchronous messaging.
-        - Improve reliability, observability, and performance.
-        - Participate in system design and mentor other engineers.
-        
-        ## Requirements
-        
-        - Strong experience with C# and ASP.NET Core.
-        - Experience with distributed systems and event-driven architectures.
-        - Solid SQL and PostgreSQL knowledge.
-        - Experience with Docker and Kubernetes.
-        - Ability to explain architectural tradeoffs clearly.
-        
-        ## Nice to Have
-        
-        - Experience with document processing pipelines.
-        - Experience with payment or billing systems.
-        """;
-
     private readonly Dictionary<string, string?> startInputValues = new(StringComparer.OrdinalIgnoreCase);
     private readonly DialogOptions loadWorkflowDialogOptions = new()
     {
         MaxWidth = MaxWidth.Medium,
-        FullWidth = true,
-        CloseOnEscapeKey = true,
-        CloseButton = true
-    };
-
-    private readonly DialogOptions deleteWorkflowDialogOptions = new()
-    {
-        MaxWidth = MaxWidth.ExtraSmall,
         FullWidth = true,
         CloseOnEscapeKey = true,
         CloseButton = true
@@ -622,7 +483,6 @@
     private bool isStartingWorkflow;
     private bool isLlmAnswering;
     private bool showLoadWorkflowDialog;
-    private bool showDeleteWorkflowDialog;
     private Guid? lastSavedChatId;
     private Guid? currentSavedWorkflowId;
     private Guid? selectedWorkflowIdToLoad;
@@ -650,7 +510,7 @@
     private string CurrentWorkflowDescription =>
         currentWorkflow?.Description ??
         currentSavedWorkflow?.Description ??
-        "Load a saved workflow or open the source editor and define one. Start inputs appear only after a workflow is compiled.";
+        "Load a workflow or open the source editor and define one locally. Manage saved workflow definitions on the Workflow Definitions page.";
 
     private bool HasSelectedModel => TryResolveEffectiveModel(out _);
 
@@ -781,56 +641,6 @@
         lastSavedChatId = null;
         lastSavedChatTitle = string.Empty;
         await InvokeAsync(StateHasChanged);
-    }
-
-    private void LoadSampleData()
-    {
-        if (currentWorkflow is null)
-        {
-            return;
-        }
-
-        if (currentWorkflow.StartInputs.Any(input => string.Equals(input.Key, "opening_topic", StringComparison.OrdinalIgnoreCase)))
-        {
-            sessionTitle = SampleBattleSessionTitle;
-            sessionDescription = SampleBattleSessionDescription;
-            SetStartInputValue("opening_topic", SampleBattleOpeningTopic);
-
-            if (currentWorkflow.StartInputs.Any(input => string.Equals(input.Key, "themes_to_cover", StringComparison.OrdinalIgnoreCase)))
-            {
-                SetStartInputValue("themes_to_cover", "3");
-            }
-
-            if (currentWorkflow.StartInputs.Any(input => string.Equals(input.Key, "battle_language", StringComparison.OrdinalIgnoreCase)))
-            {
-                SetStartInputValue("battle_language", "English");
-            }
-
-            if (currentWorkflow.StartInputs.Any(input => string.Equals(input.Key, "final_summary_focus", StringComparison.OrdinalIgnoreCase)))
-            {
-                SetStartInputValue("final_summary_focus", "Quote the strongest lines, rhetorical turns, reversals, unresolved tensions, and the most memorable formulations.");
-            }
-
-            if (currentWorkflow.StartInputs.Any(input => string.Equals(input.Key, "verdict_focus", StringComparison.OrdinalIgnoreCase)))
-            {
-                SetStartInputValue("verdict_focus", "Name the strongest argument, the weakest move, and the unresolved tension.");
-            }
-
-            return;
-        }
-
-        sessionTitle = SampleSessionTitle;
-        sessionDescription = SampleSessionDescription;
-
-        if (currentWorkflow.StartInputs.Any(input => string.Equals(input.Key, "resume", StringComparison.OrdinalIgnoreCase)))
-        {
-            SetStartInputValue("resume", SampleResumeMarkdown);
-        }
-
-        if (currentWorkflow.StartInputs.Any(input => string.Equals(input.Key, "job_description", StringComparison.OrdinalIgnoreCase)))
-        {
-            SetStartInputValue("job_description", SampleJobDescriptionMarkdown);
-        }
     }
 
     private IReadOnlyList<OrchestrationWorkflowStartInputValue> BuildStartInputs()
@@ -1011,17 +821,6 @@
         compiledWorkflow = null;
     }
 
-    private async Task LoadStarterWorkflowAsync()
-    {
-        workflowSourceCode = WorkflowCodeTemplates.DefaultStarter.SourceCode;
-        currentSavedWorkflow = null;
-        currentSavedWorkflowId = null;
-        workflowSourceDirty = false;
-        workflowCompileError = null;
-        isWorkflowSourceExpanded = false;
-        await CompileWorkflowSourceAsync(expandEditorOnError: true);
-    }
-
     private async Task OpenLoadWorkflowDialogAsync()
     {
         await RefreshSavedWorkflowsAsync();
@@ -1071,79 +870,6 @@
         await CompileWorkflowSourceAsync(expandEditorOnError: true);
     }
 
-    private void OpenDeleteWorkflowDialog()
-    {
-        if (!currentSavedWorkflowId.HasValue)
-        {
-            return;
-        }
-
-        showDeleteWorkflowDialog = true;
-    }
-
-    private void CloseDeleteWorkflowDialog()
-    {
-        showDeleteWorkflowDialog = false;
-    }
-
-    private async Task SaveWorkflowAsync()
-    {
-        if (!await CompileWorkflowSourceAsync(expandEditorOnError: true) || compiledWorkflow is null)
-        {
-            Snackbar.Add("Workflow compilation failed. Fix the source code before saving.", Severity.Error);
-            return;
-        }
-
-        SavedWorkflowDefinition savedWorkflow;
-        if (currentSavedWorkflowId.HasValue)
-        {
-            savedWorkflow = await WorkflowDefinitionService.GetByIdAsync(currentSavedWorkflowId.Value) ??
-                            new SavedWorkflowDefinition { Id = currentSavedWorkflowId.Value };
-        }
-        else
-        {
-            savedWorkflow = new SavedWorkflowDefinition();
-        }
-
-        savedWorkflow.Kind = compiledWorkflow.Kind;
-        savedWorkflow.WorkflowId = compiledWorkflow.WorkflowId;
-        savedWorkflow.DisplayName = compiledWorkflow.DisplayName;
-        savedWorkflow.Description = compiledWorkflow.Description;
-        savedWorkflow.SourceCode = workflowSourceCode;
-
-        if (currentSavedWorkflowId.HasValue &&
-            await WorkflowDefinitionService.GetByIdAsync(currentSavedWorkflowId.Value) is not null)
-        {
-            await WorkflowDefinitionService.UpdateAsync(savedWorkflow);
-        }
-        else
-        {
-            await WorkflowDefinitionService.CreateAsync(savedWorkflow);
-        }
-
-        currentSavedWorkflow = savedWorkflow;
-        currentSavedWorkflowId = savedWorkflow.Id;
-        workflowSourceDirty = false;
-        await RefreshSavedWorkflowsAsync();
-        Snackbar.Add($"Workflow '{savedWorkflow.DisplayName}' saved.", Severity.Success);
-    }
-
-    private async Task DeleteCurrentWorkflowAsync()
-    {
-        if (!currentSavedWorkflowId.HasValue)
-        {
-            return;
-        }
-
-        await WorkflowDefinitionService.DeleteAsync(currentSavedWorkflowId.Value);
-        currentSavedWorkflow = null;
-        currentSavedWorkflowId = null;
-        workflowSourceDirty = false;
-        showDeleteWorkflowDialog = false;
-        await RefreshSavedWorkflowsAsync();
-        Snackbar.Add("Saved workflow deleted.", Severity.Success);
-    }
-
     private async Task SaveCurrentChat()
     {
         if (!WorkflowSessionService.Messages.Any())
@@ -1169,8 +895,8 @@
             .ToList();
         participants.Add(new SavedChatParticipant(userSettings.UserName.ToLowerInvariant(), userSettings.UserName, ChatRole.User));
 
-        var agentMap = WorkflowSessionService.AgentDescriptions
-            .ToDictionary(agent => agent.AgentName, agent => agent.AgentId, StringComparer.OrdinalIgnoreCase);
+        var agentsById = WorkflowSessionService.AgentDescriptions
+            .ToDictionary(agent => agent.AgentId, StringComparer.OrdinalIgnoreCase);
 
         var messages = WorkflowSessionService.Messages
             .Where(message => !message.IsStreaming && !message.IsCanceled && message.Role != ChatRole.System)
@@ -1180,12 +906,12 @@
                 message.Content,
                 message.MsgDateTime,
                 message.Role,
+                message.Role == ChatRole.Assistant ? message.AgentId : null,
                 message.Role == ChatRole.Assistant &&
-                message.AgentName is not null &&
-                agentMap.TryGetValue(message.AgentName, out var agentId)
-                    ? agentId
-                    : null,
-                message.AgentName))
+                !string.IsNullOrWhiteSpace(message.AgentId) &&
+                agentsById.TryGetValue(message.AgentId, out var agent)
+                    ? agent.AgentName
+                    : null))
             .ToList();
 
         var chatId = lastSavedChatId ?? Guid.NewGuid();

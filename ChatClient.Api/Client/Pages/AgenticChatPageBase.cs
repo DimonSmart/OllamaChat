@@ -169,7 +169,7 @@ public abstract class AgenticChatPageBase : ComponentBase, IAsyncDisposable
             .ToList();
         participants.Add(new SavedChatParticipant(userSettings.UserName.ToLowerInvariant(), userSettings.UserName, ChatRole.User));
 
-        var agentMap = ChatService.AgentDescriptions.ToDictionary(agent => agent.AgentName, agent => agent.AgentId, StringComparer.OrdinalIgnoreCase);
+        var agentsById = ChatService.AgentDescriptions.ToDictionary(agent => agent.AgentId, StringComparer.OrdinalIgnoreCase);
 
         var messages = ChatService.Messages
             .Where(message => !message.IsStreaming && !message.IsCanceled && message.Role != ChatRole.System)
@@ -179,8 +179,12 @@ public abstract class AgenticChatPageBase : ComponentBase, IAsyncDisposable
                 message.Content,
                 message.MsgDateTime,
                 message.Role,
-                message.Role == ChatRole.Assistant && message.AgentName != null && agentMap.TryGetValue(message.AgentName, out var agentId) ? agentId : null,
-                message.AgentName))
+                message.Role == ChatRole.Assistant ? message.AgentId : null,
+                message.Role == ChatRole.Assistant &&
+                !string.IsNullOrWhiteSpace(message.AgentId) &&
+                agentsById.TryGetValue(message.AgentId, out var agent)
+                    ? agent.AgentName
+                    : null))
             .ToList();
 
         var chatId = SavedChatId ?? Guid.NewGuid();

@@ -21,8 +21,8 @@ Pattern-specific runtime code is localized under `ChatClient.Api/AgentWorkflows/
 
 `WorkflowCodeTemplates.StarterTemplates` is the single source of truth for built-in starter workflows used by:
 
-- the editor's `Load Starter Workflow` action
 - fallback workflow seeding when no external `workflow_definitions.json` is present
+- the saved workflow catalog surfaced by the `Load Workflow` dialog and the workflow definitions management page
 - compiler smoke tests
 
 Current built-in starters:

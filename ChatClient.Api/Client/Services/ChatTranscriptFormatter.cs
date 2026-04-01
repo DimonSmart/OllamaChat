@@ -174,7 +174,7 @@ public static class ChatTranscriptFormatter
     private static string ResolveSpeakerName(AppChatMessageViewModel message)
     {
         if (message.Role == ChatRole.Assistant)
-            return message.AgentName ?? "Assistant";
+            return message.AgentName ?? message.AgentId ?? "Assistant";
 
         return message.Role == ChatRole.Tool
             ? "Tool"

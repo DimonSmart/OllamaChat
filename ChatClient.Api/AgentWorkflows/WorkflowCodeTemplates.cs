@@ -15,6 +15,30 @@ public static class WorkflowCodeTemplates
     public static WorkflowStarterTemplate DefaultStarter =>
         GetRequiredStarter("philosopher-battle-group-chat");
 
+    public static string NewWorkflowScaffold { get; } =
+        """"
+        var workflow = WorkflowDefinitionBuilder
+            .New("new-workflow", "New Workflow")
+            .Description("Describe what this workflow should do.")
+            .Agent("triage", agent => agent
+                .Role("Entry point")
+                .Summary("Handles the initial request and routes the next step when needed.")
+                .UseDraft(
+                    AgentDefinitionBuilder
+                        .New("New Workflow Triage", "triage")
+                        .WithInstructions("""
+                            Replace this scaffold with the real workflow instructions.
+                            Keep the response focused on the workflow's entry step.
+                            """)
+                        .AutoSelectTools(0)
+                        .BuildDescription()))
+            .UseHandoff(handoff => handoff
+                .StartWith("triage"))
+            .Build();
+
+        workflow
+        """";
+
     public static WorkflowStarterTemplate GetRequiredStarter(string workflowId) =>
         StarterTemplates.First(template =>
             string.Equals(template.WorkflowId, workflowId, StringComparison.OrdinalIgnoreCase));
@@ -244,6 +268,7 @@ public static class WorkflowCodeTemplates
                 .DefaultValue("Name the strongest argument, the weakest move, and the unresolved tension."))
             .Agent("host", agent => agent
                 .Role("Debate host")
+                .AvatarText("H")
                 .Summary("Opens the debate by framing the topic sharply and setting the tone.")
                 .UseDraft(
                     AgentDefinitionBuilder
@@ -265,6 +290,7 @@ public static class WorkflowCodeTemplates
                         .BuildDescription()))
             .Agent("kant", agent => agent
                 .Role("Kantian philosopher")
+                .AvatarText("K")
                 .Summary("Defends duty, autonomy, universality, and moral law.")
                 .UseDraft(
                     AgentDefinitionBuilder
@@ -278,6 +304,7 @@ public static class WorkflowCodeTemplates
                         .BuildDescription()))
             .Agent("nietzsche", agent => agent
                 .Role("Nietzschean philosopher")
+                .AvatarText("N")
                 .Summary("Attacks herd morality, comfort, and universal rules.")
                 .UseDraft(
                     AgentDefinitionBuilder
@@ -291,6 +318,7 @@ public static class WorkflowCodeTemplates
                         .BuildDescription()))
             .Agent("judge", agent => agent
                 .Role("Debate judge")
+                .AvatarText("J")
                 .Summary("Closes the debate with a concise verdict and persists the final summary.")
                 .UseDraft(
                     AgentDefinitionBuilder

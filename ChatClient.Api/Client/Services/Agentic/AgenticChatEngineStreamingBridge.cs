@@ -6,8 +6,8 @@ namespace ChatClient.Api.Client.Services.Agentic;
 
 public sealed class AgenticChatEngineStreamingBridge : IChatEngineStreamingBridge
 {
-    public StreamingAppChatMessage Create(string agentName) =>
-        new(string.Empty, DateTime.Now, ChatRole.Assistant, null, agentName);
+    public StreamingAppChatMessage Create(string? agentId, string? agentName) =>
+        new(string.Empty, DateTime.Now, ChatRole.Assistant, null, agentId, agentName);
 
     public void Append(StreamingAppChatMessage message, string content)
     {
@@ -32,6 +32,7 @@ public sealed class AgenticChatEngineStreamingBridge : IChatEngineStreamingBridg
             message.Statistics,
             message.Files,
             message.FunctionCalls,
+            message.AgentId,
             message.AgentName)
         {
             Id = message.Id,
@@ -51,6 +52,7 @@ public sealed class AgenticChatEngineStreamingBridge : IChatEngineStreamingBridg
             message.Statistics,
             message.Files,
             message.FunctionCalls,
+            message.AgentId,
             message.AgentName)
         {
             Id = message.Id,

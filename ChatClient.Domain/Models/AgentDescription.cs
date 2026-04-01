@@ -8,6 +8,7 @@ public class AgentDescription
     public string AgentName { get; set; } = string.Empty;
     public string Content { get; set; } = string.Empty;
     public string? ShortName { get; set; }
+    public string? AvatarText { get; set; }
     public string? ModelName { get; set; }
     public Guid? LlmId { get; set; }
     public double? Temperature { get; set; }

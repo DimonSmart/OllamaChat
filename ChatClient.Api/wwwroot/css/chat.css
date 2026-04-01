@@ -98,9 +98,27 @@
 .chat-avatar {
     width: 2.5rem;
     height: 2.5rem;
-    font-size: 0.72rem;
+    min-width: 2.5rem;
+    min-height: 2.5rem;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+    font-size: 0.72rem !important;
+    line-height: 1 !important;
     font-weight: 700;
     letter-spacing: 0.04em;
+    white-space: nowrap;
+    overflow: hidden;
+    text-transform: uppercase;
+}
+
+.chat-speaker-label {
+    display: block;
+    margin-bottom: 0.35rem;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+    color: var(--mud-palette-primary);
 }
 
 @keyframes blink {

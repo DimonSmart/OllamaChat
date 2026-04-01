@@ -2,43 +2,23 @@ namespace ChatClient.Api.Client.Services.Agentic;
 
 internal static class WorkflowStreamingTextDelta
 {
-    public static string GetAppendText(string? currentContent, string? incomingContent)
+    public static bool IsDuplicateOfCurrentMessage(string? currentContent, string? incomingContent)
     {
-        if (string.IsNullOrEmpty(incomingContent))
+        if (string.IsNullOrEmpty(currentContent) || string.IsNullOrEmpty(incomingContent))
         {
-            return string.Empty;
+            return false;
         }
 
-        var current = currentContent ?? string.Empty;
-        if (current.Length == 0)
+        if (string.Equals(currentContent, incomingContent, StringComparison.Ordinal))
         {
-            return incomingContent;
+            return true;
         }
 
-        if (string.Equals(current, incomingContent, StringComparison.Ordinal))
+        if (currentContent.Contains(incomingContent, StringComparison.Ordinal))
         {
-            return string.Empty;
+            return true;
         }
 
-        if (incomingContent.StartsWith(current, StringComparison.Ordinal))
-        {
-            return incomingContent[current.Length..];
-        }
-
-        if (current.Contains(incomingContent, StringComparison.Ordinal))
-        {
-            return string.Empty;
-        }
-
-        var maxOverlap = Math.Min(current.Length, incomingContent.Length);
-        for (var overlapLength = maxOverlap; overlapLength > 0; overlapLength--)
-        {
-            if (current.EndsWith(incomingContent[..overlapLength], StringComparison.Ordinal))
-            {
-                return incomingContent[overlapLength..];
-            }
-        }
-
-        return incomingContent;
+        return false;
     }
 }

@@ -12,6 +12,8 @@ public sealed class AgentDefinition
 
     public string? ShortName { get; set; }
 
+    public string? AvatarText { get; set; }
+
     public string? ModelName { get; set; }
 
     public Guid? LlmId { get; set; }
@@ -41,6 +43,7 @@ public sealed class AgentDefinition
             AgentName = AgentName,
             Content = Content,
             ShortName = ShortName,
+            AvatarText = AvatarText,
             ModelName = ModelName,
             LlmId = LlmId,
             Temperature = Temperature,

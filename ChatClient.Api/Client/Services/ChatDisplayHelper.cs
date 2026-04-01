@@ -43,21 +43,44 @@ public static class ChatDisplayHelper
     public static string GetAvatarText(string? name) =>
         BuildAvatarText(name, 2);
 
+    public static string? GetAssistantDisplayName(
+        IEnumerable<AgentDescription> agents,
+        string? agentId)
+    {
+        var matchingAgent = ResolveAgent(agents, agentId);
+        return matchingAgent?.AgentName;
+    }
+
     public static string GetAssistantAvatarText(
         IEnumerable<AgentDescription> agents,
-        string? agentName)
+        string? agentId)
     {
-        if (string.IsNullOrWhiteSpace(agentName))
+        var matchingAgent = ResolveAgent(agents, agentId);
+        if (matchingAgent is null)
+        {
             return string.Empty;
+        }
 
-        var configuredShortName = agents
-            .FirstOrDefault(agent => string.Equals(agent.AgentName, agentName, StringComparison.OrdinalIgnoreCase))
-            ?.ShortName;
+        if (!string.IsNullOrWhiteSpace(matchingAgent?.AvatarText))
+            return BuildAvatarText(matchingAgent.AvatarText, 3);
 
-        if (!string.IsNullOrWhiteSpace(configuredShortName))
-            return BuildAvatarText(configuredShortName, 3);
+        if (!string.IsNullOrWhiteSpace(matchingAgent?.ShortName))
+            return BuildAvatarText(matchingAgent.ShortName, 3);
 
-        return BuildAvatarText(agentName, 3);
+        return BuildAvatarText(matchingAgent.AgentName, 3);
+    }
+
+    private static AgentDescription? ResolveAgent(
+        IEnumerable<AgentDescription> agents,
+        string? agentId)
+    {
+        if (string.IsNullOrWhiteSpace(agentId))
+        {
+            return null;
+        }
+
+        return agents.FirstOrDefault(agent =>
+            string.Equals(agent.AgentId, agentId, StringComparison.OrdinalIgnoreCase));
     }
 
     private static string BuildAvatarText(string? text, int maxLength)

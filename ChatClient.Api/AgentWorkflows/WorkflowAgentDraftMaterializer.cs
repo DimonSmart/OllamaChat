@@ -168,6 +168,7 @@ public sealed class WorkflowAgentDraftMaterializer(
             DraftOverrides = new AgentWorkflowAgentDraftOverrides
             {
                 AgentName = agent.DraftOverrides.AgentName,
+                AvatarText = agent.DraftOverrides.AvatarText,
                 Instructions = agent.DraftOverrides.Instructions
             },
             CapabilityRequirements = agent.CapabilityRequirements
@@ -224,6 +225,11 @@ public sealed class WorkflowAgentDraftMaterializer(
         if (!string.IsNullOrWhiteSpace(overrides.AgentName))
         {
             draft.AgentName = overrides.AgentName.Trim();
+        }
+
+        if (!string.IsNullOrWhiteSpace(overrides.AvatarText))
+        {
+            draft.AvatarText = overrides.AvatarText.Trim();
         }
 
         if (!string.IsNullOrWhiteSpace(overrides.Instructions))

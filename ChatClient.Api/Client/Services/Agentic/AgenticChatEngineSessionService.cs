@@ -178,7 +178,9 @@ public sealed class AgenticChatEngineSessionService(
         bool enableRagContext,
         CancellationToken cancellationToken)
     {
-        var stream = streamingBridge.Create(resolvedAgent.Agent.AgentName);
+        var stream = streamingBridge.Create(
+            resolvedAgent.Agent.AgentId,
+            resolvedAgent.Agent.AgentName);
         _activeStreams[stream.Id] = stream;
         await AddMessageAsync(stream);
 
@@ -266,14 +268,20 @@ public sealed class AgenticChatEngineSessionService(
         {
             logger.LogWarning(ex, "Model does not support tools for agent {AgentName}", resolvedAgent.Agent.AgentName);
             await CancelStreamAsync(stream);
-            await HandleError($"The model **{resolvedAgent.Model.ModelName}** does not support function calling.", resolvedAgent.Agent.AgentName);
+            await HandleError(
+                $"The model **{resolvedAgent.Model.ModelName}** does not support function calling.",
+                resolvedAgent.Agent.AgentId,
+                resolvedAgent.Agent.AgentName);
             return false;
         }
         catch (Exception ex)
         {
             logger.LogError(ex, "Agentic session failed for agent {AgentName}", resolvedAgent.Agent.AgentName);
             await CancelStreamAsync(stream);
-            await HandleError($"An error occurred while getting the response: {ex.Message}", resolvedAgent.Agent.AgentName);
+            await HandleError(
+                $"An error occurred while getting the response: {ex.Message}",
+                resolvedAgent.Agent.AgentId,
+                resolvedAgent.Agent.AgentName);
             return false;
         }
         finally
@@ -327,9 +335,14 @@ public sealed class AgenticChatEngineSessionService(
         _activeStreams.Remove(stream.Id);
     }
 
-    private async Task HandleError(string text, string? agentName = null)
+    private async Task HandleError(string text, string? agentId = null, string? agentName = null)
     {
-        await AddMessageAsync(new AppChatMessage(text, DateTime.Now, ChatRole.Assistant, agentName: agentName));
+        await AddMessageAsync(new AppChatMessage(
+            text,
+            DateTime.Now,
+            ChatRole.Assistant,
+            agentId: agentId,
+            agentName: agentName));
     }
 
     private async Task AddRetrievedContextMessageIfNeededAsync(string? retrievedContext)

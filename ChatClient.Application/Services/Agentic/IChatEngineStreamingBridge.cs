@@ -4,7 +4,7 @@ namespace ChatClient.Application.Services.Agentic;
 
 public interface IChatEngineStreamingBridge
 {
-    StreamingAppChatMessage Create(string agentName);
+    StreamingAppChatMessage Create(string? agentId, string? agentName);
 
     void Append(StreamingAppChatMessage message, string content);
 

@@ -32,18 +32,41 @@ public class ChatDisplayHelperTests
                     ShortName = "behavioural"
                 }
             ],
-            "Interview Coach Behavioural");
+            "behavioural");
 
         Assert.Equal("BEH", avatarText);
+    }
+
+    [Fact]
+    public void GetAssistantAvatarText_PrefersExplicitAvatarText()
+    {
+        var avatarText = ChatDisplayHelper.GetAssistantAvatarText(
+            [
+                new AgentDescription
+                {
+                    AgentName = "Immanuel Kant",
+                    ShortName = "kant",
+                    AvatarText = "K"
+                }
+            ],
+            "kant");
+
+        Assert.Equal("K", avatarText);
     }
 
     [Fact]
     public void GetAssistantAvatarText_FallsBackToAgentNameAbbreviation()
     {
         var avatarText = ChatDisplayHelper.GetAssistantAvatarText(
-            [],
-            "Interview Coach Technical");
+            [
+                new AgentDescription
+                {
+                    AgentName = "Interview Coach Technical",
+                    ShortName = "technical"
+                }
+            ],
+            "technical");
 
-        Assert.Equal("ICT", avatarText);
+        Assert.Equal("TEC", avatarText);
     }
 }

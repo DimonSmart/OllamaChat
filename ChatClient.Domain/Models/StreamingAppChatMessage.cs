@@ -4,7 +4,13 @@ using System.Text;
 
 namespace ChatClient.Domain.Models;
 
-public class StreamingAppChatMessage(string initialContent, DateTime msgDateTime, ChatRole role, List<FunctionCallRecord>? functionCalls = null, string? agentName = null) : IAppChatMessage
+public class StreamingAppChatMessage(
+    string initialContent,
+    DateTime msgDateTime,
+    ChatRole role,
+    List<FunctionCallRecord>? functionCalls = null,
+    string? agentId = null,
+    string? agentName = null) : IAppChatMessage
 {
     private readonly StringBuilder _contentBuilder = new(initialContent);
     public string Content => _contentBuilder.ToString();
@@ -15,6 +21,7 @@ public class StreamingAppChatMessage(string initialContent, DateTime msgDateTime
     public IReadOnlyList<AppChatMessageFile> Files { get; private set; } = [];
     private readonly List<FunctionCallRecord> _functionCalls = functionCalls ?? [];
     public IReadOnlyCollection<FunctionCallRecord> FunctionCalls => _functionCalls.AsReadOnly();
+    public string? AgentId { get; private set; } = agentId;
     public string? AgentName { get; private set; } = agentName;
 
     public int ApproximateTokenCount { get; set; }
@@ -53,6 +60,11 @@ public class StreamingAppChatMessage(string initialContent, DateTime msgDateTime
     public void SetAgentName(string? name)
     {
         AgentName = name;
+    }
+
+    public void SetAgentId(string? id)
+    {
+        AgentId = id;
     }
     public void SetStatistics(string stats)
     {
