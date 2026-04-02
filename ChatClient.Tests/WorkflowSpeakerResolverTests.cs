@@ -32,20 +32,22 @@ public sealed class WorkflowSpeakerResolverTests
     }
 
     [Fact]
-    public void ResolveFromWorkflow_UsesPhilosopherDebateSchedule()
+    public void ResolveFromWorkflow_UsesProgrammableGroupChatSchedule()
     {
-        var workflow = CreatePhilosopherDebateWorkflow();
+        var workflow = CreateProgrammableDebateWorkflow();
 
         Assert.Equal("host", WorkflowSpeakerResolver.ResolveFromWorkflow(workflow, 0));
-        Assert.Equal("kant", WorkflowSpeakerResolver.ResolveFromWorkflow(workflow, 1));
-        Assert.Equal("nietzsche", WorkflowSpeakerResolver.ResolveFromWorkflow(workflow, 2));
+        Assert.Equal("debater_a", WorkflowSpeakerResolver.ResolveFromWorkflow(workflow, 1));
+        Assert.Equal("debater_b", WorkflowSpeakerResolver.ResolveFromWorkflow(workflow, 2));
+        Assert.Equal("debater_a", WorkflowSpeakerResolver.ResolveFromWorkflow(workflow, 7));
+        Assert.Equal("debater_b", WorkflowSpeakerResolver.ResolveFromWorkflow(workflow, 8));
         Assert.Equal("judge", WorkflowSpeakerResolver.ResolveFromWorkflow(workflow, 9));
     }
 
     [Fact]
     public void ResolveSpeakerId_FallsBackToWorkflowSchedule_WhenExecutorIdIsMissing()
     {
-        var workflow = CreatePhilosopherDebateWorkflow();
+        var workflow = CreateProgrammableDebateWorkflow();
 
         var speakerId = WorkflowSpeakerResolver.ResolveSpeakerId(
             executorId: null,
@@ -53,7 +55,7 @@ public sealed class WorkflowSpeakerResolverTests
             workflow: workflow,
             assistantMessageIndex: 1);
 
-        Assert.Equal("kant", speakerId);
+        Assert.Equal("debater_a", speakerId);
     }
 
     [Theory]
@@ -72,19 +74,23 @@ public sealed class WorkflowSpeakerResolverTests
         Assert.Null(speakerId);
     }
 
-    private static GroupChatWorkflowDefinition CreatePhilosopherDebateWorkflow()
+    private static GroupChatWorkflowDefinition CreateProgrammableDebateWorkflow()
     {
         return new GroupChatWorkflowDefinition
         {
             Id = "philosopher-battle-group-chat",
             DisplayName = "Philosopher Battle Group Chat",
             Agents = [],
-            ParticipantAgentIds = ["host", "kant", "nietzsche", "judge"],
+            ParticipantAgentIds = ["host", "debater_a", "debater_b", "judge"],
             Manager = new GroupChatWorkflowManagerDefinition
             {
-                Kind = GroupChatWorkflowManagerKind.Custom,
-                ImplementationKey = "philosopher-debate",
-                MaximumIterations = 10
+                Kind = GroupChatWorkflowManagerKind.Programmable,
+                MaximumIterations = 10,
+                Program = GroupChatManagerPrograms.PrefixCycleSuffix(
+                    prefix: ["host"],
+                    cycle: ["debater_a", "debater_b"],
+                    suffix: ["debater_a", "debater_b", "judge"]),
+                ProgramDisplayName = "PrefixCycleSuffix"
             }
         };
     }

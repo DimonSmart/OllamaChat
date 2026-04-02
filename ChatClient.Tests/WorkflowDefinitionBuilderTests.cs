@@ -72,4 +72,84 @@ public sealed class WorkflowDefinitionBuilderTests
         Assert.Equal(["research", "review"], concurrent.ParticipantAgentIds);
         Assert.Equal(ConcurrentWorkflowAggregationKind.ConcatenateAllMessages, concurrent.Aggregation.Kind);
     }
+
+    [Fact]
+    public void Build_ThrowsForUndefinedAgentPlaceholder()
+    {
+        var exception = Assert.Throws<InvalidOperationException>(() =>
+            WorkflowDefinitionBuilder
+                .New("demo", "Demo Workflow")
+                .Agent("host", agent => agent
+                    .Role("Host")
+                    .UseDraft(new AgentDescription
+                    {
+                        Id = Guid.NewGuid(),
+                        AgentName = "Host",
+                        ShortName = "host",
+                        Content = "Invite {{agent:missing.displayName}}."
+                    }))
+                .UseHandoff(handoff => handoff
+                    .StartWith("host"))
+                .Build());
+
+        Assert.Contains("missing", exception.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Build_GroupChatWorkflow_ValidatesProgrammableManagerProgram()
+    {
+        var exception = Assert.Throws<InvalidOperationException>(() =>
+            WorkflowDefinitionBuilder
+                .New("demo", "Demo Workflow")
+                .Agent("host", agent => agent
+                    .Role("Host")
+                    .UseDraft(new AgentDescription
+                    {
+                        Id = Guid.NewGuid(),
+                        AgentName = "Host",
+                        ShortName = "host",
+                        Content = "Host prompt"
+                    }))
+                .UseGroupChat(groupChat => groupChat
+                    .Participant("host")
+                    .UseProgrammableManager(manager => manager
+                        .MaximumIterations(3)))
+                .Build());
+
+        Assert.Contains("require a program", exception.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void Build_GroupChatWorkflow_RejectsProgrammableManagerThatReturnsUnknownSpeaker()
+    {
+        var exception = Assert.Throws<InvalidOperationException>(() =>
+            WorkflowDefinitionBuilder
+                .New("demo", "Demo Workflow")
+                .Agent("host", agent => agent
+                    .Role("Host")
+                    .UseDraft(new AgentDescription
+                    {
+                        Id = Guid.NewGuid(),
+                        AgentName = "Host",
+                        ShortName = "host",
+                        Content = "Host prompt"
+                    }))
+                .Agent("guest", agent => agent
+                    .Role("Guest")
+                    .UseDraft(new AgentDescription
+                    {
+                        Id = Guid.NewGuid(),
+                        AgentName = "Guest",
+                        ShortName = "guest",
+                        Content = "Guest prompt"
+                    }))
+                .UseGroupChat(groupChat => groupChat
+                    .Participants("host", "guest")
+                    .UseProgrammableManager(manager => manager
+                        .MaximumIterations(3)
+                        .SelectNextSpeaker(static _ => "judge")))
+                .Build());
+
+        Assert.Contains("unknown speaker 'judge'", exception.Message, StringComparison.OrdinalIgnoreCase);
+    }
 }

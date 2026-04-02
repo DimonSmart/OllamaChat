@@ -117,6 +117,25 @@ public sealed class OrchestrationWorkflowChatSessionServiceTests
     }
 
     [Fact]
+    public async Task DrainWorkflowEventsAsync_UsesAgentNameForSlotBasedWorkflowAgentIds()
+    {
+        var service = CreateService();
+        service.RegisterAgentIdentity("debater_a", "Immanuel Kant", "runtime://debater-a");
+
+        await service.DrainWorkflowEventsAsync(
+            StreamEvents(
+            [
+                CreateUpdateEvent("runtime://debater-a", "Immanuel Kant", "Duty first."),
+                CreateOutputEvent("runtime://debater-a", "Immanuel Kant", "Duty first.")
+            ]),
+            "model-a");
+
+        var assistant = Assert.Single(service.Messages, message => message.Role == ChatRole.Assistant);
+        Assert.Equal("debater_a", assistant.AgentId);
+        Assert.Equal("Immanuel Kant", assistant.AgentName);
+    }
+
+    [Fact]
     public async Task DrainWorkflowEventsAsync_FinalizesPreviousSpeakerWhenNextSpeakerStartsStreaming()
     {
         var service = CreateService();

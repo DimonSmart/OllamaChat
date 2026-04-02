@@ -38,35 +38,38 @@ public sealed class GroupChatRuntimeWorkflowBuilderTests
     }
 
     [Fact]
-    public void CreateManager_CustomPhilosopherDebateCarriesPriorAssistantCount()
+    public void CreateManager_ConfiguredProgrammableManagerCarriesPriorAssistantCount()
     {
-        var builder = new GroupChatRuntimeWorkflowBuilder(
-            new GroupChatManagerRegistry([new PhilosopherDebateGroupChatManagerFactory()]));
+        var builder = new GroupChatRuntimeWorkflowBuilder(new GroupChatManagerRegistry([]));
         var workflow = new GroupChatWorkflowDefinition
         {
             Id = "philosopher-battle-group-chat",
             DisplayName = "Philosopher Battle Group Chat",
-            ParticipantAgentIds = ["host", "kant", "nietzsche", "judge"],
+            ParticipantAgentIds = ["host", "debater_a", "debater_b", "judge"],
             Manager = new GroupChatWorkflowManagerDefinition
             {
-                Kind = GroupChatWorkflowManagerKind.Custom,
-                ImplementationKey = "philosopher-debate",
-                MaximumIterations = 10
+                Kind = GroupChatWorkflowManagerKind.Programmable,
+                MaximumIterations = 10,
+                Program = GroupChatManagerPrograms.PrefixCycleSuffix(
+                    prefix: ["host"],
+                    cycle: ["debater_a", "debater_b"],
+                    suffix: ["debater_a", "debater_b", "judge"]),
+                ProgramDisplayName = "PrefixCycleSuffix"
             }
         };
 
-        var manager = Assert.IsType<PhilosopherDebateGroupChatManager>(
+        var manager = Assert.IsType<ConfiguredProgrammableGroupChatManager>(
             builder.CreateManager(
                 [
                     CreateAgent("host", "Debate Host"),
-                    CreateAgent("kant", "Immanuel Kant"),
-                    CreateAgent("nietzsche", "Friedrich Nietzsche"),
+                    CreateAgent("debater_a", "Immanuel Kant"),
+                    CreateAgent("debater_b", "Friedrich Nietzsche"),
                     CreateAgent("judge", "Debate Judge")
                 ],
                 workflow,
                 new OrchestrationRuntimeBuildContext
                 {
-                    AssistantSpeakerIds = ["host", "kant", "nietzsche", "kant", "nietzsche", "kant", "nietzsche", "kant", "judge"]
+                    AssistantSpeakerIds = ["host", "debater_a", "debater_b", "debater_a", "debater_b", "debater_a", "debater_b", "debater_a", "judge"]
                 }));
 
         Assert.Equal(9, manager.AssistantMessagesBeforeRun);

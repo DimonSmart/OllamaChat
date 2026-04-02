@@ -198,6 +198,20 @@ public sealed class GroupChatWorkflowDefinitionBuilder
         return this;
     }
 
+    public GroupChatWorkflowDefinitionBuilder UseProgrammableManager(
+        Action<ProgrammableGroupChatManagerBuilder> configure)
+    {
+        ArgumentNullException.ThrowIfNull(configure);
+
+        var builder = new ProgrammableGroupChatManagerBuilder(
+            _manager.Kind == GroupChatWorkflowManagerKind.Programmable
+                ? _manager
+                : null);
+        configure(builder);
+        _manager = builder.Build();
+        return this;
+    }
+
     public GroupChatWorkflowDefinition Build()
     {
         if (_agents.Count == 0)
@@ -220,12 +234,9 @@ public sealed class GroupChatWorkflowDefinitionBuilder
                 $"Group chat participant '{missingParticipantAgentId}' is not defined as an agent.");
         }
 
-        if (_manager.Kind == GroupChatWorkflowManagerKind.Custom &&
-            string.IsNullOrWhiteSpace(_manager.ImplementationKey))
-        {
-            throw new InvalidOperationException(
-                "Custom group chat managers require an implementation key.");
-        }
+        GroupChatWorkflowManagerValidator.Validate(_manager, participantAgentIds);
+
+        WorkflowInstructionTemplateResolver.ValidateAgentReferences(_agents);
 
         return new GroupChatWorkflowDefinition
         {

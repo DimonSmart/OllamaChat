@@ -202,6 +202,8 @@ public sealed class HandoffWorkflowDefinitionBuilder
                 $"Workflow handoff '{missingHandoffAgent.FromAgentId} -> {missingHandoffAgent.ToAgentId}' references an undefined agent.");
         }
 
+        WorkflowInstructionTemplateResolver.ValidateAgentReferences(_agents);
+
         return new AgentWorkflowDefinition
         {
             Id = _id,

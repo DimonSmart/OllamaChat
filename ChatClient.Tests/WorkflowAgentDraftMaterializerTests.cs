@@ -132,7 +132,7 @@ public sealed class WorkflowAgentDraftMaterializerTests
     }
 
     [Fact]
-    public async Task MaterializeAsync_PreservesGroupChatSpecificFields()
+    public async Task MaterializeAsync_PreservesProgrammableGroupChatManager()
     {
         var workflow = WorkflowDefinitionBuilder
             .New("debate", "Debate")
@@ -159,7 +159,9 @@ public sealed class WorkflowAgentDraftMaterializerTests
                 }))
             .UseGroupChat(groupChat => groupChat
                 .Participants("host", "guest")
-                .UseCustomManager("debate-manager", maximumIterations: 9))
+                .UseProgrammableManager(manager => manager
+                    .MaximumIterations(9)
+                    .Program(GroupChatManagerPrograms.RoundRobin())))
             .Build();
 
         var materializer = new WorkflowAgentDraftMaterializer(new StubAgentDescriptionService([]));
@@ -169,12 +171,71 @@ public sealed class WorkflowAgentDraftMaterializerTests
         var groupChat = Assert.IsType<GroupChatWorkflowDefinition>(materialized);
         Assert.Equal(WorkflowDefinitionKinds.GroupChat, groupChat.Kind);
         Assert.Equal(["host", "guest"], groupChat.ParticipantAgentIds);
-        Assert.Equal(GroupChatWorkflowManagerKind.Custom, groupChat.Manager.Kind);
-        Assert.Equal("debate-manager", groupChat.Manager.ImplementationKey);
+        Assert.Equal(GroupChatWorkflowManagerKind.Programmable, groupChat.Manager.Kind);
         Assert.Equal(9, groupChat.Manager.MaximumIterations);
+        Assert.NotNull(groupChat.Manager.Program);
+        Assert.Equal("RoundRobin", groupChat.Manager.ProgramDisplayName);
         Assert.All(groupChat.Agents, static agent => Assert.NotNull(agent.AgentDraft));
         Assert.All(groupChat.Agents, static agent => Assert.Equal(agent.Id, agent.AgentDraft!.ShortName));
         Assert.Equal("H", groupChat.Agents[0].AgentDraft!.AvatarText);
+    }
+
+    [Fact]
+    public async Task MaterializeAsync_ResolvesAgentDisplayNamePlaceholders_WithoutBreakingSlotBasedDisplayNames()
+    {
+        var savedAgents = new[]
+        {
+            new AgentDescription
+            {
+                Id = Guid.NewGuid(),
+                AgentName = "Immanuel Kant",
+                ShortName = "kant",
+                Content = "Kant prompt"
+            },
+            new AgentDescription
+            {
+                Id = Guid.NewGuid(),
+                AgentName = "Friedrich Nietzsche",
+                ShortName = "nietzsche",
+                Content = "Nietzsche prompt"
+            }
+        };
+
+        var workflow = WorkflowDefinitionBuilder
+            .New("debate", "Debate")
+            .Agent("host", agent => agent
+                .Role("Host")
+                .UseDraft(new AgentDescription
+                {
+                    Id = Guid.NewGuid(),
+                    AgentName = "Debate Host",
+                    ShortName = "host",
+                    Content = "Invite {{agent:debater_a.displayName}} and {{agent:debater_b.displayName}}."
+                }))
+            .Agent("debater_a", agent => agent
+                .FromSavedAgent("Immanuel Kant")
+                .Role("First debater"))
+            .Agent("debater_b", agent => agent
+                .FromSavedAgent("Friedrich Nietzsche")
+                .Role("Second debater"))
+            .UseGroupChat(groupChat => groupChat
+                .Participants("host", "debater_a", "debater_b")
+                .UseRoundRobinManager())
+            .Build();
+
+        var materializer = new WorkflowAgentDraftMaterializer(new StubAgentDescriptionService(savedAgents));
+
+        var materialized = await materializer.MaterializeAsync(workflow);
+        var groupChat = Assert.IsType<GroupChatWorkflowDefinition>(materialized);
+        var host = groupChat.Agents.Single(agent => agent.Id == "host");
+        var debaterA = groupChat.Agents.Single(agent => agent.Id == "debater_a");
+        var debaterB = groupChat.Agents.Single(agent => agent.Id == "debater_b");
+
+        Assert.Equal("Invite Immanuel Kant and Friedrich Nietzsche.", host.AgentDraft!.Content);
+        Assert.Equal("Immanuel Kant", debaterA.AgentDraft!.AgentName);
+        Assert.Equal("debater_a", debaterA.AgentDraft.ShortName);
+        Assert.Equal("Friedrich Nietzsche", debaterB.AgentDraft!.AgentName);
+        Assert.Equal("debater_b", debaterB.AgentDraft.ShortName);
     }
 
     private sealed class StubAgentDescriptionService(

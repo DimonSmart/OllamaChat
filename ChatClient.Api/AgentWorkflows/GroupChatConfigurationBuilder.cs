@@ -65,6 +65,20 @@ public sealed class GroupChatConfigurationBuilder
         return this;
     }
 
+    public GroupChatConfigurationBuilder UseProgrammableManager(
+        Action<ProgrammableGroupChatManagerBuilder> configure)
+    {
+        ArgumentNullException.ThrowIfNull(configure);
+
+        var builder = new ProgrammableGroupChatManagerBuilder(
+            _manager.Kind == GroupChatWorkflowManagerKind.Programmable
+                ? _manager
+                : null);
+        configure(builder);
+        _manager = builder.Build();
+        return this;
+    }
+
     internal IReadOnlyList<string> ParticipantAgentIds => _participantAgentIds;
 
     internal GroupChatWorkflowManagerDefinition Manager => _manager;

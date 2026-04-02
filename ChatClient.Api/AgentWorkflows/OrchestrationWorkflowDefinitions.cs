@@ -1,4 +1,5 @@
 using ChatClient.Domain.Models;
+using System.Text.Json.Serialization;
 
 namespace ChatClient.Api.AgentWorkflows;
 
@@ -99,10 +100,16 @@ public sealed class GroupChatWorkflowManagerDefinition
     public int MaximumIterations { get; init; } = 40;
 
     public string? ImplementationKey { get; init; }
+
+    [JsonIgnore]
+    public GroupChatManagerProgram? Program { get; init; }
+
+    public string? ProgramDisplayName { get; init; }
 }
 
 public enum GroupChatWorkflowManagerKind
 {
     RoundRobin,
-    Custom
+    Custom,
+    Programmable
 }

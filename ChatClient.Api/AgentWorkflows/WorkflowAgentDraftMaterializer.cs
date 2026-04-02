@@ -32,6 +32,7 @@ public sealed class WorkflowAgentDraftMaterializer(
         var materializedAgents = workflow.Agents
             .Select(agent => MaterializeAgent(agent, savedAgents))
             .ToList();
+        ResolveInstructionTemplates(materializedAgents);
 
         return workflow switch
         {
@@ -130,7 +131,9 @@ public sealed class WorkflowAgentDraftMaterializer(
         {
             Kind = manager.Kind,
             MaximumIterations = manager.MaximumIterations,
-            ImplementationKey = manager.ImplementationKey
+            ImplementationKey = manager.ImplementationKey,
+            Program = manager.Program,
+            ProgramDisplayName = manager.ProgramDisplayName ?? manager.Program?.DisplayName
         };
 
     private static AgentWorkflowExecutionDefinition CloneExecution(
@@ -142,6 +145,24 @@ public sealed class WorkflowAgentDraftMaterializer(
             CompletionPhase = execution.CompletionPhase,
             CompletionSummaryLabel = execution.CompletionSummaryLabel
         };
+
+    private static void ResolveInstructionTemplates(List<AgentWorkflowAgentDefinition> agents)
+    {
+        var agentsById = agents.ToDictionary(agent => agent.Id, StringComparer.OrdinalIgnoreCase);
+        foreach (var agent in agents)
+        {
+            if (agent.AgentDraft is null ||
+                string.IsNullOrWhiteSpace(agent.AgentDraft.Content))
+            {
+                continue;
+            }
+
+            agent.AgentDraft.Content = WorkflowInstructionTemplateResolver.ResolveAgentReferences(
+                agent.AgentDraft.Content,
+                agent.Id,
+                agentsById);
+        }
+    }
 
     private static AgentWorkflowAgentDefinition MaterializeAgent(
         AgentWorkflowAgentDefinition agent,

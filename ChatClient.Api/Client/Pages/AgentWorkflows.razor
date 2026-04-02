@@ -1054,10 +1054,14 @@
 
     private static string GetGroupChatManagerLabel(GroupChatWorkflowDefinition workflow)
     {
-        return workflow.Manager.Kind == GroupChatWorkflowManagerKind.Custom &&
-               !string.IsNullOrWhiteSpace(workflow.Manager.ImplementationKey)
-            ? $"{workflow.Manager.Kind} ({workflow.Manager.ImplementationKey}, max {workflow.Manager.MaximumIterations})"
-            : $"{workflow.Manager.Kind} (max {workflow.Manager.MaximumIterations})";
+        return workflow.Manager.Kind switch
+        {
+            GroupChatWorkflowManagerKind.Custom when !string.IsNullOrWhiteSpace(workflow.Manager.ImplementationKey) =>
+                $"{workflow.Manager.Kind} ({workflow.Manager.ImplementationKey}, max {workflow.Manager.MaximumIterations})",
+            GroupChatWorkflowManagerKind.Programmable =>
+                $"{workflow.Manager.Kind} ({workflow.Manager.ProgramDisplayName ?? "custom code"}, max {workflow.Manager.MaximumIterations})",
+            _ => $"{workflow.Manager.Kind} (max {workflow.Manager.MaximumIterations})"
+        };
     }
 
     private static string GetConcurrentAggregationLabel(ConcurrentWorkflowDefinition workflow)

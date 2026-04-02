@@ -31,25 +31,25 @@ public sealed class WorkflowDefinitionCompilerTests
 
         Assert.Equal("handoff", result.Kind);
         Assert.Equal("philosopher-battle-handoff", result.WorkflowId);
-        Assert.Equal("Philosopher Battle: Kant vs Nietzsche", result.DisplayName);
+        Assert.Equal("Philosopher Battle Handoff", result.DisplayName);
         Assert.Equal("host", workflow.StartAgentId);
         Assert.Equal(AgentWorkflowExecutionMode.Autonomous, workflow.Execution.Mode);
         Assert.Equal(18, workflow.Execution.MaxAutomaticTurns);
         Assert.Equal("final", workflow.Execution.CompletionSummaryLabel);
         Assert.Contains(workflow.StartInputs, static input => input.Key == "opening_topic");
-        var kant = Assert.Single(workflow.Agents, static agent => agent.Id == "kant");
-        var nietzsche = Assert.Single(workflow.Agents, static agent => agent.Id == "nietzsche");
-        Assert.Equal("Immanuel Kant", kant.SavedAgentTemplate!.SavedAgentName);
-        Assert.Equal("Friedrich Nietzsche", nietzsche.SavedAgentTemplate!.SavedAgentName);
-        Assert.NotNull(kant.DraftOverrides.AppendedInstructions);
-        Assert.NotNull(nietzsche.DraftOverrides.AppendedInstructions);
-        Assert.Contains("Workflow mode:", kant.DraftOverrides.AppendedInstructions, StringComparison.Ordinal);
-        Assert.Contains("Workflow mode:", nietzsche.DraftOverrides.AppendedInstructions, StringComparison.Ordinal);
+        var debaterA = Assert.Single(workflow.Agents, static agent => agent.Id == "debater_a");
+        var debaterB = Assert.Single(workflow.Agents, static agent => agent.Id == "debater_b");
+        Assert.Equal("Immanuel Kant", debaterA.SavedAgentTemplate!.SavedAgentName);
+        Assert.Equal("Friedrich Nietzsche", debaterB.SavedAgentTemplate!.SavedAgentName);
+        Assert.NotNull(debaterA.DraftOverrides.AppendedInstructions);
+        Assert.NotNull(debaterB.DraftOverrides.AppendedInstructions);
+        Assert.Contains("Workflow mode:", debaterA.DraftOverrides.AppendedInstructions, StringComparison.Ordinal);
+        Assert.Contains("Workflow mode:", debaterB.DraftOverrides.AppendedInstructions, StringComparison.Ordinal);
         Assert.Single(workflow.Handoffs, static handoff =>
-            handoff.FromAgentId == "kant" &&
+            handoff.FromAgentId == "debater_a" &&
             handoff.ToAgentId == "host");
         Assert.Single(workflow.Handoffs, static handoff =>
-            handoff.FromAgentId == "nietzsche" &&
+            handoff.FromAgentId == "debater_b" &&
             handoff.ToAgentId == "host");
     }
 
@@ -76,7 +76,7 @@ public sealed class WorkflowDefinitionCompilerTests
     }
 
     [Fact]
-    public async Task CompileAsync_CompilesDefaultGroupChatStarterWithCustomManager()
+    public async Task CompileAsync_CompilesDefaultGroupChatStarterWithProgrammableManager()
     {
         var compiler = new WorkflowDefinitionCompiler();
 
@@ -85,9 +85,58 @@ public sealed class WorkflowDefinitionCompilerTests
 
         Assert.Equal(WorkflowDefinitionKinds.GroupChat, result.Kind);
         Assert.Equal("philosopher-battle-group-chat", result.WorkflowId);
-        Assert.Equal(GroupChatWorkflowManagerKind.Custom, workflow.Manager.Kind);
-        Assert.Equal("philosopher-debate", workflow.Manager.ImplementationKey);
-        Assert.Equal(["host", "kant", "nietzsche", "judge"], workflow.ParticipantAgentIds);
+        Assert.Equal(GroupChatWorkflowManagerKind.Programmable, workflow.Manager.Kind);
+        Assert.NotNull(workflow.Manager.Program);
+        Assert.Equal("PrefixCycleSuffix", workflow.Manager.ProgramDisplayName);
+        Assert.Null(workflow.Manager.ImplementationKey);
+        Assert.Equal(["host", "debater_a", "debater_b", "judge"], workflow.ParticipantAgentIds);
+        var host = workflow.Agents.Single(agent => agent.Id == "host");
+        Assert.Contains("{{agent:debater_a.displayName}}", host.AgentDraft!.Content, StringComparison.Ordinal);
+        Assert.Contains("{{agent:debater_b.displayName}}", host.AgentDraft.Content, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task CompileAsync_CompilesGroupChatWithInlineProgrammableManager()
+    {
+        var compiler = new WorkflowDefinitionCompiler();
+        var sourceCode =
+            """
+            var workflow = WorkflowDefinitionBuilder
+                .New("demo-group-chat", "Demo Group Chat")
+                .Agent("host", agent => agent
+                    .Role("Host")
+                    .UseDraft(
+                        AgentDefinitionBuilder
+                            .New("Demo Host", "host")
+                            .WithInstructions("Host prompt")
+                            .BuildDescription()))
+                .Agent("guest", agent => agent
+                    .Role("Guest")
+                    .UseDraft(
+                        AgentDefinitionBuilder
+                            .New("Demo Guest", "guest")
+                            .WithInstructions("Guest prompt")
+                            .BuildDescription()))
+                .UseGroupChat(groupChat => groupChat
+                    .Participants("host", "guest")
+                    .UseProgrammableManager(manager => manager
+                        .MaximumIterations(4)
+                        .SelectNextSpeaker(ctx => ctx.AssistantMessageIndex % 2 == 0 ? "host" : "guest")))
+                .Build();
+
+            workflow
+            """;
+
+        var result = await compiler.CompileAsync(sourceCode);
+        var workflow = Assert.IsType<GroupChatWorkflowDefinition>(result.Workflow);
+
+        Assert.Equal(GroupChatWorkflowManagerKind.Programmable, workflow.Manager.Kind);
+        Assert.NotNull(workflow.Manager.Program);
+        Assert.Null(workflow.Manager.ProgramDisplayName);
+        Assert.Equal("host", workflow.Manager.Program!.SelectNextSpeaker(
+            new GroupChatManagerProgramContext(["host", "guest"], [], 0, 4)));
+        Assert.Equal("guest", workflow.Manager.Program.SelectNextSpeaker(
+            new GroupChatManagerProgramContext(["host", "guest"], ["host"], 1, 4)));
     }
 
     [Fact]
@@ -172,16 +221,16 @@ public sealed class WorkflowDefinitionCompilerTests
         var workflow = Assert.IsType<GroupChatWorkflowDefinition>(result.Workflow);
 
         var host = workflow.Agents.Single(agent => agent.Id == "host");
-        var kant = workflow.Agents.Single(agent => agent.Id == "kant");
-        var nietzsche = workflow.Agents.Single(agent => agent.Id == "nietzsche");
+        var debaterA = workflow.Agents.Single(agent => agent.Id == "debater_a");
+        var debaterB = workflow.Agents.Single(agent => agent.Id == "debater_b");
         var judge = workflow.Agents.Single(agent => agent.Id == "judge");
 
         Assert.Equal("H", host.DraftOverrides.AvatarText);
-        Assert.Equal("K", kant.DraftOverrides.AvatarText);
-        Assert.Equal("N", nietzsche.DraftOverrides.AvatarText);
+        Assert.Equal("K", debaterA.DraftOverrides.AvatarText);
+        Assert.Equal("N", debaterB.DraftOverrides.AvatarText);
         Assert.Equal("J", judge.DraftOverrides.AvatarText);
-        Assert.Equal("Immanuel Kant", kant.SavedAgentTemplate!.SavedAgentName);
-        Assert.Equal("Friedrich Nietzsche", nietzsche.SavedAgentTemplate!.SavedAgentName);
+        Assert.Equal("Immanuel Kant", debaterA.SavedAgentTemplate!.SavedAgentName);
+        Assert.Equal("Friedrich Nietzsche", debaterB.SavedAgentTemplate!.SavedAgentName);
     }
 
     [Fact]

@@ -256,7 +256,7 @@ public static class WorkflowCodeTemplates
         """"
         var workflow = WorkflowDefinitionBuilder
             .New("philosopher-battle-group-chat", "Philosopher Battle Group Chat")
-            .Description("Autonomous philosophical debate coordinated by a custom group chat manager with a host-led opening and a judge-led closing verdict.")
+            .Description("Autonomous philosophical debate coordinated by a workflow-defined group chat program with a host-led opening and a judge-led closing verdict.")
             .RunAutonomously(maxAutomaticTurns: 10, completionPhase: "complete", completionSummaryLabel: "final")
             .RequireText("opening_topic", "Opening Topic", input => input
                 .Description("The central philosophical question for the debate."))
@@ -282,13 +282,13 @@ public static class WorkflowCodeTemplates
                             Before speaking, read the workflow parameters opening_topic and battle_language with session_get_parameter.
                             Open the debate in battle_language.
                             Frame the topic as a sharp conflict in 2-4 sentences.
-                            End by explicitly inviting Kant and Nietzsche to clash.
+                            End by explicitly inviting {{agent:debater_a.displayName}} and {{agent:debater_b.displayName}} to clash.
 
                             You speak only in the opening turn. Do not summarize the debate.
                             """)
                         .AutoSelectTools(0)
                         .BuildDescription()))
-            .Agent("kant", agent => agent
+            .Agent("debater_a", agent => agent
                 .FromSavedAgent("Immanuel Kant")
                 .Role("Kantian philosopher")
                 .OverrideAvatarText("K")
@@ -298,7 +298,7 @@ public static class WorkflowCodeTemplates
                     - Speak to the other participants, not to the user.
                     - Do not ask the user for input or summarize the whole debate.
                     """))
-            .Agent("nietzsche", agent => agent
+            .Agent("debater_b", agent => agent
                 .FromSavedAgent("Friedrich Nietzsche")
                 .Role("Nietzschean philosopher")
                 .OverrideAvatarText("N")
@@ -335,8 +335,13 @@ public static class WorkflowCodeTemplates
                         .AutoSelectTools(0)
                         .BuildDescription()))
             .UseGroupChat(groupChat => groupChat
-                .Participants("host", "kant", "nietzsche", "judge")
-                .UseCustomManager("philosopher-debate", maximumIterations: 10))
+                .Participants("host", "debater_a", "debater_b", "judge")
+                .UseProgrammableManager(manager => manager
+                    .MaximumIterations(10)
+                    .Program(GroupChatManagerPrograms.PrefixCycleSuffix(
+                        prefix: new[] { "host" },
+                        cycle: new[] { "debater_a", "debater_b" },
+                        suffix: new[] { "debater_a", "debater_b", "judge" }))))
             .Build();
 
         workflow
@@ -345,7 +350,7 @@ public static class WorkflowCodeTemplates
     public static string PhilosopherBattleHandoff { get; } =
         """"
         var workflow = WorkflowDefinitionBuilder
-            .New("philosopher-battle-handoff", "Philosopher Battle: Kant vs Nietzsche")
+            .New("philosopher-battle-handoff", "Philosopher Battle Handoff")
             .Description("Autonomous multi-topic philosophical battle moderated by a host. The user provides an opening topic, the philosophers respond to each other, the host changes topic when energy drops, and the host closes with a detailed quoted verdict.")
             .RunAutonomously(maxAutomaticTurns: 18, completionPhase: "complete", completionSummaryLabel: "final")
             .RequireText("opening_topic", "Opening Topic", input => input
@@ -376,7 +381,7 @@ public static class WorkflowCodeTemplates
                                 "session_save_summary",
                                 "session_set_phase"))
                         .WithInstructions("""
-                            You are the host and referee of a philosophical battle between Kant and Nietzsche.
+                            You are the host and referee of a philosophical battle between {{agent:debater_a.displayName}} and {{agent:debater_b.displayName}}.
                             You are not a passive moderator. You are responsible for pacing, topic selection, escalation, and the final verdict.
 
                             Required workflow inputs:
@@ -421,38 +426,38 @@ public static class WorkflowCodeTemplates
                     .Purpose("Read workflow inputs, inspect transcript state, track topic progression, and persist the final verdict.")
                     .Availability(AgentWorkflowCapabilityAvailability.Available)
                     .AvailabilityNote("A generic task session MCP server is available for shared workflow state.")))
-            .Agent("kant", agent => agent
+            .Agent("debater_a", agent => agent
                 .FromSavedAgent("Immanuel Kant")
                 .Role("Kantian philosopher")
                 .MaxTurnsPerSession(6)
                 .MinAssistantTurnsBetweenTurns(2)
                 .AppendInstructions("""
                     Workflow mode:
-                    - This is an autonomous debate against Nietzsche moderated by the host.
-                    - Speak to Nietzsche or the host, not to the user.
+                    - This is an autonomous debate against {{agent:debater_b.displayName}} moderated by {{agent:host.displayName}}.
+                    - Speak to {{agent:debater_b.displayName}} or {{agent:host.displayName}}, not to the user.
                     - Do not ask the user for input or summarize the whole debate.
                     - If the topic is exhausted, say so briefly and push for a sharper reformulation.
                     """))
-            .Agent("nietzsche", agent => agent
+            .Agent("debater_b", agent => agent
                 .FromSavedAgent("Friedrich Nietzsche")
                 .Role("Nietzschean philosopher")
                 .MaxTurnsPerSession(6)
                 .MinAssistantTurnsBetweenTurns(2)
                 .AppendInstructions("""
                     Workflow mode:
-                    - This is an autonomous debate against Kant moderated by the host.
-                    - Speak to Kant or the host, not to the user.
+                    - This is an autonomous debate against {{agent:debater_a.displayName}} moderated by {{agent:host.displayName}}.
+                    - Speak to {{agent:debater_a.displayName}} or {{agent:host.displayName}}, not to the user.
                     - Do not ask the user for input or summarize the whole debate.
                     - If the topic is exhausted, say so brutally and force a sharper reformulation.
                     """))
             .UseHandoff(handoff => handoff
                 .StartWith("host")
-                .Handoff("host", "kant", "open with Kant")
-                .Handoff("host", "nietzsche", "open with Nietzsche")
-                .Handoff("kant", "nietzsche", "direct rebuttal")
-                .Handoff("nietzsche", "kant", "direct rebuttal")
-                .Handoff("kant", "host", "host intervention or conclusion")
-                .Handoff("nietzsche", "host", "host intervention or conclusion"))
+                .Handoff("host", "debater_a", "open with debater A")
+                .Handoff("host", "debater_b", "open with debater B")
+                .Handoff("debater_a", "debater_b", "direct rebuttal")
+                .Handoff("debater_b", "debater_a", "direct rebuttal")
+                .Handoff("debater_a", "host", "host intervention or conclusion")
+                .Handoff("debater_b", "host", "host intervention or conclusion"))
             .Build();
 
         workflow

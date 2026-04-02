@@ -200,6 +200,8 @@ public sealed class WorkflowDefinitionBuilder
                 "Workflow can only use one orchestration kind.");
         }
 
+        WorkflowInstructionTemplateResolver.ValidateAgentReferences(_agents);
+
         if (_handoff is not null)
         {
             return BuildHandoffWorkflow(_handoff);
@@ -280,12 +282,7 @@ public sealed class WorkflowDefinitionBuilder
                 $"Group chat participant '{missingParticipantAgentId}' is not defined as an agent.");
         }
 
-        if (groupChat.Manager.Kind == GroupChatWorkflowManagerKind.Custom &&
-            string.IsNullOrWhiteSpace(groupChat.Manager.ImplementationKey))
-        {
-            throw new InvalidOperationException(
-                "Custom group chat managers require an implementation key.");
-        }
+        GroupChatWorkflowManagerValidator.Validate(groupChat.Manager, participantAgentIds);
 
         return new GroupChatWorkflowDefinition
         {
@@ -462,7 +459,9 @@ public sealed class WorkflowDefinitionBuilder
         {
             Kind = manager.Kind,
             MaximumIterations = manager.MaximumIterations,
-            ImplementationKey = manager.ImplementationKey
+            ImplementationKey = manager.ImplementationKey,
+            Program = manager.Program,
+            ProgramDisplayName = manager.ProgramDisplayName ?? manager.Program?.DisplayName
         };
 
     private static ConcurrentWorkflowAggregationDefinition CloneAggregation(ConcurrentWorkflowAggregationDefinition aggregation) =>

@@ -47,6 +47,11 @@ public sealed class GroupChatRuntimeWorkflowBuilder(
                 agents,
                 workflow.Manager.MaximumIterations,
                 context.AssistantSpeakerIds.Count),
+            GroupChatWorkflowManagerKind.Programmable => new ConfiguredProgrammableGroupChatManager(
+                agents,
+                workflow.ParticipantAgentIds,
+                workflow.Manager,
+                context.AssistantSpeakerIds),
             GroupChatWorkflowManagerKind.Custom => _managerRegistry.Create(
                 workflow.Manager.ImplementationKey
                 ?? throw new InvalidOperationException("Custom group chat managers require an implementation key."),

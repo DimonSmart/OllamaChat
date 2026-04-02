@@ -102,8 +102,14 @@ internal static class WorkflowSourceCodeSyntaxHighlighter
                     break;
 
                 case "UseCustomManager":
+                case "UseProgrammableManager":
+                case "SelectNextSpeaker":
+                case "Program":
                     AddTokenClass(tokenClasses, method, ManagerConfigMethodClass);
-                    AddStringLiteralArgument(invocation, 0, ManagerIdClass, tokenClasses);
+                    if (method.ValueText == "UseCustomManager")
+                    {
+                        AddStringLiteralArgument(invocation, 0, ManagerIdClass, tokenClasses);
+                    }
                     break;
 
                 case "UseRoundRobinManager":

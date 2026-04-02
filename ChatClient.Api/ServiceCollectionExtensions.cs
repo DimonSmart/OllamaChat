@@ -45,7 +45,6 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<IWorkflowDefinitionCompiler, WorkflowDefinitionCompiler>();
         services.AddSingleton<IWorkflowAgentDraftMaterializer, WorkflowAgentDraftMaterializer>();
         services.AddSingleton<GroupChatManagerRegistry>();
-        services.AddSingleton<IGroupChatManagerFactory, PhilosopherDebateGroupChatManagerFactory>();
         services.AddSingleton<IOrchestrationRuntimeWorkflowBuilder, HandoffRuntimeWorkflowBuilder>();
         services.AddSingleton<IOrchestrationRuntimeWorkflowBuilder, GroupChatRuntimeWorkflowBuilder>();
         services.AddSingleton<IOrchestrationRuntimeWorkflowBuilder, SequentialRuntimeWorkflowBuilder>();

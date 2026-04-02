@@ -79,7 +79,12 @@ public sealed class WorkflowSourceCodeSyntaxHighlighterTests
                     .FromSavedAgent("Immanuel Kant"))
                 .UseGroupChat(groupChat => groupChat
                     .Participants("host", "kant")
-                    .UseCustomManager("philosopher-debate", maximumIterations: 10))
+                    .UseProgrammableManager(manager => manager
+                        .MaximumIterations(10)
+                        .Program(GroupChatManagerPrograms.PrefixCycleSuffix(
+                            prefix: new[] { "host" },
+                            cycle: new[] { "kant" },
+                            suffix: new[] { "kant" }))))
                 .UseHandoff(handoff => handoff
                     .StartWith("host")
                     .Handoff("host", "kant", "open with Kant")
@@ -97,12 +102,12 @@ public sealed class WorkflowSourceCodeSyntaxHighlighterTests
         Assert.Contains("<span class=\"tok-agent-reference\">StartWith</span>", html, StringComparison.Ordinal);
         Assert.Contains("<span class=\"tok-agent-reference\">Handoff</span>", html, StringComparison.Ordinal);
         Assert.Contains("<span class=\"tok-agent-reference\">Fallback</span>", html, StringComparison.Ordinal);
-        Assert.Contains("<span class=\"tok-manager-config\">UseCustomManager</span>", html, StringComparison.Ordinal);
+        Assert.Contains("<span class=\"tok-manager-config\">UseProgrammableManager</span>", html, StringComparison.Ordinal);
+        Assert.Contains("<span class=\"tok-manager-config\">Program</span>", html, StringComparison.Ordinal);
         Assert.Contains("<span class=\"tok-agent-id\">&quot;host&quot;</span>", html, StringComparison.Ordinal);
         Assert.Contains("<span class=\"tok-agent-id\">&quot;kant&quot;</span>", html, StringComparison.Ordinal);
         Assert.Contains("<span class=\"tok-agent-display-name\">&quot;Debate Host&quot;</span>", html, StringComparison.Ordinal);
         Assert.Contains("<span class=\"tok-agent-display-name\">&quot;Immanuel Kant&quot;</span>", html, StringComparison.Ordinal);
-        Assert.Contains("<span class=\"tok-manager-id\">&quot;philosopher-debate&quot;</span>", html, StringComparison.Ordinal);
     }
 
     [Fact]

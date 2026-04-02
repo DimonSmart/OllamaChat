@@ -1,6 +1,4 @@
 using ChatClient.Api.AgentWorkflows;
-using ChatClient.Api.AgentWorkflows.GroupChat;
-
 namespace ChatClient.Api.Client.Services.Agentic;
 
 internal static class WorkflowSpeakerResolver
@@ -57,13 +55,11 @@ internal static class WorkflowSpeakerResolver
 
         return workflow.Manager.Kind switch
         {
-            GroupChatWorkflowManagerKind.RoundRobin =>
-                workflow.ParticipantAgentIds[assistantMessageIndex % workflow.ParticipantAgentIds.Count],
-            GroupChatWorkflowManagerKind.Custom when string.Equals(
-                workflow.Manager.ImplementationKey,
-                "philosopher-debate",
-                StringComparison.OrdinalIgnoreCase) =>
-                ResolvePhilosopherDebateSpeakerId(workflow, assistantMessageIndex),
+            GroupChatWorkflowManagerKind.RoundRobin or GroupChatWorkflowManagerKind.Programmable =>
+                GroupChatManagerProgramResolver.ResolveSpeakerId(
+                    workflow.Manager,
+                    workflow.ParticipantAgentIds,
+                    assistantMessageIndex),
             _ => null
         };
     }
@@ -80,17 +76,5 @@ internal static class WorkflowSpeakerResolver
         return assistantMessageIndex < workflow.AgentOrder.Count
             ? workflow.AgentOrder[assistantMessageIndex]
             : workflow.AgentOrder[^1];
-    }
-
-    private static string? ResolvePhilosopherDebateSpeakerId(
-        GroupChatWorkflowDefinition workflow,
-        int assistantMessageIndex)
-    {
-        var candidate = PhilosopherDebateTurnSchedule.ResolveSpeakerId(
-            assistantMessageIndex,
-            workflow.Manager.MaximumIterations);
-
-        return workflow.ParticipantAgentIds.FirstOrDefault(participantId =>
-            string.Equals(participantId, candidate, StringComparison.OrdinalIgnoreCase));
     }
 }
