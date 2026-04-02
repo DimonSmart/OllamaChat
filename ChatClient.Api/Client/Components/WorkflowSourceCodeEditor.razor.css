@@ -1,0 +1,93 @@
+.workflow-source-code-editor {
+    --workflow-source-code-editor-padding-y: 0.875rem;
+    --workflow-source-code-editor-padding-x: 1rem;
+    --workflow-source-code-editor-line-height: 1.5;
+    display: grid;
+    width: 100%;
+    border: 1px solid var(--mud-palette-lines-default);
+    border-radius: var(--mud-default-borderradius);
+    background: var(--mud-palette-surface);
+}
+
+.workflow-source-code-editor:focus-within {
+    border-color: var(--mud-palette-primary);
+    box-shadow: 0 0 0 1px var(--mud-palette-primary);
+}
+
+.workflow-source-code-editor--disabled {
+    background: var(--mud-palette-background-gray);
+}
+
+.workflow-source-code-editor__highlight,
+.workflow-source-code-editor__input {
+    grid-area: 1 / 1;
+    margin: 0;
+    padding: var(--workflow-source-code-editor-padding-y) var(--workflow-source-code-editor-padding-x);
+    min-height: calc(
+        var(--workflow-source-code-editor-min-lines) * var(--workflow-source-code-editor-line-height) * 1em
+        + (var(--workflow-source-code-editor-padding-y) * 2)
+    );
+    width: 100%;
+    box-sizing: border-box;
+    font-family: Consolas, "Courier New", monospace;
+    font-size: 0.875rem;
+    line-height: var(--workflow-source-code-editor-line-height);
+    white-space: pre-wrap;
+    word-break: break-word;
+    tab-size: 4;
+}
+
+.workflow-source-code-editor__highlight {
+    color: var(--mud-palette-text-primary);
+    pointer-events: none;
+    overflow: hidden;
+}
+
+.workflow-source-code-editor__input {
+    border: none;
+    outline: none;
+    resize: vertical;
+    overflow: auto;
+    background: transparent;
+    color: transparent;
+    caret-color: var(--mud-palette-text-primary);
+    -webkit-text-fill-color: transparent;
+}
+
+.workflow-source-code-editor__input::selection {
+    background: rgba(127, 127, 127, 0.22);
+}
+
+.workflow-source-code-editor__input:disabled {
+    cursor: not-allowed;
+}
+
+.workflow-source-code-editor__highlight ::deep .tok-keyword {
+    color: var(--mud-palette-info);
+}
+
+.workflow-source-code-editor__highlight ::deep .tok-string {
+    color: var(--mud-palette-warning);
+}
+
+.workflow-source-code-editor__highlight ::deep .tok-number {
+    color: var(--mud-palette-success);
+}
+
+.workflow-source-code-editor__highlight ::deep .tok-comment {
+    color: var(--mud-palette-text-secondary);
+}
+
+.workflow-source-code-editor__highlight ::deep .tok-identifier {
+    color: var(--mud-palette-primary);
+}
+
+.workflow-source-code-editor__highlight ::deep .tok-punctuation {
+    color: var(--mud-palette-text-primary);
+}
+
+.workflow-source-code-editor__highlight ::deep .tok-error {
+    color: var(--mud-palette-error);
+    text-decoration: underline;
+    text-decoration-thickness: 1px;
+}

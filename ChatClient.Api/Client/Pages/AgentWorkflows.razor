@@ -100,17 +100,13 @@
                                 </MudStack>
 
                                 <MudCollapse Expanded="@isWorkflowSourceExpanded">
-                                    <MudTextField T="string"
-                                                  Label="Workflow Source Code"
-                                                  Value="workflowSourceCode"
-                                                  ValueChanged="OnWorkflowSourceChanged"
-                                                  Variant="Variant.Outlined"
-                                                  Margin="Margin.Dense"
-                                                  Lines="28"
-                                                  AutoGrow="true"
-                                                  Immediate="true"
-                                                  Disabled="@workflowStarted"
-                                                  Class="handoff-workflow-source-editor" />
+                                    <MudStack Spacing="1">
+                                        <MudText Typo="Typo.caption" Class="mud-text-secondary">Workflow Source Code</MudText>
+                                        <WorkflowSourceCodeEditor Value="@workflowSourceCode"
+                                                                  ValueChanged="OnWorkflowSourceChanged"
+                                                                  Disabled="@workflowStarted"
+                                                                  MinLines="28" />
+                                    </MudStack>
                                 </MudCollapse>
                             </MudStack>
                         </MudStack>

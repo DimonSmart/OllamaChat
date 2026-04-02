@@ -148,53 +148,45 @@
         <MudText Typo="Typo.h6">@(editingWorkflowIsNew ? "Create Workflow" : "Edit Workflow")</MudText>
     </TitleContent>
     <DialogContent>
-        <MudForm @ref="editWorkflowForm">
-            <MudStack Spacing="2">
-                <MudText Typo="Typo.body2" Class="mud-text-secondary">
-                    Workflow name, description, kind, and id are derived from the compiled source code. Update the scaffold before saving.
-                </MudText>
+        <MudStack Spacing="2">
+            <MudText Typo="Typo.body2" Class="mud-text-secondary">
+                Workflow name, description, kind, and id are derived from the compiled source code. Update the scaffold before saving.
+            </MudText>
 
-                @if (!string.IsNullOrWhiteSpace(editWorkflowCompileError))
-                {
-                    <MudAlert Severity="Severity.Error" Dense="true">
-                        @editWorkflowCompileError
-                    </MudAlert>
-                }
+            @if (!string.IsNullOrWhiteSpace(editWorkflowCompileError))
+            {
+                <MudAlert Severity="Severity.Error" Dense="true">
+                    @editWorkflowCompileError
+                </MudAlert>
+            }
 
-                @if (compiledEditingWorkflow is not null)
-                {
-                    <MudPaper Class="pa-3" Outlined="true">
-                        <MudStack Spacing="1">
-                            <MudStack Row="true" Spacing="1" AlignItems="AlignItems.Center">
-                                <MudText Typo="Typo.subtitle2">@compiledEditingWorkflow.DisplayName</MudText>
-                                <MudChip T="string"
-                                         Size="Size.Small"
-                                         Color="@GetWorkflowKindColor(compiledEditingWorkflow.Kind)"
-                                         Variant="Variant.Outlined">
-                                    @compiledEditingWorkflow.Kind
-                                </MudChip>
-                            </MudStack>
-                            <MudText Typo="Typo.caption" Class="mud-text-secondary">Workflow Id: @compiledEditingWorkflow.WorkflowId</MudText>
-                            @if (!string.IsNullOrWhiteSpace(compiledEditingWorkflow.Description))
-                            {
-                                <MudText Typo="Typo.body2" Class="mud-text-secondary">@compiledEditingWorkflow.Description</MudText>
-                            }
+            @if (compiledEditingWorkflow is not null)
+            {
+                <MudPaper Class="pa-3" Outlined="true">
+                    <MudStack Spacing="1">
+                        <MudStack Row="true" Spacing="1" AlignItems="AlignItems.Center">
+                            <MudText Typo="Typo.subtitle2">@compiledEditingWorkflow.DisplayName</MudText>
+                            <MudChip T="string"
+                                     Size="Size.Small"
+                                     Color="@GetWorkflowKindColor(compiledEditingWorkflow.Kind)"
+                                     Variant="Variant.Outlined">
+                                @compiledEditingWorkflow.Kind
+                            </MudChip>
                         </MudStack>
-                    </MudPaper>
-                }
+                        <MudText Typo="Typo.caption" Class="mud-text-secondary">Workflow Id: @compiledEditingWorkflow.WorkflowId</MudText>
+                        @if (!string.IsNullOrWhiteSpace(compiledEditingWorkflow.Description))
+                        {
+                            <MudText Typo="Typo.body2" Class="mud-text-secondary">@compiledEditingWorkflow.Description</MudText>
+                        }
+                    </MudStack>
+                </MudPaper>
+            }
 
-                <MudTextField T="string"
-                              Label="Workflow Source Code"
-                              Value="editingWorkflowSource"
-                              ValueChanged="OnEditingWorkflowSourceChanged"
-                              Variant="Variant.Outlined"
-                              Margin="Margin.Dense"
-                              Lines="28"
-                              AutoGrow="true"
-                              Immediate="true"
-                              Required="true" />
-            </MudStack>
-        </MudForm>
+            <MudText Typo="Typo.caption" Class="mud-text-secondary">Workflow Source Code</MudText>
+            <WorkflowSourceCodeEditor Value="@editingWorkflowSource"
+                                      ValueChanged="OnEditingWorkflowSourceChanged"
+                                      MinLines="28" />
+        </MudStack>
     </DialogContent>
     <DialogActions>
         <MudButton OnClick="CancelEdit" Size="Size.Medium">Cancel</MudButton>
@@ -235,7 +227,6 @@
     private SavedWorkflowDefinition editingWorkflow = new();
     private SavedWorkflowDefinition? workflowToDelete;
     private CompiledWorkflowDefinition? compiledEditingWorkflow;
-    private MudForm? editWorkflowForm;
     private bool loading = true;
     private bool showDeleteDialog;
     private bool showEditWorkflowDialog;
@@ -302,7 +293,6 @@
         editWorkflowCompileError = null;
         compiledEditingWorkflow = null;
         showEditWorkflowDialog = true;
-        editWorkflowForm?.ResetValidation();
         await TryCompileEditingWorkflowAsync();
     }
 
@@ -314,7 +304,6 @@
         editWorkflowCompileError = null;
         compiledEditingWorkflow = null;
         showEditWorkflowDialog = true;
-        editWorkflowForm?.ResetValidation();
         await TryCompileEditingWorkflowAsync();
     }
 
@@ -371,6 +360,11 @@
 
     private async Task ValidateWorkflowAsync()
     {
+        if (!EnsureEditingWorkflowSourceProvided())
+        {
+            return;
+        }
+
         var compiled = await TryCompileEditingWorkflowAsync();
         if (compiled is not null)
         {
@@ -380,13 +374,9 @@
 
     private async Task SaveWorkflowAsync()
     {
-        if (editWorkflowForm is not null)
+        if (!EnsureEditingWorkflowSourceProvided(showSnackbar: true))
         {
-            await editWorkflowForm.Validate();
-            if (!editWorkflowForm.IsValid)
-            {
-                return;
-            }
+            return;
         }
 
         var compiled = await TryCompileEditingWorkflowAsync();
@@ -447,6 +437,24 @@
         }
 
         return null;
+    }
+
+    private bool EnsureEditingWorkflowSourceProvided(bool showSnackbar = false)
+    {
+        if (!string.IsNullOrWhiteSpace(editingWorkflowSource))
+        {
+            return true;
+        }
+
+        editWorkflowCompileError = "Workflow source code is required.";
+        compiledEditingWorkflow = null;
+
+        if (showSnackbar)
+        {
+            Snackbar.Add(editWorkflowCompileError, Severity.Error);
+        }
+
+        return false;
     }
 
     private static SavedWorkflowDefinition CloneWorkflow(SavedWorkflowDefinition workflow)

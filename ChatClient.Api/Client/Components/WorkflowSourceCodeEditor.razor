@@ -1,0 +1,45 @@
+@using Microsoft.AspNetCore.Components.Web
+
+<div class="@BuildRootCssClass()"
+     style="@($"--workflow-source-code-editor-min-lines:{EffectiveMinLines};")">
+    <pre class="workflow-source-code-editor__highlight"
+         aria-hidden="true">@((MarkupString)WorkflowSourceCodeSyntaxHighlighter.ToHighlightedHtml(CurrentValue))</pre>
+
+    <textarea class="workflow-source-code-editor__input"
+              aria-label="Workflow source code"
+              autocapitalize="off"
+              autocomplete="off"
+              autocorrect="off"
+              disabled="@Disabled"
+              spellcheck="false"
+              value="@CurrentValue"
+              @oninput="OnInputAsync"></textarea>
+</div>
+
+@code {
+    [Parameter]
+    public string Value { get; set; } = string.Empty;
+
+    [Parameter]
+    public EventCallback<string> ValueChanged { get; set; }
+
+    [Parameter]
+    public bool Disabled { get; set; }
+
+    [Parameter]
+    public int MinLines { get; set; } = 28;
+
+    private string CurrentValue => Value ?? string.Empty;
+
+    private int EffectiveMinLines => Math.Max(1, MinLines);
+
+    private string BuildRootCssClass() =>
+        Disabled
+            ? "workflow-source-code-editor workflow-source-code-editor--disabled"
+            : "workflow-source-code-editor";
+
+    private Task OnInputAsync(ChangeEventArgs args)
+    {
+        return ValueChanged.InvokeAsync(args.Value?.ToString() ?? string.Empty);
+    }
+}

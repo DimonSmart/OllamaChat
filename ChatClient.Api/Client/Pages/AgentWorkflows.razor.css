@@ -40,10 +40,6 @@
     flex-wrap: wrap;
 }
 
-.handoff-workflow-source-editor {
-    width: 100%;
-}
-
 .workflow-load-list {
     display: flex;
     flex-direction: column;
