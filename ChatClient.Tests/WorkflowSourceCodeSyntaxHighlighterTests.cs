@@ -63,4 +63,68 @@ public sealed class WorkflowSourceCodeSyntaxHighlighterTests
 
         Assert.Contains("tok-error", html, StringComparison.Ordinal);
     }
+
+    [Fact]
+    public void ToHighlightedHtml_HighlightsAgentDslMethodsAndNames()
+    {
+        const string source = """
+            var workflow = WorkflowDefinitionBuilder
+                .New("philosopher-battle-group-chat", "Philosopher Battle Group Chat")
+                .Agent("host", agent => agent
+                    .UseDraft(
+                        AgentDefinitionBuilder
+                            .New("Debate Host", "host")
+                            .BuildDescription()))
+                .AgentFromSaved("Immanuel Kant", agent => agent
+                    .Id("kant"))
+                .UseGroupChat(groupChat => groupChat
+                    .Participants("host", "kant")
+                    .UseCustomManager("philosopher-debate", maximumIterations: 10))
+                .UseHandoff(handoff => handoff
+                    .StartWith("host")
+                    .Handoff("host", "kant", "open with Kant")
+                    .Fallback("kant", "host"))
+                .Build();
+            """;
+
+        var html = WorkflowSourceCodeSyntaxHighlighter.ToHighlightedHtml(source);
+
+        Assert.Contains("<span class=\"tok-agent-registration\">Agent</span>", html, StringComparison.Ordinal);
+        Assert.Contains("<span class=\"tok-agent-registration\">AgentFromSaved</span>", html, StringComparison.Ordinal);
+        Assert.Contains("<span class=\"tok-agent-registration\">Id</span>", html, StringComparison.Ordinal);
+        Assert.Contains("<span class=\"tok-agent-factory\">UseDraft</span>", html, StringComparison.Ordinal);
+        Assert.Contains("<span class=\"tok-agent-factory\">New</span>", html, StringComparison.Ordinal);
+        Assert.Contains("<span class=\"tok-agent-reference\">Participants</span>", html, StringComparison.Ordinal);
+        Assert.Contains("<span class=\"tok-agent-reference\">StartWith</span>", html, StringComparison.Ordinal);
+        Assert.Contains("<span class=\"tok-agent-reference\">Handoff</span>", html, StringComparison.Ordinal);
+        Assert.Contains("<span class=\"tok-agent-reference\">Fallback</span>", html, StringComparison.Ordinal);
+        Assert.Contains("<span class=\"tok-manager-config\">UseCustomManager</span>", html, StringComparison.Ordinal);
+        Assert.Contains("<span class=\"tok-agent-id\">&quot;host&quot;</span>", html, StringComparison.Ordinal);
+        Assert.Contains("<span class=\"tok-agent-id\">&quot;kant&quot;</span>", html, StringComparison.Ordinal);
+        Assert.Contains("<span class=\"tok-agent-display-name\">&quot;Debate Host&quot;</span>", html, StringComparison.Ordinal);
+        Assert.Contains("<span class=\"tok-agent-display-name\">&quot;Immanuel Kant&quot;</span>", html, StringComparison.Ordinal);
+        Assert.Contains("<span class=\"tok-manager-id\">&quot;philosopher-debate&quot;</span>", html, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void ToHighlightedHtml_LeavesWorkflowFactoryLiteralsAsRegularStrings()
+    {
+        const string source = """
+            var workflow = WorkflowDefinitionBuilder
+                .New("workflow-id", "Workflow Name")
+                .Agent("host", agent => agent
+                    .UseDraft(
+                        AgentDefinitionBuilder
+                            .New("Debate Host", "host")
+                            .BuildDescription()))
+                .Build();
+            """;
+
+        var html = WorkflowSourceCodeSyntaxHighlighter.ToHighlightedHtml(source);
+
+        Assert.Contains("<span class=\"tok-string\">&quot;workflow-id&quot;</span>", html, StringComparison.Ordinal);
+        Assert.DoesNotContain("<span class=\"tok-agent-id\">&quot;workflow-id&quot;</span>", html, StringComparison.Ordinal);
+        Assert.Contains("<span class=\"tok-agent-display-name\">&quot;Debate Host&quot;</span>", html, StringComparison.Ordinal);
+        Assert.Contains("<span class=\"tok-agent-id\">&quot;host&quot;</span>", html, StringComparison.Ordinal);
+    }
 }

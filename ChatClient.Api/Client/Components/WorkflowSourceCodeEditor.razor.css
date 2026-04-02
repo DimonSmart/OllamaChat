@@ -91,3 +91,45 @@
     text-decoration: underline;
     text-decoration-thickness: 1px;
 }
+
+.workflow-source-code-editor__highlight ::deep .tok-agent-registration {
+    color: var(--mud-palette-info);
+    font-weight: 600;
+}
+
+.workflow-source-code-editor__highlight ::deep .tok-agent-factory {
+    color: var(--mud-palette-success);
+    font-weight: 600;
+}
+
+.workflow-source-code-editor__highlight ::deep .tok-agent-reference {
+    color: var(--mud-palette-secondary);
+    font-weight: 600;
+}
+
+.workflow-source-code-editor__highlight ::deep .tok-manager-config {
+    color: var(--mud-palette-warning);
+    font-weight: 600;
+}
+
+.workflow-source-code-editor__highlight ::deep .tok-agent-id {
+    color: var(--mud-palette-secondary);
+    font-weight: 600;
+    text-decoration: underline;
+    text-decoration-style: dotted;
+    text-decoration-thickness: 1px;
+}
+
+.workflow-source-code-editor__highlight ::deep .tok-agent-display-name {
+    color: var(--mud-palette-info);
+    font-style: italic;
+    font-weight: 600;
+}
+
+.workflow-source-code-editor__highlight ::deep .tok-manager-id {
+    color: var(--mud-palette-warning);
+    font-weight: 600;
+    text-decoration: underline;
+    text-decoration-style: dotted;
+    text-decoration-thickness: 1px;
+}
