@@ -69,14 +69,9 @@ internal static class WorkflowSourceCodeSyntaxHighlighter
                     AddStringLiteralArgument(invocation, 0, AgentIdClass, tokenClasses);
                     break;
 
-                case "AgentFromSaved":
-                    AddTokenClass(tokenClasses, method, AgentRegistrationMethodClass);
+                case "FromSavedAgent":
+                    AddTokenClass(tokenClasses, method, AgentFactoryMethodClass);
                     AddStringLiteralArgument(invocation, 0, AgentDisplayNameClass, tokenClasses);
-                    break;
-
-                case "Id" when IsNestedInsideAgentRegistration(invocation):
-                    AddTokenClass(tokenClasses, method, AgentRegistrationMethodClass);
-                    AddStringLiteralArgument(invocation, 0, AgentIdClass, tokenClasses);
                     break;
 
                 case "New" when IsAgentDefinitionBuilderNew(invocation):
@@ -203,25 +198,6 @@ internal static class WorkflowSourceCodeSyntaxHighlighter
             Expression: IdentifierNameSyntax { Identifier.ValueText: "AgentDefinitionBuilder" },
             Name: SimpleNameSyntax { Identifier.ValueText: "New" }
         };
-    }
-
-    private static bool IsNestedInsideAgentRegistration(InvocationExpressionSyntax invocation)
-    {
-        return invocation
-            .Ancestors()
-            .OfType<InvocationExpressionSyntax>()
-            .Any(static ancestor =>
-            {
-                var methodToken = GetInvokedMethodIdentifier(ancestor);
-                if (methodToken is null || methodToken.Value.RawKind == 0)
-                {
-                    return false;
-                }
-
-                var method = methodToken.Value;
-                return string.Equals(method.ValueText, "Agent", StringComparison.Ordinal)
-                    || string.Equals(method.ValueText, "AgentFromSaved", StringComparison.Ordinal);
-            });
     }
 
     private static void AddStringLiteralArguments(

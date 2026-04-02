@@ -144,19 +144,6 @@ public sealed class HandoffWorkflowDefinitionBuilder
         return this;
     }
 
-    public HandoffWorkflowDefinitionBuilder AgentFromSaved(
-        string savedAgentName,
-        Action<WorkflowAgentBuilder>? configure = null)
-    {
-        var builder = new WorkflowAgentBuilder(savedAgentName)
-            .UseSavedTemplate(savedAgentName);
-        configure?.Invoke(builder);
-
-        var agent = builder.Build();
-        UpsertAgent(agent);
-        return this;
-    }
-
     public HandoffWorkflowDefinitionBuilder Handoff(string fromAgentId, string toAgentId, string label)
     {
         _handoffs.Add(new AgentWorkflowHandoffDefinition
@@ -351,7 +338,7 @@ public sealed class WorkflowStartInputBuilder
 
 public sealed class WorkflowAgentBuilder
 {
-    private string _id;
+    private readonly string _id;
     private string _role = string.Empty;
     private string _summary = string.Empty;
     private AgentDescription? _agentDraft;
@@ -367,12 +354,6 @@ public sealed class WorkflowAgentBuilder
     internal WorkflowAgentBuilder(string id)
     {
         _id = RequireValue(id, nameof(id));
-    }
-
-    public WorkflowAgentBuilder Id(string id)
-    {
-        _id = RequireValue(id, nameof(id));
-        return this;
     }
 
     public WorkflowAgentBuilder Role(string role)
@@ -394,25 +375,25 @@ public sealed class WorkflowAgentBuilder
         return this;
     }
 
-    public WorkflowAgentBuilder UseSavedTemplate(string savedAgentName)
+    public WorkflowAgentBuilder FromSavedAgent(string savedAgentName)
     {
         _savedAgentTemplateName = RequireValue(savedAgentName, nameof(savedAgentName));
         return this;
     }
 
-    public WorkflowAgentBuilder Name(string agentName)
+    public WorkflowAgentBuilder OverrideName(string agentName)
     {
         _overrideAgentName = RequireValue(agentName, nameof(agentName));
         return this;
     }
 
-    public WorkflowAgentBuilder AvatarText(string avatarText)
+    public WorkflowAgentBuilder OverrideAvatarText(string avatarText)
     {
         _overrideAvatarText = RequireValue(avatarText, nameof(avatarText));
         return this;
     }
 
-    public WorkflowAgentBuilder Instructions(string instructions)
+    public WorkflowAgentBuilder OverrideInstructions(string instructions)
     {
         _overrideInstructions = RequireValue(instructions, nameof(instructions));
         return this;
@@ -484,7 +465,7 @@ public sealed class WorkflowAgentBuilder
             !string.IsNullOrWhiteSpace(_appendedInstructions))
         {
             throw new InvalidOperationException(
-                $"Workflow agent '{_id}' cannot use both Instructions and AppendInstructions.");
+                $"Workflow agent '{_id}' cannot use both OverrideInstructions and AppendInstructions.");
         }
 
         if (string.IsNullOrWhiteSpace(_role))

@@ -107,10 +107,10 @@ var workflow = WorkflowDefinitionBuilder
         .UseDraft(...))
     .Agent("kant", agent => agent
         .Role("Kant")
-        .UseSavedTemplate("Immanuel Kant"))
+        .FromSavedAgent("Immanuel Kant"))
     .Agent("nietzsche", agent => agent
         .Role("Nietzsche")
-        .UseSavedTemplate("Friedrich Nietzsche"))
+        .FromSavedAgent("Friedrich Nietzsche"))
     .UseGroupChat(groupChat => groupChat
         .Participants("host", "kant", "nietzsche")
         .UseCustomManager("philosopher-debate", maximumIterations: 14))

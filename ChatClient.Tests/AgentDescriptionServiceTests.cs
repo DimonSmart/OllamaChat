@@ -31,6 +31,7 @@ public class AgentDescriptionServiceTests
             {
                 Id = Guid.Empty,
                 AgentName = "Browser interactor",
+                Summary = "Drives the browser tools for navigation and extraction.",
                 Content = "Use the browser tools."
             };
 
@@ -45,6 +46,7 @@ public class AgentDescriptionServiceTests
 
             Assert.NotNull(retrieved);
             Assert.Equal("Browser interactor", retrieved!.AgentName);
+            Assert.Equal("Drives the browser tools for navigation and extraction.", retrieved.Summary);
         }
         finally
         {

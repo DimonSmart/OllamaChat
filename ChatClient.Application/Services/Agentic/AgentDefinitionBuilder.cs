@@ -55,6 +55,12 @@ public sealed class AgentDefinitionBuilder
         return this;
     }
 
+    public AgentDefinitionBuilder WithSummary(string? summary)
+    {
+        _definition.Summary = summary?.Trim() ?? string.Empty;
+        return this;
+    }
+
     public AgentDefinitionBuilder Alias(string? shortName)
     {
         _definition.ShortName = string.IsNullOrWhiteSpace(shortName) ? null : shortName.Trim();

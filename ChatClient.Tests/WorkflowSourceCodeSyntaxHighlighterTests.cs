@@ -75,8 +75,8 @@ public sealed class WorkflowSourceCodeSyntaxHighlighterTests
                         AgentDefinitionBuilder
                             .New("Debate Host", "host")
                             .BuildDescription()))
-                .AgentFromSaved("Immanuel Kant", agent => agent
-                    .Id("kant"))
+                .Agent("kant", agent => agent
+                    .FromSavedAgent("Immanuel Kant"))
                 .UseGroupChat(groupChat => groupChat
                     .Participants("host", "kant")
                     .UseCustomManager("philosopher-debate", maximumIterations: 10))
@@ -90,8 +90,7 @@ public sealed class WorkflowSourceCodeSyntaxHighlighterTests
         var html = WorkflowSourceCodeSyntaxHighlighter.ToHighlightedHtml(source);
 
         Assert.Contains("<span class=\"tok-agent-registration\">Agent</span>", html, StringComparison.Ordinal);
-        Assert.Contains("<span class=\"tok-agent-registration\">AgentFromSaved</span>", html, StringComparison.Ordinal);
-        Assert.Contains("<span class=\"tok-agent-registration\">Id</span>", html, StringComparison.Ordinal);
+        Assert.Contains("<span class=\"tok-agent-factory\">FromSavedAgent</span>", html, StringComparison.Ordinal);
         Assert.Contains("<span class=\"tok-agent-factory\">UseDraft</span>", html, StringComparison.Ordinal);
         Assert.Contains("<span class=\"tok-agent-factory\">New</span>", html, StringComparison.Ordinal);
         Assert.Contains("<span class=\"tok-agent-reference\">Participants</span>", html, StringComparison.Ordinal);

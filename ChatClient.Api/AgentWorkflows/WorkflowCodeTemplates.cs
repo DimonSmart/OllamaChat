@@ -268,7 +268,7 @@ public static class WorkflowCodeTemplates
                 .DefaultValue("Name the strongest argument, the weakest move, and the unresolved tension."))
             .Agent("host", agent => agent
                 .Role("Debate host")
-                .AvatarText("H")
+                .OverrideAvatarText("H")
                 .Summary("Opens the debate by framing the topic sharply and setting the tone.")
                 .UseDraft(
                     AgentDefinitionBuilder
@@ -288,22 +288,20 @@ public static class WorkflowCodeTemplates
                             """)
                         .AutoSelectTools(0)
                         .BuildDescription()))
-            .AgentFromSaved("Immanuel Kant", agent => agent
-                .Id("kant")
+            .Agent("kant", agent => agent
+                .FromSavedAgent("Immanuel Kant")
                 .Role("Kantian philosopher")
-                .AvatarText("K")
-                .Summary("Defends duty, autonomy, universality, and moral law.")
+                .OverrideAvatarText("K")
                 .AppendInstructions("""
                     Workflow mode:
                     - This is an autonomous philosopher debate.
                     - Speak to the other participants, not to the user.
                     - Do not ask the user for input or summarize the whole debate.
                     """))
-            .AgentFromSaved("Friedrich Nietzsche", agent => agent
-                .Id("nietzsche")
+            .Agent("nietzsche", agent => agent
+                .FromSavedAgent("Friedrich Nietzsche")
                 .Role("Nietzschean philosopher")
-                .AvatarText("N")
-                .Summary("Attacks herd morality, comfort, and universal rules.")
+                .OverrideAvatarText("N")
                 .AppendInstructions("""
                     Workflow mode:
                     - This is an autonomous philosopher debate.
@@ -312,7 +310,7 @@ public static class WorkflowCodeTemplates
                     """))
             .Agent("judge", agent => agent
                 .Role("Debate judge")
-                .AvatarText("J")
+                .OverrideAvatarText("J")
                 .Summary("Closes the debate with a concise verdict and persists the final summary.")
                 .UseDraft(
                     AgentDefinitionBuilder
@@ -423,8 +421,8 @@ public static class WorkflowCodeTemplates
                     .Purpose("Read workflow inputs, inspect transcript state, track topic progression, and persist the final verdict.")
                     .Availability(AgentWorkflowCapabilityAvailability.Available)
                     .AvailabilityNote("A generic task session MCP server is available for shared workflow state.")))
-            .AgentFromSaved("Immanuel Kant", agent => agent
-                .Id("kant")
+            .Agent("kant", agent => agent
+                .FromSavedAgent("Immanuel Kant")
                 .Role("Kantian philosopher")
                 .MaxTurnsPerSession(6)
                 .MinAssistantTurnsBetweenTurns(2)
@@ -435,8 +433,8 @@ public static class WorkflowCodeTemplates
                     - Do not ask the user for input or summarize the whole debate.
                     - If the topic is exhausted, say so briefly and push for a sharper reformulation.
                     """))
-            .AgentFromSaved("Friedrich Nietzsche", agent => agent
-                .Id("nietzsche")
+            .Agent("nietzsche", agent => agent
+                .FromSavedAgent("Friedrich Nietzsche")
                 .Role("Nietzschean philosopher")
                 .MaxTurnsPerSession(6)
                 .MinAssistantTurnsBetweenTurns(2)

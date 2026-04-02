@@ -6,6 +6,7 @@ public class AgentDescription
 {
     public Guid Id { get; set; } = Guid.NewGuid();
     public string AgentName { get; set; } = string.Empty;
+    public string Summary { get; set; } = string.Empty;
     public string Content { get; set; } = string.Empty;
     public string? ShortName { get; set; }
     public string? AvatarText { get; set; }

@@ -62,6 +62,20 @@
                          Class="mt-4">
                 <Columns>
                     <PropertyColumn Property="x => x.AgentName" Title="Name" SortBy="x => x.AgentName" />
+                    <TemplateColumn Title="Summary" isEditable="false">
+                        <CellTemplate>
+                            @if (!string.IsNullOrWhiteSpace(context.Item.Summary))
+                            {
+                                <MudText Typo="Typo.body2" Class="mud-text-truncate">
+                                    @context.Item.Summary
+                                </MudText>
+                            }
+                            else
+                            {
+                                <MudText Typo="Typo.caption" Class="mud-text-secondary">No summary</MudText>
+                            }
+                        </CellTemplate>
+                    </TemplateColumn>
                     <TemplateColumn Title="Short Name" isEditable="false">
                         <CellTemplate>
                             <div>
@@ -218,6 +232,14 @@
                           Immediate="true"
                           HelperText="Custom short name for this agent. If empty, uses global agent name from settings."
                           Placeholder="Enter short name..." />
+
+            <MudTextField @bind-Value="editingAgent.Summary"
+                          Label="Summary (Optional)"
+                          Lines="2"
+                          Class="mt-4"
+                          Immediate="true"
+                          HelperText="Short description of what this saved agent is for."
+                          Placeholder="Enter a short summary..." />
 
             <ServerModelPicker @bind-Value="editingServerModel" ShowClearButton="true" UseDefaultsWhenUnset="false" Class="mt-4" />
             <MudText Typo="Typo.caption">Leave blank to use chat's default model.</MudText>
@@ -419,6 +441,7 @@
             CreatedAt = DateTime.UtcNow,
             UpdatedAt = DateTime.UtcNow,
             AgentName = "",
+            Summary = "",
             Content = "",
             ShortName = null,
             ModelName = null,
@@ -463,6 +486,7 @@
 
         filteredAgents = agents
             .Where(p => p.AgentName.Contains(searchString, StringComparison.OrdinalIgnoreCase) ||
+                       p.Summary.Contains(searchString, StringComparison.OrdinalIgnoreCase) ||
                        p.Content.Contains(searchString, StringComparison.OrdinalIgnoreCase))
             .ToList();
     }
@@ -539,6 +563,7 @@
         {
             Id = agent.Id,
             AgentName = agent.AgentName,
+            Summary = agent.Summary,
             Content = agent.Content,
             ShortName = agent.ShortName,
             ModelName = agent.ModelName,

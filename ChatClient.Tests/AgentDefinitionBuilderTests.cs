@@ -13,6 +13,7 @@ public class AgentDefinitionBuilderTests
 
         var definition = AgentDefinitionBuilder
             .New("Character Reader", "character-reader")
+            .WithSummary("Reads the current cursor position and updates the registry.")
             .WithAvatarText("CR")
             .WithInstructions("Read the cursor and update the registry.")
             .WithDefaultModel(serverId, "model-a")
@@ -31,6 +32,7 @@ public class AgentDefinitionBuilderTests
 
         Assert.Equal("Character Reader", definition.AgentName);
         Assert.Equal("character-reader", definition.ShortName);
+        Assert.Equal("Reads the current cursor position and updates the registry.", definition.Summary);
         Assert.Equal("CR", definition.AvatarText);
         Assert.Equal("Read the cursor and update the registry.", definition.Content);
         Assert.Equal(serverId, definition.LlmId);
@@ -60,6 +62,7 @@ public class AgentDefinitionBuilderTests
         {
             Id = Guid.NewGuid(),
             AgentName = "Knowledge Reader",
+            Summary = "Reads from the knowledge base.",
             ShortName = "knowledge-reader",
             Content = "Read the knowledge base.",
             ModelName = "model-old",
@@ -92,6 +95,7 @@ public class AgentDefinitionBuilderTests
             .Build();
 
         Assert.Equal("Knowledge Reader", request.Agent.AgentName);
+        Assert.Equal("Reads from the knowledge base.", request.Agent.Summary);
         Assert.Equal("Read only chapter 1 and return structured notes.", request.Agent.Content);
         Assert.Equal(resolvedModel.ServerId, request.Agent.LlmId);
         Assert.Equal(resolvedModel.ModelName, request.Agent.ModelName);

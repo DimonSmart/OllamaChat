@@ -12,6 +12,7 @@ public static class AgentDefinitionMapper
         {
             Id = source.Id,
             AgentName = source.AgentName,
+            Summary = source.Summary,
             Content = source.Content,
             ShortName = source.ShortName,
             AvatarText = source.AvatarText,
@@ -50,6 +51,7 @@ public static class AgentDefinitionMapper
         {
             Id = source.Id,
             AgentName = source.AgentName,
+            Summary = source.Summary,
             Content = source.Content,
             ShortName = source.ShortName,
             AvatarText = source.AvatarText,

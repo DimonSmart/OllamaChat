@@ -13,6 +13,7 @@ public sealed class WorkflowAgentDraftMaterializerTests
         {
             Id = Guid.NewGuid(),
             AgentName = "Saved Technical Agent",
+            Summary = "Runs technical interviews from the saved-agent catalog.",
             ShortName = "saved-tech",
             Content = "Base prompt"
         };
@@ -20,12 +21,12 @@ public sealed class WorkflowAgentDraftMaterializerTests
         var workflow = WorkflowDefinitionBuilder
             .New("demo", "Demo Workflow")
             .RunAutonomously(maxAutomaticTurns: 4, completionPhase: "complete", completionSummaryLabel: "final")
-            .AgentFromSaved("Saved Technical Agent", agent => agent
-                .Id("technical")
+            .Agent("technical", agent => agent
+                .FromSavedAgent("Saved Technical Agent")
                 .Role("Technical interviewer")
-                .Name("Override name")
-                .AvatarText("TA")
-                .Instructions("Override prompt"))
+                .OverrideName("Override name")
+                .OverrideAvatarText("TA")
+                .OverrideInstructions("Override prompt"))
             .UseHandoff(handoff => handoff
                 .StartWith("technical"))
             .Build();
@@ -40,6 +41,7 @@ public sealed class WorkflowAgentDraftMaterializerTests
         Assert.Equal("TA", technical.AgentDraft.AvatarText);
         Assert.Equal("Override prompt", technical.AgentDraft.Content);
         Assert.Equal("technical", technical.AgentDraft.ShortName);
+        Assert.Equal("Runs technical interviews from the saved-agent catalog.", technical.Summary);
         Assert.Equal(AgentWorkflowExecutionMode.Autonomous, materialized.Execution.Mode);
         Assert.Equal("final", materialized.Execution.CompletionSummaryLabel);
     }
@@ -55,7 +57,8 @@ public sealed class WorkflowAgentDraftMaterializerTests
 
         var workflow = WorkflowDefinitionBuilder
             .New("demo", "Demo Workflow")
-            .AgentFromSaved("Duplicate Agent", agent => agent.Id("technical"))
+            .Agent("technical", agent => agent
+                .FromSavedAgent("Duplicate Agent"))
             .UseHandoff(handoff => handoff
                 .StartWith("technical"))
             .Build();
@@ -75,14 +78,15 @@ public sealed class WorkflowAgentDraftMaterializerTests
         {
             Id = Guid.NewGuid(),
             AgentName = "Saved Technical Agent",
+            Summary = "Runs technical interviews from the saved-agent catalog.",
             ShortName = "saved-tech",
             Content = "Base prompt"
         };
 
         var workflow = WorkflowDefinitionBuilder
             .New("demo", "Demo Workflow")
-            .AgentFromSaved("Saved Technical Agent", agent => agent
-                .Id("technical")
+            .Agent("technical", agent => agent
+                .FromSavedAgent("Saved Technical Agent")
                 .Role("Technical interviewer")
                 .AppendInstructions("Workflow mode:\n- Stay concise."))
             .UseHandoff(handoff => handoff
@@ -98,6 +102,36 @@ public sealed class WorkflowAgentDraftMaterializerTests
     }
 
     [Fact]
+    public async Task MaterializeAsync_PreservesExplicitWorkflowSummaryOverSavedAgentSummary()
+    {
+        var savedAgent = new AgentDescription
+        {
+            Id = Guid.NewGuid(),
+            AgentName = "Saved Technical Agent",
+            Summary = "Saved-agent summary",
+            ShortName = "saved-tech",
+            Content = "Base prompt"
+        };
+
+        var workflow = WorkflowDefinitionBuilder
+            .New("demo", "Demo Workflow")
+            .Agent("technical", agent => agent
+                .FromSavedAgent("Saved Technical Agent")
+                .Role("Technical interviewer")
+                .Summary("Workflow-specific summary"))
+            .UseHandoff(handoff => handoff
+                .StartWith("technical"))
+            .Build();
+
+        var materializer = new WorkflowAgentDraftMaterializer(new StubAgentDescriptionService([savedAgent]));
+
+        var materialized = await materializer.MaterializeAsync(workflow);
+
+        var technical = Assert.Single(materialized.Agents);
+        Assert.Equal("Workflow-specific summary", technical.Summary);
+    }
+
+    [Fact]
     public async Task MaterializeAsync_PreservesGroupChatSpecificFields()
     {
         var workflow = WorkflowDefinitionBuilder
@@ -106,7 +140,7 @@ public sealed class WorkflowAgentDraftMaterializerTests
             .RequireText("opening_topic", "Opening Topic")
             .Agent("host", agent => agent
                 .Role("Host")
-                .AvatarText("H")
+                .OverrideAvatarText("H")
                 .UseDraft(new AgentDescription
                 {
                     Id = Guid.NewGuid(),

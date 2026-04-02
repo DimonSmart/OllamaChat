@@ -83,11 +83,11 @@ public sealed class HandoffWorkflowDefinitionBuilderTests
         var workflow = HandoffWorkflowDefinitionBuilder
             .New("demo", "Demo Workflow")
             .StartWith("technical")
-            .AgentFromSaved("Saved Technical Agent", agent => agent
-                .Id("technical")
+            .Agent("technical", agent => agent
+                .FromSavedAgent("Saved Technical Agent")
                 .Role("Technical interviewer")
-                .Name("Technical Interviewer")
-                .Instructions("Run a technical interview."))
+                .OverrideName("Technical Interviewer")
+                .OverrideInstructions("Run a technical interview."))
             .Build();
 
         var technical = Assert.Single(workflow.Agents);
@@ -106,8 +106,8 @@ public sealed class HandoffWorkflowDefinitionBuilderTests
         var workflow = HandoffWorkflowDefinitionBuilder
             .New("demo", "Demo Workflow")
             .StartWith("technical")
-            .AgentFromSaved("Saved Technical Agent", agent => agent
-                .Id("technical")
+            .Agent("technical", agent => agent
+                .FromSavedAgent("Saved Technical Agent")
                 .Role("Technical interviewer")
                 .AppendInstructions("Stay focused on the current workflow step."))
             .Build();
@@ -124,14 +124,14 @@ public sealed class HandoffWorkflowDefinitionBuilderTests
             HandoffWorkflowDefinitionBuilder
                 .New("demo", "Demo Workflow")
                 .StartWith("technical")
-                .AgentFromSaved("Saved Technical Agent", agent => agent
-                    .Id("technical")
+                .Agent("technical", agent => agent
+                    .FromSavedAgent("Saved Technical Agent")
                     .Role("Technical interviewer")
-                    .Instructions("Replace prompt.")
+                    .OverrideInstructions("Replace prompt.")
                     .AppendInstructions("Append prompt."))
                 .Build());
 
-        Assert.Contains("cannot use both Instructions and AppendInstructions", exception.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("cannot use both OverrideInstructions and AppendInstructions", exception.Message, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
@@ -139,12 +139,13 @@ public sealed class HandoffWorkflowDefinitionBuilderTests
     {
         var workflow = HandoffWorkflowDefinitionBuilder
             .New("demo", "Demo Workflow")
-            .StartWith("Saved Router")
-            .AgentFromSaved("Saved Router")
+            .StartWith("router")
+            .Agent("router", agent => agent
+                .FromSavedAgent("Saved Router"))
             .Build();
 
         var agent = Assert.Single(workflow.Agents);
-        Assert.Equal("Saved Router", agent.Id);
+        Assert.Equal("router", agent.Id);
         Assert.Equal("Saved Router", agent.Role);
     }
 

@@ -138,19 +138,6 @@ public sealed class GroupChatWorkflowDefinitionBuilder
         return this;
     }
 
-    public GroupChatWorkflowDefinitionBuilder AgentFromSaved(
-        string savedAgentName,
-        Action<WorkflowAgentBuilder>? configure = null)
-    {
-        var builder = new WorkflowAgentBuilder(savedAgentName)
-            .UseSavedTemplate(savedAgentName);
-        configure?.Invoke(builder);
-
-        var agent = builder.Build();
-        UpsertAgent(agent);
-        return this;
-    }
-
     public GroupChatWorkflowDefinitionBuilder Participant(string agentId)
     {
         var normalizedAgentId = RequireValue(agentId, nameof(agentId));

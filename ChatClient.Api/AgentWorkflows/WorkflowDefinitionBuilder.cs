@@ -140,19 +140,6 @@ public sealed class WorkflowDefinitionBuilder
         return this;
     }
 
-    public WorkflowDefinitionBuilder AgentFromSaved(
-        string savedAgentName,
-        Action<WorkflowAgentBuilder>? configure = null)
-    {
-        var builder = new WorkflowAgentBuilder(savedAgentName)
-            .UseSavedTemplate(savedAgentName);
-        configure?.Invoke(builder);
-
-        var agent = builder.Build();
-        UpsertAgent(agent);
-        return this;
-    }
-
     public WorkflowDefinitionBuilder UseHandoff(Action<HandoffConfigurationBuilder> configure)
     {
         ArgumentNullException.ThrowIfNull(configure);

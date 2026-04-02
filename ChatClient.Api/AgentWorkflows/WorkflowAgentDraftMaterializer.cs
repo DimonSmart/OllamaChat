@@ -149,6 +149,7 @@ public sealed class WorkflowAgentDraftMaterializer(
     {
         var draft = ResolveBaseDraft(agent, savedAgents);
         ApplyOverrides(draft, agent.DraftOverrides);
+        var summary = ResolveSummary(agent, draft);
 
         // Runtime keys agents by workflow node id, so the materialized short name must match it.
         draft.ShortName = agent.Id;
@@ -157,7 +158,7 @@ public sealed class WorkflowAgentDraftMaterializer(
         {
             Id = agent.Id,
             Role = agent.Role,
-            Summary = agent.Summary,
+            Summary = summary,
             AgentDraft = draft,
             SavedAgentTemplate = agent.SavedAgentTemplate is null
                 ? null
@@ -185,6 +186,20 @@ public sealed class WorkflowAgentDraftMaterializer(
             MaxTurnsPerSession = agent.MaxTurnsPerSession,
             MinAssistantTurnsBetweenTurns = agent.MinAssistantTurnsBetweenTurns
         };
+    }
+
+    private static string ResolveSummary(
+        AgentWorkflowAgentDefinition agent,
+        AgentDescription draft)
+    {
+        if (!string.IsNullOrWhiteSpace(agent.Summary))
+        {
+            return agent.Summary;
+        }
+
+        return agent.SavedAgentTemplate is null
+            ? string.Empty
+            : draft.Summary?.Trim() ?? string.Empty;
     }
 
     private static AgentDescription ResolveBaseDraft(

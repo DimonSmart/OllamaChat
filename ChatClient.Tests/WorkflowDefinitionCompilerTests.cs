@@ -140,12 +140,13 @@ public sealed class WorkflowDefinitionCompilerTests
             """
             var workflow = WorkflowDefinitionBuilder
                 .New("demo", "Demo Workflow")
-                .AgentFromSaved("Saved Router", agent => agent
-                    .Name("Workflow Router")
-                    .AvatarText("WR")
+                .Agent("router", agent => agent
+                    .FromSavedAgent("Saved Router")
+                    .OverrideName("Workflow Router")
+                    .OverrideAvatarText("WR")
                     .AppendInstructions("Workflow mode only."))
                 .UseHandoff(handoff => handoff
-                    .StartWith("Saved Router"))
+                    .StartWith("router"))
                 .Build();
 
             workflow

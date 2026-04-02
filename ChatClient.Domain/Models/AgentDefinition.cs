@@ -8,6 +8,8 @@ public sealed class AgentDefinition
 
     public string AgentName { get; set; } = string.Empty;
 
+    public string Summary { get; set; } = string.Empty;
+
     public string Content { get; set; } = string.Empty;
 
     public string? ShortName { get; set; }
@@ -41,6 +43,7 @@ public sealed class AgentDefinition
         {
             Id = Id,
             AgentName = AgentName,
+            Summary = Summary,
             Content = Content,
             ShortName = ShortName,
             AvatarText = AvatarText,
