@@ -27,21 +27,21 @@ public sealed class WorkflowDefinitionSeeder(
             return;
         }
 
-        var existingWorkflowIds = existing
-            .Select(static workflow => workflow.WorkflowId)
-            .Where(static workflowId => !string.IsNullOrWhiteSpace(workflowId))
-            .ToHashSet(StringComparer.OrdinalIgnoreCase);
         var hasChanges = false;
 
         foreach (var workflow in seeded)
         {
-            if (!existingWorkflowIds.Add(workflow.WorkflowId))
+            var existingIndex = existing.FindIndex(existingWorkflow =>
+                string.Equals(existingWorkflow.WorkflowId, workflow.WorkflowId, StringComparison.OrdinalIgnoreCase));
+
+            if (existingIndex < 0)
             {
+                existing.Add(workflow);
+                hasChanges = true;
                 continue;
             }
 
-            existing.Add(workflow);
-            hasChanges = true;
+            hasChanges = UpsertSeededWorkflow(existing[existingIndex], workflow) || hasChanges;
         }
 
         if (hasChanges || existing.Count == 0)
@@ -98,5 +98,45 @@ public sealed class WorkflowDefinitionSeeder(
             CreatedAt = now,
             UpdatedAt = now
         };
+    }
+
+    private static bool UpsertSeededWorkflow(
+        SavedWorkflowDefinition existing,
+        SavedWorkflowDefinition seeded)
+    {
+        var hasChanges = false;
+
+        hasChanges = UpdateValue(existing.Kind, seeded.Kind, value => existing.Kind = value) || hasChanges;
+        hasChanges = UpdateValue(existing.WorkflowId, seeded.WorkflowId, value => existing.WorkflowId = value) || hasChanges;
+        hasChanges = UpdateValue(existing.DisplayName, seeded.DisplayName, value => existing.DisplayName = value) || hasChanges;
+        hasChanges = UpdateValue(existing.Description, seeded.Description, value => existing.Description = value) || hasChanges;
+        hasChanges = UpdateValue(existing.SourceCode, seeded.SourceCode, value => existing.SourceCode = value) || hasChanges;
+
+        if (!hasChanges)
+        {
+            return false;
+        }
+
+        existing.UpdatedAt = seeded.UpdatedAt;
+        if (existing.CreatedAt == default)
+        {
+            existing.CreatedAt = seeded.CreatedAt;
+        }
+
+        return true;
+    }
+
+    private static bool UpdateValue(
+        string current,
+        string next,
+        Action<string> assign)
+    {
+        if (string.Equals(current, next, StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        assign(next);
+        return true;
     }
 }

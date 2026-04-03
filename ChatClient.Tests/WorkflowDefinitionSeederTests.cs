@@ -74,9 +74,100 @@ public sealed class WorkflowDefinitionSeederTests
         }
     }
 
+    [Fact]
+    public async Task SeedAsync_RefreshesExistingSeededWorkflowWhenSeedSourceChanges()
+    {
+        var root = Directory.CreateDirectory(
+            Path.Combine(Path.GetTempPath(), "workflow-seeder-tests", Guid.NewGuid().ToString("N")));
+
+        try
+        {
+            var configuration = new ConfigurationBuilder()
+                .AddInMemoryCollection(new Dictionary<string, string?>
+                {
+                    ["Storage:RootPath"] = root.FullName
+                })
+                .Build();
+
+            await CreateSeedWorkflowSourcesAsync(root.FullName);
+
+            var loggerFactory = LoggerFactory.Create(static builder => builder.SetMinimumLevel(LogLevel.Debug));
+            IWorkflowDefinitionRepository repository = new WorkflowDefinitionRepository(
+                configuration,
+                loggerFactory.CreateLogger<WorkflowDefinitionRepository>());
+
+            var createdAt = DateTime.UtcNow.AddDays(-2);
+            var originalId = Guid.NewGuid();
+            await repository.SaveAllAsync(
+            [
+                new SavedWorkflowDefinition
+                {
+                    Id = originalId,
+                    Kind = WorkflowDefinitionKinds.GroupChat,
+                    WorkflowId = "philosopher-battle-group-chat",
+                    DisplayName = "Philosopher Battle Group Chat",
+                    Description = "Stale seeded workflow.",
+                    SourceCode =
+                        """
+                        var workflow = WorkflowDefinitionBuilder
+                            .New("philosopher-battle-group-chat", "Philosopher Battle Group Chat")
+                            .Agent("host", agent => agent
+                                .Role("Host")
+                                .UseDraft(
+                                    AgentDefinitionBuilder
+                                        .New("Host", "host")
+                                        .WithInstructions("Open the debate.")
+                                        .BuildDescription()))
+                            .Agent("kant", agent => agent
+                                .FromSavedAgent("Immanuel Kant"))
+                            .Agent("nietzsche", agent => agent
+                                .FromSavedAgent("Friedrich Nietzsche"))
+                            .UseGroupChat(groupChat => groupChat
+                                .Participants("host", "kant", "nietzsche")
+                                .UseCustomManager("philosopher-debate", maximumIterations: 14))
+                            .Build();
+
+                        workflow
+                        """,
+                    CreatedAt = createdAt,
+                    UpdatedAt = createdAt
+                }
+            ]);
+
+            var seeder = new WorkflowDefinitionSeeder(
+                repository,
+                new WorkflowDefinitionCompiler(),
+                configuration,
+                new StubHostEnvironment(root.FullName),
+                loggerFactory.CreateLogger<WorkflowDefinitionSeeder>());
+
+            await seeder.SeedAsync();
+
+            var refreshed = Assert.Single(
+                await repository.GetAllAsync(),
+                workflow => string.Equals(
+                    workflow.WorkflowId,
+                    "philosopher-battle-group-chat",
+                    StringComparison.OrdinalIgnoreCase));
+
+            Assert.Equal(originalId, refreshed.Id);
+            Assert.Equal(createdAt, refreshed.CreatedAt);
+            Assert.Contains("UseProgrammableManager", refreshed.SourceCode, StringComparison.Ordinal);
+            Assert.DoesNotContain("UseCustomManager(\"philosopher-debate\"", refreshed.SourceCode, StringComparison.Ordinal);
+        }
+        finally
+        {
+            root.Delete(recursive: true);
+        }
+    }
+
     private static async Task CreateSeedWorkflowSourcesAsync(string rootPath)
     {
         var workflowDirectory = Directory.CreateDirectory(Path.Combine(rootPath, "Data", "workflows"));
+
+        await File.WriteAllTextAsync(
+            Path.Combine(workflowDirectory.FullName, "philosopher-battle-group-chat.workflow.csx"),
+            await File.ReadAllTextAsync(Path.Combine(GetApiRoot(), "Data", "workflows", "philosopher-battle-group-chat.workflow.csx")));
 
         await File.WriteAllTextAsync(
             Path.Combine(workflowDirectory.FullName, "seeded-handoff.workflow.csx"),
@@ -125,6 +216,11 @@ public sealed class WorkflowDefinitionSeederTests
 
             workflow
             """);
+    }
+
+    private static string GetApiRoot()
+    {
+        return Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "ChatClient.Api"));
     }
 
     private sealed class StubHostEnvironment(string contentRootPath) : IHostEnvironment
