@@ -47,6 +47,42 @@
     }
     else
     {
+        @if (isWorkflowSourceExpanded)
+        {
+            <MudPaper Class="pa-4" Outlined="true">
+                <MudStack Spacing="2">
+                    <MudStack Row="true" Spacing="2" AlignItems="AlignItems.Center" Justify="Justify.SpaceBetween" Class="handoff-workflow-start-header">
+                        <MudText Typo="Typo.h6">Workflow Source</MudText>
+                        <MudStack Row="true" Spacing="2" Class="handoff-workflow-command-row">
+                            <MudButton Variant="Variant.Filled"
+                                       Color="Color.Primary"
+                                       Size="Size.Small"
+                                       StartIcon="@Icons.Material.Filled.Check"
+                                       Disabled="@(!CanCompileWorkflow)"
+                                       OnClick="CompileWorkflowAsync">
+                                @(isCompilingWorkflow ? "Compiling..." : "Compile Workflow")
+                            </MudButton>
+                            <MudButton Variant="Variant.Text"
+                                       Color="Color.Default"
+                                       Size="Size.Small"
+                                       OnClick="ToggleWorkflowSourceEditor">
+                                Hide Source
+                            </MudButton>
+                        </MudStack>
+                    </MudStack>
+
+                    <MudText Typo="Typo.caption" Class="mud-text-secondary">
+                        Compile the current source to refresh the workflow preview and required inputs.
+                    </MudText>
+
+                    <WorkflowSourceCodeEditor Value="@workflowSourceCode"
+                                              ValueChanged="OnWorkflowSourceChanged"
+                                              Disabled="@workflowStarted"
+                                              MinLines="28" />
+                </MudStack>
+            </MudPaper>
+        }
+
         <MudGrid>
             <MudItem xs="12" lg="@(ShowWorkflowSidebar ? 7 : 12)">
                 <MudStack Spacing="3">
@@ -79,8 +115,19 @@
                                 @if (currentWorkflow is null)
                                 {
                                     <MudAlert Severity="Severity.Warning" Dense="true">
-                                        Load or compile a valid workflow source to inspect its required inputs and start it.
+                                        Compile the current workflow source to inspect its required inputs and enable Start Workflow.
                                     </MudAlert>
+
+                                    @if (HasWorkflowSource)
+                                    {
+                                        <MudButton Variant="Variant.Outlined"
+                                                   Color="Color.Primary"
+                                                   StartIcon="@Icons.Material.Filled.Check"
+                                                   Disabled="@(!CanCompileWorkflow)"
+                                                   OnClick="CompileWorkflowAsync">
+                                            @(isCompilingWorkflow ? "Compiling..." : "Compile Workflow")
+                                        </MudButton>
+                                    }
                                 }
                                 else if (!AreRequiredStartInputsSatisfied)
                                 {
@@ -188,14 +235,14 @@
                             <MudStack Spacing="2" AlignItems="AlignItems.Center">
                                 <MudText Typo="Typo.h5">No Workflow Loaded</MudText>
                                 <MudText Typo="Typo.body2" Class="mud-text-secondary workflow-empty-state-copy">
-                                    Load a workflow to review its start inputs and launch an orchestration, or open the source to define one locally.
+                                    Load a saved workflow, or open the source editor and compile a local draft to review its inputs and launch an orchestration.
                                 </MudText>
                                 <MudStack Row="true" Spacing="2" Class="handoff-workflow-command-row">
                                     <MudButton Variant="Variant.Filled"
                                                Color="Color.Primary"
                                                Disabled="@workflowStarted"
                                                OnClick="OpenLoadWorkflowDialogAsync">
-                                        Load Workflow
+                                        Load Saved Workflow
                                     </MudButton>
                                     <MudButton Variant="Variant.Text"
                                                Color="Color.Default"
@@ -237,45 +284,28 @@
                                     </MudStack>
 
                                     <MudStack Row="true" Spacing="2" Class="handoff-workflow-command-row">
-                                        @if (!isWorkflowSourceExpanded)
-                                        {
-                                            <MudButton Variant="Variant.Text"
-                                                       Color="Color.Default"
-                                                       Size="Size.Small"
-                                                       OnClick="ToggleWorkflowSourceEditor">
-                                                Show Source
-                                            </MudButton>
-                                        }
+                                        <MudButton Variant="Variant.Filled"
+                                                   Color="Color.Primary"
+                                                   Size="Size.Small"
+                                                   StartIcon="@Icons.Material.Filled.Check"
+                                                   Disabled="@(!CanCompileWorkflow)"
+                                                   OnClick="CompileWorkflowAsync">
+                                            @(isCompilingWorkflow ? "Compiling..." : "Compile Workflow")
+                                        </MudButton>
+                                        <MudButton Variant="Variant.Text"
+                                                   Color="Color.Default"
+                                                   Size="Size.Small"
+                                                   OnClick="ToggleWorkflowSourceEditor">
+                                            @(isWorkflowSourceExpanded ? "Hide Source" : "Show Source")
+                                        </MudButton>
                                         <MudButton Variant="Variant.Outlined"
                                                    Color="Color.Default"
                                                    Size="Size.Small"
                                                    Disabled="@workflowStarted"
                                                    OnClick="OpenLoadWorkflowDialogAsync">
-                                            Load Workflow
+                                            Load Saved Workflow
                                         </MudButton>
                                     </MudStack>
-                                </MudStack>
-                            </MudPaper>
-                        }
-
-                        @if (isWorkflowSourceExpanded)
-                        {
-                            <MudPaper Class="pa-4" Outlined="true">
-                                <MudStack Spacing="2">
-                                    <MudStack Row="true" Spacing="2" AlignItems="AlignItems.Center" Justify="Justify.SpaceBetween" Class="handoff-workflow-start-header">
-                                        <MudText Typo="Typo.subtitle1">Workflow Source</MudText>
-                                        <MudButton Variant="Variant.Text"
-                                                   Color="Color.Default"
-                                                   Size="Size.Small"
-                                                   OnClick="ToggleWorkflowSourceEditor">
-                                            Hide Source
-                                        </MudButton>
-                                    </MudStack>
-
-                                    <WorkflowSourceCodeEditor Value="@workflowSourceCode"
-                                                              ValueChanged="OnWorkflowSourceChanged"
-                                                              Disabled="@workflowStarted"
-                                                              MinLines="20" />
                                 </MudStack>
                             </MudPaper>
                         }
@@ -522,6 +552,7 @@
     private bool isPageLoading = true;
     private bool isWorkflowSourceExpanded;
     private bool workflowSourceDirty;
+    private bool isCompilingWorkflow;
     private bool workflowStarted;
     private bool isStartingWorkflow;
     private bool isLlmAnswering;
@@ -556,7 +587,7 @@
 
     private bool ShowWorkflowSummaryCard => HasWorkflowContext;
 
-    private bool ShowWorkflowSidebar => ShowWorkflowSummaryCard || isWorkflowSourceExpanded;
+    private bool ShowWorkflowSidebar => ShowWorkflowSummaryCard;
 
     private string WorkflowCardDisplayName =>
         currentWorkflow?.DisplayName ??
@@ -571,6 +602,12 @@
 
     private bool AreRequiredStartInputsSatisfied =>
         currentWorkflow?.StartInputs.All(IsStartInputSatisfied) ?? true;
+
+    private bool CanCompileWorkflow =>
+        !isCompilingWorkflow &&
+        !isStartingWorkflow &&
+        !workflowStarted &&
+        HasWorkflowSource;
 
     private bool CanStartWorkflow =>
         HasSelectedModel &&
@@ -685,6 +722,34 @@
         finally
         {
             isStartingWorkflow = false;
+        }
+    }
+
+    private async Task CompileWorkflowAsync()
+    {
+        if (!CanCompileWorkflow)
+        {
+            return;
+        }
+
+        isCompilingWorkflow = true;
+
+        try
+        {
+            if (await CompileWorkflowSourceAsync(expandEditorOnError: true))
+            {
+                Snackbar.Add("Workflow compiled. Review the inputs and start when ready.", Severity.Success);
+                return;
+            }
+
+            if (!string.IsNullOrWhiteSpace(workflowCompileError))
+            {
+                Snackbar.Add(workflowCompileError, Severity.Error);
+            }
+        }
+        finally
+        {
+            isCompilingWorkflow = false;
         }
     }
 
