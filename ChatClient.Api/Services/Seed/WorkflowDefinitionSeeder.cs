@@ -2,7 +2,6 @@ using ChatClient.Api.AgentWorkflows;
 using ChatClient.Application.Repositories;
 using ChatClient.Domain.Models;
 using ChatClient.Infrastructure.Helpers;
-using System.Text.Json;
 
 namespace ChatClient.Api.Services.Seed;
 
@@ -53,38 +52,34 @@ public sealed class WorkflowDefinitionSeeder(
 
     private async Task<List<SavedWorkflowDefinition>> LoadSeedWorkflowsAsync()
     {
-        var seedPath = StoragePathResolver.ResolveSeedPath(
+        var seedDirectory = StoragePathResolver.ResolveSeedPath(
             _configuration,
             _environment.ContentRootPath,
-            _configuration["WorkflowDefinitions:SeedFilePath"],
-            "workflow_definitions.json");
+            _configuration["WorkflowDefinitions:SeedDirectoryPath"],
+            "workflows");
 
-        if (File.Exists(seedPath))
+        if (!Directory.Exists(seedDirectory))
+        {
+            _logger.LogInformation("Workflow seed directory was not found: {SeedDirectory}", seedDirectory);
+            return [];
+        }
+
+        List<SavedWorkflowDefinition> seeded = [];
+        foreach (var sourcePath in Directory.EnumerateFiles(seedDirectory, "*.workflow.csx", SearchOption.TopDirectoryOnly)
+                     .OrderBy(static path => path, StringComparer.OrdinalIgnoreCase))
         {
             try
             {
-                var json = await File.ReadAllTextAsync(seedPath);
-                var seeded = JsonSerializer.Deserialize<List<SavedWorkflowDefinition>>(
-                    json,
-                    new JsonSerializerOptions(JsonSerializerDefaults.Web));
-                if (seeded is { Count: > 0 })
-                {
-                    return seeded;
-                }
+                var sourceCode = await File.ReadAllTextAsync(sourcePath);
+                seeded.Add(await BuildSavedWorkflowAsync(sourceCode));
             }
             catch (Exception ex)
             {
-                _logger.LogWarning(ex, "Failed to seed workflow definitions from {SeedPath}", seedPath);
+                _logger.LogWarning(ex, "Failed to seed workflow definition from {SourcePath}", sourcePath);
             }
         }
 
-        List<SavedWorkflowDefinition> fallback = [];
-        foreach (var template in WorkflowCodeTemplates.StarterTemplates)
-        {
-            fallback.Add(await BuildSavedWorkflowAsync(template.SourceCode));
-        }
-
-        return fallback;
+        return seeded;
     }
 
     private async Task<SavedWorkflowDefinition> BuildSavedWorkflowAsync(string sourceCode)

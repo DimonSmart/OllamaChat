@@ -9,45 +9,45 @@ public sealed class WorkflowSpeakerResolverTests
     public void ResolveFromExecutorId_ReturnsMappedWorkflowAgentId_WhenExecutorIdMatchesRuntimeExecutor()
     {
         var speakerId = WorkflowSpeakerResolver.ResolveFromExecutorId(
-            "runtime://agents/nietzsche",
+            "runtime://agents/reviewer-b",
             new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
             {
-                ["runtime://agents/nietzsche"] = "nietzsche"
+                ["runtime://agents/reviewer-b"] = "reviewer_b"
             });
 
-        Assert.Equal("nietzsche", speakerId);
+        Assert.Equal("reviewer_b", speakerId);
     }
 
     [Fact]
     public void ResolveFromExecutorId_ReturnsMappedWorkflowAgentId_WhenExecutorIdMatchesAgentName()
     {
         var speakerId = WorkflowSpeakerResolver.ResolveFromExecutorId(
-            "Debate Judge",
+            "Review Closer",
             new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
             {
-                ["Debate Judge"] = "judge"
+                ["Review Closer"] = "closer"
             });
 
-        Assert.Equal("judge", speakerId);
+        Assert.Equal("closer", speakerId);
     }
 
     [Fact]
     public void ResolveFromWorkflow_UsesProgrammableGroupChatSchedule()
     {
-        var workflow = CreateProgrammableDebateWorkflow();
+        var workflow = CreateProgrammableReviewWorkflow();
 
         Assert.Equal("host", WorkflowSpeakerResolver.ResolveFromWorkflow(workflow, 0));
-        Assert.Equal("debater_a", WorkflowSpeakerResolver.ResolveFromWorkflow(workflow, 1));
-        Assert.Equal("debater_b", WorkflowSpeakerResolver.ResolveFromWorkflow(workflow, 2));
-        Assert.Equal("debater_a", WorkflowSpeakerResolver.ResolveFromWorkflow(workflow, 7));
-        Assert.Equal("debater_b", WorkflowSpeakerResolver.ResolveFromWorkflow(workflow, 8));
-        Assert.Equal("judge", WorkflowSpeakerResolver.ResolveFromWorkflow(workflow, 9));
+        Assert.Equal("reviewer_a", WorkflowSpeakerResolver.ResolveFromWorkflow(workflow, 1));
+        Assert.Equal("reviewer_b", WorkflowSpeakerResolver.ResolveFromWorkflow(workflow, 2));
+        Assert.Equal("reviewer_a", WorkflowSpeakerResolver.ResolveFromWorkflow(workflow, 7));
+        Assert.Equal("reviewer_b", WorkflowSpeakerResolver.ResolveFromWorkflow(workflow, 8));
+        Assert.Equal("closer", WorkflowSpeakerResolver.ResolveFromWorkflow(workflow, 9));
     }
 
     [Fact]
     public void ResolveSpeakerId_FallsBackToWorkflowSchedule_WhenExecutorIdIsMissing()
     {
-        var workflow = CreateProgrammableDebateWorkflow();
+        var workflow = CreateProgrammableReviewWorkflow();
 
         var speakerId = WorkflowSpeakerResolver.ResolveSpeakerId(
             executorId: null,
@@ -55,7 +55,7 @@ public sealed class WorkflowSpeakerResolverTests
             workflow: workflow,
             assistantMessageIndex: 1);
 
-        Assert.Equal("debater_a", speakerId);
+        Assert.Equal("reviewer_a", speakerId);
     }
 
     [Theory]
@@ -74,22 +74,22 @@ public sealed class WorkflowSpeakerResolverTests
         Assert.Null(speakerId);
     }
 
-    private static GroupChatWorkflowDefinition CreateProgrammableDebateWorkflow()
+    private static GroupChatWorkflowDefinition CreateProgrammableReviewWorkflow()
     {
         return new GroupChatWorkflowDefinition
         {
-            Id = "philosopher-battle-group-chat",
-            DisplayName = "Philosopher Battle Group Chat",
+            Id = "structured-review-group-chat",
+            DisplayName = "Structured Review Group Chat",
             Agents = [],
-            ParticipantAgentIds = ["host", "debater_a", "debater_b", "judge"],
+            ParticipantAgentIds = ["host", "reviewer_a", "reviewer_b", "closer"],
             Manager = new GroupChatWorkflowManagerDefinition
             {
                 Kind = GroupChatWorkflowManagerKind.Programmable,
                 MaximumIterations = 10,
                 Program = GroupChatManagerPrograms.PrefixCycleSuffix(
                     prefix: ["host"],
-                    cycle: ["debater_a", "debater_b"],
-                    suffix: ["debater_a", "debater_b", "judge"]),
+                    cycle: ["reviewer_a", "reviewer_b"],
+                    suffix: ["reviewer_a", "reviewer_b", "closer"]),
                 ProgramDisplayName = "PrefixCycleSuffix"
             }
         };

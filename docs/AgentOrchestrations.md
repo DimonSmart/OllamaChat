@@ -19,13 +19,13 @@ Pattern-specific runtime code is localized under `ChatClient.Api/AgentWorkflows/
 
 ## Starter Templates
 
-`WorkflowCodeTemplates.StarterTemplates` is the single source of truth for built-in starter workflows used by:
+Seeded workflow source files under `ChatClient.Api/Data/workflows/*.workflow.csx` are the single source of truth for built-in starter workflows used by:
 
-- fallback workflow seeding when no external `workflow_definitions.json` is present
+- `WorkflowDefinitionSeeder` during first-run seeding
 - the saved workflow catalog surfaced by the `Load Workflow` dialog and the workflow definitions management page
 - compiler smoke tests
 
-Current built-in starters:
+Current seeded starters:
 
 - `philosopher-battle-group-chat`
 - `interview-coach-fixed-handoff`
@@ -36,7 +36,7 @@ Current built-in starters:
 
 - Saved workflows are stored through `WorkflowDefinitionService`.
 - Workflow kinds are normalized on save/load through `WorkflowDefinitionKinds.Normalize`.
-- If `WorkflowDefinitions:SeedFilePath` does not resolve to a valid seed file, `WorkflowDefinitionSeeder` seeds the built-in starter templates from `WorkflowCodeTemplates`.
+- `WorkflowDefinitionSeeder` loads starter workflow source files from `WorkflowDefinitions:SeedDirectoryPath`.
 
 ## Notes
 

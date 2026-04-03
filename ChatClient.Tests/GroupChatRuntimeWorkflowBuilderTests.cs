@@ -17,7 +17,7 @@ public sealed class GroupChatRuntimeWorkflowBuilderTests
         {
             Id = "round-robin-test",
             DisplayName = "Round Robin Test",
-            ParticipantAgentIds = ["host", "kant"],
+            ParticipantAgentIds = ["host", "reviewer"],
             Manager = new GroupChatWorkflowManagerDefinition
             {
                 Kind = GroupChatWorkflowManagerKind.RoundRobin,
@@ -27,11 +27,11 @@ public sealed class GroupChatRuntimeWorkflowBuilderTests
 
         var manager = Assert.IsType<ConfiguredRoundRobinGroupChatManager>(
             builder.CreateManager(
-                [CreateAgent("host", "Host"), CreateAgent("kant", "Kant")],
+                [CreateAgent("host", "Host"), CreateAgent("reviewer", "Reviewer")],
                 workflow,
                 new OrchestrationRuntimeBuildContext
                 {
-                    AssistantSpeakerIds = ["host", "kant", "host"]
+                    AssistantSpeakerIds = ["host", "reviewer", "host"]
                 }));
 
         Assert.Equal(3, manager.AssistantMessagesBeforeRun);
@@ -43,17 +43,17 @@ public sealed class GroupChatRuntimeWorkflowBuilderTests
         var builder = new GroupChatRuntimeWorkflowBuilder(new GroupChatManagerRegistry([]));
         var workflow = new GroupChatWorkflowDefinition
         {
-            Id = "philosopher-battle-group-chat",
-            DisplayName = "Philosopher Battle Group Chat",
-            ParticipantAgentIds = ["host", "debater_a", "debater_b", "judge"],
+            Id = "structured-review-group-chat",
+            DisplayName = "Structured Review Group Chat",
+            ParticipantAgentIds = ["host", "reviewer_a", "reviewer_b", "closer"],
             Manager = new GroupChatWorkflowManagerDefinition
             {
                 Kind = GroupChatWorkflowManagerKind.Programmable,
                 MaximumIterations = 10,
                 Program = GroupChatManagerPrograms.PrefixCycleSuffix(
                     prefix: ["host"],
-                    cycle: ["debater_a", "debater_b"],
-                    suffix: ["debater_a", "debater_b", "judge"]),
+                    cycle: ["reviewer_a", "reviewer_b"],
+                    suffix: ["reviewer_a", "reviewer_b", "closer"]),
                 ProgramDisplayName = "PrefixCycleSuffix"
             }
         };
@@ -61,15 +61,15 @@ public sealed class GroupChatRuntimeWorkflowBuilderTests
         var manager = Assert.IsType<ConfiguredProgrammableGroupChatManager>(
             builder.CreateManager(
                 [
-                    CreateAgent("host", "Debate Host"),
-                    CreateAgent("debater_a", "Immanuel Kant"),
-                    CreateAgent("debater_b", "Friedrich Nietzsche"),
-                    CreateAgent("judge", "Debate Judge")
+                    CreateAgent("host", "Review Host"),
+                    CreateAgent("reviewer_a", "Reviewer A"),
+                    CreateAgent("reviewer_b", "Reviewer B"),
+                    CreateAgent("closer", "Closer")
                 ],
                 workflow,
                 new OrchestrationRuntimeBuildContext
                 {
-                    AssistantSpeakerIds = ["host", "debater_a", "debater_b", "debater_a", "debater_b", "debater_a", "debater_b", "debater_a", "judge"]
+                    AssistantSpeakerIds = ["host", "reviewer_a", "reviewer_b", "reviewer_a", "reviewer_b", "reviewer_a", "reviewer_b", "reviewer_a", "closer"]
                 }));
 
         Assert.Equal(9, manager.AssistantMessagesBeforeRun);

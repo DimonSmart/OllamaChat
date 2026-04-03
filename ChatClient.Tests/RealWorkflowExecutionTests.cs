@@ -293,17 +293,10 @@ public sealed class RealWorkflowExecutionTests(ITestOutputHelper output)
 
     private sealed class RealWorkflowExecutionOptions
     {
-        private const string DefaultWorkflowName = "Philosopher Battle Group Chat";
-        private const string DefaultParametersJson =
-            """
-            {
-              "opening_topic": "Should a person submit to moral law when doing so makes life less powerful and less joyful?",
-              "themes_to_cover": 3,
-              "battle_language": "English",
-              "verdict_focus": "Name the strongest argument, the weakest move, and the unresolved tension."
-            }
-            """;
-        private const string DefaultInitialMessage = "Start the workflow.";
+        private const string DefaultWorkflowName = "Research Brief Sequential";
+        private const string DefaultParametersJson = "";
+        private const string DefaultInitialMessage =
+            "Compare the trade-offs of moving a small SaaS team from a monolith to microservices within the next year.";
 
         public string WorkflowName { get; init; } = DefaultWorkflowName;
 

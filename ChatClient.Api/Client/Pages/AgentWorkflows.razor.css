@@ -28,6 +28,18 @@
     flex-wrap: wrap;
 }
 
+.workflow-empty-state {
+    min-height: 18rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.workflow-empty-state-copy {
+    max-width: 32rem;
+    text-align: center;
+}
+
 .handoff-workflow-start-header {
     flex-wrap: wrap;
 }

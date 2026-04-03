@@ -69,26 +69,26 @@ public sealed class WorkflowSourceCodeSyntaxHighlighterTests
     {
         const string source = """
             var workflow = WorkflowDefinitionBuilder
-                .New("philosopher-battle-group-chat", "Philosopher Battle Group Chat")
-                .Agent("host", agent => agent
+                .New("review-panel-group-chat", "Review Panel Group Chat")
+                .Agent("moderator", agent => agent
                     .UseDraft(
                         AgentDefinitionBuilder
-                            .New("Debate Host", "host")
+                            .New("Review Moderator", "moderator")
                             .BuildDescription()))
-                .Agent("kant", agent => agent
-                    .FromSavedAgent("Immanuel Kant"))
+                .Agent("reviewer", agent => agent
+                    .FromSavedAgent("Saved Reviewer"))
                 .UseGroupChat(groupChat => groupChat
-                    .Participants("host", "kant")
+                    .Participants("moderator", "reviewer")
                     .UseProgrammableManager(manager => manager
                         .MaximumIterations(10)
                         .Program(GroupChatManagerPrograms.PrefixCycleSuffix(
-                            prefix: new[] { "host" },
-                            cycle: new[] { "kant" },
-                            suffix: new[] { "kant" }))))
+                            prefix: new[] { "moderator" },
+                            cycle: new[] { "reviewer" },
+                            suffix: new[] { "reviewer" }))))
                 .UseHandoff(handoff => handoff
-                    .StartWith("host")
-                    .Handoff("host", "kant", "open with Kant")
-                    .Fallback("kant", "host"))
+                    .StartWith("moderator")
+                    .Handoff("moderator", "reviewer", "open review")
+                    .Fallback("reviewer", "moderator"))
                 .Build();
             """;
 
@@ -104,10 +104,10 @@ public sealed class WorkflowSourceCodeSyntaxHighlighterTests
         Assert.Contains("<span class=\"tok-agent-reference\">Fallback</span>", html, StringComparison.Ordinal);
         Assert.Contains("<span class=\"tok-manager-config\">UseProgrammableManager</span>", html, StringComparison.Ordinal);
         Assert.Contains("<span class=\"tok-manager-config\">Program</span>", html, StringComparison.Ordinal);
-        Assert.Contains("<span class=\"tok-agent-id\">&quot;host&quot;</span>", html, StringComparison.Ordinal);
-        Assert.Contains("<span class=\"tok-agent-id\">&quot;kant&quot;</span>", html, StringComparison.Ordinal);
-        Assert.Contains("<span class=\"tok-agent-display-name\">&quot;Debate Host&quot;</span>", html, StringComparison.Ordinal);
-        Assert.Contains("<span class=\"tok-agent-display-name\">&quot;Immanuel Kant&quot;</span>", html, StringComparison.Ordinal);
+        Assert.Contains("<span class=\"tok-agent-id\">&quot;moderator&quot;</span>", html, StringComparison.Ordinal);
+        Assert.Contains("<span class=\"tok-agent-id\">&quot;reviewer&quot;</span>", html, StringComparison.Ordinal);
+        Assert.Contains("<span class=\"tok-agent-display-name\">&quot;Review Moderator&quot;</span>", html, StringComparison.Ordinal);
+        Assert.Contains("<span class=\"tok-agent-display-name\">&quot;Saved Reviewer&quot;</span>", html, StringComparison.Ordinal);
     }
 
     [Fact]
