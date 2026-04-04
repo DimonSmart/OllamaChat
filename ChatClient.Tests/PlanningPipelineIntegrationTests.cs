@@ -248,7 +248,8 @@ public sealed class PlanningPipelineIntegrationTests(ITestOutputHelper output)
         var chatClient = BuildChatClient();
         var logger = new TestLogger(output);
         var answerAsserter = new CachedLlmAnswerAsserter(chatClient, DevModel);
-        var planner = new LlmPlanner(chatClient, tools, logger);
+        var initialDraftRepairer = new LlmInitialDraftRepairer(chatClient, tools, logger);
+        var planner = new LlmPlanner(chatClient, tools, logger, initialDraftRepairer: initialDraftRepairer);
         var replanner = new LlmReplanner(chatClient, tools, logger);
         var runner = new AgentStepRunner(chatClient);
         var executor = new PlanExecutor(tools, runner, logger);
@@ -286,7 +287,8 @@ public sealed class PlanningPipelineIntegrationTests(ITestOutputHelper output)
         var sink = new TestArtifactLogSink();
         var logger = new TestLogger(output, sink);
         var answerAsserter = new CachedLlmAnswerAsserter(chatClient, DevModel);
-        var planner = new LlmPlanner(chatClient, tools, logger);
+        var initialDraftRepairer = new LlmInitialDraftRepairer(chatClient, tools, logger);
+        var planner = new LlmPlanner(chatClient, tools, logger, initialDraftRepairer: initialDraftRepairer);
         var replanner = new LlmReplanner(chatClient, tools, logger);
         var runner = new AgentStepRunner(chatClient);
         var executor = new PlanExecutor(tools, runner, logger);
@@ -368,7 +370,8 @@ public sealed class PlanningPipelineIntegrationTests(ITestOutputHelper output)
         var logger = new TestLogger(output, sink);
         var events = new List<PlanRunEvent>();
         var observer = new ActionPlanRunObserver(events.Add);
-        var planner = new LlmPlanner(chatClient, tools, logger, observer);
+        var initialDraftRepairer = new LlmInitialDraftRepairer(chatClient, tools, logger, observer);
+        var planner = new LlmPlanner(chatClient, tools, logger, observer, initialDraftRepairer);
 
         void WriteLine(string message)
         {

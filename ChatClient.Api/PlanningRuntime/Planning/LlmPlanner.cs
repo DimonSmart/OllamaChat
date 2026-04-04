@@ -47,6 +47,7 @@ public sealed class LlmPlanner(
         var planningPrompt = userPrompt;
         Exception? lastError = null;
         string? previousDraftJson = null;
+        var initialDraftRepairAttempted = false;
 
         for (var attempt = 1; attempt <= MaxDraftGenerations; attempt++)
         {
@@ -99,8 +100,10 @@ public sealed class LlmPlanner(
                     _log.Log($"[plan] create:invalid attempt={attempt} error={Shorten(validationException.Message, 240)} issue={PlanningJson.SerializeCompact(validationIssue)}");
                     _observer.OnEvent(new DiagnosticPlanRunEvent("planner", $"Retry {attempt}: {Shorten(validationException.Message, 240)}"));
 
-                    if (_initialDraftRepairer is not null && attempt == 1)
+                    if (_initialDraftRepairer is not null && !initialDraftRepairAttempted)
                     {
+                        initialDraftRepairAttempted = true;
+
                         try
                         {
                             _log.Log($"[plan] create:repair attempt={attempt} issue={PlanningJson.SerializeCompact(validationIssue)}");

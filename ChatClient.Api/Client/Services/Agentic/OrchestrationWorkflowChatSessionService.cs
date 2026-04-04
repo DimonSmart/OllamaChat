@@ -494,13 +494,22 @@ public sealed class OrchestrationWorkflowChatSessionService(
                 cancellationToken);
         }
 
-        assistantOutputObserved |= await ExecuteWorkflowBatchAsync(
-            run,
-            new TurnToken(emitEvents: true),
-            parameters.Configuration.ModelName,
-            streamingState,
-            completedAssistantMessages,
-            cancellationToken);
+        var statusAfterConversationBatch = conversation.Count == 0
+            ? RunStatus.NotStarted
+            : await run.GetStatusAsync(cancellationToken);
+
+        if (ShouldSendExplicitTurnToken(
+                statusAfterConversationBatch,
+                completedAssistantMessages.Count))
+        {
+            assistantOutputObserved |= await ExecuteWorkflowBatchAsync(
+                run,
+                new TurnToken(emitEvents: true),
+                parameters.Configuration.ModelName,
+                streamingState,
+                completedAssistantMessages,
+                cancellationToken);
+        }
 
         if (cancellationToken.IsCancellationRequested)
         {
@@ -675,6 +684,23 @@ public sealed class OrchestrationWorkflowChatSessionService(
             streamingState,
             completedAssistantMessages,
             cancellationToken);
+    }
+
+    internal static bool ShouldSendExplicitTurnToken(
+        RunStatus statusAfterConversationBatch,
+        int completedAssistantMessagesFromConversationBatch)
+    {
+        if (completedAssistantMessagesFromConversationBatch < 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(completedAssistantMessagesFromConversationBatch));
+        }
+
+        if (statusAfterConversationBatch == RunStatus.Ended)
+        {
+            return false;
+        }
+
+        return completedAssistantMessagesFromConversationBatch == 0;
     }
 
     private async Task ProcessCompletedAssistantMessagesAsync(

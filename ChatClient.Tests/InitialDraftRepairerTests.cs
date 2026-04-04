@@ -39,6 +39,32 @@ public sealed class InitialDraftRepairerTests
     }
 
     [Fact]
+    public async Task LlmPlanner_UsesInitialDraftRepairer_AfterInitialJsonParseFailure()
+    {
+        var invalidPlan = CreateInvalidSearchPlan();
+        var repairedPlan = CreateValidSearchPlan();
+        var toolCatalog = new PlanningToolCatalog([CreateSearchDescriptor()]);
+        var chatClient = CreateMockChatClient(
+            CreateTextResponse("{"),
+            CreateTextResponse(SerializePlan(invalidPlan)));
+        var repairer = new RecordingInitialDraftRepairer(repairedPlan);
+        var planner = new LlmPlanner(chatClient.Object, toolCatalog, initialDraftRepairer: repairer);
+
+        var result = await planner.CreatePlanAsync("Find a robot vacuum.");
+
+        Assert.Equal(1, repairer.CallCount);
+        Assert.NotNull(repairer.LastRequest);
+        Assert.Equal("tool_input_missing_required", repairer.LastRequest!.ValidationIssue.Code);
+        Assert.Equal("robot vacuums", result.Steps[0].In["query"]?.GetValue<string>());
+        chatClient.Verify(
+            client => client.GetResponseAsync(
+                It.IsAny<IEnumerable<ChatMessage>>(),
+                It.IsAny<ChatOptions?>(),
+                It.IsAny<CancellationToken>()),
+            Times.Exactly(2));
+    }
+
+    [Fact]
     public async Task LlmPlanner_UsesSingleFallbackGeneration_AfterInitialRepairFails()
     {
         var invalidPlan = CreateInvalidSearchPlan();

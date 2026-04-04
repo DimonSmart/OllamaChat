@@ -280,6 +280,25 @@ public sealed class OrchestrationWorkflowChatSessionServiceTests
         Assert.False(service.IsAnswering);
     }
 
+    [Theory]
+    [InlineData(RunStatus.NotStarted, 0, true)]
+    [InlineData(RunStatus.Idle, 0, true)]
+    [InlineData(RunStatus.Running, 0, true)]
+    [InlineData(RunStatus.Idle, 1, false)]
+    [InlineData(RunStatus.Ended, 0, false)]
+    [InlineData(RunStatus.Ended, 2, false)]
+    public void ShouldSendExplicitTurnToken_MatchesConversationBatchOutcome(
+        RunStatus statusAfterConversationBatch,
+        int completedAssistantMessagesFromConversationBatch,
+        bool expected)
+    {
+        var shouldSend = OrchestrationWorkflowChatSessionService.ShouldSendExplicitTurnToken(
+            statusAfterConversationBatch,
+            completedAssistantMessagesFromConversationBatch);
+
+        Assert.Equal(expected, shouldSend);
+    }
+
     private static OrchestrationWorkflowChatSessionService CreateService(
         TaskSessionStore? taskSessionStore = null,
         IReadOnlyList<IOrchestrationRuntimeWorkflowBuilder>? runtimeWorkflowBuilders = null) =>

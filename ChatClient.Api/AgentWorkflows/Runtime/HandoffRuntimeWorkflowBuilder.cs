@@ -23,7 +23,9 @@ public sealed class HandoffRuntimeWorkflowBuilder : IOrchestrationRuntimeWorkflo
                 $"Workflow start agent '{handoffWorkflow.StartAgentId}' was not prepared.");
         }
 
+#pragma warning disable MAAIW001
         var builder = AgentWorkflowBuilder.CreateHandoffBuilderWith(startAgent);
+#pragma warning restore MAAIW001
 
         foreach (var handoff in SelectHandoffsForRuntime(handoffWorkflow, context.AssistantSpeakerIds))
         {

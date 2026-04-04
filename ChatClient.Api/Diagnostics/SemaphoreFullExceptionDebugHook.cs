@@ -6,6 +6,7 @@ namespace ChatClient.Api.Diagnostics;
 
 internal static class SemaphoreFullExceptionDebugHook
 {
+    private const string BreakOnSemaphoreFullEnvVar = "OLLAMACHAT_BREAK_ON_SEMAPHORE_FULL";
     private static int _isRegistered;
 
     public static void Register()
@@ -38,6 +39,21 @@ internal static class SemaphoreFullExceptionDebugHook
             exception.StackTrace,
             currentStack);
 
-        Debugger.Break();
+        if (ShouldBreakIntoDebugger())
+        {
+            Debugger.Break();
+        }
+    }
+
+    private static bool ShouldBreakIntoDebugger()
+    {
+        var value = Environment.GetEnvironmentVariable(BreakOnSemaphoreFullEnvVar);
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return false;
+        }
+
+        return string.Equals(value, "1", StringComparison.OrdinalIgnoreCase) ||
+               string.Equals(value, "true", StringComparison.OrdinalIgnoreCase);
     }
 }
