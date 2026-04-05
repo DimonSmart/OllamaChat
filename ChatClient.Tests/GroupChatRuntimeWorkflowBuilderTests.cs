@@ -2,8 +2,10 @@ using ChatClient.Api.AgentWorkflows;
 using ChatClient.Api.AgentWorkflows.GroupChat;
 using ChatClient.Api.AgentWorkflows.Runtime;
 using Microsoft.Agents.AI;
+using Microsoft.Agents.AI.Workflows;
 using Microsoft.Extensions.AI;
 using System.Text.Json;
+using System.Reflection;
 
 namespace ChatClient.Tests;
 
@@ -75,9 +77,69 @@ public sealed class GroupChatRuntimeWorkflowBuilderTests
         Assert.Equal(9, manager.AssistantMessagesBeforeRun);
     }
 
+    [Fact]
+    public async Task ConfiguredProgrammableManager_DoesNotDoubleCountPriorAssistantMessagesPresentInHistory()
+    {
+        var manager = new ConfiguredProgrammableGroupChatManager(
+            [
+                CreateAgent("host", "Host"),
+                CreateAgent("debater_a", "Reviewer A"),
+                CreateAgent("debater_b", "Reviewer B"),
+                CreateAgent("judge", "Closer")
+            ],
+            ["host", "debater_a", "debater_b", "judge"],
+            new GroupChatWorkflowManagerDefinition
+            {
+                Kind = GroupChatWorkflowManagerKind.Programmable,
+                MaximumIterations = 10,
+                Program = GroupChatManagerPrograms.PrefixCycleSuffix(
+                    prefix: ["host"],
+                    cycle: ["debater_a", "debater_b"],
+                    suffix: ["debater_a", "debater_b", "judge"]),
+                ProgramDisplayName = "PrefixCycleSuffix"
+            },
+            ["host", "debater_a", "debater_b", "debater_a", "debater_b"]);
+
+        var history = Enumerable.Range(0, 5)
+            .Select(_ => new ChatMessage(ChatRole.Assistant, "already delivered"))
+            .ToList();
+
+        var nextAgent = await InvokeSelectNextAgentAsync(manager, history);
+        var shouldTerminate = await InvokeShouldTerminateAsync(manager, history);
+
+        Assert.Equal("Reviewer A", nextAgent.Name);
+        Assert.False(shouldTerminate);
+    }
+
     private static AIAgent CreateAgent(string id, string name)
     {
         return new StubAgent(id, name);
+    }
+
+    private static async Task<AIAgent> InvokeSelectNextAgentAsync(
+        GroupChatManager manager,
+        IReadOnlyList<ChatMessage> history)
+    {
+        var method = typeof(GroupChatManager).GetMethod(
+            "SelectNextAgentAsync",
+            BindingFlags.Instance | BindingFlags.NonPublic)
+            ?? throw new InvalidOperationException("SelectNextAgentAsync was not found.");
+
+        var task = (ValueTask<AIAgent>)method.Invoke(manager, [history, CancellationToken.None])!;
+        return await task;
+    }
+
+    private static async Task<bool> InvokeShouldTerminateAsync(
+        GroupChatManager manager,
+        IReadOnlyList<ChatMessage> history)
+    {
+        var method = typeof(GroupChatManager).GetMethod(
+            "ShouldTerminateAsync",
+            BindingFlags.Instance | BindingFlags.NonPublic)
+            ?? throw new InvalidOperationException("ShouldTerminateAsync was not found.");
+
+        var task = (ValueTask<bool>)method.Invoke(manager, [history, CancellationToken.None])!;
+        return await task;
     }
 
     private sealed class StubAgent(string id, string name) : AIAgent

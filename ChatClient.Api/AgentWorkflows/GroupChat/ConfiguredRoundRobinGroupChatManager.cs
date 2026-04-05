@@ -44,7 +44,7 @@ public sealed class ConfiguredRoundRobinGroupChatManager : GroupChatManager
         IReadOnlyList<ChatMessage> history,
         CancellationToken cancellationToken)
     {
-        var assistantMessageCount = _assistantMessagesBeforeRun + CountAssistantMessages(history);
+        var assistantMessageCount = CountTotalAssistantMessages(history);
         var nextAgent = _agents[assistantMessageCount % _agents.Count];
         return ValueTask.FromResult(nextAgent);
     }
@@ -58,7 +58,7 @@ public sealed class ConfiguredRoundRobinGroupChatManager : GroupChatManager
         IReadOnlyList<ChatMessage> history,
         CancellationToken cancellationToken)
     {
-        var assistantMessageCount = _assistantMessagesBeforeRun + CountAssistantMessages(history);
+        var assistantMessageCount = CountTotalAssistantMessages(history);
         return ValueTask.FromResult(assistantMessageCount >= MaximumIterationCount);
     }
 
@@ -68,4 +68,12 @@ public sealed class ConfiguredRoundRobinGroupChatManager : GroupChatManager
 
     private static int CountAssistantMessages(IReadOnlyList<ChatMessage> history) =>
         history.Count(static message => message.Role == ChatRole.Assistant);
+
+    private int CountTotalAssistantMessages(IReadOnlyList<ChatMessage> history)
+    {
+        var historyAssistantMessageCount = CountAssistantMessages(history);
+        return historyAssistantMessageCount >= _assistantMessagesBeforeRun
+            ? historyAssistantMessageCount
+            : _assistantMessagesBeforeRun + historyAssistantMessageCount;
+    }
 }

@@ -191,6 +191,45 @@ public sealed class OrchestrationWorkflowChatSessionServiceTests
     }
 
     [Fact]
+    public async Task DrainWorkflowEventsAsync_SkipsTranscriptSuffixAlreadyShownInPreviousPass()
+    {
+        var service = CreateService();
+        service.RegisterAgentIdentity("host", "Host", "runtime://host");
+        service.RegisterAgentIdentity("judge", "Judge", "runtime://judge");
+
+        service.Messages.Add(new AppChatMessage(
+            "Host intro",
+            DateTime.Now,
+            ChatRole.Assistant,
+            agentId: "host",
+            agentName: "Host"));
+        service.Messages.Add(new AppChatMessage(
+            "Judge review",
+            DateTime.Now,
+            ChatRole.Assistant,
+            agentId: "judge",
+            agentName: "Judge"));
+
+        await service.DrainWorkflowEventsAsync(
+            StreamEvents(
+            [
+                CreateOutputListEvent(
+                    "runtime://group-chat",
+                    CreateOutputMessage("Judge", "Judge review"),
+                    CreateOutputMessage("Host", "Host closing"))
+            ]),
+            "model-a");
+
+        var assistants = service.Messages.Where(message => message.Role == ChatRole.Assistant).ToList();
+
+        Assert.Equal(3, assistants.Count);
+        Assert.Equal("Host intro", assistants[0].Content);
+        Assert.Equal("Judge review", assistants[1].Content);
+        Assert.Equal("Host closing", assistants[2].Content);
+        Assert.Equal("host", assistants[2].AgentId);
+    }
+
+    [Fact]
     public async Task DrainWorkflowEventsAsync_FinalizesCurrentStreamBeforeRethrowingExecutorFailure()
     {
         var service = CreateService();

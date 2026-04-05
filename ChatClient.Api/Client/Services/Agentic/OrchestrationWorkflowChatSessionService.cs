@@ -470,6 +470,7 @@ public sealed class OrchestrationWorkflowChatSessionService(
         var workflow = BuildWorkflow(parameters.Workflow);
         var conversation = BuildConversation(_chat.Messages);
         var sessionId = TaskSessionId ?? Guid.NewGuid().ToString("N");
+        var deliveredAssistantMessages = GetDeliveredAssistantMessagesSnapshot();
 
         // Microsoft.Agents.AI.Workflows 1.0.0-rc4 drives chat-protocol runs by enqueueing the
         // initial conversation and an implicit TurnToken back-to-back inside RunAsync(). With the
@@ -490,6 +491,7 @@ public sealed class OrchestrationWorkflowChatSessionService(
                 conversation,
                 parameters.Configuration.ModelName,
                 streamingState,
+                deliveredAssistantMessages,
                 completedAssistantMessages,
                 cancellationToken);
         }
@@ -507,6 +509,7 @@ public sealed class OrchestrationWorkflowChatSessionService(
                 new TurnToken(emitEvents: true),
                 parameters.Configuration.ModelName,
                 streamingState,
+                deliveredAssistantMessages,
                 completedAssistantMessages,
                 cancellationToken);
         }
@@ -566,6 +569,7 @@ public sealed class OrchestrationWorkflowChatSessionService(
             workflowEvents,
             modelName,
             new WorkflowPassStreamingState(_assistantSpeakerIds.Count),
+            GetDeliveredAssistantMessagesSnapshot(),
             [],
             cancellationToken);
     }
@@ -574,6 +578,7 @@ public sealed class OrchestrationWorkflowChatSessionService(
         IAsyncEnumerable<WorkflowEvent> workflowEvents,
         string modelName,
         WorkflowPassStreamingState streamingState,
+        IReadOnlyList<DeliveredAssistantMessage> deliveredAssistantMessages,
         List<CompletedWorkflowAssistantMessage> completedAssistantMessages,
         CancellationToken cancellationToken)
     {
@@ -585,6 +590,7 @@ public sealed class OrchestrationWorkflowChatSessionService(
                 workflowEvent,
                 modelName,
                 streamingState,
+                deliveredAssistantMessages,
                 completedAssistantMessages,
                 cancellationToken);
         }
@@ -596,6 +602,7 @@ public sealed class OrchestrationWorkflowChatSessionService(
         WorkflowEvent workflowEvent,
         string modelName,
         WorkflowPassStreamingState streamingState,
+        IReadOnlyList<DeliveredAssistantMessage> deliveredAssistantMessages,
         List<CompletedWorkflowAssistantMessage> completedAssistantMessages,
         CancellationToken cancellationToken)
     {
@@ -634,6 +641,7 @@ public sealed class OrchestrationWorkflowChatSessionService(
 
                 foreach (var chatMessage in GetUndeliveredOutputMessages(
                              assistantMessages,
+                             deliveredAssistantMessages,
                              completedAssistantMessages))
                 {
                     await PublishCompletedOutputMessageAsync(
@@ -665,6 +673,7 @@ public sealed class OrchestrationWorkflowChatSessionService(
         TInput input,
         string modelName,
         WorkflowPassStreamingState streamingState,
+        IReadOnlyList<DeliveredAssistantMessage> deliveredAssistantMessages,
         List<CompletedWorkflowAssistantMessage> completedAssistantMessages,
         CancellationToken cancellationToken)
         where TInput : notnull
@@ -682,6 +691,7 @@ public sealed class OrchestrationWorkflowChatSessionService(
             run.WatchStreamAsync(cancellationToken),
             modelName,
             streamingState,
+            deliveredAssistantMessages,
             completedAssistantMessages,
             cancellationToken);
     }
@@ -863,16 +873,17 @@ public sealed class OrchestrationWorkflowChatSessionService(
 
     private IEnumerable<ChatMessage> GetUndeliveredOutputMessages(
         IReadOnlyList<ChatMessage> outputMessages,
+        IReadOnlyList<DeliveredAssistantMessage> deliveredAssistantMessages,
         IReadOnlyList<CompletedWorkflowAssistantMessage> completedAssistantMessages)
     {
-        var skipCount = 0;
-        var comparableMessageCount = Math.Min(outputMessages.Count, completedAssistantMessages.Count);
-
-        while (skipCount < comparableMessageCount &&
-               IsSameDeliveredAssistantMessage(outputMessages[skipCount], completedAssistantMessages[skipCount]))
-        {
-            skipCount++;
-        }
+        var deliveredMessages = deliveredAssistantMessages
+            .Concat(completedAssistantMessages.Select(static completedMessage =>
+                new DeliveredAssistantMessage(
+                    completedMessage.Message.Content ?? string.Empty,
+                    completedMessage.SpeakerId ?? completedMessage.Message.AgentId,
+                    completedMessage.Message.AgentName)))
+            .ToList();
+        var skipCount = FindDeliveredOutputOverlap(outputMessages, deliveredMessages);
 
         for (var index = skipCount; index < outputMessages.Count; index++)
         {
@@ -882,11 +893,11 @@ public sealed class OrchestrationWorkflowChatSessionService(
 
     private bool IsSameDeliveredAssistantMessage(
         ChatMessage outputMessage,
-        CompletedWorkflowAssistantMessage completedMessage)
+        DeliveredAssistantMessage deliveredMessage)
     {
         if (!string.Equals(
                 outputMessage.Text?.Trim(),
-                completedMessage.Message.Content?.Trim(),
+                deliveredMessage.Content.Trim(),
                 StringComparison.Ordinal))
         {
             return false;
@@ -896,10 +907,40 @@ public sealed class OrchestrationWorkflowChatSessionService(
         var outputSpeakerName = ResolveSpeakerName(outputSpeakerId) ?? outputMessage.AuthorName;
 
         return IsSameSpeaker(
-            completedMessage.Message.AgentId,
-            completedMessage.Message.AgentName,
+            deliveredMessage.SpeakerId,
+            deliveredMessage.SpeakerName,
             outputSpeakerId,
             outputSpeakerName);
+    }
+
+    private int FindDeliveredOutputOverlap(
+        IReadOnlyList<ChatMessage> outputMessages,
+        IReadOnlyList<DeliveredAssistantMessage> deliveredMessages)
+    {
+        var maxOverlap = Math.Min(outputMessages.Count, deliveredMessages.Count);
+        for (var overlap = maxOverlap; overlap > 0; overlap--)
+        {
+            var deliveredStartIndex = deliveredMessages.Count - overlap;
+            var matches = true;
+
+            for (var index = 0; index < overlap; index++)
+            {
+                if (!IsSameDeliveredAssistantMessage(
+                        outputMessages[index],
+                        deliveredMessages[deliveredStartIndex + index]))
+                {
+                    matches = false;
+                    break;
+                }
+            }
+
+            if (matches)
+            {
+                return overlap;
+            }
+        }
+
+        return 0;
     }
 
     private async Task<StreamingAppChatMessage> GetOrCreateStreamAsync(
@@ -1026,6 +1067,37 @@ public sealed class OrchestrationWorkflowChatSessionService(
         }
 
         return builder.ToString().Trim();
+    }
+
+    private IReadOnlyList<DeliveredAssistantMessage> GetDeliveredAssistantMessagesSnapshot()
+    {
+        List<DeliveredAssistantMessage> deliveredMessages = [];
+
+        foreach (var message in _chat.Messages)
+        {
+            if (message.IsStreaming || message.Role != ChatRole.Assistant)
+            {
+                continue;
+            }
+
+            var content = message.Content?.Trim();
+            if (string.IsNullOrWhiteSpace(content))
+            {
+                continue;
+            }
+
+            _speakerIdsByMessageId.TryGetValue(message.Id, out var speakerIdFromMessageMap);
+            var speakerId = !string.IsNullOrWhiteSpace(message.AgentId)
+                ? message.AgentId
+                : speakerIdFromMessageMap;
+            var speakerName = !string.IsNullOrWhiteSpace(message.AgentName)
+                ? message.AgentName
+                : ResolveSpeakerName(speakerId);
+
+            deliveredMessages.Add(new DeliveredAssistantMessage(content, speakerId, speakerName));
+        }
+
+        return deliveredMessages;
     }
 
     private async Task<MarkdownDocumentIntakeResult?> PrepareDocumentAsync(
@@ -1477,6 +1549,11 @@ public sealed class OrchestrationWorkflowChatSessionService(
     private sealed record CompletedWorkflowAssistantMessage(
         AppChatMessage Message,
         string? SpeakerId);
+
+    private sealed record DeliveredAssistantMessage(
+        string Content,
+        string? SpeakerId,
+        string? SpeakerName);
 
     private sealed class WorkflowPassStreamingState(int assistantMessagesBeforePass)
     {

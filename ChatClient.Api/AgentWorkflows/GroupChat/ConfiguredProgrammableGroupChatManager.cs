@@ -43,7 +43,7 @@ public sealed class ConfiguredProgrammableGroupChatManager : GroupChatManager
         IReadOnlyList<ChatMessage> history,
         CancellationToken cancellationToken)
     {
-        var currentRunAssistantMessageCount = CountAssistantMessages(history);
+        var currentRunAssistantMessageCount = CountCurrentRunAssistantMessages(history);
         var priorAssistantSpeakerIds = _priorAssistantSpeakerIds
             .Concat(GetCurrentRunSpeakerIds(currentRunAssistantMessageCount))
             .ToArray();
@@ -64,7 +64,7 @@ public sealed class ConfiguredProgrammableGroupChatManager : GroupChatManager
         IReadOnlyList<ChatMessage> history,
         CancellationToken cancellationToken)
     {
-        var assistantMessageCount = _priorAssistantSpeakerIds.Count + CountAssistantMessages(history);
+        var assistantMessageCount = CountTotalAssistantMessages(history);
         return ValueTask.FromResult(assistantMessageCount >= MaximumIterationCount);
     }
 
@@ -91,4 +91,15 @@ public sealed class ConfiguredProgrammableGroupChatManager : GroupChatManager
 
     private static int CountAssistantMessages(IReadOnlyList<ChatMessage> history) =>
         history.Count(static message => message.Role == ChatRole.Assistant);
+
+    private int CountCurrentRunAssistantMessages(IReadOnlyList<ChatMessage> history)
+    {
+        var historyAssistantMessageCount = CountAssistantMessages(history);
+        return historyAssistantMessageCount >= _priorAssistantSpeakerIds.Count
+            ? historyAssistantMessageCount - _priorAssistantSpeakerIds.Count
+            : historyAssistantMessageCount;
+    }
+
+    private int CountTotalAssistantMessages(IReadOnlyList<ChatMessage> history) =>
+        _priorAssistantSpeakerIds.Count + CountCurrentRunAssistantMessages(history);
 }
