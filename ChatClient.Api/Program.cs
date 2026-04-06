@@ -38,46 +38,61 @@ Log.Logger = new LoggerConfiguration()
     .WriteTo.Debug()
     .CreateLogger();
 
-SemaphoreFullExceptionDebugHook.Register();
+try
+{
+    SemaphoreFullExceptionDebugHook.Register();
+    ExceptionDiagnosticsHook.Register();
 
-var builder = runFromSelfContainedLayout
-    ? WebApplication.CreateBuilder(new WebApplicationOptions
+    var builder = runFromSelfContainedLayout
+        ? WebApplication.CreateBuilder(new WebApplicationOptions
+        {
+            Args = args,
+            ContentRootPath = appBaseDirectory,
+            WebRootPath = Path.Combine(appBaseDirectory, "wwwroot")
+        })
+        : WebApplication.CreateBuilder(args);
+    builder.Host.UseSerilog();
+    builder.Services.Configure<ChatEngineOptions>(builder.Configuration.GetSection(ChatEngineOptions.SectionName));
+
+    builder.Configuration.AddUserSecrets<Program>(optional: true);
+
+    builder.Services.AddApplicationServices(builder.Configuration, builder.Environment);
+
+    var app = builder.Build();
+    ExceptionDiagnosticsHook.TrackLifetime(app.Lifetime);
+    await app.InitializeApplicationAsync();
+
+    if (app.Environment.IsDevelopment())
     {
-        Args = args,
-        ContentRootPath = appBaseDirectory,
-        WebRootPath = Path.Combine(appBaseDirectory, "wwwroot")
-    })
-    : WebApplication.CreateBuilder(args);
-builder.Host.UseSerilog();
-builder.Services.Configure<ChatEngineOptions>(builder.Configuration.GetSection(ChatEngineOptions.SectionName));
+        app.UseDeveloperExceptionPage();
+    }
+    else
+    {
+        app.UseExceptionHandler("/Error");
+        app.UseHsts();
+    }
 
-builder.Configuration.AddUserSecrets<Program>(optional: true);
+    app.UseStaticFiles();
 
-builder.Services.AddApplicationServices(builder.Configuration, builder.Environment);
+    app.UseRouting();
 
-var app = builder.Build();
-await app.InitializeApplicationAsync();
+    app.MapRazorPages();
+    app.MapBlazorHub();
+    app.MapFallbackToPage("/_Host");
+    app.RegisterBrowserLaunch();
 
-if (app.Environment.IsDevelopment())
-{
-    app.UseDeveloperExceptionPage();
+    await app.RunAsync();
 }
-else
+catch (Exception ex)
 {
-    app.UseExceptionHandler("/Error");
-    app.UseHsts();
+    Log.Fatal(ex, "Application terminated unexpectedly.");
+    throw;
 }
-
-app.UseStaticFiles();
-
-app.UseRouting();
-
-app.MapRazorPages();
-app.MapBlazorHub();
-app.MapFallbackToPage("/_Host");
-app.RegisterBrowserLaunch();
-
-await app.RunAsync();
+finally
+{
+    ExceptionDiagnosticsHook.FlushSummary();
+    Log.CloseAndFlush();
+}
 
 static string ResolveApplicationBaseDirectory()
 {
