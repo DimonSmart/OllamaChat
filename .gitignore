@@ -444,3 +444,4 @@ $RECYCLE.BIN/
 /.llm-test-cache/answer-assertions
 /.codex-out
 /_tmp
+/.codex-temp
