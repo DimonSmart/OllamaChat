@@ -142,22 +142,6 @@
                                     </MudAlert>
                                 }
 
-                                <MudTextField T="string"
-                                              Label="Session Title"
-                                              Value="sessionTitle"
-                                              ValueChanged="value => sessionTitle = value"
-                                              Variant="Variant.Outlined"
-                                              Margin="Margin.Dense" />
-
-                                <MudTextField T="string"
-                                              Label="Scenario Description"
-                                              Value="sessionDescription"
-                                              ValueChanged="value => sessionDescription = value"
-                                              Variant="Variant.Outlined"
-                                              Margin="Margin.Dense"
-                                              Lines="4"
-                                              AutoGrow="true" />
-
                                 @if (currentWorkflow is not null)
                                 {
                                     @if (currentWorkflow.StartInputs.Count > 0)
@@ -546,8 +530,6 @@
     private string workflowSourceCode = string.Empty;
     private string? workflowCompileError;
     private string workflowSearchText = string.Empty;
-    private string? sessionTitle;
-    private string? sessionDescription;
     private bool isPageLoading = true;
     private bool isWorkflowSourceExpanded;
     private bool workflowSourceDirty;
@@ -699,8 +681,6 @@
                 Workflow = currentWorkflow,
                 Agents = runtimeAgents,
                 Configuration = new AppChatConfiguration(model.ModelName, []),
-                SessionTitle = sessionTitle,
-                SessionDescription = sessionDescription,
                 StartInputs = startInputs
             };
 
