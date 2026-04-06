@@ -9,7 +9,6 @@
 @using ChatClient.Domain.Models
 @using ChatClient.Domain.Models.ChatStrategies
 @using Microsoft.AspNetCore.Components
-@using Microsoft.Extensions.AI
 @using MudBlazor
 @inherits AgenticChatPageBase
 
@@ -36,7 +35,7 @@
                 else
                 {
                     <MudStack Spacing="3">
-                        <MudSelect T="AgentDescription" Label="Select Agents" SelectedValues="selectedAgents" SelectedValuesChanged="OnSelectedAgentsChanged" MultiSelection="true" Variant="Variant.Outlined" FullWidth="true" Dense="true">
+                        <MudSelect T="AgentTemplateDefinition" Label="Select Agents" SelectedValues="selectedAgents" SelectedValuesChanged="OnSelectedAgentsChanged" MultiSelection="true" Variant="Variant.Outlined" FullWidth="true" Dense="true">
                             @foreach (var agent in agents)
                             {
                                 <MudSelectItem Value="@agent">@agent.AgentName</MudSelectItem>
@@ -101,7 +100,7 @@
     {
         <AgenticChatSession @ref="chatSessionView"
                             Messages="ChatViewModelService.Messages"
-                            Agents="agents"
+                            Agents="ChatService.Agents"
                             IsLlmAnswering="isLLMAnswering"
                             UserName="userSettings.UserName"
                             IsMultiAgent="true"
@@ -120,9 +119,9 @@
     private const string RoundRobinChatStrategy = "RoundRobin";
     private const string RoundRobinSummaryChatStrategy = "RoundRobinWithSummary";
 
-    private List<AgentDescription> agents = new();
-    private List<AgentDescription> selectedAgents { get; set; } = new();
-    private List<AgentDescription> selectedAgentDrafts { get; set; } = new();
+    private List<AgentTemplateDefinition> agents = new();
+    private List<AgentTemplateDefinition> selectedAgents { get; set; } = new();
+    private List<AgentTemplateDefinition> selectedAgentDrafts { get; set; } = new();
     private List<string> chatStrategies = new();
     private IChatStrategyOptions chatStrategyOptions = new RoundRobinChatStrategyOptions();
     private string chatStrategyName = RoundRobinChatStrategy;
@@ -178,7 +177,8 @@
         if (userSettings.MultiAgentSelectedAgents?.Count > 0)
         {
             var persistedAgents = userSettings.MultiAgentSelectedAgents
-                .Select(name => agents.FirstOrDefault(agent => agent.AgentName == name))
+                .Select(agentId => agents.FirstOrDefault(agent =>
+                    string.Equals(agent.AgentId, agentId, StringComparison.OrdinalIgnoreCase)))
                 .Where(agent => agent is not null)
                 .Select(agent => agent!)
                 .ToList();
@@ -197,7 +197,7 @@
         }
 
         var assistantIds = saved.Participants
-            .Where(participant => participant.Role == ChatRole.Assistant)
+            .Where(participant => participant.Role == AppChatRole.Assistant)
             .Select(participant => participant.Id)
             .ToHashSet(StringComparer.OrdinalIgnoreCase);
 
@@ -270,7 +270,9 @@
             return;
 
         userSettings.ChatStrategyName = chatStrategyName;
-        userSettings.MultiAgentSelectedAgents = selectedAgentDrafts.Select(agent => agent.AgentName).ToList();
+        userSettings.MultiAgentSelectedAgents = selectedAgentDrafts
+            .Select(agent => agent.AgentId)
+            .ToList();
         await UserSettingsService.SaveSettingsAsync(userSettings);
 
         var runtimeAgents = BuildRuntimeAgents(selectedAgentDrafts);
@@ -297,13 +299,13 @@
         }
     }
 
-    private Task OnSelectedAgentsChanged(IEnumerable<AgentDescription> agents)
+    private Task OnSelectedAgentsChanged(IEnumerable<AgentTemplateDefinition> agents)
     {
         UpdateSelectedAgents(agents);
         return Task.CompletedTask;
     }
 
-    private Task OnDraftMcpBindingsChanged(AgentDescription agentDraft, List<McpServerSessionBinding> bindings)
+    private Task OnDraftMcpBindingsChanged(AgentTemplateDefinition agentDraft, List<McpServerSessionBinding> bindings)
     {
         agentDraft.McpServerBindings = bindings
             .Select(static binding => binding.Clone())
@@ -312,29 +314,29 @@
         return Task.CompletedTask;
     }
 
-    private bool TryResolveEffectiveModel(AgentDescription agent, out ServerModel model) =>
+    private bool TryResolveEffectiveModel(AgentTemplateDefinition agent, out ServerModel model) =>
         ModelSelectionHelper.TryGetEffectiveModel(
             new ServerModelSelection(agent.LlmId, agent.ModelName),
             UiModelSelection,
             out model);
 
-    private ServerModel GetEffectiveModel(AgentDescription agent) =>
+    private ServerModel GetEffectiveModel(AgentTemplateDefinition agent) =>
         ModelSelectionHelper.GetEffectiveModel(
             new ServerModelSelection(agent.LlmId, agent.ModelName),
             UiModelSelection,
             $"Agent: {agent.AgentName}",
             Logger);
 
-    private List<ResolvedChatAgent> BuildRuntimeAgents(IReadOnlyCollection<AgentDescription> drafts) =>
+    private List<ResolvedChatAgent> BuildRuntimeAgents(IReadOnlyCollection<AgentTemplateDefinition> drafts) =>
         drafts
             .Select(agent =>
             {
                 var effectiveModel = GetEffectiveModel(agent);
-                return AgentDescriptionFactory.CreateResolved(agent, effectiveModel);
+                return ResolvedChatAgentFactory.Resolve(agent, effectiveModel);
             })
             .ToList();
 
-    private void UpdateSelectedAgents(IEnumerable<AgentDescription> selected)
+    private void UpdateSelectedAgents(IEnumerable<AgentTemplateDefinition> selected)
     {
         var selectedList = selected.ToList();
         var existingDrafts = selectedAgentDrafts.ToDictionary(static agent => agent.Id);
@@ -343,7 +345,7 @@
         selectedAgentDrafts = selectedList
             .Select(agent => existingDrafts.TryGetValue(agent.Id, out var existingDraft)
                 ? existingDraft
-                : AgentDescriptionFactory.CreateDraft(agent))
+                : agent.Clone())
             .ToList();
     }
 }

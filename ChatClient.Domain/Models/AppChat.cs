@@ -6,22 +6,22 @@ namespace ChatClient.Domain.Models;
 
 public class AppChat
 {
-    private readonly Dictionary<string, AgentDescription> _agentsByName = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<string, AgentExecutionSpec> _agentsById = new(StringComparer.OrdinalIgnoreCase);
 
     public Guid Id { get; private set; } = Guid.NewGuid();
     public ObservableCollection<IAppChatMessage> Messages { get; } = [];
     public string? FirstUserMessage { get; set; }
     public ServerModelSelection? InitialModel { get; set; }
 
-    public IReadOnlyDictionary<string, AgentDescription> AgentsByName => _agentsByName;
-    public IReadOnlyCollection<AgentDescription> AgentDescriptions => _agentsByName.Values;
+    public IReadOnlyDictionary<string, AgentExecutionSpec> AgentsById => _agentsById;
+    public IReadOnlyCollection<AgentExecutionSpec> Agents => _agentsById.Values;
 
-    public void SetAgents(IEnumerable<AgentDescription> agents)
+    public void SetAgents(IEnumerable<AgentExecutionSpec> agents)
     {
-        _agentsByName.Clear();
+        _agentsById.Clear();
         foreach (var agent in agents)
         {
-            _agentsByName[agent.AgentId] = agent;
+            _agentsById[agent.AgentId] = agent;
         }
     }
 
@@ -29,7 +29,7 @@ public class AppChat
     {
         Id = Guid.NewGuid();
         Messages.Clear();
-        _agentsByName.Clear();
+        _agentsById.Clear();
         FirstUserMessage = null;
         InitialModel = null;
     }

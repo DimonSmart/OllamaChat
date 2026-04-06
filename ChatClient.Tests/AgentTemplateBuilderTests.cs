@@ -4,14 +4,14 @@ using Microsoft.Extensions.AI;
 
 namespace ChatClient.Tests;
 
-public class AgentDefinitionBuilderTests
+public class AgentTemplateBuilderTests
 {
     [Fact]
     public void NewAgent_BuildsDefinitionWithExecutionAndBindings()
     {
         var serverId = Guid.NewGuid();
 
-        var definition = AgentDefinitionBuilder
+        var definition = AgentTemplateBuilder
             .New("Character Reader", "character-reader")
             .WithSummary("Reads the current cursor position and updates the registry.")
             .WithAvatarText("CR")
@@ -58,7 +58,7 @@ public class AgentDefinitionBuilderTests
     [Fact]
     public void FromExistingAgent_CanOverrideDefinitionAndBuildRunRequest()
     {
-        var saved = new AgentDescription
+        var saved = new AgentTemplateDefinition
         {
             Id = Guid.NewGuid(),
             AgentName = "Knowledge Reader",
@@ -80,7 +80,7 @@ public class AgentDefinitionBuilderTests
         };
         var resolvedModel = new ServerModel(Guid.NewGuid(), "model-new");
 
-        var request = AgentDefinitionBuilder
+        var request = AgentTemplateBuilder
             .From(saved)
             .WithInstructions("Read only chapter 1 and return structured notes.")
             .WithBinding("knowledge-book", binding => binding
@@ -103,7 +103,7 @@ public class AgentDefinitionBuilderTests
         Assert.Equal(resolvedModel.ModelName, request.Configuration.ModelName);
         Assert.Equal(["mock-web:search"], request.Configuration.Functions);
         Assert.Single(request.Conversation);
-        Assert.Equal(ChatRole.System, request.Conversation[0].Role);
+        Assert.Equal(AppChatRole.System, request.Conversation[0].Role);
         Assert.Equal("Existing conversation", request.Conversation[0].Text);
         Assert.Equal("Scan chapter 1", request.UserMessage);
 
@@ -118,7 +118,7 @@ public class AgentDefinitionBuilderTests
     public void ForRun_CanUseDefinitionDefaultModel()
     {
         var serverId = Guid.NewGuid();
-        var definition = AgentDefinitionBuilder
+        var definition = AgentTemplateBuilder
             .New("Planner", "planner")
             .WithDefaultModel(serverId, "model-a")
             .Build();
@@ -133,5 +133,36 @@ public class AgentDefinitionBuilderTests
         Assert.Equal("model-a", request.ResolvedModel.ModelName);
         Assert.Equal("model-a", request.Configuration.ModelName);
         Assert.Equal("Plan the task.", request.UserMessage);
+    }
+
+    [Fact]
+    public void AgentId_DefaultsToStableGuidAndIgnoresDisplayAliasChanges()
+    {
+        var agentId = Guid.NewGuid();
+        var definition = new AgentExecutionSpec
+        {
+            Id = agentId,
+            AgentName = "Researcher",
+            ShortName = "researcher"
+        };
+
+        Assert.Equal(agentId.ToString("N"), definition.AgentId);
+
+        definition.ShortName = "reviewer";
+
+        Assert.Equal(agentId.ToString("N"), definition.AgentId);
+    }
+
+    [Fact]
+    public void AgentId_UsesRuntimeAgentIdWhenProvided()
+    {
+        var description = new AgentTemplateDefinition
+        {
+            Id = Guid.NewGuid(),
+            AgentName = "Workflow Host",
+            RuntimeAgentId = "host"
+        };
+
+        Assert.Equal("host", description.AgentId);
     }
 }

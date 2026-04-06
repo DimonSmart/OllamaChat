@@ -42,4 +42,18 @@ public static class WorkflowDefinitionKinds
             _ => Handoff
         };
     }
+
+    public static string NormalizeOrThrow(string? value)
+    {
+        var normalized = value?.Trim().ToLowerInvariant();
+        return normalized switch
+        {
+            Handoff => Handoff,
+            Sequential => Sequential,
+            Concurrent => Concurrent,
+            GroupChat or "group chat" or "group_chat" or "groupchat" => GroupChat,
+            null or "" => Handoff,
+            _ => throw new InvalidOperationException($"Unsupported workflow kind '{value}'.")
+        };
+    }
 }

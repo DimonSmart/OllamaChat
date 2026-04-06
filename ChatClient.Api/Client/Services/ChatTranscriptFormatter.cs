@@ -2,7 +2,6 @@ using System.Text;
 using ChatClient.Api.Client.Markdown;
 using ChatClient.Api.Client.ViewModels;
 using ChatClient.Domain.Models;
-using Microsoft.Extensions.AI;
 
 namespace ChatClient.Api.Client.Services;
 
@@ -23,7 +22,7 @@ public static class ChatTranscriptFormatter
 
         foreach (var message in messages)
         {
-            if (message.Role == ChatRole.System)
+            if (message.Role == AppChatRole.System)
                 continue;
 
             builder.AppendLine($"{ResolveSpeakerName(message)}: {message.Content}");
@@ -61,7 +60,7 @@ public static class ChatTranscriptFormatter
 
         foreach (var message in messages)
         {
-            if (message.Role == ChatRole.System)
+            if (message.Role == AppChatRole.System)
                 continue;
 
             builder.AppendLine($"**{ResolveSpeakerName(message)}:** {message.Content}");
@@ -106,7 +105,7 @@ public static class ChatTranscriptFormatter
 
         foreach (var message in messages)
         {
-            if (message.Role == ChatRole.System)
+            if (message.Role == AppChatRole.System)
                 continue;
 
             builder
@@ -173,10 +172,10 @@ public static class ChatTranscriptFormatter
 
     private static string ResolveSpeakerName(AppChatMessageViewModel message)
     {
-        if (message.Role == ChatRole.Assistant)
+        if (message.Role == AppChatRole.Assistant)
             return message.AgentName ?? message.AgentId ?? "Assistant";
 
-        return message.Role == ChatRole.Tool
+        return message.Role == AppChatRole.Tool
             ? "Tool"
             : "User";
     }

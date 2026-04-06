@@ -9,7 +9,7 @@ var workflow = WorkflowDefinitionBuilder
         .Role("Router / entry point")
         .Summary("Owns the first turn, reads the shared session state when needed, decides which specialist should take over next, and receives fallback handoffs when the user goes off script.")
         .UseDraft(
-            AgentDefinitionBuilder
+            AgentTemplateBuilder
                 .New("Interview Coach Triage", "triage")
                 .WithBinding(BuiltInTaskSessionMcpServerTools.Descriptor.Name, binding => binding
                     .Enabled()
@@ -35,7 +35,7 @@ Routing rules:
 Never conduct the interview yourself.
 Be brief, predictable, and explicit about who is taking over next.")
                 .AutoSelectTools(0)
-                .BuildDescription())
+                .Build())
         .Capability("task-session-store", "Task session store", capability => capability
             .Purpose("Read-only access to current phase and stored inputs so routing stays deterministic across turns.")
             .Availability(AgentWorkflowCapabilityAvailability.Available)
@@ -44,7 +44,7 @@ Be brief, predictable, and explicit about who is taking over next.")
         .Role("Start-input validation and session setup")
         .Summary("Verifies that the required workflow inputs are already attached to the shared session, then marks intake complete and hands over to the behavioural interviewer.")
         .UseDraft(
-            AgentDefinitionBuilder
+            AgentTemplateBuilder
                 .New("Interview Coach Receptionist", "receptionist")
                 .WithBinding(BuiltInTaskSessionMcpServerTools.Descriptor.Name, binding => binding
                     .Enabled()
@@ -73,7 +73,7 @@ Responsibilities:
 
 Do not conduct the interview yourself. Do not summarize the whole session. Stay in the intake role.")
                 .AutoSelectTools(0)
-                .BuildDescription())
+                .Build())
         .Capability("task-session-store", "Task session store", capability => capability
             .Purpose("Persistent shared state for workflow inputs, transcript turns, phase, and summary.")
             .Availability(AgentWorkflowCapabilityAvailability.Available)
@@ -82,7 +82,7 @@ Do not conduct the interview yourself. Do not summarize the whole session. Stay 
         .Role("Behavioural interviewer")
         .Summary("Runs the behavioural phase, keeps transcript state, and hands over when the user is ready for technical questions.")
         .UseDraft(
-            AgentDefinitionBuilder
+            AgentTemplateBuilder
                 .New("Interview Coach Behavioural Interviewer", "behavioural")
                 .WithBinding(BuiltInTaskSessionMcpServerTools.Descriptor.Name, binding => binding
                     .Enabled()
@@ -108,7 +108,7 @@ Responsibilities:
 
 Do not restart intake and do not generate the final summary.")
                 .AutoSelectTools(0)
-                .BuildDescription())
+                .Build())
         .Capability("task-session-store", "Task session store", capability => capability
             .Purpose("Persistent transcript and phase state across turns.")
             .Availability(AgentWorkflowCapabilityAvailability.Available)
@@ -117,7 +117,7 @@ Do not restart intake and do not generate the final summary.")
         .Role("Technical interviewer")
         .Summary("Runs role-specific technical questions, appends transcript state, and hands over to the summarizer.")
         .UseDraft(
-            AgentDefinitionBuilder
+            AgentTemplateBuilder
                 .New("Interview Coach Technical Interviewer", "technical")
                 .WithBinding(BuiltInTaskSessionMcpServerTools.Descriptor.Name, binding => binding
                     .Enabled()
@@ -143,7 +143,7 @@ Responsibilities:
 
 Do not redo behavioural intake and do not produce the final report yourself.")
                 .AutoSelectTools(0)
-                .BuildDescription())
+                .Build())
         .Capability("task-session-store", "Task session store", capability => capability
             .Purpose("Persistent transcript and phase state across turns.")
             .Availability(AgentWorkflowCapabilityAvailability.Available)
@@ -152,7 +152,7 @@ Do not redo behavioural intake and do not produce the final report yourself.")
         .Role("Wrap-up and summary")
         .Summary("Builds the final interview summary, marks the interview complete, and can return control to triage for a new request.")
         .UseDraft(
-            AgentDefinitionBuilder
+            AgentTemplateBuilder
                 .New("Interview Coach Summarizer", "summarizer")
                 .WithBinding(BuiltInTaskSessionMcpServerTools.Descriptor.Name, binding => binding
                     .Enabled()
@@ -177,7 +177,7 @@ Responsibilities:
 
 Do not continue the interview phase yourself and do not restart intake.")
                 .AutoSelectTools(0)
-                .BuildDescription())
+                .Build())
         .Capability("task-session-store", "Task session store", capability => capability
             .Purpose("Read/write access to the transcript and final summary.")
             .Availability(AgentWorkflowCapabilityAvailability.Available)

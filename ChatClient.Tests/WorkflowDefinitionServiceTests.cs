@@ -152,6 +152,70 @@ public sealed class WorkflowDefinitionServiceTests
         }
     }
 
+    [Fact]
+    public async Task GetAllAsync_DoesNotNormalizeOrPersistOnRead()
+    {
+        var tempFile = Path.GetTempFileName();
+        var persistedJson = """
+[
+  {
+    "Id": "11111111-1111-1111-1111-111111111111",
+    "Kind": " Group Chat ",
+    "WorkflowId": " debate ",
+    "DisplayName": " Debate Workflow ",
+    "Description": " Example description ",
+    "SourceCode": " source "
+  }
+]
+""";
+        await File.WriteAllTextAsync(tempFile, persistedJson);
+
+        try
+        {
+            var service = CreateService(tempFile);
+
+            var workflow = Assert.Single(await service.GetAllAsync());
+
+            Assert.Equal(" Group Chat ", workflow.Kind);
+            Assert.Equal(" debate ", workflow.WorkflowId);
+            Assert.Equal(" Debate Workflow ", workflow.DisplayName);
+            Assert.Equal(" Example description ", workflow.Description);
+            Assert.Equal(" source ", workflow.SourceCode);
+            Assert.Equal(persistedJson, await File.ReadAllTextAsync(tempFile));
+        }
+        finally
+        {
+            File.Delete(tempFile);
+        }
+    }
+
+    [Fact]
+    public async Task CreateAsync_RejectsUnknownWorkflowKind()
+    {
+        var tempFile = Path.GetTempFileName();
+        await File.WriteAllTextAsync(tempFile, "[]");
+
+        try
+        {
+            var service = CreateService(tempFile);
+            var workflow = new SavedWorkflowDefinition
+            {
+                WorkflowId = "demo",
+                Kind = "mystery-kind",
+                DisplayName = "Demo",
+                SourceCode = "source"
+            };
+
+            var exception = await Assert.ThrowsAsync<InvalidOperationException>(() => service.CreateAsync(workflow));
+
+            Assert.Equal("Unsupported workflow kind 'mystery-kind'.", exception.Message);
+        }
+        finally
+        {
+            File.Delete(tempFile);
+        }
+    }
+
     private static WorkflowDefinitionService CreateService(string filePath)
     {
         var configuration = new ConfigurationBuilder()

@@ -1,4 +1,3 @@
-using Microsoft.Extensions.AI;
 using System.Text.Json.Serialization;
 
 namespace ChatClient.Domain.Models;
@@ -8,7 +7,7 @@ public class AppChatMessage : IAppChatMessage
     public Guid Id { get; set; }
     public string Content { get; set; }
     public DateTime MsgDateTime { get; set; }
-    public ChatRole Role { get; set; }
+    public AppChatRole Role { get; set; }
     public string? AgentId { get; set; }
     public string? AgentName { get; set; }
     public string? Statistics { get; set; }
@@ -39,7 +38,7 @@ public class AppChatMessage : IAppChatMessage
         Id = Guid.NewGuid();
         Content = string.Empty;
         MsgDateTime = DateTime.UtcNow;
-        Role = ChatRole.User;
+        Role = AppChatRole.User;
         Files = [];
     }
 
@@ -64,7 +63,7 @@ public class AppChatMessage : IAppChatMessage
     public AppChatMessage(
         string content,
         DateTime msgDateTime,
-        ChatRole role,
+        AppChatRole role,
         string? statistics = null,
         IReadOnlyList<AppChatMessageFile>? files = null,
         IReadOnlyCollection<FunctionCallRecord>? functionCalls = null,

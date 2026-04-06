@@ -1,4 +1,4 @@
-﻿@page "/agent-descriptions"
+@page "/agent-templates"
 @using System
 @using System.IO
 @using System.Linq
@@ -8,16 +8,16 @@
 @using ChatClient.Api.Services
 @using ChatClient.Api.Client.Components
 @using Microsoft.AspNetCore.Components.Forms
-@inject IAgentDescriptionService AgentService
+@inject IAgentTemplateService AgentService
 @inject ISnackbar Snackbar
 @inject IRagFileService RagFileService
 @inject ILlmServerConfigService LlmServerConfigService
 @inject IMcpServerConfigService McpServerConfigService
 
-<PageTitle>Agent Descriptions Management</PageTitle>
+<PageTitle>Agent Templates</PageTitle>
 
 <MudContainer MaxWidth="MaxWidth.ExtraLarge" Class="mt-3">
-    <MudText Class="page-header">Agent Descriptions</MudText>
+    <MudText Class="page-header">Agent Templates</MudText>
 
     <MudPaper Elevation="3" Class="pa-3 rounded-lg">
         <MudToolBar Dense="true">
@@ -27,12 +27,12 @@
                        OnClick="AddNewAgent"
                        Class="px-4"
                        Size="Size.Small">
-                Add Agent Description
+                Add Agent Template
             </MudButton>
             <MudSpacer />
             <MudTextField T="string"
                           ValueChanged="@(s => OnSearch(s))"
-                          Placeholder="Search agent descriptions..."
+                          Placeholder="Search agent templates..."
                           Adornment="Adornment.Start"
                           AdornmentIcon="@Icons.Material.Filled.Search"
                           IconSize="Size.Medium"
@@ -50,7 +50,7 @@
         }
         else
         {
-            <MudDataGrid T="AgentDescription" @ref="dataGrid"
+            <MudDataGrid T="AgentTemplateDefinition" @ref="dataGrid"
                          Items="@filteredAgents"
                          ReadOnly="true"
                          Bordered="true"
@@ -177,14 +177,14 @@
                     </TemplateColumn>
                 </Columns>
                 <PagerContent>
-                    <MudDataGridPager T="AgentDescription" PageSizeOptions="new[] { 10, 25, 50, 100 }" />
+                    <MudDataGridPager T="AgentTemplateDefinition" PageSizeOptions="new[] { 10, 25, 50, 100 }" />
                 </PagerContent>
                 <NoRecordsContent>
                     <MudPaper Elevation="0">
                         <MudStack AlignItems="AlignItems.Center" Justify="Justify.Center" Class="py-8">
                             <MudIcon Icon="@Icons.Material.Filled.FormatQuote" Color="Color.Secondary" Size="Size.Large" />
-                            <MudText Typo="Typo.h6" Class="mt-4">No agent descriptions found</MudText>
-                            <MudText Typo="Typo.body2" Class="mud-text-secondary">Click "Add Agent Description" to create one.</MudText>
+                            <MudText Typo="Typo.h6" Class="mt-4">No agent templates found</MudText>
+                            <MudText Typo="Typo.body2" Class="mud-text-secondary">Click "Add Agent Template" to create one.</MudText>
                         </MudStack>
                     </MudPaper>
                 </NoRecordsContent>
@@ -192,7 +192,7 @@
                     <MudPaper Elevation="0">
                         <MudStack AlignItems="AlignItems.Center" Justify="Justify.Center" Class="pa-8">
                             <MudProgressCircular Color="Color.Primary" Indeterminate="true" Size="Size.Medium" />
-                            <MudText Typo="Typo.body1" Class="ml-4">Loading agent descriptions...</MudText>
+                            <MudText Typo="Typo.body1" Class="ml-4">Loading agent templates...</MudText>
                         </MudStack>
                     </MudPaper>
                 </LoadingContent>
@@ -206,7 +206,7 @@
         <MudText Typo="Typo.h6">Confirm Delete</MudText>
     </TitleContent>
     <DialogContent>
-        <MudText>Are you sure you want to delete the agent description "@agentToDelete?.AgentName"?</MudText>
+        <MudText>Are you sure you want to delete the agent template "@agentToDelete?.AgentName"?</MudText>
     </DialogContent>
     <DialogActions>
         <MudButton OnClick="CancelDelete" Size="Size.Medium">Cancel</MudButton>
@@ -216,7 +216,7 @@
 
 <MudDialog @bind-Visible="@showEditAgentDialog" Options="editDialogOptions">
     <TitleContent>
-        <MudText Typo="Typo.h6">@(editingAgent?.Id == Guid.Empty ? "Create New Agent Description" : "Edit Agent Description")</MudText>
+        <MudText Typo="Typo.h6">@(editingAgent?.Id == Guid.Empty ? "Create New Agent Template" : "Edit Agent Template")</MudText>
     </TitleContent>
     <DialogContent>
         <MudForm @ref="editAgentForm" Model="@editingAgent">
@@ -356,16 +356,16 @@
 </MudDialog>
 
 @code {
-    private List<AgentDescription> agents = new();
-    private List<AgentDescription> filteredAgents = new();
+    private List<AgentTemplateDefinition> agents = new();
+    private List<AgentTemplateDefinition> filteredAgents = new();
     private bool loading = true;
-    private AgentDescription? agentToDelete;
-    private AgentDescription editingAgent = new();
+    private AgentTemplateDefinition? agentToDelete;
+    private AgentTemplateDefinition editingAgent = new();
     private bool showDeleteDialog { get; set; }
     private bool showEditAgentDialog { get; set; }
     private string searchString = string.Empty;
     private MudForm? editAgentForm;
-    private MudDataGrid<AgentDescription>? dataGrid;
+    private MudDataGrid<AgentTemplateDefinition>? dataGrid;
     private Dictionary<Guid, int> ragCounts = new();
     private List<RagFile> ragFiles = new();
     private ServerModelSelection editingServerModel = new(null, null);
@@ -423,7 +423,7 @@
         }
     }
 
-    private string GetModelDisplay(AgentDescription agent)
+    private string GetModelDisplay(AgentTemplateDefinition agent)
     {
         if (string.IsNullOrWhiteSpace(agent.ModelName))
             return string.Empty;
@@ -435,7 +435,7 @@
 
     private void AddNewAgent()
     {
-        editingAgent = new AgentDescription
+        editingAgent = new AgentTemplateDefinition
         {
             Id = Guid.Empty,
             CreatedAt = DateTime.UtcNow,
@@ -480,7 +480,7 @@
     {
         if (string.IsNullOrWhiteSpace(searchString))
         {
-            filteredAgents = new List<AgentDescription>(agents);
+            filteredAgents = new List<AgentTemplateDefinition>(agents);
             return;
         }
 
@@ -557,9 +557,9 @@
         return $"{bytes} B";
     }
 
-    private async Task StartEditingAgent(AgentDescription agent)
+    private async Task StartEditingAgent(AgentTemplateDefinition agent)
     {
-        editingAgent = new AgentDescription
+        editingAgent = new AgentTemplateDefinition
         {
             Id = agent.Id,
             AgentName = agent.AgentName,
@@ -598,7 +598,7 @@
         showEditAgentDialog = true;
     }
 
-    private void ConfirmDeleteAgent(AgentDescription agent)
+    private void ConfirmDeleteAgent(AgentTemplateDefinition agent)
     {
         agentToDelete = agent;
         showDeleteDialog = true;
@@ -648,12 +648,12 @@
         return string.Empty;
     }
 
-    private bool HasConfiguredMcpBindings(AgentDescription agent)
+    private bool HasConfiguredMcpBindings(AgentTemplateDefinition agent)
     {
         return agent.McpServerBindings.Any(binding => binding.Enabled && binding.HasIdentity);
     }
 
-    private string GetToolingDisplayText(AgentDescription agent)
+    private string GetToolingDisplayText(AgentTemplateDefinition agent)
     {
         var activeBindings = agent.McpServerBindings.Count(binding => binding.Enabled && binding.HasIdentity);
         if (activeBindings > 0)
@@ -664,7 +664,7 @@
         return agent.FunctionSettings.GetDisplayText();
     }
 
-    private string GetToolingTooltip(AgentDescription agent)
+    private string GetToolingTooltip(AgentTemplateDefinition agent)
     {
         var activeBindings = agent.McpServerBindings.Where(binding => binding.Enabled && binding.HasIdentity).ToList();
         if (activeBindings.Count == 0)
@@ -683,7 +683,7 @@
         return $"{activeBindings.Count} MCP attachments configured. {attachmentSummary}";
     }
 
-    private string GetExecutionSummary(AgentDescription agent)
+    private string GetExecutionSummary(AgentTemplateDefinition agent)
     {
         var history = agent.ExecutionSettings.HistoryCompaction;
         if (!history.Enabled)

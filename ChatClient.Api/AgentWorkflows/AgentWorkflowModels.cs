@@ -1,3 +1,4 @@
+using ChatClient.Application.Services.Agentic;
 using ChatClient.Domain.Models;
 
 namespace ChatClient.Api.AgentWorkflows;
@@ -36,23 +37,6 @@ public sealed class AgentWorkflowDefinition : IOrchestrationWorkflowDefinition
     public List<AgentWorkflowHandoffDefinition> Handoffs { get; init; } = [];
 }
 
-public sealed class AgentWorkflowExecutionDefinition
-{
-    public AgentWorkflowExecutionMode Mode { get; init; } = AgentWorkflowExecutionMode.Interactive;
-
-    public int MaxAutomaticTurns { get; init; }
-
-    public string CompletionPhase { get; init; } = "complete";
-
-    public string? CompletionSummaryLabel { get; init; }
-}
-
-public enum AgentWorkflowExecutionMode
-{
-    Interactive,
-    Autonomous
-}
-
 public sealed class WorkflowStartInputDefinition
 {
     public required string Key { get; init; }
@@ -87,7 +71,7 @@ public sealed class AgentWorkflowAgentDefinition
 
     public string Summary { get; init; } = string.Empty;
 
-    public AgentDescription? AgentDraft { get; init; }
+    public AgentTemplateDefinition? AgentDraft { get; init; }
 
     public AgentWorkflowSavedAgentTemplate? SavedAgentTemplate { get; init; }
 

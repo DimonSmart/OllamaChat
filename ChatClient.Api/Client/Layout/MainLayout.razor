@@ -132,7 +132,7 @@
                string.Equals(currentPath, "/multi-agent-chat-agentic", StringComparison.OrdinalIgnoreCase);
     }
 
-    private bool ActiveChatHasAgents() => AgenticChatService.AgentDescriptions.Any();
+    private bool ActiveChatHasAgents() => AgenticChatService.Agents.Any();
 
     private void NewChat()
     {

@@ -2,21 +2,15 @@ using System.Text.Json;
 using ChatClient.Api.PlanningRuntime.Agents;
 using ChatClient.Api.PlanningRuntime.Common;
 using ChatClient.Api.PlanningRuntime.Execution;
-using ChatClient.Api.PlanningRuntime.Orchestration;
 using ChatClient.Api.PlanningRuntime.Planning;
-using ChatClient.Api.Client.Services.Agentic;
-using ChatClient.Api.PlanningRuntime.Tools;
-using ChatClient.Api.PlanningRuntime.Verification;
 using ChatClient.Api.Services;
 using ChatClient.Domain.Models;
 
 namespace ChatClient.Api.PlanningRuntime.Host;
 
 public sealed class PlanningSessionService(
-    ILlmChatClientFactory chatClientFactory,
     IAppToolCatalog appToolCatalog,
-    IMcpUserInteractionService mcpUserInteractionService,
-    IAgenticExecutionInvoker agenticExecutionInvoker,
+    IPlanningRunExecutor planningRunExecutor,
     ILogger<PlanningSessionService> logger) : IPlanningSessionService
 {
     private CancellationTokenSource? _runCts;
@@ -120,27 +114,19 @@ public sealed class PlanningSessionService(
     {
         try
         {
-            var chatClient = await chatClientFactory.CreateAsync(model, cancellationToken);
             var observer = new ActionPlanRunObserver(HandleEvent);
             var loggerSink = new ActionExecutionLogger(HandleLogLine);
-            var registry = new PlanningToolCatalog(enabledTools);
-            var initialDraftRepairer = new LlmInitialDraftRepairer(chatClient, registry, loggerSink, observer, callableAgents);
-            var planner = new LlmPlanner(chatClient, registry, loggerSink, observer, initialDraftRepairer, callableAgents);
-            var replanner = new LlmReplanner(chatClient, registry, loggerSink, observer, callableAgents);
-            var runner = new AgentStepRunner(chatClient, agenticExecutionInvoker, callableAgents, observer);
-            var executor = new PlanExecutor(registry, runner, loggerSink, observer, mcpUserInteractionService);
-            var finalAnswerVerifier = new LlmFinalAnswerVerifier(chatClient);
-            var orchestrator = new PlanningOrchestrator(
-                planner,
-                executor,
-                new GoalVerifier(askUserEnabled: true),
-                loggerSink,
-                maxAttempts: 3,
-                replanner: replanner,
-                finalAnswerVerifier: finalAnswerVerifier,
-                planRunObserver: observer);
-
-            var result = await orchestrator.RunAsync(userQuery, cancellationToken);
+            var result = await planningRunExecutor.ExecuteAsync(
+                new PlanningRunExecutionRequest
+                {
+                    UserQuery = userQuery,
+                    Model = model,
+                    EnabledTools = enabledTools,
+                    CallableAgents = callableAgents,
+                    ExecutionLogger = loggerSink,
+                    PlanRunObserver = observer
+                },
+                cancellationToken);
             State.FinalResult = CloneEnvelope(result);
         }
         catch (OperationCanceledException)

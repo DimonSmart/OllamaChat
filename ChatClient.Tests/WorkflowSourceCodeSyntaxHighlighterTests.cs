@@ -72,9 +72,9 @@ public sealed class WorkflowSourceCodeSyntaxHighlighterTests
                 .New("review-panel-group-chat", "Review Panel Group Chat")
                 .Agent("moderator", agent => agent
                     .UseDraft(
-                        AgentDefinitionBuilder
+                        AgentTemplateBuilder
                             .New("Review Moderator", "moderator")
-                            .BuildDescription()))
+                            .Build()))
                 .Agent("reviewer", agent => agent
                     .FromSavedAgent("Saved Reviewer"))
                 .UseGroupChat(groupChat => groupChat
@@ -118,9 +118,9 @@ public sealed class WorkflowSourceCodeSyntaxHighlighterTests
                 .New("workflow-id", "Workflow Name")
                 .Agent("host", agent => agent
                     .UseDraft(
-                        AgentDefinitionBuilder
+                        AgentTemplateBuilder
                             .New("Debate Host", "host")
-                            .BuildDescription()))
+                            .Build()))
                 .Build();
             """;
 

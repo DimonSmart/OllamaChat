@@ -12,8 +12,8 @@ public class SavedChatServiceTests
 {
     private static SavedChat CreateSampleChat(string title = "Test", string participantName = "User")
     {
-        var participant = new SavedChatParticipant(participantName.ToLowerInvariant(), participantName, Microsoft.Extensions.AI.ChatRole.User);
-        var message = new SavedChatMessage(Guid.NewGuid(), "hello", DateTime.UtcNow, Microsoft.Extensions.AI.ChatRole.User, null, null);
+        var participant = new SavedChatParticipant(participantName.ToLowerInvariant(), participantName, AppChatRole.User);
+        var message = new SavedChatMessage(Guid.NewGuid(), "hello", DateTime.UtcNow, AppChatRole.User, null, null);
         return new SavedChat(Guid.NewGuid(), title, DateTime.UtcNow, [message], [participant]);
     }
 
@@ -140,16 +140,16 @@ public class SavedChatServiceTests
                 PropertyNamingPolicy = JsonNamingPolicy.CamelCase
             };
             var chat = new SavedChat(id, "Test", DateTime.UtcNow,
-                [new SavedChatMessage(msgId, "hi", DateTime.UtcNow, Microsoft.Extensions.AI.ChatRole.User, null, null)],
-                [new SavedChatParticipant("user", "User", Microsoft.Extensions.AI.ChatRole.User)]);
+                [new SavedChatMessage(msgId, "hi", DateTime.UtcNow, AppChatRole.User, null, null)],
+                [new SavedChatParticipant("user", "User", AppChatRole.User)]);
             Directory.CreateDirectory(tempDir);
             var json = JsonSerializer.Serialize(chat, legacyOptions);
             await File.WriteAllTextAsync(Path.Combine(tempDir, $"{id}.json"), json);
 
             var loaded = await service.GetByIdAsync(id);
             Assert.NotNull(loaded);
-            Assert.Equal(Microsoft.Extensions.AI.ChatRole.User, loaded!.Messages[0].Role);
-            Assert.Equal(Microsoft.Extensions.AI.ChatRole.User, loaded.Participants.First().Role);
+            Assert.Equal(AppChatRole.User, loaded!.Messages[0].Role);
+            Assert.Equal(AppChatRole.User, loaded.Participants.First().Role);
         }
         finally
         {

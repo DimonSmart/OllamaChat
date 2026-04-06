@@ -74,7 +74,7 @@ internal static class WorkflowSourceCodeSyntaxHighlighter
                     AddStringLiteralArgument(invocation, 0, AgentDisplayNameClass, tokenClasses);
                     break;
 
-                case "New" when IsAgentDefinitionBuilderNew(invocation):
+                case "New" when IsAgentTemplateBuilderNew(invocation):
                     AddTokenClass(tokenClasses, method, AgentFactoryMethodClass);
                     AddStringLiteralArgument(invocation, 0, AgentDisplayNameClass, tokenClasses);
                     AddStringLiteralArgument(invocation, 1, AgentIdClass, tokenClasses);
@@ -197,11 +197,11 @@ internal static class WorkflowSourceCodeSyntaxHighlighter
         };
     }
 
-    private static bool IsAgentDefinitionBuilderNew(InvocationExpressionSyntax invocation)
+    private static bool IsAgentTemplateBuilderNew(InvocationExpressionSyntax invocation)
     {
         return invocation.Expression is MemberAccessExpressionSyntax
         {
-            Expression: IdentifierNameSyntax { Identifier.ValueText: "AgentDefinitionBuilder" },
+            Expression: IdentifierNameSyntax { Identifier.ValueText: "AgentTemplateBuilder" },
             Name: SimpleNameSyntax { Identifier.ValueText: "New" }
         };
     }

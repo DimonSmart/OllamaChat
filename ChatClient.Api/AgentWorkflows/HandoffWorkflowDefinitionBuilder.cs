@@ -1,3 +1,4 @@
+using ChatClient.Application.Services.Agentic;
 using ChatClient.Domain.Models;
 
 namespace ChatClient.Api.AgentWorkflows;
@@ -343,7 +344,7 @@ public sealed class WorkflowAgentBuilder
     private readonly string _id;
     private string _role = string.Empty;
     private string _summary = string.Empty;
-    private AgentDescription? _agentDraft;
+    private AgentTemplateDefinition? _agentDraft;
     private string? _savedAgentTemplateName;
     private string? _overrideAgentName;
     private string? _overrideAvatarText;
@@ -370,7 +371,7 @@ public sealed class WorkflowAgentBuilder
         return this;
     }
 
-    public WorkflowAgentBuilder UseDraft(AgentDescription draft)
+    public WorkflowAgentBuilder UseDraft(AgentTemplateDefinition draft)
     {
         ArgumentNullException.ThrowIfNull(draft);
         _agentDraft = draft;

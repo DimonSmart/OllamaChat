@@ -1,7 +1,6 @@
 using ChatClient.Api.Client.Services;
 using ChatClient.Api.Client.ViewModels;
 using ChatClient.Domain.Models;
-using Microsoft.Extensions.AI;
 
 namespace ChatClient.Tests;
 
@@ -12,7 +11,7 @@ public class ChatTranscriptFormatterTests
     {
         var message = new AppChatMessageViewModel
         {
-            Role = ChatRole.Assistant,
+            Role = AppChatRole.Assistant,
             AgentName = "Planner",
             HtmlContent = "<p>Done</p>",
             FunctionCalls =

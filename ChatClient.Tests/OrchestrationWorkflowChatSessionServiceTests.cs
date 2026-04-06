@@ -7,6 +7,7 @@ using ChatClient.Api.Services;
 using ChatClient.Api.Services.BuiltIn;
 using ChatClient.Application.Services.Agentic;
 using ChatClient.Domain.Models;
+using ChatClient.Infrastructure.Services.TaskSessions;
 using Microsoft.Agents.AI;
 using Microsoft.Agents.AI.Workflows;
 using Microsoft.Extensions.AI;
@@ -107,7 +108,7 @@ public sealed class OrchestrationWorkflowChatSessionServiceTests
             ]),
             "model-a");
 
-        var assistants = service.Messages.Where(message => message.Role == ChatRole.Assistant).ToList();
+        var assistants = service.Messages.Where(message => message.Role == AppChatRole.Assistant).ToList();
 
         var assistant = Assert.Single(assistants);
         Assert.Equal("Hello world", assistant.Content);
@@ -130,7 +131,7 @@ public sealed class OrchestrationWorkflowChatSessionServiceTests
             ]),
             "model-a");
 
-        var assistant = Assert.Single(service.Messages, message => message.Role == ChatRole.Assistant);
+        var assistant = Assert.Single(service.Messages, message => message.Role == AppChatRole.Assistant);
         Assert.Equal("debater_a", assistant.AgentId);
         Assert.Equal("Immanuel Kant", assistant.AgentName);
     }
@@ -151,7 +152,7 @@ public sealed class OrchestrationWorkflowChatSessionServiceTests
             ]),
             "model-a");
 
-        var assistants = service.Messages.Where(message => message.Role == ChatRole.Assistant).ToList();
+        var assistants = service.Messages.Where(message => message.Role == AppChatRole.Assistant).ToList();
 
         Assert.Equal(2, assistants.Count);
         Assert.Equal("Host intro", assistants[0].Content);
@@ -181,7 +182,7 @@ public sealed class OrchestrationWorkflowChatSessionServiceTests
             ]),
             "model-a");
 
-        var assistants = service.Messages.Where(message => message.Role == ChatRole.Assistant).ToList();
+        var assistants = service.Messages.Where(message => message.Role == AppChatRole.Assistant).ToList();
 
         Assert.Equal(2, assistants.Count);
         Assert.Equal("Host intro", assistants[0].Content);
@@ -200,13 +201,13 @@ public sealed class OrchestrationWorkflowChatSessionServiceTests
         service.Messages.Add(new AppChatMessage(
             "Host intro",
             DateTime.Now,
-            ChatRole.Assistant,
+            AppChatRole.Assistant,
             agentId: "host",
             agentName: "Host"));
         service.Messages.Add(new AppChatMessage(
             "Judge review",
             DateTime.Now,
-            ChatRole.Assistant,
+            AppChatRole.Assistant,
             agentId: "judge",
             agentName: "Judge"));
 
@@ -220,7 +221,7 @@ public sealed class OrchestrationWorkflowChatSessionServiceTests
             ]),
             "model-a");
 
-        var assistants = service.Messages.Where(message => message.Role == ChatRole.Assistant).ToList();
+        var assistants = service.Messages.Where(message => message.Role == AppChatRole.Assistant).ToList();
 
         Assert.Equal(3, assistants.Count);
         Assert.Equal("Host intro", assistants[0].Content);
@@ -246,7 +247,7 @@ public sealed class OrchestrationWorkflowChatSessionServiceTests
 
         Assert.Equal("boom", exception.Message);
 
-        var assistant = Assert.Single(service.Messages, message => message.Role == ChatRole.Assistant);
+        var assistant = Assert.Single(service.Messages, message => message.Role == AppChatRole.Assistant);
         Assert.Equal("Hello", assistant.Content);
         Assert.False(assistant.IsStreaming);
     }
@@ -272,7 +273,7 @@ public sealed class OrchestrationWorkflowChatSessionServiceTests
 
         await WaitUntilAsync(
             () => service.Messages.Any(message =>
-                message.Role == ChatRole.Assistant &&
+                message.Role == AppChatRole.Assistant &&
                 message.IsStreaming &&
                 string.Equals(message.Content, "Hello", StringComparison.Ordinal)),
             TimeSpan.FromSeconds(3));
@@ -282,7 +283,7 @@ public sealed class OrchestrationWorkflowChatSessionServiceTests
         releaseFinalOutput.SetResult();
         await kickoffTask;
 
-        var assistant = Assert.Single(service.Messages, message => message.Role == ChatRole.Assistant);
+        var assistant = Assert.Single(service.Messages, message => message.Role == AppChatRole.Assistant);
         Assert.Equal("Hello world", assistant.Content);
         Assert.False(assistant.IsStreaming);
     }
@@ -307,14 +308,14 @@ public sealed class OrchestrationWorkflowChatSessionServiceTests
 
         await WaitUntilAsync(
             () => service.Messages.Any(message =>
-                message.Role == ChatRole.Assistant &&
+                message.Role == AppChatRole.Assistant &&
                 message.IsStreaming),
             TimeSpan.FromSeconds(3));
 
         await service.CancelAsync();
         await kickoffTask;
 
-        var assistant = Assert.Single(service.Messages, message => message.Role == ChatRole.Assistant);
+        var assistant = Assert.Single(service.Messages, message => message.Role == AppChatRole.Assistant);
         Assert.True(assistant.IsCanceled);
         Assert.False(service.IsAnswering);
     }
@@ -331,7 +332,7 @@ public sealed class OrchestrationWorkflowChatSessionServiceTests
         int completedAssistantMessagesFromConversationBatch,
         bool expected)
     {
-        var shouldSend = OrchestrationWorkflowChatSessionService.ShouldSendExplicitTurnToken(
+        var shouldSend = OrchestrationWorkflowPassExecutor.ShouldSendExplicitTurnToken(
             statusAfterConversationBatch,
             completedAssistantMessagesFromConversationBatch);
 
@@ -340,15 +341,28 @@ public sealed class OrchestrationWorkflowChatSessionServiceTests
 
     private static OrchestrationWorkflowChatSessionService CreateService(
         TaskSessionStore? taskSessionStore = null,
-        IReadOnlyList<IOrchestrationRuntimeWorkflowBuilder>? runtimeWorkflowBuilders = null) =>
+        IReadOnlyList<IOrchestrationRuntimeWorkflowBuilder>? runtimeWorkflowBuilders = null)
+    {
+        var effectiveTaskSessionStore = taskSessionStore ?? CreateTaskSessionStore(CreateTaskStorePath());
+        var streamingBridge = new AgenticChatEngineStreamingBridge();
+        var eventStreamProcessor = new OrchestrationWorkflowEventStreamProcessor(streamingBridge);
+
+        return new(
+            effectiveTaskSessionStore,
+            CreateSessionBootstrapper(effectiveTaskSessionStore),
+            CreateTurnCoordinator(),
+            CreatePassExecutor(eventStreamProcessor, runtimeWorkflowBuilders ?? []),
+            eventStreamProcessor,
+            streamingBridge);
+    }
+
+    private static OrchestrationWorkflowPassExecutor CreatePassExecutor(
+        OrchestrationWorkflowEventStreamProcessor eventStreamProcessor,
+        IReadOnlyList<IOrchestrationRuntimeWorkflowBuilder> runtimeWorkflowBuilders) =>
         new(
-            new LoggerFactory().CreateLogger<OrchestrationWorkflowChatSessionService>(),
-            new StubModelCapabilityService(),
-            taskSessionStore ?? CreateTaskSessionStore(CreateTaskStorePath()),
-            new MarkdownDocumentIntakeService(),
-            null!,
-            runtimeWorkflowBuilders ?? [],
-            new AgenticChatEngineStreamingBridge());
+            new LoggerFactory().CreateLogger<OrchestrationWorkflowPassExecutor>(),
+            eventStreamProcessor,
+            runtimeWorkflowBuilders);
 
     private static AgentWorkflowDefinition CreateWorkflowDefinition() =>
         new()
@@ -375,8 +389,23 @@ public sealed class OrchestrationWorkflowChatSessionServiceTests
     {
         var binding = new McpServerSessionBinding();
         binding.Parameters[TaskSessionStore.DatabaseFileParameter] = databasePath;
-        return new TaskSessionStore(new McpServerSessionContext(binding));
+        return new TaskSessionStore(
+            new McpServerSessionContext(binding),
+            new SqliteTaskSessionRepository());
     }
+
+    private static OrchestrationWorkflowSessionBootstrapper CreateSessionBootstrapper(TaskSessionStore taskSessionStore) =>
+        new(
+            new LoggerFactory().CreateLogger<OrchestrationWorkflowSessionBootstrapper>(),
+            new StubModelCapabilityService(),
+            taskSessionStore,
+            new MarkdownDocumentIntakeService(),
+            null!);
+
+    private static OrchestrationWorkflowTurnCoordinator CreateTurnCoordinator() =>
+        new(
+            new LoggerFactory().CreateLogger<OrchestrationWorkflowTurnCoordinator>(),
+            new WorkflowExecutionPolicy());
 
     private static string CreateTaskStorePath()
     {

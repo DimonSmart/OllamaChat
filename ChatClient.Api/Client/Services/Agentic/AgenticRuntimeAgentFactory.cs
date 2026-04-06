@@ -282,7 +282,7 @@ public sealed class AgenticRuntimeAgentFactory(
     }
 
     private static string? BuildInstructions(
-        AgentDefinition agent,
+        AgentExecutionSpec agent,
         AgentHistoryCompactionAttachment? historyCompaction)
     {
         var content = agent.Content?.Trim();

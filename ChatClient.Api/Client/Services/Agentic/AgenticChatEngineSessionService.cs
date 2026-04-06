@@ -2,7 +2,6 @@ using ChatClient.Application.Services.Agentic;
 using ChatClient.Api.Services;
 using ChatClient.Domain.Models;
 using ChatClient.Domain.Models.ChatStrategies;
-using Microsoft.Extensions.AI;
 using OllamaSharp.Models.Exceptions;
 using System.Collections.ObjectModel;
 
@@ -31,10 +30,10 @@ public sealed class AgenticChatEngineSessionService(
 
     public Guid Id => _chat.Id;
 
-    public IReadOnlyCollection<AgentDescription> AgentDescriptions => _chat.AgentDescriptions;
+    public IReadOnlyCollection<AgentExecutionSpec> Agents => _chat.Agents;
 
     public ObservableCollection<IAppChatMessage> Messages => _chat.Messages;
-    IReadOnlyCollection<IAppChatMessage> IChatEngineSessionService.Messages => _chat.Messages;
+    IReadOnlyCollection<IAppChatMessage> IChatSessionService.Messages => _chat.Messages;
 
     public async Task StartAsync(ChatEngineSessionStartRequest request, CancellationToken cancellationToken = default)
     {
@@ -47,7 +46,7 @@ public sealed class AgenticChatEngineSessionService(
         _parameters = request;
         _chat.Reset();
         _activeStreams.Clear();
-        _chat.SetAgents(request.Agents.Select(CreateRuntimeAgentDescription));
+        _chat.SetAgents(request.Agents.Select(static agent => agent.Agent.Clone()));
         ChatReset?.Invoke();
 
         if (request.History.Count > 0)
@@ -97,7 +96,7 @@ public sealed class AgenticChatEngineSessionService(
         return new ChatEngineSessionState
         {
             Configuration = _parameters.Configuration,
-            Agents = _chat.AgentDescriptions.ToList(),
+            Agents = _chat.Agents.ToList(),
             Messages = _chat.Messages.ToList(),
             ChatStrategyName = _parameters.ChatStrategyName
         };
@@ -125,7 +124,7 @@ public sealed class AgenticChatEngineSessionService(
         if (string.IsNullOrWhiteSpace(text) || IsAnswering)
             return;
 
-        var userMessage = new AppChatMessage(text, DateTime.Now, ChatRole.User, files: files);
+        var userMessage = new AppChatMessage(text, DateTime.Now, AppChatRole.User, files: files);
         logger.LogInformation(
             "Chat request received. ChatId: {ChatId}. MessageId: {MessageId}. Files: {FileCount}. UserText: {UserText}",
             _chat.Id,
@@ -340,7 +339,7 @@ public sealed class AgenticChatEngineSessionService(
         await AddMessageAsync(new AppChatMessage(
             text,
             DateTime.Now,
-            ChatRole.Assistant,
+            AppChatRole.Assistant,
             agentId: agentId,
             agentName: agentName));
     }
@@ -351,13 +350,13 @@ public sealed class AgenticChatEngineSessionService(
             return;
 
         bool alreadyExists = _chat.Messages.Any(m =>
-            m.Role == ChatRole.Tool &&
+            m.Role == AppChatRole.Tool &&
             string.Equals(m.Content, retrievedContext, StringComparison.Ordinal));
 
         if (alreadyExists)
             return;
 
-        await AddMessageAsync(new AppChatMessage(retrievedContext, DateTime.Now, ChatRole.Tool));
+        await AddMessageAsync(new AppChatMessage(retrievedContext, DateTime.Now, AppChatRole.Tool));
     }
 
     private void UpdateAnsweringState(bool isAnswering)
@@ -388,11 +387,6 @@ public sealed class AgenticChatEngineSessionService(
                 resolvedAgent.Model,
                 cancellationToken);
         }
-    }
-
-    private static AgentDescription CreateRuntimeAgentDescription(ResolvedChatAgent resolvedAgent)
-    {
-        return AgentDescriptionFactory.CreateRuntime(resolvedAgent.Agent, resolvedAgent.Model);
     }
 
     private static string BuildStatistics(DateTime startedAt, string modelName, int tokenCount)

@@ -12,7 +12,7 @@ internal static class ApplicationStartupExtensions
     {
         using var scope = app.Services.CreateScope();
 
-        await scope.ServiceProvider.GetRequiredService<AgentDescriptionSeeder>().SeedAsync();
+        await scope.ServiceProvider.GetRequiredService<AgentTemplateSeeder>().SeedAsync();
         await scope.ServiceProvider.GetRequiredService<WorkflowDefinitionSeeder>().SeedAsync();
         await scope.ServiceProvider.GetRequiredService<LlmServerConfigSeeder>().SeedAsync();
         await scope.ServiceProvider.GetRequiredService<McpServerConfigSeeder>().SeedAsync();

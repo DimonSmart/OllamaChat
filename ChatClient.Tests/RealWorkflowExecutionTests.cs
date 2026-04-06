@@ -55,7 +55,7 @@ public sealed class RealWorkflowExecutionTests(ITestOutputHelper output)
         var workflow = await workflowMaterializer.MaterializeAsync(compiled.Workflow!);
         var model = await ResolveModelAsync(userSettingsService, options);
         var runtimeAgents = workflow.Agents
-            .Select(agent => AgentDescriptionFactory.CreateResolved(GetRequiredAgentDraft(agent), model))
+            .Select(agent => ResolvedChatAgentFactory.Resolve(GetRequiredAgentDraft(agent), model))
             .ToList();
 
         var request = new OrchestrationWorkflowSessionStartRequest
@@ -209,7 +209,7 @@ public sealed class RealWorkflowExecutionTests(ITestOutputHelper output)
         await using var scope = serviceProvider.CreateAsyncScope();
         var services = scope.ServiceProvider;
 
-        await services.GetRequiredService<AgentDescriptionSeeder>().SeedAsync();
+        await services.GetRequiredService<AgentTemplateSeeder>().SeedAsync();
         await services.GetRequiredService<WorkflowDefinitionSeeder>().SeedAsync();
         await services.GetRequiredService<LlmServerConfigSeeder>().SeedAsync();
         await services.GetRequiredService<McpServerConfigSeeder>().SeedAsync();
@@ -236,7 +236,7 @@ public sealed class RealWorkflowExecutionTests(ITestOutputHelper output)
             $"No workflow model was resolved. Set {WorkflowServerIdEnvironmentVariable} and {WorkflowModelEnvironmentVariable}, or configure the application's default model.");
     }
 
-    private static AgentDescription GetRequiredAgentDraft(AgentWorkflowAgentDefinition agent) =>
+    private static AgentTemplateDefinition GetRequiredAgentDraft(AgentWorkflowAgentDefinition agent) =>
         agent.AgentDraft ?? throw new InvalidOperationException(
             $"Workflow agent '{agent.Id}' does not have a materialized draft.");
 
@@ -269,7 +269,7 @@ public sealed class RealWorkflowExecutionTests(ITestOutputHelper output)
         var builder = new StringBuilder();
         foreach (var message in transcript)
         {
-            var speaker = message.Role == Microsoft.Extensions.AI.ChatRole.User
+            var speaker = message.Role == AppChatRole.User
                 ? "user"
                 : message.AgentName ?? message.Role.ToString();
             builder.AppendLine($"[{speaker}]");

@@ -114,10 +114,10 @@ public sealed class WorkflowDefinitionSeederTests
                             .Agent("host", agent => agent
                                 .Role("Host")
                                 .UseDraft(
-                                    AgentDefinitionBuilder
+                                    AgentTemplateBuilder
                                         .New("Host", "host")
                                         .WithInstructions("Open the debate.")
-                                        .BuildDescription()))
+                                        .Build()))
                             .Agent("kant", agent => agent
                                 .FromSavedAgent("Immanuel Kant"))
                             .Agent("nietzsche", agent => agent
@@ -177,11 +177,11 @@ public sealed class WorkflowDefinitionSeederTests
                 .Agent("triage", agent => agent
                     .Role("Router")
                     .UseDraft(
-                        AgentDefinitionBuilder
+                        AgentTemplateBuilder
                             .New("Seeded Triage", "triage")
                             .WithInstructions("Route the request.")
                             .AutoSelectTools(0)
-                            .BuildDescription()))
+                            .Build()))
                 .UseHandoff(handoff => handoff
                     .StartWith("triage"))
                 .Build();
@@ -197,19 +197,19 @@ public sealed class WorkflowDefinitionSeederTests
                 .Agent("first", agent => agent
                     .Role("First")
                     .UseDraft(
-                        AgentDefinitionBuilder
+                        AgentTemplateBuilder
                             .New("Seeded First", "first")
                             .WithInstructions("Do the first step.")
                             .AutoSelectTools(0)
-                            .BuildDescription()))
+                            .Build()))
                 .Agent("second", agent => agent
                     .Role("Second")
                     .UseDraft(
-                        AgentDefinitionBuilder
+                        AgentTemplateBuilder
                             .New("Seeded Second", "second")
                             .WithInstructions("Do the second step.")
                             .AutoSelectTools(0)
-                            .BuildDescription()))
+                            .Build()))
                 .UseSequential(sequential => sequential
                     .Order("first", "second"))
                 .Build();

@@ -59,7 +59,7 @@ public sealed class RagVectorIndexBackgroundService(
         try
         {
             using var scope = _scopeFactory.CreateScope();
-            var agentService = scope.ServiceProvider.GetRequiredService<IAgentDescriptionService>();
+            var agentService = scope.ServiceProvider.GetRequiredService<IAgentTemplateService>();
             var fileService = scope.ServiceProvider.GetRequiredService<IRagFileService>();
             var indexService = scope.ServiceProvider.GetRequiredService<IRagVectorIndexService>();
             var settingsService = scope.ServiceProvider.GetRequiredService<IUserSettingsService>();

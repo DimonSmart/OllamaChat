@@ -3,7 +3,6 @@
 @using ChatClient.Api.Client.ViewModels
 @using ChatClient.Domain.Models
 @using Microsoft.AspNetCore.Components
-@using Microsoft.Extensions.AI
 @using Microsoft.Extensions.Logging
 @using Microsoft.JSInterop
 @using MudBlazor
@@ -26,34 +25,34 @@
     }
     @foreach (var message in Messages)
     {
-        if (message.Role == ChatRole.System)
+        if (message.Role == AppChatRole.System)
         {
             continue;
         }
 
-        if (message.Role == ChatRole.Tool)
+        if (message.Role == AppChatRole.Tool)
         {
             <RagDisplay Text="@message.Content" />
         }
         else
         {
             messageIndex++;
-            <MudChat Dense="true" ChatPosition="@(message.Role == ChatRole.Assistant ? ChatBubblePosition.Start : ChatBubblePosition.End)" @key="@($"{messageIndex}_{message.Id}")">
+            <MudChat Dense="true" ChatPosition="@(message.Role == AppChatRole.Assistant ? ChatBubblePosition.Start : ChatBubblePosition.End)" @key="@($"{messageIndex}_{message.Id}")">
                 <MudChatHeader>
                     <time>@message.MsgDateTime.ToString("g")</time>
-                    <span class="copy-button" title="Copy answer" @onclick="@(() => OnCopyVisibleMessage.InvokeAsync(message))">📋</span>
-                    <span class="copy-button" title="Copy raw" @onclick="@(() => OnCopyRawMessage.InvokeAsync(message))">🚪</span>
+                    <span class="copy-button" title="Copy answer" @onclick="@(() => OnCopyVisibleMessage.InvokeAsync(message))">рџ“‹</span>
+                    <span class="copy-button" title="Copy raw" @onclick="@(() => OnCopyRawMessage.InvokeAsync(message))">рџљЄ</span>
                     @if (!IsLlmAnswering)
                     {
-                        <span class="delete-button" title="Delete" @onclick="@(() => OnDeleteMessage.InvokeAsync(message))">🗑</span>
+                        <span class="delete-button" title="Delete" @onclick="@(() => OnDeleteMessage.InvokeAsync(message))">рџ—‘</span>
                     }
                 </MudChatHeader>
 
                 @{
-                    var avatarText = message.Role == ChatRole.Assistant
+                    var avatarText = message.Role == AppChatRole.Assistant
                         ? GetAssistantAvatarText(message.AgentId)
                         : GetAvatarText(UserName);
-                    var avatarLabel = message.Role == ChatRole.Assistant
+                    var avatarLabel = message.Role == AppChatRole.Assistant
                         ? GetAssistantLabel(message)
                         : UserName;
                 }
@@ -63,14 +62,14 @@
                     @if (!string.IsNullOrWhiteSpace(avatarLabel))
                     {
                         <MudTooltip Text="@avatarLabel">
-                            <MudAvatar Class="chat-avatar" Color="@(message.Role == ChatRole.Assistant ? Color.Primary : Color.Secondary)">
+                            <MudAvatar Class="chat-avatar" Color="@(message.Role == AppChatRole.Assistant ? Color.Primary : Color.Secondary)">
                                 @avatarText
                             </MudAvatar>
                         </MudTooltip>
                     }
                     else
                     {
-                        <MudAvatar Class="chat-avatar" Color="@(message.Role == ChatRole.Assistant ? Color.Primary : Color.Secondary)">
+                        <MudAvatar Class="chat-avatar" Color="@(message.Role == AppChatRole.Assistant ? Color.Primary : Color.Secondary)">
                             @avatarText
                         </MudAvatar>
                     }
@@ -175,7 +174,7 @@
     public IReadOnlyList<AppChatMessageViewModel> Messages { get; set; } = Array.Empty<AppChatMessageViewModel>();
 
     [Parameter, EditorRequired]
-    public IReadOnlyCollection<AgentDescription> Agents { get; set; } = Array.Empty<AgentDescription>();
+    public IReadOnlyCollection<AgentExecutionSpec> Agents { get; set; } = Array.Empty<AgentExecutionSpec>();
 
     [Parameter]
     public bool IsLlmAnswering { get; set; }
@@ -277,7 +276,7 @@
 
     private bool ShouldShowSpeakerLabel(AppChatMessageViewModel message) =>
         IsMultiAgent &&
-        message.Role == ChatRole.Assistant &&
+        message.Role == AppChatRole.Assistant &&
         !string.IsNullOrWhiteSpace(GetSpeakerLabel(message));
 
     private string? GetSpeakerLabel(AppChatMessageViewModel message) =>

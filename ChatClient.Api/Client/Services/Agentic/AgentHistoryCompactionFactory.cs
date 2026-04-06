@@ -16,7 +16,7 @@ internal static class AgentHistoryCompactionFactory
     private const string StateKeyPrefix = "agentic:history-compaction";
 
     public static AgentHistoryCompactionAttachment? Create(
-        AgentDefinition agent,
+        AgentExecutionSpec agent,
         AgenticToolSet toolSet,
         ILoggerFactory loggerFactory,
         ILogger logger)
@@ -74,7 +74,7 @@ internal static class AgentHistoryCompactionFactory
     }
 
     public static AgentHistoryCompactionAttachment? Create(
-        AgentDescription agent,
+        AgentTemplateDefinition agent,
         AgenticToolSet toolSet,
         ILoggerFactory loggerFactory,
         ILogger logger)
@@ -82,7 +82,7 @@ internal static class AgentHistoryCompactionFactory
         ArgumentNullException.ThrowIfNull(agent);
 
         return Create(
-            AgentDefinitionMapper.ToDefinition(agent),
+            AgentExecutionSpecFactory.FromTemplate(agent),
             toolSet,
             loggerFactory,
             logger);
@@ -134,7 +134,7 @@ internal static class AgentHistoryCompactionFactory
         return $"Some earlier chat history for tool calls ({toolList}) may be compacted during execution. Only the most recent {keepLastToolPairs} matching tool result pair(s) remain visible.";
     }
 
-    private static string BuildStateKey(AgentDefinition agent)
+    private static string BuildStateKey(AgentExecutionSpec agent)
     {
         var agentKey = agent.Id != Guid.Empty
             ? agent.Id.ToString("N")

@@ -3,83 +3,77 @@ using Microsoft.Extensions.AI;
 
 namespace ChatClient.Application.Services.Agentic;
 
-public sealed class AgentDefinitionBuilder
+public sealed class AgentTemplateBuilder
 {
-    private readonly AgentDefinition _definition;
+    private readonly AgentTemplateDefinition _template;
 
-    private AgentDefinitionBuilder(AgentDefinition definition)
+    private AgentTemplateBuilder(AgentTemplateDefinition template)
     {
-        _definition = definition;
+        _template = template;
     }
 
-    public static AgentDefinitionBuilder New(string agentName, string? shortName = null)
+    public static AgentTemplateBuilder New(string agentName, string? shortName = null)
     {
         if (string.IsNullOrWhiteSpace(agentName))
         {
             throw new ArgumentException("Agent name is required.", nameof(agentName));
         }
 
-        return new AgentDefinitionBuilder(new AgentDefinition
+        return new AgentTemplateBuilder(new AgentTemplateDefinition
         {
             AgentName = agentName.Trim(),
             ShortName = string.IsNullOrWhiteSpace(shortName) ? null : shortName.Trim()
         });
     }
 
-    public static AgentDefinitionBuilder From(AgentDefinition source)
+    public static AgentTemplateBuilder From(AgentTemplateDefinition source)
     {
         ArgumentNullException.ThrowIfNull(source);
-        return new AgentDefinitionBuilder(source.Clone());
+        return new AgentTemplateBuilder(source.Clone());
     }
 
-    public static AgentDefinitionBuilder From(AgentDescription source)
+    public AgentTemplateBuilder WithId(Guid id)
     {
-        ArgumentNullException.ThrowIfNull(source);
-        return new AgentDefinitionBuilder(AgentDefinitionMapper.ToDefinition(source));
-    }
-
-    public AgentDefinitionBuilder WithId(Guid id)
-    {
-        _definition.Id = id;
+        _template.Id = id;
         return this;
     }
 
-    public AgentDefinitionBuilder Named(string agentName)
+    public AgentTemplateBuilder Named(string agentName)
     {
         if (string.IsNullOrWhiteSpace(agentName))
         {
             throw new ArgumentException("Agent name is required.", nameof(agentName));
         }
 
-        _definition.AgentName = agentName.Trim();
+        _template.AgentName = agentName.Trim();
         return this;
     }
 
-    public AgentDefinitionBuilder WithSummary(string? summary)
+    public AgentTemplateBuilder WithSummary(string? summary)
     {
-        _definition.Summary = summary?.Trim() ?? string.Empty;
+        _template.Summary = summary?.Trim() ?? string.Empty;
         return this;
     }
 
-    public AgentDefinitionBuilder Alias(string? shortName)
+    public AgentTemplateBuilder Alias(string? shortName)
     {
-        _definition.ShortName = string.IsNullOrWhiteSpace(shortName) ? null : shortName.Trim();
+        _template.ShortName = string.IsNullOrWhiteSpace(shortName) ? null : shortName.Trim();
         return this;
     }
 
-    public AgentDefinitionBuilder WithAvatarText(string? avatarText)
+    public AgentTemplateBuilder WithAvatarText(string? avatarText)
     {
-        _definition.AvatarText = string.IsNullOrWhiteSpace(avatarText) ? null : avatarText.Trim();
+        _template.AvatarText = string.IsNullOrWhiteSpace(avatarText) ? null : avatarText.Trim();
         return this;
     }
 
-    public AgentDefinitionBuilder WithInstructions(string content)
+    public AgentTemplateBuilder WithInstructions(string content)
     {
-        _definition.Content = content?.Trim() ?? string.Empty;
+        _template.Content = content?.Trim() ?? string.Empty;
         return this;
     }
 
-    public AgentDefinitionBuilder WithDefaultModel(Guid serverId, string modelName)
+    public AgentTemplateBuilder WithDefaultModel(Guid serverId, string modelName)
     {
         if (serverId == Guid.Empty)
         {
@@ -91,70 +85,70 @@ public sealed class AgentDefinitionBuilder
             throw new ArgumentException("Model name is required.", nameof(modelName));
         }
 
-        _definition.LlmId = serverId;
-        _definition.ModelName = modelName.Trim();
+        _template.LlmId = serverId;
+        _template.ModelName = modelName.Trim();
         return this;
     }
 
-    public AgentDefinitionBuilder WithoutDefaultModel()
+    public AgentTemplateBuilder WithoutDefaultModel()
     {
-        _definition.LlmId = null;
-        _definition.ModelName = null;
+        _template.LlmId = null;
+        _template.ModelName = null;
         return this;
     }
 
-    public AgentDefinitionBuilder WithTemperature(double? temperature)
+    public AgentTemplateBuilder WithTemperature(double? temperature)
     {
-        _definition.Temperature = temperature;
+        _template.Temperature = temperature;
         return this;
     }
 
-    public AgentDefinitionBuilder WithRepeatPenalty(double? repeatPenalty)
+    public AgentTemplateBuilder WithRepeatPenalty(double? repeatPenalty)
     {
-        _definition.RepeatPenalty = repeatPenalty;
+        _template.RepeatPenalty = repeatPenalty;
         return this;
     }
 
-    public AgentDefinitionBuilder AutoSelectTools(int autoSelectCount)
+    public AgentTemplateBuilder AutoSelectTools(int autoSelectCount)
     {
         if (autoSelectCount < 0)
         {
             throw new ArgumentOutOfRangeException(nameof(autoSelectCount), "Auto-select count cannot be negative.");
         }
 
-        _definition.FunctionSettings.AutoSelectCount = autoSelectCount;
+        _template.FunctionSettings.AutoSelectCount = autoSelectCount;
         return this;
     }
 
-    public AgentDefinitionBuilder ConfigureExecution(Action<AgentExecutionBuilder> configure)
+    public AgentTemplateBuilder ConfigureExecution(Action<AgentExecutionBuilder> configure)
     {
         ArgumentNullException.ThrowIfNull(configure);
 
-        var builder = new AgentExecutionBuilder(_definition.ExecutionSettings);
+        var builder = new AgentExecutionBuilder(_template.ExecutionSettings);
         configure(builder);
-        _definition.ExecutionSettings = builder.Build();
+        _template.ExecutionSettings = builder.Build();
         return this;
     }
 
-    public AgentDefinitionBuilder ClearBindings()
+    public AgentTemplateBuilder ClearBindings()
     {
-        _definition.McpServerBindings.Clear();
+        _template.McpServerBindings.Clear();
         return this;
     }
 
-    public AgentDefinitionBuilder WithoutBinding(string serverName)
+    public AgentTemplateBuilder WithoutBinding(string serverName)
     {
         if (string.IsNullOrWhiteSpace(serverName))
         {
             return this;
         }
 
-        _definition.McpServerBindings.RemoveAll(binding =>
+        _template.McpServerBindings.RemoveAll(binding =>
             string.Equals(binding.ServerName, serverName.Trim(), StringComparison.OrdinalIgnoreCase));
         return this;
     }
 
-    public AgentDefinitionBuilder WithBinding(string serverName, Action<AgentMcpBindingBuilder> configure)
+    public AgentTemplateBuilder WithBinding(string serverName, Action<AgentMcpBindingBuilder> configure)
     {
         if (string.IsNullOrWhiteSpace(serverName))
         {
@@ -163,16 +157,16 @@ public sealed class AgentDefinitionBuilder
 
         ArgumentNullException.ThrowIfNull(configure);
 
-        var existing = _definition.McpServerBindings.FirstOrDefault(binding =>
+        var existing = _template.McpServerBindings.FirstOrDefault(binding =>
             string.Equals(binding.ServerName, serverName.Trim(), StringComparison.OrdinalIgnoreCase));
         var builder = new AgentMcpBindingBuilder(existing)
             .ForServer(serverName.Trim());
         configure(builder);
-        UpsertBinding(_definition.McpServerBindings, builder.Build());
+        UpsertBinding(_template.McpServerBindings, builder.Build());
         return this;
     }
 
-    public AgentDefinitionBuilder WithBinding(Guid serverId, string serverName, Action<AgentMcpBindingBuilder> configure)
+    public AgentTemplateBuilder WithBinding(Guid serverId, string serverName, Action<AgentMcpBindingBuilder> configure)
     {
         if (serverId == Guid.Empty)
         {
@@ -186,32 +180,24 @@ public sealed class AgentDefinitionBuilder
 
         ArgumentNullException.ThrowIfNull(configure);
 
-        var existing = _definition.McpServerBindings.FirstOrDefault(binding =>
+        var existing = _template.McpServerBindings.FirstOrDefault(binding =>
             binding.ServerId == serverId ||
             string.Equals(binding.ServerName, serverName.Trim(), StringComparison.OrdinalIgnoreCase));
         var builder = new AgentMcpBindingBuilder(existing)
             .ForServer(serverId, serverName.Trim());
         configure(builder);
-        UpsertBinding(_definition.McpServerBindings, builder.Build());
+        UpsertBinding(_template.McpServerBindings, builder.Build());
         return this;
     }
 
-    public AgentDefinition Build()
+    public AgentTemplateDefinition Build()
     {
-        if (string.IsNullOrWhiteSpace(_definition.AgentName))
+        if (string.IsNullOrWhiteSpace(_template.AgentName))
         {
             throw new InvalidOperationException("Agent name is required.");
         }
 
-        return _definition.Clone();
-    }
-
-    public AgentDescription BuildDescription() => AgentDefinitionMapper.ToDescription(Build());
-
-    public ResolvedChatAgent BuildResolved(ServerModel model)
-    {
-        ArgumentNullException.ThrowIfNull(model);
-        return AgentDescriptionFactory.CreateResolved(Build(), model);
+        return _template.Clone();
     }
 
     private static void UpsertBinding(List<McpServerSessionBinding> bindings, McpServerSessionBinding binding)
@@ -437,22 +423,22 @@ public sealed class AgentMcpBindingBuilder
 
 public sealed class AgentRunBuilder
 {
-    private readonly AgentDefinition _definition;
+    private readonly AgentExecutionSpec _agent;
     private readonly HashSet<string> _functions = new(StringComparer.OrdinalIgnoreCase);
     private readonly List<McpServerSessionBinding> _mcpServerBindings = [];
-    private readonly List<ChatMessage> _conversation = [];
+    private readonly List<AgentRunConversationMessage> _conversation = [];
     private ServerModel? _resolvedModel;
     private string _userMessage = string.Empty;
 
-    private AgentRunBuilder(AgentDefinition definition)
+    private AgentRunBuilder(AgentExecutionSpec agent)
     {
-        _definition = definition.Clone();
+        _agent = agent.Clone();
     }
 
-    public static AgentRunBuilder For(AgentDefinition definition)
+    public static AgentRunBuilder For(AgentExecutionSpec agent)
     {
-        ArgumentNullException.ThrowIfNull(definition);
-        return new AgentRunBuilder(definition);
+        ArgumentNullException.ThrowIfNull(agent);
+        return new AgentRunBuilder(agent);
     }
 
     public AgentRunBuilder UsingModel(ServerModel model)
@@ -469,17 +455,17 @@ public sealed class AgentRunBuilder
 
     public AgentRunBuilder UsingDefaultModel()
     {
-        if (_definition.LlmId is not Guid serverId || serverId == Guid.Empty)
+        if (_agent.LlmId is not Guid serverId || serverId == Guid.Empty)
         {
-            throw new InvalidOperationException($"Agent '{_definition.AgentName}' does not have a default server configured.");
+            throw new InvalidOperationException($"Agent '{_agent.AgentName}' does not have a default server configured.");
         }
 
-        if (string.IsNullOrWhiteSpace(_definition.ModelName))
+        if (string.IsNullOrWhiteSpace(_agent.ModelName))
         {
-            throw new InvalidOperationException($"Agent '{_definition.AgentName}' does not have a default model configured.");
+            throw new InvalidOperationException($"Agent '{_agent.AgentName}' does not have a default model configured.");
         }
 
-        _resolvedModel = new ServerModel(serverId, _definition.ModelName.Trim());
+        _resolvedModel = new ServerModel(serverId, _agent.ModelName.Trim());
         return this;
     }
 
@@ -566,13 +552,14 @@ public sealed class AgentRunBuilder
         ArgumentNullException.ThrowIfNull(conversation);
 
         _conversation.Clear();
-        _conversation.AddRange(conversation);
+        _conversation.AddRange(conversation.Select(static message =>
+            new AgentRunConversationMessage(message.Role.ToAppChatRole(), message.Text ?? string.Empty)));
         return this;
     }
 
     public AgentRunBuilder AddMessage(ChatRole role, string text)
     {
-        _conversation.Add(new ChatMessage(role, text));
+        _conversation.Add(new AgentRunConversationMessage(role.ToAppChatRole(), text));
         return this;
     }
 
@@ -586,10 +573,10 @@ public sealed class AgentRunBuilder
     {
         if (_resolvedModel is null)
         {
-            throw new InvalidOperationException($"Resolved model is not configured for agent '{_definition.AgentName}'.");
+            throw new InvalidOperationException($"Resolved model is not configured for agent '{_agent.AgentName}'.");
         }
 
-        var runtimeAgent = _definition.Clone();
+        var runtimeAgent = _agent.Clone();
         runtimeAgent.LlmId = _resolvedModel.ServerId;
         runtimeAgent.ModelName = _resolvedModel.ModelName;
 
@@ -623,23 +610,17 @@ public sealed class AgentRunBuilder
     }
 }
 
-public static class AgentDefinitionFluentExtensions
+public static class AgentTemplateFluentExtensions
 {
-    public static AgentDefinition ToDefinition(this AgentDescription source)
-    {
-        ArgumentNullException.ThrowIfNull(source);
-        return AgentDefinitionMapper.ToDefinition(source);
-    }
-
-    public static AgentRunBuilder ForRun(this AgentDefinition source)
+    public static AgentRunBuilder ForRun(this AgentExecutionSpec source)
     {
         ArgumentNullException.ThrowIfNull(source);
         return AgentRunBuilder.For(source);
     }
 
-    public static AgentRunBuilder ForRun(this AgentDescription source)
+    public static AgentRunBuilder ForRun(this AgentTemplateDefinition source)
     {
         ArgumentNullException.ThrowIfNull(source);
-        return AgentRunBuilder.For(AgentDefinitionMapper.ToDefinition(source));
+        return AgentRunBuilder.For(AgentExecutionSpecFactory.FromTemplate(source));
     }
 }

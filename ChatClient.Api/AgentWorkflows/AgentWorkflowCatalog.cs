@@ -152,7 +152,7 @@ public sealed class AgentWorkflowCatalog(IMcpServerConfigService mcpServerConfig
             ExistingSavedAgentsReason = "Current saved agents are generic assistants or domain personas. None map cleanly to triage, receptionist, behavioural interviewer, technical interviewer, or summarizer, so reusing their prompts would be more confusing than creating dedicated workflow agents.",
             ReusableProjectPieces =
             [
-                "AgentDefinitionBuilder and AgentDescriptionFactory are already expressive enough for specialized role agents.",
+                "AgentTemplateBuilder and ResolvedChatAgentFactory are already expressive enough for specialized role agents.",
                 "Existing MCP binding model already supports per-agent tool scoping when suitable capabilities exist.",
                 "Built-in MCP host pattern can be reused for workflow-scoped task state and document intake capabilities.",
                 "Existing agent persistence and resolved-model pipeline can be reused for workflow-owned agents."
@@ -171,8 +171,8 @@ public sealed class AgentWorkflowCatalog(IMcpServerConfigService mcpServerConfig
         };
     }
 
-    private static AgentDescription CreateTriageAgent() =>
-        AgentDefinitionBuilder
+    private static AgentTemplateDefinition CreateTriageAgent() =>
+        AgentTemplateBuilder
             .New("Interview Coach Triage", TriageAgentId)
             .WithBinding(BuiltInTaskSessionMcpServerTools.Descriptor.Name, static binding => binding
                 .Enabled()
@@ -199,9 +199,9 @@ public sealed class AgentWorkflowCatalog(IMcpServerConfigService mcpServerConfig
                 Be brief, predictable, and explicit about who is taking over next.
                 """)
             .AutoSelectTools(0)
-            .BuildDescription();
+            .Build();
 
-    private static AgentDescription CreateReceptionistAgent(IReadOnlyList<WorkflowStartInputDefinition> startInputs)
+    private static AgentTemplateDefinition CreateReceptionistAgent(IReadOnlyList<WorkflowStartInputDefinition> startInputs)
     {
         var requiredInputSummary = string.Join(
             Environment.NewLine,
@@ -210,7 +210,7 @@ public sealed class AgentWorkflowCatalog(IMcpServerConfigService mcpServerConfig
                 .Select(input => $"- {input.DisplayName} (kind: {input.Key})"));
 
         return
-        AgentDefinitionBuilder
+        AgentTemplateBuilder
             .New("Interview Coach Receptionist", ReceptionistAgentId)
             .WithBinding(BuiltInTaskSessionMcpServerTools.Descriptor.Name, static binding => binding
                 .Enabled()
@@ -239,11 +239,11 @@ public sealed class AgentWorkflowCatalog(IMcpServerConfigService mcpServerConfig
                 Do not conduct the interview yourself. Do not summarize the whole session. Stay in the intake role.
                 """)
             .AutoSelectTools(0)
-            .BuildDescription();
+            .Build();
     }
 
-    private static AgentDescription CreateBehaviouralAgent() =>
-        AgentDefinitionBuilder
+    private static AgentTemplateDefinition CreateBehaviouralAgent() =>
+        AgentTemplateBuilder
             .New("Interview Coach Behavioural Interviewer", BehaviouralAgentId)
             .WithBinding(BuiltInTaskSessionMcpServerTools.Descriptor.Name, static binding => binding
                 .Enabled()
@@ -270,10 +270,10 @@ public sealed class AgentWorkflowCatalog(IMcpServerConfigService mcpServerConfig
                 Do not restart intake and do not generate the final summary.
                 """)
             .AutoSelectTools(0)
-            .BuildDescription();
+            .Build();
 
-    private static AgentDescription CreateTechnicalAgent() =>
-        AgentDefinitionBuilder
+    private static AgentTemplateDefinition CreateTechnicalAgent() =>
+        AgentTemplateBuilder
             .New("Interview Coach Technical Interviewer", TechnicalAgentId)
             .WithBinding(BuiltInTaskSessionMcpServerTools.Descriptor.Name, static binding => binding
                 .Enabled()
@@ -300,10 +300,10 @@ public sealed class AgentWorkflowCatalog(IMcpServerConfigService mcpServerConfig
                 Do not redo behavioural intake and do not produce the final report yourself.
                 """)
             .AutoSelectTools(0)
-            .BuildDescription();
+            .Build();
 
-    private static AgentDescription CreateSummarizerAgent() =>
-        AgentDefinitionBuilder
+    private static AgentTemplateDefinition CreateSummarizerAgent() =>
+        AgentTemplateBuilder
             .New("Interview Coach Summarizer", SummarizerAgentId)
             .WithBinding(BuiltInTaskSessionMcpServerTools.Descriptor.Name, static binding => binding
                 .Enabled()
@@ -329,7 +329,7 @@ public sealed class AgentWorkflowCatalog(IMcpServerConfigService mcpServerConfig
                 Do not continue the interview phase yourself and do not restart intake.
                 """)
             .AutoSelectTools(0)
-            .BuildDescription();
+            .Build();
 
     private static WorkflowCapabilityAvailabilitySummary EvaluateCapabilities(IReadOnlyCollection<IMcpServerDescriptor> servers)
     {

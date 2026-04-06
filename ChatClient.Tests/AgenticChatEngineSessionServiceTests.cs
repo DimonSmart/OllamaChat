@@ -4,7 +4,6 @@ using ChatClient.Api.Services;
 using ChatClient.Application.Services.Agentic;
 using ChatClient.Domain.Models;
 using ChatClient.Domain.Models.ChatStrategies;
-using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Logging;
 
 namespace ChatClient.Tests;
@@ -45,7 +44,7 @@ public class AgenticChatEngineSessionServiceTests
         var agent = CreateAgent("Agentic");
         var history = new List<IAppChatMessage>
         {
-            new AppChatMessage("loaded", DateTime.UtcNow, ChatRole.User)
+            new AppChatMessage("loaded", DateTime.UtcNow, AppChatRole.User)
         };
 
         await service.StartAsync(new ChatEngineSessionStartRequest
@@ -55,7 +54,7 @@ public class AgenticChatEngineSessionServiceTests
             History = history
         });
 
-        Assert.Single(service.AgentDescriptions);
+        Assert.Single(service.Agents);
         Assert.Single(service.Messages);
         Assert.Equal("loaded", service.Messages.First().Content);
     }
@@ -81,7 +80,7 @@ public class AgenticChatEngineSessionServiceTests
 
         await service.SendAsync("ping");
 
-        var assistant = service.Messages.Last(m => m.Role == ChatRole.Assistant);
+        var assistant = service.Messages.Last(m => m.Role == AppChatRole.Assistant);
         Assert.Equal("Hello world", assistant.Content);
         Assert.False(assistant.IsStreaming);
         Assert.False(string.IsNullOrWhiteSpace(assistant.Statistics));
@@ -114,11 +113,11 @@ public class AgenticChatEngineSessionServiceTests
 
         await service.SendAsync("ping");
 
-        var toolMessage = service.Messages.FirstOrDefault(m => m.Role == ChatRole.Tool);
+        var toolMessage = service.Messages.FirstOrDefault(m => m.Role == AppChatRole.Tool);
         Assert.NotNull(toolMessage);
         Assert.Contains("Retrieved context:", toolMessage!.Content);
 
-        var assistant = service.Messages.Last(m => m.Role == ChatRole.Assistant);
+        var assistant = service.Messages.Last(m => m.Role == AppChatRole.Assistant);
         Assert.Single(assistant.FunctionCalls);
         Assert.Equal("srv", assistant.FunctionCalls.First().Server);
     }
@@ -153,10 +152,10 @@ public class AgenticChatEngineSessionServiceTests
 
         await WaitUntilAsync(
             () => service.Messages
-                .Any(m => m.Role == ChatRole.Assistant && m.IsStreaming && m.FunctionCalls.Count == 1),
+                .Any(m => m.Role == AppChatRole.Assistant && m.IsStreaming && m.FunctionCalls.Count == 1),
             TimeSpan.FromSeconds(2));
 
-        var streamingAssistant = service.Messages.Last(m => m.Role == ChatRole.Assistant);
+        var streamingAssistant = service.Messages.Last(m => m.Role == AppChatRole.Assistant);
         Assert.True(streamingAssistant.IsStreaming);
         Assert.Single(streamingAssistant.FunctionCalls);
         Assert.Equal("srv", streamingAssistant.FunctionCalls.First().Server);
@@ -164,7 +163,7 @@ public class AgenticChatEngineSessionServiceTests
         releaseFinalChunk.SetResult();
         await sendTask;
 
-        var finalAssistant = service.Messages.Last(m => m.Role == ChatRole.Assistant);
+        var finalAssistant = service.Messages.Last(m => m.Role == AppChatRole.Assistant);
         Assert.False(finalAssistant.IsStreaming);
         Assert.Single(finalAssistant.FunctionCalls);
     }
@@ -191,7 +190,7 @@ public class AgenticChatEngineSessionServiceTests
         await service.CancelAsync();
         await sendTask;
 
-        var assistant = service.Messages.Last(m => m.Role == ChatRole.Assistant);
+        var assistant = service.Messages.Last(m => m.Role == AppChatRole.Assistant);
         Assert.True(assistant.IsCanceled);
     }
 
@@ -221,7 +220,7 @@ public class AgenticChatEngineSessionServiceTests
         await service.SendAsync("ping");
 
         var assistants = service.Messages
-            .Where(m => m.Role == ChatRole.Assistant && !m.IsCanceled)
+            .Where(m => m.Role == AppChatRole.Assistant && !m.IsCanceled)
             .ToList();
 
         Assert.Equal(2, assistants.Count);
@@ -257,7 +256,7 @@ public class AgenticChatEngineSessionServiceTests
         await service.SendAsync("ping");
 
         var assistants = service.Messages
-            .Where(m => m.Role == ChatRole.Assistant && !m.IsCanceled)
+            .Where(m => m.Role == AppChatRole.Assistant && !m.IsCanceled)
             .Select(m => m.AgentName)
             .ToList();
 
@@ -325,7 +324,7 @@ public class AgenticChatEngineSessionServiceTests
         await service.SendAsync("ping");
 
         var assistants = service.Messages
-            .Where(m => m.Role == ChatRole.Assistant && !m.IsCanceled)
+            .Where(m => m.Role == AppChatRole.Assistant && !m.IsCanceled)
             .Select(m => m.AgentName)
             .ToList();
 
@@ -380,7 +379,7 @@ public class AgenticChatEngineSessionServiceTests
         await service.StartAsync(new ChatEngineSessionStartRequest
         {
             Configuration = new AppChatConfiguration("config-model", []),
-            Agents = [new ResolvedChatAgent(agent, resolvedModel)]
+            Agents = [ResolvedChatAgentFactory.Resolve(agent, resolvedModel)]
         });
 
         await service.SendAsync("ping");
@@ -389,7 +388,7 @@ public class AgenticChatEngineSessionServiceTests
         Assert.Equal(resolvedModel.ServerId, capturedModel!.ServerId);
         Assert.Equal("resolved-model", capturedModel.ModelName);
 
-        var assistant = service.Messages.Last(m => m.Role == ChatRole.Assistant);
+        var assistant = service.Messages.Last(m => m.Role == AppChatRole.Assistant);
         Assert.Contains("resolved-model", assistant.Statistics);
         Assert.DoesNotContain("config-model", assistant.Statistics);
     }
@@ -404,19 +403,19 @@ public class AgenticChatEngineSessionServiceTests
             new AgenticChatEngineHistoryBuilder(),
             new AgenticChatEngineStreamingBridge());
 
-    private static AgentDescription CreateAgent(string name) =>
+    private static AgentTemplateDefinition CreateAgent(string name) =>
         new()
         {
             AgentName = name,
-            ShortName = $"{name}-id",
+            ShortName = $"{name}-alias",
             Content = "You are helpful.",
             ModelName = "model-a"
         };
 
-    private static IReadOnlyList<ResolvedChatAgent> ResolveAgents(params AgentDescription[] agents)
+    private static IReadOnlyList<ResolvedChatAgent> ResolveAgents(params AgentTemplateDefinition[] agents)
     {
         return agents
-            .Select(agent => new ResolvedChatAgent(
+            .Select(agent => ResolvedChatAgentFactory.Resolve(
                 agent,
                 new ServerModel(Guid.NewGuid(), agent.ModelName ?? "model-a")))
             .ToList();

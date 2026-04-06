@@ -44,7 +44,7 @@ public static class ChatDisplayHelper
         BuildAvatarText(name, 2);
 
     public static string? GetAssistantDisplayName(
-        IEnumerable<AgentDescription> agents,
+        IEnumerable<AgentExecutionSpec> agents,
         string? agentId)
     {
         var matchingAgent = ResolveAgent(agents, agentId);
@@ -52,7 +52,7 @@ public static class ChatDisplayHelper
     }
 
     public static string GetAssistantAvatarText(
-        IEnumerable<AgentDescription> agents,
+        IEnumerable<AgentExecutionSpec> agents,
         string? agentId)
     {
         var matchingAgent = ResolveAgent(agents, agentId);
@@ -61,17 +61,17 @@ public static class ChatDisplayHelper
             return string.Empty;
         }
 
-        if (!string.IsNullOrWhiteSpace(matchingAgent?.AvatarText))
+        if (!string.IsNullOrWhiteSpace(matchingAgent.AvatarText))
             return BuildAvatarText(matchingAgent.AvatarText, 3);
 
-        if (!string.IsNullOrWhiteSpace(matchingAgent?.ShortName))
+        if (!string.IsNullOrWhiteSpace(matchingAgent.ShortName))
             return BuildAvatarText(matchingAgent.ShortName, 3);
 
         return BuildAvatarText(matchingAgent.AgentName, 3);
     }
 
-    private static AgentDescription? ResolveAgent(
-        IEnumerable<AgentDescription> agents,
+    private static AgentExecutionSpec? ResolveAgent(
+        IEnumerable<AgentExecutionSpec> agents,
         string? agentId)
     {
         if (string.IsNullOrWhiteSpace(agentId))

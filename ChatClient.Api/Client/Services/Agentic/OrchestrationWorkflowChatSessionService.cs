@@ -1,8 +1,5 @@
 using System.Collections.ObjectModel;
-using System.Reflection;
-using System.Text;
 using ChatClient.Api.AgentWorkflows;
-using ChatClient.Api.AgentWorkflows.Runtime;
 using ChatClient.Api.Services;
 using ChatClient.Api.Services.BuiltIn;
 using ChatClient.Application.Services.Agentic;
@@ -10,18 +7,16 @@ using ChatClient.Domain.Models;
 #pragma warning disable MAAI001
 using Microsoft.Agents.AI;
 using Microsoft.Agents.AI.Workflows;
-using Microsoft.Extensions.AI;
 #pragma warning restore MAAI001
 
 namespace ChatClient.Api.Client.Services.Agentic;
 
 public sealed class OrchestrationWorkflowChatSessionService(
-    ILogger<OrchestrationWorkflowChatSessionService> logger,
-    IModelCapabilityService modelCapabilityService,
     TaskSessionStore taskSessionStore,
-    MarkdownDocumentIntakeService documentIntakeService,
-    AgenticRuntimeAgentFactory runtimeAgentFactory,
-    IEnumerable<IOrchestrationRuntimeWorkflowBuilder> runtimeWorkflowBuilders,
+    OrchestrationWorkflowSessionBootstrapper sessionBootstrapper,
+    OrchestrationWorkflowTurnCoordinator turnCoordinator,
+    OrchestrationWorkflowPassExecutor passExecutor,
+    OrchestrationWorkflowEventStreamProcessor eventStreamProcessor,
     IChatEngineStreamingBridge streamingBridge) : IOrchestrationWorkflowSessionService
 {
     private readonly AppChat _chat = new();
@@ -35,18 +30,6 @@ public sealed class OrchestrationWorkflowChatSessionService(
     private readonly List<string> _assistantSpeakerIds = [];
     private CancellationTokenSource? _cancellationTokenSource;
     private OrchestrationWorkflowSessionStartRequest? _parameters;
-    private readonly IReadOnlyList<IOrchestrationRuntimeWorkflowBuilder> _runtimeWorkflowBuilders =
-        runtimeWorkflowBuilders.ToArray();
-    private static readonly Lazy<MethodInfo?> GetDescriptiveIdMethod = new(static () =>
-        Type.GetType(
-                "Microsoft.Agents.AI.Workflows.AIAgentExtensions, Microsoft.Agents.AI.Workflows",
-                throwOnError: false)?
-            .GetMethod(
-                "GetDescriptiveId",
-                BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static,
-                binder: null,
-                types: [typeof(AIAgent)],
-                modifiers: null));
 
     public event Action<bool>? AnsweringStateChanged;
     public event Action? ChatReset;
@@ -60,163 +43,23 @@ public sealed class OrchestrationWorkflowChatSessionService(
 
     public string? TaskSessionId { get; private set; }
 
-    public IReadOnlyCollection<AgentDescription> AgentDescriptions => _chat.AgentDescriptions;
+    public IReadOnlyCollection<AgentExecutionSpec> Agents => _chat.Agents;
 
     public ObservableCollection<IAppChatMessage> Messages => _chat.Messages;
-    IReadOnlyCollection<IAppChatMessage> IChatEngineSessionService.Messages => _chat.Messages;
+    IReadOnlyCollection<IAppChatMessage> IChatSessionService.Messages => _chat.Messages;
 
     public async Task StartAsync(
         OrchestrationWorkflowSessionStartRequest request,
         CancellationToken cancellationToken = default)
     {
-        ArgumentNullException.ThrowIfNull(request);
-        if (request.Agents.Count == 0)
-        {
-            throw new ArgumentException("At least one workflow agent must be provided.", nameof(request));
-        }
-
-        var stage = "validate-agents";
-
-        try
-        {
-            await ValidateResolvedAgentsAsync(request.Agents, cancellationToken);
-
-            stage = "validate-workflow";
-            ValidateWorkflowDefinition(request.Workflow, request.Agents);
-            var normalizedStartInputs = NormalizeStartInputs(request.Workflow, request.StartInputs);
-
-            stage = "create-task-session";
-            var session = await taskSessionStore.CreateSessionAsync(
-                request.SessionTitle,
-                request.SessionDescription,
-                cancellationToken);
-            TaskSessionId = session.SessionId;
-
-            stage = "set-initial-phase";
-            await taskSessionStore.SetPhaseAsync(TaskSessionId, "intake", cancellationToken);
-
-            foreach (var startInput in normalizedStartInputs)
-            {
-                var definition = request.Workflow.StartInputs.First(input =>
-                    string.Equals(input.Key, startInput.Key, StringComparison.OrdinalIgnoreCase));
-
-                if (definition.Kind == WorkflowStartInputKind.MarkdownDocument)
-                {
-                    stage = $"prepare-document:{definition.Key}";
-                    var prepared = await PrepareDocumentAsync(definition, startInput, cancellationToken);
-                    if (prepared is null)
-                    {
-                        continue;
-                    }
-
-                    stage = $"attach-document:{definition.Key}";
-                    await taskSessionStore.AttachDocumentAsync(
-                        TaskSessionId,
-                        definition.Key,
-                        prepared.Markdown,
-                        prepared.Title,
-                        prepared.SourceFile,
-                        cancellationToken);
-                    continue;
-                }
-
-                stage = $"attach-parameter:{definition.Key}";
-                await taskSessionStore.SetParameterAsync(
-                    TaskSessionId,
-                    definition.Key,
-                    MapParameterValueKind(definition.Kind),
-                    NormalizeParameterValue(definition, startInput),
-                    cancellationToken);
-            }
-
-            stage = "bind-task-session";
-            var sessionBoundAgents = request.Agents
-                .Select(agent => BindTaskSession(agent, TaskSessionId))
-                .ToList();
-
-            _workflowAgentsById.Clear();
-            _agentIdsByExecutorId.Clear();
-            _agentIdsByName.Clear();
-            _agentNamesById.Clear();
-            _speakerIdsByMessageId.Clear();
-            _assistantSpeakerIds.Clear();
-
-            foreach (var sessionBoundAgent in sessionBoundAgents)
-            {
-                stage = $"build-runtime-agent:{sessionBoundAgent.Agent.AgentId}";
-                var runtimeRequest = sessionBoundAgent.Agent
-                    .ForRun()
-                    .UsingModel(sessionBoundAgent.Model)
-                    .WithConfiguration(request.Configuration)
-                    .WithConversation([])
-                    .WithUserMessage(string.Empty)
-                    .Build();
-                var builtAgent = await runtimeAgentFactory.CreateAsync(
-                    runtimeRequest,
-                    requireFunctionCalling: true,
-                    cancellationToken: cancellationToken);
-
-                _workflowAgentsById[sessionBoundAgent.Agent.AgentId] = builtAgent.Agent;
-                var executorId = TryGetAgentExecutorId(builtAgent.Agent);
-                RegisterAgentIdentity(
-                    sessionBoundAgent.Agent.AgentId,
-                    sessionBoundAgent.Agent.AgentName,
-                    executorId);
-            }
-
-            stage = "store-parameters";
-            _parameters = new OrchestrationWorkflowSessionStartRequest
-            {
-                Workflow = request.Workflow,
-                Agents = sessionBoundAgents,
-                Configuration = request.Configuration,
-                SessionTitle = request.SessionTitle,
-                SessionDescription = request.SessionDescription,
-                StartInputs = normalizedStartInputs
-            };
-
-            stage = "reset-chat";
-            _chat.Reset();
-            _activeStreams.Clear();
-            _activeSpeakerIdsByStreamId.Clear();
-            _speakerIdsByMessageId.Clear();
-            _assistantSpeakerIds.Clear();
-            _chat.SetAgents(sessionBoundAgents.Select(CreateRuntimeAgentDescription));
-            ChatReset?.Invoke();
-        }
-        catch (Exception ex)
-        {
-            logger.LogError(
-                ex,
-                "Failed to start orchestration workflow session at stage {Stage}. WorkflowId={WorkflowId}, AgentCount={AgentCount}, TaskSessionId={TaskSessionId}",
-                stage,
-                request.Workflow.Id,
-                request.Agents.Count,
-                TaskSessionId);
-            throw;
-        }
-    }
-
-    async Task IChatEngineSessionService.StartAsync(
-        ChatEngineSessionStartRequest request,
-        CancellationToken cancellationToken)
-    {
-        await Task.Yield();
-        throw new InvalidOperationException(
-            "This session service is workflow-specific. Use StartAsync(OrchestrationWorkflowSessionStartRequest).");
+        var bootstrapResult = await sessionBootstrapper.BootstrapAsync(request, cancellationToken);
+        ApplyBootstrapResult(bootstrapResult);
     }
 
     public void ResetChat()
     {
-        _chat.Reset();
-        _activeStreams.Clear();
-        _activeSpeakerIdsByStreamId.Clear();
-        _workflowAgentsById.Clear();
-        _agentIdsByExecutorId.Clear();
-        _agentIdsByName.Clear();
-        _agentNamesById.Clear();
-        _speakerIdsByMessageId.Clear();
-        _assistantSpeakerIds.Clear();
+        ClearChatState();
+        ClearWorkflowIdentityState();
         _parameters = null;
         TaskSessionId = null;
         ChatReset?.Invoke();
@@ -275,7 +118,7 @@ public sealed class OrchestrationWorkflowChatSessionService(
         return new ChatEngineSessionState
         {
             Configuration = _parameters.Configuration,
-            Agents = _chat.AgentDescriptions.ToList(),
+            Agents = _chat.Agents.ToList(),
             Messages = _chat.Messages.ToList(),
             ChatStrategyName = $"AgentOrchestration:{_parameters.Workflow.Kind}"
         };
@@ -295,7 +138,7 @@ public sealed class OrchestrationWorkflowChatSessionService(
         }
 
         _chat.Messages.Remove(message);
-        if (message.Role == ChatRole.Assistant)
+        if (message.Role == AppChatRole.Assistant)
         {
             _speakerIdsByMessageId.Remove(message.Id);
             RebuildAssistantSpeakerHistory();
@@ -330,12 +173,12 @@ public sealed class OrchestrationWorkflowChatSessionService(
                 return;
             }
 
-            var userMessage = new AppChatMessage(text, DateTime.Now, ChatRole.User, files: files);
+            var userMessage = new AppChatMessage(text, DateTime.Now, AppChatRole.User, files: files);
             await AddMessageAsync(userMessage);
             await taskSessionStore.AppendTurnAsync(
                 TaskSessionId,
                 "user",
-                BuildUserMessage(text, files),
+                OrchestrationWorkflowConversationBuilder.BuildUserMessage(text, files),
                 "user",
                 cancellationToken);
         }
@@ -345,7 +188,20 @@ public sealed class OrchestrationWorkflowChatSessionService(
 
         try
         {
-            await RunWorkflowTurnAsync(_parameters, _cancellationTokenSource.Token);
+            var parameters = _parameters;
+            await turnCoordinator.RunAsync(
+                new OrchestrationWorkflowTurnExecutionRequest
+                {
+                    WorkflowDisplayName = parameters.Workflow.DisplayName,
+                    Execution = parameters.Workflow.Execution,
+                    IsExecutionCompleteAsync = cancellation => IsWorkflowExecutionCompleteAsync(
+                        parameters.Workflow.Execution,
+                        cancellation),
+                    ExecutePassAsync = cancellation => ExecuteWorkflowPassAsync(parameters, cancellation),
+                    ProcessCompletedAssistantMessagesAsync = ProcessCompletedAssistantMessagesAsync,
+                    HandleAssistantErrorAsync = HandleError
+                },
+                _cancellationTokenSource.Token);
         }
         catch (OperationCanceledException)
         {
@@ -358,204 +214,26 @@ public sealed class OrchestrationWorkflowChatSessionService(
         }
     }
 
-    private async Task RunWorkflowTurnAsync(
+    private async Task<OrchestrationWorkflowPassResult> ExecuteWorkflowPassAsync(
         OrchestrationWorkflowSessionStartRequest parameters,
         CancellationToken cancellationToken)
     {
-        var execution = parameters.Workflow.Execution;
-        var automaticAssistantTurnsUsed = 0;
-        var passNumber = 0;
-
-        while (true)
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-
-            if (execution.Mode == AgentWorkflowExecutionMode.Autonomous &&
-                await IsWorkflowExecutionCompleteAsync(execution, cancellationToken))
-            {
-                return;
-            }
-
-            if (execution.Mode == AgentWorkflowExecutionMode.Interactive && passNumber > 0)
-            {
-                return;
-            }
-
-            if (execution.Mode == AgentWorkflowExecutionMode.Autonomous &&
-                automaticAssistantTurnsUsed >= execution.MaxAutomaticTurns)
-            {
-                await LogAutonomousWorkflowStoppedWithoutCompletionMarkersAsync(
-                    parameters.Workflow.DisplayName,
-                    execution,
-                    cancellationToken);
-                return;
-            }
-
-            passNumber++;
-            var passResult = await ExecuteWorkflowPassAsync(parameters, cancellationToken);
-
-            if (passResult.CompletedAssistantMessages.Count == 0)
-            {
-                if (passResult.Status == RunStatus.Ended)
-                {
-                    return;
-                }
-
-                if (execution.Mode == AgentWorkflowExecutionMode.Autonomous &&
-                    await IsWorkflowExecutionCompleteAsync(execution, cancellationToken))
-                {
-                    return;
-                }
-
-                await HandleError("Workflow returned an empty response.");
-                return;
-            }
-
-            await ProcessCompletedAssistantMessagesAsync(
-                passResult.CompletedAssistantMessages,
-                cancellationToken);
-
-            automaticAssistantTurnsUsed += passResult.CompletedAssistantMessages.Count;
-
-            if (execution.Mode == AgentWorkflowExecutionMode.Autonomous &&
-                passResult.Status == RunStatus.Ended)
-            {
-                var completedByMarkers = await IsWorkflowExecutionCompleteAsync(execution, cancellationToken);
-                if (!completedByMarkers &&
-                    (!string.IsNullOrWhiteSpace(execution.CompletionPhase) ||
-                     !string.IsNullOrWhiteSpace(execution.CompletionSummaryLabel)))
-                {
-                    logger.LogWarning(
-                        "Autonomous workflow '{WorkflowDisplayName}' ended without reaching completion markers. CompletionPhase={CompletionPhase}, CompletionSummaryLabel={CompletionSummaryLabel}",
-                        parameters.Workflow.DisplayName,
-                        execution.CompletionPhase,
-                        execution.CompletionSummaryLabel);
-                }
-
-                return;
-            }
-
-            if (execution.Mode == AgentWorkflowExecutionMode.Autonomous &&
-                automaticAssistantTurnsUsed > execution.MaxAutomaticTurns)
-            {
-                throw new InvalidOperationException(
-                    $"Autonomous workflow '{parameters.Workflow.DisplayName}' exceeded its automatic turn limit ({execution.MaxAutomaticTurns}).");
-            }
-
-            if (execution.Mode != AgentWorkflowExecutionMode.Autonomous)
-            {
-                return;
-            }
-
-            if (await IsWorkflowExecutionCompleteAsync(execution, cancellationToken))
-            {
-                return;
-            }
-
-            if (automaticAssistantTurnsUsed >= execution.MaxAutomaticTurns)
-            {
-                await LogAutonomousWorkflowStoppedWithoutCompletionMarkersAsync(
-                    parameters.Workflow.DisplayName,
-                    execution,
-                    cancellationToken);
-                return;
-            }
-        }
-    }
-
-    private async Task<WorkflowPassResult> ExecuteWorkflowPassAsync(
-        OrchestrationWorkflowSessionStartRequest parameters,
-        CancellationToken cancellationToken)
-    {
-        var workflow = BuildWorkflow(parameters.Workflow);
-        var conversation = BuildConversation(_chat.Messages);
-        var sessionId = TaskSessionId ?? Guid.NewGuid().ToString("N");
-        var deliveredAssistantMessages = GetDeliveredAssistantMessagesSnapshot();
-
-        // Microsoft.Agents.AI.Workflows 1.0.0-rc4 drives chat-protocol runs by enqueueing the
-        // initial conversation and an implicit TurnToken back-to-back inside RunAsync(). With the
-        // rc4 input waiter this can overflow its binary semaphore. Drive the same protocol in
-        // two explicit batches instead so each signal is consumed before the next one is sent.
-        await using var run = await InProcessExecution.OpenStreamingAsync(
-            workflow,
-            sessionId,
-            cancellationToken);
-        var completedAssistantMessages = new List<CompletedWorkflowAssistantMessage>();
-        var streamingState = new WorkflowPassStreamingState(_assistantSpeakerIds.Count);
-        var assistantOutputObserved = false;
-
-        if (conversation.Count > 0)
-        {
-            assistantOutputObserved |= await ExecuteWorkflowBatchAsync(
-                run,
-                conversation,
-                parameters.Configuration.ModelName,
-                streamingState,
-                deliveredAssistantMessages,
-                completedAssistantMessages,
-                cancellationToken);
-        }
-
-        var statusAfterConversationBatch = conversation.Count == 0
-            ? RunStatus.NotStarted
-            : await run.GetStatusAsync(cancellationToken);
-
-        if (ShouldSendExplicitTurnToken(
-                statusAfterConversationBatch,
-                completedAssistantMessages.Count))
-        {
-            assistantOutputObserved |= await ExecuteWorkflowBatchAsync(
-                run,
-                new TurnToken(emitEvents: true),
-                parameters.Configuration.ModelName,
-                streamingState,
-                deliveredAssistantMessages,
-                completedAssistantMessages,
-                cancellationToken);
-        }
-
-        if (cancellationToken.IsCancellationRequested)
-        {
-            throw new OperationCanceledException(cancellationToken);
-        }
-
-        var status = await run.GetStatusAsync(cancellationToken);
-        logger.LogDebug(
-            "Workflow pass completed. Status={Status}, AssistantOutputObserved={AssistantOutputObserved}, CompletedAssistantMessages={CompletedAssistantMessages}",
-            status,
-            assistantOutputObserved,
-            completedAssistantMessages.Count);
-
-        switch (status)
-        {
-            case RunStatus.Ended:
-            case RunStatus.Idle:
-                break;
-
-            case RunStatus.PendingRequests:
-                throw new InvalidOperationException(
-                    "Workflow requested unsupported external input.");
-
-            case RunStatus.NotStarted:
-            case RunStatus.Running:
-                if (cancellationToken.IsCancellationRequested)
-                {
-                    throw new OperationCanceledException(cancellationToken);
-                }
-
-                throw new InvalidOperationException(
-                    $"Workflow returned unexpected run status '{status}'.");
-
-            default:
-                throw new InvalidOperationException(
-                    $"Workflow returned unexpected run status '{status}'.");
-        }
-
-        await FinalizeActiveStreamsAsync(
+        var currentMessages = _chat.Messages.ToList();
+        var eventStreamContext = CreateEventStreamContext(
             parameters.Configuration.ModelName,
-            completedAssistantMessages);
-
-        return new WorkflowPassResult(status, completedAssistantMessages);
+            parameters.Workflow,
+            currentMessages);
+        return await passExecutor.ExecuteAsync(
+            new OrchestrationWorkflowPassExecutionRequest
+            {
+                Workflow = parameters.Workflow,
+                SessionId = TaskSessionId ?? Guid.NewGuid().ToString("N"),
+                Messages = currentMessages,
+                AssistantSpeakerIds = _assistantSpeakerIds.ToList(),
+                RuntimeAgentsById = _workflowAgentsById,
+                EventStreamContext = eventStreamContext
+            },
+            cancellationToken);
     }
 
     internal Task<bool> DrainWorkflowEventsAsync(
@@ -565,156 +243,18 @@ public sealed class OrchestrationWorkflowChatSessionService(
     {
         ArgumentNullException.ThrowIfNull(workflowEvents);
 
-        return DrainWorkflowEventsAsync(
+        var eventStreamContext = CreateEventStreamContext(modelName);
+        return eventStreamProcessor.DrainAsync(
             workflowEvents,
-            modelName,
-            new WorkflowPassStreamingState(_assistantSpeakerIds.Count),
-            GetDeliveredAssistantMessagesSnapshot(),
+            eventStreamContext,
+            new OrchestrationWorkflowPassStreamingState(_assistantSpeakerIds.Count),
+            eventStreamProcessor.CreateDeliveredAssistantMessagesSnapshot(eventStreamContext),
             [],
             cancellationToken);
     }
 
-    private async Task<bool> DrainWorkflowEventsAsync(
-        IAsyncEnumerable<WorkflowEvent> workflowEvents,
-        string modelName,
-        WorkflowPassStreamingState streamingState,
-        IReadOnlyList<DeliveredAssistantMessage> deliveredAssistantMessages,
-        List<CompletedWorkflowAssistantMessage> completedAssistantMessages,
-        CancellationToken cancellationToken)
-    {
-        var assistantOutputObserved = false;
-
-        await foreach (var workflowEvent in workflowEvents.WithCancellation(cancellationToken))
-        {
-            assistantOutputObserved |= await ProcessWorkflowEventAsync(
-                workflowEvent,
-                modelName,
-                streamingState,
-                deliveredAssistantMessages,
-                completedAssistantMessages,
-                cancellationToken);
-        }
-
-        return assistantOutputObserved;
-    }
-
-    private async Task<bool> ProcessWorkflowEventAsync(
-        WorkflowEvent workflowEvent,
-        string modelName,
-        WorkflowPassStreamingState streamingState,
-        IReadOnlyList<DeliveredAssistantMessage> deliveredAssistantMessages,
-        List<CompletedWorkflowAssistantMessage> completedAssistantMessages,
-        CancellationToken cancellationToken)
-    {
-        cancellationToken.ThrowIfCancellationRequested();
-
-        switch (workflowEvent)
-        {
-            case AgentResponseUpdateEvent updateEvent:
-                var updateText = ExtractUpdateText(updateEvent);
-                if (string.IsNullOrWhiteSpace(updateText))
-                {
-                    return false;
-                }
-
-                var stream = await GetOrCreateStreamAsync(
-                    updateEvent.ExecutorId,
-                    updateText,
-                    modelName,
-                    streamingState,
-                    completedAssistantMessages,
-                    cancellationToken);
-
-                streamingBridge.Append(stream, updateText);
-                await (MessageUpdated?.Invoke(stream, false) ?? Task.CompletedTask);
-                return true;
-
-            case WorkflowOutputEvent outputEvent:
-                var assistantMessages = ExtractOutputMessages(outputEvent)
-                    .Where(static chatMessage => chatMessage.Role == ChatRole.Assistant)
-                    .Where(static chatMessage => !string.IsNullOrWhiteSpace(chatMessage.Text))
-                    .ToList();
-                if (assistantMessages.Count == 0)
-                {
-                    return false;
-                }
-
-                foreach (var chatMessage in GetUndeliveredOutputMessages(
-                             assistantMessages,
-                             deliveredAssistantMessages,
-                             completedAssistantMessages))
-                {
-                    await PublishCompletedOutputMessageAsync(
-                        chatMessage,
-                        modelName,
-                        completedAssistantMessages,
-                        cancellationToken);
-                }
-
-                return true;
-
-            case ExecutorFailedEvent failedEvent:
-                await FinalizeActiveStreamsAsync(modelName, completedAssistantMessages);
-                throw failedEvent.Data ?? new InvalidOperationException(
-                    $"Workflow executor '{failedEvent.ExecutorId}' failed without an exception payload.");
-
-            case RequestInfoEvent requestInfoEvent:
-                await FinalizeActiveStreamsAsync(modelName, completedAssistantMessages);
-                throw new InvalidOperationException(
-                    $"Workflow requested unsupported external input: {requestInfoEvent.Request}");
-
-            default:
-                return false;
-        }
-    }
-
-    private async Task<bool> ExecuteWorkflowBatchAsync<TInput>(
-        StreamingRun run,
-        TInput input,
-        string modelName,
-        WorkflowPassStreamingState streamingState,
-        IReadOnlyList<DeliveredAssistantMessage> deliveredAssistantMessages,
-        List<CompletedWorkflowAssistantMessage> completedAssistantMessages,
-        CancellationToken cancellationToken)
-        where TInput : notnull
-    {
-        cancellationToken.ThrowIfCancellationRequested();
-
-        var accepted = await run.TrySendMessageAsync(input);
-        if (!accepted)
-        {
-            throw new InvalidOperationException(
-                $"Workflow rejected input of type '{typeof(TInput).Name}'.");
-        }
-
-        return await DrainWorkflowEventsAsync(
-            run.WatchStreamAsync(cancellationToken),
-            modelName,
-            streamingState,
-            deliveredAssistantMessages,
-            completedAssistantMessages,
-            cancellationToken);
-    }
-
-    internal static bool ShouldSendExplicitTurnToken(
-        RunStatus statusAfterConversationBatch,
-        int completedAssistantMessagesFromConversationBatch)
-    {
-        if (completedAssistantMessagesFromConversationBatch < 0)
-        {
-            throw new ArgumentOutOfRangeException(nameof(completedAssistantMessagesFromConversationBatch));
-        }
-
-        if (statusAfterConversationBatch == RunStatus.Ended)
-        {
-            return false;
-        }
-
-        return completedAssistantMessagesFromConversationBatch == 0;
-    }
-
     private async Task ProcessCompletedAssistantMessagesAsync(
-        IReadOnlyList<CompletedWorkflowAssistantMessage> completedAssistantMessages,
+        IReadOnlyList<OrchestrationCompletedAssistantMessage> completedAssistantMessages,
         CancellationToken cancellationToken)
     {
         foreach (var completedMessage in completedAssistantMessages)
@@ -734,545 +274,64 @@ public sealed class OrchestrationWorkflowChatSessionService(
         }
     }
 
-    private Workflow BuildWorkflow(IOrchestrationWorkflowDefinition definition)
-    {
-        var builder = _runtimeWorkflowBuilders.FirstOrDefault(candidate => candidate.CanBuild(definition));
-        if (builder is null)
-        {
-            throw new InvalidOperationException(
-                $"Workflow kind '{definition.Kind}' does not have a registered runtime builder.");
-        }
-
-        return builder.Build(
-            definition,
-            _workflowAgentsById,
-            new OrchestrationRuntimeBuildContext
-            {
-                AssistantSpeakerIds = _assistantSpeakerIds.ToList()
-            });
-    }
-
-    private static IEnumerable<ChatMessage> ExtractOutputMessages(WorkflowOutputEvent outputEvent)
-    {
-        if (outputEvent.Is<List<ChatMessage>>(out var listMessages) && listMessages is not null)
-        {
-            return listMessages;
-        }
-
-        if (outputEvent.Is<IReadOnlyList<ChatMessage>>(out var readOnlyMessages) && readOnlyMessages is not null)
-        {
-            return readOnlyMessages;
-        }
-
-        if (outputEvent.Is<ChatMessage>(out var singleMessage) && singleMessage is not null)
-        {
-            return [singleMessage];
-        }
-
-        if (outputEvent.Is<string>(out var stringMessage) && !string.IsNullOrWhiteSpace(stringMessage))
-        {
-            return [new ChatMessage(ChatRole.Assistant, stringMessage)];
-        }
-
-        return [];
-    }
-
-    private static string? ExtractUpdateText(AgentResponseUpdateEvent updateEvent)
-    {
-        if (!string.IsNullOrWhiteSpace(updateEvent.Update.Text))
-        {
-            return updateEvent.Update.Text;
-        }
-
-        return updateEvent.Update.ToString();
-    }
-
-    private string? ResolveSpeakerName(string? speakerId)
-    {
-        if (string.IsNullOrWhiteSpace(speakerId))
-        {
-            return null;
-        }
-
-        return _agentNamesById.TryGetValue(speakerId, out var speakerName)
-            ? speakerName
-            : speakerId;
-    }
-
-    private string? ResolveSpeakerIdFromAuthorName(string? authorName)
-    {
-        if (string.IsNullOrWhiteSpace(authorName))
-        {
-            return null;
-        }
-
-        if (_agentIdsByName.TryGetValue(authorName, out var speakerId))
-        {
-            return speakerId;
-        }
-
-        return _agentIdsByExecutorId.TryGetValue(authorName, out speakerId)
-            ? speakerId
-            : null;
-    }
-
-    private async Task PublishCompletedOutputMessageAsync(
-        ChatMessage chatMessage,
+    private OrchestrationWorkflowEventStreamContext CreateEventStreamContext(
         string modelName,
-        List<CompletedWorkflowAssistantMessage> completedAssistantMessages,
-        CancellationToken cancellationToken)
+        IOrchestrationWorkflowDefinition? workflow = null,
+        IReadOnlyList<IAppChatMessage>? messages = null)
     {
-        cancellationToken.ThrowIfCancellationRequested();
-
-        var outputText = chatMessage.Text;
-        if (string.IsNullOrWhiteSpace(outputText))
+        return new OrchestrationWorkflowEventStreamContext
         {
-            return;
-        }
-
-        var speakerId = ResolveSpeakerIdFromAuthorName(chatMessage.AuthorName);
-        var speakerName = ResolveSpeakerName(speakerId) ?? chatMessage.AuthorName;
-        var existing = _activeStreams.Values.LastOrDefault();
-
-        if (existing is not null)
-        {
-            _activeSpeakerIdsByStreamId.TryGetValue(existing.Id, out var existingSpeakerId);
-            if (IsSameSpeaker(existingSpeakerId, existing.AgentName, speakerId, speakerName))
-            {
-                UpdateStreamSpeaker(existing, speakerId, speakerName);
-                if (!string.IsNullOrWhiteSpace(speakerId))
-                {
-                    _activeSpeakerIdsByStreamId[existing.Id] = speakerId;
-                }
-
-                if (!string.Equals(existing.Content, outputText, StringComparison.Ordinal))
-                {
-                    existing.ResetContent();
-                    existing.Append(outputText);
-                }
-
-                await FinalizeStreamAsync(existing, modelName, completedAssistantMessages);
-                return;
-            }
-
-            await FinalizeStreamAsync(existing, modelName, completedAssistantMessages);
-        }
-
-        var finalMessage = new AppChatMessage(
-            outputText,
-            DateTime.Now,
-            ChatRole.Assistant,
-            BuildStatistics(speakerName, modelName),
-            agentId: speakerId,
-            agentName: speakerName);
-        await AddMessageAsync(finalMessage);
-        completedAssistantMessages.Add(new CompletedWorkflowAssistantMessage(
-            finalMessage,
-            speakerId ?? speakerName));
-    }
-
-    private IEnumerable<ChatMessage> GetUndeliveredOutputMessages(
-        IReadOnlyList<ChatMessage> outputMessages,
-        IReadOnlyList<DeliveredAssistantMessage> deliveredAssistantMessages,
-        IReadOnlyList<CompletedWorkflowAssistantMessage> completedAssistantMessages)
-    {
-        var deliveredMessages = deliveredAssistantMessages
-            .Concat(completedAssistantMessages.Select(static completedMessage =>
-                new DeliveredAssistantMessage(
-                    completedMessage.Message.Content ?? string.Empty,
-                    completedMessage.SpeakerId ?? completedMessage.Message.AgentId,
-                    completedMessage.Message.AgentName)))
-            .ToList();
-        var skipCount = FindDeliveredOutputOverlap(outputMessages, deliveredMessages);
-
-        for (var index = skipCount; index < outputMessages.Count; index++)
-        {
-            yield return outputMessages[index];
-        }
-    }
-
-    private bool IsSameDeliveredAssistantMessage(
-        ChatMessage outputMessage,
-        DeliveredAssistantMessage deliveredMessage)
-    {
-        if (!string.Equals(
-                outputMessage.Text?.Trim(),
-                deliveredMessage.Content.Trim(),
-                StringComparison.Ordinal))
-        {
-            return false;
-        }
-
-        var outputSpeakerId = ResolveSpeakerIdFromAuthorName(outputMessage.AuthorName);
-        var outputSpeakerName = ResolveSpeakerName(outputSpeakerId) ?? outputMessage.AuthorName;
-
-        return IsSameSpeaker(
-            deliveredMessage.SpeakerId,
-            deliveredMessage.SpeakerName,
-            outputSpeakerId,
-            outputSpeakerName);
-    }
-
-    private int FindDeliveredOutputOverlap(
-        IReadOnlyList<ChatMessage> outputMessages,
-        IReadOnlyList<DeliveredAssistantMessage> deliveredMessages)
-    {
-        var maxOverlap = Math.Min(outputMessages.Count, deliveredMessages.Count);
-        for (var overlap = maxOverlap; overlap > 0; overlap--)
-        {
-            var deliveredStartIndex = deliveredMessages.Count - overlap;
-            var matches = true;
-
-            for (var index = 0; index < overlap; index++)
-            {
-                if (!IsSameDeliveredAssistantMessage(
-                        outputMessages[index],
-                        deliveredMessages[deliveredStartIndex + index]))
-                {
-                    matches = false;
-                    break;
-                }
-            }
-
-            if (matches)
-            {
-                return overlap;
-            }
-        }
-
-        return 0;
-    }
-
-    private async Task<StreamingAppChatMessage> GetOrCreateStreamAsync(
-        string? executorId,
-        string outputText,
-        string modelName,
-        WorkflowPassStreamingState streamingState,
-        List<CompletedWorkflowAssistantMessage> completedAssistantMessages,
-        CancellationToken cancellationToken)
-    {
-        var resolvedSpeakerId = WorkflowSpeakerResolver.ResolveFromExecutorId(
-            executorId,
-            _agentIdsByExecutorId);
-        var resolvedSpeakerName = ResolveSpeakerName(resolvedSpeakerId);
-        var existing = _activeStreams.Values.LastOrDefault();
-        if (existing is not null)
-        {
-            _activeSpeakerIdsByStreamId.TryGetValue(existing.Id, out var existingSpeakerId);
-            if (ShouldContinueCurrentStream(
-                    existing,
-                    existingSpeakerId,
-                    resolvedSpeakerId,
-                    resolvedSpeakerName,
-                    outputText))
-            {
-                UpdateStreamSpeaker(existing, resolvedSpeakerId, resolvedSpeakerName);
-                if (!string.IsNullOrWhiteSpace(resolvedSpeakerId))
-                {
-                    _activeSpeakerIdsByStreamId[existing.Id] = resolvedSpeakerId;
-                }
-
-                return existing;
-            }
-
-            await FinalizeStreamAsync(existing, modelName, completedAssistantMessages);
-        }
-
-        var speakerId = resolvedSpeakerId ?? WorkflowSpeakerResolver.ResolveFromWorkflow(
-            _parameters?.Workflow,
-            streamingState.NextAssistantMessageIndex);
-        var speakerName = resolvedSpeakerName ?? ResolveSpeakerName(speakerId);
-        var stream = streamingBridge.Create(speakerId, speakerName);
-        _activeStreams[stream.Id] = stream;
-        _activeSpeakerIdsByStreamId[stream.Id] = speakerId;
-        streamingState.RegisterStartedAssistantMessage();
-        await AddMessageAsync(stream);
-        cancellationToken.ThrowIfCancellationRequested();
-        return stream;
-    }
-
-    private async Task FinalizeStreamAsync(
-        StreamingAppChatMessage stream,
-        string modelName,
-        List<CompletedWorkflowAssistantMessage> completedAssistantMessages)
-    {
-        _activeSpeakerIdsByStreamId.TryGetValue(stream.Id, out var speakerId);
-
-        var finalMessage = streamingBridge.Complete(
-            stream,
-            BuildStatistics(stream.AgentName, modelName));
-
-        ReplaceMessage(stream, finalMessage);
-        _activeStreams.Remove(stream.Id);
-        _activeSpeakerIdsByStreamId.Remove(stream.Id);
-
-        var resolvedSpeakerId = speakerId;
-        if (string.IsNullOrWhiteSpace(resolvedSpeakerId) &&
-            !string.IsNullOrWhiteSpace(finalMessage.AgentName))
-        {
-            _agentIdsByName.TryGetValue(finalMessage.AgentName, out resolvedSpeakerId);
-        }
-
-        if (!string.IsNullOrWhiteSpace(resolvedSpeakerId) &&
-            !string.Equals(finalMessage.AgentId, resolvedSpeakerId, StringComparison.OrdinalIgnoreCase))
-        {
-            finalMessage.AgentId = resolvedSpeakerId;
-        }
-
-        completedAssistantMessages.Add(new CompletedWorkflowAssistantMessage(
-            finalMessage,
-            resolvedSpeakerId ?? finalMessage.AgentName));
-        await (MessageUpdated?.Invoke(finalMessage, true) ?? Task.CompletedTask);
-    }
-
-    private static List<ChatMessage> BuildConversation(IEnumerable<IAppChatMessage> messages)
-    {
-        List<ChatMessage> result = [];
-
-        foreach (var message in messages.Where(static message => !message.IsStreaming))
-        {
-            var content = message.Role == ChatRole.User
-                ? BuildUserMessage(message.Content ?? string.Empty, message.Files)
-                : message.Content?.Trim() ?? string.Empty;
-            if (string.IsNullOrWhiteSpace(content))
-            {
-                continue;
-            }
-
-            result.Add(new ChatMessage(message.Role, content));
-        }
-
-        return result;
-    }
-
-    private static string BuildUserMessage(string text, IReadOnlyList<AppChatMessageFile>? files)
-    {
-        var trimmed = text?.Trim() ?? string.Empty;
-        if (files is null || files.Count == 0)
-        {
-            return trimmed;
-        }
-
-        var builder = new StringBuilder();
-        if (!string.IsNullOrEmpty(trimmed))
-        {
-            builder.AppendLine(trimmed);
-            builder.AppendLine();
-        }
-
-        builder.AppendLine("Attached files:");
-        foreach (var file in files)
-        {
-            builder.AppendLine($"- {file.Name} ({file.ContentType}, {file.Size} bytes)");
-        }
-
-        return builder.ToString().Trim();
-    }
-
-    private IReadOnlyList<DeliveredAssistantMessage> GetDeliveredAssistantMessagesSnapshot()
-    {
-        List<DeliveredAssistantMessage> deliveredMessages = [];
-
-        foreach (var message in _chat.Messages)
-        {
-            if (message.IsStreaming || message.Role != ChatRole.Assistant)
-            {
-                continue;
-            }
-
-            var content = message.Content?.Trim();
-            if (string.IsNullOrWhiteSpace(content))
-            {
-                continue;
-            }
-
-            _speakerIdsByMessageId.TryGetValue(message.Id, out var speakerIdFromMessageMap);
-            var speakerId = !string.IsNullOrWhiteSpace(message.AgentId)
-                ? message.AgentId
-                : speakerIdFromMessageMap;
-            var speakerName = !string.IsNullOrWhiteSpace(message.AgentName)
-                ? message.AgentName
-                : ResolveSpeakerName(speakerId);
-
-            deliveredMessages.Add(new DeliveredAssistantMessage(content, speakerId, speakerName));
-        }
-
-        return deliveredMessages;
-    }
-
-    private async Task<MarkdownDocumentIntakeResult?> PrepareDocumentAsync(
-        WorkflowStartInputDefinition definition,
-        OrchestrationWorkflowStartInputValue input,
-        CancellationToken cancellationToken)
-    {
-        if (!string.IsNullOrWhiteSpace(input.Value))
-        {
-            return documentIntakeService.PrepareMarkdown(input.Value, definition.DisplayName);
-        }
-
-        if (!string.IsNullOrWhiteSpace(input.SourceFile))
-        {
-            return await documentIntakeService.ReadDocumentAsync(input.SourceFile, cancellationToken);
-        }
-
-        return null;
-    }
-
-    private static void ValidateWorkflowDefinition(
-        IOrchestrationWorkflowDefinition workflow,
-        IReadOnlyList<ResolvedChatAgent> agents)
-    {
-        var workflowAgentIds = workflow.Agents
-            .Select(static agent => agent.Id)
-            .ToHashSet(StringComparer.OrdinalIgnoreCase);
-        var resolvedAgentIds = agents
-            .Select(static agent => agent.Agent.AgentId)
-            .ToHashSet(StringComparer.OrdinalIgnoreCase);
-
-        if (!workflowAgentIds.SetEquals(resolvedAgentIds))
-        {
-            throw new InvalidOperationException(
-                "Resolved workflow agents do not match the workflow definition.");
-        }
-    }
-
-    private static IReadOnlyList<OrchestrationWorkflowStartInputValue> NormalizeStartInputs(
-        IOrchestrationWorkflowDefinition workflow,
-        IReadOnlyList<OrchestrationWorkflowStartInputValue> providedInputs)
-    {
-        var definitionsByKey = workflow.StartInputs.ToDictionary(
-            static input => input.Key,
-            StringComparer.OrdinalIgnoreCase);
-        var providedByKey = providedInputs.ToDictionary(
-            static input => input.Key,
-            StringComparer.OrdinalIgnoreCase);
-
-        var unknownKey = providedByKey.Keys.FirstOrDefault(key => !definitionsByKey.ContainsKey(key));
-        if (unknownKey is not null)
-        {
-            throw new InvalidOperationException(
-                $"Workflow start input '{unknownKey}' is not defined.");
-        }
-
-        List<OrchestrationWorkflowStartInputValue> normalizedInputs = [];
-
-        foreach (var definition in workflow.StartInputs)
-        {
-            providedByKey.TryGetValue(definition.Key, out var provided);
-
-            if (definition.Kind == WorkflowStartInputKind.MarkdownDocument)
-            {
-                if (provided is not null &&
-                    (!string.IsNullOrWhiteSpace(provided.Value) ||
-                     !string.IsNullOrWhiteSpace(provided.SourceFile)))
-                {
-                    normalizedInputs.Add(new OrchestrationWorkflowStartInputValue
-                    {
-                        Key = definition.Key,
-                        Value = provided.Value,
-                        SourceFile = provided.SourceFile
-                    });
-                    continue;
-                }
-
-                if (definition.IsRequired)
-                {
-                    throw new InvalidOperationException(
-                        $"Workflow start input '{definition.DisplayName}' is required.");
-                }
-
-                continue;
-            }
-
-            var value = provided?.Value;
-            if (string.IsNullOrWhiteSpace(value))
-            {
-                value = definition.DefaultValue;
-            }
-
-            if (string.IsNullOrWhiteSpace(value))
-            {
-                if (definition.IsRequired)
-                {
-                    throw new InvalidOperationException(
-                        $"Workflow start input '{definition.DisplayName}' is required.");
-                }
-
-                continue;
-            }
-
-            normalizedInputs.Add(new OrchestrationWorkflowStartInputValue
-            {
-                Key = definition.Key,
-                Value = value
-            });
-        }
-
-        return normalizedInputs;
-    }
-
-    private static string NormalizeParameterValue(
-        WorkflowStartInputDefinition definition,
-        OrchestrationWorkflowStartInputValue input)
-    {
-        var value = input.Value?.Trim();
-        if (string.IsNullOrWhiteSpace(value))
-        {
-            throw new InvalidOperationException(
-                $"Workflow start input '{definition.DisplayName}' requires a value.");
-        }
-
-        return definition.Kind switch
-        {
-            WorkflowStartInputKind.Text => value,
-            WorkflowStartInputKind.Number => value,
-            WorkflowStartInputKind.Boolean => bool.TryParse(value, out var boolValue)
-                ? boolValue ? bool.TrueString.ToLowerInvariant() : bool.FalseString.ToLowerInvariant()
-                : throw new InvalidOperationException(
-                    $"Workflow start input '{definition.DisplayName}' expects a boolean value."),
-            WorkflowStartInputKind.Json => value,
-            WorkflowStartInputKind.MarkdownDocument => throw new InvalidOperationException(
-                $"Workflow start input '{definition.DisplayName}' is a document and cannot be stored as a parameter."),
-            _ => throw new InvalidOperationException(
-                $"Workflow start input '{definition.DisplayName}' uses an unsupported input kind '{definition.Kind}'.")
+            ModelName = modelName,
+            Workflow = workflow ?? _parameters?.Workflow,
+            Messages = messages ?? _chat.Messages.ToList(),
+            SpeakerIdsByMessageId = _speakerIdsByMessageId,
+            ActiveStreams = _activeStreams,
+            ActiveSpeakerIdsByStreamId = _activeSpeakerIdsByStreamId,
+            AgentIdsByExecutorId = _agentIdsByExecutorId,
+            AgentIdsByName = _agentIdsByName,
+            AgentNamesById = _agentNamesById,
+            AddMessageAsync = AddMessageAsync,
+            ReplaceMessage = ReplaceMessage,
+            NotifyMessageUpdatedAsync = (message, isFinal) =>
+                MessageUpdated?.Invoke(message, isFinal) ?? Task.CompletedTask
         };
     }
 
-    private static string MapParameterValueKind(WorkflowStartInputKind kind) =>
-        kind switch
-        {
-            WorkflowStartInputKind.Text => "text",
-            WorkflowStartInputKind.Number => "number",
-            WorkflowStartInputKind.Boolean => "boolean",
-            WorkflowStartInputKind.Json => "json",
-            WorkflowStartInputKind.MarkdownDocument => throw new InvalidOperationException(
-                "Document inputs must be stored as task session documents."),
-            _ => throw new InvalidOperationException(
-                $"Unsupported workflow start input kind '{kind}'.")
-        };
-
-    private static string? TryGetAgentExecutorId(AIAgent agent)
+    private void ApplyBootstrapResult(OrchestrationWorkflowSessionBootstrapResult bootstrapResult)
     {
-        if (GetDescriptiveIdMethod.Value?.Invoke(null, [agent]) is string descriptiveId &&
-            !string.IsNullOrWhiteSpace(descriptiveId))
+        ClearWorkflowIdentityState();
+        foreach (var runtimeAgent in bootstrapResult.RuntimeAgents)
         {
-            return descriptiveId;
+            _workflowAgentsById[runtimeAgent.AgentId] = runtimeAgent.RuntimeAgent;
+            RegisterAgentIdentity(
+                runtimeAgent.AgentId,
+                runtimeAgent.AgentName,
+                runtimeAgent.ExecutorId);
         }
 
-        return TryGetStringProperty(agent, "Id") ?? TryGetStringProperty(agent, "Name");
+        _parameters = bootstrapResult.Request;
+        TaskSessionId = bootstrapResult.TaskSessionId;
+
+        ClearChatState();
+        _chat.SetAgents(bootstrapResult.Request.Agents.Select(static agent => agent.Agent.Clone()));
+        ChatReset?.Invoke();
     }
 
-    private static string? TryGetStringProperty(object value, string propertyName)
+    private void ClearChatState()
     {
-        var property = value.GetType().GetProperty(
-            propertyName,
-            BindingFlags.Public | BindingFlags.Instance);
-        if (property?.PropertyType != typeof(string))
-        {
-            return null;
-        }
+        _chat.Reset();
+        _activeStreams.Clear();
+        _activeSpeakerIdsByStreamId.Clear();
+        _speakerIdsByMessageId.Clear();
+        _assistantSpeakerIds.Clear();
+    }
 
-        return property.GetValue(value) as string;
+    private void ClearWorkflowIdentityState()
+    {
+        _workflowAgentsById.Clear();
+        _agentIdsByExecutorId.Clear();
+        _agentIdsByName.Clear();
+        _agentNamesById.Clear();
     }
 
     private async Task<bool> IsWorkflowExecutionCompleteAsync(
@@ -1300,90 +359,6 @@ public sealed class OrchestrationWorkflowChatSessionService(
         }
 
         return false;
-    }
-
-    private async Task LogAutonomousWorkflowStoppedWithoutCompletionMarkersAsync(
-        string workflowDisplayName,
-        AgentWorkflowExecutionDefinition execution,
-        CancellationToken cancellationToken)
-    {
-        if (string.IsNullOrWhiteSpace(execution.CompletionPhase) &&
-            string.IsNullOrWhiteSpace(execution.CompletionSummaryLabel))
-        {
-            return;
-        }
-
-        if (await IsWorkflowExecutionCompleteAsync(execution, cancellationToken))
-        {
-            return;
-        }
-
-        logger.LogWarning(
-            "Autonomous workflow '{WorkflowDisplayName}' stopped after reaching its automatic turn limit without reaching completion markers. CompletionPhase={CompletionPhase}, CompletionSummaryLabel={CompletionSummaryLabel}",
-            workflowDisplayName,
-            execution.CompletionPhase,
-            execution.CompletionSummaryLabel);
-    }
-
-    private async Task ValidateResolvedAgentsAsync(
-        IReadOnlyList<ResolvedChatAgent> resolvedAgents,
-        CancellationToken cancellationToken)
-    {
-        foreach (var resolvedAgent in resolvedAgents)
-        {
-            if (resolvedAgent.Model.ServerId == Guid.Empty)
-            {
-                throw new InvalidOperationException(
-                    $"Server is not resolved for agent '{resolvedAgent.Agent.AgentName}'.");
-            }
-
-            if (string.IsNullOrWhiteSpace(resolvedAgent.Model.ModelName))
-            {
-                throw new InvalidOperationException(
-                    $"Model is not resolved for agent '{resolvedAgent.Agent.AgentName}'.");
-            }
-
-            await modelCapabilityService.EnsureModelSupportedByServerAsync(
-                resolvedAgent.Model,
-                cancellationToken);
-
-            if (resolvedAgent.Agent.McpServerBindings.Count == 0)
-            {
-                continue;
-            }
-
-            var supportsFunctions = await modelCapabilityService.SupportsFunctionCallingAsync(
-                resolvedAgent.Model,
-                cancellationToken);
-            if (!supportsFunctions)
-            {
-                throw new InvalidOperationException(
-                    $"Workflow agent '{resolvedAgent.Agent.AgentName}' requires a model with function calling.");
-            }
-        }
-    }
-
-    private static ResolvedChatAgent BindTaskSession(ResolvedChatAgent source, string sessionId)
-    {
-        var runtimeAgent = source.Agent.Clone();
-
-        foreach (var binding in runtimeAgent.McpServerBindings)
-        {
-            if (!string.Equals(binding.ServerName, BuiltInTaskSessionMcpServerTools.Descriptor.Name, StringComparison.OrdinalIgnoreCase) &&
-                binding.ServerId != BuiltInTaskSessionMcpServerTools.Descriptor.Id)
-            {
-                continue;
-            }
-
-            binding.Parameters[TaskSessionStore.SessionIdParameter] = sessionId;
-        }
-
-        return new ResolvedChatAgent(runtimeAgent, source.Model);
-    }
-
-    private static AgentDescription CreateRuntimeAgentDescription(ResolvedChatAgent resolvedAgent)
-    {
-        return AgentDescriptionFactory.CreateRuntime(resolvedAgent.Agent, resolvedAgent.Model);
     }
 
     internal void RegisterAgentIdentity(
@@ -1435,7 +410,7 @@ public sealed class OrchestrationWorkflowChatSessionService(
 
         foreach (var message in _chat.Messages)
         {
-            if (message.IsStreaming || message.Role != ChatRole.Assistant)
+            if (message.IsStreaming || message.Role != AppChatRole.Assistant)
             {
                 continue;
             }
@@ -1450,23 +425,7 @@ public sealed class OrchestrationWorkflowChatSessionService(
 
     private async Task HandleError(string text)
     {
-        await AddMessageAsync(new AppChatMessage(text, DateTime.Now, ChatRole.Assistant));
-    }
-
-    private async Task FinalizeActiveStreamsAsync(
-        string modelName,
-        List<CompletedWorkflowAssistantMessage> completedAssistantMessages)
-    {
-        foreach (var stream in _activeStreams.Values.ToList())
-        {
-            await FinalizeStreamAsync(
-                stream,
-                modelName,
-                completedAssistantMessages);
-        }
-
-        _activeStreams.Clear();
-        _activeSpeakerIdsByStreamId.Clear();
+        await AddMessageAsync(new AppChatMessage(text, DateTime.Now, AppChatRole.Assistant));
     }
 
     private void UpdateAnsweringState(bool isAnswering)
@@ -1474,100 +433,4 @@ public sealed class OrchestrationWorkflowChatSessionService(
         IsAnswering = isAnswering;
         AnsweringStateChanged?.Invoke(isAnswering);
     }
-
-    private static string BuildStatistics(string? agentName, string modelName)
-    {
-        if (string.IsNullOrWhiteSpace(agentName))
-        {
-            return $"workflow orchestration | model {modelName}";
-        }
-
-        return $"workflow orchestration | speaker {agentName} | model {modelName}";
-    }
-
-    private static void UpdateStreamSpeaker(
-        StreamingAppChatMessage stream,
-        string? speakerId,
-        string? speakerName)
-    {
-        if (!string.IsNullOrWhiteSpace(speakerId) &&
-            !string.Equals(stream.AgentId, speakerId, StringComparison.Ordinal))
-        {
-            stream.SetAgentId(speakerId);
-        }
-
-        if (!string.IsNullOrWhiteSpace(speakerName) &&
-            !string.Equals(stream.AgentName, speakerName, StringComparison.Ordinal))
-        {
-            stream.SetAgentName(speakerName);
-        }
-    }
-
-    private static bool ShouldContinueCurrentStream(
-        StreamingAppChatMessage existing,
-        string? existingSpeakerId,
-        string? nextSpeakerId,
-        string? nextSpeakerName,
-        string outputText)
-    {
-        if (!string.IsNullOrWhiteSpace(nextSpeakerId) ||
-            !string.IsNullOrWhiteSpace(nextSpeakerName))
-        {
-            return IsSameSpeaker(
-                existingSpeakerId,
-                existing.AgentName,
-                nextSpeakerId,
-                nextSpeakerName);
-        }
-
-        return WorkflowStreamingTextDelta.IsDuplicateOfCurrentMessage(existing.Content, outputText);
-    }
-
-    private static bool IsSameSpeaker(
-        string? existingSpeakerId,
-        string? existingSpeakerName,
-        string? nextSpeakerId,
-        string? nextSpeakerName)
-    {
-        if (!string.IsNullOrWhiteSpace(existingSpeakerId) &&
-            !string.IsNullOrWhiteSpace(nextSpeakerId))
-        {
-            return string.Equals(existingSpeakerId, nextSpeakerId, StringComparison.OrdinalIgnoreCase);
-        }
-
-        if ((!string.IsNullOrWhiteSpace(existingSpeakerId) ||
-             !string.IsNullOrWhiteSpace(nextSpeakerId)) &&
-            !string.IsNullOrWhiteSpace(existingSpeakerName) &&
-            !string.IsNullOrWhiteSpace(nextSpeakerName))
-        {
-            return string.Equals(existingSpeakerName, nextSpeakerName, StringComparison.OrdinalIgnoreCase);
-        }
-
-        return string.Equals(existingSpeakerName, nextSpeakerName, StringComparison.OrdinalIgnoreCase);
-    }
-
-    private sealed record CompletedWorkflowAssistantMessage(
-        AppChatMessage Message,
-        string? SpeakerId);
-
-    private sealed record DeliveredAssistantMessage(
-        string Content,
-        string? SpeakerId,
-        string? SpeakerName);
-
-    private sealed class WorkflowPassStreamingState(int assistantMessagesBeforePass)
-    {
-        private int _startedAssistantMessages;
-
-        public int NextAssistantMessageIndex => assistantMessagesBeforePass + _startedAssistantMessages;
-
-        public void RegisterStartedAssistantMessage()
-        {
-            _startedAssistantMessages++;
-        }
-    }
-
-    private sealed record WorkflowPassResult(
-        RunStatus Status,
-        IReadOnlyList<CompletedWorkflowAssistantMessage> CompletedAssistantMessages);
 }

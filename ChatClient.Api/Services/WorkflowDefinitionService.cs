@@ -10,7 +10,7 @@ public sealed class WorkflowDefinitionService(IWorkflowDefinitionRepository repo
 
     public async Task<IReadOnlyCollection<SavedWorkflowDefinition>> GetAllAsync()
     {
-        var workflows = await GetNormalizedWorkflowsAsync();
+        var workflows = await LoadWorkflowsAsync();
         return workflows
             .OrderBy(static workflow => workflow.DisplayName, StringComparer.OrdinalIgnoreCase)
             .ThenBy(static workflow => workflow.WorkflowId, StringComparer.OrdinalIgnoreCase)
@@ -19,7 +19,7 @@ public sealed class WorkflowDefinitionService(IWorkflowDefinitionRepository repo
 
     public async Task<SavedWorkflowDefinition?> GetByIdAsync(Guid workflowId)
     {
-        var workflows = await GetNormalizedWorkflowsAsync();
+        var workflows = await LoadWorkflowsAsync();
         return workflows.FirstOrDefault(workflow => workflow.Id == workflowId);
     }
 
@@ -27,7 +27,7 @@ public sealed class WorkflowDefinitionService(IWorkflowDefinitionRepository repo
     {
         ArgumentNullException.ThrowIfNull(workflow);
 
-        var workflows = await GetNormalizedWorkflowsAsync();
+        var workflows = await LoadWorkflowsAsync();
         var usedIds = workflows
             .Select(static workflow => workflow.Id)
             .Where(static id => id != Guid.Empty)
@@ -50,7 +50,7 @@ public sealed class WorkflowDefinitionService(IWorkflowDefinitionRepository repo
     {
         ArgumentNullException.ThrowIfNull(workflow);
 
-        var workflows = await GetNormalizedWorkflowsAsync();
+        var workflows = await LoadWorkflowsAsync();
         var index = workflows.FindIndex(existing => existing.Id == workflow.Id);
         if (index == -1)
         {
@@ -67,56 +67,15 @@ public sealed class WorkflowDefinitionService(IWorkflowDefinitionRepository repo
 
     public async Task DeleteAsync(Guid workflowId)
     {
-        var workflows = await GetNormalizedWorkflowsAsync();
+        var workflows = await LoadWorkflowsAsync();
         var existing = workflows.FirstOrDefault(workflow => workflow.Id == workflowId) ??
                        throw new KeyNotFoundException($"Workflow with ID {workflowId} not found");
         workflows.Remove(existing);
         await _repository.SaveAllAsync(workflows);
     }
 
-    private async Task<List<SavedWorkflowDefinition>> GetNormalizedWorkflowsAsync()
-    {
-        var workflows = (await _repository.GetAllAsync()).ToList();
-        var hasChanges = NormalizeIds(workflows);
-        hasChanges = NormalizeWorkflows(workflows) || hasChanges;
-        if (!hasChanges)
-        {
-            return workflows;
-        }
-
-        await _repository.SaveAllAsync(workflows);
-        return workflows;
-    }
-
-    private static bool NormalizeIds(List<SavedWorkflowDefinition> workflows)
-    {
-        var usedIds = new HashSet<Guid>();
-        var hasChanges = false;
-
-        foreach (var workflow in workflows)
-        {
-            if (workflow.Id != Guid.Empty && usedIds.Add(workflow.Id))
-            {
-                continue;
-            }
-
-            workflow.Id = GenerateUniqueId(usedIds);
-            hasChanges = true;
-        }
-
-        return hasChanges;
-    }
-
-    private static bool NormalizeWorkflows(List<SavedWorkflowDefinition> workflows)
-    {
-        var hasChanges = false;
-        foreach (var workflow in workflows)
-        {
-            hasChanges = NormalizeWorkflow(workflow) || hasChanges;
-        }
-
-        return hasChanges;
-    }
+    private async Task<List<SavedWorkflowDefinition>> LoadWorkflowsAsync() =>
+        (await _repository.GetAllAsync()).ToList();
 
     private static bool NormalizeWorkflow(SavedWorkflowDefinition workflow)
     {
@@ -133,7 +92,7 @@ public sealed class WorkflowDefinitionService(IWorkflowDefinitionRepository repo
 
     private static bool NormalizeWorkflowKind(string? current, Action<string> assign)
     {
-        var normalized = WorkflowDefinitionKinds.Normalize(current);
+        var normalized = WorkflowDefinitionKinds.NormalizeOrThrow(current);
         if (string.Equals(current, normalized, StringComparison.Ordinal))
         {
             return false;

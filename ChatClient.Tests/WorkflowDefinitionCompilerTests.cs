@@ -1,4 +1,5 @@
 using ChatClient.Api.AgentWorkflows;
+using ChatClient.Application.Services.Agentic;
 using ChatClient.Domain.Models;
 
 namespace ChatClient.Tests;
@@ -36,11 +37,11 @@ public sealed class WorkflowDefinitionCompilerTests
                 .Agent("coordinator", agent => agent
                     .Role("Coordinator")
                     .UseDraft(
-                        AgentDefinitionBuilder
+                        AgentTemplateBuilder
                             .New("Review Coordinator", "coordinator")
                             .WithInstructions("Coordinate the review and close it when complete.")
                             .AutoSelectTools(0)
-                            .BuildDescription()))
+                            .Build()))
                 .Agent("analyst", agent => agent
                     .FromSavedAgent("Saved Analyst")
                     .AppendInstructions("""
@@ -142,17 +143,17 @@ public sealed class WorkflowDefinitionCompilerTests
                 .Agent("host", agent => agent
                     .Role("Host")
                     .UseDraft(
-                        AgentDefinitionBuilder
+                        AgentTemplateBuilder
                             .New("Demo Host", "host")
                             .WithInstructions("Host prompt")
-                            .BuildDescription()))
+                            .Build()))
                 .Agent("guest", agent => agent
                     .Role("Guest")
                     .UseDraft(
-                        AgentDefinitionBuilder
+                        AgentTemplateBuilder
                             .New("Demo Guest", "guest")
                             .WithInstructions("Guest prompt")
-                            .BuildDescription()))
+                            .Build()))
                 .UseGroupChat(groupChat => groupChat
                     .Participants("host", "guest")
                     .UseProgrammableManager(manager => manager
@@ -201,11 +202,11 @@ public sealed class WorkflowDefinitionCompilerTests
                 .Agent("triage", agent => agent
                     .Role("Router")
                     .UseDraft(
-                        AgentDefinitionBuilder
+                        AgentTemplateBuilder
                             .New("Demo Triage", "triage")
                             .WithInstructions("Test instructions.")
                             .AutoSelectTools(0)
-                            .BuildDescription()))
+                            .Build()))
                 .UseHandoff(handoff => handoff
                     .StartWith("triage"))
                 .Build();
@@ -260,38 +261,38 @@ public sealed class WorkflowDefinitionCompilerTests
                     .Role("Host")
                     .OverrideAvatarText("H")
                     .UseDraft(
-                        AgentDefinitionBuilder
+                        AgentTemplateBuilder
                             .New("Avatar Host", "host")
                             .WithInstructions("Open the discussion.")
                             .AutoSelectTools(0)
-                            .BuildDescription()))
+                            .Build()))
                 .Agent("reviewer_a", agent => agent
                     .Role("Reviewer A")
                     .OverrideAvatarText("A")
                     .UseDraft(
-                        AgentDefinitionBuilder
+                        AgentTemplateBuilder
                             .New("Reviewer A", "reviewer_a")
                             .WithInstructions("Provide the first review.")
                             .AutoSelectTools(0)
-                            .BuildDescription()))
+                            .Build()))
                 .Agent("reviewer_b", agent => agent
                     .Role("Reviewer B")
                     .OverrideAvatarText("B")
                     .UseDraft(
-                        AgentDefinitionBuilder
+                        AgentTemplateBuilder
                             .New("Reviewer B", "reviewer_b")
                             .WithInstructions("Provide the second review.")
                             .AutoSelectTools(0)
-                            .BuildDescription()))
+                            .Build()))
                 .Agent("closer", agent => agent
                     .Role("Closer")
                     .OverrideAvatarText("C")
                     .UseDraft(
-                        AgentDefinitionBuilder
+                        AgentTemplateBuilder
                             .New("Review Closer", "closer")
                             .WithInstructions("Close the discussion.")
                             .AutoSelectTools(0)
-                            .BuildDescription()))
+                            .Build()))
                 .UseGroupChat(groupChat => groupChat
                     .Participants("host", "reviewer_a", "reviewer_b", "closer")
                     .UseProgrammableManager(manager => manager

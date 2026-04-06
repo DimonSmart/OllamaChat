@@ -160,7 +160,7 @@ public sealed class HttpAgenticExecutionRuntime(
                 continue;
             }
 
-            result.Add(new ChatMessage(message.Role, text));
+            result.Add(new ChatMessage(message.Role.ToAiChatRole(), text));
         }
 
         if (!result.Any(static message => message.Role == ChatRole.User) &&

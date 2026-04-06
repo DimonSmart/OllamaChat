@@ -1,45 +1,10 @@
-using System.Text.Json.Serialization;
-
 namespace ChatClient.Domain.Models;
 
-public sealed class AgentDefinition
+public sealed class AgentExecutionSpec : AgentModelBase
 {
-    public Guid Id { get; set; } = Guid.NewGuid();
-
-    public string AgentName { get; set; } = string.Empty;
-
-    public string Summary { get; set; } = string.Empty;
-
-    public string Content { get; set; } = string.Empty;
-
-    public string? ShortName { get; set; }
-
-    public string? AvatarText { get; set; }
-
-    public string? ModelName { get; set; }
-
-    public Guid? LlmId { get; set; }
-
-    public double? Temperature { get; set; }
-
-    public double? RepeatPenalty { get; set; }
-
-    [JsonIgnore]
-    public string AgentId => string.IsNullOrWhiteSpace(ShortName) ? AgentName : ShortName;
-
-    public FunctionSettings FunctionSettings { get; set; } = new();
-
-    public AgentExecutionSettings ExecutionSettings { get; set; } = new();
-
-    public List<McpServerSessionBinding> McpServerBindings { get; set; } = [];
-
-    public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
-
-    public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
-
-    public AgentDefinition Clone()
+    public AgentExecutionSpec Clone()
     {
-        return new AgentDefinition
+        return new AgentExecutionSpec
         {
             Id = Id,
             AgentName = AgentName,
@@ -51,6 +16,7 @@ public sealed class AgentDefinition
             LlmId = LlmId,
             Temperature = Temperature,
             RepeatPenalty = RepeatPenalty,
+            RuntimeAgentId = RuntimeAgentId,
             FunctionSettings = new FunctionSettings
             {
                 AutoSelectCount = FunctionSettings.AutoSelectCount
@@ -73,6 +39,4 @@ public sealed class AgentDefinition
             UpdatedAt = UpdatedAt
         };
     }
-
-    public override string ToString() => AgentName;
 }

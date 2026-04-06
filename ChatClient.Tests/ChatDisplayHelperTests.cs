@@ -26,10 +26,11 @@ public class ChatDisplayHelperTests
     {
         var avatarText = ChatDisplayHelper.GetAssistantAvatarText(
             [
-                new AgentDescription
+                new AgentExecutionSpec
                 {
                     AgentName = "Interview Coach Behavioural",
-                    ShortName = "behavioural"
+                    ShortName = "behavioural",
+                    RuntimeAgentId = "behavioural"
                 }
             ],
             "behavioural");
@@ -42,11 +43,12 @@ public class ChatDisplayHelperTests
     {
         var avatarText = ChatDisplayHelper.GetAssistantAvatarText(
             [
-                new AgentDescription
+                new AgentExecutionSpec
                 {
                     AgentName = "Immanuel Kant",
                     ShortName = "kant",
-                    AvatarText = "K"
+                    AvatarText = "K",
+                    RuntimeAgentId = "kant"
                 }
             ],
             "kant");
@@ -59,10 +61,11 @@ public class ChatDisplayHelperTests
     {
         var avatarText = ChatDisplayHelper.GetAssistantAvatarText(
             [
-                new AgentDescription
+                new AgentExecutionSpec
                 {
                     AgentName = "Interview Coach Technical",
-                    ShortName = "technical"
+                    ShortName = "technical",
+                    RuntimeAgentId = "technical"
                 }
             ],
             "technical");

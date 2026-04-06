@@ -8,7 +8,6 @@
 @using ChatClient.Domain.Models
 @using ChatClient.Domain.Models.ChatStrategies
 @using Microsoft.AspNetCore.Components
-@using Microsoft.Extensions.AI
 @using MudBlazor
 @inherits AgenticChatPageBase
 
@@ -35,7 +34,7 @@
                 else
                 {
                     <MudStack Spacing="3">
-                        <MudSelect T="AgentDescription" Label="Select Agent" Value="selectedAgent" ValueChanged="OnAgentChanged" Variant="Variant.Outlined" FullWidth="true" Dense="true">
+                        <MudSelect T="AgentTemplateDefinition" Label="Select Agent" Value="selectedAgent" ValueChanged="OnAgentChanged" Variant="Variant.Outlined" FullWidth="true" Dense="true">
                             @foreach (var agent in agents)
                             {
                                 <MudSelectItem Value="@agent">@agent.AgentName</MudSelectItem>
@@ -70,7 +69,7 @@
     {
         <AgenticChatSession @ref="chatSessionView"
                             Messages="ChatViewModelService.Messages"
-                            Agents="agents"
+                            Agents="ChatService.Agents"
                             IsLlmAnswering="isLLMAnswering"
                             UserName="userSettings.UserName"
                             OnSaveChat="SaveCurrentChat"
@@ -85,9 +84,9 @@
 </OllamaCheck>
 
 @code {
-    private List<AgentDescription> agents = new();
-    private AgentDescription? selectedAgent { get; set; }
-    private AgentDescription? selectedAgentDraft;
+    private List<AgentTemplateDefinition> agents = new();
+    private AgentTemplateDefinition? selectedAgent { get; set; }
+    private AgentTemplateDefinition? selectedAgentDraft;
 
     [CascadingParameter(Name = "UiModelSelection")]
     public ServerModelSelection UiModelSelection { get; set; } = new(null, null);
@@ -123,7 +122,7 @@
         }
 
         var assistantIds = saved.Participants
-            .Where(participant => participant.Role == ChatRole.Assistant)
+            .Where(participant => participant.Role == AppChatRole.Assistant)
             .Select(participant => participant.Id)
             .ToHashSet(StringComparer.OrdinalIgnoreCase);
 
@@ -138,19 +137,21 @@
         }
 
         selectedAgent = agentsForChat[0];
-        selectedAgentDraft = AgentDescriptionFactory.CreateDraft(selectedAgent);
+        selectedAgentDraft = selectedAgent.Clone();
         if (!TryResolveEffectiveModel(selectedAgentDraft, out var resolvedModel))
             throw new InvalidOperationException($"Model selection for Agent: {selectedAgentDraft.AgentName} is incomplete.");
 
         effectiveModel = resolvedModel;
 
-        var resolvedAgents = agentsForChat
-            .Select(agent => agent.Id == selectedAgent.Id ? AgentDescriptionFactory.CreateRuntime(selectedAgentDraft, effectiveModel) : agent)
-            .ToList();
-        var runtimeAgents = resolvedAgents
-            .Select(agent => AgentDescriptionFactory.CreateResolved(
-                agent,
-                new ServerModel(agent.LlmId!.Value, agent.ModelName!)))
+        var runtimeAgents = agentsForChat
+            .Select(agent =>
+            {
+                var template = agent.Id == selectedAgent.Id
+                    ? selectedAgentDraft
+                    : agent;
+                var model = new ServerModel(template.LlmId!.Value, template.ModelName!);
+                return ResolvedChatAgentFactory.Resolve(template, model);
+            })
             .ToList();
 
         var chatConfiguration = new AppChatConfiguration(CurrentModelName, []);
@@ -202,7 +203,7 @@
 
         var runtimeAgents = new[]
         {
-            AgentDescriptionFactory.CreateResolved(selectedAgentDraft, effectiveModel)
+            ResolvedChatAgentFactory.Resolve(selectedAgentDraft, effectiveModel)
         };
 
         var chatConfiguration = new AppChatConfiguration(CurrentModelName, []);
@@ -226,10 +227,10 @@
         }
     }
 
-    private Task OnAgentChanged(AgentDescription? agent)
+    private Task OnAgentChanged(AgentTemplateDefinition? agent)
     {
         selectedAgent = agent;
-        selectedAgentDraft = agent is null ? null : AgentDescriptionFactory.CreateDraft(agent);
+        selectedAgentDraft = agent is null ? null : agent.Clone();
         return Task.CompletedTask;
     }
 
@@ -245,7 +246,7 @@
         return Task.CompletedTask;
     }
 
-    private bool TryResolveEffectiveModel(AgentDescription agent, out ServerModel model) =>
+    private bool TryResolveEffectiveModel(AgentTemplateDefinition agent, out ServerModel model) =>
         ModelSelectionHelper.TryGetEffectiveModel(
             new ServerModelSelection(agent.LlmId, agent.ModelName),
             UiModelSelection,

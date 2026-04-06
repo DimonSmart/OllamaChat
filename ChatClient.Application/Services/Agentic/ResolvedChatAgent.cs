@@ -4,21 +4,16 @@ namespace ChatClient.Application.Services.Agentic;
 
 public sealed class ResolvedChatAgent
 {
-    public ResolvedChatAgent(AgentDefinition agent, ServerModel model)
+    public ResolvedChatAgent(AgentExecutionSpec spec, ServerModel model)
     {
-        ArgumentNullException.ThrowIfNull(agent);
+        ArgumentNullException.ThrowIfNull(spec);
         ArgumentNullException.ThrowIfNull(model);
 
-        Agent = agent;
+        Agent = spec;
         Model = model;
     }
 
-    public ResolvedChatAgent(AgentDescription agent, ServerModel model)
-        : this(AgentDefinitionMapper.ToDefinition(agent), model)
-    {
-    }
-
-    public AgentDefinition Agent { get; }
+    public AgentExecutionSpec Agent { get; }
 
     public ServerModel Model { get; }
 }

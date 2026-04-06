@@ -1,6 +1,5 @@
 using ChatClient.Domain.Models;
 using ChatClient.Infrastructure.Repositories;
-using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging.Abstractions;
 
@@ -10,8 +9,8 @@ public class SavedChatRepositoryTests
 {
     private static SavedChat CreateChat(string title)
     {
-        var participant = new SavedChatParticipant("user", "User", ChatRole.User);
-        var message = new SavedChatMessage(Guid.NewGuid(), "hi", DateTime.UtcNow, ChatRole.User, null, null);
+        var participant = new SavedChatParticipant("user", "User", AppChatRole.User);
+        var message = new SavedChatMessage(Guid.NewGuid(), "hi", DateTime.UtcNow, AppChatRole.User, null, null);
         return new SavedChat(Guid.NewGuid(), title, DateTime.UtcNow, [message], [participant]);
     }
 

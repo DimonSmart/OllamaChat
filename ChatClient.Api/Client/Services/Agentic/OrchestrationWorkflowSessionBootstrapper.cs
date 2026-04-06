@@ -1,0 +1,387 @@
+using System.Reflection;
+using ChatClient.Api.AgentWorkflows;
+using ChatClient.Api.Services;
+using ChatClient.Api.Services.BuiltIn;
+using ChatClient.Application.Services.Agentic;
+#pragma warning disable MAAI001
+using Microsoft.Agents.AI;
+#pragma warning restore MAAI001
+
+namespace ChatClient.Api.Client.Services.Agentic;
+
+public sealed class OrchestrationWorkflowSessionBootstrapper(
+    ILogger<OrchestrationWorkflowSessionBootstrapper> logger,
+    IModelCapabilityService modelCapabilityService,
+    TaskSessionStore taskSessionStore,
+    MarkdownDocumentIntakeService documentIntakeService,
+    AgenticRuntimeAgentFactory runtimeAgentFactory)
+{
+    private static readonly Lazy<MethodInfo?> GetDescriptiveIdMethod = new(static () =>
+        Type.GetType(
+                "Microsoft.Agents.AI.Workflows.AIAgentExtensions, Microsoft.Agents.AI.Workflows",
+                throwOnError: false)?
+            .GetMethod(
+                "GetDescriptiveId",
+                BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static,
+                binder: null,
+                types: [typeof(AIAgent)],
+                modifiers: null));
+
+    public async Task<OrchestrationWorkflowSessionBootstrapResult> BootstrapAsync(
+        OrchestrationWorkflowSessionStartRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        if (request.Agents.Count == 0)
+        {
+            throw new ArgumentException("At least one workflow agent must be provided.", nameof(request));
+        }
+
+        var stage = "validate-agents";
+
+        try
+        {
+            await ValidateResolvedAgentsAsync(request.Agents, cancellationToken);
+
+            stage = "validate-workflow";
+            ValidateWorkflowDefinition(request.Workflow, request.Agents);
+            var normalizedStartInputs = NormalizeStartInputs(request.Workflow, request.StartInputs);
+
+            stage = "create-task-session";
+            var session = await taskSessionStore.CreateSessionAsync(
+                request.SessionTitle,
+                request.SessionDescription,
+                cancellationToken);
+
+            stage = "set-initial-phase";
+            await taskSessionStore.SetPhaseAsync(session.SessionId, "intake", cancellationToken);
+
+            foreach (var startInput in normalizedStartInputs)
+            {
+                var definition = request.Workflow.StartInputs.First(input =>
+                    string.Equals(input.Key, startInput.Key, StringComparison.OrdinalIgnoreCase));
+
+                if (definition.Kind == WorkflowStartInputKind.MarkdownDocument)
+                {
+                    stage = $"prepare-document:{definition.Key}";
+                    var prepared = await PrepareDocumentAsync(definition, startInput, cancellationToken);
+                    if (prepared is null)
+                    {
+                        continue;
+                    }
+
+                    stage = $"attach-document:{definition.Key}";
+                    await taskSessionStore.AttachDocumentAsync(
+                        session.SessionId,
+                        definition.Key,
+                        prepared.Markdown,
+                        prepared.Title,
+                        prepared.SourceFile,
+                        cancellationToken);
+                    continue;
+                }
+
+                stage = $"attach-parameter:{definition.Key}";
+                await taskSessionStore.SetParameterAsync(
+                    session.SessionId,
+                    definition.Key,
+                    MapParameterValueKind(definition.Kind),
+                    NormalizeParameterValue(definition, startInput),
+                    cancellationToken);
+            }
+
+            stage = "bind-task-session";
+            var sessionBoundAgents = request.Agents
+                .Select(agent => BindTaskSession(agent, session.SessionId))
+                .ToList();
+
+            List<OrchestrationWorkflowRuntimeAgentRegistration> runtimeAgents = [];
+            foreach (var sessionBoundAgent in sessionBoundAgents)
+            {
+                stage = $"build-runtime-agent:{sessionBoundAgent.Agent.AgentId}";
+                var runtimeRequest = sessionBoundAgent.Agent
+                    .ForRun()
+                    .UsingModel(sessionBoundAgent.Model)
+                    .WithConfiguration(request.Configuration)
+                    .WithConversation([])
+                    .WithUserMessage(string.Empty)
+                    .Build();
+                var builtAgent = await runtimeAgentFactory.CreateAsync(
+                    runtimeRequest,
+                    requireFunctionCalling: true,
+                    cancellationToken: cancellationToken);
+
+                runtimeAgents.Add(new OrchestrationWorkflowRuntimeAgentRegistration(
+                    sessionBoundAgent.Agent.AgentId,
+                    sessionBoundAgent.Agent.AgentName,
+                    builtAgent.Agent,
+                    TryGetAgentExecutorId(builtAgent.Agent)));
+            }
+
+            return new OrchestrationWorkflowSessionBootstrapResult(
+                session.SessionId,
+                new OrchestrationWorkflowSessionStartRequest
+                {
+                    Workflow = request.Workflow,
+                    Agents = sessionBoundAgents,
+                    Configuration = request.Configuration,
+                    SessionTitle = request.SessionTitle,
+                    SessionDescription = request.SessionDescription,
+                    StartInputs = normalizedStartInputs
+                },
+                runtimeAgents);
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(
+                ex,
+                "Failed to bootstrap orchestration workflow session at stage {Stage}. WorkflowId={WorkflowId}, AgentCount={AgentCount}",
+                stage,
+                request.Workflow.Id,
+                request.Agents.Count);
+            throw;
+        }
+    }
+
+    private async Task<MarkdownDocumentIntakeResult?> PrepareDocumentAsync(
+        WorkflowStartInputDefinition definition,
+        OrchestrationWorkflowStartInputValue input,
+        CancellationToken cancellationToken)
+    {
+        if (!string.IsNullOrWhiteSpace(input.Value))
+        {
+            return documentIntakeService.PrepareMarkdown(input.Value, definition.DisplayName);
+        }
+
+        if (!string.IsNullOrWhiteSpace(input.SourceFile))
+        {
+            return await documentIntakeService.ReadDocumentAsync(input.SourceFile, cancellationToken);
+        }
+
+        return null;
+    }
+
+    private static void ValidateWorkflowDefinition(
+        IOrchestrationWorkflowDefinition workflow,
+        IReadOnlyList<ResolvedChatAgent> agents)
+    {
+        var workflowAgentIds = workflow.Agents
+            .Select(static agent => agent.Id)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var resolvedAgentIds = agents
+            .Select(static agent => agent.Agent.AgentId)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        if (!workflowAgentIds.SetEquals(resolvedAgentIds))
+        {
+            throw new InvalidOperationException(
+                "Resolved workflow agents do not match the workflow definition.");
+        }
+    }
+
+    private static IReadOnlyList<OrchestrationWorkflowStartInputValue> NormalizeStartInputs(
+        IOrchestrationWorkflowDefinition workflow,
+        IReadOnlyList<OrchestrationWorkflowStartInputValue> providedInputs)
+    {
+        var definitionsByKey = workflow.StartInputs.ToDictionary(
+            static input => input.Key,
+            StringComparer.OrdinalIgnoreCase);
+        var providedByKey = providedInputs.ToDictionary(
+            static input => input.Key,
+            StringComparer.OrdinalIgnoreCase);
+
+        var unknownKey = providedByKey.Keys.FirstOrDefault(key => !definitionsByKey.ContainsKey(key));
+        if (unknownKey is not null)
+        {
+            throw new InvalidOperationException(
+                $"Workflow start input '{unknownKey}' is not defined.");
+        }
+
+        List<OrchestrationWorkflowStartInputValue> normalizedInputs = [];
+
+        foreach (var definition in workflow.StartInputs)
+        {
+            providedByKey.TryGetValue(definition.Key, out var provided);
+
+            if (definition.Kind == WorkflowStartInputKind.MarkdownDocument)
+            {
+                if (provided is not null &&
+                    (!string.IsNullOrWhiteSpace(provided.Value) ||
+                     !string.IsNullOrWhiteSpace(provided.SourceFile)))
+                {
+                    normalizedInputs.Add(new OrchestrationWorkflowStartInputValue
+                    {
+                        Key = definition.Key,
+                        Value = provided.Value,
+                        SourceFile = provided.SourceFile
+                    });
+                    continue;
+                }
+
+                if (definition.IsRequired)
+                {
+                    throw new InvalidOperationException(
+                        $"Workflow start input '{definition.DisplayName}' is required.");
+                }
+
+                continue;
+            }
+
+            var value = provided?.Value;
+            if (string.IsNullOrWhiteSpace(value))
+            {
+                value = definition.DefaultValue;
+            }
+
+            if (string.IsNullOrWhiteSpace(value))
+            {
+                if (definition.IsRequired)
+                {
+                    throw new InvalidOperationException(
+                        $"Workflow start input '{definition.DisplayName}' is required.");
+                }
+
+                continue;
+            }
+
+            normalizedInputs.Add(new OrchestrationWorkflowStartInputValue
+            {
+                Key = definition.Key,
+                Value = value
+            });
+        }
+
+        return normalizedInputs;
+    }
+
+    private static string NormalizeParameterValue(
+        WorkflowStartInputDefinition definition,
+        OrchestrationWorkflowStartInputValue input)
+    {
+        var value = input.Value?.Trim();
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            throw new InvalidOperationException(
+                $"Workflow start input '{definition.DisplayName}' requires a value.");
+        }
+
+        return definition.Kind switch
+        {
+            WorkflowStartInputKind.Text => value,
+            WorkflowStartInputKind.Number => value,
+            WorkflowStartInputKind.Boolean => bool.TryParse(value, out var boolValue)
+                ? boolValue ? bool.TrueString.ToLowerInvariant() : bool.FalseString.ToLowerInvariant()
+                : throw new InvalidOperationException(
+                    $"Workflow start input '{definition.DisplayName}' expects a boolean value."),
+            WorkflowStartInputKind.Json => value,
+            WorkflowStartInputKind.MarkdownDocument => throw new InvalidOperationException(
+                $"Workflow start input '{definition.DisplayName}' is a document and cannot be stored as a parameter."),
+            _ => throw new InvalidOperationException(
+                $"Workflow start input '{definition.DisplayName}' uses an unsupported input kind '{definition.Kind}'.")
+        };
+    }
+
+    private static string MapParameterValueKind(WorkflowStartInputKind kind) =>
+        kind switch
+        {
+            WorkflowStartInputKind.Text => "text",
+            WorkflowStartInputKind.Number => "number",
+            WorkflowStartInputKind.Boolean => "boolean",
+            WorkflowStartInputKind.Json => "json",
+            WorkflowStartInputKind.MarkdownDocument => throw new InvalidOperationException(
+                "Document inputs must be stored as task session documents."),
+            _ => throw new InvalidOperationException(
+                $"Unsupported workflow start input kind '{kind}'.")
+        };
+
+    private static string? TryGetAgentExecutorId(AIAgent agent)
+    {
+        if (GetDescriptiveIdMethod.Value?.Invoke(null, [agent]) is string descriptiveId &&
+            !string.IsNullOrWhiteSpace(descriptiveId))
+        {
+            return descriptiveId;
+        }
+
+        return TryGetStringProperty(agent, "Id") ?? TryGetStringProperty(agent, "Name");
+    }
+
+    private static string? TryGetStringProperty(object value, string propertyName)
+    {
+        var property = value.GetType().GetProperty(
+            propertyName,
+            BindingFlags.Public | BindingFlags.Instance);
+        if (property?.PropertyType != typeof(string))
+        {
+            return null;
+        }
+
+        return property.GetValue(value) as string;
+    }
+
+    private async Task ValidateResolvedAgentsAsync(
+        IReadOnlyList<ResolvedChatAgent> resolvedAgents,
+        CancellationToken cancellationToken)
+    {
+        foreach (var resolvedAgent in resolvedAgents)
+        {
+            if (resolvedAgent.Model.ServerId == Guid.Empty)
+            {
+                throw new InvalidOperationException(
+                    $"Server is not resolved for agent '{resolvedAgent.Agent.AgentName}'.");
+            }
+
+            if (string.IsNullOrWhiteSpace(resolvedAgent.Model.ModelName))
+            {
+                throw new InvalidOperationException(
+                    $"Model is not resolved for agent '{resolvedAgent.Agent.AgentName}'.");
+            }
+
+            await modelCapabilityService.EnsureModelSupportedByServerAsync(
+                resolvedAgent.Model,
+                cancellationToken);
+
+            if (resolvedAgent.Agent.McpServerBindings.Count == 0)
+            {
+                continue;
+            }
+
+            var supportsFunctions = await modelCapabilityService.SupportsFunctionCallingAsync(
+                resolvedAgent.Model,
+                cancellationToken);
+            if (!supportsFunctions)
+            {
+                throw new InvalidOperationException(
+                    $"Workflow agent '{resolvedAgent.Agent.AgentName}' requires a model with function calling.");
+            }
+        }
+    }
+
+    private static ResolvedChatAgent BindTaskSession(ResolvedChatAgent source, string sessionId)
+    {
+        var runtimeAgent = source.Agent.Clone();
+
+        foreach (var binding in runtimeAgent.McpServerBindings)
+        {
+            if (!string.Equals(binding.ServerName, BuiltInTaskSessionMcpServerTools.Descriptor.Name, StringComparison.OrdinalIgnoreCase) &&
+                binding.ServerId != BuiltInTaskSessionMcpServerTools.Descriptor.Id)
+            {
+                continue;
+            }
+
+            binding.Parameters[TaskSessionStore.SessionIdParameter] = sessionId;
+        }
+
+        return new ResolvedChatAgent(runtimeAgent, source.Model);
+    }
+}
+
+public sealed record OrchestrationWorkflowSessionBootstrapResult(
+    string TaskSessionId,
+    OrchestrationWorkflowSessionStartRequest Request,
+    IReadOnlyList<OrchestrationWorkflowRuntimeAgentRegistration> RuntimeAgents);
+
+public sealed record OrchestrationWorkflowRuntimeAgentRegistration(
+    string AgentId,
+    string AgentName,
+    AIAgent RuntimeAgent,
+    string? ExecutorId);

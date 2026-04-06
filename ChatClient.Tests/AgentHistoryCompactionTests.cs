@@ -53,7 +53,7 @@ public class AgentHistoryCompactionTests
                 MayRequireUserInput: false,
                 Tool: Mock.Of<AITool>()));
 
-        var agent = new AgentDescription
+        var agent = new AgentTemplateDefinition
         {
             AgentName = "Reader",
             ExecutionSettings = new AgentExecutionSettings
@@ -91,7 +91,7 @@ public class AgentHistoryCompactionTests
                 MayRequireUserInput: false,
                 Tool: Mock.Of<AITool>()));
 
-        var agent = new AgentDescription
+        var agent = new AgentTemplateDefinition
         {
             AgentName = "Reader",
             ExecutionSettings = new AgentExecutionSettings

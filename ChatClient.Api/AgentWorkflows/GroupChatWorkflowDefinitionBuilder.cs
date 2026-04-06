@@ -1,3 +1,5 @@
+using ChatClient.Application.Services.Agentic;
+
 namespace ChatClient.Api.AgentWorkflows;
 
 public sealed class GroupChatWorkflowDefinitionBuilder

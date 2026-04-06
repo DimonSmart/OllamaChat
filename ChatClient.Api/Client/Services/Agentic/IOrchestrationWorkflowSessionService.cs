@@ -2,7 +2,7 @@ using ChatClient.Application.Services.Agentic;
 
 namespace ChatClient.Api.Client.Services.Agentic;
 
-public interface IOrchestrationWorkflowSessionService : IChatEngineSessionService
+public interface IOrchestrationWorkflowSessionService : IChatSessionService
 {
     string? TaskSessionId { get; }
 

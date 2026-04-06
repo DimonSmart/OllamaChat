@@ -83,7 +83,7 @@ public sealed class AgenticChatEngineOrchestrator(
                 continue;
             }
 
-            result.Add(new ChatMessage(message.Role, content));
+            result.Add(new ChatMessage(message.Role.ToAiChatRole(), content));
         }
 
         return result;

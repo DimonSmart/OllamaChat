@@ -3,6 +3,8 @@ using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using ModelContextProtocol.Protocol;
 using ChatClient.Domain.Models;
+using ChatClient.Application.Services.TaskSessions;
+using ChatClient.Infrastructure.Services.TaskSessions;
 
 namespace ChatClient.Api.Services.BuiltIn;
 
@@ -56,6 +58,7 @@ public static class BuiltInMcpServerHost
         });
         builder.Services.AddHttpClient();
         builder.Services.AddSingleton(new McpServerSessionContext(binding));
+        builder.Services.AddSingleton<ITaskSessionRepository, SqliteTaskSessionRepository>();
         builder.Services.AddSingleton<TaskSessionStore>();
         builder.Services.AddSingleton<MarkdownDocumentIntakeService>();
         builder.Services.AddSingleton<KnowledgeBookStore>();

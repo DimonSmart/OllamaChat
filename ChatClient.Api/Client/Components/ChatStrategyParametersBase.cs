@@ -5,7 +5,7 @@ using Microsoft.AspNetCore.Components;
 
 namespace ChatClient.Api.Client.Components;
 
-public sealed record ChatStrategyEditorContext(IChatStrategyOptions Options, IReadOnlyList<AgentDescription> Agents);
+public sealed record ChatStrategyEditorContext(IChatStrategyOptions Options, IReadOnlyList<AgentTemplateDefinition> Agents);
 
 public abstract class ChatStrategyParametersBase : ComponentBase
 {

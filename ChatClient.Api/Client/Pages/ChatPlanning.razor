@@ -149,7 +149,7 @@
     private string? selectedStepContextKey;
 
     private List<FunctionInfo> availablePlanningFunctions = [];
-    private AgentDescription plannerDraft = AgentDescriptionFactory.CreateTransient("Planner", "planner");
+    private AgentTemplateDefinition plannerDraft = AgentTemplateBuilder.New("Planner", "planner").Build();
     private IDisposable? elicitationHandlerRegistration;
 
     [CascadingParameter(Name = "UiModelSelection")]
@@ -242,7 +242,7 @@
         var plannerModel = new ServerModel(UiModelSelection.ServerId!.Value, UiModelSelection.ModelName!);
         await PlanningSessionService.StartAsync(new PlanningRunRequest
         {
-            Planner = AgentDescriptionFactory.CreateResolved(plannerDraft, plannerModel),
+            Planner = ResolvedChatAgentFactory.Resolve(plannerDraft, plannerModel),
             UserQuery = userQuery
         });
     }

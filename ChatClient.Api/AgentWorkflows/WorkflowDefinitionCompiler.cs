@@ -20,9 +20,9 @@ public sealed class WorkflowDefinitionCompiler : IWorkflowDefinitionCompiler
         typeof(object).Assembly,
         typeof(Enumerable).Assembly,
         typeof(AgentWorkflowDefinition).Assembly,
-        typeof(AgentDefinitionBuilder).Assembly,
+        typeof(AgentTemplateBuilder).Assembly,
         typeof(BuiltInTaskSessionMcpServerTools).Assembly,
-        typeof(AgentDescription).Assembly
+        typeof(AgentTemplateDefinition).Assembly
     ];
 
     private static readonly ScriptOptions ScriptOptions = Microsoft.CodeAnalysis.Scripting.ScriptOptions.Default

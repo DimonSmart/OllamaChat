@@ -1,7 +1,6 @@
 using ChatClient.Api.Client.Markdown;
 using ChatClient.Domain.Models;
 using DimonSmart.AiUtils;
-using Microsoft.Extensions.AI;
 using System.Collections.Generic;
 using System.Linq;
 
@@ -17,7 +16,7 @@ public class AppChatMessageViewModel
     public IReadOnlyCollection<string> HtmlThinkSegments { get; set; } = [];
     public IReadOnlyCollection<FunctionCallRecord> FunctionCalls { get; set; } = [];
     public DateTime MsgDateTime { get; set; }
-    public ChatRole Role { get; set; }
+    public AppChatRole Role { get; set; }
     public string? Statistics { get; set; }
     public bool IsStreaming { get; set; }
     public bool IsCanceled { get; set; }

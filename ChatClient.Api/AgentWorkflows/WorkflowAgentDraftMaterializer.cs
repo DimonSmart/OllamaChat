@@ -17,9 +17,9 @@ public interface IWorkflowAgentDraftMaterializer
 }
 
 public sealed class WorkflowAgentDraftMaterializer(
-    IAgentDescriptionService agentDescriptionService) : IWorkflowAgentDraftMaterializer
+    IAgentTemplateService agentDescriptionService) : IWorkflowAgentDraftMaterializer
 {
-    private readonly IAgentDescriptionService _agentDescriptionService = agentDescriptionService;
+    private readonly IAgentTemplateService _agentDescriptionService = agentDescriptionService;
 
     public async Task<IOrchestrationWorkflowDefinition> MaterializeAsync(
         IOrchestrationWorkflowDefinition workflow,
@@ -166,13 +166,14 @@ public sealed class WorkflowAgentDraftMaterializer(
 
     private static AgentWorkflowAgentDefinition MaterializeAgent(
         AgentWorkflowAgentDefinition agent,
-        IReadOnlyCollection<AgentDescription> savedAgents)
+        IReadOnlyCollection<AgentTemplateDefinition> savedAgents)
     {
         var draft = ResolveBaseDraft(agent, savedAgents);
         ApplyOverrides(draft, agent.DraftOverrides);
         var summary = ResolveSummary(agent, draft);
 
-        // Runtime keys agents by workflow node id, so the materialized short name must match it.
+        // Workflow slots need a stable runtime key and compact UI alias independent of the saved-agent name.
+        draft.RuntimeAgentId = agent.Id;
         draft.ShortName = agent.Id;
 
         return new AgentWorkflowAgentDefinition
@@ -211,7 +212,7 @@ public sealed class WorkflowAgentDraftMaterializer(
 
     private static string ResolveSummary(
         AgentWorkflowAgentDefinition agent,
-        AgentDescription draft)
+        AgentTemplateDefinition draft)
     {
         if (!string.IsNullOrWhiteSpace(agent.Summary))
         {
@@ -223,13 +224,13 @@ public sealed class WorkflowAgentDraftMaterializer(
             : draft.Summary?.Trim() ?? string.Empty;
     }
 
-    private static AgentDescription ResolveBaseDraft(
+    private static AgentTemplateDefinition ResolveBaseDraft(
         AgentWorkflowAgentDefinition agent,
-        IReadOnlyCollection<AgentDescription> savedAgents)
+        IReadOnlyCollection<AgentTemplateDefinition> savedAgents)
     {
         if (agent.AgentDraft is not null)
         {
-            return AgentDescriptionFactory.CreateDraft(agent.AgentDraft);
+            return agent.AgentDraft.Clone();
         }
 
         if (agent.SavedAgentTemplate is null)
@@ -247,7 +248,7 @@ public sealed class WorkflowAgentDraftMaterializer(
 
         return matches.Count switch
         {
-            1 => AgentDescriptionFactory.CreateDraft(matches[0]),
+            1 => matches[0].Clone(),
             0 => throw new InvalidOperationException(
                 $"Saved agent '{agent.SavedAgentTemplate.SavedAgentName}' was not found for workflow agent '{agent.Id}'."),
             _ => throw new InvalidOperationException(
@@ -256,7 +257,7 @@ public sealed class WorkflowAgentDraftMaterializer(
     }
 
     private static void ApplyOverrides(
-        AgentDescription draft,
+        AgentTemplateDefinition draft,
         AgentWorkflowAgentDraftOverrides overrides)
     {
         if (!string.IsNullOrWhiteSpace(overrides.AgentName))

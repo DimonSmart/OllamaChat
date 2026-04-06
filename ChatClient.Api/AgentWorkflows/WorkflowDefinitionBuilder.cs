@@ -417,7 +417,7 @@ public sealed class WorkflowDefinitionBuilder
             Summary = agent.Summary,
             AgentDraft = agent.AgentDraft is null
                 ? null
-                : AgentDescriptionFactory.CreateDraft(agent.AgentDraft),
+                : agent.AgentDraft.Clone(),
             SavedAgentTemplate = agent.SavedAgentTemplate is null
                 ? null
                 : new AgentWorkflowSavedAgentTemplate

@@ -15,7 +15,7 @@ var workflow = WorkflowDefinitionBuilder
         .OverrideAvatarText("H")
         .Summary("Opens the debate by framing the topic sharply and setting the tone.")
         .UseDraft(
-            AgentDefinitionBuilder
+            AgentTemplateBuilder
                 .New("Debate Host", "host")
                 .WithBinding(BuiltInTaskSessionMcpServerTools.Descriptor.Name, binding => binding
                     .Enabled()
@@ -30,7 +30,7 @@ End by explicitly inviting {{agent:debater_a.displayName}} and {{agent:debater_b
 
 You speak only in the opening turn. Do not summarize the debate.")
                 .AutoSelectTools(0)
-                .BuildDescription()))
+                .Build()))
     .Agent("debater_a", agent => agent
         .FromSavedAgent("Immanuel Kant")
         .Role("Kantian philosopher")
@@ -54,7 +54,7 @@ You speak only in the opening turn. Do not summarize the debate.")
         .OverrideAvatarText("J")
         .Summary("Closes the debate with a concise verdict and persists the final summary.")
         .UseDraft(
-            AgentDefinitionBuilder
+            AgentTemplateBuilder
                 .New("Debate Judge", "judge")
                 .WithBinding(BuiltInTaskSessionMcpServerTools.Descriptor.Name, binding => binding
                     .Enabled()
@@ -73,7 +73,7 @@ Mark the workflow complete with session_set_phase.
 
 Speak only once, at the end of the debate.")
                 .AutoSelectTools(0)
-                .BuildDescription()))
+                .Build()))
     .UseGroupChat(groupChat => groupChat
         .Participants("host", "debater_a", "debater_b", "judge")
         .UseProgrammableManager(manager => manager

@@ -12,7 +12,7 @@ public sealed class WorkflowDefinitionBuilderTests
             .New("demo", "Demo Workflow")
             .Agent("triage", agent => agent
                 .Role("Router")
-                .UseDraft(new AgentDescription
+                .UseDraft(new AgentTemplateDefinition
                 {
                     Id = Guid.NewGuid(),
                     AgentName = "Router",
@@ -21,7 +21,7 @@ public sealed class WorkflowDefinitionBuilderTests
                 }))
             .Agent("specialist", agent => agent
                 .Role("Specialist")
-                .UseDraft(new AgentDescription
+                .UseDraft(new AgentTemplateDefinition
                 {
                     Id = Guid.NewGuid(),
                     AgentName = "Specialist",
@@ -47,7 +47,7 @@ public sealed class WorkflowDefinitionBuilderTests
             .New("parallel-review", "Parallel Review")
             .Agent("research", agent => agent
                 .Role("Research")
-                .UseDraft(new AgentDescription
+                .UseDraft(new AgentTemplateDefinition
                 {
                     Id = Guid.NewGuid(),
                     AgentName = "Research",
@@ -56,7 +56,7 @@ public sealed class WorkflowDefinitionBuilderTests
                 }))
             .Agent("review", agent => agent
                 .Role("Review")
-                .UseDraft(new AgentDescription
+                .UseDraft(new AgentTemplateDefinition
                 {
                     Id = Guid.NewGuid(),
                     AgentName = "Review",
@@ -81,7 +81,7 @@ public sealed class WorkflowDefinitionBuilderTests
                 .New("demo", "Demo Workflow")
                 .Agent("host", agent => agent
                     .Role("Host")
-                    .UseDraft(new AgentDescription
+                    .UseDraft(new AgentTemplateDefinition
                     {
                         Id = Guid.NewGuid(),
                         AgentName = "Host",
@@ -103,7 +103,7 @@ public sealed class WorkflowDefinitionBuilderTests
                 .New("demo", "Demo Workflow")
                 .Agent("host", agent => agent
                     .Role("Host")
-                    .UseDraft(new AgentDescription
+                    .UseDraft(new AgentTemplateDefinition
                     {
                         Id = Guid.NewGuid(),
                         AgentName = "Host",
@@ -127,7 +127,7 @@ public sealed class WorkflowDefinitionBuilderTests
                 .New("demo", "Demo Workflow")
                 .Agent("host", agent => agent
                     .Role("Host")
-                    .UseDraft(new AgentDescription
+                    .UseDraft(new AgentTemplateDefinition
                     {
                         Id = Guid.NewGuid(),
                         AgentName = "Host",
@@ -136,7 +136,7 @@ public sealed class WorkflowDefinitionBuilderTests
                     }))
                 .Agent("guest", agent => agent
                     .Role("Guest")
-                    .UseDraft(new AgentDescription
+                    .UseDraft(new AgentTemplateDefinition
                     {
                         Id = Guid.NewGuid(),
                         AgentName = "Guest",

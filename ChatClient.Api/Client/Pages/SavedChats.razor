@@ -1,7 +1,6 @@
 @page "/saved-chats"
 @using ChatClient.Domain.Models
 @using ChatClient.Application.Services
-@using Microsoft.Extensions.AI
 @using MudBlazor
 @inject ISavedChatService SavedChatService
 @inject NavigationManager NavigationManager
@@ -43,7 +42,7 @@
                 <RowTemplate>
                     <MudTd>@context.Title</MudTd>
                     <MudTd>@context.SavedAt.ToString("g")</MudTd>
-                    <MudTd>@string.Join(", ", context.Participants.Where(p => p.Role == ChatRole.Assistant).Select(p => p.Name))</MudTd>
+                    <MudTd>@string.Join(", ", context.Participants.Where(p => p.Role == AppChatRole.Assistant).Select(p => p.Name))</MudTd>
                     <MudTd Class="text-right">
                         <MudIconButton Icon="@Icons.Material.Filled.OpenInNew" Size="Size.Small" OnClick="@(() => OpenChat(context))" />
                         <MudIconButton Icon="@Icons.Material.Filled.Delete" Size="Size.Small" Color="Color.Error" OnClick="@(() => DeleteChat(context))" />
@@ -86,7 +85,7 @@
 
     private void OpenChat(SavedChat chat)
     {
-        var assistantCount = chat.Participants.Count(p => p.Role == ChatRole.Assistant);
+        var assistantCount = chat.Participants.Count(p => p.Role == AppChatRole.Assistant);
         var url = assistantCount > 1 ? $"/multi-agent-chat?saved={chat.Id}" : $"/chat?saved={chat.Id}";
         NavigationManager.NavigateTo(url);
     }

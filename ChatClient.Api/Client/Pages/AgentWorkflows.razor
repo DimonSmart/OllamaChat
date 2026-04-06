@@ -12,7 +12,6 @@
 @using ChatClient.Application.Services.Agentic
 @using ChatClient.Domain.Models
 @using Microsoft.AspNetCore.Components
-@using Microsoft.Extensions.AI
 @using Microsoft.JSInterop
 @using MudBlazor
 @inject IWorkflowDefinitionCompiler WorkflowCompiler
@@ -455,7 +454,7 @@
 
                     <AgenticChatSession @ref="chatSessionView"
                                         Messages="WorkflowChatViewModelService.Messages"
-                                        Agents="WorkflowSessionService.AgentDescriptions"
+                                        Agents="WorkflowSessionService.Agents"
                                         IsLlmAnswering="isLlmAnswering"
                                         UserName="userSettings.UserName"
                                         IsMultiAgent="true"
@@ -691,7 +690,7 @@
             }
 
             var runtimeAgents = currentWorkflow.Agents
-                .Select(agent => AgentDescriptionFactory.CreateResolved(GetRequiredAgentDraft(agent), model))
+                .Select(agent => ResolvedChatAgentFactory.Resolve(GetRequiredAgentDraft(agent), model))
                 .ToList();
 
             var startInputs = BuildStartInputs();
@@ -1010,24 +1009,24 @@
         }
 
         var title = result.Data as string ?? string.Empty;
-        var participants = WorkflowSessionService.AgentDescriptions
-            .Select(agent => new SavedChatParticipant(agent.AgentId, agent.AgentName, ChatRole.Assistant))
+        var participants = WorkflowSessionService.Agents
+            .Select(agent => new SavedChatParticipant(agent.AgentId, agent.AgentName, AppChatRole.Assistant))
             .ToList();
-        participants.Add(new SavedChatParticipant(userSettings.UserName.ToLowerInvariant(), userSettings.UserName, ChatRole.User));
+        participants.Add(new SavedChatParticipant(userSettings.UserName.ToLowerInvariant(), userSettings.UserName, AppChatRole.User));
 
-        var agentsById = WorkflowSessionService.AgentDescriptions
+        var agentsById = WorkflowSessionService.Agents
             .ToDictionary(agent => agent.AgentId, StringComparer.OrdinalIgnoreCase);
 
         var messages = WorkflowSessionService.Messages
-            .Where(message => !message.IsStreaming && !message.IsCanceled && message.Role != ChatRole.System)
+            .Where(message => !message.IsStreaming && !message.IsCanceled && message.Role != AppChatRole.System)
             .Where(message => !string.IsNullOrWhiteSpace(message.Content) || message.Files.Count > 0)
             .Select(message => new SavedChatMessage(
                 message.Id,
                 message.Content,
                 message.MsgDateTime,
                 message.Role,
-                message.Role == ChatRole.Assistant ? message.AgentId : null,
-                message.Role == ChatRole.Assistant &&
+                message.Role == AppChatRole.Assistant ? message.AgentId : null,
+                message.Role == AppChatRole.Assistant &&
                 !string.IsNullOrWhiteSpace(message.AgentId) &&
                 agentsById.TryGetValue(message.AgentId, out var agent)
                     ? agent.AgentName
@@ -1191,7 +1190,7 @@
     private static string GetConcurrentAggregationLabel(ConcurrentWorkflowDefinition workflow)
         => workflow.Aggregation.Kind.ToString();
 
-    private static AgentDescription GetRequiredAgentDraft(AgentWorkflowAgentDefinition agent) =>
+    private static AgentTemplateDefinition GetRequiredAgentDraft(AgentWorkflowAgentDefinition agent) =>
         agent.AgentDraft ?? throw new InvalidOperationException(
             $"Workflow agent '{agent.Id}' was not materialized.");
 

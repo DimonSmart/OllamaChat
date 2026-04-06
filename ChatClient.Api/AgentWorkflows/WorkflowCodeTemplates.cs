@@ -11,14 +11,14 @@ public static class WorkflowCodeTemplates
                 .Role("Entry point")
                 .Summary("Handles the initial request and routes the next step when needed.")
                 .UseDraft(
-                    AgentDefinitionBuilder
+                    AgentTemplateBuilder
                         .New("New Workflow Triage", "triage")
                         .WithInstructions("""
                             Replace this scaffold with the real workflow instructions.
                             Keep the response focused on the workflow's entry step.
                             """)
                         .AutoSelectTools(0)
-                        .BuildDescription()))
+                        .Build()))
             .UseHandoff(handoff => handoff
                 .StartWith("triage"))
             .Build();

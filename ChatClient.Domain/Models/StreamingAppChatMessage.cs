@@ -1,4 +1,3 @@
-using Microsoft.Extensions.AI;
 using System.Collections.Generic;
 using System.Text;
 
@@ -7,7 +6,7 @@ namespace ChatClient.Domain.Models;
 public class StreamingAppChatMessage(
     string initialContent,
     DateTime msgDateTime,
-    ChatRole role,
+    AppChatRole role,
     List<FunctionCallRecord>? functionCalls = null,
     string? agentId = null,
     string? agentName = null) : IAppChatMessage
@@ -15,7 +14,7 @@ public class StreamingAppChatMessage(
     private readonly StringBuilder _contentBuilder = new(initialContent);
     public string Content => _contentBuilder.ToString();
     public DateTime MsgDateTime { get; private set; } = msgDateTime;
-    public ChatRole Role { get; private set; } = role;
+    public AppChatRole Role { get; private set; } = role;
     public string? Statistics { get; private set; } = string.Empty;
     public bool IsCanceled { get; private set; }
     public IReadOnlyList<AppChatMessageFile> Files { get; private set; } = [];

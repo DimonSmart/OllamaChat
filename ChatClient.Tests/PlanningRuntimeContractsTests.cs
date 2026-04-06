@@ -808,8 +808,8 @@ public class PlanningRuntimeContractsTests
 
         var exception = await Assert.ThrowsAsync<InvalidOperationException>(() => service.StartAsync(new PlanningRunRequest
         {
-            Planner = AgentDescriptionFactory.CreateResolved(
-                new AgentDescription
+            Planner = ResolvedChatAgentFactory.Resolve(
+                new AgentTemplateDefinition
                 {
                     AgentName = "Planner"
                 },
@@ -2713,26 +2713,22 @@ public class PlanningRuntimeContractsTests
 
     private static PlanningSessionService CreateSessionService()
     {
-        var chatClientFactory = new Mock<ILlmChatClientFactory>();
         var appToolCatalog = new Mock<IAppToolCatalog>();
-        var mcpUserInteractionService = new Mock<IMcpUserInteractionService>();
-        var agenticExecutionInvoker = new Mock<IAgenticExecutionInvoker>();
+        var planningRunExecutor = new Mock<IPlanningRunExecutor>();
         appToolCatalog
             .Setup(catalog => catalog.ListToolsAsync(It.IsAny<McpClientRequestContext?>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(Array.Empty<AppToolDescriptor>());
 
         return new PlanningSessionService(
-            chatClientFactory.Object,
             appToolCatalog.Object,
-            mcpUserInteractionService.Object,
-            agenticExecutionInvoker.Object,
+            planningRunExecutor.Object,
             NullLogger<PlanningSessionService>.Instance);
     }
 
     private static PlanningCallableAgentDescriptor CreateCallableAgentDescriptor(string name, string displayName)
     {
         var serverId = Guid.NewGuid();
-        var agent = new AgentDescription
+        var agent = new AgentTemplateDefinition
         {
             Id = Guid.NewGuid(),
             AgentName = displayName,
@@ -2747,7 +2743,7 @@ public class PlanningRuntimeContractsTests
             Name = name,
             DisplayName = displayName,
             Description = $"Callable agent {displayName}",
-            Agent = AgentDescriptionFactory.CreateResolved(agent, new ServerModel(serverId, "model-a"))
+            Agent = ResolvedChatAgentFactory.Resolve(agent, new ServerModel(serverId, "model-a"))
         };
     }
 

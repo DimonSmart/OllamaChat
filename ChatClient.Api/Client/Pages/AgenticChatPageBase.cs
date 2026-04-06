@@ -7,7 +7,6 @@ using ChatClient.Application.Services;
 using ChatClient.Application.Services.Agentic;
 using ChatClient.Domain.Models;
 using Microsoft.AspNetCore.Components;
-using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Logging;
 using Microsoft.JSInterop;
 using MudBlazor;
@@ -42,7 +41,7 @@ public abstract class AgenticChatPageBase : ComponentBase, IAsyncDisposable
     protected IChatEngineSessionService ChatService { get; set; } = null!;
 
     [Inject]
-    protected IAgentDescriptionService AgentService { get; set; } = null!;
+    protected IAgentTemplateService AgentService { get; set; } = null!;
 
     [Inject]
     protected IUserSettingsService UserSettingsService { get; set; } = null!;
@@ -164,23 +163,23 @@ public abstract class AgenticChatPageBase : ComponentBase, IAsyncDisposable
 
         var title = result.Data as string ?? string.Empty;
 
-        var participants = ChatService.AgentDescriptions
-            .Select(agent => new SavedChatParticipant(agent.AgentId, agent.AgentName, ChatRole.Assistant))
+        var participants = ChatService.Agents
+            .Select(agent => new SavedChatParticipant(agent.AgentId, agent.AgentName, AppChatRole.Assistant))
             .ToList();
-        participants.Add(new SavedChatParticipant(userSettings.UserName.ToLowerInvariant(), userSettings.UserName, ChatRole.User));
+        participants.Add(new SavedChatParticipant(userSettings.UserName.ToLowerInvariant(), userSettings.UserName, AppChatRole.User));
 
-        var agentsById = ChatService.AgentDescriptions.ToDictionary(agent => agent.AgentId, StringComparer.OrdinalIgnoreCase);
+        var agentsById = ChatService.Agents.ToDictionary(agent => agent.AgentId, StringComparer.OrdinalIgnoreCase);
 
         var messages = ChatService.Messages
-            .Where(message => !message.IsStreaming && !message.IsCanceled && message.Role != ChatRole.System)
+            .Where(message => !message.IsStreaming && !message.IsCanceled && message.Role != AppChatRole.System)
             .Where(message => !string.IsNullOrWhiteSpace(message.Content) || message.Files.Count > 0)
             .Select(message => new SavedChatMessage(
                 message.Id,
                 message.Content,
                 message.MsgDateTime,
                 message.Role,
-                message.Role == ChatRole.Assistant ? message.AgentId : null,
-                message.Role == ChatRole.Assistant &&
+                message.Role == AppChatRole.Assistant ? message.AgentId : null,
+                message.Role == AppChatRole.Assistant &&
                 !string.IsNullOrWhiteSpace(message.AgentId) &&
                 agentsById.TryGetValue(message.AgentId, out var agent)
                     ? agent.AgentName

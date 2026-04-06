@@ -1,5 +1,6 @@
 using ChatClient.Api.AgentWorkflows;
 using ChatClient.Application.Services;
+using ChatClient.Application.Services.Agentic;
 using ChatClient.Domain.Models;
 
 namespace ChatClient.Tests;
@@ -9,7 +10,7 @@ public sealed class WorkflowAgentDraftMaterializerTests
     [Fact]
     public async Task MaterializeAsync_LoadsSavedAgentTemplateAndAppliesOverrides()
     {
-        var savedAgent = new AgentDescription
+        var savedAgent = new AgentTemplateDefinition
         {
             Id = Guid.NewGuid(),
             AgentName = "Saved Technical Agent",
@@ -31,7 +32,7 @@ public sealed class WorkflowAgentDraftMaterializerTests
                 .StartWith("technical"))
             .Build();
 
-        var materializer = new WorkflowAgentDraftMaterializer(new StubAgentDescriptionService([savedAgent]));
+        var materializer = new WorkflowAgentDraftMaterializer(new StubAgentTemplateService([savedAgent]));
 
         var materialized = await materializer.MaterializeAsync(workflow);
 
@@ -40,6 +41,9 @@ public sealed class WorkflowAgentDraftMaterializerTests
         Assert.Equal("Override name", technical.AgentDraft!.AgentName);
         Assert.Equal("TA", technical.AgentDraft.AvatarText);
         Assert.Equal("Override prompt", technical.AgentDraft.Content);
+        Assert.Equal(savedAgent.Id, technical.AgentDraft.Id);
+        Assert.Equal("technical", technical.AgentDraft.RuntimeAgentId);
+        Assert.Equal("technical", technical.AgentDraft.AgentId);
         Assert.Equal("technical", technical.AgentDraft.ShortName);
         Assert.Equal("Runs technical interviews from the saved-agent catalog.", technical.Summary);
         Assert.Equal(AgentWorkflowExecutionMode.Autonomous, materialized.Execution.Mode);
@@ -51,8 +55,8 @@ public sealed class WorkflowAgentDraftMaterializerTests
     {
         var savedAgents = new[]
         {
-            new AgentDescription { Id = Guid.NewGuid(), AgentName = "Duplicate Agent", Content = "First" },
-            new AgentDescription { Id = Guid.NewGuid(), AgentName = "Duplicate Agent", Content = "Second" }
+            new AgentTemplateDefinition { Id = Guid.NewGuid(), AgentName = "Duplicate Agent", Content = "First" },
+            new AgentTemplateDefinition { Id = Guid.NewGuid(), AgentName = "Duplicate Agent", Content = "Second" }
         };
 
         var workflow = WorkflowDefinitionBuilder
@@ -63,7 +67,7 @@ public sealed class WorkflowAgentDraftMaterializerTests
                 .StartWith("technical"))
             .Build();
 
-        var materializer = new WorkflowAgentDraftMaterializer(new StubAgentDescriptionService(savedAgents));
+        var materializer = new WorkflowAgentDraftMaterializer(new StubAgentTemplateService(savedAgents));
 
         var exception = await Assert.ThrowsAsync<InvalidOperationException>(() =>
             materializer.MaterializeAsync(workflow));
@@ -74,7 +78,7 @@ public sealed class WorkflowAgentDraftMaterializerTests
     [Fact]
     public async Task MaterializeAsync_AppendsSavedAgentInstructionsWhenRequested()
     {
-        var savedAgent = new AgentDescription
+        var savedAgent = new AgentTemplateDefinition
         {
             Id = Guid.NewGuid(),
             AgentName = "Saved Technical Agent",
@@ -93,7 +97,7 @@ public sealed class WorkflowAgentDraftMaterializerTests
                 .StartWith("technical"))
             .Build();
 
-        var materializer = new WorkflowAgentDraftMaterializer(new StubAgentDescriptionService([savedAgent]));
+        var materializer = new WorkflowAgentDraftMaterializer(new StubAgentTemplateService([savedAgent]));
 
         var materialized = await materializer.MaterializeAsync(workflow);
 
@@ -104,7 +108,7 @@ public sealed class WorkflowAgentDraftMaterializerTests
     [Fact]
     public async Task MaterializeAsync_PreservesExplicitWorkflowSummaryOverSavedAgentSummary()
     {
-        var savedAgent = new AgentDescription
+        var savedAgent = new AgentTemplateDefinition
         {
             Id = Guid.NewGuid(),
             AgentName = "Saved Technical Agent",
@@ -123,7 +127,7 @@ public sealed class WorkflowAgentDraftMaterializerTests
                 .StartWith("technical"))
             .Build();
 
-        var materializer = new WorkflowAgentDraftMaterializer(new StubAgentDescriptionService([savedAgent]));
+        var materializer = new WorkflowAgentDraftMaterializer(new StubAgentTemplateService([savedAgent]));
 
         var materialized = await materializer.MaterializeAsync(workflow);
 
@@ -141,7 +145,7 @@ public sealed class WorkflowAgentDraftMaterializerTests
             .Agent("host", agent => agent
                 .Role("Host")
                 .OverrideAvatarText("H")
-                .UseDraft(new AgentDescription
+                .UseDraft(new AgentTemplateDefinition
                 {
                     Id = Guid.NewGuid(),
                     AgentName = "Host",
@@ -150,7 +154,7 @@ public sealed class WorkflowAgentDraftMaterializerTests
                 }))
             .Agent("guest", agent => agent
                 .Role("Guest")
-                .UseDraft(new AgentDescription
+                .UseDraft(new AgentTemplateDefinition
                 {
                     Id = Guid.NewGuid(),
                     AgentName = "Guest",
@@ -164,7 +168,7 @@ public sealed class WorkflowAgentDraftMaterializerTests
                     .Program(GroupChatManagerPrograms.RoundRobin())))
             .Build();
 
-        var materializer = new WorkflowAgentDraftMaterializer(new StubAgentDescriptionService([]));
+        var materializer = new WorkflowAgentDraftMaterializer(new StubAgentTemplateService([]));
 
         var materialized = await materializer.MaterializeAsync(workflow);
 
@@ -176,6 +180,7 @@ public sealed class WorkflowAgentDraftMaterializerTests
         Assert.NotNull(groupChat.Manager.Program);
         Assert.Equal("RoundRobin", groupChat.Manager.ProgramDisplayName);
         Assert.All(groupChat.Agents, static agent => Assert.NotNull(agent.AgentDraft));
+        Assert.All(groupChat.Agents, static agent => Assert.Equal(agent.Id, agent.AgentDraft!.RuntimeAgentId));
         Assert.All(groupChat.Agents, static agent => Assert.Equal(agent.Id, agent.AgentDraft!.ShortName));
         Assert.Equal("H", groupChat.Agents[0].AgentDraft!.AvatarText);
     }
@@ -185,14 +190,14 @@ public sealed class WorkflowAgentDraftMaterializerTests
     {
         var savedAgents = new[]
         {
-            new AgentDescription
+            new AgentTemplateDefinition
             {
                 Id = Guid.NewGuid(),
                 AgentName = "Immanuel Kant",
                 ShortName = "kant",
                 Content = "Kant prompt"
             },
-            new AgentDescription
+            new AgentTemplateDefinition
             {
                 Id = Guid.NewGuid(),
                 AgentName = "Friedrich Nietzsche",
@@ -205,7 +210,7 @@ public sealed class WorkflowAgentDraftMaterializerTests
             .New("debate", "Debate")
             .Agent("host", agent => agent
                 .Role("Host")
-                .UseDraft(new AgentDescription
+                .UseDraft(new AgentTemplateDefinition
                 {
                     Id = Guid.NewGuid(),
                     AgentName = "Debate Host",
@@ -223,7 +228,7 @@ public sealed class WorkflowAgentDraftMaterializerTests
                 .UseRoundRobinManager())
             .Build();
 
-        var materializer = new WorkflowAgentDraftMaterializer(new StubAgentDescriptionService(savedAgents));
+        var materializer = new WorkflowAgentDraftMaterializer(new StubAgentTemplateService(savedAgents));
 
         var materialized = await materializer.MaterializeAsync(workflow);
         var groupChat = Assert.IsType<GroupChatWorkflowDefinition>(materialized);
@@ -233,22 +238,24 @@ public sealed class WorkflowAgentDraftMaterializerTests
 
         Assert.Equal("Invite Immanuel Kant and Friedrich Nietzsche.", host.AgentDraft!.Content);
         Assert.Equal("Immanuel Kant", debaterA.AgentDraft!.AgentName);
+        Assert.Equal("debater_a", debaterA.AgentDraft.RuntimeAgentId);
         Assert.Equal("debater_a", debaterA.AgentDraft.ShortName);
         Assert.Equal("Friedrich Nietzsche", debaterB.AgentDraft!.AgentName);
+        Assert.Equal("debater_b", debaterB.AgentDraft.RuntimeAgentId);
         Assert.Equal("debater_b", debaterB.AgentDraft.ShortName);
     }
 
-    private sealed class StubAgentDescriptionService(
-        IReadOnlyCollection<AgentDescription> agents) : IAgentDescriptionService
+    private sealed class StubAgentTemplateService(
+        IReadOnlyCollection<AgentTemplateDefinition> agents) : IAgentTemplateService
     {
-        public Task<IReadOnlyCollection<AgentDescription>> GetAllAsync() => Task.FromResult(agents);
+        public Task<IReadOnlyCollection<AgentTemplateDefinition>> GetAllAsync() => Task.FromResult(agents);
 
-        public Task<AgentDescription?> GetByIdAsync(Guid agentId) =>
+        public Task<AgentTemplateDefinition?> GetByIdAsync(Guid agentId) =>
             Task.FromResult(agents.FirstOrDefault(agent => agent.Id == agentId));
 
-        public Task CreateAsync(AgentDescription agentDescription) => throw new NotSupportedException();
+        public Task CreateAsync(AgentTemplateDefinition agentDescription) => throw new NotSupportedException();
 
-        public Task UpdateAsync(AgentDescription agentDescription) => throw new NotSupportedException();
+        public Task UpdateAsync(AgentTemplateDefinition agentDescription) => throw new NotSupportedException();
 
         public Task DeleteAsync(Guid agentId) => throw new NotSupportedException();
     }

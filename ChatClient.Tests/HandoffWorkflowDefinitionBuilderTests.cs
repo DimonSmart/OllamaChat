@@ -149,10 +149,10 @@ public sealed class HandoffWorkflowDefinitionBuilderTests
         Assert.Equal("Saved Router", agent.Role);
     }
 
-    private static Domain.Models.AgentDescription CreateDraft(string name, string shortName) =>
-        AgentDefinitionBuilder
+    private static Domain.Models.AgentTemplateDefinition CreateDraft(string name, string shortName) =>
+        AgentTemplateBuilder
             .New(name, shortName)
             .WithInstructions("Test instructions.")
             .AutoSelectTools(0)
-            .BuildDescription();
+            .Build();
 }

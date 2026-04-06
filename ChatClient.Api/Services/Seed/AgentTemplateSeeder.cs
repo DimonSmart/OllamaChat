@@ -5,16 +5,16 @@ using System.Text.Json;
 
 namespace ChatClient.Api.Services.Seed;
 
-public class AgentDescriptionSeeder(
-    IAgentDescriptionRepository repository,
+public class AgentTemplateSeeder(
+    IAgentTemplateRepository repository,
     IConfiguration configuration,
     IHostEnvironment environment,
-    ILogger<AgentDescriptionSeeder> logger)
+    ILogger<AgentTemplateSeeder> logger)
 {
-    private readonly IAgentDescriptionRepository _repository = repository;
+    private readonly IAgentTemplateRepository _repository = repository;
     private readonly IConfiguration _configuration = configuration;
     private readonly IHostEnvironment _environment = environment;
-    private readonly ILogger<AgentDescriptionSeeder> _logger = logger;
+    private readonly ILogger<AgentTemplateSeeder> _logger = logger;
 
     public async Task SeedAsync()
     {
@@ -25,15 +25,15 @@ public class AgentDescriptionSeeder(
         var seedPath = StoragePathResolver.ResolveSeedPath(
             _configuration,
             _environment.ContentRootPath,
-            _configuration["AgentDescriptions:SeedFilePath"],
-            "agent_descriptions.json");
+            _configuration["AgentTemplates:SeedFilePath"],
+            "agent_templates.json");
 
         if (File.Exists(seedPath))
         {
             try
             {
                 var json = await File.ReadAllTextAsync(seedPath);
-                var seeded = JsonSerializer.Deserialize<List<AgentDescription>>(json, new JsonSerializerOptions(JsonSerializerDefaults.Web));
+                var seeded = JsonSerializer.Deserialize<List<AgentTemplateDefinition>>(json, new JsonSerializerOptions(JsonSerializerDefaults.Web));
                 if (seeded is { Count: > 0 })
                 {
                     await _repository.SaveAllAsync(seeded);
@@ -42,11 +42,11 @@ public class AgentDescriptionSeeder(
             }
             catch (Exception ex)
             {
-                _logger.LogWarning(ex, "Failed to seed agent descriptions from {SeedPath}", seedPath);
+                _logger.LogWarning(ex, "Failed to seed agent templates from {SeedPath}", seedPath);
             }
         }
 
-        var fallbackAgents = new List<AgentDescription>
+        var fallbackAgents = new List<AgentTemplateDefinition>
         {
             new()
             {

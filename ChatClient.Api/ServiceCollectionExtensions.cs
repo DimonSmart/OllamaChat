@@ -11,7 +11,9 @@ using ChatClient.Api.Services.Seed;
 using ChatClient.Application.Services.Agentic;
 using ChatClient.Application.Repositories;
 using ChatClient.Application.Services;
+using ChatClient.Application.Services.TaskSessions;
 using ChatClient.Infrastructure.Repositories;
+using ChatClient.Infrastructure.Services.TaskSessions;
 using Microsoft.AspNetCore.Components.Server.Circuits;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -71,12 +73,14 @@ public static class ServiceCollectionExtensions
 
     private static IServiceCollection AddPersistenceServices(this IServiceCollection services)
     {
-        services.AddSingleton<IAgentDescriptionRepository, AgentDescriptionRepository>();
+        services.AddSingleton<IAgentTemplateRepository, AgentTemplateRepository>();
         services.AddSingleton<IWorkflowDefinitionRepository, WorkflowDefinitionRepository>();
         services.AddSingleton<ILlmServerConfigRepository, LlmServerConfigRepository>();
         services.AddSingleton<IMcpServerConfigRepository, McpServerConfigRepository>();
         services.AddSingleton<IUserSettingsRepository, UserSettingsRepository>();
-        services.AddSingleton<IAgentDescriptionService, AgentDescriptionService>();
+        services.AddSingleton<ITaskSessionRepository, SqliteTaskSessionRepository>();
+        services.AddSingleton<IWorkflowExecutionPolicy, WorkflowExecutionPolicy>();
+        services.AddSingleton<IAgentTemplateService, AgentTemplateService>();
         services.AddSingleton<IWorkflowDefinitionService, WorkflowDefinitionService>();
         services.AddSingleton<ISavedChatRepository, SavedChatRepository>();
         services.AddSingleton<IUserSettingsService, UserSettingsService>();
@@ -108,6 +112,10 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IAgenticRagContextService, AgenticRagContextService>();
         services.AddScoped<AgenticChatEngineHistoryBuilder>();
         services.AddScoped<AgenticChatEngineStreamingBridge>();
+        services.AddScoped<OrchestrationWorkflowSessionBootstrapper>();
+        services.AddScoped<OrchestrationWorkflowTurnCoordinator>();
+        services.AddScoped<OrchestrationWorkflowEventStreamProcessor>();
+        services.AddScoped<OrchestrationWorkflowPassExecutor>();
         services.AddScoped<IOrchestrationWorkflowSessionService, OrchestrationWorkflowChatSessionService>();
         services.AddScoped<IOrchestrationWorkflowChatViewModelService, OrchestrationWorkflowChatViewModelService>();
         services.AddScoped<IChatEngineOrchestrator>(sp => sp.GetRequiredService<AgenticChatEngineOrchestrator>());
@@ -117,6 +125,7 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IChatEngineSessionService>(sp => sp.GetRequiredService<AgenticChatEngineSessionService>());
         services.AddScoped<IAgenticChatViewModelService, AgenticChatViewModelService>();
         services.AddScoped<ILlmChatClientFactory, PlanningChatClientFactory>();
+        services.AddScoped<IPlanningRunExecutor, PlanningRunExecutor>();
         services.AddScoped<IPlanningSessionService, PlanningSessionService>();
 
         return services;
@@ -124,7 +133,7 @@ public static class ServiceCollectionExtensions
 
     private static IServiceCollection AddSeeders(this IServiceCollection services)
     {
-        services.AddSingleton<AgentDescriptionSeeder>();
+        services.AddSingleton<AgentTemplateSeeder>();
         services.AddSingleton<WorkflowDefinitionSeeder>();
         services.AddSingleton<LlmServerConfigSeeder>();
         services.AddSingleton<McpServerConfigSeeder>();

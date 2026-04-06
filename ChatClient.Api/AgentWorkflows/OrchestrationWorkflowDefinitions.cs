@@ -1,3 +1,4 @@
+using ChatClient.Application.Services.Agentic;
 using ChatClient.Domain.Models;
 using System.Text.Json.Serialization;
 
