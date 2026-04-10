@@ -95,6 +95,16 @@
     color: var(--mud-palette-text-secondary);
 }
 
+.chat-message-action {
+    margin-left: 0.15rem;
+    color: var(--mud-palette-text-secondary) !important;
+    vertical-align: middle;
+}
+
+.chat-message-action.mud-icon-button {
+    padding: 0.15rem;
+}
+
 .chat-avatar {
     width: 2.5rem;
     height: 2.5rem;

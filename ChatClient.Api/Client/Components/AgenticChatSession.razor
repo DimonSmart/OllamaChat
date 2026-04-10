@@ -40,11 +40,26 @@
             <MudChat Dense="true" ChatPosition="@(message.Role == AppChatRole.Assistant ? ChatBubblePosition.Start : ChatBubblePosition.End)" @key="@($"{messageIndex}_{message.Id}")">
                 <MudChatHeader>
                     <time>@message.MsgDateTime.ToString("g")</time>
-                    <span class="copy-button" title="Copy answer" @onclick="@(() => OnCopyVisibleMessage.InvokeAsync(message))">рџ“‹</span>
-                    <span class="copy-button" title="Copy raw" @onclick="@(() => OnCopyRawMessage.InvokeAsync(message))">рџљЄ</span>
+                    <MudTooltip Text="Copy answer">
+                        <MudIconButton Icon="@Icons.Material.Filled.ContentCopy"
+                                       Size="Size.Small"
+                                       Class="chat-message-action"
+                                       OnClick="@(() => OnCopyVisibleMessage.InvokeAsync(message))" />
+                    </MudTooltip>
+                    <MudTooltip Text="Copy raw text">
+                        <MudIconButton Icon="@Icons.Material.Filled.Description"
+                                       Size="Size.Small"
+                                       Class="chat-message-action"
+                                       OnClick="@(() => OnCopyRawMessage.InvokeAsync(message))" />
+                    </MudTooltip>
                     @if (!IsLlmAnswering)
                     {
-                        <span class="delete-button" title="Delete" @onclick="@(() => OnDeleteMessage.InvokeAsync(message))">рџ—‘</span>
+                        <MudTooltip Text="Delete">
+                            <MudIconButton Icon="@Icons.Material.Filled.Delete"
+                                           Size="Size.Small"
+                                           Class="chat-message-action"
+                                           OnClick="@(() => OnDeleteMessage.InvokeAsync(message))" />
+                        </MudTooltip>
                     }
                 </MudChatHeader>
 

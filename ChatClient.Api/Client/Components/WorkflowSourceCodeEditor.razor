@@ -2,21 +2,40 @@
 
 <div class="@BuildRootCssClass()"
      style="@($"--workflow-source-code-editor-min-lines:{EffectiveMinLines};")">
-    <pre class="workflow-source-code-editor__highlight"
-         aria-hidden="true">@((MarkupString)WorkflowSourceCodeSyntaxHighlighter.ToHighlightedHtml(CurrentValue))</pre>
-
-    <textarea class="workflow-source-code-editor__input"
-              aria-label="Workflow source code"
-              autocapitalize="off"
-              autocomplete="off"
-              autocorrect="off"
-              disabled="@Disabled"
-              spellcheck="false"
-              value="@CurrentValue"
-              @oninput="OnInputAsync"></textarea>
+    @if (IsEditing)
+    {
+        <textarea class="workflow-source-code-editor__input"
+                  aria-label="Workflow source code"
+                  autocapitalize="off"
+                  autocomplete="off"
+                  autocorrect="off"
+                  disabled="@Disabled"
+                  spellcheck="false"
+                  value="@CurrentValue"
+                  @ref="inputElement"
+                  @oninput="OnInputAsync"
+                  @onblur="OnBlur"></textarea>
+    }
+    else
+    {
+        <div class="@BuildPreviewCssClass()"
+             aria-label="Workflow source code preview"
+             aria-disabled="@Disabled"
+             role="@BuildPreviewRole()"
+             tabindex="@BuildPreviewTabIndex()"
+             @onclick="BeginEditing"
+             @onkeydown="OnPreviewKeyDown">
+            <pre class="workflow-source-code-editor__highlight"
+                 aria-hidden="true">@((MarkupString)WorkflowSourceCodeSyntaxHighlighter.ToHighlightedHtml(CurrentValue))</pre>
+        </div>
+    }
 </div>
 
 @code {
+    private ElementReference inputElement;
+    private bool isEditing;
+    private bool focusEditorAfterRender;
+
     [Parameter]
     public string Value { get; set; } = string.Empty;
 
@@ -33,13 +52,75 @@
 
     private int EffectiveMinLines => Math.Max(1, MinLines);
 
+    private bool IsEditing => isEditing && !Disabled;
+
     private string BuildRootCssClass() =>
         Disabled
             ? "workflow-source-code-editor workflow-source-code-editor--disabled"
             : "workflow-source-code-editor";
 
+    private string BuildPreviewCssClass() =>
+        Disabled
+            ? "workflow-source-code-editor__preview workflow-source-code-editor__preview--disabled"
+            : "workflow-source-code-editor__preview";
+
+    private string? BuildPreviewRole() => Disabled ? null : "button";
+
+    private int BuildPreviewTabIndex() => Disabled ? -1 : 0;
+
     private Task OnInputAsync(ChangeEventArgs args)
     {
         return ValueChanged.InvokeAsync(args.Value?.ToString() ?? string.Empty);
+    }
+
+    protected override void OnParametersSet()
+    {
+        if (Disabled)
+        {
+            isEditing = false;
+            focusEditorAfterRender = false;
+        }
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!focusEditorAfterRender)
+        {
+            return;
+        }
+
+        focusEditorAfterRender = false;
+        await inputElement.FocusAsync();
+    }
+
+    private void BeginEditing()
+    {
+        if (Disabled || isEditing)
+        {
+            return;
+        }
+
+        isEditing = true;
+        focusEditorAfterRender = true;
+    }
+
+    private void OnBlur(FocusEventArgs _)
+    {
+        isEditing = false;
+    }
+
+    private void OnPreviewKeyDown(KeyboardEventArgs args)
+    {
+        if (Disabled)
+        {
+            return;
+        }
+
+        if (string.Equals(args.Key, "Enter", StringComparison.Ordinal)
+            || string.Equals(args.Key, " ", StringComparison.Ordinal)
+            || string.Equals(args.Key, "Spacebar", StringComparison.Ordinal))
+        {
+            BeginEditing();
+        }
     }
 }

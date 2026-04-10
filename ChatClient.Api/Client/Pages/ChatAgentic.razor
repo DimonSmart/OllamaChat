@@ -84,6 +84,8 @@
 </OllamaCheck>
 
 @code {
+    private const string DefaultAgentName = "Default Assistant";
+
     private List<AgentTemplateDefinition> agents = new();
     private AgentTemplateDefinition? selectedAgent { get; set; }
     private AgentTemplateDefinition? selectedAgentDraft;
@@ -103,8 +105,7 @@
     protected override async Task LoadAgentsAsync()
     {
         agents = (await AgentService.GetAllAsync()).ToList();
-        selectedAgent = null;
-        selectedAgentDraft = null;
+        SetSelectedAgent(AgentSelectionHelper.FindByName(agents, DefaultAgentName));
     }
 
     protected override async Task LoadUserSettingsAsync()
@@ -136,18 +137,22 @@
             return;
         }
 
-        selectedAgent = agentsForChat[0];
-        selectedAgentDraft = selectedAgent.Clone();
-        if (!TryResolveEffectiveModel(selectedAgentDraft, out var resolvedModel))
-            throw new InvalidOperationException($"Model selection for Agent: {selectedAgentDraft.AgentName} is incomplete.");
+        SetSelectedAgent(agentsForChat[0]);
+        var selectedAgentForChat = selectedAgent
+            ?? throw new InvalidOperationException("Selected agent is not initialized.");
+        var selectedAgentDraftForChat = selectedAgentDraft
+            ?? throw new InvalidOperationException("Selected agent draft is not initialized.");
+
+        if (!TryResolveEffectiveModel(selectedAgentDraftForChat, out var resolvedModel))
+            throw new InvalidOperationException($"Model selection for Agent: {selectedAgentDraftForChat.AgentName} is incomplete.");
 
         effectiveModel = resolvedModel;
 
         var runtimeAgents = agentsForChat
             .Select(agent =>
             {
-                var template = agent.Id == selectedAgent.Id
-                    ? selectedAgentDraft
+                var template = agent.Id == selectedAgentForChat.Id
+                    ? selectedAgentDraftForChat
                     : agent;
                 var model = new ServerModel(template.LlmId!.Value, template.ModelName!);
                 return ResolvedChatAgentFactory.Resolve(template, model);
@@ -229,9 +234,14 @@
 
     private Task OnAgentChanged(AgentTemplateDefinition? agent)
     {
-        selectedAgent = agent;
-        selectedAgentDraft = agent is null ? null : agent.Clone();
+        SetSelectedAgent(agent);
         return Task.CompletedTask;
+    }
+
+    private void SetSelectedAgent(AgentTemplateDefinition? agent)
+    {
+        selectedAgent = agent;
+        selectedAgentDraft = agent?.Clone();
     }
 
     private Task OnDraftMcpBindingsChanged(List<McpServerSessionBinding> bindings)
