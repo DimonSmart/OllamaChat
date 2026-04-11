@@ -3,6 +3,7 @@ using ChatClient.Api.Diagnostics;
 using ChatClient.Api.Services;
 using ChatClient.Api.Services.BuiltIn;
 using ChatClient.Api.Startup;
+using ChatClient.Api.VoiceInput;
 using ChatClient.Application.Services.Agentic;
 using Serilog;
 using Serilog.Events;
@@ -76,6 +77,7 @@ try
 
     app.UseRouting();
 
+    app.MapVoiceInputEndpoints();
     app.MapRazorPages();
     app.MapBlazorHub();
     app.MapFallbackToPage("/_Host");

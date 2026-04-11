@@ -1,10 +1,14 @@
-﻿@using Microsoft.AspNetCore.Components.Web
-@using Microsoft.AspNetCore.Components.Forms
 @using ChatClient.Api.Client.Services
 @using ChatClient.Application.Services
 @using ChatClient.Domain.Models
+@using Microsoft.AspNetCore.Components.Forms
+@using Microsoft.AspNetCore.Components.Web
+@using Microsoft.JSInterop
 @using MudBlazor
+@implements IAsyncDisposable
 @inject IUserSettingsService UserSettingsService
+@inject IVoiceInputService VoiceInputService
+@inject IJSRuntime JSRuntime
 @inject ILogger<ChatInput> Logger
 @inject ISnackbar Snackbar
 
@@ -28,6 +32,7 @@
                       DebounceInterval="200"
                       Lines="3"
                       MaxLines="15"
+                      InputId="@_messageInputId"
                       AutoGrow="true"
                       Label="Type your message"
                       Variant="Variant.Outlined"
@@ -40,6 +45,18 @@
                       OnKeyDown="HandleKeyDown"
                       ShrinkLabel="true"
                       title="@(ShowStopButton ? "Stop generation" : "Send message (Ctrl+Enter)")" />
+
+        @if (CanShowVoiceButton)
+        {
+            <MudTooltip Text="@VoiceButtonTooltip">
+                <MudIconButton Icon="@VoiceButtonIcon"
+                               Color="@VoiceButtonColor"
+                               Size="Size.Medium"
+                               Disabled="@_isVoiceProcessing"
+                               OnClick="ToggleVoiceInputAsync"
+                               title="@VoiceButtonTooltip" />
+            </MudTooltip>
+        }
     </MudStack>
 
     @if (attachedFiles.Count > 0)
@@ -68,24 +85,52 @@
     [Parameter] public bool ShowStopButton { get; set; } = false;
     [Parameter] public EventCallback OnStopClick { get; set; }
     [Parameter] public bool IsMultiAgent { get; set; } = false;
-    
+
+    private readonly string _messageInputId = $"chat-input-{Guid.NewGuid():N}";
+    private VoiceInputSettings _voiceInputSettings = new();
     private string CurrentText { get; set; } = string.Empty;
     private List<AppChatMessageFile> attachedFiles = [];
+    private bool _isVoiceRecording;
+    private bool _isVoiceProcessing;
 
     protected override async Task OnInitializedAsync()
     {
         await base.OnInitializedAsync();
+
         var settings = await UserSettingsService.GetSettingsAsync();
         var defaultMessage = IsMultiAgent ? settings.DefaultMultiAgentChatMessage : settings.DefaultChatMessage;
+        _voiceInputSettings = await VoiceInputService.GetSettingsAsync();
+
         if (!string.IsNullOrEmpty(defaultMessage))
         {
             CurrentText = defaultMessage;
         }
     }
 
-    private bool IsSending { get; set; } = false;
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        await JSRuntime.InvokeVoidAsync("voiceInputInterop.registerInput", _messageInputId);
+    }
+
+    private bool IsSending { get; set; }
     private bool IsTextEntered => !string.IsNullOrWhiteSpace(CurrentText);
     private bool IsSendDisabled => IsSending || !IsTextEntered;
+    private bool CanShowVoiceButton =>
+        _voiceInputSettings.IsEnabled &&
+        _voiceInputSettings.Status == VoiceInputInitializationStatus.Ready;
+    private string VoiceButtonIcon =>
+        _isVoiceRecording
+            ? Icons.Material.Filled.StopCircle
+            : _isVoiceProcessing
+                ? Icons.Material.Filled.HourglassTop
+                : Icons.Material.Filled.Mic;
+    private Color VoiceButtonColor => _isVoiceRecording ? Color.Error : Color.Primary;
+    private string VoiceButtonTooltip =>
+        _isVoiceRecording
+            ? "Stop voice input"
+            : _isVoiceProcessing
+                ? "Recognizing speech..."
+                : "Start voice input";
 
     private async Task HandleKeyDown(KeyboardEventArgs e)
     {
@@ -93,11 +138,15 @@
         {
             await SendMessage();
         }
-    }    
-    
+    }
+
     private async Task SendMessage()
     {
-        if (IsSendDisabled) return;
+        if (IsSendDisabled)
+        {
+            return;
+        }
+
         try
         {
             IsSending = true;
@@ -113,10 +162,10 @@
             IsSending = false;
         }
     }
-    
+
     private async Task OnFilesChanged(IReadOnlyList<IBrowserFile> files)
     {
-        const int maxFileSize = 10 * 1024 * 1024; // 10MB
+        const int maxFileSize = 10 * 1024 * 1024;
         const int maxFiles = 10;
 
         if (attachedFiles.Count + files.Count > maxFiles)
@@ -131,11 +180,11 @@
                 Snackbar?.Add($"File '{file.Name}' is too large (max {maxFileSize / (1024 * 1024)}MB)", Severity.Warning);
                 continue;
             }
+
             try
             {
                 using var stream = file.OpenReadStream(maxFileSize);
                 var buffer = new byte[file.Size];
-                
                 await stream.ReadExactlyAsync(buffer);
 
                 var chatFile = new AppChatMessageFile(file.Name, file.Size, file.ContentType, buffer);
@@ -144,7 +193,7 @@
             catch (Exception ex)
             {
                 Logger.LogWarning(ex, "Failed to read file: {FileName}", file.Name);
-            }        
+            }
         }
 
         StateHasChanged();
@@ -161,10 +210,111 @@
         if (ShowStopButton)
         {
             await OnStopClick.InvokeAsync();
+            return;
         }
-        else
+
+        await SendMessage();
+    }
+
+    private async Task ToggleVoiceInputAsync()
+    {
+        if (_isVoiceProcessing)
         {
-            await SendMessage();
+            return;
         }
+
+        if (_isVoiceRecording)
+        {
+            await StopVoiceInputAsync();
+            return;
+        }
+
+        await StartVoiceInputAsync();
+    }
+
+    private async Task StartVoiceInputAsync()
+    {
+        try
+        {
+            await JSRuntime.InvokeVoidAsync("voiceInputInterop.startRecording", _messageInputId);
+            _isVoiceRecording = true;
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "Failed to start voice input.");
+            Snackbar.Add(GetVoiceErrorMessage(ex, "Failed to start voice input."), Severity.Warning);
+        }
+        finally
+        {
+            StateHasChanged();
+        }
+    }
+
+    private async Task StopVoiceInputAsync()
+    {
+        _isVoiceRecording = false;
+        _isVoiceProcessing = true;
+        StateHasChanged();
+
+        try
+        {
+            var recognizedText = await JSRuntime.InvokeAsync<string>(
+                "voiceInputInterop.stopRecording",
+                _messageInputId,
+                "/api/voice-input/transcribe");
+
+            if (string.IsNullOrWhiteSpace(recognizedText))
+            {
+                Snackbar.Add("No speech recognized.", Severity.Info);
+                return;
+            }
+
+            var insertion = await JSRuntime.InvokeAsync<VoiceInputInsertionResult?>(
+                "voiceInputInterop.insertTextAtSavedSelection",
+                _messageInputId,
+                recognizedText);
+
+            CurrentText = insertion?.Value ?? recognizedText;
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "Voice input failed.");
+            Snackbar.Add(GetVoiceErrorMessage(ex, "Voice input failed."), Severity.Warning);
+        }
+        finally
+        {
+            _isVoiceProcessing = false;
+            StateHasChanged();
+        }
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        try
+        {
+            await JSRuntime.InvokeVoidAsync("voiceInputInterop.dispose", _messageInputId);
+        }
+        catch (JSDisconnectedException)
+        {
+        }
+        catch (InvalidOperationException)
+        {
+        }
+    }
+
+    private static string GetVoiceErrorMessage(Exception exception, string fallbackMessage)
+    {
+        var message = exception is JSException jsException
+            ? jsException.Message
+            : exception.Message;
+
+        return string.IsNullOrWhiteSpace(message)
+            ? fallbackMessage
+            : message;
+    }
+
+    private sealed class VoiceInputInsertionResult
+    {
+        public string Value { get; set; } = string.Empty;
     }
 }

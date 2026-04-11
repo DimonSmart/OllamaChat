@@ -34,4 +34,7 @@ public class UserSettings
 
     [JsonPropertyName("multiAgentSelectedAgents")]
     public List<string> MultiAgentSelectedAgents { get; set; } = [];
+
+    [JsonPropertyName("voiceInput")]
+    public VoiceInputSettings VoiceInput { get; set; } = new();
 }

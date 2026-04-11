@@ -8,6 +8,7 @@ using ChatClient.Api.Services;
 using ChatClient.Api.Services.BuiltIn;
 using ChatClient.Api.Services.Rag;
 using ChatClient.Api.Services.Seed;
+using ChatClient.Api.VoiceInput;
 using ChatClient.Application.Services.Agentic;
 using ChatClient.Application.Repositories;
 using ChatClient.Application.Services;
@@ -67,6 +68,9 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<IServerConnectionTestService, ServerConnectionTestService>();
         services.AddSingleton<McpFunctionIndexService>();
         services.AddScoped<OllamaServerAvailabilityService>();
+        services.AddOptions<VoiceInputOptions>()
+            .BindConfiguration(VoiceInputOptions.SectionName);
+        services.AddSingleton<IVoiceInputService, VoiceInputService>();
 
         return services;
     }

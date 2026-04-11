@@ -27,6 +27,7 @@ public class UserSettingsService(IUserSettingsRepository repository, ILogger<Use
         }
 
         settings.Embedding ??= new EmbeddingSettings();
+        settings.VoiceInput ??= new VoiceInputSettings();
 
         if (updated || !_repository.Exists)
             await SaveSettingsAsync(settings, cancellationToken);
@@ -46,6 +47,22 @@ public class UserSettingsService(IUserSettingsRepository repository, ILogger<Use
             _logger.LogError(ex, "Error saving user settings");
             throw;
         }
+    }
+
+    public async Task SaveVoiceInputSettingsAsync(VoiceInputSettings voiceInputSettings, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(voiceInputSettings);
+
+        var settings = await GetSettingsAsync(cancellationToken);
+        settings.VoiceInput = new VoiceInputSettings
+        {
+            IsEnabled = voiceInputSettings.IsEnabled,
+            Status = voiceInputSettings.Status,
+            RecognitionLanguage = voiceInputSettings.RecognitionLanguage,
+            ErrorMessage = voiceInputSettings.ErrorMessage
+        };
+
+        await SaveSettingsAsync(settings, cancellationToken);
     }
 }
 

@@ -1,11 +1,12 @@
 @page "/app-settings"
+@using ChatClient.Api.Client.Components
 @using ChatClient.Api.Client.Services
 @using ChatClient.Api.Services
-@using ChatClient.Api.Client.Components
-@using ChatClient.Domain.Models
 @using ChatClient.Application.Services
+@using ChatClient.Domain.Models
 @using System.Text.Json
 @inject IUserSettingsService UserSettingsService
+@inject IVoiceInputService VoiceInputService
 @inject IOllamaClientService OllamaService
 @inject ISnackbar Snackbar
 @inject ILogger<AppSettings> Logger
@@ -76,28 +77,74 @@
                         </MudCardContent>
                     </MudCard>
 
-                <MudCard Class="mb-4" Elevation="1">
-                    <MudCardContent Class="pt-0">
-                        <MudTextField T="string" Label="Chat Strategy Name" @bind-Value="_settings.ChatStrategyName"
-                                      Variant="Variant.Outlined" HelperText="Default chat strategy for multi-agent conversations" />
-                    </MudCardContent>
-                </MudCard>
+                    <MudCard Class="mb-4" Elevation="1">
+                        <MudCardContent Class="pt-0">
+                            <MudTextField T="string" Label="Chat Strategy Name" @bind-Value="_settings.ChatStrategyName"
+                                          Variant="Variant.Outlined" HelperText="Default chat strategy for multi-agent conversations" />
+                        </MudCardContent>
+                    </MudCard>
 
-                <MudCard Class="mb-4" Elevation="1">
-                    <MudCardContent>
-                        <ServerModelPicker Value="_embeddingModel" ValueChanged="OnEmbeddingModelChanged" ShowClearButton="true" />
-                        <MudText Typo="Typo.caption" Class="mt-2">
-                            Model used for generating embeddings.
-                        </MudText>
-                        <MudNumericField T="int" @bind-Value="_settings.Embedding.RagLineChunkSize" Label="Line Chunk Size" Min="1" Variant="Variant.Outlined" Class="mt-4" />
-                        <MudNumericField T="int" @bind-Value="_settings.Embedding.RagParagraphChunkSize" Label="Paragraph Chunk Size" Min="1" Variant="Variant.Outlined" Class="mt-4" />
-                        <MudNumericField T="int" @bind-Value="_settings.Embedding.RagParagraphOverlap" Label="Paragraph Overlap" Min="0" Variant="Variant.Outlined" Class="mt-4" />
-                        <MudText Typo="Typo.caption" Class="mt-2">Text chunking parameters for building RAG indexes.</MudText>
-                        <MudButton Variant="Variant.Outlined" Color="Color.Primary" OnClick="RestartEmbeddings" Class="mt-4">
-                            Restart Embedding Generation
-                        </MudButton>
-                    </MudCardContent>
-                </MudCard>
+                    <MudCard Class="mb-4" Elevation="1">
+                        <MudCardHeader Class="pb-2">
+                            <MudText Class="section-header">Voice Input</MudText>
+                        </MudCardHeader>
+                        <MudCardContent Class="pt-0">
+                            <MudSwitch T="bool"
+                                       Value="_settings.VoiceInput.IsEnabled"
+                                       ValueChanged="OnVoiceInputEnabledChanged"
+                                       Color="Color.Primary"
+                                       Label="Enable voice input" />
+
+                            <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2" Class="mt-3">
+                                <MudButton Variant="Variant.Outlined"
+                                           Color="Color.Primary"
+                                           OnClick="InitializeVoiceInput"
+                                           Disabled="@(_settings.VoiceInput.Status == VoiceInputInitializationStatus.Initializing)">
+                                    Initialize
+                                </MudButton>
+
+                                <MudChip T="string"
+                                         Color="@GetVoiceInputStatusColor(_settings.VoiceInput.Status)"
+                                         Variant="Variant.Outlined"
+                                         Size="Size.Small">
+                                    @GetVoiceInputStatusText(_settings.VoiceInput.Status)
+                                </MudChip>
+                            </MudStack>
+
+                            @if (!string.IsNullOrWhiteSpace(_settings.VoiceInput.ErrorMessage))
+                            {
+                                <MudText Typo="Typo.caption" Color="Color.Error" Class="mt-2">
+                                    @_settings.VoiceInput.ErrorMessage
+                                </MudText>
+                            }
+                            else if (!string.IsNullOrWhiteSpace(_voiceInputActivityMessage))
+                            {
+                                <MudText Typo="Typo.caption" Class="mt-2">
+                                    @_voiceInputActivityMessage
+                                </MudText>
+                            }
+
+                            <MudText Typo="Typo.caption" Class="mt-2">
+                                Uses local Whisper speech recognition with automatic language detection.
+                            </MudText>
+                        </MudCardContent>
+                    </MudCard>
+
+                    <MudCard Class="mb-4" Elevation="1">
+                        <MudCardContent>
+                            <ServerModelPicker Value="_embeddingModel" ValueChanged="OnEmbeddingModelChanged" ShowClearButton="true" />
+                            <MudText Typo="Typo.caption" Class="mt-2">
+                                Model used for generating embeddings.
+                            </MudText>
+                            <MudNumericField T="int" @bind-Value="_settings.Embedding.RagLineChunkSize" Label="Line Chunk Size" Min="1" Variant="Variant.Outlined" Class="mt-4" />
+                            <MudNumericField T="int" @bind-Value="_settings.Embedding.RagParagraphChunkSize" Label="Paragraph Chunk Size" Min="1" Variant="Variant.Outlined" Class="mt-4" />
+                            <MudNumericField T="int" @bind-Value="_settings.Embedding.RagParagraphOverlap" Label="Paragraph Overlap" Min="0" Variant="Variant.Outlined" Class="mt-4" />
+                            <MudText Typo="Typo.caption" Class="mt-2">Text chunking parameters for building RAG indexes.</MudText>
+                            <MudButton Variant="Variant.Outlined" Color="Color.Primary" OnClick="RestartEmbeddings" Class="mt-4">
+                                Restart Embedding Generation
+                            </MudButton>
+                        </MudCardContent>
+                    </MudCard>
 
                     <MudButtonGroup Class="mt-4">
                         <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="SaveSettings" Size="Size.Medium">
@@ -117,6 +164,7 @@
     private UserSettings _settings = new();
     private ServerModelSelection _defaultModel = new(null, null);
     private ServerModelSelection _embeddingModel = new(null, null);
+    private string _voiceInputActivityMessage = string.Empty;
     private bool _loading = true;
     private MudForm? _form;
 
@@ -152,8 +200,10 @@
         try
         {
             _settings = await UserSettingsService.GetSettingsAsync();
+            _settings.VoiceInput = await VoiceInputService.GetSettingsAsync();
             _defaultModel = _settings.DefaultModel;
             _embeddingModel = _settings.Embedding.Model;
+            _voiceInputActivityMessage = string.Empty;
         }
         catch (Exception ex)
         {
@@ -202,9 +252,84 @@
         }
     }
 
+    private async Task OnVoiceInputEnabledChanged(bool isEnabled)
+    {
+        _settings.VoiceInput.IsEnabled = isEnabled;
+
+        try
+        {
+            await UserSettingsService.SaveVoiceInputSettingsAsync(_settings.VoiceInput);
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Error saving voice input toggle");
+            Snackbar.Add("Failed to save voice input setting.", Severity.Error);
+        }
+    }
+
+    private async Task InitializeVoiceInput()
+    {
+        try
+        {
+            await UserSettingsService.SaveVoiceInputSettingsAsync(_settings.VoiceInput);
+
+            _settings.VoiceInput.Status = VoiceInputInitializationStatus.Initializing;
+            _settings.VoiceInput.ErrorMessage = string.Empty;
+            _voiceInputActivityMessage = "Starting voice input initialization...";
+            await InvokeAsync(StateHasChanged);
+
+            var progress = new Progress<string>(message =>
+            {
+                _voiceInputActivityMessage = message;
+                _ = InvokeAsync(StateHasChanged);
+            });
+
+            _settings.VoiceInput = await VoiceInputService.InitializeAsync(progress);
+
+            if (_settings.VoiceInput.Status == VoiceInputInitializationStatus.Ready)
+            {
+                _voiceInputActivityMessage = "Voice input is ready.";
+                Snackbar.Add("Voice input is ready.", Severity.Success);
+                return;
+            }
+
+            _voiceInputActivityMessage = _settings.VoiceInput.ErrorMessage;
+            Snackbar.Add(
+                string.IsNullOrWhiteSpace(_settings.VoiceInput.ErrorMessage)
+                    ? "Voice input initialization failed."
+                    : _settings.VoiceInput.ErrorMessage,
+                Severity.Warning);
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Error initializing voice input");
+            _voiceInputActivityMessage = "Voice input initialization failed.";
+            Snackbar.Add("Failed to initialize voice input.", Severity.Error);
+        }
+    }
+
     private async Task ResetSettings()
     {
         await LoadSettings();
         Snackbar.Add("Settings reset to last saved values", Severity.Info);
     }
+
+    private static string GetVoiceInputStatusText(VoiceInputInitializationStatus status) =>
+        status switch
+        {
+            VoiceInputInitializationStatus.NotInitialized => "Not initialized",
+            VoiceInputInitializationStatus.Initializing => "Initializing",
+            VoiceInputInitializationStatus.Ready => "Ready",
+            VoiceInputInitializationStatus.Error => "Error",
+            _ => "Unknown"
+        };
+
+    private static Color GetVoiceInputStatusColor(VoiceInputInitializationStatus status) =>
+        status switch
+        {
+            VoiceInputInitializationStatus.Ready => Color.Success,
+            VoiceInputInitializationStatus.Initializing => Color.Info,
+            VoiceInputInitializationStatus.Error => Color.Error,
+            _ => Color.Default
+        };
 }

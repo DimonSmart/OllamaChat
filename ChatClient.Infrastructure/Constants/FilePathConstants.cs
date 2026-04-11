@@ -12,5 +12,6 @@ public static class FilePathConstants
     public const string DefaultRagFilesDirectory = "UserData/agents";
     public const string DefaultRagVectorDatabaseFile = "UserData/rag/rag.sqlite";
     public const string DefaultWebSearchCacheDirectory = "UserData/web_search_cache";
+    public const string DefaultVoiceInputDirectory = "UserData/voice-input";
     public const string DefaultSeedDataDirectory = "Data";
 }
