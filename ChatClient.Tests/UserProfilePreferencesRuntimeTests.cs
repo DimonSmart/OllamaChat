@@ -63,4 +63,19 @@ public class UserProfilePreferencesRuntimeTests
 
         Assert.Equal(document.ServerDescription, description);
     }
+
+    [Fact]
+    public void BuildPrefsGetDescription_DefaultProfile_EmphasizesCurrentUserName()
+    {
+        var snapshot = UserProfilePreferencesRuntime.CreateSnapshot(
+            UserProfilePreferencesDocument.CreateDefault(),
+            useDefaultWhenMissing: true);
+
+        var description = UserProfilePreferencesRuntime.BuildPrefsGetDescription(snapshot);
+
+        Assert.Contains("current user's display name", description, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("preferred user name", description, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("greeting the user", description, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("displayName", description, StringComparison.OrdinalIgnoreCase);
+    }
 }

@@ -162,13 +162,29 @@ internal static class UserProfilePreferencesRuntime
     public static string BuildPrefsGetDescription(UserProfilePreferencesSnapshot snapshot)
     {
         var baseDescription = BuildServerDescription(snapshot);
-        return $"{baseDescription} Gets one configured profile value by key. If the value is missing, asks the user via elicitation, validates it against the configured field definition, saves it, and returns it.";
+        var personalizationHint = BuildPersonalizationHint(snapshot);
+        var fieldSummary = BuildFieldSummary(snapshot.Definitions);
+
+        if (string.IsNullOrWhiteSpace(fieldSummary))
+        {
+            return $"{baseDescription} {personalizationHint} Gets one configured current-user profile value by key. If the value is missing, asks the user via elicitation, validates it against the configured field definition, saves it, and returns it.";
+        }
+
+        return $"{baseDescription} {personalizationHint} Supported fields: {fieldSummary}. Gets one configured current-user profile value by key. If the value is missing, asks the user via elicitation, validates it against the configured field definition, saves it, and returns it.";
     }
 
     public static string BuildPrefsGetAllDescription(UserProfilePreferencesSnapshot snapshot)
     {
         var baseDescription = BuildServerDescription(snapshot);
-        return $"{baseDescription} Returns the configured field definitions together with all currently stored values.";
+        var personalizationHint = BuildPersonalizationHint(snapshot);
+        var fieldSummary = BuildFieldSummary(snapshot.Definitions);
+
+        if (string.IsNullOrWhiteSpace(fieldSummary))
+        {
+            return $"{baseDescription} {personalizationHint} Returns the configured field definitions together with all currently stored values.";
+        }
+
+        return $"{baseDescription} {personalizationHint} Configured fields: {fieldSummary}. Returns the configured field definitions together with all currently stored values.";
     }
 
     public static string BuildPrefsResetAllDescription() =>
@@ -509,5 +525,22 @@ internal static class UserProfilePreferencesRuntime
         }
 
         return builder.ToString();
+    }
+
+    private static string BuildPersonalizationHint(UserProfilePreferencesSnapshot snapshot)
+    {
+        var displayNameDefinition = snapshot.Definitions.FirstOrDefault(static definition =>
+            string.Equals(definition.Key, "displayName", StringComparison.OrdinalIgnoreCase));
+
+        if (displayNameDefinition is null)
+        {
+            return "Use this tool when you need the current user's profile data for personalization.";
+        }
+
+        var aliases = displayNameDefinition.Aliases.Count == 0
+            ? "displayName"
+            : $"displayName (aliases: {string.Join(", ", displayNameDefinition.Aliases)})";
+
+        return $"Use this tool when you need the current user's display name or preferred user name for greeting the user, addressing them personally, or other personalization. Name field: {aliases}.";
     }
 }

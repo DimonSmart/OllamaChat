@@ -182,7 +182,7 @@ public class McpFunctionIndexService
 
                 var qualifiedFunctionName = BuildQualifiedFunctionName(serverName, toolName);
                 var embedding = await _ollamaService.GenerateEmbeddingAsync(
-                    BuildToolEmbeddingText(toolName, tool.Description),
+                    BuildToolEmbeddingText(serverName, toolName, tool.Description, tool.JsonSchema, tool.ReturnJsonSchema),
                     new ServerModel(targetServerId, _model.ModelName),
                     cancellationToken);
 
@@ -284,12 +284,13 @@ public class McpFunctionIndexService
 
     private static string BuildQualifiedFunctionName(string serverName, string toolName) => $"{serverName}:{toolName}";
 
-    private static string BuildToolEmbeddingText(string toolName, string? toolDescription)
-    {
-        return string.IsNullOrWhiteSpace(toolDescription)
-            ? toolName
-            : $"{toolName}. {toolDescription}";
-    }
+    internal static string BuildToolEmbeddingText(
+        string serverName,
+        string toolName,
+        string? toolDescription,
+        JsonElement inputSchema,
+        JsonElement? outputSchema) =>
+        McpToolSearchTextBuilder.Build(serverName, toolName, toolDescription, inputSchema, outputSchema);
 
     private static string? NormalizeServerName(string? serverName)
     {

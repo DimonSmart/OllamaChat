@@ -27,13 +27,11 @@ public class KernelService(
                 return selected;
             }
 
-            return availableTools
-                .Where(tool =>
-                    selected.Contains(tool.BaseQualifiedName ?? tool.QualifiedName, StringComparer.OrdinalIgnoreCase) ||
-                    selected.Contains(tool.QualifiedName, StringComparer.OrdinalIgnoreCase))
-                .Select(tool => tool.QualifiedName)
-                .Distinct(StringComparer.OrdinalIgnoreCase)
-                .ToArray();
+            return McpAutoSelectionResolver.ResolveQualifiedFunctionNames(
+                selected.ToList(),
+                availableTools,
+                userQuery,
+                functionSettings.AutoSelectCount);
         }
 
         return [];
