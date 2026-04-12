@@ -207,21 +207,29 @@ internal static class UserProfilePreferencesRuntime
         return $"Configured preference key. Supported keys: {supportedKeys}. Accepted aliases: {string.Join(", ", aliases)}.";
     }
 
-    public static JsonElement BuildPrefsGetInputSchema(UserProfilePreferencesSnapshot snapshot) =>
-        JsonSerializer.SerializeToElement(new
+    public static JsonElement BuildPrefsGetInputSchema(UserProfilePreferencesSnapshot snapshot)
+    {
+        Dictionary<string, object?> keySchema = new(StringComparer.Ordinal)
+        {
+            ["type"] = "string",
+            ["description"] = BuildKeyParameterDescription(snapshot)
+        };
+
+        if (snapshot.AcceptedKeys.Count > 0)
+        {
+            keySchema["enum"] = snapshot.AcceptedKeys;
+        }
+
+        return JsonSerializer.SerializeToElement(new
         {
             type = "object",
             properties = new Dictionary<string, object?>
             {
-                ["key"] = new Dictionary<string, object?>
-                {
-                    ["type"] = "string",
-                    ["description"] = BuildKeyParameterDescription(snapshot),
-                    ["enum"] = snapshot.AcceptedKeys.Count == 0 ? null : snapshot.AcceptedKeys
-                }
+                ["key"] = keySchema
             },
             required = new[] { "key" }
         });
+    }
 
     public static JsonElement BuildPrefsGetOutputSchema() =>
         JsonSerializer.SerializeToElement(new

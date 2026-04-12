@@ -124,13 +124,12 @@ internal static class UserProfilePreferencesStore
         if (File.Exists(_filePath))
         {
             var json = File.ReadAllText(_filePath);
-            if (!string.IsNullOrWhiteSpace(json))
-            {
-                document = JsonSerializer.Deserialize<UserProfilePreferencesDocument>(json, _jsonOptions);
-            }
+            document = UserProfilePreferencesDocumentParser.Deserialize(json, _jsonOptions, useDefaultWhenMissing);
         }
 
-        _cachedDocument = UserProfilePreferencesRuntime.NormalizeDocument(document, useDefaultWhenMissing);
+        _cachedDocument = document is null
+            ? UserProfilePreferencesRuntime.NormalizeDocument(null, useDefaultWhenMissing)
+            : UserProfilePreferencesRuntime.NormalizeDocument(document, useDefaultWhenMissing);
         return CloneDocument(_cachedDocument);
     }
 

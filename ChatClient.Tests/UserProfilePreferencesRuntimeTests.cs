@@ -78,4 +78,34 @@ public class UserProfilePreferencesRuntimeTests
         Assert.Contains("greeting the user", description, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("displayName", description, StringComparison.OrdinalIgnoreCase);
     }
+
+    [Fact]
+    public void BuildPrefsGetInputSchema_WithoutConfiguredKeys_DoesNotEmitNullEnum()
+    {
+        var snapshot = UserProfilePreferencesRuntime.CreateSnapshot(
+            new UserProfilePreferencesDocument(),
+            useDefaultWhenMissing: false);
+
+        var schema = UserProfilePreferencesRuntime.BuildPrefsGetInputSchema(snapshot);
+        var keySchema = schema.GetProperty("properties").GetProperty("key");
+
+        Assert.False(keySchema.TryGetProperty("enum", out _));
+    }
+
+    [Fact]
+    public void BuildPrefsGetInputSchema_WithConfiguredKeys_EmitsEnumArray()
+    {
+        var snapshot = UserProfilePreferencesRuntime.CreateSnapshot(
+            UserProfilePreferencesDocument.CreateDefault(),
+            useDefaultWhenMissing: true);
+
+        var schema = UserProfilePreferencesRuntime.BuildPrefsGetInputSchema(snapshot);
+        var keySchema = schema.GetProperty("properties").GetProperty("key");
+
+        Assert.True(keySchema.TryGetProperty("enum", out var enumElement));
+        Assert.Equal(System.Text.Json.JsonValueKind.Array, enumElement.ValueKind);
+        Assert.Contains(
+            enumElement.EnumerateArray().Select(static item => item.GetString()).Where(static item => item is not null),
+            value => string.Equals(value, "displayName", StringComparison.OrdinalIgnoreCase));
+    }
 }
