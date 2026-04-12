@@ -24,6 +24,13 @@ public class VoiceInputServiceTests
             SaveCount++;
             return Task.CompletedTask;
         }
+
+        public Task SaveVoiceInputSettingsAsync(VoiceInputSettings voiceInputSettings, CancellationToken cancellationToken = default)
+        {
+            Settings.VoiceInput = voiceInputSettings;
+            SaveCount++;
+            return Task.CompletedTask;
+        }
     }
 
     [Fact]
@@ -40,7 +47,8 @@ public class VoiceInputServiceTests
                 {
                     VoiceInput = new VoiceInputSettings
                     {
-                        Status = VoiceInputInitializationStatus.Ready
+                        Status = VoiceInputInitializationStatus.Ready,
+                        ModelType = "Small"
                     }
                 }
             };
@@ -65,7 +73,7 @@ public class VoiceInputServiceTests
 
         try
         {
-            await File.WriteAllTextAsync(Path.Combine(tempDirectory, "ggml-base.bin"), "model");
+            await File.WriteAllTextAsync(Path.Combine(tempDirectory, "ggml-small.bin"), "model");
 
             var userSettingsService = new TestUserSettingsService
             {
@@ -73,7 +81,8 @@ public class VoiceInputServiceTests
                 {
                     VoiceInput = new VoiceInputSettings
                     {
-                        Status = VoiceInputInitializationStatus.Ready
+                        Status = VoiceInputInitializationStatus.Ready,
+                        ModelType = "Small"
                     }
                 }
             };
@@ -90,12 +99,47 @@ public class VoiceInputServiceTests
         }
     }
 
-    private static VoiceInputService CreateService(string tempDirectory, IUserSettingsService userSettingsService)
+    [Fact]
+    public async Task GetSettingsAsync_NormalizesMissingModelType_FromConfiguredDefault()
+    {
+        var tempDirectory = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(tempDirectory);
+
+        try
+        {
+            var userSettingsService = new TestUserSettingsService
+            {
+                Settings = new UserSettings
+                {
+                    VoiceInput = new VoiceInputSettings
+                    {
+                        ModelType = string.Empty
+                    }
+                }
+            };
+
+            using var service = CreateService(tempDirectory, userSettingsService, configuredModelType: "Small");
+            var settings = await service.GetSettingsAsync();
+
+            Assert.Equal("Small", settings.ModelType);
+            Assert.Equal(1, userSettingsService.SaveCount);
+        }
+        finally
+        {
+            Directory.Delete(tempDirectory, recursive: true);
+        }
+    }
+
+    private static VoiceInputService CreateService(
+        string tempDirectory,
+        IUserSettingsService userSettingsService,
+        string configuredModelType = "Base")
     {
         var configuration = new ConfigurationBuilder()
             .AddInMemoryCollection(new Dictionary<string, string?>
             {
-                ["VoiceInput:DirectoryPath"] = tempDirectory
+                ["VoiceInput:DirectoryPath"] = tempDirectory,
+                ["VoiceInput:ModelType"] = configuredModelType
             })
             .Build();
 
@@ -104,7 +148,7 @@ public class VoiceInputServiceTests
             Options.Create(new VoiceInputOptions
             {
                 DirectoryPath = tempDirectory,
-                ModelType = "Base",
+                ModelType = configuredModelType,
                 RecognitionLanguage = "auto"
             }),
             userSettingsService,

@@ -58,6 +58,7 @@ public class UserSettingsService(IUserSettingsRepository repository, ILogger<Use
         {
             IsEnabled = voiceInputSettings.IsEnabled,
             Status = voiceInputSettings.Status,
+            ModelType = voiceInputSettings.ModelType,
             RecognitionLanguage = voiceInputSettings.RecognitionLanguage,
             ErrorMessage = voiceInputSettings.ErrorMessage
         };

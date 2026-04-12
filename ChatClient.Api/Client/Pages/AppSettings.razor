@@ -95,6 +95,20 @@
                                        Color="Color.Primary"
                                        Label="Enable voice input" />
 
+                            <MudSelect T="string"
+                                       Value="_settings.VoiceInput.ModelType"
+                                       ValueChanged="OnVoiceInputModelChanged"
+                                       Label="Whisper Model"
+                                       Variant="Variant.Outlined"
+                                       Dense="true"
+                                       Class="mt-3"
+                                       Disabled="@(_settings.VoiceInput.Status == VoiceInputInitializationStatus.Initializing)">
+                                @foreach (var option in VoiceInputModelOptions)
+                                {
+                                    <MudSelectItem Value="@option.Value">@option.Label</MudSelectItem>
+                                }
+                            </MudSelect>
+
                             <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2" Class="mt-3">
                                 <MudButton Variant="Variant.Outlined"
                                            Color="Color.Primary"
@@ -126,6 +140,8 @@
 
                             <MudText Typo="Typo.caption" Class="mt-2">
                                 Uses local Whisper speech recognition with automatic language detection.
+                                For Russian, `Small`, `Medium`, or `LargeV3Turbo` usually work better than `Base`.
+                                Do not use `*.En` models unless you only need English.
                             </MudText>
                         </MudCardContent>
                     </MudCard>
@@ -164,6 +180,21 @@
     private UserSettings _settings = new();
     private ServerModelSelection _defaultModel = new(null, null);
     private ServerModelSelection _embeddingModel = new(null, null);
+    private static readonly IReadOnlyList<VoiceInputModelOption> VoiceInputModelOptions =
+    [
+        new("Tiny", "Tiny"),
+        new("Base", "Base"),
+        new("Small", "Small"),
+        new("Medium", "Medium"),
+        new("LargeV3Turbo", "Large V3 Turbo"),
+        new("LargeV3", "Large V3"),
+        new("TinyEn", "Tiny (English only)"),
+        new("BaseEn", "Base (English only)"),
+        new("SmallEn", "Small (English only)"),
+        new("MediumEn", "Medium (English only)"),
+        new("LargeV2", "Large V2"),
+        new("LargeV1", "Large V1")
+    ];
     private string _voiceInputActivityMessage = string.Empty;
     private bool _loading = true;
     private MudForm? _form;
@@ -267,6 +298,20 @@
         }
     }
 
+    private Task OnVoiceInputModelChanged(string modelType)
+    {
+        if (string.Equals(_settings.VoiceInput.ModelType, modelType, StringComparison.Ordinal))
+        {
+            return Task.CompletedTask;
+        }
+
+        _settings.VoiceInput.ModelType = modelType;
+        _settings.VoiceInput.Status = VoiceInputInitializationStatus.NotInitialized;
+        _settings.VoiceInput.ErrorMessage = string.Empty;
+        _voiceInputActivityMessage = "Save settings and initialize voice input to download and apply the selected model.";
+        return Task.CompletedTask;
+    }
+
     private async Task InitializeVoiceInput()
     {
         try
@@ -332,4 +377,6 @@
             VoiceInputInitializationStatus.Error => Color.Error,
             _ => Color.Default
         };
+
+    private sealed record VoiceInputModelOption(string Value, string Label);
 }

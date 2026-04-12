@@ -80,6 +80,7 @@ public class UserSettingsServiceTests
                 {
                     IsEnabled = true,
                     Status = VoiceInputInitializationStatus.Ready,
+                    ModelType = "Small",
                     RecognitionLanguage = "auto"
                 }
             };
@@ -92,6 +93,7 @@ public class UserSettingsServiceTests
             Assert.Equal(testSettings.UserName, loadedSettings.UserName);
             Assert.True(loadedSettings.VoiceInput.IsEnabled);
             Assert.Equal(VoiceInputInitializationStatus.Ready, loadedSettings.VoiceInput.Status);
+            Assert.Equal("Small", loadedSettings.VoiceInput.ModelType);
             Assert.Equal("auto", loadedSettings.VoiceInput.RecognitionLanguage);
         }
         finally
@@ -140,6 +142,7 @@ public class UserSettingsServiceTests
                 {
                     IsEnabled = false,
                     Status = VoiceInputInitializationStatus.NotInitialized,
+                    ModelType = "Base",
                     RecognitionLanguage = "auto"
                 }
             });
@@ -148,6 +151,7 @@ public class UserSettingsServiceTests
             {
                 IsEnabled = true,
                 Status = VoiceInputInitializationStatus.Ready,
+                ModelType = "Small",
                 RecognitionLanguage = "auto"
             });
 
@@ -156,6 +160,7 @@ public class UserSettingsServiceTests
             Assert.Equal("Test User", loadedSettings.UserName);
             Assert.True(loadedSettings.VoiceInput.IsEnabled);
             Assert.Equal(VoiceInputInitializationStatus.Ready, loadedSettings.VoiceInput.Status);
+            Assert.Equal("Small", loadedSettings.VoiceInput.ModelType);
         }
         finally
         {

@@ -23,16 +23,16 @@ public sealed class VoiceInputService(
         configuration,
         optionsAccessor.Value.DirectoryPath,
         FilePathConstants.DefaultVoiceInputDirectory);
-    private readonly GgmlType _modelType = ResolveModelType(optionsAccessor.Value.ModelType);
 
     private WhisperFactory? _factory;
+    private string? _loadedModelFilePath;
 
     public async Task<VoiceInputSettings> GetSettingsAsync(CancellationToken cancellationToken = default)
     {
         var userSettings = await _userSettingsService.GetSettingsAsync(cancellationToken);
         var voiceInput = userSettings.VoiceInput ??= new VoiceInputSettings();
-        NormalizeVoiceInputSettings(voiceInput);
-        var updated = false;
+        var updated = NormalizeVoiceInputSettings(voiceInput);
+        var modelFilePath = GetModelFilePath(voiceInput);
 
         if (voiceInput.Status == VoiceInputInitializationStatus.Initializing)
         {
@@ -41,7 +41,7 @@ public sealed class VoiceInputService(
             updated = true;
         }
 
-        if (voiceInput.Status == VoiceInputInitializationStatus.Ready && !File.Exists(GetModelFilePath()))
+        if (voiceInput.Status == VoiceInputInitializationStatus.Ready && !File.Exists(modelFilePath))
         {
             voiceInput.Status = VoiceInputInitializationStatus.NotInitialized;
             voiceInput.ErrorMessage = string.Empty;
@@ -75,8 +75,8 @@ public sealed class VoiceInputService(
             {
                 progress?.Report("Preparing voice input directory...");
                 Directory.CreateDirectory(_voiceInputDirectoryPath);
-                await EnsureModelExistsAsync(progress, cancellationToken);
-                await EnsureFactoryLoadedAsync(forceReload: true, progress, cancellationToken);
+                await EnsureModelExistsAsync(voiceInput, progress, cancellationToken);
+                await EnsureFactoryLoadedAsync(voiceInput, forceReload: true, progress, cancellationToken);
 
                 voiceInput.Status = VoiceInputInitializationStatus.Ready;
                 voiceInput.ErrorMessage = string.Empty;
@@ -113,7 +113,7 @@ public sealed class VoiceInputService(
         await _operationLock.WaitAsync(cancellationToken);
         try
         {
-            var factory = await EnsureFactoryLoadedAsync(forceReload: false, progress: null, cancellationToken);
+            var factory = await EnsureFactoryLoadedAsync(settings, forceReload: false, progress: null, cancellationToken);
             if (audioStream.CanSeek)
             {
                 audioStream.Position = 0;
@@ -155,49 +155,58 @@ public sealed class VoiceInputService(
         DisposeFactory();
     }
 
-    private async Task EnsureModelExistsAsync(IProgress<string>? progress, CancellationToken cancellationToken)
+    private async Task EnsureModelExistsAsync(VoiceInputSettings settings, IProgress<string>? progress, CancellationToken cancellationToken)
     {
-        var modelFilePath = GetModelFilePath();
+        var modelType = ResolveConfiguredModelType(settings.ModelType);
+        var modelFilePath = GetModelFilePath(settings);
         if (File.Exists(modelFilePath))
         {
-            progress?.Report("Whisper model found.");
+            progress?.Report($"Whisper {GetModelTypeName(modelType)} model found.");
             return;
         }
 
-        progress?.Report("Downloading Whisper model...");
+        progress?.Report($"Downloading Whisper {GetModelTypeName(modelType)} model...");
         var tempFilePath = $"{modelFilePath}.download";
         if (File.Exists(tempFilePath))
         {
             File.Delete(tempFilePath);
         }
 
-        await using var modelStream = await WhisperGgmlDownloader.Default.GetGgmlModelAsync(_modelType, cancellationToken: cancellationToken);
+        await using var modelStream = await WhisperGgmlDownloader.Default.GetGgmlModelAsync(modelType, cancellationToken: cancellationToken);
         await using (var fileStream = File.Create(tempFilePath))
         {
             await modelStream.CopyToAsync(fileStream, cancellationToken);
         }
 
         File.Move(tempFilePath, modelFilePath, overwrite: true);
-        progress?.Report("Whisper model downloaded.");
+        progress?.Report($"Whisper {GetModelTypeName(modelType)} model downloaded.");
     }
 
-    private async Task<WhisperFactory> EnsureFactoryLoadedAsync(bool forceReload, IProgress<string>? progress, CancellationToken cancellationToken)
+    private async Task<WhisperFactory> EnsureFactoryLoadedAsync(
+        VoiceInputSettings settings,
+        bool forceReload,
+        IProgress<string>? progress,
+        CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
+        var modelFilePath = GetModelFilePath(settings);
 
-        if (_factory is not null && !forceReload)
+        if (_factory is not null &&
+            !forceReload &&
+            string.Equals(_loadedModelFilePath, modelFilePath, StringComparison.OrdinalIgnoreCase))
         {
             return _factory;
         }
 
         DisposeFactory();
         progress?.Report("Loading Whisper runtime...");
-        var factory = WhisperFactory.FromPath(GetModelFilePath());
+        var factory = WhisperFactory.FromPath(modelFilePath);
         using var processor = factory.CreateBuilder()
-            .WithLanguage(_options.RecognitionLanguage)
+            .WithLanguage(settings.RecognitionLanguage)
             .Build();
 
         _factory = factory;
+        _loadedModelFilePath = modelFilePath;
         progress?.Report("Whisper runtime loaded.");
         return factory;
     }
@@ -206,18 +215,73 @@ public sealed class VoiceInputService(
     {
         _factory?.Dispose();
         _factory = null;
+        _loadedModelFilePath = null;
     }
 
-    private static void NormalizeVoiceInputSettings(VoiceInputSettings settings)
+    private bool NormalizeVoiceInputSettings(VoiceInputSettings settings)
     {
-        if (string.IsNullOrWhiteSpace(settings.RecognitionLanguage))
+        var updated = false;
+
+        var recognitionLanguage = string.IsNullOrWhiteSpace(settings.RecognitionLanguage)
+            ? _options.RecognitionLanguage
+            : settings.RecognitionLanguage;
+        if (string.IsNullOrWhiteSpace(recognitionLanguage))
         {
-            settings.RecognitionLanguage = "auto";
+            recognitionLanguage = "auto";
         }
+
+        if (!string.Equals(settings.RecognitionLanguage, recognitionLanguage, StringComparison.Ordinal))
+        {
+            settings.RecognitionLanguage = recognitionLanguage;
+            updated = true;
+        }
+
+        var modelType = GetModelTypeName(ResolveConfiguredModelType(settings.ModelType));
+        if (!string.Equals(settings.ModelType, modelType, StringComparison.Ordinal))
+        {
+            settings.ModelType = modelType;
+            updated = true;
+        }
+
+        if (settings.ErrorMessage is null)
+        {
+            settings.ErrorMessage = string.Empty;
+            updated = true;
+        }
+
+        return updated;
     }
 
-    private string GetModelFilePath() =>
-        Path.Combine(_voiceInputDirectoryPath, GetModelFileName(_modelType));
+    private string GetModelFilePath(VoiceInputSettings settings) =>
+        Path.Combine(_voiceInputDirectoryPath, GetModelFileName(ResolveConfiguredModelType(settings.ModelType)));
+
+    private GgmlType ResolveConfiguredModelType(string? modelType)
+    {
+        if (Enum.TryParse<GgmlType>(modelType, ignoreCase: true, out var parsedType))
+        {
+            return parsedType;
+        }
+
+        return ResolveModelType(_options.ModelType);
+    }
+
+    private static string GetModelTypeName(GgmlType modelType) =>
+        modelType switch
+        {
+            GgmlType.Tiny => nameof(GgmlType.Tiny),
+            GgmlType.TinyEn => nameof(GgmlType.TinyEn),
+            GgmlType.Base => nameof(GgmlType.Base),
+            GgmlType.BaseEn => nameof(GgmlType.BaseEn),
+            GgmlType.Small => nameof(GgmlType.Small),
+            GgmlType.SmallEn => nameof(GgmlType.SmallEn),
+            GgmlType.Medium => nameof(GgmlType.Medium),
+            GgmlType.MediumEn => nameof(GgmlType.MediumEn),
+            GgmlType.LargeV1 => nameof(GgmlType.LargeV1),
+            GgmlType.LargeV2 => nameof(GgmlType.LargeV2),
+            GgmlType.LargeV3 => nameof(GgmlType.LargeV3),
+            GgmlType.LargeV3Turbo => nameof(GgmlType.LargeV3Turbo),
+            _ => nameof(GgmlType.Base)
+        };
 
     private static GgmlType ResolveModelType(string? modelType)
     {

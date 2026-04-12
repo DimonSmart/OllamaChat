@@ -41,6 +41,9 @@ public class OllamaServiceTests
 
         public Task SaveSettingsAsync(UserSettings settings, CancellationToken cancellationToken = default)
             => Task.CompletedTask;
+
+        public Task SaveVoiceInputSettingsAsync(VoiceInputSettings voiceInputSettings, CancellationToken cancellationToken = default)
+            => Task.CompletedTask;
     }
 
     [Fact]

@@ -10,6 +10,9 @@ public class VoiceInputSettings
     [JsonPropertyName("status")]
     public VoiceInputInitializationStatus Status { get; set; } = VoiceInputInitializationStatus.NotInitialized;
 
+    [JsonPropertyName("modelType")]
+    public string ModelType { get; set; } = string.Empty;
+
     [JsonPropertyName("recognitionLanguage")]
     public string RecognitionLanguage { get; set; } = "auto";
 
