@@ -1,5 +1,6 @@
 using ChatClient.Application.Services;
 using Microsoft.AspNetCore.Http.HttpResults;
+using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Options;
 
 namespace ChatClient.Api.VoiceInput;
@@ -11,7 +12,8 @@ internal static class VoiceInputEndpointRouteBuilderExtensions
         endpoints.MapPost(
                 "/api/voice-input/transcribe",
                 async Task<Results<Ok<VoiceInputTranscriptionResponse>, BadRequest<VoiceInputErrorResponse>, StatusCodeHttpResult>> (
-                    IFormFile? audio,
+                    [FromForm] IFormFile? audio,
+                    [FromForm] string? operationId,
                     IVoiceInputService voiceInputService,
                     IOptions<VoiceInputOptions> optionsAccessor,
                     ILoggerFactory loggerFactory,
@@ -32,7 +34,7 @@ internal static class VoiceInputEndpointRouteBuilderExtensions
                     try
                     {
                         await using var audioStream = audio.OpenReadStream();
-                        var text = await voiceInputService.TranscribeAsync(audioStream, cancellationToken);
+                        var text = await voiceInputService.TranscribeAsync(audioStream, operationId, cancellationToken);
                         return TypedResults.Ok(new VoiceInputTranscriptionResponse(text));
                     }
                     catch (InvalidOperationException ex)

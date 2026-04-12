@@ -399,7 +399,7 @@ window.voiceInputInterop = (() => {
             }
         },
 
-        async stopRecording(inputId, endpointUrl) {
+        async stopRecording(inputId, endpointUrl, operationId) {
             const state = ensureState(inputId);
             if (!state.recorder || !state.stopPromise) {
                 throw new Error("Voice recording is not active.");
@@ -416,6 +416,7 @@ window.voiceInputInterop = (() => {
                 const waveBlob = await convertRecordingToWave(recordedBlob);
                 const formData = new FormData();
                 formData.append("audio", waveBlob, "voice-input.wav");
+                formData.append("operationId", operationId);
 
                 const response = await fetch(endpointUrl, {
                     method: "POST",

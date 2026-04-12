@@ -3,6 +3,7 @@ using ChatClient.Application.Services;
 using ChatClient.Domain.Models;
 using ChatClient.Infrastructure.Constants;
 using ChatClient.Infrastructure.Helpers;
+using System.Collections.Concurrent;
 using Microsoft.Extensions.Options;
 using Whisper.net;
 using Whisper.net.Ggml;
@@ -15,6 +16,7 @@ public sealed class VoiceInputService(
     IUserSettingsService userSettingsService,
     ILogger<VoiceInputService> logger) : IVoiceInputService, IDisposable
 {
+    private static readonly TimeSpan ProgressRetention = TimeSpan.FromMinutes(5);
     private static readonly IReadOnlyList<GgmlType> SupportedModelTypes =
     [
         GgmlType.Tiny,
@@ -39,6 +41,7 @@ public sealed class VoiceInputService(
         configuration,
         optionsAccessor.Value.DirectoryPath,
         FilePathConstants.DefaultVoiceInputDirectory);
+    private readonly ConcurrentDictionary<string, ProgressSnapshot> _transcriptionProgress = new(StringComparer.Ordinal);
 
     private WhisperFactory? _factory;
     private string? _loadedModelFilePath;
@@ -116,6 +119,27 @@ public sealed class VoiceInputService(
         }
     }
 
+    public Task<VoiceInputTranscriptionProgress?> GetTranscriptionProgressAsync(
+        string operationId,
+        CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        CleanupExpiredProgress();
+
+        if (string.IsNullOrWhiteSpace(operationId) ||
+            !_transcriptionProgress.TryGetValue(operationId, out var snapshot))
+        {
+            return Task.FromResult<VoiceInputTranscriptionProgress?>(null);
+        }
+
+        return Task.FromResult<VoiceInputTranscriptionProgress?>(
+            new VoiceInputTranscriptionProgress
+            {
+                ProgressPercent = snapshot.ProgressPercent,
+                IsCompleted = snapshot.IsCompleted
+            });
+    }
+
     public async Task<VoiceInputStorageInfo> GetStorageInfoAsync(CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
@@ -187,9 +211,13 @@ public sealed class VoiceInputService(
         }
     }
 
-    public async Task<string> TranscribeAsync(Stream audioStream, CancellationToken cancellationToken = default)
+    public async Task<string> TranscribeAsync(
+        Stream audioStream,
+        string? operationId = null,
+        CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(audioStream);
+        var normalizedOperationId = NormalizeOperationId(operationId);
 
         var settings = await GetSettingsAsync(cancellationToken);
         if (settings.Status != VoiceInputInitializationStatus.Ready)
@@ -197,6 +225,7 @@ public sealed class VoiceInputService(
             throw new InvalidOperationException("Voice input is not initialized.");
         }
 
+        StartProgressTracking(normalizedOperationId);
         await _operationLock.WaitAsync(cancellationToken);
         try
         {
@@ -206,9 +235,15 @@ public sealed class VoiceInputService(
                 audioStream.Position = 0;
             }
 
-            using var processor = factory.CreateBuilder()
-                .WithLanguage(settings.RecognitionLanguage)
-                .Build();
+            var builder = factory.CreateBuilder()
+                .WithLanguage(settings.RecognitionLanguage);
+
+            if (normalizedOperationId is not null)
+            {
+                builder = builder.WithProgressHandler(progress => UpdateProgressTracking(normalizedOperationId, progress));
+            }
+
+            using var processor = builder.Build();
 
             var transcription = new StringBuilder();
             try
@@ -226,9 +261,15 @@ public sealed class VoiceInputService(
             }
 
             var text = transcription.ToString().Trim();
+            CompleteProgressTracking(normalizedOperationId);
             return string.Equals(text, "[BLANK_AUDIO]", StringComparison.Ordinal)
                 ? string.Empty
                 : text;
+        }
+        catch
+        {
+            CompleteProgressTracking(normalizedOperationId);
+            throw;
         }
         finally
         {
@@ -438,4 +479,67 @@ public sealed class VoiceInputService(
         exception.GetType().FullName is string fullName &&
         fullName.StartsWith("Whisper.net.Wave.", StringComparison.Ordinal) &&
         fullName.EndsWith("WaveException", StringComparison.Ordinal);
+
+    private void StartProgressTracking(string? operationId)
+    {
+        if (operationId is null)
+        {
+            return;
+        }
+
+        CleanupExpiredProgress();
+        _transcriptionProgress[operationId] = new ProgressSnapshot(0, false, DateTimeOffset.UtcNow);
+    }
+
+    private void UpdateProgressTracking(string operationId, int progressPercent)
+    {
+        var normalizedProgress = Math.Clamp(progressPercent, 0, 100);
+        var timestamp = DateTimeOffset.UtcNow;
+
+        _transcriptionProgress.AddOrUpdate(
+            operationId,
+            static (key, arg) => new ProgressSnapshot(arg.ProgressPercent, false, arg.Timestamp),
+            static (key, existing, arg) => new ProgressSnapshot(
+                Math.Max(existing.ProgressPercent, arg.ProgressPercent),
+                existing.IsCompleted,
+                arg.Timestamp),
+            (ProgressPercent: normalizedProgress, Timestamp: timestamp));
+    }
+
+    private void CompleteProgressTracking(string? operationId)
+    {
+        if (operationId is null)
+        {
+            return;
+        }
+
+        var timestamp = DateTimeOffset.UtcNow;
+        _transcriptionProgress.AddOrUpdate(
+            operationId,
+            static (key, arg) => new ProgressSnapshot(100, true, arg),
+            static (key, existing, arg) => new ProgressSnapshot(
+                Math.Max(existing.ProgressPercent, 100),
+                true,
+                arg),
+            timestamp);
+    }
+
+    private void CleanupExpiredProgress()
+    {
+        var expirationThreshold = DateTimeOffset.UtcNow - ProgressRetention;
+        foreach (var pair in _transcriptionProgress)
+        {
+            if (pair.Value.UpdatedAtUtc < expirationThreshold)
+            {
+                _transcriptionProgress.TryRemove(pair.Key, out _);
+            }
+        }
+    }
+
+    private static string? NormalizeOperationId(string? operationId) =>
+        string.IsNullOrWhiteSpace(operationId)
+            ? null
+            : operationId.Trim();
+
+    private sealed record ProgressSnapshot(int ProgressPercent, bool IsCompleted, DateTimeOffset UpdatedAtUtc);
 }

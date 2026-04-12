@@ -80,8 +80,7 @@
                                              Color="Color.Primary"
                                              Size="Size.Medium"
                                              Class="voice-input-spinner" />
-                        <MudIcon Icon="@Icons.Material.Filled.HourglassTop"
-                                 Class="voice-input-processing-icon" />
+                        <span class="voice-input-processing-progress">@VoiceRecognitionProgressText</span>
                     </div>
                 }
             </div>
@@ -123,6 +122,7 @@
     private bool _isVoiceRecording;
     private bool _isVoiceProcessing;
     private double _voiceLevel;
+    private int _voiceRecognitionProgress;
     private TimeSpan VoiceInputInteropTimeout =>
         TimeSpan.FromSeconds(Math.Max(30, VoiceInputOptionsAccessor.Value.InteropCallTimeoutSeconds));
 
@@ -163,7 +163,7 @@
         _isVoiceRecording
             ? "Stop voice input"
             : _isVoiceProcessing
-                ? "Recognizing speech..."
+                ? $"Recognizing speech... {VoiceRecognitionProgressText}"
                 : "Start voice input";
     private string VoiceInputControlCssClass =>
         _isVoiceRecording
@@ -303,7 +303,12 @@
         _isVoiceRecording = false;
         _isVoiceProcessing = true;
         _voiceLevel = 0;
+        _voiceRecognitionProgress = 0;
         StateHasChanged();
+
+        var operationId = Guid.NewGuid().ToString("N");
+        using var progressCancellation = new CancellationTokenSource();
+        var progressPollingTask = PollVoiceRecognitionProgressAsync(operationId, progressCancellation.Token);
 
         try
         {
@@ -312,7 +317,11 @@
                 "voiceInputInterop.stopRecording",
                 cancellation.Token,
                 _messageInputId,
-                "/api/voice-input/transcribe");
+                "/api/voice-input/transcribe",
+                operationId);
+
+            progressCancellation.Cancel();
+            await AwaitVoiceRecognitionProgressAsync(progressPollingTask);
 
             if (string.IsNullOrWhiteSpace(recognizedText))
             {
@@ -329,6 +338,8 @@
         }
         catch (TaskCanceledException ex)
         {
+            progressCancellation.Cancel();
+            await AwaitVoiceRecognitionProgressAsync(progressPollingTask);
             Logger.LogWarning(ex, "Voice input timed out.");
             Snackbar.Add(
                 $"Voice recognition timed out after {(int)VoiceInputInteropTimeout.TotalSeconds} seconds. Try a smaller Whisper model or increase the timeout.",
@@ -336,13 +347,18 @@
         }
         catch (Exception ex)
         {
+            progressCancellation.Cancel();
+            await AwaitVoiceRecognitionProgressAsync(progressPollingTask);
             Logger.LogWarning(ex, "Voice input failed.");
             Snackbar.Add(GetVoiceErrorMessage(ex, "Voice input failed."), Severity.Warning);
         }
         finally
         {
+            progressCancellation.Cancel();
+            await AwaitVoiceRecognitionProgressAsync(progressPollingTask);
             _isVoiceProcessing = false;
             _voiceLevel = 0;
+            _voiceRecognitionProgress = 0;
             StateHasChanged();
         }
     }
@@ -387,6 +403,8 @@
             : message;
     }
 
+    private string VoiceRecognitionProgressText => $"{_voiceRecognitionProgress}%";
+
     private string GetVoiceBarStyle(double multiplier, double baseline)
     {
         var level = Math.Clamp((_voiceLevel * multiplier) + baseline, 0.12d, 1d);
@@ -395,6 +413,46 @@
         return string.Create(
             CultureInfo.InvariantCulture,
             $"height:{height}px;opacity:{opacity:0.##};");
+    }
+
+    private async Task PollVoiceRecognitionProgressAsync(string operationId, CancellationToken cancellationToken)
+    {
+        using var timer = new PeriodicTimer(TimeSpan.FromMilliseconds(250));
+
+        while (!cancellationToken.IsCancellationRequested)
+        {
+            var progress = await VoiceInputService.GetTranscriptionProgressAsync(operationId, cancellationToken);
+            if (progress is not null)
+            {
+                var normalizedProgress = Math.Clamp(progress.ProgressPercent, 0, 100);
+                if (_voiceRecognitionProgress != normalizedProgress)
+                {
+                    _voiceRecognitionProgress = normalizedProgress;
+                    await InvokeAsync(StateHasChanged);
+                }
+
+                if (progress.IsCompleted)
+                {
+                    return;
+                }
+            }
+
+            if (!await timer.WaitForNextTickAsync(cancellationToken))
+            {
+                return;
+            }
+        }
+    }
+
+    private static async Task AwaitVoiceRecognitionProgressAsync(Task pollingTask)
+    {
+        try
+        {
+            await pollingTask;
+        }
+        catch (OperationCanceledException)
+        {
+        }
     }
 
     private sealed class VoiceInputInsertionResult
