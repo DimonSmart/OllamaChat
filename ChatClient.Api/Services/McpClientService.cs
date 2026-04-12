@@ -260,9 +260,9 @@ public class McpClientService(
         return [];
     }
 
-    public async ValueTask DisposeAsync()
+    public async Task InvalidateAsync(CancellationToken cancellationToken = default)
     {
-        await _syncLock.WaitAsync();
+        await _syncLock.WaitAsync(cancellationToken);
         try
         {
             foreach (var clientSet in _clientSets.Values)
@@ -276,6 +276,11 @@ public class McpClientService(
         {
             _syncLock.Release();
         }
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        await InvalidateAsync();
 
         GC.SuppressFinalize(this);
     }

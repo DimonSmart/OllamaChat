@@ -31,72 +31,183 @@ else
                 Reload
             </MudButton>
             <MudButton Variant="Variant.Outlined"
-                       Color="Color.Error"
-                       StartIcon="@Icons.Material.Filled.RestartAlt"
+                       StartIcon="@Icons.Material.Filled.CleaningServices"
                        Disabled="@_saving"
-                       OnClick="ResetAsync">
-                Reset All
+                       OnClick="ClearValues">
+                Clear Values
+            </MudButton>
+            <MudButton Variant="Variant.Outlined"
+                       Color="Color.Warning"
+                       StartIcon="@Icons.Material.Filled.Restore"
+                       Disabled="@_saving"
+                       OnClick="RestoreDefaults">
+                Restore Defaults
             </MudButton>
             <MudButton Variant="Variant.Text"
                        Color="Color.Primary"
                        StartIcon="@Icons.Material.Filled.Add"
                        Disabled="@_saving"
-                       OnClick="AddRow">
-                Add Row
+                       OnClick="AddDefinition">
+                Add Field
             </MudButton>
         </MudStack>
 
-        @if (_rows.Count == 0)
-        {
-            <MudAlert Severity="Severity.Info" Dense="true" Variant="Variant.Outlined">
-                No preferences are stored yet. Add rows and save to create the JSON file.
-            </MudAlert>
-        }
-        else
-        {
-            <MudTable Items="@_rows"
-                      Dense="true"
-                      Hover="true"
-                      Striped="true"
-                      Bordered="true"
-                      Breakpoint="Breakpoint.Sm">
-                <HeaderContent>
-                    <MudTh Style="width: 35%;">Key</MudTh>
-                    <MudTh>Value</MudTh>
-                    <MudTh Style="width: 80px;"></MudTh>
-                </HeaderContent>
-                <RowTemplate>
-                    <MudTd DataLabel="Key">
-                        <MudTextField T="string"
-                                      Value="@context.Key"
-                                      ValueChanged="value => context.Key = NormalizeText(value)"
-                                      Immediate="true"
-                                      Margin="Margin.Dense" />
-                    </MudTd>
-                    <MudTd DataLabel="Value">
-                        <MudTextField T="string"
-                                      Value="@context.Value"
-                                      ValueChanged="value => context.Value = NormalizeText(value)"
-                                      Immediate="true"
-                                      Margin="Margin.Dense" />
-                    </MudTd>
-                    <MudTd DataLabel="Actions">
-                        <MudIconButton Icon="@Icons.Material.Filled.Delete"
-                                       Color="Color.Error"
-                                       OnClick="@(() => RemoveRow(context))" />
-                    </MudTd>
-                </RowTemplate>
-            </MudTable>
-        }
+        <MudTextField T="string"
+                      Label="Server Description"
+                      Value="@_serverDescription"
+                      ValueChanged="value => _serverDescription = NormalizeText(value)"
+                      Immediate="true"
+                      Lines="3"
+                      Variant="Variant.Outlined"
+                      Placeholder="Provides configured user profile fields for personalization, such as display name, preferred language, timezone, tone, and other user-specific preferences."
+                      HelperText="Prefer one short declarative sentence that starts with 'Provides ...' and names the most relevant field examples." />
+
+        <MudTabs Rounded="true" Elevation="0" PanelClass="pt-2">
+            <MudTabPanel Text="Definitions">
+                <MudAlert Severity="Severity.Info" Dense="true" Variant="Variant.Outlined" Class="mb-3">
+                    Definitions control what the personalization MCP server advertises and which keys are valid for stored values.
+                </MudAlert>
+
+                @if (_definitions.Count == 0)
+                {
+                    <MudAlert Severity="Severity.Warning" Dense="true" Variant="Variant.Outlined">
+                        No fields are configured. Add at least one definition if this MCP server should provide user profile data.
+                    </MudAlert>
+                }
+                else
+                {
+                    <MudTable Items="@_definitions"
+                              Dense="true"
+                              Hover="true"
+                              Striped="true"
+                              Bordered="true"
+                              Breakpoint="Breakpoint.None">
+                        <HeaderContent>
+                            <MudTh Style="width: 12%;">Key</MudTh>
+                            <MudTh Style="width: 20%;">Description</MudTh>
+                            <MudTh Style="width: 20%;">Prompt</MudTh>
+                            <MudTh Style="width: 12%;">Default</MudTh>
+                            <MudTh Style="width: 16%;">Allowed Values</MudTh>
+                            <MudTh Style="width: 16%;">Aliases</MudTh>
+                            <MudTh Style="width: 4%;"></MudTh>
+                        </HeaderContent>
+                        <RowTemplate>
+                            <MudTd DataLabel="Key">
+                                <MudTextField T="string"
+                                              Value="@context.Key"
+                                              ValueChanged="value => UpdateDefinitionKey(context, value)"
+                                              Immediate="true"
+                                              Margin="Margin.Dense" />
+                            </MudTd>
+                            <MudTd DataLabel="Description">
+                                <MudTextField T="string"
+                                              Value="@context.Description"
+                                              ValueChanged="value => context.Description = NormalizeText(value)"
+                                              Immediate="true"
+                                              Margin="Margin.Dense" />
+                            </MudTd>
+                            <MudTd DataLabel="Prompt">
+                                <MudTextField T="string"
+                                              Value="@context.Prompt"
+                                              ValueChanged="value => context.Prompt = NormalizeText(value)"
+                                              Immediate="true"
+                                              Margin="Margin.Dense" />
+                            </MudTd>
+                            <MudTd DataLabel="Default">
+                                <MudTextField T="string"
+                                              Value="@context.DefaultValue"
+                                              ValueChanged="value => context.DefaultValue = NormalizeText(value)"
+                                              Immediate="true"
+                                              Margin="Margin.Dense" />
+                            </MudTd>
+                            <MudTd DataLabel="Allowed Values">
+                                <MudTextField T="string"
+                                              Value="@context.AllowedValuesText"
+                                              ValueChanged="value => context.AllowedValuesText = NormalizeCsv(value)"
+                                              Immediate="true"
+                                              Margin="Margin.Dense"
+                                              HelperText="Comma-separated" />
+                            </MudTd>
+                            <MudTd DataLabel="Aliases">
+                                <MudTextField T="string"
+                                              Value="@context.AliasesText"
+                                              ValueChanged="value => context.AliasesText = NormalizeCsv(value)"
+                                              Immediate="true"
+                                              Margin="Margin.Dense"
+                                              HelperText="Comma-separated" />
+                            </MudTd>
+                            <MudTd DataLabel="Actions">
+                                <MudIconButton Icon="@Icons.Material.Filled.Delete"
+                                               Color="Color.Error"
+                                               OnClick="@(() => RemoveDefinition(context))" />
+                            </MudTd>
+                        </RowTemplate>
+                    </MudTable>
+                }
+            </MudTabPanel>
+
+            <MudTabPanel Text="Values">
+                <MudAlert Severity="Severity.Info" Dense="true" Variant="Variant.Outlined" Class="mb-3">
+                    Values are stored only for configured fields. Rename or remove a field in Definitions and the corresponding stored value will follow that change.
+                </MudAlert>
+
+                @if (_definitions.Count == 0)
+                {
+                    <MudAlert Severity="Severity.Warning" Dense="true" Variant="Variant.Outlined">
+                        Add field definitions first. Values are keyed strictly by the configured definitions.
+                    </MudAlert>
+                }
+                else
+                {
+                    <MudTable Items="@_definitions.OrderBy(static item => item.Key, StringComparer.OrdinalIgnoreCase)"
+                              Dense="true"
+                              Hover="true"
+                              Striped="true"
+                              Bordered="true"
+                              Breakpoint="Breakpoint.Sm">
+                        <HeaderContent>
+                            <MudTh Style="width: 20%;">Key</MudTh>
+                            <MudTh Style="width: 30%;">Description</MudTh>
+                            <MudTh>Value</MudTh>
+                            <MudTh Style="width: 60px;"></MudTh>
+                        </HeaderContent>
+                        <RowTemplate>
+                            <MudTd DataLabel="Key">
+                                <MudText Typo="Typo.body2">@context.Key</MudText>
+                            </MudTd>
+                            <MudTd DataLabel="Description">
+                                <MudText Typo="Typo.body2">@GetDefinitionSummary(context)</MudText>
+                            </MudTd>
+                            <MudTd DataLabel="Value">
+                                <MudTextField T="string"
+                                              Value="@GetValue(context.Key)"
+                                              ValueChanged="value => SetValue(context.Key, value)"
+                                              Immediate="true"
+                                              Margin="Margin.Dense"
+                                              HelperText="@GetValueHelperText(context)" />
+                            </MudTd>
+                            <MudTd DataLabel="Actions">
+                                <MudIconButton Icon="@Icons.Material.Filled.DeleteSweep"
+                                               Color="Color.Error"
+                                               Disabled="@(!HasValue(context.Key))"
+                                               OnClick="@(() => ClearValue(context.Key))" />
+                            </MudTd>
+                        </RowTemplate>
+                    </MudTable>
+                }
+            </MudTabPanel>
+        </MudTabs>
     </MudStack>
 }
 
 @code {
     [Parameter] public IMcpServerDescriptor? ServerDescriptor { get; set; }
 
-    private readonly List<PreferenceRow> _rows = [];
+    private readonly List<PreferenceDefinitionRow> _definitions = [];
+    private Dictionary<string, string> _values = new(StringComparer.OrdinalIgnoreCase);
     private bool _loading = true;
     private bool _saving;
+    private string _serverDescription = string.Empty;
     private string _storageFilePath = string.Empty;
 
     protected override async Task OnInitializedAsync()
@@ -111,16 +222,8 @@ else
             _loading = true;
             _storageFilePath = PreferencesEditorService.StorageFilePath;
 
-            var storedValues = await PreferencesEditorService.GetAllAsync();
-            _rows.Clear();
-            foreach (var (key, value) in storedValues.OrderBy(static pair => pair.Key, StringComparer.OrdinalIgnoreCase))
-            {
-                _rows.Add(new PreferenceRow
-                {
-                    Key = key,
-                    Value = value
-                });
-            }
+            var document = await PreferencesEditorService.GetDocumentAsync();
+            LoadDocument(document);
         }
         catch (Exception ex)
         {
@@ -137,8 +240,8 @@ else
         try
         {
             _saving = true;
-            await PreferencesEditorService.SaveAllAsync(BuildValueMap());
-            Snackbar.Add("User profile preferences saved.", Severity.Success);
+            await PreferencesEditorService.SaveAsync(BuildDocument());
+            Snackbar.Add("User profile MCP configuration saved.", Severity.Success);
             await ReloadAsync();
         }
         catch (Exception ex)
@@ -151,60 +254,220 @@ else
         }
     }
 
-    private async Task ResetAsync()
+    private void ClearValues()
     {
-        try
-        {
-            _saving = true;
-            await PreferencesEditorService.ClearAsync();
-            Snackbar.Add("User profile preferences cleared.", Severity.Success);
-            await ReloadAsync();
-        }
-        catch (Exception ex)
-        {
-            Snackbar.Add($"Failed to clear user profile preferences: {ex.Message}", Severity.Error);
-        }
-        finally
-        {
-            _saving = false;
-        }
+        _values.Clear();
+        Snackbar.Add("Stored values cleared in the editor. Save to persist the change.", Severity.Info);
     }
 
-    private void AddRow()
+    private void RestoreDefaults()
     {
-        _rows.Add(new PreferenceRow
+        LoadDocument(PreferencesEditorService.CreateDefaultDocument());
+        Snackbar.Add("Default profile definition set loaded into the editor. Save to persist it.", Severity.Info);
+    }
+
+    private void AddDefinition()
+    {
+        _definitions.Add(new PreferenceDefinitionRow
         {
             Key = string.Empty,
-            Value = string.Empty
+            Description = string.Empty,
+            Prompt = string.Empty,
+            DefaultValue = string.Empty,
+            AllowedValuesText = string.Empty,
+            AliasesText = string.Empty
         });
     }
 
-    private void RemoveRow(PreferenceRow row)
+    private void RemoveDefinition(PreferenceDefinitionRow row)
     {
         if (row is null)
-            return;
-
-        _rows.Remove(row);
-    }
-
-    private Dictionary<string, string?> BuildValueMap()
-    {
-        Dictionary<string, string?> values = new(StringComparer.OrdinalIgnoreCase);
-
-        foreach (var row in _rows)
         {
-            values[row.Key] = row.Value;
+            return;
         }
 
-        return values;
+        if (!string.IsNullOrWhiteSpace(row.Key))
+        {
+            _values.Remove(row.Key);
+        }
+
+        _definitions.Remove(row);
+    }
+
+    private void UpdateDefinitionKey(PreferenceDefinitionRow row, string? newValue)
+    {
+        var previousKey = row.Key;
+        var normalizedKey = NormalizeText(newValue);
+        row.Key = normalizedKey;
+
+        if (string.Equals(previousKey, normalizedKey, StringComparison.Ordinal))
+        {
+            return;
+        }
+
+        if (!string.IsNullOrWhiteSpace(previousKey) && _values.Remove(previousKey, out var existingValue))
+        {
+            if (!string.IsNullOrWhiteSpace(normalizedKey))
+            {
+                _values[normalizedKey] = existingValue;
+            }
+        }
+    }
+
+    private void SetValue(string key, string? value)
+    {
+        var normalizedKey = NormalizeText(key);
+        if (string.IsNullOrWhiteSpace(normalizedKey))
+        {
+            return;
+        }
+
+        var normalizedValue = NormalizeText(value);
+        if (string.IsNullOrWhiteSpace(normalizedValue))
+        {
+            _values.Remove(normalizedKey);
+            return;
+        }
+
+        _values[normalizedKey] = normalizedValue;
+    }
+
+    private void ClearValue(string key)
+    {
+        if (string.IsNullOrWhiteSpace(key))
+        {
+            return;
+        }
+
+        _values.Remove(key);
+    }
+
+    private bool HasValue(string key) => _values.ContainsKey(key);
+
+    private string GetValue(string key) =>
+        _values.TryGetValue(key, out var value) ? value : string.Empty;
+
+    private string GetDefinitionSummary(PreferenceDefinitionRow row)
+    {
+        if (!string.IsNullOrWhiteSpace(row.Description))
+        {
+            return row.Description;
+        }
+
+        return string.IsNullOrWhiteSpace(row.Prompt)
+            ? "(no description)"
+            : row.Prompt;
+    }
+
+    private string GetValueHelperText(PreferenceDefinitionRow row)
+    {
+        if (!string.IsNullOrWhiteSpace(row.AllowedValuesText))
+        {
+            return $"Allowed values: {row.AllowedValuesText}";
+        }
+
+        if (!string.IsNullOrWhiteSpace(row.DefaultValue))
+        {
+            return $"Default: {row.DefaultValue}";
+        }
+
+        return string.Empty;
+    }
+
+    private void LoadDocument(UserProfilePreferencesDocument document)
+    {
+        _serverDescription = document.ServerDescription;
+        _definitions.Clear();
+        _definitions.AddRange(document.Definitions
+            .OrderBy(static definition => definition.Key, StringComparer.OrdinalIgnoreCase)
+            .Select(static definition => new PreferenceDefinitionRow
+            {
+                Key = definition.Key,
+                Description = definition.Description,
+                Prompt = definition.Prompt,
+                DefaultValue = definition.DefaultValue ?? string.Empty,
+                AllowedValuesText = string.Join(", ", definition.AllowedValues),
+                AliasesText = string.Join(", ", definition.Aliases)
+            }));
+        _values = new Dictionary<string, string>(document.Values, StringComparer.OrdinalIgnoreCase);
+    }
+
+    private UserProfilePreferencesDocument BuildDocument()
+    {
+        var definitions = _definitions
+            .Select(static row => new UserProfilePreferenceDefinition
+            {
+                Key = row.Key,
+                Description = row.Description,
+                Prompt = row.Prompt,
+                DefaultValue = string.IsNullOrWhiteSpace(row.DefaultValue) ? null : row.DefaultValue,
+                AllowedValues = SplitCsv(row.AllowedValuesText),
+                Aliases = SplitCsv(row.AliasesText)
+            })
+            .ToList();
+
+        var allowedKeys = definitions
+            .Select(static definition => definition.Key)
+            .Where(static key => !string.IsNullOrWhiteSpace(key))
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        Dictionary<string, string> values = new(StringComparer.OrdinalIgnoreCase);
+        foreach (var (key, value) in _values)
+        {
+            if (!allowedKeys.Contains(key))
+            {
+                continue;
+            }
+
+            var normalizedValue = NormalizeText(value);
+            if (string.IsNullOrWhiteSpace(normalizedValue))
+            {
+                continue;
+            }
+
+            values[key] = normalizedValue;
+        }
+
+        return new UserProfilePreferencesDocument
+        {
+            ServerDescription = _serverDescription,
+            Definitions = definitions,
+            Values = values
+        };
     }
 
     private static string NormalizeText(string? value) =>
         value?.Trim() ?? string.Empty;
 
-    private sealed class PreferenceRow
+    private static string NormalizeCsv(string? value) =>
+        string.Join(", ", SplitCsv(value));
+
+    private static List<string> SplitCsv(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return [];
+        }
+
+        return value
+            .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Where(static item => !string.IsNullOrWhiteSpace(item))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+    }
+
+    private sealed class PreferenceDefinitionRow
     {
         public string Key { get; set; } = string.Empty;
-        public string Value { get; set; } = string.Empty;
+
+        public string Description { get; set; } = string.Empty;
+
+        public string Prompt { get; set; } = string.Empty;
+
+        public string DefaultValue { get; set; } = string.Empty;
+
+        public string AllowedValuesText { get; set; } = string.Empty;
+
+        public string AliasesText { get; set; } = string.Empty;
     }
 }

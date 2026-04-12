@@ -15,15 +15,18 @@ public sealed class BuiltInMcpServerDescriptor(
     string name,
     string description,
     Action<IMcpServerBuilder> registerTools,
-    IReadOnlyList<McpOverrideDefinition>? overrideDefinitions = null) : IBuiltInMcpServerDescriptor
+    IReadOnlyList<McpOverrideDefinition>? overrideDefinitions = null,
+    Func<string>? descriptionFactory = null) : IBuiltInMcpServerDescriptor
 {
     private readonly Action<IMcpServerBuilder> _registerTools =
         registerTools ?? throw new ArgumentNullException(nameof(registerTools));
+    private readonly Func<string> _descriptionFactory =
+        descriptionFactory ?? (() => description ?? string.Empty);
 
     public Guid? Id { get; } = id;
     public string Key { get; } = key ?? throw new ArgumentNullException(nameof(key));
     public string Name { get; } = name ?? throw new ArgumentNullException(nameof(name));
-    public string Description { get; } = description ?? string.Empty;
+    public string Description => _descriptionFactory();
     public IReadOnlyList<McpOverrideDefinition> OverrideDefinitions { get; } =
         overrideDefinitions?.ToArray() ?? [];
 

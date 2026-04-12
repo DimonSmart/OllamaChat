@@ -11,4 +11,6 @@ public interface IMcpClientService : IAsyncDisposable
         CancellationToken cancellationToken = default);
 
     Task<IReadOnlyList<McpClientTool>> GetMcpTools(McpClient mcpClient, CancellationToken cancellationToken = default);
+
+    Task InvalidateAsync(CancellationToken cancellationToken = default);
 }
