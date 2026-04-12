@@ -15,6 +15,22 @@ public sealed class VoiceInputService(
     IUserSettingsService userSettingsService,
     ILogger<VoiceInputService> logger) : IVoiceInputService, IDisposable
 {
+    private static readonly IReadOnlyList<GgmlType> SupportedModelTypes =
+    [
+        GgmlType.Tiny,
+        GgmlType.Base,
+        GgmlType.Small,
+        GgmlType.Medium,
+        GgmlType.LargeV3Turbo,
+        GgmlType.LargeV3,
+        GgmlType.TinyEn,
+        GgmlType.BaseEn,
+        GgmlType.SmallEn,
+        GgmlType.MediumEn,
+        GgmlType.LargeV2,
+        GgmlType.LargeV1
+    ];
+
     private readonly IUserSettingsService _userSettingsService = userSettingsService;
     private readonly ILogger<VoiceInputService> _logger = logger;
     private readonly SemaphoreSlim _operationLock = new(1, 1);
@@ -91,6 +107,77 @@ public sealed class VoiceInputService(
                 _logger.LogError(ex, "Voice input initialization failed.");
             }
 
+            await _userSettingsService.SaveSettingsAsync(userSettings, cancellationToken);
+            return voiceInput;
+        }
+        finally
+        {
+            _operationLock.Release();
+        }
+    }
+
+    public async Task<VoiceInputStorageInfo> GetStorageInfoAsync(CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        await _operationLock.WaitAsync(cancellationToken);
+        try
+        {
+            if (!Directory.Exists(_voiceInputDirectoryPath))
+            {
+                return new VoiceInputStorageInfo();
+            }
+
+            var downloadedModels = Directory.EnumerateFiles(_voiceInputDirectoryPath, "ggml-*.bin", SearchOption.TopDirectoryOnly)
+                .Select(path =>
+                {
+                    var fileInfo = new FileInfo(path);
+                    var modelType = ResolveModelTypeByFileName(fileInfo.Name);
+                    var displayName = modelType is null
+                        ? fileInfo.Name
+                        : GetModelDisplayName(modelType.Value);
+
+                    return new VoiceInputDownloadedModel(
+                        modelType is null ? fileInfo.Name : GetModelTypeName(modelType.Value),
+                        displayName,
+                        fileInfo.Name,
+                        fileInfo.Length);
+                })
+                .OrderBy(model => model.DisplayName, StringComparer.OrdinalIgnoreCase)
+                .ToArray();
+
+            return new VoiceInputStorageInfo
+            {
+                TotalBytes = downloadedModels.Sum(model => model.SizeBytes),
+                DownloadedModels = downloadedModels
+            };
+        }
+        finally
+        {
+            _operationLock.Release();
+        }
+    }
+
+    public async Task<VoiceInputSettings> ClearDownloadedModelsAsync(CancellationToken cancellationToken = default)
+    {
+        await _operationLock.WaitAsync(cancellationToken);
+        try
+        {
+            DisposeFactory();
+
+            if (Directory.Exists(_voiceInputDirectoryPath))
+            {
+                foreach (var filePath in Directory.EnumerateFiles(_voiceInputDirectoryPath, "ggml-*", SearchOption.TopDirectoryOnly))
+                {
+                    cancellationToken.ThrowIfCancellationRequested();
+                    File.Delete(filePath);
+                }
+            }
+
+            var userSettings = await _userSettingsService.GetSettingsAsync(cancellationToken);
+            var voiceInput = userSettings.VoiceInput ??= new VoiceInputSettings();
+            NormalizeVoiceInputSettings(voiceInput);
+            voiceInput.Status = VoiceInputInitializationStatus.NotInitialized;
+            voiceInput.ErrorMessage = string.Empty;
             await _userSettingsService.SaveSettingsAsync(userSettings, cancellationToken);
             return voiceInput;
         }
@@ -283,6 +370,20 @@ public sealed class VoiceInputService(
             _ => nameof(GgmlType.Base)
         };
 
+    private static string GetModelDisplayName(GgmlType modelType) =>
+        modelType switch
+        {
+            GgmlType.LargeV3Turbo => "Large V3 Turbo",
+            GgmlType.TinyEn => "Tiny (English only)",
+            GgmlType.BaseEn => "Base (English only)",
+            GgmlType.SmallEn => "Small (English only)",
+            GgmlType.MediumEn => "Medium (English only)",
+            GgmlType.LargeV1 => "Large V1",
+            GgmlType.LargeV2 => "Large V2",
+            GgmlType.LargeV3 => "Large V3",
+            _ => GetModelTypeName(modelType)
+        };
+
     private static GgmlType ResolveModelType(string? modelType)
     {
         if (Enum.TryParse<GgmlType>(modelType, ignoreCase: true, out var parsedType))
@@ -291,6 +392,19 @@ public sealed class VoiceInputService(
         }
 
         return GgmlType.Base;
+    }
+
+    private static GgmlType? ResolveModelTypeByFileName(string fileName)
+    {
+        foreach (var modelType in SupportedModelTypes)
+        {
+            if (string.Equals(GetModelFileName(modelType), fileName, StringComparison.OrdinalIgnoreCase))
+            {
+                return modelType;
+            }
+        }
+
+        return null;
     }
 
     private static string GetModelFileName(GgmlType modelType) =>

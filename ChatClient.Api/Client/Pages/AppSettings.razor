@@ -4,6 +4,7 @@
 @using ChatClient.Api.Services
 @using ChatClient.Application.Services
 @using ChatClient.Domain.Models
+@using System.Linq
 @using System.Text.Json
 @inject IUserSettingsService UserSettingsService
 @inject IVoiceInputService VoiceInputService
@@ -105,7 +106,7 @@
                                        Disabled="@(_settings.VoiceInput.Status == VoiceInputInitializationStatus.Initializing)">
                                 @foreach (var option in VoiceInputModelOptions)
                                 {
-                                    <MudSelectItem Value="@option.Value">@option.Label</MudSelectItem>
+                                    <MudSelectItem Value="@option.Value">@GetVoiceInputModelLabel(option)</MudSelectItem>
                                 }
                             </MudSelect>
 
@@ -115,6 +116,13 @@
                                            OnClick="InitializeVoiceInput"
                                            Disabled="@(_settings.VoiceInput.Status == VoiceInputInitializationStatus.Initializing)">
                                     Initialize
+                                </MudButton>
+
+                                <MudButton Variant="Variant.Outlined"
+                                           Color="Color.Secondary"
+                                           OnClick="ClearDownloadedVoiceModels"
+                                           Disabled="@(_settings.VoiceInput.Status == VoiceInputInitializationStatus.Initializing || _voiceInputStorage.TotalBytes == 0)">
+                                    Clear Downloaded Models
                                 </MudButton>
 
                                 <MudChip T="string"
@@ -135,6 +143,23 @@
                             {
                                 <MudText Typo="Typo.caption" Class="mt-2">
                                     @_voiceInputActivityMessage
+                                </MudText>
+                            }
+
+                            @if (_voiceInputStorage.DownloadedModels.Count > 0)
+                            {
+                                <MudText Typo="Typo.caption" Class="mt-2">
+                                    Downloaded models:
+                                    @string.Join(", ", _voiceInputStorage.DownloadedModels.Select(model => $"{model.DisplayName} ({ChatDisplayHelper.FormatFileSize(model.SizeBytes)})"))
+                                </MudText>
+                                <MudText Typo="Typo.caption">
+                                    Disk usage: @ChatDisplayHelper.FormatFileSize(_voiceInputStorage.TotalBytes)
+                                </MudText>
+                            }
+                            else
+                            {
+                                <MudText Typo="Typo.caption" Class="mt-2">
+                                    No Whisper models are currently stored locally.
                                 </MudText>
                             }
 
@@ -180,20 +205,21 @@
     private UserSettings _settings = new();
     private ServerModelSelection _defaultModel = new(null, null);
     private ServerModelSelection _embeddingModel = new(null, null);
+    private VoiceInputStorageInfo _voiceInputStorage = new();
     private static readonly IReadOnlyList<VoiceInputModelOption> VoiceInputModelOptions =
     [
-        new("Tiny", "Tiny"),
-        new("Base", "Base"),
-        new("Small", "Small"),
-        new("Medium", "Medium"),
-        new("LargeV3Turbo", "Large V3 Turbo"),
-        new("LargeV3", "Large V3"),
-        new("TinyEn", "Tiny (English only)"),
-        new("BaseEn", "Base (English only)"),
-        new("SmallEn", "Small (English only)"),
-        new("MediumEn", "Medium (English only)"),
-        new("LargeV2", "Large V2"),
-        new("LargeV1", "Large V1")
+        new("Tiny", "Tiny", 75L * 1024 * 1024, false),
+        new("Base", "Base", 142L * 1024 * 1024, false),
+        new("Small", "Small", 466L * 1024 * 1024, false),
+        new("Medium", "Medium", 1536L * 1024 * 1024, false),
+        new("LargeV3Turbo", "Large V3 Turbo", 1536L * 1024 * 1024, false),
+        new("LargeV3", "Large V3", 2969L * 1024 * 1024, false),
+        new("TinyEn", "Tiny", 75L * 1024 * 1024, true),
+        new("BaseEn", "Base", 142L * 1024 * 1024, true),
+        new("SmallEn", "Small", 466L * 1024 * 1024, true),
+        new("MediumEn", "Medium", 1536L * 1024 * 1024, true),
+        new("LargeV2", "Large V2", 2969L * 1024 * 1024, false),
+        new("LargeV1", "Large V1", 2969L * 1024 * 1024, false)
     ];
     private string _voiceInputActivityMessage = string.Empty;
     private bool _loading = true;
@@ -232,6 +258,7 @@
         {
             _settings = await UserSettingsService.GetSettingsAsync();
             _settings.VoiceInput = await VoiceInputService.GetSettingsAsync();
+            _voiceInputStorage = await VoiceInputService.GetStorageInfoAsync();
             _defaultModel = _settings.DefaultModel;
             _embeddingModel = _settings.Embedding.Model;
             _voiceInputActivityMessage = string.Empty;
@@ -330,6 +357,7 @@
             });
 
             _settings.VoiceInput = await VoiceInputService.InitializeAsync(progress);
+            _voiceInputStorage = await VoiceInputService.GetStorageInfoAsync();
 
             if (_settings.VoiceInput.Status == VoiceInputInitializationStatus.Ready)
             {
@@ -350,6 +378,26 @@
             Logger.LogError(ex, "Error initializing voice input");
             _voiceInputActivityMessage = "Voice input initialization failed.";
             Snackbar.Add("Failed to initialize voice input.", Severity.Error);
+        }
+    }
+
+    private async Task ClearDownloadedVoiceModels()
+    {
+        try
+        {
+            _voiceInputActivityMessage = "Removing downloaded Whisper models...";
+            await InvokeAsync(StateHasChanged);
+
+            _settings.VoiceInput = await VoiceInputService.ClearDownloadedModelsAsync();
+            _voiceInputStorage = await VoiceInputService.GetStorageInfoAsync();
+            _voiceInputActivityMessage = "Downloaded Whisper models were removed.";
+            Snackbar.Add("Downloaded Whisper models were removed.", Severity.Success);
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Error clearing downloaded Whisper models");
+            _voiceInputActivityMessage = "Failed to remove downloaded Whisper models.";
+            Snackbar.Add("Failed to remove downloaded Whisper models.", Severity.Error);
         }
     }
 
@@ -378,5 +426,13 @@
             _ => Color.Default
         };
 
-    private sealed record VoiceInputModelOption(string Value, string Label);
+    private static string GetVoiceInputModelLabel(VoiceInputModelOption option)
+    {
+        var sizeLabel = ChatDisplayHelper.FormatFileSize(option.ApproximateSizeBytes);
+        return option.IsEnglishOnly
+            ? $"{option.DisplayName} ({sizeLabel}, English only)"
+            : $"{option.DisplayName} ({sizeLabel})";
+    }
+
+    private sealed record VoiceInputModelOption(string Value, string DisplayName, long ApproximateSizeBytes, bool IsEnglishOnly);
 }

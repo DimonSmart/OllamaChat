@@ -130,6 +130,83 @@ public class VoiceInputServiceTests
         }
     }
 
+    [Fact]
+    public async Task GetStorageInfoAsync_ReturnsDownloadedModelsAndTotalSize()
+    {
+        var tempDirectory = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(tempDirectory);
+
+        try
+        {
+            await File.WriteAllTextAsync(Path.Combine(tempDirectory, "ggml-small.bin"), "12345");
+            await File.WriteAllTextAsync(Path.Combine(tempDirectory, "ggml-base.bin"), "123");
+
+            var userSettingsService = new TestUserSettingsService();
+            using var service = CreateService(tempDirectory, userSettingsService);
+
+            var storageInfo = await service.GetStorageInfoAsync();
+
+            Assert.Equal(8, storageInfo.TotalBytes);
+            Assert.Collection(
+                storageInfo.DownloadedModels.OrderBy(model => model.ModelType, StringComparer.Ordinal),
+                model =>
+                {
+                    Assert.Equal("Base", model.ModelType);
+                    Assert.Equal(3, model.SizeBytes);
+                },
+                model =>
+                {
+                    Assert.Equal("Small", model.ModelType);
+                    Assert.Equal(5, model.SizeBytes);
+                });
+        }
+        finally
+        {
+            Directory.Delete(tempDirectory, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task ClearDownloadedModelsAsync_RemovesFilesAndResetsStatus()
+    {
+        var tempDirectory = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(tempDirectory);
+
+        try
+        {
+            var modelFilePath = Path.Combine(tempDirectory, "ggml-small.bin");
+            var partialDownloadPath = Path.Combine(tempDirectory, "ggml-large-v3.bin.download");
+            await File.WriteAllTextAsync(modelFilePath, "model");
+            await File.WriteAllTextAsync(partialDownloadPath, "partial");
+
+            var userSettingsService = new TestUserSettingsService
+            {
+                Settings = new UserSettings
+                {
+                    VoiceInput = new VoiceInputSettings
+                    {
+                        Status = VoiceInputInitializationStatus.Ready,
+                        ModelType = "Small",
+                        ErrorMessage = "old error"
+                    }
+                }
+            };
+
+            using var service = CreateService(tempDirectory, userSettingsService);
+            var settings = await service.ClearDownloadedModelsAsync();
+
+            Assert.False(File.Exists(modelFilePath));
+            Assert.False(File.Exists(partialDownloadPath));
+            Assert.Equal(VoiceInputInitializationStatus.NotInitialized, settings.Status);
+            Assert.Equal(string.Empty, settings.ErrorMessage);
+            Assert.Equal(1, userSettingsService.SaveCount);
+        }
+        finally
+        {
+            Directory.Delete(tempDirectory, recursive: true);
+        }
+    }
+
     private static VoiceInputService CreateService(
         string tempDirectory,
         IUserSettingsService userSettingsService,
