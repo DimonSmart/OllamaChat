@@ -1,6 +1,7 @@
 @using ChatClient.Api.Client.Services
 @using ChatClient.Application.Services
 @using ChatClient.Domain.Models
+@using System.Globalization
 @using Microsoft.AspNetCore.Components.Forms
 @using Microsoft.AspNetCore.Components.Web
 @using Microsoft.JSInterop
@@ -48,14 +49,26 @@
 
         @if (CanShowVoiceButton)
         {
-            <MudTooltip Text="@VoiceButtonTooltip">
-                <MudIconButton Icon="@VoiceButtonIcon"
-                               Color="@VoiceButtonColor"
-                               Size="Size.Medium"
-                               Disabled="@_isVoiceProcessing"
-                               OnClick="ToggleVoiceInputAsync"
-                               title="@VoiceButtonTooltip" />
-            </MudTooltip>
+            <div class="@VoiceInputControlCssClass">
+                <MudTooltip Text="@VoiceButtonTooltip">
+                    <MudIconButton Icon="@VoiceButtonIcon"
+                                   Color="@VoiceButtonColor"
+                                   Size="Size.Medium"
+                                   Class="@VoiceButtonCssClass"
+                                   Disabled="@_isVoiceProcessing"
+                                   OnClick="ToggleVoiceInputAsync"
+                                   title="@VoiceButtonTooltip" />
+                </MudTooltip>
+
+                @if (_isVoiceRecording)
+                {
+                    <div class="voice-input-meter" aria-hidden="true">
+                        <span class="voice-input-bar" style="@GetVoiceBarStyle(0.65, 0.08)"></span>
+                        <span class="voice-input-bar" style="@GetVoiceBarStyle(1.00, 0.14)"></span>
+                        <span class="voice-input-bar" style="@GetVoiceBarStyle(0.82, 0.10)"></span>
+                    </div>
+                }
+            </div>
         }
     </MudStack>
 
@@ -88,10 +101,12 @@
 
     private readonly string _messageInputId = $"chat-input-{Guid.NewGuid():N}";
     private VoiceInputSettings _voiceInputSettings = new();
+    private DotNetObjectReference<ChatInput>? _selfReference;
     private string CurrentText { get; set; } = string.Empty;
     private List<AppChatMessageFile> attachedFiles = [];
     private bool _isVoiceRecording;
     private bool _isVoiceProcessing;
+    private double _voiceLevel;
 
     protected override async Task OnInitializedAsync()
     {
@@ -109,7 +124,8 @@
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
-        await JSRuntime.InvokeVoidAsync("voiceInputInterop.registerInput", _messageInputId);
+        _selfReference ??= DotNetObjectReference.Create(this);
+        await JSRuntime.InvokeVoidAsync("voiceInputInterop.registerInput", _messageInputId, _selfReference);
     }
 
     private bool IsSending { get; set; }
@@ -131,6 +147,18 @@
             : _isVoiceProcessing
                 ? "Recognizing speech..."
                 : "Start voice input";
+    private string VoiceInputControlCssClass =>
+        _isVoiceRecording
+            ? "voice-input-control is-recording"
+            : _isVoiceProcessing
+                ? "voice-input-control is-processing"
+                : "voice-input-control";
+    private string VoiceButtonCssClass =>
+        _isVoiceRecording
+            ? "voice-input-button is-recording"
+            : _isVoiceProcessing
+                ? "voice-input-button is-processing"
+                : "voice-input-button";
 
     private async Task HandleKeyDown(KeyboardEventArgs e)
     {
@@ -236,11 +264,13 @@
     {
         try
         {
+            _voiceLevel = 0;
             await JSRuntime.InvokeVoidAsync("voiceInputInterop.startRecording", _messageInputId);
             _isVoiceRecording = true;
         }
         catch (Exception ex)
         {
+            _voiceLevel = 0;
             Logger.LogWarning(ex, "Failed to start voice input.");
             Snackbar.Add(GetVoiceErrorMessage(ex, "Failed to start voice input."), Severity.Warning);
         }
@@ -254,6 +284,7 @@
     {
         _isVoiceRecording = false;
         _isVoiceProcessing = true;
+        _voiceLevel = 0;
         StateHasChanged();
 
         try
@@ -284,8 +315,22 @@
         finally
         {
             _isVoiceProcessing = false;
+            _voiceLevel = 0;
             StateHasChanged();
         }
+    }
+
+    [JSInvokable]
+    public Task UpdateVoiceLevel(double level)
+    {
+        var normalizedLevel = Math.Clamp(level, 0d, 1d);
+        if (Math.Abs(_voiceLevel - normalizedLevel) < 0.01d)
+        {
+            return Task.CompletedTask;
+        }
+
+        _voiceLevel = normalizedLevel;
+        return InvokeAsync(StateHasChanged);
     }
 
     public async ValueTask DisposeAsync()
@@ -300,6 +345,8 @@
         catch (InvalidOperationException)
         {
         }
+
+        _selfReference?.Dispose();
     }
 
     private static string GetVoiceErrorMessage(Exception exception, string fallbackMessage)
@@ -311,6 +358,16 @@
         return string.IsNullOrWhiteSpace(message)
             ? fallbackMessage
             : message;
+    }
+
+    private string GetVoiceBarStyle(double multiplier, double baseline)
+    {
+        var level = Math.Clamp((_voiceLevel * multiplier) + baseline, 0.12d, 1d);
+        var height = 6 + (int)Math.Round(level * 16);
+        var opacity = 0.35d + (level * 0.65d);
+        return string.Create(
+            CultureInfo.InvariantCulture,
+            $"height:{height}px;opacity:{opacity:0.##};");
     }
 
     private sealed class VoiceInputInsertionResult

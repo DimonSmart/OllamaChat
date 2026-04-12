@@ -11,6 +11,15 @@ window.voiceInputInterop = (() => {
                 selectionStart: 0,
                 selectionEnd: 0,
                 stream: null,
+                audioContext: null,
+                analyser: null,
+                analyserSource: null,
+                analyserBuffer: null,
+                levelAnimationFrame: 0,
+                lastLevelSentAt: 0,
+                lastLevelSent: -1,
+                smoothedLevel: 0,
+                dotNetRef: null,
                 recorder: null,
                 stopPromise: null,
                 eventHandlers: null
@@ -35,7 +44,105 @@ window.voiceInputInterop = (() => {
             : state.selectionStart;
     };
 
+    const reportVoiceLevel = (state, level) => {
+        if (!state.dotNetRef) {
+            return;
+        }
+
+        state.dotNetRef.invokeMethodAsync("UpdateVoiceLevel", level).catch(() => {
+        });
+    };
+
+    const stopVoiceLevelMonitoring = (state) => {
+        if (state.levelAnimationFrame) {
+            cancelAnimationFrame(state.levelAnimationFrame);
+            state.levelAnimationFrame = 0;
+        }
+
+        state.lastLevelSentAt = 0;
+        state.lastLevelSent = -1;
+        state.smoothedLevel = 0;
+
+        if (state.analyserSource) {
+            try {
+                state.analyserSource.disconnect();
+            } catch {
+            }
+
+            state.analyserSource = null;
+        }
+
+        state.analyser = null;
+        state.analyserBuffer = null;
+
+        if (state.audioContext) {
+            state.audioContext.close().catch(() => {
+            });
+            state.audioContext = null;
+        }
+
+        reportVoiceLevel(state, 0);
+    };
+
+    const scheduleVoiceLevelMonitoring = (state) => {
+        if (!state.analyser || !state.analyserBuffer) {
+            return;
+        }
+
+        state.levelAnimationFrame = requestAnimationFrame(() => {
+            if (!state.analyser || !state.analyserBuffer) {
+                return;
+            }
+
+            state.analyser.getByteTimeDomainData(state.analyserBuffer);
+
+            let energy = 0;
+            for (let index = 0; index < state.analyserBuffer.length; index++) {
+                const centered = (state.analyserBuffer[index] - 128) / 128;
+                energy += centered * centered;
+            }
+
+            const rmsLevel = Math.sqrt(energy / state.analyserBuffer.length);
+            const normalizedLevel = Math.min(1, Math.max(0, (rmsLevel - 0.015) / 0.12));
+            state.smoothedLevel = Math.max(normalizedLevel, state.smoothedLevel * 0.82);
+
+            const now = performance.now();
+            if (now - state.lastLevelSentAt >= 90 || Math.abs(state.smoothedLevel - state.lastLevelSent) >= 0.04) {
+                state.lastLevelSentAt = now;
+                state.lastLevelSent = state.smoothedLevel;
+                reportVoiceLevel(state, state.smoothedLevel);
+            }
+
+            scheduleVoiceLevelMonitoring(state);
+        });
+    };
+
+    const startVoiceLevelMonitoring = (state, stream) => {
+        const AudioContextType = window.AudioContext || window.webkitAudioContext;
+        if (!AudioContextType || !state.dotNetRef) {
+            return;
+        }
+
+        stopVoiceLevelMonitoring(state);
+
+        const audioContext = new AudioContextType();
+        const analyser = audioContext.createAnalyser();
+        analyser.fftSize = 1024;
+        analyser.smoothingTimeConstant = 0.85;
+
+        const analyserSource = audioContext.createMediaStreamSource(stream);
+        analyserSource.connect(analyser);
+
+        state.audioContext = audioContext;
+        state.analyser = analyser;
+        state.analyserSource = analyserSource;
+        state.analyserBuffer = new Uint8Array(analyser.fftSize);
+        scheduleVoiceLevelMonitoring(state);
+    };
+
     const releaseMediaResources = (state) => {
+        stopVoiceLevelMonitoring(state);
+
         if (state.stream) {
             for (const track of state.stream.getTracks()) {
                 track.stop();
@@ -85,13 +192,16 @@ window.voiceInputInterop = (() => {
         states.set(inputId, state);
     };
 
-    const ensureInput = (inputId) => {
+    const ensureInput = (inputId, dotNetRef) => {
         const input = getInput(inputId);
         if (!input) {
             throw new Error("Message input is unavailable.");
         }
 
         const state = ensureState(inputId);
+        if (dotNetRef) {
+            state.dotNetRef = dotNetRef;
+        }
         attachInputHandlers(inputId, input, state);
         return state;
     };
@@ -231,8 +341,8 @@ window.voiceInputInterop = (() => {
     };
 
     return {
-        registerInput(inputId) {
-            ensureInput(inputId);
+        registerInput(inputId, dotNetRef) {
+            ensureInput(inputId, dotNetRef);
         },
 
         async startRecording(inputId) {
@@ -265,6 +375,7 @@ window.voiceInputInterop = (() => {
 
                 state.stream = stream;
                 state.recorder = recorder;
+                startVoiceLevelMonitoring(state, stream);
                 state.stopPromise = new Promise((resolve, reject) => {
                     recorder.addEventListener("dataavailable", (event) => {
                         if (event.data && event.data.size > 0) {
@@ -297,6 +408,8 @@ window.voiceInputInterop = (() => {
             if (state.recorder.state !== "inactive") {
                 state.recorder.stop();
             }
+
+            stopVoiceLevelMonitoring(state);
 
             try {
                 const recordedBlob = await state.stopPromise;
