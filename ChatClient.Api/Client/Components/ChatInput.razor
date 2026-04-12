@@ -1,15 +1,18 @@
 @using ChatClient.Api.Client.Services
+@using ChatClient.Api.VoiceInput
 @using ChatClient.Application.Services
 @using ChatClient.Domain.Models
 @using System.Globalization
 @using Microsoft.AspNetCore.Components.Forms
 @using Microsoft.AspNetCore.Components.Web
 @using Microsoft.JSInterop
+@using Microsoft.Extensions.Options
 @using MudBlazor
 @implements IAsyncDisposable
 @inject IUserSettingsService UserSettingsService
 @inject IVoiceInputService VoiceInputService
 @inject IJSRuntime JSRuntime
+@inject IOptions<VoiceInputOptions> VoiceInputOptionsAccessor
 @inject ILogger<ChatInput> Logger
 @inject ISnackbar Snackbar
 
@@ -57,6 +60,7 @@
                                    Class="@VoiceButtonCssClass"
                                    Disabled="@_isVoiceProcessing"
                                    OnClick="ToggleVoiceInputAsync"
+                                   aria-label="@VoiceButtonTooltip"
                                    title="@VoiceButtonTooltip" />
                 </MudTooltip>
 
@@ -66,6 +70,18 @@
                         <span class="voice-input-bar" style="@GetVoiceBarStyle(0.65, 0.08)"></span>
                         <span class="voice-input-bar" style="@GetVoiceBarStyle(1.00, 0.14)"></span>
                         <span class="voice-input-bar" style="@GetVoiceBarStyle(0.82, 0.10)"></span>
+                    </div>
+                }
+
+                @if (_isVoiceProcessing)
+                {
+                    <div class="voice-input-processing-indicator" aria-hidden="true">
+                        <MudProgressCircular Indeterminate="true"
+                                             Color="Color.Primary"
+                                             Size="Size.Medium"
+                                             Class="voice-input-spinner" />
+                        <MudIcon Icon="@Icons.Material.Filled.HourglassTop"
+                                 Class="voice-input-processing-icon" />
                     </div>
                 }
             </div>
@@ -107,6 +123,8 @@
     private bool _isVoiceRecording;
     private bool _isVoiceProcessing;
     private double _voiceLevel;
+    private TimeSpan VoiceInputInteropTimeout =>
+        TimeSpan.FromSeconds(Math.Max(30, VoiceInputOptionsAccessor.Value.InteropCallTimeoutSeconds));
 
     protected override async Task OnInitializedAsync()
     {
@@ -289,8 +307,10 @@
 
         try
         {
+            using var cancellation = new CancellationTokenSource(VoiceInputInteropTimeout);
             var recognizedText = await JSRuntime.InvokeAsync<string>(
                 "voiceInputInterop.stopRecording",
+                cancellation.Token,
                 _messageInputId,
                 "/api/voice-input/transcribe");
 
@@ -306,6 +326,13 @@
                 recognizedText);
 
             CurrentText = insertion?.Value ?? recognizedText;
+        }
+        catch (TaskCanceledException ex)
+        {
+            Logger.LogWarning(ex, "Voice input timed out.");
+            Snackbar.Add(
+                $"Voice recognition timed out after {(int)VoiceInputInteropTimeout.TotalSeconds} seconds. Try a smaller Whisper model or increase the timeout.",
+                Severity.Warning);
         }
         catch (Exception ex)
         {

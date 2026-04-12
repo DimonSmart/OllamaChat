@@ -11,4 +11,6 @@ public sealed class VoiceInputOptions
     public string RecognitionLanguage { get; set; } = "auto";
 
     public long MaxAudioBytes { get; set; } = 25 * 1024 * 1024;
+
+    public int InteropCallTimeoutSeconds { get; set; } = 300;
 }

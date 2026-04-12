@@ -55,7 +55,29 @@
 }
 
 .voice-input-button.is-processing {
-    opacity: 0.8;
+    opacity: 0.16;
+    transform: scale(0.9);
+    filter: saturate(0.15);
+}
+
+.voice-input-processing-indicator {
+    position: absolute;
+    inset: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    pointer-events: none;
+}
+
+.voice-input-spinner {
+    filter: drop-shadow(0 0 0.45rem rgba(25, 118, 210, 0.24));
+}
+
+.voice-input-processing-icon {
+    position: absolute;
+    color: var(--mud-palette-primary);
+    font-size: 1rem;
+    animation: voice-input-hourglass-spin 1s linear infinite;
 }
 
 .voice-input-meter {
@@ -195,6 +217,16 @@
     50% {
         transform: scale(1.08);
         filter: drop-shadow(0 0 0.35rem rgba(255, 87, 34, 0.28));
+    }
+}
+
+@keyframes voice-input-hourglass-spin {
+    from {
+        transform: rotate(0deg);
+    }
+
+    to {
+        transform: rotate(360deg);
     }
 }
 
