@@ -22,6 +22,7 @@ window.voiceInputInterop = (() => {
                 dotNetRef: null,
                 recorder: null,
                 stopPromise: null,
+                transcriptionPromise: null,
                 eventHandlers: null
             };
             states.set(inputId, state);
@@ -51,6 +52,17 @@ window.voiceInputInterop = (() => {
 
         state.dotNetRef.invokeMethodAsync("UpdateVoiceLevel", level).catch(() => {
         });
+    };
+
+    const reportTranscriptionCompleted = async (state, operationId, recognizedText, errorMessage) => {
+        if (!state.dotNetRef) {
+            return;
+        }
+
+        await state.dotNetRef
+            .invokeMethodAsync("CompleteVoiceInputTranscription", operationId, recognizedText, errorMessage)
+            .catch(() => {
+            });
     };
 
     const stopVoiceLevelMonitoring = (state) => {
@@ -361,6 +373,10 @@ window.voiceInputInterop = (() => {
             const state = ensureInput(inputId);
             captureSelection(state);
 
+            if (state.transcriptionPromise) {
+                throw new Error("Voice recognition is still in progress.");
+            }
+
             if (state.recorder?.state === "recording") {
                 return;
             }
@@ -399,10 +415,18 @@ window.voiceInputInterop = (() => {
             }
         },
 
-        async stopRecording(inputId, endpointUrl, operationId) {
+        stopRecording(inputId, endpointUrl, operationId) {
             const state = ensureState(inputId);
             if (!state.recorder || !state.stopPromise) {
                 throw new Error("Voice recording is not active.");
+            }
+
+            if (!state.dotNetRef) {
+                throw new Error("Voice input is unavailable.");
+            }
+
+            if (state.transcriptionPromise) {
+                throw new Error("Voice recognition is already in progress.");
             }
 
             if (state.recorder.state !== "inactive") {
@@ -410,28 +434,36 @@ window.voiceInputInterop = (() => {
             }
 
             stopVoiceLevelMonitoring(state);
+            state.transcriptionPromise = (async () => {
+                try {
+                    const recordedBlob = await state.stopPromise;
+                    const waveBlob = await convertRecordingToWave(recordedBlob);
+                    const formData = new FormData();
+                    formData.append("audio", waveBlob, "voice-input.wav");
+                    formData.append("operationId", operationId);
 
-            try {
-                const recordedBlob = await state.stopPromise;
-                const waveBlob = await convertRecordingToWave(recordedBlob);
-                const formData = new FormData();
-                formData.append("audio", waveBlob, "voice-input.wav");
-                formData.append("operationId", operationId);
+                    const response = await fetch(endpointUrl, {
+                        method: "POST",
+                        body: formData
+                    });
 
-                const response = await fetch(endpointUrl, {
-                    method: "POST",
-                    body: formData
-                });
+                    const payload = await response.json().catch(() => null);
+                    if (!response.ok) {
+                        throw new Error(payload?.message || "Voice recognition failed.");
+                    }
 
-                const payload = await response.json().catch(() => null);
-                if (!response.ok) {
-                    throw new Error(payload?.message || "Voice recognition failed.");
+                    await reportTranscriptionCompleted(state, operationId, payload?.text || "", null);
+                } catch (error) {
+                    await reportTranscriptionCompleted(
+                        state,
+                        operationId,
+                        null,
+                        toFriendlyError(error, "Voice input failed."));
+                } finally {
+                    state.transcriptionPromise = null;
+                    releaseMediaResources(state);
                 }
-
-                return payload?.text || "";
-            } finally {
-                releaseMediaResources(state);
-            }
+            })();
         },
 
         insertTextAtSavedSelection(inputId, insertedText) {

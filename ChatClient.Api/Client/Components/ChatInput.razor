@@ -80,7 +80,6 @@
                                              Color="Color.Primary"
                                              Size="Size.Medium"
                                              Class="voice-input-spinner" />
-                        <span class="voice-input-processing-progress">@VoiceRecognitionProgressText</span>
                     </div>
                 }
             </div>
@@ -122,7 +121,8 @@
     private bool _isVoiceRecording;
     private bool _isVoiceProcessing;
     private double _voiceLevel;
-    private int _voiceRecognitionProgress;
+    private string? _activeVoiceOperationId;
+    private CancellationTokenSource? _voiceRecognitionTimeoutCancellation;
     private TimeSpan VoiceInputInteropTimeout =>
         TimeSpan.FromSeconds(Math.Max(30, VoiceInputOptionsAccessor.Value.InteropCallTimeoutSeconds));
 
@@ -163,7 +163,7 @@
         _isVoiceRecording
             ? "Stop voice input"
             : _isVoiceProcessing
-                ? $"Recognizing speech... {VoiceRecognitionProgressText}"
+                ? "Recognizing speech..."
                 : "Start voice input";
     private string VoiceInputControlCssClass =>
         _isVoiceRecording
@@ -303,64 +303,23 @@
         _isVoiceRecording = false;
         _isVoiceProcessing = true;
         _voiceLevel = 0;
-        _voiceRecognitionProgress = 0;
-        StateHasChanged();
-
         var operationId = Guid.NewGuid().ToString("N");
-        using var progressCancellation = new CancellationTokenSource();
-        var progressPollingTask = PollVoiceRecognitionProgressAsync(operationId, progressCancellation.Token);
+        BeginVoiceInputProcessing(operationId);
 
         try
         {
-            using var cancellation = new CancellationTokenSource(VoiceInputInteropTimeout);
-            var recognizedText = await JSRuntime.InvokeAsync<string>(
+            await JSRuntime.InvokeVoidAsync(
                 "voiceInputInterop.stopRecording",
-                cancellation.Token,
                 _messageInputId,
                 "/api/voice-input/transcribe",
                 operationId);
-
-            progressCancellation.Cancel();
-            await AwaitVoiceRecognitionProgressAsync(progressPollingTask);
-
-            if (string.IsNullOrWhiteSpace(recognizedText))
-            {
-                Snackbar.Add("No speech recognized.", Severity.Info);
-                return;
-            }
-
-            var insertion = await JSRuntime.InvokeAsync<VoiceInputInsertionResult?>(
-                "voiceInputInterop.insertTextAtSavedSelection",
-                _messageInputId,
-                recognizedText);
-
-            CurrentText = insertion?.Value ?? recognizedText;
-        }
-        catch (TaskCanceledException ex)
-        {
-            progressCancellation.Cancel();
-            await AwaitVoiceRecognitionProgressAsync(progressPollingTask);
-            Logger.LogWarning(ex, "Voice input timed out.");
-            Snackbar.Add(
-                $"Voice recognition timed out after {(int)VoiceInputInteropTimeout.TotalSeconds} seconds. Try a smaller Whisper model or increase the timeout.",
-                Severity.Warning);
         }
         catch (Exception ex)
         {
-            progressCancellation.Cancel();
-            await AwaitVoiceRecognitionProgressAsync(progressPollingTask);
-            Logger.LogWarning(ex, "Voice input failed.");
-            Snackbar.Add(GetVoiceErrorMessage(ex, "Voice input failed."), Severity.Warning);
+            await CompleteVoiceInputFailureAsync(operationId, GetVoiceErrorMessage(ex, "Voice input failed."));
         }
-        finally
-        {
-            progressCancellation.Cancel();
-            await AwaitVoiceRecognitionProgressAsync(progressPollingTask);
-            _isVoiceProcessing = false;
-            _voiceLevel = 0;
-            _voiceRecognitionProgress = 0;
-            StateHasChanged();
-        }
+
+        await InvokeAsync(StateHasChanged);
     }
 
     [JSInvokable]
@@ -376,8 +335,14 @@
         return InvokeAsync(StateHasChanged);
     }
 
+    [JSInvokable]
+    public Task CompleteVoiceInputTranscription(string operationId, string? recognizedText, string? errorMessage) =>
+        InvokeAsync(() => CompleteVoiceInputTranscriptionCoreAsync(operationId, recognizedText, errorMessage));
+
     public async ValueTask DisposeAsync()
     {
+        CancelVoiceInputMonitoring();
+
         try
         {
             await JSRuntime.InvokeVoidAsync("voiceInputInterop.dispose", _messageInputId);
@@ -403,8 +368,6 @@
             : message;
     }
 
-    private string VoiceRecognitionProgressText => $"{_voiceRecognitionProgress}%";
-
     private string GetVoiceBarStyle(double multiplier, double baseline)
     {
         var level = Math.Clamp((_voiceLevel * multiplier) + baseline, 0.12d, 1d);
@@ -415,44 +378,130 @@
             $"height:{height}px;opacity:{opacity:0.##};");
     }
 
-    private async Task PollVoiceRecognitionProgressAsync(string operationId, CancellationToken cancellationToken)
+    private void BeginVoiceInputProcessing(string operationId)
     {
-        using var timer = new PeriodicTimer(TimeSpan.FromMilliseconds(250));
+        CancelVoiceInputMonitoring();
 
-        while (!cancellationToken.IsCancellationRequested)
-        {
-            var progress = await VoiceInputService.GetTranscriptionProgressAsync(operationId, cancellationToken);
-            if (progress is not null)
-            {
-                var normalizedProgress = Math.Clamp(progress.ProgressPercent, 0, 100);
-                if (_voiceRecognitionProgress != normalizedProgress)
-                {
-                    _voiceRecognitionProgress = normalizedProgress;
-                    await InvokeAsync(StateHasChanged);
-                }
-
-                if (progress.IsCompleted)
-                {
-                    return;
-                }
-            }
-
-            if (!await timer.WaitForNextTickAsync(cancellationToken))
-            {
-                return;
-            }
-        }
+        _activeVoiceOperationId = operationId;
+        _voiceRecognitionTimeoutCancellation = new CancellationTokenSource();
+        _ = MonitorVoiceInputTimeoutAsync(operationId, _voiceRecognitionTimeoutCancellation.Token);
     }
 
-    private static async Task AwaitVoiceRecognitionProgressAsync(Task pollingTask)
+    private async Task MonitorVoiceInputTimeoutAsync(string operationId, CancellationToken cancellationToken)
     {
         try
         {
-            await pollingTask;
+            await Task.Delay(VoiceInputInteropTimeout, cancellationToken);
         }
         catch (OperationCanceledException)
         {
+            return;
         }
+
+        await InvokeAsync(() => CompleteVoiceInputTimeoutAsync(operationId));
+    }
+
+    private async Task CompleteVoiceInputTranscriptionCoreAsync(
+        string operationId,
+        string? recognizedText,
+        string? errorMessage)
+    {
+        if (!BeginVoiceInputCompletion(operationId))
+        {
+            return;
+        }
+
+        await AwaitVoiceInputMonitoringAsync();
+
+        if (!string.IsNullOrWhiteSpace(errorMessage))
+        {
+            Logger.LogWarning("Voice input failed: {Message}", errorMessage);
+            Snackbar.Add(errorMessage, Severity.Warning);
+            await ResetVoiceInputProcessingStateAsync();
+            return;
+        }
+
+        if (string.IsNullOrWhiteSpace(recognizedText))
+        {
+            Snackbar.Add("No speech recognized.", Severity.Info);
+            await ResetVoiceInputProcessingStateAsync();
+            return;
+        }
+
+        try
+        {
+            var insertion = await JSRuntime.InvokeAsync<VoiceInputInsertionResult?>(
+                "voiceInputInterop.insertTextAtSavedSelection",
+                _messageInputId,
+                recognizedText);
+
+            CurrentText = insertion?.Value ?? recognizedText;
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "Failed to insert recognized text into the input.");
+            CurrentText += recognizedText;
+        }
+
+        await ResetVoiceInputProcessingStateAsync();
+    }
+
+    private async Task CompleteVoiceInputFailureAsync(string operationId, string message)
+    {
+        if (!BeginVoiceInputCompletion(operationId))
+        {
+            return;
+        }
+
+        await AwaitVoiceInputMonitoringAsync();
+        Logger.LogWarning("Voice input failed before transcription completed: {Message}", message);
+        Snackbar.Add(message, Severity.Warning);
+        await ResetVoiceInputProcessingStateAsync();
+    }
+
+    private async Task CompleteVoiceInputTimeoutAsync(string operationId)
+    {
+        if (!BeginVoiceInputCompletion(operationId))
+        {
+            return;
+        }
+
+        await AwaitVoiceInputMonitoringAsync();
+        Logger.LogWarning("Voice input timed out after {TimeoutSeconds} seconds.", (int)VoiceInputInteropTimeout.TotalSeconds);
+        Snackbar.Add(
+            $"Voice recognition timed out after {(int)VoiceInputInteropTimeout.TotalSeconds} seconds. Try a smaller Whisper model or increase the timeout.",
+            Severity.Warning);
+        await ResetVoiceInputProcessingStateAsync();
+    }
+
+    private bool BeginVoiceInputCompletion(string operationId)
+    {
+        if (!string.Equals(_activeVoiceOperationId, operationId, StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        _activeVoiceOperationId = null;
+        CancelVoiceInputMonitoring();
+        return true;
+    }
+
+    private void CancelVoiceInputMonitoring()
+    {
+        _voiceRecognitionTimeoutCancellation?.Cancel();
+    }
+
+    private async Task AwaitVoiceInputMonitoringAsync()
+    {
+        _voiceRecognitionTimeoutCancellation?.Dispose();
+        _voiceRecognitionTimeoutCancellation = null;
+    }
+
+    private async Task ResetVoiceInputProcessingStateAsync()
+    {
+        _isVoiceProcessing = false;
+        _voiceLevel = 0;
+        await InvokeAsync(StateHasChanged);
     }
 
     private sealed class VoiceInputInsertionResult
