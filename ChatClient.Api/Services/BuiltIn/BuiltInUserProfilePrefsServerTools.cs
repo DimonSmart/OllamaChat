@@ -23,79 +23,17 @@ public sealed class BuiltInUserProfilePrefsServerTools
     private const string StoredSource = "stored";
     private const string ElicitedSource = "elicited";
 
-    private sealed record PreferenceSpec(
-        string Prompt,
-        string? DefaultValue = null,
-        IReadOnlyList<string>? AllowedValues = null,
-        string? Description = null);
-
-    private static readonly IReadOnlyDictionary<string, PreferenceSpec> _knownSpecs =
-        new Dictionary<string, PreferenceSpec>(StringComparer.OrdinalIgnoreCase)
-        {
-            ["displayName"] = new(
-                Prompt: "How should I address you?",
-                Description: "Preferred user name used for personalized addressing."),
-            ["preferredLanguage"] = new(
-                Prompt: "Which language should I use by default when replying?",
-                DefaultValue: "ru",
-                AllowedValues: ["ru", "en", "es"],
-                Description: "Default answer language."),
-            ["tone"] = new(
-                Prompt: "What communication tone do you prefer?",
-                DefaultValue: "neutral",
-                AllowedValues: ["neutral", "friendly", "formal"]),
-            ["verbosity"] = new(
-                Prompt: "How detailed should responses be?",
-                DefaultValue: "normal",
-                AllowedValues: ["short", "normal", "detailed"]),
-            ["timezone"] = new(
-                Prompt: "Which time zone should be used for time-related information?",
-                DefaultValue: "Europe/Madrid"),
-            ["measurementSystem"] = new(
-                Prompt: "Which measurement system should be used?",
-                DefaultValue: "metric",
-                AllowedValues: ["metric", "imperial"]),
-            ["grammarGenderRu"] = new(
-                Prompt: "Which grammatical gender forms should be used in Russian?",
-                DefaultValue: "neutral",
-                AllowedValues: ["male", "female", "neutral"]),
-            ["signature"] = new("What signature should be used in messages?"),
-            ["devEnvironment"] = new(
-                Prompt: "What operating system do you use?",
-                DefaultValue: "windows",
-                AllowedValues: ["windows", "macos", "linux", "other"]),
-            ["editor"] = new(
-                Prompt: "Which IDE or editor do you use?",
-                DefaultValue: "vscode",
-                AllowedValues: ["vs", "vscode", "rider", "other"])
-        };
-
-    private static readonly IReadOnlyDictionary<string, string> _canonicalKeyByAlias =
-        new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
-        {
-            ["name"] = "displayName",
-            ["preferred_name"] = "displayName",
-            ["preferredName"] = "displayName",
-            ["userName"] = "displayName"
-        };
-
-    private static readonly IReadOnlyDictionary<string, IReadOnlyList<string>> _legacyAliasesByCanonicalKey =
-        new Dictionary<string, IReadOnlyList<string>>(StringComparer.OrdinalIgnoreCase)
-        {
-            ["displayName"] = ["name", "preferred_name", "preferredName", "userName"]
-        };
-
     [McpServerTool(Name = "prefs_get"), Description("Gets one user preference by key. Accepts aliases (displayName, name, preferred_name). If missing, asks user via elicitation, validates, saves, and returns it.")]
     public static async Task<object> PrefsGetAsync(
         McpServer server,
         [Description("Preference key. Name key aliases: displayName, name, preferred_name, preferredName, userName. Other known keys: preferredLanguage, tone, verbosity, timezone, measurementSystem, grammarGenderRu, signature, devEnvironment, editor.")] string key,
         CancellationToken cancellationToken = default)
     {
-        var normalizedKey = NormalizeKey(key);
+        var normalizedKey = UserProfilePreferenceCatalog.NormalizeKey(key);
         var storedValues = await UserProfilePrefsFileStore.GetAllAsync(cancellationToken);
 
-        if (TryGetStoredValue(storedValues, normalizedKey, out var storedValue) &&
-            TryNormalizeValue(normalizedKey, storedValue, out var normalizedStoredValue))
+        if (UserProfilePreferenceCatalog.TryGetStoredValue(storedValues, normalizedKey, out var storedValue) &&
+            UserProfilePreferenceCatalog.TryNormalizeValue(normalizedKey, storedValue, out var normalizedStoredValue))
         {
             if (!storedValues.ContainsKey(normalizedKey))
             {
@@ -111,7 +49,7 @@ public sealed class BuiltInUserProfilePrefsServerTools
             };
         }
 
-        var spec = GetSpecOrFallback(normalizedKey);
+        var spec = UserProfilePreferenceCatalog.GetSpecOrFallback(normalizedKey);
         var elicitedValue = await ElicitPreferenceValueAsync(server, normalizedKey, spec, cancellationToken);
         await UserProfilePrefsFileStore.SetAsync(normalizedKey, elicitedValue, cancellationToken);
 
@@ -129,13 +67,18 @@ public sealed class BuiltInUserProfilePrefsServerTools
     {
         var storedValues = await UserProfilePrefsFileStore.GetAllAsync(cancellationToken);
         var normalizedValues = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-        var knownKeys = _knownSpecs.Keys.OrderBy(static key => key, StringComparer.OrdinalIgnoreCase).ToArray();
-        var acceptedAliases = _canonicalKeyByAlias.Keys.OrderBy(static key => key, StringComparer.OrdinalIgnoreCase).ToArray();
+        var knownKeys = UserProfilePreferenceCatalog.KnownPreferences
+            .Select(static preference => preference.Key)
+            .OrderBy(static key => key, StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+        var acceptedAliases = UserProfilePreferenceCatalog.CanonicalKeyByAlias.Keys
+            .OrderBy(static key => key, StringComparer.OrdinalIgnoreCase)
+            .ToArray();
 
         foreach (var (storedKey, rawValue) in storedValues)
         {
-            var normalizedKey = NormalizeKey(storedKey);
-            if (TryNormalizeValue(normalizedKey, rawValue, out var normalizedValue))
+            var normalizedKey = UserProfilePreferenceCatalog.NormalizeKey(storedKey);
+            if (UserProfilePreferenceCatalog.TryNormalizeValue(normalizedKey, rawValue, out var normalizedValue))
             {
                 normalizedValues[normalizedKey] = normalizedValue;
             }
@@ -172,47 +115,10 @@ public sealed class BuiltInUserProfilePrefsServerTools
         };
     }
 
-    private static PreferenceSpec GetSpecOrFallback(string key)
-    {
-        if (_knownSpecs.TryGetValue(key, out var spec))
-            return spec;
-
-        return new PreferenceSpec(Prompt: $"Enter a value for preference '{key}'.");
-    }
-
-    private static bool TryGetStoredValue(
-        IReadOnlyDictionary<string, string> storedValues,
-        string normalizedKey,
-        out string value)
-    {
-        if (storedValues.TryGetValue(normalizedKey, out var directValue) &&
-            !string.IsNullOrWhiteSpace(directValue))
-        {
-            value = directValue;
-            return true;
-        }
-
-        if (_legacyAliasesByCanonicalKey.TryGetValue(normalizedKey, out var aliases))
-        {
-            foreach (var alias in aliases)
-            {
-                if (storedValues.TryGetValue(alias, out var aliasValue) &&
-                    !string.IsNullOrWhiteSpace(aliasValue))
-                {
-                    value = aliasValue;
-                    return true;
-                }
-            }
-        }
-
-        value = string.Empty;
-        return false;
-    }
-
     private static async Task<string> ElicitPreferenceValueAsync(
         McpServer server,
         string key,
-        PreferenceSpec spec,
+        UserProfilePreferenceCatalog.PreferenceSpec spec,
         CancellationToken cancellationToken)
     {
         string? validationMessage = null;
@@ -228,7 +134,7 @@ public sealed class BuiltInUserProfilePrefsServerTools
             }
 
             if (TryReadContentValue(response, ValueFieldName, out var rawValue) &&
-                TryNormalizeValue(key, rawValue, out var normalizedValue))
+                UserProfilePreferenceCatalog.TryNormalizeValue(key, rawValue, out var normalizedValue))
             {
                 return normalizedValue;
             }
@@ -243,7 +149,7 @@ public sealed class BuiltInUserProfilePrefsServerTools
 
     private static ElicitRequestParams BuildPreferenceElicitationRequest(
         string key,
-        PreferenceSpec spec,
+        UserProfilePreferenceCatalog.PreferenceSpec spec,
         string? validationMessage)
     {
         var message = string.IsNullOrWhiteSpace(validationMessage)
@@ -265,7 +171,9 @@ public sealed class BuiltInUserProfilePrefsServerTools
         };
     }
 
-    private static ElicitRequestParams.PrimitiveSchemaDefinition BuildPreferenceSchema(string key, PreferenceSpec spec)
+    private static ElicitRequestParams.PrimitiveSchemaDefinition BuildPreferenceSchema(
+        string key,
+        UserProfilePreferenceCatalog.PreferenceSpec spec)
     {
         if (spec.AllowedValues is { Count: > 0 })
         {
@@ -292,34 +200,6 @@ public sealed class BuiltInUserProfilePrefsServerTools
             Description = spec.Description,
             Default = spec.DefaultValue
         };
-    }
-
-    private static bool TryNormalizeValue(string key, string? rawValue, out string normalizedValue)
-    {
-        normalizedValue = string.Empty;
-        if (rawValue is null)
-            return false;
-
-        var trimmed = rawValue.Trim();
-        if (trimmed.Length == 0)
-            return false;
-
-        if (_knownSpecs.TryGetValue(key, out var spec) && spec.AllowedValues is { Count: > 0 })
-        {
-            foreach (var allowedValue in spec.AllowedValues)
-            {
-                if (!string.Equals(allowedValue, trimmed, StringComparison.OrdinalIgnoreCase))
-                    continue;
-
-                normalizedValue = allowedValue;
-                return true;
-            }
-
-            return false;
-        }
-
-        normalizedValue = trimmed;
-        return true;
     }
 
     private static async Task<bool> ConfirmResetAsync(McpServer server, CancellationToken cancellationToken)
@@ -376,19 +256,6 @@ public sealed class BuiltInUserProfilePrefsServerTools
 
         return true;
     }
-
-    private static string NormalizeKey(string? key)
-    {
-        var normalizedKey = key?.Trim() ?? string.Empty;
-        if (normalizedKey.Length == 0)
-        {
-            throw new InvalidOperationException("empty_key");
-        }
-
-        return _canonicalKeyByAlias.TryGetValue(normalizedKey, out var canonicalKey)
-            ? canonicalKey
-            : normalizedKey;
-    }
 }
 
 internal static class UserProfilePrefsFileStore
@@ -401,6 +268,8 @@ internal static class UserProfilePrefsFileStore
         WriteIndented = true
     };
     private static readonly string _filePath = ResolvePath();
+
+    public static string FilePath => _filePath;
 
     public static async Task<Dictionary<string, string>> GetAllAsync(CancellationToken cancellationToken = default)
     {
@@ -425,6 +294,23 @@ internal static class UserProfilePrefsFileStore
         {
             var values = await ReadUnsafeAsync(cancellationToken);
             values[key.Trim()] = value;
+            await WriteUnsafeAsync(values, cancellationToken);
+        }
+        finally
+        {
+            _ioLock.Release();
+        }
+    }
+
+    public static async Task ReplaceAllAsync(
+        IReadOnlyDictionary<string, string> values,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(values);
+
+        await _ioLock.WaitAsync(cancellationToken);
+        try
+        {
             await WriteUnsafeAsync(values, cancellationToken);
         }
         finally

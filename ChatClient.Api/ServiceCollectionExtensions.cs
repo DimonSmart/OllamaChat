@@ -59,6 +59,7 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<IAppToolCatalog, AppToolCatalog>();
         services.AddSingleton<McpSamplingService>();
         services.AddSingleton<IMcpUserInteractionService, McpUserInteractionService>();
+        services.AddSingleton<UserProfilePreferencesEditorService>();
         services.AddSingleton<TaskSessionStore>();
         services.AddSingleton<MarkdownDocumentIntakeService>();
         services.AddSingleton<KernelService>();
@@ -175,6 +176,7 @@ public static class ServiceCollectionExtensions
             });
 
         services.AddMudServices();
+        services.AddSingleton<IMcpServerInternalEditorRegistry, McpServerInternalEditorRegistry>();
 
         services.AddSingleton<CircuitHandler, AutoShutdownCircuitHandler>();
 

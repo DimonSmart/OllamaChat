@@ -1,0 +1,210 @@
+@using ChatClient.Api.Services.BuiltIn
+@using ChatClient.Domain.Models
+@inject UserProfilePreferencesEditorService PreferencesEditorService
+@inject ISnackbar Snackbar
+
+@if (_loading)
+{
+    <MudStack AlignItems="AlignItems.Center" Class="py-6">
+        <MudProgressCircular Indeterminate="true" Color="Color.Primary" />
+    </MudStack>
+}
+else
+{
+    <MudStack Spacing="3">
+        <MudAlert Severity="Severity.Info" Dense="true" Variant="Variant.Outlined">
+            Storage file: @_storageFilePath
+        </MudAlert>
+
+        <MudStack Row="true" Spacing="1" Wrap="Wrap.Wrap">
+            <MudButton Variant="Variant.Filled"
+                       Color="Color.Primary"
+                       StartIcon="@Icons.Material.Filled.Save"
+                       Disabled="@_saving"
+                       OnClick="SaveAsync">
+                Save
+            </MudButton>
+            <MudButton Variant="Variant.Outlined"
+                       StartIcon="@Icons.Material.Filled.Refresh"
+                       Disabled="@_saving"
+                       OnClick="ReloadAsync">
+                Reload
+            </MudButton>
+            <MudButton Variant="Variant.Outlined"
+                       Color="Color.Error"
+                       StartIcon="@Icons.Material.Filled.RestartAlt"
+                       Disabled="@_saving"
+                       OnClick="ResetAsync">
+                Reset All
+            </MudButton>
+            <MudButton Variant="Variant.Text"
+                       Color="Color.Primary"
+                       StartIcon="@Icons.Material.Filled.Add"
+                       Disabled="@_saving"
+                       OnClick="AddRow">
+                Add Row
+            </MudButton>
+        </MudStack>
+
+        @if (_rows.Count == 0)
+        {
+            <MudAlert Severity="Severity.Info" Dense="true" Variant="Variant.Outlined">
+                No preferences are stored yet. Add rows and save to create the JSON file.
+            </MudAlert>
+        }
+        else
+        {
+            <MudTable Items="@_rows"
+                      Dense="true"
+                      Hover="true"
+                      Striped="true"
+                      Bordered="true"
+                      Breakpoint="Breakpoint.Sm">
+                <HeaderContent>
+                    <MudTh Style="width: 35%;">Key</MudTh>
+                    <MudTh>Value</MudTh>
+                    <MudTh Style="width: 80px;"></MudTh>
+                </HeaderContent>
+                <RowTemplate>
+                    <MudTd DataLabel="Key">
+                        <MudTextField T="string"
+                                      Value="@context.Key"
+                                      ValueChanged="value => context.Key = NormalizeText(value)"
+                                      Immediate="true"
+                                      Margin="Margin.Dense" />
+                    </MudTd>
+                    <MudTd DataLabel="Value">
+                        <MudTextField T="string"
+                                      Value="@context.Value"
+                                      ValueChanged="value => context.Value = NormalizeText(value)"
+                                      Immediate="true"
+                                      Margin="Margin.Dense" />
+                    </MudTd>
+                    <MudTd DataLabel="Actions">
+                        <MudIconButton Icon="@Icons.Material.Filled.Delete"
+                                       Color="Color.Error"
+                                       OnClick="@(() => RemoveRow(context))" />
+                    </MudTd>
+                </RowTemplate>
+            </MudTable>
+        }
+    </MudStack>
+}
+
+@code {
+    [Parameter] public IMcpServerDescriptor? ServerDescriptor { get; set; }
+
+    private readonly List<PreferenceRow> _rows = [];
+    private bool _loading = true;
+    private bool _saving;
+    private string _storageFilePath = string.Empty;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await ReloadAsync();
+    }
+
+    private async Task ReloadAsync()
+    {
+        try
+        {
+            _loading = true;
+            _storageFilePath = PreferencesEditorService.StorageFilePath;
+
+            var storedValues = await PreferencesEditorService.GetAllAsync();
+            _rows.Clear();
+            foreach (var (key, value) in storedValues.OrderBy(static pair => pair.Key, StringComparer.OrdinalIgnoreCase))
+            {
+                _rows.Add(new PreferenceRow
+                {
+                    Key = key,
+                    Value = value
+                });
+            }
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Failed to load user profile preferences: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private async Task SaveAsync()
+    {
+        try
+        {
+            _saving = true;
+            await PreferencesEditorService.SaveAllAsync(BuildValueMap());
+            Snackbar.Add("User profile preferences saved.", Severity.Success);
+            await ReloadAsync();
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Failed to save user profile preferences: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _saving = false;
+        }
+    }
+
+    private async Task ResetAsync()
+    {
+        try
+        {
+            _saving = true;
+            await PreferencesEditorService.ClearAsync();
+            Snackbar.Add("User profile preferences cleared.", Severity.Success);
+            await ReloadAsync();
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Failed to clear user profile preferences: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _saving = false;
+        }
+    }
+
+    private void AddRow()
+    {
+        _rows.Add(new PreferenceRow
+        {
+            Key = string.Empty,
+            Value = string.Empty
+        });
+    }
+
+    private void RemoveRow(PreferenceRow row)
+    {
+        if (row is null)
+            return;
+
+        _rows.Remove(row);
+    }
+
+    private Dictionary<string, string?> BuildValueMap()
+    {
+        Dictionary<string, string?> values = new(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var row in _rows)
+        {
+            values[row.Key] = row.Value;
+        }
+
+        return values;
+    }
+
+    private static string NormalizeText(string? value) =>
+        value?.Trim() ?? string.Empty;
+
+    private sealed class PreferenceRow
+    {
+        public string Key { get; set; } = string.Empty;
+        public string Value { get; set; } = string.Empty;
+    }
+}

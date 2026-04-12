@@ -1,9 +1,12 @@
 @page "/mcp-servers"
+@using ChatClient.Api.Client.Components
+@using ChatClient.Api.Client.Services
 @using ChatClient.Domain.Models
 @using ChatClient.Application.Services
 @using ChatClient.Api.Services
 @using ChatClient.Api.Services.BuiltIn
 @inject IMcpServerConfigService McpServerConfigService
+@inject IMcpServerInternalEditorRegistry InternalEditorRegistry
 @inject IOllamaClientService OllamaService
 @inject ISnackbar Snackbar
 @inject NavigationManager NavigationManager
@@ -132,6 +135,13 @@
                             <MudIconButton Icon="@Icons.Material.Filled.PlayArrow"
                                          Size="Size.Small"
                                          OnClick="@(() => NavigateToPlayground(context.Item))" />
+                            @if (HasInternalEditor(context.Item))
+                            {
+                                <MudIconButton Icon="@Icons.Material.Filled.ManageAccounts"
+                                             Size="Size.Small"
+                                             Color="Color.Primary"
+                                             OnClick="@(() => OpenInternalEditor(context.Item))" />
+                            }
                             <MudIconButton Icon="@Icons.Material.Filled.Edit"
                                          Size="Size.Small"
                                          Disabled="@(!CanModify(context.Item))"
@@ -286,6 +296,28 @@
     </DialogActions>
 </MudDialog>
 
+<MudDialog @bind-Visible="@showInternalEditorDialog" Options="internalEditorDialogOptions">
+    <TitleContent>
+        <MudText Typo="Typo.h6">@GetInternalEditorTitle()</MudText>
+    </TitleContent>
+    <DialogContent>
+        @if (activeInternalEditor is null || internalEditorServer is null)
+        {
+            <MudAlert Severity="Severity.Warning" Dense="true" Variant="Variant.Outlined">
+                No internal editor is registered for this MCP server.
+            </MudAlert>
+        }
+        else
+        {
+            <DynamicComponent Type="@activeInternalEditor.ComponentType"
+                              Parameters="@GetInternalEditorParameters()" />
+        }
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="CloseInternalEditor" Size="Size.Medium">Close</MudButton>
+    </DialogActions>
+</MudDialog>
+
 @code {
     private List<IMcpServerDescriptor> servers = new();
     private List<IMcpServerDescriptor> filteredServers = new();
@@ -304,6 +336,9 @@
     private string argumentsText = string.Empty;
     private string installLink = string.Empty;
     private bool installInProgress;
+    private bool showInternalEditorDialog;
+    private IMcpServerDescriptor? internalEditorServer;
+    private McpServerInternalEditorRegistration? activeInternalEditor;
 
     private DialogOptions dialogOptions = new()
         {
@@ -325,6 +360,14 @@
             CloseOnEscapeKey = true,
             CloseButton = true,
             MaxWidth = MaxWidth.Medium,
+            FullWidth = true
+        };
+
+    private DialogOptions internalEditorDialogOptions = new()
+        {
+            CloseOnEscapeKey = true,
+            CloseButton = true,
+            MaxWidth = MaxWidth.Large,
             FullWidth = true
         };
 
@@ -444,6 +487,29 @@
 
         var serverName = Uri.EscapeDataString(server.Name);
         NavigationManager.NavigateTo($"/mcp-playground?server={serverName}");
+    }
+
+    private bool HasInternalEditor(IMcpServerDescriptor server) =>
+        InternalEditorRegistry.TryGetEditor(server, out _);
+
+    private void OpenInternalEditor(IMcpServerDescriptor server)
+    {
+        if (!InternalEditorRegistry.TryGetEditor(server, out var registration) || registration is null)
+        {
+            Snackbar.Add("No internal editor is registered for this MCP server.", Severity.Info);
+            return;
+        }
+
+        internalEditorServer = server;
+        activeInternalEditor = registration;
+        showInternalEditorDialog = true;
+    }
+
+    private void CloseInternalEditor()
+    {
+        showInternalEditorDialog = false;
+        activeInternalEditor = null;
+        internalEditorServer = null;
     }
 
     private void StartEditing(IMcpServerDescriptor server)
@@ -672,6 +738,24 @@
     private static bool IsBuiltIn(IMcpServerDescriptor server) => server is IBuiltInMcpServerDescriptor;
 
     private static bool CanModify(IMcpServerDescriptor server) => server is McpServerConfig;
+
+    private string GetInternalEditorTitle()
+    {
+        if (activeInternalEditor is not null)
+        {
+            return activeInternalEditor.Title;
+        }
+
+        return internalEditorServer?.Name ?? "Internal MCP Editor";
+    }
+
+    private Dictionary<string, object?> GetInternalEditorParameters()
+    {
+        return new Dictionary<string, object?>(StringComparer.Ordinal)
+        {
+            [nameof(UserProfilePrefsInternalEditor.ServerDescriptor)] = internalEditorServer
+        };
+    }
 
     private static string GetServerType(IMcpServerDescriptor server)
     {
