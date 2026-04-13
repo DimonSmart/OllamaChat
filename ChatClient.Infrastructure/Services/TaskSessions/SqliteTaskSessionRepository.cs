@@ -1,6 +1,6 @@
-using System.Globalization;
 using ChatClient.Application.Services.TaskSessions;
 using Microsoft.Data.Sqlite;
+using System.Globalization;
 
 namespace ChatClient.Infrastructure.Services.TaskSessions;
 

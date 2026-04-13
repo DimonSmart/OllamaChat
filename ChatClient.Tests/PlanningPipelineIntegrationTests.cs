@@ -1,9 +1,4 @@
-﻿using System.Security.Cryptography;
-using System.Text;
-using System.Text.Json;
-using System.Text.Json.Nodes;
-using System.Runtime.ExceptionServices;
-using ChatClient.Api.PlanningRuntime.Agents;
+﻿using ChatClient.Api.PlanningRuntime.Agents;
 using ChatClient.Api.PlanningRuntime.Common;
 using ChatClient.Api.PlanningRuntime.Execution;
 using ChatClient.Api.PlanningRuntime.Orchestration;
@@ -17,6 +12,11 @@ using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Logging.Abstractions;
 using OpenAI;
 using System.ClientModel;
+using System.Runtime.ExceptionServices;
+using System.Security.Cryptography;
+using System.Text;
+using System.Text.Json;
+using System.Text.Json.Nodes;
 using Xunit.Abstractions;
 
 namespace ChatClient.Tests;
@@ -1307,42 +1307,42 @@ public sealed class PlanningPipelineIntegrationTests(ITestOutputHelper output)
         switch (element.ValueKind)
         {
             case JsonValueKind.String:
-            {
-                var text = element.GetString();
-                return LooksLikeMarkdown(text) ? text : null;
-            }
+                {
+                    var text = element.GetString();
+                    return LooksLikeMarkdown(text) ? text : null;
+                }
             case JsonValueKind.Object:
-            {
-                foreach (var propertyName in new[] { "markdown", "report", "answer", "content", "text", "message" })
                 {
-                    if (!TryGetPropertyIgnoreCase(element, propertyName, out var propertyValue))
-                        continue;
+                    foreach (var propertyName in new[] { "markdown", "report", "answer", "content", "text", "message" })
+                    {
+                        if (!TryGetPropertyIgnoreCase(element, propertyName, out var propertyValue))
+                            continue;
 
-                    var extracted = TryExtractMarkdownReport(propertyValue);
-                    if (!string.IsNullOrWhiteSpace(extracted))
-                        return extracted;
+                        var extracted = TryExtractMarkdownReport(propertyValue);
+                        if (!string.IsNullOrWhiteSpace(extracted))
+                            return extracted;
+                    }
+
+                    foreach (var property in element.EnumerateObject())
+                    {
+                        var extracted = TryExtractMarkdownReport(property.Value);
+                        if (!string.IsNullOrWhiteSpace(extracted))
+                            return extracted;
+                    }
+
+                    return null;
                 }
-
-                foreach (var property in element.EnumerateObject())
-                {
-                    var extracted = TryExtractMarkdownReport(property.Value);
-                    if (!string.IsNullOrWhiteSpace(extracted))
-                        return extracted;
-                }
-
-                return null;
-            }
             case JsonValueKind.Array:
-            {
-                foreach (var item in element.EnumerateArray())
                 {
-                    var extracted = TryExtractMarkdownReport(item);
-                    if (!string.IsNullOrWhiteSpace(extracted))
-                        return extracted;
-                }
+                    foreach (var item in element.EnumerateArray())
+                    {
+                        var extracted = TryExtractMarkdownReport(item);
+                        if (!string.IsNullOrWhiteSpace(extracted))
+                            return extracted;
+                    }
 
-                return null;
-            }
+                    return null;
+                }
             default:
                 return null;
         }

@@ -1,20 +1,40 @@
 using System.Text.Json.Nodes;
-using ChatClient.Api.Services;
 
 namespace ChatClient.Api.PlanningRuntime.Planning;
 
 public static class PlanNormalizer
 {
-    public static PlanDefinition Normalize(
-        PlanDefinition plan,
-        IReadOnlyCollection<AppToolDescriptor>? tools = null)
+    public static PlanDefinition Normalize(PlanDefinition plan)
     {
         ArgumentNullException.ThrowIfNull(plan);
 
         for (var index = 0; index < plan.Steps.Count; index++)
             plan.Steps[index] = NormalizeStep(plan.Steps[index]);
 
+        AutoMarkResultStepIfMissing(plan);
         return plan;
+    }
+
+    /// <summary>
+    /// If no step already has <see cref="PlanStep.IsResult"/> set to <c>true</c>,
+    /// marks the last terminal step (the step with no downstream consumers) as the result.
+    /// This ensures every normalised plan has an explicit result designation without
+    /// requiring the initial LLM draft to explicitly set the field.
+    /// </summary>
+    private static void AutoMarkResultStepIfMissing(PlanDefinition plan)
+    {
+        if (plan.Steps.Count == 0)
+            return;
+
+        if (plan.Steps.Any(static s => s.IsResult))
+            return;
+
+        // Find the last step that has no downstream consumers.
+        var terminalIds = PlanDependencyGraph.GetTerminalStepIds(plan.Steps);
+        var lastTerminalId = terminalIds.Count > 0 ? terminalIds[^1] : plan.Steps[^1].Id;
+        var targetStep = plan.Steps.LastOrDefault(s => string.Equals(s.Id, lastTerminalId, StringComparison.Ordinal))
+            ?? plan.Steps[^1];
+        targetStep.IsResult = true;
     }
 
     private static PlanStep NormalizeStep(PlanStep step)
@@ -32,6 +52,7 @@ public static class PlanNormalizer
             UserPrompt = step.UserPrompt,
             In = NormalizeInputs(step.In),
             Out = NormalizeOutputContract(normalizedKind, step.Out),
+            IsResult = step.IsResult,
             Status = step.Status,
             Result = step.Result,
             Error = step.Error

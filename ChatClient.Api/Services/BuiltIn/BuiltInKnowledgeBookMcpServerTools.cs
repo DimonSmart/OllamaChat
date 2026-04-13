@@ -1,8 +1,8 @@
+using ChatClient.Domain.Models;
+using ModelContextProtocol.Protocol;
+using ModelContextProtocol.Server;
 using System.ComponentModel;
 using System.Text.Json;
-using ChatClient.Domain.Models;
-using ModelContextProtocol.Server;
-using ModelContextProtocol.Protocol;
 
 namespace ChatClient.Api.Services.BuiltIn;
 

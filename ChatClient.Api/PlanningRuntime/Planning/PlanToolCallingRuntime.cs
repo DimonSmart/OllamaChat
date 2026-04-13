@@ -1,12 +1,12 @@
-using System.ComponentModel;
-using System.Text.Json;
-using System.Text.Json.Nodes;
-using System.Text.Json.Serialization.Metadata;
 using ChatClient.Api.PlanningRuntime.Agents;
 using ChatClient.Api.PlanningRuntime.Common;
 using ChatClient.Api.PlanningRuntime.Execution;
 using ChatClient.Api.Services;
 using Microsoft.Extensions.AI;
+using System.ComponentModel;
+using System.Text.Json;
+using System.Text.Json.Nodes;
+using System.Text.Json.Serialization.Metadata;
 
 namespace ChatClient.Api.PlanningRuntime.Planning;
 
@@ -60,6 +60,11 @@ internal sealed class PlanToolCallingRuntime(
                 (Func<JsonObject>)ValidateDraft,
                 PlanningAgentToolNames.PlanValidateDraft,
                 "Validate the current working plan draft and return either ok=true or a structured invalid_plan error.",
+                JsonOptions),
+            AIFunctionFactory.Create(
+                (Func<string?, JsonObject>)MarkResultStep,
+                PlanningAgentToolNames.PlanMarkResultStep,
+                "Designate a step as the sole result step. Clears isResult from all other steps and sets it on the specified step.",
                 JsonOptions)
         ];
 
@@ -141,6 +146,17 @@ internal sealed class PlanToolCallingRuntime(
             "plan.validateDraft",
             new JsonObject(),
             (session, workflowTools, _) => PlanDraftValidationTool.CreateValidationResult(session, workflowTools, agentCatalog));
+
+    [Description("Designate a step as the sole result step. Clears isResult from all other steps and sets it on the specified step.")]
+    public JsonObject MarkResultStep(
+        [Description("Step id to designate as the result step.")] string? stepId = null)
+        => ExecuteSessionTool(
+            PlanningAgentToolNames.PlanMarkResultStep,
+            "plan.markResultStep",
+            new JsonObject
+            {
+                ["stepId"] = stepId
+            });
 
     [Description("Read a compact structured summary of one failed execution trace.")]
     public JsonObject ReadFailedTrace(

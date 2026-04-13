@@ -1,7 +1,7 @@
+using ChatClient.Domain.Models;
+using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
-using System.Security.Cryptography;
-using ChatClient.Domain.Models;
 
 namespace ChatClient.Api.Services;
 

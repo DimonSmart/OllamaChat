@@ -1,5 +1,5 @@
-using ChatClient.Application.Services.Agentic;
 using ChatClient.Api.Services;
+using ChatClient.Application.Services.Agentic;
 using ChatClient.Domain.Models;
 using ChatClient.Domain.Models.ChatStrategies;
 using OllamaSharp.Models.Exceptions;

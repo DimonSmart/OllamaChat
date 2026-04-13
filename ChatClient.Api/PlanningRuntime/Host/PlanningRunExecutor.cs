@@ -1,4 +1,3 @@
-using System.Text.Json;
 using ChatClient.Api.Client.Services.Agentic;
 using ChatClient.Api.PlanningRuntime.Agents;
 using ChatClient.Api.PlanningRuntime.Common;
@@ -9,6 +8,7 @@ using ChatClient.Api.PlanningRuntime.Tools;
 using ChatClient.Api.PlanningRuntime.Verification;
 using ChatClient.Api.Services;
 using ChatClient.Domain.Models;
+using System.Text.Json;
 
 namespace ChatClient.Api.PlanningRuntime.Host;
 
@@ -37,6 +37,8 @@ public sealed class PlanningRunExecutor(
         var loggerSink = request.ExecutionLogger ?? NullExecutionLogger.Instance;
         var callableAgents = request.CallableAgents ?? PlanningCallableAgentCatalog.Empty;
         var toolCatalog = new PlanningToolCatalog(request.EnabledTools);
+        var capabilityCatalog = CapabilityCatalog.From(request.EnabledTools, callableAgents.ListAgents());
+        loggerSink.Log($"[run] capabilities tools={capabilityCatalog.Tools.Count} agents={capabilityCatalog.Agents.Count} ids=[{string.Join(",", capabilityCatalog.All.Select(static c => c.CapabilityId))}]");
         var requestAnalyzer = new LlmPlanningRequestAnalyzer(
             chatClient,
             loggerSink,

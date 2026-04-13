@@ -21,6 +21,24 @@ public sealed class PlanDefinition
 
     [JsonPropertyName("steps")]
     public List<PlanStep> Steps { get; init; } = new();
+
+    /// <summary>
+    /// Result contract derived from the request brief during the clarification phase.
+    /// Describes what the final result must look like and is used by the validator
+    /// and repair loop to verify semantic completeness.
+    /// Null when the plan was created without a prior clarification phase.
+    /// </summary>
+    [JsonIgnore]
+    public ResultContract? ResultContract { get; init; }
+
+    /// <summary>
+    /// When the planner cannot satisfy the request with the available capabilities,
+    /// this field carries a human-readable explanation of the blocking reason.
+    /// A non-null value signals that the plan is structurally complete but
+    /// intentionally blocked at the planning level.
+    /// </summary>
+    [JsonPropertyName("blockedReason")]
+    public string? BlockedReason { get; init; }
 }
 
 /// <summary>
@@ -71,6 +89,15 @@ public sealed class PlanStep
     /// </summary>
     [JsonPropertyName("out")]
     public PlanStepOutputContract? Out { get; init; }
+
+    /// <summary>
+    /// Explicit result designation. Exactly one step in the plan must have this set to <c>true</c>:
+    /// the step whose output is the final user-visible or machine-visible result.
+    /// Set by the planner when generating the draft; auto-marked on the last terminal step
+    /// by the normalizer when the planner omits it.
+    /// </summary>
+    [JsonPropertyName("isResult")]
+    public bool IsResult { get; set; }
 
     [JsonPropertyName("s")]
     public string Status { get; set; } = PlanStepStatuses.Todo;

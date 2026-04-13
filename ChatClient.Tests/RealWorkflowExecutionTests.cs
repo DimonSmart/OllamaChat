@@ -1,5 +1,3 @@
-using System.Text;
-using System.Text.Json;
 using ChatClient.Api;
 using ChatClient.Api.AgentWorkflows;
 using ChatClient.Api.Client.Services.Agentic;
@@ -14,6 +12,8 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.FileProviders;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
+using System.Text;
+using System.Text.Json;
 using Xunit.Abstractions;
 
 namespace ChatClient.Tests;

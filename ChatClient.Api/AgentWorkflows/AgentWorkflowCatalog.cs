@@ -1,6 +1,6 @@
+using ChatClient.Api.Services.BuiltIn;
 using ChatClient.Application.Services;
 using ChatClient.Application.Services.Agentic;
-using ChatClient.Api.Services.BuiltIn;
 using ChatClient.Domain.Models;
 
 namespace ChatClient.Api.AgentWorkflows;

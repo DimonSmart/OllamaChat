@@ -1,5 +1,5 @@
-using System.Text;
 using ChatClient.Domain.Models;
+using System.Text;
 
 namespace ChatClient.Api.Client.Services.Agentic;
 

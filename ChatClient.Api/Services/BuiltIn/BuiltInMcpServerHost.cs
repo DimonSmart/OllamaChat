@@ -1,10 +1,10 @@
+using ChatClient.Application.Services.TaskSessions;
+using ChatClient.Domain.Models;
+using ChatClient.Infrastructure.Services.TaskSessions;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using ModelContextProtocol.Protocol;
-using ChatClient.Domain.Models;
-using ChatClient.Application.Services.TaskSessions;
-using ChatClient.Infrastructure.Services.TaskSessions;
 
 namespace ChatClient.Api.Services.BuiltIn;
 

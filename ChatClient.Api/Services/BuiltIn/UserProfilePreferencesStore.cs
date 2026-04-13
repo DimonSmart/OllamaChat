@@ -1,7 +1,7 @@
-using System.Text.Json;
 using ChatClient.Infrastructure.Constants;
 using ChatClient.Infrastructure.Helpers;
 using Microsoft.Extensions.Configuration;
+using System.Text.Json;
 
 namespace ChatClient.Api.Services.BuiltIn;
 

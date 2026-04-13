@@ -1,7 +1,9 @@
-﻿using System.Text.Json;
+﻿using ChatClient.Api.PlanningRuntime.Common;
+using ChatClient.Api.PlanningRuntime.Planning;
 using Microsoft.Agents.AI;
 using Microsoft.Extensions.AI;
-using ChatClient.Api.PlanningRuntime.Common;
+using System.Text;
+using System.Text.Json;
 
 namespace ChatClient.Api.PlanningRuntime.Verification;
 
@@ -10,6 +12,7 @@ public interface IFinalAnswerVerifier
     Task<FinalAnswerVerificationResult> VerifyAsync(
         string userQuery,
         JsonElement? answer,
+        ResultContract? resultContract = null,
         CancellationToken cancellationToken = default);
 }
 
@@ -32,6 +35,7 @@ public sealed class LlmFinalAnswerVerifier(IChatClient chatClient) : IFinalAnswe
     public async Task<FinalAnswerVerificationResult> VerifyAsync(
         string userQuery,
         JsonElement? answer,
+        ResultContract? resultContract = null,
         CancellationToken cancellationToken = default)
     {
         if (answer is null)
@@ -47,7 +51,7 @@ public sealed class LlmFinalAnswerVerifier(IChatClient chatClient) : IFinalAnswe
         var agent = new ChatClientAgent(chatClient, BuildSystemPrompt(), "final_answer_verifier", null, null, null, null);
         var answerJson = PlanningJson.SerializeIndented(answer.Value);
         var response = await agent.RunAsync<ResultEnvelope<VerifierPayload>>(
-            BuildUserPrompt(userQuery, answerJson),
+            BuildUserPrompt(userQuery, answerJson, resultContract),
             null,
             JsonOptions,
             null,
@@ -55,16 +59,6 @@ public sealed class LlmFinalAnswerVerifier(IChatClient chatClient) : IFinalAnswe
         var envelope = response.Result
             ?? throw new InvalidOperationException("Final answer verifier returned an empty response envelope.");
         var payload = envelope.GetRequiredDataOrThrow("Final answer verifier");
-
-        if (!payload.IsAnswer && LooksLikeComparisonRecommendation(userQuery, answer))
-        {
-            return new FinalAnswerVerificationResult
-            {
-                IsAnswer = true,
-                Reason = "Heuristic override: the answer contains an explicit recommendation for a comparison-style question.",
-                Missing = []
-            };
-        }
 
         return new FinalAnswerVerificationResult
         {
@@ -78,59 +72,49 @@ public sealed class LlmFinalAnswerVerifier(IChatClient chatClient) : IFinalAnswe
         """
         You are a strict final-answer verifier.
         Determine whether the candidate final answer genuinely answers the original user question.
+        When a result contract is provided, also verify that the answer satisfies its completeness, evidence, and formatting requirements.
         Return ONLY valid JSON with this exact shape:
         {"ok":true|false,"data":{"isAnswer":true|false,"reason":"short explanation","missing":["optional missing item"]}|null,"error":null|{"code":"string","message":"string","details":null}}
         Mark isAnswer=true when the answer directly addresses the core request, even if wording differs.
         If the question asks to compare or choose and the answer gives a clear recommendation with relevant justification, that usually counts as an answer.
         Mark isAnswer=false only when the answer is off-topic, materially incomplete, or avoids the actual question.
+        When a result contract is present, mark isAnswer=false and populate missing[] if any completeness requirement is clearly unmet.
         When evaluation succeeds, set ok=true, error=null, and put the verdict into data.
         """;
 
-    private static string BuildUserPrompt(string userQuery, string answerJson) =>
-        $"Original question:\n{userQuery}\n\nCandidate final answer:\n{answerJson}";
-
-    private static bool LooksLikeComparisonRecommendation(string question, JsonElement? answer)
+    private static string BuildUserPrompt(string userQuery, string answerJson, ResultContract? contract)
     {
-        if (!IsComparisonQuestion(question) || answer is not JsonElement answerElement)
-            return false;
+        var sb = new StringBuilder();
+        sb.AppendLine("Original question:");
+        sb.AppendLine(userQuery);
 
-        if (answerElement.ValueKind == JsonValueKind.Object)
+        if (contract is not null)
         {
-            return answerElement.EnumerateObject().Any(property => property.Name is "betterModel" or "better_model" or "recommendedModel" or "recommended_model" or "bestModel" or "preferredModel");
+            sb.AppendLine();
+            sb.AppendLine("Result contract:");
+            sb.AppendLine($"  Expected artifact type: {contract.ExpectedArtifactType}");
+
+            if (contract.CompletenessRequirements.Count > 0)
+            {
+                sb.AppendLine("  Completeness requirements:");
+                foreach (var req in contract.CompletenessRequirements)
+                    sb.AppendLine($"    - {req}");
+            }
+
+            if (!string.IsNullOrWhiteSpace(contract.EvidenceRequirement))
+                sb.AppendLine($"  Evidence requirement: {contract.EvidenceRequirement}");
+
+            if (!string.IsNullOrWhiteSpace(contract.FormattingRequirements))
+                sb.AppendLine($"  Formatting requirements: {contract.FormattingRequirements}");
+
+            if (!string.IsNullOrWhiteSpace(contract.LanguagePolicy))
+                sb.AppendLine($"  Language policy: {contract.LanguagePolicy}");
         }
 
-        return answerElement.ValueKind == JsonValueKind.String
-            && LooksLikeComparisonRecommendationText(answerElement.GetString() ?? string.Empty);
-    }
-
-    private static bool IsComparisonQuestion(string question)
-    {
-        var normalized = question.ToLowerInvariant();
-        return normalized.Contains("compare", StringComparison.Ordinal)
-            || normalized.Contains("which one", StringComparison.Ordinal)
-            || normalized.Contains("better", StringComparison.Ordinal)
-            || normalized.Contains("best", StringComparison.Ordinal)
-            || normalized.Contains("recommend", StringComparison.Ordinal);
-    }
-
-    private static bool LooksLikeComparisonRecommendationText(string answerText)
-    {
-        var normalized = answerText.ToLowerInvariant();
-        var hasRecommendation = normalized.Contains("recommended", StringComparison.Ordinal)
-            || normalized.Contains("recommend", StringComparison.Ordinal)
-            || normalized.Contains("better", StringComparison.Ordinal)
-            || normalized.Contains("best", StringComparison.Ordinal)
-            || normalized.Contains("winner", StringComparison.Ordinal);
-        if (!hasRecommendation)
-            return false;
-
-        return normalized.Contains(" vs ", StringComparison.Ordinal)
-            || normalized.Contains("versus", StringComparison.Ordinal)
-            || normalized.Contains("higher", StringComparison.Ordinal)
-            || normalized.Contains("lower", StringComparison.Ordinal)
-            || normalized.Contains("longer", StringComparison.Ordinal)
-            || normalized.Contains("shorter", StringComparison.Ordinal)
-            || normalized.Contains("stronger", StringComparison.Ordinal);
+        sb.AppendLine();
+        sb.AppendLine("Candidate final answer:");
+        sb.Append(answerJson);
+        return sb.ToString();
     }
 
     private sealed record VerifierPayload

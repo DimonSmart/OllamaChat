@@ -1,13 +1,13 @@
-using System.Text;
-using System.Text.Json;
-using System.Text.Json.Nodes;
-using Microsoft.Agents.AI;
-using Microsoft.Extensions.AI;
 using ChatClient.Api.PlanningRuntime.Agents;
 using ChatClient.Api.PlanningRuntime.Common;
 using ChatClient.Api.PlanningRuntime.Execution;
 using ChatClient.Api.PlanningRuntime.Tools;
 using ChatClient.Api.Services;
+using Microsoft.Agents.AI;
+using Microsoft.Extensions.AI;
+using System.Text;
+using System.Text.Json;
+using System.Text.Json.Nodes;
 
 namespace ChatClient.Api.PlanningRuntime.Planning;
 
@@ -138,6 +138,7 @@ public sealed class LlmInitialDraftRepairer(
         sb.AppendLine($"- {PlanningAgentToolNames.PlanRemoveStep}(stepId)");
         sb.AppendLine($"- {PlanningAgentToolNames.PlanResetFrom}(stepId)");
         sb.AppendLine($"- {PlanningAgentToolNames.PlanValidateDraft}()");
+        sb.AppendLine($"- {PlanningAgentToolNames.PlanMarkResultStep}(stepId)");
         sb.AppendLine();
         sb.AppendLine("Rules:");
         sb.AppendLine("- Use the invalid draft plan as the source of truth.");
@@ -180,6 +181,7 @@ public sealed class LlmInitialDraftRepairer(
         sb.AppendLine("- Invalid example: {\"from\":\"$s1.items[]\",\"mode\":\"flatten\"}.");
         sb.AppendLine("- Use concat only to merge multiple array sources into one array input. Every concat item must resolve to an array and must use mode='value'.");
         sb.AppendLine("- Every non-final step must feed at least one downstream consumer. The only terminal step must be the last step.");
+        sb.AppendLine($"- Exactly one step must have isResult=true. Use {PlanningAgentToolNames.PlanMarkResultStep}(stepId) to designate the terminal result step when the plan is missing it or it is set on the wrong step.");
         sb.AppendLine("- Literal tool inputs must be plain JSON literals. Never wrap them in helper objects like {\"value\":...}.");
         sb.AppendLine("- If a tool returns an object containing an array field, bind from that field directly.");
         sb.AppendLine("- If a downstream tool needs a projected array field, express it explicitly in the ref.");

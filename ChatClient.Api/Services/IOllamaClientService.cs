@@ -1,7 +1,7 @@
 namespace ChatClient.Api.Services;
 
-using OllamaSharp;
 using ChatClient.Domain.Models;
+using OllamaSharp;
 
 public interface IOllamaClientService
 {

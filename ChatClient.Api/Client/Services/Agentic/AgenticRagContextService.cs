@@ -1,9 +1,9 @@
-using System.Text;
 using ChatClient.Api.Services;
 using ChatClient.Application.Helpers;
 using ChatClient.Application.Services;
 using ChatClient.Application.Services.Agentic;
 using ChatClient.Domain.Models;
+using System.Text;
 
 namespace ChatClient.Api.Client.Services.Agentic;
 

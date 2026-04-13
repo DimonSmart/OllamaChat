@@ -1,15 +1,15 @@
-using System.Net;
-using System.Security.Cryptography;
-using System.Runtime.ExceptionServices;
-using System.Text;
-using System.Text.Json;
-using System.Text.Encodings.Web;
-using System.Text.RegularExpressions;
 using ChatClient.Api.Search;
 using ChatClient.Infrastructure.Constants;
 using ChatClient.Infrastructure.Helpers;
 using HtmlAgilityPack;
 using Microsoft.Extensions.Configuration;
+using System.Net;
+using System.Runtime.ExceptionServices;
+using System.Security.Cryptography;
+using System.Text;
+using System.Text.Encodings.Web;
+using System.Text.Json;
+using System.Text.RegularExpressions;
 
 namespace ChatClient.Api.Services.BuiltIn;
 

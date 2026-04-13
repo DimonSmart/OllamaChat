@@ -1,6 +1,6 @@
+using Serilog;
 using System.Collections.Concurrent;
 using System.Runtime.ExceptionServices;
-using Serilog;
 
 namespace ChatClient.Api.Diagnostics;
 

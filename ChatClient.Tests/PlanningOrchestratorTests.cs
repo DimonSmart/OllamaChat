@@ -1,5 +1,3 @@
-using System.Text.Json;
-using System.Text.Json.Nodes;
 using ChatClient.Api.PlanningRuntime.Agents;
 using ChatClient.Api.PlanningRuntime.Common;
 using ChatClient.Api.PlanningRuntime.Execution;
@@ -8,6 +6,8 @@ using ChatClient.Api.PlanningRuntime.Planning;
 using ChatClient.Api.PlanningRuntime.Tools;
 using ChatClient.Api.PlanningRuntime.Verification;
 using ChatClient.Api.Services;
+using System.Text.Json;
+using System.Text.Json.Nodes;
 
 namespace ChatClient.Tests;
 
@@ -278,6 +278,57 @@ public sealed class PlanningOrchestratorTests
     }
 
     [Fact]
+    public async Task RunAsync_PassesResultContractToFinalAnswerVerifier()
+    {
+        var resultContract = new ResultContract
+        {
+            ExpectedArtifactType = "ranked list",
+            CompletenessRequirements = ["at least 3 items", "all prices present"],
+            EvidenceRequirement = "prices must come from tool output"
+        };
+        var plan = new PlanDefinition
+        {
+            Goal = "Return a ranked list.",
+            ResultContract = resultContract,
+            Steps =
+            [
+                new PlanStep
+                {
+                    Id = "answer",
+                    Kind = PlanStepKinds.Llm,
+                    SystemPrompt = "Return JSON.",
+                    UserPrompt = "Return the list.",
+                    In = new Dictionary<string, JsonNode?>
+                    {
+                        ["question"] = JsonValue.Create("robots")
+                    },
+                    Out = new PlanStepOutputContract { Format = PlanStepOutputFormats.Json },
+                    IsResult = true
+                }
+            ]
+        };
+        var verifier = new StubFinalAnswerVerifier(new FinalAnswerVerificationResult { IsAnswer = true, Reason = "ok" });
+        var executor = new PlanExecutor(
+            new PlanningToolCatalog([]),
+            new DelegateAgentStepRunner((_, _) => ResultEnvelope<JsonElement?>.Success(JsonSerializer.SerializeToElement(new { items = new[] { "a", "b", "c" } }))));
+        // Use a direct planner (no JSON round-trip) so that [JsonIgnore] ResultContract is preserved.
+        var orchestrator = new PlanningOrchestrator(
+            new DirectStubPlanner(plan),
+            executor,
+            new GoalVerifier(),
+            maxAttempts: 1,
+            finalAnswerVerifier: verifier);
+
+        var result = await orchestrator.RunAsync("example");
+
+        Assert.True(result.Ok);
+        Assert.NotNull(verifier.LastContract);
+        Assert.Equal("ranked list", verifier.LastContract!.ExpectedArtifactType);
+        Assert.Equal(["at least 3 items", "all prices present"], verifier.LastContract.CompletenessRequirements);
+        Assert.Equal("prices must come from tool output", verifier.LastContract.EvidenceRequirement);
+    }
+
+    [Fact]
     public async Task RunAsync_ReturnsInsufficientCapabilities_WhenFinalStepBlocksWithoutReplan()
     {
         var plan = new PlanDefinition
@@ -469,15 +520,27 @@ public sealed class PlanningOrchestratorTests
                 ?? throw new InvalidOperationException("Failed to clone test plan."));
     }
 
+    /// <summary>Returns the plan directly without JSON cloning, preserving [JsonIgnore] fields like ResultContract.</summary>
+    private sealed class DirectStubPlanner(PlanDefinition plan) : IPlanner
+    {
+        public Task<PlanDefinition> CreatePlanAsync(string userQuery, CancellationToken cancellationToken = default) =>
+            Task.FromResult(plan);
+    }
+
     private sealed class StubFinalAnswerVerifier(FinalAnswerVerificationResult result) : IFinalAnswerVerifier
     {
-        public Task<FinalAnswerVerificationResult> VerifyAsync(string userQuery, JsonElement? answer, CancellationToken cancellationToken = default) =>
-            Task.FromResult(result);
+        public ResultContract? LastContract { get; private set; }
+
+        public Task<FinalAnswerVerificationResult> VerifyAsync(string userQuery, JsonElement? answer, ResultContract? resultContract = null, CancellationToken cancellationToken = default)
+        {
+            LastContract = resultContract;
+            return Task.FromResult(result);
+        }
     }
 
     private sealed class ThrowingFinalAnswerVerifier : IFinalAnswerVerifier
     {
-        public Task<FinalAnswerVerificationResult> VerifyAsync(string userQuery, JsonElement? answer, CancellationToken cancellationToken = default) =>
+        public Task<FinalAnswerVerificationResult> VerifyAsync(string userQuery, JsonElement? answer, ResultContract? resultContract = null, CancellationToken cancellationToken = default) =>
             throw new InvalidOperationException("Synthetic verifier failure.");
     }
 

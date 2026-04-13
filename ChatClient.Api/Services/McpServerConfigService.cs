@@ -1,7 +1,7 @@
+using ChatClient.Api.Services.BuiltIn;
 using ChatClient.Application.Helpers;
 using ChatClient.Application.Repositories;
 using ChatClient.Application.Services;
-using ChatClient.Api.Services.BuiltIn;
 using ChatClient.Domain.Models;
 
 namespace ChatClient.Api.Services;

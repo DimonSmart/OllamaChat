@@ -1,5 +1,5 @@
-using System.Text.Json.Nodes;
 using ChatClient.Api.PlanningRuntime.Common;
+using System.Text.Json.Nodes;
 
 namespace ChatClient.Api.PlanningRuntime.Planning;
 
@@ -38,6 +38,7 @@ public sealed class PlanEditingSession
                 "plan.addSteps" => CreateSuccess(toolName, AddSteps(GetOptionalString(input, "afterStepId"), input["steps"])),
                 "plan.removeStep" => CreateSuccess(toolName, RemoveStep(GetRequiredString(input, "stepId"))),
                 "plan.resetFrom" => CreateSuccess(toolName, ResetFrom(GetRequiredString(input, "stepId"))),
+                "plan.markResultStep" => CreateSuccess(toolName, MarkResultStep(GetRequiredString(input, "stepId"))),
                 _ => CreateFailure("unknown_tool", $"Unknown replanning tool '{toolName ?? "<null>"}'.", toolName)
             };
         }
@@ -126,6 +127,21 @@ public sealed class PlanEditingSession
             ["removed"] = PlanningLogFormatter.SummarizeStep(removedStep, _profile),
             ["resetCount"] = resetStepIds.Count,
             ["resetStepIds"] = new JsonArray(resetStepIds.Select(resetStepId => JsonValue.Create(resetStepId)).ToArray())
+        };
+    }
+
+    private JsonNode? MarkResultStep(string stepId)
+    {
+        FindStepIndex(stepId);
+        var previousResultStepId = _plan.Steps.FirstOrDefault(static s => s.IsResult)?.Id;
+        foreach (var step in _plan.Steps)
+            step.IsResult = false;
+        _plan.Steps.First(s => string.Equals(s.Id, stepId, StringComparison.Ordinal)).IsResult = true;
+
+        return new JsonObject
+        {
+            ["stepId"] = stepId,
+            ["previousResultStepId"] = previousResultStepId
         };
     }
 

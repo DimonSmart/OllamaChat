@@ -1,7 +1,7 @@
-﻿using System.Text.Json;
-using ChatClient.Api.PlanningRuntime.Common;
+﻿using ChatClient.Api.PlanningRuntime.Common;
 using ChatClient.Api.PlanningRuntime.Planning;
 using ChatClient.Api.PlanningRuntime.Verification;
+using System.Text.Json;
 
 namespace ChatClient.Api.PlanningRuntime.Execution;
 
@@ -43,7 +43,7 @@ public sealed record PlanningAttemptStartedEvent(
     string UserQuery) : PlanRunEvent(DateTimeOffset.UtcNow);
 
 public sealed record RequestAnalysisCompletedEvent(
-    PlanningRequestAnalysis Analysis) : PlanRunEvent(DateTimeOffset.UtcNow);
+    RequestBrief Brief) : PlanRunEvent(DateTimeOffset.UtcNow);
 
 public sealed record PlanCreatedEvent(
     int AttemptNumber,

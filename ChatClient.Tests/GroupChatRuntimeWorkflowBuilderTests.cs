@@ -4,8 +4,8 @@ using ChatClient.Api.AgentWorkflows.Runtime;
 using Microsoft.Agents.AI;
 using Microsoft.Agents.AI.Workflows;
 using Microsoft.Extensions.AI;
-using System.Text.Json;
 using System.Reflection;
+using System.Text.Json;
 
 namespace ChatClient.Tests;
 

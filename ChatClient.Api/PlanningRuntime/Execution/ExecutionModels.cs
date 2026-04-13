@@ -1,5 +1,5 @@
-﻿using System.Text.Json;
-using ChatClient.Api.PlanningRuntime.Common;
+﻿using ChatClient.Api.PlanningRuntime.Common;
+using System.Text.Json;
 
 namespace ChatClient.Api.PlanningRuntime.Execution;
 

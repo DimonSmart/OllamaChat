@@ -1,8 +1,8 @@
-using System.Text.Json;
 using ChatClient.Api.PlanningRuntime.Common;
 using ChatClient.Api.PlanningRuntime.Execution;
 using ChatClient.Api.PlanningRuntime.Host;
 using ChatClient.Api.PlanningRuntime.Planning;
+using System.Text.Json;
 
 namespace ChatClient.Api.Client.Components.Planning;
 
@@ -34,7 +34,7 @@ public sealed record PlanningVirtualNodeDescriptor
 
     public PlanningAttemptStartedEvent? PlanningStarted { get; init; }
 
-    public PlanningRequestAnalysis? RequestAnalysis { get; init; }
+    public RequestBrief? RequestBrief { get; init; }
 
     public PlanDefinition? PlannedDraft { get; init; }
 
@@ -65,7 +65,7 @@ public static class PlanningVirtualNodeProjection
         var requestAnalysis = events
             .OfType<RequestAnalysisCompletedEvent>()
             .LastOrDefault()
-            ?.Analysis;
+            ?.Brief;
         var createdPlan = events
             .OfType<PlanCreatedEvent>()
             .LastOrDefault(evt => string.Equals(evt.Phase, "plan", StringComparison.OrdinalIgnoreCase))
@@ -91,7 +91,7 @@ public static class PlanningVirtualNodeProjection
                     ? "Waiting for analyzed request."
                     : Shorten(requestAnalysis.RewrittenRequest, 96),
                 PlanningStarted = planningStart,
-                RequestAnalysis = requestAnalysis
+                RequestBrief = requestAnalysis
             });
         }
 
@@ -110,7 +110,7 @@ public static class PlanningVirtualNodeProjection
                     ? "Waiting for planner output."
                     : $"steps: {createdPlan.Steps.Count}",
                 PlanningStarted = planningStart,
-                RequestAnalysis = requestAnalysis,
+                RequestBrief = requestAnalysis,
                 PlannedDraft = createdPlan,
                 AvailableTools = availableTools.ToList(),
                 Diagnostics = plannerDiagnostics

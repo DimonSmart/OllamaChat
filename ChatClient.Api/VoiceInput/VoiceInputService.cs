@@ -1,10 +1,10 @@
-using System.Text;
 using ChatClient.Application.Services;
 using ChatClient.Domain.Models;
 using ChatClient.Infrastructure.Constants;
 using ChatClient.Infrastructure.Helpers;
-using System.Collections.Concurrent;
 using Microsoft.Extensions.Options;
+using System.Collections.Concurrent;
+using System.Text;
 using Whisper.net;
 using Whisper.net.Ggml;
 

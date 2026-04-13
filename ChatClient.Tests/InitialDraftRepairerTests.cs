@@ -1,13 +1,13 @@
-using System.Text.Json;
-using System.Text.Json.Nodes;
 using ChatClient.Api.PlanningRuntime.Common;
 using ChatClient.Api.PlanningRuntime.Execution;
 using ChatClient.Api.PlanningRuntime.Planning;
-using ChatClient.Api.PlanningRuntime.Verification;
 using ChatClient.Api.PlanningRuntime.Tools;
+using ChatClient.Api.PlanningRuntime.Verification;
 using ChatClient.Api.Services;
 using Microsoft.Extensions.AI;
 using Moq;
+using System.Text.Json;
+using System.Text.Json.Nodes;
 
 namespace ChatClient.Tests;
 

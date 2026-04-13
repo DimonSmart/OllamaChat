@@ -1,7 +1,7 @@
-using System.Reflection;
-using System.Text.Json;
 using ModelContextProtocol.Protocol;
 using ModelContextProtocol.Server;
+using System.Reflection;
+using System.Text.Json;
 
 namespace ChatClient.Api.Services.BuiltIn;
 

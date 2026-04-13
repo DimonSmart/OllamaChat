@@ -1,5 +1,3 @@
-using System.Text.Json;
-using System.Text.Json.Nodes;
 using ChatClient.Api.PlanningRuntime.Agents;
 using ChatClient.Api.PlanningRuntime.Common;
 using ChatClient.Api.PlanningRuntime.Planning;
@@ -7,6 +5,8 @@ using ChatClient.Api.PlanningRuntime.Tools;
 using ChatClient.Api.PlanningRuntime.Verification;
 using ChatClient.Api.Services;
 using ModelContextProtocol.Protocol;
+using System.Text.Json;
+using System.Text.Json.Nodes;
 
 namespace ChatClient.Api.PlanningRuntime.Execution;
 
@@ -299,12 +299,12 @@ public sealed class PlanExecutor(
 
         var envelope = await agentStepRunner.ExecuteAsync(step, input, outputContract, cancellationToken);
         calls.Add(JsonSerializer.SerializeToElement(new
-            {
-                kind = PlanStepKinds.GetKind(step),
-                capabilityId = PlanStepKinds.GetCapabilityId(step),
-                ok = envelope.Ok,
-                output = CloneElement(envelope.Data),
-                error = SerializeError(envelope.Error)
+        {
+            kind = PlanStepKinds.GetKind(step),
+            capabilityId = PlanStepKinds.GetCapabilityId(step),
+            ok = envelope.Ok,
+            output = CloneElement(envelope.Data),
+            error = SerializeError(envelope.Error)
         }));
 
         return envelope;
@@ -389,24 +389,24 @@ public sealed class PlanExecutor(
                 switch (bindingExpression)
                 {
                     case PlanInputBindingSpec binding:
-                    {
-                        var resolution = PlanInputBindingSyntax.EvaluateReferenceOrThrow(binding.From, step.Id, stepMap);
-                        resolved[input.Key] = resolution.Clone();
-
-                        if (binding.Mode == PlanInputBindingMode.Map)
                         {
-                            if (resolution.ValueKind != JsonValueKind.Array)
+                            var resolution = PlanInputBindingSyntax.EvaluateReferenceOrThrow(binding.From, step.Id, stepMap);
+                            resolved[input.Key] = resolution.Clone();
+
+                            if (binding.Mode == PlanInputBindingMode.Map)
                             {
-                                throw new InvalidOperationException(
-                                    $"Step '{step.Id}': input '{input.Key}' uses mode='map' but ref '{binding.From}' did not resolve to an array.");
+                                if (resolution.ValueKind != JsonValueKind.Array)
+                                {
+                                    throw new InvalidOperationException(
+                                        $"Step '{step.Id}': input '{input.Key}' uses mode='map' but ref '{binding.From}' did not resolve to an array.");
+                                }
+
+                                fanOutInputs ??= new Dictionary<string, JsonElement?[]>(StringComparer.Ordinal);
+                                fanOutInputs[input.Key] = resolution.EnumerateArray().Select(item => (JsonElement?)item.Clone()).ToArray();
                             }
 
-                            fanOutInputs ??= new Dictionary<string, JsonElement?[]>(StringComparer.Ordinal);
-                            fanOutInputs[input.Key] = resolution.EnumerateArray().Select(item => (JsonElement?)item.Clone()).ToArray();
+                            break;
                         }
-
-                        break;
-                    }
                     case PlanInputConcatBindingSpec concatBinding:
                         resolved[input.Key] = ResolveConcatBinding(step.Id, input.Key, concatBinding, stepMap);
                         break;

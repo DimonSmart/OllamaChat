@@ -1,10 +1,10 @@
-using System.Runtime.CompilerServices;
 using ChatClient.Api.Client.Services.Agentic;
 using ChatClient.Api.Services;
 using ChatClient.Application.Services.Agentic;
 using ChatClient.Domain.Models;
 using ChatClient.Domain.Models.ChatStrategies;
 using Microsoft.Extensions.Logging;
+using System.Runtime.CompilerServices;
 
 namespace ChatClient.Tests;
 

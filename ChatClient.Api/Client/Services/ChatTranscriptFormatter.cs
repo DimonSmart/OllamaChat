@@ -1,7 +1,7 @@
-using System.Text;
 using ChatClient.Api.Client.Markdown;
 using ChatClient.Api.Client.ViewModels;
 using ChatClient.Domain.Models;
+using System.Text;
 
 namespace ChatClient.Api.Client.Services;
 

@@ -8,7 +8,19 @@ public static class PlanRuntimeHydrator
 
         var runtimePlan = PlanSanitizer.CloneSanitized(sourcePlan, PlanModelProfile.Runtime);
         Hydrate(runtimePlan);
-        return runtimePlan;
+
+        // ResultContract is [JsonIgnore] and is not preserved by JSON-based cloning.
+        // Re-attach it from the source plan so the orchestrator can use it during verification.
+        if (sourcePlan.ResultContract is null)
+            return runtimePlan;
+
+        return new PlanDefinition
+        {
+            Goal = runtimePlan.Goal,
+            Steps = runtimePlan.Steps,
+            ResultContract = sourcePlan.ResultContract,
+            BlockedReason = runtimePlan.BlockedReason
+        };
     }
 
     public static PlanDefinition Hydrate(PlanDefinition plan)

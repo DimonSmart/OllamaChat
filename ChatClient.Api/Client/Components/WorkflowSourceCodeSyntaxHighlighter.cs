@@ -1,8 +1,8 @@
-using System.Net;
-using System.Text;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
+using System.Net;
+using System.Text;
 
 namespace ChatClient.Api.Client.Components;
 

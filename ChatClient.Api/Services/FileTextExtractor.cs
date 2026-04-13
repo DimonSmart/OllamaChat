@@ -1,7 +1,7 @@
 using DocumentFormat.OpenXml.Packaging;
 using DocumentFormat.OpenXml.Wordprocessing;
-using UglyToad.PdfPig;
 using System.Text;
+using UglyToad.PdfPig;
 
 namespace ChatClient.Api.Services;
 

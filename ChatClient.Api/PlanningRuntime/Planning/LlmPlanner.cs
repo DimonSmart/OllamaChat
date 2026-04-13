@@ -1,13 +1,13 @@
-using System.Diagnostics;
-using System.Text;
-using System.Text.Json;
-using Microsoft.Agents.AI;
-using Microsoft.Extensions.AI;
 using ChatClient.Api.PlanningRuntime.Agents;
 using ChatClient.Api.PlanningRuntime.Common;
 using ChatClient.Api.PlanningRuntime.Execution;
 using ChatClient.Api.PlanningRuntime.Tools;
 using ChatClient.Api.Services;
+using Microsoft.Agents.AI;
+using Microsoft.Extensions.AI;
+using System.Diagnostics;
+using System.Text;
+using System.Text.Json;
 
 namespace ChatClient.Api.PlanningRuntime.Planning;
 
@@ -103,7 +103,7 @@ public sealed class LlmPlanner(
                 var plan = response.Result
                     ?? throw new InvalidOperationException("Planner returned an empty typed plan result.");
                 PlanSanitizer.Sanitize(plan, PlanModelProfile.Draft);
-                PlanNormalizer.Normalize(plan, tools);
+                PlanNormalizer.Normalize(plan);
 
                 _observer.OnEvent(new AgentResponseReceivedEvent(
                     PlanningSpecialStepIds.Planning,
@@ -136,7 +136,7 @@ public sealed class LlmPlanner(
                             }, cancellationToken);
 
                             PlanSanitizer.Sanitize(repaired, PlanModelProfile.Draft);
-                            PlanNormalizer.Normalize(repaired, tools);
+                            PlanNormalizer.Normalize(repaired);
                             if (!PlanValidator.TryValidate(repaired, tools, _agentCatalog.ListAgents(), PlanModelProfile.Draft, out var repairedValidationIssue))
                                 throw new PlanValidationException(repairedValidationIssue!);
 
@@ -265,6 +265,7 @@ public sealed class LlmPlanner(
         sb.AppendLine("- Invalid example: {\"from\":\"$s1.results[]\",\"mode\":\"flatten\"}.");
         sb.AppendLine("- Use concat only when you need to merge several array sources into one array input for a downstream step. Each concat item must resolve to an array and must use mode='value'.");
         sb.AppendLine("- Every non-final step must feed at least one downstream consumer. The only terminal step must be the last step.");
+        sb.AppendLine("- The terminal step must have isResult: true. Exactly one step must have isResult=true.");
         sb.AppendLine("- Do not wrap literal tool inputs in helper objects like {\"value\":...}.");
         sb.AppendLine("- binding field type is optional. Add it only when a repair specifically needs an inline input hint.");
         sb.AppendLine("- Tool steps must not declare out. The runtime derives tool output contracts from the tool catalog.");
@@ -336,6 +337,7 @@ public sealed class LlmPlanner(
         sb.AppendLine("- binding.mode supports only 'value' or 'map'. Never use 'flatten' as a binding mode.");
         sb.AppendLine("- Use only refs to earlier steps.");
         sb.AppendLine("- Every non-final step must feed at least one downstream consumer. The only terminal step must be the last step.");
+        sb.AppendLine("- The terminal step must have isResult: true. Exactly one step must have isResult=true.");
         sb.AppendLine("- Tool steps must not declare out. The runtime derives tool output contracts from the tool catalog.");
         sb.AppendLine("- LLM steps must provide systemPrompt, userPrompt, and out.");
         sb.AppendLine("- Saved-agent steps must provide userPrompt and out, and must not provide systemPrompt.");

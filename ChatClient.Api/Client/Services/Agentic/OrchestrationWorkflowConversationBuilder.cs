@@ -1,7 +1,7 @@
-using System.Text;
 using ChatClient.Application.Services.Agentic;
 using ChatClient.Domain.Models;
 using Microsoft.Extensions.AI;
+using System.Text;
 
 namespace ChatClient.Api.Client.Services.Agentic;
 

@@ -1,10 +1,9 @@
-using System.Text.Json;
-
 using ChatClient.Api.Services;
 using ChatClient.Application.Helpers;
 using ChatClient.Infrastructure.Repositories;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
+using System.Text.Json;
 using Xunit;
 
 namespace ChatClient.Tests;

@@ -1,5 +1,5 @@
-using System.Text.Json;
 using ChatClient.Api.Client.Pages;
+using System.Text.Json;
 
 namespace ChatClient.Tests;
 

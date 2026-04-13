@@ -1,5 +1,5 @@
-using ChatClient.Domain.Models;
 using ChatClient.Application.Services.Agentic;
+using ChatClient.Domain.Models;
 
 namespace ChatClient.Api.Client.Services.Agentic;
 

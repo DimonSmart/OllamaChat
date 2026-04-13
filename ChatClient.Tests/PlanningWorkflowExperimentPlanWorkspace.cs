@@ -1,10 +1,10 @@
+using ChatClient.Api.PlanningRuntime.Planning;
+using ChatClient.Api.Services;
+using Microsoft.Extensions.AI;
 using System.ComponentModel;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Text.Json.Serialization.Metadata;
-using ChatClient.Api.PlanningRuntime.Planning;
-using ChatClient.Api.Services;
-using Microsoft.Extensions.AI;
 
 namespace ChatClient.Tests;
 
@@ -1143,7 +1143,7 @@ internal sealed partial class PlanningWorkflowExperimentPlanWorkspace(
         try
         {
             PlanSanitizer.Sanitize(plan, PlanModelProfile.Draft);
-            PlanNormalizer.Normalize(plan, _workflowTools);
+            PlanNormalizer.Normalize(plan);
             if (PlanValidator.TryValidate(plan, _workflowTools, callableAgents: null, PlanModelProfile.Draft, out issue))
                 return true;
 

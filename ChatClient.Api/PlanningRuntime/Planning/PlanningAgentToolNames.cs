@@ -7,6 +7,7 @@ internal static class PlanningAgentToolNames
     public const string PlanAddSteps = "plan_add_steps";
     public const string PlanRemoveStep = "plan_remove_step";
     public const string PlanResetFrom = "plan_reset_from";
+    public const string PlanMarkResultStep = "plan_mark_result_step";
     public const string PlanValidateDraft = "plan_validate_draft";
     public const string RuntimeReadFailedTrace = "runtime_read_failed_trace";
 }

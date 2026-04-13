@@ -1,6 +1,6 @@
-using System.Text.Json;
 using ChatClient.Api.Services;
 using ChatClient.Domain.Models;
+using System.Text.Json;
 
 namespace ChatClient.Tests;
 

@@ -1,7 +1,7 @@
-using System.Text;
 using Markdig;
 using Markdig.Syntax;
 using Markdig.Syntax.Inlines;
+using System.Text;
 
 namespace ChatClient.Api.Services.BuiltIn;
 

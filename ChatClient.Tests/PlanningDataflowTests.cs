@@ -1,5 +1,3 @@
-using System.Text.Json;
-using System.Text.Json.Nodes;
 using ChatClient.Api.Client.Components.Planning;
 using ChatClient.Api.PlanningRuntime.Agents;
 using ChatClient.Api.PlanningRuntime.Common;
@@ -8,6 +6,8 @@ using ChatClient.Api.PlanningRuntime.Planning;
 using ChatClient.Api.PlanningRuntime.Tools;
 using ChatClient.Api.PlanningRuntime.Verification;
 using ChatClient.Api.Services;
+using System.Text.Json;
+using System.Text.Json.Nodes;
 
 namespace ChatClient.Tests;
 
@@ -360,7 +360,8 @@ public sealed class PlanningDataflowTests
                                 Ref("$searchB.results")
                             ],
                             type: "array<object>")
-                    }
+                    },
+                    IsResult = true
                 }
             ]
         };

@@ -1,6 +1,6 @@
-using System.Text.Json;
 using ChatClient.Api.Client.Components.Planning;
 using ChatClient.Api.PlanningRuntime.Planning;
+using System.Text.Json;
 
 namespace ChatClient.Tests;
 

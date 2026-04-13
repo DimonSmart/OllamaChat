@@ -1,6 +1,6 @@
+using ChatClient.Api.PlanningRuntime.Planning;
 using System.Text.Json;
 using System.Text.Json.Nodes;
-using ChatClient.Api.PlanningRuntime.Planning;
 
 namespace ChatClient.Api.PlanningRuntime.Common;
 

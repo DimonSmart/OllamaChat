@@ -1,5 +1,5 @@
-using ChatClient.Api.Services.BuiltIn;
 using ChatClient.Api.Services;
+using ChatClient.Api.Services.BuiltIn;
 using ChatClient.Domain.Models;
 using ChatClient.Infrastructure.Services.TaskSessions;
 

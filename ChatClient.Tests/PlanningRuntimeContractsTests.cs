@@ -1,11 +1,4 @@
-using System.Diagnostics;
-using System.Text.Json;
-using System.Text.Json.Nodes;
-using System.Net;
-using System.Net.Http.Headers;
 using ChatClient.Api.Client.Services.Agentic;
-using ChatClient.Application.Services;
-using ChatClient.Application.Services.Agentic;
 using ChatClient.Api.PlanningRuntime.Agents;
 using ChatClient.Api.PlanningRuntime.Common;
 using ChatClient.Api.PlanningRuntime.Execution;
@@ -14,11 +7,18 @@ using ChatClient.Api.PlanningRuntime.Planning;
 using ChatClient.Api.PlanningRuntime.Tools;
 using ChatClient.Api.Services;
 using ChatClient.Api.Services.BuiltIn;
+using ChatClient.Application.Services;
+using ChatClient.Application.Services.Agentic;
 using ChatClient.Domain.Models;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Logging.Abstractions;
-using Moq;
 using ModelContextProtocol.Protocol;
+using Moq;
+using System.Diagnostics;
+using System.Net;
+using System.Net.Http.Headers;
+using System.Text.Json;
+using System.Text.Json.Nodes;
 
 namespace ChatClient.Tests;
 
@@ -142,7 +142,7 @@ public class PlanningRuntimeContractsTests
             ]
         };
 
-        PlanNormalizer.Normalize(plan, [CreateStaticSearchDescriptor()]);
+        PlanNormalizer.Normalize(plan);
 
         Assert.Null(plan.Steps[0].Out);
         Assert.Equal(PlanStepKinds.Llm, plan.Steps[1].Kind);
@@ -264,6 +264,7 @@ public class PlanningRuntimeContractsTests
                     "in": {
                       "question": "example"
                     },
+                    "isResult": true,
                   "out": {}
                 }
               ]
@@ -412,7 +413,8 @@ public class PlanningRuntimeContractsTests
                     {
                         ["query"] = JsonValue.Create("example")
                     },
-                    Status = "broken"
+                    Status = "broken",
+                    IsResult = true
                 }
             ]
         };
@@ -601,7 +603,8 @@ public class PlanningRuntimeContractsTests
                         ["cursorName"] = JsonValue.Create("book-cursor"),
                         ["registryId"] = JsonValue.Create("characters")
                     },
-                    Out = StringOut()
+                    Out = StringOut(),
+                    IsResult = true
                 }
             ]
         };
@@ -1499,7 +1502,8 @@ public class PlanningRuntimeContractsTests
                     In = new Dictionary<string, JsonNode?>
                     {
                         ["page"] = Ref("$searchPages.results", mode: "map")
-                    }
+                    },
+                    IsResult = true
                 }
             ]
         };
@@ -1693,6 +1697,7 @@ public class PlanningRuntimeContractsTests
                         ["results"] = Ref("$searchPages.results", type: "array<object>"),
                         ["topic"] = JsonValue.Create("maze generator")
                     },
+                    IsResult = true,
                     Out = JsonOut(new JsonObject
                     {
                         ["type"] = "array",
@@ -1745,6 +1750,7 @@ public class PlanningRuntimeContractsTests
                     {
                         ["result"] = Ref("$searchPages.results", mode: "map", type: "object")
                     },
+                    IsResult = true,
                     Out = JsonOut(new JsonObject
                     {
                         ["type"] = "object",
@@ -1872,6 +1878,7 @@ public class PlanningRuntimeContractsTests
                     {
                         ["packages"] = Ref("$extractPackages", type: "array<object>")
                     },
+                    IsResult = true,
                     Out = StringOut()
                 }
             ]
@@ -1965,7 +1972,8 @@ public class PlanningRuntimeContractsTests
                     In = new Dictionary<string, JsonNode?>
                     {
                         ["query"] = Ref("$opaqueSource.payload")
-                    }
+                    },
+                    IsResult = true
                 }
             ]
         };
@@ -2049,6 +2057,7 @@ public class PlanningRuntimeContractsTests
                     {
                         ["content"] = JsonValue.Create("example")
                     },
+                    IsResult = true,
                     Out = new PlanStepOutputContract
                     {
                         Format = PlanStepOutputFormats.Json
@@ -2089,6 +2098,7 @@ public class PlanningRuntimeContractsTests
                     {
                         ["page"] = Ref("$searchPages.results", mode: "map")
                     },
+                    IsResult = true,
                     Out = JsonOut(
                         new JsonObject
                         {
@@ -2199,6 +2209,7 @@ public class PlanningRuntimeContractsTests
                     {
                         ["content"] = JsonValue.Create("example")
                     },
+                    IsResult = true,
                     Out = JsonOut(new JsonObject
                     {
                         ["type"] = "object",
@@ -2388,6 +2399,7 @@ public class PlanningRuntimeContractsTests
                     {
                         ["results"] = Ref("$opaqueSource.payload", type: "array<object>")
                     },
+                    IsResult = true,
                     Out = JsonOut(new JsonObject
                     {
                         ["type"] = "object",

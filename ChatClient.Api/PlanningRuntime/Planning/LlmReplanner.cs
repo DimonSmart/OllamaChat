@@ -1,13 +1,13 @@
-using System.Text;
-using System.Text.Json;
-using System.Text.Json.Nodes;
-using Microsoft.Agents.AI;
-using Microsoft.Extensions.AI;
 using ChatClient.Api.PlanningRuntime.Agents;
 using ChatClient.Api.PlanningRuntime.Common;
 using ChatClient.Api.PlanningRuntime.Execution;
 using ChatClient.Api.PlanningRuntime.Tools;
 using ChatClient.Api.Services;
+using Microsoft.Agents.AI;
+using Microsoft.Extensions.AI;
+using System.Text;
+using System.Text.Json;
+using System.Text.Json.Nodes;
 
 namespace ChatClient.Api.PlanningRuntime.Planning;
 
@@ -157,6 +157,7 @@ public sealed class LlmReplanner(
         sb.AppendLine($"- {PlanningAgentToolNames.PlanRemoveStep}(stepId)");
         sb.AppendLine($"- {PlanningAgentToolNames.PlanResetFrom}(stepId)");
         sb.AppendLine($"- {PlanningAgentToolNames.PlanValidateDraft}()");
+        sb.AppendLine($"- {PlanningAgentToolNames.PlanMarkResultStep}(stepId)");
         sb.AppendLine($"- {PlanningAgentToolNames.RuntimeReadFailedTrace}(stepId)");
         sb.AppendLine();
         sb.AppendLine("Rules:");
@@ -219,6 +220,7 @@ public sealed class LlmReplanner(
         sb.AppendLine("- If out.format='string', either omit out.schema or use out.schema={\"type\":\"string\"}.");
         sb.AppendLine("- If the prompt allows missing fields to become null, reflect that in the schema with nullable=true or type=[\"<base>\",\"null\"].");
         sb.AppendLine("- Every non-final step must feed at least one downstream consumer. The only terminal step must be the last step.");
+        sb.AppendLine($"- Exactly one step must have isResult=true. Use {PlanningAgentToolNames.PlanMarkResultStep}(stepId) to designate the terminal result step when the plan is missing it or it is set on the wrong step.");
         sb.AppendLine();
         PlanningCapabilityPromptFormatter.AppendTools(sb, workflowTools);
         sb.AppendLine();

@@ -1,6 +1,6 @@
-using System.Text;
 using ChatClient.Api.PlanningRuntime.Agents;
 using ChatClient.Api.Services;
+using System.Text;
 
 namespace ChatClient.Api.PlanningRuntime.Planning;
 

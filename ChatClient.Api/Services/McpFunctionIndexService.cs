@@ -1,14 +1,14 @@
+using ChatClient.Api.Services.Rag;
 using ChatClient.Application.Helpers;
 using ChatClient.Application.Services;
-using ChatClient.Api.Services.Rag;
 using ChatClient.Domain.Models;
 using ModelContextProtocol.Client;
 using System.Collections.Concurrent;
+using System.Linq;
 using System.Net;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
-using System.Linq;
 
 namespace ChatClient.Api.Services;
 

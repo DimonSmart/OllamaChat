@@ -116,10 +116,10 @@ else if (SelectedVirtualNode is not null)
                     <PlanningValueDisplay Text="@SelectedVirtualNode.PlanningStarted!.UserQuery" AutoDetectMarkdown="false" />
                 }
 
-                @if (!string.IsNullOrWhiteSpace(SelectedVirtualNode.RequestAnalysis?.RewrittenRequest))
+                @if (!string.IsNullOrWhiteSpace(SelectedVirtualNode.RequestBrief?.RewrittenRequest))
                 {
                     <MudText Typo="Typo.subtitle2">Analyzed Request</MudText>
-                    <PlanningValueDisplay Text="@SelectedVirtualNode.RequestAnalysis!.RewrittenRequest" AutoDetectMarkdown="false" />
+                    <PlanningValueDisplay Text="@SelectedVirtualNode.RequestBrief!.RewrittenRequest" AutoDetectMarkdown="false" />
                 }
 
                 @if (SelectedVirtualNode.AvailableTools.Count > 0)
@@ -173,46 +173,46 @@ else if (SelectedVirtualNode is not null)
                     <PlanningValueDisplay Text="@SelectedVirtualNode.PlanningStarted!.UserQuery" AutoDetectMarkdown="false" />
                 }
 
-                @if (!string.IsNullOrWhiteSpace(SelectedVirtualNode.RequestAnalysis?.RewrittenRequest))
+                @if (!string.IsNullOrWhiteSpace(SelectedVirtualNode.RequestBrief?.RewrittenRequest))
                 {
                     <MudText Typo="Typo.subtitle2">Rewritten Request</MudText>
-                    <PlanningValueDisplay Text="@SelectedVirtualNode.RequestAnalysis!.RewrittenRequest" AutoDetectMarkdown="false" />
+                    <PlanningValueDisplay Text="@SelectedVirtualNode.RequestBrief!.RewrittenRequest" AutoDetectMarkdown="false" />
                 }
 
-                @if (!string.IsNullOrWhiteSpace(SelectedVirtualNode.RequestAnalysis?.Goal))
+                @if (!string.IsNullOrWhiteSpace(SelectedVirtualNode.RequestBrief?.Goal))
                 {
                     <MudText Typo="Typo.subtitle2">Goal</MudText>
-                    <PlanningValueDisplay Text="@SelectedVirtualNode.RequestAnalysis!.Goal" AutoDetectMarkdown="false" />
+                    <PlanningValueDisplay Text="@SelectedVirtualNode.RequestBrief!.Goal" AutoDetectMarkdown="false" />
                 }
 
-                @if (SelectedVirtualNode.RequestAnalysis?.Deliverables.Count > 0)
+                @if (SelectedVirtualNode.RequestBrief?.Deliverables.Count > 0)
                 {
                     <MudText Typo="Typo.subtitle2">Deliverables</MudText>
-                    <PlanningValueDisplay Text="@SerializeJson(SelectedVirtualNode.RequestAnalysis!.Deliverables)" AutoDetectMarkdown="false" />
+                    <PlanningValueDisplay Text="@SerializeJson(SelectedVirtualNode.RequestBrief!.Deliverables)" AutoDetectMarkdown="false" />
                 }
 
-                @if (SelectedVirtualNode.RequestAnalysis?.Constraints.Count > 0)
+                @if (SelectedVirtualNode.RequestBrief?.Constraints.Count > 0)
                 {
                     <MudText Typo="Typo.subtitle2">Constraints</MudText>
-                    <PlanningValueDisplay Text="@SerializeJson(SelectedVirtualNode.RequestAnalysis!.Constraints)" AutoDetectMarkdown="false" />
+                    <PlanningValueDisplay Text="@SerializeJson(SelectedVirtualNode.RequestBrief!.Constraints)" AutoDetectMarkdown="false" />
                 }
 
-                @if (SelectedVirtualNode.RequestAnalysis?.AcquisitionNeeds.Count > 0)
+                @if (SelectedVirtualNode.RequestBrief?.AcquisitionNeeds.Count > 0)
                 {
                     <MudText Typo="Typo.subtitle2">Acquisition Needs</MudText>
-                    <PlanningValueDisplay Text="@SerializeJson(SelectedVirtualNode.RequestAnalysis!.AcquisitionNeeds)" AutoDetectMarkdown="false" />
+                    <PlanningValueDisplay Text="@SerializeJson(SelectedVirtualNode.RequestBrief!.AcquisitionNeeds)" AutoDetectMarkdown="false" />
                 }
 
-                @if (SelectedVirtualNode.RequestAnalysis?.ReasoningNeeds.Count > 0)
+                @if (SelectedVirtualNode.RequestBrief?.ReasoningNeeds.Count > 0)
                 {
                     <MudText Typo="Typo.subtitle2">Reasoning Needs</MudText>
-                    <PlanningValueDisplay Text="@SerializeJson(SelectedVirtualNode.RequestAnalysis!.ReasoningNeeds)" AutoDetectMarkdown="false" />
+                    <PlanningValueDisplay Text="@SerializeJson(SelectedVirtualNode.RequestBrief!.ReasoningNeeds)" AutoDetectMarkdown="false" />
                 }
 
-                @if (SelectedVirtualNode.RequestAnalysis?.SuggestedPlanOutline.Count > 0)
+                @if (SelectedVirtualNode.RequestBrief?.SuggestedPlanOutline.Count > 0)
                 {
                     <MudText Typo="Typo.subtitle2">Suggested Outline</MudText>
-                    <PlanningValueDisplay Text="@SerializeJson(SelectedVirtualNode.RequestAnalysis!.SuggestedPlanOutline)" AutoDetectMarkdown="false" />
+                    <PlanningValueDisplay Text="@SerializeJson(SelectedVirtualNode.RequestBrief!.SuggestedPlanOutline)" AutoDetectMarkdown="false" />
                 }
 
                 @foreach (var promptEvent in RequestAnalysisPromptEvents)
@@ -236,10 +236,10 @@ else if (SelectedVirtualNode is not null)
                     }
                 }
 
-                @if (SelectedVirtualNode.RequestAnalysis is not null)
+                @if (SelectedVirtualNode.RequestBrief is not null)
                 {
                     <MudText Typo="Typo.subtitle2">Structured Analysis</MudText>
-                    <PlanningValueDisplay Text="@SerializeJson(SelectedVirtualNode.RequestAnalysis)" AutoDetectMarkdown="false" />
+                    <PlanningValueDisplay Text="@SerializeJson(SelectedVirtualNode.RequestBrief)" AutoDetectMarkdown="false" />
                 }
             }
             else if (SelectedVirtualNode.Kind == PlanningVirtualNodeKind.Replanning)

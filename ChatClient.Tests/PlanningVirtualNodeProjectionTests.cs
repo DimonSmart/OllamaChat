@@ -1,9 +1,9 @@
-using System.Text.Json;
 using ChatClient.Api.Client.Components.Planning;
 using ChatClient.Api.PlanningRuntime.Common;
 using ChatClient.Api.PlanningRuntime.Execution;
 using ChatClient.Api.PlanningRuntime.Planning;
 using ChatClient.Api.PlanningRuntime.Verification;
+using System.Text.Json;
 
 namespace ChatClient.Tests;
 
@@ -90,7 +90,7 @@ public class PlanningVirtualNodeProjectionTests
         var events = new PlanRunEvent[]
         {
             new PlanningAttemptStartedEvent(1, "plan", "Find Python robot kits."),
-            new RequestAnalysisCompletedEvent(new PlanningRequestAnalysis
+            new RequestAnalysisCompletedEvent(new RequestBrief
             {
                 RewrittenRequest = "Find Python-programmable robot kits and compare them.",
                 Goal = "Produce a comparison.",
@@ -111,7 +111,7 @@ public class PlanningVirtualNodeProjectionTests
         var analysisNode = Assert.Single(nodes, node => node.Kind == PlanningVirtualNodeKind.RequestAnalysis);
         Assert.Equal(PlanningVirtualNodeDescriptor.RequestAnalysisNodeId, analysisNode.Id);
         Assert.Equal(PlanStepStatuses.Done, analysisNode.StatusValue);
-        Assert.Equal("Find Python-programmable robot kits and compare them.", analysisNode.RequestAnalysis?.RewrittenRequest);
+        Assert.Equal("Find Python-programmable robot kits and compare them.", analysisNode.RequestBrief?.RewrittenRequest);
     }
 
     private static PlanDefinition CreatePlan() =>

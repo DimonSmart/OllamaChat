@@ -1,8 +1,8 @@
+using ChatClient.Api.PlanningRuntime.Agents;
+using ChatClient.Api.Services;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Text.RegularExpressions;
-using ChatClient.Api.PlanningRuntime.Agents;
-using ChatClient.Api.Services;
 
 namespace ChatClient.Api.PlanningRuntime.Planning;
 
@@ -227,6 +227,7 @@ public static partial class PlanValidator
         }
 
         ValidateGraphShapeOrThrow(plan);
+        ValidateResultDesignationOrThrow(plan);
     }
 
     private static Dictionary<string, JsonElement> ValidateToolInputs(PlanStep step, AppToolDescriptor toolMetadata)
@@ -970,6 +971,51 @@ public static partial class PlanValidator
                 "plan_terminal_step_invalid",
                 $"Plan must end with exactly one terminal step, and it must be the last step '{lastStepId}'. Found terminal steps: {string.Join(", ", terminalStepIds)}.",
                 stepId: lastStepId);
+        }
+    }
+
+    /// <summary>
+    /// Validates that exactly one step is designated as the result step via <see cref="PlanStep.IsResult"/>.
+    /// Skipped when <see cref="PlanDefinition.BlockedReason"/> is set, because a blocked plan
+    /// intentionally has no user-visible result step.
+    /// </summary>
+    private static void ValidateResultDesignationOrThrow(PlanDefinition plan)
+    {
+        if (!string.IsNullOrWhiteSpace(plan.BlockedReason))
+            return;
+
+        var resultSteps = plan.Steps.Where(static s => s.IsResult).ToList();
+
+        if (resultSteps.Count == 0)
+        {
+            throw CreateIssue(
+                "plan_result_step_missing",
+                "Plan must designate exactly one result step with isResult=true. " +
+                "Set isResult=true on the terminal step that produces the final user-visible output. " +
+                "Use plan_mark_result_step to designate it.",
+                path: "steps[].isResult");
+        }
+
+        if (resultSteps.Count > 1)
+        {
+            var ids = string.Join(", ", resultSteps.Select(static s => s.Id));
+            throw CreateIssue(
+                "plan_result_step_duplicate",
+                $"Plan must designate exactly one result step with isResult=true, but found {resultSteps.Count}: {ids}. " +
+                "Use plan_mark_result_step to reassign the designation to a single step.",
+                path: "steps[].isResult");
+        }
+
+        var resultStepId = resultSteps[0].Id;
+        var terminalIds = PlanDependencyGraph.GetTerminalStepIds(plan.Steps);
+        if (!terminalIds.Contains(resultStepId))
+        {
+            throw CreateIssue(
+                "plan_result_step_not_terminal",
+                $"The result step '{resultStepId}' must be a terminal step (no downstream consumers). " +
+                "Move isResult=true to the last terminal step.",
+                stepId: resultStepId,
+                path: $"{resultStepId}.isResult");
         }
     }
 }

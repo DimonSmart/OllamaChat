@@ -1,6 +1,6 @@
-using Markdig;
 using ChatClient.Api.Search;
 using HtmlAgilityPack;
+using Markdig;
 
 namespace ChatClient.Api.Client.Markdown;
 

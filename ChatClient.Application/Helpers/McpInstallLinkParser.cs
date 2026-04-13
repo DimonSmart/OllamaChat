@@ -1,7 +1,6 @@
+using ChatClient.Domain.Models;
 using System.Collections.Generic;
 using System.Text.Json;
-
-using ChatClient.Domain.Models;
 
 namespace ChatClient.Application.Helpers;
 

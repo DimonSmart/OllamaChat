@@ -1,6 +1,6 @@
-using System.Text;
 using ChatClient.Api.PlanningRuntime.Common;
 using ChatClient.Api.PlanningRuntime.Execution;
+using System.Text;
 
 namespace ChatClient.Api.PlanningRuntime.Planning;
 
@@ -19,36 +19,56 @@ public sealed class TwoPhasePlanner(
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(userQuery);
 
-        var analysis = await requestAnalyzer.AnalyzeAsync(userQuery, cancellationToken);
-        var plannerInput = BuildPlannerInput(userQuery, analysis);
+        var brief = await requestAnalyzer.AnalyzeAsync(userQuery, cancellationToken);
+        var plannerInput = BuildPlannerInput(userQuery, brief);
 
         _log.Log(
-            $"[plan] analyze:handoff rewritten={Shorten(analysis.RewrittenRequest, 200)} deliverables={analysis.Deliverables.Count} outlineSteps={analysis.SuggestedPlanOutline.Count}");
+            $"[plan] analyze:handoff rewritten={Shorten(brief.RewrittenRequest, 200)} deliverables={brief.Deliverables.Count} outlineSteps={brief.SuggestedPlanOutline.Count}");
         _observer.OnEvent(new DiagnosticPlanRunEvent(
             "planner",
-            $"Planning handoff: rewritten request ready, deliverables={analysis.Deliverables.Count}, outlineSteps={analysis.SuggestedPlanOutline.Count}."));
+            $"Planning handoff: rewritten request ready, deliverables={brief.Deliverables.Count}, outlineSteps={brief.SuggestedPlanOutline.Count}."));
 
-        return await draftPlanner.CreatePlanAsync(
+        var draft = await draftPlanner.CreatePlanAsync(
             new PlanningDraftPlannerRequest
             {
                 OriginalUserQuery = userQuery,
-                PlannerInput = plannerInput
+                PlannerInput = plannerInput,
+                RequestBrief = brief
             },
             cancellationToken);
+
+        return AttachResultContract(draft, brief);
     }
 
-    internal static string BuildPlannerInput(string userQuery, PlanningRequestAnalysis analysis)
+    /// <summary>
+    /// Derives a <see cref="ResultContract"/> from the request brief and attaches it
+    /// to the generated plan draft. The contract is not part of the LLM-generated JSON;
+    /// it is injected by the framework after the draft is produced.
+    /// </summary>
+    private static PlanDefinition AttachResultContract(PlanDefinition draft, RequestBrief brief)
+    {
+        var contract = ResultContractDeriver.DeriveFrom(brief);
+        return new PlanDefinition
+        {
+            Goal = draft.Goal,
+            Steps = draft.Steps,
+            ResultContract = contract,
+            BlockedReason = draft.BlockedReason
+        };
+    }
+
+    internal static string BuildPlannerInput(string userQuery, RequestBrief brief)
     {
         var sb = new StringBuilder();
-        sb.AppendLine("Use the original user request plus the internal planning analysis below to build the executable JSON plan.");
-        sb.AppendLine("The planning analysis is an internal aid. It may clarify structure, but it does not add new external facts or new user requirements.");
-        sb.AppendLine("If the planning analysis conflicts with the original request, follow the original request.");
+        sb.AppendLine("Use the original user request plus the structured planning brief below to build the executable JSON plan.");
+        sb.AppendLine("The planning brief is an internal aid. It may clarify structure, but it does not add new external facts or new user requirements.");
+        sb.AppendLine("If the planning brief conflicts with the original request, follow the original request.");
         sb.AppendLine();
         sb.AppendLine("Original user request:");
         sb.AppendLine(userQuery.Trim());
         sb.AppendLine();
-        sb.AppendLine("Internal planning analysis:");
-        sb.AppendLine(PlanningJson.SerializeIndented(analysis));
+        sb.AppendLine("Structured planning brief:");
+        sb.AppendLine(PlanningPromptCompiler.Compile(brief));
         return sb.ToString().Trim();
     }
 

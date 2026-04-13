@@ -1,9 +1,9 @@
-using System.ComponentModel;
-using System.Globalization;
-using System.Text.Json;
 using Microsoft.Extensions.DependencyInjection;
 using ModelContextProtocol.Protocol;
 using ModelContextProtocol.Server;
+using System.ComponentModel;
+using System.Globalization;
+using System.Text.Json;
 
 namespace ChatClient.Api.Services.BuiltIn;
 

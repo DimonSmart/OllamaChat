@@ -1,7 +1,7 @@
-using System.Text.Json;
-using System.Text.Json.Nodes;
 using ChatClient.Api.PlanningRuntime.Agents;
 using ChatClient.Api.Services;
+using System.Text.Json;
+using System.Text.Json.Nodes;
 
 namespace ChatClient.Api.PlanningRuntime.Planning;
 
@@ -17,7 +17,7 @@ internal static class PlanDraftValidationTool
         try
         {
             var draft = session.BuildPlan();
-            PlanNormalizer.Normalize(draft, workflowTools);
+            PlanNormalizer.Normalize(draft);
             if (PlanValidator.TryValidate(draft, workflowTools, agentCatalog?.ListAgents(), session.Profile, out var validationIssue))
             {
                 return new JsonObject

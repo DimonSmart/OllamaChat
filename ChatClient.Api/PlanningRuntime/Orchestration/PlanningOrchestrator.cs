@@ -1,8 +1,8 @@
-﻿using System.Text.Json;
-using ChatClient.Api.PlanningRuntime.Common;
+﻿using ChatClient.Api.PlanningRuntime.Common;
 using ChatClient.Api.PlanningRuntime.Execution;
 using ChatClient.Api.PlanningRuntime.Planning;
 using ChatClient.Api.PlanningRuntime.Verification;
+using System.Text.Json;
 
 namespace ChatClient.Api.PlanningRuntime.Orchestration;
 
@@ -47,9 +47,10 @@ public sealed class PlanningOrchestrator(
 
             if (verdict.Action == GoalAction.Done)
             {
-                var finalVerification = await VerifyFinalAnswerAsync(userQuery, plan.Steps[^1].Result, cancellationToken);
+                var resultStep = plan.Steps.FirstOrDefault(static s => s.IsResult) ?? plan.Steps[^1];
+                var finalVerification = await VerifyFinalAnswerAsync(userQuery, resultStep.Result, plan.ResultContract, cancellationToken);
                 if (finalVerification is null || finalVerification.IsAnswer)
-                    return CompleteRun(ResultEnvelope<JsonElement?>.Success(plan.Steps[^1].Result?.Clone()), plan);
+                    return CompleteRun(ResultEnvelope<JsonElement?>.Success(resultStep.Result?.Clone()), plan);
 
                 verdict = new GoalVerdict
                 {
@@ -101,6 +102,7 @@ public sealed class PlanningOrchestrator(
     private async Task<FinalAnswerVerificationResult?> VerifyFinalAnswerAsync(
         string userQuery,
         JsonElement? finalAnswer,
+        ResultContract? resultContract,
         CancellationToken cancellationToken)
     {
         if (_finalAnswerVerifier is null)
@@ -108,7 +110,7 @@ public sealed class PlanningOrchestrator(
 
         try
         {
-            var verificationResult = await _finalAnswerVerifier.VerifyAsync(userQuery, finalAnswer, cancellationToken);
+            var verificationResult = await _finalAnswerVerifier.VerifyAsync(userQuery, finalAnswer, resultContract, cancellationToken);
             _observer.OnEvent(new FinalAnswerVerifiedEvent(verificationResult));
             _log.Log($"[verify] answer:isAnswer={verificationResult.IsAnswer} reason={verificationResult.Reason}");
             return verificationResult;

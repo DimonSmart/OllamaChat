@@ -1,6 +1,6 @@
-using System.Text.Json;
 using ChatClient.Api.PlanningRuntime.Execution;
 using ChatClient.Api.PlanningRuntime.Planning;
+using System.Text.Json;
 
 namespace ChatClient.Api.PlanningRuntime.Verification;
 
