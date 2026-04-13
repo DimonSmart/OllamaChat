@@ -83,6 +83,37 @@ public class PlanningVirtualNodeProjectionTests
         Assert.Equal(PlanStepStatuses.Fail, replanNode.StatusValue);
     }
 
+    [Fact]
+    public void Build_IncludesRequestAnalysisNode_WhenAnalysisCompleted()
+    {
+        var plan = CreatePlan();
+        var events = new PlanRunEvent[]
+        {
+            new PlanningAttemptStartedEvent(1, "plan", "Find Python robot kits."),
+            new RequestAnalysisCompletedEvent(new PlanningRequestAnalysis
+            {
+                RewrittenRequest = "Find Python-programmable robot kits and compare them.",
+                Goal = "Produce a comparison.",
+                Deliverables = ["comparison"],
+                Constraints = ["at least one kit"],
+                AcquisitionNeeds = ["candidate robot kits"],
+                ReasoningNeeds = ["compare kits"],
+                SuggestedPlanOutline = ["discover kits", "compare kits"]
+            })
+        };
+
+        var nodes = PlanningVirtualNodeProjection.Build(
+            plan,
+            events,
+            [],
+            finalResult: null);
+
+        var analysisNode = Assert.Single(nodes, node => node.Kind == PlanningVirtualNodeKind.RequestAnalysis);
+        Assert.Equal(PlanningVirtualNodeDescriptor.RequestAnalysisNodeId, analysisNode.Id);
+        Assert.Equal(PlanStepStatuses.Done, analysisNode.StatusValue);
+        Assert.Equal("Find Python-programmable robot kits and compare them.", analysisNode.RequestAnalysis?.RewrittenRequest);
+    }
+
     private static PlanDefinition CreatePlan() =>
         new()
         {

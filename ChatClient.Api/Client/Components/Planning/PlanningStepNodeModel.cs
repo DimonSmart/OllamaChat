@@ -9,6 +9,7 @@ namespace ChatClient.Api.Client.Components.Planning;
 public enum PlanningVisualNodeKind
 {
     Step,
+    RequestAnalysis,
     Planning,
     Replanning,
     Result
@@ -83,6 +84,7 @@ public sealed class PlanningStepNodeModel : NodeModel
         HiddenDescendantCount = 0;
         VisualKind = descriptor.Kind switch
         {
+            PlanningVirtualNodeKind.RequestAnalysis => PlanningVisualNodeKind.RequestAnalysis,
             PlanningVirtualNodeKind.Planning => PlanningVisualNodeKind.Planning,
             PlanningVirtualNodeKind.Replanning => PlanningVisualNodeKind.Replanning,
             PlanningVirtualNodeKind.Result => PlanningVisualNodeKind.Result,

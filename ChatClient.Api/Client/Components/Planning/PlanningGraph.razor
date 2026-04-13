@@ -330,7 +330,7 @@
                 _diagram.Nodes.Add(node);
             }
 
-            foreach (var linkDescriptor in PlanningGraphLinkProjection.Build(visibleSteps, FinalResult))
+            foreach (var linkDescriptor in PlanningGraphLinkProjection.Build(visibleSteps, virtualNodes, FinalResult))
             {
                 if (!nodeLookup.TryGetValue(linkDescriptor.SourceId, out var source) ||
                     !nodeLookup.TryGetValue(linkDescriptor.TargetId, out var target))

@@ -37,19 +37,28 @@ public sealed class PlanningRunExecutor(
         var loggerSink = request.ExecutionLogger ?? NullExecutionLogger.Instance;
         var callableAgents = request.CallableAgents ?? PlanningCallableAgentCatalog.Empty;
         var toolCatalog = new PlanningToolCatalog(request.EnabledTools);
+        var requestAnalyzer = new LlmPlanningRequestAnalyzer(
+            chatClient,
+            loggerSink,
+            observer);
         var initialDraftRepairer = new LlmInitialDraftRepairer(
             chatClient,
             toolCatalog,
             loggerSink,
             observer,
             callableAgents);
-        var planner = new LlmPlanner(
+        var draftPlanner = new LlmPlanner(
             chatClient,
             toolCatalog,
             loggerSink,
             observer,
             initialDraftRepairer,
             callableAgents);
+        var planner = new TwoPhasePlanner(
+            requestAnalyzer,
+            draftPlanner,
+            loggerSink,
+            observer);
         var replanner = new LlmReplanner(
             chatClient,
             toolCatalog,

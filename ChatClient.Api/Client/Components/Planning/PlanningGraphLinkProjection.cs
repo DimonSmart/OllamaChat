@@ -50,6 +50,54 @@ public static class PlanningGraphLinkProjection
 {
     public static IReadOnlyList<PlanningGraphLinkDescriptor> Build(
         IReadOnlyList<PlanStep> steps,
+        IReadOnlyList<PlanningVirtualNodeDescriptor> virtualNodes,
+        ResultEnvelope<JsonElement?>? finalResult)
+    {
+        var descriptors = Build(steps, finalResult).ToList();
+
+        var hasRequestAnalysisNode = virtualNodes.Any(node =>
+            string.Equals(node.Id, PlanningVirtualNodeDescriptor.RequestAnalysisNodeId, StringComparison.Ordinal));
+        var hasPlanningNode = virtualNodes.Any(node =>
+            string.Equals(node.Id, PlanningVirtualNodeDescriptor.PlanningNodeId, StringComparison.Ordinal));
+        if (hasRequestAnalysisNode && hasPlanningNode)
+        {
+            descriptors.Insert(0, new PlanningGraphLinkDescriptor
+            {
+                Id = PlanningGraphLinkDescriptor.CreateId(
+                    PlanningVirtualNodeDescriptor.RequestAnalysisNodeId,
+                    PlanningVirtualNodeDescriptor.PlanningNodeId,
+                    PlanningGraphLinkKind.Dependency),
+                SourceId = PlanningVirtualNodeDescriptor.RequestAnalysisNodeId,
+                TargetId = PlanningVirtualNodeDescriptor.PlanningNodeId,
+                Kind = PlanningGraphLinkKind.Dependency,
+                Matches =
+                [
+                    new PlanningGraphLinkMatch
+                    {
+                        InputName = "analysis",
+                        Path = "analysis",
+                        Reference = "$request_analysis",
+                        Mode = "value",
+                        DeclaredType = "planning_request_analysis",
+                        BindingJson = PlanningJson.SerializeIndented(new
+                        {
+                            from = "$request_analysis",
+                            mode = "value"
+                        }),
+                        ReferenceJson = PlanningJson.SerializeIndented(new
+                        {
+                            source = "request analysis"
+                        })
+                    }
+                ]
+            });
+        }
+
+        return descriptors;
+    }
+
+    public static IReadOnlyList<PlanningGraphLinkDescriptor> Build(
+        IReadOnlyList<PlanStep> steps,
         ResultEnvelope<JsonElement?>? finalResult)
     {
         var descriptors = new List<PlanningGraphLinkDescriptor>();

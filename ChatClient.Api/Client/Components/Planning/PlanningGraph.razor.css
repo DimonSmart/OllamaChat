@@ -73,6 +73,10 @@
     background-image: linear-gradient(135deg, rgba(255, 255, 255, 0.08), transparent 52%);
 }
 
+.planning-graph-shell ::deep .planning-step-node-request-analysis {
+    background-image: linear-gradient(135deg, rgba(179, 241, 255, 0.16), transparent 54%);
+}
+
 .planning-graph-shell ::deep .planning-step-node-replanning {
     background-image: linear-gradient(135deg, rgba(255, 245, 214, 0.12), transparent 56%);
 }

@@ -22,10 +22,9 @@ public sealed class LlmPlanner(
     IExecutionLogger? executionLogger = null,
     IPlanRunObserver? planRunObserver = null,
     IInitialDraftRepairer? initialDraftRepairer = null,
-    PlanningCallableAgentCatalog? agentCatalog = null) : IPlanner
+    PlanningCallableAgentCatalog? agentCatalog = null) : IPlanner, IPlanningDraftPlanner
 {
     private const int MaxDraftGenerations = 2;
-    private const string PlannerStepId = "__planning__";
     private readonly IExecutionLogger _log = executionLogger ?? NullExecutionLogger.Instance;
     private readonly IPlanRunObserver _observer = planRunObserver ?? NullPlanRunObserver.Instance;
     private readonly IInitialDraftRepairer? _initialDraftRepairer = initialDraftRepairer;
@@ -34,17 +33,38 @@ public sealed class LlmPlanner(
     public async Task<PlanDefinition> CreatePlanAsync(string userQuery, CancellationToken cancellationToken = default)
     {
         _log.Log($"[plan] create:start toolCount={toolCatalog.ListTools().Count} query={Shorten(userQuery, 240)}");
-        return await GeneratePlanCoreAsync(BuildPlanningUserPrompt(userQuery), cancellationToken);
+        return await CreatePlanAsync(
+            new PlanningDraftPlannerRequest
+            {
+                OriginalUserQuery = userQuery,
+                PlannerInput = BuildPlanningUserPrompt(userQuery)
+            },
+            cancellationToken);
+    }
+
+    public async Task<PlanDefinition> CreatePlanAsync(
+        PlanningDraftPlannerRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+
+        _log.Log($"[plan] create:start toolCount={toolCatalog.ListTools().Count} query={Shorten(request.OriginalUserQuery, 240)}");
+        return await GeneratePlanCoreAsync(
+            request.OriginalUserQuery,
+            request.PlannerInput,
+            cancellationToken);
     }
 
     private async Task<PlanDefinition> GeneratePlanCoreAsync(
-        string userPrompt,
+        string originalUserQuery,
+        string plannerInput,
         CancellationToken cancellationToken)
     {
         var tools = toolCatalog.ListTools();
         var systemPrompt = BuildSystemPrompt(tools);
         var agent = new ChatClientAgent(chatClient, systemPrompt, "planner", null, null, null, null);
-        var planningPrompt = userPrompt;
+        var basePlanningPrompt = plannerInput;
+        var planningPrompt = basePlanningPrompt;
         Exception? lastError = null;
         string? previousDraftJson = null;
         var initialDraftRepairAttempted = false;
@@ -59,7 +79,7 @@ public sealed class LlmPlanner(
                     "planner",
                     $"Attempt {attempt}: requesting draft (systemChars={systemPrompt.Length}, userChars={planningPrompt.Length}, tools={tools.Count})."));
                 _observer.OnEvent(new AgentPromptPreparedEvent(
-                    PlannerStepId,
+                    PlanningSpecialStepIds.Planning,
                     "planner",
                     systemPrompt,
                     planningPrompt,
@@ -86,7 +106,7 @@ public sealed class LlmPlanner(
                 PlanNormalizer.Normalize(plan, tools);
 
                 _observer.OnEvent(new AgentResponseReceivedEvent(
-                    PlannerStepId,
+                    PlanningSpecialStepIds.Planning,
                     "planner",
                     rawResponseText,
                     true,
@@ -109,7 +129,7 @@ public sealed class LlmPlanner(
                             _log.Log($"[plan] create:repair attempt={attempt} issue={PlanningJson.SerializeCompact(validationIssue)}");
                             var repaired = await _initialDraftRepairer.RepairAsync(new InitialDraftRepairRequest
                             {
-                                UserQuery = userPrompt,
+                                UserQuery = basePlanningPrompt,
                                 AttemptNumber = attempt,
                                 DraftPlan = ClonePlan(plan, PlanModelProfile.Draft),
                                 ValidationIssue = validationIssue!
@@ -134,7 +154,7 @@ public sealed class LlmPlanner(
                             lastError = repairEx;
                             _log.Log($"[plan] create:repair-failed attempt={attempt} error={Shorten(repairEx.Message, 240)}");
                             _observer.OnEvent(new DiagnosticPlanRunEvent("planner", $"Repair {attempt} failed: {Shorten(repairEx.Message, 240)}"));
-                            planningPrompt = BuildRepairPrompt(userPrompt, repairEx, previousDraftJson);
+                            planningPrompt = BuildRepairPrompt(basePlanningPrompt, repairEx, previousDraftJson);
                             continue;
                         }
                         catch (Exception repairEx)
@@ -149,7 +169,7 @@ public sealed class LlmPlanner(
                         lastError = validationException;
                         _log.Log($"[plan] create:fallback attempt={attempt + 1} reason={Shorten(validationException.Message, 240)}");
                         _observer.OnEvent(new DiagnosticPlanRunEvent("planner", $"Fallback {attempt + 1}: {Shorten(validationException.Message, 240)}"));
-                        planningPrompt = BuildRepairPrompt(userPrompt, validationException, previousDraftJson);
+                        planningPrompt = BuildRepairPrompt(basePlanningPrompt, validationException, previousDraftJson);
                         continue;
                     }
 
@@ -171,7 +191,7 @@ public sealed class LlmPlanner(
                 if (!string.IsNullOrWhiteSpace(rawResponseText))
                 {
                     _observer.OnEvent(new AgentResponseReceivedEvent(
-                        PlannerStepId,
+                        PlanningSpecialStepIds.Planning,
                         "planner",
                         rawResponseText,
                         false,
@@ -182,14 +202,14 @@ public sealed class LlmPlanner(
                 lastError = ex;
                 _log.Log($"[plan] create:retry attempt={attempt} error={Shorten(ex.Message, 240)}");
                 _observer.OnEvent(new DiagnosticPlanRunEvent("planner", $"Retry {attempt}: {Shorten(ex.Message, 240)}"));
-                planningPrompt = BuildRepairPrompt(userPrompt, ex, previousDraftJson);
+                planningPrompt = BuildRepairPrompt(basePlanningPrompt, ex, previousDraftJson);
             }
             catch (Exception ex)
             {
                 if (!string.IsNullOrWhiteSpace(rawResponseText))
                 {
                     _observer.OnEvent(new AgentResponseReceivedEvent(
-                        PlannerStepId,
+                        PlanningSpecialStepIds.Planning,
                         "planner",
                         rawResponseText,
                         false,

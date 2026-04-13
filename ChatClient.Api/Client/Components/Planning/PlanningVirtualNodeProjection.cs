@@ -8,6 +8,7 @@ namespace ChatClient.Api.Client.Components.Planning;
 
 public enum PlanningVirtualNodeKind
 {
+    RequestAnalysis,
     Planning,
     Replanning,
     Result
@@ -15,6 +16,7 @@ public enum PlanningVirtualNodeKind
 
 public sealed record PlanningVirtualNodeDescriptor
 {
+    public const string RequestAnalysisNodeId = "__request_analysis__";
     public const string PlanningNodeId = "__planning__";
     public const string ResultNodeId = "__result__";
 
@@ -31,6 +33,8 @@ public sealed record PlanningVirtualNodeDescriptor
     public string? Summary { get; init; }
 
     public PlanningAttemptStartedEvent? PlanningStarted { get; init; }
+
+    public PlanningRequestAnalysis? RequestAnalysis { get; init; }
 
     public PlanDefinition? PlannedDraft { get; init; }
 
@@ -58,6 +62,10 @@ public static class PlanningVirtualNodeProjection
         var planningStart = events
             .OfType<PlanningAttemptStartedEvent>()
             .FirstOrDefault(evt => string.Equals(evt.Phase, "plan", StringComparison.OrdinalIgnoreCase));
+        var requestAnalysis = events
+            .OfType<RequestAnalysisCompletedEvent>()
+            .LastOrDefault()
+            ?.Analysis;
         var createdPlan = events
             .OfType<PlanCreatedEvent>()
             .LastOrDefault(evt => string.Equals(evt.Phase, "plan", StringComparison.OrdinalIgnoreCase))
@@ -67,6 +75,25 @@ public static class PlanningVirtualNodeProjection
             .OfType<DiagnosticPlanRunEvent>()
             .Where(evt => string.Equals(evt.Source, "planner", StringComparison.OrdinalIgnoreCase))
             .ToList();
+
+        if (planningStart is not null || requestAnalysis is not null)
+        {
+            nodes.Add(new PlanningVirtualNodeDescriptor
+            {
+                Id = PlanningVirtualNodeDescriptor.RequestAnalysisNodeId,
+                Kind = PlanningVirtualNodeKind.RequestAnalysis,
+                Title = "request analysis",
+                Subtitle = requestAnalysis is null
+                    ? "decomposing the user request"
+                    : $"deliverables: {requestAnalysis.Deliverables.Count} | outline: {requestAnalysis.SuggestedPlanOutline.Count}",
+                StatusValue = requestAnalysis is null ? PlanStepStatuses.Running : PlanStepStatuses.Done,
+                Summary = requestAnalysis is null
+                    ? "Waiting for analyzed request."
+                    : Shorten(requestAnalysis.RewrittenRequest, 96),
+                PlanningStarted = planningStart,
+                RequestAnalysis = requestAnalysis
+            });
+        }
 
         if (planningStart is not null || createdPlan is not null || availableTools.Count > 0)
         {
@@ -83,6 +110,7 @@ public static class PlanningVirtualNodeProjection
                     ? "Waiting for planner output."
                     : $"steps: {createdPlan.Steps.Count}",
                 PlanningStarted = planningStart,
+                RequestAnalysis = requestAnalysis,
                 PlannedDraft = createdPlan,
                 AvailableTools = availableTools.ToList(),
                 Diagnostics = plannerDiagnostics
@@ -105,6 +133,7 @@ public static class PlanningVirtualNodeProjection
         IReadOnlyList<PlanningToolOption> availableTools,
         ResultEnvelope<JsonElement?>? finalResult)
     {
+        var virtualNodes = Build(plan, events, availableTools, finalResult);
         var keys = new HashSet<string>(StringComparer.Ordinal);
 
         if (plan is not null)
@@ -115,17 +144,18 @@ public static class PlanningVirtualNodeProjection
             }
         }
 
-        foreach (var nodeId in Build(plan, events, availableTools, finalResult).Select(node => node.Id))
+        foreach (var nodeId in virtualNodes.Select(node => node.Id))
         {
             keys.Add(nodeId);
         }
 
-        if (plan is not null)
+        foreach (var linkId in PlanningGraphLinkProjection.Build(
+                     plan?.Steps ?? [],
+                     virtualNodes,
+                     finalResult)
+                 .Select(link => link.Id))
         {
-            foreach (var linkId in PlanningGraphLinkProjection.Build(plan.Steps, finalResult).Select(link => link.Id))
-            {
-                keys.Add(linkId);
-            }
+            keys.Add(linkId);
         }
 
         return keys;

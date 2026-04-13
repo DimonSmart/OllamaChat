@@ -56,6 +56,46 @@ public class PlanningGraphLinkProjectionTests
             selectionKeys);
     }
 
+    [Fact]
+    public void Build_WithRequestAnalysisAndPlanningNodes_ReturnsVirtualDependencyDescriptor()
+    {
+        var plan = CreatePlan();
+        var virtualNodes = new[]
+        {
+            new PlanningVirtualNodeDescriptor
+            {
+                Id = PlanningVirtualNodeDescriptor.RequestAnalysisNodeId,
+                Kind = PlanningVirtualNodeKind.RequestAnalysis,
+                Title = "request analysis",
+                Subtitle = "deliverables: 1 | outline: 2",
+                StatusValue = PlanStepStatuses.Done
+            },
+            new PlanningVirtualNodeDescriptor
+            {
+                Id = PlanningVirtualNodeDescriptor.PlanningNodeId,
+                Kind = PlanningVirtualNodeKind.Planning,
+                Title = "planning",
+                Subtitle = "tools: 1",
+                StatusValue = PlanStepStatuses.Done
+            }
+        };
+
+        var descriptors = PlanningGraphLinkProjection.Build(
+            plan.Steps,
+            virtualNodes,
+            finalResult: null);
+
+        var analysisLink = Assert.Single(
+            descriptors,
+            descriptor =>
+                descriptor.Kind == PlanningGraphLinkKind.Dependency &&
+                descriptor.SourceId == PlanningVirtualNodeDescriptor.RequestAnalysisNodeId &&
+                descriptor.TargetId == PlanningVirtualNodeDescriptor.PlanningNodeId);
+        var match = Assert.Single(analysisLink.Matches);
+        Assert.Equal("analysis", match.InputName);
+        Assert.Equal("$request_analysis", match.Reference);
+    }
+
     private static PlanDefinition CreatePlan() =>
         new()
         {

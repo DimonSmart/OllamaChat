@@ -42,6 +42,9 @@ public sealed record PlanningAttemptStartedEvent(
     string Phase,
     string UserQuery) : PlanRunEvent(DateTimeOffset.UtcNow);
 
+public sealed record RequestAnalysisCompletedEvent(
+    PlanningRequestAnalysis Analysis) : PlanRunEvent(DateTimeOffset.UtcNow);
+
 public sealed record PlanCreatedEvent(
     int AttemptNumber,
     string Phase,

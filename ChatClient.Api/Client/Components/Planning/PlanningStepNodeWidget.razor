@@ -24,6 +24,7 @@
         var collapsed = StepNode.IsCollapsed ? " planning-step-node-collapsed" : string.Empty;
         var kind = StepNode.VisualKind switch
         {
+            PlanningVisualNodeKind.RequestAnalysis => " planning-step-node-request-analysis",
             PlanningVisualNodeKind.Planning => " planning-step-node-planning",
             PlanningVisualNodeKind.Replanning => " planning-step-node-replanning",
             PlanningVisualNodeKind.Result => " planning-step-node-result",
@@ -48,6 +49,16 @@
                 "running" => "#4a3ea8",
                 "done" => "#355f9a",
                 _ => "#4c4c7a"
+            };
+        }
+
+        if (node.VisualKind == PlanningVisualNodeKind.RequestAnalysis)
+        {
+            return node.StatusValue switch
+            {
+                "running" => "#2f5d8a",
+                "done" => "#1f6f78",
+                _ => "#385c73"
             };
         }
 
@@ -95,6 +106,16 @@
                 "running" => "#d5caff",
                 "done" => "#a8d2ff",
                 _ => "#c9c7f1"
+            };
+        }
+
+        if (node.VisualKind == PlanningVisualNodeKind.RequestAnalysis)
+        {
+            return node.StatusValue switch
+            {
+                "running" => "#b8dbff",
+                "done" => "#9cf0e8",
+                _ => "#b8d4df"
             };
         }
 
