@@ -111,7 +111,7 @@
     box-sizing: border-box;
     overflow-wrap: anywhere;
     word-break: break-word;
-    cursor: pointer;
+    cursor: grab;
     transition: transform 0.16s ease, box-shadow 0.16s ease, filter 0.16s ease, border-width 0.16s ease;
     z-index: 1;
     appearance: none;
@@ -127,6 +127,13 @@
 
 .runtime-workflow-node-selected {
     border-width: 4px;
+}
+
+.runtime-workflow-node-dragging,
+.runtime-workflow-node-dragging:hover {
+    cursor: grabbing;
+    transform: none;
+    transition: none;
 }
 
 .runtime-workflow-node-active {

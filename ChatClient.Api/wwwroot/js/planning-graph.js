@@ -259,6 +259,7 @@ window.planningGraphInterop = (() => {
 window.runtimeWorkflowGraphInterop = (() => {
     let nextId = 1;
     const registrations = new Map();
+    const nodeDragActivationDistance = 4;
 
     const isDisposedReferenceError = (error) => {
         const text = error?.message ?? String(error ?? "");
@@ -292,6 +293,15 @@ window.runtimeWorkflowGraphInterop = (() => {
             && !target.closest(".runtime-workflow-link-hit");
     };
 
+    const getNodeId = (target) => {
+        if (!(target instanceof Element)) {
+            return null;
+        }
+
+        const node = target.closest(".runtime-workflow-node[data-node-id]");
+        return node instanceof HTMLElement ? node.dataset.nodeId ?? null : null;
+    };
+
     return {
         register(element, dotNet) {
             if (!element) {
@@ -303,9 +313,29 @@ window.runtimeWorkflowGraphInterop = (() => {
                 element,
                 dotNet,
                 disposed: false,
+                draggingNodeId: null,
+                draggingNodeMoved: false,
+                dragStartClientX: 0,
+                dragStartClientY: 0,
                 panning: false,
                 pendingMove: null,
-                moveScheduled: false
+                moveScheduled: false,
+                suppressedNodeClickId: null
+            };
+
+            registration.flushPendingMove = () => {
+                const pendingMove = registration.pendingMove;
+                registration.pendingMove = null;
+                if (!pendingMove) {
+                    return;
+                }
+
+                if (pendingMove.kind === "node") {
+                    invoke(registration, "HandleNodePointerMove", pendingMove.nodeId, pendingMove.clientX, pendingMove.clientY);
+                    return;
+                }
+
+                invoke(registration, "HandleViewportPointerMove", pendingMove.clientX, pendingMove.clientY);
             };
 
             registration.flushMove = () => {
@@ -316,17 +346,28 @@ window.runtimeWorkflowGraphInterop = (() => {
                 }
 
                 registration.moveScheduled = false;
-                const pendingMove = registration.pendingMove;
-                registration.pendingMove = null;
-                if (!pendingMove) {
-                    return;
-                }
-
-                invoke(registration, "HandleViewportPointerMove", pendingMove.clientX, pendingMove.clientY);
+                registration.flushPendingMove();
             };
 
             registration.onPointerDown = (event) => {
-                if (event.button !== 0 || !isPanGestureTarget(event.target)) {
+                if (event.button !== 0) {
+                    return;
+                }
+
+                const nodeId = getNodeId(event.target);
+                if (nodeId) {
+                    event.preventDefault();
+                    element.focus?.({ preventScroll: true });
+                    registration.draggingNodeId = nodeId;
+                    registration.draggingNodeMoved = false;
+                    registration.dragStartClientX = event.clientX;
+                    registration.dragStartClientY = event.clientY;
+                    registration.pendingMove = null;
+                    invoke(registration, "HandleNodePointerDown", nodeId, event.clientX, event.clientY);
+                    return;
+                }
+
+                if (!isPanGestureTarget(event.target)) {
                     return;
                 }
 
@@ -337,12 +378,39 @@ window.runtimeWorkflowGraphInterop = (() => {
             };
 
             registration.onPointerMove = (event) => {
+                if (registration.draggingNodeId) {
+                    const deltaX = event.clientX - registration.dragStartClientX;
+                    const deltaY = event.clientY - registration.dragStartClientY;
+
+                    if (!registration.draggingNodeMoved && Math.hypot(deltaX, deltaY) < nodeDragActivationDistance) {
+                        return;
+                    }
+
+                    event.preventDefault();
+                    registration.draggingNodeMoved = true;
+                    registration.pendingMove = {
+                        kind: "node",
+                        nodeId: registration.draggingNodeId,
+                        clientX: event.clientX,
+                        clientY: event.clientY
+                    };
+
+                    if (registration.moveScheduled) {
+                        return;
+                    }
+
+                    registration.moveScheduled = true;
+                    window.requestAnimationFrame(registration.flushMove);
+                    return;
+                }
+
                 if (!registration.panning) {
                     return;
                 }
 
                 event.preventDefault();
                 registration.pendingMove = {
+                    kind: "pan",
                     clientX: event.clientX,
                     clientY: event.clientY
                 };
@@ -355,17 +423,44 @@ window.runtimeWorkflowGraphInterop = (() => {
                 window.requestAnimationFrame(registration.flushMove);
             };
 
+            registration.endNodeDrag = (cancelled) => {
+                if (!registration.draggingNodeId) {
+                    return;
+                }
+
+                registration.flushPendingMove();
+                const nodeId = registration.draggingNodeId;
+                const moved = registration.draggingNodeMoved;
+                registration.draggingNodeId = null;
+                registration.draggingNodeMoved = false;
+
+                if (cancelled) {
+                    invoke(registration, "HandleNodePointerCancel", nodeId);
+                }
+                else {
+                    invoke(registration, "HandleNodePointerUp", nodeId);
+                }
+
+                registration.suppressedNodeClickId = moved ? nodeId : null;
+            };
+
             registration.endPan = () => {
                 if (!registration.panning) {
                     return;
                 }
 
+                registration.flushPendingMove();
                 registration.panning = false;
-                registration.pendingMove = null;
                 invoke(registration, "HandleViewportPointerUp");
             };
 
             registration.onPointerUp = (event) => {
+                if (registration.draggingNodeId) {
+                    event.preventDefault();
+                    registration.endNodeDrag(false);
+                    return;
+                }
+
                 if (!registration.panning) {
                     return;
                 }
@@ -375,6 +470,11 @@ window.runtimeWorkflowGraphInterop = (() => {
             };
 
             registration.onPointerCancel = () => {
+                if (registration.draggingNodeId) {
+                    registration.endNodeDrag(true);
+                    return;
+                }
+
                 if (!registration.panning) {
                     return;
                 }
@@ -384,7 +484,25 @@ window.runtimeWorkflowGraphInterop = (() => {
                 invoke(registration, "HandleViewportPointerCancel");
             };
 
+            registration.onClick = (event) => {
+                const nodeId = getNodeId(event.target);
+                if (!nodeId) {
+                    registration.suppressedNodeClickId = null;
+                    return;
+                }
+
+                if (registration.suppressedNodeClickId === nodeId) {
+                    registration.suppressedNodeClickId = null;
+                    event.preventDefault();
+                    event.stopPropagation();
+                    return;
+                }
+
+                registration.suppressedNodeClickId = null;
+            };
+
             element.addEventListener("pointerdown", registration.onPointerDown, true);
+            element.addEventListener("click", registration.onClick, true);
             window.addEventListener("pointermove", registration.onPointerMove, true);
             window.addEventListener("pointerup", registration.onPointerUp, true);
             window.addEventListener("pointercancel", registration.onPointerCancel, true);
@@ -424,6 +542,7 @@ window.runtimeWorkflowGraphInterop = (() => {
 
             if (registration.element) {
                 registration.element.removeEventListener("pointerdown", registration.onPointerDown, true);
+                registration.element.removeEventListener("click", registration.onClick, true);
             }
 
             window.removeEventListener("pointermove", registration.onPointerMove, true);

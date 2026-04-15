@@ -103,6 +103,7 @@
                                     <button type="button"
                                             class="@GetNodeCssClass(node)"
                                             style="@GetNodeStyle(node)"
+                                            data-node-id="@node.Id"
                                             @onclick="@(() => SelectNode(node.Id))">
                                         <div class="runtime-workflow-node-header">
                                             <span class="runtime-workflow-node-id">@node.Title</span>
@@ -340,9 +341,12 @@
     private const double ZoomMax = 1.6d;
     private const double ZoomStepFactor = 1.15d;
     private const double ViewportPadding = 28d;
+    private const double NodeDragMinX = 0d;
+    private const double NodeDragMinY = 0d;
     private const int ViewportMeasurementRetries = 5;
 
     private RuntimeWorkflowGraphDescriptor Graph { get; set; } = new();
+    private readonly Dictionary<string, RuntimeWorkflowNodeLayout> _nodeLayouts = new(StringComparer.Ordinal);
     private string? _selectedElementId;
     private DotNetObjectReference<RuntimeWorkflowGraph>? _selfReference;
     private ElementReference _viewportElement;
@@ -355,6 +359,11 @@
     private double _panStartY;
     private double _pointerStartX;
     private double _pointerStartY;
+    private string? _dragNodeId;
+    private double _dragNodeStartX;
+    private double _dragNodeStartY;
+    private double _dragNodePointerStartX;
+    private double _dragNodePointerStartY;
     private bool _fitPending;
     private bool _isPanning;
     private bool _jsRegistrationInFlight;
@@ -391,6 +400,7 @@
     protected override void OnParametersSet()
     {
         Graph = RuntimeWorkflowGraphProjection.Build(Plan, Events, FinalResult, ActiveRuntimeStepId);
+        PruneNodeLayouts();
 
         var validIds = Graph.Nodes.Select(static node => node.Id)
             .Concat(Graph.Links.Select(static link => link.Id))
@@ -502,6 +512,54 @@
             return Task.CompletedTask;
 
         _isPanning = false;
+        return InvokeAsync(StateHasChanged);
+    }
+
+    [JSInvokable]
+    public Task HandleNodePointerDown(string nodeId, double clientX, double clientY)
+    {
+        if (!TryGetNodeLayout(nodeId, out var layout))
+            return Task.CompletedTask;
+
+        _dragNodeId = nodeId;
+        _dragNodeStartX = layout.X;
+        _dragNodeStartY = layout.Y;
+        _dragNodePointerStartX = clientX;
+        _dragNodePointerStartY = clientY;
+        return InvokeAsync(StateHasChanged);
+    }
+
+    [JSInvokable]
+    public Task HandleNodePointerMove(string nodeId, double clientX, double clientY)
+    {
+        if (!string.Equals(_dragNodeId, nodeId, StringComparison.Ordinal))
+            return Task.CompletedTask;
+
+        var deltaX = (clientX - _dragNodePointerStartX) / _zoom;
+        var deltaY = (clientY - _dragNodePointerStartY) / _zoom;
+        _nodeLayouts[nodeId] = ClampNodeLayout(
+            _dragNodeStartX + deltaX,
+            _dragNodeStartY + deltaY);
+        return InvokeAsync(StateHasChanged);
+    }
+
+    [JSInvokable]
+    public Task HandleNodePointerUp(string nodeId)
+    {
+        if (!string.Equals(_dragNodeId, nodeId, StringComparison.Ordinal))
+            return Task.CompletedTask;
+
+        _dragNodeId = null;
+        return InvokeAsync(StateHasChanged);
+    }
+
+    [JSInvokable]
+    public Task HandleNodePointerCancel(string nodeId)
+    {
+        if (!string.Equals(_dragNodeId, nodeId, StringComparison.Ordinal))
+            return Task.CompletedTask;
+
+        _dragNodeId = null;
         return InvokeAsync(StateHasChanged);
     }
 
@@ -623,6 +681,8 @@
         _panY = 0d;
         _fitPending = false;
         _isPanning = false;
+        _dragNodeId = null;
+        _nodeLayouts.Clear();
     }
 
     private string GetViewportCssClass()
@@ -670,11 +730,16 @@
         if (string.Equals(node.Id, _selectedElementId, StringComparison.Ordinal))
             css += " runtime-workflow-node-selected";
 
+        if (string.Equals(node.Id, _dragNodeId, StringComparison.Ordinal))
+            css += " runtime-workflow-node-dragging";
+
         return css;
     }
 
     private string GetNodeStyle(RuntimeWorkflowNodeDescriptor node) =>
-        RuntimeWorkflowGraphFormatting.BuildNodeStyle(node.X, node.Y);
+        RuntimeWorkflowGraphFormatting.BuildNodeStyle(
+            ResolveNodeLayout(node).X,
+            ResolveNodeLayout(node).Y);
 
     private string GetNodeBadge(RuntimeWorkflowNodeDescriptor node) => node.Kind switch
     {
@@ -709,8 +774,8 @@
 
     private string BuildPath(RuntimeWorkflowLinkDescriptor link)
     {
-        var source = Graph.Nodes.First(node => string.Equals(node.Id, link.SourceId, StringComparison.Ordinal));
-        var target = Graph.Nodes.First(node => string.Equals(node.Id, link.TargetId, StringComparison.Ordinal));
+        var source = ResolveNodeLayout(link.SourceId);
+        var target = ResolveNodeLayout(link.TargetId);
         var horizontalFlow = target.X >= source.X + RuntimeWorkflowGraphProjection.NodeWidth * 0.75d;
         if (horizontalFlow)
         {
@@ -751,10 +816,76 @@
     private static string SerializeIndented<T>(T value) =>
         PlanningJson.SerializeIndented(value);
 
+    private void PruneNodeLayouts()
+    {
+        if (!Graph.HasContent)
+        {
+            _nodeLayouts.Clear();
+            _dragNodeId = null;
+            return;
+        }
+
+        var validNodeIds = Graph.Nodes
+            .Select(static node => node.Id)
+            .ToHashSet(StringComparer.Ordinal);
+        var staleNodeIds = _nodeLayouts.Keys
+            .Where(nodeId => !validNodeIds.Contains(nodeId))
+            .ToArray();
+
+        foreach (var staleNodeId in staleNodeIds)
+        {
+            _nodeLayouts.Remove(staleNodeId);
+        }
+
+        if (!string.IsNullOrWhiteSpace(_dragNodeId) && !validNodeIds.Contains(_dragNodeId))
+        {
+            _dragNodeId = null;
+        }
+    }
+
+    private RuntimeWorkflowNodeLayout ResolveNodeLayout(RuntimeWorkflowNodeDescriptor node) =>
+        _nodeLayouts.TryGetValue(node.Id, out var layout)
+            ? layout
+            : new RuntimeWorkflowNodeLayout(node.X, node.Y);
+
+    private RuntimeWorkflowNodeLayout ResolveNodeLayout(string nodeId)
+    {
+        if (_nodeLayouts.TryGetValue(nodeId, out var layout))
+            return layout;
+
+        var node = Graph.Nodes.First(candidate => string.Equals(candidate.Id, nodeId, StringComparison.Ordinal));
+        return new RuntimeWorkflowNodeLayout(node.X, node.Y);
+    }
+
+    private bool TryGetNodeLayout(string nodeId, out RuntimeWorkflowNodeLayout layout)
+    {
+        var node = Graph.Nodes.FirstOrDefault(candidate => string.Equals(candidate.Id, nodeId, StringComparison.Ordinal));
+        if (node is null)
+        {
+            layout = default;
+            return false;
+        }
+
+        layout = ResolveNodeLayout(node);
+        return true;
+    }
+
+    private RuntimeWorkflowNodeLayout ClampNodeLayout(double x, double y)
+    {
+        var maxX = Math.Max(NodeDragMinX, Graph.Width - RuntimeWorkflowGraphProjection.NodeWidth);
+        var maxY = Math.Max(NodeDragMinY, Graph.Height - RuntimeWorkflowGraphProjection.NodeHeight);
+
+        return new RuntimeWorkflowNodeLayout(
+            Math.Clamp(x, NodeDragMinX, maxX),
+            Math.Clamp(y, NodeDragMinY, maxY));
+    }
+
     private sealed class RuntimeWorkflowViewportMetrics
     {
         public double Width { get; init; }
 
         public double Height { get; init; }
     }
+
+    private readonly record struct RuntimeWorkflowNodeLayout(double X, double Y);
 }

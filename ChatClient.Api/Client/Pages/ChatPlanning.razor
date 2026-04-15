@@ -8,6 +8,7 @@
 @using ChatClient.Api.Services
 @using ChatClient.Application.Services.Agentic
 @using ChatClient.Domain.Models
+@using Microsoft.JSInterop
 @using MudBlazor
 @implements IDisposable
 @inject IPlanningSessionService PlanningSessionService
@@ -15,6 +16,7 @@
 @inject IDialogService DialogService
 @inject IMcpUserInteractionService McpUserInteractionService
 @inject IAppToolCatalog AppToolCatalog
+@inject IJSRuntime JSRuntime
 @inject ILogger<ChatPlanning> Logger
 
 <PageTitle>Planning Chat</PageTitle>
@@ -90,49 +92,23 @@
                           FinalResult="@PlanningSessionService.State.FinalResult"
                           ActiveRuntimeStepId="@PlanningSessionService.State.ActiveRuntimeStepId" />
 
-    <MudGrid>
-        <MudItem xs="12" lg="6">
-            <PlanningArtifactCard Title="Request Brief" Content="@GetRequestBriefJson()" />
-        </MudItem>
-        <MudItem xs="12" lg="6">
-            <PlanningArtifactCard Title="Outline Plan" Content="@GetOutlineJson()" RawContent="@PlanningSessionService.State.OutlineRawResponse" />
-        </MudItem>
-        <MudItem xs="12" lg="6">
-            <PlanningArtifactCard Title="Low-Level Plan" Content="@GetLowLevelJson()" RawContent="@PlanningSessionService.State.LowLevelRawResponse" />
-        </MudItem>
-        <MudItem xs="12" lg="6">
-            <PlanningArtifactCard Title="Runtime Plan" Content="@GetRuntimeJson()" />
-        </MudItem>
-        <MudItem xs="12" lg="6">
-            <MudPaper Class="pa-4 h-100" Outlined="true">
-                <MudStack Spacing="2">
-                    <MudText Typo="Typo.h6">Diagnostics</MudText>
-                    <MudText Typo="Typo.caption" Class="mud-text-secondary">
-                        Active runtime step: @(PlanningSessionService.State.ActiveRuntimeStepId ?? "<none>")
-                    </MudText>
-                    @if (CurrentIssues.Count == 0)
-                    {
-                        <MudText Typo="Typo.body2" Class="mud-text-secondary">No diagnostics.</MudText>
-                    }
-                    else
-                    {
-                        <MudStack Spacing="1">
-                            @foreach (var issue in CurrentIssues)
-                            {
-                                <MudText Typo="Typo.body2"><strong>@issue.Layer</strong> (@issue.Code) @issue.Message</MudText>
-                            }
-                        </MudStack>
-                    }
-                </MudStack>
-            </MudPaper>
-        </MudItem>
-        <MudItem xs="12" lg="6">
-            <PlanningArtifactCard Title="Final Result" Content="@GetFinalResultJson()" />
-        </MudItem>
-        <MudItem xs="12">
-            <PlanningArtifactCard Title="Execution Log" Content="@GetLogText()" />
-        </MudItem>
-    </MudGrid>
+    <MudPaper Class="pa-4" Outlined="true">
+        <MudStack Row="true" Justify="Justify.SpaceBetween" AlignItems="AlignItems.Center" Wrap="Wrap.Wrap" Spacing="2">
+            <div>
+                <MudText Typo="Typo.h6">Execution Log</MudText>
+                <MudText Typo="Typo.body2" Class="mud-text-secondary">
+                    Detailed log is hidden here to avoid duplicating the node details panel. Use the button to copy the full log to the clipboard.
+                </MudText>
+            </div>
+            <MudButton Variant="Variant.Outlined"
+                       Color="Color.Primary"
+                       StartIcon="@Icons.Material.Filled.ContentCopy"
+                       Disabled="@string.IsNullOrWhiteSpace(GetLogText())"
+                       OnClick="CopyLogAsync">
+                Copy Log
+            </MudButton>
+        </MudStack>
+    </MudPaper>
 </MudStack>
 
 @code {
@@ -168,17 +144,6 @@
         PlanningSessionService.State.LowLevelPlan is not null ||
         PlanningSessionService.State.RuntimePlan is not null ||
         PlanningSessionService.State.FinalResult is not null;
-
-    private IReadOnlyList<PlanningIssue> CurrentIssues
-    {
-        get
-        {
-            lock (PlanningSessionService.State.Issues)
-            {
-                return [.. PlanningSessionService.State.Issues];
-            }
-        }
-    }
 
     protected override async Task OnInitializedAsync()
     {
@@ -283,38 +248,32 @@
         };
     }
 
-    private string GetRequestBriefJson() =>
-        PlanningSessionService.State.RequestBrief is null
-            ? string.Empty
-            : PlanningNodeJson.SerializeIndented(PlanningSessionService.State.RequestBrief);
-
-    private string GetOutlineJson() =>
-        PlanningSessionService.State.OutlinePlan is null
-            ? string.Empty
-            : PlanningNodeJson.SerializeIndented(PlanningSessionService.State.OutlinePlan);
-
-    private string GetLowLevelJson() =>
-        PlanningSessionService.State.LowLevelPlan is null
-            ? string.Empty
-            : PlanningNodeJson.SerializeIndented(PlanningSessionService.State.LowLevelPlan);
-
-    private string GetRuntimeJson() =>
-        PlanningSessionService.State.RuntimePlan is null
-            ? string.Empty
-            : PlanningNodeJson.SerializeIndented(PlanningSessionService.State.RuntimePlan);
-
-    private string GetFinalResultJson() =>
-        PlanningSessionService.State.FinalResult is null
-            ? string.Empty
-            : PlanningSessionService.State.FinalResult.Ok
-                ? PlanningJson.SerializeElementIndented(PlanningSessionService.State.FinalResult.Data)
-                : PlanningJson.SerializeIndented(PlanningSessionService.State.FinalResult);
-
     private string GetLogText()
     {
         lock (PlanningSessionService.State.LogLines)
         {
             return string.Join(Environment.NewLine, PlanningSessionService.State.LogLines);
+        }
+    }
+
+    private async Task CopyLogAsync()
+    {
+        var logText = GetLogText();
+        if (string.IsNullOrWhiteSpace(logText))
+        {
+            Snackbar.Add("Execution log is empty.", Severity.Info);
+            return;
+        }
+
+        try
+        {
+            await JSRuntime.InvokeVoidAsync("copyText", logText);
+            Snackbar.Add("Execution log copied to clipboard.", Severity.Success);
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "Failed to copy execution log to clipboard.");
+            Snackbar.Add($"Failed to copy execution log: {ex.Message}", Severity.Warning);
         }
     }
 
