@@ -613,7 +613,7 @@
             return;
 
         var transform = PlanningGraphViewportCalculator.Fit(
-            Graph.Bounds,
+            GetCurrentBounds(),
             viewport.Width,
             viewport.Height,
             ViewportPadding,
@@ -629,7 +629,7 @@
     private void CenterGraph(double zoom, double viewportWidth, double viewportHeight)
     {
         var transform = PlanningGraphViewportCalculator.Center(
-            Graph.Bounds,
+            GetCurrentBounds(),
             viewportWidth,
             viewportHeight,
             zoom,
@@ -878,6 +878,28 @@
         return new RuntimeWorkflowNodeLayout(
             Math.Clamp(x, NodeDragMinX, maxX),
             Math.Clamp(y, NodeDragMinY, maxY));
+    }
+
+    private PlanningGraphBounds GetCurrentBounds()
+    {
+        if (!Graph.HasContent)
+            return Graph.Bounds;
+
+        var left = double.MaxValue;
+        var top = double.MaxValue;
+        var right = double.MinValue;
+        var bottom = double.MinValue;
+
+        foreach (var node in Graph.Nodes)
+        {
+            var layout = ResolveNodeLayout(node);
+            left = Math.Min(left, layout.X);
+            top = Math.Min(top, layout.Y);
+            right = Math.Max(right, layout.X + RuntimeWorkflowGraphProjection.NodeWidth);
+            bottom = Math.Max(bottom, layout.Y + RuntimeWorkflowGraphProjection.NodeHeight);
+        }
+
+        return new PlanningGraphBounds(left, top, right, bottom);
     }
 
     private sealed class RuntimeWorkflowViewportMetrics
