@@ -33,4 +33,15 @@
     <ProjectReference Include="../ChatClient.Infrastructure/ChatClient.Infrastructure.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <Compile Remove="Experiments/ThreeLayerPlanning/Contracts/**/*.cs" />
+    <Compile Remove="Experiments/ThreeLayerPlanning/Outline/**/*.cs" />
+    <Compile Remove="Experiments/ThreeLayerPlanning/LowLevel/**/*.cs" />
+    <Compile Remove="Experiments/ThreeLayerPlanning/Runtime/**/*.cs" />
+    <Compile Remove="Experiments/ThreeLayerPlanning/Tools/**/*.cs" />
+    <Compile Remove="Experiments/ThreeLayerPlanning/Shared/CapabilitySummaryBuilder.cs" />
+    <Compile Remove="Experiments/ThreeLayerPlanning/Shared/ExperimentIssue.cs" />
+    <Compile Remove="Experiments/ThreeLayerPlanning/Shared/PlannerStageModels.cs" />
+  </ItemGroup>
+
 </Project>

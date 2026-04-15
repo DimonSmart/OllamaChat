@@ -255,3 +255,193 @@ window.planningGraphInterop = (() => {
         }
     };
 })();
+
+window.runtimeWorkflowGraphInterop = (() => {
+    let nextId = 1;
+    const registrations = new Map();
+
+    const isDisposedReferenceError = (error) => {
+        const text = error?.message ?? String(error ?? "");
+        return text.includes("There is no tracked object with id")
+            || text.includes("Cannot find .NET object reference");
+    };
+
+    const invoke = (registration, methodName, ...args) => {
+        if (!registration || registration.disposed || !registration.dotNet) {
+            return;
+        }
+
+        registration.dotNet.invokeMethodAsync(methodName, ...args).catch((error) => {
+            if (isDisposedReferenceError(error)) {
+                registration.disposed = true;
+                return;
+            }
+
+            console.warn("runtimeWorkflowGraphInterop", methodName, error);
+        });
+    };
+
+    const isPanGestureTarget = (target) => {
+        if (!(target instanceof Element)) {
+            return false;
+        }
+
+        return !target.closest(".runtime-workflow-toolbar")
+            && !target.closest(".runtime-workflow-details-shell")
+            && !target.closest(".runtime-workflow-node")
+            && !target.closest(".runtime-workflow-link-hit");
+    };
+
+    return {
+        register(element, dotNet) {
+            if (!element) {
+                return null;
+            }
+
+            const id = `runtime-workflow-graph-${nextId++}`;
+            const registration = {
+                element,
+                dotNet,
+                disposed: false,
+                panning: false,
+                pendingMove: null,
+                moveScheduled: false
+            };
+
+            registration.flushMove = () => {
+                if (registration.disposed) {
+                    registration.moveScheduled = false;
+                    registration.pendingMove = null;
+                    return;
+                }
+
+                registration.moveScheduled = false;
+                const pendingMove = registration.pendingMove;
+                registration.pendingMove = null;
+                if (!pendingMove) {
+                    return;
+                }
+
+                invoke(registration, "HandleViewportPointerMove", pendingMove.clientX, pendingMove.clientY);
+            };
+
+            registration.onPointerDown = (event) => {
+                if (event.button !== 0 || !isPanGestureTarget(event.target)) {
+                    return;
+                }
+
+                event.preventDefault();
+                registration.panning = true;
+                element.focus?.({ preventScroll: true });
+                invoke(registration, "HandleViewportPointerDown", event.clientX, event.clientY);
+            };
+
+            registration.onPointerMove = (event) => {
+                if (!registration.panning) {
+                    return;
+                }
+
+                event.preventDefault();
+                registration.pendingMove = {
+                    clientX: event.clientX,
+                    clientY: event.clientY
+                };
+
+                if (registration.moveScheduled) {
+                    return;
+                }
+
+                registration.moveScheduled = true;
+                window.requestAnimationFrame(registration.flushMove);
+            };
+
+            registration.endPan = () => {
+                if (!registration.panning) {
+                    return;
+                }
+
+                registration.panning = false;
+                registration.pendingMove = null;
+                invoke(registration, "HandleViewportPointerUp");
+            };
+
+            registration.onPointerUp = (event) => {
+                if (!registration.panning) {
+                    return;
+                }
+
+                event.preventDefault();
+                registration.endPan();
+            };
+
+            registration.onPointerCancel = () => {
+                if (!registration.panning) {
+                    return;
+                }
+
+                registration.panning = false;
+                registration.pendingMove = null;
+                invoke(registration, "HandleViewportPointerCancel");
+            };
+
+            element.addEventListener("pointerdown", registration.onPointerDown, true);
+            window.addEventListener("pointermove", registration.onPointerMove, true);
+            window.addEventListener("pointerup", registration.onPointerUp, true);
+            window.addEventListener("pointercancel", registration.onPointerCancel, true);
+
+            registrations.set(id, registration);
+            return id;
+        },
+
+        refreshRegistration(element, dotNet, currentId) {
+            if (!element) {
+                return null;
+            }
+
+            if (currentId) {
+                const current = registrations.get(currentId);
+                if (current?.element === element) {
+                    current.disposed = false;
+                    current.dotNet = dotNet;
+                    return currentId;
+                }
+
+                this.unregister(currentId);
+            }
+
+            return this.register(element, dotNet);
+        },
+
+        unregister(id) {
+            const registration = registrations.get(id);
+            if (!registration) {
+                return;
+            }
+
+            registration.disposed = true;
+            registration.panning = false;
+            registration.pendingMove = null;
+
+            if (registration.element) {
+                registration.element.removeEventListener("pointerdown", registration.onPointerDown, true);
+            }
+
+            window.removeEventListener("pointermove", registration.onPointerMove, true);
+            window.removeEventListener("pointerup", registration.onPointerUp, true);
+            window.removeEventListener("pointercancel", registration.onPointerCancel, true);
+            registrations.delete(id);
+        },
+
+        getViewportMetrics(element) {
+            if (!element) {
+                return { width: 0, height: 0 };
+            }
+
+            const rect = element.getBoundingClientRect();
+            return {
+                width: Math.max(rect.width, element.clientWidth || 0),
+                height: Math.max(rect.height, element.clientHeight || 0)
+            };
+        }
+    };
+})();

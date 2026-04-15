@@ -4,7 +4,7 @@
 @using ChatClient.Api.PlanningRuntime.Common
 @using ChatClient.Api.PlanningRuntime.Execution
 @using ChatClient.Api.PlanningRuntime.Host
-@using ChatClient.Api.PlanningRuntime.Planning
+@using ChatClient.Api.PlanningRuntime.Shared
 @using ChatClient.Api.Services
 @using ChatClient.Application.Services.Agentic
 @using ChatClient.Domain.Models
@@ -24,54 +24,23 @@
         <MudStack Spacing="2">
             <MudText Typo="Typo.h5">Planning Chat</MudText>
             <MudText Typo="Typo.body2" Class="mud-text-secondary">
-                Enter a user request, configure the planner draft MCP bindings, and inspect the generated plan, execution trace, and replanning logic.
+                Run the production three-layer planning runtime and inspect the request brief, outline plan, low-level plan, runtime plan, diagnostics, and final result.
             </MudText>
 
-            @if (!HasModelSelection && !UsingPreviewScenario)
+            @if (!HasModelSelection)
             {
                 <MudAlert Severity="Severity.Warning" Dense="true">
                     Select a server and model in the top bar before starting a planning run.
                 </MudAlert>
             }
 
-            <MudStack Row="true" Wrap="Wrap.Wrap" Spacing="2" Class="planning-preview-toolbar">
-                <MudSelect T="string"
-                           Label="Plan Preview Data"
-                           Value="@selectedPreviewScenarioId"
-                           ValueChanged="OnPreviewScenarioChanged"
-                           Variant="Variant.Outlined"
-                           Dense="true"
-                           Style="min-width: 260px;">
-                    <MudSelectItem Value="@PlanningPreviewScenarios.LiveScenarioId">Live planner</MudSelectItem>
-                    @foreach (var scenario in PlanningPreviewScenarios.All)
-                    {
-                        <MudSelectItem Value="@scenario.Id">@scenario.DisplayName</MudSelectItem>
-                    }
-                </MudSelect>
-
-                @if (ActivePreviewScenario is not null)
-                {
-                    <MudText Typo="Typo.caption" Class="mud-text-secondary planning-preview-description">
-                        @ActivePreviewScenario.Description
-                    </MudText>
-                }
-            </MudStack>
-
-            @if (UsingPreviewScenario)
-            {
-                <MudAlert Severity="Severity.Info" Dense="true">
-                    Preview mode is active. The page shows local mock planning data and disables live execution controls.
-                </MudAlert>
-            }
-
             <MudTextField T="string"
                           Label="User request"
-                          Value="@DisplayedUserQuery"
+                          Value="@userQuery"
                           ValueChanged="OnUserQueryChanged"
                           Lines="4"
                           Variant="Variant.Outlined"
-                          Immediate="true"
-                          Disabled="@UsingPreviewScenario" />
+                          Immediate="true" />
 
             <McpServerBindingsEditor Bindings="@plannerDraft.McpServerBindings"
                                      BindingsChanged="OnPlannerMcpBindingsChanged"
@@ -79,22 +48,19 @@
                                      Description=""
                                      EmptyBindingsText=""
                                      Class="mt-2"
-                                     Disabled="@(UsingPreviewScenario || PlanningSessionService.State.IsRunning)" />
+                                     Disabled="@PlanningSessionService.State.IsRunning" />
 
-            @if (!UsingPreviewScenario)
+            @if (availablePlanningFunctions.Count == 0)
             {
-                @if (availablePlanningFunctions.Count == 0)
-                {
-                    <MudText Typo="Typo.caption" Class="mud-text-secondary">
-                        No MCP tools selected.
-                    </MudText>
-                }
-                else
-                {
-                    <MudText Typo="Typo.caption" Class="mud-text-secondary">
-                        @GetPlanningToolSummary()
-                    </MudText>
-                }
+                <MudText Typo="Typo.caption" Class="mud-text-secondary">
+                    No MCP tools selected.
+                </MudText>
+            }
+            else
+            {
+                <MudText Typo="Typo.caption" Class="mud-text-secondary">
+                    @GetPlanningToolSummary()
+                </MudText>
             }
 
             <MudStack Row="true" Spacing="2">
@@ -119,35 +85,58 @@
         </MudStack>
     </MudPaper>
 
+    <RuntimeWorkflowGraph Plan="@PlanningSessionService.State.RuntimePlan"
+                          Events="@GetEvents()"
+                          FinalResult="@PlanningSessionService.State.FinalResult"
+                          ActiveRuntimeStepId="@PlanningSessionService.State.ActiveRuntimeStepId" />
+
     <MudGrid>
-        <MudItem xs="12" lg="7">
-            <PlanningGraph Plan="@CurrentPlan"
-                           ActiveStepId="@CurrentActiveStepId"
-                           SelectedStepId="@selectedStepId"
-                           Events="@CurrentEvents"
-                           AvailableTools="@CurrentAvailableTools"
-                           FinalResult="@CurrentFinalResult"
-                           SelectedStepIdChanged="OnSelectedStepChanged" />
+        <MudItem xs="12" lg="6">
+            <PlanningArtifactCard Title="Request Brief" Content="@GetRequestBriefJson()" />
         </MudItem>
-        <MudItem xs="12" lg="5">
-            <PlanningStepDetails Plan="@CurrentPlan"
-                                 ActiveStepId="@CurrentActiveStepId"
-                                 SelectedStepId="@selectedStepId"
-                                 Events="@CurrentEvents"
-                                 AvailableTools="@CurrentAvailableTools"
-                                 FinalResult="@CurrentFinalResult" />
+        <MudItem xs="12" lg="6">
+            <PlanningArtifactCard Title="Outline Plan" Content="@GetOutlineJson()" RawContent="@PlanningSessionService.State.OutlineRawResponse" />
+        </MudItem>
+        <MudItem xs="12" lg="6">
+            <PlanningArtifactCard Title="Low-Level Plan" Content="@GetLowLevelJson()" RawContent="@PlanningSessionService.State.LowLevelRawResponse" />
+        </MudItem>
+        <MudItem xs="12" lg="6">
+            <PlanningArtifactCard Title="Runtime Plan" Content="@GetRuntimeJson()" />
+        </MudItem>
+        <MudItem xs="12" lg="6">
+            <MudPaper Class="pa-4 h-100" Outlined="true">
+                <MudStack Spacing="2">
+                    <MudText Typo="Typo.h6">Diagnostics</MudText>
+                    <MudText Typo="Typo.caption" Class="mud-text-secondary">
+                        Active runtime step: @(PlanningSessionService.State.ActiveRuntimeStepId ?? "<none>")
+                    </MudText>
+                    @if (CurrentIssues.Count == 0)
+                    {
+                        <MudText Typo="Typo.body2" Class="mud-text-secondary">No diagnostics.</MudText>
+                    }
+                    else
+                    {
+                        <MudStack Spacing="1">
+                            @foreach (var issue in CurrentIssues)
+                            {
+                                <MudText Typo="Typo.body2"><strong>@issue.Layer</strong> (@issue.Code) @issue.Message</MudText>
+                            }
+                        </MudStack>
+                    }
+                </MudStack>
+            </MudPaper>
+        </MudItem>
+        <MudItem xs="12" lg="6">
+            <PlanningArtifactCard Title="Final Result" Content="@GetFinalResultJson()" />
+        </MudItem>
+        <MudItem xs="12">
+            <PlanningArtifactCard Title="Execution Log" Content="@GetLogText()" />
         </MudItem>
     </MudGrid>
-
-    <PlanningReplanLog Events="CurrentEvents" LogLines="CurrentLogLines" />
 </MudStack>
 
 @code {
     private string userQuery = "Find two popular robot vacuum cleaners, compare their specs, and recommend which one is better.";
-    private string selectedPreviewScenarioId = PlanningPreviewScenarios.LiveScenarioId;
-    private string? selectedStepId;
-    private string? selectedStepContextKey;
-
     private List<FunctionInfo> availablePlanningFunctions = [];
     private AgentTemplateDefinition plannerDraft = AgentTemplateBuilder.New("Planner", "planner").Build();
     private IDisposable? elicitationHandlerRegistration;
@@ -160,61 +149,36 @@
         UiModelSelection.ServerId.Value != Guid.Empty &&
         !string.IsNullOrWhiteSpace(UiModelSelection.ModelName);
 
-    private PlanningPreviewScenario? ActivePreviewScenario =>
-        PlanningPreviewScenarios.Get(selectedPreviewScenarioId);
-
-    private bool UsingPreviewScenario => ActivePreviewScenario is not null;
-
     private bool HasConfiguredPlannerBindings =>
         plannerDraft.McpServerBindings.Any(static binding => binding.Enabled && binding.HasIdentity);
 
-    private string DisplayedUserQuery =>
-        ActivePreviewScenario?.UserQuery ?? userQuery;
-
-    private PlanDefinition? CurrentPlan =>
-        ActivePreviewScenario?.Plan ?? PlanningSessionService.State.CurrentPlan;
-
-    private string? CurrentActiveStepId =>
-        ActivePreviewScenario?.ActiveStepId ?? PlanningSessionService.State.ActiveStepId;
-
-    private IReadOnlyList<PlanRunEvent> CurrentEvents =>
-        ActivePreviewScenario?.Events ?? GetStateEventsSnapshot();
-
-    private IReadOnlyList<PlanningToolOption> CurrentAvailableTools =>
-        ActivePreviewScenario?.AvailableTools ?? GetStateAvailableToolsSnapshot();
-
-    private IReadOnlyList<string> CurrentLogLines =>
-        ActivePreviewScenario?.LogLines ?? GetStateLogLinesSnapshot();
-
-    private ResultEnvelope<JsonElement?>? CurrentFinalResult =>
-        ActivePreviewScenario?.FinalResult ?? PlanningSessionService.State.FinalResult;
-
-    private string CurrentGraphKey
-    {
-        get
-        {
-            var currentEvents = CurrentEvents;
-            var currentAvailableTools = CurrentAvailableTools;
-            return BuildGraphKey(CurrentPlan, currentEvents, currentAvailableTools, CurrentFinalResult);
-        }
-    }
-
     private bool CanStart =>
-        !UsingPreviewScenario &&
         HasModelSelection &&
         !PlanningSessionService.State.IsRunning &&
         !string.IsNullOrWhiteSpace(userQuery) &&
         availablePlanningFunctions.Count > 0;
 
     private bool CanCancel =>
-        !UsingPreviewScenario && PlanningSessionService.State.IsRunning;
+        PlanningSessionService.State.IsRunning;
 
     private bool CanReset =>
-        UsingPreviewScenario ||
         PlanningSessionService.State.IsRunning ||
-        PlanningSessionService.State.CurrentPlan is not null ||
-        PlanningSessionService.State.FinalResult is not null ||
-        selectedStepId is not null;
+        PlanningSessionService.State.RequestBrief is not null ||
+        PlanningSessionService.State.OutlinePlan is not null ||
+        PlanningSessionService.State.LowLevelPlan is not null ||
+        PlanningSessionService.State.RuntimePlan is not null ||
+        PlanningSessionService.State.FinalResult is not null;
+
+    private IReadOnlyList<PlanningIssue> CurrentIssues
+    {
+        get
+        {
+            lock (PlanningSessionService.State.Issues)
+            {
+                return [.. PlanningSessionService.State.Issues];
+            }
+        }
+    }
 
     protected override async Task OnInitializedAsync()
     {
@@ -223,16 +187,10 @@
             HandleElicitationAsync);
         await RefreshToolSelectionsAsync();
         PlanningSessionService.StateChanged += OnStateChanged;
-        SyncSelectedStepId(CurrentPlan, CurrentActiveStepId, CurrentFinalResult);
     }
 
     private async Task StartRunAsync()
     {
-        if (UsingPreviewScenario)
-        {
-            return;
-        }
-
         if (!HasModelSelection)
         {
             Snackbar.Add("Select a server and model first.", Severity.Warning);
@@ -254,19 +212,7 @@
 
     private void Reset()
     {
-        if (!UsingPreviewScenario)
-        {
-            PlanningSessionService.Reset();
-        }
-
-        SyncSelectedStepId(CurrentPlan, CurrentActiveStepId, CurrentFinalResult, forceReset: true);
-    }
-
-    private Task OnSelectedStepChanged(string stepId)
-    {
-        selectedStepId = stepId;
-        selectedStepContextKey = CurrentGraphKey;
-        return InvokeAsync(StateHasChanged);
+        PlanningSessionService.Reset();
     }
 
     private Task OnUserQueryChanged(string? value)
@@ -275,101 +221,15 @@
         return Task.CompletedTask;
     }
 
-    private Task OnPreviewScenarioChanged(string? value)
-    {
-        selectedPreviewScenarioId = string.IsNullOrWhiteSpace(value)
-            ? PlanningPreviewScenarios.LiveScenarioId
-            : value;
-
-        SyncSelectedStepId(CurrentPlan, CurrentActiveStepId, CurrentFinalResult, forceReset: true);
-        return InvokeAsync(StateHasChanged);
-    }
-
     private void OnStateChanged()
     {
-        _ = InvokeAsync(() =>
-        {
-            SyncSelectedStepId(CurrentPlan, CurrentActiveStepId, CurrentFinalResult);
-            StateHasChanged();
-        });
+        _ = InvokeAsync(StateHasChanged);
     }
 
     public void Dispose()
     {
         PlanningSessionService.StateChanged -= OnStateChanged;
         elicitationHandlerRegistration?.Dispose();
-    }
-
-    private IReadOnlyList<PlanRunEvent> GetStateEventsSnapshot()
-    {
-        lock (PlanningSessionService.State.Events)
-        {
-            return [.. PlanningSessionService.State.Events];
-        }
-    }
-
-    private IReadOnlyList<string> GetStateLogLinesSnapshot()
-    {
-        lock (PlanningSessionService.State.LogLines)
-        {
-            return [.. PlanningSessionService.State.LogLines];
-        }
-    }
-
-    private IReadOnlyList<PlanningToolOption> GetStateAvailableToolsSnapshot()
-    {
-        lock (PlanningSessionService.State.AvailableTools)
-        {
-            return [.. PlanningSessionService.State.AvailableTools];
-        }
-    }
-
-    private void SyncSelectedStepId(
-        PlanDefinition? plan,
-        string? activeStepId,
-        ResultEnvelope<JsonElement?>? finalResult,
-        bool forceReset = false)
-    {
-        var currentEvents = CurrentEvents;
-        var currentAvailableTools = CurrentAvailableTools;
-        var contextKey = BuildGraphKey(plan, currentEvents, currentAvailableTools, finalResult);
-        var validNodeIds = PlanningVirtualNodeProjection.BuildSelectionKeys(plan, currentEvents, currentAvailableTools, finalResult);
-
-        if (validNodeIds.Count == 0)
-        {
-            selectedStepId = null;
-            selectedStepContextKey = contextKey;
-            return;
-        }
-
-        if (!forceReset &&
-            string.Equals(selectedStepContextKey, contextKey, StringComparison.Ordinal) &&
-            !string.IsNullOrWhiteSpace(selectedStepId) &&
-            validNodeIds.Contains(selectedStepId))
-        {
-            return;
-        }
-
-        selectedStepId = PlanningVirtualNodeProjection.ResolveDefaultSelectionId(
-            plan,
-            currentEvents,
-            currentAvailableTools,
-            finalResult,
-            activeStepId);
-        selectedStepContextKey = contextKey;
-    }
-
-    private string BuildGraphKey(
-        PlanDefinition? plan,
-        IReadOnlyList<PlanRunEvent> events,
-        IReadOnlyList<PlanningToolOption> availableTools,
-        ResultEnvelope<JsonElement?>? finalResult)
-    {
-        var planStepIds = string.Join("|", plan?.Steps.Select(step => step.Id) ?? []);
-        var virtualNodeKeys = string.Join("|", PlanningVirtualNodeProjection.Build(plan, events, availableTools, finalResult)
-            .Select(node => $"{node.Id}:{node.StatusValue}"));
-
-        return $"{selectedPreviewScenarioId}:{planStepIds}:{virtualNodeKeys}";
     }
 
     private async Task RefreshToolSelectionsAsync()
@@ -423,6 +283,49 @@
         };
     }
 
+    private string GetRequestBriefJson() =>
+        PlanningSessionService.State.RequestBrief is null
+            ? string.Empty
+            : PlanningNodeJson.SerializeIndented(PlanningSessionService.State.RequestBrief);
+
+    private string GetOutlineJson() =>
+        PlanningSessionService.State.OutlinePlan is null
+            ? string.Empty
+            : PlanningNodeJson.SerializeIndented(PlanningSessionService.State.OutlinePlan);
+
+    private string GetLowLevelJson() =>
+        PlanningSessionService.State.LowLevelPlan is null
+            ? string.Empty
+            : PlanningNodeJson.SerializeIndented(PlanningSessionService.State.LowLevelPlan);
+
+    private string GetRuntimeJson() =>
+        PlanningSessionService.State.RuntimePlan is null
+            ? string.Empty
+            : PlanningNodeJson.SerializeIndented(PlanningSessionService.State.RuntimePlan);
+
+    private string GetFinalResultJson() =>
+        PlanningSessionService.State.FinalResult is null
+            ? string.Empty
+            : PlanningSessionService.State.FinalResult.Ok
+                ? PlanningJson.SerializeElementIndented(PlanningSessionService.State.FinalResult.Data)
+                : PlanningJson.SerializeIndented(PlanningSessionService.State.FinalResult);
+
+    private string GetLogText()
+    {
+        lock (PlanningSessionService.State.LogLines)
+        {
+            return string.Join(Environment.NewLine, PlanningSessionService.State.LogLines);
+        }
+    }
+
+    private IReadOnlyList<PlanRunEvent> GetEvents()
+    {
+        lock (PlanningSessionService.State.Events)
+        {
+            return [.. PlanningSessionService.State.Events];
+        }
+    }
+
     private async Task<McpElicitationResponse> HandleElicitationAsync(
         McpElicitationPrompt prompt,
         CancellationToken cancellationToken)
@@ -456,12 +359,6 @@
             if (dialog is null)
                 return McpElicitationResponse.Cancel;
 
-            Logger.LogInformation(
-                "Elicitation dialog opened in planning UI. Server: {ServerName}. Mode: {Mode}. Fields: {FieldCount}.",
-                prompt.ServerName,
-                prompt.Mode,
-                prompt.Fields.Count);
-
             using var registration = cancellationToken.Register(() =>
             {
                 _ = InvokeAsync(() => dialog.Close(DialogResult.Ok(McpElicitationResponse.Cancel)));
@@ -469,25 +366,12 @@
 
             var result = await dialog.Result;
             if (result?.Canceled != false)
-            {
-                Logger.LogInformation(
-                    "Elicitation dialog closed in planning UI with cancel. Server: {ServerName}.",
-                    prompt.ServerName);
                 return McpElicitationResponse.Cancel;
-            }
 
-            var response = result.Data as McpElicitationResponse ?? McpElicitationResponse.Cancel;
-            Logger.LogInformation(
-                "Elicitation dialog completed in planning UI. Server: {ServerName}. Action: {Action}.",
-                prompt.ServerName,
-                response.Action);
-            return response;
+            return result.Data as McpElicitationResponse ?? McpElicitationResponse.Cancel;
         }
         catch (OperationCanceledException)
         {
-            Logger.LogInformation(
-                "Elicitation dialog canceled by token in planning UI. Server: {ServerName}.",
-                prompt.ServerName);
             return McpElicitationResponse.Cancel;
         }
         catch (Exception ex)

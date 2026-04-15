@@ -1,7 +1,6 @@
-using ChatClient.Api.PlanningRuntime.Agents;
 using ChatClient.Api.PlanningRuntime.Common;
 using ChatClient.Api.PlanningRuntime.Execution;
-using ChatClient.Api.PlanningRuntime.Planning;
+using ChatClient.Api.PlanningRuntime.Shared;
 using ChatClient.Api.Services;
 using ChatClient.Domain.Models;
 using System.Text.Json;
@@ -44,8 +43,6 @@ public sealed class PlanningSessionService(
                 Description = tool.Description
             })
             .ToList();
-        // Saved agents are intentionally not exposed to planning until the UI can opt in explicitly.
-        var callableAgents = PlanningCallableAgentCatalog.Empty;
 
         _runCts?.Cancel();
         _runCts = new CancellationTokenSource();
@@ -63,7 +60,7 @@ public sealed class PlanningSessionService(
         NotifyStateChanged();
 
         _runTask = Task.Run(
-            () => ExecuteRunAsync(request.UserQuery, planner.Model, enabledTools, callableAgents, _runCts.Token),
+            () => ExecuteRunAsync(request.UserQuery, planner.Model, enabledTools, _runCts.Token),
             _runCts.Token);
     }
 
@@ -88,8 +85,19 @@ public sealed class PlanningSessionService(
         State.IsRunning = false;
         State.IsCompleted = false;
         State.ActiveStepId = null;
+        State.ActiveRuntimeStepId = null;
+        State.RequestBrief = null;
+        State.OutlinePlan = null;
+        State.OutlineRawResponse = null;
+        State.LowLevelPlan = null;
+        State.LowLevelRawResponse = null;
+        State.RuntimePlan = null;
         State.CurrentPlan = null;
         State.FinalResult = null;
+        lock (State.Issues)
+        {
+            State.Issues.Clear();
+        }
         lock (State.Events)
         {
             State.Events.Clear();
@@ -109,7 +117,6 @@ public sealed class PlanningSessionService(
         string userQuery,
         ServerModel model,
         IReadOnlyCollection<AppToolDescriptor> enabledTools,
-        PlanningCallableAgentCatalog callableAgents,
         CancellationToken cancellationToken)
     {
         try
@@ -122,7 +129,6 @@ public sealed class PlanningSessionService(
                     UserQuery = userQuery,
                     Model = model,
                     EnabledTools = enabledTools,
-                    CallableAgents = callableAgents,
                     ExecutionLogger = loggerSink,
                     PlanRunObserver = observer
                 },
@@ -137,7 +143,7 @@ public sealed class PlanningSessionService(
         catch (Exception ex)
         {
             logger.LogWarning(ex, "Planning session failed.");
-            State.FinalResult = ChatClient.Api.PlanningRuntime.Common.ResultEnvelope<JsonElement?>.Failure("planning_failed", ex.Message);
+            State.FinalResult = ResultEnvelope<JsonElement?>.Failure("planning_failed", ex.Message);
             HandleLogLine($"[planning] error={ex.Message}");
         }
         finally
@@ -145,6 +151,7 @@ public sealed class PlanningSessionService(
             State.IsRunning = false;
             State.IsCompleted = true;
             State.ActiveStepId = null;
+            State.ActiveRuntimeStepId = null;
             NotifyStateChanged();
         }
     }
@@ -158,29 +165,51 @@ public sealed class PlanningSessionService(
 
         switch (planRunEvent)
         {
-            case PlanCreatedEvent created:
-                State.CurrentPlan = ClonePlan(created.Plan);
+            case RequestAnalysisCompletedEvent analysisCompleted:
+                State.RequestBrief = analysisCompleted.Brief;
                 break;
 
-            case ReplanAppliedEvent replanned:
-                State.CurrentPlan = ClonePlan(replanned.Plan);
+            case OutlineStageCompletedEvent outlineCompleted:
+                State.OutlinePlan = outlineCompleted.Plan;
+                State.OutlineRawResponse = string.IsNullOrWhiteSpace(outlineCompleted.RawResponse)
+                    ? null
+                    : outlineCompleted.RawResponse;
+                ReplaceIssues("outline", outlineCompleted.Issues);
                 break;
 
-            case StepStartedEvent started:
-                State.ActiveStepId = started.StepId;
-                MarkStepRunning(started.StepId);
+            case LowLevelStageCompletedEvent lowLevelCompleted:
+                State.LowLevelPlan = lowLevelCompleted.Plan;
+                State.LowLevelRawResponse = string.IsNullOrWhiteSpace(lowLevelCompleted.RawResponse)
+                    ? null
+                    : lowLevelCompleted.RawResponse;
+                ReplaceIssues("low_level", lowLevelCompleted.Issues);
                 break;
 
-            case StepReusedEvent reused:
-                PreserveReusedStepState(reused.StepId);
+            case RuntimeCompilationCompletedEvent runtimeCompiled:
+                State.RuntimePlan = runtimeCompiled.Plan;
+                ReplaceIssues("runtime", runtimeCompiled.Issues);
                 break;
 
-            case StepCompletedEvent completed:
-                UpdateStepFromTrace(completed.Trace, completed.Result);
+            case RuntimeStepStartedEvent runtimeStepStarted:
+                State.ActiveRuntimeStepId = runtimeStepStarted.StepId;
+                State.ActiveStepId = runtimeStepStarted.StepId;
+                break;
+
+            case RuntimeStepCompletedEvent runtimeStepCompleted:
+                if (string.Equals(State.ActiveRuntimeStepId, runtimeStepCompleted.StepId, StringComparison.OrdinalIgnoreCase))
+                {
+                    State.ActiveRuntimeStepId = null;
+                    State.ActiveStepId = null;
+                }
                 break;
 
             case RunCompletedEvent completed:
                 State.FinalResult = CloneEnvelope(completed.Result);
+                ReplaceIssues(
+                    "runtime_execution",
+                    IsRuntimeExecutionFailure(completed.Result)
+                        ? ExtractIssues(completed.Result.Error?.Details)
+                        : []);
                 break;
         }
 
@@ -196,84 +225,58 @@ public sealed class PlanningSessionService(
         NotifyStateChanged();
     }
 
-    private void UpdateStepFromTrace(StepExecutionTrace trace, JsonElement? result)
+    private void ReplaceIssues(string layerPrefix, IReadOnlyList<PlanningIssue> issues)
     {
-        if (State.CurrentPlan is null)
-            return;
-
-        var step = State.CurrentPlan.Steps.FirstOrDefault(candidate => string.Equals(candidate.Id, trace.StepId, StringComparison.Ordinal));
-        if (step is null)
-            return;
-
-        step.Result = result?.Clone();
-        switch (trace.Outcome)
+        lock (State.Issues)
         {
-            case StepTraceOutcome.Partial:
-                step.Status = PlanStepStatuses.Partial;
-                step.Error = new PlanStepError
-                {
-                    Code = trace.ErrorCode ?? "partial_failure",
-                    Message = trace.ErrorMessage ?? "Step completed partially.",
-                    Details = trace.ErrorDetails?.Clone()
-                };
-                return;
-
-            case StepTraceOutcome.Done:
-                step.Status = PlanStepStatuses.Done;
-                step.Error = null;
-                return;
-
-            case StepTraceOutcome.Skipped:
-                step.Status = PlanStepStatuses.Skip;
-                step.Error = null;
-                return;
-
-            case StepTraceOutcome.Failed:
-                step.Status = PlanStepStatuses.Fail;
-                if (!string.IsNullOrWhiteSpace(trace.ErrorCode) || !string.IsNullOrWhiteSpace(trace.ErrorMessage))
-                {
-                    step.Error = new PlanStepError
-                    {
-                        Code = trace.ErrorCode ?? "execution_failed",
-                        Message = trace.ErrorMessage ?? "Execution failed.",
-                        Details = trace.ErrorDetails?.Clone()
-                    };
-                }
-
-                return;
-
-            default:
-                throw new InvalidOperationException($"Unsupported trace outcome '{trace.Outcome}'.");
+            State.Issues.RemoveAll(issue => issue.Layer.StartsWith(layerPrefix, StringComparison.OrdinalIgnoreCase));
+            State.Issues.AddRange(issues);
         }
     }
 
-    private void MarkStepRunning(string stepId)
+    private static bool IsRuntimeExecutionFailure(ResultEnvelope<JsonElement?> result) =>
+        !result.Ok
+        && string.Equals(result.Error?.Code, "runtime_execution_failed", StringComparison.OrdinalIgnoreCase);
+
+    private static List<PlanningIssue> ExtractIssues(JsonElement? details)
     {
-        if (State.CurrentPlan is null)
-            return;
+        var issues = new List<PlanningIssue>();
+        if (details is not { } value
+            || value.ValueKind is JsonValueKind.Null or JsonValueKind.Undefined
+            || !value.TryGetProperty("issues", out var issuesElement)
+            || issuesElement.ValueKind != JsonValueKind.Array)
+        {
+            return issues;
+        }
 
-        var step = State.CurrentPlan.Steps.FirstOrDefault(candidate => string.Equals(candidate.Id, stepId, StringComparison.Ordinal));
-        if (step is null)
-            return;
+        foreach (var issueElement in issuesElement.EnumerateArray())
+        {
+            var layer = issueElement.TryGetProperty("layer", out var layerElement)
+                ? layerElement.GetString()
+                : null;
+            var code = issueElement.TryGetProperty("code", out var codeElement)
+                ? codeElement.GetString()
+                : null;
+            var message = issueElement.TryGetProperty("message", out var messageElement)
+                ? messageElement.GetString()
+                : null;
 
-        step.Status = PlanStepStatuses.Running;
-        step.Error = null;
-    }
+            if (string.IsNullOrWhiteSpace(layer)
+                || string.IsNullOrWhiteSpace(code)
+                || string.IsNullOrWhiteSpace(message))
+            {
+                continue;
+            }
 
-    private void PreserveReusedStepState(string stepId)
-    {
-        if (State.CurrentPlan is null)
-            return;
+            issues.Add(new PlanningIssue
+            {
+                Layer = layer,
+                Code = code,
+                Message = message
+            });
+        }
 
-        var step = State.CurrentPlan.Steps.FirstOrDefault(candidate => string.Equals(candidate.Id, stepId, StringComparison.Ordinal));
-        if (step is null)
-            return;
-
-        if (PlanExecutionState.HasCompletedResult(step) || string.Equals(step.Status, PlanStepStatuses.Skip, StringComparison.Ordinal))
-            return;
-
-        step.Status = PlanStepStatuses.Done;
-        step.Error = null;
+        return issues;
     }
 
     private void NotifyStateChanged()
@@ -281,14 +284,10 @@ public sealed class PlanningSessionService(
         StateChanged?.Invoke();
     }
 
-    private static PlanDefinition ClonePlan(PlanDefinition plan) =>
-        JsonSerializer.Deserialize<PlanDefinition>(JsonSerializer.Serialize(plan))
-        ?? throw new InvalidOperationException("Failed to clone planning state.");
-
-    private static ChatClient.Api.PlanningRuntime.Common.ResultEnvelope<JsonElement?> CloneEnvelope(ChatClient.Api.PlanningRuntime.Common.ResultEnvelope<JsonElement?> result) =>
+    private static ResultEnvelope<JsonElement?> CloneEnvelope(ResultEnvelope<JsonElement?> result) =>
         result.Ok
-            ? ChatClient.Api.PlanningRuntime.Common.ResultEnvelope<JsonElement?>.Success(result.Data?.Clone())
-            : ChatClient.Api.PlanningRuntime.Common.ResultEnvelope<JsonElement?>.Failure(
+            ? ResultEnvelope<JsonElement?>.Success(result.Data?.Clone())
+            : ResultEnvelope<JsonElement?>.Failure(
                 result.Error?.Code ?? "planning_failed",
                 result.Error?.Message ?? "Planning failed.",
                 result.Error?.Details?.Clone());

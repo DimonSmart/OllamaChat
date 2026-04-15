@@ -1,5 +1,9 @@
-﻿using ChatClient.Api.PlanningRuntime.Common;
+using ChatClient.Api.PlanningRuntime.Common;
+using ChatClient.Api.PlanningRuntime.LowLevel;
+using ChatClient.Api.PlanningRuntime.Outline;
 using ChatClient.Api.PlanningRuntime.Planning;
+using ChatClient.Api.PlanningRuntime.Runtime;
+using ChatClient.Api.PlanningRuntime.Shared;
 using ChatClient.Api.PlanningRuntime.Verification;
 using System.Text.Json;
 
@@ -44,6 +48,34 @@ public sealed record PlanningAttemptStartedEvent(
 
 public sealed record RequestAnalysisCompletedEvent(
     RequestBrief Brief) : PlanRunEvent(DateTimeOffset.UtcNow);
+
+public sealed record OutlineStageCompletedEvent(
+    OutlinePlan? Plan,
+    string RawResponse,
+    IReadOnlyList<PlanningIssue> Issues,
+    bool IsValid) : PlanRunEvent(DateTimeOffset.UtcNow);
+
+public sealed record LowLevelStageCompletedEvent(
+    LowLevelPlan? Plan,
+    string RawResponse,
+    IReadOnlyList<PlanningIssue> Issues,
+    bool IsValid) : PlanRunEvent(DateTimeOffset.UtcNow);
+
+public sealed record RuntimeCompilationCompletedEvent(
+    RuntimePlan? Plan,
+    IReadOnlyList<PlanningIssue> Issues,
+    bool IsSuccess) : PlanRunEvent(DateTimeOffset.UtcNow);
+
+public sealed record RuntimeStepStartedEvent(
+    string StepId,
+    string Kind,
+    JsonElement ResolvedInputs) : PlanRunEvent(DateTimeOffset.UtcNow);
+
+public sealed record RuntimeStepCompletedEvent(
+    string StepId,
+    bool Ok,
+    JsonElement? Output,
+    ErrorInfo? Error) : PlanRunEvent(DateTimeOffset.UtcNow);
 
 public sealed record PlanCreatedEvent(
     int AttemptNumber,
@@ -118,4 +150,3 @@ public sealed record ReplanAppliedEvent(
 public sealed record RunCompletedEvent(
     ResultEnvelope<JsonElement?> Result,
     PlanDefinition? FinalPlan) : PlanRunEvent(DateTimeOffset.UtcNow);
-

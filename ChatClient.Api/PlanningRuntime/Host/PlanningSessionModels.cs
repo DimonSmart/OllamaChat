@@ -1,6 +1,10 @@
 using ChatClient.Api.PlanningRuntime.Common;
 using ChatClient.Api.PlanningRuntime.Execution;
+using ChatClient.Api.PlanningRuntime.LowLevel;
+using ChatClient.Api.PlanningRuntime.Outline;
 using ChatClient.Api.PlanningRuntime.Planning;
+using ChatClient.Api.PlanningRuntime.Runtime;
+using ChatClient.Api.PlanningRuntime.Shared;
 using ChatClient.Application.Services.Agentic;
 using System.Text.Json;
 
@@ -31,6 +35,22 @@ public sealed class PlanningSessionState
     public bool IsCompleted { get; set; }
 
     public string? ActiveStepId { get; set; }
+
+    public string? ActiveRuntimeStepId { get; set; }
+
+    public RequestBrief? RequestBrief { get; set; }
+
+    public OutlinePlan? OutlinePlan { get; set; }
+
+    public string? OutlineRawResponse { get; set; }
+
+    public LowLevelPlan? LowLevelPlan { get; set; }
+
+    public string? LowLevelRawResponse { get; set; }
+
+    public RuntimePlan? RuntimePlan { get; set; }
+
+    public List<PlanningIssue> Issues { get; } = [];
 
     public PlanDefinition? CurrentPlan { get; set; }
 
