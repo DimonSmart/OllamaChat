@@ -77,6 +77,10 @@ public sealed record RuntimeStepCompletedEvent(
     JsonElement? Output,
     ErrorInfo? Error) : PlanRunEvent(DateTimeOffset.UtcNow);
 
+public sealed record RuntimeExecutionCompletedEvent(
+    IReadOnlyList<PlanningIssue> Issues,
+    bool IsSuccess) : PlanRunEvent(DateTimeOffset.UtcNow);
+
 public sealed record PlanCreatedEvent(
     int AttemptNumber,
     string Phase,

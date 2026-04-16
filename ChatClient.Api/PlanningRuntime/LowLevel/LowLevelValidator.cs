@@ -1,6 +1,9 @@
 using ChatClient.Api.PlanningRuntime.Outline;
+using ChatClient.Api.PlanningRuntime.Runtime;
 using ChatClient.Api.PlanningRuntime.Shared;
 using ChatClient.Api.Services;
+using System.Text.Json;
+using System.Text.Json.Serialization;
 
 namespace ChatClient.Api.PlanningRuntime.LowLevel;
 
@@ -33,6 +36,8 @@ public static class LowLevelValidator
         }
 
         var toolIds = tools.Select(static tool => tool.QualifiedName).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var toolsById = tools.ToDictionary(tool => tool.QualifiedName, StringComparer.OrdinalIgnoreCase);
+        var outlineById = outlinePlan.Nodes.ToDictionary(node => node.Id, StringComparer.OrdinalIgnoreCase);
         var outlineNodeIds = outlinePlan.Nodes.Select(static node => node.Id).ToHashSet(StringComparer.OrdinalIgnoreCase);
         var stepIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
@@ -69,6 +74,9 @@ public static class LowLevelValidator
             {
                 result.Issues.Add(CreateIssue("out_format_missing", $"Step '{step.Id}' must declare out.format."));
             }
+
+            if (outlineById.TryGetValue(step.OutlineNodeId, out var outlineNode))
+                ValidateExecutionContract(step, outlineNode, toolsById, plan.ResultStepId, result);
 
             foreach (var input in step.Inputs)
                 ValidateInput(plan, step, input, index, result);
@@ -123,6 +131,9 @@ public static class LowLevelValidator
             if (!isUsed)
                 result.Issues.Add(CreateIssue("unused_step", $"Non-result step '{step.Id}' has no downstream consumer."));
         }
+
+        if (result.Issues.Count == 0)
+            AppendRuntimeCompileIssues(plan, tools, result);
 
         return result;
     }
@@ -190,4 +201,115 @@ public static class LowLevelValidator
             Message = message,
             Layer = "low_level"
         };
+
+    private static void ValidateExecutionContract(
+        LowLevelStep step,
+        OutlineNode outlineNode,
+        IReadOnlyDictionary<string, AppToolDescriptor> toolsById,
+        string? resultStepId,
+        LowLevelValidationResult result)
+    {
+        var contract = OutlineNodeExecutionContractResolver.Resolve(outlineNode.Kind);
+
+        if (string.Equals(step.Kind, LowLevelStepKinds.Llm, StringComparison.OrdinalIgnoreCase))
+        {
+            if (!contract.AllowsLlm)
+            {
+                result.Issues.Add(CreateIssue(
+                    "outline_execution_contract_mismatch",
+                    $"Step '{step.Id}' is an llm step, but outline node '{outlineNode.Id}' with kind '{outlineNode.Kind}' requires {contract.Description}.",
+                    new
+                    {
+                        stepId = step.Id,
+                        outlineNodeId = outlineNode.Id,
+                        outlineNodeKind = outlineNode.Kind,
+                        capabilityId = step.CapabilityId,
+                        expectedRole = contract.RequiredRole?.ToString(),
+                        expectedProduces = contract.RequiredProduces?.ToString()
+                    }));
+            }
+
+            if (contract.RequiresTerminalResult
+                && !string.Equals(step.Id, resultStepId, StringComparison.OrdinalIgnoreCase)
+                && !step.IsResult)
+            {
+                result.Issues.Add(CreateIssue(
+                    "outline_terminal_result_mismatch",
+                    $"Step '{step.Id}' materializes answer node '{outlineNode.Id}', but answer nodes must end at the terminal result step.",
+                    new
+                    {
+                        stepId = step.Id,
+                        outlineNodeId = outlineNode.Id,
+                        outlineNodeKind = outlineNode.Kind,
+                        resultStepId
+                    }));
+            }
+
+            return;
+        }
+
+        if (!toolsById.TryGetValue(step.CapabilityId ?? string.Empty, out var tool))
+            return;
+
+        var actualRole = tool.PlanningMetadata?.PlannerRole;
+        var actualProduces = tool.PlanningMetadata?.ProducesKind;
+        var roleMismatch = contract.RequiredRole is not null && actualRole != contract.RequiredRole;
+        var producesMismatch = contract.RequiredProduces is not null && actualProduces != contract.RequiredProduces;
+        if (!roleMismatch && !producesMismatch && !contract.RequiresTerminalResult)
+            return;
+
+        result.Issues.Add(CreateIssue(
+            "outline_execution_contract_mismatch",
+            $"Step '{step.Id}' uses capability '{step.CapabilityId}', but outline node '{outlineNode.Id}' with kind '{outlineNode.Kind}' requires {contract.Description}",
+            new
+            {
+                stepId = step.Id,
+                outlineNodeId = outlineNode.Id,
+                outlineNodeKind = outlineNode.Kind,
+                capabilityId = step.CapabilityId,
+                expectedRole = contract.RequiredRole?.ToString(),
+                actualRole = actualRole?.ToString(),
+                expectedProduces = contract.RequiredProduces?.ToString(),
+                actualProduces = actualProduces?.ToString()
+            }));
+    }
+
+    private static PlanningIssue CreateIssue(string code, string message, object details) =>
+        new()
+        {
+            Code = code,
+            Message = message,
+            Layer = "low_level",
+            Details = JsonSerializer.SerializeToElement(details)
+        };
+
+    private static void AppendRuntimeCompileIssues(
+        LowLevelPlan plan,
+        IReadOnlyCollection<AppToolDescriptor> tools,
+        LowLevelValidationResult result)
+    {
+        var compileResult = new RuntimePlannerCompiler(tools).Compile(plan);
+        if (compileResult.IsSuccess)
+            return;
+
+        foreach (var issue in compileResult.Issues)
+        {
+            if (result.Issues.Any(existing =>
+                string.Equals(existing.Layer, issue.Layer, StringComparison.OrdinalIgnoreCase)
+                && string.Equals(existing.Code, issue.Code, StringComparison.OrdinalIgnoreCase)
+                && string.Equals(existing.Message, issue.Message, StringComparison.Ordinal)))
+            {
+                continue;
+            }
+
+            result.Issues.Add(new PlanningIssue
+            {
+                Layer = issue.Layer,
+                Code = issue.Code,
+                Message = issue.Message,
+                Details = issue.Details is JsonElement details ? details.Clone() : null,
+                IsBlocking = issue.IsBlocking
+            });
+        }
+    }
 }

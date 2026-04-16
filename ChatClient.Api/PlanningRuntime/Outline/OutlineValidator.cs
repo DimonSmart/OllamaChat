@@ -65,6 +65,13 @@ public static class OutlineValidator
             return result;
         }
 
+        if (!string.Equals(resultNode.Kind, OutlineNodeKinds.Answer, StringComparison.OrdinalIgnoreCase))
+        {
+            result.Issues.Add(CreateIssue(
+                "result_node_kind_invalid",
+                $"Result node '{resultNode.Id}' must use kind '{OutlineNodeKinds.Answer}' so the low-level materialization has an unambiguous terminal answer step."));
+        }
+
         var downstreamByNodeId = BuildDownstreamMap(plan.Nodes);
         if (downstreamByNodeId[resultNode.Id].Count != 0)
             result.Issues.Add(CreateIssue("result_node_non_terminal", $"Result node '{resultNode.Id}' must be terminal."));
@@ -83,6 +90,14 @@ public static class OutlineValidator
         {
             if (!reachable.Contains(node.Id))
                 result.Issues.Add(CreateIssue("disconnected_subgraph", $"Outline node '{node.Id}' is disconnected from the result node."));
+
+            var contract = OutlineNodeExecutionContractResolver.Resolve(node.Kind);
+            if (contract.RequiresTerminalResult && !string.Equals(node.Id, resultNode.Id, StringComparison.OrdinalIgnoreCase))
+            {
+                result.Issues.Add(CreateIssue(
+                    "node_kind_requires_terminal",
+                    $"Outline node '{node.Id}' uses kind '{node.Kind}', but only the terminal result node may use that kind."));
+            }
         }
 
         var acquisitionNodes = plan.Nodes

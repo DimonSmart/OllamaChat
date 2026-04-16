@@ -146,7 +146,7 @@ public sealed class AppToolCatalog(IMcpClientService mcpClientService) : IAppToo
         return new AppToolPlanningMetadata(
             Purpose: ExtractPurpose(description),
             Returns: outputSchema is JsonElement schema
-                ? BuildSchemaSummary(schema)
+                ? SummarizeSchema(schema)
                 : null,
             Limits: BuildLimitHint(inputSchema),
             Constraints: BuildConstraintHint(description, producesKind),
@@ -264,7 +264,25 @@ public sealed class AppToolCatalog(IMcpClientService mcpClientService) : IAppToo
             : string.Join("; ", limits);
     }
 
-    private static string BuildSchemaSummary(JsonElement schema) =>
+    internal static IReadOnlyList<string> GetRequiredInputNames(JsonElement inputSchema)
+    {
+        if (inputSchema.ValueKind != JsonValueKind.Object
+            || !inputSchema.TryGetProperty("required", out var requiredElement)
+            || requiredElement.ValueKind != JsonValueKind.Array)
+        {
+            return [];
+        }
+
+        return requiredElement
+            .EnumerateArray()
+            .Select(static item => item.GetString()?.Trim())
+            .Where(static item => !string.IsNullOrWhiteSpace(item))
+            .Cast<string>()
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+    }
+
+    internal static string SummarizeSchema(JsonElement schema) =>
         DescribeSchema(schema, includeNestedObjectProperties: true);
 
     private static string DescribeSchema(JsonElement schema, bool includeNestedObjectProperties)

@@ -593,8 +593,7 @@ public static partial class PlanValidator
         JsonElement sourceSchema,
         JsonElement targetInputSchema)
     {
-        var compatibilityIssues = new List<string>();
-        ValidateSchemaCompatibility(sourceSchema, targetInputSchema, inputName, compatibilityIssues);
+        var compatibilityIssues = SchemaCompatibilityInspector.ValidateCompatibility(sourceSchema, targetInputSchema, inputName);
         if (compatibilityIssues.Count == 0)
             return;
 
@@ -605,8 +604,8 @@ public static partial class PlanValidator
             inputName: inputName,
             bindingFrom: binding.From,
             sourceStepId: sourceStep.Id,
-            expected: DescribeSchemaShape(targetInputSchema),
-            actual: DescribeSchemaShape(sourceSchema));
+            expected: SchemaCompatibilityInspector.DescribeSchemaShape(targetInputSchema),
+            actual: SchemaCompatibilityInspector.DescribeSchemaShape(sourceSchema));
     }
 
     private static void ValidateSchemaCompatibility(
@@ -805,7 +804,7 @@ public static partial class PlanValidator
         if (issues.Count == 0)
             return;
 
-        var actualShape = DescribeSchemaShape(sourceSchema);
+        var actualShape = SchemaCompatibilityInspector.DescribeSchemaShape(sourceSchema);
 
         throw CreateIssue(
             "binding_type_mismatch",

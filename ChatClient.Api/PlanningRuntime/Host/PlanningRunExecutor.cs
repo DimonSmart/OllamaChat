@@ -7,6 +7,7 @@ using ChatClient.Api.PlanningRuntime.Runtime;
 using ChatClient.Api.PlanningRuntime.Shared;
 using ChatClient.Api.Services;
 using ChatClient.Domain.Models;
+using Microsoft.Extensions.AI;
 using System.Text.Json;
 
 namespace ChatClient.Api.PlanningRuntime.Host;
@@ -22,6 +23,8 @@ public sealed class PlanningRunExecutor(
     ILlmChatClientFactory chatClientFactory,
     IMcpUserInteractionService mcpUserInteractionService) : IPlanningRunExecutor
 {
+    private static readonly TimeSpan PlannerStageTimeout = TimeSpan.FromMinutes(2);
+
     public async Task<ResultEnvelope<JsonElement?>> ExecuteAsync(
         PlanningRunExecutionRequest request,
         CancellationToken cancellationToken = default)
@@ -31,7 +34,7 @@ public sealed class PlanningRunExecutor(
         var chatClient = await chatClientFactory.CreateAsync(request.Model, cancellationToken);
         var observer = request.PlanRunObserver ?? NullPlanRunObserver.Instance;
         var loggerSink = request.ExecutionLogger ?? NullExecutionLogger.Instance;
-        var requestAnalyzer = new LlmPlanningRequestAnalyzer(chatClient, loggerSink, observer);
+        var requestAnalyzer = new ToolCallingPlanningRequestAnalyzer(chatClient, loggerSink, observer);
         var llmClient = new ChatClientPlanningLlmClient(chatClient);
         var capabilities = CapabilitySummaryBuilder.Build(request.EnabledTools);
 
@@ -41,7 +44,8 @@ public sealed class PlanningRunExecutor(
         try
         {
             var brief = await requestAnalyzer.AnalyzeAsync(request.UserQuery, cancellationToken);
-            var outlineResult = await RunOutlineStageAsync(llmClient, capabilities, brief, observer, loggerSink, cancellationToken);
+            loggerSink.Log($"[outline] start capabilities={capabilities.Count}");
+            var outlineResult = await RunOutlineStageAsync(chatClient, capabilities, brief, observer, loggerSink, cancellationToken);
             if (!outlineResult.Ok)
             {
                 observer.OnEvent(new RunCompletedEvent(outlineResult, null));
@@ -52,7 +56,8 @@ public sealed class PlanningRunExecutor(
                 throw new InvalidOperationException("Outline stage returned no plan.");
             var outlinePlan = outlineElement.Deserialize<OutlinePlan>(PlanningNodeJson.SerializerOptions)
                 ?? throw new InvalidOperationException("Outline stage returned no plan.");
-            var lowLevelResult = await RunLowLevelStageAsync(llmClient, capabilities, request.EnabledTools, outlinePlan, observer, loggerSink, cancellationToken);
+            loggerSink.Log($"[low-level] start outlineNodes={outlinePlan.Nodes.Count}");
+            var lowLevelResult = await RunLowLevelStageAsync(chatClient, capabilities, request.EnabledTools, outlinePlan, observer, loggerSink, cancellationToken);
             if (!lowLevelResult.Ok)
             {
                 observer.OnEvent(new RunCompletedEvent(lowLevelResult, null));
@@ -63,6 +68,7 @@ public sealed class PlanningRunExecutor(
                 throw new InvalidOperationException("Low-level stage returned no plan.");
             var lowLevelPlan = lowLevelElement.Deserialize<LowLevelPlan>(PlanningNodeJson.SerializerOptions)
                 ?? throw new InvalidOperationException("Low-level stage returned no plan.");
+            loggerSink.Log($"[runtime] compile:start lowLevelSteps={lowLevelPlan.Steps.Count}");
             var compiler = new RuntimePlannerCompiler(request.EnabledTools);
             var compileResult = compiler.Compile(lowLevelPlan);
             observer.OnEvent(new RuntimeCompilationCompletedEvent(
@@ -87,6 +93,7 @@ public sealed class PlanningRunExecutor(
                 observer,
                 mcpUserInteractionService);
             var execution = await runtimeExecutor.ExecuteAsync(compileResult.Plan, cancellationToken);
+            observer.OnEvent(new RuntimeExecutionCompletedEvent(execution.Issues, execution.Succeeded));
             foreach (var issue in execution.Issues)
                 loggerSink.Log($"[runtime] execution issue {issue.Code}: {issue.Message}");
 
@@ -113,18 +120,20 @@ public sealed class PlanningRunExecutor(
     }
 
     private static async Task<ResultEnvelope<JsonElement?>> RunOutlineStageAsync(
-        IPlanningLlmClient llmClient,
-        IReadOnlyCollection<CompactCapabilitySummary> capabilities,
+        IChatClient chatClient,
+        IReadOnlyCollection<PlannerCapabilitySummary> capabilities,
         RequestBrief brief,
         IPlanRunObserver observer,
         IExecutionLogger loggerSink,
         CancellationToken cancellationToken)
     {
-        var planner = new OutlinePlanner(llmClient);
+        var planner = new ToolCallingOutlinePlanner(chatClient, loggerSink, observer);
         var repairer = new OutlineRepairer();
 
         try
         {
+            using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            timeoutCts.CancelAfter(PlannerStageTimeout);
             var stage = await planner.CreatePlanAsync(
                 new OutlinePlanningRequest
                 {
@@ -132,7 +141,7 @@ public sealed class PlanningRunExecutor(
                     ResultExpectations = BuildResultExpectations(brief),
                     Capabilities = capabilities
                 },
-                cancellationToken);
+                timeoutCts.Token);
 
             var plan = stage.Plan;
             var validation = OutlineValidator.Validate(plan);
@@ -153,6 +162,21 @@ public sealed class PlanningRunExecutor(
 
             return ResultEnvelope<JsonElement?>.Success(JsonSerializer.SerializeToElement(plan, PlanningNodeJson.SerializerOptions));
         }
+        catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+        {
+            var issues = new List<PlanningIssue>
+            {
+                new()
+                {
+                    Layer = "outline",
+                    Code = "timeout",
+                    Message = $"Outline planner did not complete within {PlannerStageTimeout}."
+                }
+            };
+            observer.OnEvent(new OutlineStageCompletedEvent(null, string.Empty, issues, false));
+            loggerSink.Log($"[outline] timeout after {PlannerStageTimeout}");
+            return CreateFailure("outline_timeout", "Outline planner timed out.", issues);
+        }
         catch (PlanningContractException ex) when (string.Equals(ex.Stage, "outline", StringComparison.OrdinalIgnoreCase))
         {
             var issues = ex.ContractIssues
@@ -169,26 +193,28 @@ public sealed class PlanningRunExecutor(
     }
 
     private static async Task<ResultEnvelope<JsonElement?>> RunLowLevelStageAsync(
-        IPlanningLlmClient llmClient,
-        IReadOnlyCollection<CompactCapabilitySummary> capabilities,
+        IChatClient chatClient,
+        IReadOnlyCollection<PlannerCapabilitySummary> capabilities,
         IReadOnlyCollection<AppToolDescriptor> tools,
         OutlinePlan outlinePlan,
         IPlanRunObserver observer,
         IExecutionLogger loggerSink,
         CancellationToken cancellationToken)
     {
-        var planner = new LowLevelPlanner(llmClient);
+        var planner = new ToolCallingLowLevelPlanner(chatClient, tools, loggerSink, observer);
         var repairer = new LowLevelRepairer();
 
         try
         {
+            using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            timeoutCts.CancelAfter(PlannerStageTimeout);
             var stage = await planner.CreatePlanAsync(
                 new LowLevelPlanningRequest
                 {
                     OutlinePlan = outlinePlan,
                     Capabilities = capabilities
                 },
-                cancellationToken);
+                timeoutCts.Token);
 
             var plan = stage.Plan;
             var validation = LowLevelValidator.Validate(plan, outlinePlan, tools);
@@ -208,6 +234,21 @@ public sealed class PlanningRunExecutor(
                 return CreateFailure("low_level_blocked", plan.BlockedReason ?? "Low-level planner returned a blocked plan.");
 
             return ResultEnvelope<JsonElement?>.Success(JsonSerializer.SerializeToElement(plan, PlanningNodeJson.SerializerOptions));
+        }
+        catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+        {
+            var issues = new List<PlanningIssue>
+            {
+                new()
+                {
+                    Layer = "low_level",
+                    Code = "timeout",
+                    Message = $"Low-level planner did not complete within {PlannerStageTimeout}."
+                }
+            };
+            observer.OnEvent(new LowLevelStageCompletedEvent(null, string.Empty, issues, false));
+            loggerSink.Log($"[low-level] timeout after {PlannerStageTimeout}");
+            return CreateFailure("low_level_timeout", "Low-level planner timed out.", issues);
         }
         catch (PlanningContractException ex) when (string.Equals(ex.Stage, "low_level", StringComparison.OrdinalIgnoreCase))
         {
@@ -257,7 +298,9 @@ public sealed class PlanningRunExecutor(
             {
                 layer = issue.Layer,
                 code = issue.Code,
-                message = issue.Message
+                message = issue.Message,
+                details = issue.Details,
+                isBlocking = issue.IsBlocking
             })
         });
         return ResultEnvelope<JsonElement?>.Failure(code, message, details);

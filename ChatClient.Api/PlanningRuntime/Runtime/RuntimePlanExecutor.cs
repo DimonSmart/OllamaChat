@@ -64,9 +64,20 @@ public sealed class RuntimePlanExecutor : IRuntimePlanExecutor
 
         foreach (var step in plan.Steps)
         {
+            var stepIssueStartIndex = issues.Count;
             var resolvedInputs = ResolveInputs(step, stepOutputs, issues);
-            if (issues.Count > 0)
+            if (TryGetBlockingIssueSince(issues, stepIssueStartIndex, out var blockingIssue))
+            {
+                _observer.OnEvent(new RuntimeStepCompletedEvent(
+                    step.Id,
+                    false,
+                    null,
+                    new ErrorInfo(
+                        blockingIssue.Code,
+                        blockingIssue.Message,
+                        CloneElement(blockingIssue.Details))));
                 return new RuntimeExecutionResult { Status = "execution_failed", Issues = issues };
+            }
 
             JsonObject normalizedOutput;
             try
@@ -82,19 +93,29 @@ public sealed class RuntimePlanExecutor : IRuntimePlanExecutor
                 if (string.Equals(step.Kind, LowLevelStepKinds.Tool, StringComparison.OrdinalIgnoreCase))
                     normalizedOutput = await ExecuteToolStepAsync(step, resolvedInputs, issues, cancellationToken);
                 else
-                    normalizedOutput = await ExecuteLlmStepAsync(step, resolvedInputs, issues, cancellationToken);
+                    normalizedOutput = await ExecuteLlmStepAsync(step, resolvedInputs, stepOutputs, issues, cancellationToken);
             }
             catch (Exception ex)
             {
                 issues.Add(CreateIssue("step_execution_exception", $"Runtime step '{step.Id}' failed: {ex.Message}"));
-                _observer.OnEvent(new RuntimeStepCompletedEvent(step.Id, false, null, new ErrorInfo("step_execution_exception", ex.Message)));
+                _observer.OnEvent(new RuntimeStepCompletedEvent(
+                    step.Id,
+                    false,
+                    null,
+                    new ErrorInfo("step_execution_exception", ex.Message)));
                 return new RuntimeExecutionResult { Status = "execution_failed", Issues = issues };
             }
 
-            if (issues.Count > 0)
+            if (TryGetBlockingIssueSince(issues, stepIssueStartIndex, out blockingIssue))
             {
-                var lastIssue = issues[^1];
-                _observer.OnEvent(new RuntimeStepCompletedEvent(step.Id, false, null, new ErrorInfo(lastIssue.Code, lastIssue.Message)));
+                _observer.OnEvent(new RuntimeStepCompletedEvent(
+                    step.Id,
+                    false,
+                    null,
+                    new ErrorInfo(
+                        blockingIssue.Code,
+                        blockingIssue.Message,
+                        CloneElement(blockingIssue.Details))));
                 return new RuntimeExecutionResult { Status = "execution_failed", Issues = issues };
             }
 
@@ -132,7 +153,11 @@ public sealed class RuntimePlanExecutor : IRuntimePlanExecutor
         {
             if (string.Equals(input.Value.Kind, RuntimeInputValueKinds.Literal, StringComparison.OrdinalIgnoreCase))
             {
-                result[input.Key] = new ResolvedInput(PlanningNodeJson.CloneNode(input.Value.Literal), LowLevelInputModes.Value);
+                result[input.Key] = new ResolvedInput(
+                    PlanningNodeJson.CloneNode(input.Value.Literal),
+                    LowLevelInputModes.Value,
+                    null,
+                    null);
                 continue;
             }
 
@@ -148,7 +173,11 @@ public sealed class RuntimePlanExecutor : IRuntimePlanExecutor
                 continue;
             }
 
-            result[input.Key] = new ResolvedInput(sourceValue.DeepClone(), input.Value.Mode ?? LowLevelInputModes.Value);
+            result[input.Key] = new ResolvedInput(
+                sourceValue.DeepClone(),
+                input.Value.Mode ?? LowLevelInputModes.Value,
+                sourceStepId,
+                port);
         }
 
         return result;
@@ -185,40 +214,97 @@ public sealed class RuntimePlanExecutor : IRuntimePlanExecutor
             }
 
             var rawResults = new List<JsonNode?>(items.Count);
-            foreach (var item in items)
+            var callRecords = new List<MappedToolCallRecord>(items.Count);
+            for (var callIndex = 0; callIndex < items.Count; callIndex++)
             {
+                var item = items[callIndex];
+                var mappedItem = item?.DeepClone();
+                var arguments = BuildToolArguments(resolvedInputs, mappedInputs[0].Key, mappedItem);
+                var callInput = SerializeArguments(arguments);
+                _log.Log($"[runtime] call:start step={step.Id} callIndex={callIndex} input={SerializeElement(callInput)}");
+                _observer.OnEvent(new StepCallStartedEvent(step.Id, callIndex, callInput.Clone()));
+
                 try
                 {
-                    var arguments = BuildToolArguments(resolvedInputs, mappedInputs[0].Key, item?.DeepClone());
                     using var interactionScope = _mcpUserInteractionService?.BeginInteractionScope(McpInteractionScope.Planning);
                     var rawResult = await tool.ExecuteAsync(arguments, cancellationToken);
                     var envelope = NormalizeToolResult(tool, rawResult);
+                    var outputNode = envelope.Data is JsonElement mappedElement
+                        ? PlanningNodeJson.ToNode(mappedElement)
+                        : null;
+                    var errorInfo = envelope.Error is null
+                        ? null
+                        : new ErrorInfo(envelope.Error.Code, envelope.Error.Message, CloneElement(envelope.Error.Details));
+
+                    _log.Log($"[runtime] call:end step={step.Id} callIndex={callIndex} ok={envelope.Ok} output={SerializeElement(envelope.Data)} error={Shorten(errorInfo?.Message, 240)} details={SerializeElement(errorInfo?.Details)}");
+                    _observer.OnEvent(new StepCallCompletedEvent(
+                        step.Id,
+                        callIndex,
+                        envelope.Ok,
+                        CloneElement(envelope.Data),
+                        errorInfo));
+
+                    callRecords.Add(new MappedToolCallRecord(callIndex, callInput, outputNode?.DeepClone(), errorInfo));
+
                     if (envelope.Ok)
-                        rawResults.Add(envelope.Data is JsonElement mappedElement ? PlanningNodeJson.ToNode(mappedElement) : null);
+                    {
+                        rawResults.Add(outputNode);
+                        continue;
+                    }
+
+                    issues.Add(CreateMappedToolItemIssue(step, mappedInputs[0].Key, callIndex, callInput, errorInfo));
                 }
-                catch
+                catch (Exception ex) when (ex is not OperationCanceledException)
                 {
+                    var errorInfo = new ErrorInfo("tool_call_exception", ex.Message);
+                    _log.Log($"[runtime] call:end step={step.Id} callIndex={callIndex} ok=false output=null error={Shorten(ex.Message, 240)} details=null");
+                    _observer.OnEvent(new StepCallCompletedEvent(step.Id, callIndex, false, null, errorInfo));
+                    callRecords.Add(new MappedToolCallRecord(callIndex, callInput, null, errorInfo));
+                    issues.Add(CreateMappedToolItemIssue(step, mappedInputs[0].Key, callIndex, callInput, errorInfo));
                 }
             }
 
             if (rawResults.Count == 0)
             {
-                issues.Add(CreateIssue("mapped_tool_all_items_failed", $"Runtime tool step '{step.Id}' failed for every mapped input item."));
+                issues.Add(CreateIssue(
+                    "mapped_tool_all_items_failed",
+                    $"Runtime tool step '{step.Id}' failed for every mapped input item.",
+                    PlanningNodeJson.ToElement(BuildMappedToolDiagnostics(step, mappedInputs[0].Key, callRecords))));
                 return new JsonObject();
             }
 
-            return NormalizeMappedOutput(step, rawResults);
+            return NormalizeMappedOutput(
+                step,
+                rawResults,
+                BuildMappedToolDiagnostics(step, mappedInputs[0].Key, callRecords));
         }
 
         var singleArguments = BuildToolArguments(resolvedInputs, null, null);
+        var singleInput = SerializeArguments(singleArguments);
+        _log.Log($"[runtime] call:start step={step.Id} callIndex=0 input={SerializeElement(singleInput)}");
+        _observer.OnEvent(new StepCallStartedEvent(step.Id, 0, singleInput.Clone()));
         using var singleInteractionScope = _mcpUserInteractionService?.BeginInteractionScope(McpInteractionScope.Planning);
         var singleResult = await tool.ExecuteAsync(singleArguments, cancellationToken);
         var normalizedResult = NormalizeToolResult(tool, singleResult);
+        var singleError = normalizedResult.Error is null
+            ? null
+            : new ErrorInfo(
+                normalizedResult.Error.Code,
+                normalizedResult.Error.Message,
+                CloneElement(normalizedResult.Error.Details));
+        _log.Log($"[runtime] call:end step={step.Id} callIndex=0 ok={normalizedResult.Ok} output={SerializeElement(normalizedResult.Data)} error={Shorten(singleError?.Message, 240)} details={SerializeElement(singleError?.Details)}");
+        _observer.OnEvent(new StepCallCompletedEvent(
+            step.Id,
+            0,
+            normalizedResult.Ok,
+            CloneElement(normalizedResult.Data),
+            singleError));
         if (!normalizedResult.Ok)
         {
             issues.Add(CreateIssue(
                 normalizedResult.Error?.Code ?? "tool_error",
-                normalizedResult.Error?.Message ?? $"Tool step '{step.Id}' failed."));
+                normalizedResult.Error?.Message ?? $"Tool step '{step.Id}' failed.",
+                CloneElement(normalizedResult.Error?.Details)));
             return new JsonObject();
         }
 
@@ -228,6 +314,7 @@ public sealed class RuntimePlanExecutor : IRuntimePlanExecutor
     private async Task<JsonObject> ExecuteLlmStepAsync(
         RuntimeStep step,
         IReadOnlyDictionary<string, ResolvedInput> resolvedInputs,
+        IReadOnlyDictionary<string, JsonObject> stepOutputs,
         List<PlanningIssue> issues,
         CancellationToken cancellationToken)
     {
@@ -251,7 +338,7 @@ public sealed class RuntimePlanExecutor : IRuntimePlanExecutor
             var rawResults = new List<JsonNode?>(mappedItems.Count);
             foreach (var item in mappedItems)
             {
-                var perItemInputs = BuildLlmInputs(resolvedInputs, mappedInputs[0].Key, item?.DeepClone());
+                var perItemInputs = BuildLlmInputs(resolvedInputs, stepOutputs, mappedInputs[0].Key, item?.DeepClone());
                 var result = await ExecuteSingleLlmCallAsync(step, perItemInputs, issues, cancellationToken, suppressIssues: true);
                 if (result is not null)
                     rawResults.Add(result);
@@ -266,9 +353,10 @@ public sealed class RuntimePlanExecutor : IRuntimePlanExecutor
             return NormalizeMappedOutput(step, rawResults);
         }
 
-        var inputsJson = BuildLlmInputs(resolvedInputs, null, null);
+        var inputsJson = BuildLlmInputs(resolvedInputs, stepOutputs, null, null);
+        var llmIssueStartIndex = issues.Count;
         var dataNode = await ExecuteSingleLlmCallAsync(step, inputsJson, issues, cancellationToken);
-        if (issues.Count > 0)
+        if (dataNode is null || TryGetBlockingIssueSince(issues, llmIssueStartIndex, out _))
             return new JsonObject();
 
         if (step.Out?.Format == RuntimeOutputFormats.String)
@@ -344,7 +432,8 @@ public sealed class RuntimePlanExecutor : IRuntimePlanExecutor
             {
                 issues.Add(CreateIssue(
                     envelope.Error?.Code ?? "llm_step_failed",
-                    envelope.Error?.Message ?? $"Runtime step '{step.Id}' failed."));
+                    envelope.Error?.Message ?? $"Runtime step '{step.Id}' failed.",
+                    CloneElement(envelope.Error?.Details)));
             }
 
             return null;
@@ -361,6 +450,7 @@ public sealed class RuntimePlanExecutor : IRuntimePlanExecutor
         var sb = new StringBuilder();
         sb.AppendLine("You are executing one workflow step inside the production planning runtime.");
         sb.AppendLine("Use only the provided inputs. Do not invent facts.");
+        sb.AppendLine("Inputs may include an internal '_inputDiagnostics' object describing partial upstream acquisition or tool failures.");
         sb.AppendLine("Return ONLY valid JSON with this exact top-level shape:");
         sb.AppendLine("{\"ok\":true|false,\"data\":...,\"error\":null|{\"code\":\"string\",\"message\":\"string\",\"details\":null}}");
 
@@ -379,6 +469,15 @@ public sealed class RuntimePlanExecutor : IRuntimePlanExecutor
         }
 
         sb.AppendLine("When reliable completion is impossible, return ok=false with a short structured error.");
+        sb.AppendLine("If the available evidence is incomplete or '_inputDiagnostics' shows partial acquisition failures and you cannot finish reliably, do not guess and do not omit required outputs.");
+        if (string.Equals(step.Fanout, LowLevelFanoutModes.PerItem, StringComparison.OrdinalIgnoreCase))
+        {
+            sb.AppendLine("This step runs once per current item. '_inputDiagnostics' may mention sibling items that failed upstream.");
+            sb.AppendLine("Do not fail only because some sibling items failed. If the current item's direct inputs are sufficient for this item's output, return ok=true for the current item.");
+            sb.AppendLine("Return ok=false only when the current item's own evidence is insufficient for this item's required output.");
+        }
+
+        sb.AppendLine("In that case return ok=false and set error.details to an object like {\"status\":\"partial|blocked\",\"needsReplan\":true|false,\"type\":\"error|missing\",\"details\":[\"short factual reason\"]}.");
         return sb.ToString().Trim();
     }
 
@@ -416,6 +515,7 @@ public sealed class RuntimePlanExecutor : IRuntimePlanExecutor
 
     private static JsonObject BuildLlmInputs(
         IReadOnlyDictionary<string, ResolvedInput> inputs,
+        IReadOnlyDictionary<string, JsonObject> stepOutputs,
         string? mappedInputName,
         JsonNode? mappedItem)
     {
@@ -428,21 +528,33 @@ public sealed class RuntimePlanExecutor : IRuntimePlanExecutor
             result[input.Key] = value?.DeepClone();
         }
 
+        var diagnostics = BuildLlmInputDiagnostics(inputs, stepOutputs);
+        if (diagnostics.Count > 0)
+            result["_inputDiagnostics"] = diagnostics;
+
         return result;
     }
 
-    private static JsonObject NormalizeMappedOutput(RuntimeStep step, IReadOnlyList<JsonNode?> rawResults)
+    private static JsonObject NormalizeMappedOutput(
+        RuntimeStep step,
+        IReadOnlyList<JsonNode?> rawResults,
+        JsonObject? diagnostics = null)
     {
         var result = new JsonObject();
         if (step.Outputs.Count == 1)
         {
             var array = new JsonArray(rawResults.Select(PlanningNodeJson.CloneNode).ToArray());
             result[step.Outputs[0].Name] = array;
+            if (diagnostics is not null)
+                result["__diagnostics"] = diagnostics;
             return result;
         }
 
         foreach (var output in step.Outputs)
             result[output.Name] = null;
+
+        if (diagnostics is not null)
+            result["__diagnostics"] = diagnostics;
 
         return result;
     }
@@ -606,13 +718,200 @@ public sealed class RuntimePlanExecutor : IRuntimePlanExecutor
         }
     }
 
-    private static PlanningIssue CreateIssue(string code, string message) =>
+    private static PlanningIssue CreateIssue(
+        string code,
+        string message,
+        JsonElement? details = null,
+        bool isBlocking = true) =>
         new()
         {
             Code = code,
             Message = message,
-            Layer = "runtime_execution"
+            Layer = "runtime_execution",
+            Details = details,
+            IsBlocking = isBlocking
         };
 
-    private sealed record ResolvedInput(JsonNode? Value, string Mode);
+    private static PlanningIssue CreateMappedToolItemIssue(
+        RuntimeStep step,
+        string mappedInputName,
+        int itemIndex,
+        JsonElement input,
+        ErrorInfo? errorInfo)
+    {
+        var details = JsonSerializer.SerializeToElement(new
+        {
+            stepId = step.Id,
+            capabilityId = step.CapabilityId,
+            mappedInputName,
+            itemIndex,
+            input,
+            error = errorInfo
+        });
+
+        return CreateIssue(
+            "mapped_tool_item_failed",
+            $"Runtime tool step '{step.Id}' failed for mapped item {itemIndex}.",
+            details,
+            isBlocking: false);
+    }
+
+    private static JsonObject BuildMappedToolDiagnostics(
+        RuntimeStep step,
+        string mappedInputName,
+        IReadOnlyList<MappedToolCallRecord> calls)
+    {
+        var failedCalls = calls.Where(static call => call.Error is not null).ToList();
+        var failedUrls = failedCalls
+            .Select(call => ExtractMappedFailureUrl(call, mappedInputName))
+            .Where(static url => !string.IsNullOrWhiteSpace(url))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+        var diagnostics = new JsonObject
+        {
+            ["stepId"] = step.Id,
+            ["capabilityId"] = step.CapabilityId,
+            ["mappedInputName"] = mappedInputName,
+            ["totalItems"] = calls.Count,
+            ["successCount"] = calls.Count(static call => call.Error is null),
+            ["failureCount"] = failedCalls.Count,
+            ["anyNeedsReplan"] = failedCalls.Any(static call => TryGetBooleanDetail(call.Error?.Details, "needsReplan")),
+            ["allFailuresRetryable"] = failedCalls.Count > 0 && failedCalls.All(static call => TryGetBooleanDetail(call.Error?.Details, "retryable")),
+            ["failedUrls"] = new JsonArray(failedUrls.Select(static url => JsonValue.Create(url)).ToArray())
+        };
+
+        var callArray = new JsonArray();
+        foreach (var call in calls)
+        {
+            var callNode = new JsonObject
+            {
+                ["callIndex"] = call.CallIndex,
+                ["ok"] = call.Error is null,
+                ["input"] = PlanningNodeJson.ToNode(call.Input)
+            };
+
+            if (call.Output is not null)
+                callNode["output"] = call.Output.DeepClone();
+
+            if (call.Error is not null)
+                callNode["error"] = PlanningNodeJson.ToNode(call.Error);
+
+            callArray.Add(callNode);
+        }
+
+        diagnostics["calls"] = callArray;
+        return diagnostics;
+    }
+
+    private static JsonObject BuildLlmInputDiagnostics(
+        IReadOnlyDictionary<string, ResolvedInput> inputs,
+        IReadOnlyDictionary<string, JsonObject> stepOutputs)
+    {
+        var diagnostics = new JsonObject();
+        foreach (var input in inputs)
+        {
+            if (string.IsNullOrWhiteSpace(input.Value.SourceStepId)
+                || !stepOutputs.TryGetValue(input.Value.SourceStepId, out var sourceOutput)
+                || sourceOutput["__diagnostics"] is not JsonNode sourceDiagnostics)
+            {
+                continue;
+            }
+
+            diagnostics[input.Key] = sourceDiagnostics.DeepClone();
+        }
+
+        return diagnostics;
+    }
+
+    private static bool TryGetBlockingIssueSince(
+        IReadOnlyList<PlanningIssue> issues,
+        int startIndex,
+        out PlanningIssue issue)
+    {
+        for (var index = issues.Count - 1; index >= 0; index--)
+        {
+            if (index < startIndex)
+                break;
+
+            if (!issues[index].IsBlocking)
+                continue;
+
+            issue = issues[index];
+            return true;
+        }
+
+        issue = null!;
+        return false;
+    }
+
+    private static string? ExtractMappedFailureUrl(MappedToolCallRecord call, string mappedInputName)
+    {
+        var errorUrl = ExtractStringDetail(call.Error?.Details, "url");
+        if (!string.IsNullOrWhiteSpace(errorUrl))
+            return errorUrl;
+
+        if (call.Input.ValueKind == JsonValueKind.Object
+            && call.Input.TryGetProperty(mappedInputName, out var mappedInput)
+            && mappedInput.ValueKind == JsonValueKind.Object
+            && mappedInput.TryGetProperty("url", out var inputUrl)
+            && inputUrl.ValueKind == JsonValueKind.String)
+        {
+            return inputUrl.GetString();
+        }
+
+        return null;
+    }
+
+    private static bool TryGetBooleanDetail(JsonElement? details, string propertyName) =>
+        details is JsonElement element
+        && element.ValueKind == JsonValueKind.Object
+        && element.TryGetProperty(propertyName, out var property)
+        && property.ValueKind == JsonValueKind.True;
+
+    private static string? ExtractStringDetail(JsonElement? details, string propertyName)
+    {
+        if (details is not JsonElement element
+            || element.ValueKind != JsonValueKind.Object
+            || !element.TryGetProperty(propertyName, out var property)
+            || property.ValueKind != JsonValueKind.String)
+        {
+            return null;
+        }
+
+        return property.GetString();
+    }
+
+    private static JsonElement SerializeArguments(Dictionary<string, object?> arguments) =>
+        JsonSerializer.SerializeToElement(arguments, PlanningNodeJson.SerializerOptions);
+
+    private static JsonElement? CloneElement(JsonElement? value) =>
+        value is JsonElement element ? element.Clone() : null;
+
+    private static string SerializeElement(JsonElement? value) =>
+        value is JsonElement element
+            ? PlanningNodeJson.SerializeIndented(element)
+            : "null";
+
+    private static string Shorten(string? value, int maxLength)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+            return string.Empty;
+
+        var normalized = value.ReplaceLineEndings(" ").Trim();
+        return normalized.Length <= maxLength
+            ? normalized
+            : $"{normalized[..maxLength]}...";
+    }
+
+    private sealed record MappedToolCallRecord(
+        int CallIndex,
+        JsonElement Input,
+        JsonNode? Output,
+        ErrorInfo? Error);
+
+    private sealed record ResolvedInput(
+        JsonNode? Value,
+        string Mode,
+        string? SourceStepId,
+        string? SourcePort);
 }

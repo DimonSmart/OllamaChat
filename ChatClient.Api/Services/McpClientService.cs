@@ -306,20 +306,45 @@ public class McpClientService(
     {
         var processPath = Environment.ProcessPath;
         var processFileName = Path.GetFileName(processPath);
+        var processBaseName = Path.GetFileNameWithoutExtension(processPath);
+        var hostAssemblyPath = ResolveBuiltInHostAssemblyPath();
+        var hostBaseName = Path.GetFileNameWithoutExtension(hostAssemblyPath);
         var isDotnetHost = string.Equals(processFileName, "dotnet", StringComparison.OrdinalIgnoreCase) ||
                            string.Equals(processFileName, "dotnet.exe", StringComparison.OrdinalIgnoreCase);
+        var isSelfHostedProcess =
+            !string.IsNullOrWhiteSpace(processBaseName) &&
+            string.Equals(processBaseName, hostBaseName, StringComparison.OrdinalIgnoreCase);
 
-        if (!string.IsNullOrWhiteSpace(processPath) && !isDotnetHost)
+        if (!string.IsNullOrWhiteSpace(processPath) && !isDotnetHost && isSelfHostedProcess)
         {
             return (processPath, McpSessionBindingTransport.AppendArguments(["--mcp-builtin", builtInKey], binding));
         }
 
-        var assemblyPath = Assembly.GetEntryAssembly()?.Location;
+        var assemblyPath = hostAssemblyPath;
         if (string.IsNullOrWhiteSpace(assemblyPath))
             throw new InvalidOperationException("Unable to determine application assembly path for built-in MCP server launch.");
 
-        var command = string.IsNullOrWhiteSpace(processPath) ? "dotnet" : processPath;
+        var command = !string.IsNullOrWhiteSpace(processPath) && isDotnetHost
+            ? processPath
+            : "dotnet";
         return (command, McpSessionBindingTransport.AppendArguments([assemblyPath, "--mcp-builtin", builtInKey], binding));
+    }
+
+    private static string ResolveBuiltInHostAssemblyPath()
+    {
+        var assemblyPath = typeof(BuiltInMcpServerHost).Assembly.Location;
+        if (!string.IsNullOrWhiteSpace(assemblyPath))
+        {
+            return assemblyPath;
+        }
+
+        assemblyPath = Assembly.GetEntryAssembly()?.Location;
+        if (!string.IsNullOrWhiteSpace(assemblyPath))
+        {
+            return assemblyPath;
+        }
+
+        throw new InvalidOperationException("Unable to determine application assembly path for built-in MCP server launch.");
     }
 
     private static string BuildFingerprint(

@@ -203,13 +203,19 @@ public sealed class PlanningSessionService(
                 }
                 break;
 
+            case RuntimeExecutionCompletedEvent runtimeExecutionCompleted:
+                ReplaceIssues("runtime_execution", runtimeExecutionCompleted.Issues);
+                break;
+
             case RunCompletedEvent completed:
                 State.FinalResult = CloneEnvelope(completed.Result);
-                ReplaceIssues(
-                    "runtime_execution",
-                    IsRuntimeExecutionFailure(completed.Result)
-                        ? ExtractIssues(completed.Result.Error?.Details)
-                        : []);
+                if (IsRuntimeExecutionFailure(completed.Result)
+                    && !HasIssuesWithLayerPrefix("runtime_execution"))
+                {
+                    ReplaceIssues(
+                        "runtime_execution",
+                        ExtractIssues(completed.Result.Error?.Details));
+                }
                 break;
         }
 
@@ -231,6 +237,14 @@ public sealed class PlanningSessionService(
         {
             State.Issues.RemoveAll(issue => issue.Layer.StartsWith(layerPrefix, StringComparison.OrdinalIgnoreCase));
             State.Issues.AddRange(issues);
+        }
+    }
+
+    private bool HasIssuesWithLayerPrefix(string layerPrefix)
+    {
+        lock (State.Issues)
+        {
+            return State.Issues.Any(issue => issue.Layer.StartsWith(layerPrefix, StringComparison.OrdinalIgnoreCase));
         }
     }
 
@@ -260,6 +274,14 @@ public sealed class PlanningSessionService(
             var message = issueElement.TryGetProperty("message", out var messageElement)
                 ? messageElement.GetString()
                 : null;
+            var isBlocking = issueElement.TryGetProperty("isBlocking", out var isBlockingElement)
+                && isBlockingElement.ValueKind == JsonValueKind.False
+                    ? false
+                    : true;
+            JsonElement? issueDetails = issueElement.TryGetProperty("details", out var detailsElement)
+                && detailsElement.ValueKind is not JsonValueKind.Null and not JsonValueKind.Undefined
+                    ? detailsElement.Clone()
+                    : null;
 
             if (string.IsNullOrWhiteSpace(layer)
                 || string.IsNullOrWhiteSpace(code)
@@ -272,7 +294,9 @@ public sealed class PlanningSessionService(
             {
                 Layer = layer,
                 Code = code,
-                Message = message
+                Message = message,
+                Details = issueDetails,
+                IsBlocking = isBlocking
             });
         }
 

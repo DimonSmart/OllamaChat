@@ -155,7 +155,12 @@ public static class RuntimeWorkflowGraphProjection
 
         if (ShouldShowResultNode(plan, finalResult))
         {
-            nodes.Add(BuildResultNode(artifactNodes, stepNodes, plan, finalResult));
+            nodes.Add(BuildResultNode(
+                artifactNodes,
+                stepNodes,
+                plan,
+                finalResult,
+                artifactContext.RuntimeExecution?.Issues ?? []));
         }
 
         if (nodes.Count == 0)
@@ -202,7 +207,8 @@ public static class RuntimeWorkflowGraphProjection
         IReadOnlyList<RuntimeWorkflowNodeDescriptor> artifactNodes,
         IReadOnlyList<RuntimeWorkflowNodeDescriptor> stepNodes,
         RuntimePlan? plan,
-        ResultEnvelope<JsonElement?>? finalResult)
+        ResultEnvelope<JsonElement?>? finalResult,
+        IReadOnlyList<PlanningIssue> executionIssues)
     {
         double x;
         double y;
@@ -241,7 +247,8 @@ public static class RuntimeWorkflowGraphProjection
             Summary = BuildResultSummary(finalResult),
             X = x,
             Y = y,
-            FinalResult = CloneEnvelope(finalResult)
+            FinalResult = CloneEnvelope(finalResult),
+            Issues = CloneIssues(executionIssues)
         };
     }
 
@@ -914,7 +921,9 @@ public static class RuntimeWorkflowGraphProjection
             {
                 Layer = issue.Layer,
                 Code = issue.Code,
-                Message = issue.Message
+                Message = issue.Message,
+                Details = issue.Details is JsonElement details ? details.Clone() : null,
+                IsBlocking = issue.IsBlocking
             }).ToList();
 
     private static string Shorten(string? value, int maxLength)
@@ -950,6 +959,7 @@ public static class RuntimeWorkflowGraphProjection
         LowLevelStageCompletedEvent? LowLevelStage,
         RuntimeCompilationCompletedEvent? RuntimeCompilation,
         RuntimePlan? RuntimePlan,
+        RuntimeExecutionCompletedEvent? RuntimeExecution,
         bool ShouldShowRequestBriefNode,
         bool ShouldShowOutlineNode,
         bool ShouldShowLowLevelNode,
@@ -966,6 +976,7 @@ public static class RuntimeWorkflowGraphProjection
             var outlineStage = events.OfType<OutlineStageCompletedEvent>().LastOrDefault();
             var lowLevelStage = events.OfType<LowLevelStageCompletedEvent>().LastOrDefault();
             var runtimeCompilation = events.OfType<RuntimeCompilationCompletedEvent>().LastOrDefault();
+            var runtimeExecution = events.OfType<RuntimeExecutionCompletedEvent>().LastOrDefault();
             var hasRuntimeProgress = !string.IsNullOrWhiteSpace(activeRuntimeStepId)
                 || events.OfType<RuntimeStepStartedEvent>().Any()
                 || events.OfType<RuntimeStepCompletedEvent>().Any();
@@ -979,6 +990,7 @@ public static class RuntimeWorkflowGraphProjection
                 LowLevelStage: lowLevelStage,
                 RuntimeCompilation: runtimeCompilation,
                 RuntimePlan: runtimeCompilation?.Plan ?? runtimePlan,
+                RuntimeExecution: runtimeExecution,
                 ShouldShowRequestBriefNode: planningStarted
                     || requestBrief is not null
                     || outlineStage is not null

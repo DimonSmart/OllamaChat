@@ -1,6 +1,9 @@
 using ChatClient.Api.PlanningRuntime.LowLevel;
+using ChatClient.Api.PlanningRuntime.Planning;
 using ChatClient.Api.PlanningRuntime.Shared;
 using ChatClient.Api.Services;
+using System.Text.Json;
+using System.Text.Json.Nodes;
 
 namespace ChatClient.Api.PlanningRuntime.Runtime;
 
@@ -33,6 +36,7 @@ public sealed class RuntimePlannerCompiler : IRuntimePlanCompiler
         ArgumentNullException.ThrowIfNull(plan);
 
         var issues = new List<PlanningIssue>();
+        var tools = _toolsById.Values.ToList();
         var resolvedResultStepId = ResolveResultStepId(plan, issues);
         if (string.IsNullOrWhiteSpace(resolvedResultStepId))
             return new RuntimeCompileResult { Issues = issues };
@@ -62,7 +66,10 @@ public sealed class RuntimePlannerCompiler : IRuntimePlanCompiler
             Steps = runtimeSteps
         };
 
-        var validation = RuntimePlanValidator.Validate(runtimePlan, _toolsById.Values.ToList());
+        var bindingIssues = new LowLevelBindingCompatibilityValidator(plan, tools, outlinePlan: null, issueLayer: "runtime").Validate();
+        issues.AddRange(bindingIssues);
+
+        var validation = RuntimePlanValidator.Validate(runtimePlan, tools);
         issues.AddRange(validation.Issues);
         return issues.Count == 0
             ? new RuntimeCompileResult { Plan = runtimePlan, Issues = issues }
@@ -105,13 +112,7 @@ public sealed class RuntimePlannerCompiler : IRuntimePlanCompiler
                 _toolsById.TryGetValue(sourceStep.CapabilityId ?? string.Empty, out var sourceTool);
                 normalizedSource = NormalizeCollectionInputMode(normalizedSource, effectiveFanout, sourceStep, sourcePort, sourceTool);
                 if (string.Equals(normalizedSource.Mode, LowLevelInputModes.Map, StringComparison.OrdinalIgnoreCase))
-                {
                     mappedInputCount++;
-                    if (!IsCollectionOutput(sourceStep, sourcePort, sourceTool))
-                    {
-                        issues.Add(CreateIssue("binding_map_non_array", $"Low-level step '{step.Id}' input '{input.Name}' uses map mode on non-array semantic type '{sourcePort.SemanticType}'."));
-                    }
-                }
             }
 
             runtimeInputs[normalizedInputName] = RuntimeBindingResolver.Resolve(normalizedSource);
@@ -136,6 +137,8 @@ public sealed class RuntimePlannerCompiler : IRuntimePlanCompiler
                 if (!ToolInputExists(tool, inputName))
                     issues.Add(CreateIssue("tool_input_unknown", $"Tool step '{step.Id}' uses unknown input '{inputName}' for capability '{step.CapabilityId}'."));
             }
+
+            ValidateToolInputSchema(step, tool, runtimeInputs, issues);
         }
 
         var runtimeOutputs = step.Outputs.Select(output => new RuntimeStepOutput
@@ -268,6 +271,132 @@ public sealed class RuntimePlannerCompiler : IRuntimePlanCompiler
         }
 
         return true;
+    }
+
+    private static void ValidateToolInputSchema(
+        LowLevelStep step,
+        AppToolDescriptor tool,
+        IReadOnlyDictionary<string, RuntimeInputValue> runtimeInputs,
+        List<PlanningIssue> issues)
+    {
+        var draftInputs = BuildDraftToolInputs(tool, runtimeInputs);
+        var schemaIssues = ToolInputSchemaValidator.ValidateDraftInput(draftInputs, tool.InputSchema);
+        if (schemaIssues.Count == 0)
+            return;
+
+        var message = string.Join(
+            " ",
+            schemaIssues
+                .Select(static issue => issue.Message)
+                .Distinct(StringComparer.Ordinal));
+        issues.Add(CreateIssue(
+            "tool_input_schema_mismatch",
+            $"Tool step '{step.Id}' does not satisfy the input schema for capability '{step.CapabilityId}': {message}"));
+    }
+
+    private static JsonObject BuildDraftToolInputs(
+        AppToolDescriptor tool,
+        IReadOnlyDictionary<string, RuntimeInputValue> runtimeInputs)
+    {
+        var result = new JsonObject();
+        var propertySchemas = tool.InputSchema.ValueKind == JsonValueKind.Object
+            && tool.InputSchema.TryGetProperty("properties", out var propertiesElement)
+            && propertiesElement.ValueKind == JsonValueKind.Object
+            ? propertiesElement.EnumerateObject().ToDictionary(property => property.Name, property => property.Value, StringComparer.OrdinalIgnoreCase)
+            : null;
+
+        foreach (var input in runtimeInputs)
+        {
+            if (string.Equals(input.Value.Kind, RuntimeInputValueKinds.Literal, StringComparison.OrdinalIgnoreCase))
+            {
+                result[input.Key] = PlanningNodeJson.CloneNode(input.Value.Literal);
+                continue;
+            }
+
+            if (propertySchemas is not null && propertySchemas.TryGetValue(input.Key, out var propertySchema))
+            {
+                result[input.Key] = CreateSchemaPlaceholder(propertySchema);
+                continue;
+            }
+
+            result[input.Key] = JsonValue.Create("<binding>");
+        }
+
+        return result;
+    }
+
+    private static JsonNode? CreateSchemaPlaceholder(JsonElement schema)
+    {
+        if (schema.ValueKind != JsonValueKind.Object)
+            return JsonValue.Create("<value>");
+
+        if (schema.TryGetProperty("enum", out var enumElement)
+            && enumElement.ValueKind == JsonValueKind.Array)
+        {
+            var firstEnumValue = enumElement.EnumerateArray().FirstOrDefault();
+            if (firstEnumValue.ValueKind != JsonValueKind.Undefined)
+                return JsonNode.Parse(firstEnumValue.GetRawText());
+        }
+
+        if (PlanStepOutputContractResolver.TryGetSchemaTypes(schema, out var types) && types.Count > 0)
+        {
+            if (types.Contains("object", StringComparer.OrdinalIgnoreCase))
+                return CreateObjectPlaceholder(schema);
+            if (types.Contains("array", StringComparer.OrdinalIgnoreCase))
+                return CreateArrayPlaceholder(schema);
+            if (types.Contains("string", StringComparer.OrdinalIgnoreCase))
+                return JsonValue.Create(string.Empty);
+            if (types.Contains("integer", StringComparer.OrdinalIgnoreCase))
+                return JsonValue.Create(0);
+            if (types.Contains("number", StringComparer.OrdinalIgnoreCase))
+                return JsonValue.Create(0);
+            if (types.Contains("boolean", StringComparer.OrdinalIgnoreCase))
+                return JsonValue.Create(false);
+            if (types.Contains("null", StringComparer.OrdinalIgnoreCase))
+                return null;
+        }
+
+        if (schema.TryGetProperty("properties", out var propertiesElement) && propertiesElement.ValueKind == JsonValueKind.Object)
+            return CreateObjectPlaceholder(schema);
+
+        if (schema.TryGetProperty("items", out _))
+            return CreateArrayPlaceholder(schema);
+
+        return JsonValue.Create("<value>");
+    }
+
+    private static JsonObject CreateObjectPlaceholder(JsonElement schema)
+    {
+        var result = new JsonObject();
+        if (!schema.TryGetProperty("required", out var requiredElement)
+            || requiredElement.ValueKind != JsonValueKind.Array
+            || !schema.TryGetProperty("properties", out var propertiesElement)
+            || propertiesElement.ValueKind != JsonValueKind.Object)
+        {
+            return result;
+        }
+
+        var propertySchemas = propertiesElement.EnumerateObject()
+            .ToDictionary(property => property.Name, property => property.Value, StringComparer.OrdinalIgnoreCase);
+        foreach (var requiredProperty in requiredElement.EnumerateArray())
+        {
+            var propertyName = requiredProperty.GetString();
+            if (string.IsNullOrWhiteSpace(propertyName) || !propertySchemas.TryGetValue(propertyName, out var propertySchema))
+                continue;
+
+            result[propertyName] = CreateSchemaPlaceholder(propertySchema);
+        }
+
+        return result;
+    }
+
+    private static JsonArray CreateArrayPlaceholder(JsonElement schema)
+    {
+        var result = new JsonArray();
+        if (schema.TryGetProperty("items", out var itemsElement))
+            result.Add(CreateSchemaPlaceholder(itemsElement));
+
+        return result;
     }
 
     private static LowLevelInputSource NormalizeInputSource(string fanout, LowLevelInputSource source)

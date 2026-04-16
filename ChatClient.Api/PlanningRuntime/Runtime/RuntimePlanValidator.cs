@@ -139,7 +139,9 @@ public static class RuntimePlanValidator
         if (string.Equals(input.Mode, LowLevelInputModes.Map, StringComparison.OrdinalIgnoreCase)
             && !sourcePort.SemanticType.EndsWith("[]", StringComparison.Ordinal))
         {
-            result.Issues.Add(CreateIssue("binding_map_non_array", $"Runtime step '{step.Id}' input '{inputName}' uses map mode on non-array port '{sourcePort.Name}'."));
+            result.Issues.Add(CreateIssue(
+                "binding_map_non_array",
+                $"Runtime step '{step.Id}' input '{inputName}' uses map mode on non-array port '{sourcePort.Name}'. The source output must be declared as an array semantic type."));
         }
     }
 

@@ -112,7 +112,7 @@
 </MudStack>
 
 @code {
-    private string userQuery = "Find two popular robot vacuum cleaners, compare their specs, and recommend which one is better.";
+    private string userQuery = string.Empty;
     private List<FunctionInfo> availablePlanningFunctions = [];
     private AgentTemplateDefinition plannerDraft = AgentTemplateBuilder.New("Planner", "planner").Build();
     private IDisposable? elicitationHandlerRegistration;

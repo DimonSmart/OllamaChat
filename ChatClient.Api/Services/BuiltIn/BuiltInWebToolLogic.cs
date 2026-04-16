@@ -27,8 +27,9 @@ internal static class BuiltInWebToolLogic
     private const string DuckDuckGoProviderName = "duckduckgo";
     private static readonly TimeSpan SearchCacheTtl = TimeSpan.FromDays(1);
     private static readonly TimeSpan BraveSearchMinInterval = TimeSpan.FromSeconds(5);
-    private static readonly TimeSpan DefaultMaxRetryDelay = TimeSpan.FromSeconds(30);
-    private static readonly TimeSpan RateLimitMaxRetryDelay = TimeSpan.FromMinutes(2);
+    private static readonly TimeSpan DefaultMaxRetryDelay = TimeSpan.FromSeconds(15);
+    private static readonly TimeSpan RateLimitMaxRetryDelay = TimeSpan.FromSeconds(15);
+    private static readonly TimeSpan DownloadRequestTimeout = TimeSpan.FromSeconds(4);
     private static readonly SemaphoreSlim BraveSearchGate = new(1, 1);
     private static readonly object BraveSearchStateLock = new();
     private static readonly JsonSerializerOptions CacheJsonOptions = new() { WriteIndented = true };
@@ -247,6 +248,7 @@ internal static class BuiltInWebToolLogic
         {
             using var client = httpClientFactory.CreateClient();
             client.DefaultRequestHeaders.UserAgent.ParseAdd("Mozilla/5.0 (compatible; OllamaChatWebMcp/1.0)");
+            client.Timeout = DownloadRequestTimeout;
 
             var retryResult = await GetWithRetriesAsync(client, logger, targetUri, DownloadMaxAttempts, cancellationToken);
             using var response = retryResult.Response;
@@ -1198,7 +1200,8 @@ internal static class BuiltInWebToolLogic
             {
                 lastError = ex;
                 response?.Dispose();
-                if (attempt == maxAttempts)
+                var retryable = IsRetryableHttpFailure(ex.StatusCode);
+                if (!retryable || attempt == maxAttempts)
                     break;
 
                 var delay = GetRetryDelay(response, attempt);
