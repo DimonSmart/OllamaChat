@@ -128,6 +128,24 @@ public class RuntimeWorkflowGraphProjectionTests
         Assert.Equal("running", activeNode.Status);
     }
 
+    [Fact]
+    public void Build_ResultNodeSummary_PrefersUserFacingAnswer()
+    {
+        var graph = RuntimeWorkflowGraphProjection.Build(
+            plan: null,
+            events: [],
+            finalResult: ResultEnvelope<JsonElement?>.Success(
+                JsonSerializer.SerializeToElement(new
+                {
+                    userFacingAnswer = "# Final answer\n\nRendered for the user.",
+                    summary = "Fallback summary"
+                })),
+            activeRuntimeStepId: null);
+
+        var resultNode = Assert.Single(graph.Nodes, node => node.Kind == RuntimeWorkflowNodeKind.Result);
+        Assert.Contains("Final answer", resultNode.Summary, StringComparison.Ordinal);
+    }
+
     private static RequestBrief CreateRequestBrief() =>
         new()
         {

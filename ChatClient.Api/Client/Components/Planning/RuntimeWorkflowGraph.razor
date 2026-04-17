@@ -11,13 +11,16 @@
 @inject IJSRuntime JSRuntime
 @implements IAsyncDisposable
 
-<MudPaper Class="pa-4" Outlined="true">
-    <MudStack Spacing="2">
-        <div>
-            <MudText Typo="Typo.h6">Workflow Graph</MudText>
-            <MudText Typo="Typo.caption" Class="mud-text-secondary">
-                Runtime step graph with live execution state and per-element details.
-            </MudText>
+<div class="@GetShellCssClass()">
+<MudPaper Class="pa-4" Outlined="true" Style="@GetShellPaperStyle()">
+    <MudStack Class="runtime-workflow-shell-stack" Spacing="2">
+        <div class="runtime-workflow-header">
+            <div>
+                <MudText Typo="Typo.h6">Workflow Graph</MudText>
+                <MudText Typo="Typo.caption" Class="mud-text-secondary">
+                    Runtime step graph with live execution state and per-element details.
+                </MudText>
+            </div>
         </div>
 
         @if (!Graph.HasContent)
@@ -59,6 +62,15 @@
                                    OnClick="ResetViewportAsync">
                             100%
                         </MudButton>
+                        <MudTooltip Text="@(_isFullscreen ? "Exit full screen" : "Full screen")">
+                            <MudIconButton Icon="@(_isFullscreen ? Icons.Material.Filled.FullscreenExit : Icons.Material.Filled.Fullscreen)"
+                                           Class="runtime-workflow-toolbar-button"
+                                           Size="Size.Small"
+                                           Variant="Variant.Filled"
+                                           Color="Color.Default"
+                                           OnClick="ToggleFullscreenAsync"
+                                           aria-label="@(_isFullscreen ? "Exit full screen" : "Full screen")" />
+                        </MudTooltip>
                     </div>
 
                     <div @ref="_viewportElement"
@@ -134,7 +146,7 @@
                                     </MudText>
                                 </div>
 
-                                @if (!string.IsNullOrWhiteSpace(SelectedNode.Summary))
+                                @if (!string.IsNullOrWhiteSpace(SelectedNode.Summary) && !ShouldRenderUserFacingAnswerBeforeSummary(SelectedNode))
                                 {
                                     <MudText Typo="Typo.subtitle2">Summary</MudText>
                                     <PlanningValueDisplay Text="@SelectedNode.Summary" AutoDetectMarkdown="false" />
@@ -278,8 +290,27 @@
                                     }
                                     else if (SelectedNode.FinalResult.Ok)
                                     {
-                                        <MudText Typo="Typo.subtitle2">Final Result</MudText>
-                                        <PlanningValueDisplay Json="@SelectedNode.FinalResult.Data" />
+                                        @if (TryExtractUserFacingAnswer(SelectedNode.FinalResult.Data, out var userFacingAnswer))
+                                        {
+                                            <MudText Typo="Typo.subtitle2">User-Facing Answer</MudText>
+                                            <PlanningValueDisplay Text="@userFacingAnswer"
+                                                                 AutoDetectMarkdown="true"
+                                                                 InitiallyExpanded="true" />
+
+                                            @if (!string.IsNullOrWhiteSpace(SelectedNode.Summary))
+                                            {
+                                                <MudText Typo="Typo.subtitle2">Summary</MudText>
+                                                <PlanningValueDisplay Text="@SelectedNode.Summary" AutoDetectMarkdown="false" />
+                                            }
+
+                                            <MudText Typo="Typo.subtitle2">Structured Result</MudText>
+                                            <PlanningValueDisplay Json="@SelectedNode.FinalResult.Data" AutoDetectMarkdown="false" />
+                                        }
+                                        else
+                                        {
+                                            <MudText Typo="Typo.subtitle2">Final Result</MudText>
+                                            <PlanningValueDisplay Json="@SelectedNode.FinalResult.Data" />
+                                        }
                                     }
                                     else
                                     {
@@ -335,6 +366,7 @@
         }
     </MudStack>
 </MudPaper>
+</div>
 
 @code {
     private const double ZoomMin = 0.1d;
@@ -367,6 +399,7 @@
     private bool _fitPending;
     private bool _isPanning;
     private bool _jsRegistrationInFlight;
+    private bool _isFullscreen;
 
     [Parameter] public RuntimePlan? Plan { get; set; }
     [Parameter] public IReadOnlyList<PlanRunEvent> Events { get; set; } = [];
@@ -396,6 +429,22 @@
         SelectedLink is null
             ? null
             : Graph.Nodes.FirstOrDefault(node => string.Equals(node.Id, SelectedLink.TargetId, StringComparison.Ordinal));
+
+    private string GetShellCssClass()
+    {
+        var css = "runtime-workflow-shell";
+        if (_isFullscreen)
+        {
+            css += " runtime-workflow-shell-fullscreen";
+        }
+
+        return css;
+    }
+
+    private string GetShellPaperStyle() =>
+        _isFullscreen
+            ? "height:100%;overflow:hidden;"
+            : string.Empty;
 
     protected override void OnParametersSet()
     {
@@ -575,6 +624,17 @@
     {
         _fitPending = false;
         await FitToViewportAsync();
+    }
+
+    private async Task ToggleFullscreenAsync()
+    {
+        _isFullscreen = !_isFullscreen;
+        if (Graph.HasContent)
+        {
+            _fitPending = true;
+        }
+
+        await InvokeAsync(StateHasChanged);
     }
 
     private async Task ResetViewportAsync()
@@ -815,6 +875,13 @@
 
     private static string SerializeIndented<T>(T value) =>
         PlanningJson.SerializeIndented(value);
+
+    private static bool TryExtractUserFacingAnswer(JsonElement? data, out string markdown) =>
+        PlanningFinalResultPresentation.TryExtractUserFacingAnswer(data, out markdown);
+
+    private static bool ShouldRenderUserFacingAnswerBeforeSummary(RuntimeWorkflowNodeDescriptor node) =>
+        node.Kind == RuntimeWorkflowNodeKind.Result
+        && PlanningFinalResultPresentation.TryExtractUserFacingAnswer(node.FinalResult?.Data, out _);
 
     private void PruneNodeLayouts()
     {

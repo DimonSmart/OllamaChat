@@ -457,11 +457,24 @@ public sealed class RuntimePlanExecutor : IRuntimePlanExecutor
         if (string.Equals(step.Out?.Format, RuntimeOutputFormats.String, StringComparison.OrdinalIgnoreCase))
         {
             sb.AppendLine("When ok=true, data must be a JSON string.");
+            if (step.IsResult)
+            {
+                sb.AppendLine("This is the terminal user-facing result step, so that string should be the final answer ready for the user and may use markdown.");
+            }
         }
         else if (step.Outputs.Count == 1)
         {
             var output = step.Outputs[0];
-            sb.AppendLine($"When ok=true, data should be a JSON value suitable for output port '{output.Name}' with semantic type '{output.SemanticType}'.");
+            if (step.IsResult)
+            {
+                sb.AppendLine("This is the terminal user-facing result step.");
+                sb.AppendLine("When ok=true, data must be a JSON object that includes a 'userFacingAnswer' string containing the final answer rendered as markdown.");
+                sb.AppendLine("You may add sibling fields with machine-readable structure, but do not wrap the answer again under a property named after the output port.");
+            }
+            else
+            {
+                sb.AppendLine($"When ok=true, data should be a JSON value suitable for output port '{output.Name}' with semantic type '{output.SemanticType}'.");
+            }
         }
         else
         {
@@ -491,10 +504,34 @@ public sealed class RuntimePlanExecutor : IRuntimePlanExecutor
 
         Required outputs:
         {{PlanningNodeJson.SerializeIndented(step.Outputs)}}
+        {{BuildResultStepPromptSection(step)}}
 
         Inputs:
         {{inputs.ToJsonString(PlanningNodeJson.SerializerOptions)}}
         """;
+
+    private static string BuildResultStepPromptSection(RuntimeStep step)
+    {
+        if (!step.IsResult)
+        {
+            return string.Empty;
+        }
+
+        if (string.Equals(step.Out?.Format, RuntimeOutputFormats.Json, StringComparison.OrdinalIgnoreCase))
+        {
+            return """
+            Result step rules:
+            - Put the final user-facing markdown answer into data.userFacingAnswer.
+            - Keep any additional machine-readable fields as siblings of userFacingAnswer.
+            - Do not nest the final answer under a second wrapper named after the output port.
+            """;
+        }
+
+        return """
+        Result step rules:
+        - Return the final user-facing answer directly as markdown text.
+        """;
+    }
 
     private static Dictionary<string, object?> BuildToolArguments(
         IReadOnlyDictionary<string, ResolvedInput> inputs,

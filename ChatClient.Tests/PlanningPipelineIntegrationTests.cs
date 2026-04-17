@@ -1313,7 +1313,7 @@ public sealed class PlanningPipelineIntegrationTests(ITestOutputHelper output)
                 }
             case JsonValueKind.Object:
                 {
-                    foreach (var propertyName in new[] { "markdown", "report", "answer", "content", "text", "message" })
+                    foreach (var propertyName in new[] { "userFacingAnswer", "markdown", "report", "answer", "content", "text", "message" })
                     {
                         if (!TryGetPropertyIgnoreCase(element, propertyName, out var propertyValue))
                             continue;

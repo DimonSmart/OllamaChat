@@ -77,18 +77,40 @@
 
                 @if (SelectedLink.Kind == PlanningGraphLinkKind.Result && FinalResult is not null)
                 {
-                    <MudText Typo="Typo.subtitle2">Final Outcome</MudText>
-                    <PlanningValueDisplay Text="@($"ok: {FinalResult.Ok.ToString().ToLowerInvariant()}")"
-                                         AutoDetectMarkdown="false" />
-
                     @if (FinalResult.Ok && FinalResult.Data is not null)
                     {
-                        <MudText Typo="Typo.subtitle2">Final Result</MudText>
-                        <PlanningValueDisplay Json="@FinalResult.Data"
-                                             AutoDetectMarkdown="true" />
+                        @if (TryExtractUserFacingAnswer(FinalResult.Data, out var userFacingAnswer))
+                        {
+                            <MudText Typo="Typo.subtitle2">User-Facing Answer</MudText>
+                            <PlanningValueDisplay Text="@userFacingAnswer"
+                                                 AutoDetectMarkdown="true"
+                                                 InitiallyExpanded="true" />
+
+                            <MudText Typo="Typo.subtitle2">Final Outcome</MudText>
+                            <PlanningValueDisplay Text="@($"ok: {FinalResult.Ok.ToString().ToLowerInvariant()}")"
+                                                 AutoDetectMarkdown="false" />
+
+                            <MudText Typo="Typo.subtitle2">Structured Result</MudText>
+                            <PlanningValueDisplay Json="@FinalResult.Data"
+                                                 AutoDetectMarkdown="false" />
+                        }
+                        else
+                        {
+                            <MudText Typo="Typo.subtitle2">Final Outcome</MudText>
+                            <PlanningValueDisplay Text="@($"ok: {FinalResult.Ok.ToString().ToLowerInvariant()}")"
+                                                 AutoDetectMarkdown="false" />
+
+                            <MudText Typo="Typo.subtitle2">Final Result</MudText>
+                            <PlanningValueDisplay Json="@FinalResult.Data"
+                                                 AutoDetectMarkdown="true" />
+                        }
                     }
                     else if (!FinalResult.Ok && FinalResult.Error is not null)
                     {
+                        <MudText Typo="Typo.subtitle2">Final Outcome</MudText>
+                        <PlanningValueDisplay Text="@($"ok: {FinalResult.Ok.ToString().ToLowerInvariant()}")"
+                                             AutoDetectMarkdown="false" />
+
                         <MudText Typo="Typo.subtitle2">Final Error</MudText>
                         <PlanningValueDisplay Text="@SerializeJson(FinalResult.Error)"
                                              AutoDetectMarkdown="false" />
@@ -300,26 +322,52 @@ else if (SelectedVirtualNode is not null)
             }
             else if (SelectedVirtualNode.FinalResult is not null)
             {
-                @if (!string.IsNullOrWhiteSpace(SelectedVirtualNode.Summary))
+                @if (!string.IsNullOrWhiteSpace(SelectedVirtualNode.Summary) && !ShouldRenderUserFacingAnswerBeforeSummary(SelectedVirtualNode))
                 {
                     <MudText Typo="Typo.subtitle2">Summary</MudText>
                     <PlanningValueDisplay Text="@SelectedVirtualNode.Summary" AutoDetectMarkdown="false" />
                 }
 
-                <MudText Typo="Typo.subtitle2">Outcome</MudText>
-                <PlanningValueDisplay Text="@($"ok: {SelectedVirtualNode.FinalResult.Ok.ToString().ToLowerInvariant()}")" AutoDetectMarkdown="false" />
-
                 @if (SelectedVirtualNode.FinalResult.Ok)
                 {
                     @if (SelectedVirtualNode.FinalResult.Data is not null)
                     {
-                        <MudText Typo="Typo.subtitle2">Result</MudText>
-                        <PlanningValueDisplay Json="@SelectedVirtualNode.FinalResult.Data"
-                                             AutoDetectMarkdown="true" />
+                        @if (TryExtractUserFacingAnswer(SelectedVirtualNode.FinalResult.Data, out var userFacingAnswer))
+                        {
+                            <MudText Typo="Typo.subtitle2">User-Facing Answer</MudText>
+                            <PlanningValueDisplay Text="@userFacingAnswer"
+                                                 AutoDetectMarkdown="true"
+                                                 InitiallyExpanded="true" />
+
+                            @if (!string.IsNullOrWhiteSpace(SelectedVirtualNode.Summary))
+                            {
+                                <MudText Typo="Typo.subtitle2">Summary</MudText>
+                                <PlanningValueDisplay Text="@SelectedVirtualNode.Summary" AutoDetectMarkdown="false" />
+                            }
+
+                            <MudText Typo="Typo.subtitle2">Outcome</MudText>
+                            <PlanningValueDisplay Text="@($"ok: {SelectedVirtualNode.FinalResult.Ok.ToString().ToLowerInvariant()}")" AutoDetectMarkdown="false" />
+
+                            <MudText Typo="Typo.subtitle2">Structured Result</MudText>
+                            <PlanningValueDisplay Json="@SelectedVirtualNode.FinalResult.Data"
+                                                 AutoDetectMarkdown="false" />
+                        }
+                        else
+                        {
+                            <MudText Typo="Typo.subtitle2">Outcome</MudText>
+                            <PlanningValueDisplay Text="@($"ok: {SelectedVirtualNode.FinalResult.Ok.ToString().ToLowerInvariant()}")" AutoDetectMarkdown="false" />
+
+                            <MudText Typo="Typo.subtitle2">Result</MudText>
+                            <PlanningValueDisplay Json="@SelectedVirtualNode.FinalResult.Data"
+                                                 AutoDetectMarkdown="true" />
+                        }
                     }
                 }
                 else if (SelectedVirtualNode.FinalResult.Error is not null)
                 {
+                    <MudText Typo="Typo.subtitle2">Outcome</MudText>
+                    <PlanningValueDisplay Text="@($"ok: {SelectedVirtualNode.FinalResult.Ok.ToString().ToLowerInvariant()}")" AutoDetectMarkdown="false" />
+
                     @if (!string.IsNullOrWhiteSpace(SelectedVirtualNode.FinalResult.Error.Code))
                     {
                         <MudText Typo="Typo.subtitle2">Error Code</MudText>
@@ -726,4 +774,11 @@ else
 
     private static string SerializeJson<T>(T value) =>
         PlanningJson.SerializeIndented(value);
+
+    private static bool TryExtractUserFacingAnswer(JsonElement? data, out string markdown) =>
+        PlanningFinalResultPresentation.TryExtractUserFacingAnswer(data, out markdown);
+
+    private static bool ShouldRenderUserFacingAnswerBeforeSummary(PlanningVirtualNodeDescriptor node) =>
+        node.Kind == PlanningVirtualNodeKind.Result
+        && PlanningFinalResultPresentation.TryExtractUserFacingAnswer(node.FinalResult?.Data, out _);
 }

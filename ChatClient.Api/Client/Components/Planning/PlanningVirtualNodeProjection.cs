@@ -294,51 +294,12 @@ public static class PlanningVirtualNodeProjection
             return Shorten(result.Error?.Message ?? result.Error?.Code ?? "Planning failed.", 96);
         }
 
-        if (TryExtractSummary(result.Data, out var summary))
+        if (PlanningFinalResultPresentation.TryExtractSummary(result.Data, out var summary))
         {
             return Shorten(summary, 96);
         }
 
         return "Final result is available.";
-    }
-
-    private static bool TryExtractSummary(JsonElement? data, out string summary)
-    {
-        summary = string.Empty;
-        if (data is not { } value || value.ValueKind is JsonValueKind.Undefined or JsonValueKind.Null)
-        {
-            return false;
-        }
-
-        switch (value.ValueKind)
-        {
-            case JsonValueKind.String:
-                summary = value.GetString() ?? string.Empty;
-                return !string.IsNullOrWhiteSpace(summary);
-
-            case JsonValueKind.Object:
-                foreach (var fieldName in new[] { "summary", "answer", "result", "message", "text", "content" })
-                {
-                    if (value.TryGetProperty(fieldName, out var property) &&
-                        property.ValueKind == JsonValueKind.String &&
-                        !string.IsNullOrWhiteSpace(property.GetString()))
-                    {
-                        summary = property.GetString()!;
-                        return true;
-                    }
-                }
-
-                summary = "Structured JSON result.";
-                return true;
-
-            case JsonValueKind.Array:
-                summary = $"items: {value.GetArrayLength()}";
-                return true;
-
-            default:
-                summary = value.GetRawText();
-                return true;
-        }
     }
 
     private static ResultEnvelope<JsonElement?> CloneEnvelope(ResultEnvelope<JsonElement?> result) =>

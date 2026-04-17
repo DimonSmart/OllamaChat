@@ -817,51 +817,12 @@ public static class RuntimeWorkflowGraphProjection
             return Shorten(finalResult.Error?.Message ?? finalResult.Error?.Code ?? "Planning failed.", 140);
         }
 
-        if (TryExtractSummary(finalResult.Data, out var summary))
+        if (PlanningFinalResultPresentation.TryExtractSummary(finalResult.Data, out var summary))
         {
             return Shorten(summary, 140);
         }
 
         return "Final result is available.";
-    }
-
-    private static bool TryExtractSummary(JsonElement? data, out string summary)
-    {
-        summary = string.Empty;
-        if (data is not { } value || value.ValueKind is JsonValueKind.Null or JsonValueKind.Undefined)
-        {
-            return false;
-        }
-
-        switch (value.ValueKind)
-        {
-            case JsonValueKind.String:
-                summary = value.GetString() ?? string.Empty;
-                return !string.IsNullOrWhiteSpace(summary);
-
-            case JsonValueKind.Object:
-                foreach (var fieldName in new[] { "summary", "answer", "result", "message", "text", "content" })
-                {
-                    if (!value.TryGetProperty(fieldName, out var property))
-                    {
-                        continue;
-                    }
-
-                    if (property.ValueKind == JsonValueKind.String)
-                    {
-                        summary = property.GetString() ?? string.Empty;
-                        if (!string.IsNullOrWhiteSpace(summary))
-                        {
-                            return true;
-                        }
-                    }
-                }
-
-                return false;
-
-            default:
-                return false;
-        }
     }
 
     private static string ResolveRequestBriefStatus(RuntimeWorkflowArtifactContext context)

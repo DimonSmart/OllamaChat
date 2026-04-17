@@ -84,6 +84,24 @@ public class PlanningVirtualNodeProjectionTests
     }
 
     [Fact]
+    public void Build_ResultNodeSummary_PrefersUserFacingAnswer()
+    {
+        var nodes = PlanningVirtualNodeProjection.Build(
+            CreatePlan(),
+            [],
+            [],
+            ResultEnvelope<JsonElement?>.Success(
+                JsonSerializer.SerializeToElement(new
+                {
+                    userFacingAnswer = "# Final answer\n\nRendered for the user.",
+                    summary = "Fallback summary"
+                })));
+
+        var resultNode = Assert.Single(nodes, node => node.Kind == PlanningVirtualNodeKind.Result);
+        Assert.Contains("Final answer", resultNode.Summary, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void Build_IncludesRequestAnalysisNode_WhenAnalysisCompleted()
     {
         var plan = CreatePlan();
@@ -131,7 +149,6 @@ public class PlanningVirtualNodeProjectionTests
             ]
         };
 }
-
 
 
 
