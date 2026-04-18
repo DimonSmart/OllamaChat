@@ -35,13 +35,15 @@ public sealed class RuntimePlanExecutor : IRuntimePlanExecutor
     private readonly IExecutionLogger _log;
     private readonly IPlanRunObserver _observer;
     private readonly IMcpUserInteractionService? _mcpUserInteractionService;
+    private readonly RuntimeLlmPromptingOptions _runtimeLlmPromptingOptions;
 
     public RuntimePlanExecutor(
         IPlanningLlmClient llmClient,
         IReadOnlyCollection<AppToolDescriptor> tools,
         IExecutionLogger? executionLogger = null,
         IPlanRunObserver? planRunObserver = null,
-        IMcpUserInteractionService? mcpUserInteractionService = null)
+        IMcpUserInteractionService? mcpUserInteractionService = null,
+        RuntimeLlmPromptingOptions? runtimeLlmPromptingOptions = null)
     {
         ArgumentNullException.ThrowIfNull(llmClient);
         ArgumentNullException.ThrowIfNull(tools);
@@ -51,6 +53,7 @@ public sealed class RuntimePlanExecutor : IRuntimePlanExecutor
         _log = executionLogger ?? NullExecutionLogger.Instance;
         _observer = planRunObserver ?? NullPlanRunObserver.Instance;
         _mcpUserInteractionService = mcpUserInteractionService;
+        _runtimeLlmPromptingOptions = (runtimeLlmPromptingOptions ?? new RuntimeLlmPromptingOptions()).CloneNormalized();
     }
 
     public async Task<RuntimeExecutionResult> ExecuteAsync(
@@ -59,6 +62,7 @@ public sealed class RuntimePlanExecutor : IRuntimePlanExecutor
     {
         ArgumentNullException.ThrowIfNull(plan);
 
+        var stepsById = plan.Steps.ToDictionary(step => step.Id, StringComparer.OrdinalIgnoreCase);
         var stepOutputs = new Dictionary<string, JsonObject>(StringComparer.OrdinalIgnoreCase);
         var issues = new List<PlanningIssue>();
 
@@ -93,7 +97,7 @@ public sealed class RuntimePlanExecutor : IRuntimePlanExecutor
                 if (string.Equals(step.Kind, LowLevelStepKinds.Tool, StringComparison.OrdinalIgnoreCase))
                     normalizedOutput = await ExecuteToolStepAsync(step, resolvedInputs, issues, cancellationToken);
                 else
-                    normalizedOutput = await ExecuteLlmStepAsync(step, resolvedInputs, stepOutputs, issues, cancellationToken);
+                    normalizedOutput = await ExecuteLlmStepAsync(step, resolvedInputs, stepOutputs, stepsById, issues, cancellationToken);
             }
             catch (Exception ex)
             {
@@ -143,17 +147,17 @@ public sealed class RuntimePlanExecutor : IRuntimePlanExecutor
         };
     }
 
-    private Dictionary<string, ResolvedInput> ResolveInputs(
+    private Dictionary<string, ResolvedRuntimeInput> ResolveInputs(
         RuntimeStep step,
         IReadOnlyDictionary<string, JsonObject> stepOutputs,
         List<PlanningIssue> issues)
     {
-        var result = new Dictionary<string, ResolvedInput>(StringComparer.OrdinalIgnoreCase);
+        var result = new Dictionary<string, ResolvedRuntimeInput>(StringComparer.OrdinalIgnoreCase);
         foreach (var input in step.In)
         {
             if (string.Equals(input.Value.Kind, RuntimeInputValueKinds.Literal, StringComparison.OrdinalIgnoreCase))
             {
-                result[input.Key] = new ResolvedInput(
+                result[input.Key] = new ResolvedRuntimeInput(
                     PlanningNodeJson.CloneNode(input.Value.Literal),
                     LowLevelInputModes.Value,
                     null,
@@ -173,7 +177,7 @@ public sealed class RuntimePlanExecutor : IRuntimePlanExecutor
                 continue;
             }
 
-            result[input.Key] = new ResolvedInput(
+            result[input.Key] = new ResolvedRuntimeInput(
                 sourceValue.DeepClone(),
                 input.Value.Mode ?? LowLevelInputModes.Value,
                 sourceStepId,
@@ -185,7 +189,7 @@ public sealed class RuntimePlanExecutor : IRuntimePlanExecutor
 
     private async Task<JsonObject> ExecuteToolStepAsync(
         RuntimeStep step,
-        IReadOnlyDictionary<string, ResolvedInput> resolvedInputs,
+        IReadOnlyDictionary<string, ResolvedRuntimeInput> resolvedInputs,
         List<PlanningIssue> issues,
         CancellationToken cancellationToken)
     {
@@ -313,8 +317,9 @@ public sealed class RuntimePlanExecutor : IRuntimePlanExecutor
 
     private async Task<JsonObject> ExecuteLlmStepAsync(
         RuntimeStep step,
-        IReadOnlyDictionary<string, ResolvedInput> resolvedInputs,
+        IReadOnlyDictionary<string, ResolvedRuntimeInput> resolvedInputs,
         IReadOnlyDictionary<string, JsonObject> stepOutputs,
+        IReadOnlyDictionary<string, RuntimeStep> stepsById,
         List<PlanningIssue> issues,
         CancellationToken cancellationToken)
     {
@@ -339,7 +344,14 @@ public sealed class RuntimePlanExecutor : IRuntimePlanExecutor
             foreach (var item in mappedItems)
             {
                 var perItemInputs = BuildLlmInputs(resolvedInputs, stepOutputs, mappedInputs[0].Key, item?.DeepClone());
-                var result = await ExecuteSingleLlmCallAsync(step, perItemInputs, issues, cancellationToken, suppressIssues: true);
+                var result = await ExecuteSingleLlmCallAsync(
+                    step,
+                    perItemInputs,
+                    resolvedInputs,
+                    stepsById,
+                    issues,
+                    cancellationToken,
+                    suppressIssues: true);
                 if (result is not null)
                     rawResults.Add(result);
             }
@@ -355,7 +367,13 @@ public sealed class RuntimePlanExecutor : IRuntimePlanExecutor
 
         var inputsJson = BuildLlmInputs(resolvedInputs, stepOutputs, null, null);
         var llmIssueStartIndex = issues.Count;
-        var dataNode = await ExecuteSingleLlmCallAsync(step, inputsJson, issues, cancellationToken);
+        var dataNode = await ExecuteSingleLlmCallAsync(
+            step,
+            inputsJson,
+            resolvedInputs,
+            stepsById,
+            issues,
+            cancellationToken);
         if (dataNode is null || TryGetBlockingIssueSince(issues, llmIssueStartIndex, out _))
             return new JsonObject();
 
@@ -380,44 +398,91 @@ public sealed class RuntimePlanExecutor : IRuntimePlanExecutor
     private async Task<JsonNode?> ExecuteSingleLlmCallAsync(
         RuntimeStep step,
         JsonObject inputsJson,
+        IReadOnlyDictionary<string, ResolvedRuntimeInput> resolvedInputs,
+        IReadOnlyDictionary<string, RuntimeStep> stepsById,
         List<PlanningIssue> issues,
         CancellationToken cancellationToken,
         bool suppressIssues = false)
     {
-        ResultEnvelope<JsonElement?> envelope;
-        var userPrompt = BuildLlmUserPrompt(step, inputsJson);
         var systemPrompt = BuildLlmSystemPrompt(step);
-
-        try
+        for (var attempt = 0; attempt < 2; attempt++)
         {
-            _observer.OnEvent(new AgentPromptPreparedEvent(
-                step.Id,
-                $"runtime_{step.Id}",
-                systemPrompt,
-                userPrompt,
-                userPrompt,
-                PlanningNodeJson.ToElement(inputsJson)));
-            envelope = await _llmClient.GenerateEnvelopeAsync(
-                $"runtime_{step.Id}",
-                systemPrompt,
-                userPrompt,
-                cancellationToken);
-        }
-        catch (Exception ex)
-        {
-            if (!suppressIssues)
-                issues.Add(CreateIssue("llm_call_exception", $"Runtime step '{step.Id}' failed: {ex.Message}"));
+            var retryAttempt = attempt > 0;
+            var promptPreparation = RuntimeLlmPromptInputLimiter.Prepare(
+                inputsJson,
+                resolvedInputs,
+                stepsById,
+                _toolsById,
+                _runtimeLlmPromptingOptions,
+                retryAttempt);
+            var userPrompt = BuildLlmUserPrompt(step, promptPreparation.PreparedInputs);
+            var metadata = new RuntimeLlmPromptCallMetadata(
+                systemPrompt.Length + userPrompt.Length,
+                promptPreparation.TruncationAttempted,
+                retryAttempt,
+                promptPreparation.TruncatedValueCount,
+                promptPreparation.TruncatedInputNames);
 
-            _observer.OnEvent(new AgentResponseReceivedEvent(
-                step.Id,
-                $"runtime_{step.Id}",
-                string.Empty,
-                false,
-                null,
-                new ErrorInfo("llm_call_exception", ex.Message)));
-            return null;
+            if (_runtimeLlmPromptingOptions.Enabled
+                && promptPreparation.InputsChars > _runtimeLlmPromptingOptions.SoftPromptChars)
+            {
+                if (!retryAttempt && promptPreparation.CanRetryWithMoreAggressiveTruncation)
+                    continue;
+
+                return HandleLlmEnvelope(step, RuntimeLlmPromptOverflow.CreateFailure(metadata), issues, suppressIssues);
+            }
+
+            ResultEnvelope<JsonElement?> envelope;
+            try
+            {
+                _observer.OnEvent(new AgentPromptPreparedEvent(
+                    step.Id,
+                    $"runtime_{step.Id}",
+                    systemPrompt,
+                    userPrompt,
+                    userPrompt,
+                    PlanningNodeJson.ToElement(promptPreparation.PreparedInputs)));
+                using var scope = RuntimeLlmPromptScope.Push(metadata);
+                envelope = await _llmClient.GenerateEnvelopeAsync(
+                    $"runtime_{step.Id}",
+                    systemPrompt,
+                    userPrompt,
+                    cancellationToken);
+            }
+            catch (Exception ex)
+            {
+                if (!suppressIssues)
+                    issues.Add(CreateIssue("llm_call_exception", $"Runtime step '{step.Id}' failed: {ex.Message}"));
+
+                _observer.OnEvent(new AgentResponseReceivedEvent(
+                    step.Id,
+                    $"runtime_{step.Id}",
+                    string.Empty,
+                    false,
+                    null,
+                    new ErrorInfo("llm_call_exception", ex.Message)));
+                return null;
+            }
+
+            if (!retryAttempt
+                && promptPreparation.CanRetryWithMoreAggressiveTruncation
+                && RuntimeLlmPromptOverflow.IsOverflow(envelope))
+            {
+                continue;
+            }
+
+            return HandleLlmEnvelope(step, envelope, issues, suppressIssues);
         }
 
+        return null;
+    }
+
+    private JsonNode? HandleLlmEnvelope(
+        RuntimeStep step,
+        ResultEnvelope<JsonElement?> envelope,
+        List<PlanningIssue> issues,
+        bool suppressIssues)
+    {
         _observer.OnEvent(new AgentResponseReceivedEvent(
             step.Id,
             $"runtime_{step.Id}",
@@ -439,10 +504,9 @@ public sealed class RuntimePlanExecutor : IRuntimePlanExecutor
             return null;
         }
 
-        var dataNode = envelope.Data is JsonElement element
+        return envelope.Data is JsonElement element
             ? PlanningNodeJson.ToNode(element)
             : null;
-        return dataNode;
     }
 
     private static string BuildLlmSystemPrompt(RuntimeStep step)
@@ -534,7 +598,7 @@ public sealed class RuntimePlanExecutor : IRuntimePlanExecutor
     }
 
     private static Dictionary<string, object?> BuildToolArguments(
-        IReadOnlyDictionary<string, ResolvedInput> inputs,
+        IReadOnlyDictionary<string, ResolvedRuntimeInput> inputs,
         string? mappedInputName,
         JsonNode? mappedItem)
     {
@@ -551,7 +615,7 @@ public sealed class RuntimePlanExecutor : IRuntimePlanExecutor
     }
 
     private static JsonObject BuildLlmInputs(
-        IReadOnlyDictionary<string, ResolvedInput> inputs,
+        IReadOnlyDictionary<string, ResolvedRuntimeInput> inputs,
         IReadOnlyDictionary<string, JsonObject> stepOutputs,
         string? mappedInputName,
         JsonNode? mappedItem)
@@ -841,7 +905,7 @@ public sealed class RuntimePlanExecutor : IRuntimePlanExecutor
     }
 
     private static JsonObject BuildLlmInputDiagnostics(
-        IReadOnlyDictionary<string, ResolvedInput> inputs,
+        IReadOnlyDictionary<string, ResolvedRuntimeInput> inputs,
         IReadOnlyDictionary<string, JsonObject> stepOutputs)
     {
         var diagnostics = new JsonObject();
@@ -945,10 +1009,4 @@ public sealed class RuntimePlanExecutor : IRuntimePlanExecutor
         JsonElement Input,
         JsonNode? Output,
         ErrorInfo? Error);
-
-    private sealed record ResolvedInput(
-        JsonNode? Value,
-        string Mode,
-        string? SourceStepId,
-        string? SourcePort);
 }

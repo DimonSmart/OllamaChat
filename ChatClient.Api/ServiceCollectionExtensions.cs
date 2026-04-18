@@ -4,6 +4,7 @@ using ChatClient.Api.AgentWorkflows.Runtime;
 using ChatClient.Api.Client.Services;
 using ChatClient.Api.Client.Services.Agentic;
 using ChatClient.Api.PlanningRuntime.Host;
+using ChatClient.Api.PlanningRuntime.Runtime;
 using ChatClient.Api.Services;
 using ChatClient.Api.Services.BuiltIn;
 using ChatClient.Api.Services.Rag;
@@ -71,6 +72,20 @@ public static class ServiceCollectionExtensions
         services.AddScoped<OllamaServerAvailabilityService>();
         services.AddOptions<VoiceInputOptions>()
             .BindConfiguration(VoiceInputOptions.SectionName);
+        services.AddOptions<RuntimeLlmPromptingOptions>()
+            .BindConfiguration(RuntimeLlmPromptingOptions.SectionName)
+            .PostConfigure(static options =>
+            {
+                var normalized = options.CloneNormalized();
+                options.Enabled = normalized.Enabled;
+                options.SoftPromptChars = normalized.SoftPromptChars;
+                options.NormalContentChars = normalized.NormalContentChars;
+                options.NormalHeadChars = normalized.NormalHeadChars;
+                options.NormalTailChars = normalized.NormalTailChars;
+                options.RetryContentChars = normalized.RetryContentChars;
+                options.RetryHeadChars = normalized.RetryHeadChars;
+                options.RetryTailChars = normalized.RetryTailChars;
+            });
         services.AddSingleton<IVoiceInputService, VoiceInputService>();
 
         return services;

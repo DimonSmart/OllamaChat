@@ -8,6 +8,7 @@ using ChatClient.Api.PlanningRuntime.Shared;
 using ChatClient.Api.Services;
 using ChatClient.Domain.Models;
 using Microsoft.Extensions.AI;
+using Microsoft.Extensions.Options;
 using System.Text.Json;
 
 namespace ChatClient.Api.PlanningRuntime.Host;
@@ -21,9 +22,11 @@ public interface IPlanningRunExecutor
 
 public sealed class PlanningRunExecutor(
     ILlmChatClientFactory chatClientFactory,
-    IMcpUserInteractionService mcpUserInteractionService) : IPlanningRunExecutor
+    IMcpUserInteractionService mcpUserInteractionService,
+    IOptions<RuntimeLlmPromptingOptions> runtimeLlmPromptingOptions) : IPlanningRunExecutor
 {
     private static readonly TimeSpan PlannerStageTimeout = TimeSpan.FromMinutes(2);
+    private readonly RuntimeLlmPromptingOptions _runtimeLlmPromptingOptions = runtimeLlmPromptingOptions.Value.CloneNormalized();
 
     public async Task<ResultEnvelope<JsonElement?>> ExecuteAsync(
         PlanningRunExecutionRequest request,
@@ -91,7 +94,8 @@ public sealed class PlanningRunExecutor(
                 request.EnabledTools,
                 loggerSink,
                 observer,
-                mcpUserInteractionService);
+                mcpUserInteractionService,
+                _runtimeLlmPromptingOptions);
             var execution = await runtimeExecutor.ExecuteAsync(compileResult.Plan, cancellationToken);
             observer.OnEvent(new RuntimeExecutionCompletedEvent(execution.Issues, execution.Succeeded));
             foreach (var issue in execution.Issues)
