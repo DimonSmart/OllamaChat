@@ -90,7 +90,7 @@
                     }
                 }
 
-                <MudChatBubble>
+                <MudChatBubble Class="@(message.Role == AppChatRole.User ? "chat-user-bubble" : null)">
                     @if (ShouldShowSpeakerLabel(message))
                     {
                         <MudText Typo="Typo.caption" Class="chat-speaker-label">

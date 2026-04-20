@@ -193,6 +193,10 @@
     color: var(--mud-palette-primary);
 }
 
+.chat-user-bubble {
+    text-align: left;
+}
+
 @keyframes blink {
     0%, 50% {
         opacity: 1;
