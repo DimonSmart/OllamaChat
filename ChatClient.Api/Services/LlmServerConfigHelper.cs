@@ -69,15 +69,27 @@ public static class LlmServerConfigHelper
         return string.Empty;
     }
 
+    public static bool UsesOpenAiCompatibleApi(LlmServerConfig server)
+    {
+        ArgumentNullException.ThrowIfNull(server);
+        return server.ServerType is ServerType.ChatGpt or ServerType.Azure;
+    }
+
+    public static bool IsAzureOpenAiServer(LlmServerConfig server)
+    {
+        ArgumentNullException.ThrowIfNull(server);
+        return server.ServerType == ServerType.Azure;
+    }
+
     public static string GetNormalizedOpenAiBaseUrl(LlmServerConfig server, string? defaultBaseUrl = null)
     {
         var baseUrl = string.IsNullOrWhiteSpace(server.BaseUrl)
             ? defaultBaseUrl ?? LlmServerConfig.DefaultOpenAiUrl
             : server.BaseUrl.Trim();
 
-        if (server.ServerType != ServerType.ChatGpt ||
+        if (server.ServerType != ServerType.Azure ||
             !Uri.TryCreate(baseUrl, UriKind.Absolute, out var uri) ||
-            !uri.Host.EndsWith(".openai.azure.com", StringComparison.OrdinalIgnoreCase))
+            !IsAzureOpenAiHost(uri.Host))
         {
             return baseUrl.TrimEnd('/');
         }
@@ -92,6 +104,24 @@ public static class LlmServerConfigHelper
             return $"{authority}/openai/v1";
 
         return $"{authority}{path}";
+    }
+
+    public static IReadOnlyList<string> GetConfiguredAzureDeploymentNames(LlmServerConfig server)
+    {
+        ArgumentNullException.ThrowIfNull(server);
+        return ParseConfiguredNames(server.AzureDeploymentNamesText);
+    }
+
+    public static IReadOnlyList<string> ParseConfiguredNames(string? rawText)
+    {
+        if (string.IsNullOrWhiteSpace(rawText))
+            return [];
+
+        return rawText
+            .Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Where(static value => !string.IsNullOrWhiteSpace(value))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
     }
 
     public static HttpClient CreateHttpClient(
@@ -190,5 +220,11 @@ public static class LlmServerConfigHelper
             yield return $"LlmServers:ApiKeys:{serverId}";
 
         yield return "OpenAI:ApiKey";
+    }
+
+    private static bool IsAzureOpenAiHost(string host)
+    {
+        return host.EndsWith(".openai.azure.com", StringComparison.OrdinalIgnoreCase) ||
+               host.EndsWith(".services.ai.azure.com", StringComparison.OrdinalIgnoreCase);
     }
 }

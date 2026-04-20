@@ -116,4 +116,27 @@ public class ServerConnectionTestServiceTests
         Assert.False(result.IsSuccessful);
         Assert.DoesNotContain("API Key is required", result.ErrorMessage);
     }
+
+    [Fact]
+    public async Task TestAzureConnectionAsync_ShouldFail_WhenNoDeploymentsConfigured()
+    {
+        var logger = new LoggerFactory().CreateLogger<ServerConnectionTestService>();
+        var configuration = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>()).Build();
+        var service = new ServerConnectionTestService(logger, configuration);
+
+        var server = new LlmServerConfig
+        {
+            Id = Guid.NewGuid(),
+            Name = "Test Azure",
+            ServerType = ServerType.Azure,
+            BaseUrl = "https://example.openai.azure.com/",
+            ApiKey = "key",
+            AzureDeploymentNamesText = ""
+        };
+
+        var result = await service.TestConnectionAsync(server);
+
+        Assert.False(result.IsSuccessful);
+        Assert.Contains("Configure at least one Azure deployment name", result.ErrorMessage);
+    }
 }

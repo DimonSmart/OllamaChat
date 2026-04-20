@@ -93,7 +93,7 @@ public sealed class McpSamplingService(
             messages[^1] = messages[^1] with { Role = "user" };
         }
 
-        return server.ServerType == ServerType.ChatGpt
+        return LlmServerConfigHelper.UsesOpenAiCompatibleApi(server)
             ? await CompleteOpenAiAsync(server, modelName, messages, cancellationToken)
             : await CompleteOllamaAsync(server, modelName, messages, cancellationToken);
     }
@@ -268,7 +268,7 @@ public sealed class McpSamplingService(
     {
         try
         {
-            if (server.ServerType == ServerType.ChatGpt)
+            if (LlmServerConfigHelper.UsesOpenAiCompatibleApi(server))
             {
                 var models = await openAIClientService.GetAvailableModelsAsync(serverId, cancellationToken);
                 return models.ToList();

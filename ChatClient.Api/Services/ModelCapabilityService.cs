@@ -28,6 +28,7 @@ public sealed class ModelCapabilityService(
 
         IReadOnlyCollection<string> availableModelNames = server.ServerType switch
         {
+            ServerType.Azure => LlmServerConfigHelper.GetConfiguredAzureDeploymentNames(server),
             ServerType.ChatGpt => await openAIClientService.GetAvailableModelsAsync(model.ServerId, cancellationToken),
             _ => (await ollamaService.GetModelsAsync(model.ServerId))
                 .Select(static m => m.Name)

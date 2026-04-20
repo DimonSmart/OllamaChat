@@ -41,7 +41,7 @@ public sealed class PlanningChatClientFactory(
 
     private Uri BuildEndpoint(LlmServerConfig server)
     {
-        var baseUrl = server.ServerType == ServerType.ChatGpt
+        var baseUrl = server.ServerType is ServerType.ChatGpt or ServerType.Azure
             ? LlmServerConfigHelper.GetNormalizedOpenAiBaseUrl(server, LlmServerConfig.DefaultOpenAiUrl)
             : string.IsNullOrWhiteSpace(server.BaseUrl)
                 ? LlmServerConfig.DefaultOllamaUrl

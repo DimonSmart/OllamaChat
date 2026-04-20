@@ -91,9 +91,16 @@
                 try
                 {
                     var serverId = s.Id ?? Guid.Empty;
-                    List<OllamaModel> models = s.ServerType == ServerType.ChatGpt
-                        ? (await OpenAIService.GetAvailableModelsAsync(serverId)).Select(m => new OllamaModel { Name = m }).ToList()
-                        : (await OllamaService.GetModelsAsync(serverId)).ToList();
+                    List<OllamaModel> models = s.ServerType switch
+                    {
+                        ServerType.Azure => LlmServerConfigHelper.GetConfiguredAzureDeploymentNames(s)
+                            .Select(name => new OllamaModel { Name = name })
+                            .ToList(),
+                        ServerType.ChatGpt => (await OpenAIService.GetAvailableModelsAsync(serverId))
+                            .Select(m => new OllamaModel { Name = m })
+                            .ToList(),
+                        _ => (await OllamaService.GetModelsAsync(serverId)).ToList()
+                    };
                     return new ServerModels(s, models, null);
                 }
                 catch

@@ -8,6 +8,7 @@
 <MudSelect T="ServerType" @bind-Value="Server.ServerType" Label="Server Type" Class="mt-4">
     <MudSelectItem Value="ServerType.Ollama">Ollama</MudSelectItem>
     <MudSelectItem Value="ServerType.ChatGpt">ChatGPT</MudSelectItem>
+    <MudSelectItem Value="ServerType.Azure">Azure</MudSelectItem>
 </MudSelect>
 
 <MudTextField @bind-Value="Server.BaseUrl"
@@ -17,7 +18,7 @@
               Required="@(Server.ServerType == ServerType.Ollama)"
               HelperText="@GetBaseUrlHelperText()" />
 
-@if (Server.ServerType == ServerType.ChatGpt)
+@if (Server.ServerType is ServerType.ChatGpt or ServerType.Azure)
 {
     <MudTextField @bind-Value="Server.ApiKey"
                   Label="API Key"
@@ -31,6 +32,16 @@
                   Variant="Variant.Outlined"
                   Class="mt-4"
                   HelperText="Optional secret alias. The app resolves LlmServers:ApiKeys:<name> from dotnet user-secrets." />
+}
+
+@if (Server.ServerType == ServerType.Azure)
+{
+    <MudTextField @bind-Value="Server.AzureDeploymentNamesText"
+                  Label="Deployments"
+                  Variant="Variant.Outlined"
+                  Class="mt-4"
+                  Lines="6"
+                  HelperText="One deployment name per line. These names are shown in the model picker and used in Azure chat requests." />
 }
 
 @if (Server.ServerType == ServerType.Ollama)
@@ -64,7 +75,8 @@
         return Server.ServerType switch
         {
             ServerType.Ollama => "Ollama server URL (e.g., http://localhost:11434)",
-            ServerType.ChatGpt => "OpenAI-compatible base URL. For Azure you can use the resource root URL and the app will map it to /openai/v1/.",
+            ServerType.ChatGpt => "OpenAI-compatible base URL (e.g., https://api.openai.com/v1/).",
+            ServerType.Azure => "Azure OpenAI resource URL (e.g., https://your-resource.openai.azure.com/). The app will map it to /openai/v1/.",
             _ => ""
         };
     }

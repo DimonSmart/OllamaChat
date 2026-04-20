@@ -23,10 +23,20 @@ public class OpenAIClientService(
 
         try
         {
-            var server = await LlmServerConfigHelper.GetServerConfigAsync(_llmServerConfigService, _userSettingsService, serverId, ServerType.ChatGpt);
+            var server = await LlmServerConfigHelper.GetServerConfigAsync(_llmServerConfigService, _userSettingsService, serverId);
             if (server == null)
             {
                 throw new InvalidOperationException($"No OpenAI server configuration found for serverId: {serverId}");
+            }
+
+            if (!LlmServerConfigHelper.UsesOpenAiCompatibleApi(server))
+            {
+                throw new InvalidOperationException($"Server '{server.Name}' does not use an OpenAI-compatible API.");
+            }
+
+            if (server.ServerType == ServerType.Azure)
+            {
+                return LlmServerConfigHelper.GetConfiguredAzureDeploymentNames(server);
             }
 
             var openAIClient = CreateOpenAIClient(server);
@@ -64,6 +74,18 @@ public class OpenAIClientService(
 
         try
         {
+            var server = await LlmServerConfigHelper.GetServerConfigAsync(_llmServerConfigService, _userSettingsService, serverId);
+            if (server is null || !LlmServerConfigHelper.UsesOpenAiCompatibleApi(server))
+            {
+                return false;
+            }
+
+            if (server.ServerType == ServerType.Azure)
+            {
+                await VerifyResourceReachableAsync(server, cancellationToken);
+                return LlmServerConfigHelper.GetConfiguredAzureDeploymentNames(server).Count > 0;
+            }
+
             var models = await GetAvailableModelsAsync(serverId, cancellationToken);
             return models.Count > 0;
         }
@@ -95,6 +117,13 @@ public class OpenAIClientService(
         }
 
         throw new InvalidOperationException("OpenAI API key is required but not configured");
+    }
+
+    private async Task VerifyResourceReachableAsync(LlmServerConfig server, CancellationToken cancellationToken)
+    {
+        var openAIClient = CreateOpenAIClient(server);
+        var modelClient = openAIClient.GetOpenAIModelClient();
+        await modelClient.GetModelsAsync(cancellationToken);
     }
 
 }

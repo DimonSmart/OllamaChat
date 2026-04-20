@@ -104,6 +104,7 @@ else
             case ServerType.Ollama:
                 return await ValidateOllamaServer(server, server.Id.Value);
             case ServerType.ChatGpt:
+            case ServerType.Azure:
                 return await ValidateOpenAIServer(server, server.Id.Value);
             default:
                 Logger.LogWarning("Unknown server type: {ServerType}", server.ServerType);

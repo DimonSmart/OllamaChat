@@ -132,6 +132,14 @@
                 throw new InvalidOperationException($"Server {serverId} not found.");
             }
 
+            if (server.ServerType == ServerType.Azure)
+            {
+                models = LlmServerConfigHelper.GetConfiguredAzureDeploymentNames(server)
+                    .Select(name => new OllamaModel { Name = name })
+                    .ToList();
+                return;
+            }
+
             models = server.ServerType == ServerType.ChatGpt
                 ? (await OpenAIService.GetAvailableModelsAsync(serverId)).Select(name => new OllamaModel { Name = name }).ToList()
                 : (await OllamaService.GetModelsAsync(serverId)).ToList();

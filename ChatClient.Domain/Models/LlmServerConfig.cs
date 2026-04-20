@@ -3,7 +3,8 @@ namespace ChatClient.Domain.Models;
 public enum ServerType
 {
     Ollama,
-    ChatGpt
+    ChatGpt,
+    Azure
 }
 
 public class LlmServerConfig
@@ -18,6 +19,7 @@ public class LlmServerConfig
     public string BaseUrl { get; set; } = string.Empty;
     public string? ApiKey { get; set; }
     public string? ApiKeySecretName { get; set; }
+    public string? AzureDeploymentNamesText { get; set; }
     public string? Password { get; set; }
     public bool IgnoreSslErrors { get; set; } = false;
     public int HttpTimeoutSeconds { get; set; } = 600;

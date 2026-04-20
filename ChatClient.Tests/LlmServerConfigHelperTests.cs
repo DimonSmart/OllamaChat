@@ -92,13 +92,27 @@ public class LlmServerConfigHelperTests
     {
         var server = new LlmServerConfig
         {
-            ServerType = ServerType.ChatGpt,
+            ServerType = ServerType.Azure,
             BaseUrl = "https://example-eastus2.openai.azure.com/"
         };
 
         var baseUrl = LlmServerConfigHelper.GetNormalizedOpenAiBaseUrl(server, LlmServerConfig.DefaultOpenAiUrl);
 
         Assert.Equal("https://example-eastus2.openai.azure.com/openai/v1", baseUrl);
+    }
+
+    [Fact]
+    public void GetConfiguredAzureDeploymentNames_ParsesDistinctNonEmptyLines()
+    {
+        var server = new LlmServerConfig
+        {
+            ServerType = ServerType.Azure,
+            AzureDeploymentNamesText = "gpt-5.4-mini\r\ngpt-4.1\r\n \r\ngpt-5.4-mini"
+        };
+
+        var names = LlmServerConfigHelper.GetConfiguredAzureDeploymentNames(server);
+
+        Assert.Equal(["gpt-5.4-mini", "gpt-4.1"], names);
     }
 
     private static HttpClient GetHttpClient(HttpClientPipelineTransport transport)

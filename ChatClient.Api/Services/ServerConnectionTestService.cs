@@ -16,6 +16,7 @@ public class ServerConnectionTestService(ILogger<ServerConnectionTestService> lo
             {
                 ServerType.Ollama => await TestOllamaConnectionAsync(server, cancellationToken),
                 ServerType.ChatGpt => await TestOpenAIConnectionAsync(server, cancellationToken),
+                ServerType.Azure => await TestAzureConnectionAsync(server, cancellationToken),
                 _ => ServerConnectionTestResult.Failure("Unknown server type")
             };
         }
@@ -102,6 +103,22 @@ public class ServerConnectionTestService(ILogger<ServerConnectionTestService> lo
             _logger.LogError(ex, "Unexpected error during OpenAI connection test");
             return ServerConnectionTestResult.Failure($"Connection failed: {ex.Message}");
         }
+    }
+
+    private async Task<ServerConnectionTestResult> TestAzureConnectionAsync(LlmServerConfig server, CancellationToken cancellationToken)
+    {
+        var deployments = LlmServerConfigHelper.GetConfiguredAzureDeploymentNames(server);
+        if (deployments.Count == 0)
+        {
+            return ServerConnectionTestResult.Failure("Configure at least one Azure deployment name in server settings.");
+        }
+
+        var result = await TestOpenAIConnectionAsync(server, cancellationToken);
+        if (!result.IsSuccessful)
+            return result;
+
+        return ServerConnectionTestResult.Success(
+            $"Successfully connected to Azure OpenAI resource. Configured deployments: {deployments.Count}");
     }
 
     private static string BuildOpenAIApiUrl(LlmServerConfig server)
