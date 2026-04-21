@@ -28,6 +28,7 @@ Seeded workflow source files under `ChatClient.Api/Data/workflows/*.workflow.csx
 Current seeded starters:
 
 - `philosopher-battle-group-chat`
+- `scenario-dispute-group-chat`
 - `interview-coach-fixed-handoff`
 - `research-brief-sequential`
 - `proposal-panel-concurrent`

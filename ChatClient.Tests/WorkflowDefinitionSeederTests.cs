@@ -75,7 +75,7 @@ public sealed class WorkflowDefinitionSeederTests
     }
 
     [Fact]
-    public async Task SeedAsync_RefreshesExistingSeededWorkflowWhenSeedSourceChanges()
+    public async Task SeedAsync_DoesNotOverwriteExistingSeededWorkflowWhenSeedSourceChanges()
     {
         var root = Directory.CreateDirectory(
             Path.Combine(Path.GetTempPath(), "workflow-seeder-tests", Guid.NewGuid().ToString("N")));
@@ -142,6 +142,93 @@ public sealed class WorkflowDefinitionSeederTests
                 loggerFactory.CreateLogger<WorkflowDefinitionSeeder>());
 
             await seeder.SeedAsync();
+
+            var existing = Assert.Single(
+                await repository.GetAllAsync(),
+                workflow => string.Equals(
+                    workflow.WorkflowId,
+                    "philosopher-battle-group-chat",
+                    StringComparison.OrdinalIgnoreCase));
+
+            Assert.Equal(originalId, existing.Id);
+            Assert.Equal(createdAt, existing.CreatedAt);
+            Assert.Contains("UseCustomManager(\"philosopher-debate\"", existing.SourceCode, StringComparison.Ordinal);
+            Assert.DoesNotContain("UseProgrammableManager", existing.SourceCode, StringComparison.Ordinal);
+        }
+        finally
+        {
+            root.Delete(recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task RestoreSeededAsync_RefreshesExistingSeededWorkflowWhenRequested()
+    {
+        var root = Directory.CreateDirectory(
+            Path.Combine(Path.GetTempPath(), "workflow-seeder-tests", Guid.NewGuid().ToString("N")));
+
+        try
+        {
+            var configuration = new ConfigurationBuilder()
+                .AddInMemoryCollection(new Dictionary<string, string?>
+                {
+                    ["Storage:RootPath"] = root.FullName
+                })
+                .Build();
+
+            await CreateSeedWorkflowSourcesAsync(root.FullName);
+
+            var loggerFactory = LoggerFactory.Create(static builder => builder.SetMinimumLevel(LogLevel.Debug));
+            IWorkflowDefinitionRepository repository = new WorkflowDefinitionRepository(
+                configuration,
+                loggerFactory.CreateLogger<WorkflowDefinitionRepository>());
+
+            var createdAt = DateTime.UtcNow.AddDays(-2);
+            var originalId = Guid.NewGuid();
+            await repository.SaveAllAsync(
+            [
+                new SavedWorkflowDefinition
+                {
+                    Id = originalId,
+                    Kind = WorkflowDefinitionKinds.GroupChat,
+                    WorkflowId = "philosopher-battle-group-chat",
+                    DisplayName = "Philosopher Battle Group Chat",
+                    Description = "Stale seeded workflow.",
+                    SourceCode =
+                        """
+                        var workflow = WorkflowDefinitionBuilder
+                            .New("philosopher-battle-group-chat", "Philosopher Battle Group Chat")
+                            .Agent("host", agent => agent
+                                .Role("Host")
+                                .UseDraft(
+                                    AgentTemplateBuilder
+                                        .New("Host", "host")
+                                        .WithInstructions("Open the debate.")
+                                        .Build()))
+                            .Agent("kant", agent => agent
+                                .FromSavedAgent("Immanuel Kant"))
+                            .Agent("nietzsche", agent => agent
+                                .FromSavedAgent("Friedrich Nietzsche"))
+                            .UseGroupChat(groupChat => groupChat
+                                .Participants("host", "kant", "nietzsche")
+                                .UseCustomManager("philosopher-debate", maximumIterations: 14))
+                            .Build();
+
+                        workflow
+                        """,
+                    CreatedAt = createdAt,
+                    UpdatedAt = createdAt
+                }
+            ]);
+
+            var seeder = new WorkflowDefinitionSeeder(
+                repository,
+                new WorkflowDefinitionCompiler(),
+                configuration,
+                new StubHostEnvironment(root.FullName),
+                loggerFactory.CreateLogger<WorkflowDefinitionSeeder>());
+
+            await seeder.RestoreSeededAsync();
 
             var refreshed = Assert.Single(
                 await repository.GetAllAsync(),

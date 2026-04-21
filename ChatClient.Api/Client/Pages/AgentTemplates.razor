@@ -6,9 +6,11 @@
 @using ChatClient.Domain.Models
 @using ChatClient.Application.Services
 @using ChatClient.Api.Services
+@using ChatClient.Api.Services.Seed
 @using ChatClient.Api.Client.Components
 @using Microsoft.AspNetCore.Components.Forms
 @inject IAgentTemplateService AgentService
+@inject AgentTemplateSeeder AgentTemplateSeeder
 @inject ISnackbar Snackbar
 @inject IRagFileService RagFileService
 @inject ILlmServerConfigService LlmServerConfigService
@@ -25,9 +27,19 @@
                        Color="Color.Primary"
                        StartIcon="@Icons.Material.Filled.Add"
                        OnClick="AddNewAgent"
+                       Disabled="@restoringBuiltInAgents"
                        Class="px-4"
                        Size="Size.Small">
                 Add Agent Template
+            </MudButton>
+            <MudButton Variant="Variant.Outlined"
+                       Color="Color.Warning"
+                       StartIcon="@Icons.Material.Filled.Restore"
+                       OnClick="ConfirmRestoreBuiltInAgents"
+                       Disabled="@(loading || restoringBuiltInAgents)"
+                       Class="ml-2"
+                       Size="Size.Small">
+                Restore Built-ins
             </MudButton>
             <MudSpacer />
             <MudTextField T="string"
@@ -214,6 +226,26 @@
     </DialogActions>
 </MudDialog>
 
+<MudDialog @bind-Visible="@showRestoreBuiltInAgentsDialog" Options="dialogOptions">
+    <TitleContent>
+        <MudText Typo="Typo.h6">Restore Built-in Agent Templates</MudText>
+    </TitleContent>
+    <DialogContent>
+        <MudText>
+            Restore the built-in agent templates from the shipped seed file? Custom agent templates will be kept, but edits to built-in templates will be replaced with the default content.
+        </MudText>
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="CancelRestoreBuiltInAgents" Size="Size.Medium">Cancel</MudButton>
+        <MudButton Color="Color.Warning"
+                   Disabled="@restoringBuiltInAgents"
+                   OnClick="RestoreBuiltInAgentsAsync"
+                   Size="Size.Medium">
+            Restore
+        </MudButton>
+    </DialogActions>
+</MudDialog>
+
 <MudDialog @bind-Visible="@showEditAgentDialog" Options="editDialogOptions">
     <TitleContent>
         <MudText Typo="Typo.h6">@(editingAgent?.Id == Guid.Empty ? "Create New Agent Template" : "Edit Agent Template")</MudText>
@@ -363,6 +395,8 @@
     private AgentTemplateDefinition editingAgent = new();
     private bool showDeleteDialog { get; set; }
     private bool showEditAgentDialog { get; set; }
+    private bool showRestoreBuiltInAgentsDialog { get; set; }
+    private bool restoringBuiltInAgents;
     private string searchString = string.Empty;
     private MudForm? editAgentForm;
     private MudDataGrid<AgentTemplateDefinition>? dataGrid;
@@ -609,6 +643,36 @@
     {
         agentToDelete = null;
         showDeleteDialog = false;
+    }
+
+    private void ConfirmRestoreBuiltInAgents()
+    {
+        showRestoreBuiltInAgentsDialog = true;
+    }
+
+    private void CancelRestoreBuiltInAgents()
+    {
+        showRestoreBuiltInAgentsDialog = false;
+    }
+
+    private async Task RestoreBuiltInAgentsAsync()
+    {
+        try
+        {
+            restoringBuiltInAgents = true;
+            await AgentTemplateSeeder.RestoreSeededAsync();
+            await LoadAgents();
+            showRestoreBuiltInAgentsDialog = false;
+            Snackbar.Add("Built-in agent templates restored from the shipped seed file.", Severity.Success);
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Error restoring built-in agent templates: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            restoringBuiltInAgents = false;
+        }
     }
 
     private async Task DeleteAgent()

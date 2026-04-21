@@ -38,13 +38,42 @@ public sealed class WorkflowDefinitionSeeder(
             {
                 existing.Add(workflow);
                 hasChanges = true;
+            }
+        }
+
+        if (hasChanges || existing.Count == 0)
+        {
+            await _repository.SaveAllAsync(existing);
+        }
+    }
+
+    public async Task RestoreSeededAsync()
+    {
+        var existing = (await _repository.GetAllAsync()).ToList();
+        var seeded = await LoadSeedWorkflowsAsync();
+        if (seeded.Count == 0)
+        {
+            return;
+        }
+
+        var hasChanges = false;
+
+        foreach (var workflow in seeded)
+        {
+            var existingIndex = existing.FindIndex(existingWorkflow =>
+                string.Equals(existingWorkflow.WorkflowId, workflow.WorkflowId, StringComparison.OrdinalIgnoreCase));
+
+            if (existingIndex < 0)
+            {
+                existing.Add(workflow);
+                hasChanges = true;
                 continue;
             }
 
             hasChanges = UpsertSeededWorkflow(existing[existingIndex], workflow) || hasChanges;
         }
 
-        if (hasChanges || existing.Count == 0)
+        if (hasChanges)
         {
             await _repository.SaveAllAsync(existing);
         }

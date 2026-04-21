@@ -133,6 +133,26 @@ public sealed class WorkflowDefinitionCompilerTests
     }
 
     [Fact]
+    public async Task CompileAsync_CompilesScenarioDisputeSeededWorkflow()
+    {
+        var compiler = new WorkflowDefinitionCompiler();
+        var sourceCode = await ReadSeedWorkflowSourceAsync("scenario-dispute-group-chat.workflow.csx");
+
+        var result = await compiler.CompileAsync(sourceCode);
+        var workflow = Assert.IsType<GroupChatWorkflowDefinition>(result.Workflow);
+
+        Assert.Equal(WorkflowDefinitionKinds.GroupChat, result.Kind);
+        Assert.Equal("scenario-dispute-group-chat", result.WorkflowId);
+        Assert.Equal("Scenario Dispute Group Chat", result.DisplayName);
+        Assert.Equal(GroupChatWorkflowManagerKind.Programmable, workflow.Manager.Kind);
+        Assert.Contains(workflow.StartInputs, static input => input.Key == "scenario");
+        Assert.Contains(workflow.StartInputs, static input => input.Key == "participant_a_position");
+        Assert.Contains(workflow.StartInputs, static input => input.Key == "participant_b_position");
+        Assert.Contains(workflow.StartInputs, static input => input.Key == "debate_rules");
+        Assert.Contains(workflow.ParticipantAgentIds, static agentId => agentId == "judge");
+    }
+
+    [Fact]
     public async Task CompileAsync_CompilesGroupChatWithInlineProgrammableManager()
     {
         var compiler = new WorkflowDefinitionCompiler();
