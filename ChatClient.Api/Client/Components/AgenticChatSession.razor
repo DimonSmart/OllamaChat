@@ -40,18 +40,18 @@
             <MudChat Dense="true" ChatPosition="@(message.Role == AppChatRole.Assistant ? ChatBubblePosition.Start : ChatBubblePosition.End)" @key="@($"{messageIndex}_{message.Id}")">
                 <MudChatHeader>
                     <time>@message.MsgDateTime.ToString("g")</time>
-                    <MudTooltip Text="Copy answer">
-                        <MudIconButton Icon="@Icons.Material.Filled.ContentCopy"
-                                       Size="Size.Small"
-                                       Class="chat-message-action"
-                                       OnClick="@(() => OnCopyVisibleMessage.InvokeAsync(message))" />
-                    </MudTooltip>
-                    <MudTooltip Text="Copy raw text">
-                        <MudIconButton Icon="@Icons.Material.Filled.Description"
-                                       Size="Size.Small"
-                                       Class="chat-message-action"
-                                       OnClick="@(() => OnCopyRawMessage.InvokeAsync(message))" />
-                    </MudTooltip>
+                    <CopyButton Text="@message.Content"
+                                Tooltip="Copy answer"
+                                AriaLabel="Copy answer"
+                                Size="Size.Small"
+                                Class="chat-message-action" />
+                    <CopyButton CopyTextFactory="@(() => GetRawContentAsync(message))"
+                                Tooltip="Copy raw text"
+                                AriaLabel="Copy raw text"
+                                Icon="@Icons.Material.Filled.Description"
+                                Size="Size.Small"
+                                Class="chat-message-action"
+                                Disabled="@string.IsNullOrWhiteSpace(message.RawContent)" />
                     @if (!IsLlmAnswering)
                     {
                         <MudTooltip Text="Delete">
@@ -128,7 +128,9 @@
                             }
                         </div>
                     }
-                    @((MarkupString)message.HtmlContent)
+                    <div class="chat-markdown-content">
+                        @((MarkupString)message.HtmlContent)
+                    </div>
                 </MudChatBubble>
 
                 @if (message.ThinkSegments.Any())
@@ -213,12 +215,6 @@
     public EventCallback<AppChatMessageViewModel> OnDeleteMessage { get; set; }
 
     [Parameter]
-    public EventCallback<AppChatMessageViewModel> OnCopyVisibleMessage { get; set; }
-
-    [Parameter]
-    public EventCallback<AppChatMessageViewModel> OnCopyRawMessage { get; set; }
-
-    [Parameter]
     public EventCallback<ChatFormat> OnCopyChat { get; set; }
 
     private ElementReference messagesElement;
@@ -296,4 +292,7 @@
 
     private string? GetSpeakerLabel(AppChatMessageViewModel message) =>
         GetAssistantLabel(message);
+
+    private static Task<string> GetRawContentAsync(AppChatMessageViewModel message) =>
+        Task.FromResult(message.RawContent ?? string.Empty);
 }

@@ -8,7 +8,6 @@
 @using ChatClient.Api.Services
 @using ChatClient.Application.Services.Agentic
 @using ChatClient.Domain.Models
-@using Microsoft.JSInterop
 @using MudBlazor
 @implements IDisposable
 @inject IPlanningSessionService PlanningSessionService
@@ -16,7 +15,6 @@
 @inject IDialogService DialogService
 @inject IMcpUserInteractionService McpUserInteractionService
 @inject IAppToolCatalog AppToolCatalog
-@inject IJSRuntime JSRuntime
 @inject ILogger<ChatPlanning> Logger
 
 <PageTitle>Planning Chat</PageTitle>
@@ -36,13 +34,13 @@
                 </MudAlert>
             }
 
-            <MudTextField T="string"
-                          Label="User request"
-                          Value="@userQuery"
-                          ValueChanged="OnUserQueryChanged"
-                          Lines="4"
-                          Variant="Variant.Outlined"
-                          Immediate="true" />
+            <ChatInput OnSend="StartRunFromInputAsync"
+                       Text="@userQuery"
+                       TextChanged="OnUserQueryChanged"
+                       Label="User request"
+                       AllowFileAttachments="false"
+                       ShowStopButton="@CanCancel"
+                       OnStopClick="CancelRunAsync" />
 
             <McpServerBindingsEditor Bindings="@plannerDraft.McpServerBindings"
                                      BindingsChanged="OnPlannerMcpBindingsChanged"
@@ -100,13 +98,13 @@
                     Detailed log is hidden here to avoid duplicating the node details panel. Use the button to copy the full log to the clipboard.
                 </MudText>
             </div>
-            <MudButton Variant="Variant.Outlined"
-                       Color="Color.Primary"
-                       StartIcon="@Icons.Material.Filled.ContentCopy"
-                       Disabled="@string.IsNullOrWhiteSpace(GetLogText())"
-                       OnClick="CopyLogAsync">
-                Copy Log
-            </MudButton>
+            <CopyButton CopyTextFactory="GetLogTextAsync"
+                        Tooltip="Copy execution log"
+                        AriaLabel="Copy execution log"
+                        Variant="Variant.Outlined"
+                        Color="Color.Primary"
+                        Size="Size.Small"
+                        Disabled="@string.IsNullOrWhiteSpace(GetLogText())" />
         </MudStack>
     </MudPaper>
 </MudStack>
@@ -168,6 +166,12 @@
             Planner = ResolvedChatAgentFactory.Resolve(plannerDraft, plannerModel),
             UserQuery = userQuery
         });
+    }
+
+    private async Task StartRunFromInputAsync((string text, IReadOnlyList<AppChatMessageFile> files) data)
+    {
+        userQuery = data.text;
+        await StartRunAsync();
     }
 
     private Task CancelRunAsync() =>
@@ -256,26 +260,8 @@
         }
     }
 
-    private async Task CopyLogAsync()
-    {
-        var logText = GetLogText();
-        if (string.IsNullOrWhiteSpace(logText))
-        {
-            Snackbar.Add("Execution log is empty.", Severity.Info);
-            return;
-        }
-
-        try
-        {
-            await JSRuntime.InvokeVoidAsync("copyText", logText);
-            Snackbar.Add("Execution log copied to clipboard.", Severity.Success);
-        }
-        catch (Exception ex)
-        {
-            Logger.LogWarning(ex, "Failed to copy execution log to clipboard.");
-            Snackbar.Add($"Failed to copy execution log: {ex.Message}", Severity.Warning);
-        }
-    }
+    private Task<string> GetLogTextAsync() =>
+        Task.FromResult(GetLogText());
 
     private IReadOnlyList<PlanRunEvent> GetEvents()
     {

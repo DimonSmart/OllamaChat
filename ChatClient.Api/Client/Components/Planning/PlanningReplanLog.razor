@@ -3,7 +3,6 @@
 @using ChatClient.Api.PlanningRuntime.Common
 @using ChatClient.Api.PlanningRuntime.Execution
 @using MudBlazor
-@inject IJSRuntime JSRuntime
 
 <MudPaper Class="pa-4" Outlined="true">
     <MudStack Spacing="2">
@@ -14,19 +13,19 @@
                 <MudStack Row="true" Spacing="1">
                     @if (HasFullLog)
                     {
-                        <MudButton Variant="Variant.Outlined"
-                                   Size="Size.Small"
-                                   OnClick="CopyFullLogAsync">
-                            Copy full log
-                        </MudButton>
+                        <CopyButton CopyTextFactory="GetFullLogTextAsync"
+                                    Tooltip="Copy full log"
+                                    AriaLabel="Copy full log"
+                                    Variant="Variant.Outlined"
+                                    Size="Size.Small" />
                     }
                     @if (HasDiagnosticBundle)
                     {
-                        <MudButton Variant="Variant.Outlined"
-                                   Size="Size.Small"
-                                   OnClick="CopyDiagnosticBundleAsync">
-                            Copy diagnostic bundle
-                        </MudButton>
+                        <CopyButton CopyTextFactory="GetDiagnosticBundleTextAsync"
+                                    Tooltip="Copy diagnostic bundle"
+                                    AriaLabel="Copy diagnostic bundle"
+                                    Variant="Variant.Outlined"
+                                    Size="Size.Small" />
                     }
                 </MudStack>
             }
@@ -64,11 +63,11 @@
     private bool HasFullLog => LogLines.Count > 0;
     private bool HasDiagnosticBundle => LogLines.Count > 0 || Events.Count > 0;
 
-    private Task CopyFullLogAsync() =>
-        JSRuntime.InvokeVoidAsync("copyText", string.Join(Environment.NewLine, LogLines)).AsTask();
+    private Task<string> GetFullLogTextAsync() =>
+        Task.FromResult(string.Join(Environment.NewLine, LogLines));
 
-    private Task CopyDiagnosticBundleAsync() =>
-        JSRuntime.InvokeVoidAsync("copyText", PlanningJson.SerializeNodeIndented(BuildDiagnosticBundle())).AsTask();
+    private Task<string> GetDiagnosticBundleTextAsync() =>
+        Task.FromResult(PlanningJson.SerializeNodeIndented(BuildDiagnosticBundle()));
 
     private static string SerializeJson<T>(T value) =>
         PlanningJson.SerializeIndented(value);

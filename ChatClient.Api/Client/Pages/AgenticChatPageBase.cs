@@ -221,15 +221,6 @@ public abstract class AgenticChatPageBase : ComponentBase, IAsyncDisposable
         await ChatService.DeleteMessageAsync(message.Id);
     }
 
-    protected Task CopyVisibleMessage(AppChatMessageViewModel message) =>
-        JSRuntime.InvokeVoidAsync("copyText", message.Content).AsTask();
-
-    protected async Task CopyRawMessage(AppChatMessageViewModel message)
-    {
-        if (!string.IsNullOrEmpty(message.RawContent))
-            await JSRuntime.InvokeVoidAsync("copyText", message.RawContent);
-    }
-
     protected Task CopyChatAsync(ChatFormat format)
     {
         var text = ChatTranscriptFormatter.Format(ChatViewModelService.Messages, format);

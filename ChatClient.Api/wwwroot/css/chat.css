@@ -150,13 +150,6 @@
     cursor: default;
 }
 
-/* Copy button style */
-.copy-button {
-    cursor: pointer;
-    margin-left: 0.25rem;
-    color: var(--mud-palette-text-secondary);
-}
-
 .chat-message-action {
     margin-left: 0.15rem;
     color: var(--mud-palette-text-secondary) !important;
@@ -195,6 +188,76 @@
 
 .chat-user-bubble {
     text-align: left;
+}
+
+.chat-markdown-content {
+    line-height: 1.55;
+}
+
+.chat-markdown-content > :first-child {
+    margin-top: 0;
+}
+
+.chat-markdown-content > :last-child {
+    margin-bottom: 0;
+}
+
+.chat-markdown-content ul,
+.chat-markdown-content ol {
+    margin: 0.5rem 0;
+}
+
+.chat-markdown-content ul {
+    list-style: none;
+    padding-inline-start: 1.35rem;
+}
+
+.chat-markdown-content ol {
+    list-style: none;
+    counter-reset: chat-markdown-ordered-list;
+    padding-inline-start: 1.65rem;
+}
+
+.chat-markdown-content ul > li,
+.chat-markdown-content ol > li {
+    position: relative;
+    margin: 0.2rem 0;
+}
+
+.chat-markdown-content ul > li::before {
+    content: "\2022";
+    position: absolute;
+    left: -0.78rem;
+    font-weight: 700;
+}
+
+.chat-markdown-content ol > li {
+    counter-increment: chat-markdown-ordered-list;
+}
+
+.chat-markdown-content ol > li::before {
+    content: counter(chat-markdown-ordered-list) ".";
+    position: absolute;
+    left: -1.5rem;
+    width: 1.15rem;
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+}
+
+.chat-markdown-content li > :first-child {
+    margin-top: 0;
+}
+
+.chat-markdown-content li > :last-child {
+    margin-bottom: 0;
+}
+
+.chat-markdown-content ul.task-list {
+    padding-inline-start: 1.35rem;
+}
+
+.chat-markdown-content ul.task-list > li::before {
+    content: none;
 }
 
 @keyframes blink {

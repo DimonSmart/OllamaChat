@@ -18,27 +18,31 @@
 
 <MudPaper Class="pa-2" Elevation="2">
     <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="1">
-        <MudFileUpload T="IReadOnlyList<IBrowserFile>"
-                       FilesChanged="OnFilesChanged"
-                       multiple="true"
-                       MaximumFileCount="10"
-                       Accept=".pdf,.txt,.doc,.docx,.jpg,.jpeg,.png,.gif,.bmp,.webp">
-            <ActivatorContent>
-                <MudIconButton Icon="@Icons.Material.Filled.AttachFile"
-                               Color="Color.Primary"
-                               Size="Size.Small"
-                               tooltip="Attach files (max 10)" />
-            </ActivatorContent>
-        </MudFileUpload>
+        @if (AllowFileAttachments)
+        {
+            <MudFileUpload T="IReadOnlyList<IBrowserFile>"
+                           FilesChanged="OnFilesChanged"
+                           multiple="true"
+                           MaximumFileCount="10"
+                           Accept=".pdf,.txt,.doc,.docx,.jpg,.jpeg,.png,.gif,.bmp,.webp">
+                <ActivatorContent>
+                    <MudIconButton Icon="@Icons.Material.Filled.AttachFile"
+                                   Color="Color.Primary"
+                                   Size="Size.Small"
+                                   tooltip="Attach files (max 10)" />
+                </ActivatorContent>
+            </MudFileUpload>
+        }
 
         <MudTextField T="string"
-                      @bind-Value="CurrentText"
+                      Value="CurrentText"
+                      ValueChanged="OnCurrentTextChanged"
                       DebounceInterval="200"
                       Lines="3"
                       MaxLines="15"
                       InputId="@_messageInputId"
                       AutoGrow="true"
-                      Label="Type your message"
+                      Label="@Label"
                       Variant="Variant.Outlined"
                       Style="flex-grow:1"
                       Margin="Margin.Dense"
@@ -112,6 +116,10 @@
     [Parameter] public bool ShowStopButton { get; set; } = false;
     [Parameter] public EventCallback OnStopClick { get; set; }
     [Parameter] public bool IsMultiAgent { get; set; } = false;
+    [Parameter] public bool AllowFileAttachments { get; set; } = true;
+    [Parameter] public string Label { get; set; } = "Type your message";
+    [Parameter] public string? Text { get; set; }
+    [Parameter] public EventCallback<string> TextChanged { get; set; }
 
     private readonly string _messageInputId = $"chat-input-{Guid.NewGuid():N}";
     private VoiceInputSettings _voiceInputSettings = new();
@@ -138,6 +146,16 @@
         {
             CurrentText = defaultMessage;
         }
+    }
+
+    protected override Task OnParametersSetAsync()
+    {
+        if (Text is not null && !string.Equals(CurrentText, Text, StringComparison.Ordinal))
+        {
+            CurrentText = Text;
+        }
+
+        return base.OnParametersSetAsync();
     }
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
@@ -186,6 +204,16 @@
         }
     }
 
+    private async Task OnCurrentTextChanged(string value)
+    {
+        CurrentText = value;
+
+        if (TextChanged.HasDelegate)
+        {
+            await TextChanged.InvokeAsync(value);
+        }
+    }
+
     private async Task SendMessage()
     {
         if (IsSendDisabled)
@@ -200,6 +228,11 @@
             var filesToSend = attachedFiles.ToList();
 
             CurrentText = string.Empty;
+            if (TextChanged.HasDelegate)
+            {
+                await TextChanged.InvokeAsync(CurrentText);
+            }
+
             attachedFiles.Clear();
             await OnSend.InvokeAsync((textToSend, filesToSend));
         }
@@ -436,11 +469,19 @@
                 recognizedText);
 
             CurrentText = insertion?.Value ?? recognizedText;
+            if (TextChanged.HasDelegate)
+            {
+                await TextChanged.InvokeAsync(CurrentText);
+            }
         }
         catch (Exception ex)
         {
             Logger.LogWarning(ex, "Failed to insert recognized text into the input.");
             CurrentText += recognizedText;
+            if (TextChanged.HasDelegate)
+            {
+                await TextChanged.InvokeAsync(CurrentText);
+            }
         }
 
         await ResetVoiceInputProcessingStateAsync();

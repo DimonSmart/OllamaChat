@@ -2,9 +2,7 @@
 @using System.Text.RegularExpressions
 @using ChatClient.Api.Client.Markdown
 @using ChatClient.Api.PlanningRuntime.Common
-@using Microsoft.JSInterop
 @using MudBlazor
-@inject IJSRuntime JSRuntime
 
 <MudPaper Class="@ComputedPaperClass" Outlined="@Outlined" Style="@PaperStyle">
     @if (ShowActions)
@@ -12,13 +10,11 @@
         <div class="planning-value-actions">
             @if (ShouldShowCopyButton)
             {
-                <MudTooltip Text="Copy">
-                    <MudIconButton Icon="@Icons.Material.Filled.ContentCopy"
-                                   Size="Size.Small"
-                                   Class="planning-value-action-button"
-                                   OnClick="CopyValueAsync"
-                                   aria-label="Copy value" />
-                </MudTooltip>
+                <CopyButton Text="@DisplayText"
+                            Tooltip="Copy"
+                            AriaLabel="Copy value"
+                            Size="Size.Small"
+                            Class="planning-value-action-button" />
             }
         </div>
     }
@@ -255,9 +251,6 @@
 
         return lines;
     }
-
-    private Task CopyValueAsync() =>
-        JSRuntime.InvokeVoidAsync("copyText", DisplayText).AsTask();
 
     private void Expand()
     {

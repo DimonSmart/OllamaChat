@@ -1,0 +1,64 @@
+.copy-button-control {
+    min-width: 0 !important;
+    padding: 0 !important;
+    border-radius: 999px;
+    line-height: 1;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex: 0 0 auto;
+}
+
+.copy-button-control.copy-button-control--small {
+    width: 1.7rem !important;
+    min-width: 1.7rem !important;
+    height: 1.7rem !important;
+}
+
+.copy-button-control.copy-button-control--medium {
+    width: 2rem !important;
+    min-width: 2rem !important;
+    height: 2rem !important;
+}
+
+.copy-button-control.copy-button-control--large {
+    width: 2.35rem !important;
+    min-width: 2.35rem !important;
+    height: 2.35rem !important;
+}
+
+.copy-button-control :is(.mud-button-label, .mud-button-root, .mud-button-start-icon, .mud-button-end-icon) {
+    margin: 0 !important;
+    padding: 0 !important;
+}
+
+.copy-button-control .mud-button-label {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+    min-width: 0;
+    line-height: 1;
+}
+
+.copy-button-control__icon {
+    font-size: 1.1rem;
+    margin: 0;
+}
+
+.copy-button-control__image {
+    width: 1rem;
+    height: 1rem;
+    object-fit: contain;
+    display: block;
+}
+
+.copy-button-control.copy-button-control--medium .copy-button-control__image {
+    width: 1.15rem;
+    height: 1.15rem;
+}
+
+.copy-button-control.copy-button-control--large .copy-button-control__image {
+    width: 1.3rem;
+    height: 1.3rem;
+}

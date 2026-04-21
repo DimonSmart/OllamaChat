@@ -3,7 +3,6 @@
 @using ChatClient.Application.Services
 @using ChatClient.Domain.Models
 @using System.Linq
-@using Microsoft.JSInterop
 @inject ISnackbar Snackbar
 @inject ILogger<VectorSearch> Logger
 @implements IDisposable
@@ -41,7 +40,8 @@
 
         @if (isEmbeddingReady)
         {
-            <ChatInput OnSend="SearchAsync" />
+            <ChatInput OnSend="SearchAsync"
+                       AllowFileAttachments="false" />
         }
         else
         {
@@ -59,7 +59,10 @@
                     <MudPaper Class="pa-2" Style="user-select:text;">
                         <div style="display:flex;justify-content:space-between;">
                             <MudText Typo="Typo.subtitle2">@item.FileName</MudText>
-                            <span class="copy-button" title="Copy" @onclick="() => CopyResult(item)">Copy</span>
+                            <CopyButton CopyTextFactory="@(() => BuildResultTextAsync(item))"
+                                        Tooltip="Copy result"
+                                        AriaLabel="Copy result"
+                                        Size="Size.Small" />
                         </div>
                         <MudText Typo="Typo.body2">@item.Content</MudText>
                         <MudText Typo="Typo.caption">Score: @item.Score.ToString("0.###")</MudText>
@@ -105,8 +108,6 @@
     [Inject] private IRagFileService RagFileService { get; set; } = default!;
     [Inject] private IUserSettingsService UserSettingsService { get; set; } = default!;
     [Inject] private IRagVectorIndexBackgroundService IndexBackgroundService { get; set; } = default!;
-    [Inject] private IJSRuntime JSRuntime { get; set; } = default!;
-
     protected override async Task OnInitializedAsync()
     {
         try
@@ -247,11 +248,8 @@
         id != Guid.Empty &&
         !string.IsNullOrWhiteSpace(modelSelection.ModelName);
 
-    private async Task CopyResult(RagSearchResult item)
-    {
-        var text = $"{item.FileName}\n{item.Content}\nScore: {item.Score:0.###}";
-        await JSRuntime.InvokeVoidAsync("copyText", text);
-    }
+    private Task<string> BuildResultTextAsync(RagSearchResult item) =>
+        Task.FromResult($"{item.FileName}\n{item.Content}\nScore: {item.Score:0.###}");
 
     private static string FormatSize(long bytes)
     {

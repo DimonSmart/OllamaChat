@@ -1,0 +1,165 @@
+@using Microsoft.JSInterop
+@using MudBlazor
+@implements IDisposable
+@inject IJSRuntime JSRuntime
+@inject ISnackbar Snackbar
+
+<MudTooltip Text="@Tooltip" Disabled="@string.IsNullOrWhiteSpace(Tooltip)">
+    <MudButton ButtonType="ButtonType.Button"
+               Variant="@Variant"
+               Color="@Color"
+               Size="@Size"
+               Disabled="@IsDisabled"
+               Class="@ComputedClass"
+               Style="@Style"
+               OnClick="HandleClickAsync"
+               aria-label="@AriaLabel">
+        @if (_showSuccessState)
+        {
+            <MudIcon Icon="@Icons.Material.Filled.Check" Class="copy-button-control__icon" />
+        }
+        else if (!string.IsNullOrWhiteSpace(ImageSrc))
+        {
+            <img src="@ImageSrc"
+                 alt=""
+                 aria-hidden="true"
+                 class="copy-button-control__image" />
+        }
+        else
+        {
+            <MudIcon Icon="@ResolvedIcon" Class="copy-button-control__icon" />
+        }
+    </MudButton>
+</MudTooltip>
+
+@code {
+    private const string DefaultIcon = Icons.Material.Filled.ContentCopy;
+    private static readonly TimeSpan SuccessStateDuration = TimeSpan.FromSeconds(1);
+
+    private CancellationTokenSource? _successStateCts;
+    private bool _isCopying;
+    private bool _showSuccessState;
+
+    [Parameter] public string? Text { get; set; }
+    [Parameter] public Func<Task<string>>? CopyTextFactory { get; set; }
+    [Parameter] public string? Icon { get; set; }
+    [Parameter] public string? ImageSrc { get; set; }
+    [Parameter] public string Tooltip { get; set; } = "Copy";
+    [Parameter] public string AriaLabel { get; set; } = "Copy";
+    [Parameter] public Color Color { get; set; } = Color.Default;
+    [Parameter] public Variant Variant { get; set; } = Variant.Text;
+    [Parameter] public Size Size { get; set; } = Size.Small;
+    [Parameter] public bool Disabled { get; set; }
+    [Parameter] public string? Class { get; set; }
+    [Parameter] public string? Style { get; set; }
+
+    private string ResolvedIcon => string.IsNullOrWhiteSpace(Icon) ? DefaultIcon : Icon;
+
+    private bool IsDisabled => Disabled || _isCopying || _showSuccessState;
+
+    private string ComputedClass
+    {
+        get
+        {
+            var sizeClass = Size switch
+            {
+                Size.Small => "copy-button-control--small",
+                Size.Medium => "copy-button-control--medium",
+                Size.Large => "copy-button-control--large",
+                _ => "copy-button-control--small"
+            };
+
+            var classes = new List<string> { "copy-button-control", sizeClass };
+            if (!string.IsNullOrWhiteSpace(Class))
+            {
+                classes.Add(Class);
+            }
+
+            return string.Join(" ", classes);
+        }
+    }
+
+    protected override void OnParametersSet()
+    {
+        if (Text is not null && CopyTextFactory is not null)
+        {
+            throw new InvalidOperationException("CopyButton accepts either Text or CopyTextFactory, but not both.");
+        }
+
+        if (Text is null && CopyTextFactory is null)
+        {
+            throw new InvalidOperationException("CopyButton requires either Text or CopyTextFactory.");
+        }
+    }
+
+    private async Task HandleClickAsync()
+    {
+        if (IsDisabled)
+        {
+            return;
+        }
+
+        _isCopying = true;
+
+        try
+        {
+            var textToCopy = await ResolveTextAsync();
+            if (string.IsNullOrWhiteSpace(textToCopy))
+            {
+                return;
+            }
+
+            await JSRuntime.InvokeVoidAsync("copyText", textToCopy);
+            await ShowSuccessStateAsync();
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Failed to copy to clipboard: {ex.Message}", Severity.Warning);
+        }
+        finally
+        {
+            _isCopying = false;
+            await InvokeAsync(StateHasChanged);
+        }
+    }
+
+    private async Task<string?> ResolveTextAsync()
+    {
+        if (CopyTextFactory is not null)
+        {
+            return await CopyTextFactory();
+        }
+
+        return Text;
+    }
+
+    private async Task ShowSuccessStateAsync()
+    {
+        _showSuccessState = true;
+        await InvokeAsync(StateHasChanged);
+
+        _successStateCts?.Cancel();
+        _successStateCts?.Dispose();
+        _successStateCts = new CancellationTokenSource();
+        _ = ResetSuccessStateAsync(_successStateCts.Token);
+    }
+
+    private async Task ResetSuccessStateAsync(CancellationToken cancellationToken)
+    {
+        try
+        {
+            await Task.Delay(SuccessStateDuration, cancellationToken);
+            _showSuccessState = false;
+            await InvokeAsync(StateHasChanged);
+        }
+        catch (OperationCanceledException)
+        {
+        }
+    }
+
+    public void Dispose()
+    {
+        _successStateCts?.Cancel();
+        _successStateCts?.Dispose();
+    }
+}

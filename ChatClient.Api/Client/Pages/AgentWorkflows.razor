@@ -446,8 +446,6 @@
                                         OnSendMessage="SendChatMessageAsync"
                                         OnStop="CancelAsync"
                                         OnDeleteMessage="DeleteMessageAsync"
-                                        OnCopyVisibleMessage="CopyVisibleMessageAsync"
-                                        OnCopyRawMessage="CopyRawMessageAsync"
                                         OnCopyChat="CopyChatAsync" />
                 </MudStack>
             </MudPaper>
@@ -1044,17 +1042,6 @@
         }
 
         await WorkflowSessionService.DeleteMessageAsync(message.Id);
-    }
-
-    private Task CopyVisibleMessageAsync(AppChatMessageViewModel message) =>
-        JSRuntime.InvokeVoidAsync("copyText", message.Content).AsTask();
-
-    private async Task CopyRawMessageAsync(AppChatMessageViewModel message)
-    {
-        if (!string.IsNullOrEmpty(message.RawContent))
-        {
-            await JSRuntime.InvokeVoidAsync("copyText", message.RawContent);
-        }
     }
 
     private Task CopyChatAsync(ChatFormat format)
