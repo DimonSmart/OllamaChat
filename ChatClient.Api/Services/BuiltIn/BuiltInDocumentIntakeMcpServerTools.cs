@@ -70,7 +70,7 @@ public sealed class BuiltInDocumentIntakeMcpServerTools
                     Text = message
                 }
             ],
-            StructuredContent = JsonSerializer.SerializeToNode(new
+            StructuredContent = JsonSerializer.SerializeToElement(new
             {
                 code,
                 message,

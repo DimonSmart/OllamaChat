@@ -578,7 +578,7 @@ public sealed class RuntimeExecutorDiagnosticsTests
                                 Text = "Download failed with HTTP 403 Forbidden."
                             }
                         ],
-                        StructuredContent = JsonSerializer.SerializeToNode(new
+                        StructuredContent = JsonSerializer.SerializeToElement(new
                         {
                             code = "download_http_error",
                             message = "Download failed with HTTP 403 Forbidden.",
@@ -643,7 +643,7 @@ public sealed class RuntimeExecutorDiagnosticsTests
                             Text = "Download failed with HTTP 403 Forbidden."
                         }
                     ],
-                    StructuredContent = JsonSerializer.SerializeToNode(new
+                    StructuredContent = JsonSerializer.SerializeToElement(new
                     {
                         code = "download_http_error",
                         message = "Download failed with HTTP 403 Forbidden.",

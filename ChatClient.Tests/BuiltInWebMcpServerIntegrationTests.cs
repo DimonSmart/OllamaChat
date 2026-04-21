@@ -40,7 +40,7 @@ public class BuiltInWebMcpServerIntegrationTests
         Assert.True(schema.TryGetProperty("properties", out var properties));
         Assert.True(properties.TryGetProperty("query", out _));
         Assert.True(properties.TryGetProperty("limit", out var limitSchema));
-        Assert.Equal("integer", limitSchema.GetProperty("type").GetString());
+        Assert.True(SchemaIncludesType(limitSchema, "integer"));
         Assert.Equal(10, limitSchema.GetProperty("maximum").GetInt32());
         Assert.Contains("not guaranteed", limitSchema.GetProperty("description").GetString(), StringComparison.OrdinalIgnoreCase);
         Assert.True(schema.TryGetProperty("required", out var required));
@@ -73,12 +73,18 @@ public class BuiltInWebMcpServerIntegrationTests
         Assert.True(schema.TryGetProperty("properties", out var properties));
         Assert.True(properties.TryGetProperty("page", out var pageSchema));
         Assert.True(properties.TryGetProperty("url", out _));
+        Assert.Equal("object", schema.GetProperty("type").GetString());
         Assert.Contains("full source content", pageSchema.GetProperty("description").GetString(), StringComparison.OrdinalIgnoreCase);
         Assert.True(pageSchema.TryGetProperty("required", out var pageRequired));
         Assert.Contains(pageRequired.EnumerateArray(), item => string.Equals(item.GetString(), "url", StringComparison.Ordinal));
         Assert.DoesNotContain(pageRequired.EnumerateArray(), item => string.Equals(item.GetString(), "title", StringComparison.Ordinal));
-        Assert.True(schema.TryGetProperty("oneOf", out var oneOf));
-        Assert.Equal(2, oneOf.GetArrayLength());
+        var pageUrlSchema = pageSchema.GetProperty("properties").GetProperty("url");
+        Assert.True(SchemaIncludesType(pageUrlSchema, "string"));
+        Assert.False(schema.TryGetProperty("oneOf", out _));
+        Assert.False(schema.TryGetProperty("anyOf", out _));
+        Assert.False(schema.TryGetProperty("allOf", out _));
+        Assert.False(schema.TryGetProperty("enum", out _));
+        Assert.False(schema.TryGetProperty("not", out _));
     }
 
     [Fact]
@@ -89,6 +95,7 @@ public class BuiltInWebMcpServerIntegrationTests
         var tool = (await client.ListToolsAsync())
             .First(candidate => string.Equals(candidate.Name, "download", StringComparison.Ordinal));
 
+        Assert.Contains("exactly one of 'page' or 'url'", tool.Description, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("full source content", tool.Description, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("lightweight records", tool.Description, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("exact facts", tool.Description, StringComparison.OrdinalIgnoreCase);
@@ -184,5 +191,18 @@ public class BuiltInWebMcpServerIntegrationTests
 
             throw new FileNotFoundException("Unable to locate ChatClient.Api.dll for built-in MCP server integration test.");
         }
+    }
+
+    private static bool SchemaIncludesType(JsonElement schema, string expectedType)
+    {
+        if (!schema.TryGetProperty("type", out var typeElement))
+            return false;
+
+        return typeElement.ValueKind switch
+        {
+            JsonValueKind.String => string.Equals(typeElement.GetString(), expectedType, StringComparison.Ordinal),
+            JsonValueKind.Array => typeElement.EnumerateArray().Any(item => string.Equals(item.GetString(), expectedType, StringComparison.Ordinal)),
+            _ => false
+        };
     }
 }

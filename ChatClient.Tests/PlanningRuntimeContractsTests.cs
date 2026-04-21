@@ -1348,12 +1348,12 @@ public class PlanningRuntimeContractsTests
 
         var toolResult = Assert.IsType<CallToolResult>(result);
         Assert.True(toolResult.IsError);
-        var structured = Assert.IsType<JsonObject>(toolResult.StructuredContent);
-        Assert.Equal("download_http_error", structured["code"]?.GetValue<string>());
-        Assert.Equal("example.com", structured["host"]?.GetValue<string>());
-        Assert.Equal(false, structured["retryable"]?.GetValue<bool>());
-        Assert.Equal(403, structured["httpStatusCode"]?.GetValue<int>());
-        Assert.Equal(true, structured["needsReplan"]?.GetValue<bool>());
+        var structured = Assert.IsType<JsonElement>(toolResult.StructuredContent);
+        Assert.Equal("download_http_error", structured.GetProperty("code").GetString());
+        Assert.Equal("example.com", structured.GetProperty("host").GetString());
+        Assert.False(structured.GetProperty("retryable").GetBoolean());
+        Assert.Equal(403, structured.GetProperty("httpStatusCode").GetInt32());
+        Assert.True(structured.GetProperty("needsReplan").GetBoolean());
     }
 
     [Fact]
@@ -1381,15 +1381,16 @@ public class PlanningRuntimeContractsTests
 
         var toolResult = Assert.IsType<CallToolResult>(result);
         Assert.True(toolResult.IsError);
-        var structured = Assert.IsType<JsonObject>(toolResult.StructuredContent);
-        Assert.Equal("search_unavailable", structured["code"]?.GetValue<string>());
-        Assert.Equal("duckduckgo", structured["provider"]?.GetValue<string>());
-        Assert.Equal("item", structured["query"]?.GetValue<string>());
-        Assert.Equal(true, structured["fallbackTried"]?.GetValue<bool>());
-        Assert.Equal(false, structured["needsReplan"]?.GetValue<bool>());
-        Assert.Equal("error", structured["type"]?.GetValue<string>());
-        var providerAttempts = Assert.IsType<JsonArray>(structured["providerAttempts"]);
-        Assert.Equal(2, providerAttempts.Count);
+        var structured = Assert.IsType<JsonElement>(toolResult.StructuredContent);
+        Assert.Equal("search_unavailable", structured.GetProperty("code").GetString());
+        Assert.Equal("duckduckgo", structured.GetProperty("provider").GetString());
+        Assert.Equal("item", structured.GetProperty("query").GetString());
+        Assert.True(structured.GetProperty("fallbackTried").GetBoolean());
+        Assert.False(structured.GetProperty("needsReplan").GetBoolean());
+        Assert.Equal("error", structured.GetProperty("type").GetString());
+        var providerAttempts = structured.GetProperty("providerAttempts");
+        Assert.Equal(JsonValueKind.Array, providerAttempts.ValueKind);
+        Assert.Equal(2, providerAttempts.GetArrayLength());
     }
 
     [Fact]
@@ -3155,7 +3156,5 @@ public class PlanningRuntimeContractsTests
             Task.FromResult(execute(step, resolvedInputs));
     }
 }
-
-
 
 

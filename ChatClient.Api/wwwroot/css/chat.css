@@ -151,13 +151,22 @@
 }
 
 .chat-message-action {
+    --chat-message-action-size: 1.55rem;
     margin-left: 0.15rem;
     color: var(--mud-palette-text-secondary) !important;
     vertical-align: middle;
 }
 
 .chat-message-action.mud-icon-button {
-    padding: 0.15rem;
+    width: var(--chat-message-action-size);
+    min-width: var(--chat-message-action-size);
+    height: var(--chat-message-action-size);
+    padding: 0;
+    border-radius: 999px;
+}
+
+.chat-message-action.mud-icon-button .mud-icon-root {
+    font-size: 1rem;
 }
 
 .chat-avatar {

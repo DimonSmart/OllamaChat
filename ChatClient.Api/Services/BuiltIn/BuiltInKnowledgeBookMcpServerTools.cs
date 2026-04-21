@@ -176,7 +176,7 @@ public sealed class BuiltInKnowledgeBookMcpServerTools
                     Text = message
                 }
             ],
-            StructuredContent = JsonSerializer.SerializeToNode(new
+            StructuredContent = JsonSerializer.SerializeToElement(new
             {
                 code,
                 message,

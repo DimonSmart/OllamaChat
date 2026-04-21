@@ -11,23 +11,28 @@
                Size="@Size"
                Disabled="@IsDisabled"
                Class="@ComputedClass"
-               Style="@Style"
+               Style="@ComputedStyle"
                OnClick="HandleClickAsync"
                aria-label="@AriaLabel">
         @if (_showSuccessState)
         {
-            <MudIcon Icon="@Icons.Material.Filled.Check" Class="copy-button-control__icon" />
+            <MudIcon Icon="@Icons.Material.Filled.Check"
+                     Class="copy-button-control__icon"
+                     Style="@IconStyle" />
         }
         else if (!string.IsNullOrWhiteSpace(ImageSrc))
         {
             <img src="@ImageSrc"
                  alt=""
                  aria-hidden="true"
-                 class="copy-button-control__image" />
+                 class="copy-button-control__image"
+                 style="@ImageStyle" />
         }
         else
         {
-            <MudIcon Icon="@ResolvedIcon" Class="copy-button-control__icon" />
+            <MudIcon Icon="@ResolvedIcon"
+                     Class="copy-button-control__icon"
+                     Style="@IconStyle" />
         }
     </MudButton>
 </MudTooltip>
@@ -56,6 +61,41 @@
     private string ResolvedIcon => string.IsNullOrWhiteSpace(Icon) ? DefaultIcon : Icon;
 
     private bool IsDisabled => Disabled || _isCopying || _showSuccessState;
+
+    private string ComputedStyle
+    {
+        get
+        {
+            var sizeStyle = Size switch
+            {
+                Size.Small => "width:1.55rem;min-width:1.55rem;height:1.55rem;",
+                Size.Medium => "width:1.85rem;min-width:1.85rem;height:1.85rem;",
+                Size.Large => "width:2.15rem;min-width:2.15rem;height:2.15rem;",
+                _ => "width:1.55rem;min-width:1.55rem;height:1.55rem;"
+            };
+
+            const string baseStyle = "padding:0;border-radius:999px;line-height:1;display:inline-flex;align-items:center;justify-content:center;flex:0 0 auto;";
+            return string.IsNullOrWhiteSpace(Style)
+                ? $"{baseStyle}{sizeStyle}"
+                : $"{baseStyle}{sizeStyle}{Style}";
+        }
+    }
+
+    private string IconStyle => Size switch
+    {
+        Size.Small => "font-size:1rem;",
+        Size.Medium => "font-size:1.1rem;",
+        Size.Large => "font-size:1.2rem;",
+        _ => "font-size:1rem;"
+    };
+
+    private string ImageStyle => Size switch
+    {
+        Size.Small => "width:0.95rem;height:0.95rem;",
+        Size.Medium => "width:1.05rem;height:1.05rem;",
+        Size.Large => "width:1.15rem;height:1.15rem;",
+        _ => "width:0.95rem;height:0.95rem;"
+    };
 
     private string ComputedClass
     {

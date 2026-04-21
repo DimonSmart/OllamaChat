@@ -770,14 +770,11 @@ public sealed class PlanExecutor(
     {
         structuredContent = default;
 
-        if (result.StructuredContent is JsonNode node)
+        if (result.StructuredContent is JsonElement element
+            && element.ValueKind is not JsonValueKind.Undefined and not JsonValueKind.Null)
         {
-            var element = JsonSerializer.SerializeToElement(node);
-            if (element.ValueKind is not JsonValueKind.Undefined and not JsonValueKind.Null)
-            {
-                structuredContent = element;
-                return true;
-            }
+            structuredContent = element;
+            return true;
         }
 
         return false;
