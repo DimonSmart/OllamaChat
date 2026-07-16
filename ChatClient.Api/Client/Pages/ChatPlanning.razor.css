@@ -1,7 +1,0 @@
-::deep .planning-preview-toolbar {
-    align-items: flex-end;
-}
-
-::deep .planning-preview-description {
-    max-width: 42rem;
-}

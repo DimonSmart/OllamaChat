@@ -1,7 +1,6 @@
 using System.Text.Encodings.Web;
 using System.Text.Json;
 using System.Text.Json.Serialization;
-using ChatClient.Api.PlanningRuntime.Host;
 using ChatClient.Api.Services;
 using ChatClient.Application.Services;
 using ChatClient.Application.Services.Agentic;

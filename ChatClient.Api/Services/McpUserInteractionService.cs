@@ -6,8 +6,7 @@ namespace ChatClient.Api.Services;
 public enum McpInteractionScope
 {
     Chat,
-    Playground,
-    Planning
+    Playground
 }
 
 public sealed record McpElicitationOption(string Value, string Label);
@@ -207,9 +206,6 @@ public sealed class McpUserInteractionService(ILogger<McpUserInteractionService>
 
             if (TryGetLatestHandlerLocked(McpInteractionScope.Playground, out var playgroundHandler))
                 return playgroundHandler;
-
-            if (TryGetLatestHandlerLocked(McpInteractionScope.Planning, out var planningHandler))
-                return planningHandler;
 
             return null;
         }
