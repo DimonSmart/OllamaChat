@@ -1,33 +1,19 @@
 using System.Collections.ObjectModel;
-using ChatClient.Api.AgentWorkflows;
-using ChatClient.Api.Services;
-using ChatClient.Api.Services.BuiltIn;
+using ChatClient.Api.Services.AgentRuntime;
 using ChatClient.Application.Services.Agentic;
 using ChatClient.Domain.Models;
-#pragma warning disable MAAI001
-using Microsoft.Agents.AI;
-using Microsoft.Agents.AI.Workflows;
-#pragma warning restore MAAI001
 
 namespace ChatClient.Api.Client.Services.Agentic;
 
 public sealed class OrchestrationWorkflowChatSessionService(
-    TaskSessionStore taskSessionStore,
-    OrchestrationWorkflowSessionBootstrapper sessionBootstrapper,
-    OrchestrationWorkflowTurnCoordinator turnCoordinator,
-    OrchestrationWorkflowPassExecutor passExecutor,
-    OrchestrationWorkflowEventStreamProcessor eventStreamProcessor,
-    IChatEngineStreamingBridge streamingBridge) : IOrchestrationWorkflowSessionService
+    IHeadlessWorkflowRunner headlessWorkflowRunner,
+    IChatEngineStreamingBridge streamingBridge,
+    ILogger<OrchestrationWorkflowChatSessionService> logger) : IOrchestrationWorkflowSessionService
 {
     private readonly AppChat _chat = new();
-    private readonly Dictionary<Guid, StreamingAppChatMessage> _activeStreams = [];
-    private readonly Dictionary<Guid, string?> _activeSpeakerIdsByStreamId = [];
-    private readonly Dictionary<string, AIAgent> _workflowAgentsById = new(StringComparer.OrdinalIgnoreCase);
-    private readonly Dictionary<string, string> _agentIdsByExecutorId = new(StringComparer.OrdinalIgnoreCase);
-    private readonly Dictionary<string, string> _agentIdsByName = new(StringComparer.OrdinalIgnoreCase);
-    private readonly Dictionary<string, string> _agentNamesById = new(StringComparer.OrdinalIgnoreCase);
-    private readonly Dictionary<Guid, string?> _speakerIdsByMessageId = [];
-    private readonly List<string> _assistantSpeakerIds = [];
+    private readonly Dictionary<string, StreamingAppChatMessage> _activeStreamsByRuntimeMessageId =
+        new(StringComparer.Ordinal);
+    private readonly HashSet<string> _completedRuntimeMessageIds = new(StringComparer.Ordinal);
     private CancellationTokenSource? _cancellationTokenSource;
     private OrchestrationWorkflowSessionStartRequest? _parameters;
 
@@ -46,20 +32,26 @@ public sealed class OrchestrationWorkflowChatSessionService(
     public IReadOnlyCollection<AgentExecutionSpec> Agents => _chat.Agents;
 
     public ObservableCollection<IAppChatMessage> Messages => _chat.Messages;
+
     IReadOnlyCollection<IAppChatMessage> IChatSessionService.Messages => _chat.Messages;
 
-    public async Task StartAsync(
+    public Task StartAsync(
         OrchestrationWorkflowSessionStartRequest request,
         CancellationToken cancellationToken = default)
     {
-        var bootstrapResult = await sessionBootstrapper.BootstrapAsync(request, cancellationToken);
-        ApplyBootstrapResult(bootstrapResult);
+        ArgumentNullException.ThrowIfNull(request);
+
+        _parameters = request;
+        TaskSessionId = null;
+        ClearChatState();
+        _chat.SetAgents(request.Agents.Select(static agent => agent.Agent.Clone()));
+        ChatReset?.Invoke();
+        return Task.CompletedTask;
     }
 
     public void ResetChat()
     {
         ClearChatState();
-        ClearWorkflowIdentityState();
         _parameters = null;
         TaskSessionId = null;
         ChatReset?.Invoke();
@@ -68,20 +60,8 @@ public sealed class OrchestrationWorkflowChatSessionService(
     public async Task CancelAsync()
     {
         _cancellationTokenSource?.Cancel();
-
-        if (_activeStreams.Count > 0)
-        {
-            foreach (var stream in _activeStreams.Values.ToList())
-            {
-                var canceled = streamingBridge.Cancel(stream);
-                ReplaceMessage(stream, canceled);
-                await (MessageUpdated?.Invoke(canceled, true) ?? Task.CompletedTask);
-            }
-
-            _activeStreams.Clear();
-            _activeSpeakerIdsByStreamId.Clear();
-        }
-
+        await CancelActiveStreamsAsync();
+        ClearRunLocalState();
         UpdateAnsweringState(false);
     }
 
@@ -90,22 +70,22 @@ public sealed class OrchestrationWorkflowChatSessionService(
         IReadOnlyList<AppChatMessageFile>? files = null,
         CancellationToken cancellationToken = default)
     {
-        if (_parameters is null || string.IsNullOrWhiteSpace(TaskSessionId))
+        if (_parameters is null)
         {
             throw new InvalidOperationException("Workflow session not started.");
         }
 
-        return GenerateAnswerAsync(text, files ?? [], cancellationToken);
+        return ExecuteWorkflowAsync(text, files ?? [], includeUserMessage: true, cancellationToken);
     }
 
     public Task KickoffAsync(CancellationToken cancellationToken = default)
     {
-        if (_parameters is null || string.IsNullOrWhiteSpace(TaskSessionId))
+        if (_parameters is null)
         {
             throw new InvalidOperationException("Workflow session not started.");
         }
 
-        return ExecuteWorkflowTurnAsync(null, [], includeUserMessage: false, cancellationToken);
+        return ExecuteWorkflowAsync(null, [], includeUserMessage: false, cancellationToken);
     }
 
     public ChatEngineSessionState GetState()
@@ -131,37 +111,23 @@ public sealed class OrchestrationWorkflowChatSessionService(
             return;
         }
 
-        var message = _chat.Messages.FirstOrDefault(m => m.Id == messageId);
+        var message = _chat.Messages.FirstOrDefault(candidate => candidate.Id == messageId);
         if (message is null)
         {
             return;
         }
 
         _chat.Messages.Remove(message);
-        if (message.Role == AppChatRole.Assistant)
-        {
-            _speakerIdsByMessageId.Remove(message.Id);
-            RebuildAssistantSpeakerHistory();
-        }
-
         await (MessageDeleted?.Invoke(messageId) ?? Task.CompletedTask);
     }
 
-    private async Task GenerateAnswerAsync(
-        string text,
-        IReadOnlyList<AppChatMessageFile> files,
-        CancellationToken cancellationToken)
-    {
-        await ExecuteWorkflowTurnAsync(text, files, includeUserMessage: true, cancellationToken);
-    }
-
-    private async Task ExecuteWorkflowTurnAsync(
+    private async Task ExecuteWorkflowAsync(
         string? text,
         IReadOnlyList<AppChatMessageFile> files,
         bool includeUserMessage,
         CancellationToken cancellationToken)
     {
-        if (IsAnswering || _parameters is null || string.IsNullOrWhiteSpace(TaskSessionId))
+        if (IsAnswering || _parameters is null)
         {
             return;
         }
@@ -173,14 +139,7 @@ public sealed class OrchestrationWorkflowChatSessionService(
                 return;
             }
 
-            var userMessage = new AppChatMessage(text, DateTime.Now, AppChatRole.User, files: files);
-            await AddMessageAsync(userMessage);
-            await taskSessionStore.AppendTurnAsync(
-                TaskSessionId,
-                "user",
-                OrchestrationWorkflowConversationBuilder.BuildUserMessage(text, files),
-                "user",
-                cancellationToken);
+            await AddMessageAsync(new AppChatMessage(text, DateTime.Now, AppChatRole.User, files: files));
         }
 
         _cancellationTokenSource = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
@@ -188,201 +147,196 @@ public sealed class OrchestrationWorkflowChatSessionService(
 
         try
         {
-            var parameters = _parameters;
-            await turnCoordinator.RunAsync(
-                new OrchestrationWorkflowTurnExecutionRequest
-                {
-                    WorkflowDisplayName = parameters.Workflow.DisplayName,
-                    Execution = parameters.Workflow.Execution,
-                    IsExecutionCompleteAsync = cancellation => IsWorkflowExecutionCompleteAsync(
-                        parameters.Workflow.Execution,
-                        cancellation),
-                    ExecutePassAsync = cancellation => ExecuteWorkflowPassAsync(parameters, cancellation),
-                    ProcessCompletedAssistantMessagesAsync = ProcessCompletedAssistantMessagesAsync,
-                    HandleAssistantErrorAsync = HandleError
-                },
-                _cancellationTokenSource.Token);
+            var request = new HeadlessWorkflowRunRequest
+            {
+                Workflow = _parameters.Workflow,
+                Agents = _parameters.Agents,
+                Configuration = _parameters.Configuration,
+                UserMessage = includeUserMessage ? text : null,
+                UserFiles = files,
+                StartInputs = _parameters.StartInputs,
+                SessionTitle = _parameters.SessionTitle ?? _parameters.Workflow.DisplayName,
+                SessionDescription = _parameters.SessionDescription ?? string.Empty
+            };
+
+            await foreach (var runEvent in headlessWorkflowRunner.RunAsync(
+                               request,
+                               _cancellationTokenSource.Token))
+            {
+                await ApplyRunEventAsync(runEvent, _cancellationTokenSource.Token);
+            }
+
+            await CompleteRemainingStreamsAsync();
         }
         catch (OperationCanceledException)
         {
+            await CancelActiveStreamsAsync();
+        }
+        catch (WorkflowAssistantErrorException ex)
+        {
+            await CancelActiveStreamsAsync();
+            await AddMessageAsync(new AppChatMessage(ex.Message, DateTime.Now, AppChatRole.Assistant));
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Workflow chat run failed.");
+            await CancelActiveStreamsAsync();
+            await AddMessageAsync(new AppChatMessage(
+                "Workflow runtime error: The run failed before a terminal result was produced.",
+                DateTime.Now,
+                AppChatRole.Assistant));
         }
         finally
         {
+            ClearRunLocalState();
             _cancellationTokenSource?.Dispose();
             _cancellationTokenSource = null;
             UpdateAnsweringState(false);
         }
     }
 
-    private async Task<OrchestrationWorkflowPassResult> ExecuteWorkflowPassAsync(
-        OrchestrationWorkflowSessionStartRequest parameters,
+    private async Task ApplyRunEventAsync(
+        HeadlessWorkflowEvent runEvent,
         CancellationToken cancellationToken)
     {
-        var currentMessages = _chat.Messages.ToList();
-        var eventStreamContext = CreateEventStreamContext(
-            parameters.Configuration.ModelName,
-            parameters.Workflow,
-            currentMessages);
-        return await passExecutor.ExecuteAsync(
-            new OrchestrationWorkflowPassExecutionRequest
-            {
-                Workflow = parameters.Workflow,
-                SessionId = TaskSessionId ?? Guid.NewGuid().ToString("N"),
-                Messages = currentMessages,
-                AssistantSpeakerIds = _assistantSpeakerIds.ToList(),
-                RuntimeAgentsById = _workflowAgentsById,
-                EventStreamContext = eventStreamContext
-            },
-            cancellationToken);
-    }
+        cancellationToken.ThrowIfCancellationRequested();
 
-    internal Task<bool> DrainWorkflowEventsAsync(
-        IAsyncEnumerable<WorkflowEvent> workflowEvents,
-        string modelName,
-        CancellationToken cancellationToken = default)
-    {
-        ArgumentNullException.ThrowIfNull(workflowEvents);
-
-        var eventStreamContext = CreateEventStreamContext(modelName);
-        return eventStreamProcessor.DrainAsync(
-            workflowEvents,
-            eventStreamContext,
-            new OrchestrationWorkflowPassStreamingState(_assistantSpeakerIds.Count),
-            eventStreamProcessor.CreateDeliveredAssistantMessagesSnapshot(eventStreamContext),
-            [],
-            cancellationToken);
-    }
-
-    private async Task ProcessCompletedAssistantMessagesAsync(
-        IReadOnlyList<OrchestrationCompletedAssistantMessage> completedAssistantMessages,
-        CancellationToken cancellationToken)
-    {
-        foreach (var completedMessage in completedAssistantMessages)
+        switch (runEvent)
         {
-            await taskSessionStore.AppendTurnAsync(
-                TaskSessionId,
-                "assistant",
-                completedMessage.Message.Content,
-                completedMessage.SpeakerId,
-                cancellationToken);
+            case HeadlessWorkflowStarted started:
+                TaskSessionId = started.TaskSessionId;
+                break;
 
-            _speakerIdsByMessageId[completedMessage.Message.Id] = completedMessage.SpeakerId;
-            if (!string.IsNullOrWhiteSpace(completedMessage.SpeakerId))
+            case HeadlessWorkflowTextDelta delta:
+                var stream = await GetOrCreateStreamAsync(delta.MessageId, delta.Author);
+                streamingBridge.Append(stream, delta.Text);
+                await (MessageUpdated?.Invoke(stream, false) ?? Task.CompletedTask);
+                break;
+
+            case HeadlessWorkflowMessageCompleted completed:
+                await CompleteOrAddAssistantMessageAsync(
+                    completed.MessageId,
+                    completed.ParticipantId,
+                    completed.Author,
+                    completed.Content);
+                break;
+
+            case HeadlessWorkflowCompleted completed:
+                await CompleteOrAddAssistantMessageAsync(
+                    completed.Result.FinalMessageId,
+                    completed.Result.Metadata.GetValueOrDefault("finalParticipantId", completed.Result.FinalAuthor),
+                    completed.Result.FinalAuthor,
+                    completed.Result.FinalContent);
+                await CompleteRemainingStreamsAsync();
+                break;
+        }
+    }
+
+    private async Task CompleteOrAddAssistantMessageAsync(
+        string runtimeMessageId,
+        string? participantId,
+        string author,
+        string content)
+    {
+        if (_completedRuntimeMessageIds.Contains(runtimeMessageId))
+        {
+            return;
+        }
+
+        if (_activeStreamsByRuntimeMessageId.TryGetValue(runtimeMessageId, out var stream))
+        {
+            if (!string.IsNullOrWhiteSpace(participantId))
             {
-                _assistantSpeakerIds.Add(completedMessage.SpeakerId);
+                stream.SetAgentId(participantId);
             }
+
+            if (!string.IsNullOrWhiteSpace(author))
+            {
+                stream.SetAgentName(author);
+            }
+
+            var final = streamingBridge.Complete(stream, content, "workflow runtime");
+            ReplaceMessage(stream, final);
+            await (MessageUpdated?.Invoke(final, true) ?? Task.CompletedTask);
+            _activeStreamsByRuntimeMessageId.Remove(runtimeMessageId);
+            _completedRuntimeMessageIds.Add(runtimeMessageId);
+            return;
+        }
+
+        await AddMessageAsync(new AppChatMessage(
+            content,
+            DateTime.Now,
+            AppChatRole.Assistant,
+            agentId: participantId,
+            agentName: author));
+        _completedRuntimeMessageIds.Add(runtimeMessageId);
+    }
+
+    private async Task<StreamingAppChatMessage> GetOrCreateStreamAsync(
+        string runtimeMessageId,
+        string author)
+    {
+        if (_activeStreamsByRuntimeMessageId.TryGetValue(runtimeMessageId, out var existing))
+        {
+            if (!string.IsNullOrWhiteSpace(author))
+            {
+                existing.SetAgentName(author);
+            }
+
+            return existing;
+        }
+
+        var stream = streamingBridge.Create(author, author);
+        _activeStreamsByRuntimeMessageId[runtimeMessageId] = stream;
+        await AddMessageAsync(stream);
+        return stream;
+    }
+
+    private async Task CompleteRemainingStreamsAsync()
+    {
+        foreach (var pair in _activeStreamsByRuntimeMessageId.ToList())
+        {
+            if (string.IsNullOrWhiteSpace(pair.Value.Content))
+            {
+                _activeStreamsByRuntimeMessageId.Remove(pair.Key);
+                continue;
+            }
+
+            var final = streamingBridge.Complete(pair.Value, "workflow runtime");
+            ReplaceMessage(pair.Value, final);
+            await (MessageUpdated?.Invoke(final, true) ?? Task.CompletedTask);
+            _completedRuntimeMessageIds.Add(pair.Key);
+            _activeStreamsByRuntimeMessageId.Remove(pair.Key);
         }
     }
 
-    private OrchestrationWorkflowEventStreamContext CreateEventStreamContext(
-        string modelName,
-        IOrchestrationWorkflowDefinition? workflow = null,
-        IReadOnlyList<IAppChatMessage>? messages = null)
+    private async Task CancelActiveStreamsAsync()
     {
-        return new OrchestrationWorkflowEventStreamContext
+        foreach (var stream in _activeStreamsByRuntimeMessageId.Values.ToList())
         {
-            ModelName = modelName,
-            Workflow = workflow ?? _parameters?.Workflow,
-            Messages = messages ?? _chat.Messages.ToList(),
-            SpeakerIdsByMessageId = _speakerIdsByMessageId,
-            ActiveStreams = _activeStreams,
-            ActiveSpeakerIdsByStreamId = _activeSpeakerIdsByStreamId,
-            AgentIdsByExecutorId = _agentIdsByExecutorId,
-            AgentIdsByName = _agentIdsByName,
-            AgentNamesById = _agentNamesById,
-            AddMessageAsync = AddMessageAsync,
-            ReplaceMessage = ReplaceMessage,
-            NotifyMessageUpdatedAsync = (message, isFinal) =>
-                MessageUpdated?.Invoke(message, isFinal) ?? Task.CompletedTask
-        };
-    }
-
-    private void ApplyBootstrapResult(OrchestrationWorkflowSessionBootstrapResult bootstrapResult)
-    {
-        ClearWorkflowIdentityState();
-        foreach (var runtimeAgent in bootstrapResult.RuntimeAgents)
-        {
-            _workflowAgentsById[runtimeAgent.AgentId] = runtimeAgent.RuntimeAgent;
-            RegisterAgentIdentity(
-                runtimeAgent.AgentId,
-                runtimeAgent.AgentName,
-                runtimeAgent.ExecutorId);
+            var canceled = streamingBridge.Cancel(stream);
+            ReplaceMessage(stream, canceled);
+            await (MessageUpdated?.Invoke(canceled, true) ?? Task.CompletedTask);
         }
 
-        _parameters = bootstrapResult.Request;
-        TaskSessionId = bootstrapResult.TaskSessionId;
-
-        ClearChatState();
-        _chat.SetAgents(bootstrapResult.Request.Agents.Select(static agent => agent.Agent.Clone()));
-        ChatReset?.Invoke();
+        _activeStreamsByRuntimeMessageId.Clear();
     }
 
     private void ClearChatState()
     {
         _chat.Reset();
-        _activeStreams.Clear();
-        _activeSpeakerIdsByStreamId.Clear();
-        _speakerIdsByMessageId.Clear();
-        _assistantSpeakerIds.Clear();
+        ClearRunLocalState();
     }
 
-    private void ClearWorkflowIdentityState()
+    private void ClearRunLocalState()
     {
-        _workflowAgentsById.Clear();
-        _agentIdsByExecutorId.Clear();
-        _agentIdsByName.Clear();
-        _agentNamesById.Clear();
-    }
-
-    private async Task<bool> IsWorkflowExecutionCompleteAsync(
-        AgentWorkflowExecutionDefinition execution,
-        CancellationToken cancellationToken)
-    {
-        if (string.IsNullOrWhiteSpace(TaskSessionId))
-        {
-            return false;
-        }
-
-        var snapshot = await taskSessionStore.GetSessionAsync(TaskSessionId, cancellationToken);
-
-        if (!string.IsNullOrWhiteSpace(execution.CompletionPhase) &&
-            string.Equals(snapshot.Phase, execution.CompletionPhase, StringComparison.OrdinalIgnoreCase))
-        {
-            return true;
-        }
-
-        if (!string.IsNullOrWhiteSpace(execution.CompletionSummaryLabel) &&
-            snapshot.Summaries.Any(summary =>
-                string.Equals(summary.Label, execution.CompletionSummaryLabel, StringComparison.OrdinalIgnoreCase)))
-        {
-            return true;
-        }
-
-        return false;
-    }
-
-    internal void RegisterAgentIdentity(
-        string agentId,
-        string agentName,
-        string? executorId)
-    {
-        ArgumentException.ThrowIfNullOrWhiteSpace(agentId);
-        ArgumentException.ThrowIfNullOrWhiteSpace(agentName);
-
-        _agentIdsByExecutorId[agentId] = agentId;
-        if (!string.IsNullOrWhiteSpace(executorId))
-        {
-            _agentIdsByExecutorId[executorId] = agentId;
-        }
-
-        _agentIdsByExecutorId[agentName] = agentId;
-        _agentIdsByName[agentName] = agentId;
-        _agentNamesById[agentId] = agentName;
+        _activeStreamsByRuntimeMessageId.Clear();
+        _completedRuntimeMessageIds.Clear();
     }
 
     private async Task AddMessageAsync(IAppChatMessage message)
     {
-        if (_chat.Messages.Any(m => m.Id == message.Id))
+        if (_chat.Messages.Any(existing => existing.Id == message.Id))
         {
             return;
         }
@@ -391,41 +345,18 @@ public sealed class OrchestrationWorkflowChatSessionService(
         await (MessageAdded?.Invoke(message) ?? Task.CompletedTask);
     }
 
-    private void ReplaceMessage(IAppChatMessage source, IAppChatMessage replacement)
+    private void ReplaceMessage(
+        IAppChatMessage source,
+        IAppChatMessage replacement)
     {
-        int index = _chat.Messages.IndexOf(source);
+        var index = _chat.Messages.IndexOf(source);
         if (index >= 0)
         {
             _chat.Messages[index] = replacement;
+            return;
         }
-        else
-        {
-            _chat.Messages.Add(replacement);
-        }
-    }
 
-    private void RebuildAssistantSpeakerHistory()
-    {
-        _assistantSpeakerIds.Clear();
-
-        foreach (var message in _chat.Messages)
-        {
-            if (message.IsStreaming || message.Role != AppChatRole.Assistant)
-            {
-                continue;
-            }
-
-            if (_speakerIdsByMessageId.TryGetValue(message.Id, out var speakerId) &&
-                !string.IsNullOrWhiteSpace(speakerId))
-            {
-                _assistantSpeakerIds.Add(speakerId);
-            }
-        }
-    }
-
-    private async Task HandleError(string text)
-    {
-        await AddMessageAsync(new AppChatMessage(text, DateTime.Now, AppChatRole.Assistant));
+        _chat.Messages.Add(replacement);
     }
 
     private void UpdateAnsweringState(bool isAnswering)

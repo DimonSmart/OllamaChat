@@ -1,322 +1,120 @@
 using ChatClient.Api.AgentWorkflows;
-using ChatClient.Api.AgentWorkflows.Runtime;
 using ChatClient.Api.Client.Services.Agentic;
-using ChatClient.Api.Services;
-using ChatClient.Api.Services.BuiltIn;
+using ChatClient.Api.Services.AgentRuntime;
 using ChatClient.Application.Services.Agentic;
 using ChatClient.Domain.Models;
-using ChatClient.Infrastructure.Services.TaskSessions;
-using Microsoft.Agents.AI;
 using Microsoft.Agents.AI.Workflows;
-using Microsoft.Extensions.AI;
-using Microsoft.Extensions.Logging;
-using System.Reflection;
+using Microsoft.Extensions.Logging.Abstractions;
 using System.Runtime.CompilerServices;
 
 namespace ChatClient.Tests;
 
 public sealed class OrchestrationWorkflowChatSessionServiceTests
 {
-    private sealed class StubModelCapabilityService : IModelCapabilityService
-    {
-        public Task EnsureModelSupportedByServerAsync(ServerModel model, CancellationToken cancellationToken = default) =>
-            Task.CompletedTask;
-
-        public Task<bool> SupportsFunctionCallingAsync(ServerModel model, CancellationToken cancellationToken = default) =>
-            Task.FromResult(true);
-    }
-
-    private sealed class StubRuntimeWorkflowBuilder(
-        IOrchestrationWorkflowDefinition workflowDefinition,
-        Workflow runtimeWorkflow) : IOrchestrationRuntimeWorkflowBuilder
-    {
-        public bool CanBuild(IOrchestrationWorkflowDefinition workflow) =>
-            ReferenceEquals(workflow, workflowDefinition);
-
-        public Workflow Build(
-            IOrchestrationWorkflowDefinition workflow,
-            IReadOnlyDictionary<string, AIAgent> agentsById,
-            OrchestrationRuntimeBuildContext context) =>
-            runtimeWorkflow;
-    }
-
-    private sealed class GatedStreamingChatExecutor(Task releaseFinalOutput)
-        : ChatProtocolExecutor(
-            "runtime://host",
-            new ChatProtocolExecutorOptions
-            {
-                StringMessageChatRole = ChatRole.User,
-                AutoSendTurnToken = false
-            })
-    {
-        protected override ProtocolBuilder ConfigureProtocol(ProtocolBuilder protocolBuilder) =>
-            base.ConfigureProtocol(protocolBuilder)
-                .SendsMessage<ChatMessage>()
-                .YieldsOutput<AgentResponseUpdate>()
-                .YieldsOutput<ChatMessage>();
-
-        protected override async ValueTask TakeTurnAsync(
-            List<ChatMessage> messages,
-            IWorkflowContext context,
-            bool? emitEvents,
-            CancellationToken cancellationToken = default)
-        {
-            await context.YieldOutputAsync(CreateUpdate("Host", "Hello"), cancellationToken);
-            await releaseFinalOutput.WaitAsync(cancellationToken);
-            await context.YieldOutputAsync(CreateUpdate("Host", " world"), cancellationToken);
-            await context.YieldOutputAsync(CreateOutputMessage("Host", "Hello world"), cancellationToken);
-        }
-    }
-
-    private sealed class CancelableStreamingChatExecutor()
-        : ChatProtocolExecutor(
-            "runtime://host",
-            new ChatProtocolExecutorOptions
-            {
-                StringMessageChatRole = ChatRole.User,
-                AutoSendTurnToken = false
-            })
-    {
-        protected override ProtocolBuilder ConfigureProtocol(ProtocolBuilder protocolBuilder) =>
-            base.ConfigureProtocol(protocolBuilder)
-                .SendsMessage<ChatMessage>()
-                .YieldsOutput<AgentResponseUpdate>();
-
-        protected override async ValueTask TakeTurnAsync(
-            List<ChatMessage> messages,
-            IWorkflowContext context,
-            bool? emitEvents,
-            CancellationToken cancellationToken = default)
-        {
-            await context.YieldOutputAsync(CreateUpdate("Host", "Hello"), cancellationToken);
-            await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken);
-        }
-    }
-
     [Fact]
-    public async Task DrainWorkflowEventsAsync_MergesUpdatesAndFinalOutputIntoSingleAssistantMessage()
+    public async Task SendAsync_ProjectsHeadlessStreamAndCompletionIntoSingleAssistantMessage()
     {
-        var service = CreateService();
-        service.RegisterAgentIdentity("host", "Host", "runtime://host");
+        var service = CreateService(new StubHeadlessWorkflowRunner([
+            new HeadlessWorkflowStarted("task-1"),
+            new HeadlessWorkflowTextDelta("m1", "Host", "partial"),
+            new HeadlessWorkflowMessageCompleted("m1", "host", "Host", "final answer"),
+            new HeadlessWorkflowCompleted(new HeadlessWorkflowResult
+            {
+                FinalMessageId = "m1",
+                FinalAuthor = "Host",
+                FinalContent = "final answer",
+                Messages = [new HeadlessWorkflowOutputMessage("m1", "host", "Host", "final answer")]
+            })
+        ]));
+        await service.StartAsync(CreateStartRequest());
 
-        await service.DrainWorkflowEventsAsync(
-            StreamEvents(
-            [
-                CreateUpdateEvent("runtime://host", "Host", "Hello"),
-                CreateUpdateEvent("runtime://host", "Host", " world"),
-                CreateOutputEvent("runtime://host", "Host", "Hello world")
-            ]),
-            "model-a");
+        await service.SendAsync("go");
 
-        var assistants = service.Messages.Where(message => message.Role == AppChatRole.Assistant).ToList();
-
-        var assistant = Assert.Single(assistants);
-        Assert.Equal("Hello world", assistant.Content);
+        Assert.Equal("task-1", service.TaskSessionId);
+        var assistant = Assert.Single(service.Messages, message => message.Role == AppChatRole.Assistant);
+        Assert.Equal("final answer", assistant.Content);
         Assert.False(assistant.IsStreaming);
         Assert.Equal("host", assistant.AgentId);
         Assert.Equal("Host", assistant.AgentName);
     }
 
     [Fact]
-    public async Task DrainWorkflowEventsAsync_UsesAgentNameForSlotBasedWorkflowAgentIds()
+    public async Task KickoffAsync_DoesNotAddUserMessageAndUsesHeadlessRunner()
     {
-        var service = CreateService();
-        service.RegisterAgentIdentity("debater_a", "Immanuel Kant", "runtime://debater-a");
+        var runner = new StubHeadlessWorkflowRunner([
+            new HeadlessWorkflowStarted("task-1"),
+            new HeadlessWorkflowMessageCompleted("m1", "host", "Host", "hello"),
+            new HeadlessWorkflowCompleted(new HeadlessWorkflowResult
+            {
+                FinalMessageId = "m1",
+                FinalAuthor = "Host",
+                FinalContent = "hello",
+                Messages = [new HeadlessWorkflowOutputMessage("m1", "host", "Host", "hello")]
+            })
+        ]);
+        var service = CreateService(runner);
+        await service.StartAsync(CreateStartRequest());
 
-        await service.DrainWorkflowEventsAsync(
-            StreamEvents(
-            [
-                CreateUpdateEvent("runtime://debater-a", "Immanuel Kant", "Duty first."),
-                CreateOutputEvent("runtime://debater-a", "Immanuel Kant", "Duty first.")
-            ]),
-            "model-a");
+        await service.KickoffAsync();
 
-        var assistant = Assert.Single(service.Messages, message => message.Role == AppChatRole.Assistant);
-        Assert.Equal("debater_a", assistant.AgentId);
-        Assert.Equal("Immanuel Kant", assistant.AgentName);
+        Assert.Null(runner.LastRequest!.UserMessage);
+        Assert.DoesNotContain(service.Messages, message => message.Role == AppChatRole.User);
+        Assert.Single(service.Messages, message => message.Role == AppChatRole.Assistant);
     }
 
     [Fact]
-    public async Task DrainWorkflowEventsAsync_FinalizesPreviousSpeakerWhenNextSpeakerStartsStreaming()
+    public async Task SendAsync_ForwardsFilesToHeadlessRunner()
     {
-        var service = CreateService();
-        service.RegisterAgentIdentity("host", "Host", "runtime://host");
-        service.RegisterAgentIdentity("judge", "Judge", "runtime://judge");
+        var runner = new StubHeadlessWorkflowRunner([
+            new HeadlessWorkflowStarted("task-1"),
+            new HeadlessWorkflowCompleted(new HeadlessWorkflowResult
+            {
+                FinalMessageId = "final",
+                FinalAuthor = "Workflow",
+                FinalContent = "done"
+            })
+        ]);
+        var service = CreateService(runner);
+        await service.StartAsync(CreateStartRequest());
+        var file = new AppChatMessageFile("notes.md", 5, "text/markdown", [1, 2, 3, 4, 5]);
 
-        await service.DrainWorkflowEventsAsync(
-            StreamEvents(
-            [
-                CreateUpdateEvent("runtime://host", "Host", "Host intro"),
-                CreateUpdateEvent("runtime://judge", "Judge", "Judge review"),
-                CreateOutputEvent("runtime://judge", "Judge", "Judge review")
-            ]),
-            "model-a");
+        await service.SendAsync("go", [file]);
 
-        var assistants = service.Messages.Where(message => message.Role == AppChatRole.Assistant).ToList();
-
-        Assert.Equal(2, assistants.Count);
-        Assert.Equal("Host intro", assistants[0].Content);
-        Assert.False(assistants[0].IsStreaming);
-        Assert.Equal("host", assistants[0].AgentId);
-        Assert.Equal("Judge review", assistants[1].Content);
-        Assert.False(assistants[1].IsStreaming);
-        Assert.Equal("judge", assistants[1].AgentId);
+        Assert.Same(file, Assert.Single(runner.LastRequest!.UserFiles));
     }
 
     [Fact]
-    public async Task DrainWorkflowEventsAsync_SkipsTranscriptMessagesAlreadyShownViaStreaming()
+    public async Task CancelAsync_CancelsActiveStreamsWithoutGenericError()
     {
-        var service = CreateService();
-        service.RegisterAgentIdentity("host", "Host", "runtime://host");
-        service.RegisterAgentIdentity("judge", "Judge", "runtime://judge");
+        var runner = new BlockingHeadlessWorkflowRunner();
+        var service = CreateService(runner);
+        await service.StartAsync(CreateStartRequest());
 
-        await service.DrainWorkflowEventsAsync(
-            StreamEvents(
-            [
-                CreateUpdateEvent("runtime://host", "Host", "Host intro"),
-                CreateUpdateEvent("runtime://judge", "Judge", "Judge review"),
-                CreateOutputListEvent(
-                    "runtime://group-chat",
-                    CreateOutputMessage("Host", "Host intro"),
-                    CreateOutputMessage("Judge", "Judge review"))
-            ]),
-            "model-a");
-
-        var assistants = service.Messages.Where(message => message.Role == AppChatRole.Assistant).ToList();
-
-        Assert.Equal(2, assistants.Count);
-        Assert.Equal("Host intro", assistants[0].Content);
-        Assert.Equal("host", assistants[0].AgentId);
-        Assert.Equal("Judge review", assistants[1].Content);
-        Assert.Equal("judge", assistants[1].AgentId);
-    }
-
-    [Fact]
-    public async Task DrainWorkflowEventsAsync_SkipsTranscriptSuffixAlreadyShownInPreviousPass()
-    {
-        var service = CreateService();
-        service.RegisterAgentIdentity("host", "Host", "runtime://host");
-        service.RegisterAgentIdentity("judge", "Judge", "runtime://judge");
-
-        service.Messages.Add(new AppChatMessage(
-            "Host intro",
-            DateTime.Now,
-            AppChatRole.Assistant,
-            agentId: "host",
-            agentName: "Host"));
-        service.Messages.Add(new AppChatMessage(
-            "Judge review",
-            DateTime.Now,
-            AppChatRole.Assistant,
-            agentId: "judge",
-            agentName: "Judge"));
-
-        await service.DrainWorkflowEventsAsync(
-            StreamEvents(
-            [
-                CreateOutputListEvent(
-                    "runtime://group-chat",
-                    CreateOutputMessage("Judge", "Judge review"),
-                    CreateOutputMessage("Host", "Host closing"))
-            ]),
-            "model-a");
-
-        var assistants = service.Messages.Where(message => message.Role == AppChatRole.Assistant).ToList();
-
-        Assert.Equal(3, assistants.Count);
-        Assert.Equal("Host intro", assistants[0].Content);
-        Assert.Equal("Judge review", assistants[1].Content);
-        Assert.Equal("Host closing", assistants[2].Content);
-        Assert.Equal("host", assistants[2].AgentId);
-    }
-
-    [Fact]
-    public async Task DrainWorkflowEventsAsync_FinalizesCurrentStreamBeforeRethrowingExecutorFailure()
-    {
-        var service = CreateService();
-        service.RegisterAgentIdentity("host", "Host", "runtime://host");
-
-        var exception = await Assert.ThrowsAsync<InvalidOperationException>(() =>
-            service.DrainWorkflowEventsAsync(
-                StreamEvents(
-                [
-                    CreateUpdateEvent("runtime://host", "Host", "Hello"),
-                    new ExecutorFailedEvent("runtime://host", new InvalidOperationException("boom"))
-                ]),
-                "model-a"));
-
-        Assert.Equal("boom", exception.Message);
-
-        var assistant = Assert.Single(service.Messages, message => message.Role == AppChatRole.Assistant);
-        Assert.Equal("Hello", assistant.Content);
-        Assert.False(assistant.IsStreaming);
-    }
-
-    [Fact]
-    public async Task KickoffAsync_StreamsFirstWorkflowMessageBeforeRunCompletes()
-    {
-        var releaseFinalOutput = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-        var workflow = CreateWorkflowDefinition();
-        var runtimeWorkflow = new WorkflowBuilder(new GatedStreamingChatExecutor(releaseFinalOutput.Task))
-            .WithOutputFrom("runtime://host")
-            .Build();
-        var taskSessionStore = CreateTaskSessionStore(CreateTaskStorePath());
-        var session = await taskSessionStore.CreateSessionAsync("Workflow stream", null, CancellationToken.None);
-        var service = CreateService(
-            taskSessionStore,
-            [new StubRuntimeWorkflowBuilder(workflow, runtimeWorkflow)]);
-
-        service.RegisterAgentIdentity("host", "Host", "runtime://host");
-        InitializeStartedWorkflowSession(service, workflow, session.SessionId);
-
-        var kickoffTask = service.KickoffAsync();
-
-        await WaitUntilAsync(
-            () => service.Messages.Any(message =>
-                message.Role == AppChatRole.Assistant &&
-                message.IsStreaming &&
-                string.Equals(message.Content, "Hello", StringComparison.Ordinal)),
-            TimeSpan.FromSeconds(3));
-
-        Assert.False(kickoffTask.IsCompleted);
-
-        releaseFinalOutput.SetResult();
-        await kickoffTask;
-
-        var assistant = Assert.Single(service.Messages, message => message.Role == AppChatRole.Assistant);
-        Assert.Equal("Hello world", assistant.Content);
-        Assert.False(assistant.IsStreaming);
-    }
-
-    [Fact]
-    public async Task CancelAsync_DuringKickoff_MarksStreamingWorkflowMessageAsCanceled()
-    {
-        var workflow = CreateWorkflowDefinition();
-        var runtimeWorkflow = new WorkflowBuilder(new CancelableStreamingChatExecutor())
-            .WithOutputFrom("runtime://host")
-            .Build();
-        var taskSessionStore = CreateTaskSessionStore(CreateTaskStorePath());
-        var session = await taskSessionStore.CreateSessionAsync("Workflow cancel", null, CancellationToken.None);
-        var service = CreateService(
-            taskSessionStore,
-            [new StubRuntimeWorkflowBuilder(workflow, runtimeWorkflow)]);
-
-        service.RegisterAgentIdentity("host", "Host", "runtime://host");
-        InitializeStartedWorkflowSession(service, workflow, session.SessionId);
-
-        var kickoffTask = service.KickoffAsync();
-
-        await WaitUntilAsync(
-            () => service.Messages.Any(message =>
-                message.Role == AppChatRole.Assistant &&
-                message.IsStreaming),
-            TimeSpan.FromSeconds(3));
+        var sendTask = service.SendAsync("go");
+        await runner.WaitUntilStreamingAsync();
 
         await service.CancelAsync();
-        await kickoffTask;
+        await sendTask;
 
         var assistant = Assert.Single(service.Messages, message => message.Role == AppChatRole.Assistant);
         Assert.True(assistant.IsCanceled);
+        Assert.False(assistant.IsStreaming);
+        Assert.DoesNotContain(service.Messages, message => message.Content.StartsWith("Workflow runtime error:", StringComparison.Ordinal));
+        Assert.False(service.IsAnswering);
+    }
+
+    [Fact]
+    public async Task SendAsync_FailureCancelsStreamsAndAddsOneErrorMessage()
+    {
+        var service = CreateService(new FailingHeadlessWorkflowRunner());
+        await service.StartAsync(CreateStartRequest());
+
+        await service.SendAsync("go");
+
+        var assistants = service.Messages.Where(message => message.Role == AppChatRole.Assistant).ToList();
+        Assert.Equal(2, assistants.Count);
+        Assert.Contains(assistants, message => message.IsCanceled);
+        Assert.Single(assistants, message => message.Content.StartsWith("Workflow runtime error:", StringComparison.Ordinal));
         Assert.False(service.IsAnswering);
     }
 
@@ -339,156 +137,83 @@ public sealed class OrchestrationWorkflowChatSessionServiceTests
         Assert.Equal(expected, shouldSend);
     }
 
-    private static OrchestrationWorkflowChatSessionService CreateService(
-        TaskSessionStore? taskSessionStore = null,
-        IReadOnlyList<IOrchestrationRuntimeWorkflowBuilder>? runtimeWorkflowBuilders = null)
-    {
-        var effectiveTaskSessionStore = taskSessionStore ?? CreateTaskSessionStore(CreateTaskStorePath());
-        var streamingBridge = new AgenticChatEngineStreamingBridge();
-        var eventStreamProcessor = new OrchestrationWorkflowEventStreamProcessor(streamingBridge);
-
-        return new(
-            effectiveTaskSessionStore,
-            CreateSessionBootstrapper(effectiveTaskSessionStore),
-            CreateTurnCoordinator(),
-            CreatePassExecutor(eventStreamProcessor, runtimeWorkflowBuilders ?? []),
-            eventStreamProcessor,
-            streamingBridge);
-    }
-
-    private static OrchestrationWorkflowPassExecutor CreatePassExecutor(
-        OrchestrationWorkflowEventStreamProcessor eventStreamProcessor,
-        IReadOnlyList<IOrchestrationRuntimeWorkflowBuilder> runtimeWorkflowBuilders) =>
+    private static OrchestrationWorkflowChatSessionService CreateService(IHeadlessWorkflowRunner runner) =>
         new(
-            new LoggerFactory().CreateLogger<OrchestrationWorkflowPassExecutor>(),
-            eventStreamProcessor,
-            runtimeWorkflowBuilders);
+            runner,
+            new AgenticChatEngineStreamingBridge(),
+            NullLogger<OrchestrationWorkflowChatSessionService>.Instance);
 
-    private static AgentWorkflowDefinition CreateWorkflowDefinition() =>
+    private static OrchestrationWorkflowSessionStartRequest CreateStartRequest() =>
         new()
         {
-            Id = "workflow-stream-test",
-            DisplayName = "Workflow Stream Test",
-            StartAgentId = "host",
-            Execution = new AgentWorkflowExecutionDefinition
+            Workflow = new AgentWorkflowDefinition
             {
-                Mode = AgentWorkflowExecutionMode.Interactive
-            },
-            Agents =
-            [
-                new AgentWorkflowAgentDefinition
+                Id = "workflow",
+                DisplayName = "Workflow",
+                StartAgentId = "host",
+                Execution = new AgentWorkflowExecutionDefinition
                 {
-                    Id = "host",
-                    Role = "host"
-                }
-            ]
-        };
-
-
-    private static TaskSessionStore CreateTaskSessionStore(string databasePath)
-    {
-        var binding = new McpServerSessionBinding();
-        binding.Parameters[TaskSessionStore.DatabaseFileParameter] = databasePath;
-        return new TaskSessionStore(
-            new McpServerSessionContext(binding),
-            new SqliteTaskSessionRepository());
-    }
-
-    private static OrchestrationWorkflowSessionBootstrapper CreateSessionBootstrapper(TaskSessionStore taskSessionStore) =>
-        new(
-            new LoggerFactory().CreateLogger<OrchestrationWorkflowSessionBootstrapper>(),
-            new StubModelCapabilityService(),
-            taskSessionStore,
-            new MarkdownDocumentIntakeService(),
-            null!);
-
-    private static OrchestrationWorkflowTurnCoordinator CreateTurnCoordinator() =>
-        new(
-            new LoggerFactory().CreateLogger<OrchestrationWorkflowTurnCoordinator>(),
-            new WorkflowExecutionPolicy());
-
-    private static string CreateTaskStorePath()
-    {
-        var tempDirectory = Path.Combine(Path.GetTempPath(), "OllamaChat.Tests", Guid.NewGuid().ToString("N"));
-        Directory.CreateDirectory(tempDirectory);
-        return Path.Combine(tempDirectory, "task-sessions.db");
-    }
-
-    private static void InitializeStartedWorkflowSession(
-        OrchestrationWorkflowChatSessionService service,
-        IOrchestrationWorkflowDefinition workflow,
-        string taskSessionId)
-    {
-        var request = new OrchestrationWorkflowSessionStartRequest
-        {
-            Workflow = workflow,
+                    Mode = AgentWorkflowExecutionMode.Interactive
+                },
+                Agents =
+                [
+                    new AgentWorkflowAgentDefinition
+                    {
+                        Id = "host",
+                        Role = "host"
+                    }
+                ]
+            },
             Agents = [],
-            Configuration = new AppChatConfiguration("model-a", [])
+            Configuration = new AppChatConfiguration("model", [])
         };
 
-        var serviceType = typeof(OrchestrationWorkflowChatSessionService);
-        serviceType
-            .GetField("_parameters", BindingFlags.Instance | BindingFlags.NonPublic)!
-            .SetValue(service, request);
-        serviceType
-            .GetProperty(
-                nameof(OrchestrationWorkflowChatSessionService.TaskSessionId),
-                BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic)!
-            .SetValue(service, taskSessionId);
-    }
-
-    private static AgentResponseUpdateEvent CreateUpdateEvent(
-        string executorId,
-        string authorName,
-        string text) =>
-        new(executorId, CreateUpdate(authorName, text));
-
-    private static AgentResponseUpdate CreateUpdate(string authorName, string text) =>
-        new(ChatRole.Assistant, text)
-        {
-            AuthorName = authorName
-        };
-
-    private static WorkflowOutputEvent CreateOutputEvent(
-        string executorId,
-        string authorName,
-        string text) =>
-        new(CreateOutputMessage(authorName, text), executorId);
-
-    private static WorkflowOutputEvent CreateOutputListEvent(
-        string executorId,
-        params ChatMessage[] messages) =>
-        new(messages.ToList(), executorId);
-
-    private static ChatMessage CreateOutputMessage(string authorName, string text) =>
-        new(ChatRole.Assistant, text)
-        {
-            AuthorName = authorName
-        };
-
-    private static async IAsyncEnumerable<WorkflowEvent> StreamEvents(
-        IReadOnlyList<WorkflowEvent> workflowEvents,
-        [EnumeratorCancellation] CancellationToken cancellationToken = default)
+    private sealed class StubHeadlessWorkflowRunner(IReadOnlyList<HeadlessWorkflowEvent> events) : IHeadlessWorkflowRunner
     {
-        foreach (var workflowEvent in workflowEvents)
+        public HeadlessWorkflowRunRequest? LastRequest { get; private set; }
+
+        public async IAsyncEnumerable<HeadlessWorkflowEvent> RunAsync(
+            HeadlessWorkflowRunRequest request,
+            [EnumeratorCancellation] CancellationToken cancellationToken = default)
         {
-            cancellationToken.ThrowIfCancellationRequested();
-            await Task.Yield();
-            yield return workflowEvent;
+            LastRequest = request;
+            foreach (var runEvent in events)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                await Task.Yield();
+                yield return runEvent;
+            }
         }
     }
 
-    private static async Task WaitUntilAsync(Func<bool> predicate, TimeSpan timeout)
+    private sealed class BlockingHeadlessWorkflowRunner : IHeadlessWorkflowRunner
     {
-        var startedAt = DateTime.UtcNow;
-        while (!predicate())
-        {
-            if (DateTime.UtcNow - startedAt > timeout)
-            {
-                throw new TimeoutException("Condition was not reached in time.");
-            }
+        private readonly TaskCompletionSource _streaming =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
 
-            await Task.Delay(15);
+        public Task WaitUntilStreamingAsync() => _streaming.Task.WaitAsync(TimeSpan.FromSeconds(3));
+
+        public async IAsyncEnumerable<HeadlessWorkflowEvent> RunAsync(
+            HeadlessWorkflowRunRequest request,
+            [EnumeratorCancellation] CancellationToken cancellationToken = default)
+        {
+            yield return new HeadlessWorkflowStarted("task-1");
+            yield return new HeadlessWorkflowTextDelta("m1", "Host", "hello");
+            _streaming.SetResult();
+            await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken);
+        }
+    }
+
+    private sealed class FailingHeadlessWorkflowRunner : IHeadlessWorkflowRunner
+    {
+        public async IAsyncEnumerable<HeadlessWorkflowEvent> RunAsync(
+            HeadlessWorkflowRunRequest request,
+            [EnumeratorCancellation] CancellationToken cancellationToken = default)
+        {
+            yield return new HeadlessWorkflowStarted("task-1");
+            yield return new HeadlessWorkflowTextDelta("m1", "Host", "hello");
+            await Task.Yield();
+            throw new InvalidOperationException("boom");
         }
     }
 }

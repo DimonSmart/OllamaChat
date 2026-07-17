@@ -68,6 +68,103 @@ public sealed class UnifiedAgentRuntimeChatSessionServiceTests
         Assert.Equal("Agent", assistant.AgentName);
     }
 
+    [Theory]
+    [MemberData(nameof(CompletedContentCases))]
+    public async Task SendAsync_CompletedMessageReplacesStreamWithSameRuntimeMessageId(
+        IReadOnlyList<AgentRunEvent> messageEvents,
+        string expectedContent)
+    {
+        var events = messageEvents
+            .Concat([
+                new AgentRunCompleted(new AgentRunResult
+                {
+                    FinalMessage = new AgentOutputMessage("Agent", expectedContent),
+                    FinalMessageId = "m1",
+                    Messages = [new AgentOutputMessage("Agent", expectedContent)]
+                })
+            ])
+            .ToList();
+        var service = CreateService(new StubAgentRunner(events));
+        await service.StartAsync(CreateStartRequest());
+
+        await service.SendAsync("go");
+
+        var assistant = Assert.Single(
+            service.Messages,
+            static message => message.Role == AppChatRole.Assistant);
+        Assert.Equal(expectedContent, assistant.Content);
+        Assert.Equal("Agent", assistant.AgentName);
+        Assert.False(assistant.IsStreaming);
+    }
+
+    [Fact]
+    public async Task SendAsync_CompletedRunFinalizesRemainingStreams()
+    {
+        var service = CreateService(new StubAgentRunner([
+            new AgentTextDelta("m1", "Agent", "answer"),
+            new AgentRunCompleted(new AgentRunResult
+            {
+                FinalMessage = new AgentOutputMessage("Agent", "answer"),
+                FinalMessageId = "m1",
+                Messages = [new AgentOutputMessage("Agent", "answer")]
+            })
+        ]));
+        await service.StartAsync(CreateStartRequest());
+
+        await service.SendAsync("go");
+
+        var assistant = Assert.Single(
+            service.Messages,
+            static message => message.Role == AppChatRole.Assistant);
+        Assert.Equal("answer", assistant.Content);
+        Assert.False(assistant.IsStreaming);
+        Assert.False(service.IsAnswering);
+    }
+
+    [Fact]
+    public async Task SendAsync_FailedRunCancelsStreamsAndAddsOneErrorMessage()
+    {
+        var service = CreateService(new StubAgentRunner([
+            new AgentTextDelta("m1", "Agent", "partial"),
+            new AgentRunFailed(new AgentRunError("execution_failed", "boom", true))
+        ]));
+        await service.StartAsync(CreateStartRequest());
+
+        await service.SendAsync("go");
+
+        var assistants = service.Messages
+            .Where(static message => message.Role == AppChatRole.Assistant)
+            .ToList();
+        Assert.Equal(2, assistants.Count);
+        Assert.Single(assistants, static message => message.IsCanceled && !message.IsStreaming);
+        Assert.Single(assistants, static message => message.Content == "Agent runtime error: boom");
+        Assert.False(service.IsAnswering);
+    }
+
+    [Fact]
+    public async Task CancelAsync_CancelsStreamsWithoutGenericError()
+    {
+        var runner = new BlockingAgentRunner();
+        var service = CreateService(runner);
+        await service.StartAsync(CreateStartRequest());
+
+        var sendTask = service.SendAsync("go");
+        await runner.WaitUntilStreamingAsync();
+
+        await service.CancelAsync();
+        await sendTask;
+
+        var assistant = Assert.Single(
+            service.Messages,
+            static message => message.Role == AppChatRole.Assistant);
+        Assert.True(assistant.IsCanceled);
+        Assert.False(assistant.IsStreaming);
+        Assert.DoesNotContain(
+            service.Messages,
+            static message => message.Content.StartsWith("Agent runtime error:", StringComparison.Ordinal));
+        Assert.False(service.IsAnswering);
+    }
+
     [Fact]
     public async Task SendAsync_ForwardsCurrentUserAttachmentsToRuntimeRequest()
     {
@@ -141,6 +238,50 @@ public sealed class UnifiedAgentRuntimeChatSessionServiceTests
             RuntimeReference = new AgentDefinitionReference(AgentDefinitionKind.SavedAgent, "agent")
         };
 
+    public static TheoryData<IReadOnlyList<AgentRunEvent>, string> CompletedContentCases()
+    {
+        var data = new TheoryData<IReadOnlyList<AgentRunEvent>, string>
+        {
+            {
+                [
+                    new AgentTextDelta("m1", "Agent", "answer"),
+                    new AgentMessageCompleted("m1", new AgentOutputMessage("Agent", "answer"))
+                ],
+                "answer"
+            },
+            {
+                [
+                    new AgentTextDelta("m1", "Agent", "answer "),
+                    new AgentMessageCompleted("m1", new AgentOutputMessage("Agent", "answer"))
+                ],
+                "answer"
+            },
+            {
+                [
+                    new AgentTextDelta("m1", "Agent", "partial"),
+                    new AgentMessageCompleted("m1", new AgentOutputMessage("Agent", "final answer"))
+                ],
+                "final answer"
+            },
+            {
+                [
+                    new AgentTextDelta("m1", "Agent", "final"),
+                    new AgentTextDelta("m1", "Agent", " answer "),
+                    new AgentMessageCompleted("m1", new AgentOutputMessage("Agent", "final answer"))
+                ],
+                "final answer"
+            },
+            {
+                [
+                    new AgentMessageCompleted("m1", new AgentOutputMessage("Agent", "answer"))
+                ],
+                "answer"
+            }
+        };
+
+        return data;
+    }
+
     private sealed class StubAgentRunner(IReadOnlyList<AgentRunEvent> events) : IAgentRunner
     {
         public AgentRuntimeRunRequest? LastRequest { get; private set; }
@@ -159,6 +300,26 @@ public sealed class UnifiedAgentRuntimeChatSessionServiceTests
                 await Task.Yield();
                 yield return runEvent;
             }
+        }
+    }
+
+    private sealed class BlockingAgentRunner : IAgentRunner
+    {
+        private readonly TaskCompletionSource _streaming =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public Task WaitUntilStreamingAsync() => _streaming.Task.WaitAsync(TimeSpan.FromSeconds(3));
+
+        public async IAsyncEnumerable<AgentRunEvent> RunAsync(
+            AgentDefinitionReference reference,
+            AgentRuntimeRunRequest request,
+            AgentRuntimeCreationContext creationContext,
+            AgentRunContext runContext,
+            [EnumeratorCancellation] CancellationToken cancellationToken = default)
+        {
+            yield return new AgentTextDelta("m1", "Agent", "partial");
+            _streaming.SetResult();
+            await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken);
         }
     }
 }

@@ -252,15 +252,15 @@ public sealed class UnifiedAgentRuntimeChatSessionService(
         string runtimeMessageId,
         AgentOutputMessage output)
     {
-        if (_activeStreamsByRuntimeMessageId.TryGetValue(runtimeMessageId, out var stream) &&
-            string.Equals(stream.Content, output.Content, StringComparison.Ordinal))
+        if (_activeStreamsByRuntimeMessageId.TryGetValue(runtimeMessageId, out var stream))
         {
             if (!string.IsNullOrWhiteSpace(output.Author))
             {
+                stream.SetAgentId(output.Author);
                 stream.SetAgentName(output.Author);
             }
 
-            var final = streamingBridge.Complete(stream, "unified agent runtime");
+            var final = streamingBridge.Complete(stream, output.Content, "unified agent runtime");
             ReplaceMessage(stream, final);
             await (MessageUpdated?.Invoke(final, true) ?? Task.CompletedTask);
             _activeStreamsByRuntimeMessageId.Remove(runtimeMessageId);

@@ -22,7 +22,9 @@ public sealed record HeadlessWorkflowRunRequest
 
     public required AppChatConfiguration Configuration { get; init; }
 
-    public required string UserMessage { get; init; }
+    public string? UserMessage { get; init; }
+
+    public IReadOnlyList<AppChatMessageFile> UserFiles { get; init; } = [];
 
     public IReadOnlyList<OrchestrationWorkflowStartInputValue> StartInputs { get; init; } = [];
 
@@ -32,6 +34,8 @@ public sealed record HeadlessWorkflowRunRequest
 }
 
 public abstract record HeadlessWorkflowEvent;
+
+public sealed record HeadlessWorkflowStarted(string TaskSessionId) : HeadlessWorkflowEvent;
 
 public sealed record HeadlessWorkflowTextDelta(
     string MessageId,
@@ -138,14 +142,22 @@ public sealed class HeadlessWorkflowRunner(
             }
 
             var taskSessionId = bootstrap.TaskSessionId;
-            var userChatMessage = new AppChatMessage(request.UserMessage, DateTime.Now, AppChatRole.User);
-            await AddMessageAsync(userChatMessage, chatMessages);
-            await taskSessionStore.AppendTurnAsync(
-                taskSessionId,
-                "user",
-                OrchestrationWorkflowConversationBuilder.BuildUserMessage(request.UserMessage, []),
-                "user",
-                cancellationToken);
+            await writer.WriteAsync(new HeadlessWorkflowStarted(taskSessionId), cancellationToken);
+            if (!string.IsNullOrWhiteSpace(request.UserMessage))
+            {
+                var userChatMessage = new AppChatMessage(
+                    request.UserMessage,
+                    DateTime.Now,
+                    AppChatRole.User,
+                    files: request.UserFiles);
+                await AddMessageAsync(userChatMessage, chatMessages);
+                await taskSessionStore.AppendTurnAsync(
+                    taskSessionId,
+                    "user",
+                    OrchestrationWorkflowConversationBuilder.BuildUserMessage(request.UserMessage, request.UserFiles),
+                    "user",
+                    cancellationToken);
+            }
 
             await turnCoordinator.RunAsync(
                 new OrchestrationWorkflowTurnExecutionRequest
@@ -290,7 +302,7 @@ public sealed class HeadlessWorkflowRunner(
         return false;
     }
 
-    private async Task<HeadlessWorkflowResult?> ResolveFinalMessageAsync(
+    internal async Task<HeadlessWorkflowResult?> ResolveFinalMessageAsync(
         HeadlessWorkflowRunRequest request,
         string taskSessionId,
         IReadOnlyList<OrchestrationCompletedAssistantMessage> messages,

@@ -356,6 +356,4 @@ internal sealed class WorkflowAgentRuntime(
                attachment.Name.EndsWith(".markdown", StringComparison.OrdinalIgnoreCase) ||
                attachment.Name.EndsWith(".txt", StringComparison.OrdinalIgnoreCase);
     }
-
-    private sealed class WorkflowAssistantErrorException(string message) : Exception(message);
 }

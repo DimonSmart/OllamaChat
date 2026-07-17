@@ -18,13 +18,18 @@ public sealed class AgenticChatEngineStreamingBridge : IChatEngineStreamingBridg
 
     public AppChatMessage Complete(StreamingAppChatMessage message, string? statistics = null)
     {
+        return Complete(message, message.Content, statistics);
+    }
+
+    public AppChatMessage Complete(StreamingAppChatMessage message, string finalContent, string? statistics = null)
+    {
         if (!string.IsNullOrEmpty(statistics))
         {
             message.SetStatistics(statistics);
         }
 
         var finalMessage = new AppChatMessage(
-            message.Content,
+            finalContent,
             message.MsgDateTime,
             AppChatRole.Assistant,
             message.Statistics,
