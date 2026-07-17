@@ -5,6 +5,7 @@ using ChatClient.Application.Services.Agentic;
 using ChatClient.Domain.Models;
 using Microsoft.Agents.AI.Workflows;
 using Microsoft.Extensions.Logging.Abstractions;
+using System.Globalization;
 using System.Runtime.CompilerServices;
 
 namespace ChatClient.Tests;
@@ -57,7 +58,7 @@ public sealed class OrchestrationWorkflowChatSessionServiceTests
 
         await service.KickoffAsync();
 
-        Assert.Null(runner.LastRequest!.UserMessage);
+        Assert.Null(runner.LastTurnRequest!.UserMessage);
         Assert.DoesNotContain(service.Messages, message => message.Role == AppChatRole.User);
         Assert.Single(service.Messages, message => message.Role == AppChatRole.Assistant);
     }
@@ -80,7 +81,7 @@ public sealed class OrchestrationWorkflowChatSessionServiceTests
 
         await service.SendAsync("go", [file]);
 
-        Assert.Same(file, Assert.Single(runner.LastRequest!.UserFiles));
+        Assert.Same(file, Assert.Single(runner.LastTurnRequest!.UserFiles));
     }
 
     [Fact]
@@ -116,6 +117,74 @@ public sealed class OrchestrationWorkflowChatSessionServiceTests
         Assert.Contains(assistants, message => message.IsCanceled);
         Assert.Single(assistants, message => message.Content.StartsWith("Workflow runtime error:", StringComparison.Ordinal));
         Assert.False(service.IsAnswering);
+    }
+
+    [Fact]
+    public async Task SendAsync_UsesOneHeadlessSessionForMultipleTurns()
+    {
+        var runner = new StubHeadlessWorkflowRunner([]);
+        var service = CreateService(runner);
+        await service.StartAsync(CreateStartRequest());
+        var taskSessionId = service.TaskSessionId;
+
+        await service.SendAsync("first");
+        await service.SendAsync("second");
+
+        Assert.Equal(1, runner.StartCount);
+        Assert.Equal(2, runner.RunTurnCount);
+        Assert.Equal(taskSessionId, service.TaskSessionId);
+        Assert.Equal(
+            ["first", "second"],
+            runner.TurnRequests.Select(static request => request.UserMessage ?? string.Empty).ToArray());
+    }
+
+    [Fact]
+    public async Task KickoffAsync_AndSendAsync_UseSameHeadlessSession()
+    {
+        var runner = new StubHeadlessWorkflowRunner([]);
+        var service = CreateService(runner);
+        await service.StartAsync(CreateStartRequest());
+        var taskSessionId = service.TaskSessionId;
+
+        await service.KickoffAsync();
+        await service.SendAsync("continue");
+
+        Assert.Equal(1, runner.StartCount);
+        Assert.Equal(2, runner.RunTurnCount);
+        Assert.Equal(taskSessionId, service.TaskSessionId);
+    }
+
+    [Fact]
+    public async Task ResetChat_DisposesOldSessionAndCreatesNewSession()
+    {
+        var runner = new StubHeadlessWorkflowRunner([]);
+        var service = CreateService(runner);
+        await service.StartAsync(CreateStartRequest());
+        await service.SendAsync("first");
+        var firstSession = Assert.Single(runner.Sessions);
+
+        service.ResetChat();
+        await service.StartAsync(CreateStartRequest());
+        await service.SendAsync("second");
+
+        Assert.True(firstSession.IsDisposed);
+        Assert.Equal(2, runner.StartCount);
+        Assert.NotEqual(runner.Sessions[0].TaskSessionId, runner.Sessions[1].TaskSessionId);
+    }
+
+    [Fact]
+    public async Task SendAsync_PreservesHeadlessSessionStateBetweenTurns()
+    {
+        var runner = new StubHeadlessWorkflowRunner([]);
+        var service = CreateService(runner);
+        await service.StartAsync(CreateStartRequest());
+
+        await service.SendAsync("first");
+        await service.SendAsync("second");
+
+        var session = Assert.Single(runner.Sessions);
+        Assert.Equal(2, session.TurnCounter);
+        Assert.Equal([1, 2], session.ObservedTurnCounters);
     }
 
     [Theory]
@@ -170,19 +239,97 @@ public sealed class OrchestrationWorkflowChatSessionServiceTests
 
     private sealed class StubHeadlessWorkflowRunner(IReadOnlyList<HeadlessWorkflowEvent> events) : IHeadlessWorkflowRunner
     {
-        public HeadlessWorkflowRunRequest? LastRequest { get; private set; }
+        public HeadlessWorkflowSessionStartRequest? LastStartRequest { get; private set; }
 
-        public async IAsyncEnumerable<HeadlessWorkflowEvent> RunAsync(
-            HeadlessWorkflowRunRequest request,
+        public HeadlessWorkflowTurnRequest? LastTurnRequest { get; private set; }
+
+        public List<HeadlessWorkflowTurnRequest> TurnRequests { get; } = [];
+
+        public List<StubHeadlessWorkflowSession> Sessions { get; } = [];
+
+        public int StartCount { get; private set; }
+
+        public int RunTurnCount => Sessions.Sum(static session => session.RunTurnCount);
+
+        public Task<IHeadlessWorkflowSession> StartAsync(
+            HeadlessWorkflowSessionStartRequest request,
+            CancellationToken cancellationToken = default)
+        {
+            LastStartRequest = request;
+            StartCount++;
+            var session = new StubHeadlessWorkflowSession(
+                "task-" + StartCount.ToString(CultureInfo.InvariantCulture),
+                events,
+                turnRequest =>
+                {
+                    LastTurnRequest = turnRequest;
+                    TurnRequests.Add(turnRequest);
+                });
+            Sessions.Add(session);
+            return Task.FromResult<IHeadlessWorkflowSession>(session);
+        }
+    }
+
+    private sealed class StubHeadlessWorkflowSession(
+        string taskSessionId,
+        IReadOnlyList<HeadlessWorkflowEvent> events,
+        Action<HeadlessWorkflowTurnRequest> captureTurnRequest) : IHeadlessWorkflowSession
+    {
+        public string TaskSessionId { get; } = taskSessionId;
+
+        public int RunTurnCount { get; private set; }
+
+        public int TurnCounter { get; private set; }
+
+        public List<int> ObservedTurnCounters { get; } = [];
+
+        public bool IsDisposed { get; private set; }
+
+        public async IAsyncEnumerable<HeadlessWorkflowEvent> RunTurnAsync(
+            HeadlessWorkflowTurnRequest request,
             [EnumeratorCancellation] CancellationToken cancellationToken = default)
         {
-            LastRequest = request;
-            foreach (var runEvent in events)
+            captureTurnRequest(request);
+            RunTurnCount++;
+            TurnCounter++;
+            ObservedTurnCounters.Add(TurnCounter);
+            var turnEvents = events.Count == 0
+                ?
+                [
+                    new HeadlessWorkflowMessageCompleted(
+                        "m" + TurnCounter.ToString(CultureInfo.InvariantCulture),
+                        "host",
+                        "Host",
+                        "turn " + TurnCounter.ToString(CultureInfo.InvariantCulture)),
+                    new HeadlessWorkflowCompleted(new HeadlessWorkflowResult
+                    {
+                        FinalMessageId = "m" + TurnCounter.ToString(CultureInfo.InvariantCulture),
+                        FinalAuthor = "Host",
+                        FinalContent = "turn " + TurnCounter.ToString(CultureInfo.InvariantCulture),
+                        Messages =
+                        [
+                            new HeadlessWorkflowOutputMessage(
+                                "m" + TurnCounter.ToString(CultureInfo.InvariantCulture),
+                                "host",
+                                "Host",
+                                "turn " + TurnCounter.ToString(CultureInfo.InvariantCulture))
+                        ]
+                    })
+                ]
+                : events;
+
+            foreach (var runEvent in turnEvents)
             {
                 cancellationToken.ThrowIfCancellationRequested();
                 await Task.Yield();
                 yield return runEvent;
             }
+        }
+
+        public ValueTask DisposeAsync()
+        {
+            IsDisposed = true;
+            return ValueTask.CompletedTask;
         }
     }
 
@@ -193,21 +340,43 @@ public sealed class OrchestrationWorkflowChatSessionServiceTests
 
         public Task WaitUntilStreamingAsync() => _streaming.Task.WaitAsync(TimeSpan.FromSeconds(3));
 
-        public async IAsyncEnumerable<HeadlessWorkflowEvent> RunAsync(
-            HeadlessWorkflowRunRequest request,
-            [EnumeratorCancellation] CancellationToken cancellationToken = default)
-        {
-            yield return new HeadlessWorkflowStarted("task-1");
-            yield return new HeadlessWorkflowTextDelta("m1", "Host", "hello");
-            _streaming.SetResult();
-            await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken);
-        }
+        public Task<IHeadlessWorkflowSession> StartAsync(
+            HeadlessWorkflowSessionStartRequest request,
+            CancellationToken cancellationToken = default) =>
+            Task.FromResult<IHeadlessWorkflowSession>(new BlockingHeadlessWorkflowSession(_streaming));
     }
 
     private sealed class FailingHeadlessWorkflowRunner : IHeadlessWorkflowRunner
     {
-        public async IAsyncEnumerable<HeadlessWorkflowEvent> RunAsync(
-            HeadlessWorkflowRunRequest request,
+        public Task<IHeadlessWorkflowSession> StartAsync(
+            HeadlessWorkflowSessionStartRequest request,
+            CancellationToken cancellationToken = default) =>
+            Task.FromResult<IHeadlessWorkflowSession>(new FailingHeadlessWorkflowSession());
+    }
+
+    private sealed class BlockingHeadlessWorkflowSession(TaskCompletionSource streaming) : IHeadlessWorkflowSession
+    {
+        public string TaskSessionId => "task-1";
+
+        public async IAsyncEnumerable<HeadlessWorkflowEvent> RunTurnAsync(
+            HeadlessWorkflowTurnRequest request,
+            [EnumeratorCancellation] CancellationToken cancellationToken = default)
+        {
+            yield return new HeadlessWorkflowStarted("task-1");
+            yield return new HeadlessWorkflowTextDelta("m1", "Host", "hello");
+            streaming.SetResult();
+            await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken);
+        }
+
+        public ValueTask DisposeAsync() => ValueTask.CompletedTask;
+    }
+
+    private sealed class FailingHeadlessWorkflowSession : IHeadlessWorkflowSession
+    {
+        public string TaskSessionId => "task-1";
+
+        public async IAsyncEnumerable<HeadlessWorkflowEvent> RunTurnAsync(
+            HeadlessWorkflowTurnRequest request,
             [EnumeratorCancellation] CancellationToken cancellationToken = default)
         {
             yield return new HeadlessWorkflowStarted("task-1");
@@ -215,5 +384,7 @@ public sealed class OrchestrationWorkflowChatSessionServiceTests
             await Task.Yield();
             throw new InvalidOperationException("boom");
         }
+
+        public ValueTask DisposeAsync() => ValueTask.CompletedTask;
     }
 }

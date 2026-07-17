@@ -130,56 +130,87 @@ internal sealed class WorkflowAgentRuntime(
             yield break;
         }
 
-        var workflowRequest = new HeadlessWorkflowRunRequest
+        var workflowRequest = new HeadlessWorkflowSessionStartRequest
         {
             Workflow = workflow,
             Agents = agents,
             Configuration = configuration,
-            UserMessage = BuildWorkflowUserMessage(
-                request.Messages.Take(currentUserMessageIndex),
-                userMessage.Content),
             StartInputs = startInputs,
             SessionTitle = Descriptor.Name,
             SessionDescription = Descriptor.Description
         };
 
-        var events = headlessWorkflowRunner.RunAsync(workflowRequest, cancellationToken);
-
-        await using var enumerator = events.GetAsyncEnumerator(cancellationToken);
-        while (true)
+        IHeadlessWorkflowSession? session = null;
+        AgentRunFailed? startFailure = null;
+        try
         {
-            HeadlessWorkflowEvent? headlessEvent = null;
-            AgentRunFailed? failure = null;
-            try
+            session = await headlessWorkflowRunner.StartAsync(workflowRequest, cancellationToken);
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            startFailure = MapWorkflowException(context, ex);
+        }
+
+        if (startFailure is not null)
+        {
+            yield return startFailure;
+            yield break;
+        }
+
+        await using (session!)
+        {
+            var events = session.RunTurnAsync(new HeadlessWorkflowTurnRequest
             {
-                if (!await enumerator.MoveNextAsync())
+                UserMessage = BuildWorkflowUserMessage(
+                    request.Messages.Take(currentUserMessageIndex),
+                    userMessage.Content)
+            }, cancellationToken);
+
+            await using var enumerator = events.GetAsyncEnumerator(cancellationToken);
+            while (true)
+            {
+                HeadlessWorkflowEvent? headlessEvent = null;
+                AgentRunFailed? failure = null;
+                try
                 {
-                    break;
+                    if (!await enumerator.MoveNextAsync())
+                    {
+                        break;
+                    }
+
+                    headlessEvent = enumerator.Current;
+                }
+                catch (OperationCanceledException)
+                {
+                    throw;
+                }
+                catch (Exception ex)
+                {
+                    failure = MapWorkflowException(context, ex);
                 }
 
-                headlessEvent = enumerator.Current;
-            }
-            catch (OperationCanceledException)
-            {
-                throw;
-            }
-            catch (Exception ex)
-            {
-                failure = MapWorkflowException(context, ex);
-            }
+                if (failure is not null)
+                {
+                    yield return failure;
+                    yield break;
+                }
 
-            if (failure is not null)
-            {
-                yield return failure;
-                yield break;
-            }
+                if (headlessEvent is null)
+                {
+                    yield break;
+                }
 
-            if (headlessEvent is null)
-            {
-                yield break;
-            }
+                if (headlessEvent is HeadlessWorkflowStarted)
+                {
+                    continue;
+                }
 
-            yield return MapHeadlessEvent(headlessEvent);
+                yield return MapHeadlessEvent(headlessEvent);
+            }
         }
     }
 

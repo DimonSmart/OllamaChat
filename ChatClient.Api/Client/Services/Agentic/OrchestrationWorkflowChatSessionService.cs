@@ -16,6 +16,7 @@ public sealed class OrchestrationWorkflowChatSessionService(
     private readonly HashSet<string> _completedRuntimeMessageIds = new(StringComparer.Ordinal);
     private CancellationTokenSource? _cancellationTokenSource;
     private OrchestrationWorkflowSessionStartRequest? _parameters;
+    private IHeadlessWorkflowSession? _headlessSession;
 
     public event Action<bool>? AnsweringStateChanged;
     public event Action? ChatReset;
@@ -35,22 +36,35 @@ public sealed class OrchestrationWorkflowChatSessionService(
 
     IReadOnlyCollection<IAppChatMessage> IChatSessionService.Messages => _chat.Messages;
 
-    public Task StartAsync(
+    public async Task StartAsync(
         OrchestrationWorkflowSessionStartRequest request,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(request);
 
+        await DisposeHeadlessSessionAsync();
+        _headlessSession = await headlessWorkflowRunner.StartAsync(
+            new HeadlessWorkflowSessionStartRequest
+            {
+                Workflow = request.Workflow,
+                Agents = request.Agents,
+                Configuration = request.Configuration,
+                StartInputs = request.StartInputs,
+                SessionTitle = request.SessionTitle ?? request.Workflow.DisplayName,
+                SessionDescription = request.SessionDescription ?? string.Empty
+            },
+            cancellationToken);
+
         _parameters = request;
-        TaskSessionId = null;
+        TaskSessionId = _headlessSession.TaskSessionId;
         ClearChatState();
         _chat.SetAgents(request.Agents.Select(static agent => agent.Agent.Clone()));
         ChatReset?.Invoke();
-        return Task.CompletedTask;
     }
 
     public void ResetChat()
     {
+        DisposeHeadlessSessionAsync().AsTask().GetAwaiter().GetResult();
         ClearChatState();
         _parameters = null;
         TaskSessionId = null;
@@ -127,7 +141,7 @@ public sealed class OrchestrationWorkflowChatSessionService(
         bool includeUserMessage,
         CancellationToken cancellationToken)
     {
-        if (IsAnswering || _parameters is null)
+        if (IsAnswering || _parameters is null || _headlessSession is null)
         {
             return;
         }
@@ -147,19 +161,13 @@ public sealed class OrchestrationWorkflowChatSessionService(
 
         try
         {
-            var request = new HeadlessWorkflowRunRequest
+            var request = new HeadlessWorkflowTurnRequest
             {
-                Workflow = _parameters.Workflow,
-                Agents = _parameters.Agents,
-                Configuration = _parameters.Configuration,
                 UserMessage = includeUserMessage ? text : null,
-                UserFiles = files,
-                StartInputs = _parameters.StartInputs,
-                SessionTitle = _parameters.SessionTitle ?? _parameters.Workflow.DisplayName,
-                SessionDescription = _parameters.SessionDescription ?? string.Empty
+                UserFiles = files
             };
 
-            await foreach (var runEvent in headlessWorkflowRunner.RunAsync(
+            await foreach (var runEvent in _headlessSession.RunTurnAsync(
                                request,
                                _cancellationTokenSource.Token))
             {
@@ -332,6 +340,17 @@ public sealed class OrchestrationWorkflowChatSessionService(
     {
         _activeStreamsByRuntimeMessageId.Clear();
         _completedRuntimeMessageIds.Clear();
+    }
+
+    private async ValueTask DisposeHeadlessSessionAsync()
+    {
+        if (_headlessSession is null)
+        {
+            return;
+        }
+
+        await _headlessSession.DisposeAsync();
+        _headlessSession = null;
     }
 
     private async Task AddMessageAsync(IAppChatMessage message)

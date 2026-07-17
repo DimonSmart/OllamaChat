@@ -9,12 +9,21 @@ namespace ChatClient.Api.Services.AgentRuntime;
 
 public interface IHeadlessWorkflowRunner
 {
-    IAsyncEnumerable<HeadlessWorkflowEvent> RunAsync(
-        HeadlessWorkflowRunRequest request,
+    Task<IHeadlessWorkflowSession> StartAsync(
+        HeadlessWorkflowSessionStartRequest request,
         CancellationToken cancellationToken = default);
 }
 
-public sealed record HeadlessWorkflowRunRequest
+public interface IHeadlessWorkflowSession : IAsyncDisposable
+{
+    string TaskSessionId { get; }
+
+    IAsyncEnumerable<HeadlessWorkflowEvent> RunTurnAsync(
+        HeadlessWorkflowTurnRequest request,
+        CancellationToken cancellationToken = default);
+}
+
+public sealed record HeadlessWorkflowSessionStartRequest
 {
     public required IOrchestrationWorkflowDefinition Workflow { get; init; }
 
@@ -22,15 +31,18 @@ public sealed record HeadlessWorkflowRunRequest
 
     public required AppChatConfiguration Configuration { get; init; }
 
-    public string? UserMessage { get; init; }
-
-    public IReadOnlyList<AppChatMessageFile> UserFiles { get; init; } = [];
-
     public IReadOnlyList<OrchestrationWorkflowStartInputValue> StartInputs { get; init; } = [];
 
     public required string SessionTitle { get; init; }
 
     public string SessionDescription { get; init; } = string.Empty;
+}
+
+public sealed record HeadlessWorkflowTurnRequest
+{
+    public string? UserMessage { get; init; }
+
+    public IReadOnlyList<AppChatMessageFile> UserFiles { get; init; } = [];
 }
 
 public abstract record HeadlessWorkflowEvent;
@@ -78,210 +90,252 @@ public sealed class HeadlessWorkflowRunner(
     TaskSessionStore taskSessionStore,
     ILogger<HeadlessWorkflowRunner> logger) : IHeadlessWorkflowRunner
 {
-    public async IAsyncEnumerable<HeadlessWorkflowEvent> RunAsync(
-        HeadlessWorkflowRunRequest request,
-        [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken = default)
+    public async Task<IHeadlessWorkflowSession> StartAsync(
+        HeadlessWorkflowSessionStartRequest request,
+        CancellationToken cancellationToken = default)
     {
-        var channel = Channel.CreateUnbounded<HeadlessWorkflowEvent>();
-        var completedMessages = new List<OrchestrationCompletedAssistantMessage>();
+        ArgumentNullException.ThrowIfNull(request);
 
-        var producer = ProduceAsync(
-            request,
-            completedMessages,
-            channel.Writer,
+        var bootstrap = await sessionBootstrapper.BootstrapAsync(
+            new OrchestrationWorkflowSessionStartRequest
+            {
+                Workflow = request.Workflow,
+                Agents = request.Agents,
+                Configuration = request.Configuration,
+                SessionTitle = request.SessionTitle,
+                SessionDescription = request.SessionDescription,
+                StartInputs = request.StartInputs
+            },
             cancellationToken);
 
-        await foreach (var runEvent in channel.Reader.ReadAllAsync(cancellationToken))
-        {
-            yield return runEvent;
-        }
-
-        await producer;
+        return new HeadlessWorkflowSession(
+            bootstrap,
+            turnCoordinator,
+            passExecutor,
+            taskSessionStore,
+            logger);
     }
 
-    private async Task ProduceAsync(
-        HeadlessWorkflowRunRequest request,
-        List<OrchestrationCompletedAssistantMessage> completedMessages,
-        ChannelWriter<HeadlessWorkflowEvent> writer,
-        CancellationToken cancellationToken)
+    private sealed class HeadlessWorkflowSession(
+        OrchestrationWorkflowSessionBootstrapResult bootstrap,
+        OrchestrationWorkflowTurnCoordinator turnCoordinator,
+        OrchestrationWorkflowPassExecutor passExecutor,
+        TaskSessionStore taskSessionStore,
+        ILogger logger) : IHeadlessWorkflowSession
     {
-        var chatMessages = new List<IAppChatMessage>();
-        var speakerIdsByMessageId = new Dictionary<Guid, string?>();
-        var assistantSpeakerIds = new List<string>();
-        var activeStreams = new Dictionary<Guid, StreamingAppChatMessage>();
-        var activeSpeakerIdsByStreamId = new Dictionary<Guid, string?>();
-        var streamContentLengths = new Dictionary<Guid, int>();
-        var emittedCompletedMessageIds = new HashSet<Guid>();
-        var agentIdsByExecutorId = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-        var agentIdsByName = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-        var agentNamesById = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        private readonly List<IAppChatMessage> _chatMessages = [];
+        private readonly Dictionary<Guid, string?> _speakerIdsByMessageId = [];
+        private readonly List<string> _assistantSpeakerIds = [];
+        private readonly Dictionary<Guid, StreamingAppChatMessage> _activeStreams = [];
+        private readonly Dictionary<Guid, string?> _activeSpeakerIdsByStreamId = [];
+        private readonly Dictionary<Guid, int> _streamContentLengths = [];
+        private readonly HashSet<Guid> _emittedCompletedMessageIds = [];
+        private readonly Dictionary<string, string> _agentIdsByExecutorId = new(StringComparer.OrdinalIgnoreCase);
+        private readonly Dictionary<string, string> _agentIdsByName = new(StringComparer.OrdinalIgnoreCase);
+        private readonly Dictionary<string, string> _agentNamesById = new(StringComparer.OrdinalIgnoreCase);
+        private bool _startedEventEmitted;
+        private bool _disposed;
 
-        try
+        public string TaskSessionId => bootstrap.TaskSessionId;
+
+        public async IAsyncEnumerable<HeadlessWorkflowEvent> RunTurnAsync(
+            HeadlessWorkflowTurnRequest request,
+            [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken = default)
         {
-            var bootstrap = await sessionBootstrapper.BootstrapAsync(
-                new OrchestrationWorkflowSessionStartRequest
-                {
-                    Workflow = request.Workflow,
-                    Agents = request.Agents,
-                    Configuration = request.Configuration,
-                    SessionTitle = request.SessionTitle,
-                    SessionDescription = request.SessionDescription,
-                    StartInputs = request.StartInputs
-                },
+            ObjectDisposedException.ThrowIf(_disposed, this);
+
+            var channel = Channel.CreateUnbounded<HeadlessWorkflowEvent>();
+            var completedMessages = new List<OrchestrationCompletedAssistantMessage>();
+
+            var producer = ProduceTurnAsync(
+                request,
+                completedMessages,
+                channel.Writer,
                 cancellationToken);
 
-            foreach (var runtimeAgent in bootstrap.RuntimeAgents)
+            await foreach (var runEvent in channel.Reader.ReadAllAsync(cancellationToken))
             {
-                RegisterAgentIdentity(
-                    runtimeAgent.AgentId,
-                    runtimeAgent.AgentName,
-                    runtimeAgent.ExecutorId,
-                    agentIdsByExecutorId,
-                    agentIdsByName,
-                    agentNamesById);
+                yield return runEvent;
             }
 
-            var taskSessionId = bootstrap.TaskSessionId;
-            await writer.WriteAsync(new HeadlessWorkflowStarted(taskSessionId), cancellationToken);
-            if (!string.IsNullOrWhiteSpace(request.UserMessage))
-            {
-                var userChatMessage = new AppChatMessage(
-                    request.UserMessage,
-                    DateTime.Now,
-                    AppChatRole.User,
-                    files: request.UserFiles);
-                await AddMessageAsync(userChatMessage, chatMessages);
-                await taskSessionStore.AppendTurnAsync(
-                    taskSessionId,
-                    "user",
-                    OrchestrationWorkflowConversationBuilder.BuildUserMessage(request.UserMessage, request.UserFiles),
-                    "user",
-                    cancellationToken);
-            }
+            await producer;
+        }
 
-            await turnCoordinator.RunAsync(
-                new OrchestrationWorkflowTurnExecutionRequest
+        public ValueTask DisposeAsync()
+        {
+            _disposed = true;
+            return ValueTask.CompletedTask;
+        }
+
+        private async Task ProduceTurnAsync(
+            HeadlessWorkflowTurnRequest request,
+            List<OrchestrationCompletedAssistantMessage> completedMessages,
+            ChannelWriter<HeadlessWorkflowEvent> writer,
+            CancellationToken cancellationToken)
+        {
+            var workflowRequest = bootstrap.Request;
+            try
+            {
+                foreach (var runtimeAgent in bootstrap.RuntimeAgents)
                 {
-                    WorkflowDisplayName = request.Workflow.DisplayName,
-                    Execution = request.Workflow.Execution,
-                    IsExecutionCompleteAsync = cancellation => IsWorkflowExecutionCompleteAsync(
-                        request.Workflow.Execution,
-                        taskSessionId,
-                        cancellation),
-                    ExecutePassAsync = cancellation => passExecutor.ExecuteAsync(
-                        new OrchestrationWorkflowPassExecutionRequest
-                        {
-                            Workflow = request.Workflow,
-                            SessionId = taskSessionId,
-                            Messages = chatMessages.ToList(),
-                            AssistantSpeakerIds = assistantSpeakerIds.ToList(),
-                            RuntimeAgentsById = bootstrap.RuntimeAgents.ToDictionary(
-                                static agent => agent.AgentId,
-                                static agent => agent.RuntimeAgent,
-                                StringComparer.OrdinalIgnoreCase),
-                            EventStreamContext = new OrchestrationWorkflowEventStreamContext
+                    RegisterAgentIdentity(
+                        runtimeAgent.AgentId,
+                        runtimeAgent.AgentName,
+                        runtimeAgent.ExecutorId,
+                        _agentIdsByExecutorId,
+                        _agentIdsByName,
+                        _agentNamesById);
+                }
+
+                if (!_startedEventEmitted)
+                {
+                    await writer.WriteAsync(new HeadlessWorkflowStarted(TaskSessionId), cancellationToken);
+                    _startedEventEmitted = true;
+                }
+
+                if (!string.IsNullOrWhiteSpace(request.UserMessage))
+                {
+                    var userChatMessage = new AppChatMessage(
+                        request.UserMessage,
+                        DateTime.Now,
+                        AppChatRole.User,
+                        files: request.UserFiles);
+                    await AddMessageAsync(userChatMessage, _chatMessages);
+                    await taskSessionStore.AppendTurnAsync(
+                        TaskSessionId,
+                        "user",
+                        OrchestrationWorkflowConversationBuilder.BuildUserMessage(request.UserMessage, request.UserFiles),
+                        "user",
+                        cancellationToken);
+                }
+
+                await turnCoordinator.RunAsync(
+                    new OrchestrationWorkflowTurnExecutionRequest
+                    {
+                        WorkflowDisplayName = workflowRequest.Workflow.DisplayName,
+                        Execution = workflowRequest.Workflow.Execution,
+                        IsExecutionCompleteAsync = cancellation => IsWorkflowExecutionCompleteAsync(
+                            workflowRequest.Workflow.Execution,
+                            TaskSessionId,
+                            taskSessionStore,
+                            cancellation),
+                        ExecutePassAsync = cancellation => passExecutor.ExecuteAsync(
+                            new OrchestrationWorkflowPassExecutionRequest
                             {
-                                ModelName = request.Configuration.ModelName,
-                                Workflow = request.Workflow,
-                                Messages = chatMessages.ToList(),
-                                SpeakerIdsByMessageId = speakerIdsByMessageId,
-                                ActiveStreams = activeStreams,
-                                ActiveSpeakerIdsByStreamId = activeSpeakerIdsByStreamId,
-                                AgentIdsByExecutorId = agentIdsByExecutorId,
-                                AgentIdsByName = agentIdsByName,
-                                AgentNamesById = agentNamesById,
-                                AddMessageAsync = message => AddMessageAsync(message, chatMessages),
-                                ReplaceMessage = (source, replacement) => ReplaceMessage(
-                                    source,
-                                    replacement,
-                                    chatMessages),
-                                NotifyMessageUpdatedAsync = (message, isFinal) => NotifyMessageAsync(
-                                    message,
-                                    isFinal,
-                                    writer,
-                                    streamContentLengths,
-                                    emittedCompletedMessageIds,
-                                    cancellation)
+                                Workflow = workflowRequest.Workflow,
+                                SessionId = TaskSessionId,
+                                Messages = _chatMessages.ToList(),
+                                AssistantSpeakerIds = _assistantSpeakerIds.ToList(),
+                                RuntimeAgentsById = bootstrap.RuntimeAgents.ToDictionary(
+                                    static agent => agent.AgentId,
+                                    static agent => agent.RuntimeAgent,
+                                    StringComparer.OrdinalIgnoreCase),
+                                EventStreamContext = new OrchestrationWorkflowEventStreamContext
+                                {
+                                    ModelName = workflowRequest.Configuration.ModelName,
+                                    Workflow = workflowRequest.Workflow,
+                                    Messages = _chatMessages.ToList(),
+                                    SpeakerIdsByMessageId = _speakerIdsByMessageId,
+                                    ActiveStreams = _activeStreams,
+                                    ActiveSpeakerIdsByStreamId = _activeSpeakerIdsByStreamId,
+                                    AgentIdsByExecutorId = _agentIdsByExecutorId,
+                                    AgentIdsByName = _agentIdsByName,
+                                    AgentNamesById = _agentNamesById,
+                                    AddMessageAsync = message => AddMessageAsync(message, _chatMessages),
+                                    ReplaceMessage = (source, replacement) => ReplaceMessage(
+                                        source,
+                                        replacement,
+                                        _chatMessages),
+                                    NotifyMessageUpdatedAsync = (message, isFinal) => NotifyMessageAsync(
+                                        message,
+                                        isFinal,
+                                        writer,
+                                        _streamContentLengths,
+                                        _emittedCompletedMessageIds,
+                                        cancellation)
+                                }
+                            },
+                            cancellation),
+                        ProcessCompletedAssistantMessagesAsync = async (messages, cancellation) =>
+                        {
+                            foreach (var completedMessage in messages)
+                            {
+                                completedMessages.Add(completedMessage);
+                                await taskSessionStore.AppendTurnAsync(
+                                    TaskSessionId,
+                                    "assistant",
+                                    completedMessage.Message.Content,
+                                    completedMessage.SpeakerId,
+                                    cancellation);
+
+                                _speakerIdsByMessageId[completedMessage.Message.Id] = completedMessage.SpeakerId;
+                                if (!string.IsNullOrWhiteSpace(completedMessage.SpeakerId))
+                                {
+                                    _assistantSpeakerIds.Add(completedMessage.SpeakerId);
+                                }
                             }
                         },
-                        cancellation),
-                    ProcessCompletedAssistantMessagesAsync = async (messages, cancellation) =>
-                    {
-                        foreach (var completedMessage in messages)
-                        {
-                            completedMessages.Add(completedMessage);
-                            await taskSessionStore.AppendTurnAsync(
-                                taskSessionId,
-                                "assistant",
-                                completedMessage.Message.Content,
-                                completedMessage.SpeakerId,
-                                cancellation);
-
-                            speakerIdsByMessageId[completedMessage.Message.Id] = completedMessage.SpeakerId;
-                            if (!string.IsNullOrWhiteSpace(completedMessage.SpeakerId))
-                            {
-                                assistantSpeakerIds.Add(completedMessage.SpeakerId);
-                            }
-                        }
+                        HandleAssistantErrorAsync = text => throw new WorkflowAssistantErrorException(text)
                     },
-                    HandleAssistantErrorAsync = text => throw new WorkflowAssistantErrorException(text)
-                },
-                cancellationToken);
-
-            foreach (var completedMessage in completedMessages)
-            {
-                await PublishCompletedMessageAsync(
-                    completedMessage.Message,
-                    completedMessage.SpeakerId,
-                    writer,
-                    emittedCompletedMessageIds,
                     cancellationToken);
-            }
 
-            var final = await ResolveFinalMessageAsync(
-                request,
-                taskSessionId,
-                completedMessages,
-                cancellationToken);
-            if (final is null)
+                foreach (var completedMessage in completedMessages)
+                {
+                    await PublishCompletedMessageAsync(
+                        completedMessage.Message,
+                        completedMessage.SpeakerId,
+                        writer,
+                        _emittedCompletedMessageIds,
+                        cancellationToken);
+                }
+
+                var final = await ResolveFinalMessageAsync(
+                    workflowRequest,
+                    TaskSessionId,
+                    completedMessages,
+                    taskSessionStore,
+                    cancellationToken);
+                if (final is null)
+                {
+                    throw new WorkflowProducedNoResultException();
+                }
+
+                await writer.WriteAsync(new HeadlessWorkflowCompleted(final), cancellationToken);
+            }
+            catch (OperationCanceledException)
             {
-                throw new WorkflowProducedNoResultException();
+                throw;
             }
-
-            await writer.WriteAsync(new HeadlessWorkflowCompleted(final), cancellationToken);
-        }
-        catch (OperationCanceledException)
-        {
-            throw;
-        }
-        catch (WorkflowAssistantErrorException)
-        {
-            throw;
-        }
-        catch (WorkflowProducedNoResultException)
-        {
-            throw;
-        }
-        catch (Exception ex)
-        {
-            logger.LogError(
-                ex,
-                "Headless workflow run failed. WorkflowId={WorkflowId}, WorkflowName={WorkflowName}, WorkflowKind={WorkflowKind}, ParticipantCount={ParticipantCount}",
-                request.Workflow.Id,
-                request.Workflow.DisplayName,
-                request.Workflow.Kind,
-                request.Workflow.Agents.Count);
-            throw;
-        }
-        finally
-        {
-            writer.TryComplete();
+            catch (WorkflowAssistantErrorException)
+            {
+                throw;
+            }
+            catch (WorkflowProducedNoResultException)
+            {
+                throw;
+            }
+            catch (Exception ex)
+            {
+                logger.LogError(
+                    ex,
+                    "Headless workflow turn failed. WorkflowId={WorkflowId}, WorkflowName={WorkflowName}, WorkflowKind={WorkflowKind}, ParticipantCount={ParticipantCount}",
+                    workflowRequest.Workflow.Id,
+                    workflowRequest.Workflow.DisplayName,
+                    workflowRequest.Workflow.Kind,
+                    workflowRequest.Workflow.Agents.Count);
+                throw;
+            }
+            finally
+            {
+                writer.TryComplete();
+            }
         }
     }
 
-    private async Task<bool> IsWorkflowExecutionCompleteAsync(
+    private static async Task<bool> IsWorkflowExecutionCompleteAsync(
         AgentWorkflowExecutionDefinition execution,
         string taskSessionId,
+        TaskSessionStore taskSessionStore,
         CancellationToken cancellationToken)
     {
         var snapshot = await taskSessionStore.GetSessionAsync(taskSessionId, cancellationToken);
@@ -302,10 +356,11 @@ public sealed class HeadlessWorkflowRunner(
         return false;
     }
 
-    internal async Task<HeadlessWorkflowResult?> ResolveFinalMessageAsync(
-        HeadlessWorkflowRunRequest request,
+    internal static async Task<HeadlessWorkflowResult?> ResolveFinalMessageAsync(
+        OrchestrationWorkflowSessionStartRequest request,
         string taskSessionId,
         IReadOnlyList<OrchestrationCompletedAssistantMessage> messages,
+        TaskSessionStore taskSessionStore,
         CancellationToken cancellationToken)
     {
         var nonEmptyMessages = messages
@@ -324,6 +379,7 @@ public sealed class HeadlessWorkflowRunner(
                 request,
                 taskSessionId,
                 nonEmptyMessages,
+                taskSessionStore,
                 cancellationToken),
             AgentWorkflowDefinition => nonEmptyMessages.Last(),
             _ => nonEmptyMessages.Last()
@@ -356,7 +412,7 @@ public sealed class HeadlessWorkflowRunner(
         return new HeadlessWorkflowResult
         {
             FinalMessageId = finalMessage.Message.Id.ToString("N"),
-            FinalAuthor = request.SessionTitle,
+            FinalAuthor = request.SessionTitle ?? request.Workflow.DisplayName,
             FinalContent = finalMessage.Message.Content,
             Messages = nonEmptyMessages
                 .Select(static message => new HeadlessWorkflowOutputMessage(
@@ -387,7 +443,7 @@ public sealed class HeadlessWorkflowRunner(
     }
 
     private static OrchestrationCompletedAssistantMessage? ResolveConcurrentFinal(
-        HeadlessWorkflowRunRequest request,
+        OrchestrationWorkflowSessionStartRequest request,
         ConcurrentWorkflowDefinition workflow,
         IReadOnlyList<OrchestrationCompletedAssistantMessage> messages)
     {
@@ -399,7 +455,7 @@ public sealed class HeadlessWorkflowRunner(
                     string.Join(Environment.NewLine + Environment.NewLine, orderedMessages.Select(static message => message.Message.Content)),
                     DateTime.Now,
                     AppChatRole.Assistant,
-                    agentName: request.SessionTitle)
+                    agentName: request.SessionTitle ?? request.Workflow.DisplayName)
                 {
                     Id = Guid.Parse(CreateSyntheticMessageId())
                 },
@@ -428,17 +484,18 @@ public sealed class HeadlessWorkflowRunner(
                     string.Join(Environment.NewLine + Environment.NewLine, sections),
                     DateTime.Now,
                     AppChatRole.Assistant,
-                    agentName: request.SessionTitle)
+                    agentName: request.SessionTitle ?? request.Workflow.DisplayName)
                 {
                     Id = Guid.Parse(CreateSyntheticMessageId())
                 },
                 request.Workflow.Id);
     }
 
-    private async Task<OrchestrationCompletedAssistantMessage?> ResolveGroupChatFinalAsync(
-        HeadlessWorkflowRunRequest request,
+    private static async Task<OrchestrationCompletedAssistantMessage?> ResolveGroupChatFinalAsync(
+        OrchestrationWorkflowSessionStartRequest request,
         string taskSessionId,
         IReadOnlyList<OrchestrationCompletedAssistantMessage> messages,
+        TaskSessionStore taskSessionStore,
         CancellationToken cancellationToken)
     {
         if (!string.IsNullOrWhiteSpace(request.Workflow.Execution.CompletionSummaryLabel))
@@ -454,7 +511,7 @@ public sealed class HeadlessWorkflowRunner(
                         snapshot.Markdown,
                         DateTime.Now,
                         AppChatRole.Assistant,
-                        agentName: request.SessionTitle)
+                        agentName: request.SessionTitle ?? request.Workflow.DisplayName)
                     {
                         Id = Guid.Parse(CreateSyntheticMessageId())
                     },

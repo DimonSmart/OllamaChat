@@ -174,13 +174,8 @@ public sealed class HeadlessWorkflowRunnerFinalSemanticsTests
         IReadOnlyList<OrchestrationCompletedAssistantMessage> messages,
         TaskSessionStore? taskSessionStore = null,
         string taskSessionId = "task") =>
-        new HeadlessWorkflowRunner(
-            null!,
-            null!,
-            null!,
-            taskSessionStore ?? CreateTaskSessionStore(),
-            NullLogger<HeadlessWorkflowRunner>.Instance).ResolveFinalMessageAsync(
-            new HeadlessWorkflowRunRequest
+        HeadlessWorkflowRunner.ResolveFinalMessageAsync(
+            new OrchestrationWorkflowSessionStartRequest
             {
                 Workflow = workflow,
                 Agents = [],
@@ -189,6 +184,7 @@ public sealed class HeadlessWorkflowRunnerFinalSemanticsTests
             },
             taskSessionId,
             messages,
+            taskSessionStore ?? CreateTaskSessionStore(),
             CancellationToken.None);
 
     private static OrchestrationCompletedAssistantMessage Message(

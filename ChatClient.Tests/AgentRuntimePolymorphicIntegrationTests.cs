@@ -1,3 +1,6 @@
+using ChatClient.Api.AgentWorkflows;
+using ChatClient.Api.Services.AgentRuntime;
+using ChatClient.Application.Services.Agentic;
 using ChatClient.Application.Services.AgentRuntime;
 using ChatClient.Domain.Models;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -71,10 +74,26 @@ public sealed class AgentRuntimePolymorphicIntegrationTests
         public Task<IAgentRuntime> CreateAsync(
             string workflowId,
             AgentRuntimeCreationContext context,
-            CancellationToken cancellationToken = default) =>
-            Task.FromResult<IAgentRuntime>(new StubRuntime(
+            CancellationToken cancellationToken = default)
+        {
+            var workflow = new AgentWorkflowDefinition
+            {
+                Id = workflowId,
+                DisplayName = "Workflow",
+                StartAgentId = "agent",
+                Agents = [new AgentWorkflowAgentDefinition { Id = "agent", Role = "agent" }]
+            };
+
+            return Task.FromResult<IAgentRuntime>(new WorkflowAgentRuntime(
                 new AgentRuntimeDescriptor(workflowId, "Workflow", string.Empty, AgentRuntimeKind.WorkflowAgent),
-                "workflow answer"));
+                workflow,
+                [new ResolvedChatAgent(
+                    new AgentExecutionSpec { Id = Guid.NewGuid(), AgentName = "Agent" },
+                    new ServerModel(Guid.NewGuid(), "model"))],
+                context.Configuration,
+                new StubHeadlessWorkflowRunner(),
+                NullLogger<WorkflowAgentRuntime>.Instance));
+        }
     }
 
     private sealed class StubRuntime(
@@ -100,5 +119,38 @@ public sealed class AgentRuntimePolymorphicIntegrationTests
                 Messages = [message]
             });
         }
+    }
+
+    private sealed class StubHeadlessWorkflowRunner : IHeadlessWorkflowRunner
+    {
+        public Task<IHeadlessWorkflowSession> StartAsync(
+            HeadlessWorkflowSessionStartRequest request,
+            CancellationToken cancellationToken = default) =>
+            Task.FromResult<IHeadlessWorkflowSession>(new StubHeadlessWorkflowSession());
+    }
+
+    private sealed class StubHeadlessWorkflowSession : IHeadlessWorkflowSession
+    {
+        public string TaskSessionId => "session-1";
+
+        public async IAsyncEnumerable<HeadlessWorkflowEvent> RunTurnAsync(
+            HeadlessWorkflowTurnRequest request,
+            [EnumeratorCancellation] CancellationToken cancellationToken = default)
+        {
+            await Task.Yield();
+            const string messageId = "m1";
+            yield return new HeadlessWorkflowStarted(TaskSessionId);
+            yield return new HeadlessWorkflowTextDelta(messageId, "Workflow", "workflow answer");
+            yield return new HeadlessWorkflowMessageCompleted(messageId, "agent", "Workflow", "workflow answer");
+            yield return new HeadlessWorkflowCompleted(new HeadlessWorkflowResult
+            {
+                FinalMessageId = messageId,
+                FinalAuthor = "Workflow",
+                FinalContent = "workflow answer",
+                Messages = [new HeadlessWorkflowOutputMessage(messageId, "agent", "Workflow", "workflow answer")]
+            });
+        }
+
+        public ValueTask DisposeAsync() => ValueTask.CompletedTask;
     }
 }
