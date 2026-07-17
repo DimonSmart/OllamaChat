@@ -23,7 +23,7 @@ public sealed class WorkflowAgentDraftMaterializerTests
             .New("demo", "Demo Workflow")
             .RunAutonomously(maxAutomaticTurns: 4, completionPhase: "complete", completionSummaryLabel: "final")
             .Agent("technical", agent => agent
-                .FromSavedAgent("Saved Technical Agent")
+                .UseAgent(savedAgent.Id.ToString("D"))
                 .Role("Technical interviewer")
                 .OverrideName("Override name")
                 .OverrideAvatarText("TA")
@@ -37,21 +37,21 @@ public sealed class WorkflowAgentDraftMaterializerTests
         var materialized = await materializer.MaterializeAsync(workflow);
 
         var technical = Assert.Single(materialized.Participants);
-        Assert.NotNull(technical.AgentDraft);
-        Assert.Equal("Override name", technical.AgentDraft!.AgentName);
-        Assert.Equal("TA", technical.AgentDraft.AvatarText);
-        Assert.Equal("Override prompt", technical.AgentDraft.Content);
-        Assert.Equal(savedAgent.Id, technical.AgentDraft.Id);
-        Assert.Equal("technical", technical.AgentDraft.RuntimeAgentId);
-        Assert.Equal("technical", technical.AgentDraft.AgentId);
-        Assert.Equal("technical", technical.AgentDraft.ShortName);
+        var technicalAgent = Assert.IsType<InlineAgentParticipantSource>(technical.Source).Agent;
+        Assert.Equal("Override name", technicalAgent.AgentName);
+        Assert.Equal("TA", technicalAgent.AvatarText);
+        Assert.Equal("Override prompt", technicalAgent.Content);
+        Assert.Equal(savedAgent.Id, technicalAgent.Id);
+        Assert.Equal("technical", technicalAgent.RuntimeAgentId);
+        Assert.Equal("technical", technicalAgent.AgentId);
+        Assert.Equal("technical", technicalAgent.ShortName);
         Assert.Equal("Runs technical interviews from the saved-agent catalog.", technical.Summary);
         Assert.Equal(AgentWorkflowExecutionMode.Autonomous, materialized.Execution.Mode);
         Assert.Equal("final", materialized.Execution.CompletionSummaryLabel);
     }
 
     [Fact]
-    public async Task MaterializeAsync_ThrowsWhenSavedAgentNameIsAmbiguous()
+    public async Task MaterializeAsync_ThrowsWhenSavedAgentIdIsUnknown()
     {
         var savedAgents = new[]
         {
@@ -62,7 +62,7 @@ public sealed class WorkflowAgentDraftMaterializerTests
         var workflow = WorkflowDefinitionBuilder
             .New("demo", "Demo Workflow")
             .Agent("technical", agent => agent
-                .FromSavedAgent("Duplicate Agent"))
+                .UseAgent(Guid.NewGuid().ToString("D")))
             .UseHandoff(handoff => handoff
                 .StartWith("technical"))
             .Build();
@@ -72,7 +72,7 @@ public sealed class WorkflowAgentDraftMaterializerTests
         var exception = await Assert.ThrowsAsync<InvalidOperationException>(() =>
             materializer.MaterializeAsync(workflow));
 
-        Assert.Contains("ambiguous", exception.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("was not found", exception.Message, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
@@ -90,7 +90,7 @@ public sealed class WorkflowAgentDraftMaterializerTests
         var workflow = WorkflowDefinitionBuilder
             .New("demo", "Demo Workflow")
             .Agent("technical", agent => agent
-                .FromSavedAgent("Saved Technical Agent")
+                .UseAgent(savedAgent.Id.ToString("D"))
                 .Role("Technical interviewer")
                 .AppendInstructions("Workflow mode:\n- Stay concise."))
             .UseHandoff(handoff => handoff
@@ -102,7 +102,9 @@ public sealed class WorkflowAgentDraftMaterializerTests
         var materialized = await materializer.MaterializeAsync(workflow);
 
         var technical = Assert.Single(materialized.Participants);
-        Assert.Equal("Base prompt\n\nWorkflow mode:\n- Stay concise.", technical.AgentDraft!.Content);
+        Assert.Equal(
+            "Base prompt\n\nWorkflow mode:\n- Stay concise.",
+            Assert.IsType<InlineAgentParticipantSource>(technical.Source).Agent.Content);
     }
 
     [Fact]
@@ -120,7 +122,7 @@ public sealed class WorkflowAgentDraftMaterializerTests
         var workflow = WorkflowDefinitionBuilder
             .New("demo", "Demo Workflow")
             .Agent("technical", agent => agent
-                .FromSavedAgent("Saved Technical Agent")
+                .UseAgent(savedAgent.Id.ToString("D"))
                 .Role("Technical interviewer")
                 .Summary("Workflow-specific summary"))
             .UseHandoff(handoff => handoff
@@ -179,10 +181,10 @@ public sealed class WorkflowAgentDraftMaterializerTests
         Assert.Equal(9, groupChat.Manager.MaximumIterations);
         Assert.NotNull(groupChat.Manager.Program);
         Assert.Equal("RoundRobin", groupChat.Manager.ProgramDisplayName);
-        Assert.All(groupChat.Agents, static agent => Assert.NotNull(agent.AgentDraft));
-        Assert.All(groupChat.Agents, static agent => Assert.Equal(agent.Id, agent.AgentDraft!.RuntimeAgentId));
-        Assert.All(groupChat.Agents, static agent => Assert.Equal(agent.Id, agent.AgentDraft!.ShortName));
-        Assert.Equal("H", groupChat.Agents[0].AgentDraft!.AvatarText);
+        Assert.All(groupChat.Participants, static agent => Assert.IsType<InlineAgentParticipantSource>(agent.Source));
+        Assert.All(groupChat.Participants, static agent => Assert.Equal(agent.Id, Assert.IsType<InlineAgentParticipantSource>(agent.Source).Agent.RuntimeAgentId));
+        Assert.All(groupChat.Participants, static agent => Assert.Equal(agent.Id, Assert.IsType<InlineAgentParticipantSource>(agent.Source).Agent.ShortName));
+        Assert.Equal("H", Assert.IsType<InlineAgentParticipantSource>(groupChat.Participants[0].Source).Agent.AvatarText);
     }
 
     [Fact]
@@ -218,10 +220,10 @@ public sealed class WorkflowAgentDraftMaterializerTests
                     Content = "Invite {{agent:debater_a.displayName}} and {{agent:debater_b.displayName}}."
                 }))
             .Agent("debater_a", agent => agent
-                .FromSavedAgent("Immanuel Kant")
+                .UseAgent(savedAgents[0].Id.ToString("D"))
                 .Role("First debater"))
             .Agent("debater_b", agent => agent
-                .FromSavedAgent("Friedrich Nietzsche")
+                .UseAgent(savedAgents[1].Id.ToString("D"))
                 .Role("Second debater"))
             .UseGroupChat(groupChat => groupChat
                 .Participants("host", "debater_a", "debater_b")
@@ -236,13 +238,16 @@ public sealed class WorkflowAgentDraftMaterializerTests
         var debaterA = groupChat.Agents.Single(agent => agent.Id == "debater_a");
         var debaterB = groupChat.Agents.Single(agent => agent.Id == "debater_b");
 
-        Assert.Equal("Invite Immanuel Kant and Friedrich Nietzsche.", host.AgentDraft!.Content);
-        Assert.Equal("Immanuel Kant", debaterA.AgentDraft!.AgentName);
-        Assert.Equal("debater_a", debaterA.AgentDraft.RuntimeAgentId);
-        Assert.Equal("debater_a", debaterA.AgentDraft.ShortName);
-        Assert.Equal("Friedrich Nietzsche", debaterB.AgentDraft!.AgentName);
-        Assert.Equal("debater_b", debaterB.AgentDraft.RuntimeAgentId);
-        Assert.Equal("debater_b", debaterB.AgentDraft.ShortName);
+        var hostAgent = Assert.IsType<InlineAgentParticipantSource>(host.Source).Agent;
+        var debaterAAgent = Assert.IsType<InlineAgentParticipantSource>(debaterA.Source).Agent;
+        var debaterBAgent = Assert.IsType<InlineAgentParticipantSource>(debaterB.Source).Agent;
+        Assert.Equal("Invite Immanuel Kant and Friedrich Nietzsche.", hostAgent.Content);
+        Assert.Equal("Immanuel Kant", debaterAAgent.AgentName);
+        Assert.Equal("debater_a", debaterAAgent.RuntimeAgentId);
+        Assert.Equal("debater_a", debaterAAgent.ShortName);
+        Assert.Equal("Friedrich Nietzsche", debaterBAgent.AgentName);
+        Assert.Equal("debater_b", debaterBAgent.RuntimeAgentId);
+        Assert.Equal("debater_b", debaterBAgent.ShortName);
     }
 
     private sealed class StubAgentTemplateService(

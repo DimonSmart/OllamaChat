@@ -1,4 +1,5 @@
 using ChatClient.Api.AgentWorkflows;
+using ChatClient.Api.AgentWorkflows.Compatibility;
 using ChatClient.Api.AgentWorkflows.GroupChat;
 using ChatClient.Api.AgentWorkflows.Runtime;
 using ChatClient.Api.Client.Services;
@@ -126,6 +127,7 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IOrchestrationWorkflowChatViewModelService, OrchestrationWorkflowChatViewModelService>();
         services.AddScoped<IAgentDefinitionCatalog, AgentDefinitionCatalog>();
         services.AddScoped<IAgentSessionDefinitionResolver, AgentSessionDefinitionResolver>();
+        services.AddScoped<ILegacyWorkflowDefinitionNormalizer, LegacyWorkflowDefinitionNormalizer>();
         services.AddScoped<IWorkflowParticipantResolver, WorkflowParticipantResolver>();
         services.AddScoped<IWorkflowAgentDraftMaterializer, WorkflowAgentDraftMaterializer>();
         services.AddScoped<IAgentInputDefinitionProvider, AgentInputDefinitionProvider>();

@@ -20,6 +20,14 @@ public sealed record AgentSessionDefinitionRequest
 public sealed record AgentSessionOverrides
 {
     public IReadOnlyList<McpServerSessionBinding>? McpServerBindings { get; init; }
+
+    public AgentSessionOverrides Snapshot() =>
+        new()
+        {
+            McpServerBindings = McpServerBindings?
+                .Select(static binding => binding.Clone())
+                .ToList()
+        };
 }
 
 public sealed record ChatRuntimeParticipantDescriptor
@@ -65,7 +73,16 @@ public sealed class AgentSessionDefinitionResolver(
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(request);
-        var descriptor = await catalog.GetRequiredAsync(reference, cancellationToken);
+        var descriptor = await catalog.FindAsync(reference, cancellationToken);
+        if (descriptor is null)
+        {
+            return new AgentDefinitionLaunchValidation
+            {
+                CanLaunch = false,
+                Problems = [new AgentDefinitionLaunchProblem($"Saved definition '{reference.Kind}:{reference.Id}' was not found.")]
+            };
+        }
+
         var (validation, _) = await ValidateLaunchAsync(
             reference,
             descriptor,
@@ -80,7 +97,37 @@ public sealed class AgentSessionDefinitionResolver(
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(request);
-        var descriptor = await catalog.GetRequiredAsync(reference, cancellationToken);
+        var descriptor = await catalog.FindAsync(reference, cancellationToken);
+        if (descriptor is null)
+        {
+            return new ResolvedAgentSessionDefinition
+            {
+                Descriptor = new AgentDefinitionDescriptor
+                {
+                    Reference = reference,
+                    Name = reference.Id,
+                    RuntimeKind = AgentRuntimeKind.LlmAgent,
+                    ModelRequirement = AgentModelRequirement.Required,
+                    DefinitionProblems =
+                    [
+                        new AgentDefinitionProblem($"Saved definition '{reference.Kind}:{reference.Id}' was not found.")
+                    ]
+                },
+                RuntimeReference = reference,
+                PresentationParticipant = new ChatRuntimeParticipantDescriptor
+                {
+                    Id = reference.Id,
+                    Name = reference.Id,
+                    RuntimeKind = AgentRuntimeKind.LlmAgent
+                },
+                Validation = new AgentDefinitionLaunchValidation
+                {
+                    CanLaunch = false,
+                    Problems = [new AgentDefinitionLaunchProblem($"Saved definition '{reference.Kind}:{reference.Id}' was not found.")]
+                }
+            };
+        }
+
         var (validation, model) = await ValidateLaunchAsync(
             reference,
             descriptor,
@@ -113,7 +160,10 @@ public sealed class AgentSessionDefinitionResolver(
         AgentSessionDefinitionRequest request,
         CancellationToken cancellationToken)
     {
-        var problems = ValidateInputs(descriptor.Inputs, request.Inputs).ToList();
+        var problems = descriptor.DefinitionProblems
+            .Select(static problem => new AgentDefinitionLaunchProblem(problem.Message))
+            .Concat(ValidateInputs(descriptor.Inputs, request.Inputs))
+            .ToList();
         problems.AddRange(await workflowPreflightValidator.ValidateAsync(reference, cancellationToken));
         ServerModel? model = null;
 

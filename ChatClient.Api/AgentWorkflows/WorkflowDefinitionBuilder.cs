@@ -436,7 +436,6 @@ public sealed class WorkflowDefinitionBuilder
         {
             InlineAgentParticipantSource inline => new InlineAgentParticipantSource(inline.Agent.Clone()),
             SavedDefinitionParticipantSource saved => new SavedDefinitionParticipantSource(saved.Reference),
-            SavedAgentNameParticipantSource savedByName => new SavedAgentNameParticipantSource(savedByName.SavedAgentName),
             null => null,
             _ => throw new InvalidOperationException(
                 $"Workflow participant source '{source.GetType().Name}' is not supported.")

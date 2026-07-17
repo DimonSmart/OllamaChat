@@ -26,4 +26,21 @@ public sealed class ChatEngineSessionStartRequest
     public string ChatStrategyName { get; init; } = "RoundRobin";
 
     public IChatStrategyOptions? ChatStrategyOptions { get; init; }
+
+    public ChatEngineSessionStartRequest Snapshot() =>
+        new()
+        {
+            Configuration = Configuration,
+            Agents = Agents.ToList(),
+            RuntimeParticipant = RuntimeParticipant,
+            RuntimeReference = RuntimeReference,
+            RuntimeDefaultModel = RuntimeDefaultModel,
+            RuntimeInputs = new Dictionary<string, string>(
+                RuntimeInputs,
+                StringComparer.OrdinalIgnoreCase),
+            Overrides = Overrides.Snapshot(),
+            History = History.ToList(),
+            ChatStrategyName = ChatStrategyName,
+            ChatStrategyOptions = ChatStrategyOptions
+        };
 }

@@ -1,4 +1,5 @@
 using ChatClient.Api.AgentWorkflows;
+using ChatClient.Api.AgentWorkflows.Compatibility;
 using ChatClient.Api.Services.AgentRuntime;
 using ChatClient.Application.Services;
 using ChatClient.Application.Services.AgentRuntime;
@@ -11,9 +12,9 @@ namespace ChatClient.Tests;
 public sealed class WorkflowParticipantUnificationTests
 {
     [Fact]
-    public async Task ResolveAsync_RejectsParticipantWithMultipleExecutableSources()
+    public async Task NormalizeAsync_RejectsParticipantWithMultipleExecutableSources()
     {
-        var resolver = CreateResolver([]);
+        var normalizer = new LegacyWorkflowDefinitionNormalizer(new StubAgentTemplateService([]));
         var workflow = CreateSequentialWorkflow(new WorkflowParticipantDefinition
         {
             Id = "ambiguous",
@@ -23,7 +24,7 @@ public sealed class WorkflowParticipantUnificationTests
         });
 
         var exception = await Assert.ThrowsAsync<InvalidOperationException>(() =>
-            resolver.ResolveAsync(workflow));
+            normalizer.NormalizeAsync(workflow));
 
         Assert.Equal(
             "Workflow participant 'ambiguous' defines more than one executable source.",
@@ -32,15 +33,15 @@ public sealed class WorkflowParticipantUnificationTests
 
     [Theory]
     [MemberData(nameof(AmbiguousParticipantSources))]
-    public async Task ResolveAsync_RejectsAllAmbiguousLegacySourceCombinations(
+    public async Task NormalizeAsync_RejectsAllAmbiguousLegacySourceCombinations(
         WorkflowParticipantDefinition participant)
     {
         var savedAgent = CreateAgent("Saved", "saved");
-        var resolver = CreateResolver([savedAgent]);
+        var normalizer = new LegacyWorkflowDefinitionNormalizer(new StubAgentTemplateService([savedAgent]));
         var workflow = CreateSequentialWorkflow(participant);
 
         var exception = await Assert.ThrowsAsync<InvalidOperationException>(() =>
-            resolver.ResolveAsync(workflow));
+            normalizer.NormalizeAsync(workflow));
 
         Assert.Equal(
             $"Workflow participant '{participant.Id}' defines more than one executable source.",

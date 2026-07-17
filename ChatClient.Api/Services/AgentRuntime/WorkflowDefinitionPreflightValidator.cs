@@ -1,4 +1,5 @@
 using ChatClient.Api.AgentWorkflows;
+using ChatClient.Api.AgentWorkflows.Compatibility;
 using ChatClient.Application.Services;
 using ChatClient.Application.Services.AgentRuntime;
 
@@ -7,6 +8,7 @@ namespace ChatClient.Api.Services.AgentRuntime;
 public sealed class WorkflowDefinitionPreflightValidator(
     IWorkflowDefinitionService workflowDefinitionService,
     IWorkflowDefinitionCompiler workflowDefinitionCompiler,
+    ILegacyWorkflowDefinitionNormalizer legacyWorkflowDefinitionNormalizer,
     IWorkflowParticipantResolver workflowParticipantResolver) : IWorkflowDefinitionPreflightValidator
 {
     public async Task<IReadOnlyList<AgentDefinitionLaunchProblem>> ValidateAsync(
@@ -36,11 +38,15 @@ public sealed class WorkflowDefinitionPreflightValidator(
             var compiled = await workflowDefinitionCompiler.CompileAsync(
                 savedWorkflow.SourceCode,
                 cancellationToken);
-            var workflow = compiled.Workflow;
-            if (workflow is null)
+            var compiledWorkflow = compiled.Workflow;
+            if (compiledWorkflow is null)
             {
                 return [new AgentDefinitionLaunchProblem("Workflow compilation did not return a workflow definition.")];
             }
+
+            var workflow = await legacyWorkflowDefinitionNormalizer.NormalizeAsync(
+                compiledWorkflow,
+                cancellationToken);
 
             var participants = await workflowParticipantResolver.ResolveAsync(workflow, cancellationToken);
             if (workflow is not SequentialWorkflowDefinition &&

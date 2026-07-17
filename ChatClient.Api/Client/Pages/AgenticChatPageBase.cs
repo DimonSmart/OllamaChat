@@ -79,6 +79,8 @@ public abstract class AgenticChatPageBase : ComponentBase, IAsyncDisposable
 
     protected virtual Task OnBeforeInitialLoadAsync() => Task.CompletedTask;
 
+    protected virtual Task OnParametersSetCoreAsync() => Task.CompletedTask;
+
     protected abstract Task LoadAgentsAsync();
 
     protected abstract Task LoadUserSettingsAsync();
@@ -117,6 +119,8 @@ public abstract class AgenticChatPageBase : ComponentBase, IAsyncDisposable
     {
         if (SavedChatId.HasValue && SavedChatId != lastSavedChatId)
             await LoadSavedChatAsync(SavedChatId.Value);
+
+        await OnParametersSetCoreAsync();
     }
 
     protected virtual void OnAnsweringStateChanged(bool answering)
@@ -190,11 +194,18 @@ public abstract class AgenticChatPageBase : ComponentBase, IAsyncDisposable
             .ToList();
 
         var chatId = SavedChatId ?? Guid.NewGuid();
-        var runtimeReference = CurrentRuntimeReference;
+        var runtimeContext = ChatService.CurrentStartRequest;
+        var runtimeReference = runtimeContext?.RuntimeReference ?? CurrentRuntimeReference;
         var chat = new SavedChat(chatId, title, DateTime.UtcNow, messages, participants)
         {
             RuntimeDefinitionKind = runtimeReference?.Kind.ToString(),
-            RuntimeDefinitionId = runtimeReference?.Id
+            RuntimeDefinitionId = runtimeReference?.Id,
+            RuntimeInputs = runtimeContext is null
+                ? new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+                : new Dictionary<string, string>(
+                    runtimeContext.RuntimeInputs,
+                    StringComparer.OrdinalIgnoreCase),
+            RuntimeOverrides = runtimeContext?.Overrides.ToSnapshot()
         };
         await SavedChatService.SaveAsync(chat);
 
@@ -329,4 +340,15 @@ public abstract class AgenticChatPageBase : ComponentBase, IAsyncDisposable
         await ChatService.CancelAsync();
         ChatService.ResetChat();
     }
+}
+
+file static class AgentSessionOverridesPersistenceExtensions
+{
+    public static AgentSessionOverridesSnapshot ToSnapshot(this AgentSessionOverrides overrides) =>
+        new()
+        {
+            McpServerBindings = overrides.McpServerBindings?
+                .Select(static binding => binding.Clone())
+                .ToList()
+        };
 }

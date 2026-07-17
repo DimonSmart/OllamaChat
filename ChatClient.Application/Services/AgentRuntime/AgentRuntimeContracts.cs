@@ -210,6 +210,10 @@ public sealed record AgentDefinitionDescriptor
     public bool SupportsConversationHistory { get; init; } = true;
 
     public bool SupportsAttachments { get; init; }
+
+    public IReadOnlyList<AgentDefinitionProblem> DefinitionProblems { get; init; } = [];
+
+    public bool IsDefinitionValid => DefinitionProblems.Count == 0;
 }
 
 public sealed record AgentLaunchCapabilities
@@ -218,6 +222,8 @@ public sealed record AgentLaunchCapabilities
 }
 
 public sealed record AgentDefinitionLaunchProblem(string Message);
+
+public sealed record AgentDefinitionProblem(string Message);
 
 public sealed record AgentDefinitionLaunchValidation
 {

@@ -347,7 +347,6 @@ public sealed class WorkflowAgentBuilder
     private string _summary = string.Empty;
     private AgentTemplateDefinition? _agentDraft;
     private AgentDefinitionReference? _savedDefinitionReference;
-    private string? _savedAgentTemplateName;
     private string? _overrideAgentName;
     private string? _overrideAvatarText;
     private string? _overrideInstructions;
@@ -377,6 +376,7 @@ public sealed class WorkflowAgentBuilder
     {
         ArgumentNullException.ThrowIfNull(draft);
         _agentDraft = draft;
+        _savedDefinitionReference = null;
         return this;
     }
 
@@ -385,15 +385,35 @@ public sealed class WorkflowAgentBuilder
         ArgumentNullException.ThrowIfNull(source);
         _agentDraft = source is InlineAgentParticipantSource inline ? inline.Agent : null;
         _savedDefinitionReference = source is SavedDefinitionParticipantSource saved ? saved.Reference : null;
-        _savedAgentTemplateName = source is SavedAgentNameParticipantSource savedByName ? savedByName.SavedAgentName : null;
+        if (_agentDraft is null && _savedDefinitionReference is null)
+        {
+            throw new ArgumentException("Source must be inline agent or saved definition.", nameof(source));
+        }
+
         return this;
     }
 
+    public WorkflowAgentBuilder UseDefinition(AgentDefinitionReference reference)
+    {
+        _savedDefinitionReference = reference;
+        _agentDraft = null;
+        return this;
+    }
+
+    public WorkflowAgentBuilder UseAgent(string agentId) =>
+        UseDefinition(new AgentDefinitionReference(
+            AgentDefinitionKind.SavedAgent,
+            RequireValue(agentId, nameof(agentId))));
+
+    public WorkflowAgentBuilder UseWorkflow(string workflowId) =>
+        UseDefinition(new AgentDefinitionReference(
+            AgentDefinitionKind.SavedWorkflow,
+            RequireValue(workflowId, nameof(workflowId))));
+
+    [Obsolete("Use UseAgent with a saved-agent id, or normalize saved-agent names at the compatibility boundary.")]
     public WorkflowAgentBuilder FromSavedAgent(string savedAgentName)
     {
-        _savedAgentTemplateName = RequireValue(savedAgentName, nameof(savedAgentName));
-        _savedDefinitionReference = null;
-        return this;
+        return UseAgent(savedAgentName);
     }
 
     public WorkflowAgentBuilder FromSavedAgent(AgentDefinitionReference reference)
@@ -403,18 +423,12 @@ public sealed class WorkflowAgentBuilder
             throw new ArgumentException("Reference must point to a saved agent.", nameof(reference));
         }
 
-        _savedDefinitionReference = reference;
-        _savedAgentTemplateName = null;
-        return this;
+        return UseDefinition(reference);
     }
 
     public WorkflowAgentBuilder FromSavedWorkflow(string workflowId)
     {
-        _savedDefinitionReference = new AgentDefinitionReference(
-            AgentDefinitionKind.SavedWorkflow,
-            RequireValue(workflowId, nameof(workflowId)));
-        _savedAgentTemplateName = null;
-        return this;
+        return UseWorkflow(workflowId);
     }
 
     public WorkflowAgentBuilder OverrideName(string agentName)
@@ -484,10 +498,8 @@ public sealed class WorkflowAgentBuilder
 
     internal WorkflowParticipantDefinition Build()
     {
-        var usesSavedTemplate = !string.IsNullOrWhiteSpace(_savedAgentTemplateName);
         var usesSavedDefinition = _savedDefinitionReference is not null;
         var sourceCount = (_agentDraft is not null ? 1 : 0) +
-                          (usesSavedTemplate ? 1 : 0) +
                           (usesSavedDefinition ? 1 : 0);
         if (sourceCount > 1)
         {
@@ -518,11 +530,7 @@ public sealed class WorkflowAgentBuilder
 
         if (string.IsNullOrWhiteSpace(_role))
         {
-            if (usesSavedTemplate)
-            {
-                _role = _overrideAgentName ?? _savedAgentTemplateName ?? "Saved agent";
-            }
-            else if (usesSavedDefinition)
+            if (usesSavedDefinition)
             {
                 _role = _overrideAgentName ?? _savedDefinitionReference!.Kind.ToString();
             }
@@ -568,7 +576,8 @@ public sealed class WorkflowAgentBuilder
             return new SavedDefinitionParticipantSource(_savedDefinitionReference);
         }
 
-        return new SavedAgentNameParticipantSource(_savedAgentTemplateName!);
+        throw new InvalidOperationException(
+            $"Workflow participant '{_id}' requires an executable source.");
     }
 
     private bool HasLlmOverrides() =>

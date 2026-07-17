@@ -1,4 +1,5 @@
 using ChatClient.Api.AgentWorkflows;
+using ChatClient.Application.Services.AgentRuntime;
 using ChatClient.Domain.Models;
 
 namespace ChatClient.Tests;
@@ -79,7 +80,7 @@ public sealed class WorkflowDefinitionBuilderTests
         var workflow = WorkflowDefinitionBuilder
             .New("demo", "Demo Workflow")
             .Agent("router", agent => agent
-                .FromSavedAgent("Saved Router")
+                .UseAgent("saved-router-id")
                 .OverrideName("Workflow Router")
                 .OverrideAvatarText("WR")
                 .AppendInstructions("Workflow mode only."))
@@ -88,7 +89,9 @@ public sealed class WorkflowDefinitionBuilderTests
             .Build();
 
         var participant = Assert.Single(workflow.Participants);
-        Assert.Equal("Saved Router", Assert.IsType<SavedAgentNameParticipantSource>(participant.Source).SavedAgentName);
+        var source = Assert.IsType<SavedDefinitionParticipantSource>(participant.Source);
+        Assert.Equal(AgentDefinitionKind.SavedAgent, source.Reference.Kind);
+        Assert.Equal("saved-router-id", source.Reference.Id);
         Assert.Equal("Workflow Router", participant.Overrides.DisplayName);
         Assert.Equal("WR", participant.Overrides.Llm!.AvatarText);
         Assert.Equal("Workflow mode only.", participant.Overrides.Llm.AppendedInstructions);

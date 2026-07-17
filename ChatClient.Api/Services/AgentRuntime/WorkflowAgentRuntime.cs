@@ -1,4 +1,5 @@
 using ChatClient.Api.AgentWorkflows;
+using ChatClient.Api.AgentWorkflows.Compatibility;
 using ChatClient.Api.Client.Services.Agentic;
 using ChatClient.Application.Helpers;
 using ChatClient.Application.Services;
@@ -12,6 +13,7 @@ namespace ChatClient.Api.Services.AgentRuntime;
 public sealed class WorkflowAgentRuntimeFactory(
     IWorkflowDefinitionService workflowDefinitionService,
     IWorkflowDefinitionCompiler workflowDefinitionCompiler,
+    ILegacyWorkflowDefinitionNormalizer legacyWorkflowDefinitionNormalizer,
     IWorkflowParticipantResolver workflowParticipantResolver,
     IHeadlessWorkflowRunner headlessWorkflowRunner,
     IWorkflowParticipantExecutor participantExecutor,
@@ -38,8 +40,11 @@ public sealed class WorkflowAgentRuntimeFactory(
         var compiled = await workflowDefinitionCompiler.CompileAsync(
             savedWorkflow.SourceCode,
             cancellationToken);
-        var workflow = compiled.Workflow
+        var compiledWorkflow = compiled.Workflow
             ?? throw new InvalidOperationException("Workflow compilation did not return a workflow definition.");
+        var workflow = await legacyWorkflowDefinitionNormalizer.NormalizeAsync(
+            compiledWorkflow,
+            cancellationToken);
         var workflowReference = new AgentDefinitionReference(
             AgentDefinitionKind.SavedWorkflow,
             savedWorkflow.Id.ToString("D"));
@@ -199,11 +204,10 @@ internal sealed class WorkflowAgentRuntime(
                 DisplayName = string.IsNullOrWhiteSpace(participant.Role) ? participant.Id : participant.Role,
                 Summary = participant.Summary,
                 RuntimeKind = AgentRuntimeKind.LlmAgent,
-                Source = new MaterializedLlmParticipantSource(
-                    (participant.Source as InlineAgentParticipantSource)?.Agent ??
-                    participant.AgentDraft ??
-                    throw new InvalidOperationException(
-                        $"Workflow participant '{participant.Id}' has no inline agent source."))
+                Source = participant.Source is InlineAgentParticipantSource inline
+                    ? new MaterializedLlmParticipantSource(inline.Agent)
+                    : throw new InvalidOperationException(
+                        $"Workflow participant '{participant.Id}' has no inline agent source.")
             }).ToList(),
             agents,
             configuration,

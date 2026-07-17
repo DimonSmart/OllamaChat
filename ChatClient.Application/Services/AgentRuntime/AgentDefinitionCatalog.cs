@@ -82,8 +82,8 @@ public sealed class AgentDefinitionCatalog(
             AgentDefinitionKind.SavedWorkflow,
             workflow.Id.ToString("D"));
         IReadOnlyList<AgentInputDefinition> inputs = [];
-        var description = workflow.Description;
         var requirement = AgentModelRequirement.Required;
+        var definitionProblems = new List<AgentDefinitionProblem>();
 
         try
         {
@@ -92,21 +92,20 @@ public sealed class AgentDefinitionCatalog(
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
-            description = string.IsNullOrWhiteSpace(description)
-                ? $"Invalid workflow definition: {ex.Message}"
-                : $"{description} Invalid workflow definition: {ex.Message}";
+            definitionProblems.Add(new AgentDefinitionProblem($"Invalid workflow definition: {ex.Message}"));
         }
 
         return new AgentDefinitionDescriptor
         {
             Reference = reference,
             Name = workflow.DisplayName,
-            Description = description,
+            Description = workflow.Description,
             RuntimeKind = AgentRuntimeKind.WorkflowAgent,
             AvatarText = "WF",
             Inputs = inputs,
             ModelRequirement = requirement,
-            SupportsAttachments = true
+            SupportsAttachments = true,
+            DefinitionProblems = definitionProblems
         };
     }
 }

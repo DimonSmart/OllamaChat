@@ -43,14 +43,14 @@ public sealed class WorkflowDefinitionCompilerTests
                             .AutoSelectTools(0)
                             .Build()))
                 .Agent("analyst", agent => agent
-                    .FromSavedAgent("Saved Analyst")
+                    .UseAgent("saved-analyst-id")
                     .AppendInstructions("""
                         Workflow mode:
                         - Review the topic directly.
                         - Answer the other participants, not the user.
                         """))
                 .Agent("challenger", agent => agent
-                    .FromSavedAgent("Saved Challenger")
+                    .UseAgent("saved-challenger-id")
                     .AppendInstructions("""
                         Workflow mode:
                         - Challenge weak assumptions.
@@ -82,8 +82,8 @@ public sealed class WorkflowDefinitionCompilerTests
         Assert.Contains(workflow.StartInputs, static input => input.Key == "topic");
         var analyst = Assert.Single(workflow.Agents, static agent => agent.Id == "analyst");
         var challenger = Assert.Single(workflow.Agents, static agent => agent.Id == "challenger");
-        Assert.Equal("Saved Analyst", Assert.IsType<SavedAgentNameParticipantSource>(analyst.Source).SavedAgentName);
-        Assert.Equal("Saved Challenger", Assert.IsType<SavedAgentNameParticipantSource>(challenger.Source).SavedAgentName);
+        Assert.Equal("saved-analyst-id", Assert.IsType<SavedDefinitionParticipantSource>(analyst.Source).Reference.Id);
+        Assert.Equal("saved-challenger-id", Assert.IsType<SavedDefinitionParticipantSource>(challenger.Source).Reference.Id);
         Assert.NotNull(analyst.Overrides.Llm?.AppendedInstructions);
         Assert.NotNull(challenger.Overrides.Llm?.AppendedInstructions);
         Assert.Contains("Workflow mode:", analyst.Overrides.Llm.AppendedInstructions, StringComparison.Ordinal);
@@ -247,7 +247,7 @@ public sealed class WorkflowDefinitionCompilerTests
             var workflow = WorkflowDefinitionBuilder
                 .New("demo", "Demo Workflow")
                 .Agent("router", agent => agent
-                    .FromSavedAgent("Saved Router")
+                    .UseAgent("saved-router-id")
                     .OverrideName("Workflow Router")
                     .OverrideAvatarText("WR")
                     .AppendInstructions("Workflow mode only."))
@@ -262,7 +262,7 @@ public sealed class WorkflowDefinitionCompilerTests
         var workflow = Assert.IsType<AgentWorkflowDefinition>(result.Workflow);
 
         var agent = Assert.Single(workflow.Agents);
-        Assert.Equal("Saved Router", Assert.IsType<SavedAgentNameParticipantSource>(agent.Source).SavedAgentName);
+        Assert.Equal("saved-router-id", Assert.IsType<SavedDefinitionParticipantSource>(agent.Source).Reference.Id);
         Assert.Equal("Workflow Router", agent.Overrides.DisplayName);
         Assert.Equal("WR", agent.Overrides.Llm!.AvatarText);
         Assert.Equal("Workflow mode only.", agent.Overrides.Llm.AppendedInstructions);

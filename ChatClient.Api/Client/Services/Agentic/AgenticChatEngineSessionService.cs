@@ -35,6 +35,8 @@ public sealed class AgenticChatEngineSessionService(
     public ObservableCollection<IAppChatMessage> Messages => _chat.Messages;
     IReadOnlyCollection<IAppChatMessage> IChatSessionService.Messages => _chat.Messages;
 
+    public ChatEngineSessionStartRequest? CurrentStartRequest => _parameters?.Snapshot();
+
     public async Task StartAsync(ChatEngineSessionStartRequest request, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(request);
@@ -43,7 +45,7 @@ public sealed class AgenticChatEngineSessionService(
 
         await ValidateResolvedAgentsAsync(request.Agents, cancellationToken);
 
-        _parameters = request;
+        _parameters = request.Snapshot();
         _chat.Reset();
         _activeStreams.Clear();
         _chat.SetAgents(request.Agents.Select(static agent => agent.Agent.Clone()));

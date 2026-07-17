@@ -34,6 +34,8 @@ public sealed class UnifiedAgentRuntimeChatSessionService(
 
     IReadOnlyCollection<IAppChatMessage> IChatSessionService.Messages => _chat.Messages;
 
+    public ChatEngineSessionStartRequest? CurrentStartRequest => _parameters?.Snapshot();
+
     public async Task StartAsync(
         ChatEngineSessionStartRequest request,
         CancellationToken cancellationToken = default)
@@ -47,7 +49,7 @@ public sealed class UnifiedAgentRuntimeChatSessionService(
                 nameof(request));
         }
 
-        _parameters = request;
+        _parameters = request.Snapshot();
         _chat.Reset();
         ClearRunLocalState();
         _chat.SetAgents(request.RuntimeParticipant is { } participant

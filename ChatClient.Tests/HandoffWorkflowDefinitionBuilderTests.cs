@@ -1,5 +1,6 @@
 using ChatClient.Api.AgentWorkflows;
 using ChatClient.Application.Services.Agentic;
+using ChatClient.Application.Services.AgentRuntime;
 
 namespace ChatClient.Tests;
 
@@ -84,7 +85,7 @@ public sealed class HandoffWorkflowDefinitionBuilderTests
             .New("demo", "Demo Workflow")
             .StartWith("technical")
             .Agent("technical", agent => agent
-                .FromSavedAgent("Saved Technical Agent")
+                .UseAgent("saved-technical-agent-id")
                 .Role("Technical interviewer")
                 .OverrideName("Technical Interviewer")
                 .OverrideInstructions("Run a technical interview."))
@@ -95,8 +96,9 @@ public sealed class HandoffWorkflowDefinitionBuilderTests
         Assert.Equal("Technical interviewer", technical.Role);
         Assert.Null(technical.AgentDraft);
         Assert.Null(technical.SavedAgentTemplate);
-        var source = Assert.IsType<SavedAgentNameParticipantSource>(technical.Source);
-        Assert.Equal("Saved Technical Agent", source.SavedAgentName);
+        var source = Assert.IsType<SavedDefinitionParticipantSource>(technical.Source);
+        Assert.Equal(AgentDefinitionKind.SavedAgent, source.Reference.Kind);
+        Assert.Equal("saved-technical-agent-id", source.Reference.Id);
         Assert.Equal("Technical Interviewer", technical.Overrides.DisplayName);
         Assert.Equal("Run a technical interview.", technical.Overrides.Llm!.Instructions);
         Assert.Null(technical.DraftOverrides.AgentName);
@@ -110,7 +112,7 @@ public sealed class HandoffWorkflowDefinitionBuilderTests
             .New("demo", "Demo Workflow")
             .StartWith("technical")
             .Agent("technical", agent => agent
-                .FromSavedAgent("Saved Technical Agent")
+                .UseAgent("saved-technical-agent-id")
                 .Role("Technical interviewer")
                 .AppendInstructions("Stay focused on the current workflow step."))
             .Build();
@@ -130,7 +132,7 @@ public sealed class HandoffWorkflowDefinitionBuilderTests
                 .New("demo", "Demo Workflow")
                 .StartWith("technical")
                 .Agent("technical", agent => agent
-                    .FromSavedAgent("Saved Technical Agent")
+                    .UseAgent("saved-technical-agent-id")
                     .Role("Technical interviewer")
                     .OverrideInstructions("Replace prompt.")
                     .AppendInstructions("Append prompt."))
@@ -140,18 +142,18 @@ public sealed class HandoffWorkflowDefinitionBuilderTests
     }
 
     [Fact]
-    public void Build_DefaultsSavedAgentRoleToTemplateNameWhenRoleIsOmitted()
+    public void Build_DefaultsSavedAgentRoleToDefinitionKindWhenRoleIsOmitted()
     {
         var workflow = HandoffWorkflowDefinitionBuilder
             .New("demo", "Demo Workflow")
             .StartWith("router")
             .Agent("router", agent => agent
-                .FromSavedAgent("Saved Router"))
+                .UseAgent("saved-router-id"))
             .Build();
 
         var agent = Assert.Single(workflow.Agents);
         Assert.Equal("router", agent.Id);
-        Assert.Equal("Saved Router", agent.Role);
+        Assert.Equal("SavedAgent", agent.Role);
     }
 
     private static Domain.Models.AgentTemplateDefinition CreateDraft(string name, string shortName) =>

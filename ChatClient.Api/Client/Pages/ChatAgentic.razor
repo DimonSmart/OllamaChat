@@ -55,7 +55,7 @@
                                                           Label="@GetInputLabel(input)"
                                                           HelperText="@input.Description"
                                                           Value="GetInputValue(input)"
-                                                          ValueChanged="value => SetInputValue(input.Key, value)"
+                                                          ValueChanged="async value => await SetInputValueAsync(input.Key, value)"
                                                           Variant="Variant.Outlined"
                                                           Margin="Margin.Dense"
                                                           Placeholder="@input.Placeholder"
@@ -67,7 +67,7 @@
                                             <MudSwitch T="bool"
                                                        Label="@GetInputLabel(input)"
                                                        Value="GetBooleanInputValue(input)"
-                                                       ValueChanged="value => SetBooleanInputValue(input.Key, value)"
+                                                       ValueChanged="async value => await SetBooleanInputValueAsync(input.Key, value)"
                                                        Color="Color.Primary" />
                                             if (!string.IsNullOrWhiteSpace(input.Description))
                                             {
@@ -80,7 +80,7 @@
                                                           Label="@GetInputLabel(input)"
                                                           HelperText="@input.Description"
                                                           Value="GetInputValue(input)"
-                                                          ValueChanged="value => SetInputValue(input.Key, value)"
+                                                          ValueChanged="async value => await SetInputValueAsync(input.Key, value)"
                                                           Variant="Variant.Outlined"
                                                           Margin="Margin.Dense"
                                                           Placeholder="@input.Placeholder"
@@ -104,6 +104,10 @@
                             <MudAlert Severity="Severity.Error" Dense="true" Variant="Variant.Outlined">
                                 @string.Join(" ", launchValidation.Problems.Select(problem => problem.Message))
                             </MudAlert>
+                        }
+                        @if (isValidatingLaunch)
+                        {
+                            <MudProgressLinear Color="Color.Primary" Indeterminate="true" />
                         }
 
                         <MudTooltip Text="Select server and model" Disabled="@CanStartChat">
@@ -149,6 +153,9 @@
     {
         CanLaunch = false
     };
+    private long validationVersion;
+    private bool isValidatingLaunch;
+    private ServerModelSelection previousUiModelSelection = new(null, null);
 
     [Inject]
     private IAgentDefinitionCatalog AgentDefinitionCatalog { get; set; } = null!;
@@ -161,7 +168,7 @@
 
     private ServerModel? effectiveModel;
 
-    private bool CanStartChat => launchValidation.CanLaunch;
+    private bool CanStartChat => launchValidation.CanLaunch && !isValidatingLaunch;
 
     protected override bool CanSendMessages => selectedDefinition is not null;
 
@@ -173,6 +180,15 @@
         var defaultItem = catalogItems.FirstOrDefault(item =>
             string.Equals(item.Name, DefaultAgentName, StringComparison.OrdinalIgnoreCase)) ?? catalogItems.FirstOrDefault();
         SetSelectedDefinition(defaultItem);
+        await RefreshLaunchValidationAsync();
+    }
+
+    protected override async Task OnParametersSetCoreAsync()
+    {
+        if (SameSelection(previousUiModelSelection, UiModelSelection))
+            return;
+
+        previousUiModelSelection = UiModelSelection;
         await RefreshLaunchValidationAsync();
     }
 
@@ -209,7 +225,8 @@
         var resolved = await SessionDefinitionResolver.ResolveAsync(selectedItem.Reference, new AgentSessionDefinitionRequest
         {
             UiModelSelection = UiModelSelection,
-            Overrides = BuildOverrides()
+            Inputs = saved.RuntimeInputs,
+            Overrides = BuildOverrides(saved.RuntimeOverrides)
         });
         if (!resolved.Validation.CanLaunch)
         {
@@ -240,7 +257,8 @@
             RuntimeParticipant = resolved.PresentationParticipant,
             RuntimeReference = resolved.RuntimeReference,
             RuntimeDefaultModel = resolved.DefaultModel,
-            Overrides = BuildOverrides(),
+            RuntimeInputs = resolved.Inputs,
+            Overrides = BuildOverrides(saved.RuntimeOverrides),
             History = savedMessages,
             ChatStrategyName = "RoundRobin",
             ChatStrategyOptions = new RoundRobinChatStrategyOptions { Rounds = 1 }
@@ -345,19 +363,19 @@
             ? value
             : input.DefaultValue ?? string.Empty;
 
-    private void SetInputValue(string key, string? value)
+    private async Task SetInputValueAsync(string key, string? value)
     {
         inputValues[key] = value ?? string.Empty;
-        _ = RefreshLaunchValidationAsync();
+        await RefreshLaunchValidationAsync();
     }
 
     private bool GetBooleanInputValue(AgentInputDefinition input) =>
         bool.TryParse(GetInputValue(input), out var value) && value;
 
-    private void SetBooleanInputValue(string key, bool value)
+    private async Task SetBooleanInputValueAsync(string key, bool value)
     {
         inputValues[key] = value.ToString();
-        _ = RefreshLaunchValidationAsync();
+        await RefreshLaunchValidationAsync();
     }
 
     private static string GetInputLabel(AgentInputDefinition input) =>
@@ -377,28 +395,79 @@
             }
             : new AgentSessionOverrides();
 
+    private AgentSessionOverrides BuildOverrides(AgentSessionOverridesSnapshot? snapshot) =>
+        selectedDefinition?.LaunchCapabilities.SupportsMcpBindingOverrides == true
+            ? new AgentSessionOverrides
+            {
+                McpServerBindings = snapshot?.McpServerBindings?
+                    .Select(static binding => binding.Clone())
+                    .ToList() ?? []
+            }
+            : new AgentSessionOverrides();
+
     private async Task RefreshLaunchValidationAsync()
     {
+        var version = System.Threading.Interlocked.Increment(ref validationVersion);
         if (selectedDefinition is null)
         {
             launchValidation = new AgentDefinitionLaunchValidation
             {
                 CanLaunch = false
             };
+            isValidatingLaunch = false;
             await InvokeAsync(StateHasChanged);
             return;
         }
 
-        launchValidation = await SessionDefinitionResolver.ValidateAsync(
-            selectedDefinition.Reference,
-            new AgentSessionDefinitionRequest
+        isValidatingLaunch = true;
+        await InvokeAsync(StateHasChanged);
+
+        var reference = selectedDefinition.Reference;
+        var request = new AgentSessionDefinitionRequest
+        {
+            UiModelSelection = UiModelSelection,
+            Inputs = BuildInputs(),
+            Overrides = BuildOverrides()
+        };
+
+        try
+        {
+            var validation = await SessionDefinitionResolver.ValidateAsync(reference, request);
+            if (version != System.Threading.Volatile.Read(ref validationVersion))
             {
-                UiModelSelection = UiModelSelection,
-                Inputs = BuildInputs(),
-                Overrides = BuildOverrides()
-            });
+                return;
+            }
+
+            launchValidation = validation;
+        }
+        catch (Exception ex)
+        {
+            if (version != System.Threading.Volatile.Read(ref validationVersion))
+            {
+                return;
+            }
+
+            Logger.LogWarning(ex, "Launch validation failed.");
+            launchValidation = new AgentDefinitionLaunchValidation
+            {
+                CanLaunch = false,
+                Problems = [new AgentDefinitionLaunchProblem(ex.Message)]
+            };
+        }
+        finally
+        {
+            if (version == System.Threading.Volatile.Read(ref validationVersion))
+            {
+                isValidatingLaunch = false;
+            }
+        }
+
         await InvokeAsync(StateHasChanged);
     }
+
+    private static bool SameSelection(ServerModelSelection left, ServerModelSelection right) =>
+        left.ServerId == right.ServerId &&
+        string.Equals(left.ModelName, right.ModelName, StringComparison.Ordinal);
 
     private static string NormalizeBoolean(string value) =>
         bool.TryParse(value, out var parsed)
