@@ -2,6 +2,8 @@ using ChatClient.Application.Helpers;
 using ChatClient.Application.Services;
 using ChatClient.Application.Services.AgentRuntime;
 using ChatClient.Domain.Models;
+using System.Globalization;
+using System.Text.Json;
 
 namespace ChatClient.Application.Services.Agentic;
 
@@ -11,6 +13,13 @@ public sealed record AgentSessionDefinitionRequest
 
     public IReadOnlyDictionary<string, string> Inputs { get; init; } =
         new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+
+    public AgentSessionOverrides Overrides { get; init; } = new();
+}
+
+public sealed record AgentSessionOverrides
+{
+    public IReadOnlyList<McpServerSessionBinding>? McpServerBindings { get; init; }
 }
 
 public sealed record ChatRuntimeParticipantDescriptor
@@ -35,6 +44,11 @@ public sealed record ResolvedAgentSessionDefinition
 
 public interface IAgentSessionDefinitionResolver
 {
+    Task<AgentDefinitionLaunchValidation> ValidateAsync(
+        AgentDefinitionReference reference,
+        AgentSessionDefinitionRequest request,
+        CancellationToken cancellationToken = default);
+
     Task<ResolvedAgentSessionDefinition> ResolveAsync(
         AgentDefinitionReference reference,
         AgentSessionDefinitionRequest request,
@@ -43,8 +57,23 @@ public interface IAgentSessionDefinitionResolver
 
 public sealed class AgentSessionDefinitionResolver(
     IAgentDefinitionCatalog catalog,
-    IAgentTemplateService agentTemplateService) : IAgentSessionDefinitionResolver
+    IWorkflowDefinitionPreflightValidator workflowPreflightValidator) : IAgentSessionDefinitionResolver
 {
+    public async Task<AgentDefinitionLaunchValidation> ValidateAsync(
+        AgentDefinitionReference reference,
+        AgentSessionDefinitionRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        var descriptor = await catalog.GetRequiredAsync(reference, cancellationToken);
+        var (validation, _) = await ValidateLaunchAsync(
+            reference,
+            descriptor,
+            request,
+            cancellationToken);
+        return validation;
+    }
+
     public async Task<ResolvedAgentSessionDefinition> ResolveAsync(
         AgentDefinitionReference reference,
         AgentSessionDefinitionRequest request,
@@ -52,31 +81,11 @@ public sealed class AgentSessionDefinitionResolver(
     {
         ArgumentNullException.ThrowIfNull(request);
         var descriptor = await catalog.GetRequiredAsync(reference, cancellationToken);
-        var problems = ValidateInputs(descriptor.Inputs, request.Inputs).ToList();
-        ServerModel? model = null;
-
-        if (descriptor.ModelRequirement != AgentModelRequirement.None)
-        {
-            var configured = new ServerModelSelection(null, null);
-            if (reference.Kind == AgentDefinitionKind.SavedAgent && Guid.TryParse(reference.Id, out var agentId))
-            {
-                var agent = (await agentTemplateService.GetAllAsync())
-                    .FirstOrDefault(candidate => candidate.Id == agentId);
-                if (agent is not null)
-                    configured = new ServerModelSelection(agent.LlmId, agent.ModelName);
-            }
-
-            if (ModelSelectionHelper.TryGetEffectiveModel(configured, request.UiModelSelection, out var resolved))
-                model = resolved;
-            else if (descriptor.ModelRequirement == AgentModelRequirement.Required)
-                problems.Add(new AgentDefinitionLaunchProblem("A model selection is required to start this definition."));
-        }
-
-        var validation = new AgentDefinitionLaunchValidation
-        {
-            CanLaunch = problems.Count == 0,
-            Problems = problems
-        };
+        var (validation, model) = await ValidateLaunchAsync(
+            reference,
+            descriptor,
+            request,
+            cancellationToken);
 
         return new ResolvedAgentSessionDefinition
         {
@@ -98,21 +107,74 @@ public sealed class AgentSessionDefinitionResolver(
         };
     }
 
+    private async Task<(AgentDefinitionLaunchValidation Validation, ServerModel? Model)> ValidateLaunchAsync(
+        AgentDefinitionReference reference,
+        AgentDefinitionDescriptor descriptor,
+        AgentSessionDefinitionRequest request,
+        CancellationToken cancellationToken)
+    {
+        var problems = ValidateInputs(descriptor.Inputs, request.Inputs).ToList();
+        problems.AddRange(await workflowPreflightValidator.ValidateAsync(reference, cancellationToken));
+        ServerModel? model = null;
+
+        if (descriptor.ModelRequirement != AgentModelRequirement.None)
+        {
+            if (ModelSelectionHelper.TryGetEffectiveModel(
+                    descriptor.ConfiguredModel,
+                    request.UiModelSelection,
+                    out var resolved))
+            {
+                model = resolved;
+            }
+            else if (descriptor.ModelRequirement == AgentModelRequirement.Required)
+            {
+                problems.Add(new AgentDefinitionLaunchProblem("A model selection is required to start this definition."));
+            }
+        }
+
+        return (new AgentDefinitionLaunchValidation
+        {
+            CanLaunch = problems.Count == 0,
+            Problems = problems
+        }, model);
+    }
+
     private static IEnumerable<AgentDefinitionLaunchProblem> ValidateInputs(
         IReadOnlyList<AgentInputDefinition> definitions,
         IReadOnlyDictionary<string, string> values)
     {
+        var definitionsByKey = definitions
+            .ToDictionary(static input => input.Key, StringComparer.OrdinalIgnoreCase);
+        foreach (var key in values.Keys.Where(key => !definitionsByKey.ContainsKey(key)))
+            yield return new AgentDefinitionLaunchProblem($"Input '{key}' is not defined.");
+
         foreach (var input in definitions)
         {
             values.TryGetValue(input.Key, out var value);
-            if (input.IsRequired && input.Kind != AgentInputDefinitionKind.Boolean && string.IsNullOrWhiteSpace(value))
+            if (input.IsRequired && string.IsNullOrWhiteSpace(value))
                 yield return new AgentDefinitionLaunchProblem($"Input '{input.DisplayName}' is required.");
             if (!string.IsNullOrWhiteSpace(value) && input.Kind == AgentInputDefinitionKind.Number &&
-                !decimal.TryParse(value, out _))
+                !decimal.TryParse(value, NumberStyles.Number, CultureInfo.InvariantCulture, out _))
                 yield return new AgentDefinitionLaunchProblem($"Input '{input.DisplayName}' must be a number.");
             if (!string.IsNullOrWhiteSpace(value) && input.Kind == AgentInputDefinitionKind.Boolean &&
                 !bool.TryParse(value, out _))
                 yield return new AgentDefinitionLaunchProblem($"Input '{input.DisplayName}' must be true or false.");
+            if (!string.IsNullOrWhiteSpace(value) && input.Kind == AgentInputDefinitionKind.Json &&
+                !IsValidJson(value))
+                yield return new AgentDefinitionLaunchProblem($"Input '{input.DisplayName}' must contain valid JSON.");
+        }
+    }
+
+    private static bool IsValidJson(string value)
+    {
+        try
+        {
+            using var _ = JsonDocument.Parse(value);
+            return true;
+        }
+        catch (JsonException)
+        {
+            return false;
         }
     }
 }

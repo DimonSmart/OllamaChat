@@ -129,6 +129,8 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IWorkflowParticipantResolver, WorkflowParticipantResolver>();
         services.AddScoped<IWorkflowAgentDraftMaterializer, WorkflowAgentDraftMaterializer>();
         services.AddScoped<IAgentInputDefinitionProvider, AgentInputDefinitionProvider>();
+        services.AddScoped<IAgentDefinitionModelRequirementAnalyzer, WorkflowModelRequirementAnalyzer>();
+        services.AddScoped<IWorkflowDefinitionPreflightValidator, WorkflowDefinitionPreflightValidator>();
         services.AddScoped<LlmAgentRuntimeFactory>();
         services.AddScoped<ILlmAgentRuntimeFactory>(sp => sp.GetRequiredService<LlmAgentRuntimeFactory>());
         services.AddScoped<IInlineLlmAgentRuntimeFactory>(sp => sp.GetRequiredService<LlmAgentRuntimeFactory>());

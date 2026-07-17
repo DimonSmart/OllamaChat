@@ -91,6 +91,21 @@
                             </MudStack>
                         }
 
+                        @if (selectedDefinition?.LaunchCapabilities.SupportsMcpBindingOverrides == true)
+                        {
+                            <McpServerBindingsEditor Bindings="@mcpServerBindings"
+                                                     BindingsChanged="OnMcpServerBindingsChanged"
+                                                     Title="MCP Servers"
+                                                     Description="Session-specific MCP bindings for this launch." />
+                        }
+
+                        @if (launchValidation.Problems.Count > 0)
+                        {
+                            <MudAlert Severity="Severity.Error" Dense="true" Variant="Variant.Outlined">
+                                @string.Join(" ", launchValidation.Problems.Select(problem => problem.Message))
+                            </MudAlert>
+                        }
+
                         <MudTooltip Text="Select server and model" Disabled="@CanStartChat">
                             <MudButton Variant="Variant.Filled"
                                        Color="Color.Primary"
@@ -129,6 +144,11 @@
     private AgentDefinitionDescriptor? selectedDefinition { get; set; }
     private IReadOnlyList<AgentInputDefinition> inputDefinitions = [];
     private readonly Dictionary<string, string> inputValues = new(StringComparer.OrdinalIgnoreCase);
+    private List<McpServerSessionBinding> mcpServerBindings = [];
+    private AgentDefinitionLaunchValidation launchValidation = new()
+    {
+        CanLaunch = false
+    };
 
     [Inject]
     private IAgentDefinitionCatalog AgentDefinitionCatalog { get; set; } = null!;
@@ -140,11 +160,12 @@
     public ServerModelSelection UiModelSelection { get; set; } = new(null, null);
 
     private ServerModel? effectiveModel;
-    private string CurrentModelName => effectiveModel!.ModelName;
 
-    private bool CanStartChat => selectedDefinition is not null && AreRequiredInputsSatisfied();
+    private bool CanStartChat => launchValidation.CanLaunch;
 
     protected override bool CanSendMessages => selectedDefinition is not null;
+
+    protected override AgentDefinitionReference? CurrentRuntimeReference => selectedDefinition?.Reference;
 
     protected override async Task LoadAgentsAsync()
     {
@@ -152,6 +173,7 @@
         var defaultItem = catalogItems.FirstOrDefault(item =>
             string.Equals(item.Name, DefaultAgentName, StringComparison.OrdinalIgnoreCase)) ?? catalogItems.FirstOrDefault();
         SetSelectedDefinition(defaultItem);
+        await RefreshLaunchValidationAsync();
     }
 
     protected override async Task LoadUserSettingsAsync()
@@ -168,30 +190,26 @@
             return;
         }
 
-        var assistantIds = saved.Participants
-            .Where(participant => participant.Role == AppChatRole.Assistant)
-            .Select(participant => participant.Id)
-            .ToHashSet(StringComparer.OrdinalIgnoreCase);
-
-        var savedAgents = await AgentService.GetAllAsync();
-        var agentsForChat = savedAgents
-            .Where(agent => assistantIds.Contains(agent.AgentId))
-            .ToList();
-
-        if (agentsForChat.Count == 0)
+        var runtimeReference = TryGetRuntimeReference(saved) ?? await TryMigrateRuntimeReferenceAsync(saved);
+        if (runtimeReference is null)
         {
-            Snackbar.Add("Agents for saved chat not found", Severity.Error);
+            Snackbar.Add("Runtime definition for saved chat not found", Severity.Error);
             return;
         }
 
         var selectedItem = catalogItems.FirstOrDefault(item =>
-            string.Equals(item.Reference.Id, agentsForChat[0].Id.ToString("D"), StringComparison.OrdinalIgnoreCase));
+            item.Reference.Kind == runtimeReference.Kind &&
+            string.Equals(item.Reference.Id, runtimeReference.Id, StringComparison.OrdinalIgnoreCase));
         SetSelectedDefinition(selectedItem);
         if (selectedItem is null)
+        {
+            Snackbar.Add("Runtime definition for saved chat not found", Severity.Error);
             return;
+        }
         var resolved = await SessionDefinitionResolver.ResolveAsync(selectedItem.Reference, new AgentSessionDefinitionRequest
         {
-            UiModelSelection = UiModelSelection
+            UiModelSelection = UiModelSelection,
+            Overrides = BuildOverrides()
         });
         if (!resolved.Validation.CanLaunch)
         {
@@ -200,7 +218,7 @@
         }
         effectiveModel = resolved.DefaultModel;
 
-        var chatConfiguration = new AppChatConfiguration(CurrentModelName, []);
+        var chatConfiguration = new AppChatConfiguration(resolved.DefaultModel?.ModelName ?? string.Empty, []);
         var savedMessages = saved.Messages
             .Select(message =>
             {
@@ -222,6 +240,7 @@
             RuntimeParticipant = resolved.PresentationParticipant,
             RuntimeReference = resolved.RuntimeReference,
             RuntimeDefaultModel = resolved.DefaultModel,
+            Overrides = BuildOverrides(),
             History = savedMessages,
             ChatStrategyName = "RoundRobin",
             ChatStrategyOptions = new RoundRobinChatStrategyOptions { Rounds = 1 }
@@ -248,7 +267,8 @@
         var resolved = await SessionDefinitionResolver.ResolveAsync(selectedDefinition.Reference, new AgentSessionDefinitionRequest
         {
             UiModelSelection = UiModelSelection,
-            Inputs = BuildInputs()
+            Inputs = BuildInputs(),
+            Overrides = BuildOverrides()
         });
         if (!resolved.Validation.CanLaunch)
         {
@@ -266,6 +286,7 @@
             RuntimeReference = resolved.RuntimeReference,
             RuntimeDefaultModel = resolved.DefaultModel,
             RuntimeInputs = resolved.Inputs,
+            Overrides = BuildOverrides(),
             ChatStrategyName = "RoundRobin",
             ChatStrategyOptions = new RoundRobinChatStrategyOptions { Rounds = 1 }
         };
@@ -282,10 +303,10 @@
         }
     }
 
-    private Task OnDefinitionChanged(AgentDefinitionDescriptor? item)
+    private async Task OnDefinitionChanged(AgentDefinitionDescriptor? item)
     {
         SetSelectedDefinition(item);
-        return Task.CompletedTask;
+        await RefreshLaunchValidationAsync();
     }
 
     private void SetSelectedDefinition(AgentDefinitionDescriptor? item)
@@ -293,9 +314,16 @@
         selectedDefinition = item;
         inputDefinitions = item?.Inputs ?? [];
         inputValues.Clear();
+        mcpServerBindings = item?.DefaultMcpServerBindings
+            .Select(static binding => binding.Clone())
+            .ToList() ?? [];
         foreach (var input in inputDefinitions)
         {
-            if (input.DefaultValue is not null)
+            if (input.Kind == AgentInputDefinitionKind.Boolean)
+                inputValues[input.Key] = input.DefaultValue is not null
+                    ? NormalizeBoolean(input.DefaultValue)
+                    : bool.FalseString;
+            else if (input.DefaultValue is not null)
                 inputValues[input.Key] = input.DefaultValue;
         }
     }
@@ -320,6 +348,7 @@
     private void SetInputValue(string key, string? value)
     {
         inputValues[key] = value ?? string.Empty;
+        _ = RefreshLaunchValidationAsync();
     }
 
     private bool GetBooleanInputValue(AgentInputDefinition input) =>
@@ -328,13 +357,78 @@
     private void SetBooleanInputValue(string key, bool value)
     {
         inputValues[key] = value.ToString();
+        _ = RefreshLaunchValidationAsync();
     }
 
     private static string GetInputLabel(AgentInputDefinition input) =>
         input.IsRequired ? $"{input.DisplayName} *" : input.DisplayName;
 
-    private bool AreRequiredInputsSatisfied() =>
-        inputDefinitions
-            .Where(static input => input.IsRequired && input.Kind != AgentInputDefinitionKind.Boolean)
-            .All(input => !string.IsNullOrWhiteSpace(GetInputValue(input)));
+    private async Task OnMcpServerBindingsChanged(List<McpServerSessionBinding> bindings)
+    {
+        mcpServerBindings = bindings;
+        await RefreshLaunchValidationAsync();
+    }
+
+    private AgentSessionOverrides BuildOverrides() =>
+        selectedDefinition?.LaunchCapabilities.SupportsMcpBindingOverrides == true
+            ? new AgentSessionOverrides
+            {
+                McpServerBindings = mcpServerBindings
+            }
+            : new AgentSessionOverrides();
+
+    private async Task RefreshLaunchValidationAsync()
+    {
+        if (selectedDefinition is null)
+        {
+            launchValidation = new AgentDefinitionLaunchValidation
+            {
+                CanLaunch = false
+            };
+            await InvokeAsync(StateHasChanged);
+            return;
+        }
+
+        launchValidation = await SessionDefinitionResolver.ValidateAsync(
+            selectedDefinition.Reference,
+            new AgentSessionDefinitionRequest
+            {
+                UiModelSelection = UiModelSelection,
+                Inputs = BuildInputs(),
+                Overrides = BuildOverrides()
+            });
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private static string NormalizeBoolean(string value) =>
+        bool.TryParse(value, out var parsed)
+            ? parsed.ToString()
+            : value;
+
+    private static AgentDefinitionReference? TryGetRuntimeReference(SavedChat saved)
+    {
+        if (string.IsNullOrWhiteSpace(saved.RuntimeDefinitionKind) ||
+            string.IsNullOrWhiteSpace(saved.RuntimeDefinitionId) ||
+            !Enum.TryParse<AgentDefinitionKind>(saved.RuntimeDefinitionKind, out var kind))
+        {
+            return null;
+        }
+
+        return new AgentDefinitionReference(kind, saved.RuntimeDefinitionId);
+    }
+
+    private async Task<AgentDefinitionReference?> TryMigrateRuntimeReferenceAsync(SavedChat saved)
+    {
+        var assistantIds = saved.Participants
+            .Where(participant => participant.Role == AppChatRole.Assistant)
+            .Select(participant => participant.Id)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var savedAgents = await AgentService.GetAllAsync();
+        var agent = savedAgents.FirstOrDefault(candidate => assistantIds.Contains(candidate.AgentId));
+        return agent is null
+            ? null
+            : new AgentDefinitionReference(
+                AgentDefinitionKind.SavedAgent,
+                agent.Id.ToString("D"));
+    }
 }

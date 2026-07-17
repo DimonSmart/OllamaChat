@@ -5,6 +5,7 @@ using ChatClient.Api.Client.ViewModels;
 using ChatClient.Api.Services;
 using ChatClient.Application.Services;
 using ChatClient.Application.Services.Agentic;
+using ChatClient.Application.Services.AgentRuntime;
 using ChatClient.Domain.Models;
 using Microsoft.AspNetCore.Components;
 using Microsoft.Extensions.Logging;
@@ -73,6 +74,8 @@ public abstract class AgenticChatPageBase : ComponentBase, IAsyncDisposable
     protected virtual bool CanSendMessages => true;
 
     protected virtual string ElicitationLogContext => "agentic chat";
+
+    protected virtual AgentDefinitionReference? CurrentRuntimeReference => null;
 
     protected virtual Task OnBeforeInitialLoadAsync() => Task.CompletedTask;
 
@@ -187,7 +190,12 @@ public abstract class AgenticChatPageBase : ComponentBase, IAsyncDisposable
             .ToList();
 
         var chatId = SavedChatId ?? Guid.NewGuid();
-        var chat = new SavedChat(chatId, title, DateTime.UtcNow, messages, participants);
+        var runtimeReference = CurrentRuntimeReference;
+        var chat = new SavedChat(chatId, title, DateTime.UtcNow, messages, participants)
+        {
+            RuntimeDefinitionKind = runtimeReference?.Kind.ToString(),
+            RuntimeDefinitionId = runtimeReference?.Id
+        };
         await SavedChatService.SaveAsync(chat);
 
         var isNew = !SavedChatId.HasValue;

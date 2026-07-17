@@ -1,3 +1,4 @@
+using ChatClient.Application.Services.Agentic;
 using ChatClient.Domain.Models;
 
 namespace ChatClient.Application.Services.AgentRuntime;
@@ -137,6 +138,20 @@ public interface IAgentInputDefinitionProvider
         CancellationToken cancellationToken = default);
 }
 
+public interface IAgentDefinitionModelRequirementAnalyzer
+{
+    Task<AgentModelRequirement> AnalyzeAsync(
+        AgentDefinitionReference reference,
+        CancellationToken cancellationToken = default);
+}
+
+public interface IWorkflowDefinitionPreflightValidator
+{
+    Task<IReadOnlyList<AgentDefinitionLaunchProblem>> ValidateAsync(
+        AgentDefinitionReference reference,
+        CancellationToken cancellationToken = default);
+}
+
 public sealed record AgentInputDefinition
 {
     public required string Key { get; init; }
@@ -184,11 +199,22 @@ public sealed record AgentDefinitionDescriptor
 
     public IReadOnlyList<AgentInputDefinition> Inputs { get; init; } = [];
 
+    public ServerModelSelection ConfiguredModel { get; init; } = new(null, null);
+
     public AgentModelRequirement ModelRequirement { get; init; }
+
+    public AgentLaunchCapabilities LaunchCapabilities { get; init; } = new();
+
+    public IReadOnlyList<McpServerSessionBinding> DefaultMcpServerBindings { get; init; } = [];
 
     public bool SupportsConversationHistory { get; init; } = true;
 
     public bool SupportsAttachments { get; init; }
+}
+
+public sealed record AgentLaunchCapabilities
+{
+    public bool SupportsMcpBindingOverrides { get; init; }
 }
 
 public sealed record AgentDefinitionLaunchProblem(string Message);
@@ -237,6 +263,8 @@ public sealed record AgentRuntimeCreationContext
     public required AppChatConfiguration Configuration { get; init; }
 
     public ServerModel? DefaultModel { get; init; }
+
+    public AgentSessionOverrides Overrides { get; init; } = new();
 }
 
 public interface IAgentRunner

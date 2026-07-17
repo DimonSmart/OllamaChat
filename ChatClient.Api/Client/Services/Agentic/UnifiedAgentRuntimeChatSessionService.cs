@@ -147,7 +147,8 @@ public sealed class UnifiedAgentRuntimeChatSessionService(
             var creationContext = new AgentRuntimeCreationContext
             {
                 Configuration = _parameters.Configuration,
-                DefaultModel = _parameters.RuntimeDefaultModel ?? _parameters.Agents.FirstOrDefault()?.Model
+                DefaultModel = _parameters.RuntimeDefaultModel ?? _parameters.Agents.FirstOrDefault()?.Model,
+                Overrides = _parameters.Overrides
             };
 
             await foreach (var runEvent in agentRunner.RunAsync(

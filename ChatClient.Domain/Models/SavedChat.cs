@@ -5,5 +5,10 @@ public record SavedChat(
     string Title,
     DateTime SavedAt,
     IReadOnlyList<SavedChatMessage> Messages,
-    IReadOnlyCollection<SavedChatParticipant> Participants);
+    IReadOnlyCollection<SavedChatParticipant> Participants)
+{
+    public string? RuntimeDefinitionKind { get; init; }
+
+    public string? RuntimeDefinitionId { get; init; }
+}
 

@@ -32,6 +32,7 @@ public sealed class LlmAgentRuntimeFactory(
             throw new KeyNotFoundException($"Saved agent '{agentId}' was not found.");
         }
 
+        template = ApplyOverrides(template, context.Overrides);
         var model = ResolveModel(template, context);
         var runtimeAgent = ResolvedChatAgentFactory.Resolve(template, model);
         return new LlmAgentRuntime(
@@ -81,6 +82,22 @@ public sealed class LlmAgentRuntimeFactory(
 
         throw new InvalidOperationException(
             $"Model selection for agent '{template.AgentName}' is incomplete.");
+    }
+
+    private static AgentTemplateDefinition ApplyOverrides(
+        AgentTemplateDefinition template,
+        AgentSessionOverrides overrides)
+    {
+        if (overrides.McpServerBindings is null)
+        {
+            return template;
+        }
+
+        var clone = template.Clone();
+        clone.McpServerBindings = overrides.McpServerBindings
+            .Select(static binding => binding.Clone())
+            .ToList();
+        return clone;
     }
 }
 

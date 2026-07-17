@@ -19,6 +19,8 @@ public sealed class ChatEngineSessionStartRequest
     public IReadOnlyDictionary<string, string> RuntimeInputs { get; init; } =
         new Dictionary<string, string>();
 
+    public AgentSessionOverrides Overrides { get; init; } = new();
+
     public IReadOnlyList<IAppChatMessage> History { get; init; } = [];
 
     public string ChatStrategyName { get; init; } = "RoundRobin";
