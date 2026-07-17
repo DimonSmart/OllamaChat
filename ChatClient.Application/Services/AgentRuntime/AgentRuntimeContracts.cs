@@ -48,7 +48,10 @@ public enum AgentMessageRole
 public sealed record AgentInputAttachment(
     string Name,
     string ContentType,
-    string Content);
+    string Content)
+{
+    public byte[] Data { get; init; } = [];
+}
 
 public sealed record AgentRunContext
 {
@@ -62,9 +65,12 @@ public sealed record AgentRunContext
 public abstract record AgentRunEvent;
 
 public sealed record AgentTextDelta(
+    string MessageId,
+    string Author,
     string Text) : AgentRunEvent;
 
 public sealed record AgentMessageCompleted(
+    string MessageId,
     AgentOutputMessage Message) : AgentRunEvent;
 
 public sealed record AgentRunCompleted(
@@ -76,6 +82,8 @@ public sealed record AgentRunFailed(
 public sealed record AgentRunResult
 {
     public required AgentOutputMessage FinalMessage { get; init; }
+
+    public string? FinalMessageId { get; init; }
 
     public IReadOnlyList<AgentOutputMessage> Messages { get; init; } = [];
 
@@ -92,6 +100,9 @@ public sealed record AgentRunError(
     string Message,
     bool IsRetryable,
     Exception? Exception = null);
+
+public sealed class AgentRuntimeProtocolException(string message)
+    : InvalidOperationException(message);
 
 public sealed record AgentDefinitionReference(
     AgentDefinitionKind Kind,

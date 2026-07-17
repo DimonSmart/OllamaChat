@@ -7,6 +7,7 @@ using ChatClient.Application.Services;
 using ChatClient.Application.Services.Agentic;
 using ChatClient.Application.Services.AgentRuntime;
 using ChatClient.Domain.Models;
+using System.Text;
 
 namespace ChatClient.Api.Services.AgentRuntime;
 
@@ -144,7 +145,10 @@ internal sealed class WorkflowAgentRuntime(
 
         try
         {
-            var userMessage = request.Messages.LastOrDefault(static message => message.Role == AgentMessageRole.User);
+            var currentUserMessageIndex = FindCurrentUserMessageIndex(request.Messages);
+            var userMessage = currentUserMessageIndex >= 0
+                ? request.Messages[currentUserMessageIndex]
+                : null;
             if (userMessage is null || string.IsNullOrWhiteSpace(userMessage.Content))
             {
                 await writer.WriteAsync(new AgentRunFailed(new AgentRunError(
@@ -154,11 +158,23 @@ internal sealed class WorkflowAgentRuntime(
                 return;
             }
 
-            if (request.Attachments.Count > 0)
+            if (request.Messages.Skip(currentUserMessageIndex + 1).Any())
             {
                 await writer.WriteAsync(new AgentRunFailed(new AgentRunError(
                     "invalid_input",
-                    "Workflow attachments are not supported by the unified runtime yet.",
+                    "Messages after the current user message are not supported.",
+                    false)), cancellationToken);
+                return;
+            }
+
+            if (!TryBuildStartInputsWithAttachments(
+                    request,
+                    out var startInputs,
+                    out var attachmentError))
+            {
+                await writer.WriteAsync(new AgentRunFailed(new AgentRunError(
+                    "invalid_input",
+                    attachmentError ?? "Workflow attachments could not be mapped to start inputs.",
                     false)), cancellationToken);
                 return;
             }
@@ -171,13 +187,7 @@ internal sealed class WorkflowAgentRuntime(
                     Configuration = configuration,
                     SessionTitle = Descriptor.Name,
                     SessionDescription = Descriptor.Description,
-                    StartInputs = request.Inputs
-                        .Select(static input => new OrchestrationWorkflowStartInputValue
-                        {
-                            Key = input.Key,
-                            Value = input.Value
-                        })
-                        .ToList()
+                    StartInputs = startInputs
                 },
                 cancellationToken);
 
@@ -193,12 +203,15 @@ internal sealed class WorkflowAgentRuntime(
             }
 
             var taskSessionId = bootstrap.TaskSessionId;
-            var userChatMessage = new AppChatMessage(userMessage.Content, DateTime.Now, AppChatRole.User);
+            var userContent = BuildWorkflowUserMessage(
+                request.Messages.Take(currentUserMessageIndex),
+                userMessage.Content);
+            var userChatMessage = new AppChatMessage(userContent, DateTime.Now, AppChatRole.User);
             await AddMessageAsync(userChatMessage, chatMessages);
             await taskSessionStore.AppendTurnAsync(
                 taskSessionId,
                 "user",
-                OrchestrationWorkflowConversationBuilder.BuildUserMessage(userMessage.Content, []),
+                OrchestrationWorkflowConversationBuilder.BuildUserMessage(userContent, []),
                 "user",
                 cancellationToken);
 
@@ -267,12 +280,7 @@ internal sealed class WorkflowAgentRuntime(
                             }
                         }
                     },
-                    HandleAssistantErrorAsync = text => writer.WriteAsync(
-                        new AgentRunFailed(new AgentRunError(
-                            "execution_failed",
-                            text,
-                            true)),
-                        cancellationToken).AsTask()
+                    HandleAssistantErrorAsync = text => throw new WorkflowAssistantErrorException(text)
                 },
                 cancellationToken);
 
@@ -301,6 +309,7 @@ internal sealed class WorkflowAgentRuntime(
             await writer.WriteAsync(new AgentRunCompleted(new AgentRunResult
             {
                 FinalMessage = final.Value.Message,
+                FinalMessageId = final.Value.MessageId,
                 Messages = completedMessages
                     .Select(static message => ToOutputMessage(message.Message))
                     .Where(static message => !string.IsNullOrWhiteSpace(message.Content))
@@ -311,6 +320,13 @@ internal sealed class WorkflowAgentRuntime(
         catch (OperationCanceledException)
         {
             throw;
+        }
+        catch (WorkflowAssistantErrorException ex)
+        {
+            await writer.WriteAsync(new AgentRunFailed(new AgentRunError(
+                "execution_failed",
+                ex.Message,
+                true)), CancellationToken.None);
         }
         catch (Exception ex)
         {
@@ -357,7 +373,7 @@ internal sealed class WorkflowAgentRuntime(
         return false;
     }
 
-    private async Task<(AgentOutputMessage Message, IReadOnlyDictionary<string, string> Metadata)?> ResolveFinalMessageAsync(
+    private async Task<(string MessageId, AgentOutputMessage Message, IReadOnlyDictionary<string, string> Metadata)?> ResolveFinalMessageAsync(
         string taskSessionId,
         IReadOnlyList<OrchestrationCompletedAssistantMessage> messages,
         CancellationToken cancellationToken)
@@ -402,7 +418,10 @@ internal sealed class WorkflowAgentRuntime(
             metadata["finalParticipantName"] = finalMessage.Message.AgentName;
         }
 
-        return (new AgentOutputMessage(Descriptor.Name, finalMessage.Message.Content), metadata);
+        return (
+            finalMessage.Message.Id.ToString("N"),
+            new AgentOutputMessage(Descriptor.Name, finalMessage.Message.Content),
+            metadata);
     }
 
     private static OrchestrationCompletedAssistantMessage? ResolveSequentialFinal(
@@ -513,7 +532,10 @@ internal sealed class WorkflowAgentRuntime(
             if (content.Length > previousLength)
             {
                 await writer.WriteAsync(
-                    new AgentTextDelta(content[previousLength..]),
+                    new AgentTextDelta(
+                        message.Id.ToString("N"),
+                        string.IsNullOrWhiteSpace(message.AgentName) ? "assistant" : message.AgentName,
+                        content[previousLength..]),
                     cancellationToken);
                 streamContentLengths[message.Id] = content.Length;
             }
@@ -541,7 +563,7 @@ internal sealed class WorkflowAgentRuntime(
         }
 
         await writer.WriteAsync(
-            new AgentMessageCompleted(ToOutputMessage(message)),
+            new AgentMessageCompleted(message.Id.ToString("N"), ToOutputMessage(message)),
             cancellationToken);
     }
 
@@ -595,4 +617,126 @@ internal sealed class WorkflowAgentRuntime(
         agentIdsByName[agentName] = agentId;
         agentNamesById[agentId] = agentName;
     }
+
+    private static int FindCurrentUserMessageIndex(IReadOnlyList<AgentInputMessage> messages)
+    {
+        for (var index = messages.Count - 1; index >= 0; index--)
+        {
+            if (messages[index].Role == AgentMessageRole.User)
+            {
+                return index;
+            }
+        }
+
+        return -1;
+    }
+
+    private static string BuildWorkflowUserMessage(
+        IEnumerable<AgentInputMessage> previousMessages,
+        string currentMessage)
+    {
+        var history = previousMessages
+            .Where(static message => !string.IsNullOrWhiteSpace(message.Content))
+            .Where(static message => message.Role is AgentMessageRole.System or AgentMessageRole.User or AgentMessageRole.Assistant)
+            .ToList();
+
+        if (history.Count == 0)
+        {
+            return currentMessage;
+        }
+
+        var builder = new StringBuilder();
+        builder.AppendLine("Previous conversation:");
+        builder.AppendLine();
+        foreach (var message in history)
+        {
+            var role = message.Role switch
+            {
+                AgentMessageRole.System => "System",
+                AgentMessageRole.Assistant => "Assistant",
+                _ => "User"
+            };
+            builder.AppendLine($"{role}: {message.Content}");
+            builder.AppendLine();
+        }
+
+        builder.AppendLine("Current request:");
+        builder.AppendLine();
+        builder.Append(currentMessage);
+        return builder.ToString();
+    }
+
+    private bool TryBuildStartInputsWithAttachments(
+        AgentRuntimeRunRequest request,
+        out IReadOnlyList<OrchestrationWorkflowStartInputValue> startInputs,
+        out string? error)
+    {
+        var values = request.Inputs
+            .Select(static input => new OrchestrationWorkflowStartInputValue
+            {
+                Key = input.Key,
+                Value = input.Value
+            })
+            .ToList();
+
+        error = null;
+        if (request.Attachments.Count == 0)
+        {
+            startInputs = values;
+            return true;
+        }
+
+        var markdownInputs = workflow.StartInputs
+            .Where(static input => input.Kind == WorkflowStartInputKind.MarkdownDocument)
+            .ToList();
+        var requiredMarkdownInputs = markdownInputs
+            .Where(static input => input.IsRequired)
+            .ToList();
+
+        if (request.Attachments.Count != 1 || requiredMarkdownInputs.Count != 1)
+        {
+            startInputs = [];
+            error = "Workflow attachments require exactly one attachment and exactly one required MarkdownDocument start input.";
+            return false;
+        }
+
+        var attachment = request.Attachments[0];
+        if (!IsMarkdownOrTextAttachment(attachment))
+        {
+            startInputs = [];
+            error = $"Attachment '{attachment.Name}' is not a supported markdown/text attachment.";
+            return false;
+        }
+
+        if (values.Any(value => string.Equals(value.Key, requiredMarkdownInputs[0].Key, StringComparison.OrdinalIgnoreCase)))
+        {
+            startInputs = [];
+            error = $"Workflow start input '{requiredMarkdownInputs[0].Key}' was provided both as an input and as an attachment.";
+            return false;
+        }
+
+        values.Add(new OrchestrationWorkflowStartInputValue
+        {
+            Key = requiredMarkdownInputs[0].Key,
+            Value = string.IsNullOrWhiteSpace(attachment.Content)
+                ? Encoding.UTF8.GetString(attachment.Data)
+                : attachment.Content
+        });
+        startInputs = values;
+        return true;
+    }
+
+    private static bool IsMarkdownOrTextAttachment(AgentInputAttachment attachment)
+    {
+        if (attachment.ContentType.StartsWith("text/", StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
+        return attachment.Name.EndsWith(".md", StringComparison.OrdinalIgnoreCase) ||
+               attachment.Name.EndsWith(".markdown", StringComparison.OrdinalIgnoreCase) ||
+               attachment.Name.EndsWith(".txt", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private sealed class WorkflowAssistantErrorException(string message) : Exception(message);
 }

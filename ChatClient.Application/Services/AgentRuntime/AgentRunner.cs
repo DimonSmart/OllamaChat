@@ -38,8 +38,8 @@ public sealed class AgentRunner(
                 reference.Kind,
                 reference.Id);
             creationFailure = new AgentRunFailed(new AgentRunError(
-                "runtime_creation_failed",
-                ex.Message,
+                MapCreationFailureCode(reference, ex),
+                BuildSafeCreationFailureMessage(reference, ex),
                 false,
                 ex));
         }
@@ -56,13 +56,42 @@ public sealed class AgentRunner(
         }
 
         AgentRunEvent? lastEvent = null;
+        var terminalEventSeen = false;
         try
         {
             await foreach (var runEvent in runtime.RunAsync(request, runContext, cancellationToken)
                                .WithCancellation(cancellationToken))
             {
+                if (terminalEventSeen)
+                {
+                    var message = $"Runtime '{runtime.Descriptor.Name}' emitted an event after a terminal event.";
+                    logger.LogError(
+                        "Agent runtime protocol violation. RunId={RunId}, RuntimeKind={RuntimeKind}, RuntimeName={RuntimeName}, EventType={EventType}",
+                        runContext.RunId,
+                        runtime.Descriptor.Kind,
+                        runtime.Descriptor.Name,
+                        runEvent.GetType().Name);
+                    throw new AgentRuntimeProtocolException(message);
+                }
+
+                if (IsTerminal(runEvent))
+                {
+                    terminalEventSeen = true;
+                }
+
                 lastEvent = runEvent;
                 yield return runEvent;
+            }
+
+            if (!terminalEventSeen)
+            {
+                var message = $"Runtime '{runtime.Descriptor.Name}' completed without a terminal event.";
+                logger.LogError(
+                    "Agent runtime protocol violation. RunId={RunId}, RuntimeKind={RuntimeKind}, RuntimeName={RuntimeName}",
+                    runContext.RunId,
+                    runtime.Descriptor.Kind,
+                    runtime.Descriptor.Name);
+                throw new AgentRuntimeProtocolException(message);
             }
         }
         finally
@@ -79,5 +108,49 @@ public sealed class AgentRunner(
                 cancellationToken.IsCancellationRequested,
                 lastEvent is AgentRunFailed failed ? failed.Error.Code : null);
         }
+    }
+
+    private static bool IsTerminal(AgentRunEvent runEvent) =>
+        runEvent is AgentRunCompleted or AgentRunFailed;
+
+    private static string MapCreationFailureCode(
+        AgentDefinitionReference reference,
+        Exception exception)
+    {
+        if (exception is KeyNotFoundException)
+        {
+            return reference.Kind == AgentDefinitionKind.SavedWorkflow
+                ? "workflow_not_found"
+                : "agent_not_found";
+        }
+
+        if (exception is InvalidOperationException &&
+            exception.Message.Contains("model", StringComparison.OrdinalIgnoreCase))
+        {
+            return "model_resolution_failed";
+        }
+
+        if (reference.Kind == AgentDefinitionKind.SavedWorkflow &&
+            exception.Message.Contains("compil", StringComparison.OrdinalIgnoreCase))
+        {
+            return "workflow_compile_failed";
+        }
+
+        return "runtime_creation_failed";
+    }
+
+    private static string BuildSafeCreationFailureMessage(
+        AgentDefinitionReference reference,
+        Exception exception)
+    {
+        var code = MapCreationFailureCode(reference, exception);
+        return code switch
+        {
+            "agent_not_found" => "Saved agent was not found.",
+            "workflow_not_found" => "Saved workflow was not found.",
+            "model_resolution_failed" => "Agent model selection could not be resolved.",
+            "workflow_compile_failed" => "Workflow could not be compiled.",
+            _ => "Agent runtime could not be created."
+        };
     }
 }

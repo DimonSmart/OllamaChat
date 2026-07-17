@@ -3,6 +3,8 @@ using ChatClient.Application.Services;
 using ChatClient.Application.Services.Agentic;
 using ChatClient.Application.Services.AgentRuntime;
 using ChatClient.Domain.Models;
+using System.Runtime.CompilerServices;
+using System.Text;
 using System.Threading.Channels;
 
 namespace ChatClient.Api.Services.AgentRuntime;
@@ -74,14 +76,20 @@ internal sealed class LlmAgentRuntime(
 {
     public AgentRuntimeDescriptor Descriptor { get; } = descriptor;
 
-    public IAsyncEnumerable<AgentRunEvent> RunAsync(
+    public async IAsyncEnumerable<AgentRunEvent> RunAsync(
         AgentRuntimeRunRequest request,
         AgentRunContext context,
-        CancellationToken cancellationToken = default)
+        [EnumeratorCancellation] CancellationToken cancellationToken = default)
     {
         var channel = Channel.CreateUnbounded<AgentRunEvent>();
-        _ = ProduceAsync(request, context, channel.Writer, cancellationToken);
-        return channel.Reader.ReadAllAsync(cancellationToken);
+        var producer = ProduceAsync(request, context, channel.Writer, cancellationToken);
+
+        await foreach (var runEvent in channel.Reader.ReadAllAsync(cancellationToken))
+        {
+            yield return runEvent;
+        }
+
+        await producer;
     }
 
     private async Task ProduceAsync(
@@ -90,7 +98,10 @@ internal sealed class LlmAgentRuntime(
         ChannelWriter<AgentRunEvent> writer,
         CancellationToken cancellationToken)
     {
-        var userMessage = request.Messages.LastOrDefault(static message => message.Role == AgentMessageRole.User);
+        var currentUserMessageIndex = FindCurrentUserMessageIndex(request.Messages);
+        var userMessage = currentUserMessageIndex >= 0
+            ? request.Messages[currentUserMessageIndex]
+            : null;
         if (userMessage is null || string.IsNullOrWhiteSpace(userMessage.Content))
         {
             await writer.WriteAsync(new AgentRunFailed(new AgentRunError(
@@ -101,17 +112,21 @@ internal sealed class LlmAgentRuntime(
             return;
         }
 
-        if (request.Attachments.Count > 0)
+        var trailingMessages = request.Messages.Skip(currentUserMessageIndex + 1).ToList();
+        if (trailingMessages.Count > 0)
         {
             await writer.WriteAsync(new AgentRunFailed(new AgentRunError(
                 "invalid_input",
-                "Attachments are not supported by the saved-agent runtime contract yet.",
+                "Messages after the current user message are not supported.",
                 false)), cancellationToken);
             writer.TryComplete();
             return;
         }
 
-        var history = BuildHistory(request.Messages);
+        var history = BuildHistory(request.Messages.Take(currentUserMessageIndex));
+        var files = request.Attachments
+            .Select(ToAppChatMessageFile)
+            .ToList();
         var orchestrationRequest = new ChatEngineOrchestrationRequest
         {
             Agent = agent.Agent,
@@ -119,10 +134,11 @@ internal sealed class LlmAgentRuntime(
             Configuration = configuration,
             Messages = history,
             UserMessage = userMessage.Content,
-            Files = [],
+            Files = files,
             EnableRagContext = true
         };
 
+        var messageId = Guid.NewGuid().ToString("N");
         var buffer = new List<string>();
         var completedMessages = new List<AgentOutputMessage>();
 
@@ -143,7 +159,9 @@ internal sealed class LlmAgentRuntime(
                 if (!string.IsNullOrEmpty(chunk.Content))
                 {
                     buffer.Add(chunk.Content);
-                    await writer.WriteAsync(new AgentTextDelta(chunk.Content), cancellationToken);
+                    await writer.WriteAsync(
+                        new AgentTextDelta(messageId, Descriptor.Name, chunk.Content),
+                        cancellationToken);
                 }
 
                 if (chunk.IsFinal)
@@ -164,10 +182,11 @@ internal sealed class LlmAgentRuntime(
 
             var completed = new AgentOutputMessage(Descriptor.Name, finalContent);
             completedMessages.Add(completed);
-            await writer.WriteAsync(new AgentMessageCompleted(completed), cancellationToken);
+            await writer.WriteAsync(new AgentMessageCompleted(messageId, completed), cancellationToken);
             await writer.WriteAsync(new AgentRunCompleted(new AgentRunResult
             {
                 FinalMessage = completed,
+                FinalMessageId = messageId,
                 Messages = completedMessages
             }), cancellationToken);
         }
@@ -195,7 +214,33 @@ internal sealed class LlmAgentRuntime(
         }
     }
 
-    private static IReadOnlyList<IAppChatMessage> BuildHistory(IReadOnlyList<AgentInputMessage> messages)
+    private static int FindCurrentUserMessageIndex(IReadOnlyList<AgentInputMessage> messages)
+    {
+        for (var index = messages.Count - 1; index >= 0; index--)
+        {
+            if (messages[index].Role == AgentMessageRole.User)
+            {
+                return index;
+            }
+        }
+
+        return -1;
+    }
+
+    private static AppChatMessageFile ToAppChatMessageFile(AgentInputAttachment attachment)
+    {
+        var data = attachment.Data.Length > 0
+            ? attachment.Data
+            : Encoding.UTF8.GetBytes(attachment.Content);
+
+        return new AppChatMessageFile(
+            attachment.Name,
+            data.LongLength,
+            attachment.ContentType,
+            data);
+    }
+
+    private static IReadOnlyList<IAppChatMessage> BuildHistory(IEnumerable<AgentInputMessage> messages)
     {
         var history = new List<IAppChatMessage>();
         foreach (var message in messages)
