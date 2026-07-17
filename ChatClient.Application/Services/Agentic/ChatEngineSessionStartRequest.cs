@@ -14,6 +14,9 @@ public sealed class ChatEngineSessionStartRequest
 
     public ServerModel? RuntimeDefaultModel { get; init; }
 
+    public IReadOnlyDictionary<string, string> RuntimeInputs { get; init; } =
+        new Dictionary<string, string>();
+
     public IReadOnlyList<IAppChatMessage> History { get; init; } = [];
 
     public string ChatStrategyName { get; init; } = "RoundRobin";

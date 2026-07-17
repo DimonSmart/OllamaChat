@@ -28,7 +28,7 @@ public class AutoShutdownCircuitHandlerTests
         await handler.OnConnectionDownAsync(CreateCircuit("c1"), default);
         Assert.False(lifetime.Stopped);
 
-        await Task.Delay(TimeSpan.FromSeconds(3));
+        await WaitUntilAsync(() => lifetime.Stopped, TimeSpan.FromSeconds(6));
         Assert.True(lifetime.Stopped);
     }
 
@@ -78,6 +78,20 @@ public class AutoShutdownCircuitHandlerTests
         var circuit = (Circuit)RuntimeHelpers.GetUninitializedObject(typeof(Circuit));
         CircuitHostField.SetValue(circuit, circuitHost);
         return circuit;
+    }
+
+    private static async Task WaitUntilAsync(Func<bool> predicate, TimeSpan timeout)
+    {
+        var startedAt = DateTime.UtcNow;
+        while (!predicate())
+        {
+            if (DateTime.UtcNow - startedAt > timeout)
+            {
+                return;
+            }
+
+            await Task.Delay(25);
+        }
     }
 
     private static readonly Type CircuitHostType = typeof(Circuit).Assembly

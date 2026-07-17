@@ -128,6 +128,9 @@ public sealed class UnifiedAgentRuntimeChatSessionService(
                         },
                         message.Content))
                     .ToList(),
+                Inputs = new Dictionary<string, string>(
+                    _parameters.RuntimeInputs,
+                    StringComparer.OrdinalIgnoreCase),
                 Attachments = (files ?? [])
                     .Select(ToAgentInputAttachment)
                     .ToList()

@@ -96,6 +96,37 @@ public sealed class UnifiedAgentRuntimeChatSessionServiceTests
         Assert.Equal(file.Data, attachment.Data);
     }
 
+    [Fact]
+    public async Task SendAsync_ForwardsRuntimeInputsToRuntimeRequest()
+    {
+        var runner = new StubAgentRunner([
+            new AgentRunCompleted(new AgentRunResult
+            {
+                FinalMessage = new AgentOutputMessage("Agent", "done"),
+                FinalMessageId = "final",
+                Messages = [new AgentOutputMessage("Agent", "done")]
+            })
+        ]);
+        var service = CreateService(runner);
+        var request = new ChatEngineSessionStartRequest
+        {
+            Configuration = new AppChatConfiguration("model", []),
+            Agents = [],
+            RuntimeReference = new AgentDefinitionReference(AgentDefinitionKind.SavedAgent, "agent"),
+            RuntimeInputs = new Dictionary<string, string>
+            {
+                ["topic"] = "runtime design",
+                ["strict"] = "True"
+            }
+        };
+        await service.StartAsync(request);
+
+        await service.SendAsync("go");
+
+        Assert.Equal("runtime design", runner.LastRequest!.Inputs["topic"]);
+        Assert.Equal("True", runner.LastRequest.Inputs["strict"]);
+    }
+
     private static UnifiedAgentRuntimeChatSessionService CreateService(IAgentRunner runner) =>
         new(
             runner,

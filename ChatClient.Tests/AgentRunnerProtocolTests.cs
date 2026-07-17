@@ -45,6 +45,54 @@ public sealed class AgentRunnerProtocolTests
     }
 
     [Fact]
+    public async Task RunAsync_DoesNotEmitCompletionWhenRuntimeEmitsEventAfterCompletion()
+    {
+        var runner = CreateRunner(new StubRuntime([
+            new AgentRunCompleted(CreateResult("final", "m1")),
+            new AgentTextDelta("m2", "assistant", "late")
+        ]));
+        var events = new List<AgentRunEvent>();
+
+        await Assert.ThrowsAsync<AgentRuntimeProtocolException>(async () =>
+        {
+            await foreach (var runEvent in runner.RunAsync(
+                               CreateReference(),
+                               CreateRequest(),
+                               CreateCreationContext(),
+                               CreateRunContext()))
+            {
+                events.Add(runEvent);
+            }
+        });
+
+        Assert.Empty(events);
+    }
+
+    [Fact]
+    public async Task RunAsync_DoesNotEmitFailureWhenRuntimeEmitsEventAfterFailure()
+    {
+        var runner = CreateRunner(new StubRuntime([
+            new AgentRunFailed(new AgentRunError("execution_failed", "failed", true)),
+            new AgentTextDelta("m2", "assistant", "late")
+        ]));
+        var events = new List<AgentRunEvent>();
+
+        await Assert.ThrowsAsync<AgentRuntimeProtocolException>(async () =>
+        {
+            await foreach (var runEvent in runner.RunAsync(
+                               CreateReference(),
+                               CreateRequest(),
+                               CreateCreationContext(),
+                               CreateRunContext()))
+            {
+                events.Add(runEvent);
+            }
+        });
+
+        Assert.Empty(events);
+    }
+
+    [Fact]
     public async Task RunAsync_PropagatesCancellation()
     {
         using var cts = new CancellationTokenSource();
@@ -57,6 +105,29 @@ public sealed class AgentRunnerProtocolTests
                 CreateCreationContext(),
                 CreateRunContext(),
                 cts.Token)));
+    }
+
+    [Fact]
+    public async Task RunAsync_PropagatesCancellationAfterPendingTerminal()
+    {
+        using var cts = new CancellationTokenSource();
+        var runner = CreateRunner(new CancelingAfterTerminalRuntime(cts));
+        var events = new List<AgentRunEvent>();
+
+        await Assert.ThrowsAsync<OperationCanceledException>(async () =>
+        {
+            await foreach (var runEvent in runner.RunAsync(
+                               CreateReference(),
+                               CreateRequest(),
+                               CreateCreationContext(),
+                               CreateRunContext(),
+                               cts.Token))
+            {
+                events.Add(runEvent);
+            }
+        });
+
+        Assert.Empty(events);
     }
 
     [Fact]
@@ -207,6 +278,23 @@ public sealed class AgentRunnerProtocolTests
             cancellationTokenSource.Cancel();
             cancellationToken.ThrowIfCancellationRequested();
             yield break;
+        }
+    }
+
+    private sealed class CancelingAfterTerminalRuntime(CancellationTokenSource cancellationTokenSource) : IAgentRuntime
+    {
+        public AgentRuntimeDescriptor Descriptor { get; } =
+            new("runtime", "Runtime", string.Empty, AgentRuntimeKind.LlmAgent);
+
+        public async IAsyncEnumerable<AgentRunEvent> RunAsync(
+            AgentRuntimeRunRequest request,
+            AgentRunContext context,
+            [EnumeratorCancellation] CancellationToken cancellationToken = default)
+        {
+            await Task.Yield();
+            yield return new AgentRunCompleted(CreateResult("final", "m1"));
+            cancellationTokenSource.Cancel();
+            cancellationToken.ThrowIfCancellationRequested();
         }
     }
 }

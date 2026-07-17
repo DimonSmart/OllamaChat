@@ -42,6 +42,55 @@
                             }
                         </MudSelect>
 
+                        @if (workflowInputDefinitions.Count > 0)
+                        {
+                            <MudStack Spacing="1">
+                                @foreach (var input in workflowInputDefinitions)
+                                {
+                                    @switch (input.Kind)
+                                    {
+                                        case AgentInputDefinitionKind.Json:
+                                        case AgentInputDefinitionKind.MarkdownDocument:
+                                            <MudTextField T="string"
+                                                          Label="@GetWorkflowInputLabel(input)"
+                                                          HelperText="@input.Description"
+                                                          Value="GetWorkflowInputValue(input)"
+                                                          ValueChanged="value => SetWorkflowInputValue(input.Key, value)"
+                                                          Variant="Variant.Outlined"
+                                                          Margin="Margin.Dense"
+                                                          Placeholder="@input.Placeholder"
+                                                          Lines="6"
+                                                          AutoGrow="true" />
+                                            break;
+
+                                        case AgentInputDefinitionKind.Boolean:
+                                            <MudSwitch T="bool"
+                                                       Label="@GetWorkflowInputLabel(input)"
+                                                       Value="GetBooleanWorkflowInputValue(input)"
+                                                       ValueChanged="value => SetBooleanWorkflowInputValue(input.Key, value)"
+                                                       Color="Color.Primary" />
+                                            if (!string.IsNullOrWhiteSpace(input.Description))
+                                            {
+                                                <MudText Typo="Typo.caption" Class="mud-text-secondary">@input.Description</MudText>
+                                            }
+                                            break;
+
+                                        default:
+                                            <MudTextField T="string"
+                                                          Label="@GetWorkflowInputLabel(input)"
+                                                          HelperText="@input.Description"
+                                                          Value="GetWorkflowInputValue(input)"
+                                                          ValueChanged="value => SetWorkflowInputValue(input.Key, value)"
+                                                          Variant="Variant.Outlined"
+                                                          Margin="Margin.Dense"
+                                                          Placeholder="@input.Placeholder"
+                                                          InputType="@(input.Kind == AgentInputDefinitionKind.Number ? InputType.Number : InputType.Text)" />
+                                            break;
+                                    }
+                                }
+                            </MudStack>
+                        }
+
                         @if (selectedAgentDraft is not null)
                         {
                             <McpServerBindingsEditor Bindings="@selectedAgentDraft.McpServerBindings"
@@ -90,9 +139,14 @@
     private AgentDefinitionCatalogItem? selectedCatalogItem { get; set; }
     private AgentTemplateDefinition? selectedAgent { get; set; }
     private AgentTemplateDefinition? selectedAgentDraft;
+    private IReadOnlyList<AgentInputDefinition> workflowInputDefinitions = [];
+    private readonly Dictionary<string, string> workflowInputValues = new(StringComparer.OrdinalIgnoreCase);
 
     [Inject]
     private IAgentDefinitionCatalog AgentDefinitionCatalog { get; set; } = null!;
+
+    [Inject]
+    private IAgentInputDefinitionProvider AgentInputDefinitionProvider { get; set; } = null!;
 
     [CascadingParameter(Name = "UiModelSelection")]
     public ServerModelSelection UiModelSelection { get; set; } = new(null, null);
@@ -101,7 +155,7 @@
     private string CurrentModelName => effectiveModel!.ModelName;
 
     private bool CanStartChat =>
-        selectedCatalogItem is { RuntimeKind: AgentRuntimeKind.WorkflowAgent } ||
+        selectedCatalogItem is { RuntimeKind: AgentRuntimeKind.WorkflowAgent } && AreRequiredWorkflowInputsSatisfied() ||
         selectedAgentDraft is not null && TryResolveEffectiveModel(selectedAgentDraft, out _);
 
     protected override bool CanSendMessages => selectedCatalogItem is not null;
@@ -116,7 +170,7 @@
             : catalogItems.FirstOrDefault(item =>
                 item.Reference.Kind == AgentDefinitionKind.SavedAgent &&
                 string.Equals(item.Reference.Id, defaultAgent.Id.ToString("D"), StringComparison.OrdinalIgnoreCase));
-        SetSelectedCatalogItem(defaultItem);
+        await SetSelectedCatalogItemAsync(defaultItem);
     }
 
     protected override async Task LoadUserSettingsAsync()
@@ -151,7 +205,7 @@
         var selectedItem = catalogItems.FirstOrDefault(item =>
             item.Reference.Kind == AgentDefinitionKind.SavedAgent &&
             string.Equals(item.Reference.Id, agentsForChat[0].Id.ToString("D"), StringComparison.OrdinalIgnoreCase));
-        SetSelectedCatalogItem(selectedItem);
+        await SetSelectedCatalogItemAsync(selectedItem);
         var selectedAgentForChat = selectedAgent
             ?? throw new InvalidOperationException("Selected agent is not initialized.");
         var selectedAgentDraftForChat = selectedAgentDraft
@@ -257,6 +311,7 @@
             Agents = runtimeAgents,
             RuntimeReference = selectedCatalogItem.Reference,
             RuntimeDefaultModel = resolvedModel,
+            RuntimeInputs = BuildWorkflowInputs(),
             ChatStrategyName = "RoundRobin",
             ChatStrategyOptions = new RoundRobinChatStrategyOptions { Rounds = 1 }
         };
@@ -273,15 +328,17 @@
         }
     }
 
-    private Task OnCatalogItemChanged(AgentDefinitionCatalogItem? item)
+    private async Task OnCatalogItemChanged(AgentDefinitionCatalogItem? item)
     {
-        SetSelectedCatalogItem(item);
-        return Task.CompletedTask;
+        await SetSelectedCatalogItemAsync(item);
     }
 
-    private void SetSelectedCatalogItem(AgentDefinitionCatalogItem? item)
+    private async Task SetSelectedCatalogItemAsync(AgentDefinitionCatalogItem? item)
     {
         selectedCatalogItem = item;
+        workflowInputDefinitions = [];
+        workflowInputValues.Clear();
+
         if (item?.Reference.Kind == AgentDefinitionKind.SavedAgent &&
             Guid.TryParse(item.Reference.Id, out var agentId))
         {
@@ -290,6 +347,17 @@
         }
 
         SetSelectedAgent(null);
+        if (item?.Reference.Kind == AgentDefinitionKind.SavedWorkflow)
+        {
+            workflowInputDefinitions = await AgentInputDefinitionProvider.GetInputsAsync(item.Reference);
+            foreach (var input in workflowInputDefinitions)
+            {
+                if (input.DefaultValue is not null)
+                {
+                    workflowInputValues[input.Key] = input.DefaultValue;
+                }
+            }
+        }
     }
 
     private void SetSelectedAgent(AgentTemplateDefinition? agent)
@@ -332,4 +400,39 @@
 
     private static string GetKindLabel(AgentDefinitionCatalogItem item) =>
         item.RuntimeKind == AgentRuntimeKind.WorkflowAgent ? "workflow" : "agent";
+
+    private IReadOnlyDictionary<string, string> BuildWorkflowInputs() =>
+        workflowInputDefinitions
+            .Where(input => workflowInputValues.TryGetValue(input.Key, out var value) &&
+                            (!string.IsNullOrWhiteSpace(value) || input.Kind == AgentInputDefinitionKind.Boolean))
+            .ToDictionary(
+                input => input.Key,
+                input => workflowInputValues[input.Key],
+                StringComparer.OrdinalIgnoreCase);
+
+    private string GetWorkflowInputValue(AgentInputDefinition input) =>
+        workflowInputValues.TryGetValue(input.Key, out var value)
+            ? value
+            : input.DefaultValue ?? string.Empty;
+
+    private void SetWorkflowInputValue(string key, string? value)
+    {
+        workflowInputValues[key] = value ?? string.Empty;
+    }
+
+    private bool GetBooleanWorkflowInputValue(AgentInputDefinition input) =>
+        bool.TryParse(GetWorkflowInputValue(input), out var value) && value;
+
+    private void SetBooleanWorkflowInputValue(string key, bool value)
+    {
+        workflowInputValues[key] = value.ToString();
+    }
+
+    private static string GetWorkflowInputLabel(AgentInputDefinition input) =>
+        input.IsRequired ? $"{input.DisplayName} *" : input.DisplayName;
+
+    private bool AreRequiredWorkflowInputsSatisfied() =>
+        workflowInputDefinitions
+            .Where(static input => input.IsRequired && input.Kind != AgentInputDefinitionKind.Boolean)
+            .All(input => !string.IsNullOrWhiteSpace(GetWorkflowInputValue(input)));
 }

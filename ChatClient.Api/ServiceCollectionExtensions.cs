@@ -122,9 +122,11 @@ public static class ServiceCollectionExtensions
         services.AddScoped<OrchestrationWorkflowTurnCoordinator>();
         services.AddScoped<OrchestrationWorkflowEventStreamProcessor>();
         services.AddScoped<OrchestrationWorkflowPassExecutor>();
+        services.AddScoped<IHeadlessWorkflowRunner, HeadlessWorkflowRunner>();
         services.AddScoped<IOrchestrationWorkflowSessionService, OrchestrationWorkflowChatSessionService>();
         services.AddScoped<IOrchestrationWorkflowChatViewModelService, OrchestrationWorkflowChatViewModelService>();
         services.AddScoped<IAgentDefinitionCatalog, AgentDefinitionCatalog>();
+        services.AddScoped<IAgentInputDefinitionProvider, AgentInputDefinitionProvider>();
         services.AddScoped<ILlmAgentRuntimeFactory, LlmAgentRuntimeFactory>();
         services.AddScoped<IWorkflowAgentRuntimeFactory, WorkflowAgentRuntimeFactory>();
         services.AddScoped<IAgentRuntimeFactory, AgentRuntimeFactory>();

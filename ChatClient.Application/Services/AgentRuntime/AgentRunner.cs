@@ -56,13 +56,13 @@ public sealed class AgentRunner(
         }
 
         AgentRunEvent? lastEvent = null;
-        var terminalEventSeen = false;
+        AgentRunEvent? pendingTerminal = null;
         try
         {
             await foreach (var runEvent in runtime.RunAsync(request, runContext, cancellationToken)
                                .WithCancellation(cancellationToken))
             {
-                if (terminalEventSeen)
+                if (pendingTerminal is not null)
                 {
                     var message = $"Runtime '{runtime.Descriptor.Name}' emitted an event after a terminal event.";
                     logger.LogError(
@@ -76,14 +76,16 @@ public sealed class AgentRunner(
 
                 if (IsTerminal(runEvent))
                 {
-                    terminalEventSeen = true;
+                    pendingTerminal = runEvent;
+                    lastEvent = runEvent;
+                    continue;
                 }
 
                 lastEvent = runEvent;
                 yield return runEvent;
             }
 
-            if (!terminalEventSeen)
+            if (pendingTerminal is null)
             {
                 var message = $"Runtime '{runtime.Descriptor.Name}' completed without a terminal event.";
                 logger.LogError(
@@ -93,6 +95,8 @@ public sealed class AgentRunner(
                     runtime.Descriptor.Name);
                 throw new AgentRuntimeProtocolException(message);
             }
+
+            yield return pendingTerminal;
         }
         finally
         {

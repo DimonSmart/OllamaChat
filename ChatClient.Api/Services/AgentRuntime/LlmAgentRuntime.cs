@@ -151,7 +151,7 @@ internal sealed class LlmAgentRuntime(
                 {
                     await writer.WriteAsync(new AgentRunFailed(new AgentRunError(
                         "execution_failed",
-                        chunk.Content,
+                        "Agent execution failed.",
                         true)), cancellationToken);
                     return;
                 }
@@ -204,7 +204,7 @@ internal sealed class LlmAgentRuntime(
                 Descriptor.Name);
             await writer.WriteAsync(new AgentRunFailed(new AgentRunError(
                 "execution_failed",
-                ex.Message,
+                "Agent execution failed.",
                 true,
                 ex)), CancellationToken.None);
         }

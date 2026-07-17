@@ -124,6 +124,39 @@ public interface IAgentDefinitionCatalog
         CancellationToken cancellationToken = default);
 }
 
+public interface IAgentInputDefinitionProvider
+{
+    Task<IReadOnlyList<AgentInputDefinition>> GetInputsAsync(
+        AgentDefinitionReference reference,
+        CancellationToken cancellationToken = default);
+}
+
+public sealed record AgentInputDefinition
+{
+    public required string Key { get; init; }
+
+    public required string DisplayName { get; init; }
+
+    public string Description { get; init; } = string.Empty;
+
+    public required AgentInputDefinitionKind Kind { get; init; }
+
+    public bool IsRequired { get; init; }
+
+    public string? Placeholder { get; init; }
+
+    public string? DefaultValue { get; init; }
+}
+
+public enum AgentInputDefinitionKind
+{
+    Text,
+    Number,
+    Boolean,
+    Json,
+    MarkdownDocument
+}
+
 public sealed record AgentDefinitionCatalogItem
 {
     public required AgentDefinitionReference Reference { get; init; }
