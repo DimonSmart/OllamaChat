@@ -77,10 +77,11 @@ public sealed class WorkflowDefinitionBuilderTests
     [Fact]
     public void Build_WritesOnlyCanonicalParticipantSourceAndOverrides()
     {
+        var savedAgentId = Guid.NewGuid();
         var workflow = WorkflowDefinitionBuilder
             .New("demo", "Demo Workflow")
             .Agent("router", agent => agent
-                .UseAgent("saved-router-id")
+                .UseAgent(savedAgentId)
                 .OverrideName("Workflow Router")
                 .OverrideAvatarText("WR")
                 .AppendInstructions("Workflow mode only."))
@@ -91,7 +92,7 @@ public sealed class WorkflowDefinitionBuilderTests
         var participant = Assert.Single(workflow.Participants);
         var source = Assert.IsType<SavedDefinitionParticipantSource>(participant.Source);
         Assert.Equal(AgentDefinitionKind.SavedAgent, source.Reference.Kind);
-        Assert.Equal("saved-router-id", source.Reference.Id);
+        Assert.Equal(savedAgentId.ToString("D"), source.Reference.Id);
         Assert.Equal("Workflow Router", participant.Overrides.DisplayName);
         Assert.Equal("WR", participant.Overrides.Llm!.AvatarText);
         Assert.Equal("Workflow mode only.", participant.Overrides.Llm.AppendedInstructions);

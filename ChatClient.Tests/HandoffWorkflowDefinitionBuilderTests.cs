@@ -81,11 +81,12 @@ public sealed class HandoffWorkflowDefinitionBuilderTests
     [Fact]
     public void Build_CreatesSavedAgentTemplateReferenceWithOverrides()
     {
+        var savedAgentId = Guid.NewGuid();
         var workflow = HandoffWorkflowDefinitionBuilder
             .New("demo", "Demo Workflow")
             .StartWith("technical")
             .Agent("technical", agent => agent
-                .UseAgent("saved-technical-agent-id")
+                .UseAgent(savedAgentId)
                 .Role("Technical interviewer")
                 .OverrideName("Technical Interviewer")
                 .OverrideInstructions("Run a technical interview."))
@@ -98,7 +99,7 @@ public sealed class HandoffWorkflowDefinitionBuilderTests
         Assert.Null(technical.SavedAgentTemplate);
         var source = Assert.IsType<SavedDefinitionParticipantSource>(technical.Source);
         Assert.Equal(AgentDefinitionKind.SavedAgent, source.Reference.Kind);
-        Assert.Equal("saved-technical-agent-id", source.Reference.Id);
+        Assert.Equal(savedAgentId.ToString("D"), source.Reference.Id);
         Assert.Equal("Technical Interviewer", technical.Overrides.DisplayName);
         Assert.Equal("Run a technical interview.", technical.Overrides.Llm!.Instructions);
         Assert.Null(technical.DraftOverrides.AgentName);
@@ -108,11 +109,12 @@ public sealed class HandoffWorkflowDefinitionBuilderTests
     [Fact]
     public void Build_CreatesSavedAgentTemplateReferenceWithAppendedInstructions()
     {
+        var savedAgentId = Guid.NewGuid();
         var workflow = HandoffWorkflowDefinitionBuilder
             .New("demo", "Demo Workflow")
             .StartWith("technical")
             .Agent("technical", agent => agent
-                .UseAgent("saved-technical-agent-id")
+                .UseAgent(savedAgentId)
                 .Role("Technical interviewer")
                 .AppendInstructions("Stay focused on the current workflow step."))
             .Build();
@@ -132,7 +134,7 @@ public sealed class HandoffWorkflowDefinitionBuilderTests
                 .New("demo", "Demo Workflow")
                 .StartWith("technical")
                 .Agent("technical", agent => agent
-                    .UseAgent("saved-technical-agent-id")
+                    .UseAgent(Guid.NewGuid())
                     .Role("Technical interviewer")
                     .OverrideInstructions("Replace prompt.")
                     .AppendInstructions("Append prompt."))
@@ -148,12 +150,57 @@ public sealed class HandoffWorkflowDefinitionBuilderTests
             .New("demo", "Demo Workflow")
             .StartWith("router")
             .Agent("router", agent => agent
-                .UseAgent("saved-router-id"))
+                .UseAgent(Guid.NewGuid()))
             .Build();
 
         var agent = Assert.Single(workflow.Agents);
         Assert.Equal("router", agent.Id);
         Assert.Equal("SavedAgent", agent.Role);
+    }
+
+    [Fact]
+    public void Build_FromSavedAgentPreservesLegacyNameSemantics()
+    {
+        var workflow = HandoffWorkflowDefinitionBuilder
+            .New("demo", "Demo Workflow")
+            .StartWith("reviewer")
+            .Agent("reviewer", agent => agent
+                .FromSavedAgent("Code Reviewer"))
+            .Build();
+
+        var agent = Assert.Single(workflow.Agents);
+        var source = Assert.IsType<SavedAgentNameParticipantSource>(agent.Source);
+        Assert.Equal("Code Reviewer", source.SavedAgentName);
+    }
+
+    [Fact]
+    public void Build_UseAgentStringRejectsInvalidGuid()
+    {
+        var exception = Assert.Throws<ArgumentException>(() =>
+            HandoffWorkflowDefinitionBuilder
+                .New("demo", "Demo Workflow")
+                .StartWith("reviewer")
+                .Agent("reviewer", agent => agent
+                    .UseAgent("Code Reviewer"))
+                .Build());
+
+        Assert.Equal("agentId", exception.ParamName);
+        Assert.Contains("valid GUID", exception.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void Build_UseWorkflowStringRejectsInvalidGuid()
+    {
+        var exception = Assert.Throws<ArgumentException>(() =>
+            HandoffWorkflowDefinitionBuilder
+                .New("demo", "Demo Workflow")
+                .StartWith("reviewer")
+                .Agent("reviewer", agent => agent
+                    .UseWorkflow("Nested Workflow"))
+                .Build());
+
+        Assert.Equal("workflowId", exception.ParamName);
+        Assert.Contains("valid GUID", exception.Message, StringComparison.OrdinalIgnoreCase);
     }
 
     private static Domain.Models.AgentTemplateDefinition CreateDraft(string name, string shortName) =>

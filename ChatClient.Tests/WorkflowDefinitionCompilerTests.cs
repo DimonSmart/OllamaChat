@@ -27,8 +27,10 @@ public sealed class WorkflowDefinitionCompilerTests
     public async Task CompileAsync_CompilesAutonomousHandoffWorkflow()
     {
         var compiler = new WorkflowDefinitionCompiler();
+        var analystId = Guid.NewGuid();
+        var challengerId = Guid.NewGuid();
         var sourceCode =
-            """"
+            $$""""
             var workflow = WorkflowDefinitionBuilder
                 .New("autonomous-review-handoff", "Autonomous Review Handoff")
                 .Description("Autonomous review loop with a coordinator and two specialists.")
@@ -43,14 +45,14 @@ public sealed class WorkflowDefinitionCompilerTests
                             .AutoSelectTools(0)
                             .Build()))
                 .Agent("analyst", agent => agent
-                    .UseAgent("saved-analyst-id")
+                    .UseAgent("{{analystId:D}}")
                     .AppendInstructions("""
                         Workflow mode:
                         - Review the topic directly.
                         - Answer the other participants, not the user.
                         """))
                 .Agent("challenger", agent => agent
-                    .UseAgent("saved-challenger-id")
+                    .UseAgent("{{challengerId:D}}")
                     .AppendInstructions("""
                         Workflow mode:
                         - Challenge weak assumptions.
@@ -82,8 +84,8 @@ public sealed class WorkflowDefinitionCompilerTests
         Assert.Contains(workflow.StartInputs, static input => input.Key == "topic");
         var analyst = Assert.Single(workflow.Agents, static agent => agent.Id == "analyst");
         var challenger = Assert.Single(workflow.Agents, static agent => agent.Id == "challenger");
-        Assert.Equal("saved-analyst-id", Assert.IsType<SavedDefinitionParticipantSource>(analyst.Source).Reference.Id);
-        Assert.Equal("saved-challenger-id", Assert.IsType<SavedDefinitionParticipantSource>(challenger.Source).Reference.Id);
+        Assert.Equal(analystId.ToString("D"), Assert.IsType<SavedDefinitionParticipantSource>(analyst.Source).Reference.Id);
+        Assert.Equal(challengerId.ToString("D"), Assert.IsType<SavedDefinitionParticipantSource>(challenger.Source).Reference.Id);
         Assert.NotNull(analyst.Overrides.Llm?.AppendedInstructions);
         Assert.NotNull(challenger.Overrides.Llm?.AppendedInstructions);
         Assert.Contains("Workflow mode:", analyst.Overrides.Llm.AppendedInstructions, StringComparison.Ordinal);
@@ -242,12 +244,13 @@ public sealed class WorkflowDefinitionCompilerTests
     public async Task CompileAsync_CompilesWorkflowUsingSavedAgentTemplateSyntax()
     {
         var compiler = new WorkflowDefinitionCompiler();
+        var routerId = Guid.NewGuid();
         var sourceCode =
-            """
+            $$"""
             var workflow = WorkflowDefinitionBuilder
                 .New("demo", "Demo Workflow")
                 .Agent("router", agent => agent
-                    .UseAgent("saved-router-id")
+                    .UseAgent("{{routerId:D}}")
                     .OverrideName("Workflow Router")
                     .OverrideAvatarText("WR")
                     .AppendInstructions("Workflow mode only."))
@@ -262,7 +265,7 @@ public sealed class WorkflowDefinitionCompilerTests
         var workflow = Assert.IsType<AgentWorkflowDefinition>(result.Workflow);
 
         var agent = Assert.Single(workflow.Agents);
-        Assert.Equal("saved-router-id", Assert.IsType<SavedDefinitionParticipantSource>(agent.Source).Reference.Id);
+        Assert.Equal(routerId.ToString("D"), Assert.IsType<SavedDefinitionParticipantSource>(agent.Source).Reference.Id);
         Assert.Equal("Workflow Router", agent.Overrides.DisplayName);
         Assert.Equal("WR", agent.Overrides.Llm!.AvatarText);
         Assert.Equal("Workflow mode only.", agent.Overrides.Llm.AppendedInstructions);

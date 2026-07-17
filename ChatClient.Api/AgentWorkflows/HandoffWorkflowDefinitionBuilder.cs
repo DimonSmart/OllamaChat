@@ -347,6 +347,7 @@ public sealed class WorkflowAgentBuilder
     private string _summary = string.Empty;
     private AgentTemplateDefinition? _agentDraft;
     private AgentDefinitionReference? _savedDefinitionReference;
+    private string? _savedAgentName;
     private string? _overrideAgentName;
     private string? _overrideAvatarText;
     private string? _overrideInstructions;
@@ -377,6 +378,7 @@ public sealed class WorkflowAgentBuilder
         ArgumentNullException.ThrowIfNull(draft);
         _agentDraft = draft;
         _savedDefinitionReference = null;
+        _savedAgentName = null;
         return this;
     }
 
@@ -384,10 +386,15 @@ public sealed class WorkflowAgentBuilder
     {
         ArgumentNullException.ThrowIfNull(source);
         _agentDraft = source is InlineAgentParticipantSource inline ? inline.Agent : null;
-        _savedDefinitionReference = source is SavedDefinitionParticipantSource saved ? saved.Reference : null;
-        if (_agentDraft is null && _savedDefinitionReference is null)
+        _savedDefinitionReference = source is SavedDefinitionParticipantSource saved
+            ? ValidateReference(saved.Reference, nameof(source))
+            : null;
+        _savedAgentName = source is SavedAgentNameParticipantSource savedByName
+            ? RequireValue(savedByName.SavedAgentName, nameof(source))
+            : null;
+        if (_agentDraft is null && _savedDefinitionReference is null && _savedAgentName is null)
         {
-            throw new ArgumentException("Source must be inline agent or saved definition.", nameof(source));
+            throw new ArgumentException("Source must be inline agent, saved definition, or saved-agent name.", nameof(source));
         }
 
         return this;
@@ -395,25 +402,42 @@ public sealed class WorkflowAgentBuilder
 
     public WorkflowAgentBuilder UseDefinition(AgentDefinitionReference reference)
     {
-        _savedDefinitionReference = reference;
+        _savedDefinitionReference = ValidateReference(reference, nameof(reference));
         _agentDraft = null;
+        _savedAgentName = null;
         return this;
     }
 
-    public WorkflowAgentBuilder UseAgent(string agentId) =>
+    public WorkflowAgentBuilder UseAgent(Guid agentId) =>
         UseDefinition(new AgentDefinitionReference(
             AgentDefinitionKind.SavedAgent,
-            RequireValue(agentId, nameof(agentId))));
+            agentId.ToString("D")));
 
-    public WorkflowAgentBuilder UseWorkflow(string workflowId) =>
+    public WorkflowAgentBuilder UseAgent(string agentId) =>
+        UseAgent(ParseGuid(agentId, nameof(agentId), "Saved agent id must be a valid GUID."));
+
+    public WorkflowAgentBuilder UseWorkflow(Guid workflowId) =>
         UseDefinition(new AgentDefinitionReference(
             AgentDefinitionKind.SavedWorkflow,
-            RequireValue(workflowId, nameof(workflowId))));
+            workflowId.ToString("D")));
 
-    [Obsolete("Use UseAgent with a saved-agent id, or normalize saved-agent names at the compatibility boundary.")]
+    public WorkflowAgentBuilder UseWorkflow(string workflowId) =>
+        UseWorkflow(ParseGuid(workflowId, nameof(workflowId), "Saved workflow id must be a valid GUID."));
+
+    [Obsolete(
+        "Saved-agent names are supported only for legacy workflow migration. Use UseAgent(Guid) for new workflows.")]
+    public WorkflowAgentBuilder FromSavedAgentName(string savedAgentName)
+    {
+        _savedAgentName = RequireValue(savedAgentName, nameof(savedAgentName));
+        _agentDraft = null;
+        _savedDefinitionReference = null;
+        return this;
+    }
+
+    [Obsolete("Use UseAgent(Guid).")]
     public WorkflowAgentBuilder FromSavedAgent(string savedAgentName)
     {
-        return UseAgent(savedAgentName);
+        return FromSavedAgentName(savedAgentName);
     }
 
     public WorkflowAgentBuilder FromSavedAgent(AgentDefinitionReference reference)
@@ -499,8 +523,10 @@ public sealed class WorkflowAgentBuilder
     internal WorkflowParticipantDefinition Build()
     {
         var usesSavedDefinition = _savedDefinitionReference is not null;
+        var usesSavedAgentName = _savedAgentName is not null;
         var sourceCount = (_agentDraft is not null ? 1 : 0) +
-                          (usesSavedDefinition ? 1 : 0);
+                          (usesSavedDefinition ? 1 : 0) +
+                          (usesSavedAgentName ? 1 : 0);
         if (sourceCount > 1)
         {
             throw new InvalidOperationException(
@@ -533,6 +559,10 @@ public sealed class WorkflowAgentBuilder
             if (usesSavedDefinition)
             {
                 _role = _overrideAgentName ?? _savedDefinitionReference!.Kind.ToString();
+            }
+            else if (usesSavedAgentName)
+            {
+                _role = _overrideAgentName ?? AgentDefinitionKind.SavedAgent.ToString();
             }
             else
             {
@@ -576,6 +606,11 @@ public sealed class WorkflowAgentBuilder
             return new SavedDefinitionParticipantSource(_savedDefinitionReference);
         }
 
+        if (_savedAgentName is not null)
+        {
+            return new SavedAgentNameParticipantSource(_savedAgentName);
+        }
+
         throw new InvalidOperationException(
             $"Workflow participant '{_id}' requires an executable source.");
     }
@@ -593,6 +628,35 @@ public sealed class WorkflowAgentBuilder
         }
 
         return value.Trim();
+    }
+
+    private static Guid ParseGuid(string? value, string paramName, string message)
+    {
+        var normalized = RequireValue(value, paramName);
+        if (!Guid.TryParse(normalized, out var parsed))
+        {
+            throw new ArgumentException(message, paramName);
+        }
+
+        return parsed;
+    }
+
+    private static AgentDefinitionReference ValidateReference(
+        AgentDefinitionReference reference,
+        string paramName)
+    {
+        if (!Guid.TryParse(RequireValue(reference.Id, paramName), out var parsed))
+        {
+            var message = reference.Kind switch
+            {
+                AgentDefinitionKind.SavedAgent => "Saved agent id must be a valid GUID.",
+                AgentDefinitionKind.SavedWorkflow => "Saved workflow id must be a valid GUID.",
+                _ => "Saved definition id must be a valid GUID."
+            };
+            throw new ArgumentException(message, paramName);
+        }
+
+        return reference with { Id = parsed.ToString("D") };
     }
 }
 

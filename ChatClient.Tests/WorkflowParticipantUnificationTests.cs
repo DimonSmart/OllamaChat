@@ -12,6 +12,150 @@ namespace ChatClient.Tests;
 public sealed class WorkflowParticipantUnificationTests
 {
     [Fact]
+    public async Task NormalizeAsync_FromSavedAgentNameResolvesToCanonicalSavedDefinition()
+    {
+        var savedAgent = CreateAgent("Code Reviewer", "Review code.");
+        var normalizer = new LegacyWorkflowDefinitionNormalizer(new StubAgentTemplateService([savedAgent]));
+        var workflow = HandoffWorkflowDefinitionBuilder
+            .New("demo", "Demo Workflow")
+            .StartWith("reviewer")
+            .Agent("reviewer", agent => agent
+                .FromSavedAgent("Code Reviewer"))
+            .Build();
+
+        var normalized = await normalizer.NormalizeAsync(workflow);
+
+        var participant = Assert.Single(normalized.Participants);
+        var source = Assert.IsType<SavedDefinitionParticipantSource>(participant.Source);
+        Assert.Equal(AgentDefinitionKind.SavedAgent, source.Reference.Kind);
+        Assert.Equal(savedAgent.Id.ToString("D"), source.Reference.Id);
+    }
+
+    [Fact]
+    public async Task NormalizeAsync_RejectsUnknownSavedAgentName()
+    {
+        var normalizer = new LegacyWorkflowDefinitionNormalizer(new StubAgentTemplateService([]));
+        var workflow = CreateSequentialWorkflow(new WorkflowParticipantDefinition
+        {
+            Id = "reviewer",
+            Role = "Reviewer",
+            Source = new SavedAgentNameParticipantSource("Missing Agent")
+        });
+
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            normalizer.NormalizeAsync(workflow));
+
+        Assert.Contains("Missing Agent", exception.Message, StringComparison.Ordinal);
+        Assert.Contains("was not found", exception.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task NormalizeAsync_RejectsAmbiguousSavedAgentName()
+    {
+        var normalizer = new LegacyWorkflowDefinitionNormalizer(new StubAgentTemplateService(
+        [
+            CreateAgent("Code Reviewer", "First"),
+            CreateAgent("Code Reviewer", "Second")
+        ]));
+        var workflow = CreateSequentialWorkflow(new WorkflowParticipantDefinition
+        {
+            Id = "reviewer",
+            Role = "Reviewer",
+            Source = new SavedAgentNameParticipantSource("Code Reviewer")
+        });
+
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            normalizer.NormalizeAsync(workflow));
+
+        Assert.Contains("ambiguous", exception.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task NormalizeAsync_RemovesLegacySourcesFromBoundary()
+    {
+        var savedAgent = CreateAgent("Saved", "Saved instructions");
+        var normalizer = new LegacyWorkflowDefinitionNormalizer(new StubAgentTemplateService([savedAgent]));
+        var workflow = new SequentialWorkflowDefinition
+        {
+            Id = "workflow",
+            DisplayName = "Workflow",
+            Participants =
+            [
+                new WorkflowParticipantDefinition
+                {
+                    Id = "by-source-name",
+                    Role = "By Source Name",
+                    Source = new SavedAgentNameParticipantSource("Saved")
+                },
+                new WorkflowParticipantDefinition
+                {
+                    Id = "by-agent-draft",
+                    Role = "By Agent Draft",
+                    AgentDraft = CreateAgent("Draft", "Draft instructions")
+                },
+                new WorkflowParticipantDefinition
+                {
+                    Id = "by-saved-template",
+                    Role = "By Saved Template",
+                    SavedAgentTemplate = new AgentWorkflowSavedAgentTemplate { SavedAgentName = "Saved" }
+                }
+            ],
+            ParticipantOrder = ["by-source-name", "by-agent-draft", "by-saved-template"]
+        };
+
+        var normalized = await normalizer.NormalizeAsync(workflow);
+
+        Assert.All(normalized.Participants, participant =>
+        {
+            Assert.IsNotType<SavedAgentNameParticipantSource>(participant.Source);
+            Assert.Null(participant.AgentDraft);
+            Assert.Null(participant.SavedAgentTemplate);
+        });
+        Assert.Contains(normalized.Participants, static participant =>
+            participant.Id == "by-agent-draft" &&
+            participant.Source is InlineAgentParticipantSource);
+        Assert.Equal(2, normalized.Participants.Count(static participant =>
+            participant.Source is SavedDefinitionParticipantSource));
+    }
+
+    [Fact]
+    public async Task PreflightValidation_ReturnsStructuredProblemForUnknownSavedAgentName()
+    {
+        var workflowId = Guid.NewGuid();
+        var sourceCode =
+            """
+            var workflow = WorkflowDefinitionBuilder
+                .New("demo", "Demo Workflow")
+                .Agent("reviewer", agent => agent
+                    .FromSavedAgent("Missing Agent"))
+                .UseHandoff(handoff => handoff
+                    .StartWith("reviewer"))
+                .Build();
+
+            workflow
+            """;
+        var validator = new WorkflowDefinitionPreflightValidator(
+            new StubWorkflowDefinitionService(new SavedWorkflowDefinition
+            {
+                Id = workflowId,
+                WorkflowId = "demo",
+                DisplayName = "Demo Workflow",
+                SourceCode = sourceCode
+            }),
+            new WorkflowDefinitionCompiler(),
+            new LegacyWorkflowDefinitionNormalizer(new StubAgentTemplateService([])),
+            new StubWorkflowParticipantResolver());
+
+        var problems = await validator.ValidateAsync(new AgentDefinitionReference(
+            AgentDefinitionKind.SavedWorkflow,
+            workflowId.ToString("D")));
+
+        var problem = Assert.Single(problems);
+        Assert.Contains("Missing Agent", problem.Message, StringComparison.Ordinal);
+        Assert.Contains("was not found", problem.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
     public async Task NormalizeAsync_RejectsParticipantWithMultipleExecutableSources()
     {
         var normalizer = new LegacyWorkflowDefinitionNormalizer(new StubAgentTemplateService([]));
@@ -461,5 +605,28 @@ public sealed class WorkflowParticipantUnificationTests
             CancellationToken cancellationToken = default) =>
             await FindAsync(reference, cancellationToken) ??
             throw new KeyNotFoundException();
+    }
+
+    private sealed class StubWorkflowDefinitionService(SavedWorkflowDefinition workflow) : IWorkflowDefinitionService
+    {
+        public Task<IReadOnlyCollection<SavedWorkflowDefinition>> GetAllAsync() =>
+            Task.FromResult<IReadOnlyCollection<SavedWorkflowDefinition>>([workflow]);
+
+        public Task<SavedWorkflowDefinition?> GetByIdAsync(Guid workflowId) =>
+            Task.FromResult(workflow.Id == workflowId ? workflow : null);
+
+        public Task CreateAsync(SavedWorkflowDefinition workflow) => throw new NotSupportedException();
+
+        public Task UpdateAsync(SavedWorkflowDefinition workflow) => throw new NotSupportedException();
+
+        public Task DeleteAsync(Guid workflowId) => throw new NotSupportedException();
+    }
+
+    private sealed class StubWorkflowParticipantResolver : IWorkflowParticipantResolver
+    {
+        public Task<IReadOnlyList<ResolvedWorkflowParticipant>> ResolveAsync(
+            IOrchestrationWorkflowDefinition workflow,
+            CancellationToken cancellationToken = default) =>
+            Task.FromResult<IReadOnlyList<ResolvedWorkflowParticipant>>([]);
     }
 }
