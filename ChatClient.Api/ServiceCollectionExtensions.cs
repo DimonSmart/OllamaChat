@@ -125,6 +125,7 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IOrchestrationWorkflowSessionService, OrchestrationWorkflowChatSessionService>();
         services.AddScoped<IOrchestrationWorkflowChatViewModelService, OrchestrationWorkflowChatViewModelService>();
         services.AddScoped<IAgentDefinitionCatalog, AgentDefinitionCatalog>();
+        services.AddScoped<IAgentSessionDefinitionResolver, AgentSessionDefinitionResolver>();
         services.AddScoped<IWorkflowParticipantResolver, WorkflowParticipantResolver>();
         services.AddScoped<IWorkflowAgentDraftMaterializer, WorkflowAgentDraftMaterializer>();
         services.AddScoped<IAgentInputDefinitionProvider, AgentInputDefinitionProvider>();

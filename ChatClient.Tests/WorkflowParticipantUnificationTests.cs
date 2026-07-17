@@ -434,24 +434,31 @@ public sealed class WorkflowParticipantUnificationTests
     private sealed class StubDefinitionCatalog(
         IReadOnlyCollection<AgentTemplateDefinition> agents) : IAgentDefinitionCatalog
     {
-        public Task<IReadOnlyList<AgentDefinitionCatalogItem>> GetAllAsync(
+        public Task<IReadOnlyList<AgentDefinitionDescriptor>> GetAllAsync(
             CancellationToken cancellationToken = default) =>
-            Task.FromResult<IReadOnlyList<AgentDefinitionCatalogItem>>(
-                agents.Select(static agent => new AgentDefinitionCatalogItem
+            Task.FromResult<IReadOnlyList<AgentDefinitionDescriptor>>(
+                agents.Select(static agent => new AgentDefinitionDescriptor
                 {
                     Reference = new AgentDefinitionReference(
                         AgentDefinitionKind.SavedAgent,
                         agent.Id.ToString("D")),
                     Name = agent.AgentName,
                     Description = agent.Summary,
-                    RuntimeKind = AgentRuntimeKind.LlmAgent
+                    RuntimeKind = AgentRuntimeKind.LlmAgent,
+                    ModelRequirement = AgentModelRequirement.Required
                 }).ToList());
 
-        public async Task<AgentDefinitionCatalogItem?> FindAsync(
+        public async Task<AgentDefinitionDescriptor?> FindAsync(
             AgentDefinitionReference reference,
             CancellationToken cancellationToken = default) =>
             (await GetAllAsync(cancellationToken)).FirstOrDefault(item =>
                 item.Reference.Kind == reference.Kind &&
                 string.Equals(item.Reference.Id, reference.Id, StringComparison.OrdinalIgnoreCase));
+
+        public async Task<AgentDefinitionDescriptor> GetRequiredAsync(
+            AgentDefinitionReference reference,
+            CancellationToken cancellationToken = default) =>
+            await FindAsync(reference, cancellationToken) ??
+            throw new KeyNotFoundException();
     }
 }

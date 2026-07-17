@@ -50,7 +50,15 @@ public sealed class UnifiedAgentRuntimeChatSessionService(
         _parameters = request;
         _chat.Reset();
         ClearRunLocalState();
-        _chat.SetAgents(request.Agents.Select(static agent => agent.Agent.Clone()));
+        _chat.SetAgents(request.RuntimeParticipant is { } participant
+            ? [new AgentExecutionSpec
+            {
+                RuntimeAgentId = participant.Id,
+                AgentName = participant.Name,
+                Summary = participant.Description,
+                ShortName = participant.AvatarText
+            }]
+            : request.Agents.Select(static agent => agent.Agent.Clone()));
         ChatReset?.Invoke();
 
         foreach (var message in request.History.OrderBy(static message => message.MsgDateTime))

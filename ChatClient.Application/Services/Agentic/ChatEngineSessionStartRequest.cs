@@ -10,6 +10,8 @@ public sealed class ChatEngineSessionStartRequest
 
     public required IReadOnlyList<ResolvedChatAgent> Agents { get; init; }
 
+    public ChatRuntimeParticipantDescriptor? RuntimeParticipant { get; init; }
+
     public AgentDefinitionReference? RuntimeReference { get; init; }
 
     public ServerModel? RuntimeDefaultModel { get; init; }

@@ -118,10 +118,14 @@ public enum AgentDefinitionKind
 
 public interface IAgentDefinitionCatalog
 {
-    Task<IReadOnlyList<AgentDefinitionCatalogItem>> GetAllAsync(
+    Task<IReadOnlyList<AgentDefinitionDescriptor>> GetAllAsync(
         CancellationToken cancellationToken = default);
 
-    Task<AgentDefinitionCatalogItem?> FindAsync(
+    Task<AgentDefinitionDescriptor?> FindAsync(
+        AgentDefinitionReference reference,
+        CancellationToken cancellationToken = default);
+
+    Task<AgentDefinitionDescriptor> GetRequiredAsync(
         AgentDefinitionReference reference,
         CancellationToken cancellationToken = default);
 }
@@ -159,7 +163,14 @@ public enum AgentInputDefinitionKind
     MarkdownDocument
 }
 
-public sealed record AgentDefinitionCatalogItem
+public enum AgentModelRequirement
+{
+    None,
+    Optional,
+    Required
+}
+
+public sealed record AgentDefinitionDescriptor
 {
     public required AgentDefinitionReference Reference { get; init; }
 
@@ -168,6 +179,25 @@ public sealed record AgentDefinitionCatalogItem
     public string Description { get; init; } = string.Empty;
 
     public required AgentRuntimeKind RuntimeKind { get; init; }
+
+    public string AvatarText { get; init; } = string.Empty;
+
+    public IReadOnlyList<AgentInputDefinition> Inputs { get; init; } = [];
+
+    public AgentModelRequirement ModelRequirement { get; init; }
+
+    public bool SupportsConversationHistory { get; init; } = true;
+
+    public bool SupportsAttachments { get; init; }
+}
+
+public sealed record AgentDefinitionLaunchProblem(string Message);
+
+public sealed record AgentDefinitionLaunchValidation
+{
+    public required bool CanLaunch { get; init; }
+
+    public IReadOnlyList<AgentDefinitionLaunchProblem> Problems { get; init; } = [];
 }
 
 public interface IAgentRuntimeFactory
