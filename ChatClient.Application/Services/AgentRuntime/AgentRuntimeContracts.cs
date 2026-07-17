@@ -186,6 +186,14 @@ public interface ILlmAgentRuntimeFactory
         CancellationToken cancellationToken = default);
 }
 
+public interface IInlineLlmAgentRuntimeFactory
+{
+    IAgentRuntime Create(
+        AgentRuntimeDescriptor descriptor,
+        AgentTemplateDefinition agent,
+        AgentRuntimeCreationContext context);
+}
+
 public interface IWorkflowAgentRuntimeFactory
 {
     Task<IAgentRuntime> CreateAsync(
@@ -207,6 +215,15 @@ public interface IAgentRunner
         AgentDefinitionReference reference,
         AgentRuntimeRunRequest request,
         AgentRuntimeCreationContext creationContext,
+        AgentRunContext runContext,
+        CancellationToken cancellationToken = default);
+}
+
+public interface IAgentRuntimeProtocolExecutor
+{
+    IAsyncEnumerable<AgentRunEvent> RunAsync(
+        IAgentRuntime runtime,
+        AgentRuntimeRunRequest request,
         AgentRunContext runContext,
         CancellationToken cancellationToken = default);
 }

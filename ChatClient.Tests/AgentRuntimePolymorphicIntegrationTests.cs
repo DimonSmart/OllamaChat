@@ -21,6 +21,7 @@ public sealed class AgentRuntimePolymorphicIntegrationTests
             new AgentRuntimeFactory(
                 new StubLlmFactory(),
                 new StubWorkflowFactory()),
+            new AgentRuntimeProtocolExecutor(NullLogger<AgentRuntimeProtocolExecutor>.Instance),
             NullLogger<AgentRunner>.Instance);
 
         var events = await RunAndCollectAsync(runner, new AgentDefinitionReference(kind, id));
@@ -81,7 +82,20 @@ public sealed class AgentRuntimePolymorphicIntegrationTests
                 Id = workflowId,
                 DisplayName = "Workflow",
                 StartAgentId = "agent",
-                Agents = [new AgentWorkflowAgentDefinition { Id = "agent", Role = "agent" }]
+                Agents =
+                [
+                    new AgentWorkflowAgentDefinition
+                    {
+                        Id = "agent",
+                        Role = "agent",
+                        Source = new InlineAgentParticipantSource(new AgentTemplateDefinition
+                        {
+                            Id = Guid.NewGuid(),
+                            AgentName = "Agent",
+                            Content = "Prompt"
+                        })
+                    }
+                ]
             };
 
             return Task.FromResult<IAgentRuntime>(new WorkflowAgentRuntime(

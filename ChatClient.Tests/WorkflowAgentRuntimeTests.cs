@@ -27,22 +27,22 @@ public sealed class WorkflowAgentRuntimeTests
                 {
                     ParticipantId = "a",
                     DisplayName = "A",
-                    Reference = new AgentDefinitionReference(AgentDefinitionKind.SavedAgent, "a"),
-                    RuntimeKind = AgentRuntimeKind.LlmAgent
+                    RuntimeKind = AgentRuntimeKind.LlmAgent,
+                    Source = new ReferencedParticipantSource(new AgentDefinitionReference(AgentDefinitionKind.SavedAgent, "a"))
                 },
                 new ResolvedWorkflowParticipant
                 {
                     ParticipantId = "w",
                     DisplayName = "W",
-                    Reference = new AgentDefinitionReference(AgentDefinitionKind.SavedWorkflow, "w"),
-                    RuntimeKind = AgentRuntimeKind.WorkflowAgent
+                    RuntimeKind = AgentRuntimeKind.WorkflowAgent,
+                    Source = new ReferencedParticipantSource(new AgentDefinitionReference(AgentDefinitionKind.SavedWorkflow, "w"))
                 },
                 new ResolvedWorkflowParticipant
                 {
                     ParticipantId = "b",
                     DisplayName = "B",
-                    Reference = new AgentDefinitionReference(AgentDefinitionKind.SavedAgent, "b"),
-                    RuntimeKind = AgentRuntimeKind.LlmAgent
+                    RuntimeKind = AgentRuntimeKind.LlmAgent,
+                    Source = new ReferencedParticipantSource(new AgentDefinitionReference(AgentDefinitionKind.SavedAgent, "b"))
                 }
             ],
             ["a", "w", "b"]);
@@ -81,8 +81,8 @@ public sealed class WorkflowAgentRuntimeTests
                 {
                     ParticipantId = "self",
                     DisplayName = "Self",
-                    Reference = new AgentDefinitionReference(AgentDefinitionKind.SavedWorkflow, "workflow"),
-                    RuntimeKind = AgentRuntimeKind.WorkflowAgent
+                    RuntimeKind = AgentRuntimeKind.WorkflowAgent,
+                    Source = new ReferencedParticipantSource(new AgentDefinitionReference(AgentDefinitionKind.SavedWorkflow, "workflow"))
                 }
             ],
             ["self"]);
@@ -106,8 +106,8 @@ public sealed class WorkflowAgentRuntimeTests
                 {
                     ParticipantId = "next",
                     DisplayName = "Next",
-                    Reference = new AgentDefinitionReference(AgentDefinitionKind.SavedAgent, "next"),
-                    RuntimeKind = AgentRuntimeKind.LlmAgent
+                    RuntimeKind = AgentRuntimeKind.LlmAgent,
+                    Source = new ReferencedParticipantSource(new AgentDefinitionReference(AgentDefinitionKind.SavedAgent, "next"))
                 }
             ],
             ["next"]);
@@ -408,7 +408,20 @@ public sealed class WorkflowAgentRuntimeTests
                 DisplayName = "Workflow",
                 StartAgentId = "agent",
                 StartInputs = (startInputs ?? []).ToList(),
-                Agents = [new AgentWorkflowAgentDefinition { Id = "agent", Role = "agent" }]
+                Agents =
+                [
+                    new AgentWorkflowAgentDefinition
+                    {
+                        Id = "agent",
+                        Role = "agent",
+                        Source = new InlineAgentParticipantSource(new AgentTemplateDefinition
+                        {
+                            Id = Guid.NewGuid(),
+                            AgentName = "Agent",
+                            Content = "Prompt"
+                        })
+                    }
+                ]
             },
             [new ResolvedChatAgent(new AgentExecutionSpec { Id = Guid.NewGuid(), AgentName = "Agent" }, new ServerModel(Guid.NewGuid(), "model"))],
             new AppChatConfiguration("model", []),
@@ -432,9 +445,9 @@ public sealed class WorkflowAgentRuntimeTests
                 {
                     Id = participant.ParticipantId,
                     Role = participant.DisplayName,
-                    Source = participant.Reference is null
-                        ? null
-                        : new SavedDefinitionParticipantSource(participant.Reference)
+                    Source = participant.Source is ReferencedParticipantSource referenced
+                        ? new SavedDefinitionParticipantSource(referenced.Reference)
+                        : null
                 }).ToList(),
                 ParticipantOrder = participantOrder.ToList()
             },
@@ -446,8 +459,10 @@ public sealed class WorkflowAgentRuntimeTests
                 Configuration = configuration
             },
             new StubHeadlessWorkflowRunner([]),
-            new ThrowingChatEngineOrchestrator(),
-            new AgentRunnerServiceProvider(runner),
+            new WorkflowParticipantExecutor(
+                runner,
+                new ThrowingInlineLlmAgentRuntimeFactory(),
+                new AgentRuntimeProtocolExecutor(NullLogger<AgentRuntimeProtocolExecutor>.Instance)),
             NullLogger<WorkflowAgentRuntime>.Instance);
     }
 
@@ -550,17 +565,12 @@ public sealed class WorkflowAgentRuntimeTests
             AgentRunContext Context);
     }
 
-    private sealed class AgentRunnerServiceProvider(IAgentRunner runner) : IServiceProvider
+    private sealed class ThrowingInlineLlmAgentRuntimeFactory : IInlineLlmAgentRuntimeFactory
     {
-        public object? GetService(Type serviceType) =>
-            serviceType == typeof(IAgentRunner) ? runner : null;
-    }
-
-    private sealed class ThrowingChatEngineOrchestrator : IChatEngineOrchestrator
-    {
-        public IAsyncEnumerable<ChatEngineStreamChunk> StreamAsync(
-            ChatEngineOrchestrationRequest request,
-            CancellationToken cancellationToken = default) =>
+        public IAgentRuntime Create(
+            AgentRuntimeDescriptor descriptor,
+            AgentTemplateDefinition agent,
+            AgentRuntimeCreationContext context) =>
             throw new NotSupportedException();
     }
 

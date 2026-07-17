@@ -74,6 +74,32 @@ public sealed class WorkflowDefinitionBuilderTests
     }
 
     [Fact]
+    public void Build_WritesOnlyCanonicalParticipantSourceAndOverrides()
+    {
+        var workflow = WorkflowDefinitionBuilder
+            .New("demo", "Demo Workflow")
+            .Agent("router", agent => agent
+                .FromSavedAgent("Saved Router")
+                .OverrideName("Workflow Router")
+                .OverrideAvatarText("WR")
+                .AppendInstructions("Workflow mode only."))
+            .UseHandoff(handoff => handoff
+                .StartWith("router"))
+            .Build();
+
+        var participant = Assert.Single(workflow.Participants);
+        Assert.Equal("Saved Router", Assert.IsType<SavedAgentNameParticipantSource>(participant.Source).SavedAgentName);
+        Assert.Equal("Workflow Router", participant.Overrides.DisplayName);
+        Assert.Equal("WR", participant.Overrides.Llm!.AvatarText);
+        Assert.Equal("Workflow mode only.", participant.Overrides.Llm.AppendedInstructions);
+        Assert.Null(participant.AgentDraft);
+        Assert.Null(participant.SavedAgentTemplate);
+        Assert.Null(participant.DraftOverrides.AgentName);
+        Assert.Null(participant.DraftOverrides.AvatarText);
+        Assert.Null(participant.DraftOverrides.AppendedInstructions);
+    }
+
+    [Fact]
     public void Build_ThrowsForUndefinedAgentPlaceholder()
     {
         var exception = Assert.Throws<InvalidOperationException>(() =>

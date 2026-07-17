@@ -1,3 +1,4 @@
+using ChatClient.Domain.Models;
 using System.Text.RegularExpressions;
 
 namespace ChatClient.Api.AgentWorkflows;
@@ -23,9 +24,11 @@ internal static class WorkflowInstructionTemplateResolver
         var agentsById = agents.ToDictionary(agent => agent.Id, StringComparer.OrdinalIgnoreCase);
         foreach (var agent in agents)
         {
-            ValidateText(agent.Id, "agent draft instructions", agent.AgentDraft?.Content, agentsById);
-            ValidateText(agent.Id, "override instructions", agent.DraftOverrides.Instructions, agentsById);
-            ValidateText(agent.Id, "appended instructions", agent.DraftOverrides.AppendedInstructions, agentsById);
+            ValidateText(agent.Id, "agent draft instructions", ResolveInlineAgent(agent)?.Content, agentsById);
+            ValidateText(agent.Id, "override instructions", agent.Overrides.Llm?.Instructions, agentsById);
+            ValidateText(agent.Id, "appended instructions", agent.Overrides.Llm?.AppendedInstructions, agentsById);
+            ValidateText(agent.Id, "legacy override instructions", agent.DraftOverrides.Instructions, agentsById);
+            ValidateText(agent.Id, "legacy appended instructions", agent.DraftOverrides.AppendedInstructions, agentsById);
         }
     }
 
@@ -55,7 +58,7 @@ internal static class WorkflowInstructionTemplateResolver
                 "displayname" => ResolveDisplayName(referencedAgent),
                 "role" => referencedAgent.Role,
                 "id" => referencedAgent.Id,
-                "avatartext" => referencedAgent.AgentDraft?.AvatarText?.Trim() ?? string.Empty,
+                "avatartext" => ResolveInlineAgent(referencedAgent)?.AvatarText?.Trim() ?? string.Empty,
                 _ => throw new InvalidOperationException(
                     $"Workflow agent '{ownerAgentId}' references unsupported property '{property}' in placeholder '{match.Value}'.")
             };
@@ -119,7 +122,7 @@ internal static class WorkflowInstructionTemplateResolver
 
     private static string ResolveDisplayName(WorkflowParticipantDefinition agent)
     {
-        var displayName = agent.AgentDraft?.AgentName?.Trim();
+        var displayName = ResolveInlineAgent(agent)?.AgentName?.Trim();
         if (!string.IsNullOrWhiteSpace(displayName))
         {
             return displayName;
@@ -129,4 +132,9 @@ internal static class WorkflowInstructionTemplateResolver
             ? agent.Role
             : agent.Id;
     }
+
+    private static AgentTemplateDefinition? ResolveInlineAgent(WorkflowParticipantDefinition agent) =>
+        agent.Source is InlineAgentParticipantSource inline
+            ? inline.Agent
+            : agent.AgentDraft;
 }

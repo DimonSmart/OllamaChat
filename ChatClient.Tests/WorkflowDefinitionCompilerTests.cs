@@ -82,12 +82,12 @@ public sealed class WorkflowDefinitionCompilerTests
         Assert.Contains(workflow.StartInputs, static input => input.Key == "topic");
         var analyst = Assert.Single(workflow.Agents, static agent => agent.Id == "analyst");
         var challenger = Assert.Single(workflow.Agents, static agent => agent.Id == "challenger");
-        Assert.Equal("Saved Analyst", analyst.SavedAgentTemplate!.SavedAgentName);
-        Assert.Equal("Saved Challenger", challenger.SavedAgentTemplate!.SavedAgentName);
-        Assert.NotNull(analyst.DraftOverrides.AppendedInstructions);
-        Assert.NotNull(challenger.DraftOverrides.AppendedInstructions);
-        Assert.Contains("Workflow mode:", analyst.DraftOverrides.AppendedInstructions, StringComparison.Ordinal);
-        Assert.Contains("Workflow mode:", challenger.DraftOverrides.AppendedInstructions, StringComparison.Ordinal);
+        Assert.Equal("Saved Analyst", Assert.IsType<SavedAgentNameParticipantSource>(analyst.Source).SavedAgentName);
+        Assert.Equal("Saved Challenger", Assert.IsType<SavedAgentNameParticipantSource>(challenger.Source).SavedAgentName);
+        Assert.NotNull(analyst.Overrides.Llm?.AppendedInstructions);
+        Assert.NotNull(challenger.Overrides.Llm?.AppendedInstructions);
+        Assert.Contains("Workflow mode:", analyst.Overrides.Llm.AppendedInstructions, StringComparison.Ordinal);
+        Assert.Contains("Workflow mode:", challenger.Overrides.Llm.AppendedInstructions, StringComparison.Ordinal);
         Assert.Single(workflow.Handoffs, static handoff =>
             handoff.FromAgentId == "analyst" &&
             handoff.ToAgentId == "coordinator");
@@ -262,11 +262,12 @@ public sealed class WorkflowDefinitionCompilerTests
         var workflow = Assert.IsType<AgentWorkflowDefinition>(result.Workflow);
 
         var agent = Assert.Single(workflow.Agents);
-        Assert.NotNull(agent.SavedAgentTemplate);
-        Assert.Equal("Saved Router", agent.SavedAgentTemplate!.SavedAgentName);
-        Assert.Equal("Workflow Router", agent.DraftOverrides.AgentName);
-        Assert.Equal("WR", agent.DraftOverrides.AvatarText);
-        Assert.Equal("Workflow mode only.", agent.DraftOverrides.AppendedInstructions);
+        Assert.Equal("Saved Router", Assert.IsType<SavedAgentNameParticipantSource>(agent.Source).SavedAgentName);
+        Assert.Equal("Workflow Router", agent.Overrides.DisplayName);
+        Assert.Equal("WR", agent.Overrides.Llm!.AvatarText);
+        Assert.Equal("Workflow mode only.", agent.Overrides.Llm.AppendedInstructions);
+        Assert.Null(agent.SavedAgentTemplate);
+        Assert.Null(agent.DraftOverrides.AgentName);
     }
 
     [Fact]
@@ -334,10 +335,10 @@ public sealed class WorkflowDefinitionCompilerTests
         var reviewerB = workflow.Agents.Single(agent => agent.Id == "reviewer_b");
         var closer = workflow.Agents.Single(agent => agent.Id == "closer");
 
-        Assert.Equal("H", host.DraftOverrides.AvatarText);
-        Assert.Equal("A", reviewerA.DraftOverrides.AvatarText);
-        Assert.Equal("B", reviewerB.DraftOverrides.AvatarText);
-        Assert.Equal("C", closer.DraftOverrides.AvatarText);
+        Assert.Equal("H", host.Overrides.Llm!.AvatarText);
+        Assert.Equal("A", reviewerA.Overrides.Llm!.AvatarText);
+        Assert.Equal("B", reviewerB.Overrides.Llm!.AvatarText);
+        Assert.Equal("C", closer.Overrides.Llm!.AvatarText);
     }
 
     [Fact]

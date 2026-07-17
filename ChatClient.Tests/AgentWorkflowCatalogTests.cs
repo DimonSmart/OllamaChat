@@ -35,19 +35,19 @@ public sealed class AgentWorkflowCatalogTests
         Assert.Equal(["resume", "job_description"], workflow.StartInputs.Select(static input => input.Key).ToArray());
 
         var triage = Assert.Single(workflow.Agents, static agent => agent.Id == "triage");
-        Assert.NotNull(triage.AgentDraft);
-        Assert.Equal("triage", triage.AgentDraft!.ShortName);
-        Assert.Contains("routing", triage.AgentDraft.Content, StringComparison.OrdinalIgnoreCase);
+        var triageDraft = GetInlineAgent(triage);
+        Assert.Equal("triage", triageDraft.ShortName);
+        Assert.Contains("routing", triageDraft.Content, StringComparison.OrdinalIgnoreCase);
         Assert.Contains(triage.CapabilityRequirements, static capability => capability.Key == "task-session-store");
 
         var receptionist = Assert.Single(workflow.Agents, static agent => agent.Id == "receptionist");
-        Assert.NotNull(receptionist.AgentDraft);
+        var receptionistDraft = GetInlineAgent(receptionist);
         var taskBinding = Assert.Single(
-            receptionist.AgentDraft!.McpServerBindings,
+            receptionistDraft.McpServerBindings,
             static binding => string.Equals(binding.ServerName, "Built-in Task Session MCP Server", StringComparison.OrdinalIgnoreCase));
         Assert.DoesNotContain(taskBinding.SelectedTools, static tool => string.Equals(tool, "session_create", StringComparison.OrdinalIgnoreCase));
         Assert.DoesNotContain(taskBinding.SelectedTools, static tool => string.Equals(tool, "session_attach_document", StringComparison.OrdinalIgnoreCase));
-        Assert.Contains("start form", receptionist.AgentDraft.Content, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("start form", receptionistDraft.Content, StringComparison.OrdinalIgnoreCase);
 
         Assert.Contains(workflow.Handoffs, static handoff =>
             handoff.FromAgentId == "triage" &&
@@ -62,6 +62,9 @@ public sealed class AgentWorkflowCatalogTests
             handoff.ToAgentId == "summarizer" &&
             !handoff.IsFallback);
     }
+
+    private static AgentTemplateDefinition GetInlineAgent(WorkflowParticipantDefinition participant) =>
+        Assert.IsType<InlineAgentParticipantSource>(participant.Source).Agent;
 
     [Fact]
     public async Task GetRequiredAsync_MarksDocumentIntakeAsPartialWhenOnlyMarkdownServerExists()

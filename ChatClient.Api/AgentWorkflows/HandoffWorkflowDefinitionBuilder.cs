@@ -385,7 +385,7 @@ public sealed class WorkflowAgentBuilder
         ArgumentNullException.ThrowIfNull(source);
         _agentDraft = source is InlineAgentParticipantSource inline ? inline.Agent : null;
         _savedDefinitionReference = source is SavedDefinitionParticipantSource saved ? saved.Reference : null;
-        _savedAgentTemplateName = null;
+        _savedAgentTemplateName = source is SavedAgentNameParticipantSource savedByName ? savedByName.SavedAgentName : null;
         return this;
     }
 
@@ -538,13 +538,6 @@ public sealed class WorkflowAgentBuilder
             Role = _role,
             Summary = _summary,
             Source = BuildSource(),
-            AgentDraft = _agentDraft,
-            SavedAgentTemplate = usesSavedTemplate
-                ? new AgentWorkflowSavedAgentTemplate
-                {
-                    SavedAgentName = _savedAgentTemplateName!
-                }
-                : null,
             Overrides = new WorkflowParticipantOverrides
             {
                 DisplayName = _overrideAgentName,
@@ -556,13 +549,6 @@ public sealed class WorkflowAgentBuilder
                         AppendedInstructions = _appendedInstructions
                     }
                     : null
-            },
-            DraftOverrides = new AgentWorkflowAgentDraftOverrides
-            {
-                AgentName = _overrideAgentName,
-                AvatarText = _overrideAvatarText,
-                Instructions = _overrideInstructions,
-                AppendedInstructions = _appendedInstructions
             },
             CapabilityRequirements = _capabilities.ToList(),
             MaxTurnsPerSession = _maxTurnsPerSession,
@@ -582,7 +568,7 @@ public sealed class WorkflowAgentBuilder
             return new SavedDefinitionParticipantSource(_savedDefinitionReference);
         }
 
-        return null!;
+        return new SavedAgentNameParticipantSource(_savedAgentTemplateName!);
     }
 
     private bool HasLlmOverrides() =>

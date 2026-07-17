@@ -94,10 +94,13 @@ public sealed class HandoffWorkflowDefinitionBuilderTests
         Assert.Equal("technical", technical.Id);
         Assert.Equal("Technical interviewer", technical.Role);
         Assert.Null(technical.AgentDraft);
-        Assert.NotNull(technical.SavedAgentTemplate);
-        Assert.Equal("Saved Technical Agent", technical.SavedAgentTemplate!.SavedAgentName);
-        Assert.Equal("Technical Interviewer", technical.DraftOverrides.AgentName);
-        Assert.Equal("Run a technical interview.", technical.DraftOverrides.Instructions);
+        Assert.Null(technical.SavedAgentTemplate);
+        var source = Assert.IsType<SavedAgentNameParticipantSource>(technical.Source);
+        Assert.Equal("Saved Technical Agent", source.SavedAgentName);
+        Assert.Equal("Technical Interviewer", technical.Overrides.DisplayName);
+        Assert.Equal("Run a technical interview.", technical.Overrides.Llm!.Instructions);
+        Assert.Null(technical.DraftOverrides.AgentName);
+        Assert.Null(technical.DraftOverrides.Instructions);
     }
 
     [Fact]
@@ -113,7 +116,9 @@ public sealed class HandoffWorkflowDefinitionBuilderTests
             .Build();
 
         var technical = Assert.Single(workflow.Agents);
-        Assert.Equal("Stay focused on the current workflow step.", technical.DraftOverrides.AppendedInstructions);
+        Assert.Equal("Stay focused on the current workflow step.", technical.Overrides.Llm!.AppendedInstructions);
+        Assert.Null(technical.Overrides.Llm.Instructions);
+        Assert.Null(technical.DraftOverrides.AppendedInstructions);
         Assert.Null(technical.DraftOverrides.Instructions);
     }
 

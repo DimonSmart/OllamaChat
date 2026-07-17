@@ -416,23 +416,7 @@ public sealed class WorkflowDefinitionBuilder
             Role = agent.Role,
             Summary = agent.Summary,
             Source = CloneSource(agent.Source),
-            AgentDraft = agent.AgentDraft is null
-                ? null
-                : agent.AgentDraft.Clone(),
-            SavedAgentTemplate = agent.SavedAgentTemplate is null
-                ? null
-                : new AgentWorkflowSavedAgentTemplate
-                {
-                    SavedAgentName = agent.SavedAgentTemplate.SavedAgentName
-                },
             Overrides = CloneOverrides(agent.Overrides),
-            DraftOverrides = new AgentWorkflowAgentDraftOverrides
-            {
-                AgentName = agent.DraftOverrides.AgentName,
-                AvatarText = agent.DraftOverrides.AvatarText,
-                Instructions = agent.DraftOverrides.Instructions,
-                AppendedInstructions = agent.DraftOverrides.AppendedInstructions
-            },
             CapabilityRequirements = agent.CapabilityRequirements
                 .Select(capability => new AgentWorkflowCapabilityRequirement
                 {
@@ -452,6 +436,7 @@ public sealed class WorkflowDefinitionBuilder
         {
             InlineAgentParticipantSource inline => new InlineAgentParticipantSource(inline.Agent.Clone()),
             SavedDefinitionParticipantSource saved => new SavedDefinitionParticipantSource(saved.Reference),
+            SavedAgentNameParticipantSource savedByName => new SavedAgentNameParticipantSource(savedByName.SavedAgentName),
             null => null,
             _ => throw new InvalidOperationException(
                 $"Workflow participant source '{source.GetType().Name}' is not supported.")

@@ -125,6 +125,10 @@ public sealed record SavedDefinitionParticipantSource(
     AgentDefinitionReference Reference)
     : WorkflowParticipantSource;
 
+public sealed record SavedAgentNameParticipantSource(
+    string SavedAgentName)
+    : WorkflowParticipantSource;
+
 public sealed class WorkflowParticipantOverrides
 {
     public string? DisplayName { get; init; }

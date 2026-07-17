@@ -12,7 +12,7 @@ namespace ChatClient.Api.Services.AgentRuntime;
 public sealed class LlmAgentRuntimeFactory(
     IAgentTemplateService agentTemplateService,
     IChatEngineOrchestrator orchestrator,
-    ILogger<LlmAgentRuntimeFactory> logger) : ILlmAgentRuntimeFactory
+    ILogger<LlmAgentRuntimeFactory> logger) : ILlmAgentRuntimeFactory, IInlineLlmAgentRuntimeFactory
 {
     public async Task<IAgentRuntime> CreateAsync(
         string agentId,
@@ -40,6 +40,23 @@ public sealed class LlmAgentRuntimeFactory(
                 template.AgentName,
                 template.Summary,
                 AgentRuntimeKind.LlmAgent),
+            runtimeAgent,
+            context.Configuration,
+            orchestrator,
+            logger);
+    }
+
+    public IAgentRuntime Create(
+        AgentRuntimeDescriptor descriptor,
+        AgentTemplateDefinition agent,
+        AgentRuntimeCreationContext context)
+    {
+        ArgumentNullException.ThrowIfNull(agent);
+
+        var model = ResolveModel(agent, context);
+        var runtimeAgent = ResolvedChatAgentFactory.Resolve(agent, model);
+        return new LlmAgentRuntime(
+            descriptor,
             runtimeAgent,
             context.Configuration,
             orchestrator,

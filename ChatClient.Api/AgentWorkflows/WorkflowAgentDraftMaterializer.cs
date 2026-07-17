@@ -9,13 +9,7 @@ public interface IWorkflowParticipantResolver
 {
     Task<IReadOnlyList<ResolvedWorkflowParticipant>> ResolveAsync(
         IOrchestrationWorkflowDefinition workflow,
-        WorkflowParticipantResolutionContext context,
         CancellationToken cancellationToken = default);
-}
-
-public sealed record WorkflowParticipantResolutionContext
-{
-    public IReadOnlyList<AgentDefinitionReference> DefinitionPath { get; init; } = [];
 }
 
 public sealed record ResolvedWorkflowParticipant
@@ -26,12 +20,20 @@ public sealed record ResolvedWorkflowParticipant
 
     public string Summary { get; init; } = string.Empty;
 
-    public required AgentDefinitionReference? Reference { get; init; }
-
-    public AgentTemplateDefinition? InlineAgent { get; init; }
-
     public required AgentRuntimeKind RuntimeKind { get; init; }
+
+    public required ResolvedWorkflowParticipantSource Source { get; init; }
 }
+
+public abstract record ResolvedWorkflowParticipantSource;
+
+public sealed record ReferencedParticipantSource(
+    AgentDefinitionReference Reference)
+    : ResolvedWorkflowParticipantSource;
+
+public sealed record MaterializedLlmParticipantSource(
+    AgentTemplateDefinition Agent)
+    : ResolvedWorkflowParticipantSource;
 
 public interface IWorkflowAgentDraftMaterializer
 {
@@ -54,7 +56,6 @@ public sealed class WorkflowParticipantResolver(
 
     public async Task<IReadOnlyList<ResolvedWorkflowParticipant>> ResolveAsync(
         IOrchestrationWorkflowDefinition workflow,
-        WorkflowParticipantResolutionContext context,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(workflow);
@@ -109,13 +110,20 @@ public sealed class WorkflowParticipantResolver(
                 throw new InvalidOperationException("Workflow participant id is required.");
             }
 
-            var hasSource = participant.Source is not null ||
-                            participant.AgentDraft is not null ||
-                            participant.SavedAgentTemplate is not null;
-            if (!hasSource)
+            var sourceCount =
+                (participant.Source is not null ? 1 : 0) +
+                (participant.AgentDraft is not null ? 1 : 0) +
+                (participant.SavedAgentTemplate is not null ? 1 : 0);
+            if (sourceCount == 0)
             {
                 throw new InvalidOperationException(
                     $"Workflow participant '{participant.Id}' has no executable source.");
+            }
+
+            if (sourceCount > 1)
+            {
+                throw new InvalidOperationException(
+                    $"Workflow participant '{participant.Id}' defines more than one executable source.");
             }
 
             if (participant.Source is SavedDefinitionParticipantSource saved &&
@@ -176,6 +184,13 @@ public sealed class WorkflowParticipantResolver(
                 saved.Reference,
                 savedAgents,
                 cancellationToken),
+            SavedAgentNameParticipantSource savedByName => await ResolveSavedAsync(
+                participant,
+                new AgentDefinitionReference(
+                    AgentDefinitionKind.SavedAgent,
+                    ResolveSavedAgentByName(participant, savedByName.SavedAgentName, savedAgents).Id.ToString("D")),
+                savedAgents,
+                cancellationToken),
             _ => throw new InvalidOperationException(
                 $"Workflow participant '{participant.Id}' has no executable source.")
         };
@@ -219,9 +234,8 @@ public sealed class WorkflowParticipantResolver(
                 ParticipantId = participant.Id,
                 DisplayName = ResolveDisplayName(participant, draft.AgentName),
                 Summary = ResolveSummary(participant, draft.Summary),
-                Reference = reference,
-                InlineAgent = draft,
-                RuntimeKind = AgentRuntimeKind.LlmAgent
+                RuntimeKind = AgentRuntimeKind.LlmAgent,
+                Source = new MaterializedLlmParticipantSource(draft)
             };
         }
 
@@ -230,8 +244,8 @@ public sealed class WorkflowParticipantResolver(
             ParticipantId = participant.Id,
             DisplayName = ResolveDisplayName(participant, catalogItem.Name),
             Summary = ResolveSummary(participant, catalogItem.Description),
-            Reference = reference,
-            RuntimeKind = AgentRuntimeKind.WorkflowAgent
+            RuntimeKind = AgentRuntimeKind.WorkflowAgent,
+            Source = new ReferencedParticipantSource(reference)
         };
     }
 
@@ -250,9 +264,8 @@ public sealed class WorkflowParticipantResolver(
             ParticipantId = participant.Id,
             DisplayName = ResolveDisplayName(participant, draft.AgentName),
             Summary = ResolveSummary(participant, draft.Summary),
-            Reference = null,
-            InlineAgent = draft,
-            RuntimeKind = AgentRuntimeKind.LlmAgent
+            RuntimeKind = AgentRuntimeKind.LlmAgent,
+            Source = new MaterializedLlmParticipantSource(draft)
         };
     }
 
@@ -272,7 +285,10 @@ public sealed class WorkflowParticipantResolver(
 
         if (participant.SavedAgentTemplate is not null)
         {
-            var savedAgent = ResolveSavedAgentByName(participant, savedAgents);
+            var savedAgent = ResolveSavedAgentByName(
+                participant,
+                participant.SavedAgentTemplate.SavedAgentName,
+                savedAgents);
             return new SavedDefinitionParticipantSource(new AgentDefinitionReference(
                 AgentDefinitionKind.SavedAgent,
                 savedAgent.Id.ToString("D")));
@@ -298,9 +314,9 @@ public sealed class WorkflowParticipantResolver(
 
     private static AgentTemplateDefinition ResolveSavedAgentByName(
         WorkflowParticipantDefinition participant,
+        string? savedAgentName,
         IReadOnlyCollection<AgentTemplateDefinition> savedAgents)
     {
-        var savedAgentName = participant.SavedAgentTemplate?.SavedAgentName;
         var matches = savedAgents
             .Where(savedAgent => string.Equals(
                 savedAgent.AgentName,
@@ -410,7 +426,7 @@ public sealed class WorkflowParticipantResolver(
     private static void ResolveInstructionTemplates(List<ResolvedWorkflowParticipant> participants)
     {
         var agentsById = participants
-            .Where(static participant => participant.InlineAgent is not null)
+            .Where(static participant => participant.Source is MaterializedLlmParticipantSource)
             .ToDictionary(
                 static participant => participant.ParticipantId,
                 static participant => new WorkflowParticipantDefinition
@@ -418,20 +434,20 @@ public sealed class WorkflowParticipantResolver(
                     Id = participant.ParticipantId,
                     Role = participant.DisplayName,
                     Summary = participant.Summary,
-                    Source = new InlineAgentParticipantSource(participant.InlineAgent!)
+                    Source = new InlineAgentParticipantSource(((MaterializedLlmParticipantSource)participant.Source).Agent)
                 },
                 StringComparer.OrdinalIgnoreCase);
 
         foreach (var participant in participants)
         {
-            if (participant.InlineAgent is null ||
-                string.IsNullOrWhiteSpace(participant.InlineAgent.Content))
+            if (participant.Source is not MaterializedLlmParticipantSource materialized ||
+                string.IsNullOrWhiteSpace(materialized.Agent.Content))
             {
                 continue;
             }
 
-            participant.InlineAgent.Content = WorkflowInstructionTemplateResolver.ResolveAgentReferences(
-                participant.InlineAgent.Content,
+            materialized.Agent.Content = WorkflowInstructionTemplateResolver.ResolveAgentReferences(
+                materialized.Agent.Content,
                 participant.ParticipantId,
                 agentsById);
         }
@@ -470,7 +486,6 @@ public sealed class WorkflowAgentDraftMaterializer(
 
         var resolvedParticipants = await participantResolver.ResolveAsync(
             workflow,
-            new WorkflowParticipantResolutionContext(),
             cancellationToken);
         var materializedParticipants = resolvedParticipants
             .Select(ToMaterializedParticipant)
@@ -595,12 +610,16 @@ public sealed class WorkflowAgentDraftMaterializer(
             Id = participant.ParticipantId,
             Role = participant.DisplayName,
             Summary = participant.Summary,
-            Source = participant.InlineAgent is null
-                ? participant.Reference is null
-                    ? null
-                    : new SavedDefinitionParticipantSource(participant.Reference)
-                : new InlineAgentParticipantSource(participant.InlineAgent),
-            AgentDraft = participant.InlineAgent
+            Source = participant.Source switch
+            {
+                MaterializedLlmParticipantSource llm => new InlineAgentParticipantSource(llm.Agent),
+                ReferencedParticipantSource referenced => new SavedDefinitionParticipantSource(referenced.Reference),
+                _ => throw new InvalidOperationException(
+                    $"Resolved participant source '{participant.Source.GetType().Name}' is not supported.")
+            },
+            AgentDraft = participant.Source is MaterializedLlmParticipantSource materializedSource
+                ? materializedSource.Agent
+                : null
         };
 }
 

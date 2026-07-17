@@ -5,7 +5,6 @@ using ChatClient.Application.Services;
 using ChatClient.Application.Services.Agentic;
 using ChatClient.Application.Services.AgentRuntime;
 using ChatClient.Domain.Models;
-using Microsoft.Extensions.DependencyInjection;
 using System.Text;
 
 namespace ChatClient.Api.Services.AgentRuntime;
@@ -15,8 +14,7 @@ public sealed class WorkflowAgentRuntimeFactory(
     IWorkflowDefinitionCompiler workflowDefinitionCompiler,
     IWorkflowParticipantResolver workflowParticipantResolver,
     IHeadlessWorkflowRunner headlessWorkflowRunner,
-    IChatEngineOrchestrator chatEngineOrchestrator,
-    IServiceProvider serviceProvider,
+    IWorkflowParticipantExecutor participantExecutor,
     ILogger<WorkflowAgentRuntimeFactory> logger) : IWorkflowAgentRuntimeFactory
 {
     public async Task<IAgentRuntime> CreateAsync(
@@ -47,14 +45,10 @@ public sealed class WorkflowAgentRuntimeFactory(
             savedWorkflow.Id.ToString("D"));
         var resolvedParticipants = await workflowParticipantResolver.ResolveAsync(
             workflow,
-            new WorkflowParticipantResolutionContext
-            {
-                DefinitionPath = [workflowReference]
-            },
             cancellationToken);
         var resolvedAgents = resolvedParticipants
-            .Where(static participant => participant.RuntimeKind == AgentRuntimeKind.LlmAgent)
-            .Select(participant => ResolveWorkflowAgent(participant, context))
+            .Where(static participant => participant.Source is MaterializedLlmParticipantSource)
+            .Select(participant => CreateHeadlessResolvedAgent(participant, context))
             .ToList();
 
         if (workflow is not SequentialWorkflowDefinition &&
@@ -77,16 +71,15 @@ public sealed class WorkflowAgentRuntimeFactory(
             context.Configuration,
             context,
             headlessWorkflowRunner,
-            chatEngineOrchestrator,
-            serviceProvider,
+            participantExecutor,
             logger);
     }
 
-    private static ResolvedChatAgent ResolveWorkflowAgent(
+    private static ResolvedChatAgent CreateHeadlessResolvedAgent(
         ResolvedWorkflowParticipant workflowAgent,
         AgentRuntimeCreationContext context)
     {
-        var draft = workflowAgent.InlineAgent
+        var draft = (workflowAgent.Source as MaterializedLlmParticipantSource)?.Agent
             ?? throw new InvalidOperationException(
                 $"Workflow participant '{workflowAgent.ParticipantId}' has no materialized agent draft.");
         var uiSelection = context.DefaultModel is null
@@ -106,6 +99,73 @@ public sealed class WorkflowAgentRuntimeFactory(
     }
 }
 
+public interface IWorkflowParticipantExecutor
+{
+    IAsyncEnumerable<AgentRunEvent> RunAsync(
+        ResolvedWorkflowParticipant participant,
+        AgentRuntimeRunRequest request,
+        AgentRuntimeCreationContext creationContext,
+        AgentRunContext runContext,
+        CancellationToken cancellationToken = default);
+}
+
+public sealed class WorkflowParticipantExecutor(
+    IAgentRunner agentRunner,
+    IInlineLlmAgentRuntimeFactory inlineRuntimeFactory,
+    IAgentRuntimeProtocolExecutor protocolExecutor) : IWorkflowParticipantExecutor
+{
+    public async IAsyncEnumerable<AgentRunEvent> RunAsync(
+        ResolvedWorkflowParticipant participant,
+        AgentRuntimeRunRequest request,
+        AgentRuntimeCreationContext creationContext,
+        AgentRunContext runContext,
+        [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken = default)
+    {
+        switch (participant.Source)
+        {
+            case ReferencedParticipantSource referenced:
+                await foreach (var runEvent in agentRunner.RunAsync(
+                                   referenced.Reference,
+                                   request,
+                                   creationContext,
+                                   runContext,
+                                   cancellationToken))
+                {
+                    yield return runEvent;
+                }
+
+                yield break;
+
+            case MaterializedLlmParticipantSource materialized:
+                var runtime = inlineRuntimeFactory.Create(
+                    new AgentRuntimeDescriptor(
+                        participant.ParticipantId,
+                        participant.DisplayName,
+                        participant.Summary,
+                        AgentRuntimeKind.LlmAgent),
+                    materialized.Agent,
+                    creationContext);
+                await foreach (var runEvent in protocolExecutor.RunAsync(
+                                   runtime,
+                                   request,
+                                   runContext,
+                                   cancellationToken))
+                {
+                    yield return runEvent;
+                }
+
+                yield break;
+
+            default:
+                yield return new AgentRunFailed(new AgentRunError(
+                    "invalid_workflow",
+                    $"Workflow participant '{participant.ParticipantId}' has no executable source.",
+                    false));
+                yield break;
+        }
+    }
+}
+
 internal sealed class WorkflowAgentRuntime(
     AgentRuntimeDescriptor descriptor,
     AgentDefinitionReference workflowReference,
@@ -115,8 +175,7 @@ internal sealed class WorkflowAgentRuntime(
     AppChatConfiguration configuration,
     AgentRuntimeCreationContext creationContext,
     IHeadlessWorkflowRunner headlessWorkflowRunner,
-    IChatEngineOrchestrator chatEngineOrchestrator,
-    IServiceProvider serviceProvider,
+    IWorkflowParticipantExecutor participantExecutor,
     ILogger logger) : IAgentRuntime
 {
     private const int DefaultMaximumWorkflowNestingDepth = 8;
@@ -139,9 +198,12 @@ internal sealed class WorkflowAgentRuntime(
                 ParticipantId = participant.Id,
                 DisplayName = string.IsNullOrWhiteSpace(participant.Role) ? participant.Id : participant.Role,
                 Summary = participant.Summary,
-                Reference = null,
-                InlineAgent = participant.AgentDraft,
-                RuntimeKind = AgentRuntimeKind.LlmAgent
+                RuntimeKind = AgentRuntimeKind.LlmAgent,
+                Source = new MaterializedLlmParticipantSource(
+                    (participant.Source as InlineAgentParticipantSource)?.Agent ??
+                    participant.AgentDraft ??
+                    throw new InvalidOperationException(
+                        $"Workflow participant '{participant.Id}' has no inline agent source."))
             }).ToList(),
             agents,
             configuration,
@@ -150,8 +212,7 @@ internal sealed class WorkflowAgentRuntime(
                 Configuration = configuration
             },
             headlessWorkflowRunner,
-            new MissingChatEngineOrchestrator(),
-            new EmptyServiceProvider(),
+            new MissingWorkflowParticipantExecutor(),
             logger)
     {
     }
@@ -529,9 +590,10 @@ internal sealed class WorkflowAgentRuntime(
             AgentRunResult? terminalResult = null;
             AgentRunFailed? terminalFailure = null;
 
-            await foreach (var participantEvent in RunParticipantAsync(
+            await foreach (var participantEvent in participantExecutor.RunAsync(
                                participant,
                                participantRequest,
+                               creationContext,
                                childContext,
                                cancellationToken))
             {
@@ -596,79 +658,12 @@ internal sealed class WorkflowAgentRuntime(
         });
     }
 
-    private async IAsyncEnumerable<AgentRunEvent> RunParticipantAsync(
-        ResolvedWorkflowParticipant participant,
-        AgentRuntimeRunRequest request,
-        AgentRunContext context,
-        [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken)
-    {
-        if (participant.Reference is not null)
-        {
-            var runner = serviceProvider.GetRequiredService<IAgentRunner>();
-            await foreach (var runEvent in runner.RunAsync(
-                               participant.Reference,
-                               request,
-                               creationContext,
-                               context,
-                               cancellationToken))
-            {
-                yield return runEvent;
-            }
-
-            yield break;
-        }
-
-        if (participant.InlineAgent is null)
-        {
-            yield return new AgentRunFailed(new AgentRunError(
-                "invalid_workflow",
-                $"Workflow participant '{participant.ParticipantId}' has no executable source.",
-                false));
-            yield break;
-        }
-
-        var runtime = CreateInlineRuntime(participant, participant.InlineAgent);
-        await foreach (var runEvent in runtime.RunAsync(request, context, cancellationToken))
-        {
-            yield return runEvent;
-        }
-    }
-
-    private IAgentRuntime CreateInlineRuntime(
-        ResolvedWorkflowParticipant participant,
-        AgentTemplateDefinition draft)
-    {
-        var uiSelection = creationContext.DefaultModel is null
-            ? new ServerModelSelection(null, null)
-            : new ServerModelSelection(creationContext.DefaultModel.ServerId, creationContext.DefaultModel.ModelName);
-
-        if (!ModelSelectionHelper.TryGetEffectiveModel(
-                new ServerModelSelection(draft.LlmId, draft.ModelName),
-                uiSelection,
-                out var model))
-        {
-            throw new InvalidOperationException(
-                $"Model selection for workflow participant '{participant.ParticipantId}' is incomplete.");
-        }
-
-        return new LlmAgentRuntime(
-            new AgentRuntimeDescriptor(
-                participant.ParticipantId,
-                participant.DisplayName,
-                participant.Summary,
-                AgentRuntimeKind.LlmAgent),
-            ResolvedChatAgentFactory.Resolve(draft, model),
-            configuration,
-            chatEngineOrchestrator,
-            logger);
-    }
-
     private AgentRunContext CreateChildContext(
         AgentRunContext parent,
         ResolvedWorkflowParticipant participant)
     {
         var path = EnsureCurrentWorkflowInPath(parent.DefinitionPath)
-            .Concat(participant.Reference is null ? [] : new[] { participant.Reference })
+            .Concat(participant.Source is ReferencedParticipantSource referenced ? [referenced.Reference] : [])
             .ToList();
 
         return new AgentRunContext
@@ -705,20 +700,21 @@ internal sealed class WorkflowAgentRuntime(
         out AgentRunFailed? failure)
     {
         failure = null;
-        if (participant.Reference?.Kind != AgentDefinitionKind.SavedWorkflow)
+        if (participant.Source is not ReferencedParticipantSource referenced ||
+            referenced.Reference.Kind != AgentDefinitionKind.SavedWorkflow)
         {
             return false;
         }
 
         var path = EnsureCurrentWorkflowInPath(context.DefinitionPath);
-        if (!path.Any(reference => SameReference(reference, participant.Reference)))
+        if (!path.Any(reference => SameReference(reference, referenced.Reference)))
         {
             return false;
         }
 
         var cyclePath = path
             .Where(static reference => reference.Kind == AgentDefinitionKind.SavedWorkflow)
-            .Concat([participant.Reference])
+            .Concat([referenced.Reference])
             .Select(static reference => reference.Id)
             .ToList();
 
@@ -755,17 +751,15 @@ internal sealed class WorkflowAgentRuntime(
             StringComparison.OrdinalIgnoreCase);
 }
 
-file sealed class EmptyServiceProvider : IServiceProvider
+file sealed class MissingWorkflowParticipantExecutor : IWorkflowParticipantExecutor
 {
-    public object? GetService(Type serviceType) => null;
-}
-
-file sealed class MissingChatEngineOrchestrator : IChatEngineOrchestrator
-{
-    public IAsyncEnumerable<ChatEngineStreamChunk> StreamAsync(
-        ChatEngineOrchestrationRequest request,
+    public IAsyncEnumerable<AgentRunEvent> RunAsync(
+        ResolvedWorkflowParticipant participant,
+        AgentRuntimeRunRequest request,
+        AgentRuntimeCreationContext creationContext,
+        AgentRunContext runContext,
         CancellationToken cancellationToken = default) =>
-        throw new NotSupportedException("Inline workflow participants require a configured chat engine orchestrator.");
+        throw new NotSupportedException("Sequential workflow participants require a configured participant executor.");
 }
 
 internal static class SequentialParticipantRequestBuilder

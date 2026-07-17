@@ -135,6 +135,7 @@ public sealed class AgentRunnerProtocolTests
     {
         var runner = new AgentRunner(
             new ThrowingRuntimeFactory(new KeyNotFoundException("internal path")),
+            new AgentRuntimeProtocolExecutor(NullLogger<AgentRuntimeProtocolExecutor>.Instance),
             NullLogger<AgentRunner>.Instance);
 
         var events = await CollectAsync(runner.RunAsync(
@@ -178,7 +179,10 @@ public sealed class AgentRunnerProtocolTests
     }
 
     private static AgentRunner CreateRunner(IAgentRuntime runtime) =>
-        new(new StubRuntimeFactory(runtime), NullLogger<AgentRunner>.Instance);
+        new(
+            new StubRuntimeFactory(runtime),
+            new AgentRuntimeProtocolExecutor(NullLogger<AgentRuntimeProtocolExecutor>.Instance),
+            NullLogger<AgentRunner>.Instance);
 
     private static AgentDefinitionReference CreateReference() =>
         new(AgentDefinitionKind.SavedAgent, "agent");

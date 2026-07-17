@@ -128,10 +128,14 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IWorkflowParticipantResolver, WorkflowParticipantResolver>();
         services.AddScoped<IWorkflowAgentDraftMaterializer, WorkflowAgentDraftMaterializer>();
         services.AddScoped<IAgentInputDefinitionProvider, AgentInputDefinitionProvider>();
-        services.AddScoped<ILlmAgentRuntimeFactory, LlmAgentRuntimeFactory>();
+        services.AddScoped<LlmAgentRuntimeFactory>();
+        services.AddScoped<ILlmAgentRuntimeFactory>(sp => sp.GetRequiredService<LlmAgentRuntimeFactory>());
+        services.AddScoped<IInlineLlmAgentRuntimeFactory>(sp => sp.GetRequiredService<LlmAgentRuntimeFactory>());
         services.AddScoped<IWorkflowAgentRuntimeFactory, WorkflowAgentRuntimeFactory>();
         services.AddScoped<IAgentRuntimeFactory, AgentRuntimeFactory>();
+        services.AddScoped<IAgentRuntimeProtocolExecutor, AgentRuntimeProtocolExecutor>();
         services.AddScoped<IAgentRunner, AgentRunner>();
+        services.AddScoped<IWorkflowParticipantExecutor, WorkflowParticipantExecutor>();
         services.AddScoped<IChatEngineOrchestrator>(sp => sp.GetRequiredService<AgenticChatEngineOrchestrator>());
         services.AddScoped<IChatEngineHistoryBuilder>(sp => sp.GetRequiredService<AgenticChatEngineHistoryBuilder>());
         services.AddScoped<IChatEngineStreamingBridge>(sp => sp.GetRequiredService<AgenticChatEngineStreamingBridge>());

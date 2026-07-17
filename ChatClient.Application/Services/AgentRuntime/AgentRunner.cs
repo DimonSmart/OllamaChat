@@ -4,6 +4,7 @@ namespace ChatClient.Application.Services.AgentRuntime;
 
 public sealed class AgentRunner(
     IAgentRuntimeFactory runtimeFactory,
+    IAgentRuntimeProtocolExecutor protocolExecutor,
     ILogger<AgentRunner> logger) : IAgentRunner
 {
     public async IAsyncEnumerable<AgentRunEvent> RunAsync(
@@ -56,47 +57,17 @@ public sealed class AgentRunner(
         }
 
         AgentRunEvent? lastEvent = null;
-        AgentRunEvent? pendingTerminal = null;
         try
         {
-            await foreach (var runEvent in runtime.RunAsync(request, runContext, cancellationToken)
-                               .WithCancellation(cancellationToken))
+            await foreach (var runEvent in protocolExecutor.RunAsync(
+                               runtime,
+                               request,
+                               runContext,
+                               cancellationToken))
             {
-                if (pendingTerminal is not null)
-                {
-                    var message = $"Runtime '{runtime.Descriptor.Name}' emitted an event after a terminal event.";
-                    logger.LogError(
-                        "Agent runtime protocol violation. RunId={RunId}, RuntimeKind={RuntimeKind}, RuntimeName={RuntimeName}, EventType={EventType}",
-                        runContext.RunId,
-                        runtime.Descriptor.Kind,
-                        runtime.Descriptor.Name,
-                        runEvent.GetType().Name);
-                    throw new AgentRuntimeProtocolException(message);
-                }
-
-                if (IsTerminal(runEvent))
-                {
-                    pendingTerminal = runEvent;
-                    lastEvent = runEvent;
-                    continue;
-                }
-
                 lastEvent = runEvent;
                 yield return runEvent;
             }
-
-            if (pendingTerminal is null)
-            {
-                var message = $"Runtime '{runtime.Descriptor.Name}' completed without a terminal event.";
-                logger.LogError(
-                    "Agent runtime protocol violation. RunId={RunId}, RuntimeKind={RuntimeKind}, RuntimeName={RuntimeName}",
-                    runContext.RunId,
-                    runtime.Descriptor.Kind,
-                    runtime.Descriptor.Name);
-                throw new AgentRuntimeProtocolException(message);
-            }
-
-            yield return pendingTerminal;
         }
         finally
         {
@@ -113,9 +84,6 @@ public sealed class AgentRunner(
                 lastEvent is AgentRunFailed failed ? failed.Error.Code : null);
         }
     }
-
-    private static bool IsTerminal(AgentRunEvent runEvent) =>
-        runEvent is AgentRunCompleted or AgentRunFailed;
 
     private static string MapCreationFailureCode(
         AgentDefinitionReference reference,
@@ -157,4 +125,56 @@ public sealed class AgentRunner(
             _ => "Agent runtime could not be created."
         };
     }
+}
+
+public sealed class AgentRuntimeProtocolExecutor(
+    ILogger<AgentRuntimeProtocolExecutor> logger) : IAgentRuntimeProtocolExecutor
+{
+    public async IAsyncEnumerable<AgentRunEvent> RunAsync(
+        IAgentRuntime runtime,
+        AgentRuntimeRunRequest request,
+        AgentRunContext runContext,
+        [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken = default)
+    {
+        AgentRunEvent? pendingTerminal = null;
+        await foreach (var runEvent in runtime.RunAsync(request, runContext, cancellationToken)
+                           .WithCancellation(cancellationToken))
+        {
+            if (pendingTerminal is not null)
+            {
+                var message = $"Runtime '{runtime.Descriptor.Name}' emitted an event after a terminal event.";
+                logger.LogError(
+                    "Agent runtime protocol violation. RunId={RunId}, RuntimeKind={RuntimeKind}, RuntimeName={RuntimeName}, EventType={EventType}",
+                    runContext.RunId,
+                    runtime.Descriptor.Kind,
+                    runtime.Descriptor.Name,
+                    runEvent.GetType().Name);
+                throw new AgentRuntimeProtocolException(message);
+            }
+
+            if (IsTerminal(runEvent))
+            {
+                pendingTerminal = runEvent;
+                continue;
+            }
+
+            yield return runEvent;
+        }
+
+        if (pendingTerminal is null)
+        {
+            var message = $"Runtime '{runtime.Descriptor.Name}' completed without a terminal event.";
+            logger.LogError(
+                "Agent runtime protocol violation. RunId={RunId}, RuntimeKind={RuntimeKind}, RuntimeName={RuntimeName}",
+                runContext.RunId,
+                runtime.Descriptor.Kind,
+                runtime.Descriptor.Name);
+            throw new AgentRuntimeProtocolException(message);
+        }
+
+        yield return pendingTerminal;
+    }
+
+    private static bool IsTerminal(AgentRunEvent runEvent) =>
+        runEvent is AgentRunCompleted or AgentRunFailed;
 }
