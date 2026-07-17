@@ -5,6 +5,7 @@
 @using ChatClient.Api.Client.Components
 @using ChatClient.Application.Helpers
 @using ChatClient.Application.Services.Agentic
+@using ChatClient.Application.Services.AgentRuntime
 @using ChatClient.Domain.Models
 @using ChatClient.Domain.Models.ChatStrategies
 @using Microsoft.AspNetCore.Components
@@ -34,10 +35,10 @@
                 else
                 {
                     <MudStack Spacing="3">
-                        <MudSelect T="AgentTemplateDefinition" Label="Select Agent" Value="selectedAgent" ValueChanged="OnAgentChanged" Variant="Variant.Outlined" FullWidth="true" Dense="true">
-                            @foreach (var agent in agents)
+                        <MudSelect T="AgentDefinitionCatalogItem" Label="Select Agent or Workflow" Value="selectedCatalogItem" ValueChanged="OnCatalogItemChanged" Variant="Variant.Outlined" FullWidth="true" Dense="true">
+                            @foreach (var item in catalogItems)
                             {
-                                <MudSelectItem Value="@agent">@agent.AgentName</MudSelectItem>
+                                <MudSelectItem Value="@item">@item.Name (@GetKindLabel(item))</MudSelectItem>
                             }
                         </MudSelect>
 
@@ -84,9 +85,14 @@
 @code {
     private const string DefaultAgentName = "Default Assistant";
 
+    private List<AgentDefinitionCatalogItem> catalogItems = new();
     private List<AgentTemplateDefinition> agents = new();
+    private AgentDefinitionCatalogItem? selectedCatalogItem { get; set; }
     private AgentTemplateDefinition? selectedAgent { get; set; }
     private AgentTemplateDefinition? selectedAgentDraft;
+
+    [Inject]
+    private IAgentDefinitionCatalog AgentDefinitionCatalog { get; set; } = null!;
 
     [CascadingParameter(Name = "UiModelSelection")]
     public ServerModelSelection UiModelSelection { get; set; } = new(null, null);
@@ -95,15 +101,22 @@
     private string CurrentModelName => effectiveModel!.ModelName;
 
     private bool CanStartChat =>
-        selectedAgentDraft is not null &&
-        TryResolveEffectiveModel(selectedAgentDraft, out _);
+        selectedCatalogItem is { RuntimeKind: AgentRuntimeKind.WorkflowAgent } ||
+        selectedAgentDraft is not null && TryResolveEffectiveModel(selectedAgentDraft, out _);
 
-    protected override bool CanSendMessages => selectedAgent is not null;
+    protected override bool CanSendMessages => selectedCatalogItem is not null;
 
     protected override async Task LoadAgentsAsync()
     {
+        catalogItems = (await AgentDefinitionCatalog.GetAllAsync()).ToList();
         agents = (await AgentService.GetAllAsync()).ToList();
-        SetSelectedAgent(AgentSelectionHelper.FindByName(agents, DefaultAgentName));
+        var defaultAgent = AgentSelectionHelper.FindByName(agents, DefaultAgentName);
+        var defaultItem = defaultAgent is null
+            ? catalogItems.FirstOrDefault()
+            : catalogItems.FirstOrDefault(item =>
+                item.Reference.Kind == AgentDefinitionKind.SavedAgent &&
+                string.Equals(item.Reference.Id, defaultAgent.Id.ToString("D"), StringComparison.OrdinalIgnoreCase));
+        SetSelectedCatalogItem(defaultItem);
     }
 
     protected override async Task LoadUserSettingsAsync()
@@ -135,7 +148,10 @@
             return;
         }
 
-        SetSelectedAgent(agentsForChat[0]);
+        var selectedItem = catalogItems.FirstOrDefault(item =>
+            item.Reference.Kind == AgentDefinitionKind.SavedAgent &&
+            string.Equals(item.Reference.Id, agentsForChat[0].Id.ToString("D"), StringComparison.OrdinalIgnoreCase));
+        SetSelectedCatalogItem(selectedItem);
         var selectedAgentForChat = selectedAgent
             ?? throw new InvalidOperationException("Selected agent is not initialized.");
         var selectedAgentDraftForChat = selectedAgentDraft
@@ -176,6 +192,10 @@
         {
             Configuration = chatConfiguration,
             Agents = runtimeAgents,
+            RuntimeReference = new AgentDefinitionReference(
+                AgentDefinitionKind.SavedAgent,
+                selectedAgentForChat.Id.ToString("D")),
+            RuntimeDefaultModel = effectiveModel,
             History = savedMessages,
             ChatStrategyName = "RoundRobin",
             ChatStrategyOptions = new RoundRobinChatStrategyOptions { Rounds = 1 }
@@ -196,24 +216,47 @@
 
     private async Task StartChat()
     {
-        if (selectedAgentDraft is null)
+        if (selectedCatalogItem is null)
             return;
 
-        if (!TryResolveEffectiveModel(selectedAgentDraft, out var resolvedModel))
-            throw new InvalidOperationException($"Model selection for Agent: {selectedAgentDraft.AgentName} is incomplete.");
+        var runtimeAgents = new List<ResolvedChatAgent>();
+        ServerModel? resolvedModel = null;
 
-        effectiveModel = resolvedModel;
-
-        var runtimeAgents = new[]
+        if (selectedCatalogItem.Reference.Kind == AgentDefinitionKind.SavedAgent)
         {
-            ResolvedChatAgentFactory.Resolve(selectedAgentDraft, effectiveModel)
-        };
+            if (selectedAgentDraft is null)
+                return;
 
-        var chatConfiguration = new AppChatConfiguration(CurrentModelName, []);
+            if (!TryResolveEffectiveModel(selectedAgentDraft, out resolvedModel))
+                throw new InvalidOperationException($"Model selection for Agent: {selectedAgentDraft.AgentName} is incomplete.");
+
+            effectiveModel = resolvedModel;
+            runtimeAgents.Add(ResolvedChatAgentFactory.Resolve(selectedAgentDraft, effectiveModel));
+        }
+        else
+        {
+            resolvedModel = TryResolveUiModel(out var uiModel)
+                ? uiModel
+                : null;
+            effectiveModel = resolvedModel;
+            runtimeAgents.Add(new ResolvedChatAgent(
+                new AgentExecutionSpec
+                {
+                    RuntimeAgentId = selectedCatalogItem.Reference.Id,
+                    AgentName = selectedCatalogItem.Name,
+                    Summary = selectedCatalogItem.Description,
+                    ShortName = "WF"
+                },
+                resolvedModel ?? new ServerModel(Guid.Empty, string.Empty)));
+        }
+
+        var chatConfiguration = new AppChatConfiguration(resolvedModel?.ModelName ?? string.Empty, []);
         var request = new ChatEngineSessionStartRequest
         {
             Configuration = chatConfiguration,
             Agents = runtimeAgents,
+            RuntimeReference = selectedCatalogItem.Reference,
+            RuntimeDefaultModel = resolvedModel,
             ChatStrategyName = "RoundRobin",
             ChatStrategyOptions = new RoundRobinChatStrategyOptions { Rounds = 1 }
         };
@@ -230,10 +273,23 @@
         }
     }
 
-    private Task OnAgentChanged(AgentTemplateDefinition? agent)
+    private Task OnCatalogItemChanged(AgentDefinitionCatalogItem? item)
     {
-        SetSelectedAgent(agent);
+        SetSelectedCatalogItem(item);
         return Task.CompletedTask;
+    }
+
+    private void SetSelectedCatalogItem(AgentDefinitionCatalogItem? item)
+    {
+        selectedCatalogItem = item;
+        if (item?.Reference.Kind == AgentDefinitionKind.SavedAgent &&
+            Guid.TryParse(item.Reference.Id, out var agentId))
+        {
+            SetSelectedAgent(agents.FirstOrDefault(agent => agent.Id == agentId));
+            return;
+        }
+
+        SetSelectedAgent(null);
     }
 
     private void SetSelectedAgent(AgentTemplateDefinition? agent)
@@ -259,4 +315,21 @@
             new ServerModelSelection(agent.LlmId, agent.ModelName),
             UiModelSelection,
             out model);
+
+    private bool TryResolveUiModel(out ServerModel model)
+    {
+        if (UiModelSelection.ServerId is { } serverId &&
+            serverId != Guid.Empty &&
+            !string.IsNullOrWhiteSpace(UiModelSelection.ModelName))
+        {
+            model = new ServerModel(serverId, UiModelSelection.ModelName);
+            return true;
+        }
+
+        model = default!;
+        return false;
+    }
+
+    private static string GetKindLabel(AgentDefinitionCatalogItem item) =>
+        item.RuntimeKind == AgentRuntimeKind.WorkflowAgent ? "workflow" : "agent";
 }

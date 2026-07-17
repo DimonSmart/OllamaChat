@@ -11,6 +11,7 @@ using ChatClient.Api.VoiceInput;
 using ChatClient.Application.Repositories;
 using ChatClient.Application.Services;
 using ChatClient.Application.Services.Agentic;
+using ChatClient.Application.Services.AgentRuntime;
 using ChatClient.Application.Services.TaskSessions;
 using ChatClient.Infrastructure.Repositories;
 using ChatClient.Infrastructure.Services.TaskSessions;
@@ -20,6 +21,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using MudBlazor.Services;
 using System.Net.Http;
+using ChatClient.Api.Services.AgentRuntime;
 
 namespace ChatClient.Api;
 
@@ -122,11 +124,17 @@ public static class ServiceCollectionExtensions
         services.AddScoped<OrchestrationWorkflowPassExecutor>();
         services.AddScoped<IOrchestrationWorkflowSessionService, OrchestrationWorkflowChatSessionService>();
         services.AddScoped<IOrchestrationWorkflowChatViewModelService, OrchestrationWorkflowChatViewModelService>();
+        services.AddScoped<IAgentDefinitionCatalog, AgentDefinitionCatalog>();
+        services.AddScoped<ILlmAgentRuntimeFactory, LlmAgentRuntimeFactory>();
+        services.AddScoped<IWorkflowAgentRuntimeFactory, WorkflowAgentRuntimeFactory>();
+        services.AddScoped<IAgentRuntimeFactory, AgentRuntimeFactory>();
+        services.AddScoped<IAgentRunner, AgentRunner>();
         services.AddScoped<IChatEngineOrchestrator>(sp => sp.GetRequiredService<AgenticChatEngineOrchestrator>());
         services.AddScoped<IChatEngineHistoryBuilder>(sp => sp.GetRequiredService<AgenticChatEngineHistoryBuilder>());
         services.AddScoped<IChatEngineStreamingBridge>(sp => sp.GetRequiredService<AgenticChatEngineStreamingBridge>());
         services.AddScoped<AgenticChatEngineSessionService>();
-        services.AddScoped<IChatEngineSessionService>(sp => sp.GetRequiredService<AgenticChatEngineSessionService>());
+        services.AddScoped<UnifiedAgentRuntimeChatSessionService>();
+        services.AddScoped<IChatEngineSessionService>(sp => sp.GetRequiredService<UnifiedAgentRuntimeChatSessionService>());
         services.AddScoped<IAgenticChatViewModelService, AgenticChatViewModelService>();
         services.AddScoped<ILlmChatClientFactory, LlmChatClientFactory>();
 

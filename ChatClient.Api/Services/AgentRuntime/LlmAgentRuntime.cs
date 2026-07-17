@@ -1,0 +1,216 @@
+using ChatClient.Application.Helpers;
+using ChatClient.Application.Services;
+using ChatClient.Application.Services.Agentic;
+using ChatClient.Application.Services.AgentRuntime;
+using ChatClient.Domain.Models;
+using System.Threading.Channels;
+
+namespace ChatClient.Api.Services.AgentRuntime;
+
+public sealed class LlmAgentRuntimeFactory(
+    IAgentTemplateService agentTemplateService,
+    IChatEngineOrchestrator orchestrator,
+    ILogger<LlmAgentRuntimeFactory> logger) : ILlmAgentRuntimeFactory
+{
+    public async Task<IAgentRuntime> CreateAsync(
+        string agentId,
+        AgentRuntimeCreationContext context,
+        CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+
+        if (!Guid.TryParse(agentId, out var templateId))
+        {
+            throw new KeyNotFoundException($"Agent id '{agentId}' is not a valid saved-agent id.");
+        }
+
+        var template = await agentTemplateService.GetByIdAsync(templateId);
+        if (template is null)
+        {
+            throw new KeyNotFoundException($"Saved agent '{agentId}' was not found.");
+        }
+
+        var model = ResolveModel(template, context);
+        var runtimeAgent = ResolvedChatAgentFactory.Resolve(template, model);
+        return new LlmAgentRuntime(
+            new AgentRuntimeDescriptor(
+                template.Id.ToString("D"),
+                template.AgentName,
+                template.Summary,
+                AgentRuntimeKind.LlmAgent),
+            runtimeAgent,
+            context.Configuration,
+            orchestrator,
+            logger);
+    }
+
+    private static ServerModel ResolveModel(
+        AgentTemplateDefinition template,
+        AgentRuntimeCreationContext context)
+    {
+        var uiSelection = context.DefaultModel is null
+            ? new ServerModelSelection(null, null)
+            : new ServerModelSelection(context.DefaultModel.ServerId, context.DefaultModel.ModelName);
+
+        if (ModelSelectionHelper.TryGetEffectiveModel(
+                new ServerModelSelection(template.LlmId, template.ModelName),
+                uiSelection,
+                out var model))
+        {
+            return model;
+        }
+
+        throw new InvalidOperationException(
+            $"Model selection for agent '{template.AgentName}' is incomplete.");
+    }
+}
+
+internal sealed class LlmAgentRuntime(
+    AgentRuntimeDescriptor descriptor,
+    ResolvedChatAgent agent,
+    AppChatConfiguration configuration,
+    IChatEngineOrchestrator orchestrator,
+    ILogger logger) : IAgentRuntime
+{
+    public AgentRuntimeDescriptor Descriptor { get; } = descriptor;
+
+    public IAsyncEnumerable<AgentRunEvent> RunAsync(
+        AgentRuntimeRunRequest request,
+        AgentRunContext context,
+        CancellationToken cancellationToken = default)
+    {
+        var channel = Channel.CreateUnbounded<AgentRunEvent>();
+        _ = ProduceAsync(request, context, channel.Writer, cancellationToken);
+        return channel.Reader.ReadAllAsync(cancellationToken);
+    }
+
+    private async Task ProduceAsync(
+        AgentRuntimeRunRequest request,
+        AgentRunContext context,
+        ChannelWriter<AgentRunEvent> writer,
+        CancellationToken cancellationToken)
+    {
+        var userMessage = request.Messages.LastOrDefault(static message => message.Role == AgentMessageRole.User);
+        if (userMessage is null || string.IsNullOrWhiteSpace(userMessage.Content))
+        {
+            await writer.WriteAsync(new AgentRunFailed(new AgentRunError(
+                "invalid_input",
+                "At least one non-empty user message is required.",
+                false)), cancellationToken);
+            writer.TryComplete();
+            return;
+        }
+
+        if (request.Attachments.Count > 0)
+        {
+            await writer.WriteAsync(new AgentRunFailed(new AgentRunError(
+                "invalid_input",
+                "Attachments are not supported by the saved-agent runtime contract yet.",
+                false)), cancellationToken);
+            writer.TryComplete();
+            return;
+        }
+
+        var history = BuildHistory(request.Messages);
+        var orchestrationRequest = new ChatEngineOrchestrationRequest
+        {
+            Agent = agent.Agent,
+            ResolvedModel = agent.Model,
+            Configuration = configuration,
+            Messages = history,
+            UserMessage = userMessage.Content,
+            Files = [],
+            EnableRagContext = true
+        };
+
+        var buffer = new List<string>();
+        var completedMessages = new List<AgentOutputMessage>();
+
+        try
+        {
+            await foreach (var chunk in orchestrator.StreamAsync(orchestrationRequest, cancellationToken)
+                               .WithCancellation(cancellationToken))
+            {
+                if (chunk.IsError)
+                {
+                    await writer.WriteAsync(new AgentRunFailed(new AgentRunError(
+                        "execution_failed",
+                        chunk.Content,
+                        true)), cancellationToken);
+                    return;
+                }
+
+                if (!string.IsNullOrEmpty(chunk.Content))
+                {
+                    buffer.Add(chunk.Content);
+                    await writer.WriteAsync(new AgentTextDelta(chunk.Content), cancellationToken);
+                }
+
+                if (chunk.IsFinal)
+                {
+                    break;
+                }
+            }
+
+            var finalContent = string.Concat(buffer).Trim();
+            if (string.IsNullOrWhiteSpace(finalContent))
+            {
+                await writer.WriteAsync(new AgentRunFailed(new AgentRunError(
+                    "execution_failed",
+                    "Agent produced no assistant response.",
+                    true)), cancellationToken);
+                return;
+            }
+
+            var completed = new AgentOutputMessage(Descriptor.Name, finalContent);
+            completedMessages.Add(completed);
+            await writer.WriteAsync(new AgentMessageCompleted(completed), cancellationToken);
+            await writer.WriteAsync(new AgentRunCompleted(new AgentRunResult
+            {
+                FinalMessage = completed,
+                Messages = completedMessages
+            }), cancellationToken);
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(
+                ex,
+                "Saved agent runtime failed. RunId={RunId}, AgentId={AgentId}, AgentName={AgentName}",
+                context.RunId,
+                Descriptor.Id,
+                Descriptor.Name);
+            await writer.WriteAsync(new AgentRunFailed(new AgentRunError(
+                "execution_failed",
+                ex.Message,
+                true,
+                ex)), CancellationToken.None);
+        }
+        finally
+        {
+            writer.TryComplete();
+        }
+    }
+
+    private static IReadOnlyList<IAppChatMessage> BuildHistory(IReadOnlyList<AgentInputMessage> messages)
+    {
+        var history = new List<IAppChatMessage>();
+        foreach (var message in messages)
+        {
+            var role = message.Role switch
+            {
+                AgentMessageRole.System => AppChatRole.System,
+                AgentMessageRole.User => AppChatRole.User,
+                AgentMessageRole.Assistant => AppChatRole.Assistant,
+                _ => AppChatRole.User
+            };
+
+            history.Add(new AppChatMessage(message.Content, DateTime.Now, role));
+        }
+
+        return history;
+    }
+}
