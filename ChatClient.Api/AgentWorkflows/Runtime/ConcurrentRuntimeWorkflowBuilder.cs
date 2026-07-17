@@ -18,7 +18,7 @@ public sealed class ConcurrentRuntimeWorkflowBuilder : IOrchestrationRuntimeWork
                                  ?? throw new InvalidOperationException(
                                      $"Workflow kind '{workflow.Kind}' is not supported by {nameof(ConcurrentRuntimeWorkflowBuilder)}.");
 
-        var participantAgents = concurrentWorkflow.ParticipantAgentIds
+        var participantAgents = concurrentWorkflow.ParticipantIds
             .Select(agentId => agentsById.TryGetValue(agentId, out var agent)
                 ? agent
                 : throw new InvalidOperationException(

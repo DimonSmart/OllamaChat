@@ -165,7 +165,7 @@ public sealed class OrchestrationWorkflowSessionBootstrapper(
         IOrchestrationWorkflowDefinition workflow,
         IReadOnlyList<ResolvedChatAgent> agents)
     {
-        var workflowAgentIds = workflow.Agents
+        var workflowAgentIds = workflow.Participants
             .Select(static agent => agent.Id)
             .ToHashSet(StringComparer.OrdinalIgnoreCase);
         var resolvedAgentIds = agents

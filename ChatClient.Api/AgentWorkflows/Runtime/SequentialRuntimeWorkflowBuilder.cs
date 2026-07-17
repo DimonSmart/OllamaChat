@@ -17,7 +17,7 @@ public sealed class SequentialRuntimeWorkflowBuilder : IOrchestrationRuntimeWork
                                  ?? throw new InvalidOperationException(
                                      $"Workflow kind '{workflow.Kind}' is not supported by {nameof(SequentialRuntimeWorkflowBuilder)}.");
 
-        var orderedAgents = sequentialWorkflow.AgentOrder
+        var orderedAgents = sequentialWorkflow.ParticipantOrder
             .Select(agentId => agentsById.TryGetValue(agentId, out var agent)
                 ? agent
                 : throw new InvalidOperationException(

@@ -54,7 +54,7 @@ public sealed class RealWorkflowExecutionTests(ITestOutputHelper output)
 
         var workflow = await workflowMaterializer.MaterializeAsync(compiled.Workflow!);
         var model = await ResolveModelAsync(userSettingsService, options);
-        var runtimeAgents = workflow.Agents
+        var runtimeAgents = workflow.Participants
             .Select(agent => ResolvedChatAgentFactory.Resolve(GetRequiredAgentDraft(agent), model))
             .ToList();
 
@@ -236,7 +236,7 @@ public sealed class RealWorkflowExecutionTests(ITestOutputHelper output)
             $"No workflow model was resolved. Set {WorkflowServerIdEnvironmentVariable} and {WorkflowModelEnvironmentVariable}, or configure the application's default model.");
     }
 
-    private static AgentTemplateDefinition GetRequiredAgentDraft(AgentWorkflowAgentDefinition agent) =>
+    private static AgentTemplateDefinition GetRequiredAgentDraft(WorkflowParticipantDefinition agent) =>
         agent.AgentDraft ?? throw new InvalidOperationException(
             $"Workflow agent '{agent.Id}' does not have a materialized draft.");
 

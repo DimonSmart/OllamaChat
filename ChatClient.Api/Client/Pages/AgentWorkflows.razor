@@ -354,7 +354,7 @@
                             </MudPaper>
 
                             <MudExpansionPanels MultiExpansion="true" Outlined="true" Class="handoff-workflow-agent-panels">
-                                @foreach (var agent in currentWorkflow.Agents)
+                                @foreach (var agent in currentWorkflow.Participants)
                                 {
                                     var agentDraft = GetRequiredAgentDraft(agent);
                                     <MudExpansionPanel Expanded="false">
@@ -669,7 +669,7 @@
                 return;
             }
 
-            var runtimeAgents = currentWorkflow.Agents
+            var runtimeAgents = currentWorkflow.Participants
                 .Select(agent => ResolvedChatAgentFactory.Resolve(GetRequiredAgentDraft(agent), model))
                 .ToList();
 
@@ -1157,7 +1157,7 @@
     private static string GetConcurrentAggregationLabel(ConcurrentWorkflowDefinition workflow)
         => workflow.Aggregation.Kind.ToString();
 
-    private static AgentTemplateDefinition GetRequiredAgentDraft(AgentWorkflowAgentDefinition agent) =>
+    private static AgentTemplateDefinition GetRequiredAgentDraft(WorkflowParticipantDefinition agent) =>
         agent.AgentDraft ?? throw new InvalidOperationException(
             $"Workflow agent '{agent.Id}' was not materialized.");
 

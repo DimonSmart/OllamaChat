@@ -1,4 +1,5 @@
 using ChatClient.Application.Services.Agentic;
+using ChatClient.Application.Services.AgentRuntime;
 using ChatClient.Domain.Models;
 
 namespace ChatClient.Api.AgentWorkflows;
@@ -11,7 +12,7 @@ public sealed class HandoffWorkflowDefinitionBuilder
     private string? _startAgentId;
     private AgentWorkflowExecutionDefinition _execution = new();
     private readonly List<WorkflowStartInputDefinition> _startInputs = [];
-    private readonly List<AgentWorkflowAgentDefinition> _agents = [];
+    private readonly List<WorkflowParticipantDefinition> _agents = [];
     private readonly List<AgentWorkflowHandoffDefinition> _handoffs = [];
 
     private HandoffWorkflowDefinitionBuilder(string id, string displayName)
@@ -210,10 +211,10 @@ public sealed class HandoffWorkflowDefinitionBuilder
             Id = _id,
             DisplayName = _displayName,
             Description = _description,
-            StartAgentId = _startAgentId,
+            StartParticipantId = _startAgentId,
             Execution = _execution,
             StartInputs = _startInputs.ToList(),
-            Agents = _agents.ToList(),
+            Participants = _agents.ToList(),
             Handoffs = _handoffs.ToList()
         };
     }
@@ -240,7 +241,7 @@ public sealed class HandoffWorkflowDefinitionBuilder
         _startInputs.Add(input);
     }
 
-    private void UpsertAgent(AgentWorkflowAgentDefinition agent)
+    private void UpsertAgent(WorkflowParticipantDefinition agent)
     {
         _agents.RemoveAll(existing =>
             string.Equals(existing.Id, agent.Id, StringComparison.OrdinalIgnoreCase));
@@ -345,6 +346,7 @@ public sealed class WorkflowAgentBuilder
     private string _role = string.Empty;
     private string _summary = string.Empty;
     private AgentTemplateDefinition? _agentDraft;
+    private AgentDefinitionReference? _savedDefinitionReference;
     private string? _savedAgentTemplateName;
     private string? _overrideAgentName;
     private string? _overrideAvatarText;
@@ -378,9 +380,40 @@ public sealed class WorkflowAgentBuilder
         return this;
     }
 
+    public WorkflowAgentBuilder UseSource(WorkflowParticipantSource source)
+    {
+        ArgumentNullException.ThrowIfNull(source);
+        _agentDraft = source is InlineAgentParticipantSource inline ? inline.Agent : null;
+        _savedDefinitionReference = source is SavedDefinitionParticipantSource saved ? saved.Reference : null;
+        _savedAgentTemplateName = null;
+        return this;
+    }
+
     public WorkflowAgentBuilder FromSavedAgent(string savedAgentName)
     {
         _savedAgentTemplateName = RequireValue(savedAgentName, nameof(savedAgentName));
+        _savedDefinitionReference = null;
+        return this;
+    }
+
+    public WorkflowAgentBuilder FromSavedAgent(AgentDefinitionReference reference)
+    {
+        if (reference.Kind != AgentDefinitionKind.SavedAgent)
+        {
+            throw new ArgumentException("Reference must point to a saved agent.", nameof(reference));
+        }
+
+        _savedDefinitionReference = reference;
+        _savedAgentTemplateName = null;
+        return this;
+    }
+
+    public WorkflowAgentBuilder FromSavedWorkflow(string workflowId)
+    {
+        _savedDefinitionReference = new AgentDefinitionReference(
+            AgentDefinitionKind.SavedWorkflow,
+            RequireValue(workflowId, nameof(workflowId)));
+        _savedAgentTemplateName = null;
         return this;
     }
 
@@ -449,26 +482,38 @@ public sealed class WorkflowAgentBuilder
         return this;
     }
 
-    internal AgentWorkflowAgentDefinition Build()
+    internal WorkflowParticipantDefinition Build()
     {
         var usesSavedTemplate = !string.IsNullOrWhiteSpace(_savedAgentTemplateName);
-        if (_agentDraft is not null && usesSavedTemplate)
+        var usesSavedDefinition = _savedDefinitionReference is not null;
+        var sourceCount = (_agentDraft is not null ? 1 : 0) +
+                          (usesSavedTemplate ? 1 : 0) +
+                          (usesSavedDefinition ? 1 : 0);
+        if (sourceCount > 1)
         {
             throw new InvalidOperationException(
-                $"Workflow agent '{_id}' cannot use both an inline draft and a saved-agent template.");
+                $"Workflow participant '{_id}' cannot use more than one source.");
         }
 
-        if (_agentDraft is null && !usesSavedTemplate)
+        if (sourceCount == 0)
         {
             throw new InvalidOperationException(
-                $"Workflow agent '{_id}' requires either an inline agent draft or a saved-agent template.");
+                $"Workflow participant '{_id}' requires an executable source.");
         }
 
         if (!string.IsNullOrWhiteSpace(_overrideInstructions) &&
             !string.IsNullOrWhiteSpace(_appendedInstructions))
         {
             throw new InvalidOperationException(
-                $"Workflow agent '{_id}' cannot use both OverrideInstructions and AppendInstructions.");
+                $"Workflow participant '{_id}' cannot use both OverrideInstructions and AppendInstructions.");
+        }
+
+        if (usesSavedDefinition &&
+            _savedDefinitionReference!.Kind == AgentDefinitionKind.SavedWorkflow &&
+            HasLlmOverrides())
+        {
+            throw new InvalidOperationException(
+                $"Workflow participant '{_id}' cannot apply LLM overrides to a saved workflow.");
         }
 
         if (string.IsNullOrWhiteSpace(_role))
@@ -477,17 +522,22 @@ public sealed class WorkflowAgentBuilder
             {
                 _role = _overrideAgentName ?? _savedAgentTemplateName ?? "Saved agent";
             }
+            else if (usesSavedDefinition)
+            {
+                _role = _overrideAgentName ?? _savedDefinitionReference!.Kind.ToString();
+            }
             else
             {
-                throw new InvalidOperationException($"Workflow agent '{_id}' requires a role.");
+                throw new InvalidOperationException($"Workflow participant '{_id}' requires a role.");
             }
         }
 
-        return new AgentWorkflowAgentDefinition
+        return new WorkflowParticipantDefinition
         {
             Id = _id,
             Role = _role,
             Summary = _summary,
+            Source = BuildSource(),
             AgentDraft = _agentDraft,
             SavedAgentTemplate = usesSavedTemplate
                 ? new AgentWorkflowSavedAgentTemplate
@@ -495,6 +545,18 @@ public sealed class WorkflowAgentBuilder
                     SavedAgentName = _savedAgentTemplateName!
                 }
                 : null,
+            Overrides = new WorkflowParticipantOverrides
+            {
+                DisplayName = _overrideAgentName,
+                Llm = HasLlmOverrides()
+                    ? new LlmParticipantOverrides
+                    {
+                        AvatarText = _overrideAvatarText,
+                        Instructions = _overrideInstructions,
+                        AppendedInstructions = _appendedInstructions
+                    }
+                    : null
+            },
             DraftOverrides = new AgentWorkflowAgentDraftOverrides
             {
                 AgentName = _overrideAgentName,
@@ -507,6 +569,26 @@ public sealed class WorkflowAgentBuilder
             MinAssistantTurnsBetweenTurns = _minAssistantTurnsBetweenTurns
         };
     }
+
+    private WorkflowParticipantSource BuildSource()
+    {
+        if (_agentDraft is not null)
+        {
+            return new InlineAgentParticipantSource(_agentDraft);
+        }
+
+        if (_savedDefinitionReference is not null)
+        {
+            return new SavedDefinitionParticipantSource(_savedDefinitionReference);
+        }
+
+        return null!;
+    }
+
+    private bool HasLlmOverrides() =>
+        !string.IsNullOrWhiteSpace(_overrideAvatarText) ||
+        !string.IsNullOrWhiteSpace(_overrideInstructions) ||
+        !string.IsNullOrWhiteSpace(_appendedInstructions);
 
     private static string RequireValue(string? value, string paramName)
     {

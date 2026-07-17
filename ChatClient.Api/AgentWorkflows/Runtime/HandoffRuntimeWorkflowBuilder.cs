@@ -17,10 +17,10 @@ public sealed class HandoffRuntimeWorkflowBuilder : IOrchestrationRuntimeWorkflo
                               ?? throw new InvalidOperationException(
                                   $"Workflow kind '{workflow.Kind}' is not supported by {nameof(HandoffRuntimeWorkflowBuilder)}.");
 
-        if (!agentsById.TryGetValue(handoffWorkflow.StartAgentId, out var startAgent))
+        if (!agentsById.TryGetValue(handoffWorkflow.StartParticipantId, out var startAgent))
         {
             throw new InvalidOperationException(
-                $"Workflow start agent '{handoffWorkflow.StartAgentId}' was not prepared.");
+                $"Workflow start participant '{handoffWorkflow.StartParticipantId}' was not prepared.");
         }
 
 #pragma warning disable MAAIW001
@@ -29,16 +29,16 @@ public sealed class HandoffRuntimeWorkflowBuilder : IOrchestrationRuntimeWorkflo
 
         foreach (var handoff in SelectHandoffsForRuntime(handoffWorkflow, context.AssistantSpeakerIds))
         {
-            if (!agentsById.TryGetValue(handoff.FromAgentId, out var fromAgent))
+            if (!agentsById.TryGetValue(handoff.FromParticipantId, out var fromAgent))
             {
                 throw new InvalidOperationException(
-                    $"Workflow source agent '{handoff.FromAgentId}' was not prepared.");
+                    $"Workflow source participant '{handoff.FromParticipantId}' was not prepared.");
             }
 
-            if (!agentsById.TryGetValue(handoff.ToAgentId, out var toAgent))
+            if (!agentsById.TryGetValue(handoff.ToParticipantId, out var toAgent))
             {
                 throw new InvalidOperationException(
-                    $"Workflow target agent '{handoff.ToAgentId}' was not prepared.");
+                    $"Workflow target participant '{handoff.ToParticipantId}' was not prepared.");
             }
 
             builder.WithHandoff(fromAgent, toAgent, handoff.Label);
@@ -54,7 +54,7 @@ public sealed class HandoffRuntimeWorkflowBuilder : IOrchestrationRuntimeWorkflo
 
         foreach (var handoff in handoffs)
         {
-            var handoffKey = $"{handoff.FromAgentId}\u001F{handoff.ToAgentId}";
+            var handoffKey = $"{handoff.FromParticipantId}\u001F{handoff.ToParticipantId}";
             if (!selectedHandoffsByPair.TryGetValue(handoffKey, out var existingHandoff))
             {
                 selectedHandoffsByPair[handoffKey] = handoff;
@@ -91,7 +91,7 @@ public sealed class HandoffRuntimeWorkflowBuilder : IOrchestrationRuntimeWorkflo
 
         foreach (var handoff in handoffs)
         {
-            if (!agentsById.TryGetValue(handoff.ToAgentId, out var targetAgent))
+            if (!agentsById.TryGetValue(handoff.ToParticipantId, out var targetAgent))
             {
                 selected.Add(handoff);
                 continue;

@@ -21,7 +21,7 @@ public sealed class GroupChatRuntimeWorkflowBuilder(
                                 ?? throw new InvalidOperationException(
                                     $"Workflow kind '{workflow.Kind}' is not supported by {nameof(GroupChatRuntimeWorkflowBuilder)}.");
 
-        var participantAgents = groupChatWorkflow.ParticipantAgentIds
+        var participantAgents = groupChatWorkflow.ParticipantIds
             .Select(agentId => agentsById.TryGetValue(agentId, out var agent)
                 ? agent
                 : throw new InvalidOperationException(
@@ -49,7 +49,7 @@ public sealed class GroupChatRuntimeWorkflowBuilder(
                 context.AssistantSpeakerIds.Count),
             GroupChatWorkflowManagerKind.Programmable => new ConfiguredProgrammableGroupChatManager(
                 agents,
-                workflow.ParticipantAgentIds,
+                workflow.ParticipantIds,
                 workflow.Manager,
                 context.AssistantSpeakerIds),
             GroupChatWorkflowManagerKind.Custom => _managerRegistry.Create(

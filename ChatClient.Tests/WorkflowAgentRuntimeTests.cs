@@ -12,6 +12,123 @@ namespace ChatClient.Tests;
 public sealed class WorkflowAgentRuntimeTests
 {
     [Fact]
+    public async Task RunAsync_SequentialSavedParticipants_RunThroughAgentRunnerAndPassFinalMessage()
+    {
+        var runner = new RecordingAgentRunner(new Dictionary<string, string>
+        {
+            ["SavedAgent:a"] = "first",
+            ["SavedWorkflow:w"] = "nested",
+            ["SavedAgent:b"] = "final"
+        });
+        var runtime = CreateSequentialRuntime(
+            runner,
+            [
+                new ResolvedWorkflowParticipant
+                {
+                    ParticipantId = "a",
+                    DisplayName = "A",
+                    Reference = new AgentDefinitionReference(AgentDefinitionKind.SavedAgent, "a"),
+                    RuntimeKind = AgentRuntimeKind.LlmAgent
+                },
+                new ResolvedWorkflowParticipant
+                {
+                    ParticipantId = "w",
+                    DisplayName = "W",
+                    Reference = new AgentDefinitionReference(AgentDefinitionKind.SavedWorkflow, "w"),
+                    RuntimeKind = AgentRuntimeKind.WorkflowAgent
+                },
+                new ResolvedWorkflowParticipant
+                {
+                    ParticipantId = "b",
+                    DisplayName = "B",
+                    Reference = new AgentDefinitionReference(AgentDefinitionKind.SavedAgent, "b"),
+                    RuntimeKind = AgentRuntimeKind.LlmAgent
+                }
+            ],
+            ["a", "w", "b"]);
+        var parentContext = CreateContext();
+
+        var events = await CollectAsync(runtime.RunAsync(CreateRequest(), parentContext));
+
+        Assert.Equal(
+            [
+                new AgentDefinitionReference(AgentDefinitionKind.SavedAgent, "a"),
+                new AgentDefinitionReference(AgentDefinitionKind.SavedWorkflow, "w"),
+                new AgentDefinitionReference(AgentDefinitionKind.SavedAgent, "b")
+            ],
+            runner.Calls.Select(static call => call.Reference).ToList());
+        Assert.Contains("first", runner.Calls[1].Request.Messages.Last().Content);
+        Assert.Contains("nested", runner.Calls[2].Request.Messages.Last().Content);
+        Assert.All(runner.Calls, call => Assert.Equal(parentContext.RunId, call.Context.ParentRunId));
+        Assert.Contains(runner.Calls[1].Context.DefinitionPath, reference =>
+            reference.Kind == AgentDefinitionKind.SavedWorkflow &&
+            reference.Id == "w");
+
+        Assert.Single(events.OfType<AgentRunCompleted>());
+        var completed = Assert.IsType<AgentRunCompleted>(events.Last());
+        Assert.Equal("final", completed.Result.FinalMessage.Content);
+        Assert.Equal("Workflow", completed.Result.FinalMessage.Author);
+    }
+
+    [Fact]
+    public async Task RunAsync_SequentialSavedWorkflowParticipant_DetectsCycleBeforeRunningParticipant()
+    {
+        var runner = new RecordingAgentRunner(new Dictionary<string, string>());
+        var runtime = CreateSequentialRuntime(
+            runner,
+            [
+                new ResolvedWorkflowParticipant
+                {
+                    ParticipantId = "self",
+                    DisplayName = "Self",
+                    Reference = new AgentDefinitionReference(AgentDefinitionKind.SavedWorkflow, "workflow"),
+                    RuntimeKind = AgentRuntimeKind.WorkflowAgent
+                }
+            ],
+            ["self"]);
+
+        var events = await CollectAsync(runtime.RunAsync(CreateRequest(), CreateContext()));
+
+        Assert.Empty(runner.Calls);
+        var failed = Assert.IsType<AgentRunFailed>(Assert.Single(events));
+        Assert.Equal("workflow_cycle_detected", failed.Error.Code);
+        Assert.False(failed.Error.IsRetryable);
+    }
+
+    [Fact]
+    public async Task RunAsync_SequentialWorkflow_ReturnsNonRetryableFailureWhenNestingLimitExceeded()
+    {
+        var runner = new RecordingAgentRunner(new Dictionary<string, string>());
+        var runtime = CreateSequentialRuntime(
+            runner,
+            [
+                new ResolvedWorkflowParticipant
+                {
+                    ParticipantId = "next",
+                    DisplayName = "Next",
+                    Reference = new AgentDefinitionReference(AgentDefinitionKind.SavedAgent, "next"),
+                    RuntimeKind = AgentRuntimeKind.LlmAgent
+                }
+            ],
+            ["next"]);
+        var context = CreateContext() with
+        {
+            DefinitionPath = Enumerable.Range(0, 8)
+                .Select(index => new AgentDefinitionReference(
+                    AgentDefinitionKind.SavedWorkflow,
+                    $"workflow-{index}"))
+                .ToList()
+        };
+
+        var events = await CollectAsync(runtime.RunAsync(CreateRequest(), context));
+
+        Assert.Empty(runner.Calls);
+        var failed = Assert.IsType<AgentRunFailed>(Assert.Single(events));
+        Assert.Equal("workflow_nesting_limit_exceeded", failed.Error.Code);
+        Assert.False(failed.Error.IsRetryable);
+    }
+
+    [Fact]
     public async Task RunAsync_MapsHeadlessEventsToUnifiedEvents()
     {
         var runtime = CreateRuntime(new StubHeadlessWorkflowRunner([
@@ -298,6 +415,42 @@ public sealed class WorkflowAgentRuntimeTests
             runner,
             NullLogger<WorkflowAgentRuntime>.Instance);
 
+    private static WorkflowAgentRuntime CreateSequentialRuntime(
+        IAgentRunner runner,
+        IReadOnlyList<ResolvedWorkflowParticipant> participants,
+        IReadOnlyList<string> participantOrder)
+    {
+        var configuration = new AppChatConfiguration("model", []);
+        return new WorkflowAgentRuntime(
+            new AgentRuntimeDescriptor("workflow", "Workflow", "Runs a workflow", AgentRuntimeKind.WorkflowAgent),
+            new AgentDefinitionReference(AgentDefinitionKind.SavedWorkflow, "workflow"),
+            new SequentialWorkflowDefinition
+            {
+                Id = "workflow",
+                DisplayName = "Workflow",
+                Participants = participants.Select(static participant => new WorkflowParticipantDefinition
+                {
+                    Id = participant.ParticipantId,
+                    Role = participant.DisplayName,
+                    Source = participant.Reference is null
+                        ? null
+                        : new SavedDefinitionParticipantSource(participant.Reference)
+                }).ToList(),
+                ParticipantOrder = participantOrder.ToList()
+            },
+            participants,
+            [],
+            configuration,
+            new AgentRuntimeCreationContext
+            {
+                Configuration = configuration
+            },
+            new StubHeadlessWorkflowRunner([]),
+            new ThrowingChatEngineOrchestrator(),
+            new AgentRunnerServiceProvider(runner),
+            NullLogger<WorkflowAgentRuntime>.Instance);
+    }
+
     private static AgentRuntimeRunRequest CreateRequest() =>
         new()
         {
@@ -360,6 +513,55 @@ public sealed class WorkflowAgentRuntimeTests
         }
 
         public ValueTask DisposeAsync() => ValueTask.CompletedTask;
+    }
+
+    private sealed class RecordingAgentRunner(
+        IReadOnlyDictionary<string, string> results) : IAgentRunner
+    {
+        public List<Call> Calls { get; } = [];
+
+        public async IAsyncEnumerable<AgentRunEvent> RunAsync(
+            AgentDefinitionReference reference,
+            AgentRuntimeRunRequest request,
+            AgentRuntimeCreationContext creationContext,
+            AgentRunContext runContext,
+            [EnumeratorCancellation] CancellationToken cancellationToken = default)
+        {
+            Calls.Add(new Call(reference, request, runContext));
+            await Task.Yield();
+            var key = $"{reference.Kind}:{reference.Id}";
+            var content = results.TryGetValue(key, out var result)
+                ? result
+                : key;
+            var message = new AgentOutputMessage(reference.Id, content);
+            yield return new AgentTextDelta(Guid.NewGuid().ToString("N"), reference.Id, content);
+            yield return new AgentMessageCompleted(Guid.NewGuid().ToString("N"), message);
+            yield return new AgentRunCompleted(new AgentRunResult
+            {
+                FinalMessage = message,
+                FinalMessageId = Guid.NewGuid().ToString("N"),
+                Messages = [message]
+            });
+        }
+
+        public sealed record Call(
+            AgentDefinitionReference Reference,
+            AgentRuntimeRunRequest Request,
+            AgentRunContext Context);
+    }
+
+    private sealed class AgentRunnerServiceProvider(IAgentRunner runner) : IServiceProvider
+    {
+        public object? GetService(Type serviceType) =>
+            serviceType == typeof(IAgentRunner) ? runner : null;
+    }
+
+    private sealed class ThrowingChatEngineOrchestrator : IChatEngineOrchestrator
+    {
+        public IAsyncEnumerable<ChatEngineStreamChunk> StreamAsync(
+            ChatEngineOrchestrationRequest request,
+            CancellationToken cancellationToken = default) =>
+            throw new NotSupportedException();
     }
 
     private sealed class ThrowingHeadlessWorkflowRunner(Exception exception) : IHeadlessWorkflowRunner

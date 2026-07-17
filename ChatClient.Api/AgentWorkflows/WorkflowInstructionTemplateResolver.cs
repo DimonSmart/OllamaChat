@@ -16,7 +16,7 @@ internal static class WorkflowInstructionTemplateResolver
         "avatarText"
     ];
 
-    public static void ValidateAgentReferences(IEnumerable<AgentWorkflowAgentDefinition> agents)
+    public static void ValidateAgentReferences(IEnumerable<WorkflowParticipantDefinition> agents)
     {
         ArgumentNullException.ThrowIfNull(agents);
 
@@ -32,7 +32,7 @@ internal static class WorkflowInstructionTemplateResolver
     public static string ResolveAgentReferences(
         string content,
         string ownerAgentId,
-        IReadOnlyDictionary<string, AgentWorkflowAgentDefinition> agentsById)
+        IReadOnlyDictionary<string, WorkflowParticipantDefinition> agentsById)
     {
         ArgumentNullException.ThrowIfNull(content);
         ArgumentNullException.ThrowIfNull(agentsById);
@@ -66,7 +66,7 @@ internal static class WorkflowInstructionTemplateResolver
         string ownerAgentId,
         string fieldName,
         string? content,
-        IReadOnlyDictionary<string, AgentWorkflowAgentDefinition> agentsById)
+        IReadOnlyDictionary<string, WorkflowParticipantDefinition> agentsById)
     {
         if (string.IsNullOrWhiteSpace(content) ||
             !content.Contains("{{agent:", StringComparison.Ordinal))
@@ -117,7 +117,7 @@ internal static class WorkflowInstructionTemplateResolver
         }
     }
 
-    private static string ResolveDisplayName(AgentWorkflowAgentDefinition agent)
+    private static string ResolveDisplayName(WorkflowParticipantDefinition agent)
     {
         var displayName = agent.AgentDraft?.AgentName?.Trim();
         if (!string.IsNullOrWhiteSpace(displayName))

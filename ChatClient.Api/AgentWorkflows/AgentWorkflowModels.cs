@@ -1,5 +1,7 @@
 using ChatClient.Application.Services.Agentic;
+using ChatClient.Application.Services.AgentRuntime;
 using ChatClient.Domain.Models;
+using System.Text.Json.Serialization;
 
 namespace ChatClient.Api.AgentWorkflows;
 
@@ -26,13 +28,27 @@ public sealed class AgentWorkflowDefinition : IOrchestrationWorkflowDefinition
 
     public string Kind => WorkflowDefinitionKinds.Handoff;
 
-    public required string StartAgentId { get; init; }
+    public string StartParticipantId { get; init; } = string.Empty;
+
+    [Obsolete("Use StartParticipantId.")]
+    public string StartAgentId
+    {
+        get => StartParticipantId;
+        init => StartParticipantId = value;
+    }
 
     public AgentWorkflowExecutionDefinition Execution { get; init; } = new();
 
     public List<WorkflowStartInputDefinition> StartInputs { get; init; } = [];
 
-    public List<AgentWorkflowAgentDefinition> Agents { get; init; } = [];
+    public List<WorkflowParticipantDefinition> Participants { get; init; } = [];
+
+    [Obsolete("Use Participants.")]
+    public List<WorkflowParticipantDefinition> Agents
+    {
+        get => Participants;
+        init => Participants = value;
+    }
 
     public List<AgentWorkflowHandoffDefinition> Handoffs { get; init; } = [];
 }
@@ -63,30 +79,68 @@ public enum WorkflowStartInputKind
     Json
 }
 
-public sealed class AgentWorkflowAgentDefinition
+public class WorkflowParticipantDefinition
 {
     public required string Id { get; init; }
 
-    public required string Role { get; init; }
+    public string Role { get; init; } = string.Empty;
 
     public string Summary { get; init; } = string.Empty;
 
+    public WorkflowParticipantSource? Source { get; init; }
+
+    public WorkflowParticipantOverrides Overrides { get; init; } = new();
+
+    [Obsolete("Use Source = new InlineAgentParticipantSource(...).")]
     public AgentTemplateDefinition? AgentDraft { get; init; }
 
+    [Obsolete("Use Source = new SavedDefinitionParticipantSource(...).")]
     public AgentWorkflowSavedAgentTemplate? SavedAgentTemplate { get; init; }
 
+    [Obsolete("Use Overrides.")]
     public AgentWorkflowAgentDraftOverrides DraftOverrides { get; init; } = new();
 
     public List<AgentWorkflowCapabilityRequirement> CapabilityRequirements { get; init; } = [];
 
-    public int MaxTurnsPerSession { get; init; }
+    public int? MaxTurnsPerSession { get; init; }
 
-    public int MinAssistantTurnsBetweenTurns { get; init; }
+    public int? MinAssistantTurnsBetweenTurns { get; init; }
 }
+
+[Obsolete("Use WorkflowParticipantDefinition.")]
+public sealed class AgentWorkflowAgentDefinition : WorkflowParticipantDefinition;
 
 public sealed class AgentWorkflowSavedAgentTemplate
 {
     public required string SavedAgentName { get; init; }
+}
+
+public abstract record WorkflowParticipantSource;
+
+public sealed record InlineAgentParticipantSource(
+    AgentTemplateDefinition Agent)
+    : WorkflowParticipantSource;
+
+public sealed record SavedDefinitionParticipantSource(
+    AgentDefinitionReference Reference)
+    : WorkflowParticipantSource;
+
+public sealed class WorkflowParticipantOverrides
+{
+    public string? DisplayName { get; init; }
+
+    public string? Summary { get; init; }
+
+    public LlmParticipantOverrides? Llm { get; init; }
+}
+
+public sealed class LlmParticipantOverrides
+{
+    public string? AvatarText { get; init; }
+
+    public string? Instructions { get; init; }
+
+    public string? AppendedInstructions { get; init; }
 }
 
 public sealed class AgentWorkflowAgentDraftOverrides
@@ -102,9 +156,23 @@ public sealed class AgentWorkflowAgentDraftOverrides
 
 public sealed class AgentWorkflowHandoffDefinition
 {
-    public required string FromAgentId { get; init; }
+    public string FromParticipantId { get; init; } = string.Empty;
 
-    public required string ToAgentId { get; init; }
+    public string ToParticipantId { get; init; } = string.Empty;
+
+    [Obsolete("Use FromParticipantId.")]
+    public string FromAgentId
+    {
+        get => FromParticipantId;
+        init => FromParticipantId = value;
+    }
+
+    [Obsolete("Use ToParticipantId.")]
+    public string ToAgentId
+    {
+        get => ToParticipantId;
+        init => ToParticipantId = value;
+    }
 
     public string Label { get; init; } = string.Empty;
 

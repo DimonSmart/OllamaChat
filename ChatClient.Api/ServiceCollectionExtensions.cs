@@ -47,7 +47,6 @@ public static class ServiceCollectionExtensions
     {
         services.AddSingleton<IAgentWorkflowCatalog, AgentWorkflowCatalog>();
         services.AddSingleton<IWorkflowDefinitionCompiler, WorkflowDefinitionCompiler>();
-        services.AddSingleton<IWorkflowAgentDraftMaterializer, WorkflowAgentDraftMaterializer>();
         services.AddSingleton<GroupChatManagerRegistry>();
         services.AddSingleton<IOrchestrationRuntimeWorkflowBuilder, HandoffRuntimeWorkflowBuilder>();
         services.AddSingleton<IOrchestrationRuntimeWorkflowBuilder, GroupChatRuntimeWorkflowBuilder>();
@@ -126,6 +125,8 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IOrchestrationWorkflowSessionService, OrchestrationWorkflowChatSessionService>();
         services.AddScoped<IOrchestrationWorkflowChatViewModelService, OrchestrationWorkflowChatViewModelService>();
         services.AddScoped<IAgentDefinitionCatalog, AgentDefinitionCatalog>();
+        services.AddScoped<IWorkflowParticipantResolver, WorkflowParticipantResolver>();
+        services.AddScoped<IWorkflowAgentDraftMaterializer, WorkflowAgentDraftMaterializer>();
         services.AddScoped<IAgentInputDefinitionProvider, AgentInputDefinitionProvider>();
         services.AddScoped<ILlmAgentRuntimeFactory, LlmAgentRuntimeFactory>();
         services.AddScoped<IWorkflowAgentRuntimeFactory, WorkflowAgentRuntimeFactory>();

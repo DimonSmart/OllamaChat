@@ -322,7 +322,7 @@ public sealed class HeadlessWorkflowRunner(
                     workflowRequest.Workflow.Id,
                     workflowRequest.Workflow.DisplayName,
                     workflowRequest.Workflow.Kind,
-                    workflowRequest.Workflow.Agents.Count);
+                    workflowRequest.Workflow.Participants.Count);
                 throw;
             }
             finally

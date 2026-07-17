@@ -18,7 +18,7 @@ public interface IOrchestrationWorkflowDefinition
 
     List<WorkflowStartInputDefinition> StartInputs { get; }
 
-    List<AgentWorkflowAgentDefinition> Agents { get; }
+    List<WorkflowParticipantDefinition> Participants { get; }
 }
 
 public sealed class SequentialWorkflowDefinition : IOrchestrationWorkflowDefinition
@@ -35,9 +35,23 @@ public sealed class SequentialWorkflowDefinition : IOrchestrationWorkflowDefinit
 
     public List<WorkflowStartInputDefinition> StartInputs { get; init; } = [];
 
-    public List<AgentWorkflowAgentDefinition> Agents { get; init; } = [];
+    public List<WorkflowParticipantDefinition> Participants { get; init; } = [];
 
-    public List<string> AgentOrder { get; init; } = [];
+    public List<string> ParticipantOrder { get; init; } = [];
+
+    [Obsolete("Use Participants.")]
+    public List<WorkflowParticipantDefinition> Agents
+    {
+        get => Participants;
+        init => Participants = value;
+    }
+
+    [Obsolete("Use ParticipantOrder.")]
+    public List<string> AgentOrder
+    {
+        get => ParticipantOrder;
+        init => ParticipantOrder = value;
+    }
 }
 
 public sealed class ConcurrentWorkflowDefinition : IOrchestrationWorkflowDefinition
@@ -54,9 +68,23 @@ public sealed class ConcurrentWorkflowDefinition : IOrchestrationWorkflowDefinit
 
     public List<WorkflowStartInputDefinition> StartInputs { get; init; } = [];
 
-    public List<AgentWorkflowAgentDefinition> Agents { get; init; } = [];
+    public List<WorkflowParticipantDefinition> Participants { get; init; } = [];
 
-    public List<string> ParticipantAgentIds { get; init; } = [];
+    public List<string> ParticipantIds { get; init; } = [];
+
+    [Obsolete("Use Participants.")]
+    public List<WorkflowParticipantDefinition> Agents
+    {
+        get => Participants;
+        init => Participants = value;
+    }
+
+    [Obsolete("Use ParticipantIds.")]
+    public List<string> ParticipantAgentIds
+    {
+        get => ParticipantIds;
+        init => ParticipantIds = value;
+    }
 
     public ConcurrentWorkflowAggregationDefinition Aggregation { get; init; } = new();
 }
@@ -87,9 +115,23 @@ public sealed class GroupChatWorkflowDefinition : IOrchestrationWorkflowDefiniti
 
     public List<WorkflowStartInputDefinition> StartInputs { get; init; } = [];
 
-    public List<AgentWorkflowAgentDefinition> Agents { get; init; } = [];
+    public List<WorkflowParticipantDefinition> Participants { get; init; } = [];
 
-    public List<string> ParticipantAgentIds { get; init; } = [];
+    public List<string> ParticipantIds { get; init; } = [];
+
+    [Obsolete("Use Participants.")]
+    public List<WorkflowParticipantDefinition> Agents
+    {
+        get => Participants;
+        init => Participants = value;
+    }
+
+    [Obsolete("Use ParticipantIds.")]
+    public List<string> ParticipantAgentIds
+    {
+        get => ParticipantIds;
+        init => ParticipantIds = value;
+    }
 
     public GroupChatWorkflowManagerDefinition Manager { get; init; } = new();
 }

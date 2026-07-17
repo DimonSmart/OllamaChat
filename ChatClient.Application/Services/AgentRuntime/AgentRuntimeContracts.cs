@@ -60,6 +60,8 @@ public sealed record AgentRunContext
     public string? ParentRunId { get; init; }
 
     public string? ConversationId { get; init; }
+
+    public IReadOnlyList<AgentDefinitionReference> DefinitionPath { get; init; } = [];
 }
 
 public abstract record AgentRunEvent;

@@ -9,7 +9,7 @@ public sealed class GroupChatWorkflowDefinitionBuilder
     private string _description = string.Empty;
     private AgentWorkflowExecutionDefinition _execution = new();
     private readonly List<WorkflowStartInputDefinition> _startInputs = [];
-    private readonly List<AgentWorkflowAgentDefinition> _agents = [];
+    private readonly List<WorkflowParticipantDefinition> _agents = [];
     private readonly List<string> _participantAgentIds = [];
     private GroupChatWorkflowManagerDefinition _manager = new();
 
@@ -247,8 +247,8 @@ public sealed class GroupChatWorkflowDefinitionBuilder
             Description = _description,
             Execution = _execution,
             StartInputs = _startInputs.ToList(),
-            Agents = _agents.ToList(),
-            ParticipantAgentIds = participantAgentIds,
+            Participants = _agents.ToList(),
+            ParticipantIds = participantAgentIds,
             Manager = _manager
         };
     }
@@ -275,7 +275,7 @@ public sealed class GroupChatWorkflowDefinitionBuilder
         _startInputs.Add(input);
     }
 
-    private void UpsertAgent(AgentWorkflowAgentDefinition agent)
+    private void UpsertAgent(WorkflowParticipantDefinition agent)
     {
         _agents.RemoveAll(existing =>
             string.Equals(existing.Id, agent.Id, StringComparison.OrdinalIgnoreCase));

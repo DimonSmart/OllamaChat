@@ -36,7 +36,7 @@ public sealed class WorkflowAgentDraftMaterializerTests
 
         var materialized = await materializer.MaterializeAsync(workflow);
 
-        var technical = Assert.Single(materialized.Agents);
+        var technical = Assert.Single(materialized.Participants);
         Assert.NotNull(technical.AgentDraft);
         Assert.Equal("Override name", technical.AgentDraft!.AgentName);
         Assert.Equal("TA", technical.AgentDraft.AvatarText);
@@ -101,7 +101,7 @@ public sealed class WorkflowAgentDraftMaterializerTests
 
         var materialized = await materializer.MaterializeAsync(workflow);
 
-        var technical = Assert.Single(materialized.Agents);
+        var technical = Assert.Single(materialized.Participants);
         Assert.Equal("Base prompt\n\nWorkflow mode:\n- Stay concise.", technical.AgentDraft!.Content);
     }
 
@@ -131,7 +131,7 @@ public sealed class WorkflowAgentDraftMaterializerTests
 
         var materialized = await materializer.MaterializeAsync(workflow);
 
-        var technical = Assert.Single(materialized.Agents);
+        var technical = Assert.Single(materialized.Participants);
         Assert.Equal("Workflow-specific summary", technical.Summary);
     }
 

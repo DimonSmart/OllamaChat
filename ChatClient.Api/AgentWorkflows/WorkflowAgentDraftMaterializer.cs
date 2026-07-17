@@ -1,8 +1,37 @@
 using ChatClient.Application.Services;
 using ChatClient.Application.Services.Agentic;
+using ChatClient.Application.Services.AgentRuntime;
 using ChatClient.Domain.Models;
 
 namespace ChatClient.Api.AgentWorkflows;
+
+public interface IWorkflowParticipantResolver
+{
+    Task<IReadOnlyList<ResolvedWorkflowParticipant>> ResolveAsync(
+        IOrchestrationWorkflowDefinition workflow,
+        WorkflowParticipantResolutionContext context,
+        CancellationToken cancellationToken = default);
+}
+
+public sealed record WorkflowParticipantResolutionContext
+{
+    public IReadOnlyList<AgentDefinitionReference> DefinitionPath { get; init; } = [];
+}
+
+public sealed record ResolvedWorkflowParticipant
+{
+    public required string ParticipantId { get; init; }
+
+    public required string DisplayName { get; init; }
+
+    public string Summary { get; init; } = string.Empty;
+
+    public required AgentDefinitionReference? Reference { get; init; }
+
+    public AgentTemplateDefinition? InlineAgent { get; init; }
+
+    public required AgentRuntimeKind RuntimeKind { get; init; }
+}
 
 public interface IWorkflowAgentDraftMaterializer
 {
@@ -16,10 +45,421 @@ public interface IWorkflowAgentDraftMaterializer
         where TWorkflow : class, IOrchestrationWorkflowDefinition;
 }
 
-public sealed class WorkflowAgentDraftMaterializer(
-    IAgentTemplateService agentDescriptionService) : IWorkflowAgentDraftMaterializer
+public sealed class WorkflowParticipantResolver(
+    IAgentTemplateService agentDescriptionService,
+    IAgentDefinitionCatalog definitionCatalog) : IWorkflowParticipantResolver
 {
     private readonly IAgentTemplateService _agentDescriptionService = agentDescriptionService;
+    private readonly IAgentDefinitionCatalog _definitionCatalog = definitionCatalog;
+
+    public async Task<IReadOnlyList<ResolvedWorkflowParticipant>> ResolveAsync(
+        IOrchestrationWorkflowDefinition workflow,
+        WorkflowParticipantResolutionContext context,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(workflow);
+        cancellationToken.ThrowIfCancellationRequested();
+        ValidateWorkflowShape(workflow);
+
+        var savedAgents = await _agentDescriptionService.GetAllAsync();
+        var resolved = new List<ResolvedWorkflowParticipant>();
+        foreach (var participant in workflow.Participants)
+        {
+            resolved.Add(await ResolveParticipantAsync(
+                participant,
+                savedAgents,
+                cancellationToken));
+        }
+
+        ResolveInstructionTemplates(resolved);
+        return resolved;
+    }
+
+    private static void ValidateWorkflowShape(IOrchestrationWorkflowDefinition workflow)
+    {
+        if (workflow.Participants.Count == 0)
+        {
+            throw new InvalidOperationException("Workflow must define at least one participant.");
+        }
+
+        var duplicateParticipantId = workflow.Participants
+            .GroupBy(static participant => participant.Id, StringComparer.OrdinalIgnoreCase)
+            .FirstOrDefault(static group => group.Count() > 1)
+            ?.Key;
+        if (!string.IsNullOrWhiteSpace(duplicateParticipantId))
+        {
+            throw new InvalidOperationException(
+                $"Workflow contains duplicate participant id '{duplicateParticipantId}'.");
+        }
+
+        var duplicateStartInput = workflow.StartInputs
+            .GroupBy(static input => input.Key, StringComparer.OrdinalIgnoreCase)
+            .FirstOrDefault(static group => group.Count() > 1)
+            ?.Key;
+        if (!string.IsNullOrWhiteSpace(duplicateStartInput))
+        {
+            throw new InvalidOperationException(
+                $"Workflow contains duplicate start input key '{duplicateStartInput}'.");
+        }
+
+        foreach (var participant in workflow.Participants)
+        {
+            if (string.IsNullOrWhiteSpace(participant.Id))
+            {
+                throw new InvalidOperationException("Workflow participant id is required.");
+            }
+
+            var hasSource = participant.Source is not null ||
+                            participant.AgentDraft is not null ||
+                            participant.SavedAgentTemplate is not null;
+            if (!hasSource)
+            {
+                throw new InvalidOperationException(
+                    $"Workflow participant '{participant.Id}' has no executable source.");
+            }
+
+            if (participant.Source is SavedDefinitionParticipantSource saved &&
+                string.IsNullOrWhiteSpace(saved.Reference.Id))
+            {
+                throw new InvalidOperationException(
+                    $"Workflow participant '{participant.Id}' references a saved definition without an id.");
+            }
+        }
+
+        if (workflow is SequentialWorkflowDefinition sequential)
+        {
+            ValidateSequentialWorkflow(sequential);
+        }
+    }
+
+    private static void ValidateSequentialWorkflow(SequentialWorkflowDefinition workflow)
+    {
+        if (workflow.ParticipantOrder.Count == 0)
+        {
+            throw new InvalidOperationException("Sequential workflow must define at least one ordered participant.");
+        }
+
+        var participantIds = workflow.Participants
+            .Select(static participant => participant.Id)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        foreach (var participantId in workflow.ParticipantOrder)
+        {
+            if (!participantIds.Contains(participantId))
+            {
+                throw new InvalidOperationException(
+                    $"Sequential workflow participant '{participantId}' is not defined.");
+            }
+        }
+
+        var repeatedParticipantId = workflow.ParticipantOrder
+            .GroupBy(static participantId => participantId, StringComparer.OrdinalIgnoreCase)
+            .FirstOrDefault(static group => group.Count() > 1)
+            ?.Key;
+        if (!string.IsNullOrWhiteSpace(repeatedParticipantId))
+        {
+            throw new InvalidOperationException(
+                $"Sequential workflow participant '{repeatedParticipantId}' is ordered more than once.");
+        }
+    }
+
+    private async Task<ResolvedWorkflowParticipant> ResolveParticipantAsync(
+        WorkflowParticipantDefinition participant,
+        IReadOnlyCollection<AgentTemplateDefinition> savedAgents,
+        CancellationToken cancellationToken)
+    {
+        var source = ResolveSource(participant, savedAgents);
+        return source switch
+        {
+            InlineAgentParticipantSource inline => ResolveInline(participant, inline.Agent),
+            SavedDefinitionParticipantSource saved => await ResolveSavedAsync(
+                participant,
+                saved.Reference,
+                savedAgents,
+                cancellationToken),
+            _ => throw new InvalidOperationException(
+                $"Workflow participant '{participant.Id}' has no executable source.")
+        };
+    }
+
+    private async Task<ResolvedWorkflowParticipant> ResolveSavedAsync(
+        WorkflowParticipantDefinition participant,
+        AgentDefinitionReference reference,
+        IReadOnlyCollection<AgentTemplateDefinition> savedAgents,
+        CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(reference.Id))
+        {
+            throw new InvalidOperationException(
+                $"Workflow participant '{participant.Id}' references a saved definition without an id.");
+        }
+
+        var catalogItem = await _definitionCatalog.FindAsync(reference, cancellationToken);
+        if (catalogItem is null)
+        {
+            throw new InvalidOperationException(
+                $"Saved {reference.Kind} '{reference.Id}' was not found for workflow participant '{participant.Id}'.");
+        }
+
+        if (reference.Kind == AgentDefinitionKind.SavedWorkflow &&
+            participant.Overrides.Llm is not null)
+        {
+            throw new InvalidOperationException(
+                $"Workflow participant '{participant.Id}' applies LLM overrides to a saved workflow.");
+        }
+
+        if (reference.Kind == AgentDefinitionKind.SavedAgent)
+        {
+            var draft = ResolveSavedAgentDraft(reference, savedAgents);
+            ApplyOverrides(draft, participant.Overrides);
+            ApplyLegacyOverrides(draft, participant.DraftOverrides, participant.Overrides);
+            draft.RuntimeAgentId = participant.Id;
+            draft.ShortName = participant.Id;
+            return new ResolvedWorkflowParticipant
+            {
+                ParticipantId = participant.Id,
+                DisplayName = ResolveDisplayName(participant, draft.AgentName),
+                Summary = ResolveSummary(participant, draft.Summary),
+                Reference = reference,
+                InlineAgent = draft,
+                RuntimeKind = AgentRuntimeKind.LlmAgent
+            };
+        }
+
+        return new ResolvedWorkflowParticipant
+        {
+            ParticipantId = participant.Id,
+            DisplayName = ResolveDisplayName(participant, catalogItem.Name),
+            Summary = ResolveSummary(participant, catalogItem.Description),
+            Reference = reference,
+            RuntimeKind = AgentRuntimeKind.WorkflowAgent
+        };
+    }
+
+    private static ResolvedWorkflowParticipant ResolveInline(
+        WorkflowParticipantDefinition participant,
+        AgentTemplateDefinition agent)
+    {
+        var draft = agent.Clone();
+        ApplyOverrides(draft, participant.Overrides);
+        ApplyLegacyOverrides(draft, participant.DraftOverrides, participant.Overrides);
+        draft.RuntimeAgentId = participant.Id;
+        draft.ShortName = participant.Id;
+
+        return new ResolvedWorkflowParticipant
+        {
+            ParticipantId = participant.Id,
+            DisplayName = ResolveDisplayName(participant, draft.AgentName),
+            Summary = ResolveSummary(participant, draft.Summary),
+            Reference = null,
+            InlineAgent = draft,
+            RuntimeKind = AgentRuntimeKind.LlmAgent
+        };
+    }
+
+    private static WorkflowParticipantSource? ResolveSource(
+        WorkflowParticipantDefinition participant,
+        IReadOnlyCollection<AgentTemplateDefinition> savedAgents)
+    {
+        if (participant.Source is not null)
+        {
+            return participant.Source;
+        }
+
+        if (participant.AgentDraft is not null)
+        {
+            return new InlineAgentParticipantSource(participant.AgentDraft);
+        }
+
+        if (participant.SavedAgentTemplate is not null)
+        {
+            var savedAgent = ResolveSavedAgentByName(participant, savedAgents);
+            return new SavedDefinitionParticipantSource(new AgentDefinitionReference(
+                AgentDefinitionKind.SavedAgent,
+                savedAgent.Id.ToString("D")));
+        }
+
+        return null;
+    }
+
+    private static AgentTemplateDefinition ResolveSavedAgentDraft(
+        AgentDefinitionReference reference,
+        IReadOnlyCollection<AgentTemplateDefinition> savedAgents)
+    {
+        if (!Guid.TryParse(reference.Id, out var agentId))
+        {
+            throw new InvalidOperationException(
+                $"Saved agent reference '{reference.Id}' is not a valid saved-agent id.");
+        }
+
+        return savedAgents.FirstOrDefault(agent => agent.Id == agentId)?.Clone()
+               ?? throw new InvalidOperationException(
+                   $"Saved agent '{reference.Id}' was not found.");
+    }
+
+    private static AgentTemplateDefinition ResolveSavedAgentByName(
+        WorkflowParticipantDefinition participant,
+        IReadOnlyCollection<AgentTemplateDefinition> savedAgents)
+    {
+        var savedAgentName = participant.SavedAgentTemplate?.SavedAgentName;
+        var matches = savedAgents
+            .Where(savedAgent => string.Equals(
+                savedAgent.AgentName,
+                savedAgentName,
+                StringComparison.OrdinalIgnoreCase))
+            .ToList();
+
+        return matches.Count switch
+        {
+            1 => matches[0],
+            0 => throw new InvalidOperationException(
+                $"Saved agent '{savedAgentName}' was not found for workflow participant '{participant.Id}'."),
+            _ => throw new InvalidOperationException(
+                $"Saved agent name '{savedAgentName}' is ambiguous for workflow participant '{participant.Id}'.")
+        };
+    }
+
+    private static string ResolveDisplayName(
+        WorkflowParticipantDefinition participant,
+        string fallback)
+    {
+        if (!string.IsNullOrWhiteSpace(participant.Overrides.DisplayName))
+        {
+            return participant.Overrides.DisplayName.Trim();
+        }
+
+        if (!string.IsNullOrWhiteSpace(participant.DraftOverrides.AgentName))
+        {
+            return participant.DraftOverrides.AgentName.Trim();
+        }
+
+        return string.IsNullOrWhiteSpace(fallback) ? participant.Id : fallback.Trim();
+    }
+
+    private static string ResolveSummary(
+        WorkflowParticipantDefinition participant,
+        string? fallback)
+    {
+        if (!string.IsNullOrWhiteSpace(participant.Overrides.Summary))
+        {
+            return participant.Overrides.Summary.Trim();
+        }
+
+        if (!string.IsNullOrWhiteSpace(participant.Summary))
+        {
+            return participant.Summary.Trim();
+        }
+
+        return fallback?.Trim() ?? string.Empty;
+    }
+
+    private static void ApplyOverrides(
+        AgentTemplateDefinition draft,
+        WorkflowParticipantOverrides overrides)
+    {
+        if (!string.IsNullOrWhiteSpace(overrides.DisplayName))
+        {
+            draft.AgentName = overrides.DisplayName.Trim();
+        }
+
+        if (!string.IsNullOrWhiteSpace(overrides.Llm?.AvatarText))
+        {
+            draft.AvatarText = overrides.Llm.AvatarText.Trim();
+        }
+
+        if (!string.IsNullOrWhiteSpace(overrides.Llm?.Instructions))
+        {
+            draft.Content = overrides.Llm.Instructions.Trim();
+        }
+
+        if (!string.IsNullOrWhiteSpace(overrides.Llm?.AppendedInstructions))
+        {
+            draft.Content = AppendInstructions(draft.Content, overrides.Llm.AppendedInstructions);
+        }
+    }
+
+    private static void ApplyLegacyOverrides(
+        AgentTemplateDefinition draft,
+        AgentWorkflowAgentDraftOverrides overrides,
+        WorkflowParticipantOverrides canonicalOverrides)
+    {
+        if (string.IsNullOrWhiteSpace(canonicalOverrides.DisplayName) &&
+            !string.IsNullOrWhiteSpace(overrides.AgentName))
+        {
+            draft.AgentName = overrides.AgentName.Trim();
+        }
+
+        if (string.IsNullOrWhiteSpace(canonicalOverrides.Llm?.AvatarText) &&
+            !string.IsNullOrWhiteSpace(overrides.AvatarText))
+        {
+            draft.AvatarText = overrides.AvatarText.Trim();
+        }
+
+        if (string.IsNullOrWhiteSpace(canonicalOverrides.Llm?.Instructions) &&
+            !string.IsNullOrWhiteSpace(overrides.Instructions))
+        {
+            draft.Content = overrides.Instructions.Trim();
+        }
+
+        if (string.IsNullOrWhiteSpace(canonicalOverrides.Llm?.AppendedInstructions) &&
+            !string.IsNullOrWhiteSpace(overrides.AppendedInstructions))
+        {
+            draft.Content = AppendInstructions(draft.Content, overrides.AppendedInstructions);
+        }
+    }
+
+    private static void ResolveInstructionTemplates(List<ResolvedWorkflowParticipant> participants)
+    {
+        var agentsById = participants
+            .Where(static participant => participant.InlineAgent is not null)
+            .ToDictionary(
+                static participant => participant.ParticipantId,
+                static participant => new WorkflowParticipantDefinition
+                {
+                    Id = participant.ParticipantId,
+                    Role = participant.DisplayName,
+                    Summary = participant.Summary,
+                    Source = new InlineAgentParticipantSource(participant.InlineAgent!)
+                },
+                StringComparer.OrdinalIgnoreCase);
+
+        foreach (var participant in participants)
+        {
+            if (participant.InlineAgent is null ||
+                string.IsNullOrWhiteSpace(participant.InlineAgent.Content))
+            {
+                continue;
+            }
+
+            participant.InlineAgent.Content = WorkflowInstructionTemplateResolver.ResolveAgentReferences(
+                participant.InlineAgent.Content,
+                participant.ParticipantId,
+                agentsById);
+        }
+    }
+
+    private static string AppendInstructions(string baseInstructions, string appendedInstructions)
+    {
+        var normalizedBase = baseInstructions?.Trim() ?? string.Empty;
+        var normalizedAppendix = appendedInstructions.Trim();
+
+        if (string.IsNullOrWhiteSpace(normalizedBase))
+        {
+            return normalizedAppendix;
+        }
+
+        return $"{normalizedBase}\n\n{normalizedAppendix}";
+    }
+}
+
+public sealed class WorkflowAgentDraftMaterializer(
+    IWorkflowParticipantResolver participantResolver) : IWorkflowAgentDraftMaterializer
+{
+    public WorkflowAgentDraftMaterializer(IAgentTemplateService agentDescriptionService)
+        : this(new WorkflowParticipantResolver(
+            agentDescriptionService,
+            new AgentTemplateServiceDefinitionCatalog(agentDescriptionService)))
+    {
+    }
 
     public async Task<IOrchestrationWorkflowDefinition> MaterializeAsync(
         IOrchestrationWorkflowDefinition workflow,
@@ -28,11 +468,13 @@ public sealed class WorkflowAgentDraftMaterializer(
         ArgumentNullException.ThrowIfNull(workflow);
         cancellationToken.ThrowIfCancellationRequested();
 
-        var savedAgents = await _agentDescriptionService.GetAllAsync();
-        var materializedAgents = workflow.Agents
-            .Select(agent => MaterializeAgent(agent, savedAgents))
+        var resolvedParticipants = await participantResolver.ResolveAsync(
+            workflow,
+            new WorkflowParticipantResolutionContext(),
+            cancellationToken);
+        var materializedParticipants = resolvedParticipants
+            .Select(ToMaterializedParticipant)
             .ToList();
-        ResolveInstructionTemplates(materializedAgents);
 
         return workflow switch
         {
@@ -41,10 +483,10 @@ public sealed class WorkflowAgentDraftMaterializer(
                 Id = handoff.Id,
                 DisplayName = handoff.DisplayName,
                 Description = handoff.Description,
-                StartAgentId = handoff.StartAgentId,
+                StartParticipantId = handoff.StartParticipantId,
                 Execution = CloneExecution(handoff.Execution),
                 StartInputs = CloneStartInputs(handoff.StartInputs),
-                Agents = materializedAgents,
+                Participants = materializedParticipants,
                 Handoffs = CloneHandoffs(handoff.Handoffs)
             },
             SequentialWorkflowDefinition sequential => new SequentialWorkflowDefinition
@@ -54,8 +496,8 @@ public sealed class WorkflowAgentDraftMaterializer(
                 Description = sequential.Description,
                 Execution = CloneExecution(sequential.Execution),
                 StartInputs = CloneStartInputs(sequential.StartInputs),
-                Agents = materializedAgents,
-                AgentOrder = sequential.AgentOrder.ToList()
+                Participants = materializedParticipants,
+                ParticipantOrder = sequential.ParticipantOrder.ToList()
             },
             ConcurrentWorkflowDefinition concurrent => new ConcurrentWorkflowDefinition
             {
@@ -64,8 +506,8 @@ public sealed class WorkflowAgentDraftMaterializer(
                 Description = concurrent.Description,
                 Execution = CloneExecution(concurrent.Execution),
                 StartInputs = CloneStartInputs(concurrent.StartInputs),
-                Agents = materializedAgents,
-                ParticipantAgentIds = concurrent.ParticipantAgentIds.ToList(),
+                Participants = materializedParticipants,
+                ParticipantIds = concurrent.ParticipantIds.ToList(),
                 Aggregation = CloneAggregation(concurrent.Aggregation)
             },
             GroupChatWorkflowDefinition groupChat => new GroupChatWorkflowDefinition
@@ -75,8 +517,8 @@ public sealed class WorkflowAgentDraftMaterializer(
                 Description = groupChat.Description,
                 Execution = CloneExecution(groupChat.Execution),
                 StartInputs = CloneStartInputs(groupChat.StartInputs),
-                Agents = materializedAgents,
-                ParticipantAgentIds = groupChat.ParticipantAgentIds.ToList(),
+                Participants = materializedParticipants,
+                ParticipantIds = groupChat.ParticipantIds.ToList(),
                 Manager = CloneManager(groupChat.Manager)
             },
             _ => throw new InvalidOperationException(
@@ -112,8 +554,8 @@ public sealed class WorkflowAgentDraftMaterializer(
         IReadOnlyCollection<AgentWorkflowHandoffDefinition> handoffs) =>
         handoffs.Select(handoff => new AgentWorkflowHandoffDefinition
         {
-            FromAgentId = handoff.FromAgentId,
-            ToAgentId = handoff.ToAgentId,
+            FromParticipantId = handoff.FromParticipantId,
+            ToParticipantId = handoff.ToParticipantId,
             Label = handoff.Label,
             IsFallback = handoff.IsFallback
         }).ToList();
@@ -146,151 +588,47 @@ public sealed class WorkflowAgentDraftMaterializer(
             CompletionSummaryLabel = execution.CompletionSummaryLabel
         };
 
-    private static void ResolveInstructionTemplates(List<AgentWorkflowAgentDefinition> agents)
-    {
-        var agentsById = agents.ToDictionary(agent => agent.Id, StringComparer.OrdinalIgnoreCase);
-        foreach (var agent in agents)
+    private static WorkflowParticipantDefinition ToMaterializedParticipant(
+        ResolvedWorkflowParticipant participant) =>
+        new()
         {
-            if (agent.AgentDraft is null ||
-                string.IsNullOrWhiteSpace(agent.AgentDraft.Content))
-            {
-                continue;
-            }
-
-            agent.AgentDraft.Content = WorkflowInstructionTemplateResolver.ResolveAgentReferences(
-                agent.AgentDraft.Content,
-                agent.Id,
-                agentsById);
-        }
-    }
-
-    private static AgentWorkflowAgentDefinition MaterializeAgent(
-        AgentWorkflowAgentDefinition agent,
-        IReadOnlyCollection<AgentTemplateDefinition> savedAgents)
-    {
-        var draft = ResolveBaseDraft(agent, savedAgents);
-        ApplyOverrides(draft, agent.DraftOverrides);
-        var summary = ResolveSummary(agent, draft);
-
-        // Workflow slots need a stable runtime key and compact UI alias independent of the saved-agent name.
-        draft.RuntimeAgentId = agent.Id;
-        draft.ShortName = agent.Id;
-
-        return new AgentWorkflowAgentDefinition
-        {
-            Id = agent.Id,
-            Role = agent.Role,
-            Summary = summary,
-            AgentDraft = draft,
-            SavedAgentTemplate = agent.SavedAgentTemplate is null
-                ? null
-                : new AgentWorkflowSavedAgentTemplate
-                {
-                    SavedAgentName = agent.SavedAgentTemplate.SavedAgentName
-                },
-            DraftOverrides = new AgentWorkflowAgentDraftOverrides
-            {
-                AgentName = agent.DraftOverrides.AgentName,
-                AvatarText = agent.DraftOverrides.AvatarText,
-                Instructions = agent.DraftOverrides.Instructions,
-                AppendedInstructions = agent.DraftOverrides.AppendedInstructions
-            },
-            CapabilityRequirements = agent.CapabilityRequirements
-                .Select(capability => new AgentWorkflowCapabilityRequirement
-                {
-                    Key = capability.Key,
-                    DisplayName = capability.DisplayName,
-                    Purpose = capability.Purpose,
-                    Availability = capability.Availability,
-                    AvailabilityNote = capability.AvailabilityNote
-                })
-                .ToList(),
-            MaxTurnsPerSession = agent.MaxTurnsPerSession,
-            MinAssistantTurnsBetweenTurns = agent.MinAssistantTurnsBetweenTurns
+            Id = participant.ParticipantId,
+            Role = participant.DisplayName,
+            Summary = participant.Summary,
+            Source = participant.InlineAgent is null
+                ? participant.Reference is null
+                    ? null
+                    : new SavedDefinitionParticipantSource(participant.Reference)
+                : new InlineAgentParticipantSource(participant.InlineAgent),
+            AgentDraft = participant.InlineAgent
         };
-    }
+}
 
-    private static string ResolveSummary(
-        AgentWorkflowAgentDefinition agent,
-        AgentTemplateDefinition draft)
+file sealed class AgentTemplateServiceDefinitionCatalog(
+    IAgentTemplateService agentTemplateService) : IAgentDefinitionCatalog
+{
+    public async Task<IReadOnlyList<AgentDefinitionCatalogItem>> GetAllAsync(
+        CancellationToken cancellationToken = default)
     {
-        if (!string.IsNullOrWhiteSpace(agent.Summary))
-        {
-            return agent.Summary;
-        }
-
-        return agent.SavedAgentTemplate is null
-            ? string.Empty
-            : draft.Summary?.Trim() ?? string.Empty;
-    }
-
-    private static AgentTemplateDefinition ResolveBaseDraft(
-        AgentWorkflowAgentDefinition agent,
-        IReadOnlyCollection<AgentTemplateDefinition> savedAgents)
-    {
-        if (agent.AgentDraft is not null)
-        {
-            return agent.AgentDraft.Clone();
-        }
-
-        if (agent.SavedAgentTemplate is null)
-        {
-            throw new InvalidOperationException(
-                $"Workflow agent '{agent.Id}' has no inline draft and no saved-agent template.");
-        }
-
-        var matches = savedAgents
-            .Where(savedAgent => string.Equals(
-                savedAgent.AgentName,
-                agent.SavedAgentTemplate.SavedAgentName,
-                StringComparison.OrdinalIgnoreCase))
+        cancellationToken.ThrowIfCancellationRequested();
+        var agents = await agentTemplateService.GetAllAsync();
+        return agents
+            .Select(static agent => new AgentDefinitionCatalogItem
+            {
+                Reference = new AgentDefinitionReference(
+                    AgentDefinitionKind.SavedAgent,
+                    agent.Id.ToString("D")),
+                Name = agent.AgentName,
+                Description = agent.Summary,
+                RuntimeKind = AgentRuntimeKind.LlmAgent
+            })
             .ToList();
-
-        return matches.Count switch
-        {
-            1 => matches[0].Clone(),
-            0 => throw new InvalidOperationException(
-                $"Saved agent '{agent.SavedAgentTemplate.SavedAgentName}' was not found for workflow agent '{agent.Id}'."),
-            _ => throw new InvalidOperationException(
-                $"Saved agent name '{agent.SavedAgentTemplate.SavedAgentName}' is ambiguous for workflow agent '{agent.Id}'.")
-        };
     }
 
-    private static void ApplyOverrides(
-        AgentTemplateDefinition draft,
-        AgentWorkflowAgentDraftOverrides overrides)
-    {
-        if (!string.IsNullOrWhiteSpace(overrides.AgentName))
-        {
-            draft.AgentName = overrides.AgentName.Trim();
-        }
-
-        if (!string.IsNullOrWhiteSpace(overrides.AvatarText))
-        {
-            draft.AvatarText = overrides.AvatarText.Trim();
-        }
-
-        if (!string.IsNullOrWhiteSpace(overrides.Instructions))
-        {
-            draft.Content = overrides.Instructions.Trim();
-        }
-
-        if (!string.IsNullOrWhiteSpace(overrides.AppendedInstructions))
-        {
-            draft.Content = AppendInstructions(draft.Content, overrides.AppendedInstructions);
-        }
-    }
-
-    private static string AppendInstructions(string baseInstructions, string appendedInstructions)
-    {
-        var normalizedBase = baseInstructions?.Trim() ?? string.Empty;
-        var normalizedAppendix = appendedInstructions.Trim();
-
-        if (string.IsNullOrWhiteSpace(normalizedBase))
-        {
-            return normalizedAppendix;
-        }
-
-        return $"{normalizedBase}\n\n{normalizedAppendix}";
-    }
+    public async Task<AgentDefinitionCatalogItem?> FindAsync(
+        AgentDefinitionReference reference,
+        CancellationToken cancellationToken = default) =>
+        (await GetAllAsync(cancellationToken)).FirstOrDefault(item =>
+            item.Reference.Kind == reference.Kind &&
+            string.Equals(item.Reference.Id, reference.Id, StringComparison.OrdinalIgnoreCase));
 }

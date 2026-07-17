@@ -9,7 +9,7 @@ public sealed class WorkflowDefinitionBuilder
     private string _description = string.Empty;
     private AgentWorkflowExecutionDefinition _execution = new();
     private readonly List<WorkflowStartInputDefinition> _startInputs = [];
-    private readonly List<AgentWorkflowAgentDefinition> _agents = [];
+    private readonly List<WorkflowParticipantDefinition> _participants = [];
     private HandoffConfigurationBuilder? _handoff;
     private GroupChatConfigurationBuilder? _groupChat;
     private SequentialConfigurationBuilder? _sequential;
@@ -182,9 +182,9 @@ public sealed class WorkflowDefinitionBuilder
 
     public IOrchestrationWorkflowDefinition Build()
     {
-        if (_agents.Count == 0)
+        if (_participants.Count == 0)
         {
-            throw new InvalidOperationException("Workflow must define at least one agent.");
+            throw new InvalidOperationException("Workflow must define at least one participant.");
         }
 
         var configuredKinds = CountConfiguredKinds();
@@ -200,7 +200,7 @@ public sealed class WorkflowDefinitionBuilder
                 "Workflow can only use one orchestration kind.");
         }
 
-        WorkflowInstructionTemplateResolver.ValidateAgentReferences(_agents);
+        WorkflowInstructionTemplateResolver.ValidateAgentReferences(_participants);
 
         if (_handoff is not null)
         {
@@ -260,10 +260,10 @@ public sealed class WorkflowDefinitionBuilder
             Id = _id,
             DisplayName = _displayName,
             Description = _description,
-            StartAgentId = startAgentId,
+            StartParticipantId = startAgentId,
             Execution = CloneExecution(_execution),
             StartInputs = CloneStartInputs(),
-            Agents = CloneAgents(),
+            Participants = CloneParticipants(),
             Handoffs = handoff.Handoffs.ToList()
         };
     }
@@ -272,7 +272,7 @@ public sealed class WorkflowDefinitionBuilder
     {
         var agentIds = GetDefinedAgentIds();
         var participantAgentIds = groupChat.ParticipantAgentIds.Count == 0
-            ? _agents.Select(static agent => agent.Id).ToList()
+            ? _participants.Select(static agent => agent.Id).ToList()
             : groupChat.ParticipantAgentIds.ToList();
 
         var missingParticipantAgentId = participantAgentIds.FirstOrDefault(agentId => !agentIds.Contains(agentId));
@@ -291,8 +291,8 @@ public sealed class WorkflowDefinitionBuilder
             Description = _description,
             Execution = CloneExecution(_execution),
             StartInputs = CloneStartInputs(),
-            Agents = CloneAgents(),
-            ParticipantAgentIds = participantAgentIds,
+            Participants = CloneParticipants(),
+            ParticipantIds = participantAgentIds,
             Manager = CloneManager(groupChat.Manager)
         };
     }
@@ -301,7 +301,7 @@ public sealed class WorkflowDefinitionBuilder
     {
         var agentIds = GetDefinedAgentIds();
         var agentOrder = sequential.AgentOrder.Count == 0
-            ? _agents.Select(static agent => agent.Id).ToList()
+            ? _participants.Select(static agent => agent.Id).ToList()
             : sequential.AgentOrder.ToList();
 
         var missingAgentId = agentOrder.FirstOrDefault(agentId => !agentIds.Contains(agentId));
@@ -318,8 +318,8 @@ public sealed class WorkflowDefinitionBuilder
             Description = _description,
             Execution = CloneExecution(_execution),
             StartInputs = CloneStartInputs(),
-            Agents = CloneAgents(),
-            AgentOrder = agentOrder
+            Participants = CloneParticipants(),
+            ParticipantOrder = agentOrder
         };
     }
 
@@ -327,7 +327,7 @@ public sealed class WorkflowDefinitionBuilder
     {
         var agentIds = GetDefinedAgentIds();
         var participantAgentIds = concurrent.ParticipantAgentIds.Count == 0
-            ? _agents.Select(static agent => agent.Id).ToList()
+            ? _participants.Select(static agent => agent.Id).ToList()
             : concurrent.ParticipantAgentIds.ToList();
 
         var missingAgentId = participantAgentIds.FirstOrDefault(agentId => !agentIds.Contains(agentId));
@@ -344,8 +344,8 @@ public sealed class WorkflowDefinitionBuilder
             Description = _description,
             Execution = CloneExecution(_execution),
             StartInputs = CloneStartInputs(),
-            Agents = CloneAgents(),
-            ParticipantAgentIds = participantAgentIds,
+            Participants = CloneParticipants(),
+            ParticipantIds = participantAgentIds,
             Aggregation = CloneAggregation(concurrent.Aggregation)
         };
     }
@@ -357,15 +357,15 @@ public sealed class WorkflowDefinitionBuilder
         _startInputs.Add(input);
     }
 
-    private void UpsertAgent(AgentWorkflowAgentDefinition agent)
+    private void UpsertAgent(WorkflowParticipantDefinition agent)
     {
-        _agents.RemoveAll(existing =>
+        _participants.RemoveAll(existing =>
             string.Equals(existing.Id, agent.Id, StringComparison.OrdinalIgnoreCase));
-        _agents.Add(agent);
+        _participants.Add(agent);
     }
 
     private HashSet<string> GetDefinedAgentIds() =>
-        _agents.Select(static agent => agent.Id)
+        _participants.Select(static agent => agent.Id)
             .ToHashSet(StringComparer.OrdinalIgnoreCase);
 
     private int CountConfiguredKinds() =>
@@ -394,8 +394,8 @@ public sealed class WorkflowDefinitionBuilder
     private List<WorkflowStartInputDefinition> CloneStartInputs() =>
         _startInputs.Select(CloneStartInput).ToList();
 
-    private List<AgentWorkflowAgentDefinition> CloneAgents() =>
-        _agents.Select(CloneAgent).ToList();
+    private List<WorkflowParticipantDefinition> CloneParticipants() =>
+        _participants.Select(CloneParticipant).ToList();
 
     private static WorkflowStartInputDefinition CloneStartInput(WorkflowStartInputDefinition input) =>
         new()
@@ -409,12 +409,13 @@ public sealed class WorkflowDefinitionBuilder
             DefaultValue = input.DefaultValue
         };
 
-    private static AgentWorkflowAgentDefinition CloneAgent(AgentWorkflowAgentDefinition agent) =>
+    private static WorkflowParticipantDefinition CloneParticipant(WorkflowParticipantDefinition agent) =>
         new()
         {
             Id = agent.Id,
             Role = agent.Role,
             Summary = agent.Summary,
+            Source = CloneSource(agent.Source),
             AgentDraft = agent.AgentDraft is null
                 ? null
                 : agent.AgentDraft.Clone(),
@@ -424,6 +425,7 @@ public sealed class WorkflowDefinitionBuilder
                 {
                     SavedAgentName = agent.SavedAgentTemplate.SavedAgentName
                 },
+            Overrides = CloneOverrides(agent.Overrides),
             DraftOverrides = new AgentWorkflowAgentDraftOverrides
             {
                 AgentName = agent.DraftOverrides.AgentName,
@@ -443,6 +445,31 @@ public sealed class WorkflowDefinitionBuilder
                 .ToList(),
             MaxTurnsPerSession = agent.MaxTurnsPerSession,
             MinAssistantTurnsBetweenTurns = agent.MinAssistantTurnsBetweenTurns
+        };
+
+    private static WorkflowParticipantSource? CloneSource(WorkflowParticipantSource? source) =>
+        source switch
+        {
+            InlineAgentParticipantSource inline => new InlineAgentParticipantSource(inline.Agent.Clone()),
+            SavedDefinitionParticipantSource saved => new SavedDefinitionParticipantSource(saved.Reference),
+            null => null,
+            _ => throw new InvalidOperationException(
+                $"Workflow participant source '{source.GetType().Name}' is not supported.")
+        };
+
+    private static WorkflowParticipantOverrides CloneOverrides(WorkflowParticipantOverrides overrides) =>
+        new()
+        {
+            DisplayName = overrides.DisplayName,
+            Summary = overrides.Summary,
+            Llm = overrides.Llm is null
+                ? null
+                : new LlmParticipantOverrides
+                {
+                    AvatarText = overrides.Llm.AvatarText,
+                    Instructions = overrides.Llm.Instructions,
+                    AppendedInstructions = overrides.Llm.AppendedInstructions
+                }
         };
 
     private static AgentWorkflowExecutionDefinition CloneExecution(AgentWorkflowExecutionDefinition execution) =>

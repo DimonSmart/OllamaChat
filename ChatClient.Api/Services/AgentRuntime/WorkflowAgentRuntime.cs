@@ -5,6 +5,7 @@ using ChatClient.Application.Services;
 using ChatClient.Application.Services.Agentic;
 using ChatClient.Application.Services.AgentRuntime;
 using ChatClient.Domain.Models;
+using Microsoft.Extensions.DependencyInjection;
 using System.Text;
 
 namespace ChatClient.Api.Services.AgentRuntime;
@@ -12,8 +13,10 @@ namespace ChatClient.Api.Services.AgentRuntime;
 public sealed class WorkflowAgentRuntimeFactory(
     IWorkflowDefinitionService workflowDefinitionService,
     IWorkflowDefinitionCompiler workflowDefinitionCompiler,
-    IWorkflowAgentDraftMaterializer workflowAgentDraftMaterializer,
+    IWorkflowParticipantResolver workflowParticipantResolver,
     IHeadlessWorkflowRunner headlessWorkflowRunner,
+    IChatEngineOrchestrator chatEngineOrchestrator,
+    IServiceProvider serviceProvider,
     ILogger<WorkflowAgentRuntimeFactory> logger) : IWorkflowAgentRuntimeFactory
 {
     public async Task<IAgentRuntime> CreateAsync(
@@ -39,10 +42,27 @@ public sealed class WorkflowAgentRuntimeFactory(
             cancellationToken);
         var workflow = compiled.Workflow
             ?? throw new InvalidOperationException("Workflow compilation did not return a workflow definition.");
-        var materialized = await workflowAgentDraftMaterializer.MaterializeAsync(workflow, cancellationToken);
-        var resolvedAgents = materialized.Agents
-            .Select(agent => ResolveWorkflowAgent(agent, context))
+        var workflowReference = new AgentDefinitionReference(
+            AgentDefinitionKind.SavedWorkflow,
+            savedWorkflow.Id.ToString("D"));
+        var resolvedParticipants = await workflowParticipantResolver.ResolveAsync(
+            workflow,
+            new WorkflowParticipantResolutionContext
+            {
+                DefinitionPath = [workflowReference]
+            },
+            cancellationToken);
+        var resolvedAgents = resolvedParticipants
+            .Where(static participant => participant.RuntimeKind == AgentRuntimeKind.LlmAgent)
+            .Select(participant => ResolveWorkflowAgent(participant, context))
             .ToList();
+
+        if (workflow is not SequentialWorkflowDefinition &&
+            resolvedParticipants.Any(static participant => participant.RuntimeKind == AgentRuntimeKind.WorkflowAgent))
+        {
+            throw new NotSupportedException(
+                $"Workflow '{workflow.DisplayName}' contains a saved workflow participant, which is currently supported only by sequential workflows.");
+        }
 
         return new WorkflowAgentRuntime(
             new AgentRuntimeDescriptor(
@@ -50,20 +70,25 @@ public sealed class WorkflowAgentRuntimeFactory(
                 savedWorkflow.DisplayName,
                 savedWorkflow.Description,
                 AgentRuntimeKind.WorkflowAgent),
-            materialized,
+            workflowReference,
+            workflow,
+            resolvedParticipants,
             resolvedAgents,
             context.Configuration,
+            context,
             headlessWorkflowRunner,
+            chatEngineOrchestrator,
+            serviceProvider,
             logger);
     }
 
     private static ResolvedChatAgent ResolveWorkflowAgent(
-        AgentWorkflowAgentDefinition workflowAgent,
+        ResolvedWorkflowParticipant workflowAgent,
         AgentRuntimeCreationContext context)
     {
-        var draft = workflowAgent.AgentDraft
+        var draft = workflowAgent.InlineAgent
             ?? throw new InvalidOperationException(
-                $"Workflow agent '{workflowAgent.Id}' has no materialized agent draft.");
+                $"Workflow participant '{workflowAgent.ParticipantId}' has no materialized agent draft.");
         var uiSelection = context.DefaultModel is null
             ? new ServerModelSelection(null, null)
             : new ServerModelSelection(context.DefaultModel.ServerId, context.DefaultModel.ModelName);
@@ -74,7 +99,7 @@ public sealed class WorkflowAgentRuntimeFactory(
                 out var model))
         {
             throw new InvalidOperationException(
-                $"Model selection for workflow agent '{workflowAgent.Id}' is incomplete.");
+                $"Model selection for workflow participant '{workflowAgent.ParticipantId}' is incomplete.");
         }
 
         return ResolvedChatAgentFactory.Resolve(draft, model);
@@ -83,19 +108,73 @@ public sealed class WorkflowAgentRuntimeFactory(
 
 internal sealed class WorkflowAgentRuntime(
     AgentRuntimeDescriptor descriptor,
+    AgentDefinitionReference workflowReference,
     IOrchestrationWorkflowDefinition workflow,
+    IReadOnlyList<ResolvedWorkflowParticipant> participants,
     IReadOnlyList<ResolvedChatAgent> agents,
     AppChatConfiguration configuration,
+    AgentRuntimeCreationContext creationContext,
     IHeadlessWorkflowRunner headlessWorkflowRunner,
+    IChatEngineOrchestrator chatEngineOrchestrator,
+    IServiceProvider serviceProvider,
     ILogger logger) : IAgentRuntime
 {
+    private const int DefaultMaximumWorkflowNestingDepth = 8;
+
     public AgentRuntimeDescriptor Descriptor { get; } = descriptor;
+
+    public WorkflowAgentRuntime(
+        AgentRuntimeDescriptor descriptor,
+        IOrchestrationWorkflowDefinition workflow,
+        IReadOnlyList<ResolvedChatAgent> agents,
+        AppChatConfiguration configuration,
+        IHeadlessWorkflowRunner headlessWorkflowRunner,
+        ILogger logger)
+        : this(
+            descriptor,
+            new AgentDefinitionReference(AgentDefinitionKind.SavedWorkflow, descriptor.Id),
+            workflow,
+            workflow.Participants.Select(static participant => new ResolvedWorkflowParticipant
+            {
+                ParticipantId = participant.Id,
+                DisplayName = string.IsNullOrWhiteSpace(participant.Role) ? participant.Id : participant.Role,
+                Summary = participant.Summary,
+                Reference = null,
+                InlineAgent = participant.AgentDraft,
+                RuntimeKind = AgentRuntimeKind.LlmAgent
+            }).ToList(),
+            agents,
+            configuration,
+            new AgentRuntimeCreationContext
+            {
+                Configuration = configuration
+            },
+            headlessWorkflowRunner,
+            new MissingChatEngineOrchestrator(),
+            new EmptyServiceProvider(),
+            logger)
+    {
+    }
 
     public async IAsyncEnumerable<AgentRunEvent> RunAsync(
         AgentRuntimeRunRequest request,
         AgentRunContext context,
         [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken = default)
     {
+        if (workflow is SequentialWorkflowDefinition sequentialWorkflow)
+        {
+            await foreach (var runEvent in RunSequentialAsync(
+                               sequentialWorkflow,
+                               request,
+                               context,
+                               cancellationToken))
+            {
+                yield return runEvent;
+            }
+
+            yield break;
+        }
+
         var currentUserMessageIndex = FindCurrentUserMessageIndex(request.Messages);
         var userMessage = currentUserMessageIndex >= 0
             ? request.Messages[currentUserMessageIndex]
@@ -234,7 +313,7 @@ internal sealed class WorkflowAgentRuntime(
             Descriptor.Id,
             Descriptor.Name,
             workflow.Kind,
-            workflow.Agents.Count);
+            workflow.Participants.Count);
 
         return new AgentRunFailed(new AgentRunError(
             "execution_failed",
@@ -386,5 +465,343 @@ internal sealed class WorkflowAgentRuntime(
         return attachment.Name.EndsWith(".md", StringComparison.OrdinalIgnoreCase) ||
                attachment.Name.EndsWith(".markdown", StringComparison.OrdinalIgnoreCase) ||
                attachment.Name.EndsWith(".txt", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private async IAsyncEnumerable<AgentRunEvent> RunSequentialAsync(
+        SequentialWorkflowDefinition sequentialWorkflow,
+        AgentRuntimeRunRequest request,
+        AgentRunContext context,
+        [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken)
+    {
+        if (!ValidateRuntimeNesting(context, out var nestingFailure))
+        {
+            yield return nestingFailure!;
+            yield break;
+        }
+
+        if (!TryBuildStartInputsWithAttachments(request, out _, out var attachmentError))
+        {
+            yield return new AgentRunFailed(new AgentRunError(
+                "invalid_input",
+                attachmentError ?? "Workflow attachments could not be mapped to start inputs.",
+                false));
+            yield break;
+        }
+
+        var participantsById = participants.ToDictionary(
+            static participant => participant.ParticipantId,
+            StringComparer.OrdinalIgnoreCase);
+        if (sequentialWorkflow.ParticipantOrder.Count == 0)
+        {
+            yield return new AgentRunFailed(new AgentRunError(
+                "invalid_workflow",
+                "Sequential workflow has no participant order.",
+                false));
+            yield break;
+        }
+
+        AgentRunResult? previousResult = null;
+        var outputMessages = new List<AgentOutputMessage>();
+        var messageId = Guid.NewGuid().ToString("N");
+
+        foreach (var participantId in sequentialWorkflow.ParticipantOrder)
+        {
+            if (!participantsById.TryGetValue(participantId, out var participant))
+            {
+                yield return new AgentRunFailed(new AgentRunError(
+                    "invalid_workflow",
+                    $"Sequential workflow participant '{participantId}' was not resolved.",
+                    false));
+                yield break;
+            }
+
+            if (DetectCycle(participant, context, out var cycleFailure))
+            {
+                yield return cycleFailure!;
+                yield break;
+            }
+
+            var childContext = CreateChildContext(context, participant);
+            var participantRequest = SequentialParticipantRequestBuilder.Build(
+                request,
+                participant,
+                previousResult);
+            AgentRunResult? terminalResult = null;
+            AgentRunFailed? terminalFailure = null;
+
+            await foreach (var participantEvent in RunParticipantAsync(
+                               participant,
+                               participantRequest,
+                               childContext,
+                               cancellationToken))
+            {
+                switch (participantEvent)
+                {
+                    case AgentTextDelta delta when IsFinalParticipant(sequentialWorkflow, participant.ParticipantId):
+                        yield return new AgentTextDelta(messageId, Descriptor.Name, delta.Text);
+                        break;
+                    case AgentRunCompleted completed:
+                        terminalResult = completed.Result;
+                        break;
+                    case AgentRunFailed failed:
+                        terminalFailure = failed;
+                        break;
+                }
+            }
+
+            if (terminalFailure is not null)
+            {
+                yield return terminalFailure;
+                yield break;
+            }
+
+            if (terminalResult is null)
+            {
+                yield return new AgentRunFailed(new AgentRunError(
+                    "participant_protocol_violation",
+                    $"Workflow participant '{participant.ParticipantId}' completed without a terminal result.",
+                    false));
+                yield break;
+            }
+
+            previousResult = terminalResult;
+            outputMessages.Add(terminalResult.FinalMessage);
+        }
+
+        if (previousResult is null)
+        {
+            yield return new AgentRunFailed(new AgentRunError(
+                "workflow_produced_no_result",
+                "Workflow produced no final assistant result.",
+                false));
+            yield break;
+        }
+
+        var finalMessage = new AgentOutputMessage(
+            Descriptor.Name,
+            previousResult.FinalMessage.Content);
+        yield return new AgentMessageCompleted(messageId, finalMessage);
+        yield return new AgentRunCompleted(new AgentRunResult
+        {
+            FinalMessage = finalMessage,
+            FinalMessageId = messageId,
+            Messages = [finalMessage],
+            Metadata = new Dictionary<string, string>
+            {
+                ["runtime.kind"] = "workflow",
+                ["workflow.id"] = Descriptor.Id,
+                ["workflow.name"] = Descriptor.Name,
+                ["workflowKind"] = workflow.Kind
+            }
+        });
+    }
+
+    private async IAsyncEnumerable<AgentRunEvent> RunParticipantAsync(
+        ResolvedWorkflowParticipant participant,
+        AgentRuntimeRunRequest request,
+        AgentRunContext context,
+        [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken)
+    {
+        if (participant.Reference is not null)
+        {
+            var runner = serviceProvider.GetRequiredService<IAgentRunner>();
+            await foreach (var runEvent in runner.RunAsync(
+                               participant.Reference,
+                               request,
+                               creationContext,
+                               context,
+                               cancellationToken))
+            {
+                yield return runEvent;
+            }
+
+            yield break;
+        }
+
+        if (participant.InlineAgent is null)
+        {
+            yield return new AgentRunFailed(new AgentRunError(
+                "invalid_workflow",
+                $"Workflow participant '{participant.ParticipantId}' has no executable source.",
+                false));
+            yield break;
+        }
+
+        var runtime = CreateInlineRuntime(participant, participant.InlineAgent);
+        await foreach (var runEvent in runtime.RunAsync(request, context, cancellationToken))
+        {
+            yield return runEvent;
+        }
+    }
+
+    private IAgentRuntime CreateInlineRuntime(
+        ResolvedWorkflowParticipant participant,
+        AgentTemplateDefinition draft)
+    {
+        var uiSelection = creationContext.DefaultModel is null
+            ? new ServerModelSelection(null, null)
+            : new ServerModelSelection(creationContext.DefaultModel.ServerId, creationContext.DefaultModel.ModelName);
+
+        if (!ModelSelectionHelper.TryGetEffectiveModel(
+                new ServerModelSelection(draft.LlmId, draft.ModelName),
+                uiSelection,
+                out var model))
+        {
+            throw new InvalidOperationException(
+                $"Model selection for workflow participant '{participant.ParticipantId}' is incomplete.");
+        }
+
+        return new LlmAgentRuntime(
+            new AgentRuntimeDescriptor(
+                participant.ParticipantId,
+                participant.DisplayName,
+                participant.Summary,
+                AgentRuntimeKind.LlmAgent),
+            ResolvedChatAgentFactory.Resolve(draft, model),
+            configuration,
+            chatEngineOrchestrator,
+            logger);
+    }
+
+    private AgentRunContext CreateChildContext(
+        AgentRunContext parent,
+        ResolvedWorkflowParticipant participant)
+    {
+        var path = EnsureCurrentWorkflowInPath(parent.DefinitionPath)
+            .Concat(participant.Reference is null ? [] : new[] { participant.Reference })
+            .ToList();
+
+        return new AgentRunContext
+        {
+            RunId = Guid.NewGuid().ToString("N"),
+            ParentRunId = parent.RunId,
+            ConversationId = parent.ConversationId,
+            DefinitionPath = path
+        };
+    }
+
+    private bool ValidateRuntimeNesting(
+        AgentRunContext context,
+        out AgentRunFailed? failure)
+    {
+        var workflowDepth = EnsureCurrentWorkflowInPath(context.DefinitionPath)
+            .Count(static reference => reference.Kind == AgentDefinitionKind.SavedWorkflow);
+        if (workflowDepth <= DefaultMaximumWorkflowNestingDepth)
+        {
+            failure = null;
+            return true;
+        }
+
+        failure = new AgentRunFailed(new AgentRunError(
+            "workflow_nesting_limit_exceeded",
+            $"Workflow nesting limit exceeded. Maximum depth is {DefaultMaximumWorkflowNestingDepth}.",
+            false));
+        return false;
+    }
+
+    private bool DetectCycle(
+        ResolvedWorkflowParticipant participant,
+        AgentRunContext context,
+        out AgentRunFailed? failure)
+    {
+        failure = null;
+        if (participant.Reference?.Kind != AgentDefinitionKind.SavedWorkflow)
+        {
+            return false;
+        }
+
+        var path = EnsureCurrentWorkflowInPath(context.DefinitionPath);
+        if (!path.Any(reference => SameReference(reference, participant.Reference)))
+        {
+            return false;
+        }
+
+        var cyclePath = path
+            .Where(static reference => reference.Kind == AgentDefinitionKind.SavedWorkflow)
+            .Concat([participant.Reference])
+            .Select(static reference => reference.Id)
+            .ToList();
+
+        failure = new AgentRunFailed(new AgentRunError(
+            "workflow_cycle_detected",
+            $"Workflow dependency cycle detected: {string.Join(" -> ", cyclePath)}.",
+            false));
+        return true;
+    }
+
+    private static bool SameReference(
+        AgentDefinitionReference left,
+        AgentDefinitionReference right) =>
+        left.Kind == right.Kind &&
+        string.Equals(left.Id, right.Id, StringComparison.OrdinalIgnoreCase);
+
+    private IReadOnlyList<AgentDefinitionReference> EnsureCurrentWorkflowInPath(
+        IReadOnlyList<AgentDefinitionReference> path)
+    {
+        if (path.Any(reference => SameReference(reference, workflowReference)))
+        {
+            return path;
+        }
+
+        return path.Concat([workflowReference]).ToList();
+    }
+
+    private static bool IsFinalParticipant(
+        SequentialWorkflowDefinition workflow,
+        string participantId) =>
+        string.Equals(
+            workflow.ParticipantOrder.LastOrDefault(),
+            participantId,
+            StringComparison.OrdinalIgnoreCase);
+}
+
+file sealed class EmptyServiceProvider : IServiceProvider
+{
+    public object? GetService(Type serviceType) => null;
+}
+
+file sealed class MissingChatEngineOrchestrator : IChatEngineOrchestrator
+{
+    public IAsyncEnumerable<ChatEngineStreamChunk> StreamAsync(
+        ChatEngineOrchestrationRequest request,
+        CancellationToken cancellationToken = default) =>
+        throw new NotSupportedException("Inline workflow participants require a configured chat engine orchestrator.");
+}
+
+internal static class SequentialParticipantRequestBuilder
+{
+    public static AgentRuntimeRunRequest Build(
+        AgentRuntimeRunRequest workflowRequest,
+        ResolvedWorkflowParticipant participant,
+        AgentRunResult? previousResult)
+    {
+        if (previousResult is null)
+        {
+            return workflowRequest;
+        }
+
+        var originalUserMessage = workflowRequest.Messages
+            .LastOrDefault(static message => message.Role == AgentMessageRole.User)
+            ?.Content
+            ?.Trim();
+        var messages = new List<AgentInputMessage>();
+
+        if (!string.IsNullOrWhiteSpace(originalUserMessage))
+        {
+            messages.Add(new AgentInputMessage(
+                AgentMessageRole.User,
+                $"Original request:\n{originalUserMessage}"));
+        }
+
+        messages.Add(new AgentInputMessage(
+            AgentMessageRole.User,
+            $"Previous participant final response:\n{previousResult.FinalMessage.Content}"));
+
+        return new AgentRuntimeRunRequest
+        {
+            Messages = messages,
+            Inputs = workflowRequest.Inputs,
+            Attachments = []
+        };
     }
 }
