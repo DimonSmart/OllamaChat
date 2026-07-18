@@ -7,6 +7,7 @@ namespace ChatClient.Tests;
 public sealed class WorkflowDefinitionCompilerTests
 {
     [Fact]
+    [Obsolete]
     public async Task CompileAsync_CompilesStarterTemplate()
     {
         var compiler = new WorkflowDefinitionCompiler();
@@ -24,6 +25,7 @@ public sealed class WorkflowDefinitionCompilerTests
     }
 
     [Fact]
+    [Obsolete]
     public async Task CompileAsync_CompilesAutonomousHandoffWorkflow()
     {
         var compiler = new WorkflowDefinitionCompiler();
@@ -118,6 +120,7 @@ public sealed class WorkflowDefinitionCompilerTests
     }
 
     [Fact]
+    [Obsolete]
     public async Task CompileAsync_CompilesSeededGroupChatWorkflowWithProgrammableManager()
     {
         var compiler = new WorkflowDefinitionCompiler();
@@ -135,6 +138,7 @@ public sealed class WorkflowDefinitionCompilerTests
     }
 
     [Fact]
+    [Obsolete]
     public async Task CompileAsync_CompilesScenarioDisputeSeededWorkflow()
     {
         var compiler = new WorkflowDefinitionCompiler();
@@ -199,6 +203,7 @@ public sealed class WorkflowDefinitionCompilerTests
     }
 
     [Fact]
+    [Obsolete]
     public async Task CompileAsync_CompilesNewWorkflowScaffold()
     {
         var compiler = new WorkflowDefinitionCompiler();
@@ -241,6 +246,7 @@ public sealed class WorkflowDefinitionCompilerTests
     }
 
     [Fact]
+    [Obsolete]
     public async Task CompileAsync_CompilesWorkflowUsingSavedAgentTemplateSyntax()
     {
         var compiler = new WorkflowDefinitionCompiler();
@@ -274,6 +280,7 @@ public sealed class WorkflowDefinitionCompilerTests
     }
 
     [Fact]
+    [Obsolete]
     public async Task CompileAsync_CompilesLegacyHandoffSavedAgentSyntax()
     {
         var compiler = new WorkflowDefinitionCompiler();
@@ -316,6 +323,7 @@ public sealed class WorkflowDefinitionCompilerTests
     }
 
     [Fact]
+    [Obsolete]
     public async Task CompileAsync_CompilesGroupChatAvatarTextOverrides()
     {
         var compiler = new WorkflowDefinitionCompiler();

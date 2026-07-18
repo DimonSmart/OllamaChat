@@ -7,6 +7,7 @@ namespace ChatClient.Tests;
 public sealed class AgentWorkflowCatalogTests
 {
     [Fact]
+    [Obsolete]
     public async Task GetRequiredAsync_BuildsInterviewCoachWorkflowWithExpectedAgentsAndHandoffs()
     {
         var catalog = new AgentWorkflowCatalog(new StubMcpServerConfigService(
@@ -67,6 +68,7 @@ public sealed class AgentWorkflowCatalogTests
         Assert.IsType<InlineAgentParticipantSource>(participant.Source).Agent;
 
     [Fact]
+    [Obsolete]
     public async Task GetRequiredAsync_MarksDocumentIntakeAsPartialWhenOnlyMarkdownServerExists()
     {
         var catalog = new AgentWorkflowCatalog(new StubMcpServerConfigService(
@@ -90,6 +92,7 @@ public sealed class AgentWorkflowCatalogTests
     }
 
     [Fact]
+    [Obsolete]
     public async Task GetRequiredAsync_MarksCriticalCapabilitiesAvailableWhenMatchingServersExist()
     {
         var catalog = new AgentWorkflowCatalog(new StubMcpServerConfigService(

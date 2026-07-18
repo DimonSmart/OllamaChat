@@ -74,6 +74,7 @@ public sealed class AgentRuntimePolymorphicIntegrationTests
 
     private sealed class StubWorkflowFactory : IWorkflowAgentRuntimeFactory
     {
+        [Obsolete]
         public Task<IAgentRuntime> CreateAsync(
             string workflowId,
             AgentRuntimeCreationContext context,

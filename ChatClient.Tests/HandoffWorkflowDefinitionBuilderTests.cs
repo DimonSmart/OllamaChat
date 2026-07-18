@@ -7,6 +7,7 @@ namespace ChatClient.Tests;
 public sealed class HandoffWorkflowDefinitionBuilderTests
 {
     [Fact]
+    [Obsolete]
     public void Build_CreatesWorkflowWithStartInputsAgentsAndHandoffs()
     {
         var workflow = HandoffWorkflowDefinitionBuilder
@@ -64,6 +65,7 @@ public sealed class HandoffWorkflowDefinitionBuilderTests
     }
 
     [Fact]
+    [Obsolete]
     public void Build_ThrowsWhenStartAgentWasNotDefined()
     {
         var exception = Assert.Throws<InvalidOperationException>(() =>
@@ -79,6 +81,7 @@ public sealed class HandoffWorkflowDefinitionBuilderTests
     }
 
     [Fact]
+    [Obsolete]
     public void Build_CreatesSavedAgentTemplateReferenceWithOverrides()
     {
         var savedAgentId = Guid.NewGuid();
@@ -107,6 +110,7 @@ public sealed class HandoffWorkflowDefinitionBuilderTests
     }
 
     [Fact]
+    [Obsolete]
     public void Build_CreatesSavedAgentTemplateReferenceWithAppendedInstructions()
     {
         var savedAgentId = Guid.NewGuid();
@@ -127,6 +131,7 @@ public sealed class HandoffWorkflowDefinitionBuilderTests
     }
 
     [Fact]
+    [Obsolete]
     public void Build_ThrowsWhenInstructionsAndAppendInstructionsAreCombined()
     {
         var exception = Assert.Throws<InvalidOperationException>(() =>
@@ -144,6 +149,7 @@ public sealed class HandoffWorkflowDefinitionBuilderTests
     }
 
     [Fact]
+    [Obsolete]
     public void Build_DefaultsSavedAgentRoleToDefinitionKindWhenRoleIsOmitted()
     {
         var workflow = HandoffWorkflowDefinitionBuilder
@@ -159,6 +165,7 @@ public sealed class HandoffWorkflowDefinitionBuilderTests
     }
 
     [Fact]
+    [Obsolete]
     public void Build_FromSavedAgentPreservesLegacyNameSemantics()
     {
         var workflow = HandoffWorkflowDefinitionBuilder
@@ -174,6 +181,7 @@ public sealed class HandoffWorkflowDefinitionBuilderTests
     }
 
     [Fact]
+    [Obsolete]
     public void Build_UseAgentStringRejectsInvalidGuid()
     {
         var exception = Assert.Throws<ArgumentException>(() =>
@@ -189,6 +197,7 @@ public sealed class HandoffWorkflowDefinitionBuilderTests
     }
 
     [Fact]
+    [Obsolete]
     public void Build_UseWorkflowStringRejectsInvalidGuid()
     {
         var exception = Assert.Throws<ArgumentException>(() =>

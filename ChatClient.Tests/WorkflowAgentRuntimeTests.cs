@@ -12,6 +12,7 @@ namespace ChatClient.Tests;
 public sealed class WorkflowAgentRuntimeTests
 {
     [Fact]
+    [Obsolete]
     public async Task RunAsync_SequentialSavedParticipants_RunThroughAgentRunnerAndPassFinalMessage()
     {
         var runner = new RecordingAgentRunner(new Dictionary<string, string>
@@ -97,6 +98,7 @@ public sealed class WorkflowAgentRuntimeTests
     }
 
     [Fact]
+    [Obsolete]
     public async Task RunAsync_SequentialWorkflow_ReturnsNonRetryableFailureWhenNestingLimitExceeded()
     {
         var runner = new RecordingAgentRunner(new Dictionary<string, string>());
@@ -128,6 +130,7 @@ public sealed class WorkflowAgentRuntimeTests
     }
 
     [Fact]
+    [Obsolete]
     public async Task RunAsync_MapsHeadlessEventsToUnifiedEvents()
     {
         var runtime = CreateRuntime(new StubHeadlessWorkflowRunner([
@@ -160,6 +163,7 @@ public sealed class WorkflowAgentRuntimeTests
     }
 
     [Fact]
+    [Obsolete]
     public async Task WorkflowAgentRuntime_HandlesRealHeadlessLifecycle()
     {
         var runtime = CreateRuntime(new StubHeadlessWorkflowRunner([
@@ -185,6 +189,7 @@ public sealed class WorkflowAgentRuntimeTests
     }
 
     [Fact]
+    [Obsolete]
     public async Task RunAsync_FormatsHistoryAndKeepsLastUserOnlyInCurrentRequest()
     {
         var runner = new StubHeadlessWorkflowRunner([
@@ -219,6 +224,7 @@ public sealed class WorkflowAgentRuntimeTests
     }
 
     [Fact]
+    [Obsolete]
     public async Task RunAsync_MessagesAfterLastUserProduceOneInvalidInputFailure()
     {
         var events = await CollectAsync(CreateRuntime(new StubHeadlessWorkflowRunner([])).RunAsync(new AgentRuntimeRunRequest
@@ -235,6 +241,7 @@ public sealed class WorkflowAgentRuntimeTests
     }
 
     [Fact]
+    [Obsolete]
     public async Task RunAsync_MapsOneMarkdownAttachmentToRequiredMarkdownInput()
     {
         var runner = new StubHeadlessWorkflowRunner([
@@ -266,6 +273,7 @@ public sealed class WorkflowAgentRuntimeTests
 
     [Theory]
     [MemberData(nameof(InvalidAttachmentRequests))]
+    [Obsolete]
     public async Task RunAsync_InvalidAttachmentMappingProducesInvalidInput(
         AgentRuntimeRunRequest request,
         IReadOnlyList<WorkflowStartInputDefinition> inputs)
@@ -279,6 +287,7 @@ public sealed class WorkflowAgentRuntimeTests
 
     [Theory]
     [MemberData(nameof(ExceptionMappings))]
+    [Obsolete]
     public async Task RunAsync_MapsExceptions(Exception exception, string expectedCode)
     {
         var events = await CollectAsync(CreateRuntime(new ThrowingHeadlessWorkflowRunner(exception))
@@ -289,6 +298,7 @@ public sealed class WorkflowAgentRuntimeTests
     }
 
     [Fact]
+    [Obsolete]
     public async Task RunAsync_CancellationPropagates()
     {
         using var cts = new CancellationTokenSource();
@@ -299,6 +309,7 @@ public sealed class WorkflowAgentRuntimeTests
     }
 
     [Fact]
+    [Obsolete]
     public async Task RunAsync_CreatesNewWorkflowSessionPerInvocation()
     {
         var runner = new StubHeadlessWorkflowRunner([
@@ -396,6 +407,7 @@ public sealed class WorkflowAgentRuntimeTests
         yield return [new InvalidOperationException("boom"), "workflow_execution_failed"];
     }
 
+    [Obsolete]
     private static WorkflowAgentRuntime CreateRuntime(
         IHeadlessWorkflowRunner runner,
         IReadOnlyList<WorkflowStartInputDefinition>? startInputs = null) =>

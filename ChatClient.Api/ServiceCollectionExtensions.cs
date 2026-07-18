@@ -5,6 +5,7 @@ using ChatClient.Api.AgentWorkflows.Runtime;
 using ChatClient.Api.Client.Services;
 using ChatClient.Api.Client.Services.Agentic;
 using ChatClient.Api.Services;
+using ChatClient.Api.Services.AgentRuntime;
 using ChatClient.Api.Services.BuiltIn;
 using ChatClient.Api.Services.Rag;
 using ChatClient.Api.Services.Seed;
@@ -23,7 +24,6 @@ using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Options;
 using MudBlazor.Services;
 using System.Net.Http;
-using ChatClient.Api.Services.AgentRuntime;
 
 namespace ChatClient.Api;
 

@@ -3,6 +3,7 @@ namespace ChatClient.Api.Client.Services.Agentic;
 
 internal static class WorkflowSpeakerResolver
 {
+    [Obsolete]
     public static string? ResolveSpeakerId(
         string? executorId,
         IReadOnlyDictionary<string, string> agentIdsByExecutorId,
@@ -26,6 +27,7 @@ internal static class WorkflowSpeakerResolver
         return null;
     }
 
+    [Obsolete]
     public static string? ResolveFromWorkflow(
         IOrchestrationWorkflowDefinition? workflow,
         int assistantMessageIndex)
@@ -44,6 +46,7 @@ internal static class WorkflowSpeakerResolver
         };
     }
 
+    [Obsolete]
     private static string? ResolveGroupChatSpeakerId(
         GroupChatWorkflowDefinition workflow,
         int assistantMessageIndex)
@@ -64,6 +67,7 @@ internal static class WorkflowSpeakerResolver
         };
     }
 
+    [Obsolete]
     private static string? ResolveSequentialSpeakerId(
         SequentialWorkflowDefinition workflow,
         int assistantMessageIndex)

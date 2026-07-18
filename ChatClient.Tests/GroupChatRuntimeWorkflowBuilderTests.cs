@@ -12,6 +12,7 @@ namespace ChatClient.Tests;
 public sealed class GroupChatRuntimeWorkflowBuilderTests
 {
     [Fact]
+    [Obsolete]
     public void CreateManager_ConfiguredRoundRobinCarriesPriorAssistantCount()
     {
         var builder = new GroupChatRuntimeWorkflowBuilder(new GroupChatManagerRegistry([]));
@@ -40,6 +41,7 @@ public sealed class GroupChatRuntimeWorkflowBuilderTests
     }
 
     [Fact]
+    [Obsolete]
     public void CreateManager_ConfiguredProgrammableManagerCarriesPriorAssistantCount()
     {
         var builder = new GroupChatRuntimeWorkflowBuilder(new GroupChatManagerRegistry([]));

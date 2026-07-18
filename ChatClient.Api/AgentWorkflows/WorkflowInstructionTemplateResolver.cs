@@ -17,6 +17,7 @@ internal static class WorkflowInstructionTemplateResolver
         "avatarText"
     ];
 
+    [Obsolete]
     public static void ValidateAgentReferences(IEnumerable<WorkflowParticipantDefinition> agents)
     {
         ArgumentNullException.ThrowIfNull(agents);
@@ -32,6 +33,7 @@ internal static class WorkflowInstructionTemplateResolver
         }
     }
 
+    [Obsolete]
     public static string ResolveAgentReferences(
         string content,
         string ownerAgentId,
@@ -120,6 +122,7 @@ internal static class WorkflowInstructionTemplateResolver
         }
     }
 
+    [Obsolete]
     private static string ResolveDisplayName(WorkflowParticipantDefinition agent)
     {
         var displayName = ResolveInlineAgent(agent)?.AgentName?.Trim();
@@ -133,6 +136,7 @@ internal static class WorkflowInstructionTemplateResolver
             : agent.Id;
     }
 
+    [Obsolete]
     private static AgentTemplateDefinition? ResolveInlineAgent(WorkflowParticipantDefinition agent) =>
         agent.Source is InlineAgentParticipantSource inline
             ? inline.Agent

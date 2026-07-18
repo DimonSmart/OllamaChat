@@ -183,9 +183,9 @@ public sealed class LlmAgentRuntimeTests
         {
             await Task.Yield();
             throw new InvalidOperationException("boom");
-            #pragma warning disable CS0162
+#pragma warning disable CS0162
             yield break;
-            #pragma warning restore CS0162
+#pragma warning restore CS0162
         }
     }
 

@@ -32,6 +32,7 @@ public sealed class WorkflowSpeakerResolverTests
     }
 
     [Fact]
+    [Obsolete]
     public void ResolveFromWorkflow_UsesProgrammableGroupChatSchedule()
     {
         var workflow = CreateProgrammableReviewWorkflow();
@@ -45,6 +46,7 @@ public sealed class WorkflowSpeakerResolverTests
     }
 
     [Fact]
+    [Obsolete]
     public void ResolveSpeakerId_FallsBackToWorkflowSchedule_WhenExecutorIdIsMissing()
     {
         var workflow = CreateProgrammableReviewWorkflow();
@@ -74,6 +76,7 @@ public sealed class WorkflowSpeakerResolverTests
         Assert.Null(speakerId);
     }
 
+    [Obsolete]
     private static GroupChatWorkflowDefinition CreateProgrammableReviewWorkflow()
     {
         return new GroupChatWorkflowDefinition

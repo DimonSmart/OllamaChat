@@ -7,6 +7,7 @@ namespace ChatClient.Tests;
 public sealed class WorkflowDefinitionBuilderTests
 {
     [Fact]
+    [Obsolete]
     public void Build_HandoffWorkflow_ReturnsHandoffDefinition()
     {
         var workflow = WorkflowDefinitionBuilder
@@ -42,6 +43,7 @@ public sealed class WorkflowDefinitionBuilderTests
     }
 
     [Fact]
+    [Obsolete]
     public void Build_ConcurrentWorkflow_UsesDeclaredParticipantsAndSupportedAggregation()
     {
         var workflow = WorkflowDefinitionBuilder
@@ -75,6 +77,7 @@ public sealed class WorkflowDefinitionBuilderTests
     }
 
     [Fact]
+    [Obsolete]
     public void Build_WritesOnlyCanonicalParticipantSourceAndOverrides()
     {
         var savedAgentId = Guid.NewGuid();

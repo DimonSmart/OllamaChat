@@ -13,6 +13,7 @@ namespace ChatClient.Tests;
 public sealed class OrchestrationWorkflowChatSessionServiceTests
 {
     [Fact]
+    [Obsolete]
     public async Task SendAsync_ProjectsHeadlessStreamAndCompletionIntoSingleAssistantMessage()
     {
         var service = CreateService(new StubHeadlessWorkflowRunner([
@@ -40,6 +41,7 @@ public sealed class OrchestrationWorkflowChatSessionServiceTests
     }
 
     [Fact]
+    [Obsolete]
     public async Task KickoffAsync_DoesNotAddUserMessageAndUsesHeadlessRunner()
     {
         var runner = new StubHeadlessWorkflowRunner([
@@ -64,6 +66,7 @@ public sealed class OrchestrationWorkflowChatSessionServiceTests
     }
 
     [Fact]
+    [Obsolete]
     public async Task SendAsync_ForwardsFilesToHeadlessRunner()
     {
         var runner = new StubHeadlessWorkflowRunner([
@@ -85,6 +88,7 @@ public sealed class OrchestrationWorkflowChatSessionServiceTests
     }
 
     [Fact]
+    [Obsolete]
     public async Task CancelAsync_CancelsActiveStreamsWithoutGenericError()
     {
         var runner = new BlockingHeadlessWorkflowRunner();
@@ -105,6 +109,7 @@ public sealed class OrchestrationWorkflowChatSessionServiceTests
     }
 
     [Fact]
+    [Obsolete]
     public async Task SendAsync_FailureCancelsStreamsAndAddsOneErrorMessage()
     {
         var service = CreateService(new FailingHeadlessWorkflowRunner());
@@ -120,6 +125,7 @@ public sealed class OrchestrationWorkflowChatSessionServiceTests
     }
 
     [Fact]
+    [Obsolete]
     public async Task SendAsync_UsesOneHeadlessSessionForMultipleTurns()
     {
         var runner = new StubHeadlessWorkflowRunner([]);
@@ -139,6 +145,7 @@ public sealed class OrchestrationWorkflowChatSessionServiceTests
     }
 
     [Fact]
+    [Obsolete]
     public async Task KickoffAsync_AndSendAsync_UseSameHeadlessSession()
     {
         var runner = new StubHeadlessWorkflowRunner([]);
@@ -155,6 +162,7 @@ public sealed class OrchestrationWorkflowChatSessionServiceTests
     }
 
     [Fact]
+    [Obsolete]
     public async Task ResetChat_DisposesOldSessionAndCreatesNewSession()
     {
         var runner = new StubHeadlessWorkflowRunner([]);
@@ -173,6 +181,7 @@ public sealed class OrchestrationWorkflowChatSessionServiceTests
     }
 
     [Fact]
+    [Obsolete]
     public async Task SendAsync_PreservesHeadlessSessionStateBetweenTurns()
     {
         var runner = new StubHeadlessWorkflowRunner([]);
@@ -212,6 +221,7 @@ public sealed class OrchestrationWorkflowChatSessionServiceTests
             new AgenticChatEngineStreamingBridge(),
             NullLogger<OrchestrationWorkflowChatSessionService>.Instance);
 
+    [Obsolete]
     private static OrchestrationWorkflowSessionStartRequest CreateStartRequest() =>
         new()
         {

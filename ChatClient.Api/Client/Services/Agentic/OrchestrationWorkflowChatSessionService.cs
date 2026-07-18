@@ -1,7 +1,7 @@
-using System.Collections.ObjectModel;
 using ChatClient.Api.Services.AgentRuntime;
 using ChatClient.Application.Services.Agentic;
 using ChatClient.Domain.Models;
+using System.Collections.ObjectModel;
 
 namespace ChatClient.Api.Client.Services.Agentic;
 

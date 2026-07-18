@@ -13,6 +13,7 @@ namespace ChatClient.Tests;
 public sealed class HeadlessWorkflowRunnerFinalSemanticsTests
 {
     [Fact]
+    [Obsolete]
     public async Task Sequential_UsesLastMessageFromLastAgentInDeclaredOrder()
     {
         var workflow = new SequentialWorkflowDefinition
@@ -36,6 +37,7 @@ public sealed class HeadlessWorkflowRunnerFinalSemanticsTests
     }
 
     [Fact]
+    [Obsolete]
     public async Task Sequential_FallsBackToLastMessage()
     {
         var workflow = new SequentialWorkflowDefinition
@@ -54,6 +56,7 @@ public sealed class HeadlessWorkflowRunnerFinalSemanticsTests
     }
 
     [Fact]
+    [Obsolete]
     public async Task Concurrent_LastMessagePerAgent_UsesDeclarationOrderNotCompletionOrder()
     {
         var workflow = new ConcurrentWorkflowDefinition
@@ -79,6 +82,7 @@ public sealed class HeadlessWorkflowRunnerFinalSemanticsTests
     }
 
     [Fact]
+    [Obsolete]
     public async Task Concurrent_ConcatenateAllMessages_PreservesParticipantOrderAndUnknownsLast()
     {
         var workflow = new ConcurrentWorkflowDefinition
@@ -148,6 +152,7 @@ public sealed class HeadlessWorkflowRunnerFinalSemanticsTests
     }
 
     [Fact]
+    [Obsolete]
     public async Task HandoffAndGenericWorkflow_UseLastContentMessage()
     {
         var workflow = new AgentWorkflowDefinition

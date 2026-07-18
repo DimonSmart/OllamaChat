@@ -12,6 +12,7 @@ namespace ChatClient.Tests;
 public sealed class WorkflowParticipantUnificationTests
 {
     [Fact]
+    [Obsolete]
     public async Task NormalizeAsync_FromSavedAgentNameResolvesToCanonicalSavedDefinition()
     {
         var savedAgent = CreateAgent("Code Reviewer", "Review code.");
@@ -71,6 +72,7 @@ public sealed class WorkflowParticipantUnificationTests
     }
 
     [Fact]
+    [Obsolete]
     public async Task NormalizeAsync_RemovesLegacySourcesFromBoundary()
     {
         var savedAgent = CreateAgent("Saved", "Saved instructions");
@@ -137,6 +139,7 @@ public sealed class WorkflowParticipantUnificationTests
     }
 
     [Fact]
+    [Obsolete]
     public async Task NormalizeAsync_RejectsParticipantWithMultipleExecutableSources()
     {
         var normalizer = new LegacyWorkflowDefinitionNormalizer(new StubAgentTemplateService([]));
@@ -312,6 +315,7 @@ public sealed class WorkflowParticipantUnificationTests
                 creationContext)));
     }
 
+    [Obsolete]
     public static IEnumerable<object[]> AmbiguousParticipantSources()
     {
         var reference = new AgentDefinitionReference(AgentDefinitionKind.SavedAgent, Guid.NewGuid().ToString("D"));

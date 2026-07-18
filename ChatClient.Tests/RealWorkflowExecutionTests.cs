@@ -27,6 +27,7 @@ public sealed class RealWorkflowExecutionTests(ITestOutputHelper output)
     private const string WorkflowModelEnvironmentVariable = "CHATCLIENT_REAL_WORKFLOW_MODEL";
 
     [RealWorkflowFact]
+    [Obsolete]
     public async Task RunWorkflowFromSavedDefinitions_AndPrintTranscriptAndSummary()
     {
         var options = RealWorkflowExecutionOptions.FromEnvironment();
@@ -236,6 +237,7 @@ public sealed class RealWorkflowExecutionTests(ITestOutputHelper output)
             $"No workflow model was resolved. Set {WorkflowServerIdEnvironmentVariable} and {WorkflowModelEnvironmentVariable}, or configure the application's default model.");
     }
 
+    [Obsolete]
     private static AgentTemplateDefinition GetRequiredAgentDraft(WorkflowParticipantDefinition agent) =>
         agent.AgentDraft ?? throw new InvalidOperationException(
             $"Workflow agent '{agent.Id}' does not have a materialized draft.");

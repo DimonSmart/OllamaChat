@@ -1,6 +1,6 @@
+using ChatClient.Application.Services.AgentRuntime;
 using ChatClient.Domain.Models;
 using ChatClient.Domain.Models.ChatStrategies;
-using ChatClient.Application.Services.AgentRuntime;
 
 namespace ChatClient.Application.Services.Agentic;
 

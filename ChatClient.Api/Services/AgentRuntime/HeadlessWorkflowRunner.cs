@@ -1,11 +1,11 @@
-using System.Threading.Channels;
 using ChatClient.Api.AgentWorkflows;
 using ChatClient.Api.AgentWorkflows.Runtime;
 using ChatClient.Api.Client.Services.Agentic;
 using ChatClient.Api.Services.BuiltIn;
-using ChatClient.Application.Services.AgentRuntime;
 using ChatClient.Application.Services.Agentic;
+using ChatClient.Application.Services.AgentRuntime;
 using ChatClient.Domain.Models;
+using System.Threading.Channels;
 
 namespace ChatClient.Api.Services.AgentRuntime;
 
@@ -370,6 +370,7 @@ public sealed class HeadlessWorkflowRunner(
         return false;
     }
 
+    [Obsolete]
     internal static async Task<HeadlessWorkflowResult?> ResolveFinalMessageAsync(
         OrchestrationWorkflowSessionStartRequest request,
         string taskSessionId,
@@ -439,6 +440,7 @@ public sealed class HeadlessWorkflowRunner(
         };
     }
 
+    [Obsolete]
     private static OrchestrationCompletedAssistantMessage? ResolveSequentialFinal(
         SequentialWorkflowDefinition workflow,
         IReadOnlyList<OrchestrationCompletedAssistantMessage> messages)
@@ -456,6 +458,7 @@ public sealed class HeadlessWorkflowRunner(
         return messages.LastOrDefault();
     }
 
+    [Obsolete]
     private static OrchestrationCompletedAssistantMessage? ResolveConcurrentFinal(
         OrchestrationWorkflowSessionStartRequest request,
         ConcurrentWorkflowDefinition workflow,
@@ -536,6 +539,7 @@ public sealed class HeadlessWorkflowRunner(
         return messages.LastOrDefault();
     }
 
+    [Obsolete]
     private static IReadOnlyList<OrchestrationCompletedAssistantMessage> OrderConcurrentMessages(
         ConcurrentWorkflowDefinition workflow,
         IReadOnlyList<OrchestrationCompletedAssistantMessage> messages)

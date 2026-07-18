@@ -180,6 +180,7 @@ public sealed class WorkflowDefinitionBuilder
         return this;
     }
 
+    [Obsolete]
     public IOrchestrationWorkflowDefinition Build()
     {
         if (_participants.Count == 0)
@@ -235,6 +236,7 @@ public sealed class WorkflowDefinitionBuilder
         return this;
     }
 
+    [Obsolete]
     private AgentWorkflowDefinition BuildHandoffWorkflow(HandoffConfigurationBuilder handoff)
     {
         var agentIds = GetDefinedAgentIds();

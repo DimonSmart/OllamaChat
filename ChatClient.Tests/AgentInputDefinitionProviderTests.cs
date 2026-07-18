@@ -9,6 +9,7 @@ namespace ChatClient.Tests;
 public sealed class AgentInputDefinitionProviderTests
 {
     [Fact]
+    [Obsolete]
     public async Task GetInputsAsync_SavedAgentReturnsNoWorkflowInputs()
     {
         var provider = new AgentInputDefinitionProvider(
@@ -26,6 +27,7 @@ public sealed class AgentInputDefinitionProviderTests
     }
 
     [Fact]
+    [Obsolete]
     public async Task GetInputsAsync_WorkflowWithoutInputsReturnsEmptyList()
     {
         var workflowId = Guid.NewGuid();
@@ -44,6 +46,7 @@ public sealed class AgentInputDefinitionProviderTests
     }
 
     [Fact]
+    [Obsolete]
     public async Task GetInputsAsync_PreservesKindsDefaultsAndRequiredFlags()
     {
         var workflowId = Guid.NewGuid();

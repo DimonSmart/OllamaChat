@@ -11,6 +11,7 @@ public sealed class HandoffConfigurationBuilder
         return this;
     }
 
+    [Obsolete]
     public HandoffConfigurationBuilder Handoff(string fromAgentId, string toAgentId, string label)
     {
         _handoffs.Add(new AgentWorkflowHandoffDefinition
@@ -23,6 +24,7 @@ public sealed class HandoffConfigurationBuilder
         return this;
     }
 
+    [Obsolete]
     public HandoffConfigurationBuilder Fallback(
         string fromAgentId,
         string toAgentId,

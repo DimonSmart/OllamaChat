@@ -9,6 +9,7 @@ namespace ChatClient.Tests;
 public sealed class HandoffRuntimeWorkflowBuilderTests
 {
     [Fact]
+    [Obsolete]
     public void SelectDistinctHandoffsForRuntime_DeduplicatesSameAgentPair()
     {
         var handoffs = new[]
@@ -47,6 +48,7 @@ public sealed class HandoffRuntimeWorkflowBuilderTests
     }
 
     [Fact]
+    [Obsolete]
     public void SelectHandoffsForRuntime_SkipsTargetAgentStillOnCooldown()
     {
         var workflow = CreateWorkflowDefinition(
@@ -93,6 +95,7 @@ public sealed class HandoffRuntimeWorkflowBuilderTests
     }
 
     [Fact]
+    [Obsolete]
     public void SelectHandoffsForRuntime_SkipsTargetAgentAtTurnLimit()
     {
         var workflow = CreateWorkflowDefinition(
@@ -196,6 +199,7 @@ public sealed class HandoffRuntimeWorkflowBuilderTests
         return [];
     }
 
+    [Obsolete]
     private static AgentWorkflowDefinition CreateWorkflowDefinition(
         AgentWorkflowAgentDefinition host,
         AgentWorkflowAgentDefinition first,

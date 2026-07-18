@@ -159,6 +159,7 @@ public sealed class HandoffWorkflowDefinitionBuilder
         return this;
     }
 
+    [Obsolete]
     public HandoffWorkflowDefinitionBuilder Handoff(string fromAgentId, string toAgentId, string label)
     {
         _handoffs.Add(new AgentWorkflowHandoffDefinition
@@ -171,6 +172,7 @@ public sealed class HandoffWorkflowDefinitionBuilder
         return this;
     }
 
+    [Obsolete]
     public HandoffWorkflowDefinitionBuilder Fallback(
         string fromAgentId,
         string toAgentId,
@@ -186,6 +188,7 @@ public sealed class HandoffWorkflowDefinitionBuilder
         return this;
     }
 
+    [Obsolete]
     public AgentWorkflowDefinition Build()
     {
         if (string.IsNullOrWhiteSpace(_startAgentId))

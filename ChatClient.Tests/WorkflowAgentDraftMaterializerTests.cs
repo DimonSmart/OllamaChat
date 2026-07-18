@@ -138,6 +138,7 @@ public sealed class WorkflowAgentDraftMaterializerTests
     }
 
     [Fact]
+    [Obsolete]
     public async Task MaterializeAsync_PreservesProgrammableGroupChatManager()
     {
         var workflow = WorkflowDefinitionBuilder
@@ -188,6 +189,7 @@ public sealed class WorkflowAgentDraftMaterializerTests
     }
 
     [Fact]
+    [Obsolete]
     public async Task MaterializeAsync_ResolvesAgentDisplayNamePlaceholders_WithoutBreakingSlotBasedDisplayNames()
     {
         var savedAgents = new[]
