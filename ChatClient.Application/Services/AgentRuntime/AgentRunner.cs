@@ -18,7 +18,7 @@ public sealed class AgentRunner(
     {
         IAgentRuntime? runtime = null;
         var startedAt = DateTimeOffset.UtcNow;
-        var outcome = AgentRunOutcome.Incomplete;
+        var outcome = AgentRunOutcome.Abandoned;
         string? failureCode = null;
         bool? failureRetryable = null;
         try
@@ -91,7 +91,7 @@ public sealed class AgentRunner(
         }
         finally
         {
-            if (outcome == AgentRunOutcome.Incomplete && cancellationToken.IsCancellationRequested)
+            if (outcome == AgentRunOutcome.Abandoned && cancellationToken.IsCancellationRequested)
             {
                 outcome = AgentRunOutcome.Canceled;
             }
@@ -196,7 +196,7 @@ internal enum AgentRunOutcome
     Failed,
     Canceled,
     ProtocolViolation,
-    Incomplete
+    Abandoned
 }
 
 public sealed class AgentRuntimeProtocolExecutor(

@@ -301,7 +301,7 @@ public sealed class AgentRunnerProtocolTests
     }
 
     [Fact]
-    public async Task RunAsync_LogsCanceledAndIncompleteOutcomes()
+    public async Task RunAsync_LogsCanceledOutcome()
     {
         using var cts = new CancellationTokenSource();
         var canceledLogger = new CapturingLogger<AgentRunner>();
@@ -309,18 +309,43 @@ public sealed class AgentRunnerProtocolTests
         await Assert.ThrowsAsync<OperationCanceledException>(() => CollectAsync(canceledRunner.RunAsync(
             CreateReference(), CreateRequest(), CreateCreationContext(), CreateRunContext(), cts.Token)));
         Assert.Equal("Canceled", canceledLogger.FinishedProperties()["Outcome"]);
+        Assert.Null(canceledLogger.FinishedProperties().GetValueOrDefault("FailureCode"));
+    }
 
-        var incompleteLogger = new CapturingLogger<AgentRunner>();
-        var incompleteRunner = CreateRunner(new StubRuntime([
+    [Fact]
+    public async Task RunAsync_LogsAbandonedOutcomeWhenConsumerStopsBeforeTerminalEvent()
+    {
+        var abandonedLogger = new CapturingLogger<AgentRunner>();
+        var abandonedRunner = CreateRunner(new StubRuntime([
             new AgentTextDelta("m1", "assistant", "partial"),
             new AgentRunCompleted(CreateResult("final", "m1"))
-        ]), incompleteLogger);
-        await using (var enumerator = incompleteRunner.RunAsync(
+        ]), abandonedLogger);
+        await using (var enumerator = abandonedRunner.RunAsync(
                          CreateReference(), CreateRequest(), CreateCreationContext(), CreateRunContext()).GetAsyncEnumerator())
         {
             Assert.True(await enumerator.MoveNextAsync());
         }
-        Assert.Equal("Incomplete", incompleteLogger.FinishedProperties()["Outcome"]);
+
+        var properties = abandonedLogger.FinishedProperties();
+        Assert.Equal("Abandoned", properties["Outcome"]);
+        Assert.Null(properties.GetValueOrDefault("FailureCode"));
+    }
+
+    [Fact]
+    public async Task RunAsync_LogsRuntimeCreationFailureOutcome()
+    {
+        var logger = new CapturingLogger<AgentRunner>();
+        var runner = CreateRunner(new ThrowingRuntimeFactory(new InvalidOperationException("factory failed")), logger);
+
+        var events = await CollectAsync(runner.RunAsync(
+            CreateReference(), CreateRequest(), CreateCreationContext(), CreateRunContext()));
+
+        var failure = Assert.IsType<AgentRunFailed>(Assert.Single(events));
+        Assert.Equal("runtime_creation_failed", failure.Error.Code);
+        var properties = logger.FinishedProperties();
+        Assert.Equal("Failed", properties["Outcome"]);
+        Assert.Equal("runtime_creation_failed", properties["FailureCode"]);
+        Assert.Equal(false, properties["FailureRetryable"]);
     }
 
     public static IEnumerable<object[]> ProtocolViolationSequences()

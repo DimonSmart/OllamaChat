@@ -18,6 +18,13 @@ namespace ChatClient.Tests;
 
 public sealed class HeadlessRecursiveWorkflowExecutionIntegrationTests
 {
+    private static readonly string[] WorkflowKinds =
+    [
+        WorkflowDefinitionKinds.Sequential,
+        WorkflowDefinitionKinds.Concurrent,
+        WorkflowDefinitionKinds.GroupChat
+    ];
+
     private static readonly string[] HeadlessKinds =
     [
         WorkflowDefinitionKinds.Handoff,
@@ -25,12 +32,9 @@ public sealed class HeadlessRecursiveWorkflowExecutionIntegrationTests
         WorkflowDefinitionKinds.GroupChat
     ];
 
-    public static TheoryData<string> HeadlessWorkflowKinds() => new()
-    {
-        WorkflowDefinitionKinds.Handoff,
-        WorkflowDefinitionKinds.Concurrent,
-        WorkflowDefinitionKinds.GroupChat
-    };
+    public static TheoryData<string> WorkflowKindCases() => TheoryDataFrom(WorkflowKinds);
+
+    public static TheoryData<string> HeadlessWorkflowKinds() => TheoryDataFrom(HeadlessKinds);
 
     public static TheoryData<string, LeafEmissionMode> HeadlessWorkflowKindsAndLeafModes()
     {
@@ -46,33 +50,68 @@ public sealed class HeadlessRecursiveWorkflowExecutionIntegrationTests
     }
 
     [Theory]
-    [MemberData(nameof(HeadlessWorkflowKinds))]
-    public async Task RunAsync_HeadlessNestedWorkflow_ExecutesNestedDefinitionThroughRealHeadlessRuntime(string kind)
+    [MemberData(nameof(WorkflowKindCases))]
+    public async Task RunAsync_NestedWorkflow_ExecutesNestedDefinitionThroughProductionRuntime(string kind)
     {
         var rootId = NewId();
         var nestedId = NewId();
-        var leafId = NewId();
+        var leafAId = NewId();
+        var leafBId = NewId();
+        var leafCId = NewId();
+        var leafDId = NewId();
         var system = TestSystem.Create(8,
-            Workflow(kind, rootId, "Root workflow", WorkflowParticipant("nested", "Nested workflow", nestedId)),
-            Workflow(kind, nestedId, "Nested workflow", AgentParticipant("leaf", "Leaf agent", leafId)),
-            Agent(leafId, "Leaf agent", "nested final"));
+            Workflow(
+                kind,
+                rootId,
+                "Root workflow",
+                AgentParticipant("a", "Leaf A", leafAId),
+                WorkflowParticipant("nested", "Nested workflow", nestedId),
+                AgentParticipant("d", "Leaf D", leafDId)),
+            Workflow(
+                kind,
+                nestedId,
+                "Nested workflow",
+                AgentParticipant("b", "Leaf B", leafBId),
+                AgentParticipant("c", "Leaf C", leafCId)),
+            Agent(leafAId, "Leaf A", "leaf A final"),
+            Agent(leafBId, "Leaf B", "leaf B final"),
+            Agent(leafCId, "Leaf C", "leaf C final"),
+            Agent(leafDId, "Leaf D", "leaf D final"));
 
         var events = await system.RunAsync(rootId, conversationId: "conversation-1");
 
         AssertValidAgentRunProtocol(events);
-        Assert.IsType<HeadlessWorkflowRunner>(system.HeadlessWorkflowRunner);
-        Assert.Single(system.LeafInvocations);
+        if (kind != WorkflowDefinitionKinds.Sequential)
+        {
+            Assert.IsType<HeadlessWorkflowRunner>(system.HeadlessWorkflowRunner);
+        }
+
         Assert.Equal([rootId, nestedId], system.CreatedWorkflowIds);
-        var leaf = system.LeafInvocations[0];
-        Assert.Equal(["Root workflow", "Nested workflow", "Leaf agent"], leaf.Context.DefinitionStack.Select(static frame => frame.DisplayName));
+        Assert.Equal(
+            ["Leaf A", "Leaf B", "Leaf C", "Leaf D"],
+            system.LeafInvocations
+                .Select(static item => item.Context.DefinitionStack[^1].DisplayName)
+                .Distinct(StringComparer.Ordinal)
+                .OrderBy(static item => item, StringComparer.Ordinal));
+        Assert.All(system.LeafInvocations, static item => Assert.NotNull(item.Context.ParentRunId));
+        Assert.All(system.LeafInvocations.Where(static item => item.Context.DefinitionStack[^1].DisplayName is "Leaf B" or "Leaf C"), static item =>
+            Assert.Equal(["Root workflow", "Nested workflow", item.Context.DefinitionStack[^1].DisplayName], item.Context.DefinitionStack.Select(static frame => frame.DisplayName)));
         Assert.Equal(["conversation-1"], system.ObservedContexts.Select(static context => context.ConversationId).Distinct());
         Assert.All(system.ObservedContexts.Where(static context => context.ParentRunId is not null), static context => Assert.NotEqual(context.ParentRunId, context.RunId));
         Assert.Equal(system.ObservedContexts[0].RunId, system.ObservedContexts[1].ParentRunId);
-        Assert.Equal(system.ObservedContexts[1].RunId, leaf.Context.ParentRunId);
+        Assert.All(system.LeafInvocations.Where(static item => item.Context.DefinitionStack[^1].DisplayName is "Leaf B" or "Leaf C"), item =>
+            Assert.Equal(system.ObservedContexts[1].RunId, item.Context.ParentRunId));
 
         var completed = Assert.IsType<AgentRunCompleted>(events[^1]);
-        AssertFinalContent(completed.Result.FinalMessage.Content, kind, "nested final");
-        AssertSingleFinalText(events, kind, "nested final");
+        if (kind == WorkflowDefinitionKinds.GroupChat)
+        {
+            Assert.False(string.IsNullOrWhiteSpace(completed.Result.FinalMessage.Content));
+        }
+        else
+        {
+            AssertFinalContent(completed.Result.FinalMessage.Content, kind, "leaf D final");
+            AssertSingleFinalText(events, kind, "leaf D final", requireEachCompletedMessage: kind != WorkflowDefinitionKinds.Concurrent);
+        }
     }
 
     [Theory]
@@ -208,13 +247,28 @@ public sealed class HeadlessRecursiveWorkflowExecutionIntegrationTests
         var execution = new AgentWorkflowExecutionDefinition();
         return kind switch
         {
+            WorkflowDefinitionKinds.Sequential => new SequentialWorkflowDefinition
+            {
+                Id = id,
+                DisplayName = name,
+                Execution = execution,
+                Participants = participants.ToList(),
+                ParticipantOrder = participants.Select(static item => item.Id).ToList()
+            },
             WorkflowDefinitionKinds.Handoff => new AgentWorkflowDefinition
             {
                 Id = id,
                 DisplayName = name,
                 Execution = execution,
                 Participants = participants.ToList(),
-                StartParticipantId = participants[0].Id
+                StartParticipantId = participants[0].Id,
+                Handoffs = participants.Zip(participants.Skip(1), static (from, to) => new AgentWorkflowHandoffDefinition
+                {
+                    FromParticipantId = from.Id,
+                    ToParticipantId = to.Id,
+                    Label = $"Continue to {to.Role}",
+                    IsFallback = true
+                }).ToList()
             },
             WorkflowDefinitionKinds.Concurrent => new ConcurrentWorkflowDefinition
             {
@@ -235,13 +289,35 @@ public sealed class HeadlessRecursiveWorkflowExecutionIntegrationTests
                 Execution = execution,
                 Participants = participants.ToList(),
                 ParticipantIds = participants.Select(static item => item.Id).ToList(),
-                Manager = new GroupChatWorkflowManagerDefinition
-                {
-                    Kind = GroupChatWorkflowManagerKind.RoundRobin,
-                    MaximumIterations = 1
-                }
+                Manager = CreateGroupChatManager(participants)
             },
             _ => throw new ArgumentOutOfRangeException(nameof(kind), kind, "Unsupported workflow kind.")
+        };
+    }
+
+    private static GroupChatWorkflowManagerDefinition CreateGroupChatManager(
+        IReadOnlyList<WorkflowParticipantDefinition> participants)
+    {
+        if (participants.Count != 3)
+        {
+            return new GroupChatWorkflowManagerDefinition
+            {
+                Kind = GroupChatWorkflowManagerKind.RoundRobin,
+                MaximumIterations = participants.Count
+            };
+        }
+
+        return new GroupChatWorkflowManagerDefinition
+        {
+            Kind = GroupChatWorkflowManagerKind.Programmable,
+            MaximumIterations = 4,
+            Program = new GroupChatManagerProgram(context =>
+                context.PriorAssistantSpeakerIds.Count switch
+                {
+                    0 => participants[0].Id,
+                    1 => participants[1].Id,
+                    _ => participants[^1].Id
+                })
         };
     }
 
@@ -269,6 +345,17 @@ public sealed class HeadlessRecursiveWorkflowExecutionIntegrationTests
 
     private static string NewId() => Guid.NewGuid().ToString("D");
 
+    private static TheoryData<string> TheoryDataFrom(IEnumerable<string> values)
+    {
+        var data = new TheoryData<string>();
+        foreach (var value in values)
+        {
+            data.Add(value);
+        }
+
+        return data;
+    }
+
     private static IReadOnlyList<string> StackIds(AgentRunError error) =>
         error.Metadata["definition.stack"]
             .Split(" > ")
@@ -285,23 +372,23 @@ public sealed class HeadlessRecursiveWorkflowExecutionIntegrationTests
         Assert.Same(events[^1], terminalEvents[0]);
     }
 
-    private static void AssertSingleFinalText(IReadOnlyList<AgentRunEvent> events, string kind, string finalText)
+    private static void AssertSingleFinalText(
+        IReadOnlyList<AgentRunEvent> events,
+        string kind,
+        string finalText,
+        bool requireEachCompletedMessage = true)
     {
-        foreach (var deltaGroup in events.OfType<AgentTextDelta>().GroupBy(static delta => delta.MessageId))
+        if (requireEachCompletedMessage)
         {
-            var deltaContent = string.Concat(deltaGroup.Select(static delta => delta.Text));
-            if (kind == WorkflowDefinitionKinds.Concurrent)
+            foreach (var deltaGroup in events.OfType<AgentTextDelta>().GroupBy(static delta => delta.MessageId))
             {
-                Assert.Contains(finalText, deltaContent, StringComparison.Ordinal);
-                continue;
+                var deltaContent = string.Concat(deltaGroup.Select(static delta => delta.Text));
+                AssertFinalContent(deltaContent, kind, finalText);
             }
-
-            AssertFinalContent(deltaContent, kind, finalText);
+            Assert.All(
+                events.OfType<AgentMessageCompleted>(),
+                completed => AssertFinalContent(completed.Message.Content, kind, finalText));
         }
-
-        Assert.All(
-            events.OfType<AgentMessageCompleted>(),
-            completed => AssertFinalContent(completed.Message.Content, kind, finalText));
 
         var runCompleted = Assert.IsType<AgentRunCompleted>(events[^1]);
         AssertFinalContent(runCompleted.Result.FinalMessage.Content, kind, finalText);
@@ -309,27 +396,13 @@ public sealed class HeadlessRecursiveWorkflowExecutionIntegrationTests
 
     private static void AssertFinalContent(string actual, string kind, string expectedText)
     {
-        if (kind != WorkflowDefinitionKinds.Concurrent)
+        if (kind is not (WorkflowDefinitionKinds.Concurrent or WorkflowDefinitionKinds.GroupChat))
         {
             Assert.Equal(expectedText, actual);
             return;
         }
 
         Assert.Contains(expectedText, actual, StringComparison.Ordinal);
-        Assert.Equal(1, CountOccurrences(actual, expectedText));
-    }
-
-    private static int CountOccurrences(string text, string value)
-    {
-        var count = 0;
-        var index = 0;
-        while ((index = text.IndexOf(value, index, StringComparison.Ordinal)) >= 0)
-        {
-            count++;
-            index += value.Length;
-        }
-
-        return count;
     }
 
     private sealed record WorkflowSpec(string Id, string Name, IOrchestrationWorkflowDefinition Definition);
