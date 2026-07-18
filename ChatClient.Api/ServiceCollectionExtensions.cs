@@ -146,6 +146,9 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IWorkflowAgentRuntimeFactory, WorkflowAgentRuntimeFactory>();
         services.AddScoped<IAgentRuntimeFactory, AgentRuntimeFactory>();
         services.AddScoped<IAgentRuntimeProtocolExecutor, AgentRuntimeProtocolExecutor>();
+        services.AddScoped<IAgentDefinitionExecutionDispatcher, AgentDefinitionExecutionDispatcher>();
+        services.AddScoped<Func<IAgentDefinitionExecutionDispatcher>>(sp =>
+            () => sp.GetRequiredService<IAgentDefinitionExecutionDispatcher>());
         services.AddScoped<IAgentRunContextFactory, AgentRunContextFactory>();
         services.AddScoped<IAgentRunNestingValidator>(sp => new AgentRunNestingValidator(
             sp.GetRequiredService<IOptions<AgentRuntimeOptions>>().Value));

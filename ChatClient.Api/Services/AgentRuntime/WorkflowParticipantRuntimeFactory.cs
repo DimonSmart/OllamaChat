@@ -11,9 +11,7 @@ public interface IWorkflowParticipantRuntimeFactory
         CancellationToken cancellationToken = default);
 }
 
-public sealed class WorkflowParticipantRuntimeFactory(
-    IInlineLlmAgentRuntimeFactory inlineRuntimeFactory,
-    IServiceProvider serviceProvider) : IWorkflowParticipantRuntimeFactory
+public sealed class WorkflowParticipantRuntimeFactory : IWorkflowParticipantRuntimeFactory
 {
     public Task<WorkflowRuntimeParticipant> CreateAsync(
         ResolvedWorkflowParticipant participant,
@@ -28,11 +26,9 @@ public sealed class WorkflowParticipantRuntimeFactory(
                 participant,
                 materialized,
                 creationContext)),
-            ReferencedParticipantSource referenced => CreateReferencedAsync(
+            ReferencedParticipantSource referenced => Task.FromResult(CreateReferenced(
                 participant,
-                referenced,
-                creationContext,
-                cancellationToken),
+                referenced)),
             _ => throw new NotSupportedException(
                 $"Workflow participant '{participant.ParticipantId}' has unsupported source '{participant.Source.GetType().Name}'.")
         };
@@ -43,74 +39,28 @@ public sealed class WorkflowParticipantRuntimeFactory(
         MaterializedLlmParticipantSource source,
         AgentRuntimeCreationContext creationContext)
     {
-        var runtime = inlineRuntimeFactory.Create(
-            new AgentRuntimeDescriptor(
-                participant.ParticipantId,
-                participant.DisplayName,
-                participant.Summary,
-                AgentRuntimeKind.LlmAgent),
-            source.Agent,
-            creationContext);
-
         return new WorkflowRuntimeParticipant
         {
             Id = participant.ParticipantId,
             DisplayName = participant.DisplayName,
             Summary = participant.Summary,
-            Runtime = runtime
+            Source = source,
+            RuntimeKind = AgentRuntimeKind.LlmAgent
         };
     }
 
-    private async Task<WorkflowRuntimeParticipant> CreateReferencedAsync(
+    private static WorkflowRuntimeParticipant CreateReferenced(
         ResolvedWorkflowParticipant participant,
-        ReferencedParticipantSource source,
-        AgentRuntimeCreationContext creationContext,
-        CancellationToken cancellationToken)
+        ReferencedParticipantSource source)
     {
-        await Task.CompletedTask;
-
         return new WorkflowRuntimeParticipant
         {
             Id = participant.ParticipantId,
             DisplayName = participant.DisplayName,
             Summary = participant.Summary,
-            Runtime = new ReferencedWorkflowParticipantRuntime(
-                new AgentRuntimeDescriptor(
-                    participant.ParticipantId,
-                    participant.DisplayName,
-                    participant.Summary,
-                    participant.RuntimeKind),
-                source.Reference,
-                creationContext,
-                serviceProvider),
-            DefinitionReference = source.Reference
+            Source = source,
+            RuntimeKind = participant.RuntimeKind
         };
-    }
-}
-
-file sealed class ReferencedWorkflowParticipantRuntime(
-    AgentRuntimeDescriptor descriptor,
-    AgentDefinitionReference reference,
-    AgentRuntimeCreationContext creationContext,
-    IServiceProvider serviceProvider) : IAgentRuntime
-{
-    public AgentRuntimeDescriptor Descriptor { get; } = descriptor;
-
-    public async IAsyncEnumerable<AgentRunEvent> RunAsync(
-        AgentRuntimeRunRequest request,
-        AgentRunContext context,
-        [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken = default)
-    {
-        var runner = serviceProvider.GetRequiredService<IAgentRunner>();
-        await foreach (var runEvent in runner.RunAsync(
-                           reference,
-                           request,
-                           creationContext,
-                           context,
-                           cancellationToken))
-        {
-            yield return runEvent;
-        }
     }
 }
 
@@ -135,10 +85,7 @@ public sealed class AgentRunContextFactory : IAgentRunContextFactory
         {
             RunId = Guid.NewGuid().ToString("N"),
             ConversationId = conversationId,
-            DefinitionStack = stack,
-#pragma warning disable CS0618
-            DefinitionPath = [definition.Reference]
-#pragma warning restore CS0618
+            DefinitionStack = stack
         };
     }
 
@@ -150,25 +97,13 @@ public sealed class AgentRunContextFactory : IAgentRunContextFactory
         ArgumentNullException.ThrowIfNull(parent);
         ArgumentNullException.ThrowIfNull(childDefinition);
 
-        IReadOnlyList<AgentRunFrame> parentStack;
-        if (parent.DefinitionStack.Count > 0)
+        if (parent.DefinitionStack.Count == 0)
         {
-            parentStack = parent.DefinitionStack;
-        }
-        else
-        {
-#pragma warning disable CS0618
-            parentStack = parent.DefinitionPath
-                .Select(static reference => new AgentRunFrame
-                {
-                    Definition = reference,
-                    DisplayName = reference.Id
-                })
-                .ToList();
-#pragma warning restore CS0618
+            throw new InvalidOperationException(
+                "Cannot create a child run context from an empty definition stack.");
         }
 
-        var stack = parentStack.Concat([
+        var stack = parent.DefinitionStack.Concat([
             new AgentRunFrame
             {
                 Definition = childDefinition.Reference,
@@ -183,10 +118,7 @@ public sealed class AgentRunContextFactory : IAgentRunContextFactory
             RunId = Guid.NewGuid().ToString("N"),
             ParentRunId = parent.RunId,
             ConversationId = parent.ConversationId,
-            DefinitionStack = stack,
-#pragma warning disable CS0618
-            DefinitionPath = stack.Select(static frame => frame.Definition).ToList()
-#pragma warning restore CS0618
+            DefinitionStack = stack
         };
     }
 }

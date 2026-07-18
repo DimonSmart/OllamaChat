@@ -35,6 +35,8 @@ public sealed record HeadlessWorkflowSessionStartRequest
 
     public IReadOnlyList<ResolvedChatAgent> Agents { get; init; } = [];
 
+    public IWorkflowParticipantInvoker? ParticipantInvoker { get; init; }
+
     public required AppChatConfiguration Configuration { get; init; }
 
     public AgentRuntimeCreationContext? CreationContext { get; init; }
@@ -116,6 +118,7 @@ public sealed class HeadlessWorkflowRunner(
                 Configuration = request.Configuration,
                 CreationContext = request.CreationContext,
                 ParentRunContext = request.ParentRunContext,
+                ParticipantInvoker = request.ParticipantInvoker,
                 SessionTitle = request.SessionTitle,
                 SessionDescription = request.SessionDescription,
                 StartInputs = request.StartInputs
@@ -181,6 +184,7 @@ public sealed class HeadlessWorkflowRunner(
             return ValueTask.CompletedTask;
         }
 
+        [Obsolete]
         private async Task ProduceTurnAsync(
             HeadlessWorkflowTurnRequest request,
             List<OrchestrationCompletedAssistantMessage> completedMessages,

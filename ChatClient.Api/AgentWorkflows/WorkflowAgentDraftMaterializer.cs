@@ -12,29 +12,6 @@ public interface IWorkflowParticipantResolver
         CancellationToken cancellationToken = default);
 }
 
-public sealed record ResolvedWorkflowParticipant
-{
-    public required string ParticipantId { get; init; }
-
-    public required string DisplayName { get; init; }
-
-    public string Summary { get; init; } = string.Empty;
-
-    public required AgentRuntimeKind RuntimeKind { get; init; }
-
-    public required ResolvedWorkflowParticipantSource Source { get; init; }
-}
-
-public abstract record ResolvedWorkflowParticipantSource;
-
-public sealed record ReferencedParticipantSource(
-    AgentDefinitionReference Reference)
-    : ResolvedWorkflowParticipantSource;
-
-public sealed record MaterializedLlmParticipantSource(
-    AgentTemplateDefinition Agent)
-    : ResolvedWorkflowParticipantSource;
-
 public interface IWorkflowAgentDraftMaterializer
 {
     Task<IOrchestrationWorkflowDefinition> MaterializeAsync(
@@ -318,6 +295,7 @@ public sealed class WorkflowParticipantResolver(
         }
     }
 
+    [Obsolete]
     private static void ResolveInstructionTemplates(List<ResolvedWorkflowParticipant> participants)
     {
         var agentsById = participants

@@ -28,10 +28,9 @@ public sealed class AgentRuntimeAIAgentAdapterTests
 
         var updates = await CollectAsync(adapter.RunStreamingAsync("go"));
 
-        Assert.NotNull(invoker.Invocation);
-        Assert.NotEqual(parentContext.RunId, invoker.Invocation.Context.RunId);
-        Assert.Equal(parentContext.RunId, invoker.Invocation.Context.ParentRunId);
-        Assert.All(updates, update => Assert.Equal(invoker.Invocation.Context.RunId, update.ResponseId));
+        Assert.NotNull(invoker.ParentContext);
+        Assert.Equal(parentContext.RunId, invoker.ParentContext.RunId);
+        Assert.All(updates, update => Assert.NotEqual(parentContext.RunId, update.ResponseId));
     }
 
     [Fact]
@@ -71,10 +70,10 @@ public sealed class AgentRuntimeAIAgentAdapterTests
             Id = "inner",
             DisplayName = "Inner",
             Summary = "Nested participant",
-            Runtime = new NonExecutableRuntime(),
-            DefinitionReference = new AgentDefinitionReference(
+            RuntimeKind = AgentRuntimeKind.WorkflowAgent,
+            Source = new ReferencedParticipantSource(new AgentDefinitionReference(
                 AgentDefinitionKind.SavedWorkflow,
-                "inner-workflow")
+                "inner-workflow"))
         };
 
         var resolved = new ResolvedWorkflowParticipant
@@ -130,44 +129,16 @@ public sealed class AgentRuntimeAIAgentAdapterTests
     private sealed class StubParticipantInvoker(
         IReadOnlyList<AgentRunEvent> events) : IWorkflowParticipantInvoker
     {
-        public WorkflowParticipantInvocationHandle? Invocation { get; private set; }
-
-        public WorkflowParticipantInvocationHandle CreateInvocation(
-            ResolvedWorkflowParticipant participant,
-            AppAgentRunContext parentContext)
-        {
-            Invocation = new WorkflowParticipantInvocationHandle
-            {
-                Participant = participant,
-                Context = parentContext with
-                {
-                    RunId = "child-run",
-                    ParentRunId = parentContext.RunId,
-                    DefinitionStack =
-                    [
-                        .. parentContext.DefinitionStack,
-                        new AgentRunFrame
-                        {
-                            Definition = new AgentDefinitionReference(
-                                AgentDefinitionKind.SavedWorkflow,
-                                "inner-workflow"),
-                            DisplayName = "Inner",
-                            ParticipantId = participant.ParticipantId,
-                            ParticipantDisplayName = participant.DisplayName
-                        }
-                    ]
-                }
-            };
-
-            return Invocation;
-        }
+        public AppAgentRunContext? ParentContext { get; private set; }
 
         public async IAsyncEnumerable<AgentRunEvent> InvokeAsync(
-            WorkflowParticipantInvocationHandle invocation,
+            ResolvedWorkflowParticipant participant,
             AgentRuntimeRunRequest request,
             AgentRuntimeCreationContext creationContext,
+            AppAgentRunContext parentContext,
             [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken = default)
         {
+            ParentContext = parentContext;
             foreach (var runEvent in events)
             {
                 cancellationToken.ThrowIfCancellationRequested();

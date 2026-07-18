@@ -17,14 +17,15 @@ public sealed class AgentRuntimePolymorphicIntegrationTests
         AgentDefinitionKind kind,
         string id)
     {
-        var runner = new AgentRunner(
+        var protocolExecutor = new AgentRuntimeProtocolExecutor(NullLogger<AgentRuntimeProtocolExecutor>.Instance);
+        var runner = new AgentRunner(new AgentDefinitionExecutionDispatcher(
             new StubDefinitionCatalog(),
             new AgentRunNestingValidator(new AgentRuntimeOptions()),
             new AgentRuntimeFactory(
                 new StubLlmFactory(),
                 new StubWorkflowFactory()),
-            new AgentRuntimeProtocolExecutor(NullLogger<AgentRuntimeProtocolExecutor>.Instance),
-            NullLogger<AgentRunner>.Instance);
+            protocolExecutor,
+            NullLogger<AgentDefinitionExecutionDispatcher>.Instance));
 
         var events = await RunAndCollectAsync(runner, new AgentDefinitionReference(kind, id));
 
@@ -52,7 +53,15 @@ public sealed class AgentRuntimePolymorphicIntegrationTests
                            },
                            new AgentRunContext
                            {
-                               RunId = Guid.NewGuid().ToString("N")
+                               RunId = Guid.NewGuid().ToString("N"),
+                               DefinitionStack =
+                               [
+                                   new AgentRunFrame
+                                   {
+                                       Definition = reference,
+                                       DisplayName = reference.Id
+                                   }
+                               ]
                            }))
         {
             result.Add(runEvent);
@@ -116,15 +125,11 @@ public sealed class AgentRuntimePolymorphicIntegrationTests
 
     private sealed class ThrowingWorkflowParticipantInvoker : IWorkflowParticipantInvoker
     {
-        public WorkflowParticipantInvocationHandle CreateInvocation(
-            ResolvedWorkflowParticipant participant,
-            AgentRunContext parentContext) =>
-            throw new NotSupportedException();
-
         public IAsyncEnumerable<AgentRunEvent> InvokeAsync(
-            WorkflowParticipantInvocationHandle invocation,
+            ResolvedWorkflowParticipant participant,
             AgentRuntimeRunRequest request,
             AgentRuntimeCreationContext creationContext,
+            AgentRunContext parentContext,
             CancellationToken cancellationToken = default) =>
             throw new NotSupportedException();
     }

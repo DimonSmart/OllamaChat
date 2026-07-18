@@ -62,10 +62,7 @@ public sealed record AgentRunContext
 
     public string? ConversationId { get; init; }
 
-    public IReadOnlyList<AgentRunFrame> DefinitionStack { get; init; } = [];
-
-    [Obsolete("Use DefinitionStack for runtime logic.")]
-    public IReadOnlyList<AgentDefinitionReference> DefinitionPath { get; init; } = [];
+    public required IReadOnlyList<AgentRunFrame> DefinitionStack { get; init; }
 }
 
 public sealed record AgentRunFrame
@@ -361,10 +358,33 @@ public sealed record WorkflowRuntimeParticipant
 
     public required string Summary { get; init; }
 
-    public required IAgentRuntime Runtime { get; init; }
+    public required ResolvedWorkflowParticipantSource Source { get; init; }
 
-    public AgentDefinitionReference? DefinitionReference { get; init; }
+    public required AgentRuntimeKind RuntimeKind { get; init; }
 }
+
+public sealed record ResolvedWorkflowParticipant
+{
+    public required string ParticipantId { get; init; }
+
+    public required string DisplayName { get; init; }
+
+    public string Summary { get; init; } = string.Empty;
+
+    public required AgentRuntimeKind RuntimeKind { get; init; }
+
+    public required ResolvedWorkflowParticipantSource Source { get; init; }
+}
+
+public abstract record ResolvedWorkflowParticipantSource;
+
+public sealed record ReferencedParticipantSource(
+    AgentDefinitionReference Reference)
+    : ResolvedWorkflowParticipantSource;
+
+public sealed record MaterializedLlmParticipantSource(
+    AgentTemplateDefinition Agent)
+    : ResolvedWorkflowParticipantSource;
 
 public interface ILlmAgentRuntimeFactory
 {
@@ -406,6 +426,16 @@ public interface IAgentRunner
         AgentRuntimeRunRequest request,
         AgentRuntimeCreationContext creationContext,
         AgentRunContext runContext,
+        CancellationToken cancellationToken = default);
+}
+
+public interface IAgentDefinitionExecutionDispatcher
+{
+    IAsyncEnumerable<AgentRunEvent> ExecuteAsync(
+        AgentDefinitionReference reference,
+        AgentRuntimeRunRequest request,
+        AgentRuntimeCreationContext creationContext,
+        AgentRunContext context,
         CancellationToken cancellationToken = default);
 }
 

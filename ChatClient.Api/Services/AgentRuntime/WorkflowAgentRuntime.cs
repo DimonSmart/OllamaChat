@@ -16,7 +16,8 @@ public sealed class WorkflowAgentRuntimeFactory(
     ILegacyWorkflowDefinitionNormalizer legacyWorkflowDefinitionNormalizer,
     IWorkflowParticipantResolver workflowParticipantResolver,
     IWorkflowParticipantRuntimeFactory participantRuntimeFactory,
-    IServiceProvider serviceProvider,
+    IHeadlessWorkflowRunner headlessWorkflowRunner,
+    IWorkflowParticipantInvoker participantInvoker,
     ILogger<WorkflowAgentRuntimeFactory> logger) : IWorkflowAgentRuntimeFactory
 {
     public async Task<IAgentRuntime> CreateAsync(
@@ -68,52 +69,11 @@ public sealed class WorkflowAgentRuntimeFactory(
             runtimeParticipants,
             context.Configuration,
             context,
-            new LazyHeadlessWorkflowRunner(serviceProvider),
-            new LazyWorkflowParticipantInvoker(serviceProvider),
+            headlessWorkflowRunner,
+            participantInvoker,
             logger);
     }
 
-}
-file sealed class LazyHeadlessWorkflowRunner(
-    IServiceProvider serviceProvider) : IHeadlessWorkflowRunner
-{
-    public Task<IHeadlessWorkflowSession> StartAsync(
-        HeadlessWorkflowSessionStartRequest request,
-        CancellationToken cancellationToken = default)
-    {
-        var runner = serviceProvider.GetRequiredService<IHeadlessWorkflowRunner>();
-        return runner.StartAsync(
-            request,
-            cancellationToken);
-    }
-}
-
-file sealed class LazyWorkflowParticipantInvoker(
-    IServiceProvider serviceProvider) : IWorkflowParticipantInvoker
-{
-    public WorkflowParticipantInvocationHandle CreateInvocation(
-        ResolvedWorkflowParticipant participant,
-        AgentRunContext parentContext)
-    {
-        var invoker = serviceProvider.GetRequiredService<IWorkflowParticipantInvoker>();
-        return invoker.CreateInvocation(
-            participant,
-            parentContext);
-    }
-
-    public IAsyncEnumerable<AgentRunEvent> InvokeAsync(
-        WorkflowParticipantInvocationHandle invocation,
-        AgentRuntimeRunRequest request,
-        AgentRuntimeCreationContext creationContext,
-        CancellationToken cancellationToken = default)
-    {
-        var invoker = serviceProvider.GetRequiredService<IWorkflowParticipantInvoker>();
-        return invoker.InvokeAsync(
-            invocation,
-            request,
-            creationContext,
-            cancellationToken);
-    }
 }
 
 internal sealed class WorkflowAgentRuntime(
@@ -192,7 +152,8 @@ internal sealed class WorkflowAgentRuntime(
             SessionDescription = Descriptor.Description,
             ParentRunContext = context,
             CreationContext = creationContext,
-            ResolvedParticipants = participants
+            ResolvedParticipants = participants,
+            ParticipantInvoker = participantInvoker
         };
 
         IHeadlessWorkflowSession? session = null;
@@ -534,14 +495,11 @@ internal sealed class WorkflowAgentRuntime(
             AgentRunResult? terminalResult = null;
             AgentRunFailed? terminalFailure = null;
 
-            var invocation = participantInvoker.CreateInvocation(
-                participant,
-                context);
-
             await foreach (var participantEvent in participantInvoker.InvokeAsync(
-                               invocation,
+                               participant,
                                participantRequest,
                                creationContext,
+                               context,
                                cancellationToken))
             {
                 switch (participantEvent)
@@ -589,20 +547,73 @@ internal sealed class WorkflowAgentRuntime(
         var finalMessage = new AgentOutputMessage(
             Descriptor.Name,
             previousResult.FinalMessage.Content);
+        var metadata = BuildSequentialMetadata(
+            sequentialWorkflow,
+            outputMessages,
+            participantsById,
+            previousResult);
         yield return new AgentMessageCompleted(messageId, finalMessage);
         yield return new AgentRunCompleted(new AgentRunResult
         {
             FinalMessage = finalMessage,
             FinalMessageId = messageId,
-            Messages = [finalMessage],
-            Metadata = new Dictionary<string, string>
-            {
-                ["runtime.kind"] = "workflow",
-                ["workflow.id"] = Descriptor.Id,
-                ["workflow.name"] = Descriptor.Name,
-                ["workflowKind"] = workflow.Kind
-            }
+            Messages = outputMessages.Concat([finalMessage]).ToList(),
+            Metadata = metadata
         });
+    }
+
+    private IReadOnlyDictionary<string, string> BuildSequentialMetadata(
+        SequentialWorkflowDefinition sequentialWorkflow,
+        IReadOnlyList<AgentOutputMessage> outputMessages,
+        IReadOnlyDictionary<string, ResolvedWorkflowParticipant> participantsById,
+        AgentRunResult finalParticipantResult)
+    {
+        var metadata = new Dictionary<string, string>
+        {
+            ["runtime.kind"] = "workflow",
+            ["workflow.id"] = Descriptor.Id,
+            ["workflow.name"] = Descriptor.Name,
+            ["workflow.kind"] = workflow.Kind,
+            ["workflow.participant.count"] = sequentialWorkflow.ParticipantOrder.Count.ToString()
+        };
+
+        for (var index = 0; index < sequentialWorkflow.ParticipantOrder.Count; index++)
+        {
+            var participantId = sequentialWorkflow.ParticipantOrder[index];
+            if (!participantsById.TryGetValue(participantId, out var participant))
+            {
+                continue;
+            }
+
+            var prefix = $"workflow.participant.{index}";
+            metadata[$"{prefix}.id"] = participant.ParticipantId;
+            metadata[$"{prefix}.name"] = participant.DisplayName;
+            metadata[$"{prefix}.definition.kind"] = participant.Source is ReferencedParticipantSource referenced
+                ? referenced.Reference.Kind.ToString()
+                : AgentDefinitionKind.SavedAgent.ToString();
+            metadata[$"{prefix}.definition.id"] = participant.Source is ReferencedParticipantSource referencedSource
+                ? referencedSource.Reference.Id
+                : participant.ParticipantId;
+
+            if (index < outputMessages.Count)
+            {
+                metadata[$"{prefix}.result.author"] = outputMessages[index].Author;
+            }
+        }
+
+        foreach (var pair in finalParticipantResult.Metadata)
+        {
+            metadata[$"workflow.participant.{sequentialWorkflow.ParticipantOrder.Count - 1}.metadata.{pair.Key}"] =
+                pair.Value;
+        }
+
+        if (!string.IsNullOrWhiteSpace(finalParticipantResult.FinalMessageId))
+        {
+            metadata[$"workflow.participant.{sequentialWorkflow.ParticipantOrder.Count - 1}.result.messageId"] =
+                finalParticipantResult.FinalMessageId;
+        }
+
+        return metadata;
     }
 
     private static bool IsFinalParticipant(

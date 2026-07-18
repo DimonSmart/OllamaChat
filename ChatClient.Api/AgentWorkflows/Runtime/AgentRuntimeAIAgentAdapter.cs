@@ -59,9 +59,6 @@ public sealed class AgentRuntimeAIAgentAdapter(
         {
             Configuration = new ChatClient.Domain.Models.AppChatConfiguration(string.Empty, [])
         };
-        var invocation = participantInvoker.CreateInvocation(
-            invocationParticipant,
-            parentContext);
         var request = new AgentRuntimeRunRequest
         {
             Messages = messages
@@ -72,12 +69,13 @@ public sealed class AgentRuntimeAIAgentAdapter(
 
         AgentRunFailed? terminalFailure = null;
         var deliveredTextLengths = new Dictionary<string, int>(StringComparer.Ordinal);
-        var responseId = invocation.Context.RunId;
+        var responseId = Guid.NewGuid().ToString("N");
 
         await foreach (var runEvent in participantInvoker.InvokeAsync(
-                           invocation,
+                           invocationParticipant,
                            request,
                            effectiveCreationContext,
+                           parentContext,
                            cancellationToken))
         {
             switch (runEvent)
@@ -127,25 +125,13 @@ public sealed class AgentRuntimeAIAgentAdapter(
     private static ResolvedWorkflowParticipant CreateResolvedParticipant(
         WorkflowRuntimeParticipant participant)
     {
-        if (participant.DefinitionReference is { } reference)
-        {
-            return new ResolvedWorkflowParticipant
-            {
-                ParticipantId = participant.Id,
-                DisplayName = participant.DisplayName,
-                Summary = participant.Summary,
-                RuntimeKind = participant.Runtime.Descriptor.Kind,
-                Source = new ReferencedParticipantSource(reference)
-            };
-        }
-
         return new ResolvedWorkflowParticipant
         {
             ParticipantId = participant.Id,
             DisplayName = participant.DisplayName,
             Summary = participant.Summary,
-            RuntimeKind = AgentRuntimeKind.LlmAgent,
-            Source = new RuntimeWorkflowParticipantSource(participant.Runtime)
+            RuntimeKind = participant.RuntimeKind,
+            Source = participant.Source
         };
     }
 

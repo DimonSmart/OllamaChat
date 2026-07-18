@@ -17,8 +17,7 @@ public sealed class OrchestrationWorkflowSessionBootstrapper(
     IModelCapabilityService modelCapabilityService,
     TaskSessionStore taskSessionStore,
     MarkdownDocumentIntakeService documentIntakeService,
-    AgenticRuntimeAgentFactory runtimeAgentFactory,
-    IWorkflowParticipantInvoker participantInvoker)
+    AgenticRuntimeAgentFactory runtimeAgentFactory)
 {
     private static readonly Lazy<MethodInfo?> GetDescriptiveIdMethod = new(static () =>
         Type.GetType(
@@ -101,6 +100,10 @@ public sealed class OrchestrationWorkflowSessionBootstrapper(
             List<ResolvedChatAgent> sessionBoundAgents = [];
             if (request.Participants.Count > 0)
             {
+                var participantInvoker = request.ParticipantInvoker
+                    ?? throw new InvalidOperationException(
+                        "Runtime workflow participants require a participant invoker.");
+
                 foreach (var participant in request.Participants)
                 {
                     stage = $"adapt-runtime-participant:{participant.Id}";
@@ -158,6 +161,7 @@ public sealed class OrchestrationWorkflowSessionBootstrapper(
                     Participants = request.Participants,
                     ResolvedParticipants = request.ResolvedParticipants,
                     Agents = request.Participants.Count == 0 ? sessionBoundAgents : [],
+                    ParticipantInvoker = request.ParticipantInvoker,
                     Configuration = request.Configuration,
                     CreationContext = request.CreationContext,
                     ParentRunContext = request.ParentRunContext,

@@ -1,4 +1,5 @@
 using ChatClient.Api.AgentWorkflows;
+using ChatClient.Api.Services.AgentRuntime;
 using ChatClient.Application.Services.Agentic;
 using ChatClient.Application.Services.AgentRuntime;
 using ChatClient.Domain.Models;
@@ -14,6 +15,8 @@ public sealed class OrchestrationWorkflowSessionStartRequest
     public IReadOnlyList<ResolvedWorkflowParticipant> ResolvedParticipants { get; init; } = [];
 
     public IReadOnlyList<ResolvedChatAgent> Agents { get; init; } = [];
+
+    public IWorkflowParticipantInvoker? ParticipantInvoker { get; init; }
 
     public required AppChatConfiguration Configuration { get; init; }
 

@@ -19,7 +19,7 @@ public sealed class AgentRunNestingValidator(
                 "Maximum workflow nesting depth must be greater than zero.");
         }
 
-        var stack = GetDefinitionStack(context);
+        var stack = context.DefinitionStack;
         if (stack.Count > 0 &&
             !SameReference(stack[^1].Definition, target.Reference))
         {
@@ -56,24 +56,6 @@ public sealed class AgentRunNestingValidator(
             "workflow_cycle_detected",
             BuildCycleMessage(stack, target),
             CreateMetadata(context, target, stack));
-    }
-
-    private static IReadOnlyList<AgentRunFrame> GetDefinitionStack(AgentRunContext context)
-    {
-        if (context.DefinitionStack.Count > 0)
-        {
-            return context.DefinitionStack;
-        }
-
-#pragma warning disable CS0618
-        return context.DefinitionPath
-            .Select(static reference => new AgentRunFrame
-            {
-                Definition = reference,
-                DisplayName = reference.Id
-            })
-            .ToList();
-#pragma warning restore CS0618
     }
 
     private static string BuildCycleMessage(

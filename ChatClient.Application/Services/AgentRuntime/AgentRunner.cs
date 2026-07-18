@@ -3,13 +3,30 @@ using Microsoft.Extensions.Logging;
 namespace ChatClient.Application.Services.AgentRuntime;
 
 public sealed class AgentRunner(
+    IAgentDefinitionExecutionDispatcher dispatcher) : IAgentRunner
+{
+    public IAsyncEnumerable<AgentRunEvent> RunAsync(
+        AgentDefinitionReference reference,
+        AgentRuntimeRunRequest request,
+        AgentRuntimeCreationContext creationContext,
+        AgentRunContext runContext,
+        CancellationToken cancellationToken = default) =>
+        dispatcher.ExecuteAsync(
+            reference,
+            request,
+            creationContext,
+            runContext,
+            cancellationToken);
+}
+
+public sealed class AgentDefinitionExecutionDispatcher(
     IAgentDefinitionCatalog definitionCatalog,
     IAgentRunNestingValidator nestingValidator,
     IAgentRuntimeFactory runtimeFactory,
     IAgentRuntimeProtocolExecutor protocolExecutor,
-    ILogger<AgentRunner> logger) : IAgentRunner
+    ILogger<AgentDefinitionExecutionDispatcher> logger) : IAgentDefinitionExecutionDispatcher
 {
-    public async IAsyncEnumerable<AgentRunEvent> RunAsync(
+    public async IAsyncEnumerable<AgentRunEvent> ExecuteAsync(
         AgentDefinitionReference reference,
         AgentRuntimeRunRequest request,
         AgentRuntimeCreationContext creationContext,
@@ -106,18 +123,8 @@ public sealed class AgentRunner(
     }
 
     private static int GetWorkflowDepth(AgentRunContext context)
-    {
-        if (context.DefinitionStack.Count > 0)
-        {
-            return context.DefinitionStack.Count(static frame =>
-                frame.Definition.Kind == AgentDefinitionKind.SavedWorkflow);
-        }
-
-#pragma warning disable CS0618
-        return context.DefinitionPath.Count(static reference =>
-            reference.Kind == AgentDefinitionKind.SavedWorkflow);
-#pragma warning restore CS0618
-    }
+        => context.DefinitionStack.Count(static frame =>
+            frame.Definition.Kind == AgentDefinitionKind.SavedWorkflow);
 
     private static string MapCreationFailureCode(
         AgentDefinitionReference reference,

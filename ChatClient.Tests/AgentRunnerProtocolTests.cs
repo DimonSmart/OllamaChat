@@ -133,18 +133,13 @@ public sealed class AgentRunnerProtocolTests
     [Fact]
     public async Task RunAsync_MapsRuntimeCreationNotFoundToStableCode()
     {
-        var runner = new AgentRunner(
-            new StubDefinitionCatalog(),
-            new AgentRunNestingValidator(new AgentRuntimeOptions()),
-            new ThrowingRuntimeFactory(new KeyNotFoundException("internal path")),
-            new AgentRuntimeProtocolExecutor(NullLogger<AgentRuntimeProtocolExecutor>.Instance),
-            NullLogger<AgentRunner>.Instance);
+        var runner = CreateRunner(new ThrowingRuntimeFactory(new KeyNotFoundException("internal path")));
 
         var events = await CollectAsync(runner.RunAsync(
             new AgentDefinitionReference(AgentDefinitionKind.SavedWorkflow, "missing"),
             CreateRequest(),
             CreateCreationContext(),
-            CreateRunContext()));
+            CreateRunContext(new AgentDefinitionReference(AgentDefinitionKind.SavedWorkflow, "missing"))));
 
         var failed = Assert.IsType<AgentRunFailed>(Assert.Single(events));
         Assert.Equal("workflow_not_found", failed.Error.Code);
@@ -181,12 +176,15 @@ public sealed class AgentRunnerProtocolTests
     }
 
     private static AgentRunner CreateRunner(IAgentRuntime runtime) =>
-        new(
+        CreateRunner(new StubRuntimeFactory(runtime));
+
+    private static AgentRunner CreateRunner(IAgentRuntimeFactory runtimeFactory) =>
+        new(new AgentDefinitionExecutionDispatcher(
             new StubDefinitionCatalog(),
             new AgentRunNestingValidator(new AgentRuntimeOptions()),
-            new StubRuntimeFactory(runtime),
+            runtimeFactory,
             new AgentRuntimeProtocolExecutor(NullLogger<AgentRuntimeProtocolExecutor>.Instance),
-            NullLogger<AgentRunner>.Instance);
+            NullLogger<AgentDefinitionExecutionDispatcher>.Instance));
 
     private static AgentDefinitionReference CreateReference() =>
         new(AgentDefinitionKind.SavedAgent, "agent");
@@ -207,9 +205,20 @@ public sealed class AgentRunnerProtocolTests
         };
 
     private static AgentRunContext CreateRunContext() =>
+        CreateRunContext(CreateReference());
+
+    private static AgentRunContext CreateRunContext(AgentDefinitionReference reference) =>
         new()
         {
-            RunId = Guid.NewGuid().ToString("N")
+            RunId = Guid.NewGuid().ToString("N"),
+            DefinitionStack =
+            [
+                new AgentRunFrame
+                {
+                    Definition = reference,
+                    DisplayName = reference.Id
+                }
+            ]
         };
 
     private static AgentRunResult CreateResult(string content, string messageId)

@@ -144,7 +144,18 @@ public sealed class LlmAgentRuntimeTests
         };
 
     private static AgentRunContext CreateContext() =>
-        new() { RunId = Guid.NewGuid().ToString("N") };
+        new()
+        {
+            RunId = Guid.NewGuid().ToString("N"),
+            DefinitionStack =
+            [
+                new AgentRunFrame
+                {
+                    Definition = new AgentDefinitionReference(AgentDefinitionKind.SavedAgent, "agent"),
+                    DisplayName = "Agent"
+                }
+            ]
+        };
 
     private static async Task<List<AgentRunEvent>> CollectAsync(IAsyncEnumerable<AgentRunEvent> events)
     {

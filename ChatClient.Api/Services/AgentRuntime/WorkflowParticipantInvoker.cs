@@ -5,49 +5,21 @@ namespace ChatClient.Api.Services.AgentRuntime;
 
 public interface IWorkflowParticipantInvoker
 {
-    WorkflowParticipantInvocationHandle CreateInvocation(
-        ResolvedWorkflowParticipant participant,
-        AgentRunContext parentContext);
-
     IAsyncEnumerable<AgentRunEvent> InvokeAsync(
-        WorkflowParticipantInvocationHandle invocation,
+        ResolvedWorkflowParticipant participant,
         AgentRuntimeRunRequest request,
         AgentRuntimeCreationContext creationContext,
+        AgentRunContext parentContext,
         CancellationToken cancellationToken = default);
-}
-
-public sealed record WorkflowParticipantInvocationHandle
-{
-    public required ResolvedWorkflowParticipant Participant { get; init; }
-
-    public required AgentRunContext Context { get; init; }
 }
 
 public sealed class WorkflowParticipantInvoker(
     IAgentRunContextFactory contextFactory,
-    IAgentRunner agentRunner,
+    Func<IAgentDefinitionExecutionDispatcher> dispatcherFactory,
     IInlineLlmAgentRuntimeFactory inlineRuntimeFactory,
+    IAgentRunNestingValidator nestingValidator,
     IAgentRuntimeProtocolExecutor protocolExecutor) : IWorkflowParticipantInvoker
 {
-    public WorkflowParticipantInvocationHandle CreateInvocation(
-        ResolvedWorkflowParticipant participant,
-        AgentRunContext parentContext)
-    {
-        var childDefinition = CreateInvocationDefinition(participant);
-        var childContext = contextFactory.CreateChild(
-            parentContext,
-            childDefinition,
-            new WorkflowParticipantInvocation(
-                participant.ParticipantId,
-                participant.DisplayName));
-
-        return new WorkflowParticipantInvocationHandle
-        {
-            Participant = participant,
-            Context = childContext
-        };
-    }
-
     private static AgentDefinitionDescriptor CreateInvocationDefinition(
         ResolvedWorkflowParticipant participant)
     {
@@ -68,18 +40,28 @@ public sealed class WorkflowParticipantInvoker(
     }
 
     public async IAsyncEnumerable<AgentRunEvent> InvokeAsync(
-        WorkflowParticipantInvocationHandle invocation,
+        ResolvedWorkflowParticipant participant,
         AgentRuntimeRunRequest request,
         AgentRuntimeCreationContext creationContext,
+        AgentRunContext parentContext,
         [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
 
+        var childDefinition = CreateInvocationDefinition(participant);
+        var childContext = contextFactory.CreateChild(
+            parentContext,
+            childDefinition,
+            new WorkflowParticipantInvocation(
+                participant.ParticipantId,
+                participant.DisplayName));
+
         await foreach (var runEvent in InvokeCoreAsync(
-                           invocation.Participant,
+                           participant,
+                           childDefinition,
                            request,
                            creationContext,
-                           invocation.Context,
+                           childContext,
                            cancellationToken))
         {
             yield return runEvent;
@@ -88,6 +70,7 @@ public sealed class WorkflowParticipantInvoker(
 
     private async IAsyncEnumerable<AgentRunEvent> InvokeCoreAsync(
         ResolvedWorkflowParticipant participant,
+        AgentDefinitionDescriptor childDefinition,
         AgentRuntimeRunRequest request,
         AgentRuntimeCreationContext creationContext,
         AgentRunContext childContext,
@@ -96,7 +79,8 @@ public sealed class WorkflowParticipantInvoker(
         switch (participant.Source)
         {
             case ReferencedParticipantSource referenced:
-                await foreach (var runEvent in agentRunner.RunAsync(
+                var dispatcher = dispatcherFactory();
+                await foreach (var runEvent in dispatcher.ExecuteAsync(
                                    referenced.Reference,
                                    request,
                                    creationContext,
@@ -117,6 +101,13 @@ public sealed class WorkflowParticipantInvoker(
                         AgentRuntimeKind.LlmAgent),
                     materialized.Agent,
                     creationContext);
+                var validation = nestingValidator.Validate(childDefinition, childContext);
+                if (!validation.IsValid)
+                {
+                    yield return new AgentRunFailed(validation.Error!);
+                    yield break;
+                }
+
                 await foreach (var runEvent in protocolExecutor.RunAsync(
                                    runtime,
                                    request,
@@ -129,6 +120,13 @@ public sealed class WorkflowParticipantInvoker(
                 yield break;
 
             case RuntimeWorkflowParticipantSource runtimeSource:
+                var runtimeValidation = nestingValidator.Validate(childDefinition, childContext);
+                if (!runtimeValidation.IsValid)
+                {
+                    yield return new AgentRunFailed(runtimeValidation.Error!);
+                    yield break;
+                }
+
                 await foreach (var runEvent in protocolExecutor.RunAsync(
                                    runtimeSource.Runtime,
                                    request,

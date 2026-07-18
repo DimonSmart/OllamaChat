@@ -61,9 +61,9 @@ public sealed class WorkflowAgentRuntimeTests
         Assert.Contains("first", runner.Calls[1].Request.Messages.Last().Content);
         Assert.Contains("nested", runner.Calls[2].Request.Messages.Last().Content);
         Assert.All(runner.Calls, call => Assert.Equal(parentContext.RunId, call.Context.ParentRunId));
-        Assert.Contains(runner.Calls[1].Context.DefinitionPath, reference =>
-            reference.Kind == AgentDefinitionKind.SavedWorkflow &&
-            reference.Id == "w");
+        Assert.Contains(runner.Calls[1].Context.DefinitionStack, frame =>
+            frame.Definition.Kind == AgentDefinitionKind.SavedWorkflow &&
+            frame.Definition.Id == "w");
 
         Assert.Single(events.OfType<AgentRunCompleted>());
         var completed = Assert.IsType<AgentRunCompleted>(events.Last());
@@ -116,10 +116,14 @@ public sealed class WorkflowAgentRuntimeTests
             ["next"]);
         var context = CreateContext() with
         {
-            DefinitionPath = Enumerable.Range(0, 8)
-                .Select(index => new AgentDefinitionReference(
-                    AgentDefinitionKind.SavedWorkflow,
-                    $"workflow-{index}"))
+            DefinitionStack = Enumerable.Range(0, 8)
+                .Select(index => new AgentRunFrame
+                {
+                    Definition = new AgentDefinitionReference(
+                        AgentDefinitionKind.SavedWorkflow,
+                        $"workflow-{index}"),
+                    DisplayName = $"workflow-{index}"
+                })
                 .ToList()
         };
 
@@ -446,7 +450,7 @@ public sealed class WorkflowAgentRuntimeTests
             NullLogger<WorkflowAgentRuntime>.Instance);
 
     private static WorkflowAgentRuntime CreateSequentialRuntime(
-        IAgentRunner runner,
+        RecordingAgentRunner runner,
         IReadOnlyList<ResolvedWorkflowParticipant> participants,
         IReadOnlyList<string> participantOrder)
     {
@@ -477,8 +481,9 @@ public sealed class WorkflowAgentRuntimeTests
             new StubHeadlessWorkflowRunner([]),
             new WorkflowParticipantInvoker(
                 new AgentRunContextFactory(),
-                runner,
+                () => runner,
                 new ThrowingInlineLlmAgentRuntimeFactory(),
+                new AgentRunNestingValidator(new AgentRuntimeOptions()),
                 new AgentRuntimeProtocolExecutor(NullLogger<AgentRuntimeProtocolExecutor>.Instance)),
             NullLogger<WorkflowAgentRuntime>.Instance);
     }
@@ -490,7 +495,20 @@ public sealed class WorkflowAgentRuntimeTests
         };
 
     private static AgentRunContext CreateContext() =>
-        new() { RunId = Guid.NewGuid().ToString("N") };
+        new()
+        {
+            RunId = Guid.NewGuid().ToString("N"),
+            DefinitionStack =
+            [
+                new AgentRunFrame
+                {
+                    Definition = new AgentDefinitionReference(
+                        AgentDefinitionKind.SavedWorkflow,
+                        "workflow"),
+                    DisplayName = "Workflow"
+                }
+            ]
+        };
 
     private static async Task<List<AgentRunEvent>> CollectAsync(IAsyncEnumerable<AgentRunEvent> events)
     {
@@ -548,7 +566,7 @@ public sealed class WorkflowAgentRuntimeTests
     }
 
     private sealed class RecordingAgentRunner(
-        IReadOnlyDictionary<string, string> results) : IAgentRunner
+        IReadOnlyDictionary<string, string> results) : IAgentRunner, IAgentDefinitionExecutionDispatcher
     {
         public List<Call> Calls { get; } = [];
 
@@ -576,6 +594,14 @@ public sealed class WorkflowAgentRuntimeTests
             });
         }
 
+        public IAsyncEnumerable<AgentRunEvent> ExecuteAsync(
+            AgentDefinitionReference reference,
+            AgentRuntimeRunRequest request,
+            AgentRuntimeCreationContext creationContext,
+            AgentRunContext context,
+            CancellationToken cancellationToken = default) =>
+            RunAsync(reference, request, creationContext, context, cancellationToken);
+
         public sealed record Call(
             AgentDefinitionReference Reference,
             AgentRuntimeRunRequest Request,
@@ -593,15 +619,11 @@ public sealed class WorkflowAgentRuntimeTests
 
     private sealed class ThrowingWorkflowParticipantInvoker : IWorkflowParticipantInvoker
     {
-        public WorkflowParticipantInvocationHandle CreateInvocation(
-            ResolvedWorkflowParticipant participant,
-            AgentRunContext parentContext) =>
-            throw new NotSupportedException();
-
         public IAsyncEnumerable<AgentRunEvent> InvokeAsync(
-            WorkflowParticipantInvocationHandle invocation,
+            ResolvedWorkflowParticipant participant,
             AgentRuntimeRunRequest request,
             AgentRuntimeCreationContext creationContext,
+            AgentRunContext parentContext,
             CancellationToken cancellationToken = default) =>
             throw new NotSupportedException();
     }

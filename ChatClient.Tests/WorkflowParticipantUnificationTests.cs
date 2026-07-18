@@ -283,36 +283,34 @@ public sealed class WorkflowParticipantUnificationTests
 
         var referencedExecutor = new WorkflowParticipantInvoker(
             new AgentRunContextFactory(),
-            new AgentRunner(
+            () => new AgentDefinitionExecutionDispatcher(
                 new StubDefinitionCatalog([]),
                 new AgentRunNestingValidator(new AgentRuntimeOptions()),
                 new FixedRuntimeFactory(new StubRuntime(runtimeEvents)),
                 protocolExecutor,
-                NullLogger<AgentRunner>.Instance),
+                NullLogger<AgentDefinitionExecutionDispatcher>.Instance),
                 new RecordingInlineRuntimeFactory([]),
+                new AgentRunNestingValidator(new AgentRuntimeOptions()),
                 protocolExecutor);
         var inlineExecutor = new WorkflowParticipantInvoker(
             new AgentRunContextFactory(),
-            new ThrowingAgentRunner(),
+            () => new ThrowingAgentRunner(),
             new RecordingInlineRuntimeFactory(runtimeEvents),
+            new AgentRunNestingValidator(new AgentRuntimeOptions()),
             protocolExecutor);
-        var referencedInvocation = referencedExecutor.CreateInvocation(
-            CreateReferencedParticipant(),
-            CreateContext());
-        var inlineInvocation = inlineExecutor.CreateInvocation(
-            CreateMaterializedParticipant(),
-            CreateContext());
 
         await Assert.ThrowsAsync<AgentRuntimeProtocolException>(() =>
             CollectAsync(referencedExecutor.InvokeAsync(
-                referencedInvocation,
+                CreateReferencedParticipant(),
                 request,
-                creationContext)));
+                creationContext,
+                CreateContext())));
         await Assert.ThrowsAsync<AgentRuntimeProtocolException>(() =>
             CollectAsync(inlineExecutor.InvokeAsync(
-                inlineInvocation,
+                CreateMaterializedParticipant(),
                 request,
-                creationContext)));
+                creationContext,
+                CreateContext())));
     }
 
     [Obsolete]
@@ -418,8 +416,9 @@ public sealed class WorkflowParticipantUnificationTests
             new EmptyHeadlessWorkflowRunner(),
             new WorkflowParticipantInvoker(
                 new AgentRunContextFactory(),
-                new ThrowingAgentRunner(),
+                () => new ThrowingAgentRunner(),
                 inlineFactory,
+                new AgentRunNestingValidator(new AgentRuntimeOptions()),
                 new AgentRuntimeProtocolExecutor(NullLogger<AgentRuntimeProtocolExecutor>.Instance)),
             NullLogger<WorkflowAgentRuntime>.Instance);
     }
@@ -462,7 +461,17 @@ public sealed class WorkflowParticipantUnificationTests
     private static AgentRunContext CreateContext() =>
         new()
         {
-            RunId = Guid.NewGuid().ToString("N")
+            RunId = Guid.NewGuid().ToString("N"),
+            DefinitionStack =
+            [
+                new AgentRunFrame
+                {
+                    Definition = new AgentDefinitionReference(
+                        AgentDefinitionKind.SavedWorkflow,
+                        "workflow"),
+                    DisplayName = "Workflow"
+                }
+            ]
         };
 
     private static AgentRunResult CreateResult(string content)
@@ -534,13 +543,21 @@ public sealed class WorkflowParticipantUnificationTests
         }
     }
 
-    private sealed class ThrowingAgentRunner : IAgentRunner
+    private sealed class ThrowingAgentRunner : IAgentRunner, IAgentDefinitionExecutionDispatcher
     {
         public IAsyncEnumerable<AgentRunEvent> RunAsync(
             AgentDefinitionReference reference,
             AgentRuntimeRunRequest request,
             AgentRuntimeCreationContext creationContext,
             AgentRunContext runContext,
+            CancellationToken cancellationToken = default) =>
+            throw new NotSupportedException();
+
+        public IAsyncEnumerable<AgentRunEvent> ExecuteAsync(
+            AgentDefinitionReference reference,
+            AgentRuntimeRunRequest request,
+            AgentRuntimeCreationContext creationContext,
+            AgentRunContext context,
             CancellationToken cancellationToken = default) =>
             throw new NotSupportedException();
     }
