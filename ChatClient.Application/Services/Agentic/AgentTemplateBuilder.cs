@@ -217,6 +217,12 @@ public sealed class AgentTemplateBuilder
     }
 }
 
+public static class AgentDefinitionBuilder
+{
+    public static AgentTemplateBuilder New(string agentName, string? shortName = null) =>
+        AgentTemplateBuilder.New(agentName, shortName);
+}
+
 public sealed class AgentExecutionBuilder
 {
     private readonly AgentExecutionSettings _settings;
@@ -612,6 +618,12 @@ public sealed class AgentRunBuilder
 
 public static class AgentTemplateFluentExtensions
 {
+    public static AgentTemplateDefinition BuildDescription(this AgentTemplateBuilder builder)
+    {
+        ArgumentNullException.ThrowIfNull(builder);
+        return builder.Build();
+    }
+
     public static AgentRunBuilder ForRun(this AgentExecutionSpec source)
     {
         ArgumentNullException.ThrowIfNull(source);

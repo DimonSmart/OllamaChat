@@ -146,6 +146,19 @@ public sealed class HandoffWorkflowDefinitionBuilder
         return this;
     }
 
+    public HandoffWorkflowDefinitionBuilder AgentFromSaved(
+        string savedAgentName,
+        Action<HandoffSavedAgentBuilder> configure)
+    {
+        ArgumentNullException.ThrowIfNull(configure);
+
+        var builder = new HandoffSavedAgentBuilder(savedAgentName);
+        configure(builder);
+
+        UpsertAgent(builder.Build());
+        return this;
+    }
+
     public HandoffWorkflowDefinitionBuilder Handoff(string fromAgentId, string toAgentId, string label)
     {
         _handoffs.Add(new AgentWorkflowHandoffDefinition
@@ -246,6 +259,101 @@ public sealed class HandoffWorkflowDefinitionBuilder
         _agents.RemoveAll(existing =>
             string.Equals(existing.Id, agent.Id, StringComparison.OrdinalIgnoreCase));
         _agents.Add(agent);
+    }
+
+    private static string RequireValue(string? value, string paramName)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            throw new ArgumentException("Value is required.", paramName);
+        }
+
+        return value.Trim();
+    }
+
+    private static string? NormalizeOptional(string? value) =>
+        string.IsNullOrWhiteSpace(value) ? null : value.Trim();
+}
+
+public sealed class HandoffSavedAgentBuilder
+{
+    private readonly string _savedAgentName;
+    private string? _id;
+    private string? _role;
+    private string? _displayName;
+    private string? _instructions;
+    private string _summary = string.Empty;
+    private readonly List<AgentWorkflowCapabilityRequirement> _capabilities = [];
+
+    internal HandoffSavedAgentBuilder(string savedAgentName)
+    {
+        _savedAgentName = RequireValue(savedAgentName, nameof(savedAgentName));
+    }
+
+    public HandoffSavedAgentBuilder Id(string id)
+    {
+        _id = RequireValue(id, nameof(id));
+        return this;
+    }
+
+    public HandoffSavedAgentBuilder Role(string role)
+    {
+        _role = RequireValue(role, nameof(role));
+        return this;
+    }
+
+    public HandoffSavedAgentBuilder Name(string displayName)
+    {
+        _displayName = RequireValue(displayName, nameof(displayName));
+        return this;
+    }
+
+    public HandoffSavedAgentBuilder Instructions(string instructions)
+    {
+        _instructions = RequireValue(instructions, nameof(instructions));
+        return this;
+    }
+
+    public HandoffSavedAgentBuilder Summary(string summary)
+    {
+        _summary = summary?.Trim() ?? string.Empty;
+        return this;
+    }
+
+    public HandoffSavedAgentBuilder Capability(
+        string key,
+        string displayName,
+        Action<WorkflowCapabilityRequirementBuilder> configure)
+    {
+        ArgumentNullException.ThrowIfNull(configure);
+
+        var builder = new WorkflowCapabilityRequirementBuilder(key, displayName);
+        configure(builder);
+        _capabilities.Add(builder.Build());
+        return this;
+    }
+
+    internal WorkflowParticipantDefinition Build()
+    {
+        var id = RequireValue(_id, nameof(_id));
+        return new WorkflowParticipantDefinition
+        {
+            Id = id,
+            Role = string.IsNullOrWhiteSpace(_role) ? _savedAgentName : _role.Trim(),
+            Summary = _summary,
+            Source = new SavedAgentNameParticipantSource(_savedAgentName),
+            Overrides = new WorkflowParticipantOverrides
+            {
+                DisplayName = NormalizeOptional(_displayName),
+                Llm = string.IsNullOrWhiteSpace(_instructions)
+                    ? null
+                    : new LlmParticipantOverrides
+                    {
+                        Instructions = _instructions.Trim()
+                    }
+            },
+            CapabilityRequirements = _capabilities.ToList()
+        };
     }
 
     private static string RequireValue(string? value, string paramName)
