@@ -286,7 +286,7 @@ public sealed class WorkflowParticipantUnificationTests
 
     [Theory]
     [MemberData(nameof(ProtocolViolationSequences))]
-    public async Task WorkflowParticipantExecutor_AppliesProtocolValidationToReferencedAndMaterializedParticipants(
+    public async Task WorkflowParticipantInvoker_AppliesProtocolValidationToReferencedAndMaterializedParticipants(
         IReadOnlyList<AgentRunEvent> runtimeEvents)
     {
         var request = CreateRequest();
@@ -297,26 +297,32 @@ public sealed class WorkflowParticipantUnificationTests
         var protocolExecutor = new AgentRuntimeProtocolExecutor(
             NullLogger<AgentRuntimeProtocolExecutor>.Instance);
 
-        var referencedExecutor = new WorkflowParticipantExecutor(
+        var referencedExecutor = new WorkflowParticipantInvoker(
+            new StubDefinitionCatalog([]),
+            new AgentRunContextFactory(),
             new AgentRunner(
+                new StubDefinitionCatalog([]),
+                new AgentRunNestingValidator(new AgentRuntimeOptions()),
                 new FixedRuntimeFactory(new StubRuntime(runtimeEvents)),
                 protocolExecutor,
                 NullLogger<AgentRunner>.Instance),
             new RecordingInlineRuntimeFactory([]),
             protocolExecutor);
-        var inlineExecutor = new WorkflowParticipantExecutor(
+        var inlineExecutor = new WorkflowParticipantInvoker(
+            new StubDefinitionCatalog([]),
+            new AgentRunContextFactory(),
             new ThrowingAgentRunner(),
             new RecordingInlineRuntimeFactory(runtimeEvents),
             protocolExecutor);
 
         await Assert.ThrowsAsync<AgentRuntimeProtocolException>(() =>
-            CollectAsync(referencedExecutor.RunAsync(
+            CollectAsync(referencedExecutor.InvokeAsync(
                 CreateReferencedParticipant(),
                 request,
                 creationContext,
                 CreateContext())));
         await Assert.ThrowsAsync<AgentRuntimeProtocolException>(() =>
-            CollectAsync(inlineExecutor.RunAsync(
+            CollectAsync(inlineExecutor.InvokeAsync(
                 CreateMaterializedParticipant(),
                 request,
                 creationContext,
@@ -414,7 +420,6 @@ public sealed class WorkflowParticipantUnificationTests
         var configuration = new AppChatConfiguration("model", []);
         return new WorkflowAgentRuntime(
             new AgentRuntimeDescriptor("workflow", "Workflow", string.Empty, AgentRuntimeKind.WorkflowAgent),
-            new AgentDefinitionReference(AgentDefinitionKind.SavedWorkflow, "workflow"),
             workflow,
             participants,
             [],
@@ -424,7 +429,9 @@ public sealed class WorkflowParticipantUnificationTests
                 Configuration = configuration
             },
             new EmptyHeadlessWorkflowRunner(),
-            new WorkflowParticipantExecutor(
+            new WorkflowParticipantInvoker(
+                new StubDefinitionCatalog([]),
+                new AgentRunContextFactory(),
                 new ThrowingAgentRunner(),
                 inlineFactory,
                 new AgentRuntimeProtocolExecutor(NullLogger<AgentRuntimeProtocolExecutor>.Instance)),
@@ -604,7 +611,15 @@ public sealed class WorkflowParticipantUnificationTests
             AgentDefinitionReference reference,
             CancellationToken cancellationToken = default) =>
             await FindAsync(reference, cancellationToken) ??
-            throw new KeyNotFoundException();
+            new AgentDefinitionDescriptor
+            {
+                Reference = reference,
+                Name = reference.Id,
+                RuntimeKind = reference.Kind == AgentDefinitionKind.SavedWorkflow
+                    ? AgentRuntimeKind.WorkflowAgent
+                    : AgentRuntimeKind.LlmAgent,
+                ModelRequirement = AgentModelRequirement.Required
+            };
     }
 
     private sealed class StubWorkflowDefinitionService(SavedWorkflowDefinition workflow) : IWorkflowDefinitionService

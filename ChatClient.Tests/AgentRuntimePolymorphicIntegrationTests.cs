@@ -18,6 +18,8 @@ public sealed class AgentRuntimePolymorphicIntegrationTests
         string id)
     {
         var runner = new AgentRunner(
+            new StubDefinitionCatalog(),
+            new AgentRunNestingValidator(new AgentRuntimeOptions()),
             new AgentRuntimeFactory(
                 new StubLlmFactory(),
                 new StubWorkflowFactory()),
@@ -166,5 +168,30 @@ public sealed class AgentRuntimePolymorphicIntegrationTests
         }
 
         public ValueTask DisposeAsync() => ValueTask.CompletedTask;
+    }
+
+    private sealed class StubDefinitionCatalog : IAgentDefinitionCatalog
+    {
+        public Task<IReadOnlyList<AgentDefinitionDescriptor>> GetAllAsync(
+            CancellationToken cancellationToken = default) =>
+            Task.FromResult<IReadOnlyList<AgentDefinitionDescriptor>>([]);
+
+        public Task<AgentDefinitionDescriptor?> FindAsync(
+            AgentDefinitionReference reference,
+            CancellationToken cancellationToken = default) =>
+            Task.FromResult<AgentDefinitionDescriptor?>(new AgentDefinitionDescriptor
+            {
+                Reference = reference,
+                Name = reference.Id,
+                RuntimeKind = reference.Kind == AgentDefinitionKind.SavedWorkflow
+                    ? AgentRuntimeKind.WorkflowAgent
+                    : AgentRuntimeKind.LlmAgent,
+                ModelRequirement = AgentModelRequirement.Required
+            });
+
+        public async Task<AgentDefinitionDescriptor> GetRequiredAsync(
+            AgentDefinitionReference reference,
+            CancellationToken cancellationToken = default) =>
+            await FindAsync(reference, cancellationToken) ?? throw new KeyNotFoundException();
     }
 }

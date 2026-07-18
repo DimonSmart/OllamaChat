@@ -31,9 +31,15 @@ public sealed record HeadlessWorkflowSessionStartRequest
 
     public IReadOnlyList<WorkflowRuntimeParticipant> Participants { get; init; } = [];
 
+    public IReadOnlyList<ResolvedWorkflowParticipant> ResolvedParticipants { get; init; } = [];
+
     public IReadOnlyList<ResolvedChatAgent> Agents { get; init; } = [];
 
     public required AppChatConfiguration Configuration { get; init; }
+
+    public AgentRuntimeCreationContext? CreationContext { get; init; }
+
+    public AgentRunContext? ParentRunContext { get; init; }
 
     public IReadOnlyList<OrchestrationWorkflowStartInputValue> StartInputs { get; init; } = [];
 
@@ -105,8 +111,11 @@ public sealed class HeadlessWorkflowRunner(
             {
                 Workflow = request.Workflow,
                 Participants = request.Participants,
+                ResolvedParticipants = request.ResolvedParticipants,
                 Agents = request.Agents,
                 Configuration = request.Configuration,
+                CreationContext = request.CreationContext,
+                ParentRunContext = request.ParentRunContext,
                 SessionTitle = request.SessionTitle,
                 SessionDescription = request.SessionDescription,
                 StartInputs = request.StartInputs

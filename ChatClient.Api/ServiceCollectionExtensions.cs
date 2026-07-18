@@ -20,6 +20,7 @@ using Microsoft.AspNetCore.Components.Server.Circuits;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Options;
 using MudBlazor.Services;
 using System.Net.Http;
 using ChatClient.Api.Services.AgentRuntime;
@@ -126,6 +127,10 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IOrchestrationWorkflowSessionService, OrchestrationWorkflowChatSessionService>();
         services.AddScoped<IOrchestrationWorkflowChatViewModelService, OrchestrationWorkflowChatViewModelService>();
         services.AddScoped<IAgentDefinitionCatalog, AgentDefinitionCatalog>();
+        services.AddOptions<AgentRuntimeOptions>()
+            .Validate(static options => options.MaximumWorkflowNestingDepth > 0,
+                "MaximumWorkflowNestingDepth must be greater than zero.")
+            .ValidateOnStart();
         services.AddScoped<IAgentSessionDefinitionResolver, AgentSessionDefinitionResolver>();
         services.AddScoped<ILegacyWorkflowDefinitionNormalizer, LegacyWorkflowDefinitionNormalizer>();
         services.AddScoped<IWorkflowParticipantResolver, WorkflowParticipantResolver>();
@@ -133,6 +138,7 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IWorkflowAgentDraftMaterializer, WorkflowAgentDraftMaterializer>();
         services.AddScoped<IAgentInputDefinitionProvider, AgentInputDefinitionProvider>();
         services.AddScoped<IAgentDefinitionModelRequirementAnalyzer, WorkflowModelRequirementAnalyzer>();
+        services.AddScoped<IAgentDefinitionDependencyGraph, AgentDefinitionDependencyGraph>();
         services.AddScoped<IWorkflowDefinitionPreflightValidator, WorkflowDefinitionPreflightValidator>();
         services.AddScoped<LlmAgentRuntimeFactory>();
         services.AddScoped<ILlmAgentRuntimeFactory>(sp => sp.GetRequiredService<LlmAgentRuntimeFactory>());
@@ -141,8 +147,10 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IAgentRuntimeFactory, AgentRuntimeFactory>();
         services.AddScoped<IAgentRuntimeProtocolExecutor, AgentRuntimeProtocolExecutor>();
         services.AddScoped<IAgentRunContextFactory, AgentRunContextFactory>();
+        services.AddScoped<IAgentRunNestingValidator>(sp => new AgentRunNestingValidator(
+            sp.GetRequiredService<IOptions<AgentRuntimeOptions>>().Value));
         services.AddScoped<IAgentRunner, AgentRunner>();
-        services.AddScoped<IWorkflowParticipantExecutor, WorkflowParticipantExecutor>();
+        services.AddScoped<IWorkflowParticipantInvoker, WorkflowParticipantInvoker>();
         services.AddScoped<IChatEngineOrchestrator>(sp => sp.GetRequiredService<AgenticChatEngineOrchestrator>());
         services.AddScoped<IChatEngineHistoryBuilder>(sp => sp.GetRequiredService<AgenticChatEngineHistoryBuilder>());
         services.AddScoped<IChatEngineStreamingBridge>(sp => sp.GetRequiredService<AgenticChatEngineStreamingBridge>());

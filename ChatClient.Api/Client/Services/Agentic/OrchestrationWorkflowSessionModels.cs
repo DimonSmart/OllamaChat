@@ -11,9 +11,15 @@ public sealed class OrchestrationWorkflowSessionStartRequest
 
     public IReadOnlyList<WorkflowRuntimeParticipant> Participants { get; init; } = [];
 
+    public IReadOnlyList<ResolvedWorkflowParticipant> ResolvedParticipants { get; init; } = [];
+
     public IReadOnlyList<ResolvedChatAgent> Agents { get; init; } = [];
 
     public required AppChatConfiguration Configuration { get; init; }
+
+    public AgentRuntimeCreationContext? CreationContext { get; init; }
+
+    public AgentRunContext? ParentRunContext { get; init; }
 
     public string? SessionTitle { get; init; }
 

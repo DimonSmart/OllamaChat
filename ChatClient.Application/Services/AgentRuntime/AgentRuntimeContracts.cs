@@ -62,8 +62,26 @@ public sealed record AgentRunContext
 
     public string? ConversationId { get; init; }
 
+    public IReadOnlyList<AgentRunFrame> DefinitionStack { get; init; } = [];
+
+    [Obsolete("Use DefinitionStack for runtime logic.")]
     public IReadOnlyList<AgentDefinitionReference> DefinitionPath { get; init; } = [];
 }
+
+public sealed record AgentRunFrame
+{
+    public required AgentDefinitionReference Definition { get; init; }
+
+    public required string DisplayName { get; init; }
+
+    public string? ParticipantId { get; init; }
+
+    public string? ParticipantDisplayName { get; init; }
+}
+
+public sealed record WorkflowParticipantInvocation(
+    string ParticipantId,
+    string ParticipantDisplayName);
 
 public sealed class AgentRuntimeOptions
 {
@@ -72,9 +90,28 @@ public sealed class AgentRuntimeOptions
 
 public interface IAgentRunContextFactory
 {
+    AgentRunContext CreateRoot(
+        AgentDefinitionDescriptor definition,
+        string? conversationId = null);
+
     AgentRunContext CreateChild(
         AgentRunContext parent,
-        AgentDefinitionReference? childDefinition);
+        AgentDefinitionDescriptor childDefinition,
+        WorkflowParticipantInvocation? invocation = null);
+}
+
+public interface IAgentRunNestingValidator
+{
+    AgentRunNestingValidation Validate(
+        AgentDefinitionDescriptor target,
+        AgentRunContext context);
+}
+
+public sealed record AgentRunNestingValidation
+{
+    public required bool IsValid { get; init; }
+
+    public AgentRunError? Error { get; init; }
 }
 
 public abstract record AgentRunEvent;
@@ -114,7 +151,11 @@ public sealed record AgentRunError(
     string Code,
     string Message,
     bool IsRetryable,
-    Exception? Exception = null);
+    Exception? Exception = null)
+{
+    public IReadOnlyDictionary<string, string> Metadata { get; init; } =
+        new Dictionary<string, string>();
+}
 
 public sealed class AgentRuntimeProtocolException(string message)
     : InvalidOperationException(message);
@@ -162,6 +203,42 @@ public interface IWorkflowDefinitionPreflightValidator
     Task<IReadOnlyList<AgentDefinitionLaunchProblem>> ValidateAsync(
         AgentDefinitionReference reference,
         CancellationToken cancellationToken = default);
+}
+
+public interface IAgentDefinitionDependencyGraph
+{
+    Task<AgentDefinitionDependencyAnalysis> AnalyzeAsync(
+        AgentDefinitionReference root,
+        CancellationToken cancellationToken = default);
+}
+
+public sealed record AgentDefinitionDependencyAnalysis
+{
+    public required AgentDefinitionReference Root { get; init; }
+
+    public IReadOnlyList<AgentDefinitionDependencyNode> Nodes { get; init; } = [];
+
+    public IReadOnlyList<AgentDefinitionDependencyEdge> Edges { get; init; } = [];
+
+    public IReadOnlyList<AgentDefinitionProblem> Problems { get; init; } = [];
+}
+
+public sealed record AgentDefinitionDependencyNode
+{
+    public required AgentDefinitionReference Definition { get; init; }
+
+    public required string DisplayName { get; init; }
+
+    public required AgentRuntimeKind RuntimeKind { get; init; }
+}
+
+public sealed record AgentDefinitionDependencyEdge
+{
+    public required AgentDefinitionReference Parent { get; init; }
+
+    public required AgentDefinitionReference Child { get; init; }
+
+    public required string ParticipantId { get; init; }
 }
 
 public sealed record AgentInputDefinition

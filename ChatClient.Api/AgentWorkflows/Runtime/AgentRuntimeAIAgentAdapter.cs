@@ -1,4 +1,5 @@
 using ChatClient.Application.Services.AgentRuntime;
+using ChatClient.Api.Services.AgentRuntime;
 using Microsoft.Agents.AI;
 using Microsoft.Extensions.AI;
 using System.Runtime.CompilerServices;
@@ -8,8 +9,10 @@ namespace ChatClient.Api.AgentWorkflows.Runtime;
 
 public sealed class AgentRuntimeAIAgentAdapter(
     WorkflowRuntimeParticipant participant,
-    IAgentRunContextFactory contextFactory,
-    IAgentRuntimeProtocolExecutor protocolExecutor) : AIAgent
+    ResolvedWorkflowParticipant? resolvedParticipant,
+    AgentRuntimeCreationContext? creationContext,
+    ChatClient.Application.Services.AgentRuntime.AgentRunContext? parentRunContext,
+    IWorkflowParticipantInvoker participantInvoker) : AIAgent
 {
     protected override string? IdCore => participant.Id;
 
@@ -49,10 +52,12 @@ public sealed class AgentRuntimeAIAgentAdapter(
         AgentRunOptions? options,
         [EnumeratorCancellation] CancellationToken cancellationToken)
     {
-        var parentContext = CreateParentContext();
-        var childContext = contextFactory.CreateChild(
-            parentContext,
-            participant.DefinitionReference);
+        var invocationParticipant = resolvedParticipant ?? CreateResolvedParticipant(participant);
+        var parentContext = parentRunContext ?? CreateParentContext();
+        var effectiveCreationContext = creationContext ?? new AgentRuntimeCreationContext
+        {
+            Configuration = new ChatClient.Domain.Models.AppChatConfiguration(string.Empty, [])
+        };
         var request = new AgentRuntimeRunRequest
         {
             Messages = messages
@@ -63,11 +68,13 @@ public sealed class AgentRuntimeAIAgentAdapter(
 
         AgentRunFailed? terminalFailure = null;
         var deliveredTextLengths = new Dictionary<string, int>(StringComparer.Ordinal);
+        var responseId = parentContext.RunId;
 
-        await foreach (var runEvent in protocolExecutor.RunAsync(
-                           participant.Runtime,
+        await foreach (var runEvent in participantInvoker.InvokeAsync(
+                           invocationParticipant,
                            request,
-                           childContext,
+                           effectiveCreationContext,
+                           parentContext,
                            cancellationToken))
         {
             switch (runEvent)
@@ -80,7 +87,7 @@ public sealed class AgentRuntimeAIAgentAdapter(
                         AgentId = participant.Id,
                         AuthorName = participant.DisplayName,
                         MessageId = delta.MessageId,
-                        ResponseId = childContext.RunId
+                        ResponseId = responseId
                     };
                     break;
 
@@ -94,7 +101,7 @@ public sealed class AgentRuntimeAIAgentAdapter(
                         AgentId = participant.Id,
                         AuthorName = participant.DisplayName,
                         MessageId = completed.MessageId,
-                        ResponseId = childContext.RunId,
+                        ResponseId = responseId,
                         FinishReason = ChatFinishReason.Stop
                     };
                     break;
@@ -121,6 +128,31 @@ public sealed class AgentRuntimeAIAgentAdapter(
         return new ChatClient.Application.Services.AgentRuntime.AgentRunContext
         {
             RunId = Guid.NewGuid().ToString("N")
+        };
+    }
+
+    private static ResolvedWorkflowParticipant CreateResolvedParticipant(
+        WorkflowRuntimeParticipant participant)
+    {
+        if (participant.DefinitionReference is { } reference)
+        {
+            return new ResolvedWorkflowParticipant
+            {
+                ParticipantId = participant.Id,
+                DisplayName = participant.DisplayName,
+                Summary = participant.Summary,
+                RuntimeKind = participant.Runtime.Descriptor.Kind,
+                Source = new ReferencedParticipantSource(reference)
+            };
+        }
+
+        return new ResolvedWorkflowParticipant
+        {
+            ParticipantId = participant.Id,
+            DisplayName = participant.DisplayName,
+            Summary = participant.Summary,
+            RuntimeKind = AgentRuntimeKind.LlmAgent,
+            Source = new RuntimeWorkflowParticipantSource(participant.Runtime)
         };
     }
 

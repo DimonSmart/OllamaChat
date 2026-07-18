@@ -8,6 +8,8 @@ namespace ChatClient.Api.Client.Services.Agentic;
 
 public sealed class UnifiedAgentRuntimeChatSessionService(
     IAgentRunner agentRunner,
+    IAgentDefinitionCatalog definitionCatalog,
+    IAgentRunContextFactory runContextFactory,
     IChatEngineStreamingBridge streamingBridge,
     ILogger<UnifiedAgentRuntimeChatSessionService> logger) : IChatEngineSessionService
 {
@@ -152,16 +154,18 @@ public sealed class UnifiedAgentRuntimeChatSessionService(
                 DefaultModel = _parameters.RuntimeDefaultModel ?? _parameters.Agents.FirstOrDefault()?.Model,
                 Overrides = _parameters.Overrides
             };
+            var descriptor = await definitionCatalog.GetRequiredAsync(
+                _parameters.RuntimeReference,
+                _cancellationTokenSource.Token);
+            var runContext = runContextFactory.CreateRoot(
+                descriptor,
+                _chat.Id.ToString("N"));
 
             await foreach (var runEvent in agentRunner.RunAsync(
                                _parameters.RuntimeReference,
                                runtimeRequest,
                                creationContext,
-                               new AgentRunContext
-                               {
-                                   RunId = Guid.NewGuid().ToString("N"),
-                                   ConversationId = _chat.Id.ToString("N")
-                               },
+                               runContext,
                                _cancellationTokenSource.Token))
             {
                 if (runEvent is AgentRunFailed)

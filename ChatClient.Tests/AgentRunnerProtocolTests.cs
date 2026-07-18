@@ -134,6 +134,8 @@ public sealed class AgentRunnerProtocolTests
     public async Task RunAsync_MapsRuntimeCreationNotFoundToStableCode()
     {
         var runner = new AgentRunner(
+            new StubDefinitionCatalog(),
+            new AgentRunNestingValidator(new AgentRuntimeOptions()),
             new ThrowingRuntimeFactory(new KeyNotFoundException("internal path")),
             new AgentRuntimeProtocolExecutor(NullLogger<AgentRuntimeProtocolExecutor>.Instance),
             NullLogger<AgentRunner>.Instance);
@@ -180,6 +182,8 @@ public sealed class AgentRunnerProtocolTests
 
     private static AgentRunner CreateRunner(IAgentRuntime runtime) =>
         new(
+            new StubDefinitionCatalog(),
+            new AgentRunNestingValidator(new AgentRuntimeOptions()),
             new StubRuntimeFactory(runtime),
             new AgentRuntimeProtocolExecutor(NullLogger<AgentRuntimeProtocolExecutor>.Instance),
             NullLogger<AgentRunner>.Instance);
@@ -238,6 +242,31 @@ public sealed class AgentRunnerProtocolTests
             AgentRuntimeCreationContext context,
             CancellationToken cancellationToken = default) =>
             Task.FromResult(runtime);
+    }
+
+    private sealed class StubDefinitionCatalog : IAgentDefinitionCatalog
+    {
+        public Task<IReadOnlyList<AgentDefinitionDescriptor>> GetAllAsync(
+            CancellationToken cancellationToken = default) =>
+            Task.FromResult<IReadOnlyList<AgentDefinitionDescriptor>>([]);
+
+        public Task<AgentDefinitionDescriptor?> FindAsync(
+            AgentDefinitionReference reference,
+            CancellationToken cancellationToken = default) =>
+            Task.FromResult<AgentDefinitionDescriptor?>(new AgentDefinitionDescriptor
+            {
+                Reference = reference,
+                Name = reference.Id,
+                RuntimeKind = reference.Kind == AgentDefinitionKind.SavedWorkflow
+                    ? AgentRuntimeKind.WorkflowAgent
+                    : AgentRuntimeKind.LlmAgent,
+                ModelRequirement = AgentModelRequirement.Required
+            });
+
+        public async Task<AgentDefinitionDescriptor> GetRequiredAsync(
+            AgentDefinitionReference reference,
+            CancellationToken cancellationToken = default) =>
+            await FindAsync(reference, cancellationToken) ?? throw new KeyNotFoundException();
     }
 
     private sealed class ThrowingRuntimeFactory(Exception exception) : IAgentRuntimeFactory

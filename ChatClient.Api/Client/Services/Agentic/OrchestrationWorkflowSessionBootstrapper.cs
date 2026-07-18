@@ -18,8 +18,7 @@ public sealed class OrchestrationWorkflowSessionBootstrapper(
     TaskSessionStore taskSessionStore,
     MarkdownDocumentIntakeService documentIntakeService,
     AgenticRuntimeAgentFactory runtimeAgentFactory,
-    IAgentRunContextFactory runContextFactory,
-    IAgentRuntimeProtocolExecutor protocolExecutor)
+    IWorkflowParticipantInvoker participantInvoker)
 {
     private static readonly Lazy<MethodInfo?> GetDescriptiveIdMethod = new(static () =>
         Type.GetType(
@@ -105,10 +104,14 @@ public sealed class OrchestrationWorkflowSessionBootstrapper(
                 foreach (var participant in request.Participants)
                 {
                     stage = $"adapt-runtime-participant:{participant.Id}";
+                    var resolvedParticipant = request.ResolvedParticipants.FirstOrDefault(candidate =>
+                        string.Equals(candidate.ParticipantId, participant.Id, StringComparison.OrdinalIgnoreCase));
                     var agent = new AgentRuntimeAIAgentAdapter(
                         participant,
-                        runContextFactory,
-                        protocolExecutor);
+                        resolvedParticipant,
+                        request.CreationContext,
+                        request.ParentRunContext,
+                        participantInvoker);
 
                     runtimeAgents.Add(new OrchestrationWorkflowRuntimeAgentRegistration(
                         participant.Id,
@@ -153,8 +156,11 @@ public sealed class OrchestrationWorkflowSessionBootstrapper(
                 {
                     Workflow = request.Workflow,
                     Participants = request.Participants,
+                    ResolvedParticipants = request.ResolvedParticipants,
                     Agents = request.Participants.Count == 0 ? sessionBoundAgents : [],
                     Configuration = request.Configuration,
+                    CreationContext = request.CreationContext,
+                    ParentRunContext = request.ParentRunContext,
                     SessionTitle = request.SessionTitle,
                     SessionDescription = request.SessionDescription,
                     StartInputs = normalizedStartInputs

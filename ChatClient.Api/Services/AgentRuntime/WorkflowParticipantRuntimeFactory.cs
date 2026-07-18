@@ -116,22 +116,69 @@ file sealed class ReferencedWorkflowParticipantRuntime(
 
 public sealed class AgentRunContextFactory : IAgentRunContextFactory
 {
+    public AgentRunContext CreateRoot(
+        AgentDefinitionDescriptor definition,
+        string? conversationId = null)
+    {
+        ArgumentNullException.ThrowIfNull(definition);
+
+        var stack = new List<AgentRunFrame>
+        {
+            new()
+            {
+                Definition = definition.Reference,
+                DisplayName = definition.Name
+            }
+        };
+
+        return new AgentRunContext
+        {
+            RunId = Guid.NewGuid().ToString("N"),
+            ConversationId = conversationId,
+            DefinitionStack = stack,
+#pragma warning disable CS0618
+            DefinitionPath = [definition.Reference]
+#pragma warning restore CS0618
+        };
+    }
+
     public AgentRunContext CreateChild(
         AgentRunContext parent,
-        AgentDefinitionReference? childDefinition)
+        AgentDefinitionDescriptor childDefinition,
+        WorkflowParticipantInvocation? invocation = null)
     {
         ArgumentNullException.ThrowIfNull(parent);
+        ArgumentNullException.ThrowIfNull(childDefinition);
 
-        var path = childDefinition is null
-            ? parent.DefinitionPath
-            : parent.DefinitionPath.Concat([childDefinition]).ToList();
+        var parentStack = parent.DefinitionStack.Count > 0
+            ? parent.DefinitionStack
+            : parent.DefinitionPath
+                .Select(static reference => new AgentRunFrame
+                {
+                    Definition = reference,
+                    DisplayName = reference.Id
+                })
+                .ToList();
+
+        var stack = parentStack.Concat([
+            new AgentRunFrame
+            {
+                Definition = childDefinition.Reference,
+                DisplayName = childDefinition.Name,
+                ParticipantId = invocation?.ParticipantId,
+                ParticipantDisplayName = invocation?.ParticipantDisplayName
+            }
+        ]).ToList();
 
         return new AgentRunContext
         {
             RunId = Guid.NewGuid().ToString("N"),
             ParentRunId = parent.RunId,
             ConversationId = parent.ConversationId,
-            DefinitionPath = path
+            DefinitionStack = stack,
+#pragma warning disable CS0618
+            DefinitionPath = stack.Select(static frame => frame.Definition).ToList()
+#pragma warning restore CS0618
         };
     }
 }

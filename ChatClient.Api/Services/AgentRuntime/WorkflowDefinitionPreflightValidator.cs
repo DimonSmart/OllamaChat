@@ -9,7 +9,8 @@ public sealed class WorkflowDefinitionPreflightValidator(
     IWorkflowDefinitionService workflowDefinitionService,
     IWorkflowDefinitionCompiler workflowDefinitionCompiler,
     ILegacyWorkflowDefinitionNormalizer legacyWorkflowDefinitionNormalizer,
-    IWorkflowParticipantResolver workflowParticipantResolver) : IWorkflowDefinitionPreflightValidator
+    IWorkflowParticipantResolver workflowParticipantResolver,
+    IAgentDefinitionDependencyGraph? dependencyGraph = null) : IWorkflowDefinitionPreflightValidator
 {
     public async Task<IReadOnlyList<AgentDefinitionLaunchProblem>> ValidateAsync(
         AgentDefinitionReference reference,
@@ -19,6 +20,17 @@ public sealed class WorkflowDefinitionPreflightValidator(
         if (reference.Kind != AgentDefinitionKind.SavedWorkflow)
         {
             return [];
+        }
+
+        if (dependencyGraph is not null)
+        {
+            var analysis = await dependencyGraph.AnalyzeAsync(reference, cancellationToken);
+            if (analysis.Problems.Count > 0)
+            {
+                return analysis.Problems
+                    .Select(static problem => new AgentDefinitionLaunchProblem(problem.Message))
+                    .ToList();
+            }
         }
 
         var problems = new List<AgentDefinitionLaunchProblem>();

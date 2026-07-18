@@ -1,4 +1,5 @@
 using ChatClient.Api.Client.Services.Agentic;
+using ChatClient.Api.Services.AgentRuntime;
 using ChatClient.Application.Services.Agentic;
 using ChatClient.Application.Services.AgentRuntime;
 using ChatClient.Domain.Models;
@@ -227,6 +228,8 @@ public sealed class UnifiedAgentRuntimeChatSessionServiceTests
     private static UnifiedAgentRuntimeChatSessionService CreateService(IAgentRunner runner) =>
         new(
             runner,
+            new StubDefinitionCatalog(),
+            new AgentRunContextFactory(),
             new AgenticChatEngineStreamingBridge(),
             NullLogger<UnifiedAgentRuntimeChatSessionService>.Instance);
 
@@ -321,5 +324,30 @@ public sealed class UnifiedAgentRuntimeChatSessionServiceTests
             _streaming.SetResult();
             await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken);
         }
+    }
+
+    private sealed class StubDefinitionCatalog : IAgentDefinitionCatalog
+    {
+        public Task<IReadOnlyList<AgentDefinitionDescriptor>> GetAllAsync(
+            CancellationToken cancellationToken = default) =>
+            Task.FromResult<IReadOnlyList<AgentDefinitionDescriptor>>([]);
+
+        public Task<AgentDefinitionDescriptor?> FindAsync(
+            AgentDefinitionReference reference,
+            CancellationToken cancellationToken = default) =>
+            Task.FromResult<AgentDefinitionDescriptor?>(new AgentDefinitionDescriptor
+            {
+                Reference = reference,
+                Name = "Agent",
+                RuntimeKind = reference.Kind == AgentDefinitionKind.SavedWorkflow
+                    ? AgentRuntimeKind.WorkflowAgent
+                    : AgentRuntimeKind.LlmAgent,
+                ModelRequirement = AgentModelRequirement.Required
+            });
+
+        public async Task<AgentDefinitionDescriptor> GetRequiredAsync(
+            AgentDefinitionReference reference,
+            CancellationToken cancellationToken = default) =>
+            await FindAsync(reference, cancellationToken) ?? throw new KeyNotFoundException();
     }
 }

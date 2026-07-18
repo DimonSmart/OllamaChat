@@ -73,7 +73,10 @@ public sealed class WorkflowAgentRuntimeTests
     [Fact]
     public async Task RunAsync_SequentialSavedWorkflowParticipant_DetectsCycleBeforeRunningParticipant()
     {
-        var runner = new RecordingAgentRunner(new Dictionary<string, string>());
+        var runner = new RecordingAgentRunner(new Dictionary<string, string>
+        {
+            ["SavedWorkflow:workflow"] = "self"
+        });
         var runtime = CreateSequentialRuntime(
             runner,
             [
@@ -89,10 +92,8 @@ public sealed class WorkflowAgentRuntimeTests
 
         var events = await CollectAsync(runtime.RunAsync(CreateRequest(), CreateContext()));
 
-        Assert.Empty(runner.Calls);
-        var failed = Assert.IsType<AgentRunFailed>(Assert.Single(events));
-        Assert.Equal("workflow_cycle_detected", failed.Error.Code);
-        Assert.False(failed.Error.IsRetryable);
+        Assert.Single(runner.Calls);
+        Assert.IsType<AgentRunCompleted>(events.Last());
     }
 
     [Fact]
@@ -122,10 +123,8 @@ public sealed class WorkflowAgentRuntimeTests
 
         var events = await CollectAsync(runtime.RunAsync(CreateRequest(), context));
 
-        Assert.Empty(runner.Calls);
-        var failed = Assert.IsType<AgentRunFailed>(Assert.Single(events));
-        Assert.Equal("workflow_nesting_limit_exceeded", failed.Error.Code);
-        Assert.False(failed.Error.IsRetryable);
+        Assert.Single(runner.Calls);
+        Assert.IsType<AgentRunCompleted>(events.Last());
     }
 
     [Fact]
@@ -436,7 +435,6 @@ public sealed class WorkflowAgentRuntimeTests
         var configuration = new AppChatConfiguration("model", []);
         return new WorkflowAgentRuntime(
             new AgentRuntimeDescriptor("workflow", "Workflow", "Runs a workflow", AgentRuntimeKind.WorkflowAgent),
-            new AgentDefinitionReference(AgentDefinitionKind.SavedWorkflow, "workflow"),
             new SequentialWorkflowDefinition
             {
                 Id = "workflow",
@@ -459,7 +457,9 @@ public sealed class WorkflowAgentRuntimeTests
                 Configuration = configuration
             },
             new StubHeadlessWorkflowRunner([]),
-            new WorkflowParticipantExecutor(
+            new WorkflowParticipantInvoker(
+                new StubDefinitionCatalog(participants),
+                new AgentRunContextFactory(),
                 runner,
                 new ThrowingInlineLlmAgentRuntimeFactory(),
                 new AgentRuntimeProtocolExecutor(NullLogger<AgentRuntimeProtocolExecutor>.Instance)),
@@ -572,6 +572,51 @@ public sealed class WorkflowAgentRuntimeTests
             AgentTemplateDefinition agent,
             AgentRuntimeCreationContext context) =>
             throw new NotSupportedException();
+    }
+
+    private sealed class StubDefinitionCatalog(
+        IReadOnlyList<ResolvedWorkflowParticipant> participants) : IAgentDefinitionCatalog
+    {
+        public Task<IReadOnlyList<AgentDefinitionDescriptor>> GetAllAsync(
+            CancellationToken cancellationToken = default) =>
+            Task.FromResult<IReadOnlyList<AgentDefinitionDescriptor>>(
+                participants.Select(ToDescriptor).ToList());
+
+        public Task<AgentDefinitionDescriptor?> FindAsync(
+            AgentDefinitionReference reference,
+            CancellationToken cancellationToken = default) =>
+            Task.FromResult(GetAllAsync(cancellationToken).Result.FirstOrDefault(item =>
+                item.Reference.Kind == reference.Kind &&
+                string.Equals(item.Reference.Id, reference.Id, StringComparison.OrdinalIgnoreCase)));
+
+        public async Task<AgentDefinitionDescriptor> GetRequiredAsync(
+            AgentDefinitionReference reference,
+            CancellationToken cancellationToken = default) =>
+            await FindAsync(reference, cancellationToken) ?? new AgentDefinitionDescriptor
+            {
+                Reference = reference,
+                Name = reference.Id,
+                RuntimeKind = reference.Kind == AgentDefinitionKind.SavedWorkflow
+                    ? AgentRuntimeKind.WorkflowAgent
+                    : AgentRuntimeKind.LlmAgent,
+                ModelRequirement = AgentModelRequirement.Required
+            };
+
+        private static AgentDefinitionDescriptor ToDescriptor(
+            ResolvedWorkflowParticipant participant)
+        {
+            var reference = participant.Source is ReferencedParticipantSource referenced
+                ? referenced.Reference
+                : new AgentDefinitionReference(AgentDefinitionKind.SavedAgent, participant.ParticipantId);
+            return new AgentDefinitionDescriptor
+            {
+                Reference = reference,
+                Name = participant.DisplayName,
+                Description = participant.Summary,
+                RuntimeKind = participant.RuntimeKind,
+                ModelRequirement = AgentModelRequirement.Required
+            };
+        }
     }
 
     private sealed class ThrowingHeadlessWorkflowRunner(Exception exception) : IHeadlessWorkflowRunner

@@ -3,6 +3,8 @@ using Microsoft.Extensions.Logging;
 namespace ChatClient.Application.Services.AgentRuntime;
 
 public sealed class AgentRunner(
+    IAgentDefinitionCatalog definitionCatalog,
+    IAgentRunNestingValidator nestingValidator,
     IAgentRuntimeFactory runtimeFactory,
     IAgentRuntimeProtocolExecutor protocolExecutor,
     ILogger<AgentRunner> logger) : IAgentRunner
@@ -20,15 +22,33 @@ public sealed class AgentRunner(
 
         try
         {
-            runtime = await runtimeFactory.CreateAsync(reference, creationContext, cancellationToken);
-            logger.LogInformation(
-                "Agent run started. RunId={RunId}, DefinitionKind={DefinitionKind}, DefinitionId={DefinitionId}, RuntimeKind={RuntimeKind}, Name={Name}, StartedAt={StartedAt}",
-                runContext.RunId,
-                reference.Kind,
-                reference.Id,
-                runtime.Descriptor.Kind,
-                runtime.Descriptor.Name,
-                startedAt);
+            var descriptor = await definitionCatalog.GetRequiredAsync(reference, cancellationToken);
+            var nestingValidation = nestingValidator.Validate(descriptor, runContext);
+            if (!nestingValidation.IsValid)
+            {
+                logger.LogWarning(
+                    "Agent run nesting validation failed. RunId={RunId}, DefinitionKind={DefinitionKind}, DefinitionId={DefinitionId}, Code={Code}",
+                    runContext.RunId,
+                    reference.Kind,
+                    reference.Id,
+                    nestingValidation.Error?.Code);
+                creationFailure = new AgentRunFailed(nestingValidation.Error!);
+            }
+            else
+            {
+                runtime = await runtimeFactory.CreateAsync(reference, creationContext, cancellationToken);
+                logger.LogInformation(
+                    "Agent run started. RunId={RunId}, ParentRunId={ParentRunId}, DefinitionKind={DefinitionKind}, DefinitionId={DefinitionId}, DefinitionName={DefinitionName}, RuntimeKind={RuntimeKind}, NestingDepth={NestingDepth}, ConversationId={ConversationId}, StartedAt={StartedAt}",
+                    runContext.RunId,
+                    runContext.ParentRunId,
+                    reference.Kind,
+                    reference.Id,
+                    descriptor.Name,
+                    runtime.Descriptor.Kind,
+                    GetWorkflowDepth(runContext),
+                    runContext.ConversationId,
+                    startedAt);
+            }
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
@@ -83,6 +103,20 @@ public sealed class AgentRunner(
                 cancellationToken.IsCancellationRequested,
                 lastEvent is AgentRunFailed failed ? failed.Error.Code : null);
         }
+    }
+
+    private static int GetWorkflowDepth(AgentRunContext context)
+    {
+        if (context.DefinitionStack.Count > 0)
+        {
+            return context.DefinitionStack.Count(static frame =>
+                frame.Definition.Kind == AgentDefinitionKind.SavedWorkflow);
+        }
+
+#pragma warning disable CS0618
+        return context.DefinitionPath.Count(static reference =>
+            reference.Kind == AgentDefinitionKind.SavedWorkflow);
+#pragma warning restore CS0618
     }
 
     private static string MapCreationFailureCode(
