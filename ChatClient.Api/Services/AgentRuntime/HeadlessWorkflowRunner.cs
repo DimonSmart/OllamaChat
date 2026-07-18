@@ -147,6 +147,7 @@ public sealed class HeadlessWorkflowRunner(
         private readonly Dictionary<Guid, string?> _activeSpeakerIdsByStreamId = [];
         private readonly Dictionary<Guid, int> _streamContentLengths = [];
         private readonly HashSet<Guid> _emittedCompletedMessageIds = [];
+        private readonly HashSet<string> _emittedCompletedMessageContents = [];
         private readonly Dictionary<string, string> _agentIdsByExecutorId = new(StringComparer.OrdinalIgnoreCase);
         private readonly Dictionary<string, string> _agentIdsByName = new(StringComparer.OrdinalIgnoreCase);
         private readonly Dictionary<string, string> _agentNamesById = new(StringComparer.OrdinalIgnoreCase);
@@ -155,6 +156,7 @@ public sealed class HeadlessWorkflowRunner(
 
         public string TaskSessionId => bootstrap.TaskSessionId;
 
+        [Obsolete]
         public async IAsyncEnumerable<HeadlessWorkflowEvent> RunTurnAsync(
             HeadlessWorkflowTurnRequest request,
             [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken = default)
@@ -270,6 +272,7 @@ public sealed class HeadlessWorkflowRunner(
                                         writer,
                                         _streamContentLengths,
                                         _emittedCompletedMessageIds,
+                                        _emittedCompletedMessageContents,
                                         cancellation)
                                 }
                             },
@@ -304,6 +307,7 @@ public sealed class HeadlessWorkflowRunner(
                         completedMessage.SpeakerId,
                         writer,
                         _emittedCompletedMessageIds,
+                        _emittedCompletedMessageContents,
                         cancellationToken);
                 }
 
@@ -384,6 +388,7 @@ public sealed class HeadlessWorkflowRunner(
     {
         var nonEmptyMessages = messages
             .Where(static message => !string.IsNullOrWhiteSpace(message.Message.Content))
+            .DistinctBy(static message => message.Message.Content.Trim())
             .ToList();
         if (nonEmptyMessages.Count == 0)
         {
@@ -576,6 +581,7 @@ public sealed class HeadlessWorkflowRunner(
         ChannelWriter<HeadlessWorkflowEvent> writer,
         Dictionary<Guid, int> streamContentLengths,
         HashSet<Guid> emittedCompletedMessageIds,
+        HashSet<string> emittedCompletedMessageContents,
         CancellationToken cancellationToken)
     {
         if (message.Role != AppChatRole.Assistant)
@@ -606,6 +612,7 @@ public sealed class HeadlessWorkflowRunner(
             message.AgentId,
             writer,
             emittedCompletedMessageIds,
+            emittedCompletedMessageContents,
             cancellationToken);
     }
 
@@ -614,10 +621,12 @@ public sealed class HeadlessWorkflowRunner(
         string? participantId,
         ChannelWriter<HeadlessWorkflowEvent> writer,
         HashSet<Guid> emittedCompletedMessageIds,
+        HashSet<string> emittedCompletedMessageContents,
         CancellationToken cancellationToken)
     {
-        if (!emittedCompletedMessageIds.Add(message.Id) ||
-            string.IsNullOrWhiteSpace(message.Content))
+        if (string.IsNullOrWhiteSpace(message.Content) ||
+            !emittedCompletedMessageIds.Add(message.Id) ||
+            !emittedCompletedMessageContents.Add(message.Content.Trim()))
         {
             return;
         }

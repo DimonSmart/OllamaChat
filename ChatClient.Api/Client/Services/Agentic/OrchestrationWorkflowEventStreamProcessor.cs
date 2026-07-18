@@ -232,6 +232,13 @@ public sealed class OrchestrationWorkflowEventStreamProcessor(
                     completedMessage.Message.Content ?? string.Empty,
                     completedMessage.SpeakerId ?? completedMessage.Message.AgentId,
                     completedMessage.Message.AgentName)))
+            .Concat(context.ActiveStreams.Select(stream =>
+                new OrchestrationDeliveredAssistantMessage(
+                    stream.Value.Content ?? string.Empty,
+                    context.ActiveSpeakerIdsByStreamId.TryGetValue(stream.Key, out var speakerId)
+                        ? speakerId
+                        : stream.Value.AgentId,
+                    stream.Value.AgentName)))
             .ToList();
         var skipCount = FindDeliveredOutputOverlap(context, outputMessages, deliveredMessages);
 
@@ -289,13 +296,16 @@ public sealed class OrchestrationWorkflowEventStreamProcessor(
         var outputSpeakerId = ResolveSpeakerIdFromAuthorName(context, outputMessage.AuthorName);
         var outputSpeakerName = ResolveSpeakerName(context, outputSpeakerId) ?? outputMessage.AuthorName;
 
-        return IsSameSpeaker(
+        return string.IsNullOrWhiteSpace(outputSpeakerId) ||
+               string.IsNullOrWhiteSpace(deliveredMessage.SpeakerId) ||
+               IsSameSpeaker(
             deliveredMessage.SpeakerId,
             deliveredMessage.SpeakerName,
             outputSpeakerId,
             outputSpeakerName);
     }
 
+    [Obsolete]
     private async Task<StreamingAppChatMessage> GetOrCreateStreamAsync(
         OrchestrationWorkflowEventStreamContext context,
         string? executorId,
