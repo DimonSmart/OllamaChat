@@ -61,6 +61,38 @@ public sealed class AgentRuntimeAIAgentAdapterTests
         Assert.Equal("outer > inner", exception.Error.Metadata["definition.stack"]);
     }
 
+    [Theory]
+    [InlineData(true, true)]
+    [InlineData(false, true)]
+    [InlineData(false, false)]
+    public async Task RunStreamingAsync_EmitsFinalTextExactlyOnce(
+        bool includesDelta,
+        bool includesMessageCompleted)
+    {
+        var events = new List<AgentRunEvent>();
+        if (includesDelta)
+        {
+            events.Add(new AgentTextDelta("message-1", "Inner", "hello "));
+        }
+
+        if (includesMessageCompleted)
+        {
+            events.Add(new AgentMessageCompleted("message-1", new AgentOutputMessage("Inner", "hello world")));
+        }
+
+        events.Add(new AgentRunCompleted(new AgentRunResult
+        {
+            FinalMessage = new AgentOutputMessage("Inner", "hello world"),
+            FinalMessageId = "message-1"
+        }));
+
+        var updates = await CollectAsync(CreateAdapter(
+            CreateParentContext(),
+            new StubParticipantInvoker(events)).RunStreamingAsync("go"));
+
+        Assert.Equal("hello world", string.Concat(updates.Select(static update => update.Text)));
+    }
+
     private static AgentRuntimeAIAgentAdapter CreateAdapter(
         AppAgentRunContext parentContext,
         IWorkflowParticipantInvoker invoker)

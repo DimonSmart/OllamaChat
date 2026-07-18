@@ -187,6 +187,23 @@ public sealed class AgentDefinitionDependencyGraphTests
         Assert.Contains("participant \"To C\"", problem.Message);
     }
 
+    [Fact]
+    public async Task AnalyzeAsync_DetectsCycleWhenGuidReferencesUseDifferentFormats()
+    {
+        var aId = Guid.NewGuid();
+        var bId = Guid.NewGuid();
+        var a = Workflow("A", aId.ToString("D"), new ParticipantReference(
+            "to-b", "To B", new AgentDefinitionReference(AgentDefinitionKind.SavedWorkflow, bId.ToString("N"))));
+        var b = Workflow("B", bId.ToString("D"), new ParticipantReference(
+            "to-a", "To A", new AgentDefinitionReference(AgentDefinitionKind.SavedWorkflow, aId.ToString("D"))));
+        var graph = CreateGraph([a, b]);
+
+        var analysis = await graph.AnalyzeAsync(Reference(aId.ToString("N")));
+
+        Assert.Contains(analysis.Problems, static problem =>
+            problem.Message.Contains("Workflow dependency cycle detected", StringComparison.Ordinal));
+    }
+
     private static AgentDefinitionDependencyGraph CreateGraph(
         IReadOnlyList<WorkflowRecord> workflows,
         CountingWorkflowDefinitionCompiler? compiler = null,

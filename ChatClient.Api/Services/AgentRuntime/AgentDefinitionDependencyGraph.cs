@@ -46,7 +46,7 @@ public sealed class AgentDefinitionDependencyGraph(
     {
         cancellationToken.ThrowIfCancellationRequested();
 
-        if (path.Any(frame => SameReference(frame.Definition, reference)))
+        if (path.Any(frame => AgentDefinitionReferenceComparer.Instance.Equals(frame.Definition, reference)))
         {
             var cyclePath = path.Concat([
                 CreateFrame(
@@ -301,14 +301,8 @@ public sealed class AgentDefinitionDependencyGraph(
         return string.Join(Environment.NewLine, lines);
     }
 
-    private static bool SameReference(
-        AgentDefinitionReference left,
-        AgentDefinitionReference right) =>
-        left.Kind == right.Kind &&
-        string.Equals(left.Id, right.Id, StringComparison.OrdinalIgnoreCase);
-
     private static string Key(AgentDefinitionReference reference) =>
-        $"{reference.Kind}:{reference.Id}";
+        AgentDefinitionReferenceComparer.Instance.GetKey(reference);
 
     private sealed record ResolvedWorkflow(
         IOrchestrationWorkflowDefinition Definition,

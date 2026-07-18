@@ -1,5 +1,6 @@
 using ChatClient.Application.Services.AgentRuntime;
 using ChatClient.Domain.Models;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using System.Runtime.CompilerServices;
 
@@ -272,6 +273,56 @@ public sealed class AgentRunnerProtocolTests
         Assert.Equal("Saved workflow was not found.", failed.Error.Message);
     }
 
+    [Theory]
+    [InlineData("completed", "Completed", null, null)]
+    [InlineData("failed", "Failed", "execution_failed", true)]
+    [InlineData("protocol", "ProtocolViolation", "runtime_protocol_violation", false)]
+    public async Task RunAsync_LogsActualTerminalOutcome(
+        string scenario,
+        string expectedOutcome,
+        string? expectedFailureCode,
+        bool? expectedRetryable)
+    {
+        var events = scenario switch
+        {
+            "completed" => new AgentRunEvent[] { new AgentRunCompleted(CreateResult("final", "m1")) },
+            "failed" => new AgentRunEvent[] { new AgentRunFailed(new AgentRunError("execution_failed", "failed", true)) },
+            _ => new AgentRunEvent[] { new AgentRunFailed(new AgentRunError("runtime_protocol_violation", "protocol", false)) }
+        };
+        var logger = new CapturingLogger<AgentRunner>();
+
+        await CollectAsync(CreateRunner(new StubRuntime(events), logger).RunAsync(
+            CreateReference(), CreateRequest(), CreateCreationContext(), CreateRunContext()));
+
+        var properties = logger.Entries.Single(static entry => entry.Message.Contains("Agent run finished.", StringComparison.Ordinal)).Properties;
+        Assert.Equal(expectedOutcome, properties["Outcome"]);
+        Assert.Equal(expectedFailureCode, properties.GetValueOrDefault("FailureCode"));
+        Assert.Equal(expectedRetryable, properties.GetValueOrDefault("FailureRetryable"));
+    }
+
+    [Fact]
+    public async Task RunAsync_LogsCanceledAndIncompleteOutcomes()
+    {
+        using var cts = new CancellationTokenSource();
+        var canceledLogger = new CapturingLogger<AgentRunner>();
+        var canceledRunner = CreateRunner(new CancelingRuntime(cts), canceledLogger);
+        await Assert.ThrowsAsync<OperationCanceledException>(() => CollectAsync(canceledRunner.RunAsync(
+            CreateReference(), CreateRequest(), CreateCreationContext(), CreateRunContext(), cts.Token)));
+        Assert.Equal("Canceled", canceledLogger.FinishedProperties()["Outcome"]);
+
+        var incompleteLogger = new CapturingLogger<AgentRunner>();
+        var incompleteRunner = CreateRunner(new StubRuntime([
+            new AgentTextDelta("m1", "assistant", "partial"),
+            new AgentRunCompleted(CreateResult("final", "m1"))
+        ]), incompleteLogger);
+        await using (var enumerator = incompleteRunner.RunAsync(
+                         CreateReference(), CreateRequest(), CreateCreationContext(), CreateRunContext()).GetAsyncEnumerator())
+        {
+            Assert.True(await enumerator.MoveNextAsync());
+        }
+        Assert.Equal("Incomplete", incompleteLogger.FinishedProperties()["Outcome"]);
+    }
+
     public static IEnumerable<object[]> ProtocolViolationSequences()
     {
         yield return
@@ -301,16 +352,16 @@ public sealed class AgentRunnerProtocolTests
         yield return [Array.Empty<AgentRunEvent>()];
     }
 
-    private static AgentRunner CreateRunner(IAgentRuntime runtime) =>
-        CreateRunner(new StubRuntimeFactory(runtime));
+    private static AgentRunner CreateRunner(IAgentRuntime runtime, ILogger<AgentRunner>? logger = null) =>
+        CreateRunner(new StubRuntimeFactory(runtime), logger);
 
-    private static AgentRunner CreateRunner(IAgentRuntimeFactory runtimeFactory) =>
+    private static AgentRunner CreateRunner(IAgentRuntimeFactory runtimeFactory, ILogger<AgentRunner>? logger = null) =>
         new(
             new StubDefinitionCatalog(),
             new AgentRunNestingValidator(new AgentRuntimeOptions()),
             runtimeFactory,
             CreateProtocolExecutor(),
-            NullLogger<AgentRunner>.Instance);
+            logger ?? NullLogger<AgentRunner>.Instance);
 
     private static AgentRuntimeProtocolExecutor CreateProtocolExecutor() =>
         new(NullLogger<AgentRuntimeProtocolExecutor>.Instance);
@@ -491,4 +542,26 @@ public sealed class AgentRunnerProtocolTests
             cancellationToken.ThrowIfCancellationRequested();
         }
     }
+
+    private sealed class CapturingLogger<T> : ILogger<T>
+    {
+        public List<LogEntry> Entries { get; } = [];
+
+        public IReadOnlyDictionary<string, object?> FinishedProperties() =>
+            Entries.Single(static entry => entry.Message.Contains("Agent run finished.", StringComparison.Ordinal)).Properties;
+
+        public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
+
+        public bool IsEnabled(LogLevel logLevel) => true;
+
+        public void Log<TState>(LogLevel logLevel, EventId eventId, TState state, Exception? exception, Func<TState, Exception?, string> formatter)
+        {
+            var properties = state is IEnumerable<KeyValuePair<string, object?>> pairs
+                ? pairs.ToDictionary(static pair => pair.Key, static pair => pair.Value)
+                : new Dictionary<string, object?>();
+            Entries.Add(new LogEntry(formatter(state, exception), properties));
+        }
+    }
+
+    private sealed record LogEntry(string Message, IReadOnlyDictionary<string, object?> Properties);
 }

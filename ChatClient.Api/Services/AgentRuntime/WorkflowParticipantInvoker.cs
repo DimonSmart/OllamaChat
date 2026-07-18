@@ -115,21 +115,6 @@ public sealed class WorkflowParticipantInvoker(
 
                 yield break;
 
-            case RuntimeWorkflowParticipantSource runtimeSource:
-                var runtimeValidation = nestingValidator.Validate(childDefinition, childContext);
-                if (!runtimeValidation.IsValid)
-                {
-                    yield return new AgentRunFailed(runtimeValidation.Error!);
-                    yield break;
-                }
-
-                await foreach (var runEvent in protocolExecutor.ExecuteAsync(runtimeSource.Runtime, request, childContext, cancellationToken))
-                {
-                    yield return runEvent;
-                }
-
-                yield break;
-
             default:
                 yield return new AgentRunFailed(new AgentRunError(
                     "invalid_workflow",
@@ -140,6 +125,3 @@ public sealed class WorkflowParticipantInvoker(
     }
 
 }
-
-public sealed record RuntimeWorkflowParticipantSource(IAgentRuntime Runtime)
-    : ResolvedWorkflowParticipantSource;

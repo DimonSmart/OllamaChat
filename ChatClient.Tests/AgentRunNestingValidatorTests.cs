@@ -160,6 +160,20 @@ public sealed class AgentRunNestingValidatorTests
         Assert.Equal("review", result.Error.Metadata["participant.id"]);
     }
 
+    [Fact]
+    public void Validate_RecognizesGuidCycleAcrossTextFormats()
+    {
+        var id = Guid.NewGuid();
+        var root = Workflow(id.ToString("D"), "Root");
+        var target = Workflow(id.ToString("N"), "Root again");
+        var context = Context([Frame(root), Frame(target, "again", "Again")]);
+
+        var result = CreateValidator().Validate(target, context);
+
+        Assert.False(result.IsValid);
+        Assert.Equal("workflow_cycle_detected", result.Error?.Code);
+    }
+
     private static AgentRunNestingValidator CreateValidator(int maximumDepth = 8) =>
         new(new AgentRuntimeOptions { MaximumWorkflowNestingDepth = maximumDepth });
 

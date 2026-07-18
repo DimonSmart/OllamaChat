@@ -18,94 +18,129 @@ public sealed class AgentRunner(
     {
         IAgentRuntime? runtime = null;
         var startedAt = DateTimeOffset.UtcNow;
-        AgentRunFailed? creationFailure = null;
-
+        var outcome = AgentRunOutcome.Incomplete;
+        string? failureCode = null;
+        bool? failureRetryable = null;
         try
         {
-            var descriptor = await definitionCatalog.GetRequiredAsync(reference, cancellationToken);
-            var nestingValidation = nestingValidator.Validate(descriptor, runContext);
-            if (!nestingValidation.IsValid)
+            AgentRunFailed? creationFailure = null;
+            try
             {
-                logger.LogWarning(
-                    "Agent run nesting validation failed. RunId={RunId}, DefinitionKind={DefinitionKind}, DefinitionId={DefinitionId}, Code={Code}",
-                    runContext.RunId,
-                    reference.Kind,
-                    reference.Id,
-                    nestingValidation.Error?.Code);
-                creationFailure = new AgentRunFailed(nestingValidation.Error!);
+                var descriptor = await definitionCatalog.GetRequiredAsync(reference, cancellationToken);
+                var nestingValidation = nestingValidator.Validate(descriptor, runContext);
+                if (!nestingValidation.IsValid)
+                {
+                    logger.LogWarning(
+                        "Agent run nesting validation failed. RunId={RunId}, DefinitionKind={DefinitionKind}, DefinitionId={DefinitionId}, Code={Code}",
+                        runContext.RunId, reference.Kind, reference.Id, nestingValidation.Error?.Code);
+                    creationFailure = new AgentRunFailed(nestingValidation.Error!);
+                }
+                else
+                {
+                    runtime = await runtimeFactory.CreateAsync(reference, creationContext, cancellationToken);
+                    logger.LogInformation(
+                        "Agent run started. RunId={RunId}, ParentRunId={ParentRunId}, DefinitionKind={DefinitionKind}, DefinitionId={DefinitionId}, DefinitionName={DefinitionName}, RuntimeKind={RuntimeKind}, NestingDepth={NestingDepth}, ConversationId={ConversationId}, StartedAt={StartedAt}",
+                        runContext.RunId, runContext.ParentRunId, reference.Kind, reference.Id, descriptor.Name,
+                        runtime.Descriptor.Kind, GetWorkflowDepth(runContext), runContext.ConversationId, startedAt);
+                }
             }
-            else
+            catch (OperationCanceledException)
             {
-                runtime = await runtimeFactory.CreateAsync(reference, creationContext, cancellationToken);
-                logger.LogInformation(
-                    "Agent run started. RunId={RunId}, ParentRunId={ParentRunId}, DefinitionKind={DefinitionKind}, DefinitionId={DefinitionId}, DefinitionName={DefinitionName}, RuntimeKind={RuntimeKind}, NestingDepth={NestingDepth}, ConversationId={ConversationId}, StartedAt={StartedAt}",
-                    runContext.RunId,
-                    runContext.ParentRunId,
-                    reference.Kind,
-                    reference.Id,
-                    descriptor.Name,
-                    runtime.Descriptor.Kind,
-                    GetWorkflowDepth(runContext),
-                    runContext.ConversationId,
-                    startedAt);
+                outcome = AgentRunOutcome.Canceled;
+                throw;
             }
-        }
-        catch (Exception ex) when (ex is not OperationCanceledException)
-        {
-            logger.LogError(
-                ex,
-                "Agent runtime creation failed. RunId={RunId}, DefinitionKind={DefinitionKind}, DefinitionId={DefinitionId}",
-                runContext.RunId,
-                reference.Kind,
-                reference.Id);
-            creationFailure = new AgentRunFailed(new AgentRunError(
-                MapCreationFailureCode(reference, ex),
-                BuildSafeCreationFailureMessage(reference, ex),
-                false,
-                ex));
-        }
-
-        if (creationFailure is not null)
-        {
-            yield return creationFailure;
-            yield break;
-        }
-
-        if (runtime is null)
-        {
-            yield break;
-        }
-
-        try
-        {
-            await foreach (var runEvent in protocolExecutor.ExecuteAsync(
-                               runtime,
-                               request,
-                               runContext,
-                               cancellationToken)
-                           .WithCancellation(cancellationToken))
+            catch (Exception ex)
             {
+                logger.LogError(ex, "Agent runtime creation failed. RunId={RunId}, DefinitionKind={DefinitionKind}, DefinitionId={DefinitionId}", runContext.RunId, reference.Kind, reference.Id);
+                creationFailure = new AgentRunFailed(new AgentRunError(
+                    MapCreationFailureCode(reference, ex), BuildSafeCreationFailureMessage(reference, ex), false, ex));
+            }
+
+            if (creationFailure is not null)
+            {
+                SetFailureOutcome(creationFailure, ref outcome, ref failureCode, ref failureRetryable);
+                yield return creationFailure;
+                yield break;
+            }
+
+            if (runtime is null)
+            {
+                yield break;
+            }
+
+            await using var enumerator = protocolExecutor.ExecuteAsync(
+                runtime,
+                request,
+                runContext,
+                cancellationToken).GetAsyncEnumerator(cancellationToken);
+            while (await MoveNextAsync(enumerator, () => outcome = AgentRunOutcome.Canceled))
+            {
+                var runEvent = enumerator.Current;
+                switch (runEvent)
+                {
+                    case AgentRunCompleted:
+                        outcome = AgentRunOutcome.Completed;
+                        break;
+                    case AgentRunFailed failed:
+                        SetFailureOutcome(failed, ref outcome, ref failureCode, ref failureRetryable);
+                        break;
+                }
+
                 yield return runEvent;
             }
         }
         finally
         {
+            if (outcome == AgentRunOutcome.Incomplete && cancellationToken.IsCancellationRequested)
+            {
+                outcome = AgentRunOutcome.Canceled;
+            }
+
             var completedAt = DateTimeOffset.UtcNow;
             logger.LogInformation(
-                "Agent run finished. RunId={RunId}, ParentRunId={ParentRunId}, DefinitionKind={DefinitionKind}, DefinitionId={DefinitionId}, RuntimeKind={RuntimeKind}, RuntimeName={RuntimeName}, Outcome={Outcome}, FailureCode={FailureCode}, DurationMs={DurationMs}, Canceled={Canceled}, NestingDepth={NestingDepth}, ConversationId={ConversationId}, CompletedAt={CompletedAt}",
+                "Agent run finished. RunId={RunId}, ParentRunId={ParentRunId}, DefinitionKind={DefinitionKind}, DefinitionId={DefinitionId}, RuntimeKind={RuntimeKind}, RuntimeName={RuntimeName}, Outcome={Outcome}, FailureCode={FailureCode}, FailureRetryable={FailureRetryable}, DurationMs={DurationMs}, Canceled={Canceled}, NestingDepth={NestingDepth}, ConversationId={ConversationId}, CompletedAt={CompletedAt}",
                 runContext.RunId,
                 runContext.ParentRunId,
                 reference.Kind,
                 reference.Id,
-                runtime.Descriptor.Kind,
-                runtime.Descriptor.Name,
-                "Completed",
-                null,
+                runtime?.Descriptor.Kind,
+                runtime?.Descriptor.Name,
+                outcome.ToString(),
+                failureCode,
+                failureRetryable,
                 (completedAt - startedAt).TotalMilliseconds,
                 cancellationToken.IsCancellationRequested,
                 GetWorkflowDepth(runContext),
                 runContext.ConversationId,
                 completedAt);
+        }
+    }
+
+    private static void SetFailureOutcome(
+        AgentRunFailed failed,
+        ref AgentRunOutcome outcome,
+        ref string? failureCode,
+        ref bool? failureRetryable)
+    {
+        outcome = string.Equals(failed.Error.Code, "runtime_protocol_violation", StringComparison.Ordinal)
+            ? AgentRunOutcome.ProtocolViolation
+            : AgentRunOutcome.Failed;
+        failureCode = failed.Error.Code;
+        failureRetryable = failed.Error.IsRetryable;
+    }
+
+    private static async Task<bool> MoveNextAsync(
+        IAsyncEnumerator<AgentRunEvent> enumerator,
+        Action markCanceled)
+    {
+        try
+        {
+            return await enumerator.MoveNextAsync();
+        }
+        catch (OperationCanceledException)
+        {
+            markCanceled();
+            throw;
         }
     }
 
@@ -153,6 +188,15 @@ public sealed class AgentRunner(
             _ => "Agent runtime could not be created."
         };
     }
+}
+
+internal enum AgentRunOutcome
+{
+    Completed,
+    Failed,
+    Canceled,
+    ProtocolViolation,
+    Incomplete
 }
 
 public sealed class AgentRuntimeProtocolExecutor(

@@ -172,6 +172,29 @@ public sealed record AgentDefinitionReference(
     AgentDefinitionKind Kind,
     string Id);
 
+public sealed class AgentDefinitionReferenceComparer : IEqualityComparer<AgentDefinitionReference>
+{
+    public static AgentDefinitionReferenceComparer Instance { get; } = new();
+
+    public bool Equals(AgentDefinitionReference? left, AgentDefinitionReference? right) =>
+        ReferenceEquals(left, right) ||
+        left is not null && right is not null &&
+        left.Kind == right.Kind &&
+        string.Equals(NormalizeId(left.Id), NormalizeId(right.Id), StringComparison.OrdinalIgnoreCase);
+
+    public int GetHashCode(AgentDefinitionReference reference) =>
+        HashCode.Combine(reference.Kind, StringComparer.OrdinalIgnoreCase.GetHashCode(NormalizeId(reference.Id)));
+
+    public AgentDefinitionReference Normalize(AgentDefinitionReference reference) =>
+        reference with { Id = NormalizeId(reference.Id) };
+
+    public string GetKey(AgentDefinitionReference reference) =>
+        $"{reference.Kind}:{NormalizeId(reference.Id)}";
+
+    public static string NormalizeId(string id) =>
+        Guid.TryParse(id, out var parsed) ? parsed.ToString("D") : id;
+}
+
 public enum AgentDefinitionKind
 {
     SavedAgent,

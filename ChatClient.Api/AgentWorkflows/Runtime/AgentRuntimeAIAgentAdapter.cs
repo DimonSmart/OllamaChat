@@ -69,6 +69,7 @@ public sealed class AgentRuntimeAIAgentAdapter(
 
         AgentRunFailed? terminalFailure = null;
         var deliveredTextLengths = new Dictionary<string, int>(StringComparer.Ordinal);
+        var completedMessageIds = new HashSet<string>(StringComparer.Ordinal);
         var responseId = Guid.NewGuid().ToString("N");
 
         await foreach (var runEvent in participantInvoker.InvokeAsync(
@@ -97,6 +98,7 @@ public sealed class AgentRuntimeAIAgentAdapter(
                     var remainingText = completed.Message.Content.Length > deliveredLength
                         ? completed.Message.Content[deliveredLength..]
                         : string.Empty;
+                    completedMessageIds.Add(completed.MessageId);
                     yield return new AgentResponseUpdate(ChatRole.Assistant, remainingText)
                     {
                         AgentId = participant.Id,
@@ -107,7 +109,27 @@ public sealed class AgentRuntimeAIAgentAdapter(
                     };
                     break;
 
-                case AgentRunCompleted:
+                case AgentRunCompleted runCompleted:
+                    var finalMessageId = runCompleted.Result.FinalMessageId ?? responseId;
+                    if (!completedMessageIds.Contains(finalMessageId))
+                    {
+                        var finalDeliveredLength = deliveredTextLengths.GetValueOrDefault(finalMessageId);
+                        var finalText = runCompleted.Result.FinalMessage.Content;
+                        var finalRemainingText = finalText.Length > finalDeliveredLength
+                            ? finalText[finalDeliveredLength..]
+                            : string.Empty;
+                        if (!string.IsNullOrEmpty(finalRemainingText))
+                        {
+                            yield return new AgentResponseUpdate(ChatRole.Assistant, finalRemainingText)
+                            {
+                                AgentId = participant.Id,
+                                AuthorName = participant.DisplayName,
+                                MessageId = finalMessageId,
+                                ResponseId = responseId,
+                                FinishReason = ChatFinishReason.Stop
+                            };
+                        }
+                    }
                     yield break;
 
                 case AgentRunFailed failed:

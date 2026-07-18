@@ -33,7 +33,7 @@ public sealed class AgentRunNestingValidator(
                 "Run definition stack contains an empty definition id.");
         }
 
-        if (!SameReference(stack[^1].Definition, target.Reference))
+        if (!AgentDefinitionReferenceComparer.Instance.Equals(stack[^1].Definition, target.Reference))
         {
             return Invalid(
                 "invalid_run_context",
@@ -56,10 +56,10 @@ public sealed class AgentRunNestingValidator(
         }
 
         var priorFrames = stack.Count > 0 &&
-                          SameReference(stack[^1].Definition, target.Reference)
+                          AgentDefinitionReferenceComparer.Instance.Equals(stack[^1].Definition, target.Reference)
             ? stack.Take(stack.Count - 1)
             : stack;
-        if (!priorFrames.Any(frame => SameReference(frame.Definition, target.Reference)))
+        if (!priorFrames.Any(frame => AgentDefinitionReferenceComparer.Instance.Equals(frame.Definition, target.Reference)))
         {
             return Valid();
         }
@@ -153,17 +153,4 @@ public sealed class AgentRunNestingValidator(
             }
         };
 
-    private static bool SameReference(
-        AgentDefinitionReference left,
-        AgentDefinitionReference right) =>
-        left.Kind == right.Kind &&
-        string.Equals(
-            NormalizeReferenceId(left.Id),
-            NormalizeReferenceId(right.Id),
-            StringComparison.OrdinalIgnoreCase);
-
-    private static string NormalizeReferenceId(string id) =>
-        Guid.TryParse(id, out var parsed)
-            ? parsed.ToString("D")
-            : id;
 }

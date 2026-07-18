@@ -76,7 +76,7 @@ public sealed class AgentRunContextFactory : IAgentRunContextFactory
         {
             new()
             {
-                Definition = NormalizeReference(definition.Reference),
+                Definition = AgentDefinitionReferenceComparer.Instance.Normalize(definition.Reference),
                 DisplayName = definition.Name
             }
         };
@@ -117,7 +117,7 @@ public sealed class AgentRunContextFactory : IAgentRunContextFactory
         var stack = parent.DefinitionStack.Concat([
             new AgentRunFrame
             {
-                Definition = NormalizeReference(childDefinition.Reference),
+                Definition = AgentDefinitionReferenceComparer.Instance.Normalize(childDefinition.Reference),
                 DisplayName = childDefinition.Name,
                 ParticipantId = invocation?.ParticipantId,
                 ParticipantDisplayName = invocation?.ParticipantDisplayName
@@ -144,8 +144,4 @@ public sealed class AgentRunContextFactory : IAgentRunContextFactory
         };
     }
 
-    private static AgentDefinitionReference NormalizeReference(AgentDefinitionReference reference) =>
-        Guid.TryParse(reference.Id, out var id)
-            ? reference with { Id = id.ToString("D") }
-            : reference;
 }
