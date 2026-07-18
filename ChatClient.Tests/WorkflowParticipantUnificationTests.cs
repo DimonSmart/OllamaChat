@@ -299,18 +299,21 @@ public sealed class WorkflowParticipantUnificationTests
             new AgentRunNestingValidator(new AgentRuntimeOptions()),
             protocolExecutor);
 
-        await Assert.ThrowsAsync<AgentRuntimeProtocolException>(() =>
-            CollectAsync(referencedExecutor.InvokeAsync(
-                CreateReferencedParticipant(),
-                request,
-                creationContext,
-                CreateContext())));
-        await Assert.ThrowsAsync<AgentRuntimeProtocolException>(() =>
-            CollectAsync(inlineExecutor.InvokeAsync(
-                CreateMaterializedParticipant(),
-                request,
-                creationContext,
-                CreateContext())));
+        var referencedEvents = await CollectAsync(referencedExecutor.InvokeAsync(
+            CreateReferencedParticipant(),
+            request,
+            creationContext,
+            CreateContext()));
+        var referencedFailure = Assert.IsType<AgentRunFailed>(Assert.Single(referencedEvents));
+        Assert.Equal("runtime_protocol_violation", referencedFailure.Error.Code);
+
+        var inlineEvents = await CollectAsync(inlineExecutor.InvokeAsync(
+            CreateMaterializedParticipant(),
+            request,
+            creationContext,
+            CreateContext()));
+        var inlineFailure = Assert.IsType<AgentRunFailed>(Assert.Single(inlineEvents));
+        Assert.Equal("runtime_protocol_violation", inlineFailure.Error.Code);
     }
 
     [Obsolete]

@@ -60,6 +60,36 @@ public sealed class AgentRunNestingValidatorTests
         Assert.True(result.IsValid);
     }
 
+    [Fact]
+    public void Validate_EmptyDefinitionStack_IsRejected()
+    {
+        var target = Agent("leaf", "Leaf");
+        var context = Context([]);
+
+        var result = CreateValidator().Validate(target, context);
+
+        Assert.False(result.IsValid);
+        Assert.Equal("invalid_run_context", result.Error?.Code);
+    }
+
+    [Fact]
+    public void Validate_EmptyDefinitionId_IsRejected()
+    {
+        var target = Agent("leaf", "Leaf");
+        var context = Context([
+            new AgentRunFrame
+            {
+                Definition = new AgentDefinitionReference(AgentDefinitionKind.SavedAgent, string.Empty),
+                DisplayName = "Leaf"
+            }
+        ]);
+
+        var result = CreateValidator().Validate(target, context);
+
+        Assert.False(result.IsValid);
+        Assert.Equal("invalid_run_context", result.Error?.Code);
+    }
+
     [Theory]
     [InlineData("a")]
     [InlineData("b")]

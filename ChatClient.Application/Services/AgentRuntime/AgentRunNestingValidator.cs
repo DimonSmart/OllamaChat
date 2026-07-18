@@ -12,16 +12,22 @@ public sealed class AgentRunNestingValidator(
         ArgumentNullException.ThrowIfNull(target);
         ArgumentNullException.ThrowIfNull(context);
 
-        if (options.MaximumWorkflowNestingDepth <= 0)
+        var stack = context.DefinitionStack;
+        if (stack.Count == 0)
         {
             return Invalid(
-                "invalid_runtime_options",
-                "Maximum workflow nesting depth must be greater than zero.");
+                "invalid_run_context",
+                "Run definition stack must contain the target definition.");
         }
 
-        var stack = context.DefinitionStack;
-        if (stack.Count > 0 &&
-            !SameReference(stack[^1].Definition, target.Reference))
+        if (stack.Any(static frame => string.IsNullOrWhiteSpace(frame.Definition.Id)))
+        {
+            return Invalid(
+                "invalid_run_context",
+                "Run definition stack contains an empty definition id.");
+        }
+
+        if (!SameReference(stack[^1].Definition, target.Reference))
         {
             return Invalid(
                 "invalid_run_context",
@@ -145,5 +151,13 @@ public sealed class AgentRunNestingValidator(
         AgentDefinitionReference left,
         AgentDefinitionReference right) =>
         left.Kind == right.Kind &&
-        string.Equals(left.Id, right.Id, StringComparison.OrdinalIgnoreCase);
+        string.Equals(
+            NormalizeReferenceId(left.Id),
+            NormalizeReferenceId(right.Id),
+            StringComparison.OrdinalIgnoreCase);
+
+    private static string NormalizeReferenceId(string id) =>
+        Guid.TryParse(id, out var parsed)
+            ? parsed.ToString("D")
+            : id;
 }

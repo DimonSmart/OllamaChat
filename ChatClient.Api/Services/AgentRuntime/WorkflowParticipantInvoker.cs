@@ -108,7 +108,7 @@ public sealed class WorkflowParticipantInvoker(
                     yield break;
                 }
 
-                await foreach (var runEvent in protocolExecutor.RunAsync(
+                await foreach (var runEvent in RunRuntimeAsync(
                                    runtime,
                                    request,
                                    childContext,
@@ -127,7 +127,7 @@ public sealed class WorkflowParticipantInvoker(
                     yield break;
                 }
 
-                await foreach (var runEvent in protocolExecutor.RunAsync(
+                await foreach (var runEvent in RunRuntimeAsync(
                                    runtimeSource.Runtime,
                                    request,
                                    childContext,
@@ -147,6 +147,95 @@ public sealed class WorkflowParticipantInvoker(
         }
     }
 
+    private async IAsyncEnumerable<AgentRunEvent> RunRuntimeAsync(
+        IAgentRuntime runtime,
+        AgentRuntimeRunRequest request,
+        AgentRunContext runContext,
+        [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken)
+    {
+        AgentRunFailed? executionFailure = null;
+        var terminalEmitted = false;
+        var enumerator = protocolExecutor.RunAsync(
+            runtime,
+            request,
+            runContext,
+            cancellationToken).GetAsyncEnumerator(cancellationToken);
+
+        try
+        {
+            while (true)
+            {
+                AgentRunEvent runEvent;
+                try
+                {
+                    if (!await enumerator.MoveNextAsync())
+                    {
+                        break;
+                    }
+
+                    runEvent = enumerator.Current;
+                }
+                catch (OperationCanceledException)
+                {
+                    throw;
+                }
+                catch (AgentRuntimeProtocolException ex)
+                {
+                    executionFailure = new AgentRunFailed(new AgentRunError(
+                        "runtime_protocol_violation",
+                        "Agent runtime protocol violation.",
+                        false,
+                        ex));
+                    break;
+                }
+                catch (AgentRunFailedException ex)
+                {
+                    executionFailure = new AgentRunFailed(ex.Error);
+                    break;
+                }
+                catch (Exception ex)
+                {
+                    executionFailure = new AgentRunFailed(new AgentRunError(
+                        "runtime_execution_failed",
+                        "Agent runtime execution failed.",
+                        false,
+                        ex));
+                    break;
+                }
+
+                terminalEmitted = runEvent is AgentRunCompleted or AgentRunFailed;
+                yield return runEvent;
+            }
+        }
+        finally
+        {
+            try
+            {
+                await enumerator.DisposeAsync();
+            }
+            catch (OperationCanceledException)
+            {
+                throw;
+            }
+            catch (Exception ex) when (executionFailure is null && !terminalEmitted)
+            {
+                executionFailure = new AgentRunFailed(new AgentRunError(
+                    "runtime_execution_failed",
+                    "Agent runtime execution failed.",
+                    false,
+                    ex));
+            }
+            catch (Exception)
+            {
+            }
+        }
+
+        if (executionFailure is not null &&
+            !terminalEmitted)
+        {
+            yield return executionFailure;
+        }
+    }
 }
 
 public sealed record RuntimeWorkflowParticipantSource(IAgentRuntime Runtime)

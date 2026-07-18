@@ -76,10 +76,15 @@ public sealed class AgentRunContextFactory : IAgentRunContextFactory
         {
             new()
             {
-                Definition = definition.Reference,
+                Definition = NormalizeReference(definition.Reference),
                 DisplayName = definition.Name
             }
         };
+
+        if (stack.Count != 1)
+        {
+            throw new InvalidOperationException("Root run context must contain exactly one definition stack frame.");
+        }
 
         return new AgentRunContext
         {
@@ -103,22 +108,44 @@ public sealed class AgentRunContextFactory : IAgentRunContextFactory
                 "Cannot create a child run context from an empty definition stack.");
         }
 
+        var parentRunId = parent.RunId;
+        if (string.IsNullOrWhiteSpace(parentRunId))
+        {
+            throw new InvalidOperationException("Parent run context must have a run id.");
+        }
+
         var stack = parent.DefinitionStack.Concat([
             new AgentRunFrame
             {
-                Definition = childDefinition.Reference,
+                Definition = NormalizeReference(childDefinition.Reference),
                 DisplayName = childDefinition.Name,
                 ParticipantId = invocation?.ParticipantId,
                 ParticipantDisplayName = invocation?.ParticipantDisplayName
             }
         ]).ToList();
 
+        if (stack.Count != parent.DefinitionStack.Count + 1)
+        {
+            throw new InvalidOperationException("Child run context must append exactly one definition stack frame.");
+        }
+
+        var runId = Guid.NewGuid().ToString("N");
+        if (string.Equals(runId, parentRunId, StringComparison.Ordinal))
+        {
+            throw new InvalidOperationException("Child run context must have a new run id.");
+        }
+
         return new AgentRunContext
         {
-            RunId = Guid.NewGuid().ToString("N"),
-            ParentRunId = parent.RunId,
+            RunId = runId,
+            ParentRunId = parentRunId,
             ConversationId = parent.ConversationId,
             DefinitionStack = stack
         };
     }
+
+    private static AgentDefinitionReference NormalizeReference(AgentDefinitionReference reference) =>
+        Guid.TryParse(reference.Id, out var id)
+            ? reference with { Id = id.ToString("D") }
+            : reference;
 }
