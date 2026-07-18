@@ -16,7 +16,6 @@ public sealed class WorkflowAgentRuntimeFactory(
     ILegacyWorkflowDefinitionNormalizer legacyWorkflowDefinitionNormalizer,
     IWorkflowParticipantResolver workflowParticipantResolver,
     IWorkflowParticipantRuntimeFactory participantRuntimeFactory,
-    IHeadlessWorkflowRunner headlessWorkflowRunner,
     IServiceProvider serviceProvider,
     ILogger<WorkflowAgentRuntimeFactory> logger) : IWorkflowAgentRuntimeFactory
 {
@@ -69,12 +68,26 @@ public sealed class WorkflowAgentRuntimeFactory(
             runtimeParticipants,
             context.Configuration,
             context,
-            headlessWorkflowRunner,
+            new LazyHeadlessWorkflowRunner(serviceProvider),
             new LazyWorkflowParticipantInvoker(serviceProvider),
             logger);
     }
 
 }
+file sealed class LazyHeadlessWorkflowRunner(
+    IServiceProvider serviceProvider) : IHeadlessWorkflowRunner
+{
+    public Task<IHeadlessWorkflowSession> StartAsync(
+        HeadlessWorkflowSessionStartRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        var runner = serviceProvider.GetRequiredService<IHeadlessWorkflowRunner>();
+        return runner.StartAsync(
+            request,
+            cancellationToken);
+    }
+}
+
 file sealed class LazyWorkflowParticipantInvoker(
     IServiceProvider serviceProvider) : IWorkflowParticipantInvoker
 {
