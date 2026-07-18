@@ -103,13 +103,29 @@ public sealed class AgentRuntimePolymorphicIntegrationTests
             return Task.FromResult<IAgentRuntime>(new WorkflowAgentRuntime(
                 new AgentRuntimeDescriptor(workflowId, "Workflow", string.Empty, AgentRuntimeKind.WorkflowAgent),
                 workflow,
-                [new ResolvedChatAgent(
-                    new AgentExecutionSpec { Id = Guid.NewGuid(), AgentName = "Agent" },
-                    new ServerModel(Guid.NewGuid(), "model"))],
+                [],
+                [],
                 context.Configuration,
+                context,
                 new StubHeadlessWorkflowRunner(),
+                new ThrowingWorkflowParticipantInvoker(),
                 NullLogger<WorkflowAgentRuntime>.Instance));
         }
+    }
+
+    private sealed class ThrowingWorkflowParticipantInvoker : IWorkflowParticipantInvoker
+    {
+        public WorkflowParticipantInvocationHandle CreateInvocation(
+            ResolvedWorkflowParticipant participant,
+            AgentRunContext parentContext) =>
+            throw new NotSupportedException();
+
+        public IAsyncEnumerable<AgentRunEvent> InvokeAsync(
+            WorkflowParticipantInvocationHandle invocation,
+            AgentRuntimeRunRequest request,
+            AgentRuntimeCreationContext creationContext,
+            CancellationToken cancellationToken = default) =>
+            throw new NotSupportedException();
     }
 
     private sealed class StubRuntime(

@@ -392,8 +392,8 @@ public sealed class WorkflowAgentRuntimeTests
     public static IEnumerable<object[]> ExceptionMappings()
     {
         yield return [new WorkflowProducedNoResultException(), "workflow_produced_no_result"];
-        yield return [new WorkflowAssistantErrorException("assistant failed"), "execution_failed"];
-        yield return [new InvalidOperationException("boom"), "execution_failed"];
+        yield return [new WorkflowAssistantErrorException("assistant failed"), "workflow_execution_failed"];
+        yield return [new InvalidOperationException("boom"), "workflow_execution_failed"];
     }
 
     private static WorkflowAgentRuntime CreateRuntime(
@@ -422,9 +422,15 @@ public sealed class WorkflowAgentRuntimeTests
                     }
                 ]
             },
-            [new ResolvedChatAgent(new AgentExecutionSpec { Id = Guid.NewGuid(), AgentName = "Agent" }, new ServerModel(Guid.NewGuid(), "model"))],
+            [],
+            [],
             new AppChatConfiguration("model", []),
+            new AgentRuntimeCreationContext
+            {
+                Configuration = new AppChatConfiguration("model", [])
+            },
             runner,
+            new ThrowingWorkflowParticipantInvoker(),
             NullLogger<WorkflowAgentRuntime>.Instance);
 
     private static WorkflowAgentRuntime CreateSequentialRuntime(
@@ -458,7 +464,6 @@ public sealed class WorkflowAgentRuntimeTests
             },
             new StubHeadlessWorkflowRunner([]),
             new WorkflowParticipantInvoker(
-                new StubDefinitionCatalog(participants),
                 new AgentRunContextFactory(),
                 runner,
                 new ThrowingInlineLlmAgentRuntimeFactory(),
@@ -571,6 +576,21 @@ public sealed class WorkflowAgentRuntimeTests
             AgentRuntimeDescriptor descriptor,
             AgentTemplateDefinition agent,
             AgentRuntimeCreationContext context) =>
+            throw new NotSupportedException();
+    }
+
+    private sealed class ThrowingWorkflowParticipantInvoker : IWorkflowParticipantInvoker
+    {
+        public WorkflowParticipantInvocationHandle CreateInvocation(
+            ResolvedWorkflowParticipant participant,
+            AgentRunContext parentContext) =>
+            throw new NotSupportedException();
+
+        public IAsyncEnumerable<AgentRunEvent> InvokeAsync(
+            WorkflowParticipantInvocationHandle invocation,
+            AgentRuntimeRunRequest request,
+            AgentRuntimeCreationContext creationContext,
+            CancellationToken cancellationToken = default) =>
             throw new NotSupportedException();
     }
 

@@ -78,19 +78,27 @@ public sealed class WorkflowAgentRuntimeFactory(
 file sealed class LazyWorkflowParticipantInvoker(
     IServiceProvider serviceProvider) : IWorkflowParticipantInvoker
 {
-    public IAsyncEnumerable<AgentRunEvent> InvokeAsync(
+    public WorkflowParticipantInvocationHandle CreateInvocation(
         ResolvedWorkflowParticipant participant,
+        AgentRunContext parentContext)
+    {
+        var invoker = serviceProvider.GetRequiredService<IWorkflowParticipantInvoker>();
+        return invoker.CreateInvocation(
+            participant,
+            parentContext);
+    }
+
+    public IAsyncEnumerable<AgentRunEvent> InvokeAsync(
+        WorkflowParticipantInvocationHandle invocation,
         AgentRuntimeRunRequest request,
         AgentRuntimeCreationContext creationContext,
-        AgentRunContext parentContext,
         CancellationToken cancellationToken = default)
     {
         var invoker = serviceProvider.GetRequiredService<IWorkflowParticipantInvoker>();
         return invoker.InvokeAsync(
-            participant,
+            invocation,
             request,
             creationContext,
-            parentContext,
             cancellationToken);
     }
 }
@@ -107,45 +115,6 @@ internal sealed class WorkflowAgentRuntime(
     ILogger logger) : IAgentRuntime
 {
     public AgentRuntimeDescriptor Descriptor { get; } = descriptor;
-
-    public WorkflowAgentRuntime(
-        AgentRuntimeDescriptor descriptor,
-        IOrchestrationWorkflowDefinition workflow,
-        IReadOnlyList<ResolvedChatAgent> agents,
-        AppChatConfiguration configuration,
-        IHeadlessWorkflowRunner headlessWorkflowRunner,
-        ILogger logger)
-        : this(
-            descriptor,
-            workflow,
-            workflow.Participants.Select(static participant => new ResolvedWorkflowParticipant
-            {
-                ParticipantId = participant.Id,
-                DisplayName = string.IsNullOrWhiteSpace(participant.Role) ? participant.Id : participant.Role,
-                Summary = participant.Summary,
-                RuntimeKind = AgentRuntimeKind.LlmAgent,
-                Source = participant.Source is InlineAgentParticipantSource inline
-                    ? new MaterializedLlmParticipantSource(inline.Agent)
-                    : throw new InvalidOperationException(
-                        $"Workflow participant '{participant.Id}' has no inline agent source.")
-            }).ToList(),
-            agents.Select(static agent => new WorkflowRuntimeParticipant
-            {
-                Id = agent.Agent.AgentId,
-                DisplayName = agent.Agent.AgentName,
-                Summary = agent.Agent.Summary,
-                Runtime = new MissingWorkflowRuntime()
-            }).ToList(),
-            configuration,
-            new AgentRuntimeCreationContext
-            {
-                Configuration = configuration
-            },
-            headlessWorkflowRunner,
-            new MissingWorkflowParticipantInvoker(),
-            logger)
-    {
-    }
 
     public async IAsyncEnumerable<AgentRunEvent> RunAsync(
         AgentRuntimeRunRequest request,
@@ -234,9 +203,10 @@ internal sealed class WorkflowAgentRuntime(
             yield break;
         }
 
-        await using (session!)
+        var activeSession = session!;
+        await using (activeSession)
         {
-            var events = session.RunTurnAsync(new HeadlessWorkflowTurnRequest
+            var events = activeSession.RunTurnAsync(new HeadlessWorkflowTurnRequest
             {
                 UserMessage = BuildWorkflowUserMessage(
                     request.Messages.Take(currentUserMessageIndex),
@@ -291,6 +261,11 @@ internal sealed class WorkflowAgentRuntime(
         AgentRunContext context,
         Exception ex)
     {
+        if (TryExtractAgentRunError(ex) is { } runError)
+        {
+            return new AgentRunFailed(runError);
+        }
+
         if (ex is WorkflowProducedNoResultException)
         {
             return new AgentRunFailed(new AgentRunError(
@@ -310,10 +285,46 @@ internal sealed class WorkflowAgentRuntime(
             workflow.Participants.Count);
 
         return new AgentRunFailed(new AgentRunError(
-            "execution_failed",
+            "workflow_execution_failed",
             "Workflow execution failed.",
             true,
             ex));
+    }
+
+    private static AgentRunError? TryExtractAgentRunError(Exception exception)
+    {
+        var visited = new HashSet<Exception>(ReferenceEqualityComparer.Instance);
+        var queue = new Queue<Exception>();
+        queue.Enqueue(exception);
+
+        while (queue.Count > 0)
+        {
+            var current = queue.Dequeue();
+            if (!visited.Add(current))
+            {
+                continue;
+            }
+
+            if (current is AgentRunFailedException runFailure)
+            {
+                return runFailure.Error;
+            }
+
+            if (current is AggregateException aggregate)
+            {
+                foreach (var inner in aggregate.InnerExceptions)
+                {
+                    queue.Enqueue(inner);
+                }
+            }
+
+            if (current.InnerException is not null)
+            {
+                queue.Enqueue(current.InnerException);
+            }
+        }
+
+        return null;
     }
 
     private static AgentRunEvent MapHeadlessEvent(HeadlessWorkflowEvent headlessEvent) =>
@@ -510,11 +521,14 @@ internal sealed class WorkflowAgentRuntime(
             AgentRunResult? terminalResult = null;
             AgentRunFailed? terminalFailure = null;
 
+            var invocation = participantInvoker.CreateInvocation(
+                participant,
+                context);
+
             await foreach (var participantEvent in participantInvoker.InvokeAsync(
-                               participant,
+                               invocation,
                                participantRequest,
                                creationContext,
-                               context,
                                cancellationToken))
             {
                 switch (participantEvent)
@@ -585,29 +599,6 @@ internal sealed class WorkflowAgentRuntime(
             workflow.ParticipantOrder.LastOrDefault(),
             participantId,
             StringComparison.OrdinalIgnoreCase);
-}
-
-file sealed class MissingWorkflowParticipantInvoker : IWorkflowParticipantInvoker
-{
-    public IAsyncEnumerable<AgentRunEvent> InvokeAsync(
-        ResolvedWorkflowParticipant participant,
-        AgentRuntimeRunRequest request,
-        AgentRuntimeCreationContext creationContext,
-        AgentRunContext runContext,
-        CancellationToken cancellationToken = default) =>
-        throw new NotSupportedException("Sequential workflow participants require a configured participant executor.");
-}
-
-file sealed class MissingWorkflowRuntime : IAgentRuntime
-{
-    public AgentRuntimeDescriptor Descriptor { get; } =
-        new("missing", "Missing workflow runtime", string.Empty, AgentRuntimeKind.LlmAgent);
-
-    public IAsyncEnumerable<AgentRunEvent> RunAsync(
-        AgentRuntimeRunRequest request,
-        AgentRunContext context,
-        CancellationToken cancellationToken = default) =>
-        throw new NotSupportedException("This workflow runtime placeholder is not executable.");
 }
 
 internal static class SequentialParticipantRequestBuilder

@@ -150,15 +150,23 @@ public sealed class AgentRunContextFactory : IAgentRunContextFactory
         ArgumentNullException.ThrowIfNull(parent);
         ArgumentNullException.ThrowIfNull(childDefinition);
 
-        var parentStack = parent.DefinitionStack.Count > 0
-            ? parent.DefinitionStack
-            : parent.DefinitionPath
+        IReadOnlyList<AgentRunFrame> parentStack;
+        if (parent.DefinitionStack.Count > 0)
+        {
+            parentStack = parent.DefinitionStack;
+        }
+        else
+        {
+#pragma warning disable CS0618
+            parentStack = parent.DefinitionPath
                 .Select(static reference => new AgentRunFrame
                 {
                     Definition = reference,
                     DisplayName = reference.Id
                 })
                 .ToList();
+#pragma warning restore CS0618
+        }
 
         var stack = parentStack.Concat([
             new AgentRunFrame

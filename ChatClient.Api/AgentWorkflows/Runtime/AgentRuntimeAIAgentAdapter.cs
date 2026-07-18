@@ -53,11 +53,15 @@ public sealed class AgentRuntimeAIAgentAdapter(
         [EnumeratorCancellation] CancellationToken cancellationToken)
     {
         var invocationParticipant = resolvedParticipant ?? CreateResolvedParticipant(participant);
-        var parentContext = parentRunContext ?? CreateParentContext();
+        var parentContext = parentRunContext ?? throw new InvalidOperationException(
+            "Workflow participant adapter requires a parent run context.");
         var effectiveCreationContext = creationContext ?? new AgentRuntimeCreationContext
         {
             Configuration = new ChatClient.Domain.Models.AppChatConfiguration(string.Empty, [])
         };
+        var invocation = participantInvoker.CreateInvocation(
+            invocationParticipant,
+            parentContext);
         var request = new AgentRuntimeRunRequest
         {
             Messages = messages
@@ -68,13 +72,12 @@ public sealed class AgentRuntimeAIAgentAdapter(
 
         AgentRunFailed? terminalFailure = null;
         var deliveredTextLengths = new Dictionary<string, int>(StringComparer.Ordinal);
-        var responseId = parentContext.RunId;
+        var responseId = invocation.Context.RunId;
 
         await foreach (var runEvent in participantInvoker.InvokeAsync(
-                           invocationParticipant,
+                           invocation,
                            request,
                            effectiveCreationContext,
-                           parentContext,
                            cancellationToken))
         {
             switch (runEvent)
@@ -117,18 +120,8 @@ public sealed class AgentRuntimeAIAgentAdapter(
 
         if (terminalFailure is not null)
         {
-            throw new InvalidOperationException(
-                $"Workflow participant '{participant.DisplayName}' failed: {terminalFailure.Error.Message}",
-                terminalFailure.Error.Exception);
+            throw new AgentRunFailedException(terminalFailure.Error);
         }
-    }
-
-    private ChatClient.Application.Services.AgentRuntime.AgentRunContext CreateParentContext()
-    {
-        return new ChatClient.Application.Services.AgentRuntime.AgentRunContext
-        {
-            RunId = Guid.NewGuid().ToString("N")
-        };
     }
 
     private static ResolvedWorkflowParticipant CreateResolvedParticipant(

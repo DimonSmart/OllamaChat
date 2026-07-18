@@ -5,31 +5,35 @@ namespace ChatClient.Api.Services.AgentRuntime;
 
 public interface IWorkflowParticipantInvoker
 {
-    IAsyncEnumerable<AgentRunEvent> InvokeAsync(
+    WorkflowParticipantInvocationHandle CreateInvocation(
         ResolvedWorkflowParticipant participant,
+        AgentRunContext parentContext);
+
+    IAsyncEnumerable<AgentRunEvent> InvokeAsync(
+        WorkflowParticipantInvocationHandle invocation,
         AgentRuntimeRunRequest request,
         AgentRuntimeCreationContext creationContext,
-        AgentRunContext parentContext,
         CancellationToken cancellationToken = default);
 }
 
+public sealed record WorkflowParticipantInvocationHandle
+{
+    public required ResolvedWorkflowParticipant Participant { get; init; }
+
+    public required AgentRunContext Context { get; init; }
+}
+
 public sealed class WorkflowParticipantInvoker(
-    IAgentDefinitionCatalog definitionCatalog,
     IAgentRunContextFactory contextFactory,
     IAgentRunner agentRunner,
     IInlineLlmAgentRuntimeFactory inlineRuntimeFactory,
     IAgentRuntimeProtocolExecutor protocolExecutor) : IWorkflowParticipantInvoker
 {
-    public async IAsyncEnumerable<AgentRunEvent> InvokeAsync(
+    public WorkflowParticipantInvocationHandle CreateInvocation(
         ResolvedWorkflowParticipant participant,
-        AgentRuntimeRunRequest request,
-        AgentRuntimeCreationContext creationContext,
-        AgentRunContext parentContext,
-        [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken = default)
+        AgentRunContext parentContext)
     {
-        var childDefinition = await ResolveChildDefinitionAsync(
-            participant,
-            cancellationToken);
+        var childDefinition = CreateInvocationDefinition(participant);
         var childContext = contextFactory.CreateChild(
             parentContext,
             childDefinition,
@@ -37,11 +41,45 @@ public sealed class WorkflowParticipantInvoker(
                 participant.ParticipantId,
                 participant.DisplayName));
 
+        return new WorkflowParticipantInvocationHandle
+        {
+            Participant = participant,
+            Context = childContext
+        };
+    }
+
+    private static AgentDefinitionDescriptor CreateInvocationDefinition(
+        ResolvedWorkflowParticipant participant)
+    {
+        var reference = participant.Source is ReferencedParticipantSource referenced
+            ? referenced.Reference
+            : new AgentDefinitionReference(AgentDefinitionKind.SavedAgent, participant.ParticipantId);
+
+        return new AgentDefinitionDescriptor
+        {
+            Reference = reference,
+            Name = participant.DisplayName,
+            Description = participant.Summary,
+            RuntimeKind = participant.RuntimeKind,
+            ModelRequirement = participant.RuntimeKind == AgentRuntimeKind.LlmAgent
+                ? AgentModelRequirement.Required
+                : AgentModelRequirement.None
+        };
+    }
+
+    public async IAsyncEnumerable<AgentRunEvent> InvokeAsync(
+        WorkflowParticipantInvocationHandle invocation,
+        AgentRuntimeRunRequest request,
+        AgentRuntimeCreationContext creationContext,
+        [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+
         await foreach (var runEvent in InvokeCoreAsync(
-                           participant,
+                           invocation.Participant,
                            request,
                            creationContext,
-                           childContext,
+                           invocation.Context,
                            cancellationToken))
         {
             yield return runEvent;
@@ -111,28 +149,6 @@ public sealed class WorkflowParticipantInvoker(
         }
     }
 
-    private async Task<AgentDefinitionDescriptor> ResolveChildDefinitionAsync(
-        ResolvedWorkflowParticipant participant,
-        CancellationToken cancellationToken)
-    {
-        if (participant.Source is ReferencedParticipantSource referenced)
-        {
-            return await definitionCatalog.GetRequiredAsync(
-                referenced.Reference,
-                cancellationToken);
-        }
-
-        return new AgentDefinitionDescriptor
-        {
-            Reference = new AgentDefinitionReference(
-                AgentDefinitionKind.SavedAgent,
-                participant.ParticipantId),
-            Name = participant.DisplayName,
-            Description = participant.Summary,
-            RuntimeKind = AgentRuntimeKind.LlmAgent,
-            ModelRequirement = AgentModelRequirement.Required
-        };
-    }
 }
 
 public sealed record RuntimeWorkflowParticipantSource(IAgentRuntime Runtime)

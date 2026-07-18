@@ -122,29 +122,10 @@ public sealed class WorkflowParticipantUnificationTests
     public async Task PreflightValidation_ReturnsStructuredProblemForUnknownSavedAgentName()
     {
         var workflowId = Guid.NewGuid();
-        var sourceCode =
-            """
-            var workflow = WorkflowDefinitionBuilder
-                .New("demo", "Demo Workflow")
-                .Agent("reviewer", agent => agent
-                    .FromSavedAgent("Missing Agent"))
-                .UseHandoff(handoff => handoff
-                    .StartWith("reviewer"))
-                .Build();
-
-            workflow
-            """;
         var validator = new WorkflowDefinitionPreflightValidator(
-            new StubWorkflowDefinitionService(new SavedWorkflowDefinition
-            {
-                Id = workflowId,
-                WorkflowId = "demo",
-                DisplayName = "Demo Workflow",
-                SourceCode = sourceCode
-            }),
-            new WorkflowDefinitionCompiler(),
-            new LegacyWorkflowDefinitionNormalizer(new StubAgentTemplateService([])),
-            new StubWorkflowParticipantResolver());
+            new StubDependencyGraph([
+                new AgentDefinitionProblem("Missing Agent was not found")
+            ]));
 
         var problems = await validator.ValidateAsync(new AgentDefinitionReference(
             AgentDefinitionKind.SavedWorkflow,
@@ -298,7 +279,6 @@ public sealed class WorkflowParticipantUnificationTests
             NullLogger<AgentRuntimeProtocolExecutor>.Instance);
 
         var referencedExecutor = new WorkflowParticipantInvoker(
-            new StubDefinitionCatalog([]),
             new AgentRunContextFactory(),
             new AgentRunner(
                 new StubDefinitionCatalog([]),
@@ -306,27 +286,30 @@ public sealed class WorkflowParticipantUnificationTests
                 new FixedRuntimeFactory(new StubRuntime(runtimeEvents)),
                 protocolExecutor,
                 NullLogger<AgentRunner>.Instance),
-            new RecordingInlineRuntimeFactory([]),
-            protocolExecutor);
+                new RecordingInlineRuntimeFactory([]),
+                protocolExecutor);
         var inlineExecutor = new WorkflowParticipantInvoker(
-            new StubDefinitionCatalog([]),
             new AgentRunContextFactory(),
             new ThrowingAgentRunner(),
             new RecordingInlineRuntimeFactory(runtimeEvents),
             protocolExecutor);
+        var referencedInvocation = referencedExecutor.CreateInvocation(
+            CreateReferencedParticipant(),
+            CreateContext());
+        var inlineInvocation = inlineExecutor.CreateInvocation(
+            CreateMaterializedParticipant(),
+            CreateContext());
 
         await Assert.ThrowsAsync<AgentRuntimeProtocolException>(() =>
             CollectAsync(referencedExecutor.InvokeAsync(
-                CreateReferencedParticipant(),
+                referencedInvocation,
                 request,
-                creationContext,
-                CreateContext())));
+                creationContext)));
         await Assert.ThrowsAsync<AgentRuntimeProtocolException>(() =>
             CollectAsync(inlineExecutor.InvokeAsync(
-                CreateMaterializedParticipant(),
+                inlineInvocation,
                 request,
-                creationContext,
-                CreateContext())));
+                creationContext)));
     }
 
     public static IEnumerable<object[]> AmbiguousParticipantSources()
@@ -430,7 +413,6 @@ public sealed class WorkflowParticipantUnificationTests
             },
             new EmptyHeadlessWorkflowRunner(),
             new WorkflowParticipantInvoker(
-                new StubDefinitionCatalog([]),
                 new AgentRunContextFactory(),
                 new ThrowingAgentRunner(),
                 inlineFactory,
@@ -643,5 +625,18 @@ public sealed class WorkflowParticipantUnificationTests
             IOrchestrationWorkflowDefinition workflow,
             CancellationToken cancellationToken = default) =>
             Task.FromResult<IReadOnlyList<ResolvedWorkflowParticipant>>([]);
+    }
+
+    private sealed class StubDependencyGraph(
+        IReadOnlyList<AgentDefinitionProblem> problems) : IAgentDefinitionDependencyGraph
+    {
+        public Task<AgentDefinitionDependencyAnalysis> AnalyzeAsync(
+            AgentDefinitionReference root,
+            CancellationToken cancellationToken = default) =>
+            Task.FromResult(new AgentDefinitionDependencyAnalysis
+            {
+                Root = root,
+                Problems = problems
+            });
     }
 }

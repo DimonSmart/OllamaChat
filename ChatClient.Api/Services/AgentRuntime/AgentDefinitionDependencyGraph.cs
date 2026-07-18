@@ -2,7 +2,6 @@ using ChatClient.Api.AgentWorkflows;
 using ChatClient.Api.AgentWorkflows.Compatibility;
 using ChatClient.Application.Services;
 using ChatClient.Application.Services.AgentRuntime;
-using ChatClient.Domain.Models;
 using Microsoft.Extensions.Options;
 
 namespace ChatClient.Api.Services.AgentRuntime;
@@ -19,8 +18,14 @@ public sealed class AgentDefinitionDependencyGraph(
         AgentDefinitionReference root,
         CancellationToken cancellationToken = default)
     {
-        var state = new AnalysisState(root);
-        await VisitAsync(root, [], 0, state, cancellationToken);
+        var state = new AnalysisState();
+        await VisitAsync(
+            root,
+            [],
+            null,
+            null,
+            state,
+            cancellationToken);
 
         return new AgentDefinitionDependencyAnalysis
         {
@@ -33,56 +38,84 @@ public sealed class AgentDefinitionDependencyGraph(
 
     private async Task VisitAsync(
         AgentDefinitionReference reference,
-        IReadOnlyList<AgentDefinitionReference> stack,
-        int workflowDepth,
+        IReadOnlyList<AgentDefinitionTraversalFrame> path,
+        string? parentParticipantId,
+        string? parentParticipantDisplayName,
         AnalysisState state,
         CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
 
-        if (stack.Any(item => SameReference(item, reference)))
+        if (path.Any(frame => SameReference(frame.Definition, reference)))
         {
+            var cyclePath = path.Concat([
+                CreateFrame(
+                    reference,
+                    state.GetDisplayName(reference),
+                    parentParticipantId,
+                    parentParticipantDisplayName)
+            ]).ToList();
             state.Problems.Add(new AgentDefinitionProblem(
-                $"Workflow dependency cycle detected: {FormatPath(stack.Concat([reference]))}."));
+                "Workflow dependency cycle detected:" + Environment.NewLine + FormatPath(cyclePath)));
             return;
         }
 
+        var resolution = await ResolveAsync(reference, state, cancellationToken);
+        state.SetDisplayName(reference, resolution.DisplayName);
+
+        var nextPath = path.Concat([
+            CreateFrame(
+                reference,
+                resolution.DisplayName,
+                parentParticipantId,
+                parentParticipantDisplayName)
+        ]).ToList();
+
+        var workflowDepth = nextPath.Count(static frame =>
+            frame.Definition.Kind == AgentDefinitionKind.SavedWorkflow);
         if (reference.Kind == AgentDefinitionKind.SavedWorkflow &&
-            workflowDepth + 1 > options.Value.MaximumWorkflowNestingDepth)
+            workflowDepth > options.Value.MaximumWorkflowNestingDepth)
         {
             state.Problems.Add(new AgentDefinitionProblem(
-                $"Workflow nesting limit exceeded at {reference.Id}. Maximum depth is {options.Value.MaximumWorkflowNestingDepth}."));
+                $"Workflow nesting limit exceeded. Maximum depth is {options.Value.MaximumWorkflowNestingDepth}." +
+                Environment.NewLine +
+                FormatPath(nextPath)));
             return;
         }
 
-        var cacheKey = Key(reference);
-        if (state.Visited.Contains(cacheKey))
+        if (resolution.Node is { } node)
+        {
+            state.Nodes.TryAdd(Key(reference), node);
+        }
+
+        switch (resolution.Status)
+        {
+            case DefinitionResolutionStatus.Resolved:
+                break;
+            case DefinitionResolutionStatus.Missing:
+                state.Problems.Add(new AgentDefinitionProblem(
+                    FormatMissing(reference, resolution.Message, nextPath)));
+                return;
+            case DefinitionResolutionStatus.Invalid:
+                state.Problems.Add(new AgentDefinitionProblem(
+                    FormatInvalid(reference, resolution.Message, nextPath)));
+                return;
+            case DefinitionResolutionStatus.Unsupported:
+                state.Problems.Add(new AgentDefinitionProblem(
+                    FormatUnsupported(reference, resolution.Message, nextPath)));
+                return;
+            default:
+                throw new InvalidOperationException(
+                    $"Unsupported dependency resolution status '{resolution.Status}'.");
+        }
+
+        if (!state.Traversed.Add(Key(reference)) ||
+            resolution.Workflow is null)
         {
             return;
         }
 
-        if (reference.Kind == AgentDefinitionKind.SavedAgent)
-        {
-            await VisitSavedAgentAsync(reference, state);
-            return;
-        }
-
-        if (reference.Kind != AgentDefinitionKind.SavedWorkflow)
-        {
-            state.Problems.Add(new AgentDefinitionProblem(
-                $"Definition reference '{reference.Kind}:{reference.Id}' has unsupported kind."));
-            return;
-        }
-
-        var resolved = await ResolveWorkflowAsync(reference, state, cancellationToken);
-        if (resolved is null)
-        {
-            return;
-        }
-
-        state.Visited.Add(cacheKey);
-        var nextStack = stack.Concat([reference]).ToList();
-        foreach (var participant in resolved.Participants)
+        foreach (var participant in resolution.Workflow.Participants)
         {
             if (participant.Source is not ReferencedParticipantSource referenced)
             {
@@ -93,64 +126,90 @@ public sealed class AgentDefinitionDependencyGraph(
             {
                 Parent = reference,
                 Child = referenced.Reference,
-                ParticipantId = participant.ParticipantId
+                ParticipantId = participant.ParticipantId,
+                ParticipantDisplayName = participant.DisplayName
             });
 
             await VisitAsync(
                 referenced.Reference,
-                nextStack,
-                reference.Kind == AgentDefinitionKind.SavedWorkflow ? workflowDepth + 1 : workflowDepth,
+                nextPath,
+                participant.ParticipantId,
+                participant.DisplayName,
                 state,
                 cancellationToken);
         }
     }
 
-    private async Task VisitSavedAgentAsync(
+    private async Task<DefinitionResolutionResult> ResolveAsync(
         AgentDefinitionReference reference,
-        AnalysisState state)
+        AnalysisState state,
+        CancellationToken cancellationToken)
+    {
+        var cacheKey = Key(reference);
+        if (state.ResolutionCache.TryGetValue(cacheKey, out var cached))
+        {
+            return cached;
+        }
+
+        DefinitionResolutionResult result = reference.Kind switch
+        {
+            AgentDefinitionKind.SavedAgent => await ResolveSavedAgentAsync(reference),
+            AgentDefinitionKind.SavedWorkflow => await ResolveWorkflowAsync(reference, cancellationToken),
+            _ => DefinitionResolutionResult.Unsupported(
+                reference.Id,
+                $"Definition reference '{reference.Kind}:{reference.Id}' has unsupported kind.")
+        };
+
+        state.ResolutionCache.Add(cacheKey, result);
+        return result;
+    }
+
+    private async Task<DefinitionResolutionResult> ResolveSavedAgentAsync(
+        AgentDefinitionReference reference)
     {
         if (!Guid.TryParse(reference.Id, out var agentId))
         {
-            state.Problems.Add(new AgentDefinitionProblem(
-                $"Saved agent reference '{reference.Id}' is not a valid saved-agent id."));
-            return;
+            return DefinitionResolutionResult.Invalid(
+                reference.Id,
+                $"Saved agent reference '{reference.Id}' is not a valid saved-agent id.");
         }
 
         var agent = await agentTemplateService.GetByIdAsync(agentId);
         if (agent is null)
         {
-            state.Problems.Add(new AgentDefinitionProblem(
-                $"Saved agent '{reference.Id}' was not found."));
-            return;
+            return DefinitionResolutionResult.Missing(
+                reference.Id,
+                $"references missing saved agent {reference.Id}");
         }
 
-        state.Nodes.TryAdd(Key(reference), new AgentDefinitionDependencyNode
-        {
-            Definition = reference,
-            DisplayName = agent.AgentName,
-            RuntimeKind = AgentRuntimeKind.LlmAgent
-        });
-        state.Visited.Add(Key(reference));
+        return DefinitionResolutionResult.Resolved(
+            agent.AgentName,
+            new AgentDefinitionDependencyNode
+            {
+                Definition = reference,
+                DisplayName = agent.AgentName,
+                RuntimeKind = AgentRuntimeKind.LlmAgent
+            },
+            null);
     }
 
-    private async Task<ResolvedWorkflow?> ResolveWorkflowAsync(
+    private async Task<DefinitionResolutionResult> ResolveWorkflowAsync(
         AgentDefinitionReference reference,
-        AnalysisState state,
         CancellationToken cancellationToken)
     {
         if (!Guid.TryParse(reference.Id, out var workflowId))
         {
-            state.Problems.Add(new AgentDefinitionProblem(
-                $"Workflow id '{reference.Id}' is not a valid saved-workflow id."));
-            return null;
+            return DefinitionResolutionResult.Invalid(
+                reference.Id,
+                $"Workflow id '{reference.Id}' is not a valid saved-workflow id.");
         }
 
         var savedWorkflow = await workflowDefinitionService.GetByIdAsync(workflowId);
         if (savedWorkflow is null)
         {
-            state.Problems.Add(new AgentDefinitionProblem(
-                $"Saved workflow '{reference.Id}' was not found."));
-            return null;
+            return DefinitionResolutionResult.Missing(
+                reference.Id,
+                $"references missing saved workflow {reference.Id}");
         }
 
         try
@@ -160,9 +219,9 @@ public sealed class AgentDefinitionDependencyGraph(
                 cancellationToken);
             if (compiled.Workflow is null)
             {
-                state.Problems.Add(new AgentDefinitionProblem(
-                    $"Workflow '{savedWorkflow.DisplayName}' compilation did not return a workflow definition."));
-                return null;
+                return DefinitionResolutionResult.Invalid(
+                    savedWorkflow.DisplayName,
+                    $"Workflow '{savedWorkflow.DisplayName}' compilation did not return a workflow definition.");
             }
 
             var workflow = await legacyWorkflowDefinitionNormalizer.NormalizeAsync(
@@ -172,25 +231,75 @@ public sealed class AgentDefinitionDependencyGraph(
                 workflow,
                 cancellationToken);
 
-            state.Nodes.TryAdd(Key(reference), new AgentDefinitionDependencyNode
-            {
-                Definition = reference,
-                DisplayName = savedWorkflow.DisplayName,
-                RuntimeKind = AgentRuntimeKind.WorkflowAgent
-            });
-
-            return new ResolvedWorkflow(workflow, participants);
+            return DefinitionResolutionResult.Resolved(
+                savedWorkflow.DisplayName,
+                new AgentDefinitionDependencyNode
+                {
+                    Definition = reference,
+                    DisplayName = savedWorkflow.DisplayName,
+                    RuntimeKind = AgentRuntimeKind.WorkflowAgent
+                },
+                new ResolvedWorkflow(workflow, participants));
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
-            state.Problems.Add(new AgentDefinitionProblem(
-                $"Workflow '{savedWorkflow.DisplayName}' is invalid: {ex.Message}"));
-            return null;
+            return DefinitionResolutionResult.Invalid(
+                savedWorkflow.DisplayName,
+                $"Workflow '{savedWorkflow.DisplayName}' is invalid: {ex.Message}");
         }
     }
 
-    private static string FormatPath(IEnumerable<AgentDefinitionReference> path) =>
-        string.Join(" -> ", path.Select(static reference => $"{reference.Kind}:{reference.Id}"));
+    private static AgentDefinitionTraversalFrame CreateFrame(
+        AgentDefinitionReference definition,
+        string displayName,
+        string? parentParticipantId,
+        string? parentParticipantDisplayName) =>
+        new()
+        {
+            Definition = definition,
+            DisplayName = displayName,
+            ParentParticipantId = parentParticipantId,
+            ParentParticipantDisplayName = parentParticipantDisplayName
+        };
+
+    private static string FormatMissing(
+        AgentDefinitionReference reference,
+        string message,
+        IReadOnlyList<AgentDefinitionTraversalFrame> path) =>
+        FormatPath(path) + Environment.NewLine + message;
+
+    private static string FormatInvalid(
+        AgentDefinitionReference reference,
+        string message,
+        IReadOnlyList<AgentDefinitionTraversalFrame> path) =>
+        FormatPath(path) + Environment.NewLine + message;
+
+    private static string FormatUnsupported(
+        AgentDefinitionReference reference,
+        string message,
+        IReadOnlyList<AgentDefinitionTraversalFrame> path) =>
+        FormatPath(path) + Environment.NewLine + message;
+
+    private static string FormatPath(
+        IReadOnlyList<AgentDefinitionTraversalFrame> path)
+    {
+        var lines = new List<string>();
+        foreach (var frame in path)
+        {
+            if (!string.IsNullOrWhiteSpace(frame.ParentParticipantDisplayName) ||
+                !string.IsNullOrWhiteSpace(frame.ParentParticipantId))
+            {
+                var participant = string.IsNullOrWhiteSpace(frame.ParentParticipantDisplayName)
+                    ? frame.ParentParticipantId
+                    : frame.ParentParticipantDisplayName;
+                lines.Add($"  -> participant \"{participant}\"");
+            }
+
+            lines.Add(frame.DisplayName);
+        }
+
+        return string.Join(Environment.NewLine, lines);
+    }
 
     private static bool SameReference(
         AgentDefinitionReference left,
@@ -202,13 +311,74 @@ public sealed class AgentDefinitionDependencyGraph(
         $"{reference.Kind}:{reference.Id}";
 
     private sealed record ResolvedWorkflow(
-        IOrchestrationWorkflowDefinition Workflow,
+        IOrchestrationWorkflowDefinition Definition,
         IReadOnlyList<ResolvedWorkflowParticipant> Participants);
 
-    private sealed class AnalysisState(AgentDefinitionReference root)
+    private enum DefinitionResolutionStatus
     {
-        public AgentDefinitionReference Root { get; } = root;
+        Resolved,
+        Missing,
+        Invalid,
+        Unsupported
+    }
 
+    private sealed record DefinitionResolutionResult
+    {
+        public required DefinitionResolutionStatus Status { get; init; }
+
+        public required string DisplayName { get; init; }
+
+        public string Message { get; init; } = string.Empty;
+
+        public AgentDefinitionDependencyNode? Node { get; init; }
+
+        public ResolvedWorkflow? Workflow { get; init; }
+
+        public static DefinitionResolutionResult Resolved(
+            string displayName,
+            AgentDefinitionDependencyNode node,
+            ResolvedWorkflow? workflow) =>
+            new()
+            {
+                Status = DefinitionResolutionStatus.Resolved,
+                DisplayName = displayName,
+                Node = node,
+                Workflow = workflow
+            };
+
+        public static DefinitionResolutionResult Missing(
+            string displayName,
+            string message) =>
+            new()
+            {
+                Status = DefinitionResolutionStatus.Missing,
+                DisplayName = displayName,
+                Message = message
+            };
+
+        public static DefinitionResolutionResult Invalid(
+            string displayName,
+            string message) =>
+            new()
+            {
+                Status = DefinitionResolutionStatus.Invalid,
+                DisplayName = displayName,
+                Message = message
+            };
+
+        public static DefinitionResolutionResult Unsupported(
+            string displayName,
+            string message) =>
+            new()
+            {
+                Status = DefinitionResolutionStatus.Unsupported,
+                DisplayName = displayName,
+                Message = message
+            };
+    }
+
+    private sealed class AnalysisState
+    {
         public Dictionary<string, AgentDefinitionDependencyNode> Nodes { get; } =
             new(StringComparer.OrdinalIgnoreCase);
 
@@ -216,6 +386,27 @@ public sealed class AgentDefinitionDependencyGraph(
 
         public List<AgentDefinitionProblem> Problems { get; } = [];
 
-        public HashSet<string> Visited { get; } = new(StringComparer.OrdinalIgnoreCase);
+        public Dictionary<string, DefinitionResolutionResult> ResolutionCache { get; } =
+            new(StringComparer.OrdinalIgnoreCase);
+
+        public HashSet<string> Traversed { get; } = new(StringComparer.OrdinalIgnoreCase);
+
+        private Dictionary<string, string> DisplayNames { get; } =
+            new(StringComparer.OrdinalIgnoreCase);
+
+        public string GetDisplayName(AgentDefinitionReference reference) =>
+            DisplayNames.TryGetValue(Key(reference), out var displayName)
+                ? displayName
+                : reference.Id;
+
+        public void SetDisplayName(
+            AgentDefinitionReference reference,
+            string displayName)
+        {
+            if (!string.IsNullOrWhiteSpace(displayName))
+            {
+                DisplayNames[Key(reference)] = displayName;
+            }
+        }
     }
 }

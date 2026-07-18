@@ -131,6 +131,17 @@ public sealed record AgentRunCompleted(
 public sealed record AgentRunFailed(
     AgentRunError Error) : AgentRunEvent;
 
+public sealed class AgentRunFailedException : Exception
+{
+    public AgentRunFailedException(AgentRunError error)
+        : base(error.Message, error.Exception)
+    {
+        Error = error;
+    }
+
+    public AgentRunError Error { get; }
+}
+
 public sealed record AgentRunResult
 {
     public required AgentOutputMessage FinalMessage { get; init; }
@@ -239,6 +250,19 @@ public sealed record AgentDefinitionDependencyEdge
     public required AgentDefinitionReference Child { get; init; }
 
     public required string ParticipantId { get; init; }
+
+    public required string ParticipantDisplayName { get; init; }
+}
+
+public sealed record AgentDefinitionTraversalFrame
+{
+    public required AgentDefinitionReference Definition { get; init; }
+
+    public required string DisplayName { get; init; }
+
+    public string? ParentParticipantId { get; init; }
+
+    public string? ParentParticipantDisplayName { get; init; }
 }
 
 public sealed record AgentInputDefinition
