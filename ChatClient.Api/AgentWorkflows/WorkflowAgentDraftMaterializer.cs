@@ -2,7 +2,6 @@ using ChatClient.Application.Services;
 using ChatClient.Application.Services.Agentic;
 using ChatClient.Application.Services.AgentRuntime;
 using ChatClient.Domain.Models;
-using Microsoft.Extensions.DependencyInjection;
 
 namespace ChatClient.Api.AgentWorkflows;
 
@@ -363,11 +362,10 @@ public sealed class WorkflowParticipantResolver(
     }
 }
 
-[method: ActivatorUtilitiesConstructor]
 public sealed class WorkflowAgentDraftMaterializer(
     IWorkflowParticipantResolver participantResolver) : IWorkflowAgentDraftMaterializer
 {
-    public WorkflowAgentDraftMaterializer(IAgentTemplateService agentDescriptionService)
+    internal WorkflowAgentDraftMaterializer(IAgentTemplateService agentDescriptionService)
         : this(new WorkflowParticipantResolver(
             agentDescriptionService,
             new AgentTemplateServiceDefinitionCatalog(agentDescriptionService)))
