@@ -283,12 +283,12 @@ public sealed class WorkflowParticipantUnificationTests
 
         var referencedExecutor = new WorkflowParticipantInvoker(
             new AgentRunContextFactory(),
-            () => new AgentDefinitionExecutionDispatcher(
+            () => new AgentRunner(
                 new StubDefinitionCatalog([]),
                 new AgentRunNestingValidator(new AgentRuntimeOptions()),
                 new FixedRuntimeFactory(new StubRuntime(runtimeEvents)),
                 protocolExecutor,
-                NullLogger<AgentDefinitionExecutionDispatcher>.Instance),
+                NullLogger<AgentRunner>.Instance),
                 new RecordingInlineRuntimeFactory([]),
                 new AgentRunNestingValidator(new AgentRuntimeOptions()),
                 protocolExecutor);
@@ -546,7 +546,7 @@ public sealed class WorkflowParticipantUnificationTests
         }
     }
 
-    private sealed class ThrowingAgentRunner : IAgentRunner, IAgentDefinitionExecutionDispatcher
+    private sealed class ThrowingAgentRunner : IAgentRunner
     {
         public IAsyncEnumerable<AgentRunEvent> RunAsync(
             AgentDefinitionReference reference,
@@ -556,13 +556,6 @@ public sealed class WorkflowParticipantUnificationTests
             CancellationToken cancellationToken = default) =>
             throw new NotSupportedException();
 
-        public IAsyncEnumerable<AgentRunEvent> ExecuteAsync(
-            AgentDefinitionReference reference,
-            AgentRuntimeRunRequest request,
-            AgentRuntimeCreationContext creationContext,
-            AgentRunContext context,
-            CancellationToken cancellationToken = default) =>
-            throw new NotSupportedException();
     }
 
     private sealed class EmptyHeadlessWorkflowRunner : IHeadlessWorkflowRunner

@@ -72,68 +72,6 @@ public sealed class WorkflowAgentRuntimeTests
     }
 
     [Fact]
-    public async Task RunAsync_SequentialSavedWorkflowParticipant_DetectsCycleBeforeRunningParticipant()
-    {
-        var runner = new RecordingAgentRunner(new Dictionary<string, string>
-        {
-            ["SavedWorkflow:workflow"] = "self"
-        });
-        var runtime = CreateSequentialRuntime(
-            runner,
-            [
-                new ResolvedWorkflowParticipant
-                {
-                    ParticipantId = "self",
-                    DisplayName = "Self",
-                    RuntimeKind = AgentRuntimeKind.WorkflowAgent,
-                    Source = new ReferencedParticipantSource(new AgentDefinitionReference(AgentDefinitionKind.SavedWorkflow, "workflow"))
-                }
-            ],
-            ["self"]);
-
-        var events = await CollectAsync(runtime.RunAsync(CreateRequest(), CreateContext()));
-
-        Assert.Single(runner.Calls);
-        Assert.IsType<AgentRunCompleted>(events.Last());
-    }
-
-    [Fact]
-    [Obsolete]
-    public async Task RunAsync_SequentialWorkflow_ReturnsNonRetryableFailureWhenNestingLimitExceeded()
-    {
-        var runner = new RecordingAgentRunner(new Dictionary<string, string>());
-        var runtime = CreateSequentialRuntime(
-            runner,
-            [
-                new ResolvedWorkflowParticipant
-                {
-                    ParticipantId = "next",
-                    DisplayName = "Next",
-                    RuntimeKind = AgentRuntimeKind.LlmAgent,
-                    Source = new ReferencedParticipantSource(new AgentDefinitionReference(AgentDefinitionKind.SavedAgent, "next"))
-                }
-            ],
-            ["next"]);
-        var context = CreateContext() with
-        {
-            DefinitionStack = Enumerable.Range(0, 8)
-                .Select(index => new AgentRunFrame
-                {
-                    Definition = new AgentDefinitionReference(
-                        AgentDefinitionKind.SavedWorkflow,
-                        $"workflow-{index}"),
-                    DisplayName = $"workflow-{index}"
-                })
-                .ToList()
-        };
-
-        var events = await CollectAsync(runtime.RunAsync(CreateRequest(), context));
-
-        Assert.Single(runner.Calls);
-        Assert.IsType<AgentRunCompleted>(events.Last());
-    }
-
-    [Fact]
     [Obsolete]
     public async Task RunAsync_MapsHeadlessEventsToUnifiedEvents()
     {
@@ -566,7 +504,7 @@ public sealed class WorkflowAgentRuntimeTests
     }
 
     private sealed class RecordingAgentRunner(
-        IReadOnlyDictionary<string, string> results) : IAgentRunner, IAgentDefinitionExecutionDispatcher
+        IReadOnlyDictionary<string, string> results) : IAgentRunner
     {
         public List<Call> Calls { get; } = [];
 
@@ -593,14 +531,6 @@ public sealed class WorkflowAgentRuntimeTests
                 Messages = [message]
             });
         }
-
-        public IAsyncEnumerable<AgentRunEvent> ExecuteAsync(
-            AgentDefinitionReference reference,
-            AgentRuntimeRunRequest request,
-            AgentRuntimeCreationContext creationContext,
-            AgentRunContext context,
-            CancellationToken cancellationToken = default) =>
-            RunAsync(reference, request, creationContext, context, cancellationToken);
 
         public sealed record Call(
             AgentDefinitionReference Reference,

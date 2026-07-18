@@ -15,6 +15,20 @@ public sealed class AgentRunNestingValidatorTests
         Assert.True(result.IsValid);
     }
 
+    [Theory]
+    [InlineData(0)]
+    [InlineData(-1)]
+    public void Validate_InvalidMaximumDepth_IsRejectedAsConfigurationError(int maximumDepth)
+    {
+        var target = Workflow("a", "A");
+        var context = Context([Frame(target)]);
+
+        var exception = Assert.Throws<InvalidOperationException>(() =>
+            CreateValidator(maximumDepth).Validate(target, context));
+
+        Assert.Equal("MaximumWorkflowNestingDepth must be greater than zero.", exception.Message);
+    }
+
     [Fact]
     public void Validate_WorkflowDepthAtLimit_IsAllowed()
     {

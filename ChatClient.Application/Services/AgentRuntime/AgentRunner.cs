@@ -3,30 +3,13 @@ using Microsoft.Extensions.Logging;
 namespace ChatClient.Application.Services.AgentRuntime;
 
 public sealed class AgentRunner(
-    IAgentDefinitionExecutionDispatcher dispatcher) : IAgentRunner
-{
-    public IAsyncEnumerable<AgentRunEvent> RunAsync(
-        AgentDefinitionReference reference,
-        AgentRuntimeRunRequest request,
-        AgentRuntimeCreationContext creationContext,
-        AgentRunContext runContext,
-        CancellationToken cancellationToken = default) =>
-        dispatcher.ExecuteAsync(
-            reference,
-            request,
-            creationContext,
-            runContext,
-            cancellationToken);
-}
-
-public sealed class AgentDefinitionExecutionDispatcher(
     IAgentDefinitionCatalog definitionCatalog,
     IAgentRunNestingValidator nestingValidator,
     IAgentRuntimeFactory runtimeFactory,
     IAgentRuntimeProtocolExecutor protocolExecutor,
-    ILogger<AgentDefinitionExecutionDispatcher> logger) : IAgentDefinitionExecutionDispatcher
+    ILogger<AgentRunner> logger) : IAgentRunner
 {
-    public async IAsyncEnumerable<AgentRunEvent> ExecuteAsync(
+    public async IAsyncEnumerable<AgentRunEvent> RunAsync(
         AgentDefinitionReference reference,
         AgentRuntimeRunRequest request,
         AgentRuntimeCreationContext creationContext,
@@ -93,132 +76,20 @@ public sealed class AgentDefinitionExecutionDispatcher(
             yield break;
         }
 
-        AgentRunFailed? executionFailure = null;
-        var terminalEmitted = false;
-        var outcome = "Completed";
-        var failureCode = (string?)null;
-        var enumerator = protocolExecutor.RunAsync(
-            runtime,
-            request,
-            runContext,
-            cancellationToken).GetAsyncEnumerator(cancellationToken);
         try
         {
-            while (true)
+            await foreach (var runEvent in protocolExecutor.ExecuteAsync(
+                               runtime,
+                               request,
+                               runContext,
+                               cancellationToken)
+                           .WithCancellation(cancellationToken))
             {
-                AgentRunEvent runEvent;
-                try
-                {
-                    if (!await enumerator.MoveNextAsync())
-                    {
-                        break;
-                    }
-
-                    runEvent = enumerator.Current;
-                }
-                catch (OperationCanceledException)
-                {
-                    outcome = "Canceled";
-                    throw;
-                }
-                catch (AgentRuntimeProtocolException ex)
-                {
-                    outcome = "ProtocolViolation";
-                    failureCode = "runtime_protocol_violation";
-                    logger.LogError(
-                        ex,
-                        "Agent runtime protocol violation. RunId={RunId}, ParentRunId={ParentRunId}, DefinitionKind={DefinitionKind}, DefinitionId={DefinitionId}, RuntimeKind={RuntimeKind}, RuntimeName={RuntimeName}, NestingDepth={NestingDepth}, ConversationId={ConversationId}",
-                        runContext.RunId,
-                        runContext.ParentRunId,
-                        reference.Kind,
-                        reference.Id,
-                        runtime.Descriptor.Kind,
-                        runtime.Descriptor.Name,
-                        GetWorkflowDepth(runContext),
-                        runContext.ConversationId);
-                    executionFailure = CreateProtocolFailure(ex);
-                    break;
-                }
-                catch (AgentRunFailedException ex)
-                {
-                    outcome = "Failed";
-                    failureCode = ex.Error.Code;
-                    executionFailure = new AgentRunFailed(ex.Error);
-                    break;
-                }
-                catch (Exception ex)
-                {
-                    outcome = "Failed";
-                    failureCode = "runtime_execution_failed";
-                    logger.LogError(
-                        ex,
-                        "Agent runtime execution failed. RunId={RunId}, ParentRunId={ParentRunId}, DefinitionKind={DefinitionKind}, DefinitionId={DefinitionId}, RuntimeKind={RuntimeKind}, RuntimeName={RuntimeName}, NestingDepth={NestingDepth}, ConversationId={ConversationId}",
-                        runContext.RunId,
-                        runContext.ParentRunId,
-                        reference.Kind,
-                        reference.Id,
-                        runtime.Descriptor.Kind,
-                        runtime.Descriptor.Name,
-                        GetWorkflowDepth(runContext),
-                        runContext.ConversationId);
-                    executionFailure = CreateRuntimeExecutionFailure(ex);
-                    break;
-                }
-
-                if (IsTerminal(runEvent))
-                {
-                    terminalEmitted = true;
-                    if (runEvent is AgentRunFailed failed)
-                    {
-                        outcome = "Failed";
-                        failureCode = failed.Error.Code;
-                    }
-                }
-
                 yield return runEvent;
             }
         }
         finally
         {
-            try
-            {
-                await enumerator.DisposeAsync();
-            }
-            catch (OperationCanceledException)
-            {
-                outcome = "Canceled";
-                throw;
-            }
-            catch (Exception ex) when (executionFailure is null && !terminalEmitted)
-            {
-                outcome = "Failed";
-                failureCode = "runtime_execution_failed";
-                logger.LogError(
-                    ex,
-                    "Agent runtime disposal failed. RunId={RunId}, ParentRunId={ParentRunId}, DefinitionKind={DefinitionKind}, DefinitionId={DefinitionId}, RuntimeKind={RuntimeKind}, RuntimeName={RuntimeName}, NestingDepth={NestingDepth}, ConversationId={ConversationId}",
-                    runContext.RunId,
-                    runContext.ParentRunId,
-                    reference.Kind,
-                    reference.Id,
-                    runtime.Descriptor.Kind,
-                    runtime.Descriptor.Name,
-                    GetWorkflowDepth(runContext),
-                    runContext.ConversationId);
-                executionFailure = CreateRuntimeExecutionFailure(ex);
-            }
-            catch (Exception ex)
-            {
-                logger.LogWarning(
-                    ex,
-                    "Agent runtime disposal failed after terminal event. RunId={RunId}, ParentRunId={ParentRunId}, DefinitionKind={DefinitionKind}, DefinitionId={DefinitionId}, RuntimeKind={RuntimeKind}, RuntimeName={RuntimeName}",
-                    runContext.RunId,
-                    runContext.ParentRunId,
-                    reference.Kind,
-                    reference.Id,
-                    runtime.Descriptor.Kind,
-                    runtime.Descriptor.Name);
-            }
-
             var completedAt = DateTimeOffset.UtcNow;
             logger.LogInformation(
                 "Agent run finished. RunId={RunId}, ParentRunId={ParentRunId}, DefinitionKind={DefinitionKind}, DefinitionId={DefinitionId}, RuntimeKind={RuntimeKind}, RuntimeName={RuntimeName}, Outcome={Outcome}, FailureCode={FailureCode}, DurationMs={DurationMs}, Canceled={Canceled}, NestingDepth={NestingDepth}, ConversationId={ConversationId}, CompletedAt={CompletedAt}",
@@ -228,38 +99,15 @@ public sealed class AgentDefinitionExecutionDispatcher(
                 reference.Id,
                 runtime.Descriptor.Kind,
                 runtime.Descriptor.Name,
-                outcome,
-                failureCode,
+                "Completed",
+                null,
                 (completedAt - startedAt).TotalMilliseconds,
-                outcome == "Canceled" || cancellationToken.IsCancellationRequested,
+                cancellationToken.IsCancellationRequested,
                 GetWorkflowDepth(runContext),
                 runContext.ConversationId,
                 completedAt);
         }
-
-        if (executionFailure is not null &&
-            !terminalEmitted)
-        {
-            yield return executionFailure;
-        }
     }
-
-    private static AgentRunFailed CreateProtocolFailure(AgentRuntimeProtocolException exception) =>
-        new(new AgentRunError(
-            "runtime_protocol_violation",
-            "Agent runtime protocol violation.",
-            false,
-            exception));
-
-    private static AgentRunFailed CreateRuntimeExecutionFailure(Exception exception) =>
-        new(new AgentRunError(
-            "runtime_execution_failed",
-            "Agent runtime execution failed.",
-            false,
-            exception));
-
-    private static bool IsTerminal(AgentRunEvent runEvent) =>
-        runEvent is AgentRunCompleted or AgentRunFailed;
 
     private static int GetWorkflowDepth(AgentRunContext context)
         => context.DefinitionStack.Count(static frame =>
@@ -310,54 +158,87 @@ public sealed class AgentDefinitionExecutionDispatcher(
 public sealed class AgentRuntimeProtocolExecutor(
     ILogger<AgentRuntimeProtocolExecutor> logger) : IAgentRuntimeProtocolExecutor
 {
-    public async IAsyncEnumerable<AgentRunEvent> RunAsync(
+    public async IAsyncEnumerable<AgentRunEvent> ExecuteAsync(
         IAgentRuntime runtime,
         AgentRuntimeRunRequest request,
         AgentRunContext runContext,
         [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken = default)
     {
         AgentRunEvent? pendingTerminal = null;
-        await foreach (var runEvent in runtime.RunAsync(request, runContext, cancellationToken)
-                           .WithCancellation(cancellationToken))
+        AgentRunFailed? failure = null;
+        var enumerator = runtime.RunAsync(request, runContext, cancellationToken)
+            .GetAsyncEnumerator(cancellationToken);
+        try
         {
-            if (pendingTerminal is not null)
+            while (true)
             {
-                var isSecondTerminal = IsTerminal(runEvent);
-                var message = isSecondTerminal
-                    ? $"Runtime '{runtime.Descriptor.Name}' emitted more than one terminal event."
-                    : $"Runtime '{runtime.Descriptor.Name}' emitted an event after a terminal event.";
-                logger.LogError(
-                    "Agent runtime protocol violation. RunId={RunId}, RuntimeKind={RuntimeKind}, RuntimeName={RuntimeName}, EventType={EventType}, Violation={Violation}",
+                AgentRunEvent runEvent;
+                try
+                {
+                    if (!await enumerator.MoveNextAsync())
+                        break;
+                    runEvent = enumerator.Current;
+                }
+                catch (OperationCanceledException) { throw; }
+                catch (AgentRuntimeProtocolException ex) { failure = ProtocolFailure(ex); break; }
+                catch (AgentRunFailedException ex) { failure = new AgentRunFailed(ex.Error); break; }
+                catch (Exception ex) { failure = ExecutionFailure(ex); break; }
+
+                if (pendingTerminal is not null)
+                {
+                    failure = ProtocolFailure(new AgentRuntimeProtocolException(
+                        IsTerminal(runEvent)
+                            ? $"Runtime '{runtime.Descriptor.Name}' emitted more than one terminal event."
+                            : $"Runtime '{runtime.Descriptor.Name}' emitted an event after a terminal event."));
+                    break;
+                }
+
+                if (IsTerminal(runEvent))
+                    pendingTerminal = runEvent;
+                else
+                    yield return runEvent;
+            }
+        }
+        finally
+        {
+            try
+            { await enumerator.DisposeAsync(); }
+            catch (OperationCanceledException) { throw; }
+            catch (Exception ex) when (failure is null && pendingTerminal is null)
+            {
+                failure = ExecutionFailure(ex);
+            }
+            catch (Exception ex)
+            {
+                logger.LogWarning(
+                    ex,
+                    "Agent runtime disposal failed after terminal event. RunId={RunId}, RuntimeName={RuntimeName}",
                     runContext.RunId,
-                    runtime.Descriptor.Kind,
-                    runtime.Descriptor.Name,
-                    runEvent.GetType().Name,
-                    isSecondTerminal ? "MultipleTerminalEvents" : "EventAfterTerminal");
-                throw new AgentRuntimeProtocolException(message);
+                    runtime.Descriptor.Name);
             }
+        }
 
-            if (IsTerminal(runEvent))
-            {
-                pendingTerminal = runEvent;
-                continue;
-            }
-
-            yield return runEvent;
+        if (failure is not null)
+        {
+            yield return failure;
+            yield break;
         }
 
         if (pendingTerminal is null)
         {
-            var message = $"Runtime '{runtime.Descriptor.Name}' completed without a terminal event.";
-            logger.LogError(
-                "Agent runtime protocol violation. RunId={RunId}, RuntimeKind={RuntimeKind}, RuntimeName={RuntimeName}",
-                runContext.RunId,
-                runtime.Descriptor.Kind,
-                runtime.Descriptor.Name);
-            throw new AgentRuntimeProtocolException(message);
+            yield return ProtocolFailure(new AgentRuntimeProtocolException(
+                $"Runtime '{runtime.Descriptor.Name}' completed without a terminal event."));
+            yield break;
         }
 
         yield return pendingTerminal;
     }
+
+    private static AgentRunFailed ProtocolFailure(Exception exception) =>
+        new(new AgentRunError("runtime_protocol_violation", "Agent runtime protocol violation.", false, exception));
+
+    private static AgentRunFailed ExecutionFailure(Exception exception) =>
+        new(new AgentRunError("runtime_execution_failed", "Agent runtime execution failed.", false, exception));
 
     private static bool IsTerminal(AgentRunEvent runEvent) =>
         runEvent is AgentRunCompleted or AgentRunFailed;

@@ -12,6 +12,12 @@ public sealed class AgentRunNestingValidator(
         ArgumentNullException.ThrowIfNull(target);
         ArgumentNullException.ThrowIfNull(context);
 
+        if (options.MaximumWorkflowNestingDepth <= 0)
+        {
+            throw new InvalidOperationException(
+                "MaximumWorkflowNestingDepth must be greater than zero.");
+        }
+
         var stack = context.DefinitionStack;
         if (stack.Count == 0)
         {

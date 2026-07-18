@@ -429,19 +429,9 @@ public interface IAgentRunner
         CancellationToken cancellationToken = default);
 }
 
-public interface IAgentDefinitionExecutionDispatcher
-{
-    IAsyncEnumerable<AgentRunEvent> ExecuteAsync(
-        AgentDefinitionReference reference,
-        AgentRuntimeRunRequest request,
-        AgentRuntimeCreationContext creationContext,
-        AgentRunContext context,
-        CancellationToken cancellationToken = default);
-}
-
 public interface IAgentRuntimeProtocolExecutor
 {
-    IAsyncEnumerable<AgentRunEvent> RunAsync(
+    IAsyncEnumerable<AgentRunEvent> ExecuteAsync(
         IAgentRuntime runtime,
         AgentRuntimeRunRequest request,
         AgentRunContext runContext,

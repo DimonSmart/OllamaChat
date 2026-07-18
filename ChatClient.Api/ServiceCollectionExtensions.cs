@@ -146,13 +146,12 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IWorkflowAgentRuntimeFactory, WorkflowAgentRuntimeFactory>();
         services.AddScoped<IAgentRuntimeFactory, AgentRuntimeFactory>();
         services.AddScoped<IAgentRuntimeProtocolExecutor, AgentRuntimeProtocolExecutor>();
-        services.AddScoped<IAgentDefinitionExecutionDispatcher, AgentDefinitionExecutionDispatcher>();
-        services.AddScoped<Func<IAgentDefinitionExecutionDispatcher>>(sp =>
-            () => sp.GetRequiredService<IAgentDefinitionExecutionDispatcher>());
         services.AddScoped<IAgentRunContextFactory, AgentRunContextFactory>();
         services.AddScoped<IAgentRunNestingValidator>(sp => new AgentRunNestingValidator(
             sp.GetRequiredService<IOptions<AgentRuntimeOptions>>().Value));
         services.AddScoped<IAgentRunner, AgentRunner>();
+        services.AddScoped<Func<IAgentRunner>>(sp =>
+            () => sp.GetRequiredService<IAgentRunner>());
         services.AddScoped<IWorkflowParticipantInvoker, WorkflowParticipantInvoker>();
         services.AddScoped<IChatEngineOrchestrator>(sp => sp.GetRequiredService<AgenticChatEngineOrchestrator>());
         services.AddScoped<IChatEngineHistoryBuilder>(sp => sp.GetRequiredService<AgenticChatEngineHistoryBuilder>());

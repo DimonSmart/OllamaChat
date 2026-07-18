@@ -57,7 +57,7 @@ public sealed class AgentRunnerProtocolTests
             new AgentRunCompleted(CreateResult("final", "m1"))
         ]);
 
-        var events = await CollectAsync(executor.RunAsync(
+        var events = await CollectAsync(executor.ExecuteAsync(
             runtime,
             CreateRequest(),
             CreateRunContext()));
@@ -76,7 +76,7 @@ public sealed class AgentRunnerProtocolTests
             new AgentRunFailed(new AgentRunError("execution_failed", "failed", true))
         ]);
 
-        var events = await CollectAsync(executor.RunAsync(
+        var events = await CollectAsync(executor.ExecuteAsync(
             runtime,
             CreateRequest(),
             CreateRunContext()));
@@ -88,31 +88,33 @@ public sealed class AgentRunnerProtocolTests
 
     [Theory]
     [MemberData(nameof(ProtocolViolationSequences))]
-    public async Task ProtocolExecutor_ThrowsProtocolExceptionForTerminalViolations(
+    public async Task ProtocolExecutor_ReturnsProtocolFailureForTerminalViolations(
         IReadOnlyList<AgentRunEvent> runtimeEvents)
     {
         var executor = CreateProtocolExecutor();
 
-        await Assert.ThrowsAsync<AgentRuntimeProtocolException>(() =>
-            CollectAsync(executor.RunAsync(
-                new StubRuntime(runtimeEvents),
-                CreateRequest(),
-                CreateRunContext())));
+        var events = await CollectAsync(executor.ExecuteAsync(
+            new StubRuntime(runtimeEvents),
+            CreateRequest(),
+            CreateRunContext()));
+
+        Assert.Equal("runtime_protocol_violation", Assert.IsType<AgentRunFailed>(Assert.Single(events)).Error.Code);
     }
 
     [Fact]
-    public async Task ProtocolExecutor_DoesNotMaskRuntimeException()
+    public async Task ProtocolExecutor_MapsRuntimeExceptionToFailure()
     {
         var exception = new InvalidOperationException("runtime failed");
         var executor = CreateProtocolExecutor();
 
-        var actual = await Assert.ThrowsAsync<InvalidOperationException>(() =>
-            CollectAsync(executor.RunAsync(
-                new ThrowingRuntime(exception),
-                CreateRequest(),
-                CreateRunContext())));
+        var events = await CollectAsync(executor.ExecuteAsync(
+            new ThrowingRuntime(exception),
+            CreateRequest(),
+            CreateRunContext()));
 
-        Assert.Same(exception, actual);
+        var failure = Assert.IsType<AgentRunFailed>(Assert.Single(events));
+        Assert.Equal("runtime_execution_failed", failure.Error.Code);
+        Assert.Same(exception, failure.Error.Exception);
     }
 
     [Fact]
@@ -303,12 +305,12 @@ public sealed class AgentRunnerProtocolTests
         CreateRunner(new StubRuntimeFactory(runtime));
 
     private static AgentRunner CreateRunner(IAgentRuntimeFactory runtimeFactory) =>
-        new(new AgentDefinitionExecutionDispatcher(
+        new(
             new StubDefinitionCatalog(),
             new AgentRunNestingValidator(new AgentRuntimeOptions()),
             runtimeFactory,
             CreateProtocolExecutor(),
-            NullLogger<AgentDefinitionExecutionDispatcher>.Instance));
+            NullLogger<AgentRunner>.Instance);
 
     private static AgentRuntimeProtocolExecutor CreateProtocolExecutor() =>
         new(NullLogger<AgentRuntimeProtocolExecutor>.Instance);

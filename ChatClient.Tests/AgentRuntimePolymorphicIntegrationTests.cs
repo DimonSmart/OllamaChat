@@ -18,14 +18,14 @@ public sealed class AgentRuntimePolymorphicIntegrationTests
         string id)
     {
         var protocolExecutor = new AgentRuntimeProtocolExecutor(NullLogger<AgentRuntimeProtocolExecutor>.Instance);
-        var runner = new AgentRunner(new AgentDefinitionExecutionDispatcher(
+        var runner = new AgentRunner(
             new StubDefinitionCatalog(),
             new AgentRunNestingValidator(new AgentRuntimeOptions()),
             new AgentRuntimeFactory(
                 new StubLlmFactory(),
                 new StubWorkflowFactory()),
             protocolExecutor,
-            NullLogger<AgentDefinitionExecutionDispatcher>.Instance));
+            NullLogger<AgentRunner>.Instance);
 
         var events = await RunAndCollectAsync(runner, new AgentDefinitionReference(kind, id));
 
