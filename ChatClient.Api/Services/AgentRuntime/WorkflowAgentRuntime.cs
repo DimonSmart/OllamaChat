@@ -17,7 +17,7 @@ public sealed class WorkflowAgentRuntimeFactory(
     IWorkflowParticipantResolver workflowParticipantResolver,
     IWorkflowParticipantRuntimeFactory participantRuntimeFactory,
     IHeadlessWorkflowRunner headlessWorkflowRunner,
-    IWorkflowParticipantExecutor participantExecutor,
+    IServiceProvider serviceProvider,
     ILogger<WorkflowAgentRuntimeFactory> logger) : IWorkflowAgentRuntimeFactory
 {
     public async Task<IAgentRuntime> CreateAsync(
@@ -74,7 +74,7 @@ public sealed class WorkflowAgentRuntimeFactory(
             context.Configuration,
             context,
             headlessWorkflowRunner,
-            participantExecutor,
+            new LazyWorkflowParticipantExecutor(serviceProvider),
             logger);
     }
 
@@ -144,6 +144,26 @@ public sealed class WorkflowParticipantExecutor(
                     false));
                 yield break;
         }
+    }
+}
+
+file sealed class LazyWorkflowParticipantExecutor(
+    IServiceProvider serviceProvider) : IWorkflowParticipantExecutor
+{
+    public IAsyncEnumerable<AgentRunEvent> RunAsync(
+        ResolvedWorkflowParticipant participant,
+        AgentRuntimeRunRequest request,
+        AgentRuntimeCreationContext creationContext,
+        AgentRunContext runContext,
+        CancellationToken cancellationToken = default)
+    {
+        var executor = serviceProvider.GetRequiredService<IWorkflowParticipantExecutor>();
+        return executor.RunAsync(
+            participant,
+            request,
+            creationContext,
+            runContext,
+            cancellationToken);
     }
 }
 
