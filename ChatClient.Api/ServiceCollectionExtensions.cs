@@ -129,6 +129,7 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IAgentSessionDefinitionResolver, AgentSessionDefinitionResolver>();
         services.AddScoped<ILegacyWorkflowDefinitionNormalizer, LegacyWorkflowDefinitionNormalizer>();
         services.AddScoped<IWorkflowParticipantResolver, WorkflowParticipantResolver>();
+        services.AddScoped<IWorkflowParticipantRuntimeFactory, WorkflowParticipantRuntimeFactory>();
         services.AddScoped<IWorkflowAgentDraftMaterializer, WorkflowAgentDraftMaterializer>();
         services.AddScoped<IAgentInputDefinitionProvider, AgentInputDefinitionProvider>();
         services.AddScoped<IAgentDefinitionModelRequirementAnalyzer, WorkflowModelRequirementAnalyzer>();
@@ -139,6 +140,7 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IWorkflowAgentRuntimeFactory, WorkflowAgentRuntimeFactory>();
         services.AddScoped<IAgentRuntimeFactory, AgentRuntimeFactory>();
         services.AddScoped<IAgentRuntimeProtocolExecutor, AgentRuntimeProtocolExecutor>();
+        services.AddScoped<IAgentRunContextFactory, AgentRunContextFactory>();
         services.AddScoped<IAgentRunner, AgentRunner>();
         services.AddScoped<IWorkflowParticipantExecutor, WorkflowParticipantExecutor>();
         services.AddScoped<IChatEngineOrchestrator>(sp => sp.GetRequiredService<AgenticChatEngineOrchestrator>());

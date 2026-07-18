@@ -1,7 +1,9 @@
 using System.Threading.Channels;
 using ChatClient.Api.AgentWorkflows;
+using ChatClient.Api.AgentWorkflows.Runtime;
 using ChatClient.Api.Client.Services.Agentic;
 using ChatClient.Api.Services.BuiltIn;
+using ChatClient.Application.Services.AgentRuntime;
 using ChatClient.Application.Services.Agentic;
 using ChatClient.Domain.Models;
 
@@ -27,7 +29,9 @@ public sealed record HeadlessWorkflowSessionStartRequest
 {
     public required IOrchestrationWorkflowDefinition Workflow { get; init; }
 
-    public required IReadOnlyList<ResolvedChatAgent> Agents { get; init; }
+    public IReadOnlyList<WorkflowRuntimeParticipant> Participants { get; init; } = [];
+
+    public IReadOnlyList<ResolvedChatAgent> Agents { get; init; } = [];
 
     public required AppChatConfiguration Configuration { get; init; }
 
@@ -100,6 +104,7 @@ public sealed class HeadlessWorkflowRunner(
             new OrchestrationWorkflowSessionStartRequest
             {
                 Workflow = request.Workflow,
+                Participants = request.Participants,
                 Agents = request.Agents,
                 Configuration = request.Configuration,
                 SessionTitle = request.SessionTitle,

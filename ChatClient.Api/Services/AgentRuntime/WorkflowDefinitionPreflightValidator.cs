@@ -48,13 +48,7 @@ public sealed class WorkflowDefinitionPreflightValidator(
                 compiledWorkflow,
                 cancellationToken);
 
-            var participants = await workflowParticipantResolver.ResolveAsync(workflow, cancellationToken);
-            if (workflow is not SequentialWorkflowDefinition &&
-                participants.Any(static participant => participant.RuntimeKind == AgentRuntimeKind.WorkflowAgent))
-            {
-                problems.Add(new AgentDefinitionLaunchProblem(
-                    "Saved workflow participants are currently supported only in sequential workflows."));
-            }
+            _ = await workflowParticipantResolver.ResolveAsync(workflow, cancellationToken);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {

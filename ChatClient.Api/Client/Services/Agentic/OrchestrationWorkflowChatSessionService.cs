@@ -47,6 +47,7 @@ public sealed class OrchestrationWorkflowChatSessionService(
             new HeadlessWorkflowSessionStartRequest
             {
                 Workflow = request.Workflow,
+                Participants = request.Participants,
                 Agents = request.Agents,
                 Configuration = request.Configuration,
                 StartInputs = request.StartInputs,
@@ -58,7 +59,14 @@ public sealed class OrchestrationWorkflowChatSessionService(
         _parameters = request;
         TaskSessionId = _headlessSession.TaskSessionId;
         ClearChatState();
-        _chat.SetAgents(request.Agents.Select(static agent => agent.Agent.Clone()));
+        _chat.SetAgents(request.Agents.Count > 0
+            ? request.Agents.Select(static agent => agent.Agent.Clone())
+            : request.Participants.Select(static participant => new AgentExecutionSpec
+            {
+                RuntimeAgentId = participant.Id,
+                AgentName = participant.DisplayName,
+                Summary = participant.Summary
+            }));
         ChatReset?.Invoke();
     }
 

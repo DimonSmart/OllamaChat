@@ -65,6 +65,18 @@ public sealed record AgentRunContext
     public IReadOnlyList<AgentDefinitionReference> DefinitionPath { get; init; } = [];
 }
 
+public sealed class AgentRuntimeOptions
+{
+    public int MaximumWorkflowNestingDepth { get; set; } = 8;
+}
+
+public interface IAgentRunContextFactory
+{
+    AgentRunContext CreateChild(
+        AgentRunContext parent,
+        AgentDefinitionReference? childDefinition);
+}
+
 public abstract record AgentRunEvent;
 
 public sealed record AgentTextDelta(
@@ -238,6 +250,19 @@ public interface IAgentRuntimeFactory
         AgentDefinitionReference reference,
         AgentRuntimeCreationContext context,
         CancellationToken cancellationToken = default);
+}
+
+public sealed record WorkflowRuntimeParticipant
+{
+    public required string Id { get; init; }
+
+    public required string DisplayName { get; init; }
+
+    public required string Summary { get; init; }
+
+    public required IAgentRuntime Runtime { get; init; }
+
+    public AgentDefinitionReference? DefinitionReference { get; init; }
 }
 
 public interface ILlmAgentRuntimeFactory

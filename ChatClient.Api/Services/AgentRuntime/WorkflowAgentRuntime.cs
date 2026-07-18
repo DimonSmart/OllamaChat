@@ -15,6 +15,7 @@ public sealed class WorkflowAgentRuntimeFactory(
     IWorkflowDefinitionCompiler workflowDefinitionCompiler,
     ILegacyWorkflowDefinitionNormalizer legacyWorkflowDefinitionNormalizer,
     IWorkflowParticipantResolver workflowParticipantResolver,
+    IWorkflowParticipantRuntimeFactory participantRuntimeFactory,
     IHeadlessWorkflowRunner headlessWorkflowRunner,
     IWorkflowParticipantExecutor participantExecutor,
     ILogger<WorkflowAgentRuntimeFactory> logger) : IWorkflowAgentRuntimeFactory
@@ -51,16 +52,13 @@ public sealed class WorkflowAgentRuntimeFactory(
         var resolvedParticipants = await workflowParticipantResolver.ResolveAsync(
             workflow,
             cancellationToken);
-        var resolvedAgents = resolvedParticipants
-            .Where(static participant => participant.Source is MaterializedLlmParticipantSource)
-            .Select(participant => CreateHeadlessResolvedAgent(participant, context))
-            .ToList();
-
-        if (workflow is not SequentialWorkflowDefinition &&
-            resolvedParticipants.Any(static participant => participant.RuntimeKind == AgentRuntimeKind.WorkflowAgent))
+        var runtimeParticipants = new List<WorkflowRuntimeParticipant>();
+        foreach (var participant in resolvedParticipants)
         {
-            throw new NotSupportedException(
-                $"Workflow '{workflow.DisplayName}' contains a saved workflow participant, which is currently supported only by sequential workflows.");
+            runtimeParticipants.Add(await participantRuntimeFactory.CreateAsync(
+                participant,
+                context,
+                cancellationToken));
         }
 
         return new WorkflowAgentRuntime(
@@ -72,7 +70,7 @@ public sealed class WorkflowAgentRuntimeFactory(
             workflowReference,
             workflow,
             resolvedParticipants,
-            resolvedAgents,
+            runtimeParticipants,
             context.Configuration,
             context,
             headlessWorkflowRunner,
@@ -80,28 +78,6 @@ public sealed class WorkflowAgentRuntimeFactory(
             logger);
     }
 
-    private static ResolvedChatAgent CreateHeadlessResolvedAgent(
-        ResolvedWorkflowParticipant workflowAgent,
-        AgentRuntimeCreationContext context)
-    {
-        var draft = (workflowAgent.Source as MaterializedLlmParticipantSource)?.Agent
-            ?? throw new InvalidOperationException(
-                $"Workflow participant '{workflowAgent.ParticipantId}' has no materialized agent draft.");
-        var uiSelection = context.DefaultModel is null
-            ? new ServerModelSelection(null, null)
-            : new ServerModelSelection(context.DefaultModel.ServerId, context.DefaultModel.ModelName);
-
-        if (!ModelSelectionHelper.TryGetEffectiveModel(
-                new ServerModelSelection(draft.LlmId, draft.ModelName),
-                uiSelection,
-                out var model))
-        {
-            throw new InvalidOperationException(
-                $"Model selection for workflow participant '{workflowAgent.ParticipantId}' is incomplete.");
-        }
-
-        return ResolvedChatAgentFactory.Resolve(draft, model);
-    }
 }
 
 public interface IWorkflowParticipantExecutor
@@ -176,7 +152,7 @@ internal sealed class WorkflowAgentRuntime(
     AgentDefinitionReference workflowReference,
     IOrchestrationWorkflowDefinition workflow,
     IReadOnlyList<ResolvedWorkflowParticipant> participants,
-    IReadOnlyList<ResolvedChatAgent> agents,
+    IReadOnlyList<WorkflowRuntimeParticipant> runtimeParticipants,
     AppChatConfiguration configuration,
     AgentRuntimeCreationContext creationContext,
     IHeadlessWorkflowRunner headlessWorkflowRunner,
@@ -209,7 +185,13 @@ internal sealed class WorkflowAgentRuntime(
                     : throw new InvalidOperationException(
                         $"Workflow participant '{participant.Id}' has no inline agent source.")
             }).ToList(),
-            agents,
+            agents.Select(static agent => new WorkflowRuntimeParticipant
+            {
+                Id = agent.Agent.AgentId,
+                DisplayName = agent.Agent.AgentName,
+                Summary = agent.Agent.Summary,
+                Runtime = new MissingWorkflowRuntime()
+            }).ToList(),
             configuration,
             new AgentRuntimeCreationContext
             {
@@ -277,7 +259,7 @@ internal sealed class WorkflowAgentRuntime(
         var workflowRequest = new HeadlessWorkflowSessionStartRequest
         {
             Workflow = workflow,
-            Agents = agents,
+            Participants = runtimeParticipants,
             Configuration = configuration,
             StartInputs = startInputs,
             SessionTitle = Descriptor.Name,
@@ -764,6 +746,18 @@ file sealed class MissingWorkflowParticipantExecutor : IWorkflowParticipantExecu
         AgentRunContext runContext,
         CancellationToken cancellationToken = default) =>
         throw new NotSupportedException("Sequential workflow participants require a configured participant executor.");
+}
+
+file sealed class MissingWorkflowRuntime : IAgentRuntime
+{
+    public AgentRuntimeDescriptor Descriptor { get; } =
+        new("missing", "Missing workflow runtime", string.Empty, AgentRuntimeKind.LlmAgent);
+
+    public IAsyncEnumerable<AgentRunEvent> RunAsync(
+        AgentRuntimeRunRequest request,
+        AgentRunContext context,
+        CancellationToken cancellationToken = default) =>
+        throw new NotSupportedException("This workflow runtime placeholder is not executable.");
 }
 
 internal static class SequentialParticipantRequestBuilder
