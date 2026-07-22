@@ -29,13 +29,7 @@
             continue;
         }
 
-        if (message.Role == AppChatRole.Tool)
-        {
-            <RagDisplay Text="@message.Content" />
-        }
-        else
-        {
-            messageIndex++;
+        messageIndex++;
             <MudChat Dense="true" ChatPosition="@(message.Role == AppChatRole.Assistant ? ChatBubblePosition.Start : ChatBubblePosition.End)" @key="@($"{messageIndex}_{message.Id}")">
                 <MudChatHeader>
                     <time>@message.MsgDateTime.ToString("g")</time>
@@ -51,7 +45,7 @@
                                 Size="Size.Small"
                                 Class="chat-message-action"
                                 Disabled="@string.IsNullOrWhiteSpace(message.RawContent)" />
-                    @if (!IsLlmAnswering)
+                    @if (AllowMessageDeletion && !IsLlmAnswering)
                     {
                         <MudTooltip Text="Delete">
                             <MudIconButton Icon="@Icons.Material.Filled.Delete"
@@ -140,11 +134,11 @@
                     }
                 }
 
-                @if (message.FunctionCalls.Any())
+                @if (message.ToolInvocations.Any())
                 {
-                    foreach (var call in message.FunctionCalls)
+                    foreach (var call in message.ToolInvocations)
                     {
-                        <McpCallDisplay Call="@call" />
+                        <ToolCallDisplay Call="@call" />
                     }
                 }
 
@@ -171,14 +165,20 @@
                         }
                     </MudChatFooter>
                 }
-            </MudChat>
-        }
+        </MudChat>
     }
 </div>
 
 <div class="chat-input-panel">
     <MudStack>
+        @if (RequiresReset)
+        {
+            <MudAlert Severity="Severity.Warning" Dense="true">
+                This conversation cannot continue after the canceled or failed run. Start a new chat to continue.
+            </MudAlert>
+        }
         <ChatInput OnSend="OnSendMessage"
+                   Disabled="RequiresReset"
                    ShowStopButton="IsLlmAnswering"
                    OnStopClick="OnStop"
                    IsMultiAgent="IsMultiAgent" />
@@ -200,6 +200,12 @@
 
     [Parameter]
     public bool IsMultiAgent { get; set; }
+
+    [Parameter]
+    public bool AllowMessageDeletion { get; set; }
+
+    [Parameter]
+    public bool RequiresReset { get; set; }
 
     [Parameter]
     public EventCallback<(string text, IReadOnlyList<AppChatMessageFile> files)> OnSendMessage { get; set; }

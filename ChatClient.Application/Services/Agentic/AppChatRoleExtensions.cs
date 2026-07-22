@@ -11,7 +11,6 @@ public static class AppChatRoleExtensions
             AppChatRole.User => ChatRole.User,
             AppChatRole.Assistant => ChatRole.Assistant,
             AppChatRole.System => ChatRole.System,
-            AppChatRole.Tool => ChatRole.Tool,
             _ => throw new ArgumentOutOfRangeException(nameof(role), role, "Unsupported app chat role.")
         };
 
@@ -30,11 +29,6 @@ public static class AppChatRoleExtensions
         if (role == ChatRole.System)
         {
             return AppChatRole.System;
-        }
-
-        if (role == ChatRole.Tool)
-        {
-            return AppChatRole.Tool;
         }
 
         throw new ArgumentOutOfRangeException(nameof(role), role, "Unsupported AI chat role.");

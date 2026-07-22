@@ -120,16 +120,6 @@ public sealed class AgentTemplateBuilder
         return this;
     }
 
-    public AgentTemplateBuilder ConfigureExecution(Action<AgentExecutionBuilder> configure)
-    {
-        ArgumentNullException.ThrowIfNull(configure);
-
-        var builder = new AgentExecutionBuilder(_template.ExecutionSettings);
-        configure(builder);
-        _template.ExecutionSettings = builder.Build();
-        return this;
-    }
-
     public AgentTemplateBuilder ClearBindings()
     {
         _template.McpServerBindings.Clear();
@@ -221,99 +211,6 @@ public static class AgentDefinitionBuilder
 {
     public static AgentTemplateBuilder New(string agentName, string? shortName = null) =>
         AgentTemplateBuilder.New(agentName, shortName);
-}
-
-public sealed class AgentExecutionBuilder
-{
-    private readonly AgentExecutionSettings _settings;
-
-    internal AgentExecutionBuilder(AgentExecutionSettings settings)
-    {
-        ArgumentNullException.ThrowIfNull(settings);
-        _settings = new AgentExecutionSettings
-        {
-            MaxToolCalls = settings.MaxToolCalls,
-            HistoryCompaction = new AgentHistoryCompactionSettings
-            {
-                Enabled = settings.HistoryCompaction.Enabled,
-                Mode = settings.HistoryCompaction.Mode,
-                KeepLastToolPairs = settings.HistoryCompaction.KeepLastToolPairs,
-                ToolNames = settings.HistoryCompaction.ToolNames.ToList()
-            }
-        };
-    }
-
-    public AgentExecutionBuilder WithMaxToolCalls(int? maxToolCalls)
-    {
-        if (maxToolCalls < 0)
-        {
-            throw new ArgumentOutOfRangeException(nameof(maxToolCalls), "Max tool calls cannot be negative.");
-        }
-
-        _settings.MaxToolCalls = maxToolCalls;
-        return this;
-    }
-
-    public AgentExecutionBuilder WithoutMaxToolCalls()
-    {
-        _settings.MaxToolCalls = null;
-        return this;
-    }
-
-    public AgentExecutionBuilder DisableHistoryCompaction()
-    {
-        _settings.HistoryCompaction = new AgentHistoryCompactionSettings
-        {
-            Enabled = false,
-            Mode = AgentHistoryCompactionModes.None,
-            KeepLastToolPairs = 0,
-            ToolNames = []
-        };
-        return this;
-    }
-
-    public AgentExecutionBuilder UseToolWindowCompaction(int keepLastToolPairs, params string[] toolNames)
-    {
-        if (keepLastToolPairs <= 0)
-        {
-            throw new ArgumentOutOfRangeException(nameof(keepLastToolPairs), "Keep-last count must be greater than zero.");
-        }
-
-        _settings.HistoryCompaction = new AgentHistoryCompactionSettings
-        {
-            Enabled = true,
-            Mode = AgentHistoryCompactionModes.ToolWindow,
-            KeepLastToolPairs = keepLastToolPairs,
-            ToolNames = NormalizeValues(toolNames)
-        };
-        return this;
-    }
-
-    internal AgentExecutionSettings Build()
-    {
-        return new AgentExecutionSettings
-        {
-            MaxToolCalls = _settings.MaxToolCalls,
-            HistoryCompaction = new AgentHistoryCompactionSettings
-            {
-                Enabled = _settings.HistoryCompaction.Enabled,
-                Mode = _settings.HistoryCompaction.Mode,
-                KeepLastToolPairs = _settings.HistoryCompaction.KeepLastToolPairs,
-                ToolNames = _settings.HistoryCompaction.ToolNames.ToList()
-            }
-        };
-    }
-
-    private static List<string> NormalizeValues(IEnumerable<string> values)
-    {
-        ArgumentNullException.ThrowIfNull(values);
-
-        return values
-            .Where(static value => !string.IsNullOrWhiteSpace(value))
-            .Select(static value => value.Trim())
-            .Distinct(StringComparer.OrdinalIgnoreCase)
-            .ToList();
-    }
 }
 
 public sealed class AgentMcpBindingBuilder

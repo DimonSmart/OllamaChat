@@ -168,8 +168,7 @@ internal sealed class LlmAgentRuntime(
             Configuration = configuration,
             Messages = history,
             UserMessage = userMessage.Content,
-            Files = files,
-            EnableRagContext = true
+            Files = files
         };
 
         var messageId = Guid.NewGuid().ToString("N");
@@ -196,6 +195,28 @@ internal sealed class LlmAgentRuntime(
                     await writer.WriteAsync(
                         new AgentTextDelta(messageId, Descriptor.Name, chunk.Content),
                         cancellationToken);
+                }
+
+                if (chunk.Event is HarnessToolCallStarted started)
+                {
+                    await writer.WriteAsync(new AgentToolCallStarted(
+                        messageId,
+                        Descriptor.Name,
+                        ToViewState(started)), cancellationToken);
+                }
+                else if (chunk.Event is HarnessToolCallCompleted toolCompleted)
+                {
+                    await writer.WriteAsync(new AgentToolCallCompleted(
+                        messageId,
+                        Descriptor.Name,
+                        ToViewState(toolCompleted)), cancellationToken);
+                }
+                else if (chunk.Event is HarnessToolCallFailed failed)
+                {
+                    await writer.WriteAsync(new AgentToolCallFailed(
+                        messageId,
+                        Descriptor.Name,
+                        ToViewState(failed)), cancellationToken);
                 }
 
                 if (chunk.IsFinal)
@@ -260,6 +281,21 @@ internal sealed class LlmAgentRuntime(
 
         return -1;
     }
+
+    private static ToolInvocationViewState ToViewState(HarnessToolCallStarted value) => new(
+        value.CallId, value.RegisteredName, value.OriginalName, value.Source, value.ServerName,
+        value.BindingName, value.IsInteractive, value.Arguments, null, null,
+        ToolInvocationStatus.Running, value.StartedAt, null);
+
+    private static ToolInvocationViewState ToViewState(HarnessToolCallCompleted value) => new(
+        value.CallId, value.RegisteredName, value.OriginalName, value.Source, value.ServerName,
+        value.BindingName, value.IsInteractive, value.Arguments, value.Result, null,
+        ToolInvocationStatus.Succeeded, value.StartedAt, value.CompletedAt);
+
+    private static ToolInvocationViewState ToViewState(HarnessToolCallFailed value) => new(
+        value.CallId, value.RegisteredName, value.OriginalName, value.Source, value.ServerName,
+        value.BindingName, value.IsInteractive, value.Arguments, null, value.Error,
+        ToolInvocationStatus.Failed, value.StartedAt, value.CompletedAt);
 
     private static AppChatMessageFile ToAppChatMessageFile(AgentInputAttachment attachment)
     {

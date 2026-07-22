@@ -15,6 +15,4 @@ public sealed class ChatEngineOrchestrationRequest
     public required string UserMessage { get; init; }
 
     public IReadOnlyList<AppChatMessageFile> Files { get; init; } = [];
-
-    public bool EnableRagContext { get; init; } = true;
 }

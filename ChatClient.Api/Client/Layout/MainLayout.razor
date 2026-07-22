@@ -115,9 +115,7 @@
         var currentPath = NavigationManager.ToAbsoluteUri(NavigationManager.Uri).LocalPath;
         return currentPath == "/" ||
                currentPath == "/chat" ||
-               currentPath == "/multi-agent-chat" ||
-               currentPath == "/chat-agentic" ||
-               currentPath == "/multi-agent-chat-agentic";
+               currentPath == "/chat-agentic";
     }
 
     private bool IsOnAgenticChatPage()
@@ -125,16 +123,14 @@
         var currentPath = NavigationManager.ToAbsoluteUri(NavigationManager.Uri).LocalPath;
         return string.Equals(currentPath, "/", StringComparison.OrdinalIgnoreCase) ||
                string.Equals(currentPath, "/chat", StringComparison.OrdinalIgnoreCase) ||
-               string.Equals(currentPath, "/chat-agentic", StringComparison.OrdinalIgnoreCase) ||
-               string.Equals(currentPath, "/multi-agent-chat", StringComparison.OrdinalIgnoreCase) ||
-               string.Equals(currentPath, "/multi-agent-chat-agentic", StringComparison.OrdinalIgnoreCase);
+               string.Equals(currentPath, "/chat-agentic", StringComparison.OrdinalIgnoreCase);
     }
 
     private bool ActiveChatHasAgents() => AgenticChatService.Agents.Any();
 
-    private void NewChat()
+    private async Task NewChat()
     {
-        AgenticChatService.ResetChat();
+        await AgenticChatService.ResetAsync();
         if (!IsOnChatPage())
         {
             NavigationManager.NavigateTo("/chat");

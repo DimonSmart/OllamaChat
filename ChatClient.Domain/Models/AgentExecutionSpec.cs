@@ -21,17 +21,6 @@ public sealed class AgentExecutionSpec : AgentModelBase
             {
                 AutoSelectCount = FunctionSettings.AutoSelectCount
             },
-            ExecutionSettings = new AgentExecutionSettings
-            {
-                MaxToolCalls = ExecutionSettings.MaxToolCalls,
-                HistoryCompaction = new AgentHistoryCompactionSettings
-                {
-                    Enabled = ExecutionSettings.HistoryCompaction.Enabled,
-                    Mode = ExecutionSettings.HistoryCompaction.Mode,
-                    KeepLastToolPairs = ExecutionSettings.HistoryCompaction.KeepLastToolPairs,
-                    ToolNames = ExecutionSettings.HistoryCompaction.ToolNames.ToList()
-                }
-            },
             McpServerBindings = McpServerBindings
                 .Select(static binding => binding.Clone())
                 .ToList(),

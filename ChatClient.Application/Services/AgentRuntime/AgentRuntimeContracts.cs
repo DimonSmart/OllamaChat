@@ -118,6 +118,21 @@ public sealed record AgentTextDelta(
     string Author,
     string Text) : AgentRunEvent;
 
+public sealed record AgentToolCallStarted(
+    string MessageId,
+    string Author,
+    ToolInvocationViewState Invocation) : AgentRunEvent;
+
+public sealed record AgentToolCallCompleted(
+    string MessageId,
+    string Author,
+    ToolInvocationViewState Invocation) : AgentRunEvent;
+
+public sealed record AgentToolCallFailed(
+    string MessageId,
+    string Author,
+    ToolInvocationViewState Invocation) : AgentRunEvent;
+
 public sealed record AgentMessageCompleted(
     string MessageId,
     AgentOutputMessage Message) : AgentRunEvent;

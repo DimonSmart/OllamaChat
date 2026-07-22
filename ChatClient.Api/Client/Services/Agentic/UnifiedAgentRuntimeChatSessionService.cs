@@ -16,7 +16,8 @@ public sealed class UnifiedAgentRuntimeChatSessionService(
     IChatEngineStreamingBridge streamingBridge,
     ILogger<UnifiedAgentRuntimeChatSessionService> logger,
     IAgentTemplateService agentTemplateService,
-    AgenticRuntimeAgentFactory runtimeAgentFactory) : IChatEngineSessionService
+    AgenticRuntimeAgentFactory runtimeAgentFactory,
+    HarnessResponseEventProjector responseEventProjector) : IChatEngineSessionService
 {
     private readonly AppChat _chat = new();
     private readonly Dictionary<string, StreamingAppChatMessage> _activeStreamsByRuntimeMessageId =
@@ -26,6 +27,11 @@ public sealed class UnifiedAgentRuntimeChatSessionService(
     private CancellationTokenSource? _cancellationTokenSource;
     private AIAgent? _directAgent;
     private AgentSession? _directSession;
+    private IReadOnlyDictionary<string, AgenticRegisteredTool> _directToolMetadata =
+        new Dictionary<string, AgenticRegisteredTool>(StringComparer.OrdinalIgnoreCase);
+    private TaskCompletionSource? _activeRunCompletion;
+    private readonly object _lifecycleLock = new();
+    private readonly SemaphoreSlim _runSetupGate = new(1, 1);
     private long _generation;
     private bool _resetting;
 
@@ -33,9 +39,10 @@ public sealed class UnifiedAgentRuntimeChatSessionService(
     public event Action? ChatReset;
     public event Func<IAppChatMessage, Task>? MessageAdded;
     public event Func<IAppChatMessage, bool, Task>? MessageUpdated;
-    public event Func<Guid, Task>? MessageDeleted;
 
     public bool IsAnswering { get; private set; }
+
+    public bool RequiresReset { get; private set; }
 
     public Guid Id => _chat.Id;
 
@@ -44,8 +51,6 @@ public sealed class UnifiedAgentRuntimeChatSessionService(
     public ObservableCollection<IAppChatMessage> Messages => _chat.Messages;
 
     IReadOnlyCollection<IAppChatMessage> IChatSessionService.Messages => _chat.Messages;
-
-    public ChatEngineSessionStartRequest? CurrentStartRequest => _parameters?.Snapshot();
 
     public async Task StartAsync(
         ChatEngineSessionStartRequest request,
@@ -59,6 +64,8 @@ public sealed class UnifiedAgentRuntimeChatSessionService(
                 "A runtime reference or at least one resolved agent must be provided.",
                 nameof(request));
         }
+
+        await ResetAsync(cancellationToken);
 
         _parameters = request.Snapshot();
         _chat.Reset();
@@ -76,36 +83,53 @@ public sealed class UnifiedAgentRuntimeChatSessionService(
 
         if (request.RuntimeReference?.Kind == AgentDefinitionKind.SavedAgent)
         {
-            if (request.History.Count > 0)
-            {
-                throw new InvalidOperationException("Saved chat history cannot be restored. Start a new conversation instead.");
-            }
-
             await CreateDirectConversationAsync(request, cancellationToken);
         }
-
-        foreach (var message in request.History.OrderBy(static message => message.MsgDateTime))
-        {
-            _chat.Messages.Add(message);
-            await (MessageAdded?.Invoke(message) ?? Task.CompletedTask);
-        }
-
-        await Task.CompletedTask;
     }
 
-    public void ResetChat()
+    public async Task ResetAsync(CancellationToken cancellationToken = default)
     {
-        _resetting = true;
-        _cancellationTokenSource?.Cancel();
-        Interlocked.Increment(ref _generation);
-        _directAgent = null;
-        _directSession = null;
-        _chat.Reset();
-        ClearRunLocalState();
-        _parameters = null;
-        _cancellationTokenSource?.Dispose();
-        _cancellationTokenSource = null;
-        _resetting = false;
+        Task? activeRun;
+        lock (_lifecycleLock)
+        {
+            _resetting = true;
+        }
+
+        await _runSetupGate.WaitAsync(cancellationToken);
+        try
+        {
+            lock (_lifecycleLock)
+            {
+                Interlocked.Increment(ref _generation);
+                _cancellationTokenSource?.Cancel();
+                activeRun = _activeRunCompletion?.Task;
+            }
+        }
+        finally
+        {
+            _runSetupGate.Release();
+        }
+
+        if (activeRun is not null)
+        {
+            await activeRun.WaitAsync(cancellationToken);
+        }
+
+        lock (_lifecycleLock)
+        {
+            _directAgent = null;
+            _directSession = null;
+            _directToolMetadata = new Dictionary<string, AgenticRegisteredTool>(StringComparer.OrdinalIgnoreCase);
+            _chat.Reset();
+            ClearRunLocalState();
+            _parameters = null;
+            _cancellationTokenSource?.Dispose();
+            _cancellationTokenSource = null;
+            _activeRunCompletion = null;
+            RequiresReset = false;
+            _resetting = false;
+        }
+
         UpdateAnsweringState(false);
         ChatReset?.Invoke();
     }
@@ -113,17 +137,16 @@ public sealed class UnifiedAgentRuntimeChatSessionService(
     public async Task CancelAsync()
     {
         _cancellationTokenSource?.Cancel();
-
-        foreach (var stream in _activeStreamsByRuntimeMessageId.Values.ToList())
+        Task? activeRun;
+        lock (_lifecycleLock)
         {
-            var canceled = streamingBridge.Cancel(stream);
-            ReplaceMessage(stream, canceled);
-            await (MessageUpdated?.Invoke(canceled, true) ?? Task.CompletedTask);
+            activeRun = _activeRunCompletion?.Task;
         }
 
-        ClearRunLocalState();
-        _directSession = null;
-        UpdateAnsweringState(false);
+        if (activeRun is not null)
+        {
+            await activeRun;
+        }
     }
 
     public async Task SendAsync(
@@ -141,23 +164,58 @@ public sealed class UnifiedAgentRuntimeChatSessionService(
             return;
         }
 
+        if (RequiresReset)
+        {
+            throw new InvalidOperationException("This conversation cannot continue after a canceled or failed run. Start a new chat.");
+        }
+
         if (_parameters.RuntimeReference is null)
         {
             throw new InvalidOperationException("Unified agent runtime reference is not configured.");
         }
 
+        await _runSetupGate.WaitAsync(cancellationToken);
+        long generation;
+        try
+        {
+            if (_resetting || IsAnswering)
+            {
+                return;
+            }
+
+            if (RequiresReset)
+            {
+                throw new InvalidOperationException("This conversation cannot continue after a canceled or failed run. Start a new chat.");
+            }
+
+            generation = Interlocked.Read(ref _generation);
+            if (_parameters.RuntimeReference.Kind == AgentDefinitionKind.SavedAgent)
+            {
+                await EnsureDirectConversationAsync(cancellationToken);
+            }
+
+            if (generation != Interlocked.Read(ref _generation))
+            {
+                return;
+            }
+
+            var userMessage = new AppChatMessage(text, DateTime.Now, AppChatRole.User, files: files ?? []);
+            await AddMessageAsync(userMessage);
+            _cancellationTokenSource = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            _activeRunCompletion = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            UpdateAnsweringState(true);
+        }
+        finally
+        {
+            _runSetupGate.Release();
+        }
+
         if (_parameters.RuntimeReference.Kind == AgentDefinitionKind.SavedAgent)
         {
-            await EnsureDirectConversationAsync(cancellationToken);
-            await SendDirectAsync(text, files ?? [], cancellationToken);
+            await SendDirectAsync(text, files ?? [], generation, cancellationToken);
             return;
         }
 
-        var userMessage = new AppChatMessage(text, DateTime.Now, AppChatRole.User, files: files ?? []);
-        await AddMessageAsync(userMessage);
-
-        _cancellationTokenSource = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-        UpdateAnsweringState(true);
         var terminalFailureHandled = false;
 
         try
@@ -202,60 +260,57 @@ public sealed class UnifiedAgentRuntimeChatSessionService(
                                runtimeRequest,
                                creationContext,
                                runContext,
-                               _cancellationTokenSource.Token))
+                               _cancellationTokenSource!.Token))
             {
                 if (runEvent is AgentRunFailed)
                 {
                     terminalFailureHandled = true;
                 }
 
-                await ApplyRunEventAsync(runEvent, _cancellationTokenSource.Token);
+                if (generation != Interlocked.Read(ref _generation))
+                {
+                    break;
+                }
+
+                await ApplyRunEventAsync(runEvent, generation, _cancellationTokenSource.Token);
             }
         }
         catch (OperationCanceledException)
         {
-            await CancelActiveStreamsAsync();
+            if (generation == Interlocked.Read(ref _generation))
+            {
+                RequiresReset = true;
+                await CancelActiveStreamsAsync();
+            }
         }
         catch (Exception ex)
         {
-            logger.LogError(ex, "Unified agent chat run failed.");
-            await CancelActiveStreamsAsync();
-            if (!terminalFailureHandled)
+            if (generation == Interlocked.Read(ref _generation))
             {
-                await AddMessageAsync(new AppChatMessage(
-                    "Agent runtime error: The run failed before a terminal result was produced.",
-                    DateTime.Now,
-                    AppChatRole.Assistant));
+                RequiresReset = true;
+                logger.LogError(ex, "Unified agent chat run failed.");
+                await CancelActiveStreamsAsync();
+                if (!terminalFailureHandled)
+                {
+                    await AddMessageAsync(new AppChatMessage(
+                        "Agent runtime error: The run failed before a terminal result was produced.",
+                        DateTime.Now,
+                        AppChatRole.Assistant));
+                }
             }
         }
         finally
         {
-            ClearRunLocalState();
-            _cancellationTokenSource?.Dispose();
-            _cancellationTokenSource = null;
-            UpdateAnsweringState(false);
+            if (generation == Interlocked.Read(ref _generation))
+            {
+                ClearRunLocalState();
+                _cancellationTokenSource?.Dispose();
+                _cancellationTokenSource = null;
+                UpdateAnsweringState(false);
+            }
+
+            _activeRunCompletion?.TrySetResult();
         }
-    }
-
-    public ChatEngineSessionState GetState()
-    {
-        if (_parameters is null)
-        {
-            throw new InvalidOperationException("Chat session not started.");
-        }
-
-        return new ChatEngineSessionState
-        {
-            Configuration = _parameters.Configuration,
-            Agents = _chat.Agents.ToList(),
-            Messages = _chat.Messages.ToList(),
-            ChatStrategyName = "UnifiedAgentRuntime"
-        };
-    }
-
-    public async Task DeleteMessageAsync(Guid messageId)
-    {
-        throw new InvalidOperationException("Messages in an active conversation cannot be edited or deleted. Start a new chat instead.");
     }
 
     private async Task CreateDirectConversationAsync(
@@ -290,6 +345,7 @@ public sealed class UnifiedAgentRuntimeChatSessionService(
 
         _directAgent = build.Agent;
         _directSession = await build.Agent.CreateSessionAsync(cancellationToken);
+        _directToolMetadata = build.ToolSet.MetadataByName;
     }
 
     private async Task EnsureDirectConversationAsync(CancellationToken cancellationToken)
@@ -310,15 +366,17 @@ public sealed class UnifiedAgentRuntimeChatSessionService(
     private async Task SendDirectAsync(
         string text,
         IReadOnlyList<AppChatMessageFile> files,
+        long generation,
         CancellationToken cancellationToken)
     {
-        var generation = Interlocked.Read(ref _generation);
-        var userMessage = new AppChatMessage(text, DateTime.Now, AppChatRole.User, files: files);
-        await AddMessageAsync(userMessage);
-        _cancellationTokenSource = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-        UpdateAnsweringState(true);
+        if (generation != Interlocked.Read(ref _generation))
+        {
+            return;
+        }
+
         var messageId = $"direct-harness-response-{Guid.NewGuid():N}";
         var stream = await GetOrCreateStreamAsync(messageId, _chat.Agents.FirstOrDefault()?.AgentName ?? "Agent");
+        var projection = responseEventProjector.CreateProjection();
 
         try
         {
@@ -333,9 +391,14 @@ public sealed class UnifiedAgentRuntimeChatSessionService(
                     break;
                 }
 
-                if (!string.IsNullOrEmpty(update.Text))
+                foreach (var responseEvent in projection.Project(update, _directToolMetadata))
                 {
-                    streamingBridge.Append(stream, update.Text);
+                    if (generation != Interlocked.Read(ref _generation))
+                    {
+                        break;
+                    }
+
+                    ApplyHarnessEvent(stream, responseEvent);
                     await (MessageUpdated?.Invoke(stream, false) ?? Task.CompletedTask);
                 }
             }
@@ -352,20 +415,34 @@ public sealed class UnifiedAgentRuntimeChatSessionService(
         }
         catch (OperationCanceledException)
         {
-            _directSession = null;
-            await CancelActiveStreamsAsync();
+            if (generation == Interlocked.Read(ref _generation))
+            {
+                RequiresReset = true;
+                _directSession = null;
+                await CancelActiveStreamsAsync();
+            }
         }
         catch (Exception ex)
         {
-            logger.LogError(ex, "Harness direct chat run failed.");
-            await CancelActiveStreamsAsync();
-            await AddMessageAsync(new AppChatMessage($"Agent runtime error: {ex.Message}", DateTime.Now, AppChatRole.Assistant));
+            if (generation == Interlocked.Read(ref _generation))
+            {
+                RequiresReset = true;
+                _directSession = null;
+                logger.LogError(ex, "Harness direct chat run failed.");
+                await CancelActiveStreamsAsync();
+                await AddMessageAsync(new AppChatMessage($"Agent runtime error: {ex.Message}", DateTime.Now, AppChatRole.Assistant));
+            }
         }
         finally
         {
-            _cancellationTokenSource?.Dispose();
-            _cancellationTokenSource = null;
-            UpdateAnsweringState(false);
+            if (generation == Interlocked.Read(ref _generation))
+            {
+                _cancellationTokenSource?.Dispose();
+                _cancellationTokenSource = null;
+                UpdateAnsweringState(false);
+            }
+
+            _activeRunCompletion?.TrySetResult();
         }
     }
 
@@ -420,9 +497,14 @@ public sealed class UnifiedAgentRuntimeChatSessionService(
 
     private async Task ApplyRunEventAsync(
         AgentRunEvent runEvent,
+        long generation,
         CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
+        if (generation != Interlocked.Read(ref _generation))
+        {
+            return;
+        }
 
         switch (runEvent)
         {
@@ -430,6 +512,18 @@ public sealed class UnifiedAgentRuntimeChatSessionService(
                 var stream = await GetOrCreateStreamAsync(delta.MessageId, delta.Author);
                 streamingBridge.Append(stream, delta.Text);
                 await (MessageUpdated?.Invoke(stream, false) ?? Task.CompletedTask);
+                break;
+
+            case AgentToolCallStarted started:
+                await ApplyToolInvocationAsync(started.MessageId, started.Author, started.Invocation);
+                break;
+
+            case AgentToolCallCompleted completed:
+                await ApplyToolInvocationAsync(completed.MessageId, completed.Author, completed.Invocation);
+                break;
+
+            case AgentToolCallFailed failed:
+                await ApplyToolInvocationAsync(failed.MessageId, failed.Author, failed.Invocation);
                 break;
 
             case AgentMessageCompleted completed:
@@ -475,6 +569,55 @@ public sealed class UnifiedAgentRuntimeChatSessionService(
             agentName: output.Author));
         _completedRuntimeMessageIds.Add(runtimeMessageId);
     }
+
+    private async Task ApplyToolInvocationAsync(
+        string runtimeMessageId,
+        string author,
+        ToolInvocationViewState invocation)
+    {
+        var stream = await GetOrCreateStreamAsync(runtimeMessageId, author);
+        stream.UpdateToolInvocation(invocation);
+        await (MessageUpdated?.Invoke(stream, true) ?? Task.CompletedTask);
+    }
+
+    private static void ApplyHarnessEvent(
+        StreamingAppChatMessage stream,
+        HarnessResponseEvent responseEvent)
+    {
+        switch (responseEvent)
+        {
+            case HarnessTextDelta text:
+                stream.Append(text.Text);
+                break;
+
+            case HarnessToolCallStarted started:
+                stream.StartToolInvocation(ToViewState(started));
+                break;
+
+            case HarnessToolCallCompleted completed:
+                stream.UpdateToolInvocation(ToViewState(completed));
+                break;
+
+            case HarnessToolCallFailed failed:
+                stream.UpdateToolInvocation(ToViewState(failed));
+                break;
+        }
+    }
+
+    private static ToolInvocationViewState ToViewState(HarnessToolCallStarted value) => new(
+        value.CallId, value.RegisteredName, value.OriginalName, value.Source, value.ServerName,
+        value.BindingName, value.IsInteractive, value.Arguments, null, null,
+        ToolInvocationStatus.Running, value.StartedAt, null);
+
+    private static ToolInvocationViewState ToViewState(HarnessToolCallCompleted value) => new(
+        value.CallId, value.RegisteredName, value.OriginalName, value.Source, value.ServerName,
+        value.BindingName, value.IsInteractive, value.Arguments, value.Result, null,
+        ToolInvocationStatus.Succeeded, value.StartedAt, value.CompletedAt);
+
+    private static ToolInvocationViewState ToViewState(HarnessToolCallFailed value) => new(
+        value.CallId, value.RegisteredName, value.OriginalName, value.Source, value.ServerName,
+        value.BindingName, value.IsInteractive, value.Arguments, null, value.Error,
+        ToolInvocationStatus.Failed, value.StartedAt, value.CompletedAt);
 
     private async Task ApplyFinalResultAsync(AgentRunResult result)
     {
@@ -532,7 +675,7 @@ public sealed class UnifiedAgentRuntimeChatSessionService(
     {
         foreach (var pair in _activeStreamsByRuntimeMessageId.ToList())
         {
-            if (string.IsNullOrWhiteSpace(pair.Value.Content))
+            if (string.IsNullOrWhiteSpace(pair.Value.Content) && pair.Value.ToolInvocations.Count == 0)
             {
                 _activeStreamsByRuntimeMessageId.Remove(pair.Key);
                 continue;
@@ -550,6 +693,18 @@ public sealed class UnifiedAgentRuntimeChatSessionService(
     {
         foreach (var stream in _activeStreamsByRuntimeMessageId.Values.ToList())
         {
+            foreach (var invocation in stream.ToolInvocations
+                         .Where(static invocation => invocation.Status == ToolInvocationStatus.Running)
+                         .ToList())
+            {
+                stream.UpdateToolInvocation(invocation with
+                {
+                    Status = ToolInvocationStatus.Canceled,
+                    Error = "Canceled",
+                    CompletedAt = DateTimeOffset.UtcNow
+                });
+            }
+
             var canceled = streamingBridge.Cancel(stream);
             ReplaceMessage(stream, canceled);
             await (MessageUpdated?.Invoke(canceled, true) ?? Task.CompletedTask);

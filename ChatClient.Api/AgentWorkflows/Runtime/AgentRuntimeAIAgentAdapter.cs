@@ -93,6 +93,37 @@ public sealed class AgentRuntimeAIAgentAdapter(
                     };
                     break;
 
+                case AgentToolCallStarted toolStarted:
+                    var callContent = new FunctionCallContent(
+                        toolStarted.Invocation.CallId,
+                        toolStarted.Invocation.RegisteredName)
+                    {
+                        RawRepresentation = toolStarted.Invocation
+                    };
+                    yield return CreateToolUpdate(toolStarted.MessageId, responseId, callContent);
+                    break;
+
+                case AgentToolCallCompleted toolCompleted:
+                    var resultContent = new FunctionResultContent(
+                        toolCompleted.Invocation.CallId,
+                        toolCompleted.Invocation.Result)
+                    {
+                        RawRepresentation = toolCompleted.Invocation
+                    };
+                    yield return CreateToolUpdate(toolCompleted.MessageId, responseId, resultContent);
+                    break;
+
+                case AgentToolCallFailed toolFailed:
+                    var failedContent = new FunctionResultContent(
+                        toolFailed.Invocation.CallId,
+                        toolFailed.Invocation.Error)
+                    {
+                        Exception = new InvalidOperationException(toolFailed.Invocation.Error ?? "Tool invocation failed."),
+                        RawRepresentation = toolFailed.Invocation
+                    };
+                    yield return CreateToolUpdate(toolFailed.MessageId, responseId, failedContent);
+                    break;
+
                 case AgentMessageCompleted completed:
                     var deliveredLength = deliveredTextLengths.GetValueOrDefault(completed.MessageId);
                     var remainingText = completed.Message.Content.Length > deliveredLength
@@ -165,6 +196,18 @@ public sealed class AgentRuntimeAIAgentAdapter(
                     ? AgentMessageRole.Assistant
                     : AgentMessageRole.User,
             message.Text ?? string.Empty);
+
+    private AgentResponseUpdate CreateToolUpdate(
+        string messageId,
+        string responseId,
+        AIContent content) =>
+        new(ChatRole.Assistant, [content])
+        {
+            AgentId = participant.Id,
+            AuthorName = participant.DisplayName,
+            MessageId = messageId,
+            ResponseId = responseId
+        };
 
     private sealed class RuntimeAdapterAgentSession : AgentSession;
 }

@@ -140,11 +140,6 @@ public sealed class AgentTemplateSeeder(
                left.Temperature == right.Temperature &&
                left.RepeatPenalty == right.RepeatPenalty &&
                left.FunctionSettings.AutoSelectCount == right.FunctionSettings.AutoSelectCount &&
-               left.ExecutionSettings.MaxToolCalls == right.ExecutionSettings.MaxToolCalls &&
-               left.ExecutionSettings.HistoryCompaction.Enabled == right.ExecutionSettings.HistoryCompaction.Enabled &&
-               string.Equals(left.ExecutionSettings.HistoryCompaction.Mode, right.ExecutionSettings.HistoryCompaction.Mode, StringComparison.Ordinal) &&
-               left.ExecutionSettings.HistoryCompaction.KeepLastToolPairs == right.ExecutionSettings.HistoryCompaction.KeepLastToolPairs &&
-               left.ExecutionSettings.HistoryCompaction.ToolNames.SequenceEqual(right.ExecutionSettings.HistoryCompaction.ToolNames, StringComparer.Ordinal) &&
                HaveEquivalentBindings(left.McpServerBindings, right.McpServerBindings);
     }
 

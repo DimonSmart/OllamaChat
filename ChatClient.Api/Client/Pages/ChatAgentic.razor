@@ -7,7 +7,6 @@
 @using ChatClient.Application.Services.Agentic
 @using ChatClient.Application.Services.AgentRuntime
 @using ChatClient.Domain.Models
-@using ChatClient.Domain.Models.ChatStrategies
 @using Microsoft.AspNetCore.Components
 @using MudBlazor
 @inherits AgenticChatPageBase
@@ -131,10 +130,10 @@
                             Messages="ChatViewModelService.Messages"
                             Agents="ChatService.Agents"
                             IsLlmAnswering="isLLMAnswering"
+                            RequiresReset="ChatService.RequiresReset"
                             UserName="userSettings.UserName"
                             OnSendMessage="SendChatMessageAsync"
                             OnStop="Cancel"
-                            OnDeleteMessage="DeleteMessage"
                             OnCopyChat="CopyChatAsync" />
     }
     </MudStack>
@@ -223,9 +222,7 @@
             RuntimeReference = resolved.RuntimeReference,
             RuntimeDefaultModel = resolved.DefaultModel,
             RuntimeInputs = resolved.Inputs,
-            Overrides = BuildOverrides(),
-            ChatStrategyName = "RoundRobin",
-            ChatStrategyOptions = new RoundRobinChatStrategyOptions { Rounds = 1 }
+            Overrides = BuildOverrides()
         };
 
         try

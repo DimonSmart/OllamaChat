@@ -7,16 +7,19 @@ namespace ChatClient.Tests;
 public class ChatTranscriptFormatterTests
 {
     [Fact]
-    public void Format_Html_RendersFunctionCallsFromRecords()
+    public void Format_Html_RendersToolInvocations()
     {
         var message = new AppChatMessageViewModel
         {
             Role = AppChatRole.Assistant,
             AgentName = "Planner",
             HtmlContent = "<p>Done</p>",
-            FunctionCalls =
+            ToolInvocations =
             [
-                new FunctionCallRecord("srv", "sum", "request payload", "response payload")
+                new ToolInvocationViewState(
+                    "call-1", "sum", "sum", "mcp", "srv", null, false,
+                    "request payload", "response payload", null,
+                    ToolInvocationStatus.Succeeded, DateTimeOffset.UtcNow, DateTimeOffset.UtcNow)
             ]
         };
 

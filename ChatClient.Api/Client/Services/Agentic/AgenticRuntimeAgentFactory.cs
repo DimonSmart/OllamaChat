@@ -11,7 +11,7 @@ using ModelContextProtocol.Client;
 
 namespace ChatClient.Api.Client.Services.Agentic;
 
-internal sealed record AgenticRuntimeAgentBuildResult(
+internal sealed record HarnessAgentRuntimeDefinition(
     AIAgent Agent,
     LlmServerConfig Server,
     AgenticToolSet ToolSet,
@@ -23,10 +23,11 @@ public sealed class AgenticRuntimeAgentFactory(
     IModelCapabilityService modelCapabilityService,
     IAppToolCatalog appToolCatalog,
     IMcpUserInteractionService mcpUserInteractionService,
+    IAgenticRagContextService ragContextService,
     IOptions<AgenticToolInvocationPolicyOptions> toolPolicyOptions,
     ILogger<AgenticRuntimeAgentFactory> logger)
 {
-    internal async Task<AgenticRuntimeAgentBuildResult> CreateAsync(
+    internal async Task<HarnessAgentRuntimeDefinition> CreateAsync(
         AgentRunRequest request,
         bool requireFunctionCalling = false,
         CancellationToken cancellationToken = default)
@@ -83,8 +84,8 @@ public sealed class AgenticRuntimeAgentFactory(
                 string.Join(", ", requestedFunctions));
         }
 
-        var runtimeAgent = CreateRuntimeAgent(chatClient, request, toolSet);
-        return new AgenticRuntimeAgentBuildResult(
+        var runtimeAgent = CreateRuntimeAgent(chatClient, request, toolSet, ragContextService);
+        return new HarnessAgentRuntimeDefinition(
             runtimeAgent,
             server,
             toolSet,
@@ -94,7 +95,8 @@ public sealed class AgenticRuntimeAgentFactory(
     private static AIAgent CreateRuntimeAgent(
         IChatClient chatClient,
         AgentRunRequest request,
-        AgenticToolSet toolSet)
+        AgenticToolSet toolSet,
+        IAgenticRagContextService ragContextService)
     {
         // Harness owns the function-invocation loop, session history and compaction.
         // The direct-chat service must not rebuild any of that state from its UI transcript.
@@ -116,6 +118,9 @@ public sealed class AgenticRuntimeAgentFactory(
             DisableWebSearch = true,
             DisableFileMemory = true,
             DisableAgentSkillsProvider = true,
+            AIContextProviders = Guid.TryParse(request.Agent.AgentId, out var agentId) && agentId != Guid.Empty
+                ? [new AgenticRagContextProvider(agentId, request.ResolvedModel.ServerId, ragContextService)]
+                : [],
 #pragma warning disable MAAI001
             DisableCompaction = true
 #pragma warning restore MAAI001
@@ -193,14 +198,16 @@ public sealed class AgenticRuntimeAgentFactory(
             : new McpClientRequestContext(mergedBindings);
     }
 
-    private static AgenticToolInvocationPolicyOptions NormalizeToolPolicy(AgenticToolInvocationPolicyOptions? policy)
+    internal static AgenticToolInvocationPolicyOptions NormalizeToolPolicy(AgenticToolInvocationPolicyOptions? policy)
     {
         policy ??= new AgenticToolInvocationPolicyOptions();
 
         return new AgenticToolInvocationPolicyOptions
         {
             TimeoutSeconds = Math.Max(0, policy.TimeoutSeconds),
-            InteractiveTimeoutSeconds = Math.Max(0, policy.InteractiveTimeoutSeconds),
+            InteractiveTimeoutSeconds = Math.Max(
+                Math.Max(0, policy.TimeoutSeconds),
+                policy.InteractiveTimeoutSeconds),
             MaxRetries = Math.Max(0, policy.MaxRetries),
             RetryDelayMs = Math.Max(0, policy.RetryDelayMs)
         };

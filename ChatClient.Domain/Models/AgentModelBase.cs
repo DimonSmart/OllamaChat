@@ -17,7 +17,6 @@ public abstract class AgentModelBase
     public double? Temperature { get; set; }
     public double? RepeatPenalty { get; set; }
     public FunctionSettings FunctionSettings { get; set; } = new();
-    public AgentExecutionSettings ExecutionSettings { get; set; } = new();
     public List<McpServerSessionBinding> McpServerBindings { get; set; } = [];
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
     public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;

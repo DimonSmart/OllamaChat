@@ -34,7 +34,7 @@ public sealed class AgenticChatEngineStreamingBridge : IChatEngineStreamingBridg
             AppChatRole.Assistant,
             message.Statistics,
             message.Files,
-            message.FunctionCalls,
+            message.ToolInvocations,
             message.AgentId,
             message.AgentName)
         {
@@ -54,7 +54,7 @@ public sealed class AgenticChatEngineStreamingBridge : IChatEngineStreamingBridg
             AppChatRole.Assistant,
             message.Statistics,
             message.Files,
-            message.FunctionCalls,
+            message.ToolInvocations,
             message.AgentId,
             message.AgentName)
         {

@@ -6,6 +6,8 @@ public interface IChatSessionService
 {
     bool IsAnswering { get; }
 
+    bool RequiresReset { get; }
+
     Guid Id { get; }
 
     IReadOnlyCollection<AgentExecutionSpec> Agents { get; }
@@ -20,15 +22,17 @@ public interface IChatSessionService
 
     event Func<IAppChatMessage, bool, Task>? MessageUpdated;
 
-    event Func<Guid, Task>? MessageDeleted;
-
-    void ResetChat();
+    Task ResetAsync(CancellationToken cancellationToken = default);
 
     Task CancelAsync();
 
     Task SendAsync(string text, IReadOnlyList<AppChatMessageFile>? files = null, CancellationToken cancellationToken = default);
 
-    ChatEngineSessionState GetState();
+}
+
+public interface IEditableChatSessionService : IChatSessionService
+{
+    event Func<Guid, Task>? MessageDeleted;
 
     Task DeleteMessageAsync(Guid messageId);
 }

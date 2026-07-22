@@ -14,7 +14,7 @@ public class AppChatMessageViewModel
     public string HtmlContent { get; set; } = string.Empty;
     public IReadOnlyCollection<string> ThinkSegments { get; set; } = [];
     public IReadOnlyCollection<string> HtmlThinkSegments { get; set; } = [];
-    public IReadOnlyCollection<FunctionCallRecord> FunctionCalls { get; set; } = [];
+    public IReadOnlyCollection<ToolInvocationViewState> ToolInvocations { get; set; } = [];
     public DateTime MsgDateTime { get; set; }
     public AppChatRole Role { get; set; }
     public string? Statistics { get; set; }
@@ -36,7 +36,7 @@ public class AppChatMessageViewModel
         IsStreaming = message.IsStreaming;
         IsCanceled = message.IsCanceled;
         Files = message.Files;
-        FunctionCalls = message.FunctionCalls;
+        ToolInvocations = message.ToolInvocations;
         var result = ThinkTagParser.ExtractThinkAnswer(message.Content);
 
         ThinkSegments = result.ThoughtSegments;

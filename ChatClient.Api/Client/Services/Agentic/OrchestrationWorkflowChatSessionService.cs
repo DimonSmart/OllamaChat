@@ -26,6 +26,8 @@ public sealed class OrchestrationWorkflowChatSessionService(
 
     public bool IsAnswering { get; private set; }
 
+    public bool RequiresReset => false;
+
     public Guid Id => _chat.Id;
 
     public string? TaskSessionId { get; private set; }
@@ -70,9 +72,9 @@ public sealed class OrchestrationWorkflowChatSessionService(
         ChatReset?.Invoke();
     }
 
-    public void ResetChat()
+    public async Task ResetAsync(CancellationToken cancellationToken = default)
     {
-        DisposeHeadlessSessionAsync().AsTask().GetAwaiter().GetResult();
+        await DisposeHeadlessSessionAsync();
         ClearChatState();
         _parameters = null;
         TaskSessionId = null;
@@ -108,22 +110,6 @@ public sealed class OrchestrationWorkflowChatSessionService(
         }
 
         return ExecuteWorkflowAsync(null, [], includeUserMessage: false, cancellationToken);
-    }
-
-    public ChatEngineSessionState GetState()
-    {
-        if (_parameters is null)
-        {
-            throw new InvalidOperationException("Workflow session not started.");
-        }
-
-        return new ChatEngineSessionState
-        {
-            Configuration = _parameters.Configuration,
-            Agents = _chat.Agents.ToList(),
-            Messages = _chat.Messages.ToList(),
-            ChatStrategyName = $"AgentOrchestration:{_parameters.Workflow.Kind}"
-        };
     }
 
     public async Task DeleteMessageAsync(Guid messageId)

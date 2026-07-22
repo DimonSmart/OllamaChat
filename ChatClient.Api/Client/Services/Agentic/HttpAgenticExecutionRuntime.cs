@@ -9,6 +9,7 @@ namespace ChatClient.Api.Client.Services.Agentic;
 
 public sealed class HttpAgenticExecutionRuntime(
     AgenticRuntimeAgentFactory runtimeAgentFactory,
+    HarnessResponseEventProjector responseEventProjector,
     ILogger<HttpAgenticExecutionRuntime> logger) : IAgenticExecutionRuntime
 {
     public async IAsyncEnumerable<ChatEngineStreamChunk> StreamAsync(
@@ -17,7 +18,7 @@ public sealed class HttpAgenticExecutionRuntime(
     {
         ArgumentNullException.ThrowIfNull(request);
 
-        AgenticRuntimeAgentBuildResult? buildResult = null;
+        HarnessAgentRuntimeDefinition? buildResult = null;
         string? startupError = null;
 
         try
@@ -48,6 +49,7 @@ public sealed class HttpAgenticExecutionRuntime(
 
         var runOptions = BuildRunOptions(request, buildResult.Server, buildResult.ToolSet);
         var streamedText = false;
+        var projection = responseEventProjector.CreateProjection();
         string? streamError = null;
 
         var session = await buildResult.Agent.CreateSessionAsync(cancellationToken);
@@ -81,17 +83,27 @@ public sealed class HttpAgenticExecutionRuntime(
                 break;
             }
 
-            if (string.IsNullOrEmpty(update.Text))
+            foreach (var responseEvent in projection.Project(update, buildResult.ToolSet.MetadataByName))
             {
-                continue;
-            }
+                if (responseEvent is HarnessTextDelta textDelta)
+                {
+                    if (!string.IsNullOrWhiteSpace(textDelta.Text))
+                    {
+                        streamedText = true;
+                    }
 
-            if (!string.IsNullOrWhiteSpace(update.Text))
-            {
-                streamedText = true;
-            }
+                    yield return new ChatEngineStreamChunk(
+                        request.Agent.AgentName,
+                        textDelta.Text,
+                        Event: responseEvent);
+                    continue;
+                }
 
-            yield return new ChatEngineStreamChunk(request.Agent.AgentName, update.Text);
+                yield return new ChatEngineStreamChunk(
+                    request.Agent.AgentName,
+                    string.Empty,
+                    Event: responseEvent);
+            }
         }
 
         if (!string.IsNullOrWhiteSpace(streamError))

@@ -12,5 +12,5 @@ public interface IAppChatMessage : IEquatable<IAppChatMessage>
     bool IsStreaming { get; }
     bool IsCanceled { get; }
     IReadOnlyList<AppChatMessageFile> Files { get; }
-    IReadOnlyCollection<FunctionCallRecord> FunctionCalls { get; }
+    IReadOnlyCollection<ToolInvocationViewState> ToolInvocations { get; }
 }

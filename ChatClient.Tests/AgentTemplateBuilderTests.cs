@@ -7,7 +7,7 @@ namespace ChatClient.Tests;
 public class AgentTemplateBuilderTests
 {
     [Fact]
-    public void NewAgent_BuildsDefinitionWithExecutionAndBindings()
+    public void NewAgent_BuildsDefinitionWithBindings()
     {
         var serverId = Guid.NewGuid();
 
@@ -20,9 +20,6 @@ public class AgentTemplateBuilderTests
             .WithTemperature(0.2)
             .WithRepeatPenalty(1.1)
             .AutoSelectTools(6)
-            .ConfigureExecution(execution => execution
-                .WithMaxToolCalls(12)
-                .UseToolWindowCompaction(4, "cursor_next", "save_registry"))
             .WithBinding("character-registry", binding => binding
                 .DisplayAs("Registry")
                 .OnlyTools("read_registry", "save_registry")
@@ -40,12 +37,6 @@ public class AgentTemplateBuilderTests
         Assert.Equal(0.2, definition.Temperature);
         Assert.Equal(1.1, definition.RepeatPenalty);
         Assert.Equal(6, definition.FunctionSettings.AutoSelectCount);
-        Assert.Equal(12, definition.ExecutionSettings.MaxToolCalls);
-        Assert.True(definition.ExecutionSettings.HistoryCompaction.Enabled);
-        Assert.Equal(AgentHistoryCompactionModes.ToolWindow, definition.ExecutionSettings.HistoryCompaction.Mode);
-        Assert.Equal(4, definition.ExecutionSettings.HistoryCompaction.KeepLastToolPairs);
-        Assert.Equal(["cursor_next", "save_registry"], definition.ExecutionSettings.HistoryCompaction.ToolNames);
-
         var binding = Assert.Single(definition.McpServerBindings);
         Assert.Equal("character-registry", binding.ServerName);
         Assert.Equal("Registry", binding.DisplayName);

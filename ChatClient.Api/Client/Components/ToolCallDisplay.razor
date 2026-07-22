@@ -1,0 +1,43 @@
+@using Microsoft.AspNetCore.Components
+@using MudBlazor
+@using ChatClient.Domain.Models
+
+<MudChatBubble Class="@($"mcp-call {(isExpanded ? "expanded" : "collapsed")}")" OnClick="Toggle">
+    @if (isExpanded)
+    {
+        <MudText Typo="Typo.caption" Class="mud-text-secondary mcp-call-header">
+            <strong>@Call.ServerName</strong>.@Call.OriginalName — @Call.Status
+        </MudText>
+        <MudText Typo="Typo.caption" Class="mcp-call-label">Request:</MudText>
+        <pre class="mcp-call-pre">@Call.Arguments</pre>
+        @if (Call.Status == ToolInvocationStatus.Running)
+        {
+            <MudProgressLinear Indeterminate="true" Color="Color.Info" />
+        }
+        else if (Call.Status == ToolInvocationStatus.Succeeded)
+        {
+            <MudText Typo="Typo.caption" Class="mcp-call-label">Response:</MudText>
+            <pre class="mcp-call-pre">@Call.Result</pre>
+        }
+        else
+        {
+            <MudAlert Severity="@(Call.Status == ToolInvocationStatus.Canceled ? Severity.Warning : Severity.Error)" Dense="true">
+                @(Call.Status == ToolInvocationStatus.Canceled ? "Canceled" : Call.Error)
+            </MudAlert>
+        }
+    }
+    else
+    {
+        <MudText Typo="Typo.caption" Class="mud-text-secondary" Style="font-style: italic;">
+            🛠 @Call.ServerName.@Call.OriginalName — @Call.Status
+        </MudText>
+    }
+</MudChatBubble>
+
+@code {
+    [Parameter, EditorRequired]
+    public ToolInvocationViewState Call { get; set; } = null!;
+
+    private bool isExpanded;
+    private void Toggle() => isExpanded = !isExpanded;
+}

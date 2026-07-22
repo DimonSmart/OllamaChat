@@ -29,12 +29,6 @@ public class UserSettings
     [JsonPropertyName("embedding")]
     public EmbeddingSettings Embedding { get; set; } = new();
 
-    [JsonPropertyName("chatStrategyName")]
-    public string ChatStrategyName { get; set; } = string.Empty;
-
-    [JsonPropertyName("multiAgentSelectedAgents")]
-    public List<string> MultiAgentSelectedAgents { get; set; } = [];
-
     [JsonPropertyName("voiceInput")]
     public VoiceInputSettings VoiceInput { get; set; } = new();
 }

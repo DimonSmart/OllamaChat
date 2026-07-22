@@ -13,6 +13,8 @@ internal sealed record AgenticRegisteredTool(
     string RegisteredName,
     string ServerName,
     string ToolName,
+    string Source,
+    string? BindingName,
     bool MayRequireUserInput,
     AITool Tool);
 
@@ -87,6 +89,8 @@ internal static class AgenticToolSetBuilder
                 registeredName,
                 spec.ServerName,
                 spec.ToolName,
+                spec.Source,
+                spec.BindingName,
                 spec.MayRequireUserInput,
                 tool);
         }
@@ -244,6 +248,8 @@ internal static class AgenticToolSetBuilder
         string ServerName,
         string SourceLabel,
         string ToolName,
+        string Source,
+        string? BindingName,
         string Description,
         JsonElement InputSchema,
         JsonElement? OutputSchema,
@@ -262,6 +268,8 @@ internal static class AgenticToolSetBuilder
                 tool.ServerName,
                 sourceLabel,
                 tool.ToolName,
+                tool.BindingId is null ? "application" : "mcp",
+                tool.BindingDisplayName,
                 tool.Description,
                 inputSchema,
                 outputSchema,

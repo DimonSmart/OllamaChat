@@ -522,7 +522,8 @@ public sealed class HeadlessRecursiveWorkflowExecutionIntegrationTests
                 new MarkdownDocumentIntakeService(),
                 null!);
             var eventStreamProcessor = new OrchestrationWorkflowEventStreamProcessor(
-                new AgenticChatEngineStreamingBridge());
+                new AgenticChatEngineStreamingBridge(),
+                new HarnessResponseEventProjector(NullLogger<HarnessResponseEventProjector>.Instance));
             var passExecutor = new OrchestrationWorkflowPassExecutor(
                 NullLogger<OrchestrationWorkflowPassExecutor>.Instance,
                 eventStreamProcessor,

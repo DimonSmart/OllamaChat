@@ -443,6 +443,7 @@
                                                            IsMultiAgent="true"
                                                            OnSendMessage="SendChatMessageAsync"
                                                            OnStop="CancelAsync"
+                                                           AllowMessageDeletion="true"
                                                            OnDeleteMessage="DeleteMessageAsync"
                                         OnCopyChat="CopyChatAsync" />
                 </MudStack>
@@ -729,7 +730,7 @@
     private async Task ResetWorkflowAsync()
     {
         await WorkflowSessionService.CancelAsync();
-        WorkflowSessionService.ResetChat();
+        await WorkflowSessionService.ResetAsync();
         workflowStarted = false;
         await InvokeAsync(StateHasChanged);
     }
@@ -1131,6 +1132,6 @@
 
         elicitationHandlerRegistration?.Dispose();
         await WorkflowSessionService.CancelAsync();
-        WorkflowSessionService.ResetChat();
+        await WorkflowSessionService.ResetAsync();
     }
 }

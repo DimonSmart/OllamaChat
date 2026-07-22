@@ -13,7 +13,7 @@ public class AppChatMessage : IAppChatMessage
     public string? Statistics { get; set; }
     public bool IsCanceled { get; set; }
     public IReadOnlyList<AppChatMessageFile> Files { get; set; } = [];
-    public IReadOnlyCollection<FunctionCallRecord> FunctionCalls { get; set; } = [];
+    public IReadOnlyCollection<ToolInvocationViewState> ToolInvocations { get; set; } = [];
     public bool IsStreaming => false;
 
     public bool Equals(IAppChatMessage? other)
@@ -57,7 +57,7 @@ public class AppChatMessage : IAppChatMessage
         Statistics = message.Statistics;
         IsCanceled = message.IsCanceled;
         Files = message.Files;
-        FunctionCalls = message.FunctionCalls;
+        ToolInvocations = message.ToolInvocations.ToList();
     }
 
     public AppChatMessage(
@@ -66,7 +66,7 @@ public class AppChatMessage : IAppChatMessage
         AppChatRole role,
         string? statistics = null,
         IReadOnlyList<AppChatMessageFile>? files = null,
-        IReadOnlyCollection<FunctionCallRecord>? functionCalls = null,
+        IReadOnlyCollection<ToolInvocationViewState>? toolInvocations = null,
         string? agentId = null,
         string? agentName = null)
     {
@@ -78,6 +78,6 @@ public class AppChatMessage : IAppChatMessage
         AgentName = agentName;
         Statistics = statistics;
         Files = files ?? [];
-        FunctionCalls = functionCalls ?? [];
+        ToolInvocations = toolInvocations ?? [];
     }
 }

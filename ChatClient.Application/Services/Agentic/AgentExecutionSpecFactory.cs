@@ -50,17 +50,6 @@ public static class AgentExecutionSpecFactory
         {
             AutoSelectCount = source.FunctionSettings.AutoSelectCount
         };
-        target.ExecutionSettings = new AgentExecutionSettings
-        {
-            MaxToolCalls = source.ExecutionSettings.MaxToolCalls,
-            HistoryCompaction = new AgentHistoryCompactionSettings
-            {
-                Enabled = source.ExecutionSettings.HistoryCompaction.Enabled,
-                Mode = source.ExecutionSettings.HistoryCompaction.Mode,
-                KeepLastToolPairs = source.ExecutionSettings.HistoryCompaction.KeepLastToolPairs,
-                ToolNames = source.ExecutionSettings.HistoryCompaction.ToolNames.ToList()
-            }
-        };
         target.McpServerBindings = source.McpServerBindings
             .Select(static binding => binding.Clone())
             .ToList();

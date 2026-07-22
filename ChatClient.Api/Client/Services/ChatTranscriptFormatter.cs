@@ -32,21 +32,25 @@ public static class ChatTranscriptFormatter
                 builder.AppendLine($"  [thought] {thought}");
             }
 
-            foreach (var call in message.FunctionCalls)
+            foreach (var call in message.ToolInvocations)
             {
-                var callName = string.IsNullOrEmpty(call.Function) ? call.Server : $"{call.Server}.{call.Function}";
-                builder.AppendLine($"  [tool] {callName}");
+                builder.AppendLine($"  [tool:{call.Status}] {call.ServerName}.{call.OriginalName}");
 
-                if (!string.IsNullOrEmpty(call.Request))
+                if (!string.IsNullOrEmpty(call.Arguments))
                 {
                     builder.AppendLine("  Request:");
-                    builder.AppendLine(call.Request);
+                    builder.AppendLine(call.Arguments);
                 }
 
-                if (!string.IsNullOrEmpty(call.Response))
+                if (!string.IsNullOrEmpty(call.Result))
                 {
                     builder.AppendLine("  Response:");
-                    builder.AppendLine(call.Response);
+                    builder.AppendLine(call.Result);
+                }
+
+                if (!string.IsNullOrEmpty(call.Error))
+                {
+                    builder.AppendLine($"  Error: {call.Error}");
                 }
             }
         }
@@ -72,26 +76,28 @@ public static class ChatTranscriptFormatter
                 builder.AppendLine();
             }
 
-            foreach (var call in message.FunctionCalls)
+            foreach (var call in message.ToolInvocations)
             {
-                var callName = string.IsNullOrEmpty(call.Function) ? call.Server : $"{call.Server}.{call.Function}";
-                builder.AppendLine($"**[tool] {callName}**");
+                builder.AppendLine($"**[tool:{call.Status}] {call.ServerName}.{call.OriginalName}**");
 
-                if (!string.IsNullOrEmpty(call.Request))
+                if (!string.IsNullOrEmpty(call.Arguments))
                 {
                     builder.AppendLine("**Request:**");
                     builder.AppendLine("```");
-                    builder.AppendLine(call.Request);
+                    builder.AppendLine(call.Arguments);
                     builder.AppendLine("```");
                 }
 
-                if (!string.IsNullOrEmpty(call.Response))
+                if (!string.IsNullOrEmpty(call.Result))
                 {
                     builder.AppendLine("**Response:**");
                     builder.AppendLine("```");
-                    builder.AppendLine(call.Response);
+                    builder.AppendLine(call.Result);
                     builder.AppendLine("```");
                 }
+
+                if (!string.IsNullOrEmpty(call.Error))
+                    builder.AppendLine($"**Error:** {call.Error}");
             }
         }
 
@@ -120,7 +126,7 @@ public static class ChatTranscriptFormatter
                 builder.Append("<div class=\"think\"><em>").Append(thought).AppendLine("</em></div>");
             }
 
-            foreach (var call in message.FunctionCalls)
+            foreach (var call in message.ToolInvocations)
             {
                 builder
                     .Append("<div class=\"function-call\">")
@@ -133,39 +139,26 @@ public static class ChatTranscriptFormatter
         return builder.ToString();
     }
 
-    private static string FormatFunctionCallHtml(FunctionCallRecord call)
+    private static string FormatFunctionCallHtml(ToolInvocationViewState call)
     {
         var builder = new StringBuilder();
 
-        if (!string.IsNullOrEmpty(call.Server) || !string.IsNullOrEmpty(call.Function))
-        {
-            builder.Append("**");
-            if (!string.IsNullOrEmpty(call.Server))
-            {
-                builder.Append(call.Server);
-            }
-
-            if (!string.IsNullOrEmpty(call.Function))
-            {
-                if (!string.IsNullOrEmpty(call.Server))
-                {
-                    builder.Append('.');
-                }
-
-                builder.Append(call.Function);
-            }
-
-            builder.AppendLine("**  ");
-        }
+        builder.AppendLine($"**{call.ServerName}.{call.OriginalName} — {call.Status}**  ");
 
         builder.AppendLine("**Request:**");
         builder.AppendLine("```");
-        builder.AppendLine(call.Request);
+        builder.AppendLine(call.Arguments);
         builder.AppendLine("```");
-        builder.AppendLine("**Response:**");
-        builder.AppendLine("```");
-        builder.AppendLine(call.Response);
-        builder.AppendLine("```");
+        if (!string.IsNullOrEmpty(call.Result))
+        {
+            builder.AppendLine("**Response:**");
+            builder.AppendLine("```");
+            builder.AppendLine(call.Result);
+            builder.AppendLine("```");
+        }
+
+        if (!string.IsNullOrEmpty(call.Error))
+            builder.AppendLine($"**Error:** {call.Error}");
 
         return AppMarkdown.ToHtml(builder.ToString());
     }
@@ -175,8 +168,6 @@ public static class ChatTranscriptFormatter
         if (message.Role == AppChatRole.Assistant)
             return message.AgentName ?? message.AgentId ?? "Assistant";
 
-        return message.Role == AppChatRole.Tool
-            ? "Tool"
-            : "User";
+        return "User";
     }
 }

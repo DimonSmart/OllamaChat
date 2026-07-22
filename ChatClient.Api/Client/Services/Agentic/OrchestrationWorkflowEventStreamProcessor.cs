@@ -9,8 +9,11 @@ using Microsoft.Extensions.AI;
 namespace ChatClient.Api.Client.Services.Agentic;
 
 public sealed class OrchestrationWorkflowEventStreamProcessor(
-    IChatEngineStreamingBridge streamingBridge)
+    IChatEngineStreamingBridge streamingBridge,
+    HarnessResponseEventProjector responseEventProjector)
 {
+    private readonly HarnessResponseEventProjector.Projection _responseProjection =
+        responseEventProjector.CreateProjection();
     internal IReadOnlyList<OrchestrationDeliveredAssistantMessage> CreateDeliveredAssistantMessagesSnapshot(
         OrchestrationWorkflowEventStreamContext context)
     {
@@ -94,6 +97,7 @@ public sealed class OrchestrationWorkflowEventStreamProcessor(
         context.ActiveSpeakerIdsByStreamId.Clear();
     }
 
+    [Obsolete]
     private async Task<bool> ProcessWorkflowEventAsync(
         WorkflowEvent workflowEvent,
         OrchestrationWorkflowEventStreamContext context,
@@ -107,12 +111,15 @@ public sealed class OrchestrationWorkflowEventStreamProcessor(
         switch (workflowEvent)
         {
             case AgentResponseUpdateEvent updateEvent:
-                var updateText = ExtractUpdateText(updateEvent);
-                if (string.IsNullOrWhiteSpace(updateText))
+                var projectedEvents = _responseProjection.Project(
+                    updateEvent.Update,
+                    new Dictionary<string, AgenticRegisteredTool>(StringComparer.OrdinalIgnoreCase));
+                if (projectedEvents.Count == 0)
                 {
                     return false;
                 }
 
+                var updateText = projectedEvents.OfType<HarnessTextDelta>().Select(static item => item.Text).FirstOrDefault() ?? string.Empty;
                 var stream = await GetOrCreateStreamAsync(
                     context,
                     updateEvent.ExecutorId,
@@ -121,8 +128,12 @@ public sealed class OrchestrationWorkflowEventStreamProcessor(
                     completedAssistantMessages,
                     cancellationToken);
 
-                streamingBridge.Append(stream, updateText);
-                await context.NotifyMessageUpdatedAsync(stream, false);
+                foreach (var projectedEvent in projectedEvents)
+                {
+                    ApplyProjectedEvent(stream, projectedEvent);
+                }
+
+                await context.NotifyMessageUpdatedAsync(stream, projectedEvents.Any(static item => item is HarnessToolCallEvent));
                 return true;
 
             case WorkflowOutputEvent outputEvent:
@@ -164,6 +175,40 @@ public sealed class OrchestrationWorkflowEventStreamProcessor(
                 return false;
         }
     }
+
+    private static void ApplyProjectedEvent(StreamingAppChatMessage stream, HarnessResponseEvent responseEvent)
+    {
+        switch (responseEvent)
+        {
+            case HarnessTextDelta text:
+                stream.Append(text.Text);
+                break;
+            case HarnessToolCallStarted started:
+                stream.StartToolInvocation(ToViewState(started));
+                break;
+            case HarnessToolCallCompleted completed:
+                stream.UpdateToolInvocation(ToViewState(completed));
+                break;
+            case HarnessToolCallFailed failed:
+                stream.UpdateToolInvocation(ToViewState(failed));
+                break;
+        }
+    }
+
+    private static ToolInvocationViewState ToViewState(HarnessToolCallStarted value) => new(
+        value.CallId, value.RegisteredName, value.OriginalName, value.Source, value.ServerName,
+        value.BindingName, value.IsInteractive, value.Arguments, null, null,
+        ToolInvocationStatus.Running, value.StartedAt, null);
+
+    private static ToolInvocationViewState ToViewState(HarnessToolCallCompleted value) => new(
+        value.CallId, value.RegisteredName, value.OriginalName, value.Source, value.ServerName,
+        value.BindingName, value.IsInteractive, value.Arguments, value.Result, null,
+        ToolInvocationStatus.Succeeded, value.StartedAt, value.CompletedAt);
+
+    private static ToolInvocationViewState ToViewState(HarnessToolCallFailed value) => new(
+        value.CallId, value.RegisteredName, value.OriginalName, value.Source, value.ServerName,
+        value.BindingName, value.IsInteractive, value.Arguments, null, value.Error,
+        ToolInvocationStatus.Failed, value.StartedAt, value.CompletedAt);
 
     private async Task PublishCompletedOutputMessageAsync(
         OrchestrationWorkflowEventStreamContext context,

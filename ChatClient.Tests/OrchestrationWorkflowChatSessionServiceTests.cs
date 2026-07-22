@@ -171,7 +171,7 @@ public sealed class OrchestrationWorkflowChatSessionServiceTests
         await service.SendAsync("first");
         var firstSession = Assert.Single(runner.Sessions);
 
-        service.ResetChat();
+        await service.ResetAsync();
         await service.StartAsync(CreateStartRequest());
         await service.SendAsync("second");
 

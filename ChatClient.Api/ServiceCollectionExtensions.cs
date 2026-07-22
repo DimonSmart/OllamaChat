@@ -111,11 +111,10 @@ public static class ServiceCollectionExtensions
     private static IServiceCollection AddAgenticServices(this IServiceCollection services)
     {
         services.AddScoped<AgenticRuntimeAgentFactory>();
+        services.AddScoped<HarnessResponseEventProjector>();
         services.AddScoped<IAgenticExecutionRuntime, HttpAgenticExecutionRuntime>();
-        services.AddScoped<IAgenticExecutionInvoker, AgenticExecutionInvoker>();
         services.AddScoped<AgenticChatEngineOrchestrator>();
         services.AddScoped<IAgenticRagContextService, AgenticRagContextService>();
-        services.AddScoped<AgenticChatEngineHistoryBuilder>();
         services.AddScoped<AgenticChatEngineStreamingBridge>();
         services.AddScoped<OrchestrationWorkflowSessionBootstrapper>();
         services.AddScoped<OrchestrationWorkflowTurnCoordinator>();
@@ -152,13 +151,13 @@ public static class ServiceCollectionExtensions
             () => sp.GetRequiredService<IAgentRunner>());
         services.AddScoped<IWorkflowParticipantInvoker, WorkflowParticipantInvoker>();
         services.AddScoped<IChatEngineOrchestrator>(sp => sp.GetRequiredService<AgenticChatEngineOrchestrator>());
-        services.AddScoped<IChatEngineHistoryBuilder>(sp => sp.GetRequiredService<AgenticChatEngineHistoryBuilder>());
         services.AddScoped<IChatEngineStreamingBridge>(sp => sp.GetRequiredService<AgenticChatEngineStreamingBridge>());
         services.AddScoped<UnifiedAgentRuntimeChatSessionService>();
         services.AddScoped<IChatEngineSessionService>(sp => sp.GetRequiredService<UnifiedAgentRuntimeChatSessionService>());
         services.AddScoped<IAgenticChatViewModelService, AgenticChatViewModelService>();
         services.AddScoped<ILlmChatClientFactory, LlmChatClientFactory>();
         services.AddOptions<AgenticToolInvocationPolicyOptions>()
+            .BindConfiguration("ChatEngine:ToolPolicy")
             .Validate(static options => options.TimeoutSeconds >= 0,
                 "Tool timeout must be non-negative.")
             .Validate(static options => options.InteractiveTimeoutSeconds >= 0,
@@ -166,7 +165,8 @@ public static class ServiceCollectionExtensions
             .Validate(static options => options.MaxRetries >= 0,
                 "Tool retry count must be non-negative.")
             .Validate(static options => options.RetryDelayMs >= 0,
-                "Tool retry delay must be non-negative.");
+                "Tool retry delay must be non-negative.")
+            .ValidateOnStart();
 
         return services;
     }

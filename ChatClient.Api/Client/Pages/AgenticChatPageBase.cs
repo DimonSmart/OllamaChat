@@ -60,7 +60,6 @@ public abstract class AgenticChatPageBase : ComponentBase, IAsyncDisposable
     private StreamingDebouncer _renderDebouncer = null!;
     private Func<AppChatMessageViewModel, Task>? _messageAddedHandler;
     private Func<AppChatMessageViewModel, MessageUpdateOptions, Task>? _messageUpdatedHandler;
-    private Func<AppChatMessageViewModel, Task>? _messageDeletedHandler;
     private IDisposable? elicitationHandlerRegistration;
 
     protected virtual bool CanSendMessages => true;
@@ -96,10 +95,8 @@ public abstract class AgenticChatPageBase : ComponentBase, IAsyncDisposable
         _renderDebouncer = new StreamingDebouncer(UpdateIntervalMs, () => InvokeAsync(StateHasChanged));
         _messageAddedHandler = message => InvokeAsync(() => OnMessageAddedAsync(message));
         _messageUpdatedHandler = (message, options) => InvokeAsync(() => OnMessageUpdatedAsync(message, options));
-        _messageDeletedHandler = message => InvokeAsync(() => OnMessageDeleted(message));
         ChatViewModelService.MessageAdded += _messageAddedHandler;
         ChatViewModelService.MessageUpdated += _messageUpdatedHandler;
-        ChatViewModelService.MessageDeleted += _messageDeletedHandler;
 
         isLoadingInitialData = false;
         StateHasChanged();
@@ -125,11 +122,6 @@ public abstract class AgenticChatPageBase : ComponentBase, IAsyncDisposable
     protected virtual Task OnMessageUpdatedAsync(AppChatMessageViewModel message, MessageUpdateOptions options) =>
         _renderDebouncer.TriggerAsync(options);
 
-    protected virtual void OnMessageDeleted(AppChatMessageViewModel message)
-    {
-        StateHasChanged();
-    }
-
     protected virtual void OnChatReset()
     {
         chatStarted = false;
@@ -150,14 +142,6 @@ public abstract class AgenticChatPageBase : ComponentBase, IAsyncDisposable
 
     protected Task Cancel() =>
         ChatService.CancelAsync();
-
-    protected async Task DeleteMessage(AppChatMessageViewModel message)
-    {
-        if (isLLMAnswering)
-            return;
-
-        await ChatService.DeleteMessageAsync(message.Id);
-    }
 
     protected Task CopyChatAsync(ChatFormat format)
     {
@@ -252,22 +236,9 @@ public abstract class AgenticChatPageBase : ComponentBase, IAsyncDisposable
             ChatViewModelService.MessageAdded -= _messageAddedHandler;
         if (_messageUpdatedHandler is not null)
             ChatViewModelService.MessageUpdated -= _messageUpdatedHandler;
-        if (_messageDeletedHandler is not null)
-            ChatViewModelService.MessageDeleted -= _messageDeletedHandler;
         elicitationHandlerRegistration?.Dispose();
 
         await ChatService.CancelAsync();
-        ChatService.ResetChat();
+        await ChatService.ResetAsync();
     }
-}
-
-file static class AgentSessionOverridesPersistenceExtensions
-{
-    public static AgentSessionOverridesSnapshot ToSnapshot(this AgentSessionOverrides overrides) =>
-        new()
-        {
-            McpServerBindings = overrides.McpServerBindings?
-                .Select(static binding => binding.Clone())
-                .ToList()
-        };
 }

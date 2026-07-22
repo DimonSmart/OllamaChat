@@ -7,7 +7,7 @@ public class StreamingAppChatMessage(
     string initialContent,
     DateTime msgDateTime,
     AppChatRole role,
-    List<FunctionCallRecord>? functionCalls = null,
+    List<ToolInvocationViewState>? toolInvocations = null,
     string? agentId = null,
     string? agentName = null) : IAppChatMessage
 {
@@ -18,8 +18,8 @@ public class StreamingAppChatMessage(
     public string? Statistics { get; private set; } = string.Empty;
     public bool IsCanceled { get; private set; }
     public IReadOnlyList<AppChatMessageFile> Files { get; private set; } = [];
-    private readonly List<FunctionCallRecord> _functionCalls = functionCalls ?? [];
-    public IReadOnlyCollection<FunctionCallRecord> FunctionCalls => _functionCalls.AsReadOnly();
+    private readonly List<ToolInvocationViewState> _toolInvocations = toolInvocations ?? [];
+    public IReadOnlyCollection<ToolInvocationViewState> ToolInvocations => _toolInvocations.AsReadOnly();
     public string? AgentId { get; private set; } = agentId;
     public string? AgentName { get; private set; } = agentName;
 
@@ -70,15 +70,22 @@ public class StreamingAppChatMessage(
         Statistics = stats;
     }
 
-    public void AddFunctionCall(FunctionCallRecord record)
+    public void StartToolInvocation(ToolInvocationViewState invocation)
     {
-        _functionCalls.Add(record);
+        var index = _toolInvocations.FindIndex(item => item.CallId == invocation.CallId);
+        if (index >= 0)
+        {
+            _toolInvocations[index] = invocation;
+        }
+        else
+        {
+            _toolInvocations.Add(invocation);
+        }
     }
 
-    public void SetFunctionCalls(IEnumerable<FunctionCallRecord> records)
+    public void UpdateToolInvocation(ToolInvocationViewState invocation)
     {
-        _functionCalls.Clear();
-        _functionCalls.AddRange(records);
+        StartToolInvocation(invocation);
     }
 
     public void SetCanceled()

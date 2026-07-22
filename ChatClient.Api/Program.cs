@@ -53,7 +53,6 @@ try
         })
         : WebApplication.CreateBuilder(args);
     builder.Host.UseSerilog();
-    builder.Services.Configure<ChatEngineOptions>(builder.Configuration.GetSection(ChatEngineOptions.SectionName));
 
     builder.Configuration.AddUserSecrets<Program>(optional: true);
 

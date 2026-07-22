@@ -1,6 +1,5 @@
 using ChatClient.Application.Services.AgentRuntime;
 using ChatClient.Domain.Models;
-using ChatClient.Domain.Models.ChatStrategies;
 
 namespace ChatClient.Application.Services.Agentic;
 
@@ -21,12 +20,6 @@ public sealed class ChatEngineSessionStartRequest
 
     public AgentSessionOverrides Overrides { get; init; } = new();
 
-    public IReadOnlyList<IAppChatMessage> History { get; init; } = [];
-
-    public string ChatStrategyName { get; init; } = "RoundRobin";
-
-    public IChatStrategyOptions? ChatStrategyOptions { get; init; }
-
     public ChatEngineSessionStartRequest Snapshot() =>
         new()
         {
@@ -38,9 +31,6 @@ public sealed class ChatEngineSessionStartRequest
             RuntimeInputs = new Dictionary<string, string>(
                 RuntimeInputs,
                 StringComparer.OrdinalIgnoreCase),
-            Overrides = Overrides.Snapshot(),
-            History = History.ToList(),
-            ChatStrategyName = ChatStrategyName,
-            ChatStrategyOptions = ChatStrategyOptions
+            Overrides = Overrides.Snapshot()
         };
 }
