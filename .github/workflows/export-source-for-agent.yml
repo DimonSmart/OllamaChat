@@ -31,9 +31,9 @@ jobs:
         shell: bash
         run: |
           cat .github/agent-migration.patch.part-* > /tmp/agent-migration.patch.gz.b64
-          test "$(sha256sum /tmp/agent-migration.patch.gz.b64 | cut -d' ' -f1)" = "5e3b2eeb3f841f33a654602a08f670c61639c78df6beb842a5ada95273c47808"
+          test "$(sha256sum /tmp/agent-migration.patch.gz.b64 | cut -d' ' -f1)" = "c84765d39964f62bf977c0b74160876ee2ebf74e05a00f14cb4f7f7550bd2c2a"
           base64 --decode /tmp/agent-migration.patch.gz.b64 | gzip --decompress > /tmp/agent-migration.patch
-          test "$(sha256sum /tmp/agent-migration.patch | cut -d' ' -f1)" = "9951788f7d1386bb335e3869f1275e99ea9f947757e20e0e6a1a1f467457e1ae"
+          test "$(sha256sum /tmp/agent-migration.patch | cut -d' ' -f1)" = "abaaece39718ceb3adb038b038d1e50fbf8d0e84a7fc5add31ffe7f6f10ab2ae"
           git apply --check /tmp/agent-migration.patch
           git apply --index /tmp/agent-migration.patch
           git rm .github/agent-migration.patch.part-* .github/agent-migration.ready
