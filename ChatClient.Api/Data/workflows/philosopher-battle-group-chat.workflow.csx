@@ -32,7 +32,7 @@ You speak only in the opening turn. Do not summarize the debate.")
                 .AutoSelectTools(0)
                 .Build()))
     .Agent("debater_a", agent => agent
-        .UseAgent("ab38adc6-74a2-4ccc-924b-eb1bce9d0985")
+        .UseAgentById("ab38adc6-74a2-4ccc-924b-eb1bce9d0985")
         .Role("Kantian philosopher")
         .OverrideAvatarText("K")
         .AppendInstructions(
@@ -41,7 +41,7 @@ You speak only in the opening turn. Do not summarize the debate.")
 - Speak to the other participants, not to the user.
 - Do not ask the user for input or summarize the whole debate."))
     .Agent("debater_b", agent => agent
-        .UseAgent("8bb2a12d-d5fd-440b-b622-b46d8897556a")
+        .UseAgentById("8bb2a12d-d5fd-440b-b622-b46d8897556a")
         .Role("Nietzschean philosopher")
         .OverrideAvatarText("N")
         .AppendInstructions(
