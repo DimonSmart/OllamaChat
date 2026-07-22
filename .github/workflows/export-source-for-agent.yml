@@ -1,9 +1,9 @@
 name: Apply and validate Harness migration
 
 on:
-  push:
-    branches:
-      - agent/replace-direct-chat-with-harness-agent
+  pull_request:
+    branches: [ main ]
+    types: [opened, synchronize, reopened]
   workflow_dispatch:
 
 permissions:
@@ -17,7 +17,17 @@ jobs:
         with:
           ref: agent/replace-direct-chat-with-harness-agent
           fetch-depth: 0
+      - name: Detect queued migration
+        id: gate
+        shell: bash
+        run: |
+          if test -f .github/agent-migration.ready; then
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+          fi
       - name: Assemble and apply migration patch
+        if: steps.gate.outputs.ready == 'true'
         shell: bash
         run: |
           cat .github/agent-migration.patch.part-* > /tmp/agent-migration.patch.gz.b64
@@ -29,11 +39,14 @@ jobs:
           git rm .github/agent-migration.patch.part-* .github/agent-migration.ready
           git rm -f .github/agent-migration.patch.gz.b64
       - uses: actions/setup-dotnet@v4
+        if: steps.gate.outputs.ready == 'true'
         with:
           dotnet-version: 10.0.x
       - name: Restore
+        if: steps.gate.outputs.ready == 'true'
         run: dotnet restore OllamaChat.sln
       - name: Test
+        if: steps.gate.outputs.ready == 'true'
         id: test
         shell: bash
         run: |
@@ -44,6 +57,7 @@ jobs:
           echo "$status" > /tmp/test-status
           exit 0
       - uses: actions/upload-artifact@v4
+        if: steps.gate.outputs.ready == 'true'
         with:
           name: harness-migration-diagnostics
           path: |
@@ -52,8 +66,10 @@ jobs:
             /tmp/test-status
           retention-days: 1
       - name: Fail on validation errors
+        if: steps.gate.outputs.ready == 'true'
         run: test "$(cat /tmp/test-status)" = "0"
       - name: Commit validated changes
+        if: steps.gate.outputs.ready == 'true'
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
