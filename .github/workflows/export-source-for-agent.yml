@@ -4,8 +4,6 @@ on:
   push:
     branches:
       - agent/replace-direct-chat-with-harness-agent
-    paths:
-      - .github/agent-migration.ready
   workflow_dispatch:
 
 permissions:
