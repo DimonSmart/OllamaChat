@@ -1,6 +1,9 @@
 name: Apply and validate Harness migration
 
 on:
+  pull_request:
+    branches: [ main ]
+    types: [opened, synchronize, reopened]
   push:
     branches:
       - agent/replace-direct-chat-with-harness-agent
