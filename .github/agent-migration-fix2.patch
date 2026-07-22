@@ -1,0 +1,107 @@
+diff --git a/ChatClient.Tests/UnifiedAgentRuntimeChatSessionServiceTests.cs b/ChatClient.Tests/UnifiedAgentRuntimeChatSessionServiceTests.cs
+index ec7900d..b32ceef 100644
+--- a/ChatClient.Tests/UnifiedAgentRuntimeChatSessionServiceTests.cs
++++ b/ChatClient.Tests/UnifiedAgentRuntimeChatSessionServiceTests.cs
+@@ -265,7 +265,7 @@ public sealed class UnifiedAgentRuntimeChatSessionServiceTests
+             AgentDefinitionReference reference,
+             AgentRuntimeRunRequest request,
+             AgentRuntimeCreationContext creationContext,
+-            AgentRunContext runContext,
++            ChatClient.Application.Services.AgentRuntime.AgentRunContext runContext,
+             [EnumeratorCancellation] CancellationToken cancellationToken = default)
+         {
+             foreach (var runEvent in events)
+diff --git a/docs/AgentOrchestrations.md b/docs/AgentOrchestrations.md
+index 2dd4bc7..5ba2c42 100644
+--- a/docs/AgentOrchestrations.md
++++ b/docs/AgentOrchestrations.md
+@@ -43,3 +43,7 @@ Current seeded starters:
+ 
+ - `docs/AgentOrchestrationsPlan.md` is the migration/design spec.
+ - This file describes the current implementation shape after the generic orchestration migration.
++
++## Saved-agent runtime
++
++Saved-agent materialization is shared by direct chat and workflow participants through `IHarnessAgentFactory`. Direct chat owns a long-lived `AgentSession` for the active conversation, while workflow participants use temporary sessions for an invocation. See [Harness Agent Runtime](HarnessAgentRuntime.md) for lifecycle, RAG, tool, persistence, and export details.
+diff --git a/docs/HarnessAgentRuntime.md b/docs/HarnessAgentRuntime.md
+new file mode 100644
+index 0000000..3c32842
+--- /dev/null
++++ b/docs/HarnessAgentRuntime.md
+@@ -0,0 +1,76 @@
++# Harness Agent Runtime
++
++Ordinary saved-agent conversations use Microsoft Agent Framework `HarnessAgent` as their only runtime implementation.
++
++## Runtime shape
++
++```text
++Saved Agent Definition
++        ↓
++HarnessAgentFactory
++        ↓
++HarnessAgent + AgentSession
++        ↓
++UnifiedAgentRuntimeChatSessionService
++        ↓
++AppChat UI transcript
++```
++
++A saved agent remains a declarative definition: identity, instructions, model selection, model settings, MCP bindings, application tools, and execution settings. `HarnessAgentFactory` resolves that definition into a `HarnessAgent` directly from `IChatClient`.
++
++The factory does not create an `AgentSession`. A session belongs to a particular conversation lifecycle.
++
++## Direct chat lifecycle
++
++`UnifiedAgentRuntimeChatSessionService` owns one `HarnessAgent` and one `AgentSession` for the current direct conversation.
++
++- Starting a new chat materializes the agent and calls `CreateSessionAsync` once.
++- Sending a message passes only the new user message to `RunStreamingAsync` together with the existing session.
++- The UI transcript is updated from streaming framework events, but it is never converted back into agent history.
++- Reset discards the agent, session, cancellation source, streaming state, and transcript, then starts a fresh conversation.
++- Changing the saved agent, model, MCP bindings, tools, or execution settings starts a new conversation and therefore a new session.
++- Cancel completes the visible streaming placeholder and leaves the UI idle. A canceled direct session is not rebuilt from the transcript; the user starts a new chat before continuing.
++
++The `AgentSession` is the source of truth for agent history and provider state. `AppChat` is only a presentation model for visible messages, attachments, errors, streaming state, and export.
++
++## Harness defaults used by ordinary chat
++
++Ordinary chat must remain useful for simple questions, so the application explicitly disables Harness capabilities that would otherwise change every prompt into an autonomous task:
++
++- todo provider;
++- plan/execute mode provider;
++- file memory;
++- skills discovery;
++- hosted web search;
++- default Harness working-style instructions.
++
++Tools configured by the saved agent remain available. Harness owns the single function-invocation loop. Retry, timeout, logging, MCP interaction scope, and call recording are implemented around individual tools rather than around the agent.
++
++Compaction and function-loop limits are expressed through `HarnessAgentOptions`; the removed application-specific compaction and invocation pipelines are not used.
++
++## RAG
++
++RAG is integrated through `AgenticRagContextProvider`. Retrieval is performed for the current user request and supplied as transient runtime context. Retrieved text is not inserted into the UI transcript and is not treated as a user or assistant message.
++
++## Workflow lifecycle
++
++Workflow execution continues to use the shared workflow runtime and `AgentRunEvent` protocol. When a saved agent is used as a workflow participant, it is materialized by the same `IHarnessAgentFactory` and receives a temporary `AgentSession` for that invocation.
++
++Workflow and participant sessions are not persisted. A workflow run creates its runtime, executes, projects its visible transcript, and releases the runtime after completion.
++
++The difference between direct chat and workflow is lifecycle, not agent type:
++
++```text
++Direct chat → HarnessAgent → long-lived session for the active conversation
++Workflow    → HarnessAgent participant → temporary session for one invocation
++```
++
++## Persistence and export
++
++Saved agent definitions and saved workflow definitions remain persistent. User chat sessions are not persisted and old saved chats are not loaded or migrated.
++
++The current visible transcript can be copied or exported as text, Markdown, or HTML. Export does not include serialized sessions, system prompts, provider state, hidden RAG context, or secrets.
++
++## Deferred Harness capabilities
++
++Approvals, todo visualization, explicit plan/execute modes, writable workspaces, file editing, code execution, skills discovery, hosted web search, background agents, artifacts, durable workflow state, and persistent `AgentSession` serialization are intentionally deferred.
