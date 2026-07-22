@@ -33,16 +33,25 @@ jobs:
       - name: Restore
         run: dotnet restore OllamaChat.sln
       - name: Test
+        id: test
         shell: bash
         run: |
           set +e
           dotnet test OllamaChat.sln --no-restore --configuration Release > /tmp/test.log 2>&1
           status=$?
-          if [ "$status" -ne 0 ]; then
-            grep -E "error (CS|NU)[0-9]+|Build FAILED|Test Run Failed|Failed!|\[FAIL\]" /tmp/test.log || tail -n 120 /tmp/test.log
-            exit "$status"
-          fi
-          tail -n 40 /tmp/test.log
+          grep -E "error (CS|NU)[0-9]+|Build FAILED|Test Run Failed|Failed!|\[FAIL\]" /tmp/test.log > /tmp/diagnostics.log || tail -n 160 /tmp/test.log > /tmp/diagnostics.log
+          echo "$status" > /tmp/test-status
+          exit 0
+      - uses: actions/upload-artifact@v4
+        with:
+          name: harness-migration-diagnostics
+          path: |
+            /tmp/diagnostics.log
+            /tmp/test.log
+            /tmp/test-status
+          retention-days: 1
+      - name: Fail on validation errors
+        run: test "$(cat /tmp/test-status)" = "0"
       - name: Commit validated changes
         run: |
           git config user.name "github-actions[bot]"
