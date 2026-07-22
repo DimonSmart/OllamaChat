@@ -1,12 +1,11 @@
 name: Apply and validate Harness migration
 
 on:
-  pull_request:
-    branches: [ main ]
-    types: [opened, synchronize, reopened]
   push:
     branches:
       - agent/replace-direct-chat-with-harness-agent
+    paths:
+      - .github/agent-migration.ready
   workflow_dispatch:
 
 permissions:
@@ -20,38 +19,17 @@ jobs:
         with:
           ref: agent/replace-direct-chat-with-harness-agent
           fetch-depth: 0
-      - name: Require migration patch
-        run: test -f .github/agent-migration.patch.gz.b64
-      - name: Check and apply migration patch
-        id: apply
+      - name: Assemble and apply migration patch
         shell: bash
         run: |
-          set +e
-          base64 --decode .github/agent-migration.patch.gz.b64 | gzip --decompress > /tmp/agent-migration.patch 2> /tmp/apply.log
-          status=$?
-          if [ "$status" = "0" ]; then
-            git apply --check /tmp/agent-migration.patch >> /tmp/apply.log 2>&1
-            status=$?
-          fi
-          if [ "$status" = "0" ]; then
-            git apply --index /tmp/agent-migration.patch >> /tmp/apply.log 2>&1
-            status=$?
-          fi
-          if [ "$status" = "0" ]; then
-            git rm .github/agent-migration.patch.gz.b64 >> /tmp/apply.log 2>&1
-          fi
-          echo "$status" > /tmp/apply-status
-          exit 0
-      - uses: actions/upload-artifact@v4
-        with:
-          name: harness-patch-diagnostics
-          path: |
-            /tmp/apply.log
-            /tmp/apply-status
-            /tmp/agent-migration.patch
-          retention-days: 1
-      - name: Fail on patch errors
-        run: test "$(cat /tmp/apply-status)" = "0"
+          cat .github/agent-migration.patch.part-* > /tmp/agent-migration.patch.gz.b64
+          test "$(sha256sum /tmp/agent-migration.patch.gz.b64 | cut -d' ' -f1)" = "5e3b2eeb3f841f33a654602a08f670c61639c78df6beb842a5ada95273c47808"
+          base64 --decode /tmp/agent-migration.patch.gz.b64 | gzip --decompress > /tmp/agent-migration.patch
+          test "$(sha256sum /tmp/agent-migration.patch | cut -d' ' -f1)" = "9951788f7d1386bb335e3869f1275e99ea9f947757e20e0e6a1a1f467457e1ae"
+          git apply --check /tmp/agent-migration.patch
+          git apply --index /tmp/agent-migration.patch
+          git rm .github/agent-migration.patch.part-* .github/agent-migration.ready
+          git rm -f .github/agent-migration.patch.gz.b64
       - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: 10.0.x
@@ -64,7 +42,7 @@ jobs:
           set +e
           dotnet test OllamaChat.sln --no-restore --configuration Release > /tmp/test.log 2>&1
           status=$?
-          grep -E "error (CS|NU)[0-9]+|Build FAILED|Test Run Failed|Failed!|\[FAIL\]" /tmp/test.log > /tmp/diagnostics.log || tail -n 160 /tmp/test.log > /tmp/diagnostics.log
+          grep -E "error (CS|NU)[0-9]+|Build FAILED|Test Run Failed|Failed!|\[FAIL\]" /tmp/test.log > /tmp/diagnostics.log || tail -n 180 /tmp/test.log > /tmp/diagnostics.log
           echo "$status" > /tmp/test-status
           exit 0
       - uses: actions/upload-artifact@v4
