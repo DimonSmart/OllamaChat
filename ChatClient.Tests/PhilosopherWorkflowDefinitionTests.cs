@@ -23,7 +23,33 @@ public sealed class PhilosopherWorkflowDefinitionTests
 
         AssertSavedAgentReference(workflow, "debater_a", KantAgentId);
         AssertSavedAgentReference(workflow, "debater_b", NietzscheAgentId);
+        Assert.Contains("UseAgentById", sourceCode, StringComparison.Ordinal);
         Assert.DoesNotContain("FromSavedAgent", sourceCode, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task UseAgentByName_PreservesExpressiveNameBasedReference()
+    {
+        const string sourceCode =
+            """
+            var workflow = WorkflowDefinitionBuilder
+                .New("name-based-demo", "Name-based Demo")
+                .Agent("kant", agent => agent
+                    .UseAgentByName("Immanuel Kant")
+                    .Role("Kantian philosopher"))
+                .UseSequential(sequential => sequential
+                    .Order("kant"))
+                .Build();
+
+            workflow
+            """;
+
+        var compiled = await new WorkflowDefinitionCompiler().CompileAsync(sourceCode);
+        var workflow = Assert.IsType<SequentialWorkflowDefinition>(compiled.Workflow);
+        var participant = Assert.Single(workflow.Participants);
+        var source = Assert.IsType<SavedAgentNameParticipantSource>(participant.Source);
+
+        Assert.Equal("Immanuel Kant", source.SavedAgentName);
     }
 
     private static void AssertSavedAgentReference(
