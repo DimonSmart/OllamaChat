@@ -1,6 +1,9 @@
+using ChatClient.Application.Services;
 using ChatClient.Application.Services.Agentic;
 using ChatClient.Application.Services.AgentRuntime;
 using ChatClient.Domain.Models;
+using Microsoft.Agents.AI;
+using Microsoft.Extensions.AI;
 using System.Collections.ObjectModel;
 using System.Text;
 
@@ -11,7 +14,9 @@ public sealed class UnifiedAgentRuntimeChatSessionService(
     IAgentDefinitionCatalog definitionCatalog,
     IAgentRunContextFactory runContextFactory,
     IChatEngineStreamingBridge streamingBridge,
-    ILogger<UnifiedAgentRuntimeChatSessionService> logger) : IChatEngineSessionService
+    ILogger<UnifiedAgentRuntimeChatSessionService> logger,
+    IAgentTemplateService? agentTemplateService = null,
+    AgenticRuntimeAgentFactory? runtimeAgentFactory = null) : IChatEngineSessionService
 {
     private readonly AppChat _chat = new();
     private readonly Dictionary<string, StreamingAppChatMessage> _activeStreamsByRuntimeMessageId =
@@ -19,6 +24,8 @@ public sealed class UnifiedAgentRuntimeChatSessionService(
     private readonly HashSet<string> _completedRuntimeMessageIds = new(StringComparer.Ordinal);
     private ChatEngineSessionStartRequest? _parameters;
     private CancellationTokenSource? _cancellationTokenSource;
+    private AIAgent? _directAgent;
+    private AgentSession? _directSession;
 
     public event Action<bool>? AnsweringStateChanged;
     public event Action? ChatReset;
@@ -65,6 +72,16 @@ public sealed class UnifiedAgentRuntimeChatSessionService(
             : request.Agents.Select(static agent => agent.Agent.Clone()));
         ChatReset?.Invoke();
 
+        if (request.RuntimeReference?.Kind == AgentDefinitionKind.SavedAgent)
+        {
+            if (request.History.Count > 0)
+            {
+                throw new InvalidOperationException("Saved chat history cannot be restored. Start a new conversation instead.");
+            }
+
+            await CreateDirectConversationAsync(request, cancellationToken);
+        }
+
         foreach (var message in request.History.OrderBy(static message => message.MsgDateTime))
         {
             _chat.Messages.Add(message);
@@ -76,6 +93,8 @@ public sealed class UnifiedAgentRuntimeChatSessionService(
 
     public void ResetChat()
     {
+        _directAgent = null;
+        _directSession = null;
         _chat.Reset();
         ClearRunLocalState();
         _parameters = null;
@@ -115,6 +134,12 @@ public sealed class UnifiedAgentRuntimeChatSessionService(
         if (_parameters.RuntimeReference is null)
         {
             throw new InvalidOperationException("Unified agent runtime reference is not configured.");
+        }
+
+        if (_directAgent is not null && _directSession is not null)
+        {
+            await SendDirectAsync(text, files ?? [], cancellationToken);
+            return;
         }
 
         var userMessage = new AppChatMessage(text, DateTime.Now, AppChatRole.User, files: files ?? []);
@@ -219,19 +244,93 @@ public sealed class UnifiedAgentRuntimeChatSessionService(
 
     public async Task DeleteMessageAsync(Guid messageId)
     {
-        if (IsAnswering)
+        throw new InvalidOperationException("Messages in an active conversation cannot be edited or deleted. Start a new chat instead.");
+    }
+
+    private async Task CreateDirectConversationAsync(
+        ChatEngineSessionStartRequest request,
+        CancellationToken cancellationToken)
+    {
+        if (!Guid.TryParse(request.RuntimeReference!.Id, out var templateId) ||
+            request.RuntimeDefaultModel is null)
         {
-            return;
+            throw new InvalidOperationException("The saved agent and model must be resolved before starting a conversation.");
         }
 
-        var message = _chat.Messages.FirstOrDefault(candidate => candidate.Id == messageId);
-        if (message is null)
+        var templateService = agentTemplateService ?? throw new InvalidOperationException("Harness agent factory is not configured.");
+        var agentFactory = runtimeAgentFactory ?? throw new InvalidOperationException("Harness agent factory is not configured.");
+        var template = await templateService.GetByIdAsync(templateId)
+            ?? throw new InvalidOperationException($"Saved agent '{request.RuntimeReference.Id}' was not found.");
+        if (request.Overrides.McpServerBindings is not null)
         {
-            return;
+            template = template.Clone();
+            template.McpServerBindings = request.Overrides.McpServerBindings
+                .Select(static binding => binding.Clone())
+                .ToList();
         }
 
-        _chat.Messages.Remove(message);
-        await (MessageDeleted?.Invoke(messageId) ?? Task.CompletedTask);
+        var resolved = ResolvedChatAgentFactory.Resolve(template, request.RuntimeDefaultModel);
+        var build = await agentFactory.CreateAsync(new AgentRunRequest
+        {
+            Agent = resolved.Agent,
+            ResolvedModel = resolved.Model,
+            Configuration = request.Configuration,
+            Conversation = [],
+            UserMessage = string.Empty
+        }, cancellationToken: cancellationToken);
+
+        _directAgent = build.Agent;
+        _directSession = await build.Agent.CreateSessionAsync(cancellationToken);
+    }
+
+    private async Task SendDirectAsync(
+        string text,
+        IReadOnlyList<AppChatMessageFile> files,
+        CancellationToken cancellationToken)
+    {
+        var userMessage = new AppChatMessage(text, DateTime.Now, AppChatRole.User, files: files);
+        await AddMessageAsync(userMessage);
+        _cancellationTokenSource = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        UpdateAnsweringState(true);
+        const string messageId = "direct-harness-response";
+        var stream = await GetOrCreateStreamAsync(messageId, _chat.Agents.FirstOrDefault()?.AgentName ?? "Agent");
+
+        try
+        {
+            await foreach (var update in _directAgent!.RunStreamingAsync(
+                               [new ChatMessage(ChatRole.User, text)],
+                               _directSession,
+                               null,
+                               _cancellationTokenSource.Token))
+            {
+                if (!string.IsNullOrEmpty(update.Text))
+                {
+                    streamingBridge.Append(stream, update.Text);
+                    await (MessageUpdated?.Invoke(stream, false) ?? Task.CompletedTask);
+                }
+            }
+
+            var final = streamingBridge.Complete(stream, "HarnessAgent");
+            ReplaceMessage(stream, final);
+            await (MessageUpdated?.Invoke(final, true) ?? Task.CompletedTask);
+            _activeStreamsByRuntimeMessageId.Remove(messageId);
+        }
+        catch (OperationCanceledException)
+        {
+            await CancelActiveStreamsAsync();
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Harness direct chat run failed.");
+            await CancelActiveStreamsAsync();
+            await AddMessageAsync(new AppChatMessage($"Agent runtime error: {ex.Message}", DateTime.Now, AppChatRole.Assistant));
+        }
+        finally
+        {
+            _cancellationTokenSource?.Dispose();
+            _cancellationTokenSource = null;
+            UpdateAnsweringState(false);
+        }
     }
 
     private async Task ApplyRunEventAsync(

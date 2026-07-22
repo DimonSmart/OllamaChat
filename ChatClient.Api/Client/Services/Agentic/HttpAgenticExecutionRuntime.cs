@@ -48,14 +48,14 @@ public sealed class HttpAgenticExecutionRuntime(
             yield break;
         }
 
-        var messages = BuildChatMessages(request);
         var runOptions = BuildRunOptions(request, buildResult.Server, buildResult.ToolSet);
         var streamedText = false;
         string? streamError = null;
 
+        var session = await buildResult.Agent.CreateSessionAsync(cancellationToken);
         await using var updates = buildResult.Agent.RunStreamingAsync(
-                messages,
-                null,
+                BuildChatMessages(request),
+                session,
                 runOptions,
                 cancellationToken)
             .GetAsyncEnumerator(cancellationToken);

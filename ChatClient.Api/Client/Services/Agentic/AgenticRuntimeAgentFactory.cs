@@ -9,7 +9,6 @@ using ChatClient.Domain.Models;
 using Microsoft.Agents.AI;
 #pragma warning restore MAAI001
 using Microsoft.Extensions.AI;
-using Microsoft.Extensions.Options;
 using ModelContextProtocol.Client;
 
 namespace ChatClient.Api.Client.Services.Agentic;
@@ -25,11 +24,7 @@ public sealed class AgenticRuntimeAgentFactory(
     ILlmChatClientFactory llmChatClientFactory,
     IModelCapabilityService modelCapabilityService,
     IAppToolCatalog appToolCatalog,
-    IMcpUserInteractionService mcpUserInteractionService,
     KernelService kernelService,
-    IOptions<ChatEngineOptions> chatEngineOptions,
-    ILoggerFactory loggerFactory,
-    IServiceProvider serviceProvider,
     ILogger<AgenticRuntimeAgentFactory> logger)
 {
     private const int MaxLoggedPayloadLength = 4000;
@@ -39,9 +34,6 @@ public sealed class AgenticRuntimeAgentFactory(
         DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
         Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping
     };
-
-    private readonly AgenticToolInvocationPolicyOptions _toolPolicy =
-        NormalizeToolPolicy(chatEngineOptions.Value.ToolPolicy);
 
     internal async Task<AgenticRuntimeAgentBuildResult> CreateAsync(
         AgentRunRequest request,
@@ -96,7 +88,7 @@ public sealed class AgenticRuntimeAgentFactory(
                 string.Join(", ", requestedFunctions));
         }
 
-        var runtimeAgent = CreateRuntimeAgent(chatClient, server, request, toolSet, functionCalls);
+        var runtimeAgent = CreateRuntimeAgent(chatClient, request, toolSet);
         return new AgenticRuntimeAgentBuildResult(
             runtimeAgent,
             server,
@@ -104,198 +96,39 @@ public sealed class AgenticRuntimeAgentFactory(
             supportsFunctions);
     }
 
-    private AIAgent CreateRuntimeAgent(
+    private static AIAgent CreateRuntimeAgent(
         IChatClient chatClient,
-        LlmServerConfig server,
         AgentRunRequest request,
-        AgenticToolSet toolSet,
-        List<FunctionCallRecord>? functionCalls)
+        AgenticToolSet toolSet)
     {
-        var historyCompaction = AgentHistoryCompactionFactory.Create(
-            request.Agent,
-            toolSet,
-            loggerFactory,
-            logger);
-
-        var agentOptions = new ChatClientAgentOptions
+        // Harness owns the function-invocation loop, session history and compaction.
+        // The direct-chat service must not rebuild any of that state from its UI transcript.
+        var agentOptions = new HarnessAgentOptions
         {
             Id = string.IsNullOrWhiteSpace(request.Agent.AgentId) ? null : request.Agent.AgentId.Trim(),
             Name = string.IsNullOrWhiteSpace(request.Agent.AgentName) ? null : request.Agent.AgentName.Trim(),
             ChatOptions = new ChatOptions
             {
-                Instructions = BuildInstructions(request.Agent, historyCompaction),
+                Instructions = BuildInstructions(request.Agent),
                 Tools = toolSet.Tools.ToList()
             },
-            AIContextProviders = historyCompaction is null ? null : [historyCompaction.Provider],
-            UseProvidedChatClientAsIs = false
+            DisableTodoProvider = true,
+            DisableAgentModeProvider = true,
+            DisableWebSearch = true,
+            DisableFileMemory = true,
+            DisableAgentSkillsProvider = true,
+#pragma warning disable MAAI001
+            DisableCompaction = true
+#pragma warning restore MAAI001
         };
 
-        var baseAgent = new ChatClientAgent(
-            chatClient,
-            agentOptions,
-            loggerFactory,
-            serviceProvider);
-
-        if (!toolSet.HasTools)
-        {
-            return baseAgent;
-        }
-
-        return baseAgent
-            .AsBuilder()
-            .Use(async (_, context, next, cancellationToken) =>
-            {
-                if (!toolSet.MetadataByName.TryGetValue(context.Function.Name, out var tool))
-                {
-                    return await next(context, cancellationToken);
-                }
-
-                var requestPayload = SerializeArguments(context.Arguments);
-                var requestForLog = FormatForLog(requestPayload, MaxLoggedPayloadLength);
-                int maxAttempts = Math.Max(1, _toolPolicy.MaxRetries + 1);
-                Exception? lastException = null;
-
-                for (int attempt = 1; attempt <= maxAttempts; attempt++)
-                {
-                    var startedAt = DateTime.UtcNow;
-
-                    try
-                    {
-                        if (attempt == 1)
-                        {
-                            logger.LogInformation(
-                                "Calling MCP tool {Server}:{ToolName} via framework tool {RegisteredName}. Arguments: {Arguments}",
-                                tool.ServerName,
-                                tool.ToolName,
-                                tool.RegisteredName,
-                                requestForLog);
-                        }
-                        else
-                        {
-                            logger.LogInformation(
-                                "Retrying MCP tool {Server}:{ToolName} via framework tool {RegisteredName} (attempt {Attempt}/{MaxAttempts}).",
-                                tool.ServerName,
-                                tool.ToolName,
-                                tool.RegisteredName,
-                                attempt,
-                                maxAttempts);
-                        }
-
-                        var timeoutSeconds = tool.MayRequireUserInput
-                            ? Math.Max(_toolPolicy.TimeoutSeconds, _toolPolicy.InteractiveTimeoutSeconds)
-                            : _toolPolicy.TimeoutSeconds;
-
-                        using var timeoutCts = timeoutSeconds > 0
-                            ? CancellationTokenSource.CreateLinkedTokenSource(cancellationToken)
-                            : null;
-                        if (timeoutSeconds > 0)
-                        {
-                            timeoutCts!.CancelAfter(TimeSpan.FromSeconds(timeoutSeconds));
-                        }
-
-                        var executionToken = timeoutCts?.Token ?? cancellationToken;
-                        using var interactionScope = mcpUserInteractionService.BeginInteractionScope(McpInteractionScope.Chat);
-                        var result = await next(context, executionToken);
-                        var responsePayload = AgenticToolUtility.SerializeForToolTransport(result, ToolResultJsonOptions);
-                        var durationMs = (int)Math.Max(0, (DateTime.UtcNow - startedAt).TotalMilliseconds);
-
-                        logger.LogInformation(
-                            "MCP tool {Server}:{ToolName} completed via framework tool {RegisteredName} (attempt {Attempt}/{MaxAttempts}, {DurationMs} ms). Response: {Response}",
-                            tool.ServerName,
-                            tool.ToolName,
-                            tool.RegisteredName,
-                            attempt,
-                            maxAttempts,
-                            durationMs,
-                            FormatForLog(responsePayload, MaxLoggedPayloadLength));
-
-                        functionCalls?.Add(new FunctionCallRecord(
-                            tool.ServerName,
-                            tool.ToolName,
-                            requestPayload,
-                            $"status=ok;attempt={attempt};durationMs={durationMs};response={responsePayload}"));
-
-                        return result;
-                    }
-                    catch (OperationCanceledException ex) when (!cancellationToken.IsCancellationRequested)
-                    {
-                        lastException = ex;
-                        var durationMs = (int)Math.Max(0, (DateTime.UtcNow - startedAt).TotalMilliseconds);
-                        logger.LogWarning(
-                            "Tool {Server}:{ToolName} timed out on attempt {Attempt}/{MaxAttempts} after {DurationMs} ms.",
-                            tool.ServerName,
-                            tool.ToolName,
-                            attempt,
-                            maxAttempts,
-                            durationMs);
-                    }
-                    catch (OperationCanceledException)
-                    {
-                        throw;
-                    }
-                    catch (Exception ex)
-                    {
-                        lastException = ex;
-                        var durationMs = (int)Math.Max(0, (DateTime.UtcNow - startedAt).TotalMilliseconds);
-                        logger.LogWarning(
-                            ex,
-                            "Tool {Server}:{ToolName} failed on attempt {Attempt}/{MaxAttempts} after {DurationMs} ms.",
-                            tool.ServerName,
-                            tool.ToolName,
-                            attempt,
-                            maxAttempts,
-                            durationMs);
-                    }
-
-                    if (attempt < maxAttempts && _toolPolicy.RetryDelayMs > 0)
-                    {
-                        await Task.Delay(_toolPolicy.RetryDelayMs, cancellationToken);
-                    }
-                }
-
-                var finalMessage = lastException?.Message ?? "Unknown tool execution failure.";
-                var errorPayload = new Dictionary<string, object?>
-                {
-                    ["error"] = finalMessage
-                };
-                var serializedPayload = JsonSerializer.Serialize(errorPayload, ToolResultJsonOptions);
-
-                logger.LogError(
-                    lastException,
-                    "Tool execution failed for {Server}:{ToolName} (framework tool {RegisteredName}) after {MaxAttempts} attempts. Arguments: {Arguments}",
-                    tool.ServerName,
-                    tool.ToolName,
-                    tool.RegisteredName,
-                    maxAttempts,
-                    requestForLog);
-
-                functionCalls?.Add(new FunctionCallRecord(
-                    tool.ServerName,
-                    tool.ToolName,
-                    requestPayload,
-                    $"status=error;attempt={maxAttempts};response={serializedPayload}"));
-
-                return errorPayload;
-            })
-            .Build();
+        return chatClient.AsHarnessAgent(agentOptions);
     }
 
-    private static string? BuildInstructions(
-        AgentExecutionSpec agent,
-        AgentHistoryCompactionAttachment? historyCompaction)
+    private static string? BuildInstructions(AgentExecutionSpec agent)
     {
         var content = agent.Content?.Trim();
-        if (historyCompaction is null)
-        {
-            return string.IsNullOrWhiteSpace(content) ? null : content;
-        }
-
-        if (string.IsNullOrWhiteSpace(content))
-        {
-            return historyCompaction.InstructionNote;
-        }
-
-        return $"{content}\n\n{historyCompaction.InstructionNote}";
+        return string.IsNullOrWhiteSpace(content) ? null : content;
     }
 
     private async Task<IReadOnlyList<string>> ResolveRequestedFunctionNamesAsync(

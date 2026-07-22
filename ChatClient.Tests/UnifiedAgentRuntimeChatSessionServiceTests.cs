@@ -238,7 +238,7 @@ public sealed class UnifiedAgentRuntimeChatSessionServiceTests
         {
             Configuration = new AppChatConfiguration("model", []),
             Agents = [],
-            RuntimeReference = new AgentDefinitionReference(AgentDefinitionKind.SavedAgent, "agent")
+            RuntimeReference = new AgentDefinitionReference(AgentDefinitionKind.SavedWorkflow, "agent")
         };
 
     public static TheoryData<IReadOnlyList<AgentRunEvent>, string> CompletedContentCases()
