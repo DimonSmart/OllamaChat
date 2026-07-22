@@ -33,7 +33,16 @@ jobs:
       - name: Restore
         run: dotnet restore OllamaChat.sln
       - name: Test
-        run: dotnet test OllamaChat.sln --no-restore --configuration Release
+        shell: bash
+        run: |
+          set +e
+          dotnet test OllamaChat.sln --no-restore --configuration Release > /tmp/test.log 2>&1
+          status=$?
+          if [ "$status" -ne 0 ]; then
+            grep -E "error (CS|NU)[0-9]+|Build FAILED|Test Run Failed|Failed!|\[FAIL\]" /tmp/test.log || tail -n 120 /tmp/test.log
+            exit "$status"
+          fi
+          tail -n 40 /tmp/test.log
       - name: Commit validated changes
         run: |
           git config user.name "github-actions[bot]"
