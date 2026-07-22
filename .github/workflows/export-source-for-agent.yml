@@ -11,7 +11,7 @@ permissions:
 
 jobs:
   apply-and-test:
-    if: ${{ hashFiles('.github/agent-migration.patch') != '' }}
+    if: ${{ hashFiles('.github/agent-migration.patch.gz.b64') != '' }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -20,8 +20,9 @@ jobs:
           fetch-depth: 0
       - name: Apply migration patch
         run: |
-          git apply --index .github/agent-migration.patch
-          git rm .github/agent-migration.patch
+          base64 --decode .github/agent-migration.patch.gz.b64 | gzip --decompress > /tmp/agent-migration.patch
+          git apply --index /tmp/agent-migration.patch
+          git rm .github/agent-migration.patch.gz.b64
       - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: 10.0.x
