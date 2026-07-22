@@ -1,0 +1,63 @@
+diff --git a/ChatClient.Api/Client/Pages/ChatAgentic.razor b/ChatClient.Api/Client/Pages/ChatAgentic.razor
+index c955a12..0b7b16a 100644
+--- a/ChatClient.Api/Client/Pages/ChatAgentic.razor
++++ b/ChatClient.Api/Client/Pages/ChatAgentic.razor
+@@ -7,7 +7,6 @@
+ @using ChatClient.Application.Services.Agentic
+ @using ChatClient.Application.Services.AgentRuntime
+ @using ChatClient.Domain.Models
+-@using ChatClient.Domain.Models.ChatStrategies
+ @using Microsoft.AspNetCore.Components
+ @using MudBlazor
+ @inherits AgenticChatPageBase
+@@ -311,16 +310,6 @@
+             }
+             : new AgentSessionOverrides();
+ 
+-    private AgentSessionOverrides BuildOverrides(AgentSessionOverridesSnapshot? snapshot) =>
+-        selectedDefinition?.LaunchCapabilities.SupportsMcpBindingOverrides == true
+-            ? new AgentSessionOverrides
+-            {
+-                McpServerBindings = snapshot?.McpServerBindings?
+-                    .Select(static binding => binding.Clone())
+-                    .ToList() ?? []
+-            }
+-            : new AgentSessionOverrides();
+-
+     private async Task RefreshLaunchValidationAsync()
+     {
+         var version = System.Threading.Interlocked.Increment(ref validationVersion);
+diff --git a/ChatClient.Api/Client/Services/Agentic/HarnessAgentFactory.cs b/ChatClient.Api/Client/Services/Agentic/HarnessAgentFactory.cs
+index 10b799d..1fe780d 100644
+--- a/ChatClient.Api/Client/Services/Agentic/HarnessAgentFactory.cs
++++ b/ChatClient.Api/Client/Services/Agentic/HarnessAgentFactory.cs
+@@ -13,7 +13,6 @@ namespace ChatClient.Api.Client.Services.Agentic;
+ #pragma warning disable MAAI001
+ public sealed record HarnessAgentBuildResult(
+     HarnessAgent Agent,
+-    AgenticToolSet ToolSet,
+     bool SupportsFunctionCalling);
+ 
+ public interface IHarnessAgentFactory
+@@ -83,7 +82,7 @@ public sealed class HarnessAgentFactory(
+         var options = BuildOptions(agent, model, server, toolSet);
+         var harnessAgent = chatClient.AsHarnessAgent(options, loggerFactory, serviceProvider);
+ 
+-        return new HarnessAgentBuildResult(harnessAgent, toolSet, supportsFunctions);
++        return new HarnessAgentBuildResult(harnessAgent, supportsFunctions);
+     }
+ 
+     private HarnessAgentOptions BuildOptions(
+diff --git a/ChatClient.Tests/UnifiedAgentRuntimeChatSessionServiceTests.cs b/ChatClient.Tests/UnifiedAgentRuntimeChatSessionServiceTests.cs
+index c617a2a..ec7900d 100644
+--- a/ChatClient.Tests/UnifiedAgentRuntimeChatSessionServiceTests.cs
++++ b/ChatClient.Tests/UnifiedAgentRuntimeChatSessionServiceTests.cs
+@@ -218,7 +218,7 @@ public sealed class UnifiedAgentRuntimeChatSessionServiceTests
+                 DisableApprovalNotRequiredFunctionBypassing = true,
+                 DisableApprovalResponseBinding = true
+             });
+-            return Task.FromResult(new HarnessAgentBuildResult(agent, AgenticToolSet.Empty, false));
++            return Task.FromResult(new HarnessAgentBuildResult(agent, false));
+         }
+     }
+ 
