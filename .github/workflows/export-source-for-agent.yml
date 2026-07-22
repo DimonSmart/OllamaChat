@@ -1,18 +1,37 @@
-name: Export source for agent
+name: Apply and validate Harness migration
 
 on:
-  pull_request:
-    branches: [ main ]
+  push:
+    branches:
+      - agent/replace-direct-chat-with-harness-agent
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
-  export-source:
+  apply-and-test:
+    if: ${{ hashFiles('.github/agent-migration.patch') != '' }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/upload-artifact@v4
         with:
-          name: ollamachat-source
-          path: .
-          include-hidden-files: true
-          retention-days: 1
+          ref: agent/replace-direct-chat-with-harness-agent
+          fetch-depth: 0
+      - name: Apply migration patch
+        run: |
+          git apply --index .github/agent-migration.patch
+          git rm .github/agent-migration.patch
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+      - name: Restore
+        run: dotnet restore OllamaChat.sln
+      - name: Test
+        run: dotnet test OllamaChat.sln --no-restore --configuration Release
+      - name: Commit validated changes
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "Migrate direct chat to HarnessAgent"
+          git push origin HEAD:agent/replace-direct-chat-with-harness-agent
