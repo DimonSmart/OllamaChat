@@ -21,8 +21,6 @@ public abstract class AgenticChatPageBase : ComponentBase, IAsyncDisposable
     protected bool isLLMAnswering { get; set; }
     protected bool isLoadingInitialData = true;
     protected bool chatStarted = false;
-    protected Guid? lastSavedChatId;
-    protected string lastSavedChatTitle = string.Empty;
     protected UserSettings userSettings = new();
     protected AgenticChatSession? chatSessionView;
 
@@ -48,9 +46,6 @@ public abstract class AgenticChatPageBase : ComponentBase, IAsyncDisposable
     protected IUserSettingsService UserSettingsService { get; set; } = null!;
 
     [Inject]
-    protected ISavedChatService SavedChatService { get; set; } = null!;
-
-    [Inject]
     protected ISnackbar Snackbar { get; set; } = null!;
 
     [Inject]
@@ -60,9 +55,6 @@ public abstract class AgenticChatPageBase : ComponentBase, IAsyncDisposable
     protected ILoggerFactory LoggerFactory { get; set; } = null!;
 
     protected ILogger Logger => _logger ??= LoggerFactory.CreateLogger(GetType());
-
-    [Parameter, SupplyParameterFromQuery(Name = "saved")]
-    public Guid? SavedChatId { get; set; }
 
     private ILogger? _logger;
     private StreamingDebouncer _renderDebouncer = null!;
@@ -84,8 +76,6 @@ public abstract class AgenticChatPageBase : ComponentBase, IAsyncDisposable
     protected abstract Task LoadAgentsAsync();
 
     protected abstract Task LoadUserSettingsAsync();
-
-    protected abstract Task LoadSavedChatAsync(Guid savedChatId);
 
     protected override async Task OnInitializedAsync()
     {
@@ -117,9 +107,6 @@ public abstract class AgenticChatPageBase : ComponentBase, IAsyncDisposable
 
     protected override async Task OnParametersSetAsync()
     {
-        if (SavedChatId.HasValue && SavedChatId != lastSavedChatId)
-            await LoadSavedChatAsync(SavedChatId.Value);
-
         await OnParametersSetCoreAsync();
     }
 
@@ -146,75 +133,7 @@ public abstract class AgenticChatPageBase : ComponentBase, IAsyncDisposable
     protected virtual void OnChatReset()
     {
         chatStarted = false;
-        lastSavedChatId = null;
-        lastSavedChatTitle = string.Empty;
         _ = InvokeAsync(StateHasChanged);
-    }
-
-    protected async Task SaveCurrentChat()
-    {
-        if (!ChatService.Messages.Any())
-        {
-            Snackbar.Add("Nothing to save", Severity.Info);
-            return;
-        }
-
-        var parameters = new DialogParameters
-        {
-            ["InitialTitle"] = SavedChatId.HasValue ? lastSavedChatTitle : string.Empty
-        };
-        var dialog = await DialogService.ShowAsync<SaveChatDialog>("Save Chat", parameters);
-        var result = await dialog.Result;
-        if (result?.Canceled != false)
-            return;
-
-        var title = result.Data as string ?? string.Empty;
-
-        var participants = ChatService.Agents
-            .Select(agent => new SavedChatParticipant(agent.AgentId, agent.AgentName, AppChatRole.Assistant))
-            .ToList();
-        participants.Add(new SavedChatParticipant(userSettings.UserName.ToLowerInvariant(), userSettings.UserName, AppChatRole.User));
-
-        var agentsById = ChatService.Agents.ToDictionary(agent => agent.AgentId, StringComparer.OrdinalIgnoreCase);
-
-        var messages = ChatService.Messages
-            .Where(message => !message.IsStreaming && !message.IsCanceled && message.Role != AppChatRole.System)
-            .Where(message => !string.IsNullOrWhiteSpace(message.Content) || message.Files.Count > 0)
-            .Select(message => new SavedChatMessage(
-                message.Id,
-                message.Content,
-                message.MsgDateTime,
-                message.Role,
-                message.Role == AppChatRole.Assistant ? message.AgentId : null,
-                message.Role == AppChatRole.Assistant &&
-                !string.IsNullOrWhiteSpace(message.AgentId) &&
-                agentsById.TryGetValue(message.AgentId, out var agent)
-                    ? agent.AgentName
-                    : null))
-            .ToList();
-
-        var chatId = SavedChatId ?? Guid.NewGuid();
-        var runtimeContext = ChatService.CurrentStartRequest;
-        var runtimeReference = runtimeContext?.RuntimeReference ?? CurrentRuntimeReference;
-        var chat = new SavedChat(chatId, title, DateTime.UtcNow, messages, participants)
-        {
-            RuntimeDefinitionKind = runtimeReference?.Kind.ToString(),
-            RuntimeDefinitionId = runtimeReference?.Id,
-            RuntimeInputs = runtimeContext is null
-                ? new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
-                : new Dictionary<string, string>(
-                    runtimeContext.RuntimeInputs,
-                    StringComparer.OrdinalIgnoreCase),
-            RuntimeOverrides = runtimeContext?.Overrides.ToSnapshot()
-        };
-        await SavedChatService.SaveAsync(chat);
-
-        var isNew = !SavedChatId.HasValue;
-        SavedChatId = chatId;
-        lastSavedChatTitle = title;
-        Snackbar.Add("Chat saved", Severity.Success);
-        if (isNew)
-            NavigationManager.NavigateTo(NavigationManager.GetUriWithQueryParameter("saved", chatId));
     }
 
     protected async Task SendChatMessageAsync((string text, IReadOnlyList<AppChatMessageFile> files) messageData)

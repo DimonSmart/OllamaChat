@@ -89,9 +89,7 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<IWorkflowExecutionPolicy, WorkflowExecutionPolicy>();
         services.AddSingleton<IAgentTemplateService, AgentTemplateService>();
         services.AddSingleton<IWorkflowDefinitionService, WorkflowDefinitionService>();
-        services.AddSingleton<ISavedChatRepository, SavedChatRepository>();
         services.AddSingleton<IUserSettingsService, UserSettingsService>();
-        services.AddSingleton<ISavedChatService, SavedChatService>();
 
         return services;
     }
@@ -156,11 +154,19 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IChatEngineOrchestrator>(sp => sp.GetRequiredService<AgenticChatEngineOrchestrator>());
         services.AddScoped<IChatEngineHistoryBuilder>(sp => sp.GetRequiredService<AgenticChatEngineHistoryBuilder>());
         services.AddScoped<IChatEngineStreamingBridge>(sp => sp.GetRequiredService<AgenticChatEngineStreamingBridge>());
-        services.AddScoped<AgenticChatEngineSessionService>();
         services.AddScoped<UnifiedAgentRuntimeChatSessionService>();
         services.AddScoped<IChatEngineSessionService>(sp => sp.GetRequiredService<UnifiedAgentRuntimeChatSessionService>());
         services.AddScoped<IAgenticChatViewModelService, AgenticChatViewModelService>();
         services.AddScoped<ILlmChatClientFactory, LlmChatClientFactory>();
+        services.AddOptions<AgenticToolInvocationPolicyOptions>()
+            .Validate(static options => options.TimeoutSeconds >= 0,
+                "Tool timeout must be non-negative.")
+            .Validate(static options => options.InteractiveTimeoutSeconds >= 0,
+                "Interactive tool timeout must be non-negative.")
+            .Validate(static options => options.MaxRetries >= 0,
+                "Tool retry count must be non-negative.")
+            .Validate(static options => options.RetryDelayMs >= 0,
+                "Tool retry delay must be non-negative.");
 
         return services;
     }

@@ -104,7 +104,6 @@
                             IsLlmAnswering="isLLMAnswering"
                             UserName="userSettings.UserName"
                             IsMultiAgent="true"
-                            OnSaveChat="SaveCurrentChat"
                             OnSendMessage="SendChatMessageAsync"
                             OnStop="Cancel"
                             OnDeleteMessage="DeleteMessage"
@@ -182,72 +181,6 @@
                 .ToList();
 
             UpdateSelectedAgents(persistedAgents);
-        }
-    }
-
-    protected override async Task LoadSavedChatAsync(Guid savedChatId)
-    {
-        var saved = await SavedChatService.GetByIdAsync(savedChatId);
-        if (saved is null)
-        {
-            Snackbar.Add("Saved chat not found", Severity.Error);
-            return;
-        }
-
-        var assistantIds = saved.Participants
-            .Where(participant => participant.Role == AppChatRole.Assistant)
-            .Select(participant => participant.Id)
-            .ToHashSet(StringComparer.OrdinalIgnoreCase);
-
-        var savedAgents = agents
-            .Where(agent => assistantIds.Contains(agent.AgentId))
-            .ToList();
-
-        if (savedAgents.Count == 0)
-        {
-            Snackbar.Add("Agents for saved chat not found", Severity.Error);
-            return;
-        }
-
-        UpdateSelectedAgents(savedAgents);
-
-        var runtimeAgents = BuildRuntimeAgents(selectedAgentDrafts);
-        currentModelName = runtimeAgents[0].Model.ModelName;
-
-        var chatConfiguration = new AppChatConfiguration(currentModelName, []);
-        var savedMessages = saved.Messages
-            .Select(message =>
-            {
-                var chatMessage = new AppChatMessage(
-                    message.Content,
-                    message.MsgDateTime,
-                    message.Role,
-                    agentId: message.AgentId,
-                    agentName: message.AgentName);
-                chatMessage.Id = message.Id;
-                return (IAppChatMessage)chatMessage;
-            })
-            .ToList();
-
-        var request = new ChatEngineSessionStartRequest
-        {
-            Configuration = chatConfiguration,
-            Agents = runtimeAgents,
-            History = savedMessages,
-            ChatStrategyName = chatStrategyName,
-            ChatStrategyOptions = chatStrategyOptions
-        };
-
-        try
-        {
-            await ChatService.StartAsync(request);
-            chatStarted = true;
-            lastSavedChatId = savedChatId;
-            lastSavedChatTitle = saved.Title;
-        }
-        catch (InvalidOperationException ex)
-        {
-            Snackbar.Add(ex.Message, Severity.Error);
         }
     }
 

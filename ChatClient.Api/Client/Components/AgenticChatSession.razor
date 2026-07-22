@@ -16,7 +16,6 @@
         <MudMenuItem OnClick="@(() => OnCopyChat.InvokeAsync(ChatFormat.Markdown))">Copy as Markdown</MudMenuItem>
         <MudMenuItem OnClick="@(() => OnCopyChat.InvokeAsync(ChatFormat.Html))">Copy as HTML</MudMenuItem>
     </MudMenu>
-    <MudIconButton Icon="@Icons.Material.Filled.Save" Color="Color.Primary" OnClick="@(() => OnSaveChat.InvokeAsync())" />
 </div>
 
 <div class="chat-messages-container" @ref="messagesElement">
@@ -201,9 +200,6 @@
 
     [Parameter]
     public bool IsMultiAgent { get; set; }
-
-    [Parameter]
-    public EventCallback OnSaveChat { get; set; }
 
     [Parameter]
     public EventCallback<(string text, IReadOnlyList<AppChatMessageFile> files)> OnSendMessage { get; set; }

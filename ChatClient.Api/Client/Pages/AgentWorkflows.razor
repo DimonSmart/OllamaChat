@@ -20,7 +20,6 @@
 @inject IOrchestrationWorkflowSessionService WorkflowSessionService
 @inject IOrchestrationWorkflowChatViewModelService WorkflowChatViewModelService
 @inject IUserSettingsService UserSettingsService
-@inject ISavedChatService SavedChatService
 @inject IMcpUserInteractionService McpUserInteractionService
 @inject IJSRuntime JSRuntime
 @inject IDialogService DialogService
@@ -436,16 +435,15 @@
                         }
                     </MudStack>
 
-                    <AgenticChatSession @ref="chatSessionView"
-                                        Messages="WorkflowChatViewModelService.Messages"
-                                        Agents="WorkflowSessionService.Agents"
-                                        IsLlmAnswering="isLlmAnswering"
-                                        UserName="userSettings.UserName"
-                                        IsMultiAgent="true"
-                                        OnSaveChat="SaveCurrentChat"
-                                        OnSendMessage="SendChatMessageAsync"
-                                        OnStop="CancelAsync"
-                                        OnDeleteMessage="DeleteMessageAsync"
+                                        <AgenticChatSession @ref="chatSessionView"
+                                                           Messages="WorkflowChatViewModelService.Messages"
+                                                           Agents="WorkflowSessionService.Agents"
+                                                           IsLlmAnswering="isLlmAnswering"
+                                                           UserName="userSettings.UserName"
+                                                           IsMultiAgent="true"
+                                                           OnSendMessage="SendChatMessageAsync"
+                                                           OnStop="CancelAsync"
+                                                           OnDeleteMessage="DeleteMessageAsync"
                                         OnCopyChat="CopyChatAsync" />
                 </MudStack>
             </MudPaper>
@@ -536,10 +534,8 @@
     private bool isStartingWorkflow;
     private bool isLlmAnswering;
     private bool showLoadWorkflowDialog;
-    private Guid? lastSavedChatId;
     private Guid? currentSavedWorkflowId;
     private Guid? selectedWorkflowIdToLoad;
-    private string lastSavedChatTitle = string.Empty;
     private UserSettings userSettings = new();
     private List<SavedWorkflowDefinition> savedWorkflows = [];
     private List<SavedWorkflowDefinition> filteredSavedWorkflows = [];
@@ -735,8 +731,6 @@
         await WorkflowSessionService.CancelAsync();
         WorkflowSessionService.ResetChat();
         workflowStarted = false;
-        lastSavedChatId = null;
-        lastSavedChatTitle = string.Empty;
         await InvokeAsync(StateHasChanged);
     }
 
@@ -965,59 +959,6 @@
         isWorkflowSourceExpanded = false;
         showLoadWorkflowDialog = false;
         await CompileWorkflowSourceAsync(expandEditorOnError: true);
-    }
-
-    private async Task SaveCurrentChat()
-    {
-        if (!WorkflowSessionService.Messages.Any())
-        {
-            Snackbar.Add("Nothing to save", Severity.Info);
-            return;
-        }
-
-        var parameters = new DialogParameters
-        {
-            ["InitialTitle"] = lastSavedChatId.HasValue ? lastSavedChatTitle : string.Empty
-        };
-        var dialog = await DialogService.ShowAsync<SaveChatDialog>("Save Chat", parameters);
-        var result = await dialog.Result;
-        if (result?.Canceled != false)
-        {
-            return;
-        }
-
-        var title = result.Data as string ?? string.Empty;
-        var participants = WorkflowSessionService.Agents
-            .Select(agent => new SavedChatParticipant(agent.AgentId, agent.AgentName, AppChatRole.Assistant))
-            .ToList();
-        participants.Add(new SavedChatParticipant(userSettings.UserName.ToLowerInvariant(), userSettings.UserName, AppChatRole.User));
-
-        var agentsById = WorkflowSessionService.Agents
-            .ToDictionary(agent => agent.AgentId, StringComparer.OrdinalIgnoreCase);
-
-        var messages = WorkflowSessionService.Messages
-            .Where(message => !message.IsStreaming && !message.IsCanceled && message.Role != AppChatRole.System)
-            .Where(message => !string.IsNullOrWhiteSpace(message.Content) || message.Files.Count > 0)
-            .Select(message => new SavedChatMessage(
-                message.Id,
-                message.Content,
-                message.MsgDateTime,
-                message.Role,
-                message.Role == AppChatRole.Assistant ? message.AgentId : null,
-                message.Role == AppChatRole.Assistant &&
-                !string.IsNullOrWhiteSpace(message.AgentId) &&
-                agentsById.TryGetValue(message.AgentId, out var agent)
-                    ? agent.AgentName
-                    : null))
-            .ToList();
-
-        var chatId = lastSavedChatId ?? Guid.NewGuid();
-        var chat = new SavedChat(chatId, title, DateTime.UtcNow, messages, participants);
-        await SavedChatService.SaveAsync(chat);
-
-        lastSavedChatId = chatId;
-        lastSavedChatTitle = title;
-        Snackbar.Add("Chat saved", Severity.Success);
     }
 
     private async Task SendChatMessageAsync((string text, IReadOnlyList<AppChatMessageFile> files) messageData)

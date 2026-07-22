@@ -18,14 +18,12 @@ public sealed class HttpAgenticExecutionRuntime(
         ArgumentNullException.ThrowIfNull(request);
 
         AgenticRuntimeAgentBuildResult? buildResult = null;
-        List<FunctionCallRecord> functionCalls = [];
         string? startupError = null;
 
         try
         {
             buildResult = await runtimeAgentFactory.CreateAsync(
                 request,
-                functionCalls,
                 cancellationToken: cancellationToken);
         }
         catch (OperationCanceledException)
@@ -108,16 +106,14 @@ public sealed class HttpAgenticExecutionRuntime(
                 request.Agent.AgentName,
                 "Model returned an empty response.",
                 IsFinal: true,
-                IsError: true,
-                FunctionCalls: functionCalls.Count > 0 ? functionCalls.ToArray() : null);
+                IsError: true);
             yield break;
         }
 
         yield return new ChatEngineStreamChunk(
             request.Agent.AgentName,
             string.Empty,
-            IsFinal: true,
-            FunctionCalls: functionCalls.Count > 0 ? functionCalls.ToArray() : null);
+            IsFinal: true);
     }
 
     private static ChatClientAgentRunOptions BuildRunOptions(

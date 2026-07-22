@@ -15,8 +15,8 @@ public sealed class UnifiedAgentRuntimeChatSessionService(
     IAgentRunContextFactory runContextFactory,
     IChatEngineStreamingBridge streamingBridge,
     ILogger<UnifiedAgentRuntimeChatSessionService> logger,
-    IAgentTemplateService? agentTemplateService = null,
-    AgenticRuntimeAgentFactory? runtimeAgentFactory = null) : IChatEngineSessionService
+    IAgentTemplateService agentTemplateService,
+    AgenticRuntimeAgentFactory runtimeAgentFactory) : IChatEngineSessionService
 {
     private readonly AppChat _chat = new();
     private readonly Dictionary<string, StreamingAppChatMessage> _activeStreamsByRuntimeMessageId =
@@ -26,6 +26,8 @@ public sealed class UnifiedAgentRuntimeChatSessionService(
     private CancellationTokenSource? _cancellationTokenSource;
     private AIAgent? _directAgent;
     private AgentSession? _directSession;
+    private long _generation;
+    private bool _resetting;
 
     public event Action<bool>? AnsweringStateChanged;
     public event Action? ChatReset;
@@ -93,11 +95,18 @@ public sealed class UnifiedAgentRuntimeChatSessionService(
 
     public void ResetChat()
     {
+        _resetting = true;
+        _cancellationTokenSource?.Cancel();
+        Interlocked.Increment(ref _generation);
         _directAgent = null;
         _directSession = null;
         _chat.Reset();
         ClearRunLocalState();
         _parameters = null;
+        _cancellationTokenSource?.Dispose();
+        _cancellationTokenSource = null;
+        _resetting = false;
+        UpdateAnsweringState(false);
         ChatReset?.Invoke();
     }
 
@@ -113,6 +122,7 @@ public sealed class UnifiedAgentRuntimeChatSessionService(
         }
 
         ClearRunLocalState();
+        _directSession = null;
         UpdateAnsweringState(false);
     }
 
@@ -126,7 +136,7 @@ public sealed class UnifiedAgentRuntimeChatSessionService(
             throw new InvalidOperationException("Chat session not started.");
         }
 
-        if (string.IsNullOrWhiteSpace(text) || IsAnswering)
+        if (string.IsNullOrWhiteSpace(text) || IsAnswering || _resetting)
         {
             return;
         }
@@ -136,8 +146,9 @@ public sealed class UnifiedAgentRuntimeChatSessionService(
             throw new InvalidOperationException("Unified agent runtime reference is not configured.");
         }
 
-        if (_directAgent is not null && _directSession is not null)
+        if (_parameters.RuntimeReference.Kind == AgentDefinitionKind.SavedAgent)
         {
+            await EnsureDirectConversationAsync(cancellationToken);
             await SendDirectAsync(text, files ?? [], cancellationToken);
             return;
         }
@@ -257,9 +268,7 @@ public sealed class UnifiedAgentRuntimeChatSessionService(
             throw new InvalidOperationException("The saved agent and model must be resolved before starting a conversation.");
         }
 
-        var templateService = agentTemplateService ?? throw new InvalidOperationException("Harness agent factory is not configured.");
-        var agentFactory = runtimeAgentFactory ?? throw new InvalidOperationException("Harness agent factory is not configured.");
-        var template = await templateService.GetByIdAsync(templateId)
+        var template = await agentTemplateService.GetByIdAsync(templateId)
             ?? throw new InvalidOperationException($"Saved agent '{request.RuntimeReference.Id}' was not found.");
         if (request.Overrides.McpServerBindings is not null)
         {
@@ -270,7 +279,7 @@ public sealed class UnifiedAgentRuntimeChatSessionService(
         }
 
         var resolved = ResolvedChatAgentFactory.Resolve(template, request.RuntimeDefaultModel);
-        var build = await agentFactory.CreateAsync(new AgentRunRequest
+        var build = await runtimeAgentFactory.CreateAsync(new AgentRunRequest
         {
             Agent = resolved.Agent,
             ResolvedModel = resolved.Model,
@@ -283,31 +292,57 @@ public sealed class UnifiedAgentRuntimeChatSessionService(
         _directSession = await build.Agent.CreateSessionAsync(cancellationToken);
     }
 
+    private async Task EnsureDirectConversationAsync(CancellationToken cancellationToken)
+    {
+        if (_parameters is null)
+        {
+            throw new InvalidOperationException("Chat session not started.");
+        }
+
+        if (_directAgent is not null && _directSession is not null)
+        {
+            return;
+        }
+
+        await CreateDirectConversationAsync(_parameters, cancellationToken);
+    }
+
     private async Task SendDirectAsync(
         string text,
         IReadOnlyList<AppChatMessageFile> files,
         CancellationToken cancellationToken)
     {
+        var generation = Interlocked.Read(ref _generation);
         var userMessage = new AppChatMessage(text, DateTime.Now, AppChatRole.User, files: files);
         await AddMessageAsync(userMessage);
         _cancellationTokenSource = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         UpdateAnsweringState(true);
-        const string messageId = "direct-harness-response";
+        var messageId = $"direct-harness-response-{Guid.NewGuid():N}";
         var stream = await GetOrCreateStreamAsync(messageId, _chat.Agents.FirstOrDefault()?.AgentName ?? "Agent");
 
         try
         {
             await foreach (var update in _directAgent!.RunStreamingAsync(
-                               [new ChatMessage(ChatRole.User, text)],
+                               [BuildDirectUserMessage(text, files)],
                                _directSession,
-                               null,
+                               BuildDirectRunOptions(),
                                _cancellationTokenSource.Token))
             {
+                if (generation != Interlocked.Read(ref _generation))
+                {
+                    break;
+                }
+
                 if (!string.IsNullOrEmpty(update.Text))
                 {
                     streamingBridge.Append(stream, update.Text);
                     await (MessageUpdated?.Invoke(stream, false) ?? Task.CompletedTask);
                 }
+            }
+
+            if (generation != Interlocked.Read(ref _generation))
+            {
+                return;
             }
 
             var final = streamingBridge.Complete(stream, "HarnessAgent");
@@ -317,6 +352,7 @@ public sealed class UnifiedAgentRuntimeChatSessionService(
         }
         catch (OperationCanceledException)
         {
+            _directSession = null;
             await CancelActiveStreamsAsync();
         }
         catch (Exception ex)
@@ -331,6 +367,55 @@ public sealed class UnifiedAgentRuntimeChatSessionService(
             _cancellationTokenSource = null;
             UpdateAnsweringState(false);
         }
+    }
+
+    private ChatClientAgentRunOptions BuildDirectRunOptions()
+    {
+        if (_parameters?.RuntimeDefaultModel is null)
+        {
+            return new ChatClientAgentRunOptions(new ChatOptions());
+        }
+
+        var agent = _chat.Agents.FirstOrDefault();
+        var options = new ChatOptions
+        {
+            ModelId = _parameters.RuntimeDefaultModel.ModelName,
+            Temperature = agent?.Temperature is double temperature
+                ? (float)temperature
+                : null
+        };
+
+        if (agent?.RepeatPenalty is double repeatPenalty)
+        {
+            options.AdditionalProperties ??= [];
+            options.AdditionalProperties["repeat_penalty"] = repeatPenalty;
+        }
+
+        return new ChatClientAgentRunOptions(options);
+    }
+
+    private static ChatMessage BuildDirectUserMessage(
+        string text,
+        IReadOnlyList<AppChatMessageFile> files)
+    {
+        if (files.Count == 0)
+        {
+            return new ChatMessage(ChatRole.User, text);
+        }
+
+        List<AIContent> contents = [new TextContent(text)];
+        foreach (var file in files)
+        {
+            if (IsTextAttachment(file))
+            {
+                contents.Add(new TextContent(Encoding.UTF8.GetString(file.Data)));
+                continue;
+            }
+
+            contents.Add(new DataContent(file.Data, file.ContentType));
+        }
+
+        return new ChatMessage(ChatRole.User, contents);
     }
 
     private async Task ApplyRunEventAsync(

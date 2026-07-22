@@ -1,10 +1,8 @@
-using System.Text.Encodings.Web;
-using System.Text.Json;
-using System.Text.Json.Serialization;
 using ChatClient.Api.Services;
 using ChatClient.Application.Services;
 using ChatClient.Application.Services.Agentic;
 using ChatClient.Domain.Models;
+using Microsoft.Extensions.Options;
 #pragma warning disable MAAI001
 using Microsoft.Agents.AI;
 #pragma warning restore MAAI001
@@ -24,20 +22,12 @@ public sealed class AgenticRuntimeAgentFactory(
     ILlmChatClientFactory llmChatClientFactory,
     IModelCapabilityService modelCapabilityService,
     IAppToolCatalog appToolCatalog,
-    KernelService kernelService,
+    IMcpUserInteractionService mcpUserInteractionService,
+    IOptions<AgenticToolInvocationPolicyOptions> toolPolicyOptions,
     ILogger<AgenticRuntimeAgentFactory> logger)
 {
-    private const int MaxLoggedPayloadLength = 4000;
-
-    private static readonly JsonSerializerOptions ToolResultJsonOptions = new(JsonSerializerDefaults.Web)
-    {
-        DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
-        Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping
-    };
-
     internal async Task<AgenticRuntimeAgentBuildResult> CreateAsync(
         AgentRunRequest request,
-        List<FunctionCallRecord>? functionCalls = null,
         bool requireFunctionCalling = false,
         CancellationToken cancellationToken = default)
     {
@@ -59,7 +49,7 @@ public sealed class AgenticRuntimeAgentFactory(
         var availableTools = supportsFunctions
             ? await appToolCatalog.ListToolsAsync(toolRequestContext, cancellationToken)
             : [];
-        var requestedFunctions = await ResolveRequestedFunctionNamesAsync(request, availableTools, cancellationToken);
+        var requestedFunctions = ResolveRequestedFunctionNames(request, availableTools);
 
         if (!supportsFunctions && requestedFunctions.Count > 0)
         {
@@ -77,7 +67,12 @@ public sealed class AgenticRuntimeAgentFactory(
         }
 
         var toolSet = supportsFunctions
-            ? AgenticToolSetBuilder.Build(requestedFunctions, availableTools)
+            ? AgenticToolSetBuilder.Build(
+                requestedFunctions,
+                availableTools,
+                NormalizeToolPolicy(toolPolicyOptions.Value),
+                mcpUserInteractionService,
+                logger)
             : AgenticToolSet.Empty;
 
         if (requestedFunctions.Count > 0 && !toolSet.HasTools)
@@ -110,7 +105,11 @@ public sealed class AgenticRuntimeAgentFactory(
             ChatOptions = new ChatOptions
             {
                 Instructions = BuildInstructions(request.Agent),
-                Tools = toolSet.Tools.ToList()
+                Tools = toolSet.Tools.ToList(),
+                ModelId = request.ResolvedModel.ModelName,
+                Temperature = request.Agent.Temperature is double temperature
+                    ? (float)temperature
+                    : null
             },
             DisableTodoProvider = true,
             DisableAgentModeProvider = true,
@@ -122,6 +121,18 @@ public sealed class AgenticRuntimeAgentFactory(
 #pragma warning restore MAAI001
         };
 
+        if (request.Agent.RepeatPenalty is double repeatPenalty)
+        {
+            agentOptions.ChatOptions.AdditionalProperties ??= [];
+            agentOptions.ChatOptions.AdditionalProperties["repeat_penalty"] = repeatPenalty;
+        }
+
+        if (toolSet.HasTools)
+        {
+            agentOptions.ChatOptions.AllowMultipleToolCalls = true;
+            agentOptions.ChatOptions.ToolMode = ChatToolMode.Auto;
+        }
+
         return chatClient.AsHarnessAgent(agentOptions);
     }
 
@@ -131,10 +142,9 @@ public sealed class AgenticRuntimeAgentFactory(
         return string.IsNullOrWhiteSpace(content) ? null : content;
     }
 
-    private async Task<IReadOnlyList<string>> ResolveRequestedFunctionNamesAsync(
+    private IReadOnlyList<string> ResolveRequestedFunctionNames(
         AgentRunRequest request,
-        IReadOnlyCollection<AppToolDescriptor> availableTools,
-        CancellationToken cancellationToken)
+        IReadOnlyCollection<AppToolDescriptor> availableTools)
     {
         HashSet<string> requested = new(StringComparer.OrdinalIgnoreCase);
 
@@ -155,34 +165,18 @@ public sealed class AgenticRuntimeAgentFactory(
             requested.Add(function);
         }
 
-        try
+        if (request.Agent.FunctionSettings.IsAutoSelectEnabled)
         {
-            var fromAgentSettings = await kernelService.GetFunctionsToRegisterAsync(
-                request.Agent.FunctionSettings,
-                request.UserMessage,
-                availableTools,
-                cancellationToken);
-
-            foreach (var function in fromAgentSettings)
+            foreach (var tool in availableTools)
             {
-                if (string.IsNullOrWhiteSpace(function))
-                {
-                    continue;
-                }
-
-                requested.Add(function.Trim());
+                requested.Add(tool.QualifiedName);
             }
-        }
-        catch (OperationCanceledException)
-        {
-            throw;
-        }
-        catch (Exception ex)
-        {
-            logger.LogWarning(
-                ex,
-                "Failed to resolve function selection for agent {AgentName}. Falling back to explicit configuration only.",
-                request.Agent.AgentName);
+
+            logger.LogInformation(
+                "Agent {AgentName} uses AutoSelectCount={AutoSelectCount}; direct Harness registration includes all {ToolCount} tools allowed by current bindings.",
+                request.Agent.AgentName,
+                request.Agent.FunctionSettings.AutoSelectCount,
+                availableTools.Count);
         }
 
         return requested.ToList();
@@ -210,33 +204,5 @@ public sealed class AgenticRuntimeAgentFactory(
             MaxRetries = Math.Max(0, policy.MaxRetries),
             RetryDelayMs = Math.Max(0, policy.RetryDelayMs)
         };
-    }
-
-    private static string SerializeArguments(IReadOnlyDictionary<string, object?> arguments)
-    {
-        try
-        {
-            return JsonSerializer.Serialize(arguments, ToolResultJsonOptions);
-        }
-        catch
-        {
-            return "{}";
-        }
-    }
-
-    private static string FormatForLog(string? payload, int maxLength)
-    {
-        if (string.IsNullOrWhiteSpace(payload))
-        {
-            return "<empty>";
-        }
-
-        var singleLine = payload.Replace("\r", " ").Replace("\n", " ").Trim();
-        if (singleLine.Length <= maxLength)
-        {
-            return singleLine;
-        }
-
-        return $"{singleLine[..maxLength]}... (truncated, {singleLine.Length} chars)";
     }
 }

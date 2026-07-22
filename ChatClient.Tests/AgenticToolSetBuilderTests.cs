@@ -1,5 +1,8 @@
 using ChatClient.Api.Client.Services.Agentic;
 using ChatClient.Api.Services;
+using ChatClient.Application.Services.Agentic;
+using Microsoft.Extensions.Logging.Abstractions;
+using ModelContextProtocol.Protocol;
 using System.Text.Json;
 
 namespace ChatClient.Tests;
@@ -17,7 +20,10 @@ public class AgenticToolSetBuilderTests
 
         var toolSet = AgenticToolSetBuilder.Build(
             ["server-a:search"],
-            tools);
+            tools,
+            TestPolicy,
+            TestInteractionService.Instance,
+            NullLogger.Instance);
 
         var registered = Assert.Single(toolSet.MetadataByName);
         Assert.Equal("search", registered.Key);
@@ -35,7 +41,10 @@ public class AgenticToolSetBuilderTests
 
         var toolSet = AgenticToolSetBuilder.Build(
             ["get_page"],
-            tools);
+            tools,
+            TestPolicy,
+            TestInteractionService.Instance,
+            NullLogger.Instance);
 
         var registered = Assert.Single(toolSet.MetadataByName);
         Assert.Equal("get_page", registered.Key);
@@ -53,7 +62,10 @@ public class AgenticToolSetBuilderTests
 
         var toolSet = AgenticToolSetBuilder.Build(
             ["search"],
-            tools);
+            tools,
+            TestPolicy,
+            TestInteractionService.Instance,
+            NullLogger.Instance);
 
         Assert.Equal(2, toolSet.MetadataByName.Count);
         Assert.Contains("Docs_A__search", toolSet.MetadataByName.Keys);
@@ -65,10 +77,13 @@ public class AgenticToolSetBuilderTests
     {
         var toolSet = AgenticToolSetBuilder.Build(
             ["search"],
-            [CreateTool("docs", "search", inputSchema: JsonSerializer.SerializeToElement(true))]);
+            [CreateTool("docs", "search", inputSchema: JsonSerializer.SerializeToElement(true))],
+            TestPolicy,
+            TestInteractionService.Instance,
+            NullLogger.Instance);
 
         var registered = Assert.Single(toolSet.MetadataByName);
-        var function = Assert.IsType<ConfiguredAgenticFunction>(registered.Value.Tool);
+        var function = Assert.IsAssignableFrom<PolicyAgenticFunction>(registered.Value.Tool);
         var schema = function.JsonSchema;
 
         Assert.Equal(JsonValueKind.Object, schema.ValueKind);
@@ -80,13 +95,24 @@ public class AgenticToolSetBuilderTests
     {
         var toolSet = AgenticToolSetBuilder.Build(
             ["search"],
-            [CreateTool("docs", "search", outputSchema: JsonSerializer.SerializeToElement(true))]);
+            [CreateTool("docs", "search", outputSchema: JsonSerializer.SerializeToElement(true))],
+            TestPolicy,
+            TestInteractionService.Instance,
+            NullLogger.Instance);
 
         var registered = Assert.Single(toolSet.MetadataByName);
-        var function = Assert.IsType<ConfiguredAgenticFunction>(registered.Value.Tool);
+        var function = Assert.IsAssignableFrom<PolicyAgenticFunction>(registered.Value.Tool);
 
         Assert.Null(function.ReturnJsonSchema);
     }
+
+    private static AgenticToolInvocationPolicyOptions TestPolicy { get; } = new()
+    {
+        TimeoutSeconds = 0,
+        InteractiveTimeoutSeconds = 0,
+        MaxRetries = 0,
+        RetryDelayMs = 0
+    };
 
     private static AppToolDescriptor CreateTool(
         string serverName,
@@ -119,5 +145,32 @@ public class AgenticToolSetBuilderTests
     {
         using var document = JsonDocument.Parse("""{"type":"object","properties":{}}""");
         return document.RootElement.Clone();
+    }
+
+    private sealed class TestInteractionService : IMcpUserInteractionService
+    {
+        public static TestInteractionService Instance { get; } = new();
+
+        public IDisposable BeginInteractionScope(McpInteractionScope scope) => NoopDisposable.Instance;
+
+        public IDisposable RegisterElicitationHandler(
+            McpInteractionScope scope,
+            Func<McpElicitationPrompt, CancellationToken, Task<McpElicitationResponse>> handler) =>
+            NoopDisposable.Instance;
+
+        public ValueTask<ElicitResult> HandleElicitationAsync(
+            string serverName,
+            ElicitRequestParams request,
+            CancellationToken cancellationToken = default) =>
+            throw new NotSupportedException();
+    }
+
+    private sealed class NoopDisposable : IDisposable
+    {
+        public static NoopDisposable Instance { get; } = new();
+
+        public void Dispose()
+        {
+        }
     }
 }

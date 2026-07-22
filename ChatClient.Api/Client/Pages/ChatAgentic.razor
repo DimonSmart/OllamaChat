@@ -132,7 +132,6 @@
                             Agents="ChatService.Agents"
                             IsLlmAnswering="isLLMAnswering"
                             UserName="userSettings.UserName"
-                            OnSaveChat="SaveCurrentChat"
                             OnSendMessage="SendChatMessageAsync"
                             OnStop="Cancel"
                             OnDeleteMessage="DeleteMessage"
@@ -195,86 +194,6 @@
     protected override async Task LoadUserSettingsAsync()
     {
         userSettings = await UserSettingsService.GetSettingsAsync();
-    }
-
-    protected override async Task LoadSavedChatAsync(Guid savedChatId)
-    {
-        var saved = await SavedChatService.GetByIdAsync(savedChatId);
-        if (saved is null)
-        {
-            Snackbar.Add("Saved chat not found", Severity.Error);
-            return;
-        }
-
-        var runtimeReference = TryGetRuntimeReference(saved) ?? await TryMigrateRuntimeReferenceAsync(saved);
-        if (runtimeReference is null)
-        {
-            Snackbar.Add("Runtime definition for saved chat not found", Severity.Error);
-            return;
-        }
-
-        var selectedItem = catalogItems.FirstOrDefault(item =>
-            item.Reference.Kind == runtimeReference.Kind &&
-            string.Equals(item.Reference.Id, runtimeReference.Id, StringComparison.OrdinalIgnoreCase));
-        SetSelectedDefinition(selectedItem);
-        if (selectedItem is null)
-        {
-            Snackbar.Add("Runtime definition for saved chat not found", Severity.Error);
-            return;
-        }
-        var resolved = await SessionDefinitionResolver.ResolveAsync(selectedItem.Reference, new AgentSessionDefinitionRequest
-        {
-            UiModelSelection = UiModelSelection,
-            Inputs = saved.RuntimeInputs,
-            Overrides = BuildOverrides(saved.RuntimeOverrides)
-        });
-        if (!resolved.Validation.CanLaunch)
-        {
-            Snackbar.Add(string.Join(" ", resolved.Validation.Problems.Select(problem => problem.Message)), Severity.Error);
-            return;
-        }
-        effectiveModel = resolved.DefaultModel;
-
-        var chatConfiguration = new AppChatConfiguration(resolved.DefaultModel?.ModelName ?? string.Empty, []);
-        var savedMessages = saved.Messages
-            .Select(message =>
-            {
-                var chatMessage = new AppChatMessage(
-                    message.Content,
-                    message.MsgDateTime,
-                    message.Role,
-                    agentId: message.AgentId,
-                    agentName: message.AgentName);
-                chatMessage.Id = message.Id;
-                return (IAppChatMessage)chatMessage;
-            })
-            .ToList();
-
-        var request = new ChatEngineSessionStartRequest
-        {
-            Configuration = chatConfiguration,
-            Agents = [],
-            RuntimeParticipant = resolved.PresentationParticipant,
-            RuntimeReference = resolved.RuntimeReference,
-            RuntimeDefaultModel = resolved.DefaultModel,
-            RuntimeInputs = resolved.Inputs,
-            Overrides = BuildOverrides(saved.RuntimeOverrides),
-            History = savedMessages,
-            ChatStrategyName = "RoundRobin",
-            ChatStrategyOptions = new RoundRobinChatStrategyOptions { Rounds = 1 }
-        };
-
-        try
-        {
-            await ChatService.StartAsync(request);
-            chatStarted = true;
-            lastSavedChatId = savedChatId;
-            lastSavedChatTitle = saved.Title;
-        }
-        catch (InvalidOperationException ex)
-        {
-            Snackbar.Add(ex.Message, Severity.Error);
-        }
     }
 
     private async Task StartChat()
@@ -395,16 +314,6 @@
             }
             : new AgentSessionOverrides();
 
-    private AgentSessionOverrides BuildOverrides(AgentSessionOverridesSnapshot? snapshot) =>
-        selectedDefinition?.LaunchCapabilities.SupportsMcpBindingOverrides == true
-            ? new AgentSessionOverrides
-            {
-                McpServerBindings = snapshot?.McpServerBindings?
-                    .Select(static binding => binding.Clone())
-                    .ToList() ?? []
-            }
-            : new AgentSessionOverrides();
-
     private async Task RefreshLaunchValidationAsync()
     {
         var version = System.Threading.Interlocked.Increment(ref validationVersion);
@@ -473,31 +382,4 @@
         bool.TryParse(value, out var parsed)
             ? parsed.ToString()
             : value;
-
-    private static AgentDefinitionReference? TryGetRuntimeReference(SavedChat saved)
-    {
-        if (string.IsNullOrWhiteSpace(saved.RuntimeDefinitionKind) ||
-            string.IsNullOrWhiteSpace(saved.RuntimeDefinitionId) ||
-            !Enum.TryParse<AgentDefinitionKind>(saved.RuntimeDefinitionKind, out var kind))
-        {
-            return null;
-        }
-
-        return new AgentDefinitionReference(kind, saved.RuntimeDefinitionId);
-    }
-
-    private async Task<AgentDefinitionReference?> TryMigrateRuntimeReferenceAsync(SavedChat saved)
-    {
-        var assistantIds = saved.Participants
-            .Where(participant => participant.Role == AppChatRole.Assistant)
-            .Select(participant => participant.Id)
-            .ToHashSet(StringComparer.OrdinalIgnoreCase);
-        var savedAgents = await AgentService.GetAllAsync();
-        var agent = savedAgents.FirstOrDefault(candidate => assistantIds.Contains(candidate.AgentId));
-        return agent is null
-            ? null
-            : new AgentDefinitionReference(
-                AgentDefinitionKind.SavedAgent,
-                agent.Id.ToString("D"));
-    }
 }

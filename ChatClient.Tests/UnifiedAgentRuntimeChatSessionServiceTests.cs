@@ -210,7 +210,7 @@ public sealed class UnifiedAgentRuntimeChatSessionServiceTests
         {
             Configuration = new AppChatConfiguration("model", []),
             Agents = [],
-            RuntimeReference = new AgentDefinitionReference(AgentDefinitionKind.SavedAgent, "agent"),
+            RuntimeReference = new AgentDefinitionReference(AgentDefinitionKind.SavedWorkflow, "workflow"),
             RuntimeInputs = new Dictionary<string, string>
             {
                 ["topic"] = "runtime design",
@@ -231,7 +231,9 @@ public sealed class UnifiedAgentRuntimeChatSessionServiceTests
             new StubDefinitionCatalog(),
             new AgentRunContextFactory(),
             new AgenticChatEngineStreamingBridge(),
-            NullLogger<UnifiedAgentRuntimeChatSessionService>.Instance);
+            NullLogger<UnifiedAgentRuntimeChatSessionService>.Instance,
+            null!,
+            null!);
 
     private static ChatEngineSessionStartRequest CreateStartRequest() =>
         new()
