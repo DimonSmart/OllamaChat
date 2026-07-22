@@ -38,7 +38,9 @@ jobs:
           git apply --index /tmp/agent-migration.patch
           git apply --check .github/agent-migration-fix.patch
           git apply --index .github/agent-migration-fix.patch
-          git rm .github/agent-migration-v2.part-* .github/agent-migration.patch.part-* .github/agent-migration.ready .github/agent-migration-fix.patch
+          git apply --check .github/agent-migration-fix2.patch
+          git apply --index .github/agent-migration-fix2.patch
+          git rm .github/agent-migration-v2.part-* .github/agent-migration.patch.part-* .github/agent-migration.ready .github/agent-migration-fix.patch .github/agent-migration-fix2.patch
           git rm -f .github/agent-migration.patch.gz.b64
       - uses: actions/setup-dotnet@v4
         if: steps.gate.outputs.ready == 'true'
