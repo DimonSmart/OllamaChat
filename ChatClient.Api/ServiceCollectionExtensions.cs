@@ -130,7 +130,8 @@ public static class ServiceCollectionExtensions
             .ValidateOnStart();
         services.AddScoped<IAgentSessionDefinitionResolver, AgentSessionDefinitionResolver>();
         services.AddScoped<ILegacyWorkflowDefinitionNormalizer, LegacyWorkflowDefinitionNormalizer>();
-        services.AddScoped<IWorkflowParticipantResolver, WorkflowParticipantResolver>();
+        services.AddScoped<WorkflowParticipantResolver>();
+        services.AddScoped<IWorkflowParticipantResolver, NormalizingWorkflowParticipantResolver>();
         services.AddScoped<IWorkflowParticipantRuntimeFactory, WorkflowParticipantRuntimeFactory>();
         services.AddScoped<IWorkflowAgentDraftMaterializer, WorkflowAgentDraftMaterializer>();
         services.AddScoped<IAgentInputDefinitionProvider, AgentInputDefinitionProvider>();
@@ -206,7 +207,7 @@ public static class ServiceCollectionExtensions
             .AddHubOptions(options =>
             {
                 options.ClientTimeoutInterval = signalRTimeouts.ClientTimeout;
-                options.HandshakeTimeout = signalRTimeouts.HandshakeTimeout;
+                options.HandshakeTimeoutInterval = signalRTimeouts.HandshakeTimeout;
                 options.KeepAliveInterval = signalRTimeouts.KeepAliveInterval;
             });
 
@@ -220,18 +221,13 @@ public static class ServiceCollectionExtensions
 
     private static IServiceCollection AddHttpClients(this IServiceCollection services)
     {
-        services.AddTransient<HttpLoggingHandler>();
-        services.AddHttpClient();
-        services.AddHttpClient("ollama")
-            .AddHttpMessageHandler<HttpLoggingHandler>();
-        services.AddHttpClient("ollama-insecure")
+        services.AddHttpClient("Default")
             .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler
             {
-                ServerCertificateCustomValidationCallback = (_, _, _, _) => true
-            })
-            .AddHttpMessageHandler<HttpLoggingHandler>();
+                AllowAutoRedirect = false,
+                AutomaticDecompression = System.Net.DecompressionMethods.All
+            });
 
         return services;
     }
 }
-
