@@ -207,7 +207,7 @@ public static class ServiceCollectionExtensions
             .AddHubOptions(options =>
             {
                 options.ClientTimeoutInterval = signalRTimeouts.ClientTimeout;
-                options.HandshakeTimeoutInterval = signalRTimeouts.HandshakeTimeout;
+                options.HandshakeTimeout = signalRTimeouts.HandshakeTimeout;
                 options.KeepAliveInterval = signalRTimeouts.KeepAliveInterval;
             });
 
@@ -221,12 +221,16 @@ public static class ServiceCollectionExtensions
 
     private static IServiceCollection AddHttpClients(this IServiceCollection services)
     {
-        services.AddHttpClient("Default")
+        services.AddTransient<HttpLoggingHandler>();
+        services.AddHttpClient();
+        services.AddHttpClient("ollama")
+            .AddHttpMessageHandler<HttpLoggingHandler>();
+        services.AddHttpClient("ollama-insecure")
             .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler
             {
-                AllowAutoRedirect = false,
-                AutomaticDecompression = System.Net.DecompressionMethods.All
-            });
+                ServerCertificateCustomValidationCallback = (_, _, _, _) => true
+            })
+            .AddHttpMessageHandler<HttpLoggingHandler>();
 
         return services;
     }
