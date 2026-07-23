@@ -2,6 +2,7 @@ using ChatClient.Api;
 using ChatClient.Api.Client.Services.Agentic;
 using ChatClient.Api.Services;
 using ChatClient.Application.Services.Agentic;
+using ChatClient.Domain.Models;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -58,6 +59,26 @@ public class AgenticToolSetBuilderTests
         Assert.Equal(20, normalized.InteractiveTimeoutSeconds);
         Assert.Equal(2, normalized.MaxRetries);
         Assert.Equal(7, normalized.RetryDelayMs);
+    }
+
+    [Fact]
+    public void ResolveTemperature_OmitsConfiguredValueForGpt5Models()
+    {
+        var temperature = AgenticRuntimeAgentFactory.ResolveTemperature(
+            new ServerModel(Guid.NewGuid(), "gpt-5-mini"),
+            0.8);
+
+        Assert.Null(temperature);
+    }
+
+    [Fact]
+    public void ResolveTemperature_PreservesConfiguredValueForOtherModels()
+    {
+        var temperature = AgenticRuntimeAgentFactory.ResolveTemperature(
+            new ServerModel(Guid.NewGuid(), "qwen3:latest"),
+            0.8);
+
+        Assert.Equal(0.8f, temperature);
     }
 
     [Fact]

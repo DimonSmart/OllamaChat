@@ -84,7 +84,7 @@ public sealed class AgenticRuntimeAgentFactory(
                 string.Join(", ", requestedFunctions));
         }
 
-        var runtimeAgent = CreateRuntimeAgent(chatClient, request, toolSet, ragContextService);
+        var runtimeAgent = CreateRuntimeAgent(chatClient, request, server, toolSet, ragContextService);
         return new HarnessAgentRuntimeDefinition(
             runtimeAgent,
             server,
@@ -95,6 +95,7 @@ public sealed class AgenticRuntimeAgentFactory(
     private static AIAgent CreateRuntimeAgent(
         IChatClient chatClient,
         AgentRunRequest request,
+        LlmServerConfig server,
         AgenticToolSet toolSet,
         IAgenticRagContextService ragContextService)
     {
@@ -109,9 +110,7 @@ public sealed class AgenticRuntimeAgentFactory(
                 Instructions = BuildInstructions(request.Agent),
                 Tools = toolSet.Tools.ToList(),
                 ModelId = request.ResolvedModel.ModelName,
-                Temperature = request.Agent.Temperature is double temperature
-                    ? (float)temperature
-                    : null
+                Temperature = ResolveTemperature(request.ResolvedModel, request.Agent.Temperature)
             },
             DisableTodoProvider = true,
             DisableAgentModeProvider = true,
@@ -126,7 +125,8 @@ public sealed class AgenticRuntimeAgentFactory(
 #pragma warning restore MAAI001
         };
 
-        if (request.Agent.RepeatPenalty is double repeatPenalty)
+        if (server.ServerType == ServerType.Ollama &&
+            request.Agent.RepeatPenalty is double repeatPenalty)
         {
             agentOptions.ChatOptions.AdditionalProperties ??= [];
             agentOptions.ChatOptions.AdditionalProperties["repeat_penalty"] = repeatPenalty;
@@ -211,5 +211,15 @@ public sealed class AgenticRuntimeAgentFactory(
             MaxRetries = Math.Max(0, policy.MaxRetries),
             RetryDelayMs = Math.Max(0, policy.RetryDelayMs)
         };
+    }
+
+    internal static float? ResolveTemperature(ServerModel model, double? configuredTemperature)
+    {
+        ArgumentNullException.ThrowIfNull(model);
+
+        return configuredTemperature is double temperature &&
+               !model.ModelName.StartsWith("gpt-5", StringComparison.OrdinalIgnoreCase)
+            ? (float)temperature
+            : null;
     }
 }

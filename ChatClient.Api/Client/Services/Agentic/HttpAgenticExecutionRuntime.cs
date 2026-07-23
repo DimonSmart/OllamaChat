@@ -136,9 +136,9 @@ public sealed class HttpAgenticExecutionRuntime(
         var chatOptions = new ChatOptions
         {
             ModelId = request.ResolvedModel.ModelName,
-            Temperature = request.Agent.Temperature is double temperature
-                ? (float)temperature
-                : null
+            Temperature = AgenticRuntimeAgentFactory.ResolveTemperature(
+                request.ResolvedModel,
+                request.Agent.Temperature)
         };
 
         if (toolSet.HasTools)

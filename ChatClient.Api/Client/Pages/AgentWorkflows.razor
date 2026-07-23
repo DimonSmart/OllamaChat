@@ -1100,7 +1100,7 @@
         => workflow.Aggregation.Kind.ToString();
 
     private static AgentTemplateDefinition GetRequiredAgentDraft(WorkflowParticipantDefinition agent) =>
-        agent.AgentDraft ?? throw new InvalidOperationException(
+        (agent.Source as InlineAgentParticipantSource)?.Agent ?? throw new InvalidOperationException(
             $"Workflow agent '{agent.Id}' was not materialized.");
 
     private static Color GetCapabilityColor(AgentWorkflowCapabilityAvailability availability) =>
