@@ -157,7 +157,7 @@
         if (editForm is null)
             return;
 
-        await editForm.Validate();
+        await editForm.ValidateAsync();
         if (!editForm.IsValid)
             return;
 

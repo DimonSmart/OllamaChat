@@ -6,6 +6,7 @@
 @using Microsoft.Extensions.Logging
 @using Microsoft.JSInterop
 @using MudBlazor
+@using MudX
 @inject IJSRuntime JSRuntime
 @inject IDialogService DialogService
 @inject ILogger<AgenticChatSession> Logger
@@ -30,8 +31,8 @@
         }
 
         messageIndex++;
-            <MudChat Dense="true" ChatPosition="@(message.Role == AppChatRole.Assistant ? ChatBubblePosition.Start : ChatBubblePosition.End)" @key="@($"{messageIndex}_{message.Id}")">
-                <MudChatHeader>
+            <MudXChat Dense="true" ChatPosition="@(message.Role == AppChatRole.Assistant ? ChatBubblePosition.Start : ChatBubblePosition.End)" @key="@($"{messageIndex}_{message.Id}")">
+                <MudXChatHeader>
                     <time>@message.MsgDateTime.ToString("g")</time>
                     <CopyButton Text="@message.Content"
                                 Tooltip="Copy answer"
@@ -54,7 +55,7 @@
                                            OnClick="@(() => OnDeleteMessage.InvokeAsync(message))" />
                         </MudTooltip>
                     }
-                </MudChatHeader>
+                </MudXChatHeader>
 
                 @{
                     var avatarText = message.Role == AppChatRole.Assistant
@@ -83,7 +84,7 @@
                     }
                 }
 
-                <MudChatBubble Class="@(message.Role == AppChatRole.User ? "chat-user-bubble" : null)">
+                <MudXChatBubble Class="@(message.Role == AppChatRole.User ? "chat-user-bubble" : null)">
                     @if (ShouldShowSpeakerLabel(message))
                     {
                         <MudText Typo="Typo.caption" Class="chat-speaker-label">
@@ -124,7 +125,7 @@
                     <div class="chat-markdown-content">
                         @((MarkupString)message.HtmlContent)
                     </div>
-                </MudChatBubble>
+                </MudXChatBubble>
 
                 @if (message.ThinkSegments.Any())
                 {
@@ -144,7 +145,7 @@
 
                 @if (message.IsStreaming || message.IsCanceled || !string.IsNullOrEmpty(message.Statistics))
                 {
-                    <MudChatFooter>
+                    <MudXChatFooter>
                         @if (message.IsStreaming)
                         {
                             <MudText Typo="Typo.caption" Class="typing-indicator">typing...</MudText>
@@ -163,9 +164,9 @@
                                 </MudText>
                             </div>
                         }
-                    </MudChatFooter>
+                    </MudXChatFooter>
                 }
-        </MudChat>
+        </MudXChat>
     }
 </div>
 

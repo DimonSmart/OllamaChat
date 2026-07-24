@@ -790,7 +790,7 @@
     private async Task SaveAgent()
     {
         if (editAgentForm == null) return;
-        await editAgentForm.Validate();
+        await editAgentForm.ValidateAsync();
         if (editAgentForm.IsValid)
         {
             try

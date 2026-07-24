@@ -1,8 +1,9 @@
 @using Microsoft.AspNetCore.Components
 @using MudBlazor
+@using MudX
 @using ChatClient.Domain.Models
 
-<MudChatBubble Class="@($"mcp-call {(isExpanded ? "expanded" : "collapsed")}")" OnClick="Toggle">
+<MudXChatBubble Class="@($"mcp-call {(isExpanded ? "expanded" : "collapsed")}")" OnClick="Toggle">
     @if (isExpanded)
     {
         <MudText Typo="Typo.caption" Class="mud-text-secondary mcp-call-header">
@@ -32,7 +33,7 @@
             🛠 @Call.ServerName.@Call.OriginalName — @Call.Status
         </MudText>
     }
-</MudChatBubble>
+</MudXChatBubble>
 
 @code {
     [Parameter, EditorRequired]

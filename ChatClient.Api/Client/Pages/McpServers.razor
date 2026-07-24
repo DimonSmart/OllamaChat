@@ -447,11 +447,12 @@
         showEditServerDialog = true;
     }
 
-    private void ShowInstallFromLinkDialog()
+    private async Task ShowInstallFromLinkDialog()
     {
         installLink = string.Empty;
         showInstallFromLinkDialog = true;
-        installFromLinkForm?.ResetValidation();
+        if (installFromLinkForm is not null)
+            await installFromLinkForm.ResetValidationAsync();
     }
 
     private void OnSearch(string text)
@@ -600,11 +601,12 @@
         showDeleteDialog = false;
     }
 
-    private void CancelInstallFromLink()
+    private async Task CancelInstallFromLink()
     {
         showInstallFromLinkDialog = false;
         installLink = string.Empty;
-        installFromLinkForm?.ResetValidation();
+        if (installFromLinkForm is not null)
+            await installFromLinkForm.ResetValidationAsync();
     }
 
     private async Task InstallServerFromLink()
@@ -612,7 +614,7 @@
         if (installFromLinkForm == null)
             return;
 
-        await installFromLinkForm.Validate();
+        await installFromLinkForm.ValidateAsync();
         if (!installFromLinkForm.IsValid)
             return;
 
@@ -625,7 +627,7 @@
             Snackbar.Add($"MCP server \"{installed.Name}\" installed successfully", Severity.Success);
             showInstallFromLinkDialog = false;
             installLink = string.Empty;
-            installFromLinkForm?.ResetValidation();
+            await installFromLinkForm.ResetValidationAsync();
         }
         catch (Exception ex)
         {
@@ -695,7 +697,7 @@
             return;
         }
 
-        await editServerForm.Validate();
+        await editServerForm.ValidateAsync();
         if (editServerForm.IsValid)
         {
             try

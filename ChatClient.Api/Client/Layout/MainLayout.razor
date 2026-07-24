@@ -8,11 +8,13 @@
 @using ChatClient.Api.Client.Components
 @using ChatClient.Api.Services
 @using System.Linq
+@using MudX
 
 <MudThemeProvider Theme="@_theme" IsDarkMode="_isDarkMode" />
 <MudDialogProvider />
 <MudSnackbarProvider />
 <MudPopoverProvider />
+<MudXProvider />
 <CascadingValue Value="@pickerModel" Name="UiModelSelection">
 <MudLayout>
     <MudAppBar Elevation="1" Dense="true">
