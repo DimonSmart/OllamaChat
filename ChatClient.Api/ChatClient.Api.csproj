@@ -23,7 +23,7 @@
         <PackageReference Include="Serilog.AspNetCore" Version="10.0.0" />
         <PackageReference Include="Serilog.Sinks.File" Version="7.0.0" />
         <PackageReference Include="DocumentFormat.OpenXml" Version="3.4.1" />
-        <PackageReference Include="PdfPig" Version="0.1.13" />
+        <PackageReference Include="PdfPig" Version="0.1.15" />
         <PackageReference Include="Whisper.net" Version="1.9.1" />
         <PackageReference Include="Whisper.net.Runtime" Version="1.9.1" />
         <PackageReference Include="Z.Blazor.Diagrams" Version="3.0.4.1" />
