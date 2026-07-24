@@ -48,17 +48,19 @@ public sealed class WorkflowStartValuesTests
     }
 
     [Fact]
-    public void Program_ResolvesMaximumIterationsFromStartValues()
+    public void ProgrammableManagerBuilder_BindsMaximumIterationsToStartValues()
     {
-        var program = GroupChatManagerPrograms
-            .PrefixCycleSuffix(["host"], ["a", "b"], ["judge"])
-            .WithMaximumIterationsResolver(start =>
-                checked(start.RequireInt32("rounds", min: 1, max: 20) * 2 + 2));
+        var manager = new ProgrammableGroupChatManagerBuilder()
+            .MaximumIterations(start =>
+                checked(start.RequireInt32("rounds", min: 1, max: 20) * 2 + 2))
+            .Program(GroupChatManagerPrograms.PrefixCycleSuffix(["host"], ["a", "b"], ["judge"]))
+            .Build();
         var values = new WorkflowStartValues(new Dictionary<string, string>
         {
             ["rounds"] = "5"
         });
 
-        Assert.Equal(12, program.ResolveMaximumIterations(values, fallback: 40));
+        Assert.NotNull(manager.Program);
+        Assert.Equal(12, manager.Program.ResolveMaximumIterations(values, fallback: manager.MaximumIterations));
     }
 }
