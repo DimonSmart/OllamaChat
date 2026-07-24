@@ -85,10 +85,6 @@ public sealed class OrchestrationWorkflowTurnCoordinator(
                     decision.ErrorMessage ?? "Workflow returned an empty response.");
                 return true;
 
-            case WorkflowExecutionAction.ThrowExceededAutomaticTurns:
-                throw new InvalidOperationException(
-                    $"Autonomous workflow '{request.WorkflowDisplayName}' exceeded its automatic turn limit ({request.Execution.MaxAutomaticTurns}).");
-
             default:
                 throw new InvalidOperationException(
                     $"Unsupported workflow execution action '{decision.Action}'.");

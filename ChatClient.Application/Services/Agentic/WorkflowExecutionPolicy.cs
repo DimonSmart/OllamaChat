@@ -81,12 +81,6 @@ public sealed class WorkflowExecutionPolicy : IWorkflowExecutionPolicy
                     : WorkflowExecutionWarning.None);
         }
 
-        if (execution.Mode == AgentWorkflowExecutionMode.Autonomous &&
-            progress.AutomaticAssistantTurnsUsed > execution.MaxAutomaticTurns)
-        {
-            return WorkflowExecutionDecision.ThrowExceededAutomaticTurns();
-        }
-
         if (execution.Mode != AgentWorkflowExecutionMode.Autonomous)
         {
             return WorkflowExecutionDecision.Stop();
@@ -155,16 +149,13 @@ public readonly record struct WorkflowExecutionDecision(
     public static WorkflowExecutionDecision AssistantError(string message) =>
         new(WorkflowExecutionAction.ShowAssistantError, ErrorMessage: message);
 
-    public static WorkflowExecutionDecision ThrowExceededAutomaticTurns() =>
-        new(WorkflowExecutionAction.ThrowExceededAutomaticTurns);
 }
 
 public enum WorkflowExecutionAction
 {
     Continue,
     Stop,
-    ShowAssistantError,
-    ThrowExceededAutomaticTurns
+    ShowAssistantError
 }
 
 public enum WorkflowExecutionWarning
