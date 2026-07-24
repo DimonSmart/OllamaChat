@@ -1,0 +1,130 @@
+@page "/agent-mode-provider-profiles"
+@using ChatClient.Api.Services
+@inject IAgentModeProviderProfileService AgentModeProviderProfileService
+@inject ISnackbar Snackbar
+
+<PageTitle>Agent Mode Provider Profiles</PageTitle>
+
+<MudContainer MaxWidth="MaxWidth.ExtraLarge" Class="mt-3">
+    <MudText Class="page-header">Agent Mode Provider Profiles</MudText>
+    <MudPaper Elevation="3" Class="pa-3 rounded-lg">
+        <MudToolBar Dense="true">
+            <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Add" OnClick="CreateProfile" Class="px-4" Size="Size.Small">Add Agent Mode Profile</MudButton>
+            <MudSpacer />
+            <MudTextField T="string" ValueChanged="OnSearch" Placeholder="Search profiles..." Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Search" IconSize="Size.Medium" Immediate="true" DebounceInterval="300" Style="min-width: 300px;" />
+        </MudToolBar>
+
+        @if (loading)
+        {
+            <MudStack Justify="Justify.Center" Class="my-4"><MudProgressCircular Color="Color.Primary" Indeterminate="true" /></MudStack>
+        }
+        else
+        {
+            <MudDataGrid T="AgentModeProviderProfile" Items="@filteredProfiles" ReadOnly="true" Bordered="true" Hover="true" Striped="true" Dense="true" FixedHeader="true" Class="mt-4">
+                <Columns>
+                    <PropertyColumn Property="x => x.Name" Title="Name" />
+                    <PropertyColumn Property="x => x.DefaultMode" Title="Default Mode" />
+                    <TemplateColumn Title="Modes"><CellTemplate><MudTooltip Text="@string.Join(", ", context.Item.Modes.Select(mode => mode.Name))"><MudText Typo="Typo.body2">@string.Join(", ", context.Item.Modes.Select(mode => mode.Name))</MudText></MudTooltip></CellTemplate></TemplateColumn>
+                    <TemplateColumn Title="Instructions"><CellTemplate><MudText Typo="Typo.body2" Class="mud-text-truncate">@Preview(context.Item.Instructions, "Default")</MudText></CellTemplate></TemplateColumn>
+                    <TemplateColumn Title="Updated"><CellTemplate><MudText Typo="Typo.body2">@context.Item.UpdatedAt.ToLocalTime().ToString("g")</MudText></CellTemplate></TemplateColumn>
+                    <TemplateColumn Title="Created"><CellTemplate><MudText Typo="Typo.body2">@context.Item.CreatedAt.ToLocalTime().ToString("g")</MudText></CellTemplate></TemplateColumn>
+                    <TemplateColumn Title="Actions" CellStyle="display:flex; justify-content:flex-end;"><CellTemplate><MudIconButton Icon="@Icons.Material.Filled.Edit" Size="Size.Small" OnClick="@(() => EditProfile(context.Item))" /><MudIconButton Icon="@Icons.Material.Filled.Delete" Color="Color.Error" Size="Size.Small" OnClick="@(() => ConfirmDelete(context.Item))" /></CellTemplate></TemplateColumn>
+                </Columns>
+                <PagerContent><MudDataGridPager T="AgentModeProviderProfile" PageSizeOptions="new[] { 10, 25, 50, 100 }" /></PagerContent>
+                <NoRecordsContent><MudStack AlignItems="AlignItems.Center" Justify="Justify.Center" Class="py-8"><MudIcon Icon="@Icons.Material.Filled.Tune" Color="Color.Secondary" Size="Size.Large" /><MudText Typo="Typo.h6" Class="mt-4">No Agent Mode Provider profiles found</MudText><MudText Typo="Typo.body2" Class="mud-text-secondary">Click "Add Agent Mode Profile" to create one.</MudText></MudStack></NoRecordsContent>
+            </MudDataGrid>
+        }
+    </MudPaper>
+</MudContainer>
+
+<MudDialog @bind-Visible="showEditDialog" Options="editDialogOptions">
+    <TitleContent><MudText Typo="Typo.h6">@(isNewProfile ? "Create Agent Mode Provider Profile" : "Edit Agent Mode Provider Profile")</MudText></TitleContent>
+    <DialogContent>
+        <MudForm @ref="editForm" Model="editingProfile">
+            <MudTextField @bind-Value="editingProfile.Name" Label="Name" Required="true" Immediate="true" Validation="@(new Func<string, string>(ValidateName))" />
+            <MudTextField @bind-Value="editingProfile.Instructions" Label="Provider Instructions" Lines="8" Class="mt-4" HelperText="Optional custom instructions for AgentModeProvider. Leave empty to use Microsoft Agent Framework defaults. Custom instructions must contain: {available_modes} {current_mode}" />
+            <MudSelect T="string" @bind-Value="editingProfile.DefaultMode" Label="Default Mode" Required="true" Class="mt-4">
+                @foreach (var mode in editingProfile.Modes.Where(mode => !string.IsNullOrWhiteSpace(mode.Name)))
+                {
+                    <MudSelectItem T="string" Value="@mode.Name">@mode.Name</MudSelectItem>
+                }
+            </MudSelect>
+            <MudText Typo="Typo.h6" Class="mt-6 mb-2">Modes</MudText>
+            @for (var index = 0; index < editingProfile.Modes.Count; index++)
+            {
+                var mode = editingProfile.Modes[index];
+                <MudPaper Outlined="true" Class="pa-3 mb-3">
+                    <MudTextField @bind-Value="mode.Name" Label="Name" Required="true" Immediate="true" />
+                    <MudTextField @bind-Value="mode.Instructions" Label="Instructions" Lines="5" Required="true" Class="mt-3" />
+                    <MudStack Row="true" Justify="Justify.FlexEnd" Class="mt-2"><MudButton Color="Color.Error" Disabled="@(editingProfile.Modes.Count == 1)" StartIcon="@Icons.Material.Filled.Delete" OnClick="@(() => DeleteMode(mode))">Delete</MudButton></MudStack>
+                </MudPaper>
+            }
+            <MudButton Variant="Variant.Outlined" StartIcon="@Icons.Material.Filled.Add" OnClick="AddMode">Add Mode</MudButton>
+        </MudForm>
+    </DialogContent>
+    <DialogActions><MudButton OnClick="CloseEditDialog">Cancel</MudButton><MudButton Color="Color.Primary" OnClick="SaveProfile" Disabled="saving">Save</MudButton></DialogActions>
+</MudDialog>
+
+<MudDialog @bind-Visible="showDeleteDialog" Options="deleteDialogOptions">
+    <TitleContent><MudText Typo="Typo.h6">Delete Agent Mode Provider Profile</MudText></TitleContent>
+    <DialogContent><MudText>Are you sure you want to delete "@profileToDelete?.Name"?</MudText></DialogContent>
+    <DialogActions><MudButton OnClick="CloseDeleteDialog">Cancel</MudButton><MudButton Color="Color.Error" OnClick="DeleteProfile">Delete</MudButton></DialogActions>
+</MudDialog>
+
+@code {
+    private List<AgentModeProviderProfile> profiles = [];
+    private List<AgentModeProviderProfile> filteredProfiles = [];
+    private AgentModeProviderProfile editingProfile = new();
+    private AgentModeProviderProfile? profileToDelete;
+    private MudForm? editForm;
+    private bool loading = true;
+    private bool saving;
+    private bool isNewProfile;
+    private bool showEditDialog;
+    private bool showDeleteDialog;
+    private string searchText = string.Empty;
+    private readonly DialogOptions editDialogOptions = new() { CloseOnEscapeKey = true, CloseButton = true, MaxWidth = MaxWidth.Large, FullWidth = true };
+    private readonly DialogOptions deleteDialogOptions = new() { CloseOnEscapeKey = true, CloseButton = true, MaxWidth = MaxWidth.ExtraSmall };
+
+    protected override async Task OnInitializedAsync() => await LoadProfiles();
+
+    private async Task LoadProfiles()
+    {
+        try { loading = true; profiles = (await AgentModeProviderProfileService.GetAllAsync()).OrderBy(profile => profile.Name, StringComparer.OrdinalIgnoreCase).ToList(); ApplySearch(); }
+        catch (Exception ex) { Snackbar.Add($"Error loading Agent Mode Provider profiles: {ex.Message}", Severity.Error); }
+        finally { loading = false; }
+    }
+
+    private void OnSearch(string text) { searchText = text; ApplySearch(); }
+    private void ApplySearch() => filteredProfiles = string.IsNullOrWhiteSpace(searchText) ? profiles.ToList() : profiles.Where(profile => Contains(profile.Name, searchText) || Contains(profile.DefaultMode, searchText) || Contains(profile.Instructions, searchText) || profile.Modes.Any(mode => Contains(mode.Name, searchText) || Contains(mode.Instructions, searchText))).ToList();
+
+    private void CreateProfile() { editingProfile = new AgentModeProviderProfile { Modes = [new AgentModeProfile()] }; isNewProfile = true; showEditDialog = true; }
+    private void EditProfile(AgentModeProviderProfile profile)
+    {
+        editingProfile = new AgentModeProviderProfile { Id = profile.Id, Name = profile.Name, Instructions = profile.Instructions, DefaultMode = profile.DefaultMode, CreatedAt = profile.CreatedAt, UpdatedAt = profile.UpdatedAt, Modes = profile.Modes.Select(mode => new AgentModeProfile { Name = mode.Name, Instructions = mode.Instructions }).ToList() };
+        isNewProfile = false; showEditDialog = true;
+    }
+    private void AddMode() => editingProfile.Modes.Add(new AgentModeProfile());
+    private void DeleteMode(AgentModeProfile mode) { if (editingProfile.Modes.Count == 1) return; editingProfile.Modes.Remove(mode); if (editingProfile.DefaultMode == mode.Name) editingProfile.DefaultMode = null; }
+    private async Task SaveProfile()
+    {
+        if (editForm is null) return;
+        await editForm.ValidateAsync();
+        if (!editForm.IsValid) return;
+        try { saving = true; if (isNewProfile) await AgentModeProviderProfileService.CreateAsync(editingProfile); else await AgentModeProviderProfileService.UpdateAsync(editingProfile); showEditDialog = false; await LoadProfiles(); Snackbar.Add($"Agent Mode Provider profile {(isNewProfile ? "created" : "updated")}.", Severity.Success); }
+        catch (Exception ex) { Snackbar.Add($"Could not save Agent Mode Provider profile: {ex.Message}", Severity.Error); }
+        finally { saving = false; }
+    }
+    private void ConfirmDelete(AgentModeProviderProfile profile) { profileToDelete = profile; showDeleteDialog = true; }
+    private async Task DeleteProfile()
+    {
+        if (profileToDelete is null) return;
+        try { await AgentModeProviderProfileService.DeleteAsync(profileToDelete.Id); showDeleteDialog = false; await LoadProfiles(); Snackbar.Add("Agent Mode Provider profile deleted.", Severity.Success); }
+        catch (Exception ex) { Snackbar.Add($"Could not delete Agent Mode Provider profile: {ex.Message}", Severity.Error); }
+    }
+    private void CloseEditDialog() => showEditDialog = false;
+    private void CloseDeleteDialog() => showDeleteDialog = false;
+    private static string ValidateName(string value) => string.IsNullOrWhiteSpace(value) ? "Name is required." : string.Empty;
+    private static bool Contains(string? value, string search) => value?.Contains(search, StringComparison.OrdinalIgnoreCase) == true;
+    private static string Preview(string? value, string emptyText = "") => string.IsNullOrWhiteSpace(value) ? emptyText : value.Length <= 100 ? value : $"{value[..100]}…";
+}

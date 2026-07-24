@@ -7,6 +7,7 @@ public static class FilePathConstants
     public const string DefaultUserProfilePrefsFile = "UserData/user_profile.json";
     public const string DefaultAgentTemplatesFile = "UserData/agent_templates.json";
     public const string DefaultTodoProviderProfilesFile = "UserData/todo_provider_profiles.json";
+    public const string DefaultAgentModeProviderProfilesFile = "UserData/agent_mode_provider_profiles.json";
     public const string DefaultWorkflowDefinitionsFile = "UserData/workflow_definitions.json";
     public const string DefaultUserSettingsFile = "UserData/user_settings.json";
     public const string DefaultRagFilesDirectory = "UserData/agents";
