@@ -3,14 +3,24 @@ namespace ChatClient.Api.AgentWorkflows;
 public sealed class GroupChatManagerProgram
 {
     private readonly Func<GroupChatManagerProgramContext, string> _selectNextSpeaker;
+    private readonly Func<WorkflowStartValues, int>? _maximumIterationsResolver;
 
     public GroupChatManagerProgram(
         Func<GroupChatManagerProgramContext, string> selectNextSpeaker,
         string? displayName = null)
+        : this(selectNextSpeaker, displayName, maximumIterationsResolver: null)
+    {
+    }
+
+    private GroupChatManagerProgram(
+        Func<GroupChatManagerProgramContext, string> selectNextSpeaker,
+        string? displayName,
+        Func<WorkflowStartValues, int>? maximumIterationsResolver)
     {
         ArgumentNullException.ThrowIfNull(selectNextSpeaker);
 
         _selectNextSpeaker = selectNextSpeaker;
+        _maximumIterationsResolver = maximumIterationsResolver;
         DisplayName = NormalizeOptional(displayName);
     }
 
@@ -28,6 +38,32 @@ public sealed class GroupChatManagerProgram
         }
 
         return speakerId.Trim();
+    }
+
+    internal GroupChatManagerProgram WithMaximumIterationsResolver(
+        Func<WorkflowStartValues, int> resolver)
+    {
+        ArgumentNullException.ThrowIfNull(resolver);
+        return new GroupChatManagerProgram(_selectNextSpeaker, DisplayName, resolver);
+    }
+
+    internal GroupChatManagerProgram WithoutMaximumIterationsResolver() =>
+        _maximumIterationsResolver is null
+            ? this
+            : new GroupChatManagerProgram(_selectNextSpeaker, DisplayName, maximumIterationsResolver: null);
+
+    internal int ResolveMaximumIterations(WorkflowStartValues startValues, int fallback)
+    {
+        ArgumentNullException.ThrowIfNull(startValues);
+
+        var maximumIterations = _maximumIterationsResolver?.Invoke(startValues) ?? fallback;
+        if (maximumIterations <= 0)
+        {
+            throw new InvalidOperationException(
+                "Resolved group chat maximum iterations must be greater than zero.");
+        }
+
+        return maximumIterations;
     }
 
     private static string? NormalizeOptional(string? value) =>
