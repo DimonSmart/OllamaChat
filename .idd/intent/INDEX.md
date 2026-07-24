@@ -32,3 +32,4 @@ Git history is the source for deleted or previous document versions.
 | IDD-0018 | Spec | Built-in MCP knowledge book | Structured knowledge-book operations | — |
 | IDD-0019 | Spec | Built-in MCP markdown document | Structured Markdown reading and editing | — |
 | IDD-0020 | ADR | Architecture | C#/.NET and Microsoft Agent Framework | — |
+| IDD-0021 | Spec | Todo Provider profiles | Reusable Todo Provider configuration | — |

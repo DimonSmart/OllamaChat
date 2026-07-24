@@ -1,0 +1,219 @@
+@page "/todo-provider-profiles"
+@using ChatClient.Api.Services
+@inject ITodoProviderProfileService TodoProviderProfileService
+@inject ISnackbar Snackbar
+
+<PageTitle>Todo Provider Profiles</PageTitle>
+
+<MudContainer MaxWidth="MaxWidth.ExtraLarge" Class="mt-3">
+    <MudText Class="page-header">Todo Provider Profiles</MudText>
+
+    <MudPaper Elevation="3" Class="pa-3 rounded-lg">
+        <MudToolBar Dense="true">
+            <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Add"
+                       OnClick="CreateProfile" Class="px-4" Size="Size.Small">
+                Add Todo Profile
+            </MudButton>
+            <MudSpacer />
+            <MudTextField T="string" ValueChanged="OnSearch" Placeholder="Search profiles..."
+                          Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Search"
+                          IconSize="Size.Medium" Immediate="true" DebounceInterval="300"
+                          Style="min-width: 300px;" />
+        </MudToolBar>
+
+        @if (loading)
+        {
+            <MudStack Justify="Justify.Center" Class="my-4"><MudProgressCircular Color="Color.Primary" Indeterminate="true" /></MudStack>
+        }
+        else
+        {
+            <MudDataGrid T="TodoProviderProfile" Items="@filteredProfiles" ReadOnly="true" Bordered="true" Hover="true"
+                         Striped="true" Dense="true" FixedHeader="true" Class="mt-4">
+                <Columns>
+                    <PropertyColumn Property="x => x.Name" Title="Name" />
+                    <TemplateColumn Title="Instructions">
+                        <CellTemplate><MudText Typo="Typo.body2" Class="mud-text-truncate">@Preview(context.Item.Instructions)</MudText></CellTemplate>
+                    </TemplateColumn>
+                    <TemplateColumn Title="Todo Message">
+                        <CellTemplate><MudText Typo="Typo.body2" Class="mud-text-truncate">@Preview(context.Item.TodoListMessageTemplate, "Default")</MudText></CellTemplate>
+                    </TemplateColumn>
+                    <TemplateColumn Title="Suppress Message">
+                        <CellTemplate><MudText Typo="Typo.body2">@(context.Item.SuppressTodoListMessage ? "Yes" : "No")</MudText></CellTemplate>
+                    </TemplateColumn>
+                    <TemplateColumn Title="Updated">
+                        <CellTemplate><MudText Typo="Typo.body2">@context.Item.UpdatedAt.ToLocalTime().ToString("g")</MudText></CellTemplate>
+                    </TemplateColumn>
+                    <TemplateColumn Title="Created">
+                        <CellTemplate><MudText Typo="Typo.body2">@context.Item.CreatedAt.ToLocalTime().ToString("g")</MudText></CellTemplate>
+                    </TemplateColumn>
+                    <TemplateColumn Title="Actions" CellStyle="display:flex; justify-content:flex-end;">
+                        <CellTemplate>
+                            <MudIconButton Icon="@Icons.Material.Filled.Edit" Size="Size.Small" OnClick="@(() => EditProfile(context.Item))" />
+                            <MudIconButton Icon="@Icons.Material.Filled.Delete" Color="Color.Error" Size="Size.Small" OnClick="@(() => ConfirmDelete(context.Item))" />
+                        </CellTemplate>
+                    </TemplateColumn>
+                </Columns>
+                <PagerContent><MudDataGridPager T="TodoProviderProfile" PageSizeOptions="new[] { 10, 25, 50, 100 }" /></PagerContent>
+                <NoRecordsContent>
+                    <MudStack AlignItems="AlignItems.Center" Justify="Justify.Center" Class="py-8">
+                        <MudIcon Icon="@Icons.Material.Filled.Checklist" Color="Color.Secondary" Size="Size.Large" />
+                        <MudText Typo="Typo.h6" Class="mt-4">No Todo Provider profiles found</MudText>
+                        <MudText Typo="Typo.body2" Class="mud-text-secondary">Click "Add Todo Profile" to create one.</MudText>
+                    </MudStack>
+                </NoRecordsContent>
+            </MudDataGrid>
+        }
+    </MudPaper>
+</MudContainer>
+
+<MudDialog @bind-Visible="showEditDialog" Options="editDialogOptions">
+    <TitleContent><MudText Typo="Typo.h6">@(isNewProfile ? "Create Todo Provider Profile" : "Edit Todo Provider Profile")</MudText></TitleContent>
+    <DialogContent>
+        <MudForm @ref="editForm" Model="editingProfile">
+            <MudTextField @bind-Value="editingProfile.Name" Label="Name" Required="true" Immediate="true"
+                          Validation="@(new Func<string, string>(ValidateName))" />
+            <MudTextField @bind-Value="editingProfile.Instructions" Label="Instructions" Lines="8" Class="mt-4"
+                          HelperText="Custom instructions for TodoProvider. Leave empty to use Microsoft Agent Framework defaults." />
+            <MudTextField @bind-Value="editingProfile.TodoListMessageTemplate" Label="Todo List Message Template" Lines="8" Class="mt-4"
+                          HelperText="Optional custom template for the todo-list message. Use {todos} where the formatted todo list should appear. Leave empty to use the framework default." />
+            <MudCheckBox @bind-Value="editingProfile.SuppressTodoListMessage" Label="Suppress todo-list message" Class="mt-4" />
+            <MudText Typo="Typo.caption" Class="mud-text-secondary">Do not inject the current todo-list summary into the model context.</MudText>
+        </MudForm>
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="CloseEditDialog">Cancel</MudButton>
+        <MudButton Color="Color.Primary" OnClick="SaveProfile" Disabled="saving">Save</MudButton>
+    </DialogActions>
+</MudDialog>
+
+<MudDialog @bind-Visible="showDeleteDialog" Options="deleteDialogOptions">
+    <TitleContent><MudText Typo="Typo.h6">Delete Todo Provider Profile</MudText></TitleContent>
+    <DialogContent><MudText>Are you sure you want to delete "@profileToDelete?.Name"?</MudText></DialogContent>
+    <DialogActions>
+        <MudButton OnClick="CloseDeleteDialog">Cancel</MudButton>
+        <MudButton Color="Color.Error" OnClick="DeleteProfile">Delete</MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    private List<TodoProviderProfile> profiles = [];
+    private List<TodoProviderProfile> filteredProfiles = [];
+    private TodoProviderProfile editingProfile = new();
+    private TodoProviderProfile? profileToDelete;
+    private MudForm? editForm;
+    private bool loading = true;
+    private bool saving;
+    private bool isNewProfile;
+    private bool showEditDialog;
+    private bool showDeleteDialog;
+    private string searchText = string.Empty;
+
+    private readonly DialogOptions editDialogOptions = new() { CloseOnEscapeKey = true, CloseButton = true, MaxWidth = MaxWidth.Medium, FullWidth = true };
+    private readonly DialogOptions deleteDialogOptions = new() { CloseOnEscapeKey = true, CloseButton = true, MaxWidth = MaxWidth.ExtraSmall };
+
+    protected override async Task OnInitializedAsync() => await LoadProfiles();
+
+    private async Task LoadProfiles()
+    {
+        try
+        {
+            loading = true;
+            profiles = (await TodoProviderProfileService.GetAllAsync())
+                .OrderBy(profile => profile.Name, StringComparer.OrdinalIgnoreCase).ToList();
+            ApplySearch();
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Error loading Todo Provider profiles: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            loading = false;
+        }
+    }
+
+    private void OnSearch(string text)
+    {
+        searchText = text;
+        ApplySearch();
+    }
+
+    private void ApplySearch()
+    {
+        filteredProfiles = string.IsNullOrWhiteSpace(searchText)
+            ? profiles.ToList()
+            : profiles.Where(profile => Contains(profile.Name, searchText) || Contains(profile.Instructions, searchText) || Contains(profile.TodoListMessageTemplate, searchText)).ToList();
+    }
+
+    private void CreateProfile()
+    {
+        editingProfile = new TodoProviderProfile();
+        isNewProfile = true;
+        showEditDialog = true;
+    }
+
+    private void EditProfile(TodoProviderProfile profile)
+    {
+        editingProfile = new TodoProviderProfile
+        {
+            Id = profile.Id, Name = profile.Name, Instructions = profile.Instructions,
+            SuppressTodoListMessage = profile.SuppressTodoListMessage, TodoListMessageTemplate = profile.TodoListMessageTemplate,
+            CreatedAt = profile.CreatedAt, UpdatedAt = profile.UpdatedAt
+        };
+        isNewProfile = false;
+        showEditDialog = true;
+    }
+
+    private async Task SaveProfile()
+    {
+        if (editForm is null) return;
+        await editForm.ValidateAsync();
+        if (!editForm.IsValid) return;
+
+        try
+        {
+            saving = true;
+            if (isNewProfile) await TodoProviderProfileService.CreateAsync(editingProfile);
+            else await TodoProviderProfileService.UpdateAsync(editingProfile);
+            showEditDialog = false;
+            await LoadProfiles();
+            Snackbar.Add($"Todo Provider profile {(isNewProfile ? "created" : "updated") }.", Severity.Success);
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Could not save Todo Provider profile: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            saving = false;
+        }
+    }
+
+    private void ConfirmDelete(TodoProviderProfile profile)
+    {
+        profileToDelete = profile;
+        showDeleteDialog = true;
+    }
+
+    private async Task DeleteProfile()
+    {
+        if (profileToDelete is null) return;
+        try
+        {
+            await TodoProviderProfileService.DeleteAsync(profileToDelete.Id);
+            showDeleteDialog = false;
+            await LoadProfiles();
+            Snackbar.Add("Todo Provider profile deleted.", Severity.Success);
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Could not delete Todo Provider profile: {ex.Message}", Severity.Error);
+        }
+    }
+
+    private void CloseEditDialog() => showEditDialog = false;
+    private void CloseDeleteDialog() => showDeleteDialog = false;
+    private static string ValidateName(string value) => string.IsNullOrWhiteSpace(value) ? "Name is required." : string.Empty;
+    private static bool Contains(string? value, string search) => value?.Contains(search, StringComparison.OrdinalIgnoreCase) == true;
+    private static string Preview(string? value, string emptyText = "") => string.IsNullOrWhiteSpace(value) ? emptyText : value.Length <= 100 ? value : $"{value[..100]}…";
+}
