@@ -3,6 +3,7 @@ namespace ChatClient.Api.AgentWorkflows;
 public sealed class ProgrammableGroupChatManagerBuilder
 {
     private int _maximumIterations = 40;
+    private Func<WorkflowStartValues, int>? _maximumIterationsResolver;
     private GroupChatManagerProgram? _program;
     private string? _programDisplayName;
 
@@ -34,6 +35,16 @@ public sealed class ProgrammableGroupChatManagerBuilder
         }
 
         _maximumIterations = maximumIterations;
+        _maximumIterationsResolver = null;
+        _program = _program?.WithoutMaximumIterationsResolver();
+        return this;
+    }
+
+    public ProgrammableGroupChatManagerBuilder MaximumIterations(
+        Func<WorkflowStartValues, int> maximumIterationsResolver)
+    {
+        ArgumentNullException.ThrowIfNull(maximumIterationsResolver);
+        _maximumIterationsResolver = maximumIterationsResolver;
         return this;
     }
 
@@ -59,11 +70,15 @@ public sealed class ProgrammableGroupChatManagerBuilder
 
     internal GroupChatWorkflowManagerDefinition Build()
     {
+        var program = _maximumIterationsResolver is null || _program is null
+            ? _program
+            : _program.WithMaximumIterationsResolver(_maximumIterationsResolver);
+
         return new GroupChatWorkflowManagerDefinition
         {
             Kind = GroupChatWorkflowManagerKind.Programmable,
             MaximumIterations = _maximumIterations,
-            Program = _program,
+            Program = program,
             ProgramDisplayName = _programDisplayName
         };
     }
