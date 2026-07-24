@@ -48,6 +48,7 @@ public sealed class OrchestrationWorkflowEventStreamProcessor(
         return deliveredMessages;
     }
 
+    [Obsolete]
     internal async Task<bool> DrainAsync(
         IAsyncEnumerable<WorkflowEvent> workflowEvents,
         OrchestrationWorkflowEventStreamContext context,
@@ -425,9 +426,13 @@ public sealed class OrchestrationWorkflowEventStreamProcessor(
             finalMessage.AgentId = resolvedSpeakerId;
         }
 
-        completedAssistantMessages.Add(new OrchestrationCompletedAssistantMessage(
-            finalMessage,
-            resolvedSpeakerId ?? finalMessage.AgentName));
+        if (!string.IsNullOrWhiteSpace(finalMessage.Content))
+        {
+            completedAssistantMessages.Add(new OrchestrationCompletedAssistantMessage(
+                finalMessage,
+                resolvedSpeakerId ?? finalMessage.AgentName));
+        }
+
         await context.NotifyMessageUpdatedAsync(finalMessage, true);
     }
 
