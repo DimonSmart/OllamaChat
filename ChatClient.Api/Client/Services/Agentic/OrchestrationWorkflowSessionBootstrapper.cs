@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Reflection;
 using ChatClient.Api.AgentWorkflows;
 using ChatClient.Api.AgentWorkflows.Runtime;
@@ -52,6 +53,10 @@ public sealed class OrchestrationWorkflowSessionBootstrapper(
             stage = "validate-workflow";
             ValidateWorkflowDefinition(request.Workflow, request.Participants, request.Agents);
             var normalizedStartInputs = NormalizeStartInputs(request.Workflow, request.StartInputs);
+            var normalizedParameterValues = NormalizeParameterValues(request.Workflow, normalizedStartInputs);
+
+            stage = "resolve-runtime-configuration";
+            var runtimeWorkflow = ResolveRuntimeConfiguration(request.Workflow, normalizedParameterValues);
 
             stage = "create-task-session";
             var session = await taskSessionStore.CreateSessionAsync(
@@ -64,7 +69,7 @@ public sealed class OrchestrationWorkflowSessionBootstrapper(
 
             foreach (var startInput in normalizedStartInputs)
             {
-                var definition = request.Workflow.StartInputs.First(input =>
+                var definition = runtimeWorkflow.StartInputs.First(input =>
                     string.Equals(input.Key, startInput.Key, StringComparison.OrdinalIgnoreCase));
 
                 if (definition.Kind == WorkflowStartInputKind.MarkdownDocument)
@@ -92,7 +97,7 @@ public sealed class OrchestrationWorkflowSessionBootstrapper(
                     session.SessionId,
                     definition.Key,
                     MapParameterValueKind(definition.Kind),
-                    NormalizeParameterValue(definition, startInput),
+                    normalizedParameterValues[definition.Key],
                     cancellationToken);
             }
 
@@ -157,7 +162,7 @@ public sealed class OrchestrationWorkflowSessionBootstrapper(
                 session.SessionId,
                 new OrchestrationWorkflowSessionStartRequest
                 {
-                    Workflow = request.Workflow,
+                    Workflow = runtimeWorkflow,
                     Participants = request.Participants,
                     ResolvedParticipants = request.ResolvedParticipants,
                     Agents = request.Participants.Count == 0 ? sessionBoundAgents : [],
@@ -298,6 +303,69 @@ public sealed class OrchestrationWorkflowSessionBootstrapper(
         return normalizedInputs;
     }
 
+    private static IReadOnlyDictionary<string, string> NormalizeParameterValues(
+        IOrchestrationWorkflowDefinition workflow,
+        IReadOnlyList<OrchestrationWorkflowStartInputValue> normalizedInputs)
+    {
+        var inputsByKey = normalizedInputs.ToDictionary(
+            static input => input.Key,
+            StringComparer.OrdinalIgnoreCase);
+        var values = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var definition in workflow.StartInputs)
+        {
+            if (definition.Kind == WorkflowStartInputKind.MarkdownDocument ||
+                !inputsByKey.TryGetValue(definition.Key, out var input))
+            {
+                continue;
+            }
+
+            values[definition.Key] = NormalizeParameterValue(definition, input);
+        }
+
+        return values;
+    }
+
+    private static IOrchestrationWorkflowDefinition ResolveRuntimeConfiguration(
+        IOrchestrationWorkflowDefinition workflow,
+        IReadOnlyDictionary<string, string> parameterValues)
+    {
+        if (workflow is not GroupChatWorkflowDefinition groupChat ||
+            groupChat.Manager.Kind != GroupChatWorkflowManagerKind.Programmable ||
+            groupChat.Manager.Program is null)
+        {
+            return workflow;
+        }
+
+        var maximumIterations = groupChat.Manager.Program.ResolveMaximumIterations(
+            new WorkflowStartValues(parameterValues),
+            groupChat.Manager.MaximumIterations);
+
+        if (maximumIterations == groupChat.Manager.MaximumIterations)
+        {
+            return workflow;
+        }
+
+        return new GroupChatWorkflowDefinition
+        {
+            Id = groupChat.Id,
+            DisplayName = groupChat.DisplayName,
+            Description = groupChat.Description,
+            Execution = groupChat.Execution,
+            StartInputs = groupChat.StartInputs,
+            Participants = groupChat.Participants,
+            ParticipantIds = groupChat.ParticipantIds,
+            Manager = new GroupChatWorkflowManagerDefinition
+            {
+                Kind = groupChat.Manager.Kind,
+                MaximumIterations = maximumIterations,
+                ImplementationKey = groupChat.Manager.ImplementationKey,
+                Program = groupChat.Manager.Program,
+                ProgramDisplayName = groupChat.Manager.ProgramDisplayName
+            }
+        };
+    }
+
     private static string NormalizeParameterValue(
         WorkflowStartInputDefinition definition,
         OrchestrationWorkflowStartInputValue input)
@@ -312,7 +380,14 @@ public sealed class OrchestrationWorkflowSessionBootstrapper(
         return definition.Kind switch
         {
             WorkflowStartInputKind.Text => value,
-            WorkflowStartInputKind.Number => value,
+            WorkflowStartInputKind.Number => decimal.TryParse(
+                value,
+                NumberStyles.Float,
+                CultureInfo.InvariantCulture,
+                out _)
+                    ? value
+                    : throw new InvalidOperationException(
+                        $"Workflow start input '{definition.DisplayName}' expects a numeric value."),
             WorkflowStartInputKind.Boolean => bool.TryParse(value, out var boolValue)
                 ? boolValue ? bool.TrueString.ToLowerInvariant() : bool.FalseString.ToLowerInvariant()
                 : throw new InvalidOperationException(
