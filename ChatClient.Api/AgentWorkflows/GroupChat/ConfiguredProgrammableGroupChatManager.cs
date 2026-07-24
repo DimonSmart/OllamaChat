@@ -90,7 +90,7 @@ public sealed class ConfiguredProgrammableGroupChatManager : GroupChatManager
     }
 
     private static int CountAssistantMessages(IReadOnlyList<ChatMessage> history) =>
-        history.Count(static message => message.Role == ChatRole.Assistant);
+        GroupChatAssistantTurnCounter.CountCompletedParticipantTurns(history);
 
     private int CountCurrentRunAssistantMessages(IReadOnlyList<ChatMessage> history)
     {
