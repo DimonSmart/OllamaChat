@@ -1,9 +1,12 @@
 var workflow = WorkflowDefinitionBuilder
     .New("philosopher-battle-group-chat", "Philosopher Battle Group Chat")
     .Description("Autonomous philosophical debate coordinated by a workflow-defined group chat program with a host-led opening and a judge-led closing verdict.")
-    .RunAutonomously(maxAutomaticTurns: 10, completionPhase: "complete", completionSummaryLabel: "final")
+    .RunAutonomously(maxAutomaticTurns: 42, completionPhase: "complete", completionSummaryLabel: "final")
     .RequireText("opening_topic", "Opening Topic", input => input
         .Description("The central philosophical question for the debate."))
+    .OptionalNumber("rounds", "Rounds", input => input
+        .Description("Number of complete Kant/Nietzsche debate rounds.")
+        .DefaultValue("5"))
     .OptionalText("battle_language", "Battle Language", input => input
         .Description("Language used by the host and judge.")
         .DefaultValue("English"))
@@ -77,11 +80,12 @@ Speak only once, at the end of the debate.")
     .UseGroupChat(groupChat => groupChat
         .Participants("host", "debater_a", "debater_b", "judge")
         .UseProgrammableManager(manager => manager
-            .MaximumIterations(10)
+            .MaximumIterations(start =>
+                checked(start.RequireInt32("rounds", min: 1, max: 20) * 2 + 2))
             .Program(GroupChatManagerPrograms.PrefixCycleSuffix(
                 prefix: new[] { "host" },
                 cycle: new[] { "debater_a", "debater_b" },
-                suffix: new[] { "debater_a", "debater_b", "judge" }))))
+                suffix: new[] { "judge" }))))
     .Build();
 
 workflow
