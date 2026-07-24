@@ -17,6 +17,8 @@ public sealed class WorkflowDefinitionSeeder(
     private const string LegacyNietzscheReference = ".FromSavedAgent(\"Friedrich Nietzsche\")";
     private const string KantIdReference = ".UseAgentById(\"ab38adc6-74a2-4ccc-924b-eb1bce9d0985\")";
     private const string NietzscheIdReference = ".UseAgentById(\"8bb2a12d-d5fd-440b-b622-b46d8897556a\")";
+    private const string LegacyPhilosopherAutomaticTurnLimit = ".RunAutonomously(maxAutomaticTurns: 10, completionPhase: \"complete\", completionSummaryLabel: \"final\")";
+    private const string PhilosopherAutomaticTurnLimit = ".RunAutonomously(maxAutomaticTurns: 42, completionPhase: \"complete\", completionSummaryLabel: \"final\")";
 
     private readonly IWorkflowDefinitionRepository _repository = repository;
     private readonly IWorkflowDefinitionCompiler _workflowDefinitionCompiler = workflowDefinitionCompiler;
@@ -102,7 +104,8 @@ public sealed class WorkflowDefinitionSeeder(
 
         var migratedSource = workflow.SourceCode
             .Replace(LegacyKantReference, KantIdReference, StringComparison.Ordinal)
-            .Replace(LegacyNietzscheReference, NietzscheIdReference, StringComparison.Ordinal);
+            .Replace(LegacyNietzscheReference, NietzscheIdReference, StringComparison.Ordinal)
+            .Replace(LegacyPhilosopherAutomaticTurnLimit, PhilosopherAutomaticTurnLimit, StringComparison.Ordinal);
 
         if (string.Equals(workflow.SourceCode, migratedSource, StringComparison.Ordinal))
         {

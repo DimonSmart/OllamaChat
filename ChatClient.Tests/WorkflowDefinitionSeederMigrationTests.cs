@@ -82,4 +82,32 @@ public sealed class WorkflowDefinitionSeederMigrationTests
         Assert.Contains(".UseAgentByName(\"Immanuel Kant\")", workflow.SourceCode, StringComparison.Ordinal);
         Assert.Contains(".UseAgentByName(\"Friedrich Nietzsche\")", workflow.SourceCode, StringComparison.Ordinal);
     }
+
+    [Fact]
+    public void TryMigrateKnownBuiltInWorkflow_UpdatesLegacyAutomaticTurnLimit()
+    {
+        var workflow = new SavedWorkflowDefinition
+        {
+            Id = Guid.NewGuid(),
+            WorkflowId = "philosopher-battle-group-chat",
+            Kind = "group-chat",
+            DisplayName = "Philosopher Battle Group Chat",
+            Description = "Built-in workflow.",
+            SourceCode =
+                """
+                var workflow = WorkflowDefinitionBuilder
+                    .New("philosopher-battle-group-chat", "Philosopher Battle Group Chat")
+                    .RunAutonomously(maxAutomaticTurns: 10, completionPhase: "complete", completionSummaryLabel: "final")
+                    .Build();
+                """,
+            CreatedAt = DateTime.UtcNow,
+            UpdatedAt = DateTime.UtcNow
+        };
+
+        var migrated = WorkflowDefinitionSeeder.TryMigrateKnownBuiltInWorkflow(workflow);
+
+        Assert.True(migrated);
+        Assert.Contains(".RunAutonomously(maxAutomaticTurns: 42", workflow.SourceCode, StringComparison.Ordinal);
+        Assert.DoesNotContain(".RunAutonomously(maxAutomaticTurns: 10", workflow.SourceCode, StringComparison.Ordinal);
+    }
 }
