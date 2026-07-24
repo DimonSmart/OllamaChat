@@ -41,6 +41,8 @@
                             <MudSelect T="string"
                                        Label="@GetFieldLabel(field)"
                                        MultiSelection="true"
+                                       Dense="true"
+                                       Margin="Margin.Dense"
                                        SelectedValues="@GetMultiValues(field.Name)"
                                        SelectedValuesChanged="values => SetMultiValues(field.Name, values)">
                                 @foreach (var option in field.Options)
@@ -61,6 +63,8 @@
                             <MudSelect T="string"
                                        Label="@GetFieldLabel(field)"
                                        Value="@GetTextValue(field.Name)"
+                                       Dense="true"
+                                       Margin="Margin.Dense"
                                        ValueChanged="value => _textValues[field.Name] = value ?? string.Empty">
                                 @foreach (var option in field.Options)
                                 {
@@ -74,6 +78,7 @@
                                           Label="@GetFieldLabel(field)"
                                           Value="@GetTextValue(field.Name)"
                                           ValueChanged="value => _textValues[field.Name] = value ?? string.Empty"
+                                          Margin="Margin.Dense"
                                           InputType="@(IsNumericField(field) ? InputType.Number : InputType.Text)" />
                         }
 
@@ -94,9 +99,9 @@
         }
     </DialogContent>
     <DialogActions>
-        <MudButton Variant="Variant.Text" OnClick="Decline">Decline</MudButton>
-        <MudButton Variant="Variant.Text" OnClick="Cancel">Cancel</MudButton>
-        <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="Submit">
+        <MudButton Variant="Variant.Text" Size="Size.Small" OnClick="Decline">Decline</MudButton>
+        <MudButton Variant="Variant.Text" Size="Size.Small" OnClick="Cancel">Cancel</MudButton>
+        <MudButton Variant="Variant.Filled" Color="Color.Primary" Size="Size.Small" OnClick="Submit">
             @(IsUrlMode ? "Continue" : "Submit")
         </MudButton>
     </DialogActions>

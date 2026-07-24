@@ -18,7 +18,7 @@
             <MudTextField T="string" ValueChanged="OnSearch" Placeholder="Search profiles..."
                           Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Search"
                           IconSize="Size.Medium" Immediate="true" DebounceInterval="300"
-                          Style="min-width: 300px;" />
+                          Margin="Margin.Dense" Style="min-width: 300px;" />
         </MudToolBar>
 
         @if (loading)
@@ -28,7 +28,7 @@
         else
         {
             <MudDataGrid T="TodoProviderProfile" Items="@filteredProfiles" ReadOnly="true" Bordered="true" Hover="true"
-                         Striped="true" Dense="true" FixedHeader="true" Class="mt-4">
+                         Striped="true" Dense="true" FixedHeader="true" Class="mt-2">
                 <Columns>
                     <PropertyColumn Property="x => x.Name" Title="Name" />
                     <TemplateColumn Title="Instructions">
@@ -70,19 +70,19 @@
     <TitleContent><MudText Typo="Typo.h6">@(isNewProfile ? "Create Todo Provider Profile" : "Edit Todo Provider Profile")</MudText></TitleContent>
     <DialogContent>
         <MudForm @ref="editForm" Model="editingProfile">
-            <MudTextField @bind-Value="editingProfile.Name" Label="Name" Required="true" Immediate="true"
+            <MudTextField @bind-Value="editingProfile.Name" Label="Name" Required="true" Immediate="true" Margin="Margin.Dense"
                           Validation="@(new Func<string, string>(ValidateName))" />
-            <MudTextField @bind-Value="editingProfile.Instructions" Label="Instructions" Lines="8" Class="mt-4"
+            <MudTextField @bind-Value="editingProfile.Instructions" Label="Instructions" Lines="8" Margin="Margin.Dense" Class="mt-2"
                           HelperText="Custom instructions for TodoProvider. Leave empty to use Microsoft Agent Framework defaults." />
-            <MudTextField @bind-Value="editingProfile.TodoListMessageTemplate" Label="Todo List Message Template" Lines="8" Class="mt-4"
+            <MudTextField @bind-Value="editingProfile.TodoListMessageTemplate" Label="Todo List Message Template" Lines="8" Margin="Margin.Dense" Class="mt-2"
                           HelperText="Optional custom template for the todo-list message. Use {todos} where the formatted todo list should appear. Leave empty to use the framework default." />
-            <MudCheckBox @bind-Value="editingProfile.SuppressTodoListMessage" Label="Suppress todo-list message" Class="mt-4" />
+            <MudCheckBox @bind-Value="editingProfile.SuppressTodoListMessage" Label="Suppress todo-list message" Class="mt-2" />
             <MudText Typo="Typo.caption" Class="mud-text-secondary">Do not inject the current todo-list summary into the model context.</MudText>
         </MudForm>
     </DialogContent>
     <DialogActions>
-        <MudButton OnClick="CloseEditDialog">Cancel</MudButton>
-        <MudButton Color="Color.Primary" OnClick="SaveProfile" Disabled="saving">Save</MudButton>
+        <MudButton OnClick="CloseEditDialog" Size="Size.Small">Cancel</MudButton>
+        <MudButton Color="Color.Primary" OnClick="SaveProfile" Disabled="saving" Size="Size.Small">Save</MudButton>
     </DialogActions>
 </MudDialog>
 
@@ -90,8 +90,8 @@
     <TitleContent><MudText Typo="Typo.h6">Delete Todo Provider Profile</MudText></TitleContent>
     <DialogContent><MudText>Are you sure you want to delete "@profileToDelete?.Name"?</MudText></DialogContent>
     <DialogActions>
-        <MudButton OnClick="CloseDeleteDialog">Cancel</MudButton>
-        <MudButton Color="Color.Error" OnClick="DeleteProfile">Delete</MudButton>
+        <MudButton OnClick="CloseDeleteDialog" Size="Size.Small">Cancel</MudButton>
+        <MudButton Color="Color.Error" OnClick="DeleteProfile" Size="Size.Small">Delete</MudButton>
     </DialogActions>
 </MudDialog>
 

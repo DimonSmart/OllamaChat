@@ -3,9 +3,10 @@
 <MudTextField @bind-Value="Server.Name"
               Label="Server Name"
               Required="true"
-              Immediate="true" />
+              Immediate="true"
+              Margin="Margin.Dense" />
 
-<MudSelect T="ServerType" @bind-Value="Server.ServerType" Label="Server Type" Class="mt-4">
+<MudSelect T="ServerType" @bind-Value="Server.ServerType" Label="Server Type" Dense="true" Margin="Margin.Dense" Class="mt-2">
     <MudSelectItem Value="ServerType.Ollama">Ollama</MudSelectItem>
     <MudSelectItem Value="ServerType.ChatGpt">ChatGPT</MudSelectItem>
     <MudSelectItem Value="ServerType.Azure">Azure</MudSelectItem>
@@ -14,7 +15,8 @@
 <MudTextField @bind-Value="Server.BaseUrl"
               Label="Base URL"
               Variant="Variant.Outlined"
-              Class="mt-4"
+              Margin="Margin.Dense"
+              Class="mt-2"
               Required="@(Server.ServerType == ServerType.Ollama)"
               HelperText="@GetBaseUrlHelperText()" />
 
@@ -23,14 +25,16 @@
     <MudTextField @bind-Value="Server.ApiKey"
                   Label="API Key"
                   Variant="Variant.Outlined"
-                  Class="mt-4"
+                  Margin="Margin.Dense"
+                  Class="mt-2"
                   InputType="InputType.Password"
                   HelperText="Optional inline key. Leave empty to use the local secret store." />
 
     <MudTextField @bind-Value="Server.ApiKeySecretName"
                   Label="API Key Secret Name"
                   Variant="Variant.Outlined"
-                  Class="mt-4"
+                  Margin="Margin.Dense"
+                  Class="mt-2"
                   HelperText="Optional secret alias. The app resolves LlmServers:ApiKeys:<name> from dotnet user-secrets." />
 }
 
@@ -39,7 +43,8 @@
     <MudTextField @bind-Value="Server.AzureDeploymentNamesText"
                   Label="Deployments"
                   Variant="Variant.Outlined"
-                  Class="mt-4"
+                  Margin="Margin.Dense"
+                  Class="mt-2"
                   Lines="6"
                   HelperText="One deployment name per line. These names are shown in the model picker and used in Azure chat requests." />
 }
@@ -50,7 +55,8 @@
                   Label="Password"
                   Variant="Variant.Outlined"
                   InputType="InputType.Password"
-                  Class="mt-4"
+                  Margin="Margin.Dense"
+                  Class="mt-2"
                   HelperText="Optional password for Ollama server" />
 }
 
@@ -58,11 +64,12 @@
                  Label="HTTP Timeout (seconds)"
                  Variant="Variant.Outlined"
                  Min="1" Max="3600"
-                 Class="mt-4" />
+                 Margin="Margin.Dense"
+                 Class="mt-2" />
 
 @if (Server.ServerType == ServerType.Ollama)
 {
-    <MudSwitch @bind-Value="Server.IgnoreSslErrors" Class="mt-4">
+    <MudSwitch @bind-Value="Server.IgnoreSslErrors" Class="mt-2">
         Ignore SSL certificate errors
     </MudSwitch>
 }

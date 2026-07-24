@@ -7,6 +7,7 @@
 @using ChatClient.Api.Client.Pages
 @using ChatClient.Api.Client.Components
 @using ChatClient.Api.Services
+@using ChatClient.Api.Client.Styling
 @using System.Linq
 @using MudX
 
@@ -18,7 +19,7 @@
 <CascadingValue Value="@pickerModel" Name="UiModelSelection">
 <MudLayout>
     <MudAppBar Elevation="1" Dense="true">
-        <MudIconButton Icon="@Icons.Material.Filled.Menu" Color="Color.Inherit" Edge="Edge.Start" OnClick="@((e) => DrawerToggle())" Size="Size.Medium" />
+        <MudIconButton Icon="@Icons.Material.Filled.Menu" Color="Color.Inherit" Edge="Edge.Start" OnClick="@((e) => DrawerToggle())" Size="Size.Small" />
         <MudText Typo="Typo.h6" Class="ml-3" Style="flex-shrink: 0;">Ollama chat with MCP</MudText>
         @if (!isLLMAnswering && ActiveChatHasAgents())
         {
@@ -37,13 +38,13 @@
             </div>
         }
         <MudSpacer />
-        <MudIconButton Icon="@(DarkLightModeButtonIcon)" Color="Color.Inherit" OnClick="@DarkModeToggle" Size="Size.Medium" />
-        <MudIconButton Icon="@Icons.Material.Filled.MoreVert" Color="Color.Inherit" Edge="Edge.End" Size="Size.Medium" />
+        <MudIconButton Icon="@(DarkLightModeButtonIcon)" Color="Color.Inherit" OnClick="@DarkModeToggle" Size="Size.Small" />
+        <MudIconButton Icon="@Icons.Material.Filled.MoreVert" Color="Color.Inherit" Edge="Edge.End" Size="Size.Small" />
     </MudAppBar>
     <MudDrawer id="nav-drawer" @bind-Open="_drawerOpen" ClipMode="DrawerClipMode.Always" Elevation="2">
         <NavMenu />
     </MudDrawer>
-    <MudMainContent Class="pt-14 pa-3">
+    <MudMainContent Class="pt-13 pa-2">
         @Body
     </MudMainContent>
     @if (!IsOnChatPage())
@@ -82,12 +83,7 @@
         var settings = await UserSettingsService.GetSettingsAsync();
         pickerModel = settings.DefaultModel;
 
-        _theme = new()
-        {
-            PaletteLight = _lightPalette,
-            PaletteDark = _darkPalette,
-            LayoutProperties = new LayoutProperties()
-        };
+        _theme = AppTheme.Create(_lightPalette, _darkPalette);
     }
 
     private void DrawerToggle()

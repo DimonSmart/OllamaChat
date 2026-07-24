@@ -28,7 +28,7 @@
         {
             <MudPaper Elevation="3" Class="pa-3 rounded-lg">
                 <MudForm @ref="_form" Model="@_settings">
-                    <MudCard Class="mb-4" Elevation="1">
+                    <MudCard Class="mb-2" Elevation="1">
                         <MudCardContent>
                             <ServerModelPicker Value="_defaultModel" ValueChanged="OnDefaultModelChanged" ShowClearButton="true" />
                             <MudText Typo="Typo.caption" Class="mt-2">
@@ -37,9 +37,9 @@
                         </MudCardContent>
                     </MudCard>
 
-                    <MudCard Class="mb-4" Elevation="1">
+                    <MudCard Class="mb-2" Elevation="1">
                         <MudCardContent Class="pt-0">
-                            <MudSelect T="AppChatHistoryMode" Label="History Processing" @bind-Value="_settings.ChatHistoryMode" Variant="Variant.Outlined" Dense="true">
+                            <MudSelect T="AppChatHistoryMode" Label="History Processing" @bind-Value="_settings.ChatHistoryMode" Variant="Variant.Outlined" Dense="true" Margin="Margin.Dense">
                                 <MudSelectItem Value="@AppChatHistoryMode.None">None</MudSelectItem>
                                 <MudSelectItem Value="@AppChatHistoryMode.Truncate">Truncate</MudSelectItem>
                                 <MudSelectItem Value="@AppChatHistoryMode.Summarize">Summarize</MudSelectItem>
@@ -50,35 +50,35 @@
                         </MudCardContent>
                     </MudCard>
 
-                    <MudCard Class="mb-4" Elevation="1">
+                    <MudCard Class="mb-2" Elevation="1">
                         <MudCardContent>
                             <MudTextField T="string" Label="Default Chat Message" @bind-Value="_settings.DefaultChatMessage"
-                                          Lines="3" Variant="Variant.Outlined" HelperText="Pre-filled message in the chat input (useful for testing)" />
+                                          Lines="3" Variant="Variant.Outlined" Margin="Margin.Dense" HelperText="Pre-filled message in the chat input (useful for testing)" />
                         </MudCardContent>
                     </MudCard>
 
-                    <MudCard Class="mb-4" Elevation="1">
+                    <MudCard Class="mb-2" Elevation="1">
                         <MudCardContent>
                             <MudTextField T="string" Label="Default Multiagent Chat Message" @bind-Value="_settings.DefaultMultiAgentChatMessage"
-                                          Lines="3" Variant="Variant.Outlined" HelperText="Pre-filled message in the multiagent chat input" />
+                                          Lines="3" Variant="Variant.Outlined" Margin="Margin.Dense" HelperText="Pre-filled message in the multiagent chat input" />
                         </MudCardContent>
                     </MudCard>
 
-                    <MudCard Class="mb-4" Elevation="1">
+                    <MudCard Class="mb-2" Elevation="1">
                         <MudCardHeader Class="pb-2">
                             <MudText Class="section-header">Chat Participants</MudText>
                         </MudCardHeader>
                         <MudCardContent Class="pt-0">
                             <MudTextField T="string" Label="User Name" @bind-Value="_settings.UserName"
-                                          Variant="Variant.Outlined" Class="mb-3"
+                                          Variant="Variant.Outlined" Margin="Margin.Dense" Class="mb-2"
                                           HelperText="Display name for user messages (leave empty to hide avatar)" />
                             <MudTextField T="string" Label="Agent Name" @bind-Value="_settings.AgentName"
-                                          Variant="Variant.Outlined"
+                                          Variant="Variant.Outlined" Margin="Margin.Dense"
                                           HelperText="Display name for AI assistant messages (leave empty to hide avatar)" />
                         </MudCardContent>
                     </MudCard>
 
-                    <MudCard Class="mb-4" Elevation="1">
+                    <MudCard Class="mb-2" Elevation="1">
                         <MudCardHeader Class="pb-2">
                             <MudText Class="section-header">Voice Input</MudText>
                         </MudCardHeader>
@@ -170,21 +170,21 @@
                             <MudText Typo="Typo.caption" Class="mt-2">
                                 Model used for generating embeddings.
                             </MudText>
-                            <MudNumericField T="int" @bind-Value="_settings.Embedding.RagLineChunkSize" Label="Line Chunk Size" Min="1" Variant="Variant.Outlined" Class="mt-4" />
-                            <MudNumericField T="int" @bind-Value="_settings.Embedding.RagParagraphChunkSize" Label="Paragraph Chunk Size" Min="1" Variant="Variant.Outlined" Class="mt-4" />
-                            <MudNumericField T="int" @bind-Value="_settings.Embedding.RagParagraphOverlap" Label="Paragraph Overlap" Min="0" Variant="Variant.Outlined" Class="mt-4" />
+                            <MudNumericField T="int" @bind-Value="_settings.Embedding.RagLineChunkSize" Label="Line Chunk Size" Min="1" Variant="Variant.Outlined" Margin="Margin.Dense" Class="mt-2" />
+                            <MudNumericField T="int" @bind-Value="_settings.Embedding.RagParagraphChunkSize" Label="Paragraph Chunk Size" Min="1" Variant="Variant.Outlined" Margin="Margin.Dense" Class="mt-2" />
+                            <MudNumericField T="int" @bind-Value="_settings.Embedding.RagParagraphOverlap" Label="Paragraph Overlap" Min="0" Variant="Variant.Outlined" Margin="Margin.Dense" Class="mt-2" />
                             <MudText Typo="Typo.caption" Class="mt-2">Text chunking parameters for building RAG indexes.</MudText>
-                            <MudButton Variant="Variant.Outlined" Color="Color.Primary" OnClick="RestartEmbeddings" Class="mt-4">
+                            <MudButton Variant="Variant.Outlined" Color="Color.Primary" OnClick="RestartEmbeddings" Size="Size.Small" Class="mt-2">
                                 Restart Embedding Generation
                             </MudButton>
                         </MudCardContent>
                     </MudCard>
 
                     <MudButtonGroup Class="mt-4">
-                        <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="SaveSettings" Size="Size.Medium">
+                        <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="SaveSettings" Size="Size.Small">
                             Save Application Settings
                         </MudButton>
-                        <MudButton Variant="Variant.Outlined" Color="Color.Secondary" OnClick="ResetSettings" Size="Size.Medium">
+                        <MudButton Variant="Variant.Outlined" Color="Color.Secondary" OnClick="ResetSettings" Size="Size.Small">
                             Reset
                         </MudButton>
                     </MudButtonGroup>

@@ -24,7 +24,7 @@
     {
         @foreach (var definition in Definitions)
         {
-            <MudPaper Outlined="true" Class="pa-3">
+            <MudPaper Outlined="true" Class="pa-2">
                 <MudGrid>
                     <MudItem xs="12" md="4">
                         <MudTextField T="string"
@@ -32,6 +32,7 @@
                                       ValueChanged="@(value => UpdateDefinition(definition, value, nameof(McpOverrideDefinition.Key)))"
                                       Label="Key"
                                       Immediate="true"
+                                      Margin="Margin.Dense"
                                       Disabled="@Disabled" />
                     </MudItem>
                     <MudItem xs="12" md="4">
@@ -40,6 +41,7 @@
                                       ValueChanged="@(value => UpdateDefinition(definition, value, nameof(McpOverrideDefinition.Label)))"
                                       Label="Label"
                                       Immediate="true"
+                                      Margin="Margin.Dense"
                                       Disabled="@Disabled" />
                     </MudItem>
                     <MudItem xs="12" md="4">
@@ -48,6 +50,7 @@
                                    Value="@definition.Kind"
                                    ValueChanged="@(value => UpdateDefinition(definition, value, nameof(McpOverrideDefinition.Kind)))"
                                    Dense="true"
+                                   Margin="Margin.Dense"
                                    Disabled="@Disabled">
                             <MudSelectItem Value="@("string")">String</MudSelectItem>
                             <MudSelectItem Value="@("int")">Integer</MudSelectItem>
@@ -60,6 +63,7 @@
                                       ValueChanged="@(value => UpdateDefinition(definition, value, nameof(McpOverrideDefinition.Description)))"
                                       Label="Description"
                                       Immediate="true"
+                                      Margin="Margin.Dense"
                                       Disabled="@Disabled" />
                     </MudItem>
                     <MudItem xs="12" md="2">

@@ -27,7 +27,7 @@
 
 <PageTitle>Agent Orchestrations</PageTitle>
 
-<MudStack Spacing="3">
+<MudStack Spacing="2">
     @if (!string.IsNullOrWhiteSpace(loadError))
     {
         <MudAlert Severity="Severity.Error" Dense="true">
@@ -36,8 +36,8 @@
     }
     else if (isPageLoading)
     {
-        <MudPaper Class="pa-6" Outlined="true">
-            <MudStack Row="true" Spacing="2" AlignItems="AlignItems.Center">
+        <MudPaper Class="pa-3" Outlined="true">
+            <MudStack Row="true" Spacing="1" AlignItems="AlignItems.Center">
                 <MudProgressCircular Indeterminate="true" Size="Size.Small" />
                 <MudText Typo="Typo.body2">Loading workflow editor...</MudText>
             </MudStack>
@@ -47,11 +47,11 @@
     {
         @if (isWorkflowSourceExpanded)
         {
-            <MudPaper Class="pa-4" Outlined="true">
+            <MudPaper Class="pa-2" Outlined="true">
                 <MudStack Spacing="2">
                     <MudStack Row="true" Spacing="2" AlignItems="AlignItems.Center" Justify="Justify.SpaceBetween" Class="handoff-workflow-start-header">
                         <MudText Typo="Typo.h6">Workflow Source</MudText>
-                        <MudStack Row="true" Spacing="2" Class="handoff-workflow-command-row">
+                        <MudStack Row="true" Spacing="1" Class="handoff-workflow-command-row">
                             <MudButton Variant="Variant.Filled"
                                        Color="Color.Primary"
                                        Size="Size.Small"
@@ -83,10 +83,10 @@
 
         <MudGrid>
             <MudItem xs="12" lg="@(ShowWorkflowSidebar ? 7 : 12)">
-                <MudStack Spacing="3">
+                <MudStack Spacing="2">
                     @if (ShowWorkflowStartPanel)
                     {
-                        <MudPaper Class="pa-4" Outlined="true">
+                        <MudPaper Class="pa-2" Outlined="true">
                             <MudStack Spacing="2">
                                 <MudStack Row="true" Spacing="2" AlignItems="AlignItems.Center" Justify="Justify.SpaceBetween" Class="handoff-workflow-start-header">
                                     <MudText Typo="Typo.h6">Start Workflow</MudText>
@@ -195,15 +195,17 @@
                                     }
                                 }
 
-                                <MudStack Row="true" Spacing="2" Class="handoff-workflow-command-row">
+                                <MudStack Row="true" Spacing="1" Class="handoff-workflow-command-row">
                                     <MudButton Variant="Variant.Filled"
                                                Color="Color.Primary"
                                                Disabled="@(!CanStartWorkflow)"
+                                               Size="Size.Small"
                                                OnClick="StartWorkflowAsync">
                                         Start Workflow
                                     </MudButton>
                                     <MudButton Variant="Variant.Outlined"
                                                Disabled="@(!workflowStarted)"
+                                               Size="Size.Small"
                                                OnClick="ResetWorkflowAsync">
                                         New Session
                                     </MudButton>
@@ -213,7 +215,7 @@
                     }
                     else
                     {
-                        <MudPaper Class="pa-6 workflow-empty-state" Outlined="true">
+                        <MudPaper Class="pa-3 workflow-empty-state" Outlined="true">
                             <MudStack Spacing="2" AlignItems="AlignItems.Center">
                                 <MudText Typo="Typo.h5">No Workflow Loaded</MudText>
                                 <MudText Typo="Typo.body2" Class="mud-text-secondary workflow-empty-state-copy">
@@ -223,6 +225,7 @@
                                     <MudButton Variant="Variant.Filled"
                                                Color="Color.Primary"
                                                Disabled="@workflowStarted"
+                                               Size="Size.Small"
                                                OnClick="OpenLoadWorkflowDialogAsync">
                                         Load Saved Workflow
                                     </MudButton>

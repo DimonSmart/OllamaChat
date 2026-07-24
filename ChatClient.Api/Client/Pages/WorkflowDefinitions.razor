@@ -41,6 +41,7 @@
                           Adornment="Adornment.Start"
                           AdornmentIcon="@Icons.Material.Filled.Search"
                           IconSize="Size.Medium"
+                          Margin="Margin.Dense"
                           Class="mt-0"
                           Style="min-width: 300px;"
                           Immediate="true"
@@ -64,7 +65,7 @@
                          Dense="true"
                          FixedHeader="true"
                          Height="100%"
-                         Class="mt-4">
+                         Class="mt-2">
                 <Columns>
                     <TemplateColumn Title="Name" isEditable="false">
                         <CellTemplate>
@@ -146,10 +147,10 @@
         <MudText>Delete workflow "@workflowToDelete?.DisplayName"?</MudText>
     </DialogContent>
     <DialogActions>
-        <MudButton OnClick="CancelDelete" Size="Size.Medium">Cancel</MudButton>
+        <MudButton OnClick="CancelDelete" Size="Size.Small">Cancel</MudButton>
         <MudButton Color="Color.Error"
                    OnClick="DeleteWorkflowAsync"
-                   Size="Size.Medium">
+                   Size="Size.Small">
             Delete
         </MudButton>
     </DialogActions>
@@ -165,7 +166,7 @@
         </MudText>
     </DialogContent>
     <DialogActions>
-        <MudButton OnClick="CancelRestoreBuiltInWorkflows" Size="Size.Medium">Cancel</MudButton>
+        <MudButton OnClick="CancelRestoreBuiltInWorkflows" Size="Size.Small">Cancel</MudButton>
         <MudButton Color="Color.Warning"
                    Disabled="@restoringBuiltInWorkflows"
                    OnClick="RestoreBuiltInWorkflowsAsync"
@@ -221,7 +222,7 @@
         </MudStack>
     </DialogContent>
     <DialogActions>
-        <MudButton OnClick="CancelEdit" Size="Size.Medium">Cancel</MudButton>
+        <MudButton OnClick="CancelEdit" Size="Size.Small">Cancel</MudButton>
         <MudButton Variant="Variant.Outlined"
                    Color="Color.Default"
                    OnClick="ValidateWorkflowAsync"
