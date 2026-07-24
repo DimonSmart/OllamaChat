@@ -9,7 +9,10 @@ public sealed class WorkflowStartValues
     public WorkflowStartValues(IReadOnlyDictionary<string, string> values)
     {
         ArgumentNullException.ThrowIfNull(values);
-        _values = new Dictionary<string, string>(values, StringComparer.OrdinalIgnoreCase);
+        _values = values.ToDictionary(
+            static pair => pair.Key,
+            static pair => pair.Value,
+            StringComparer.OrdinalIgnoreCase);
     }
 
     public int RequireInt32(string key, int? min = null, int? max = null)
@@ -50,13 +53,23 @@ public sealed class WorkflowStartValues
         int? min,
         int? max)
     {
-        var constraint = (min, max) switch
+        string constraint;
+        if (min.HasValue && max.HasValue)
         {
-            ({ } minimum, { } maximum) => $"between {minimum} and {maximum}",
-            ({ } minimum, null) => $"at least {minimum}",
-            (null, { } maximum) => $"at most {maximum}",
-            _ => throw new InvalidOperationException("A numeric range constraint is required.")
-        };
+            constraint = $"between {min.Value} and {max.Value}";
+        }
+        else if (min.HasValue)
+        {
+            constraint = $"at least {min.Value}";
+        }
+        else if (max.HasValue)
+        {
+            constraint = $"at most {max.Value}";
+        }
+        else
+        {
+            throw new InvalidOperationException("A numeric range constraint is required.");
+        }
 
         return new InvalidOperationException(
             $"Workflow start input '{key}' must be {constraint}.");
