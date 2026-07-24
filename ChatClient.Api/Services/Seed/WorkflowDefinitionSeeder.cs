@@ -12,14 +12,6 @@ public sealed class WorkflowDefinitionSeeder(
     IHostEnvironment environment,
     ILogger<WorkflowDefinitionSeeder> logger)
 {
-    private const string PhilosopherBattleWorkflowId = "philosopher-battle-group-chat";
-    private const string LegacyKantReference = ".FromSavedAgent(\"Immanuel Kant\")";
-    private const string LegacyNietzscheReference = ".FromSavedAgent(\"Friedrich Nietzsche\")";
-    private const string KantIdReference = ".UseAgentById(\"ab38adc6-74a2-4ccc-924b-eb1bce9d0985\")";
-    private const string NietzscheIdReference = ".UseAgentById(\"8bb2a12d-d5fd-440b-b622-b46d8897556a\")";
-    private const string LegacyPhilosopherAutomaticTurnLimit = ".RunAutonomously(maxAutomaticTurns: 10, completionPhase: \"complete\", completionSummaryLabel: \"final\")";
-    private const string PhilosopherAutomaticTurnLimit = ".RunAutonomously(maxAutomaticTurns: 42, completionPhase: \"complete\", completionSummaryLabel: \"final\")";
-
     private readonly IWorkflowDefinitionRepository _repository = repository;
     private readonly IWorkflowDefinitionCompiler _workflowDefinitionCompiler = workflowDefinitionCompiler;
     private readonly IConfiguration _configuration = configuration;
@@ -39,20 +31,19 @@ public sealed class WorkflowDefinitionSeeder(
 
         foreach (var workflow in seeded)
         {
-            var existingIndex = existing.FindIndex(existingWorkflow =>
+            var alreadyExists = existing.Any(existingWorkflow =>
                 string.Equals(existingWorkflow.WorkflowId, workflow.WorkflowId, StringComparison.OrdinalIgnoreCase));
 
-            if (existingIndex < 0)
+            if (alreadyExists)
             {
-                existing.Add(workflow);
-                hasChanges = true;
                 continue;
             }
 
-            hasChanges = TryMigrateKnownBuiltInWorkflow(existing[existingIndex]) || hasChanges;
+            existing.Add(workflow);
+            hasChanges = true;
         }
 
-        if (hasChanges || existing.Count == 0)
+        if (hasChanges)
         {
             await _repository.SaveAllAsync(existing);
         }
@@ -88,33 +79,6 @@ public sealed class WorkflowDefinitionSeeder(
         {
             await _repository.SaveAllAsync(existing);
         }
-    }
-
-    internal static bool TryMigrateKnownBuiltInWorkflow(SavedWorkflowDefinition workflow)
-    {
-        ArgumentNullException.ThrowIfNull(workflow);
-
-        if (!string.Equals(
-                workflow.WorkflowId,
-                PhilosopherBattleWorkflowId,
-                StringComparison.OrdinalIgnoreCase))
-        {
-            return false;
-        }
-
-        var migratedSource = workflow.SourceCode
-            .Replace(LegacyKantReference, KantIdReference, StringComparison.Ordinal)
-            .Replace(LegacyNietzscheReference, NietzscheIdReference, StringComparison.Ordinal)
-            .Replace(LegacyPhilosopherAutomaticTurnLimit, PhilosopherAutomaticTurnLimit, StringComparison.Ordinal);
-
-        if (string.Equals(workflow.SourceCode, migratedSource, StringComparison.Ordinal))
-        {
-            return false;
-        }
-
-        workflow.SourceCode = migratedSource;
-        workflow.UpdatedAt = DateTime.UtcNow;
-        return true;
     }
 
     private async Task<List<SavedWorkflowDefinition>> LoadSeedWorkflowsAsync()
