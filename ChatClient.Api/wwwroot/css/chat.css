@@ -23,7 +23,16 @@
     flex-direction: column;
     flex: 1 1 auto;
     min-height: 0;
+    min-width: 0;
+    overflow-x: hidden;
     overflow-y: auto;
+}
+
+.chat-messages-container > *,
+.chat-messages-container .mudx-chat,
+.chat-messages-container .mcp-call {
+    min-width: 0;
+    max-width: 100%;
 }
 
 .chat-input-panel {
@@ -350,7 +359,12 @@
     border-radius: 4px;
     font-size: 0.75rem;
     white-space: pre-wrap;
+    max-width: 100%;
+    min-width: 0;
+    box-sizing: border-box;
     overflow-x: auto;
+    overflow-wrap: anywhere;
+    word-break: break-word;
 }
 .mcp-call-label {
     font-size: 0.75rem;

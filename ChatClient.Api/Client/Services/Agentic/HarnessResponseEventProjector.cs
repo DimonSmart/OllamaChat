@@ -2,6 +2,7 @@ using ChatClient.Application.Services.Agentic;
 using ChatClient.Domain.Models;
 using Microsoft.Agents.AI;
 using Microsoft.Extensions.AI;
+using System.Text.Encodings.Web;
 using System.Text.Json;
 
 namespace ChatClient.Api.Client.Services.Agentic;
@@ -12,6 +13,11 @@ public sealed class HarnessResponseEventProjector(ILogger<HarnessResponseEventPr
 
     internal sealed class Projection(ILogger logger)
     {
+        private static readonly JsonSerializerOptions DisplayJsonOptions = new()
+        {
+            Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping
+        };
+
         private readonly Dictionary<string, PendingToolCall> _pendingCalls = new(StringComparer.Ordinal);
 
         public IReadOnlyList<HarnessResponseEvent> Project(
@@ -177,7 +183,7 @@ public sealed class HarnessResponseEventProjector(ILogger<HarnessResponseEventPr
         {
             try
             {
-                return JsonSerializer.Serialize(value);
+                return JsonSerializer.Serialize(value, DisplayJsonOptions);
             }
             catch
             {

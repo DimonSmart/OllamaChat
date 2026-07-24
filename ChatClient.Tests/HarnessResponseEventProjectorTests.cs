@@ -74,5 +74,26 @@ public sealed class HarnessResponseEventProjectorTests
         Assert.Equal("boom", failed.Error);
     }
 
+    [Fact]
+    public void Project_SerializesToolResultWithoutEscapingUnicode()
+    {
+        var projector = new HarnessResponseEventProjector(
+            NullLogger<HarnessResponseEventProjector>.Instance).CreateProjection();
+        var metadata = new Dictionary<string, AgenticRegisteredTool>();
+        projector.Project(new AgentResponseUpdate(ChatRole.Assistant,
+        [
+            new FunctionCallContent("call-3", "profile")
+        ]), metadata);
+
+        var events = projector.Project(new AgentResponseUpdate(ChatRole.Assistant,
+        [
+            new FunctionResultContent("call-3", new { name = "Дима" })
+        ]), metadata);
+
+        var completed = Assert.IsType<HarnessToolCallCompleted>(Assert.Single(events));
+        Assert.Contains("Дима", completed.Result);
+        Assert.DoesNotContain("\\u", completed.Result, StringComparison.OrdinalIgnoreCase);
+    }
+
     private sealed class UnknownContent : AIContent;
 }
