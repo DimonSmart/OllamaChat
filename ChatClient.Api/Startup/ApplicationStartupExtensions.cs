@@ -1,5 +1,7 @@
 using ChatClient.Api.Services;
 using ChatClient.Api.Services.Seed;
+using ChatClient.Application.Repositories;
+using ChatClient.Domain.Models;
 using Microsoft.AspNetCore.Hosting.Server;
 using Microsoft.AspNetCore.Hosting.Server.Features;
 using Microsoft.Extensions.Logging;
@@ -8,11 +10,15 @@ namespace ChatClient.Api.Startup;
 
 internal static class ApplicationStartupExtensions
 {
+    private static readonly Guid DemoTodoProviderProfileId = Guid.Parse("9bbf0bcb-d651-466c-87f7-c4d949bc2a3c");
+    private const string DemoTodoProviderProfileName = "MAF Planning Assistant (Demo)";
+
     public static async Task InitializeApplicationAsync(this WebApplication app)
     {
         using var scope = app.Services.CreateScope();
 
         await scope.ServiceProvider.GetRequiredService<AgentTemplateSeeder>().SeedAsync();
+        await SeedTodoProviderProfilesAsync(scope.ServiceProvider);
         await scope.ServiceProvider.GetRequiredService<WorkflowDefinitionSeeder>().SeedAsync();
         await scope.ServiceProvider.GetRequiredService<LlmServerConfigSeeder>().SeedAsync();
         await scope.ServiceProvider.GetRequiredService<McpServerConfigSeeder>().SeedAsync();
@@ -63,5 +69,32 @@ internal static class ApplicationStartupExtensions
                     .LogError(ex, "Error during application startup");
             }
         });
+    }
+
+    private static async Task SeedTodoProviderProfilesAsync(IServiceProvider services)
+    {
+        var repository = services.GetRequiredService<ITodoProviderProfileRepository>();
+        var profiles = (await repository.GetAllAsync()).ToList();
+
+        if (profiles.Any(profile =>
+                profile.Id == DemoTodoProviderProfileId ||
+                string.Equals(profile.Name, DemoTodoProviderProfileName, StringComparison.OrdinalIgnoreCase)))
+        {
+            return;
+        }
+
+        var now = DateTime.UtcNow;
+        profiles.Add(new TodoProviderProfile
+        {
+            Id = DemoTodoProviderProfileId,
+            Name = DemoTodoProviderProfileName,
+            Instructions = "You are a helpful planning assistant. Use your todo list to plan and track multi-step work.",
+            SuppressTodoListMessage = false,
+            TodoListMessageTemplate = null,
+            CreatedAt = now,
+            UpdatedAt = now
+        });
+
+        await repository.SaveAllAsync(profiles);
     }
 }
