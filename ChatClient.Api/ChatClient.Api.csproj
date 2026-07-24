@@ -15,7 +15,7 @@
         <PackageReference Include="Microsoft.Extensions.AI.OpenAI" Version="10.8.0" />
         <PackageReference Include="Microsoft.Data.Sqlite" Version="10.0.3" />
         <PackageReference Include="ModelContextProtocol" Version="1.2.0" />
-        <PackageReference Include="MudBlazor" Version="8.15.0" />
+        <PackageReference Include="MudBlazor" Version="9.7.0" />
         <PackageReference Include="Markdig" Version="0.45.0" />
         <PackageReference Include="DimonSmart.AiUtils" Version="1.25624.1027" />
         <PackageReference Include="OllamaSharp" Version="5.4.30" />
