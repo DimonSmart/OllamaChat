@@ -16,6 +16,8 @@ public sealed class AgentTemplateDefinition : AgentModelBase
             LlmId = LlmId,
             Temperature = Temperature,
             RepeatPenalty = RepeatPenalty,
+            TodoProviderProfileId = TodoProviderProfileId,
+            AgentModeProviderProfileId = AgentModeProviderProfileId,
             RuntimeAgentId = RuntimeAgentId,
             FunctionSettings = new FunctionSettings
             {

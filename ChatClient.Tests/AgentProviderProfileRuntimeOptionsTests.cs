@@ -83,4 +83,20 @@ public class AgentProviderProfileRuntimeOptionsTests
         Assert.Equal(todoProfileId, spec.TodoProviderProfileId);
         Assert.Equal(modeProfileId, spec.AgentModeProviderProfileId);
     }
+
+    [Fact]
+    public void AgentTemplateClone_PreservesProviderSelections()
+    {
+        var todoProfileId = Guid.NewGuid();
+        var modeProfileId = Guid.NewGuid();
+
+        var clone = new AgentTemplateDefinition
+        {
+            TodoProviderProfileId = todoProfileId,
+            AgentModeProviderProfileId = modeProfileId
+        }.Clone();
+
+        Assert.Equal(todoProfileId, clone.TodoProviderProfileId);
+        Assert.Equal(modeProfileId, clone.AgentModeProviderProfileId);
+    }
 }
