@@ -67,7 +67,58 @@ public sealed class UnifiedAgentRuntimeChatSessionServiceTests
         Assert.True(state.HasTodoProvider);
         Assert.True(state.HasAgentModeProvider);
         Assert.Equal("Plan", state.Mode);
+        Assert.Equal(["Plan"], state.AvailableModes);
         Assert.Empty(state.Todos);
+    }
+
+    [Fact]
+    public async Task SetAgentModeAsync_ChangesExistingDirectSessionBeforeFirstMessageWithoutInvocation()
+    {
+        var fixture = CreateDirectFixture(availableModes: ["Plan", "Execute"]);
+
+        await fixture.Service.StartAsync(fixture.Request);
+        await fixture.Service.SetAgentModeAsync("Execute");
+
+        var state = await fixture.Service.GetSessionStateAsync();
+        Assert.NotNull(state);
+        Assert.Equal("Execute", state.Mode);
+        Assert.Equal(["Plan", "Execute"], state.AvailableModes);
+        Assert.Empty(fixture.Service.Messages);
+        Assert.Empty(fixture.ChatClient.Requests);
+    }
+
+    [Fact]
+    public async Task SetAgentModeAsync_PersistsForSubsequentTurnsAndNewChatUsesProfileDefault()
+    {
+        var fixture = CreateDirectFixture(availableModes: ["Plan", "Execute"]);
+
+        await fixture.Service.StartAsync(fixture.Request);
+        await fixture.Service.SetAgentModeAsync("Execute");
+        await fixture.Service.SendAsync("first");
+        await fixture.Service.SendAsync("second");
+
+        Assert.Equal("Execute", (await fixture.Service.GetSessionStateAsync())!.Mode);
+        Assert.Equal(2, fixture.ChatClient.Requests.Count);
+
+        await fixture.Service.StartAsync(fixture.Request);
+
+        Assert.Equal("Plan", (await fixture.Service.GetSessionStateAsync())!.Mode);
+    }
+
+    [Fact]
+    public async Task SetAgentModeAsync_RejectsUnavailableModeWithoutChangingRuntimeState()
+    {
+        var fixture = CreateDirectFixture(availableModes: ["Research", "Verification"]);
+
+        await fixture.Service.StartAsync(fixture.Request);
+
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(
+            () => fixture.Service.SetAgentModeAsync("Execute"));
+
+        Assert.Contains("not available", exception.Message);
+        Assert.Equal("Research", (await fixture.Service.GetSessionStateAsync())!.Mode);
+        Assert.Empty(fixture.Service.Messages);
+        Assert.Empty(fixture.ChatClient.Requests);
     }
 
     [Fact]
@@ -313,7 +364,9 @@ public sealed class UnifiedAgentRuntimeChatSessionServiceTests
             null!,
             new HarnessResponseEventProjector(NullLogger<HarnessResponseEventProjector>.Instance));
 
-    private static DirectFixture CreateDirectFixture(bool withSessionStateProviders = false)
+    private static DirectFixture CreateDirectFixture(
+        bool withSessionStateProviders = false,
+        IReadOnlyList<string>? availableModes = null)
     {
         var templateId = Guid.NewGuid();
         var serverId = Guid.NewGuid();
@@ -325,7 +378,7 @@ public sealed class UnifiedAgentRuntimeChatSessionServiceTests
             Temperature = 0.35,
             RepeatPenalty = 1.15
         };
-        if (withSessionStateProviders)
+        if (withSessionStateProviders || availableModes is not null)
         {
             template.TodoProviderProfileId = Guid.NewGuid();
             template.AgentModeProviderProfileId = Guid.NewGuid();
@@ -352,7 +405,7 @@ public sealed class UnifiedAgentRuntimeChatSessionServiceTests
         var rag = new Mock<IAgenticRagContextService>(MockBehavior.Strict);
         var todoProfiles = new Mock<ITodoProviderProfileService>(MockBehavior.Strict);
         var agentModeProfiles = new Mock<IAgentModeProviderProfileService>(MockBehavior.Strict);
-        if (withSessionStateProviders)
+        if (withSessionStateProviders || availableModes is not null)
         {
             todoProfiles.Setup(service => service.GetByIdAsync(template.TodoProviderProfileId!.Value))
                 .ReturnsAsync(new TodoProviderProfile { Name = "Todos" });
@@ -360,8 +413,10 @@ public sealed class UnifiedAgentRuntimeChatSessionServiceTests
                 .ReturnsAsync(new AgentModeProviderProfile
                 {
                     Name = "Modes",
-                    DefaultMode = "Plan",
-                    Modes = [new AgentModeProfile { Name = "Plan", Instructions = "Plan work." }]
+                    DefaultMode = availableModes?.FirstOrDefault() ?? "Plan",
+                    Modes = (availableModes ?? ["Plan"])
+                        .Select(mode => new AgentModeProfile { Name = mode, Instructions = $"{mode} work." })
+                        .ToList()
                 });
         }
         rag.Setup(service => service.TryBuildContextAsync(

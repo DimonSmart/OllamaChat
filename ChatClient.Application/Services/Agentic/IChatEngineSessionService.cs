@@ -9,4 +9,6 @@ public interface IChatEngineSessionService : IChatSessionService
     Task StartAsync(ChatEngineSessionStartRequest request, CancellationToken cancellationToken = default);
 
     Task<AgentSessionStateViewModel?> GetSessionStateAsync(CancellationToken cancellationToken = default);
+
+    Task SetAgentModeAsync(string mode, CancellationToken cancellationToken = default);
 }

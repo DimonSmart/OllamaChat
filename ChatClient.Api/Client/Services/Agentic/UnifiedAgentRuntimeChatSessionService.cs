@@ -27,6 +27,7 @@ public sealed class UnifiedAgentRuntimeChatSessionService(
     private CancellationTokenSource? _cancellationTokenSource;
     private AIAgent? _directAgent;
     private AgentSession? _directSession;
+    private IReadOnlyList<string> _directAvailableModes = [];
     private IReadOnlyDictionary<string, AgenticRegisteredTool> _directToolMetadata =
         new Dictionary<string, AgenticRegisteredTool>(StringComparer.OrdinalIgnoreCase);
     private TaskCompletionSource? _activeRunCompletion;
@@ -112,7 +113,59 @@ public sealed class UnifiedAgentRuntimeChatSessionService(
                 .ToList();
         var mode = modeProvider is null ? null : await modeProvider.GetModeAsync(session, cancellationToken);
 
-        return new AgentSessionStateViewModel(mode, todoProvider is not null, modeProvider is not null, todos);
+        return new AgentSessionStateViewModel(
+            mode,
+            _directAvailableModes,
+            todoProvider is not null,
+            modeProvider is not null,
+            todos);
+    }
+
+    public async Task SetAgentModeAsync(string mode, CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(mode))
+        {
+            throw new ArgumentException("An agent mode is required.", nameof(mode));
+        }
+
+        await _runSetupGate.WaitAsync(cancellationToken);
+        try
+        {
+            AIAgent? agent;
+            AgentSession? session;
+            IReadOnlyList<string> availableModes;
+            lock (_lifecycleLock)
+            {
+                if (_resetting || IsAnswering || RequiresReset)
+                {
+                    throw new InvalidOperationException("The agent mode cannot be changed while this conversation is unavailable.");
+                }
+
+                agent = _directAgent;
+                session = _directSession;
+                availableModes = _directAvailableModes;
+            }
+
+            if (agent is null || session is null)
+            {
+                throw new InvalidOperationException("A direct agent session is not available.");
+            }
+
+            var requestedMode = mode.Trim();
+            if (!availableModes.Contains(requestedMode, StringComparer.OrdinalIgnoreCase))
+            {
+                throw new InvalidOperationException($"Agent mode '{requestedMode}' is not available for this conversation.");
+            }
+
+            var modeProvider = agent.GetService<AgentModeProvider>()
+                ?? throw new InvalidOperationException("The direct agent does not have an Agent Mode Provider.");
+            await modeProvider.SetModeAsync(session, requestedMode, cancellationToken);
+            SessionStateChanged?.Invoke();
+        }
+        finally
+        {
+            _runSetupGate.Release();
+        }
     }
 
     public async Task ResetAsync(CancellationToken cancellationToken = default)
@@ -147,6 +200,7 @@ public sealed class UnifiedAgentRuntimeChatSessionService(
         {
             _directAgent = null;
             _directSession = null;
+            _directAvailableModes = [];
             _directToolMetadata = new Dictionary<string, AgenticRegisteredTool>(StringComparer.OrdinalIgnoreCase);
             _chat.Reset();
             ClearRunLocalState();
@@ -374,6 +428,7 @@ public sealed class UnifiedAgentRuntimeChatSessionService(
 
         _directAgent = build.Agent;
         _directSession = await build.Agent.CreateSessionAsync(cancellationToken);
+        _directAvailableModes = build.AvailableModes;
         _directToolMetadata = build.ToolSet.MetadataByName;
         SessionStateChanged?.Invoke();
     }

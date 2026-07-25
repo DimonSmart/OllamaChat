@@ -15,7 +15,8 @@ internal sealed record HarnessAgentRuntimeDefinition(
     AIAgent Agent,
     LlmServerConfig Server,
     AgenticToolSet ToolSet,
-    bool SupportsFunctionCalling);
+    bool SupportsFunctionCalling,
+    IReadOnlyList<string> AvailableModes);
 
 public sealed class AgenticRuntimeAgentFactory(
     ILlmServerConfigService llmServerConfigService,
@@ -93,7 +94,8 @@ public sealed class AgenticRuntimeAgentFactory(
             runtimeAgent,
             server,
             toolSet,
-            supportsFunctions);
+            supportsFunctions,
+            GetEffectiveModeNames(agentModeProfile));
     }
 
     private static AIAgent CreateRuntimeAgent(
@@ -212,6 +214,18 @@ public sealed class AgenticRuntimeAgentFactory(
                 .ToList(),
             DefaultMode = NormalizeOptionalText(profile.DefaultMode)
         };
+    }
+
+    private static IReadOnlyList<string> GetEffectiveModeNames(AgentModeProviderProfile? profile)
+    {
+        if (profile is null)
+        {
+            return [];
+        }
+
+        return profile.Modes.Count == 0
+            ? ["plan", "execute"]
+            : profile.Modes.Select(static mode => mode.Name).ToList();
     }
 
     private static string? NormalizeOptionalText(string? value)

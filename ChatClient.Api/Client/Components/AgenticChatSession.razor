@@ -38,7 +38,25 @@
             {
                 <MudStack Row="true" Justify="Justify.SpaceBetween" AlignItems="AlignItems.Center">
                     <MudText Typo="Typo.caption" Class="mud-text-secondary">Mode</MudText>
-                    <MudText Typo="Typo.body2">@SessionState.Mode</MudText>
+                    @if (SessionState.AvailableModes.Count == 1)
+                    {
+                        <MudText Typo="Typo.body2">@SessionState.Mode</MudText>
+                    }
+                    else
+                    {
+                        <MudSelect T="string"
+                                   Value="SessionState.Mode"
+                                   ValueChanged="OnAgentModeChangedAsync"
+                                   Dense="true"
+                                   Margin="Margin.Dense"
+                                   Disabled="@(IsLlmAnswering || isChangingAgentMode)"
+                                   Style="min-width: 130px">
+                            @foreach (var mode in SessionState.AvailableModes)
+                            {
+                                <MudSelectItem T="string" Value="@mode">@mode</MudSelectItem>
+                            }
+                        </MudSelect>
+                    }
                 </MudStack>
             }
             @if (SessionState.HasTodoProvider)
@@ -276,10 +294,33 @@
     [Parameter]
     public EventCallback<ChatFormat> OnCopyChat { get; set; }
 
+    [Parameter]
+    public EventCallback<string> OnAgentModeChanged { get; set; }
+
     private ElementReference messagesElement;
     private bool showSessionState;
+    private bool isChangingAgentMode;
 
     private void ToggleSessionState() => showSessionState = !showSessionState;
+
+    private async Task OnAgentModeChangedAsync(string mode)
+    {
+        if (isChangingAgentMode || IsLlmAnswering ||
+            string.Equals(mode, SessionState?.Mode, StringComparison.OrdinalIgnoreCase))
+        {
+            return;
+        }
+
+        isChangingAgentMode = true;
+        try
+        {
+            await OnAgentModeChanged.InvokeAsync(mode);
+        }
+        finally
+        {
+            isChangingAgentMode = false;
+        }
+    }
 
     public async Task ScrollToBottomAsync()
     {

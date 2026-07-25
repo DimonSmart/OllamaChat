@@ -146,6 +146,18 @@ public abstract class AgenticChatPageBase : ComponentBase, IAsyncDisposable
     protected Task Cancel() =>
         ChatService.CancelAsync();
 
+    protected async Task SetAgentModeAsync(string mode)
+    {
+        try
+        {
+            await ChatService.SetAgentModeAsync(mode);
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Could not switch agent mode: {ex.Message}", Severity.Error);
+        }
+    }
+
     protected Task CopyChatAsync(ChatFormat format)
     {
         var text = ChatTranscriptFormatter.Format(ChatViewModelService.Messages, format);
