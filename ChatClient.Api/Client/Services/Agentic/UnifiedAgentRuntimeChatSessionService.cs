@@ -39,6 +39,7 @@ public sealed class UnifiedAgentRuntimeChatSessionService(
     public event Action? ChatReset;
     public event Func<IAppChatMessage, Task>? MessageAdded;
     public event Func<IAppChatMessage, bool, Task>? MessageUpdated;
+    public event Action? SessionStateChanged;
 
     public bool IsAnswering { get; private set; }
 
@@ -87,6 +88,33 @@ public sealed class UnifiedAgentRuntimeChatSessionService(
         }
     }
 
+    public async Task<AgentSessionStateViewModel?> GetSessionStateAsync(
+        CancellationToken cancellationToken = default)
+    {
+        var agent = _directAgent;
+        var session = _directSession;
+        if (agent is null || session is null)
+        {
+            return null;
+        }
+
+        var todoProvider = agent.GetService<TodoProvider>();
+        var modeProvider = agent.GetService<AgentModeProvider>();
+        if (todoProvider is null && modeProvider is null)
+        {
+            return null;
+        }
+
+        var todos = todoProvider is null
+            ? []
+            : (await todoProvider.GetAllTodosAsync(session, cancellationToken))
+                .Select(static todo => new AgentSessionTodoItemViewModel(todo.Id, todo.Title, todo.Description, todo.IsComplete))
+                .ToList();
+        var mode = modeProvider is null ? null : await modeProvider.GetModeAsync(session, cancellationToken);
+
+        return new AgentSessionStateViewModel(mode, todoProvider is not null, modeProvider is not null, todos);
+    }
+
     public async Task ResetAsync(CancellationToken cancellationToken = default)
     {
         Task? activeRun;
@@ -132,6 +160,7 @@ public sealed class UnifiedAgentRuntimeChatSessionService(
 
         UpdateAnsweringState(false);
         ChatReset?.Invoke();
+        SessionStateChanged?.Invoke();
     }
 
     public async Task CancelAsync()
@@ -346,6 +375,7 @@ public sealed class UnifiedAgentRuntimeChatSessionService(
         _directAgent = build.Agent;
         _directSession = await build.Agent.CreateSessionAsync(cancellationToken);
         _directToolMetadata = build.ToolSet.MetadataByName;
+        SessionStateChanged?.Invoke();
     }
 
     private async Task EnsureDirectConversationAsync(CancellationToken cancellationToken)
@@ -412,6 +442,7 @@ public sealed class UnifiedAgentRuntimeChatSessionService(
             ReplaceMessage(stream, final);
             await (MessageUpdated?.Invoke(final, true) ?? Task.CompletedTask);
             _activeStreamsByRuntimeMessageId.Remove(messageId);
+            SessionStateChanged?.Invoke();
         }
         catch (OperationCanceledException)
         {

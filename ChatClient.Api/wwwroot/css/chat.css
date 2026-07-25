@@ -17,6 +17,21 @@
     flex: 0 0 auto;
 }
 
+.session-state-panel {
+    max-width: 26rem;
+    margin: -0.15rem 0.5rem 0.5rem auto;
+    padding: 0.5rem 0.65rem;
+}
+
+.session-state-todo {
+    min-height: 1.4rem;
+}
+
+.session-state-todo-complete {
+    color: var(--mud-palette-text-secondary);
+    text-decoration: line-through;
+}
+
 .chat-messages-container {
     padding: 1rem;
     display: flex;

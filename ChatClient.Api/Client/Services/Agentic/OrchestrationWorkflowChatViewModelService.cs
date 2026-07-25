@@ -1,4 +1,5 @@
 using ChatClient.Api.Client.ViewModels;
+using ChatClient.Application.Services.Agentic;
 using ChatClient.Domain.Models;
 
 namespace ChatClient.Api.Client.Services.Agentic;
@@ -17,11 +18,13 @@ public sealed class OrchestrationWorkflowChatViewModelService : IOrchestrationWo
 
     public event Action<bool>? AnsweringStateChanged;
     public event Action? ChatReset;
+    public event Action? SessionStateChanged;
     public event Func<AppChatMessageViewModel, Task>? MessageAdded;
     public event Func<AppChatMessageViewModel, MessageUpdateOptions, Task>? MessageUpdated;
     public event Func<AppChatMessageViewModel, Task>? MessageDeleted;
 
     public bool IsAnswering => _chatService.IsAnswering;
+    public AgentSessionStateViewModel? SessionState => null;
 
     public OrchestrationWorkflowChatViewModelService(IOrchestrationWorkflowSessionService chatService)
     {

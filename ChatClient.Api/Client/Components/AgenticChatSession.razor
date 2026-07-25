@@ -1,6 +1,7 @@
 @using System.Linq
 @using ChatClient.Api.Client.Services
 @using ChatClient.Api.Client.ViewModels
+@using ChatClient.Application.Services.Agentic
 @using ChatClient.Domain.Models
 @using Microsoft.AspNetCore.Components
 @using Microsoft.Extensions.Logging
@@ -12,12 +13,64 @@
 @inject ILogger<AgenticChatSession> Logger
 
 <div class="chat-actions">
+    @if (SessionState is not null)
+    {
+        <MudTooltip Text="Session state">
+            <MudIconButton Icon="@Icons.Material.Filled.FactCheck"
+                           Size="Size.Small"
+                           AriaLabel="Session state"
+                           OnClick="ToggleSessionState" />
+        </MudTooltip>
+    }
     <MudMenu Icon="@Icons.Material.Filled.ContentCopy" AnchorOrigin="Origin.TopRight" TransformOrigin="Origin.TopRight">
         <MudMenuItem OnClick="@(() => OnCopyChat.InvokeAsync(ChatFormat.Text))">Copy as Text</MudMenuItem>
         <MudMenuItem OnClick="@(() => OnCopyChat.InvokeAsync(ChatFormat.Markdown))">Copy as Markdown</MudMenuItem>
         <MudMenuItem OnClick="@(() => OnCopyChat.InvokeAsync(ChatFormat.Html))">Copy as HTML</MudMenuItem>
     </MudMenu>
 </div>
+
+@if (SessionState is not null)
+{
+    <MudCollapse Expanded="showSessionState">
+        <MudPaper Outlined="true" Class="session-state-panel">
+            <MudText Typo="Typo.subtitle2">Session state</MudText>
+            @if (SessionState.HasAgentModeProvider)
+            {
+                <MudStack Row="true" Justify="Justify.SpaceBetween" AlignItems="AlignItems.Center">
+                    <MudText Typo="Typo.caption" Class="mud-text-secondary">Mode</MudText>
+                    <MudText Typo="Typo.body2">@SessionState.Mode</MudText>
+                </MudStack>
+            }
+            @if (SessionState.HasTodoProvider)
+            {
+                var completed = SessionState.Todos.Count(todo => todo.IsComplete);
+                <MudStack Row="true" Justify="Justify.SpaceBetween" AlignItems="AlignItems.Center" Class="mt-2">
+                    <MudText Typo="Typo.caption" Class="mud-text-secondary">TODO</MudText>
+                    @if (SessionState.Todos.Count > 0)
+                    {
+                        <MudText Typo="Typo.caption">@completed/@SessionState.Todos.Count</MudText>
+                    }
+                </MudStack>
+                @if (SessionState.Todos.Count == 0)
+                {
+                    <MudText Typo="Typo.caption">No tasks</MudText>
+                }
+                else
+                {
+                    @foreach (var todo in SessionState.Todos)
+                    {
+                        <MudStack Row="true" Spacing="1" AlignItems="AlignItems.Center" Class="session-state-todo">
+                            <MudIcon Icon="@(todo.IsComplete ? Icons.Material.Filled.CheckCircle : Icons.Material.Outlined.RadioButtonUnchecked)"
+                                     Color="@(todo.IsComplete ? Color.Success : Color.Default)"
+                                     Size="Size.Small" />
+                            <MudText Typo="Typo.caption" Class="@(todo.IsComplete ? "session-state-todo-complete" : null)">@todo.Title</MudText>
+                        </MudStack>
+                    }
+                }
+            }
+        </MudPaper>
+    </MudCollapse>
+}
 
 <div class="chat-messages-container" @ref="messagesElement">
     @{
@@ -209,6 +262,9 @@
     public bool RequiresReset { get; set; }
 
     [Parameter]
+    public AgentSessionStateViewModel? SessionState { get; set; }
+
+    [Parameter]
     public EventCallback<(string text, IReadOnlyList<AppChatMessageFile> files)> OnSendMessage { get; set; }
 
     [Parameter]
@@ -221,6 +277,9 @@
     public EventCallback<ChatFormat> OnCopyChat { get; set; }
 
     private ElementReference messagesElement;
+    private bool showSessionState;
+
+    private void ToggleSessionState() => showSessionState = !showSessionState;
 
     public async Task ScrollToBottomAsync()
     {

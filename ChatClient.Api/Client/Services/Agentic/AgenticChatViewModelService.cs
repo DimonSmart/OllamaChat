@@ -12,15 +12,18 @@ public sealed class AgenticChatViewModelService : IAgenticChatViewModelService, 
     private readonly Action _chatResetHandler;
     private readonly Func<IAppChatMessage, Task> _messageAddedHandler;
     private readonly Func<IAppChatMessage, bool, Task> _messageUpdatedHandler;
+    private readonly Action _sessionStateChangedHandler;
 
     public IReadOnlyList<AppChatMessageViewModel> Messages => _messages;
 
     public event Action<bool>? AnsweringStateChanged;
     public event Action? ChatReset;
+    public event Action? SessionStateChanged;
     public event Func<AppChatMessageViewModel, Task>? MessageAdded;
     public event Func<AppChatMessageViewModel, MessageUpdateOptions, Task>? MessageUpdated;
 
     public bool IsAnswering => _chatService.IsAnswering;
+    public AgentSessionStateViewModel? SessionState { get; private set; }
 
     public AgenticChatViewModelService(IChatEngineSessionService chatService)
     {
@@ -30,11 +33,13 @@ public sealed class AgenticChatViewModelService : IAgenticChatViewModelService, 
         _chatResetHandler = OnChatReset;
         _messageAddedHandler = OnMessageAdded;
         _messageUpdatedHandler = OnMessageUpdated;
+        _sessionStateChangedHandler = OnSessionStateChanged;
 
         _chatService.AnsweringStateChanged += _answeringStateChangedHandler;
         _chatService.ChatReset += _chatResetHandler;
         _chatService.MessageAdded += _messageAddedHandler;
         _chatService.MessageUpdated += _messageUpdatedHandler;
+        _chatService.SessionStateChanged += _sessionStateChangedHandler;
     }
 
     private async Task OnMessageAdded(IAppChatMessage domainMessage)
@@ -69,7 +74,17 @@ public sealed class AgenticChatViewModelService : IAgenticChatViewModelService, 
     private void OnChatReset()
     {
         _messages.Clear();
+        SessionState = null;
         ChatReset?.Invoke();
+        SessionStateChanged?.Invoke();
+    }
+
+    private void OnSessionStateChanged() => _ = RefreshSessionStateAsync();
+
+    private async Task RefreshSessionStateAsync()
+    {
+        SessionState = await _chatService.GetSessionStateAsync();
+        SessionStateChanged?.Invoke();
     }
 
     private async Task OnMessageUpdated(IAppChatMessage domainMessage, bool forceRender)
@@ -88,6 +103,7 @@ public sealed class AgenticChatViewModelService : IAgenticChatViewModelService, 
         _chatService.ChatReset -= _chatResetHandler;
         _chatService.MessageAdded -= _messageAddedHandler;
         _chatService.MessageUpdated -= _messageUpdatedHandler;
+        _chatService.SessionStateChanged -= _sessionStateChangedHandler;
         return ValueTask.CompletedTask;
     }
 }

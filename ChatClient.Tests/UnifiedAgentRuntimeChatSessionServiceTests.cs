@@ -55,6 +55,32 @@ public sealed class UnifiedAgentRuntimeChatSessionServiceTests
     }
 
     [Fact]
+    public async Task GetSessionStateAsync_ProjectsConfiguredDirectSessionProviders()
+    {
+        var fixture = CreateDirectFixture(withSessionStateProviders: true);
+
+        await fixture.Service.StartAsync(fixture.Request);
+
+        var state = await fixture.Service.GetSessionStateAsync();
+
+        Assert.NotNull(state);
+        Assert.True(state.HasTodoProvider);
+        Assert.True(state.HasAgentModeProvider);
+        Assert.Equal("Plan", state.Mode);
+        Assert.Empty(state.Todos);
+    }
+
+    [Fact]
+    public async Task GetSessionStateAsync_ReturnsNullForDirectAgentWithoutProviders()
+    {
+        var fixture = CreateDirectFixture();
+
+        await fixture.Service.StartAsync(fixture.Request);
+
+        Assert.Null(await fixture.Service.GetSessionStateAsync());
+    }
+
+    [Fact]
     public async Task SendAsync_ProjectsParticipantStreamsByRuntimeMessageId()
     {
         var runner = new StubAgentRunner([
@@ -287,7 +313,7 @@ public sealed class UnifiedAgentRuntimeChatSessionServiceTests
             null!,
             new HarnessResponseEventProjector(NullLogger<HarnessResponseEventProjector>.Instance));
 
-    private static DirectFixture CreateDirectFixture()
+    private static DirectFixture CreateDirectFixture(bool withSessionStateProviders = false)
     {
         var templateId = Guid.NewGuid();
         var serverId = Guid.NewGuid();
@@ -299,6 +325,11 @@ public sealed class UnifiedAgentRuntimeChatSessionServiceTests
             Temperature = 0.35,
             RepeatPenalty = 1.15
         };
+        if (withSessionStateProviders)
+        {
+            template.TodoProviderProfileId = Guid.NewGuid();
+            template.AgentModeProviderProfileId = Guid.NewGuid();
+        }
         var model = new ServerModel(serverId, "test-model");
         var chatClient = new RecordingChatClient();
 
@@ -321,6 +352,18 @@ public sealed class UnifiedAgentRuntimeChatSessionServiceTests
         var rag = new Mock<IAgenticRagContextService>(MockBehavior.Strict);
         var todoProfiles = new Mock<ITodoProviderProfileService>(MockBehavior.Strict);
         var agentModeProfiles = new Mock<IAgentModeProviderProfileService>(MockBehavior.Strict);
+        if (withSessionStateProviders)
+        {
+            todoProfiles.Setup(service => service.GetByIdAsync(template.TodoProviderProfileId!.Value))
+                .ReturnsAsync(new TodoProviderProfile { Name = "Todos" });
+            agentModeProfiles.Setup(service => service.GetByIdAsync(template.AgentModeProviderProfileId!.Value))
+                .ReturnsAsync(new AgentModeProviderProfile
+                {
+                    Name = "Modes",
+                    DefaultMode = "Plan",
+                    Modes = [new AgentModeProfile { Name = "Plan", Instructions = "Plan work." }]
+                });
+        }
         rag.Setup(service => service.TryBuildContextAsync(
                 templateId,
                 It.IsAny<string>(),

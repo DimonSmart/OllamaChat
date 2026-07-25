@@ -60,6 +60,7 @@ public abstract class AgenticChatPageBase : ComponentBase, IAsyncDisposable
     private StreamingDebouncer _renderDebouncer = null!;
     private Func<AppChatMessageViewModel, Task>? _messageAddedHandler;
     private Func<AppChatMessageViewModel, MessageUpdateOptions, Task>? _messageUpdatedHandler;
+    private Action? _sessionStateChangedHandler;
     private IDisposable? elicitationHandlerRegistration;
 
     protected virtual bool CanSendMessages => true;
@@ -97,6 +98,8 @@ public abstract class AgenticChatPageBase : ComponentBase, IAsyncDisposable
         _messageUpdatedHandler = (message, options) => InvokeAsync(() => OnMessageUpdatedAsync(message, options));
         ChatViewModelService.MessageAdded += _messageAddedHandler;
         ChatViewModelService.MessageUpdated += _messageUpdatedHandler;
+        _sessionStateChangedHandler = () => _ = InvokeAsync(StateHasChanged);
+        ChatViewModelService.SessionStateChanged += _sessionStateChangedHandler;
 
         isLoadingInitialData = false;
         StateHasChanged();
@@ -236,6 +239,8 @@ public abstract class AgenticChatPageBase : ComponentBase, IAsyncDisposable
             ChatViewModelService.MessageAdded -= _messageAddedHandler;
         if (_messageUpdatedHandler is not null)
             ChatViewModelService.MessageUpdated -= _messageUpdatedHandler;
+        if (_sessionStateChangedHandler is not null)
+            ChatViewModelService.SessionStateChanged -= _sessionStateChangedHandler;
         elicitationHandlerRegistration?.Dispose();
 
         await ChatService.CancelAsync();
