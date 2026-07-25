@@ -16,6 +16,8 @@ public abstract class AgentModelBase
     public Guid? LlmId { get; set; }
     public double? Temperature { get; set; }
     public double? RepeatPenalty { get; set; }
+    public Guid? TodoProviderProfileId { get; set; }
+    public Guid? AgentModeProviderProfileId { get; set; }
     public FunctionSettings FunctionSettings { get; set; } = new();
     public List<McpServerSessionBinding> McpServerBindings { get; set; } = [];
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;

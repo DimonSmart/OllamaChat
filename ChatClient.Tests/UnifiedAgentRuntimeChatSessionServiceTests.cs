@@ -319,6 +319,8 @@ public sealed class UnifiedAgentRuntimeChatSessionServiceTests
         var tools = new Mock<IAppToolCatalog>(MockBehavior.Strict);
         var interaction = new Mock<IMcpUserInteractionService>(MockBehavior.Strict);
         var rag = new Mock<IAgenticRagContextService>(MockBehavior.Strict);
+        var todoProfiles = new Mock<ITodoProviderProfileService>(MockBehavior.Strict);
+        var agentModeProfiles = new Mock<IAgentModeProviderProfileService>(MockBehavior.Strict);
         rag.Setup(service => service.TryBuildContextAsync(
                 templateId,
                 It.IsAny<string>(),
@@ -333,6 +335,8 @@ public sealed class UnifiedAgentRuntimeChatSessionServiceTests
             tools.Object,
             interaction.Object,
             rag.Object,
+            todoProfiles.Object,
+            agentModeProfiles.Object,
             Options.Create(new AgenticToolInvocationPolicyOptions()),
             NullLogger<AgenticRuntimeAgentFactory>.Instance);
         var service = new UnifiedAgentRuntimeChatSessionService(

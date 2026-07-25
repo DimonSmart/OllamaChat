@@ -45,6 +45,8 @@ public static class AgentExecutionSpecFactory
         target.LlmId = source.LlmId;
         target.Temperature = source.Temperature;
         target.RepeatPenalty = source.RepeatPenalty;
+        target.TodoProviderProfileId = source.TodoProviderProfileId;
+        target.AgentModeProviderProfileId = source.AgentModeProviderProfileId;
         target.RuntimeAgentId = source.RuntimeAgentId;
         target.FunctionSettings = new FunctionSettings
         {

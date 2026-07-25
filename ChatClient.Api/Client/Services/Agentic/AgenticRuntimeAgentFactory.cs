@@ -24,6 +24,8 @@ public sealed class AgenticRuntimeAgentFactory(
     IAppToolCatalog appToolCatalog,
     IMcpUserInteractionService mcpUserInteractionService,
     IAgenticRagContextService ragContextService,
+    ITodoProviderProfileService todoProviderProfileService,
+    IAgentModeProviderProfileService agentModeProviderProfileService,
     IOptions<AgenticToolInvocationPolicyOptions> toolPolicyOptions,
     ILogger<AgenticRuntimeAgentFactory> logger)
 {
@@ -84,7 +86,9 @@ public sealed class AgenticRuntimeAgentFactory(
                 string.Join(", ", requestedFunctions));
         }
 
-        var runtimeAgent = CreateRuntimeAgent(chatClient, request, server, toolSet, ragContextService);
+        var todoProfile = await GetTodoProviderProfileAsync(request.Agent.TodoProviderProfileId);
+        var agentModeProfile = await GetAgentModeProviderProfileAsync(request.Agent.AgentModeProviderProfileId);
+        var runtimeAgent = CreateRuntimeAgent(chatClient, request, server, toolSet, ragContextService, todoProfile, agentModeProfile);
         return new HarnessAgentRuntimeDefinition(
             runtimeAgent,
             server,
@@ -97,7 +101,9 @@ public sealed class AgenticRuntimeAgentFactory(
         AgentRunRequest request,
         LlmServerConfig server,
         AgenticToolSet toolSet,
-        IAgenticRagContextService ragContextService)
+        IAgenticRagContextService ragContextService,
+        TodoProviderProfile? todoProfile,
+        AgentModeProviderProfile? agentModeProfile)
     {
         // Harness owns the function-invocation loop, session history and compaction.
         // The direct-chat service must not rebuild any of that state from its UI transcript.
@@ -113,13 +119,17 @@ public sealed class AgenticRuntimeAgentFactory(
                 Temperature = ResolveTemperature(request.ResolvedModel, request.Agent.Temperature)
             },
             DisableTodoProvider = true,
-            DisableAgentModeProvider = true,
+            DisableAgentModeProvider = agentModeProfile is null,
+            AgentModeProviderOptions = agentModeProfile is null
+                ? null
+                : BuildAgentModeProviderOptions(agentModeProfile),
             DisableWebSearch = true,
             DisableFileMemory = true,
             DisableAgentSkillsProvider = true,
-            AIContextProviders = Guid.TryParse(request.Agent.AgentId, out var agentId) && agentId != Guid.Empty
-                ? [new AgenticRagContextProvider(agentId, request.ResolvedModel.ServerId, ragContextService)]
-                : [],
+            AIContextProviders = BuildContextProviders(
+                request,
+                ragContextService,
+                todoProfile),
 #pragma warning disable MAAI001
             DisableCompaction = true
 #pragma warning restore MAAI001
@@ -139,6 +149,83 @@ public sealed class AgenticRuntimeAgentFactory(
         }
 
         return chatClient.AsHarnessAgent(agentOptions);
+    }
+
+    private async Task<TodoProviderProfile?> GetTodoProviderProfileAsync(Guid? profileId)
+    {
+        return profileId is Guid id && id != Guid.Empty
+            ? await todoProviderProfileService.GetByIdAsync(id)
+            : null;
+    }
+
+    private async Task<AgentModeProviderProfile?> GetAgentModeProviderProfileAsync(Guid? profileId)
+    {
+        return profileId is Guid id && id != Guid.Empty
+            ? await agentModeProviderProfileService.GetByIdAsync(id)
+            : null;
+    }
+
+    internal static List<AIContextProvider> BuildContextProviders(
+        AgentRunRequest request,
+        IAgenticRagContextService ragContextService,
+        TodoProviderProfile? todoProfile)
+    {
+        List<AIContextProvider> providers = [];
+
+        if (Guid.TryParse(request.Agent.AgentId, out var agentId) && agentId != Guid.Empty)
+        {
+            providers.Add(new AgenticRagContextProvider(agentId, request.ResolvedModel.ServerId, ragContextService));
+        }
+
+        if (todoProfile is not null)
+        {
+            providers.Add(new TodoProvider(BuildTodoProviderOptions(todoProfile)));
+        }
+
+        return providers;
+    }
+
+    internal static TodoProviderOptions BuildTodoProviderOptions(TodoProviderProfile profile)
+    {
+        ArgumentNullException.ThrowIfNull(profile);
+
+        var messageTemplate = NormalizeOptionalText(profile.TodoListMessageTemplate);
+        return new TodoProviderOptions
+        {
+            Instructions = NormalizeOptionalText(profile.Instructions),
+            SuppressTodoListMessage = profile.SuppressTodoListMessage,
+            TodoListMessageBuilder = messageTemplate is null
+                ? null
+                : todos => messageTemplate.Replace("{todos}", FormatTodoList(todos))
+        };
+    }
+
+    internal static AgentModeProviderOptions BuildAgentModeProviderOptions(AgentModeProviderProfile profile)
+    {
+        ArgumentNullException.ThrowIfNull(profile);
+
+        return new AgentModeProviderOptions
+        {
+            Instructions = NormalizeOptionalText(profile.Instructions),
+            Modes = profile.Modes
+                .Select(mode => new AgentModeProviderOptions.AgentMode(mode.Name, mode.Instructions))
+                .ToList(),
+            DefaultMode = NormalizeOptionalText(profile.DefaultMode)
+        };
+    }
+
+    private static string? NormalizeOptionalText(string? value)
+    {
+        var trimmed = value?.Trim();
+        return string.IsNullOrEmpty(trimmed) ? null : trimmed;
+    }
+
+    private static string FormatTodoList(IReadOnlyList<TodoItem> todos)
+    {
+        return string.Join(
+            Environment.NewLine,
+            todos.Select(todo => $"- [{(todo.IsComplete ? 'x' : ' ')}] {todo.Title}" +
+                                 (string.IsNullOrWhiteSpace(todo.Description) ? string.Empty : $": {todo.Description}")));
     }
 
     private static string? BuildInstructions(AgentExecutionSpec agent)

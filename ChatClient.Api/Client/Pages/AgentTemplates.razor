@@ -15,6 +15,8 @@
 @inject IRagFileService RagFileService
 @inject ILlmServerConfigService LlmServerConfigService
 @inject IMcpServerConfigService McpServerConfigService
+@inject ITodoProviderProfileService TodoProviderProfileService
+@inject IAgentModeProviderProfileService AgentModeProviderProfileService
 
 <PageTitle>Agent Templates</PageTitle>
 
@@ -266,6 +268,23 @@
             <MudText Typo="Typo.caption">Leave blank to use chat defaults.</MudText>
 
             <MudDivider Class="my-2" />
+            <MudText Typo="Typo.subtitle1">Harness</MudText>
+            <MudSelect T="Guid?" @bind-Value="editingAgent.TodoProviderProfileId" Label="Todo provider" Class="mt-2">
+                <MudSelectItem T="Guid?" Value="@((Guid?)null)">None</MudSelectItem>
+                @foreach (var profile in todoProviderProfiles)
+                {
+                    <MudSelectItem T="Guid?" Value="@((Guid?)profile.Id)">@profile.Name</MudSelectItem>
+                }
+            </MudSelect>
+            <MudSelect T="Guid?" @bind-Value="editingAgent.AgentModeProviderProfileId" Label="Agent mode provider" Class="mt-2">
+                <MudSelectItem T="Guid?" Value="@((Guid?)null)">None</MudSelectItem>
+                @foreach (var profile in agentModeProviderProfiles)
+                {
+                    <MudSelectItem T="Guid?" Value="@((Guid?)profile.Id)">@profile.Name</MudSelectItem>
+                }
+            </MudSelect>
+
+            <MudDivider Class="my-2" />
             <MudText Typo="Typo.subtitle1">Tooling</MudText>
             <MudNumericField T="int"
                              @bind-Value="editingAgent.FunctionSettings.AutoSelectCount"
@@ -353,6 +372,8 @@
     private ServerModelSelection editingServerModel = new(null, null);
     private List<LlmServerConfig> servers = new();
     private List<IMcpServerDescriptor> mcpServers = new();
+    private List<TodoProviderProfile> todoProviderProfiles = new();
+    private List<AgentModeProviderProfile> agentModeProviderProfiles = new();
     private DialogOptions dialogOptions = new()
     {
         CloseOnEscapeKey = true,
@@ -373,6 +394,12 @@
         await LoadAgents();
         servers = (await LlmServerConfigService.GetAllAsync()).ToList();
         mcpServers = (await McpServerConfigService.GetAllAsync()).ToList();
+        todoProviderProfiles = (await TodoProviderProfileService.GetAllAsync())
+            .OrderBy(profile => profile.Name, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+        agentModeProviderProfiles = (await AgentModeProviderProfileService.GetAllAsync())
+            .OrderBy(profile => profile.Name, StringComparer.OrdinalIgnoreCase)
+            .ToList();
     }
 
     private async Task LoadAgents()
@@ -429,6 +456,8 @@
             LlmId = null,
             Temperature = null,
             RepeatPenalty = null,
+            TodoProviderProfileId = null,
+            AgentModeProviderProfileId = null,
             FunctionSettings = new FunctionSettings
             {
                 AutoSelectCount = 0
@@ -540,6 +569,8 @@
             LlmId = agent.LlmId,
             Temperature = agent.Temperature,
             RepeatPenalty = agent.RepeatPenalty,
+            TodoProviderProfileId = agent.TodoProviderProfileId,
+            AgentModeProviderProfileId = agent.AgentModeProviderProfileId,
             CreatedAt = agent.CreatedAt,
             UpdatedAt = agent.UpdatedAt,
             FunctionSettings = new FunctionSettings
