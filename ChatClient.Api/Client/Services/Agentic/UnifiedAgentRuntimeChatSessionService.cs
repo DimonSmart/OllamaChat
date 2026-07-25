@@ -484,6 +484,13 @@ public sealed class UnifiedAgentRuntimeChatSessionService(
                     }
 
                     ApplyHarnessEvent(stream, responseEvent);
+
+                    if (responseEvent is HarnessToolCallCompleted completed &&
+                        ChangesHarnessSessionState(completed))
+                    {
+                        SessionStateChanged?.Invoke();
+                    }
+
                     await (MessageUpdated?.Invoke(stream, false) ?? Task.CompletedTask);
                 }
             }
@@ -689,6 +696,20 @@ public sealed class UnifiedAgentRuntimeChatSessionService(
                 break;
         }
     }
+
+    internal static bool ChangesHarnessSessionState(HarnessToolCallCompleted completed)
+    {
+        ArgumentNullException.ThrowIfNull(completed);
+
+        return IsHarnessSessionStateTool(completed.RegisteredName) ||
+               IsHarnessSessionStateTool(completed.OriginalName);
+    }
+
+    private static bool IsHarnessSessionStateTool(string toolName) => toolName is
+        "todos_add" or
+        "todos_complete" or
+        "todos_remove" or
+        "mode_set";
 
     private static ToolInvocationViewState ToViewState(HarnessToolCallStarted value) => new(
         value.CallId, value.RegisteredName, value.OriginalName, value.Source, value.ServerName,

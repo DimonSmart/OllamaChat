@@ -131,6 +131,7 @@ public class AgentProviderProfileRuntimeOptionsTests
         var evaluator = Assert.IsType<TodoCompletionLoopEvaluator>(Assert.Single(options.LoopEvaluators!));
         Assert.NotNull(evaluator);
         Assert.Equal(7, options.LoopAgentOptions!.MaxIterations);
+        Assert.True(options.LoopAgentOptions.ExcludeOnBehalfOfMessages);
     }
 
     [Fact]

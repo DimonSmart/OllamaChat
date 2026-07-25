@@ -16,6 +16,23 @@ namespace ChatClient.Tests;
 
 public sealed class UnifiedAgentRuntimeChatSessionServiceTests
 {
+    [Theory]
+    [InlineData("todos_add", true)]
+    [InlineData("todos_complete", true)]
+    [InlineData("todos_remove", true)]
+    [InlineData("mode_set", true)]
+    [InlineData("mcp_search", false)]
+    public void ChangesHarnessSessionState_RecognizesOnlyStateChangingProviderTools(
+        string toolName,
+        bool expected)
+    {
+        var completed = new HarnessToolCallCompleted(
+            "call", toolName, toolName, "built-in", "Harness", null, false, "{}", "ok",
+            DateTimeOffset.UtcNow, DateTimeOffset.UtcNow);
+
+        Assert.Equal(expected, UnifiedAgentRuntimeChatSessionService.ChangesHarnessSessionState(completed));
+    }
+
     [Fact]
     public async Task DirectHarness_ReusesSessionForTwoTurnsAndResetStartsFreshConversation()
     {

@@ -220,7 +220,8 @@ public sealed class AgenticRuntimeAgentFactory(
         ];
         agentOptions.LoopAgentOptions = new LoopAgentOptions
         {
-            MaxIterations = agent.MaxTodoCompletionIterations
+            MaxIterations = agent.MaxTodoCompletionIterations,
+            ExcludeOnBehalfOfMessages = true
         };
     }
 #pragma warning restore MAAI001

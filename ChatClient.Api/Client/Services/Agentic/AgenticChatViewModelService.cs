@@ -13,6 +13,7 @@ public sealed class AgenticChatViewModelService : IAgenticChatViewModelService, 
     private readonly Func<IAppChatMessage, Task> _messageAddedHandler;
     private readonly Func<IAppChatMessage, bool, Task> _messageUpdatedHandler;
     private readonly Action _sessionStateChangedHandler;
+    private long _sessionStateGeneration;
 
     public IReadOnlyList<AppChatMessageViewModel> Messages => _messages;
 
@@ -73,17 +74,28 @@ public sealed class AgenticChatViewModelService : IAgenticChatViewModelService, 
 
     private void OnChatReset()
     {
+        Interlocked.Increment(ref _sessionStateGeneration);
         _messages.Clear();
         SessionState = null;
         ChatReset?.Invoke();
         SessionStateChanged?.Invoke();
     }
 
-    private void OnSessionStateChanged() => _ = RefreshSessionStateAsync();
-
-    private async Task RefreshSessionStateAsync()
+    private void OnSessionStateChanged()
     {
-        SessionState = await _chatService.GetSessionStateAsync();
+        var generation = Interlocked.Read(ref _sessionStateGeneration);
+        _ = RefreshSessionStateAsync(generation);
+    }
+
+    private async Task RefreshSessionStateAsync(long generation)
+    {
+        var sessionState = await _chatService.GetSessionStateAsync();
+        if (generation != Interlocked.Read(ref _sessionStateGeneration))
+        {
+            return;
+        }
+
+        SessionState = sessionState;
         SessionStateChanged?.Invoke();
     }
 
