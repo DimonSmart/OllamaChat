@@ -3,6 +3,8 @@ using ChatClient.Application.Services.Agentic;
 using ChatClient.Domain.Models;
 using Microsoft.Agents.AI;
 
+#pragma warning disable MAAI001
+
 namespace ChatClient.Tests;
 
 public class AgentProviderProfileRuntimeOptionsTests
@@ -99,4 +101,73 @@ public class AgentProviderProfileRuntimeOptionsTests
         Assert.Equal(todoProfileId, clone.TodoProviderProfileId);
         Assert.Equal(modeProfileId, clone.AgentModeProviderProfileId);
     }
+
+    [Fact]
+    public void TodoCompletionLoop_IsNotConfiguredWhenDisabled()
+    {
+        var options = new HarnessAgentOptions();
+
+        AgenticRuntimeAgentFactory.ConfigureTodoCompletionLoop(
+            options,
+            new AgentExecutionSpec { ContinueUntilTodosComplete = false });
+
+        Assert.Null(options.LoopEvaluators);
+        Assert.Null(options.LoopAgentOptions);
+    }
+
+    [Fact]
+    public void TodoCompletionLoop_UsesExecuteOnlyAndConfiguredMaximum()
+    {
+        var options = new HarnessAgentOptions();
+
+        AgenticRuntimeAgentFactory.ConfigureTodoCompletionLoop(
+            options,
+            new AgentExecutionSpec
+            {
+                ContinueUntilTodosComplete = true,
+                MaxTodoCompletionIterations = 7
+            });
+
+        var evaluator = Assert.IsType<TodoCompletionLoopEvaluator>(Assert.Single(options.LoopEvaluators!));
+        Assert.NotNull(evaluator);
+        Assert.Equal(7, options.LoopAgentOptions!.MaxIterations);
+    }
+
+    [Fact]
+    public void TodoCompletionLoop_RejectsMissingProvidersAndNonOrdinalExecuteMode()
+    {
+        var agent = new AgentExecutionSpec { ContinueUntilTodosComplete = true };
+
+        var missingTodo = Assert.Throws<InvalidOperationException>(() =>
+            AgenticRuntimeAgentFactory.ValidateTodoCompletionConfiguration(agent, null, new AgentModeProviderProfile
+            {
+                Modes = [new AgentModeProfile { Name = "execute", Instructions = "run" }]
+            }));
+        Assert.Contains("Todo provider", missingTodo.Message);
+
+        var missingExecute = Assert.Throws<InvalidOperationException>(() =>
+            AgenticRuntimeAgentFactory.ValidateTodoCompletionConfiguration(agent, new TodoProviderProfile(), new AgentModeProviderProfile
+            {
+                Modes = [new AgentModeProfile { Name = "Execute", Instructions = "run" }]
+            }));
+        Assert.Contains("execute", missingExecute.Message);
+    }
+
+    [Fact]
+    public void AgentExecutionSpecFactory_PreservesTodoCompletionSettings()
+    {
+        var spec = AgentExecutionSpecFactory.FromTemplate(new AgentTemplateDefinition
+        {
+            ContinueUntilTodosComplete = true,
+            MaxTodoCompletionIterations = 7
+        });
+
+        Assert.True(spec.ContinueUntilTodosComplete);
+        Assert.Equal(7, spec.MaxTodoCompletionIterations);
+        var clone = spec.Clone();
+        Assert.True(clone.ContinueUntilTodosComplete);
+        Assert.Equal(7, clone.MaxTodoCompletionIterations);
+    }
 }
+
+#pragma warning restore MAAI001

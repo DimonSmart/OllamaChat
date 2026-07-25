@@ -18,6 +18,8 @@ public sealed class AgentExecutionSpec : AgentModelBase
             RepeatPenalty = RepeatPenalty,
             TodoProviderProfileId = TodoProviderProfileId,
             AgentModeProviderProfileId = AgentModeProviderProfileId,
+            ContinueUntilTodosComplete = ContinueUntilTodosComplete,
+            MaxTodoCompletionIterations = MaxTodoCompletionIterations,
             RuntimeAgentId = RuntimeAgentId,
             FunctionSettings = new FunctionSettings
             {

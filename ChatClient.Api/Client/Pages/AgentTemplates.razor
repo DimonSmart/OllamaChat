@@ -283,6 +283,18 @@
                     <MudSelectItem T="Guid?" Value="@((Guid?)profile.Id)">@profile.Name</MudSelectItem>
                 }
             </MudSelect>
+            <MudCheckBox T="bool"
+                         @bind-Value="editingAgent.ContinueUntilTodosComplete"
+                         Label="Continue until TODOs are complete"
+                         Class="mt-2" />
+            <MudNumericField T="int"
+                             @bind-Value="editingAgent.MaxTodoCompletionIterations"
+                             Label="Maximum autonomous iterations"
+                             Class="mt-2"
+                             Immediate="true"
+                             Min="1"
+                             Max="100"
+                             Disabled="@(!editingAgent.ContinueUntilTodosComplete)" />
 
             <MudDivider Class="my-2" />
             <MudText Typo="Typo.subtitle1">Tooling</MudText>
@@ -458,6 +470,8 @@
             RepeatPenalty = null,
             TodoProviderProfileId = null,
             AgentModeProviderProfileId = null,
+            ContinueUntilTodosComplete = false,
+            MaxTodoCompletionIterations = 10,
             FunctionSettings = new FunctionSettings
             {
                 AutoSelectCount = 0
@@ -571,6 +585,8 @@
             RepeatPenalty = agent.RepeatPenalty,
             TodoProviderProfileId = agent.TodoProviderProfileId,
             AgentModeProviderProfileId = agent.AgentModeProviderProfileId,
+            ContinueUntilTodosComplete = agent.ContinueUntilTodosComplete,
+            MaxTodoCompletionIterations = agent.MaxTodoCompletionIterations,
             CreatedAt = agent.CreatedAt,
             UpdatedAt = agent.UpdatedAt,
             FunctionSettings = new FunctionSettings
@@ -665,6 +681,36 @@
             return "Content is required";
 
         return string.Empty;
+    }
+
+    private string? ValidateTodoCompletionConfiguration()
+    {
+        if (!editingAgent.ContinueUntilTodosComplete)
+        {
+            return null;
+        }
+
+        if (editingAgent.TodoProviderProfileId is not Guid todoId ||
+            todoProviderProfiles.All(profile => profile.Id != todoId))
+        {
+            return "Todo provider is required for autonomous TODO execution.";
+        }
+
+        if (editingAgent.AgentModeProviderProfileId is not Guid modeId ||
+            agentModeProviderProfiles.FirstOrDefault(profile => profile.Id == modeId) is not { } modeProfile)
+        {
+            return "Agent mode provider is required for autonomous TODO execution.";
+        }
+
+        if (!modeProfile.Modes.Any(mode =>
+                string.Equals(mode.Name, "execute", StringComparison.Ordinal)))
+        {
+            return "Selected Agent Mode Provider must contain an \"execute\" mode.";
+        }
+
+        return editingAgent.MaxTodoCompletionIterations is < 1 or > 100
+            ? "Maximum autonomous iterations must be between 1 and 100."
+            : null;
     }
 
     private bool HasConfiguredMcpBindings(AgentTemplateDefinition agent)
@@ -829,6 +875,13 @@
             {
                 editingAgent.LlmId = editingServerModel.ServerId;
                 editingAgent.ModelName = editingServerModel.ModelName;
+                var todoCompletionError = ValidateTodoCompletionConfiguration();
+                if (!string.IsNullOrWhiteSpace(todoCompletionError))
+                {
+                    Snackbar.Add(todoCompletionError, Severity.Error);
+                    return;
+                }
+
                 var validationError = await PrepareBindingsForSaveAsync();
                 if (!string.IsNullOrWhiteSpace(validationError))
                 {

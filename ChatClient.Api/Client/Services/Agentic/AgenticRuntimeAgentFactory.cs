@@ -9,6 +9,8 @@ using Microsoft.Agents.AI;
 using Microsoft.Extensions.AI;
 using ModelContextProtocol.Client;
 
+#pragma warning disable MAAI001
+
 namespace ChatClient.Api.Client.Services.Agentic;
 
 internal sealed record HarnessAgentRuntimeDefinition(
@@ -43,6 +45,10 @@ public sealed class AgenticRuntimeAgentFactory(
             throw new InvalidOperationException(
                 $"Configured LLM server '{request.ResolvedModel.ServerId}' was not found.");
         }
+
+        var todoProfile = await GetTodoProviderProfileAsync(request.Agent.TodoProviderProfileId);
+        var agentModeProfile = await GetAgentModeProviderProfileAsync(request.Agent.AgentModeProviderProfileId);
+        ValidateTodoCompletionConfiguration(request.Agent, todoProfile, agentModeProfile);
 
         var chatClient = await llmChatClientFactory.CreateAsync(request.ResolvedModel, cancellationToken);
         bool supportsFunctions = await modelCapabilityService.SupportsFunctionCallingAsync(
@@ -87,8 +93,6 @@ public sealed class AgenticRuntimeAgentFactory(
                 string.Join(", ", requestedFunctions));
         }
 
-        var todoProfile = await GetTodoProviderProfileAsync(request.Agent.TodoProviderProfileId);
-        var agentModeProfile = await GetAgentModeProviderProfileAsync(request.Agent.AgentModeProviderProfileId);
         var runtimeAgent = CreateRuntimeAgent(chatClient, request, server, toolSet, ragContextService, todoProfile, agentModeProfile);
         return new HarnessAgentRuntimeDefinition(
             runtimeAgent,
@@ -137,6 +141,8 @@ public sealed class AgenticRuntimeAgentFactory(
 #pragma warning restore MAAI001
         };
 
+        ConfigureTodoCompletionLoop(agentOptions, request.Agent);
+
         if (server.ServerType == ServerType.Ollama &&
             request.Agent.RepeatPenalty is double repeatPenalty)
         {
@@ -152,6 +158,72 @@ public sealed class AgenticRuntimeAgentFactory(
 
         return chatClient.AsHarnessAgent(agentOptions);
     }
+
+    internal static void ValidateTodoCompletionConfiguration(
+        AgentExecutionSpec agent,
+        TodoProviderProfile? todoProfile,
+        AgentModeProviderProfile? agentModeProfile)
+    {
+        ArgumentNullException.ThrowIfNull(agent);
+
+        if (!agent.ContinueUntilTodosComplete)
+        {
+            return;
+        }
+
+        if (todoProfile is null)
+        {
+            throw new InvalidOperationException(
+                "Todo provider is required for autonomous TODO execution.");
+        }
+
+        if (agentModeProfile is null)
+        {
+            throw new InvalidOperationException(
+                "Agent mode provider is required for autonomous TODO execution.");
+        }
+
+        if (!agentModeProfile.Modes.Any(mode =>
+                string.Equals(mode.Name, "execute", StringComparison.Ordinal)))
+        {
+            throw new InvalidOperationException(
+                "Selected Agent Mode Provider must contain an \"execute\" mode.");
+        }
+
+        if (agent.MaxTodoCompletionIterations is < 1 or > 100)
+        {
+            throw new InvalidOperationException(
+                "Maximum autonomous iterations must be between 1 and 100.");
+        }
+    }
+
+#pragma warning disable MAAI001
+    internal static void ConfigureTodoCompletionLoop(
+        HarnessAgentOptions agentOptions,
+        AgentExecutionSpec agent)
+    {
+        ArgumentNullException.ThrowIfNull(agentOptions);
+        ArgumentNullException.ThrowIfNull(agent);
+
+        if (!agent.ContinueUntilTodosComplete)
+        {
+            return;
+        }
+
+        agentOptions.LoopEvaluators =
+        [
+            new TodoCompletionLoopEvaluator(
+                new TodoCompletionLoopEvaluatorOptions
+                {
+                    Modes = ["execute"]
+                })
+        ];
+        agentOptions.LoopAgentOptions = new LoopAgentOptions
+        {
+            MaxIterations = agent.MaxTodoCompletionIterations
+        };
+    }
+#pragma warning restore MAAI001
 
     private async Task<TodoProviderProfile?> GetTodoProviderProfileAsync(Guid? profileId)
     {
@@ -324,3 +396,5 @@ public sealed class AgenticRuntimeAgentFactory(
             : null;
     }
 }
+
+#pragma warning restore MAAI001
