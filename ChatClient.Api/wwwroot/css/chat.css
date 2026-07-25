@@ -361,6 +361,11 @@
     margin: 0.25rem 0;
 }
 
+/* MudX leaves clickable bubbles unclipped, allowing the ripple to overflow the chat panel. */
+.mudx-chat-bubble.mcp-call {
+    overflow: hidden !important;
+}
+
 .think-line.collapsed,
 .mcp-call.collapsed {
     white-space: nowrap;
