@@ -81,6 +81,7 @@ public static class ServiceCollectionExtensions
     private static IServiceCollection AddPersistenceServices(this IServiceCollection services)
     {
         services.AddSingleton<IAgentTemplateRepository, AgentTemplateRepository>();
+        services.AddSingleton<IKnowledgeStoreRepository, KnowledgeStoreRepository>();
         services.AddSingleton<ITodoProviderProfileRepository, TodoProviderProfileRepository>();
         services.AddSingleton<IAgentModeProviderProfileRepository, AgentModeProviderProfileRepository>();
         services.AddSingleton<IFileAccessProviderProfileRepository, FileAccessProviderProfileRepository>();
@@ -96,6 +97,7 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<IFileAccessProviderProfileService, FileAccessProviderProfileService>();
         services.AddSingleton<IWorkflowDefinitionService, WorkflowDefinitionService>();
         services.AddSingleton<IUserSettingsService, UserSettingsService>();
+        services.AddSingleton<IKnowledgeStoreService, KnowledgeStoreService>();
 
         return services;
     }
@@ -112,7 +114,11 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<IRagVectorIndexBackgroundService>(sp => sp.GetRequiredService<RagVectorIndexBackgroundService>());
         services.AddHostedService(sp => sp.GetRequiredService<RagVectorIndexBackgroundService>());
         services.AddSingleton<IRagVectorSearchService, RagVectorSearchService>();
-        services.AddScoped<IAgentRagSearchService, AgentRagSearchService>();
+        services.AddSingleton<KnowledgeVectorStore>();
+        services.AddSingleton<KnowledgeIndexBackgroundService>();
+        services.AddSingleton<IKnowledgeIndexBackgroundService>(sp => sp.GetRequiredService<KnowledgeIndexBackgroundService>());
+        services.AddHostedService(sp => sp.GetRequiredService<KnowledgeIndexBackgroundService>());
+        services.AddScoped<IKnowledgeSearchService, KnowledgeSearchService>();
 
         return services;
     }

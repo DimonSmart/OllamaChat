@@ -58,6 +58,7 @@ public static class AgentExecutionSpecFactory
         target.McpServerBindings = source.McpServerBindings
             .Select(static binding => binding.Clone())
             .ToList();
+        target.KnowledgeStoreIds = source.KnowledgeStoreIds.Distinct().ToList();
         target.CreatedAt = source.CreatedAt;
         target.UpdatedAt = source.UpdatedAt;
         return target;

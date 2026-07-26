@@ -29,6 +29,7 @@ public sealed class AgentTemplateDefinition : AgentModelBase
             McpServerBindings = McpServerBindings
                 .Select(static binding => binding.Clone())
                 .ToList(),
+            KnowledgeStoreIds = KnowledgeStoreIds.ToList(),
             CreatedAt = CreatedAt,
             UpdatedAt = UpdatedAt
         };

@@ -23,6 +23,7 @@ public abstract class AgentModelBase
     public int MaxTodoCompletionIterations { get; set; } = 10;
     public FunctionSettings FunctionSettings { get; set; } = new();
     public List<McpServerSessionBinding> McpServerBindings { get; set; } = [];
+    public List<Guid> KnowledgeStoreIds { get; set; } = [];
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
     public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
 
