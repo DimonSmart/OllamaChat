@@ -1,7 +1,9 @@
 using ChatClient.Api.Client.Services.Agentic;
+using ChatClient.Application.Services;
 using ChatClient.Application.Services.Agentic;
 using ChatClient.Domain.Models;
 using Microsoft.Agents.AI;
+using Microsoft.Extensions.Logging.Abstractions;
 
 #pragma warning disable MAAI001
 
@@ -84,10 +86,13 @@ public class AgentProviderProfileRuntimeOptionsTests
         var providers = AgenticRuntimeAgentFactory.BuildContextProviders(
             request,
             null!,
-            new TodoProviderProfile { Instructions = "Track the work." });
+            hasRagContent: false,
+            supportsFunctions: false,
+            loggerFactory: NullLoggerFactory.Instance,
+            todoProfile: new TodoProviderProfile { Instructions = "Track the work." });
 
-        Assert.Equal(2, providers.Count);
-        Assert.IsType<TodoProvider>(providers[1]);
+        Assert.Single(providers);
+        Assert.IsType<TodoProvider>(providers[0]);
     }
 
     [Fact]

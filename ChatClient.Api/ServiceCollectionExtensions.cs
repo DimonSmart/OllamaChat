@@ -110,6 +110,7 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<IRagVectorIndexBackgroundService>(sp => sp.GetRequiredService<RagVectorIndexBackgroundService>());
         services.AddHostedService(sp => sp.GetRequiredService<RagVectorIndexBackgroundService>());
         services.AddSingleton<IRagVectorSearchService, RagVectorSearchService>();
+        services.AddScoped<IAgentRagSearchService, AgentRagSearchService>();
 
         return services;
     }
@@ -120,7 +121,6 @@ public static class ServiceCollectionExtensions
         services.AddScoped<HarnessResponseEventProjector>();
         services.AddScoped<IAgenticExecutionRuntime, HttpAgenticExecutionRuntime>();
         services.AddScoped<AgenticChatEngineOrchestrator>();
-        services.AddScoped<IAgenticRagContextService, AgenticRagContextService>();
         services.AddScoped<AgenticChatEngineStreamingBridge>();
         services.AddScoped<OrchestrationWorkflowSessionBootstrapper>();
         services.AddScoped<OrchestrationWorkflowTurnCoordinator>();

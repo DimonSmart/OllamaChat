@@ -563,7 +563,7 @@ public sealed class UnifiedAgentRuntimeChatSessionServiceTests
             .ReturnsAsync(false);
         var tools = new Mock<IAppToolCatalog>(MockBehavior.Strict);
         var interaction = new Mock<IMcpUserInteractionService>(MockBehavior.Strict);
-        var rag = new Mock<IAgenticRagContextService>(MockBehavior.Strict);
+        var rag = new Mock<IAgentRagSearchService>(MockBehavior.Strict);
         var todoProfiles = new Mock<ITodoProviderProfileService>(MockBehavior.Strict);
         var agentModeProfiles = new Mock<IAgentModeProviderProfileService>(MockBehavior.Strict);
         if (withSessionStateProviders || availableModes is not null)
@@ -580,12 +580,8 @@ public sealed class UnifiedAgentRuntimeChatSessionServiceTests
                         .ToList()
                 });
         }
-        rag.Setup(service => service.TryBuildContextAsync(
-                templateId,
-                It.IsAny<string>(),
-                serverId,
-                It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new AgenticRagContextResult());
+        rag.Setup(service => service.HasIndexedContentAsync(templateId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(false);
 
         var runtimeFactory = new AgenticRuntimeAgentFactory(
             serverService.Object,
@@ -597,7 +593,8 @@ public sealed class UnifiedAgentRuntimeChatSessionServiceTests
             todoProfiles.Object,
             agentModeProfiles.Object,
             Options.Create(new AgenticToolInvocationPolicyOptions()),
-            NullLogger<AgenticRuntimeAgentFactory>.Instance);
+            NullLogger<AgenticRuntimeAgentFactory>.Instance,
+            NullLoggerFactory.Instance);
         var service = new UnifiedAgentRuntimeChatSessionService(
             new StubAgentRunner([]),
             new StubDefinitionCatalog(),
