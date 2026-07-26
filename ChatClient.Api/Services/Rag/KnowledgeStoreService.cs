@@ -59,7 +59,7 @@ public sealed class KnowledgeStoreService(
         var store = await RequiredAsync(storeId, ct);
         if (string.IsNullOrWhiteSpace(fileName))
             throw new ArgumentException("File name is required.", nameof(fileName));
-        var prepared = await ingestion.PrepareAsync(fileName, content, ct);
+        var prepared = await ingestion.PrepareAsync(fileName, content, contentType, ct);
         var existing = store.Documents.FirstOrDefault(x => x.FileName.Equals(fileName, StringComparison.OrdinalIgnoreCase));
         var document = new KnowledgeDocument
         {

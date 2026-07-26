@@ -12,12 +12,13 @@ public sealed class KnowledgeStore
 
 public sealed class KnowledgeStoreIndexConfiguration : IEquatable<KnowledgeStoreIndexConfiguration>
 {
+    public const string CurrentIngestionVersion = "markdown-header-v2";
     public Guid ServerId { get; set; }
     public string Model { get; set; } = string.Empty;
     public int Dimensions { get; set; }
     public int MaxTokensPerChunk { get; set; } = 512;
     public int OverlapTokens { get; set; } = 64;
-    public string IngestionVersion { get; set; } = "data-ingestion-token-v1";
+    public string IngestionVersion { get; set; } = CurrentIngestionVersion;
 
     public bool Equals(KnowledgeStoreIndexConfiguration? other) => other is not null &&
         ServerId == other.ServerId && Model == other.Model && Dimensions == other.Dimensions &&

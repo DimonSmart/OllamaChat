@@ -4,7 +4,7 @@ namespace ChatClient.Api.Services.Rag;
 
 public interface IKnowledgeDocumentIngestionService
 {
-    Task<PreparedKnowledgeDocument> PrepareAsync(string fileName, Stream source, CancellationToken cancellationToken = default);
+    Task<PreparedKnowledgeDocument> PrepareAsync(string fileName, Stream source, string? contentType = null, CancellationToken cancellationToken = default);
     Task<IngestionDocument> ReadCanonicalMarkdownAsync(string fileName, Stream markdown, CancellationToken cancellationToken = default);
 }
 

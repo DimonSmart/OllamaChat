@@ -21,7 +21,15 @@ public sealed class KnowledgeIndexBackgroundService(IServiceScopeFactory scopes,
         var ingestion = scope.ServiceProvider.GetRequiredService<IKnowledgeDocumentIngestionService>();
         var ollama = scope.ServiceProvider.GetRequiredService<IOllamaClientService>();
         var vectors = scope.ServiceProvider.GetRequiredService<KnowledgeVectorStore>();
-        foreach (var snapshot in (await stores.GetAllAsync(ct)).Where(x => x.Documents.Count > 0 && NeedsIndexing(x)))
+        var allStores = await stores.GetAllAsync(ct);
+        foreach (var store in allStores.Where(store => store.Configuration.IngestionVersion != KnowledgeStoreIndexConfiguration.CurrentIngestionVersion))
+        {
+            store.Configuration.IngestionVersion = KnowledgeStoreIndexConfiguration.CurrentIngestionVersion;
+            store.Index.State = KnowledgeStoreIndexState.Outdated;
+            await stores.UpdateAsync(store, ct);
+        }
+
+        foreach (var snapshot in allStores.Where(x => x.Documents.Count > 0 && NeedsIndexing(x)))
         {
             try
             {
@@ -79,7 +87,7 @@ public sealed class KnowledgeIndexBackgroundService(IServiceScopeFactory scopes,
         var chunker = new HeaderChunker(new IngestionChunkerOptions(TiktokenTokenizer.CreateForEncoding("cl100k_base", null, null)) { MaxTokensPerChunk = max, OverlapTokens = overlap });
         var result = new List<KnowledgeChunkRecord>();
         await foreach (var chunk in chunker.ProcessAsync(source, ct))
-            result.Add(new KnowledgeChunkRecord { FileName = fileName, ChunkIndex = result.Count, Content = chunk.Content });
+            result.Add(new KnowledgeChunkRecord { FileName = fileName, ChunkIndex = result.Count, Content = chunk.Content, Section = string.IsNullOrWhiteSpace(chunk.Context) ? null : chunk.Context });
         return result;
     }
 }

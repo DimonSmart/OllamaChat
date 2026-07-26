@@ -105,6 +105,8 @@ public static class ServiceCollectionExtensions
 
     private static IServiceCollection AddRagServices(this IServiceCollection services)
     {
+        services.AddOptions<KnowledgeIngestionOptions>()
+            .BindConfiguration(KnowledgeIngestionOptions.SectionName);
         services.AddSingleton<IMcpFunctionIndexStore, McpFunctionIndexStore>();
         services.AddSingleton<KnowledgeVectorStore>();
         services.AddSingleton<IKnowledgeDocumentIngestionService, KnowledgeDocumentIngestionService>();

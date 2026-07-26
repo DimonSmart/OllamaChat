@@ -29,6 +29,7 @@
                     <MudStack Row="true"><MudButton Color="Color.Primary" OnClick="SaveAsync">Save</MudButton><MudButton OnClick="ReindexAsync">Reindex</MudButton><MudButton Color="Color.Error" OnClick="DeleteAsync">Delete store</MudButton></MudStack>
                     <MudDivider />
                     <MudText Typo="Typo.subtitle1">Documents</MudText>
+                    <MudText Typo="Typo.body2">Markdown/text files are processed directly. Other supported document formats require MarkItDown.</MudText>
                     <InputFile OnChange="UploadAsync" multiple />
                     <MudTable Items="selected.Documents" Dense="true">
                         <HeaderContent><MudTh>File</MudTh><MudTh>Size</MudTh><MudTh>Updated</MudTh><MudTh>Index status</MudTh><MudTh></MudTh></HeaderContent>
