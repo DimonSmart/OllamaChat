@@ -47,6 +47,7 @@ public static class AgentExecutionSpecFactory
         target.RepeatPenalty = source.RepeatPenalty;
         target.TodoProviderProfileId = source.TodoProviderProfileId;
         target.AgentModeProviderProfileId = source.AgentModeProviderProfileId;
+        target.FileAccessProviderProfileId = source.FileAccessProviderProfileId;
         target.ContinueUntilTodosComplete = source.ContinueUntilTodosComplete;
         target.MaxTodoCompletionIterations = source.MaxTodoCompletionIterations;
         target.RuntimeAgentId = source.RuntimeAgentId;

@@ -86,6 +86,17 @@
                     }
                 }
             }
+            @if (SessionState.FileAccess is { } fileAccess)
+            {
+                <MudStack Class="mt-2" Spacing="1">
+                    <MudText Typo="Typo.caption" Class="mud-text-secondary">Workspace (@fileAccess.ProfileName)</MudText>
+                    <MudStack Row="true" AlignItems="AlignItems.Center">
+                        <MudTextField T="string" Value="workspaceInput" ValueChanged="value => workspaceInput = value" Dense="true" Margin="Margin.Dense"
+                                      Disabled="@(IsLlmAnswering || PendingToolApproval is not null || isChangingWorkspace)" Style="flex: 1" />
+                        <MudButton Size="Size.Small" Class="ml-1" Disabled="@(IsLlmAnswering || PendingToolApproval is not null || isChangingWorkspace || string.Equals(workspaceInput, fileAccess.WorkspacePath, StringComparison.Ordinal))" OnClick="ChangeWorkspaceAsync">Change</MudButton>
+                    </MudStack>
+                </MudStack>
+            }
         </MudPaper>
     </MudCollapse>
 }
@@ -102,8 +113,11 @@
             <MudStack Row="true" Spacing="1" Wrap="Wrap.Wrap">
                 <MudButton Variant="Variant.Outlined" Color="Color.Error" Disabled="isRespondingToToolApproval" OnClick="@(() => RespondToToolApprovalAsync(ToolApprovalDecision.Deny))">Deny</MudButton>
                 <MudButton Variant="Variant.Filled" Color="Color.Primary" Disabled="isRespondingToToolApproval" OnClick="@(() => RespondToToolApprovalAsync(ToolApprovalDecision.ApproveOnce))">Approve once</MudButton>
-                <MudButton Variant="Variant.Outlined" Disabled="isRespondingToToolApproval" OnClick="@(() => RespondToToolApprovalAsync(ToolApprovalDecision.AlwaysApproveTool))">Always approve this tool in this chat</MudButton>
-                <MudButton Variant="Variant.Outlined" Disabled="isRespondingToToolApproval" OnClick="@(() => RespondToToolApprovalAsync(ToolApprovalDecision.AlwaysApproveExactArguments))">Always approve this exact call in this chat</MudButton>
+                @if (PendingToolApproval.AllowStandingApproval)
+                {
+                    <MudButton Variant="Variant.Outlined" Disabled="isRespondingToToolApproval" OnClick="@(() => RespondToToolApprovalAsync(ToolApprovalDecision.AlwaysApproveTool))">Always approve this tool in this chat</MudButton>
+                    <MudButton Variant="Variant.Outlined" Disabled="isRespondingToToolApproval" OnClick="@(() => RespondToToolApprovalAsync(ToolApprovalDecision.AlwaysApproveExactArguments))">Always approve this exact call in this chat</MudButton>
+                }
                 @if (isRespondingToToolApproval)
                 {
                     <MudProgressCircular Indeterminate="true" Size="Size.Small" />
@@ -324,12 +338,31 @@
     public EventCallback<string> OnAgentModeChanged { get; set; }
 
     [Parameter]
+    public EventCallback<string> OnFileAccessWorkspaceChanged { get; set; }
+
+    [Parameter]
     public EventCallback<ToolApprovalDecision> OnToolApprovalDecision { get; set; }
 
     private ElementReference messagesElement;
     private bool showSessionState;
     private bool isChangingAgentMode;
     private bool isRespondingToToolApproval;
+    private bool isChangingWorkspace;
+    private string workspaceInput = string.Empty;
+
+    protected override void OnParametersSet()
+    {
+        if (SessionState?.FileAccess is { } fileAccess && !isChangingWorkspace)
+            workspaceInput = fileAccess.WorkspacePath;
+    }
+
+    private async Task ChangeWorkspaceAsync()
+    {
+        if (isChangingWorkspace || string.IsNullOrWhiteSpace(workspaceInput)) return;
+        isChangingWorkspace = true;
+        try { await OnFileAccessWorkspaceChanged.InvokeAsync(workspaceInput); }
+        finally { isChangingWorkspace = false; }
+    }
 
     private void ToggleSessionState() => showSessionState = !showSessionState;
 

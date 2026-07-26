@@ -35,3 +35,4 @@ Git history is the source for deleted or previous document versions.
 | IDD-0021 | Spec | Todo Provider profiles | Reusable Todo Provider configuration | — |
 | IDD-0022 | Spec | Agent Mode Provider profiles | Reusable agent operating-mode configuration | — |
 | IDD-0023 | Spec | Compact user interface | Shared desktop-oriented UI density and accessibility | — |
+| IDD-0024 | Spec | File Access Provider profiles | Reusable direct-agent file-access policies | — |

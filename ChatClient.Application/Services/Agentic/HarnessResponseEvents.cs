@@ -65,7 +65,8 @@ public sealed record HarnessToolApprovalRequested(
 public sealed record ToolApprovalRequestViewModel(
     string RequestId,
     string ToolName,
-    string Arguments);
+    string Arguments,
+    bool AllowStandingApproval = true);
 
 public enum ToolApprovalDecision
 {

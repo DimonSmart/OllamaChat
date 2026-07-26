@@ -18,6 +18,7 @@ public abstract class AgentModelBase
     public double? RepeatPenalty { get; set; }
     public Guid? TodoProviderProfileId { get; set; }
     public Guid? AgentModeProviderProfileId { get; set; }
+    public Guid? FileAccessProviderProfileId { get; set; }
     public bool ContinueUntilTodosComplete { get; set; }
     public int MaxTodoCompletionIterations { get; set; } = 10;
     public FunctionSettings FunctionSettings { get; set; } = new();

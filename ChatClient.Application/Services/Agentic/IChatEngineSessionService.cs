@@ -14,5 +14,7 @@ public interface IChatEngineSessionService : IChatSessionService
 
     Task SetAgentModeAsync(string mode, CancellationToken cancellationToken = default);
 
+    Task SetFileAccessWorkspaceAsync(string workspace, CancellationToken cancellationToken = default);
+
     Task RespondToToolApprovalAsync(ToolApprovalDecision decision, CancellationToken cancellationToken = default);
 }

@@ -18,7 +18,9 @@ internal sealed record HarnessAgentRuntimeDefinition(
     LlmServerConfig Server,
     AgenticToolSet ToolSet,
     bool SupportsFunctionCalling,
-    IReadOnlyList<string> AvailableModes);
+    IReadOnlyList<string> AvailableModes,
+    SessionWorkspaceAgentFileStore? FileAccessStore,
+    FileAccessProviderProfile? FileAccessProfile);
 
 public sealed class AgenticRuntimeAgentFactory(
     ILlmServerConfigService llmServerConfigService,
@@ -30,7 +32,8 @@ public sealed class AgenticRuntimeAgentFactory(
     ITodoProviderProfileService todoProviderProfileService,
     IAgentModeProviderProfileService agentModeProviderProfileService,
     IOptions<AgenticToolInvocationPolicyOptions> toolPolicyOptions,
-    ILogger<AgenticRuntimeAgentFactory> logger)
+    ILogger<AgenticRuntimeAgentFactory> logger,
+    IFileAccessProviderProfileService? fileAccessProviderProfileService = null)
 {
     internal async Task<HarnessAgentRuntimeDefinition> CreateAsync(
         AgentRunRequest request,
@@ -48,6 +51,11 @@ public sealed class AgenticRuntimeAgentFactory(
 
         var todoProfile = await GetTodoProviderProfileAsync(request.Agent.TodoProviderProfileId);
         var agentModeProfile = await GetAgentModeProviderProfileAsync(request.Agent.AgentModeProviderProfileId);
+        var fileAccessProfile = await GetFileAccessProviderProfileAsync(request.Agent.FileAccessProviderProfileId);
+        if (request.Agent.FileAccessProviderProfileId is Guid fileAccessProfileId && fileAccessProfileId != Guid.Empty && fileAccessProfile is null)
+        {
+            throw new InvalidOperationException($"Selected File Access Provider profile '{fileAccessProfileId}' was not found.");
+        }
         ValidateTodoCompletionConfiguration(request.Agent, todoProfile, agentModeProfile);
 
         var chatClient = await llmChatClientFactory.CreateAsync(request.ResolvedModel, cancellationToken);
@@ -93,13 +101,14 @@ public sealed class AgenticRuntimeAgentFactory(
                 string.Join(", ", requestedFunctions));
         }
 
-        var runtimeAgent = CreateRuntimeAgent(chatClient, request, server, toolSet, ragContextService, todoProfile, agentModeProfile);
+        var workspaceStore = fileAccessProfile is null ? null : new SessionWorkspaceAgentFileStore(ValidateWorkspace(request.FileAccessWorkspace));
+        var runtimeAgent = CreateRuntimeAgent(chatClient, request, server, toolSet, ragContextService, todoProfile, agentModeProfile, fileAccessProfile, workspaceStore);
         return new HarnessAgentRuntimeDefinition(
             runtimeAgent,
             server,
             toolSet,
             supportsFunctions,
-            GetEffectiveModeNames(agentModeProfile));
+            GetEffectiveModeNames(agentModeProfile), workspaceStore, fileAccessProfile);
     }
 
     private static AIAgent CreateRuntimeAgent(
@@ -109,7 +118,9 @@ public sealed class AgenticRuntimeAgentFactory(
         AgenticToolSet toolSet,
         IAgenticRagContextService ragContextService,
         TodoProviderProfile? todoProfile,
-        AgentModeProviderProfile? agentModeProfile)
+        AgentModeProviderProfile? agentModeProfile,
+        FileAccessProviderProfile? fileAccessProfile,
+        SessionWorkspaceAgentFileStore? workspaceStore)
     {
         // Harness owns the function-invocation loop, session history and compaction.
         // The direct-chat service must not rebuild any of that state from its UI transcript.
@@ -131,6 +142,8 @@ public sealed class AgenticRuntimeAgentFactory(
                 : BuildAgentModeProviderOptions(agentModeProfile),
             DisableWebSearch = true,
             DisableFileMemory = true,
+            FileAccessStore = workspaceStore,
+            FileAccessProviderOptions = fileAccessProfile is null ? null : BuildFileAccessProviderOptions(fileAccessProfile),
             DisableAgentSkillsProvider = true,
             AIContextProviders = BuildContextProviders(
                 request,
@@ -238,6 +251,35 @@ public sealed class AgenticRuntimeAgentFactory(
         return profileId is Guid id && id != Guid.Empty
             ? await agentModeProviderProfileService.GetByIdAsync(id)
             : null;
+    }
+
+    private async Task<FileAccessProviderProfile?> GetFileAccessProviderProfileAsync(Guid? profileId) =>
+        profileId is Guid id && id != Guid.Empty && fileAccessProviderProfileService is not null
+            ? await fileAccessProviderProfileService.GetByIdAsync(id)
+            : null;
+
+#pragma warning disable MAAI001
+    internal static FileAccessProviderOptions BuildFileAccessProviderOptions(FileAccessProviderProfile profile)
+    {
+        ArgumentNullException.ThrowIfNull(profile);
+        return new FileAccessProviderOptions
+        {
+            Instructions = NormalizeOptionalText(profile.Instructions),
+            DisableWriteTools = profile.AccessMode == FileAccessMode.ReadOnly,
+            DisableReadOnlyToolApproval = !profile.RequireReadApproval,
+            DisableWriteToolApproval = !profile.RequireWriteApproval
+        };
+    }
+#pragma warning restore MAAI001
+
+    private static string ValidateWorkspace(string? workspace)
+    {
+        if (string.IsNullOrWhiteSpace(workspace))
+            throw new InvalidOperationException("A workspace directory is required for File Access.");
+        var normalized = Path.GetFullPath(workspace);
+        if (!Directory.Exists(normalized))
+            throw new InvalidOperationException($"Workspace directory does not exist: {normalized}");
+        return normalized;
     }
 
     internal static List<AIContextProvider> BuildContextProviders(

@@ -20,13 +20,15 @@ public sealed record AgentSessionDefinitionRequest
 public sealed record AgentSessionOverrides
 {
     public IReadOnlyList<McpServerSessionBinding>? McpServerBindings { get; init; }
+    public string? FileAccessWorkspace { get; init; }
 
     public AgentSessionOverrides Snapshot() =>
         new()
         {
             McpServerBindings = McpServerBindings?
                 .Select(static binding => binding.Clone())
-                .ToList()
+                .ToList(),
+            FileAccessWorkspace = FileAccessWorkspace
         };
 }
 
@@ -164,6 +166,24 @@ public sealed class AgentSessionDefinitionResolver(
             .Select(static problem => new AgentDefinitionLaunchProblem(problem.Message))
             .Concat(ValidateInputs(descriptor.Inputs, request.Inputs))
             .ToList();
+        if (descriptor.LaunchCapabilities.SupportsFileAccessWorkspace)
+        {
+            if (string.IsNullOrWhiteSpace(request.Overrides.FileAccessWorkspace))
+                problems.Add(new AgentDefinitionLaunchProblem("A workspace directory is required to start this agent."));
+            else
+            {
+                try
+                {
+                    var workspace = Path.GetFullPath(request.Overrides.FileAccessWorkspace);
+                    if (!Directory.Exists(workspace))
+                        problems.Add(new AgentDefinitionLaunchProblem($"Workspace directory does not exist: {workspace}"));
+                }
+                catch (Exception ex) when (ex is ArgumentException or NotSupportedException or PathTooLongException)
+                {
+                    problems.Add(new AgentDefinitionLaunchProblem($"Workspace path is invalid: {request.Overrides.FileAccessWorkspace}"));
+                }
+            }
+        }
         problems.AddRange(await workflowPreflightValidator.ValidateAsync(reference, cancellationToken));
         ServerModel? model = null;
 

@@ -66,7 +66,8 @@ public sealed class AgentDefinitionCatalog(
             ModelRequirement = AgentModelRequirement.Required,
             LaunchCapabilities = new AgentLaunchCapabilities
             {
-                SupportsMcpBindingOverrides = true
+                SupportsMcpBindingOverrides = true,
+                SupportsFileAccessWorkspace = agent.FileAccessProviderProfileId is not null
             },
             DefaultMcpServerBindings = agent.McpServerBindings
                 .Select(static binding => binding.Clone())

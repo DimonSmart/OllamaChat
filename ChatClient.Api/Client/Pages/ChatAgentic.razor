@@ -98,6 +98,14 @@
                                                      Description="Session-specific MCP bindings for this launch." />
                         }
 
+                        @if (selectedDefinition?.LaunchCapabilities.SupportsFileAccessWorkspace == true)
+                        {
+                            <MudTextField T="string" Label="Workspace" Value="fileAccessWorkspace"
+                                          ValueChanged="OnFileAccessWorkspaceChanged" Variant="Variant.Outlined"
+                                          Margin="Margin.Dense" Immediate="true"
+                                          HelperText="Existing directory available to this conversation only." />
+                        }
+
                         @if (launchValidation.Problems.Count > 0)
                         {
                             <MudAlert Severity="Severity.Error" Dense="true" Variant="Variant.Outlined">
@@ -135,6 +143,7 @@
                             RequiresReset="ChatService.RequiresReset"
                             UserName="userSettings.UserName"
                             OnAgentModeChanged="SetAgentModeAsync"
+                            OnFileAccessWorkspaceChanged="SetFileAccessWorkspaceAsync"
                             OnToolApprovalDecision="RespondToToolApprovalAsync"
                             OnSendMessage="SendChatMessageAsync"
                             OnStop="Cancel"
@@ -151,6 +160,7 @@
     private IReadOnlyList<AgentInputDefinition> inputDefinitions = [];
     private readonly Dictionary<string, string> inputValues = new(StringComparer.OrdinalIgnoreCase);
     private List<McpServerSessionBinding> mcpServerBindings = [];
+    private string fileAccessWorkspace = string.Empty;
     private AgentDefinitionLaunchValidation launchValidation = new()
     {
         CanLaunch = false
@@ -255,6 +265,7 @@
         mcpServerBindings = item?.DefaultMcpServerBindings
             .Select(static binding => binding.Clone())
             .ToList() ?? [];
+        fileAccessWorkspace = string.Empty;
         foreach (var input in inputDefinitions)
         {
             if (input.Kind == AgentInputDefinitionKind.Boolean)
@@ -307,13 +318,22 @@
         await RefreshLaunchValidationAsync();
     }
 
-    private AgentSessionOverrides BuildOverrides() =>
-        selectedDefinition?.LaunchCapabilities.SupportsMcpBindingOverrides == true
-            ? new AgentSessionOverrides
-            {
-                McpServerBindings = mcpServerBindings
-            }
-            : new AgentSessionOverrides();
+    private async Task OnFileAccessWorkspaceChanged(string value)
+    {
+        fileAccessWorkspace = value;
+        await RefreshLaunchValidationAsync();
+    }
+
+    private AgentSessionOverrides BuildOverrides() => new()
+    {
+        McpServerBindings = selectedDefinition?.LaunchCapabilities.SupportsMcpBindingOverrides == true
+            ? mcpServerBindings
+            : null,
+        FileAccessWorkspace = selectedDefinition?.LaunchCapabilities.SupportsFileAccessWorkspace == true &&
+                              !string.IsNullOrWhiteSpace(fileAccessWorkspace)
+            ? fileAccessWorkspace
+            : null
+    };
 
     private async Task RefreshLaunchValidationAsync()
     {

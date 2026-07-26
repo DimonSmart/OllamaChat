@@ -50,6 +50,25 @@ public class AgentProviderProfileRuntimeOptionsTests
             mode => Assert.Equal(("execute", "Perform approved work."), (mode.Name, mode.Instructions)));
     }
 
+    [Theory]
+    [InlineData(FileAccessMode.ReadOnly, true)]
+    [InlineData(FileAccessMode.ReadWrite, false)]
+    public void BuildFileAccessProviderOptions_MapsPositivePolicy(FileAccessMode accessMode, bool disableWriteTools)
+    {
+        var options = AgenticRuntimeAgentFactory.BuildFileAccessProviderOptions(new FileAccessProviderProfile
+        {
+            Instructions = " Use relative paths. ",
+            AccessMode = accessMode,
+            RequireReadApproval = true,
+            RequireWriteApproval = false
+        });
+
+        Assert.Equal("Use relative paths.", options.Instructions);
+        Assert.Equal(disableWriteTools, options.DisableWriteTools);
+        Assert.False(options.DisableReadOnlyToolApproval);
+        Assert.True(options.DisableWriteToolApproval);
+    }
+
     [Fact]
     public void BuildContextProviders_AddsConfiguredTodoProviderWithoutDefaultProvider()
     {
@@ -76,14 +95,17 @@ public class AgentProviderProfileRuntimeOptionsTests
     {
         var todoProfileId = Guid.NewGuid();
         var modeProfileId = Guid.NewGuid();
+        var fileAccessProfileId = Guid.NewGuid();
         var spec = AgentExecutionSpecFactory.FromTemplate(new AgentTemplateDefinition
         {
             TodoProviderProfileId = todoProfileId,
-            AgentModeProviderProfileId = modeProfileId
+            AgentModeProviderProfileId = modeProfileId,
+            FileAccessProviderProfileId = fileAccessProfileId
         });
 
         Assert.Equal(todoProfileId, spec.TodoProviderProfileId);
         Assert.Equal(modeProfileId, spec.AgentModeProviderProfileId);
+        Assert.Equal(fileAccessProfileId, spec.FileAccessProviderProfileId);
     }
 
     [Fact]
@@ -91,15 +113,18 @@ public class AgentProviderProfileRuntimeOptionsTests
     {
         var todoProfileId = Guid.NewGuid();
         var modeProfileId = Guid.NewGuid();
+        var fileAccessProfileId = Guid.NewGuid();
 
         var clone = new AgentTemplateDefinition
         {
             TodoProviderProfileId = todoProfileId,
-            AgentModeProviderProfileId = modeProfileId
+            AgentModeProviderProfileId = modeProfileId,
+            FileAccessProviderProfileId = fileAccessProfileId
         }.Clone();
 
         Assert.Equal(todoProfileId, clone.TodoProviderProfileId);
         Assert.Equal(modeProfileId, clone.AgentModeProviderProfileId);
+        Assert.Equal(fileAccessProfileId, clone.FileAccessProviderProfileId);
     }
 
     [Fact]

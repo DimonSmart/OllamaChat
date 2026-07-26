@@ -11,4 +11,6 @@ public sealed class AgentRunRequest
     public required IReadOnlyList<AgentRunConversationMessage> Conversation { get; init; }
 
     public required string UserMessage { get; init; }
+
+    public string? FileAccessWorkspace { get; init; }
 }

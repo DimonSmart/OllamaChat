@@ -367,6 +367,7 @@ public sealed record AgentDefinitionDescriptor
 public sealed record AgentLaunchCapabilities
 {
     public bool SupportsMcpBindingOverrides { get; init; }
+    public bool SupportsFileAccessWorkspace { get; init; }
 }
 
 public sealed record AgentDefinitionLaunchProblem(string Message);

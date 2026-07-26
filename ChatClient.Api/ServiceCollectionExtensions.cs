@@ -83,6 +83,7 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<IAgentTemplateRepository, AgentTemplateRepository>();
         services.AddSingleton<ITodoProviderProfileRepository, TodoProviderProfileRepository>();
         services.AddSingleton<IAgentModeProviderProfileRepository, AgentModeProviderProfileRepository>();
+        services.AddSingleton<IFileAccessProviderProfileRepository, FileAccessProviderProfileRepository>();
         services.AddSingleton<IWorkflowDefinitionRepository, WorkflowDefinitionRepository>();
         services.AddSingleton<ILlmServerConfigRepository, LlmServerConfigRepository>();
         services.AddSingleton<IMcpServerConfigRepository, McpServerConfigRepository>();
@@ -92,6 +93,7 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<IAgentTemplateService, AgentTemplateService>();
         services.AddSingleton<ITodoProviderProfileService, TodoProviderProfileService>();
         services.AddSingleton<IAgentModeProviderProfileService, AgentModeProviderProfileService>();
+        services.AddSingleton<IFileAccessProviderProfileService, FileAccessProviderProfileService>();
         services.AddSingleton<IWorkflowDefinitionService, WorkflowDefinitionService>();
         services.AddSingleton<IUserSettingsService, UserSettingsService>();
 

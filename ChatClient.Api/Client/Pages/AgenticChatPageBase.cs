@@ -158,6 +158,13 @@ public abstract class AgenticChatPageBase : ComponentBase, IAsyncDisposable
         }
     }
 
+    protected async Task SetFileAccessWorkspaceAsync(string workspace)
+    {
+        try
+        { await ChatService.SetFileAccessWorkspaceAsync(workspace); }
+        catch (Exception ex) { Snackbar.Add($"Could not change workspace: {ex.Message}", Severity.Error); }
+    }
+
     protected async Task RespondToToolApprovalAsync(ToolApprovalDecision decision)
     {
         try

@@ -17,6 +17,7 @@
 @inject IMcpServerConfigService McpServerConfigService
 @inject ITodoProviderProfileService TodoProviderProfileService
 @inject IAgentModeProviderProfileService AgentModeProviderProfileService
+@inject IFileAccessProviderProfileService FileAccessProviderProfileService
 
 <PageTitle>Agent Templates</PageTitle>
 
@@ -283,6 +284,13 @@
                     <MudSelectItem T="Guid?" Value="@((Guid?)profile.Id)">@profile.Name</MudSelectItem>
                 }
             </MudSelect>
+            <MudSelect T="Guid?" @bind-Value="editingAgent.FileAccessProviderProfileId" Label="File access provider" Class="mt-2">
+                <MudSelectItem T="Guid?" Value="@((Guid?)null)">None</MudSelectItem>
+                @foreach (var profile in fileAccessProviderProfiles)
+                {
+                    <MudSelectItem T="Guid?" Value="@((Guid?)profile.Id)">@profile.Name</MudSelectItem>
+                }
+            </MudSelect>
             <MudCheckBox T="bool"
                          @bind-Value="editingAgent.ContinueUntilTodosComplete"
                          Label="Continue until TODOs are complete"
@@ -386,6 +394,7 @@
     private List<IMcpServerDescriptor> mcpServers = new();
     private List<TodoProviderProfile> todoProviderProfiles = new();
     private List<AgentModeProviderProfile> agentModeProviderProfiles = new();
+    private List<FileAccessProviderProfile> fileAccessProviderProfiles = new();
     private DialogOptions dialogOptions = new()
     {
         CloseOnEscapeKey = true,
@@ -410,6 +419,9 @@
             .OrderBy(profile => profile.Name, StringComparer.OrdinalIgnoreCase)
             .ToList();
         agentModeProviderProfiles = (await AgentModeProviderProfileService.GetAllAsync())
+            .OrderBy(profile => profile.Name, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+        fileAccessProviderProfiles = (await FileAccessProviderProfileService.GetAllAsync())
             .OrderBy(profile => profile.Name, StringComparer.OrdinalIgnoreCase)
             .ToList();
     }
@@ -470,6 +482,7 @@
             RepeatPenalty = null,
             TodoProviderProfileId = null,
             AgentModeProviderProfileId = null,
+            FileAccessProviderProfileId = null,
             ContinueUntilTodosComplete = false,
             MaxTodoCompletionIterations = 10,
             FunctionSettings = new FunctionSettings
@@ -585,6 +598,7 @@
             RepeatPenalty = agent.RepeatPenalty,
             TodoProviderProfileId = agent.TodoProviderProfileId,
             AgentModeProviderProfileId = agent.AgentModeProviderProfileId,
+            FileAccessProviderProfileId = agent.FileAccessProviderProfileId,
             ContinueUntilTodosComplete = agent.ContinueUntilTodosComplete,
             MaxTodoCompletionIterations = agent.MaxTodoCompletionIterations,
             CreatedAt = agent.CreatedAt,

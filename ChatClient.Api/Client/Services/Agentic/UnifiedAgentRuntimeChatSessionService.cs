@@ -28,6 +28,8 @@ public sealed class UnifiedAgentRuntimeChatSessionService(
     private AIAgent? _directAgent;
     private AgentSession? _directSession;
     private IReadOnlyList<string> _directAvailableModes = [];
+    private SessionWorkspaceAgentFileStore? _directFileAccessStore;
+    private FileAccessProviderProfile? _directFileAccessProfile;
     private IReadOnlyDictionary<string, AgenticRegisteredTool> _directToolMetadata =
         new Dictionary<string, AgenticRegisteredTool>(StringComparer.OrdinalIgnoreCase);
     private TaskCompletionSource? _activeRunCompletion;
@@ -104,7 +106,7 @@ public sealed class UnifiedAgentRuntimeChatSessionService(
 
         var todoProvider = agent.GetService<TodoProvider>();
         var modeProvider = agent.GetService<AgentModeProvider>();
-        if (todoProvider is null && modeProvider is null)
+        if (todoProvider is null && modeProvider is null && _directFileAccessStore is null)
         {
             return null;
         }
@@ -121,7 +123,30 @@ public sealed class UnifiedAgentRuntimeChatSessionService(
             _directAvailableModes,
             todoProvider is not null,
             modeProvider is not null,
-            todos);
+            todos,
+            _directFileAccessStore is null || _directFileAccessProfile is null ? null : new AgentSessionFileAccessViewModel(
+                _directFileAccessStore.WorkspacePath,
+                _directFileAccessProfile.Name,
+                _directFileAccessProfile.AccessMode,
+                _directFileAccessProfile.RequireReadApproval,
+                _directFileAccessProfile.RequireWriteApproval));
+    }
+
+    public async Task SetFileAccessWorkspaceAsync(string workspace, CancellationToken cancellationToken = default)
+    {
+        await _runSetupGate.WaitAsync(cancellationToken);
+        try
+        {
+            if (IsAnswering)
+                throw new InvalidOperationException("Workspace cannot be changed while the agent is running.");
+            if (PendingToolApproval is not null)
+                throw new InvalidOperationException("Workspace cannot be changed while tool approval is pending.");
+            var store = _directFileAccessStore ?? throw new InvalidOperationException("This conversation does not use File Access.");
+            store.SetWorkspace(workspace);
+            logger.LogInformation("File Access workspace changed to {Workspace}", store.WorkspacePath);
+            SessionStateChanged?.Invoke();
+        }
+        finally { _runSetupGate.Release(); }
     }
 
     public async Task SetAgentModeAsync(string mode, CancellationToken cancellationToken = default)
@@ -203,6 +228,8 @@ public sealed class UnifiedAgentRuntimeChatSessionService(
         {
             _directAgent = null;
             _directSession = null;
+            _directFileAccessStore = null;
+            _directFileAccessProfile = null;
             _directAvailableModes = [];
             _directToolMetadata = new Dictionary<string, AgenticRegisteredTool>(StringComparer.OrdinalIgnoreCase);
             _pendingToolApprovalRequest = null;
@@ -423,6 +450,10 @@ public sealed class UnifiedAgentRuntimeChatSessionService(
             if (_directAgent is null || _directSession is null)
                 throw new InvalidOperationException("A direct agent session is not available.");
 
+            if (PendingToolApproval is { AllowStandingApproval: false } && decision is
+                ToolApprovalDecision.AlwaysApproveTool or ToolApprovalDecision.AlwaysApproveExactArguments)
+                throw new InvalidOperationException("Standing approval is not available for File Access tools.");
+
             generation = Interlocked.Read(ref _generation);
             _pendingToolApprovalRequest = null;
             PendingToolApproval = null;
@@ -475,12 +506,15 @@ public sealed class UnifiedAgentRuntimeChatSessionService(
             ResolvedModel = resolved.Model,
             Configuration = request.Configuration,
             Conversation = [],
-            UserMessage = string.Empty
+            UserMessage = string.Empty,
+            FileAccessWorkspace = request.Overrides.FileAccessWorkspace
         }, cancellationToken: cancellationToken);
 
         _directAgent = build.Agent;
         _directSession = await build.Agent.CreateSessionAsync(cancellationToken);
         _directAvailableModes = build.AvailableModes;
+        _directFileAccessStore = build.FileAccessStore;
+        _directFileAccessProfile = build.FileAccessProfile;
         _directToolMetadata = build.ToolSet.MetadataByName;
         SessionStateChanged?.Invoke();
     }
@@ -548,7 +582,8 @@ public sealed class UnifiedAgentRuntimeChatSessionService(
                         {
                             _pendingToolApprovalRequest = approvalRequest;
                             PendingToolApproval = new ToolApprovalRequestViewModel(
-                                approval.RequestId, approval.ToolName, approval.Arguments);
+                                approval.RequestId, approval.ToolName, approval.Arguments,
+                                !approval.ToolName.StartsWith("file_access_", StringComparison.OrdinalIgnoreCase));
                             SessionStateChanged?.Invoke();
                         }
 
