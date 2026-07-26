@@ -11,8 +11,7 @@ public static class FilePathConstants
     public const string DefaultFileAccessProviderProfilesFile = "UserData/file_access_provider_profiles.json";
     public const string DefaultWorkflowDefinitionsFile = "UserData/workflow_definitions.json";
     public const string DefaultUserSettingsFile = "UserData/user_settings.json";
-    public const string DefaultRagFilesDirectory = "UserData/agents";
-    public const string DefaultRagVectorDatabaseFile = "UserData/rag/rag.sqlite";
+    public const string DefaultKnowledgeVectorDatabaseFile = "UserData/knowledge-stores/knowledge.sqlite";
     public const string DefaultWebSearchCacheDirectory = "UserData/web_search_cache";
     public const string DefaultVoiceInputDirectory = "UserData/voice-input";
     public const string DefaultSeedDataDirectory = "Data";

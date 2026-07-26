@@ -7,18 +7,23 @@ namespace ChatClient.Infrastructure.Repositories;
 public sealed class KnowledgeDocumentStorage(IConfiguration configuration) : IKnowledgeDocumentStorage
 {
     private readonly string _root = StoragePathResolver.ResolveUserPath(configuration, configuration["KnowledgeStores:DocumentsPath"], "UserData/knowledge-stores");
-    public Task<string?> ReadAsync(Guid storeId, Guid documentId, CancellationToken ct = default)
+    public Task<string?> ReadCanonicalMarkdownAsync(Guid storeId, Guid documentId, CancellationToken ct = default)
     {
-        var path = PathFor(storeId, documentId);
+        var path = MarkdownPathFor(storeId, documentId);
         return File.Exists(path) ? File.ReadAllTextAsync(path, ct).ContinueWith(x => (string?)x.Result, ct) : Task.FromResult<string?>(null);
     }
-    public async Task WriteAsync(Guid storeId, Guid documentId, string content, CancellationToken ct = default)
+    public async Task WriteAsync(Guid storeId, Guid documentId, string fileName, Stream source, string canonicalMarkdown, CancellationToken ct = default)
     {
-        var path = PathFor(storeId, documentId);
-        Directory.CreateDirectory(Path.GetDirectoryName(path)!);
-        await File.WriteAllTextAsync(path, content, ct);
+        var directory = DocumentDirectory(storeId, documentId);
+        Directory.CreateDirectory(directory);
+        var extension = Path.GetExtension(fileName);
+        var sourcePath = Path.Combine(directory, "source" + (string.IsNullOrWhiteSpace(extension) ? ".bin" : extension));
+        await using (var destination = File.Create(sourcePath))
+            await source.CopyToAsync(destination, ct);
+        await File.WriteAllTextAsync(MarkdownPathFor(storeId, documentId), canonicalMarkdown, ct);
     }
-    public Task DeleteAsync(Guid storeId, Guid documentId, CancellationToken ct = default) { var path = PathFor(storeId, documentId); if (File.Exists(path)) File.Delete(path); return Task.CompletedTask; }
+    public Task DeleteAsync(Guid storeId, Guid documentId, CancellationToken ct = default) { var path = DocumentDirectory(storeId, documentId); if (Directory.Exists(path)) Directory.Delete(path, true); return Task.CompletedTask; }
     public Task DeleteStoreAsync(Guid storeId, CancellationToken ct = default) { var path = Path.Combine(_root, storeId.ToString("N")); if (Directory.Exists(path)) Directory.Delete(path, true); return Task.CompletedTask; }
-    private string PathFor(Guid storeId, Guid documentId) => Path.Combine(_root, storeId.ToString("N"), "documents", documentId.ToString("N") + ".txt");
+    private string DocumentDirectory(Guid storeId, Guid documentId) => Path.Combine(_root, storeId.ToString("N"), "documents", documentId.ToString("N"));
+    private string MarkdownPathFor(Guid storeId, Guid documentId) => Path.Combine(DocumentDirectory(storeId, documentId), "content.md");
 }

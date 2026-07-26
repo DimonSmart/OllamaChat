@@ -36,9 +36,6 @@ public sealed class AgenticRuntimeAgentFactory(
     ILoggerFactory loggerFactory,
     IFileAccessProviderProfileService? fileAccessProviderProfileService = null)
 {
-    // Transitional test-facing constructor; production resolves IKnowledgeSearchService.
-    public AgenticRuntimeAgentFactory(ILlmServerConfigService servers, ILlmChatClientFactory clients, IModelCapabilityService capabilities, IAppToolCatalog tools, IMcpUserInteractionService interaction, IAgentRagSearchService legacySearch, ITodoProviderProfileService todos, IAgentModeProviderProfileService modes, IOptions<AgenticToolInvocationPolicyOptions> policy, ILogger<AgenticRuntimeAgentFactory> log, ILoggerFactory logs, IFileAccessProviderProfileService? fileAccess = null)
-        : this(servers, clients, capabilities, tools, interaction, new LegacyKnowledgeSearchService(legacySearch), todos, modes, policy, log, logs, fileAccess) { }
     internal async Task<HarnessAgentRuntimeDefinition> CreateAsync(
         AgentRunRequest request,
         bool requireFunctionCalling = false,
@@ -373,7 +370,7 @@ public sealed class AgenticRuntimeAgentFactory(
 
                 return response.Results.Select(result => new TextSearchProvider.TextSearchResult
                 {
-                    SourceName = result.FileName,
+                    SourceName = $"{result.KnowledgeStoreName} / {result.FileName}",
                     Text = result.Content,
                     RawRepresentation = result
                 });
@@ -395,17 +392,6 @@ public sealed class AgenticRuntimeAgentFactory(
             loggerFactory);
     }
 
-    internal static TextSearchProvider CreateRagProvider(Guid agentId, IAgentRagSearchService legacySearch, bool supportsFunctions, ILoggerFactory loggerFactory) =>
-        CreateRagProvider([agentId], new LegacyKnowledgeSearchService(legacySearch, agentId), supportsFunctions, loggerFactory);
-
-    internal static List<AIContextProvider> BuildContextProviders(AgentRunRequest request, IAgentRagSearchService legacySearch, bool hasRagContent, bool supportsFunctions, ILoggerFactory loggerFactory, TodoProviderProfile? todoProfile) =>
-        BuildKnowledgeContextProviders(request, new LegacyKnowledgeSearchService(legacySearch, request.Agent.Id), hasRagContent, supportsFunctions, loggerFactory, todoProfile);
-
-    private sealed class LegacyKnowledgeSearchService(IAgentRagSearchService search, Guid agentId = default) : IKnowledgeSearchService
-    {
-        public Task<bool> HasReadyContentAsync(IReadOnlyCollection<Guid> storeIds, CancellationToken cancellationToken = default) => search.HasIndexedContentAsync(agentId, cancellationToken);
-        public Task<RagSearchResponse> SearchAsync(IReadOnlyCollection<Guid> storeIds, string query, int maxResults = 5, CancellationToken cancellationToken = default) => search.SearchAsync(agentId, query, maxResults, cancellationToken);
-    }
 
     internal static TextSearchProviderOptions.TextSearchBehavior ResolveRagSearchBehavior(
         bool supportsFunctions) => supportsFunctions

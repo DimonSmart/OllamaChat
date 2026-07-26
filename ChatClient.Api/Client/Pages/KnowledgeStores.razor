@@ -1,22 +1,64 @@
 @page "/knowledge-stores"
 @using ChatClient.Application.Services
 @using ChatClient.Domain.Models
+@using Microsoft.AspNetCore.Components.Forms
 @inject IKnowledgeStoreService Stores
 @inject ISnackbar Snackbar
 
 <PageTitle>Knowledge Stores</PageTitle>
 <MudContainer MaxWidth="MaxWidth.Large" Class="mt-3">
-    <MudStack Row="true" AlignItems="AlignItems.Center"><MudText Class="page-header">Knowledge Stores</MudText><MudSpacer /><MudButton Color="Color.Primary" Variant="Variant.Filled" OnClick="CreateAsync">Create</MudButton></MudStack>
-    <MudTable Items="stores" Dense="true" Hover="true" Class="mt-3">
-        <HeaderContent><MudTh>Name</MudTh><MudTh>Documents</MudTh><MudTh>Embedding Model</MudTh><MudTh>State</MudTh><MudTh>Last Indexed</MudTh><MudTh></MudTh></HeaderContent>
-        <RowTemplate><MudTd>@context.Name</MudTd><MudTd>@context.Documents.Count</MudTd><MudTd>@context.Configuration.Model</MudTd><MudTd>@context.Index.State</MudTd><MudTd>@context.Index.CompletedUtc?.ToLocalTime().ToString("g")</MudTd><MudTd><MudIconButton Icon="@Icons.Material.Filled.Delete" Color="Color.Error" OnClick="@(() => DeleteAsync(context.Id))" /></MudTd></RowTemplate>
-    </MudTable>
+    <MudStack Row="true" AlignItems="AlignItems.Center"><MudText Class="page-header">Knowledge Stores</MudText><MudSpacer /><MudButton Color="Color.Primary" OnClick="CreateAsync">Create</MudButton></MudStack>
+    <MudGrid Class="mt-3">
+        <MudItem xs="12" md="4">
+            <MudList T="Guid" Dense="true">
+                @foreach (var item in stores)
+                { <MudListItem T="Guid" Value="@item.Id" OnClick="@(() => Select(item.Id))">@item.Name <MudChip T="string" Size="Size.Small">@item.Index.State</MudChip></MudListItem> }
+            </MudList>
+        </MudItem>
+        <MudItem xs="12" md="8">
+            @if (selected is not null)
+            {
+                <MudStack Spacing="2">
+                    <MudTextField @bind-Value="selected.Name" Label="Name" />
+                    <MudTextField @bind-Value="selected.Description" Label="Description" Lines="3" />
+                    <MudText Typo="Typo.subtitle1">Index configuration</MudText>
+                    <MudTextField @bind-Value="selected.Configuration.Model" Label="Embedding model" />
+                    <MudNumericField @bind-Value="selected.Configuration.MaxTokensPerChunk" Label="Max tokens per chunk" Min="1" />
+                    <MudNumericField @bind-Value="selected.Configuration.OverlapTokens" Label="Overlap tokens" Min="0" />
+                    @if (!string.IsNullOrWhiteSpace(selected.Index.LastError)) { <MudAlert Severity="Severity.Error">@selected.Index.LastError</MudAlert> }
+                    <MudStack Row="true"><MudButton Color="Color.Primary" OnClick="SaveAsync">Save</MudButton><MudButton OnClick="ReindexAsync">Reindex</MudButton><MudButton Color="Color.Error" OnClick="DeleteAsync">Delete store</MudButton></MudStack>
+                    <MudDivider />
+                    <MudText Typo="Typo.subtitle1">Documents</MudText>
+                    <InputFile OnChange="UploadAsync" multiple />
+                    <MudTable Items="selected.Documents" Dense="true">
+                        <HeaderContent><MudTh>File</MudTh><MudTh>Size</MudTh><MudTh>Updated</MudTh><MudTh>Index status</MudTh><MudTh></MudTh></HeaderContent>
+                        <RowTemplate><MudTd>@context.FileName</MudTd><MudTd>@context.Size</MudTd><MudTd>@context.UpdatedUtc.ToLocalTime().ToString("g")</MudTd><MudTd>@(context.SourceHash == context.IndexedSourceHash ? "Indexed" : "Pending")</MudTd><MudTd><MudIconButton Icon="@Icons.Material.Filled.Delete" Color="Color.Error" OnClick="@(() => DeleteDocumentAsync(context.Id))" /></MudTd></RowTemplate>
+                    </MudTable>
+                </MudStack>
+            }
+        </MudItem>
+    </MudGrid>
 </MudContainer>
 
 @code {
     private List<KnowledgeStore> stores = [];
+    private KnowledgeStore? selected;
     protected override async Task OnInitializedAsync() => await ReloadAsync();
-    private async Task ReloadAsync() => stores = (await Stores.GetAllAsync()).OrderBy(x => x.Name).ToList();
-    private async Task CreateAsync() { await Stores.CreateAsync("New Knowledge Store", null); await ReloadAsync(); Snackbar.Add("Knowledge Store created.", Severity.Success); }
-    private async Task DeleteAsync(Guid id) { await Stores.DeleteAsync(id); await ReloadAsync(); }
+    private async Task ReloadAsync() { stores = (await Stores.GetAllAsync()).OrderBy(x => x.Name).ToList(); if (selected is not null) selected = stores.FirstOrDefault(x => x.Id == selected.Id); }
+    private void Select(Guid id) => selected = stores.First(x => x.Id == id);
+    private async Task CreateAsync() { selected = await Stores.CreateAsync("New Knowledge Store", null); await ReloadAsync(); }
+    private async Task SaveAsync() { if (selected is null) return; await Stores.UpdateAsync(selected); Snackbar.Add("Knowledge Store saved.", Severity.Success); }
+    private async Task ReindexAsync() { if (selected is null) return; selected.Index.State = KnowledgeStoreIndexState.Outdated; await Stores.UpdateAsync(selected); Snackbar.Add("Reindexing requested.", Severity.Info); }
+    private async Task DeleteAsync() { if (selected is null) return; await Stores.DeleteAsync(selected.Id); selected = null; await ReloadAsync(); }
+    private async Task UploadAsync(InputFileChangeEventArgs args)
+    {
+        if (selected is null) return;
+        foreach (var file in args.GetMultipleFiles(20))
+        {
+            try { await using var stream = file.OpenReadStream(20 * 1024 * 1024); await Stores.AddOrUpdateDocumentAsync(selected.Id, file.Name, stream, file.ContentType); }
+            catch (Exception ex) { Snackbar.Add($"{file.Name}: {ex.Message}", Severity.Error); }
+        }
+        await ReloadAsync();
+    }
+    private async Task DeleteDocumentAsync(Guid id) { if (selected is null) return; await Stores.DeleteDocumentAsync(selected.Id, id); await ReloadAsync(); }
 }

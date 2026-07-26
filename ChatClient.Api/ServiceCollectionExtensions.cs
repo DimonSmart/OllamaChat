@@ -105,17 +105,9 @@ public static class ServiceCollectionExtensions
 
     private static IServiceCollection AddRagServices(this IServiceCollection services)
     {
-        services.AddSingleton<IRagFileRepository, RagFileRepository>();
-        services.AddSingleton<IRagFileService, RagFileService>();
-        services.AddSingleton<IRagVectorIndexService, RagVectorIndexService>();
-        services.AddSingleton<IRagIndexMetadataStore, RagIndexMetadataStore>();
-        services.AddSingleton<RagVectorDataStore>();
         services.AddSingleton<IMcpFunctionIndexStore, McpFunctionIndexStore>();
-        services.AddSingleton<RagVectorIndexBackgroundService>();
-        services.AddSingleton<IRagVectorIndexBackgroundService>(sp => sp.GetRequiredService<RagVectorIndexBackgroundService>());
-        services.AddHostedService(sp => sp.GetRequiredService<RagVectorIndexBackgroundService>());
-        services.AddSingleton<IRagVectorSearchService, RagVectorSearchService>();
         services.AddSingleton<KnowledgeVectorStore>();
+        services.AddSingleton<IKnowledgeDocumentIngestionService, KnowledgeDocumentIngestionService>();
         services.AddSingleton<KnowledgeIndexBackgroundService>();
         services.AddSingleton<IKnowledgeIndexBackgroundService>(sp => sp.GetRequiredService<KnowledgeIndexBackgroundService>());
         services.AddHostedService(sp => sp.GetRequiredService<KnowledgeIndexBackgroundService>());
@@ -194,7 +186,6 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<WorkflowDefinitionSeeder>();
         services.AddSingleton<LlmServerConfigSeeder>();
         services.AddSingleton<McpServerConfigSeeder>();
-        services.AddSingleton<RagFilesSeeder>();
 
         return services;
     }

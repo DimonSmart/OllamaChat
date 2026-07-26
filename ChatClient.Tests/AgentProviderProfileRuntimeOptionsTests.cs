@@ -83,7 +83,7 @@ public class AgentProviderProfileRuntimeOptionsTests
             UserMessage = "Hello"
         };
 
-        var providers = AgenticRuntimeAgentFactory.BuildContextProviders(
+        var providers = AgenticRuntimeAgentFactory.BuildKnowledgeContextProviders(
             request,
             null!,
             hasRagContent: false,

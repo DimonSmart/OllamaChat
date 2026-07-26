@@ -1,6 +1,5 @@
 @page "/agent-templates"
 @using System
-@using System.IO
 @using System.Linq
 @using System.Collections.Generic
 @using ChatClient.Domain.Models
@@ -8,12 +7,10 @@
 @using ChatClient.Api.Services
 @using ChatClient.Api.Services.Seed
 @using ChatClient.Api.Client.Components
-@using Microsoft.AspNetCore.Components.Forms
 @inject IAgentTemplateService AgentService
 @inject AgentTemplateSeeder AgentTemplateSeeder
 @inject ISnackbar Snackbar
 @inject IKnowledgeStoreService KnowledgeStoreService
-@inject IRagFileService RagFileService
 @inject ILlmServerConfigService LlmServerConfigService
 @inject IMcpServerConfigService McpServerConfigService
 @inject ITodoProviderProfileService TodoProviderProfileService
@@ -361,8 +358,6 @@
     private MudForm? editAgentForm;
     private MudDataGrid<AgentTemplateDefinition>? dataGrid;
     private List<KnowledgeStore> knowledgeStores = new();
-    private Dictionary<Guid, int> ragCounts = new();
-    private List<RagFile> ragFiles = new();
     private ServerModelSelection editingServerModel = new(null, null);
     private List<LlmServerConfig> servers = new();
     private List<IMcpServerDescriptor> mcpServers = new();
@@ -484,62 +479,6 @@
             .ToList();
     }
 
-    private async Task LoadRagFiles(Guid agentId)
-    {
-        ragFiles = (await RagFileService.GetFilesAsync(agentId)).ToList();
-        ragCounts[agentId] = ragFiles.Count;
-    }
-
-    private async Task UploadFiles(InputFileChangeEventArgs e)
-    {
-        if (editingAgent.Id == Guid.Empty) return;
-
-        const long maxFileSize = 10 * 1024 * 1024; // 10MB
-        foreach (var file in e.GetMultipleFiles())
-        {
-            if (file.Size > maxFileSize)
-            {
-                Snackbar.Add($"File {file.Name} exceeds 10MB", Severity.Error);
-                continue;
-            }
-            try
-            {
-                await using var ms = new MemoryStream();
-                await file.OpenReadStream(maxFileSize).CopyToAsync(ms);
-                ms.Position = 0;
-                if (!FileTextExtractor.Supports(file.Name))
-                {
-                    Snackbar.Add($"Unsupported file type {Path.GetExtension(file.Name)}", Severity.Error);
-                    continue;
-                }
-
-                var content = await FileTextExtractor.ExtractTextAsync(file.Name, ms);
-                await RagFileService.AddOrUpdateFileAsync(editingAgent.Id, new RagFile { FileName = file.Name, Content = content });
-            }
-            catch (Exception ex)
-            {
-                Snackbar.Add($"Error adding file: {ex.Message}", Severity.Error);
-            }
-        }
-
-        await LoadRagFiles(editingAgent.Id);
-    }
-
-    private async Task DeleteFile(string fileName)
-    {
-        if (editingAgent.Id == Guid.Empty) return;
-
-        try
-        {
-            await RagFileService.DeleteFileAsync(editingAgent.Id, fileName);
-            await LoadRagFiles(editingAgent.Id);
-            Snackbar.Add("File deleted", Severity.Success);
-        }
-        catch (Exception ex)
-        {
-            Snackbar.Add($"Error deleting file: {ex.Message}", Severity.Error);
-        }
-    }
 
     private static string FormatSize(long bytes)
     {
@@ -642,7 +581,6 @@
             Snackbar.Add("Agent deleted successfully", Severity.Success);
 
             agents.Remove(agentToDelete);
-            ragCounts.Remove(agentToDelete.Id);
             ApplySearch();
         }
         catch (Exception ex)
@@ -880,7 +818,6 @@
                 {
                     await AgentService.CreateAsync(editingAgent);
                     agents.Add(editingAgent);
-                    ragCounts[editingAgent.Id] = ragFiles.Count;
                     Snackbar.Add("Agent description created successfully", Severity.Success);
                 }
                 else
@@ -889,7 +826,6 @@
                     await AgentService.UpdateAsync(editingAgent);
                     var index = agents.FindIndex(p => p.Id == editingAgent.Id);
                     if (index >= 0) agents[index] = editingAgent;
-                    ragCounts[editingAgent.Id] = ragFiles.Count;
                     Snackbar.Add("Agent description updated successfully", Severity.Success);
                 }
 

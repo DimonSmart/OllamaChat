@@ -25,7 +25,6 @@ internal static class ApplicationStartupExtensions
         await scope.ServiceProvider.GetRequiredService<WorkflowDefinitionSeeder>().SeedAsync();
         await scope.ServiceProvider.GetRequiredService<LlmServerConfigSeeder>().SeedAsync();
         await scope.ServiceProvider.GetRequiredService<McpServerConfigSeeder>().SeedAsync();
-        await scope.ServiceProvider.GetRequiredService<RagFilesSeeder>().SeedAsync();
 
         var startupChecker = scope.ServiceProvider.GetRequiredService<OllamaServerAvailabilityService>();
         var ollamaStatus = await startupChecker.CheckOllamaStatusAsync();

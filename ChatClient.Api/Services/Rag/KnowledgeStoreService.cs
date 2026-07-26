@@ -10,6 +10,7 @@ namespace ChatClient.Api.Services.Rag;
 public sealed class KnowledgeStoreService(
     IKnowledgeStoreRepository repository,
     IKnowledgeDocumentStorage documents,
+    IKnowledgeDocumentIngestionService ingestion,
     IAgentTemplateService agents,
     IUserSettingsService settings,
     IKnowledgeIndexBackgroundService indexer,
@@ -53,25 +54,33 @@ public sealed class KnowledgeStoreService(
                 await agents.UpdateAsync(agent);
     }
 
-    public async Task AddOrUpdateDocumentAsync(Guid storeId, KnowledgeDocument document, CancellationToken ct = default)
+    public async Task AddOrUpdateDocumentAsync(Guid storeId, string fileName, Stream content, string? contentType = null, CancellationToken ct = default)
     {
         var store = await RequiredAsync(storeId, ct);
-        if (string.IsNullOrWhiteSpace(document.FileName))
-            throw new ArgumentException("File name is required.", nameof(document));
-        var content = document.Content;
-        if (string.IsNullOrWhiteSpace(content))
-            throw new ArgumentException("Document content is required.", nameof(document));
-        var existing = store.Documents.FirstOrDefault(x => x.Id == document.Id || x.FileName.Equals(document.FileName, StringComparison.OrdinalIgnoreCase));
-        document.Id = existing?.Id ?? document.Id;
-        document.SourceHash = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(content)));
-        document.Size = Encoding.UTF8.GetByteCount(content);
-        document.UpdatedUtc = DateTime.UtcNow;
-        await documents.WriteAsync(store.Id, document.Id, content, ct);
+        if (string.IsNullOrWhiteSpace(fileName))
+            throw new ArgumentException("File name is required.", nameof(fileName));
+        var prepared = await ingestion.PrepareAsync(fileName, content, ct);
+        var existing = store.Documents.FirstOrDefault(x => x.FileName.Equals(fileName, StringComparison.OrdinalIgnoreCase));
+        var document = new KnowledgeDocument
+        {
+            Id = existing?.Id ?? Guid.NewGuid(),
+            FileName = fileName.Trim(),
+            ContentType = contentType,
+            SourceHash = Convert.ToHexString(SHA256.HashData(prepared.Source)),
+            Size = prepared.Source.LongLength,
+            UpdatedUtc = DateTime.UtcNow,
+            IndexedSourceHash = existing?.IndexedSourceHash
+        };
+        if (existing?.SourceHash == document.SourceHash)
+            return;
+        await using var source = new MemoryStream(prepared.Source, writable: false);
+        await documents.WriteAsync(store.Id, document.Id, document.FileName, source, prepared.CanonicalMarkdown, ct);
         if (existing is null)
             store.Documents.Add(document);
         else
         { var index = store.Documents.IndexOf(existing); store.Documents[index] = document; }
-        MarkOutdated(store);
+        if (store.Index.State == KnowledgeStoreIndexState.Ready)
+            store.Index.State = KnowledgeStoreIndexState.Outdated;
         await UpdateAsync(store, ct);
     }
 
@@ -81,10 +90,10 @@ public sealed class KnowledgeStoreService(
         if (store.Documents.RemoveAll(x => x.Id == documentId) == 0)
             return;
         await documents.DeleteAsync(storeId, documentId, ct);
-        MarkOutdated(store);
-        await UpdateAsync(store, ct);
         await indexer.DeleteDocumentVectorsAsync(storeId, documentId, ct);
+        if (store.Documents.Count == 0)
+            store.Index.State = KnowledgeStoreIndexState.NotIndexed;
+        await UpdateAsync(store, ct);
     }
-    private static void MarkOutdated(KnowledgeStore store) { if (store.Index.State == KnowledgeStoreIndexState.Ready) store.Index.State = KnowledgeStoreIndexState.Outdated; }
     private async Task<KnowledgeStore> RequiredAsync(Guid id, CancellationToken ct) => await GetAsync(id, ct) ?? throw new KeyNotFoundException($"Knowledge Store '{id}' was not found.");
 }

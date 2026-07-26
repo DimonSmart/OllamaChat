@@ -8,7 +8,7 @@ namespace ChatClient.Api.Services.Rag;
 
 public sealed class KnowledgeVectorStore(IConfiguration configuration)
 {
-    private readonly string _connectionString = new Microsoft.Data.Sqlite.SqliteConnectionStringBuilder { DataSource = StoragePathResolver.ResolveUserPath(configuration, configuration["RagVectorStore:DatabasePath"], FilePathConstants.DefaultRagVectorDatabaseFile) }.ToString();
+    private readonly string _connectionString = new Microsoft.Data.Sqlite.SqliteConnectionStringBuilder { DataSource = StoragePathResolver.ResolveUserPath(configuration, configuration["KnowledgeVectorStore:DatabasePath"], FilePathConstants.DefaultKnowledgeVectorDatabaseFile) }.ToString();
 
     public async Task ReplaceDocumentAsync(Guid storeId, Guid documentId, int dimension, IReadOnlyList<KnowledgeChunkRecord> chunks, CancellationToken ct)
     {
@@ -26,7 +26,7 @@ public sealed class KnowledgeVectorStore(IConfiguration configuration)
         var collection = await GetExistingCollectionForReadAsync(dimension, ct);
         var results = new List<RagSearchResult>();
         await foreach (var result in collection.SearchAsync(query, max, new VectorSearchOptions<KnowledgeChunkRecord> { Filter = x => x.KnowledgeStoreId == store.Id.ToString("N"), ScoreThreshold = 1d - Math.Clamp(threshold, -1d, 1d), IncludeVectors = false }, ct))
-            results.Add(new RagSearchResult { FileName = result.Record.FileName, Content = result.Record.Content, Score = 1d - (result.Score ?? 1d) });
+            results.Add(new RagSearchResult { FileName = result.Record.FileName, Section = result.Record.Section, Content = result.Record.Content, Score = 1d - (result.Score ?? 1d) });
         return results;
     }
 

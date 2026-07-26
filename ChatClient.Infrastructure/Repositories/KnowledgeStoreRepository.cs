@@ -38,6 +38,6 @@ public sealed class KnowledgeStoreRepository : IKnowledgeStoreRepository
         Description = store.Description,
         Configuration = store.Configuration.Clone(),
         Index = new KnowledgeStoreIndexMetadata { State = store.Index.State, IndexedConfiguration = store.Index.IndexedConfiguration?.Clone(), LastError = store.Index.LastError, CompletedUtc = store.Index.CompletedUtc },
-        Documents = store.Documents.Select(d => new KnowledgeDocument { Id = d.Id, FileName = d.FileName, SourceHash = d.SourceHash, Size = d.Size, UpdatedUtc = d.UpdatedUtc }).ToList()
+        Documents = store.Documents.Select(d => new KnowledgeDocument { Id = d.Id, FileName = d.FileName, SourceHash = d.SourceHash, IndexedSourceHash = d.IndexedSourceHash, ContentType = d.ContentType, Size = d.Size, UpdatedUtc = d.UpdatedUtc }).ToList()
     };
 }

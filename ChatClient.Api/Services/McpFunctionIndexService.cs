@@ -19,7 +19,7 @@ public class McpFunctionIndexService
     private readonly IMcpClientService _clientService;
     private readonly IOllamaClientService _ollamaService;
     private readonly IUserSettingsService _userSettingsService;
-    private readonly IRagVectorIndexBackgroundService _indexBackgroundService;
+    private readonly IKnowledgeIndexBackgroundService _indexBackgroundService;
     private readonly IMcpFunctionIndexStore _indexStore;
     private readonly ILogger<McpFunctionIndexService> _logger;
     private ServerModel _model = new(Guid.Empty, string.Empty);
@@ -30,7 +30,7 @@ public class McpFunctionIndexService
         IMcpClientService clientService,
         IOllamaClientService ollamaService,
         IUserSettingsService userSettingsService,
-        IRagVectorIndexBackgroundService indexBackgroundService,
+        IKnowledgeIndexBackgroundService indexBackgroundService,
         IMcpFunctionIndexStore indexStore,
         ILogger<McpFunctionIndexService> logger)
     {

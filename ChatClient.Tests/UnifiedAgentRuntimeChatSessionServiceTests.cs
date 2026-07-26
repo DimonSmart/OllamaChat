@@ -563,7 +563,7 @@ public sealed class UnifiedAgentRuntimeChatSessionServiceTests
             .ReturnsAsync(false);
         var tools = new Mock<IAppToolCatalog>(MockBehavior.Strict);
         var interaction = new Mock<IMcpUserInteractionService>(MockBehavior.Strict);
-        var rag = new Mock<IAgentRagSearchService>(MockBehavior.Strict);
+        var rag = new Mock<IKnowledgeSearchService>(MockBehavior.Strict);
         var todoProfiles = new Mock<ITodoProviderProfileService>(MockBehavior.Strict);
         var agentModeProfiles = new Mock<IAgentModeProviderProfileService>(MockBehavior.Strict);
         if (withSessionStateProviders || availableModes is not null)
@@ -580,7 +580,7 @@ public sealed class UnifiedAgentRuntimeChatSessionServiceTests
                         .ToList()
                 });
         }
-        rag.Setup(service => service.HasIndexedContentAsync(templateId, It.IsAny<CancellationToken>()))
+        rag.Setup(service => service.HasReadyContentAsync(It.IsAny<IReadOnlyCollection<Guid>>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(false);
 
         var runtimeFactory = new AgenticRuntimeAgentFactory(
