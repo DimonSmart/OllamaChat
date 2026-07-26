@@ -67,7 +67,8 @@ public interface IAgentSessionDefinitionResolver
 
 public sealed class AgentSessionDefinitionResolver(
     IAgentDefinitionCatalog catalog,
-    IWorkflowDefinitionPreflightValidator workflowPreflightValidator) : IAgentSessionDefinitionResolver
+    IWorkflowDefinitionPreflightValidator workflowPreflightValidator,
+    IAgentLaunchCapabilityValidator launchCapabilityValidator) : IAgentSessionDefinitionResolver
 {
     public async Task<AgentDefinitionLaunchValidation> ValidateAsync(
         AgentDefinitionReference reference,
@@ -200,6 +201,13 @@ public sealed class AgentSessionDefinitionResolver(
             {
                 problems.Add(new AgentDefinitionLaunchProblem("A model selection is required to start this definition."));
             }
+        }
+
+        if (descriptor.LaunchCapabilities.SupportsFileAccessWorkspace && model is not null &&
+            !await launchCapabilityValidator.SupportsFunctionCallingAsync(model, cancellationToken))
+        {
+            problems.Add(new AgentDefinitionLaunchProblem(
+                "The selected model does not support function calling required by File Access."));
         }
 
         return (new AgentDefinitionLaunchValidation

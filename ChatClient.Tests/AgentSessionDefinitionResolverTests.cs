@@ -103,6 +103,50 @@ public sealed class AgentSessionDefinitionResolverTests
         Assert.Contains(validation.Problems, problem => problem.Message == "preflight failed");
     }
 
+    [Fact]
+    public async Task ValidateAsync_FileAccessWithModelWithoutFunctionCalling_ReturnsFailure()
+    {
+        var model = new ServerModel(Guid.NewGuid(), "no-functions");
+        var resolver = CreateResolver(new AgentDefinitionDescriptor
+        {
+            Reference = Reference,
+            Name = "Agent",
+            RuntimeKind = AgentRuntimeKind.LlmAgent,
+            ModelRequirement = AgentModelRequirement.Required,
+            LaunchCapabilities = new AgentLaunchCapabilities { SupportsFileAccessWorkspace = true }
+        }, supportsFunctionCalling: false);
+
+        var validation = await resolver.ValidateAsync(Reference, new AgentSessionDefinitionRequest
+        {
+            UiModelSelection = new ServerModelSelection(model.ServerId, model.ModelName),
+            Overrides = new AgentSessionOverrides { FileAccessWorkspace = AppContext.BaseDirectory }
+        });
+
+        Assert.False(validation.CanLaunch);
+        Assert.Contains(validation.Problems, problem => problem.Message.Contains("function calling required by File Access", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public async Task ValidateAsync_NoFileAccessWithModelWithoutFunctionCalling_AllowsLaunch()
+    {
+        var model = new ServerModel(Guid.NewGuid(), "no-functions");
+        var resolver = CreateResolver(new AgentDefinitionDescriptor
+        {
+            Reference = Reference,
+            Name = "Agent",
+            RuntimeKind = AgentRuntimeKind.LlmAgent,
+            ModelRequirement = AgentModelRequirement.Required
+        }, supportsFunctionCalling: false);
+
+        var validation = await resolver.ValidateAsync(Reference, new AgentSessionDefinitionRequest
+        {
+            UiModelSelection = new ServerModelSelection(model.ServerId, model.ModelName)
+        });
+
+        Assert.True(validation.CanLaunch);
+        Assert.DoesNotContain(validation.Problems, problem => problem.Message.Contains("File Access", StringComparison.OrdinalIgnoreCase));
+    }
+
     private static AgentDefinitionDescriptor DescriptorWithInput(AgentInputDefinitionKind kind) =>
         new()
         {
@@ -124,8 +168,12 @@ public sealed class AgentSessionDefinitionResolverTests
 
     private static AgentSessionDefinitionResolver CreateResolver(
         AgentDefinitionDescriptor descriptor,
-        IReadOnlyList<AgentDefinitionLaunchProblem>? preflightProblems = null) =>
-        new(new StubCatalog(descriptor), new StubPreflightValidator(preflightProblems ?? []));
+        IReadOnlyList<AgentDefinitionLaunchProblem>? preflightProblems = null,
+        bool supportsFunctionCalling = true) =>
+        new(
+            new StubCatalog(descriptor),
+            new StubPreflightValidator(preflightProblems ?? []),
+            new StubLaunchCapabilityValidator(supportsFunctionCalling));
 
     private sealed class StubCatalog(AgentDefinitionDescriptor descriptor) : IAgentDefinitionCatalog
     {
@@ -151,5 +199,14 @@ public sealed class AgentSessionDefinitionResolverTests
             AgentDefinitionReference reference,
             CancellationToken cancellationToken = default) =>
             Task.FromResult(problems);
+    }
+
+    private sealed class StubLaunchCapabilityValidator(bool supportsFunctionCalling)
+        : IAgentLaunchCapabilityValidator
+    {
+        public Task<bool> SupportsFunctionCallingAsync(
+            ServerModel model,
+            CancellationToken cancellationToken = default) =>
+            Task.FromResult(supportsFunctionCalling);
     }
 }

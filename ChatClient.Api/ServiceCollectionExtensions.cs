@@ -135,6 +135,7 @@ public static class ServiceCollectionExtensions
                 "MaximumWorkflowNestingDepth must be greater than zero.")
             .ValidateOnStart();
         services.AddScoped<IAgentSessionDefinitionResolver, AgentSessionDefinitionResolver>();
+        services.AddScoped<IAgentLaunchCapabilityValidator, AgentLaunchCapabilityValidator>();
         services.AddScoped<ILegacyWorkflowDefinitionNormalizer, LegacyWorkflowDefinitionNormalizer>();
         services.AddScoped<WorkflowParticipantResolver>();
         services.AddScoped<IWorkflowParticipantResolver, NormalizingWorkflowParticipantResolver>();

@@ -63,6 +63,12 @@ public sealed class AgenticRuntimeAgentFactory(
             request.ResolvedModel,
             cancellationToken);
 
+        if (fileAccessProfile is not null && !supportsFunctions)
+        {
+            throw new InvalidOperationException(
+                $"Model '{request.ResolvedModel.ModelName}' does not support function calling required by File Access.");
+        }
+
         var toolRequestContext = BuildToolRequestContext(request);
         var availableTools = supportsFunctions
             ? await appToolCatalog.ListToolsAsync(toolRequestContext, cancellationToken)
