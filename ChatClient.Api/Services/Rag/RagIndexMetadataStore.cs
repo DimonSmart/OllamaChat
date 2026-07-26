@@ -6,6 +6,7 @@ namespace ChatClient.Api.Services.Rag;
 
 public sealed class RagIndexMetadataStore(IConfiguration configuration, ILogger<RagIndexMetadataStore> logger) : IRagIndexMetadataStore
 {
+    private const int CurrentSchemaVersion = 3;
     private const string Complete = "complete";
     private const string InProgress = "in_progress";
     private const string Failed = "failed";
@@ -118,11 +119,11 @@ public sealed class RagIndexMetadataStore(IConfiguration configuration, ILogger<
             Directory.CreateDirectory(Path.GetDirectoryName(_databasePath)!);
             await using var connection = await OpenAsync(cancellationToken);
             await using var command = connection.CreateCommand();
-            command.CommandText = "CREATE TABLE IF NOT EXISTS rag_index_schema (version INTEGER NOT NULL); SELECT COUNT(*) FROM rag_index_schema;";
-            var hasCurrentSchema = (long)(await command.ExecuteScalarAsync(cancellationToken) ?? 0) == 1;
-            if (!hasCurrentSchema)
+            command.CommandText = "CREATE TABLE IF NOT EXISTS rag_index_schema (version INTEGER NOT NULL); SELECT version FROM rag_index_schema LIMIT 1;";
+            var schemaVersion = await command.ExecuteScalarAsync(cancellationToken) as long?;
+            if (schemaVersion != CurrentSchemaVersion)
             {
-                command.CommandText = """DROP TABLE IF EXISTS rag_vector_entries; DROP TABLE IF EXISTS rag_file_index; CREATE TABLE rag_file_index (agent_id TEXT NOT NULL,file_name TEXT NOT NULL,source_hash TEXT NOT NULL,source_modified_utc TEXT NOT NULL,embedding_model TEXT NOT NULL,embedding_dimension INTEGER NOT NULL,max_tokens INTEGER NOT NULL,overlap_tokens INTEGER NOT NULL,ingestion_version TEXT NOT NULL,total_chunks INTEGER NOT NULL,processed_chunks INTEGER NOT NULL,status TEXT NOT NULL,created_utc TEXT NOT NULL,updated_utc TEXT NOT NULL,last_error TEXT NULL,PRIMARY KEY(agent_id,file_name)); INSERT INTO rag_index_schema(version) VALUES (2);""";
+                command.CommandText = $"""DROP TABLE IF EXISTS rag_chunks; DROP TABLE IF EXISTS rag_vector_entries; DROP TABLE IF EXISTS rag_file_index; DELETE FROM rag_index_schema; CREATE TABLE rag_file_index (agent_id TEXT NOT NULL,file_name TEXT NOT NULL,source_hash TEXT NOT NULL,source_modified_utc TEXT NOT NULL,embedding_model TEXT NOT NULL,embedding_dimension INTEGER NOT NULL,max_tokens INTEGER NOT NULL,overlap_tokens INTEGER NOT NULL,ingestion_version TEXT NOT NULL,total_chunks INTEGER NOT NULL,processed_chunks INTEGER NOT NULL,status TEXT NOT NULL,created_utc TEXT NOT NULL,updated_utc TEXT NOT NULL,last_error TEXT NULL,PRIMARY KEY(agent_id,file_name)); INSERT INTO rag_index_schema(version) VALUES ({CurrentSchemaVersion});""";
                 await command.ExecuteNonQueryAsync(cancellationToken);
             }
             logger.LogInformation("RAG indexing metadata store initialized at {Path}", _databasePath);

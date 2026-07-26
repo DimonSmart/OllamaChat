@@ -9,7 +9,7 @@ public sealed class RagVectorSearchService(RagVectorDataStore vectors, IUserSett
     {
         var threshold = (await settings.GetSettingsAsync(cancellationToken)).Embedding.RagMinRelevanceScore;
         var response = await vectors.SearchAsync(agentId, queryVector, maxResults, threshold, cancellationToken);
-        logger.LogDebug("RAG vector search AgentId={AgentId} TopN={TopN} Results={Results} Threshold={Threshold}", agentId, maxResults, response.Results.Count, threshold);
+        logger.LogDebug("RAG vector search AgentId={AgentId} TopN={TopN} Results={Results} MinRelevanceScore={MinRelevanceScore}", agentId, maxResults, response.Results.Count, threshold);
         return response;
     }
 }
