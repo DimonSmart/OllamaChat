@@ -49,7 +49,7 @@
                                    ValueChanged="OnAgentModeChangedAsync"
                                    Dense="true"
                                    Margin="Margin.Dense"
-                                   Disabled="@(IsLlmAnswering || isChangingAgentMode)"
+                                   Disabled="@(IsLlmAnswering || isChangingAgentMode || PendingToolApproval is not null)"
                                    Style="min-width: 130px">
                             @foreach (var mode in SessionState.AvailableModes)
                             {
@@ -102,8 +102,8 @@
             <MudStack Row="true" Spacing="1" Wrap="Wrap.Wrap">
                 <MudButton Variant="Variant.Outlined" Color="Color.Error" Disabled="isRespondingToToolApproval" OnClick="@(() => RespondToToolApprovalAsync(ToolApprovalDecision.Deny))">Deny</MudButton>
                 <MudButton Variant="Variant.Filled" Color="Color.Primary" Disabled="isRespondingToToolApproval" OnClick="@(() => RespondToToolApprovalAsync(ToolApprovalDecision.ApproveOnce))">Approve once</MudButton>
-                <MudButton Variant="Variant.Outlined" Disabled="isRespondingToToolApproval" OnClick="@(() => RespondToToolApprovalAsync(ToolApprovalDecision.AlwaysApproveTool))">Always approve this tool</MudButton>
-                <MudButton Variant="Variant.Outlined" Disabled="isRespondingToToolApproval" OnClick="@(() => RespondToToolApprovalAsync(ToolApprovalDecision.AlwaysApproveExactArguments))">Always approve this call</MudButton>
+                <MudButton Variant="Variant.Outlined" Disabled="isRespondingToToolApproval" OnClick="@(() => RespondToToolApprovalAsync(ToolApprovalDecision.AlwaysApproveTool))">Always approve this tool in this chat</MudButton>
+                <MudButton Variant="Variant.Outlined" Disabled="isRespondingToToolApproval" OnClick="@(() => RespondToToolApprovalAsync(ToolApprovalDecision.AlwaysApproveExactArguments))">Always approve this exact call in this chat</MudButton>
                 @if (isRespondingToToolApproval)
                 {
                     <MudProgressCircular Indeterminate="true" Size="Size.Small" />

@@ -139,7 +139,7 @@ public sealed class UnifiedAgentRuntimeChatSessionService(
             IReadOnlyList<string> availableModes;
             lock (_lifecycleLock)
             {
-                if (_resetting || IsAnswering || RequiresReset)
+                if (_resetting || IsAnswering || RequiresReset || PendingToolApproval is not null)
                 {
                     throw new InvalidOperationException("The agent mode cannot be changed while this conversation is unavailable.");
                 }
@@ -405,6 +405,11 @@ public sealed class UnifiedAgentRuntimeChatSessionService(
         ToolApprovalDecision decision,
         CancellationToken cancellationToken = default)
     {
+        if (!Enum.IsDefined(decision))
+        {
+            throw new ArgumentOutOfRangeException(nameof(decision));
+        }
+
         await _runSetupGate.WaitAsync(cancellationToken);
         long generation;
         ToolApprovalRequestContent request;

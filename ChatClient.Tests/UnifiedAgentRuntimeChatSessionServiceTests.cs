@@ -9,6 +9,7 @@ using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using Moq;
+using System.Reflection;
 using System.Runtime.CompilerServices;
 using System.Text;
 
@@ -136,6 +137,32 @@ public sealed class UnifiedAgentRuntimeChatSessionServiceTests
         Assert.Equal("Research", (await fixture.Service.GetSessionStateAsync())!.Mode);
         Assert.Empty(fixture.Service.Messages);
         Assert.Empty(fixture.ChatClient.Requests);
+    }
+
+    [Fact]
+    public async Task SetAgentModeAsync_RejectsModeChangeWhileToolApprovalIsPending()
+    {
+        var fixture = CreateDirectFixture(availableModes: ["Plan", "Execute"]);
+        await fixture.Service.StartAsync(fixture.Request);
+        SetPendingApproval(fixture.Service);
+
+        await Assert.ThrowsAsync<InvalidOperationException>(
+            () => fixture.Service.SetAgentModeAsync("Execute"));
+
+        Assert.Equal("Plan", (await fixture.Service.GetSessionStateAsync())!.Mode);
+    }
+
+    [Fact]
+    public async Task RespondToToolApprovalAsync_RejectsInvalidDecisionBeforeChangingRuntimeState()
+    {
+        var service = CreateService(new StubAgentRunner([]));
+        SetPendingApproval(service);
+
+        await Assert.ThrowsAsync<ArgumentOutOfRangeException>(
+            () => service.RespondToToolApprovalAsync((ToolApprovalDecision)999));
+
+        Assert.NotNull(service.PendingToolApproval);
+        Assert.False(service.IsAnswering);
     }
 
     [Fact]
@@ -380,6 +407,22 @@ public sealed class UnifiedAgentRuntimeChatSessionServiceTests
             null!,
             null!,
             new HarnessResponseEventProjector(NullLogger<HarnessResponseEventProjector>.Instance));
+
+    private static void SetPendingApproval(UnifiedAgentRuntimeChatSessionService service)
+    {
+        var request = new ToolApprovalRequestContent(
+            "request-1",
+            new FunctionCallContent(
+                "call-1",
+                "protected_operation",
+                new Dictionary<string, object?> { ["value"] = "A" }));
+        typeof(UnifiedAgentRuntimeChatSessionService)
+            .GetField("_pendingToolApprovalRequest", BindingFlags.Instance | BindingFlags.NonPublic)!
+            .SetValue(service, request);
+        typeof(UnifiedAgentRuntimeChatSessionService)
+            .GetProperty(nameof(IChatEngineSessionService.PendingToolApproval), BindingFlags.Instance | BindingFlags.Public)!
+            .SetValue(service, new ToolApprovalRequestViewModel("request-1", "protected_operation", "{\"value\":\"A\"}"));
+    }
 
     private static DirectFixture CreateDirectFixture(
         bool withSessionStateProviders = false,
