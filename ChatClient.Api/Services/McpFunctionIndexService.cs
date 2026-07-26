@@ -20,7 +20,7 @@ public class McpFunctionIndexService
     private readonly IOllamaClientService _ollamaService;
     private readonly IUserSettingsService _userSettingsService;
     private readonly IRagVectorIndexBackgroundService _indexBackgroundService;
-    private readonly IRagVectorStore _ragVectorStore;
+    private readonly IMcpFunctionIndexStore _indexStore;
     private readonly ILogger<McpFunctionIndexService> _logger;
     private ServerModel _model = new(Guid.Empty, string.Empty);
     private readonly ConcurrentDictionary<string, float[]> _index = new();
@@ -31,14 +31,14 @@ public class McpFunctionIndexService
         IOllamaClientService ollamaService,
         IUserSettingsService userSettingsService,
         IRagVectorIndexBackgroundService indexBackgroundService,
-        IRagVectorStore ragVectorStore,
+        IMcpFunctionIndexStore indexStore,
         ILogger<McpFunctionIndexService> logger)
     {
         _clientService = clientService;
         _ollamaService = ollamaService;
         _userSettingsService = userSettingsService;
         _indexBackgroundService = indexBackgroundService;
-        _ragVectorStore = ragVectorStore;
+        _indexStore = indexStore;
         _logger = logger;
     }
 
@@ -142,33 +142,10 @@ public class McpFunctionIndexService
         Guid targetServerId,
         CancellationToken cancellationToken)
     {
-        var metadata = new RagVectorBuildMetadata(
-            SourceHash: ComputeToolsHash(serverName, tools),
-            SourceModifiedUtc: DateTime.UtcNow,
-            EmbeddingModel: _model.ModelName,
-            LineChunkSize: 0,
-            ParagraphChunkSize: 0,
-            ParagraphOverlap: 0,
-            TotalChunks: tools.Count);
-
-        var plan = await _ragVectorStore.BeginIndexingAsync(
-            McpIndexAgentId,
-            serverName,
-            metadata,
-            cancellationToken: cancellationToken);
-
         try
         {
-            if (plan.StartIndex > 0)
-            {
-                _logger.LogInformation(
-                    "Resuming MCP tool index for server {ServerName} from tool {Start}/{Total}",
-                    serverName,
-                    plan.StartIndex,
-                    tools.Count);
-            }
-
-            for (var i = plan.StartIndex; i < tools.Count; i++)
+            var entries = new List<McpFunctionIndexEntry>();
+            for (var i = 0; i < tools.Count; i++)
             {
                 cancellationToken.ThrowIfCancellationRequested();
 
@@ -186,26 +163,17 @@ public class McpFunctionIndexService
                     new ServerModel(targetServerId, _model.ModelName),
                     cancellationToken);
 
-                await _ragVectorStore.UpsertEntryAsync(
-                    McpIndexAgentId,
-                    serverName,
-                    new RagVectorStoreEntry(serverName, i, qualifiedFunctionName, embedding),
-                    processedChunks: i + 1,
-                    totalChunks: tools.Count,
-                    cancellationToken);
+                entries.Add(new McpFunctionIndexEntry(serverName, qualifiedFunctionName, embedding));
             }
-
-            await _ragVectorStore.CompleteIndexingAsync(McpIndexAgentId, serverName, tools.Count, cancellationToken);
+            await _indexStore.ReplaceAsync(McpIndexAgentId, serverName, entries, cancellationToken);
         }
         catch (HttpRequestException ex) when (ex.StatusCode == HttpStatusCode.NotFound)
         {
-            await _ragVectorStore.MarkIndexingFailedAsync(McpIndexAgentId, serverName, ex.Message, CancellationToken.None);
             _logger.LogError("Embedding model '{Model}' not found. Stopping MCP function indexing.", _model.ModelName);
             throw;
         }
         catch (Exception ex)
         {
-            await _ragVectorStore.MarkIndexingFailedAsync(McpIndexAgentId, serverName, ex.Message, CancellationToken.None);
             if (!_ollamaService.EmbeddingsAvailable)
             {
                 _logger.LogError(ex, "Embedding service unavailable. Stopping MCP function indexing.");
@@ -220,9 +188,9 @@ public class McpFunctionIndexService
         IReadOnlySet<string> activeServers,
         CancellationToken cancellationToken)
     {
-        var persisted = await _ragVectorStore.ReadAgentEntriesAsync(McpIndexAgentId, cancellationToken);
+        var persisted = await _indexStore.ReadAsync(cancellationToken);
         var persistedServerNames = persisted
-            .Select(static entry => entry.FileName)
+            .Select(static entry => entry.Group)
             .Where(static name => !string.IsNullOrWhiteSpace(name))
             .Distinct(StringComparer.OrdinalIgnoreCase);
 
@@ -234,25 +202,25 @@ public class McpFunctionIndexService
                 continue;
             }
 
-            await _ragVectorStore.RemoveFileAsync(McpIndexAgentId, persistedServerName, cancellationToken);
+            await _indexStore.RemoveAsync(McpIndexAgentId, persistedServerName, cancellationToken);
         }
     }
 
     private async Task LoadIndexFromStoreAsync(CancellationToken cancellationToken)
     {
-        var persistedEntries = await _ragVectorStore.ReadAgentEntriesAsync(McpIndexAgentId, cancellationToken);
+        var persistedEntries = await _indexStore.ReadAsync(cancellationToken);
 
         _index.Clear();
         foreach (var entry in persistedEntries)
         {
             cancellationToken.ThrowIfCancellationRequested();
 
-            if (string.IsNullOrWhiteSpace(entry.Text))
+            if (string.IsNullOrWhiteSpace(entry.Name))
             {
                 continue;
             }
 
-            _index[entry.Text] = entry.Vector;
+            _index[entry.Name] = entry.Embedding;
         }
     }
 
@@ -327,7 +295,7 @@ public class McpFunctionIndexService
 
     public async Task RebuildAsync()
     {
-        await _ragVectorStore.ClearAllAsync();
+        await _indexStore.ClearAsync();
 
         Invalidate();
         await BuildIndexAsync();

@@ -7,12 +7,12 @@ public class EmbeddingSettings
     [JsonPropertyName("model")]
     public ServerModelSelection Model { get; set; } = new(null, null);
 
-    [JsonPropertyName("ragLineChunkSize")]
-    public int RagLineChunkSize { get; set; } = 256;
+    [JsonPropertyName("ragMaxTokensPerChunk")]
+    public int RagMaxTokensPerChunk { get; set; } = 512;
 
-    [JsonPropertyName("ragParagraphChunkSize")]
-    public int RagParagraphChunkSize { get; set; } = 512;
+    [JsonPropertyName("ragOverlapTokens")]
+    public int RagOverlapTokens { get; set; } = 64;
 
-    [JsonPropertyName("ragParagraphOverlap")]
-    public int RagParagraphOverlap { get; set; } = 64;
+    [JsonPropertyName("ragMinRelevanceScore")]
+    public double RagMinRelevanceScore { get; set; } = 0.7;
 }

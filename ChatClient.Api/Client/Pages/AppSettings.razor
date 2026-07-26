@@ -170,9 +170,9 @@
                             <MudText Typo="Typo.caption" Class="mt-2">
                                 Model used for generating embeddings.
                             </MudText>
-                            <MudNumericField T="int" @bind-Value="_settings.Embedding.RagLineChunkSize" Label="Line Chunk Size" Min="1" Variant="Variant.Outlined" Margin="Margin.Dense" Class="mt-2" />
-                            <MudNumericField T="int" @bind-Value="_settings.Embedding.RagParagraphChunkSize" Label="Paragraph Chunk Size" Min="1" Variant="Variant.Outlined" Margin="Margin.Dense" Class="mt-2" />
-                            <MudNumericField T="int" @bind-Value="_settings.Embedding.RagParagraphOverlap" Label="Paragraph Overlap" Min="0" Variant="Variant.Outlined" Margin="Margin.Dense" Class="mt-2" />
+                            <MudNumericField T="int" @bind-Value="_settings.Embedding.RagMaxTokensPerChunk" Label="Maximum tokens per chunk" Min="1" Variant="Variant.Outlined" Margin="Margin.Dense" Class="mt-2" />
+                            <MudNumericField T="int" @bind-Value="_settings.Embedding.RagOverlapTokens" Label="Overlap tokens" Min="0" Variant="Variant.Outlined" Margin="Margin.Dense" Class="mt-2" />
+                            <MudNumericField T="double" @bind-Value="_settings.Embedding.RagMinRelevanceScore" Label="Minimum relevance score" Min="-1" Max="1" Step="0.01" Variant="Variant.Outlined" Margin="Margin.Dense" Class="mt-2" />
                             <MudText Typo="Typo.caption" Class="mt-2">Text chunking parameters for building RAG indexes.</MudText>
                             <MudButton Variant="Variant.Outlined" Color="Color.Primary" OnClick="RestartEmbeddings" Size="Size.Small" Class="mt-2">
                                 Restart Embedding Generation

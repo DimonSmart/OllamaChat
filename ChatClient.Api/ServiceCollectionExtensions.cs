@@ -105,7 +105,9 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<IRagFileRepository, RagFileRepository>();
         services.AddSingleton<IRagFileService, RagFileService>();
         services.AddSingleton<IRagVectorIndexService, RagVectorIndexService>();
-        services.AddSingleton<IRagVectorStore, RagVectorStore>();
+        services.AddSingleton<IRagIndexMetadataStore, RagIndexMetadataStore>();
+        services.AddSingleton<RagVectorDataStore>();
+        services.AddSingleton<IMcpFunctionIndexStore, McpFunctionIndexStore>();
         services.AddSingleton<RagVectorIndexBackgroundService>();
         services.AddSingleton<IRagVectorIndexBackgroundService>(sp => sp.GetRequiredService<RagVectorIndexBackgroundService>());
         services.AddHostedService(sp => sp.GetRequiredService<RagVectorIndexBackgroundService>());

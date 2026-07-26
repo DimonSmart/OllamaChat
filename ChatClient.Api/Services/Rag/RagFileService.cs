@@ -8,11 +8,11 @@ namespace ChatClient.Api.Services.Rag;
 public class RagFileService(
     IRagFileRepository repository,
     IRagVectorIndexBackgroundService indexBackgroundService,
-    IRagVectorStore vectorStore) : IRagFileService
+    IRagIndexMetadataStore vectorStore) : IRagFileService
 {
     private readonly IRagFileRepository _repository = repository;
     private readonly IRagVectorIndexBackgroundService _indexBackgroundService = indexBackgroundService;
-    private readonly IRagVectorStore _vectorStore = vectorStore;
+    private readonly IRagIndexMetadataStore _vectorStore = vectorStore;
 
     public async Task<IReadOnlyCollection<RagFile>> GetFilesAsync(Guid agentId)
     {
