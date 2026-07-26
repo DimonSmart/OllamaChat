@@ -37,7 +37,7 @@ public sealed class KnowledgeIndexBackgroundService(IServiceScopeFactory scopes,
                 await stores.UpdateAsync(snapshot, ct);
                 var indexed = snapshot.Configuration.Clone();
                 var rebuildAll = snapshot.Index.IndexedConfiguration is null || !snapshot.Configuration.Equals(snapshot.Index.IndexedConfiguration);
-                var documentsToIndex = rebuildAll ? snapshot.Documents : snapshot.Documents.Where(d => d.SourceHash != d.IndexedSourceHash).ToList();
+                var documentsToIndex = SelectDocumentsToIndex(snapshot, rebuildAll);
                 foreach (var document in documentsToIndex)
                 {
                     var content = await payloads.ReadCanonicalMarkdownAsync(snapshot.Id, document.Id, ct) ?? throw new InvalidOperationException($"Document '{document.FileName}' canonical Markdown is missing.");
@@ -81,6 +81,9 @@ public sealed class KnowledgeIndexBackgroundService(IServiceScopeFactory scopes,
     private static bool NeedsIndexing(KnowledgeStore store) =>
         store.Index.State is KnowledgeStoreIndexState.NotIndexed or KnowledgeStoreIndexState.Outdated or KnowledgeStoreIndexState.Failed ||
         store.Documents.Any(document => document.SourceHash != document.IndexedSourceHash);
+
+    internal static IReadOnlyList<KnowledgeDocument> SelectDocumentsToIndex(KnowledgeStore store, bool rebuildAll) =>
+        rebuildAll ? store.Documents : store.Documents.Where(document => document.SourceHash != document.IndexedSourceHash).ToList();
 
     private static async Task<List<KnowledgeChunkRecord>> ChunkAsync(string fileName, IngestionDocument source, int max, int overlap, CancellationToken ct)
     {

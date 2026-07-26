@@ -325,17 +325,14 @@
                           Validation="@(new Func<string, string>(ValidateContent))"
                           Placeholder="Enter agent description here..." />
 
-            @if (editingAgent.Id != Guid.Empty)
-            {
-                <MudDivider Class="my-2" />
-                <MudText Typo="Typo.subtitle1" Class="mb-2">Knowledge Stores</MudText>
-                <MudStack Spacing="0">
-                    @foreach (var store in knowledgeStores)
-                    {
-                        <MudCheckBox T="bool" Value="@editingAgent.KnowledgeStoreIds.Contains(store.Id)" ValueChanged="@(selected => SetKnowledgeStoreAttachment(store.Id, selected))" Label="@($"{store.Name} ({store.Index.State})")" />
-                    }
-                </MudStack>
-            }
+            <MudDivider Class="my-2" />
+            <MudText Typo="Typo.subtitle1" Class="mb-2">Knowledge Stores</MudText>
+            <MudStack Spacing="0">
+                @foreach (var store in knowledgeStores)
+                {
+                    <MudCheckBox T="bool" Value="@editingAgent.KnowledgeStoreIds.Contains(store.Id)" ValueChanged="@(selected => SetKnowledgeStoreAttachment(store.Id, selected))" Label="@($"{store.Name} ({store.Index.State})")" />
+                }
+            </MudStack>
         </MudForm>
     </DialogContent>
     <DialogActions>

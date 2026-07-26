@@ -110,6 +110,7 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<IMcpFunctionIndexStore, McpFunctionIndexStore>();
         services.AddSingleton<KnowledgeVectorStore>();
         services.AddSingleton<IKnowledgeDocumentIngestionService, KnowledgeDocumentIngestionService>();
+        services.AddSingleton<LegacyRagMigrationService>();
         services.AddSingleton<KnowledgeIndexBackgroundService>();
         services.AddSingleton<IKnowledgeIndexBackgroundService>(sp => sp.GetRequiredService<KnowledgeIndexBackgroundService>());
         services.AddHostedService(sp => sp.GetRequiredService<KnowledgeIndexBackgroundService>());

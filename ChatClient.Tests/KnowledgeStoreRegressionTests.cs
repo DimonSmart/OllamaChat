@@ -100,6 +100,26 @@ public sealed class KnowledgeStoreRegressionTests
         Assert.Equal("first", result.Content);
     }
 
+    [Theory]
+    [InlineData(false, 1)]
+    [InlineData(true, 2)]
+    public void SelectDocumentsToIndex_UsesDocumentChangesUnlessConfigurationChanged(bool rebuildAll, int expectedCount)
+    {
+        var store = new KnowledgeStore
+        {
+            Documents =
+            [
+                new KnowledgeDocument { FileName = "a.txt", SourceHash = "same", IndexedSourceHash = "same" },
+                new KnowledgeDocument { FileName = "b.txt", SourceHash = "changed", IndexedSourceHash = "old" }
+            ]
+        };
+
+        var selected = KnowledgeIndexBackgroundService.SelectDocumentsToIndex(store, rebuildAll);
+
+        Assert.Equal(expectedCount, selected.Count);
+        Assert.Contains(selected, document => document.FileName == "b.txt");
+    }
+
     private static KnowledgeStore CreateReadyStore(string name, int dimensions)
     {
         var configuration = new KnowledgeStoreIndexConfiguration { ServerId = Guid.NewGuid(), Model = "embedding", Dimensions = dimensions };

@@ -22,7 +22,7 @@
                     <MudTextField @bind-Value="selected.Name" Label="Name" />
                     <MudTextField @bind-Value="selected.Description" Label="Description" Lines="3" />
                     <MudText Typo="Typo.subtitle1">Index configuration</MudText>
-                    <MudTextField @bind-Value="selected.Configuration.Model" Label="Embedding model" />
+                    <ServerModelPicker Value="GetEmbeddingSelection()" ValueChanged="OnEmbeddingSelectionChanged" ShowClearButton="false" UseDefaultsWhenUnset="false" />
                     <MudNumericField @bind-Value="selected.Configuration.MaxTokensPerChunk" Label="Max tokens per chunk" Min="1" />
                     <MudNumericField @bind-Value="selected.Configuration.OverlapTokens" Label="Overlap tokens" Min="0" />
                     @if (!string.IsNullOrWhiteSpace(selected.Index.LastError)) { <MudAlert Severity="Severity.Error">@selected.Index.LastError</MudAlert> }
@@ -48,7 +48,27 @@
     private async Task ReloadAsync() { stores = (await Stores.GetAllAsync()).OrderBy(x => x.Name).ToList(); if (selected is not null) selected = stores.FirstOrDefault(x => x.Id == selected.Id); }
     private void Select(Guid id) => selected = stores.First(x => x.Id == id);
     private async Task CreateAsync() { selected = await Stores.CreateAsync("New Knowledge Store", null); await ReloadAsync(); }
-    private async Task SaveAsync() { if (selected is null) return; await Stores.UpdateAsync(selected); Snackbar.Add("Knowledge Store saved.", Severity.Success); }
+    private ServerModelSelection GetEmbeddingSelection() => selected is null ? new(null, null) : new(selected.Configuration.ServerId, selected.Configuration.Model);
+    private Task OnEmbeddingSelectionChanged(ServerModelSelection selection)
+    {
+        if (selected is not null)
+        {
+            selected.Configuration.ServerId = selection.ServerId ?? Guid.Empty;
+            selected.Configuration.Model = selection.ModelName ?? string.Empty;
+        }
+        return Task.CompletedTask;
+    }
+    private async Task SaveAsync()
+    {
+        if (selected is null) return;
+        if (selected.Configuration.ServerId == Guid.Empty || string.IsNullOrWhiteSpace(selected.Configuration.Model))
+        {
+            Snackbar.Add("Select an embedding server and model.", Severity.Error);
+            return;
+        }
+        await Stores.UpdateAsync(selected);
+        Snackbar.Add("Knowledge Store saved.", Severity.Success);
+    }
     private async Task ReindexAsync() { if (selected is null) return; selected.Index.State = KnowledgeStoreIndexState.Outdated; await Stores.UpdateAsync(selected); Snackbar.Add("Reindexing requested.", Severity.Info); }
     private async Task DeleteAsync() { if (selected is null) return; await Stores.DeleteAsync(selected.Id); selected = null; await ReloadAsync(); }
     private async Task UploadAsync(InputFileChangeEventArgs args)

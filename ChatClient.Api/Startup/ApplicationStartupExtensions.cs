@@ -1,4 +1,5 @@
 using ChatClient.Api.Services;
+using ChatClient.Api.Services.Rag;
 using ChatClient.Api.Services.Seed;
 using ChatClient.Application.Repositories;
 using ChatClient.Domain.Models;
@@ -25,6 +26,7 @@ internal static class ApplicationStartupExtensions
         await scope.ServiceProvider.GetRequiredService<WorkflowDefinitionSeeder>().SeedAsync();
         await scope.ServiceProvider.GetRequiredService<LlmServerConfigSeeder>().SeedAsync();
         await scope.ServiceProvider.GetRequiredService<McpServerConfigSeeder>().SeedAsync();
+        await scope.ServiceProvider.GetRequiredService<LegacyRagMigrationService>().MigrateAsync();
 
         var startupChecker = scope.ServiceProvider.GetRequiredService<OllamaServerAvailabilityService>();
         var ollamaStatus = await startupChecker.CheckOllamaStatusAsync();
