@@ -12,6 +12,11 @@ using Moq;
 using System.Reflection;
 using System.Runtime.CompilerServices;
 using System.Text;
+using AgentModeProviderOptions = Microsoft.Agents.AI.AgentModeProviderOptions;
+using AgentSession = Microsoft.Agents.AI.AgentSession;
+using AIAgent = Microsoft.Agents.AI.AIAgent;
+using HarnessAgentOptions = Microsoft.Agents.AI.HarnessAgentOptions;
+using TodoProvider = Microsoft.Agents.AI.TodoProvider;
 
 namespace ChatClient.Tests;
 
@@ -150,6 +155,85 @@ public sealed class UnifiedAgentRuntimeChatSessionServiceTests
             () => fixture.Service.SetAgentModeAsync("Execute"));
 
         Assert.Equal("Plan", (await fixture.Service.GetSessionStateAsync())!.Mode);
+    }
+
+    [Fact]
+    public async Task DirectHarness_ToolApprovalUsesFrameworkRulesAndPreservesSessionState()
+    {
+        var fixture = CreateDirectFixture(availableModes: ["Plan", "Execute"]);
+        await fixture.Service.StartAsync(fixture.Request);
+
+        var testHarness = new ApprovalHarnessFixture();
+        InstallDirectHarness(fixture.Service, testHarness.Agent, testHarness.Session, ["Plan", "Execute"]);
+        await fixture.Service.SetAgentModeAsync("Execute");
+        var stateBeforeApproval = (await fixture.Service.GetSessionStateAsync())!;
+        Assert.True(stateBeforeApproval.HasTodoProvider);
+        Assert.Empty(stateBeforeApproval.Todos);
+
+        await fixture.Service.SendAsync("A");
+
+        Assert.NotNull(fixture.Service.PendingToolApproval);
+        Assert.Equal(0, testHarness.InvocationCount);
+        Assert.False(fixture.Service.IsAnswering);
+        Assert.False(fixture.Service.RequiresReset);
+        var stateAfterApproval = (await fixture.Service.GetSessionStateAsync())!;
+        Assert.Equal("Execute", stateAfterApproval.Mode);
+        Assert.True(stateAfterApproval.HasTodoProvider);
+        Assert.Empty(stateAfterApproval.Todos);
+
+        await fixture.Service.RespondToToolApprovalAsync(ToolApprovalDecision.ApproveOnce);
+
+        Assert.Equal(1, testHarness.InvocationCount);
+        Assert.Null(fixture.Service.PendingToolApproval);
+        Assert.False(fixture.Service.RequiresReset);
+        Assert.Equal("Execute", (await fixture.Service.GetSessionStateAsync())!.Mode);
+
+        await fixture.Service.SendAsync("Deny");
+        Assert.NotNull(fixture.Service.PendingToolApproval);
+        await fixture.Service.RespondToToolApprovalAsync(ToolApprovalDecision.Deny);
+        Assert.Equal(1, testHarness.InvocationCount);
+        Assert.Null(fixture.Service.PendingToolApproval);
+        Assert.False(fixture.Service.RequiresReset);
+
+        await fixture.Service.SendAsync("A");
+        Assert.NotNull(fixture.Service.PendingToolApproval);
+        await fixture.Service.RespondToToolApprovalAsync(ToolApprovalDecision.AlwaysApproveTool);
+        Assert.Equal(2, testHarness.InvocationCount);
+
+        await fixture.Service.SendAsync("B");
+        Assert.Null(fixture.Service.PendingToolApproval);
+        Assert.Equal(3, testHarness.InvocationCount);
+
+        await fixture.Service.ResetAsync();
+        await fixture.Service.StartAsync(fixture.Request);
+        var resetHarness = new ApprovalHarnessFixture();
+        InstallDirectHarness(fixture.Service, resetHarness.Agent, resetHarness.Session, ["Plan", "Execute"]);
+
+        await fixture.Service.SendAsync("A");
+        Assert.NotNull(fixture.Service.PendingToolApproval);
+        Assert.Equal(0, resetHarness.InvocationCount);
+    }
+
+    [Fact]
+    public async Task DirectHarness_ExactArgumentsApprovalOnlyAutoApprovesTheMatchingCall()
+    {
+        var fixture = CreateDirectFixture();
+        await fixture.Service.StartAsync(fixture.Request);
+        var testHarness = new ApprovalHarnessFixture();
+        InstallDirectHarness(fixture.Service, testHarness.Agent, testHarness.Session, []);
+
+        await fixture.Service.SendAsync("A");
+        Assert.NotNull(fixture.Service.PendingToolApproval);
+        await fixture.Service.RespondToToolApprovalAsync(ToolApprovalDecision.AlwaysApproveExactArguments);
+        Assert.Equal(1, testHarness.InvocationCount);
+
+        await fixture.Service.SendAsync("A");
+        Assert.Null(fixture.Service.PendingToolApproval);
+        Assert.Equal(2, testHarness.InvocationCount);
+
+        await fixture.Service.SendAsync("B");
+        Assert.NotNull(fixture.Service.PendingToolApproval);
+        Assert.Equal(2, testHarness.InvocationCount);
     }
 
     [Fact]
@@ -424,6 +508,23 @@ public sealed class UnifiedAgentRuntimeChatSessionServiceTests
             .SetValue(service, new ToolApprovalRequestViewModel("request-1", "protected_operation", "{\"value\":\"A\"}"));
     }
 
+    private static void InstallDirectHarness(
+        UnifiedAgentRuntimeChatSessionService service,
+        AIAgent agent,
+        AgentSession session,
+        IReadOnlyList<string> availableModes)
+    {
+        typeof(UnifiedAgentRuntimeChatSessionService)
+            .GetField("_directAgent", BindingFlags.Instance | BindingFlags.NonPublic)!
+            .SetValue(service, agent);
+        typeof(UnifiedAgentRuntimeChatSessionService)
+            .GetField("_directSession", BindingFlags.Instance | BindingFlags.NonPublic)!
+            .SetValue(service, session);
+        typeof(UnifiedAgentRuntimeChatSessionService)
+            .GetField("_directAvailableModes", BindingFlags.Instance | BindingFlags.NonPublic)!
+            .SetValue(service, availableModes);
+    }
+
     private static DirectFixture CreateDirectFixture(
         bool withSessionStateProviders = false,
         IReadOnlyList<string>? availableModes = null)
@@ -558,6 +659,112 @@ public sealed class UnifiedAgentRuntimeChatSessionServiceTests
     }
 
     private sealed record RecordedChatRequest(IReadOnlyList<ChatMessage> Messages, ChatOptions? Options);
+
+    private sealed class ApprovalHarnessFixture
+    {
+        private readonly ApprovalChatClient _chatClient = new();
+
+#pragma warning disable MAAI001
+        public ApprovalHarnessFixture()
+        {
+            var protectedOperation = AIFunctionFactory.Create(
+                (string value) =>
+                {
+                    InvocationCount++;
+                    return $"executed:{value}";
+                },
+                "protected_operation",
+                "Test-only operation with an observable side effect.");
+            Agent = _chatClient.AsHarnessAgent(new HarnessAgentOptions
+            {
+                ChatOptions = new ChatOptions
+                {
+                    Tools = [new ApprovalRequiredAIFunction(protectedOperation)],
+                    ToolMode = ChatToolMode.Auto,
+                    AllowMultipleToolCalls = false
+                },
+                DisableTodoProvider = true,
+                AIContextProviders = [new TodoProvider()],
+                DisableAgentModeProvider = false,
+                AgentModeProviderOptions = new AgentModeProviderOptions
+                {
+                    DefaultMode = "Plan",
+                    Modes =
+                    [
+                        new AgentModeProviderOptions.AgentMode("Plan", "Plan work."),
+                        new AgentModeProviderOptions.AgentMode("Execute", "Execute work.")
+                    ]
+                },
+                DisableWebSearch = true,
+                DisableFileMemory = true,
+                DisableAgentSkillsProvider = true,
+                DisableCompaction = true
+            });
+            Session = Agent.CreateSessionAsync().GetAwaiter().GetResult();
+        }
+#pragma warning restore MAAI001
+
+        public AIAgent Agent { get; }
+
+        public AgentSession Session { get; }
+
+        public int InvocationCount { get; private set; }
+    }
+
+    private sealed class ApprovalChatClient : IChatClient
+    {
+        public void Dispose()
+        {
+        }
+
+        public object? GetService(Type serviceType, object? serviceKey = null) =>
+            serviceType == typeof(ChatClientMetadata)
+                ? new ChatClientMetadata("approval-test", null, "approval-test")
+                : null;
+
+        public Task<ChatResponse> GetResponseAsync(
+            IEnumerable<ChatMessage> messages,
+            ChatOptions? options = null,
+            CancellationToken cancellationToken = default) =>
+            Task.FromResult(new ChatResponse(new ChatMessage(ChatRole.Assistant, "complete")));
+
+        public async IAsyncEnumerable<ChatResponseUpdate> GetStreamingResponseAsync(
+            IEnumerable<ChatMessage> messages,
+            ChatOptions? options = null,
+            [EnumeratorCancellation] CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            var materializedMessages = messages.ToList();
+            var lastUserIndex = materializedMessages.FindLastIndex(message =>
+                message.Role == ChatRole.User &&
+                string.Concat(message.Contents.OfType<TextContent>().Select(static content => content.Text)) is "A" or "B" or "Deny");
+            var lastFunctionResultIndex = materializedMessages.FindLastIndex(message =>
+                message.Contents.OfType<FunctionResultContent>().Any(content =>
+                    content.CallId.StartsWith("protected-", StringComparison.Ordinal)));
+            if (lastFunctionResultIndex > lastUserIndex)
+            {
+                yield return new ChatResponseUpdate(ChatRole.Assistant, "complete");
+                yield break;
+            }
+
+            var lastUser = materializedMessages[lastUserIndex];
+            var value = string.Concat(lastUser.Contents.OfType<TextContent>().Select(static content => content.Text));
+            if (value is "A" or "B" or "Deny")
+            {
+                yield return new ChatResponseUpdate(ChatRole.Assistant,
+                [
+                    new FunctionCallContent(
+                        $"protected-{Guid.NewGuid():N}",
+                        "protected_operation",
+                        new Dictionary<string, object?> { ["value"] = value })
+                ]);
+                yield break;
+            }
+
+            await Task.Yield();
+            yield return new ChatResponseUpdate(ChatRole.Assistant, "complete");
+        }
+    }
 
     private static ChatEngineSessionStartRequest CreateStartRequest() =>
         new()
