@@ -33,9 +33,9 @@ public sealed class KnowledgeDocumentIngestionService(IOptions<KnowledgeIngestio
             var document = await new MarkItDownMcpReader(endpoint).ReadAsync(
                 stream,
                 fileName,
-                string.IsNullOrWhiteSpace(contentType) ? "application/octet-stream" : contentType,
+                ResolveMediaType(fileName, contentType),
                 cancellationToken);
-            return string.Join("\n", document.Sections.Select(section => section.Text));
+            return GetMarkdown(document);
         }
         catch (Exception exception) when (exception is not OperationCanceledException)
         {
@@ -47,6 +47,25 @@ public sealed class KnowledgeDocumentIngestionService(IOptions<KnowledgeIngestio
         extension.Equals(".md", StringComparison.OrdinalIgnoreCase) ||
         extension.Equals(".markdown", StringComparison.OrdinalIgnoreCase) ||
         extension.Equals(".txt", StringComparison.OrdinalIgnoreCase);
+
+    internal static string GetMarkdown(IngestionDocument document) =>
+        string.Join("\n", document.Sections.Select(section => section.GetMarkdown()));
+
+    private static string ResolveMediaType(string fileName, string? contentType)
+    {
+        if (!string.IsNullOrWhiteSpace(contentType) &&
+            !contentType.Equals("application/octet-stream", StringComparison.OrdinalIgnoreCase))
+            return contentType;
+
+        return Path.GetExtension(fileName).ToLowerInvariant() switch
+        {
+            ".pdf" => "application/pdf",
+            ".docx" => "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            ".pptx" => "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+            ".xlsx" => "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            _ => "application/octet-stream"
+        };
+    }
 
     private static string NormalizeMarkdown(string markdown)
     {

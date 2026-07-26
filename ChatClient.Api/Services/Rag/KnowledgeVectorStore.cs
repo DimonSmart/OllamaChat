@@ -13,7 +13,9 @@ public sealed class KnowledgeVectorStore(IConfiguration configuration)
     public async Task ReplaceDocumentAsync(Guid storeId, Guid documentId, int dimension, IReadOnlyList<KnowledgeChunkRecord> chunks, CancellationToken ct)
     {
         var collection = await GetOrCreateCollectionForWriteAsync(dimension, ct);
-        await foreach (var item in collection.GetAsync(x => x.KnowledgeStoreId == storeId.ToString("N") && x.DocumentId == documentId.ToString("N"), int.MaxValue, null, ct))
+        var store = storeId.ToString("N");
+        var document = documentId.ToString("N");
+        await foreach (var item in collection.GetAsync(x => x.KnowledgeStoreId == store && x.DocumentId == document, int.MaxValue, null, ct))
             await collection.DeleteAsync(item.Id, ct);
         await collection.UpsertAsync(chunks, ct);
     }
@@ -24,8 +26,9 @@ public sealed class KnowledgeVectorStore(IConfiguration configuration)
         if (dimension != query.Length)
             throw new InvalidOperationException($"Knowledge Store '{store.Name}' was indexed with dimension {dimension}, but the current embedding provider returned dimension {query.Length}. Reindex the Knowledge Store.");
         var collection = await GetExistingCollectionForReadAsync(dimension, ct);
+        var storeId = store.Id.ToString("N");
         var results = new List<RagSearchResult>();
-        await foreach (var result in collection.SearchAsync(query, max, new VectorSearchOptions<KnowledgeChunkRecord> { Filter = x => x.KnowledgeStoreId == store.Id.ToString("N"), ScoreThreshold = 1d - Math.Clamp(threshold, -1d, 1d), IncludeVectors = false }, ct))
+        await foreach (var result in collection.SearchAsync(query, max, new VectorSearchOptions<KnowledgeChunkRecord> { Filter = x => x.KnowledgeStoreId == storeId, ScoreThreshold = 1d - Math.Clamp(threshold, -1d, 1d), IncludeVectors = false }, ct))
             results.Add(new RagSearchResult { FileName = result.Record.FileName, Section = result.Record.Section, Content = result.Record.Content, Score = 1d - (result.Score ?? 1d) });
         return results;
     }
