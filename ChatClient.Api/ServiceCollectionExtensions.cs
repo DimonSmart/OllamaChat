@@ -82,6 +82,7 @@ public static class ServiceCollectionExtensions
     {
         services.AddSingleton<IAgentTemplateRepository, AgentTemplateRepository>();
         services.AddSingleton<IKnowledgeStoreRepository, KnowledgeStoreRepository>();
+        services.AddSingleton<IKnowledgeDocumentStorage, KnowledgeDocumentStorage>();
         services.AddSingleton<ITodoProviderProfileRepository, TodoProviderProfileRepository>();
         services.AddSingleton<IAgentModeProviderProfileRepository, AgentModeProviderProfileRepository>();
         services.AddSingleton<IFileAccessProviderProfileRepository, FileAccessProviderProfileRepository>();

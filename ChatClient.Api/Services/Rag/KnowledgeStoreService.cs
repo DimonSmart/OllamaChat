@@ -1,3 +1,4 @@
+using ChatClient.Application.Helpers;
 using ChatClient.Application.Repositories;
 using ChatClient.Application.Services;
 using ChatClient.Domain.Models;
@@ -8,74 +9,82 @@ namespace ChatClient.Api.Services.Rag;
 
 public sealed class KnowledgeStoreService(
     IKnowledgeStoreRepository repository,
+    IKnowledgeDocumentStorage documents,
     IAgentTemplateService agents,
-    IKnowledgeIndexBackgroundService indexer) : IKnowledgeStoreService
+    IUserSettingsService settings,
+    IKnowledgeIndexBackgroundService indexer,
+    ILogger<KnowledgeStoreService> logger) : IKnowledgeStoreService
 {
-    public Task<IReadOnlyCollection<KnowledgeStore>> GetAllAsync(CancellationToken cancellationToken = default) => repository.GetAllAsync(cancellationToken);
-    public async Task<KnowledgeStore?> GetAsync(Guid storeId, CancellationToken cancellationToken = default) =>
-        (await repository.GetAllAsync(cancellationToken)).FirstOrDefault(x => x.Id == storeId);
+    public Task<IReadOnlyCollection<KnowledgeStore>> GetAllAsync(CancellationToken ct = default) => repository.GetAllAsync(ct);
+    public async Task<KnowledgeStore?> GetAsync(Guid id, CancellationToken ct = default) => (await repository.GetAllAsync(ct)).FirstOrDefault(x => x.Id == id);
 
-    public async Task<KnowledgeStore> CreateAsync(string name, string? description, CancellationToken cancellationToken = default)
+    public async Task<KnowledgeStore> CreateAsync(string name, string? description, CancellationToken ct = default)
     {
         if (string.IsNullOrWhiteSpace(name))
             throw new ArgumentException("Knowledge Store name is required.", nameof(name));
-        var stores = (await repository.GetAllAsync(cancellationToken)).ToList();
-        var store = new KnowledgeStore { Name = name.Trim(), Description = description?.Trim() };
-        stores.Add(store);
-        await repository.SaveAllAsync(stores, cancellationToken);
+        var app = await settings.GetSettingsAsync(ct);
+        var model = ModelSelectionHelper.GetEffectiveEmbeddingModel(app.Embedding.Model, app.DefaultModel, "Knowledge Store creation", logger);
+        var store = new KnowledgeStore { Name = name.Trim(), Description = description?.Trim(), Configuration = new KnowledgeStoreIndexConfiguration { ServerId = model.ServerId, Model = model.ModelName } };
+        await repository.SaveAsync(store, ct);
         return store;
     }
 
-    public async Task UpdateAsync(KnowledgeStore store, CancellationToken cancellationToken = default)
+    public async Task UpdateAsync(KnowledgeStore store, CancellationToken ct = default)
     {
-        var stores = (await repository.GetAllAsync(cancellationToken)).ToList();
-        var index = stores.FindIndex(x => x.Id == store.Id);
-        if (index < 0)
-            throw new KeyNotFoundException($"Knowledge Store '{store.Id}' was not found.");
+        var current = await RequiredAsync(store.Id, ct);
         if (store.Index.IndexedConfiguration is not null && !store.Configuration.Equals(store.Index.IndexedConfiguration) && store.Index.State == KnowledgeStoreIndexState.Ready)
             store.Index.State = KnowledgeStoreIndexState.Outdated;
-        stores[index] = store;
-        await repository.SaveAllAsync(stores, cancellationToken);
+        await repository.SaveAsync(store, ct);
         if (store.Index.State is KnowledgeStoreIndexState.NotIndexed or KnowledgeStoreIndexState.Outdated or KnowledgeStoreIndexState.Failed)
             indexer.RequestRebuild();
     }
 
-    public async Task DeleteAsync(Guid storeId, CancellationToken cancellationToken = default)
+    public async Task DeleteAsync(Guid storeId, CancellationToken ct = default)
     {
-        var stores = (await repository.GetAllAsync(cancellationToken)).ToList();
-        if (!stores.RemoveAll(x => x.Id == storeId).Equals(1))
+        var store = await GetAsync(storeId, ct);
+        if (store is null)
             return;
-        await repository.SaveAllAsync(stores, cancellationToken);
+        var dimension = store.Index.IndexedConfiguration?.Dimensions ?? 0;
+        await indexer.DeleteStoreVectorsAsync(storeId, dimension, ct);
+        await documents.DeleteStoreAsync(storeId, ct);
+        await repository.DeleteAsync(storeId, ct);
         foreach (var agent in await agents.GetAllAsync())
             if (agent.KnowledgeStoreIds.Remove(storeId))
                 await agents.UpdateAsync(agent);
-        await indexer.DeleteStoreVectorsAsync(storeId, cancellationToken);
     }
 
-    public async Task AddOrUpdateDocumentAsync(Guid storeId, KnowledgeDocument document, CancellationToken cancellationToken = default)
+    public async Task AddOrUpdateDocumentAsync(Guid storeId, KnowledgeDocument document, CancellationToken ct = default)
     {
-        var store = await GetRequiredAsync(storeId, cancellationToken);
+        var store = await RequiredAsync(storeId, ct);
         if (string.IsNullOrWhiteSpace(document.FileName))
             throw new ArgumentException("File name is required.", nameof(document));
-        document.SourceHash = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(document.Content)));
+        var content = document.Content;
+        if (string.IsNullOrWhiteSpace(content))
+            throw new ArgumentException("Document content is required.", nameof(document));
+        var existing = store.Documents.FirstOrDefault(x => x.Id == document.Id || x.FileName.Equals(document.FileName, StringComparison.OrdinalIgnoreCase));
+        document.Id = existing?.Id ?? document.Id;
+        document.SourceHash = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(content)));
+        document.Size = Encoding.UTF8.GetByteCount(content);
         document.UpdatedUtc = DateTime.UtcNow;
-        var existing = store.Documents.FindIndex(x => x.Id == document.Id || x.FileName.Equals(document.FileName, StringComparison.OrdinalIgnoreCase));
-        if (existing >= 0)
-        { document.Id = store.Documents[existing].Id; store.Documents[existing] = document; }
-        else
+        await documents.WriteAsync(store.Id, document.Id, content, ct);
+        if (existing is null)
             store.Documents.Add(document);
-        store.Index.State = store.Index.State == KnowledgeStoreIndexState.Ready ? KnowledgeStoreIndexState.Outdated : store.Index.State;
-        await UpdateAsync(store, cancellationToken);
+        else
+        { var index = store.Documents.IndexOf(existing); store.Documents[index] = document; }
+        MarkOutdated(store);
+        await UpdateAsync(store, ct);
     }
 
-    public async Task DeleteDocumentAsync(Guid storeId, Guid documentId, CancellationToken cancellationToken = default)
+    public async Task DeleteDocumentAsync(Guid storeId, Guid documentId, CancellationToken ct = default)
     {
-        var store = await GetRequiredAsync(storeId, cancellationToken);
+        var store = await RequiredAsync(storeId, ct);
         if (store.Documents.RemoveAll(x => x.Id == documentId) == 0)
             return;
-        await UpdateAsync(store, cancellationToken);
-        await indexer.DeleteDocumentVectorsAsync(storeId, documentId, cancellationToken);
+        await documents.DeleteAsync(storeId, documentId, ct);
+        MarkOutdated(store);
+        await UpdateAsync(store, ct);
+        await indexer.DeleteDocumentVectorsAsync(storeId, documentId, ct);
     }
-
-    private async Task<KnowledgeStore> GetRequiredAsync(Guid id, CancellationToken ct) => await GetAsync(id, ct) ?? throw new KeyNotFoundException($"Knowledge Store '{id}' was not found.");
+    private static void MarkOutdated(KnowledgeStore store) { if (store.Index.State == KnowledgeStoreIndexState.Ready) store.Index.State = KnowledgeStoreIndexState.Outdated; }
+    private async Task<KnowledgeStore> RequiredAsync(Guid id, CancellationToken ct) => await GetAsync(id, ct) ?? throw new KeyNotFoundException($"Knowledge Store '{id}' was not found.");
 }

@@ -12,6 +12,7 @@
 @inject IAgentTemplateService AgentService
 @inject AgentTemplateSeeder AgentTemplateSeeder
 @inject ISnackbar Snackbar
+@inject IKnowledgeStoreService KnowledgeStoreService
 @inject IRagFileService RagFileService
 @inject ILlmServerConfigService LlmServerConfigService
 @inject IMcpServerConfigService McpServerConfigService
@@ -125,9 +126,9 @@
                             </div>
                         </CellTemplate>
                     </TemplateColumn>
-                    <TemplateColumn Title="RAG Files" isEditable="false" CellStyle="text-align:center; width:80px;">
+                    <TemplateColumn Title="Knowledge Stores" isEditable="false" CellStyle="text-align:center; width:80px;">
                         <CellTemplate>
-                            @(ragCounts.TryGetValue(context.Item.Id, out var count) ? count : 0)
+                            @context.Item.KnowledgeStoreIds.Count
                         </CellTemplate>
                     </TemplateColumn>
                     <TemplateColumn Title="Tools" isEditable="false" CellStyle="text-align:center; width:120px;">
@@ -330,41 +331,13 @@
             @if (editingAgent.Id != Guid.Empty)
             {
                 <MudDivider Class="my-2" />
-                <MudText Typo="Typo.subtitle1" Class="mb-2">RAG Files</MudText>
-                <div class="rag-drop-wrapper mt-2">
-                    <MudFileUpload T="IReadOnlyList<IBrowserFile>"
-                                   OnFilesChanged="UploadFiles"
-                                   Hidden="false"
-                                   InputClass="rag-drop-input" />
-                    <div class="rag-drop-overlay">
-                        <MudText Typo="Typo.body2" Class="mud-text-secondary">Drag and drop files here or click to browse</MudText>
-                    </div>
-                </div>
-                <MudTable Items="@ragFiles" Dense="true" Bordered="true" Class="mt-2">
-                    <HeaderContent>
-                        <MudTh>File</MudTh>
-                        <MudTh>Size</MudTh>
-                        <MudTh>Index</MudTh>
-                        <MudTh></MudTh>
-                    </HeaderContent>
-                    <RowTemplate>
-                        <MudTd DataLabel="File">@context.FileName</MudTd>
-                        <MudTd DataLabel="Size">@FormatSize(context.Size)</MudTd>
-                        <MudTd DataLabel="Index">
-                            <MudIcon Icon="@(context.HasIndex ? Icons.Material.Filled.Check : Icons.Material.Filled.Close)"
-                                     Color="@(context.HasIndex ? Color.Success : Color.Error)" />
-                        </MudTd>
-                        <MudTd>
-                            <MudIconButton Icon="@Icons.Material.Filled.Delete"
-                                           Color="Color.Error"
-                                           Size="Size.Small"
-                                           OnClick="@(() => DeleteFile(context.FileName))" />
-                        </MudTd>
-                    </RowTemplate>
-                    <NoRecordsContent>
-                        <MudText Typo="Typo.body2" Class="mud-text-secondary pa-2">No files</MudText>
-                    </NoRecordsContent>
-                </MudTable>
+                <MudText Typo="Typo.subtitle1" Class="mb-2">Knowledge Stores</MudText>
+                <MudStack Spacing="0">
+                    @foreach (var store in knowledgeStores)
+                    {
+                        <MudCheckBox T="bool" Value="@editingAgent.KnowledgeStoreIds.Contains(store.Id)" ValueChanged="@(selected => SetKnowledgeStoreAttachment(store.Id, selected))" Label="@($"{store.Name} ({store.Index.State})")" />
+                    }
+                </MudStack>
             }
         </MudForm>
     </DialogContent>
@@ -387,6 +360,7 @@
     private string searchString = string.Empty;
     private MudForm? editAgentForm;
     private MudDataGrid<AgentTemplateDefinition>? dataGrid;
+    private List<KnowledgeStore> knowledgeStores = new();
     private Dictionary<Guid, int> ragCounts = new();
     private List<RagFile> ragFiles = new();
     private ServerModelSelection editingServerModel = new(null, null);
@@ -436,13 +410,7 @@
             agents = (await AgentService.GetAllAsync()).ToList();
             filteredAgents = agents;
 
-            ragCounts.Clear();
-            var tasks = agents.Select(async a =>
-            {
-                var files = await RagFileService.GetFilesAsync(a.Id);
-                ragCounts[a.Id] = files.Count;
-            });
-            await Task.WhenAll(tasks);
+            knowledgeStores = (await KnowledgeStoreService.GetAllAsync()).ToList();
         }
         catch (Exception ex)
         {
@@ -492,7 +460,6 @@
             McpServerBindings = []
         };
         editingServerModel = new ServerModelSelection(null, null);
-        ragFiles = new();
         showEditAgentDialog = true;
     }
 
@@ -607,13 +574,13 @@
             {
                 AutoSelectCount = agent.FunctionSettings.AutoSelectCount
             },
+            KnowledgeStoreIds = agent.KnowledgeStoreIds.Distinct().ToList(),
             McpServerBindings = agent.McpServerBindings
                 .Select(static binding => binding.Clone())
                 .ToList()
         };
 
         editingServerModel = new ServerModelSelection(agent.LlmId, agent.ModelName);
-        await LoadRagFiles(agent.Id);
         showEditAgentDialog = true;
     }
 
@@ -628,6 +595,12 @@
     {
         agentToDelete = null;
         showDeleteDialog = false;
+    }
+
+    private void SetKnowledgeStoreAttachment(Guid storeId, bool selected)
+    {
+        if (selected && !editingAgent.KnowledgeStoreIds.Contains(storeId)) editingAgent.KnowledgeStoreIds.Add(storeId);
+        if (!selected) editingAgent.KnowledgeStoreIds.Remove(storeId);
     }
 
     private void ConfirmRestoreBuiltInAgents()

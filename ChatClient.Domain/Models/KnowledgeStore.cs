@@ -42,7 +42,9 @@ public sealed class KnowledgeDocument
 {
     public Guid Id { get; set; } = Guid.NewGuid();
     public string FileName { get; set; } = string.Empty;
+    [System.Text.Json.Serialization.JsonIgnore]
     public string Content { get; set; } = string.Empty;
     public string SourceHash { get; set; } = string.Empty;
+    public long Size { get; set; }
     public DateTime UpdatedUtc { get; set; } = DateTime.UtcNow;
 }

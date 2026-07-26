@@ -1,0 +1,22 @@
+@page "/knowledge-stores"
+@using ChatClient.Application.Services
+@using ChatClient.Domain.Models
+@inject IKnowledgeStoreService Stores
+@inject ISnackbar Snackbar
+
+<PageTitle>Knowledge Stores</PageTitle>
+<MudContainer MaxWidth="MaxWidth.Large" Class="mt-3">
+    <MudStack Row="true" AlignItems="AlignItems.Center"><MudText Class="page-header">Knowledge Stores</MudText><MudSpacer /><MudButton Color="Color.Primary" Variant="Variant.Filled" OnClick="CreateAsync">Create</MudButton></MudStack>
+    <MudTable Items="stores" Dense="true" Hover="true" Class="mt-3">
+        <HeaderContent><MudTh>Name</MudTh><MudTh>Documents</MudTh><MudTh>Embedding Model</MudTh><MudTh>State</MudTh><MudTh>Last Indexed</MudTh><MudTh></MudTh></HeaderContent>
+        <RowTemplate><MudTd>@context.Name</MudTd><MudTd>@context.Documents.Count</MudTd><MudTd>@context.Configuration.Model</MudTd><MudTd>@context.Index.State</MudTd><MudTd>@context.Index.CompletedUtc?.ToLocalTime().ToString("g")</MudTd><MudTd><MudIconButton Icon="@Icons.Material.Filled.Delete" Color="Color.Error" OnClick="@(() => DeleteAsync(context.Id))" /></MudTd></RowTemplate>
+    </MudTable>
+</MudContainer>
+
+@code {
+    private List<KnowledgeStore> stores = [];
+    protected override async Task OnInitializedAsync() => await ReloadAsync();
+    private async Task ReloadAsync() => stores = (await Stores.GetAllAsync()).OrderBy(x => x.Name).ToList();
+    private async Task CreateAsync() { await Stores.CreateAsync("New Knowledge Store", null); await ReloadAsync(); Snackbar.Add("Knowledge Store created.", Severity.Success); }
+    private async Task DeleteAsync(Guid id) { await Stores.DeleteAsync(id); await ReloadAsync(); }
+}

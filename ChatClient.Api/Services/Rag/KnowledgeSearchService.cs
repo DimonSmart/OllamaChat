@@ -1,24 +1,32 @@
-using ChatClient.Application.Helpers;
 using ChatClient.Application.Services;
 using ChatClient.Domain.Models;
 
 namespace ChatClient.Api.Services.Rag;
 
-public sealed class KnowledgeSearchService(IKnowledgeStoreService stores, IUserSettingsService settings, IOllamaClientService ollama, KnowledgeVectorStore vectors, ILogger<KnowledgeSearchService> logger) : IKnowledgeSearchService
+public sealed class KnowledgeSearchService(IKnowledgeStoreService stores, IUserSettingsService settings, IOllamaClientService ollama, KnowledgeVectorStore vectors) : IKnowledgeSearchService
 {
-    public async Task<bool> HasReadyContentAsync(IReadOnlyCollection<Guid> ids, CancellationToken ct = default) => (await stores.GetAllAsync(ct)).Any(x => ids.Contains(x.Id) && x.Index.State == KnowledgeStoreIndexState.Ready && x.Documents.Count > 0 && x.Index.IndexedConfiguration?.Equals(x.Configuration) == true);
+    public async Task<bool> HasReadyContentAsync(IReadOnlyCollection<Guid> ids, CancellationToken ct = default) => (await stores.GetAllAsync(ct)).Any(IsRetrievable(ids));
     public async Task<RagSearchResponse> SearchAsync(IReadOnlyCollection<Guid> ids, string query, int maxResults = 5, CancellationToken ct = default)
     {
-        var selected = (await stores.GetAllAsync(ct)).Where(x => ids.Contains(x.Id) && x.Index.State == KnowledgeStoreIndexState.Ready && x.Index.IndexedConfiguration?.Equals(x.Configuration) == true).ToList();
+        var selected = (await stores.GetAllAsync(ct)).Where(IsRetrievable(ids)).ToList();
         if (selected.Count == 0 || string.IsNullOrWhiteSpace(query))
             return new RagSearchResponse();
-        var app = await settings.GetSettingsAsync(ct);
-        var model = ModelSelectionHelper.GetEffectiveEmbeddingModel(app.Embedding.Model, app.DefaultModel, "Knowledge search", logger);
-        var embedding = await ollama.GenerateEmbeddingAsync(query.Trim(), new ServerModel(model.ServerId, model.ModelName), ct);
+        var threshold = (await settings.GetSettingsAsync(ct)).Embedding.RagMinRelevanceScore;
         var results = new List<RagSearchResult>();
-        foreach (var store in selected)
-            results.AddRange(await vectors.SearchAsync(store, embedding, maxResults, app.Embedding.RagMinRelevanceScore, ct));
+        foreach (var group in selected.GroupBy(x => (x.Index.IndexedConfiguration!.ServerId, x.Index.IndexedConfiguration.Model)))
+        {
+            var profile = group.First().Index.IndexedConfiguration!;
+            var embedding = await ollama.GenerateEmbeddingAsync(query.Trim(), new ServerModel(profile.ServerId, profile.Model), ct);
+            foreach (var store in group)
+            {
+                var found = await vectors.SearchAsync(store, embedding, maxResults, threshold, ct);
+                foreach (var result in found)
+                    result.KnowledgeStoreName = store.Name;
+                results.AddRange(found);
+            }
+        }
         var ordered = results.OrderByDescending(x => x.Score).Take(maxResults).ToList();
         return new RagSearchResponse { Total = ordered.Count, Results = ordered };
     }
+    private static Func<KnowledgeStore, bool> IsRetrievable(IReadOnlyCollection<Guid> ids) => store => ids.Contains(store.Id) && store.Documents.Count > 0 && store.Index.State == KnowledgeStoreIndexState.Ready && store.Index.IndexedConfiguration?.Equals(store.Configuration) == true;
 }
