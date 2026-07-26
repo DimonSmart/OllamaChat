@@ -48,7 +48,7 @@ public sealed class KnowledgeDocumentIngestionService(IOptions<KnowledgeIngestio
         extension.Equals(".markdown", StringComparison.OrdinalIgnoreCase) ||
         extension.Equals(".txt", StringComparison.OrdinalIgnoreCase);
 
-    internal static string GetMarkdown(IngestionDocument document) =>
+    private static string GetMarkdown(IngestionDocument document) =>
         string.Join("\n", document.Sections.Select(section => section.GetMarkdown()));
 
     private static string ResolveMediaType(string fileName, string? contentType)

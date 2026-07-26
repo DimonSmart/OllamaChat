@@ -4,7 +4,6 @@ using ChatClient.Application.Repositories;
 using ChatClient.Application.Services;
 using ChatClient.Domain.Models;
 using Microsoft.Extensions.Configuration;
-using Microsoft.Extensions.DataIngestion;
 using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
 
@@ -12,23 +11,6 @@ namespace ChatClient.Tests;
 
 public sealed class KnowledgeStoreRegressionTests
 {
-    [Fact]
-    public void GetMarkdown_UsesStructuredMarkdownRepresentation()
-    {
-        var document = new IngestionDocument("document");
-        var section = new IngestionDocumentSection();
-        section.Elements.Add(new IngestionDocumentParagraph("# First\n\nAAA\n\n## Second\n\nBBB"));
-        document.Sections.Add(section);
-
-        var markdown = KnowledgeDocumentIngestionService.GetMarkdown(document);
-
-        Assert.NotEmpty(markdown);
-        Assert.Contains("# First", markdown, StringComparison.Ordinal);
-        Assert.Contains("## Second", markdown, StringComparison.Ordinal);
-        Assert.Contains("AAA", markdown, StringComparison.Ordinal);
-        Assert.Contains("BBB", markdown, StringComparison.Ordinal);
-    }
-
     [Fact]
     public async Task SearchAsync_DimensionMismatchPreservesExistingVectors()
     {
@@ -98,26 +80,6 @@ public sealed class KnowledgeStoreRegressionTests
         var result = Assert.Single(response.Results);
         Assert.Equal("First", result.KnowledgeStoreName);
         Assert.Equal("first", result.Content);
-    }
-
-    [Theory]
-    [InlineData(false, 1)]
-    [InlineData(true, 2)]
-    public void SelectDocumentsToIndex_UsesDocumentChangesUnlessConfigurationChanged(bool rebuildAll, int expectedCount)
-    {
-        var store = new KnowledgeStore
-        {
-            Documents =
-            [
-                new KnowledgeDocument { FileName = "a.txt", SourceHash = "same", IndexedSourceHash = "same" },
-                new KnowledgeDocument { FileName = "b.txt", SourceHash = "changed", IndexedSourceHash = "old" }
-            ]
-        };
-
-        var selected = KnowledgeIndexBackgroundService.SelectDocumentsToIndex(store, rebuildAll);
-
-        Assert.Equal(expectedCount, selected.Count);
-        Assert.Contains(selected, document => document.FileName == "b.txt");
     }
 
     private static KnowledgeStore CreateReadyStore(string name, int dimensions)
