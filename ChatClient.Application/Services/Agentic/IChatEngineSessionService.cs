@@ -6,9 +6,13 @@ public interface IChatEngineSessionService : IChatSessionService
 {
     event Action? SessionStateChanged;
 
+    ToolApprovalRequestViewModel? PendingToolApproval { get; }
+
     Task StartAsync(ChatEngineSessionStartRequest request, CancellationToken cancellationToken = default);
 
     Task<AgentSessionStateViewModel?> GetSessionStateAsync(CancellationToken cancellationToken = default);
 
     Task SetAgentModeAsync(string mode, CancellationToken cancellationToken = default);
+
+    Task RespondToToolApprovalAsync(ToolApprovalDecision decision, CancellationToken cancellationToken = default);
 }

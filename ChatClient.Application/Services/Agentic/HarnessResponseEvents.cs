@@ -56,3 +56,21 @@ public sealed record HarnessToolCallFailed(
     : HarnessToolCallEvent(CallId, RegisteredName, OriginalName, Source, ServerName, BindingName, IsInteractive, Arguments, StartedAt);
 
 public sealed record HarnessResponseMetadata(string? ResponseId, string? ModelId) : HarnessResponseEvent;
+
+public sealed record HarnessToolApprovalRequested(
+    string RequestId,
+    string ToolName,
+    string Arguments) : HarnessResponseEvent;
+
+public sealed record ToolApprovalRequestViewModel(
+    string RequestId,
+    string ToolName,
+    string Arguments);
+
+public enum ToolApprovalDecision
+{
+    ApproveOnce,
+    Deny,
+    AlwaysApproveTool,
+    AlwaysApproveExactArguments
+}

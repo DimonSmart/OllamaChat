@@ -131,9 +131,11 @@
                             Agents="ChatService.Agents"
                             IsLlmAnswering="isLLMAnswering"
                             SessionState="ChatViewModelService.SessionState"
+                            PendingToolApproval="ChatService.PendingToolApproval"
                             RequiresReset="ChatService.RequiresReset"
                             UserName="userSettings.UserName"
                             OnAgentModeChanged="SetAgentModeAsync"
+                            OnToolApprovalDecision="RespondToToolApprovalAsync"
                             OnSendMessage="SendChatMessageAsync"
                             OnStop="Cancel"
                             OnCopyChat="CopyChatAsync" />

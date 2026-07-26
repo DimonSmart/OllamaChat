@@ -95,5 +95,26 @@ public sealed class HarnessResponseEventProjectorTests
         Assert.DoesNotContain("\\u", completed.Result, StringComparison.OrdinalIgnoreCase);
     }
 
+    [Fact]
+    public void Project_MapsToolApprovalRequest()
+    {
+        var projector = new HarnessResponseEventProjector(
+            NullLogger<HarnessResponseEventProjector>.Instance).CreateProjection();
+        var approval = new ToolApprovalRequestContent(
+            "approval-1",
+            new FunctionCallContent("call-4", "protected_operation", new Dictionary<string, object?>
+            {
+                ["value"] = "test"
+            }));
+
+        var approvalEvent = Assert.IsType<HarnessToolApprovalRequested>(Assert.Single(projector.Project(
+            new AgentResponseUpdate(ChatRole.Assistant, [approval]),
+            new Dictionary<string, AgenticRegisteredTool>())));
+
+        Assert.Equal("approval-1", approvalEvent.RequestId);
+        Assert.Equal("protected_operation", approvalEvent.ToolName);
+        Assert.Contains("test", approvalEvent.Arguments);
+    }
+
     private sealed class UnknownContent : AIContent;
 }

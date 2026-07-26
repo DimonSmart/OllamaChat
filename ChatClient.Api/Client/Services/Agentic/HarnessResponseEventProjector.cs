@@ -48,6 +48,21 @@ public sealed class HarnessResponseEventProjector(ILogger<HarnessResponseEventPr
                         events.Add(ProjectResult(result, update.CreatedAt));
                         break;
 
+                    case ToolApprovalRequestContent approval:
+                        var (toolName, arguments) = approval.ToolCall switch
+                        {
+                            FunctionCallContent functionCall =>
+                                (functionCall.Name, Serialize(functionCall.Arguments)),
+                            McpServerToolCallContent mcpCall =>
+                                (mcpCall.Name, Serialize(mcpCall.Arguments)),
+                            _ => ("unknown", "{}")
+                        };
+                        events.Add(new HarnessToolApprovalRequested(
+                            approval.RequestId,
+                            toolName,
+                            arguments));
+                        break;
+
                     default:
                         logger.LogDebug(
                             "Ignoring unsupported Harness response content type {ContentType}.",

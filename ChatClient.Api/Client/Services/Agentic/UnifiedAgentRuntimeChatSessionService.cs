@@ -31,6 +31,7 @@ public sealed class UnifiedAgentRuntimeChatSessionService(
     private IReadOnlyDictionary<string, AgenticRegisteredTool> _directToolMetadata =
         new Dictionary<string, AgenticRegisteredTool>(StringComparer.OrdinalIgnoreCase);
     private TaskCompletionSource? _activeRunCompletion;
+    private ToolApprovalRequestContent? _pendingToolApprovalRequest;
     private readonly object _lifecycleLock = new();
     private readonly SemaphoreSlim _runSetupGate = new(1, 1);
     private long _generation;
@@ -45,6 +46,8 @@ public sealed class UnifiedAgentRuntimeChatSessionService(
     public bool IsAnswering { get; private set; }
 
     public bool RequiresReset { get; private set; }
+
+    public ToolApprovalRequestViewModel? PendingToolApproval { get; private set; }
 
     public Guid Id => _chat.Id;
 
@@ -202,6 +205,8 @@ public sealed class UnifiedAgentRuntimeChatSessionService(
             _directSession = null;
             _directAvailableModes = [];
             _directToolMetadata = new Dictionary<string, AgenticRegisteredTool>(StringComparer.OrdinalIgnoreCase);
+            _pendingToolApprovalRequest = null;
+            PendingToolApproval = null;
             _chat.Reset();
             ClearRunLocalState();
             _parameters = null;
@@ -242,7 +247,7 @@ public sealed class UnifiedAgentRuntimeChatSessionService(
             throw new InvalidOperationException("Chat session not started.");
         }
 
-        if (string.IsNullOrWhiteSpace(text) || IsAnswering || _resetting)
+        if (string.IsNullOrWhiteSpace(text) || IsAnswering || _resetting || PendingToolApproval is not null)
         {
             return;
         }
@@ -396,6 +401,48 @@ public sealed class UnifiedAgentRuntimeChatSessionService(
         }
     }
 
+    public async Task RespondToToolApprovalAsync(
+        ToolApprovalDecision decision,
+        CancellationToken cancellationToken = default)
+    {
+        await _runSetupGate.WaitAsync(cancellationToken);
+        long generation;
+        ToolApprovalRequestContent request;
+        try
+        {
+            if (_resetting || IsAnswering || RequiresReset)
+                throw new InvalidOperationException("The pending tool approval cannot be answered while this conversation is unavailable.");
+
+            request = _pendingToolApprovalRequest
+                ?? throw new InvalidOperationException("There is no pending tool approval for this conversation.");
+            if (_directAgent is null || _directSession is null)
+                throw new InvalidOperationException("A direct agent session is not available.");
+
+            generation = Interlocked.Read(ref _generation);
+            _pendingToolApprovalRequest = null;
+            PendingToolApproval = null;
+            _cancellationTokenSource = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            _activeRunCompletion = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            UpdateAnsweringState(true);
+            SessionStateChanged?.Invoke();
+        }
+        finally
+        {
+            _runSetupGate.Release();
+        }
+
+        AIContent response = decision switch
+        {
+            ToolApprovalDecision.ApproveOnce => request.CreateResponse(true, "User approved"),
+            ToolApprovalDecision.Deny => request.CreateResponse(false, "User denied"),
+            ToolApprovalDecision.AlwaysApproveTool => request.CreateAlwaysApproveToolResponse("User approved"),
+            ToolApprovalDecision.AlwaysApproveExactArguments => request.CreateAlwaysApproveToolWithArgumentsResponse("User approved"),
+            _ => throw new ArgumentOutOfRangeException(nameof(decision))
+        };
+
+        await RunDirectAsync([new ChatMessage(ChatRole.User, [response])], generation);
+    }
+
     private async Task CreateDirectConversationAsync(
         ChatEngineSessionStartRequest request,
         CancellationToken cancellationToken)
@@ -459,14 +506,19 @@ public sealed class UnifiedAgentRuntimeChatSessionService(
             return;
         }
 
+        await RunDirectAsync([BuildDirectUserMessage(text, files)], generation);
+    }
+
+    private async Task RunDirectAsync(IReadOnlyList<ChatMessage> input, long generation)
+    {
         var messageId = $"direct-harness-response-{Guid.NewGuid():N}";
-        var stream = await GetOrCreateStreamAsync(messageId, _chat.Agents.FirstOrDefault()?.AgentName ?? "Agent");
+        StreamingAppChatMessage? stream = null;
         var projection = responseEventProjector.CreateProjection();
 
         try
         {
             await foreach (var update in _directAgent!.RunStreamingAsync(
-                               [BuildDirectUserMessage(text, files)],
+                               input,
                                _directSession,
                                BuildDirectRunOptions(),
                                _cancellationTokenSource.Token))
@@ -483,6 +535,24 @@ public sealed class UnifiedAgentRuntimeChatSessionService(
                         break;
                     }
 
+                    if (responseEvent is HarnessToolApprovalRequested approval)
+                    {
+                        var approvalRequest = update.Contents.OfType<ToolApprovalRequestContent>()
+                            .FirstOrDefault(content => content.RequestId == approval.RequestId);
+                        if (approvalRequest is not null)
+                        {
+                            _pendingToolApprovalRequest = approvalRequest;
+                            PendingToolApproval = new ToolApprovalRequestViewModel(
+                                approval.RequestId, approval.ToolName, approval.Arguments);
+                            SessionStateChanged?.Invoke();
+                        }
+
+                        continue;
+                    }
+
+                    stream ??= await GetOrCreateStreamAsync(
+                        messageId,
+                        _chat.Agents.FirstOrDefault()?.AgentName ?? "Agent");
                     ApplyHarnessEvent(stream, responseEvent);
 
                     if (responseEvent is HarnessToolCallCompleted completed &&
@@ -500,10 +570,13 @@ public sealed class UnifiedAgentRuntimeChatSessionService(
                 return;
             }
 
-            var final = streamingBridge.Complete(stream, "HarnessAgent");
-            ReplaceMessage(stream, final);
-            await (MessageUpdated?.Invoke(final, true) ?? Task.CompletedTask);
-            _activeStreamsByRuntimeMessageId.Remove(messageId);
+            if (stream is not null)
+            {
+                var final = streamingBridge.Complete(stream, "HarnessAgent");
+                ReplaceMessage(stream, final);
+                await (MessageUpdated?.Invoke(final, true) ?? Task.CompletedTask);
+                _activeStreamsByRuntimeMessageId.Remove(messageId);
+            }
             SessionStateChanged?.Invoke();
         }
         catch (OperationCanceledException)

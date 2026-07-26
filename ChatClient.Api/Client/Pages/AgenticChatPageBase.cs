@@ -158,6 +158,19 @@ public abstract class AgenticChatPageBase : ComponentBase, IAsyncDisposable
         }
     }
 
+    protected async Task RespondToToolApprovalAsync(ToolApprovalDecision decision)
+    {
+        try
+        {
+            await ChatService.RespondToToolApprovalAsync(decision);
+            await ScrollToBottomAsync();
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Could not respond to tool approval: {ex.Message}", Severity.Error);
+        }
+    }
+
     protected Task CopyChatAsync(ChatFormat format)
     {
         var text = ChatTranscriptFormatter.Format(ChatViewModelService.Messages, format);

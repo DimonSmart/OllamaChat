@@ -90,6 +90,29 @@
     </MudCollapse>
 }
 
+@if (PendingToolApproval is not null)
+{
+    <MudPaper Outlined="true" Class="pa-4 mb-3">
+        <MudStack Spacing="2">
+            <MudText Typo="Typo.subtitle2">Approval required</MudText>
+            <MudText Typo="Typo.caption" Class="mud-text-secondary">Tool</MudText>
+            <MudText Typo="Typo.body2">@PendingToolApproval.ToolName</MudText>
+            <MudText Typo="Typo.caption" Class="mud-text-secondary">Arguments</MudText>
+            <MudPaper Outlined="true" Class="pa-2"><pre class="ma-0">@PendingToolApproval.Arguments</pre></MudPaper>
+            <MudStack Row="true" Spacing="1" Wrap="Wrap.Wrap">
+                <MudButton Variant="Variant.Outlined" Color="Color.Error" Disabled="isRespondingToToolApproval" OnClick="@(() => RespondToToolApprovalAsync(ToolApprovalDecision.Deny))">Deny</MudButton>
+                <MudButton Variant="Variant.Filled" Color="Color.Primary" Disabled="isRespondingToToolApproval" OnClick="@(() => RespondToToolApprovalAsync(ToolApprovalDecision.ApproveOnce))">Approve once</MudButton>
+                <MudButton Variant="Variant.Outlined" Disabled="isRespondingToToolApproval" OnClick="@(() => RespondToToolApprovalAsync(ToolApprovalDecision.AlwaysApproveTool))">Always approve this tool</MudButton>
+                <MudButton Variant="Variant.Outlined" Disabled="isRespondingToToolApproval" OnClick="@(() => RespondToToolApprovalAsync(ToolApprovalDecision.AlwaysApproveExactArguments))">Always approve this call</MudButton>
+                @if (isRespondingToToolApproval)
+                {
+                    <MudProgressCircular Indeterminate="true" Size="Size.Small" />
+                }
+            </MudStack>
+        </MudStack>
+    </MudPaper>
+}
+
 <div class="chat-messages-container" @ref="messagesElement">
     @{
         var messageIndex = 0;
@@ -250,8 +273,8 @@
             </MudAlert>
         }
         <ChatInput OnSend="OnSendMessage"
-                   Disabled="RequiresReset"
-                   ShowStopButton="IsLlmAnswering"
+                   Disabled="@(RequiresReset || PendingToolApproval is not null)"
+                   ShowStopButton="@(IsLlmAnswering && PendingToolApproval is null)"
                    OnStopClick="OnStop"
                    IsMultiAgent="IsMultiAgent" />
     </MudStack>
@@ -283,6 +306,9 @@
     public AgentSessionStateViewModel? SessionState { get; set; }
 
     [Parameter]
+    public ToolApprovalRequestViewModel? PendingToolApproval { get; set; }
+
+    [Parameter]
     public EventCallback<(string text, IReadOnlyList<AppChatMessageFile> files)> OnSendMessage { get; set; }
 
     [Parameter]
@@ -297,9 +323,13 @@
     [Parameter]
     public EventCallback<string> OnAgentModeChanged { get; set; }
 
+    [Parameter]
+    public EventCallback<ToolApprovalDecision> OnToolApprovalDecision { get; set; }
+
     private ElementReference messagesElement;
     private bool showSessionState;
     private bool isChangingAgentMode;
+    private bool isRespondingToToolApproval;
 
     private void ToggleSessionState() => showSessionState = !showSessionState;
 
@@ -319,6 +349,22 @@
         finally
         {
             isChangingAgentMode = false;
+        }
+    }
+
+    private async Task RespondToToolApprovalAsync(ToolApprovalDecision decision)
+    {
+        if (isRespondingToToolApproval)
+            return;
+
+        isRespondingToToolApproval = true;
+        try
+        {
+            await OnToolApprovalDecision.InvokeAsync(decision);
+        }
+        finally
+        {
+            isRespondingToToolApproval = false;
         }
     }
 
