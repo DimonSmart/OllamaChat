@@ -34,10 +34,10 @@
                     <MudDivider />
                     <MudText Typo="Typo.subtitle1">Documents</MudText>
                     <MudText Typo="Typo.body2">Markdown/text files are processed directly. Other supported document formats require MarkItDown.</MudText>
-                    <InputFile OnChange="UploadAsync" multiple disabled="@uploading" />
-                    @if (uploading)
+                    <InputFile @key="GetUploadInputKey()" OnChange="UploadAsync" multiple disabled="@(activeUpload is not null)" />
+                    @if (IsUploadingFor(selected.Id))
                     {
-                        <MudText Typo="Typo.body2">Uploading @uploadedFileCount / @uploadFileCount</MudText>
+                        <MudText Typo="Typo.body2">Uploading @activeUpload!.CompletedFiles / @activeUpload.TotalFiles</MudText>
                     }
                     <MudTable Items="selected.Documents" Dense="true">
                         <HeaderContent><MudTh>File</MudTh><MudTh>Size</MudTh><MudTh>Updated</MudTh><MudTh>Index status</MudTh><MudTh></MudTh></HeaderContent>
@@ -53,9 +53,8 @@
     private List<KnowledgeStore> stores = [];
     private Guid? selectedStoreId;
     private KnowledgeStore? selected;
-    private bool uploading;
-    private int uploadFileCount;
-    private int uploadedFileCount;
+    private UploadState? activeUpload;
+    private int uploadInputVersion;
     private readonly CancellationTokenSource refreshCancellation = new();
     protected override async Task OnInitializedAsync()
     {
@@ -63,7 +62,7 @@
         _ = RefreshAsync();
     }
     private async Task ReloadAsync() { stores = (await Stores.GetAllAsync()).OrderBy(x => x.Name).ToList(); selected = selectedStoreId is Guid id ? stores.FirstOrDefault(x => x.Id == id) : null; }
-    private void Select(Guid id) { selectedStoreId = id; selected = stores.First(x => x.Id == id); }
+    private void Select(Guid id) { selectedStoreId = id; selected = stores.First(x => x.Id == id); uploadInputVersion++; }
     private async Task CreateAsync() { var created = await Stores.CreateAsync("New Knowledge Store", null); selectedStoreId = created.Id; await ReloadAsync(); }
     private ServerModelSelection GetEmbeddingSelection() => selected is null ? new(null, null) : new(selected.Configuration.ServerId, selected.Configuration.Model);
     private Task OnEmbeddingSelectionChanged(ServerModelSelection selection)
@@ -93,21 +92,24 @@
         if (selected is null) return;
         var targetStoreId = selected.Id;
         var files = args.GetMultipleFiles(100);
-        uploading = true;
-        uploadFileCount = files.Count;
-        uploadedFileCount = 0;
+        activeUpload = new UploadState(targetStoreId, files.Count);
         try
         {
             foreach (var file in files)
             {
                 try { await using var stream = file.OpenReadStream(20 * 1024 * 1024); await Stores.AddOrUpdateDocumentAsync(targetStoreId, file.Name, stream, file.ContentType); }
                 catch (Exception ex) { Snackbar.Add($"{file.Name}: {ex.Message}", Severity.Error); }
-                finally { uploadedFileCount++; }
+                finally
+                {
+                    activeUpload.CompletedFiles++;
+                    await InvokeAsync(StateHasChanged);
+                }
             }
         }
         finally
         {
-            uploading = false;
+            activeUpload = null;
+            uploadInputVersion++;
             await ReloadAsync();
         }
     }
@@ -137,6 +139,8 @@
         };
     }
     private string GetSourceUrl(Guid documentId) => selected is null ? string.Empty : $"/api/knowledge-stores/{selected.Id}/documents/{documentId}/source";
+    private bool IsUploadingFor(Guid storeId) => activeUpload?.StoreId == storeId;
+    private (Guid? StoreId, int Version) GetUploadInputKey() => (selected?.Id, uploadInputVersion);
     private static int GetProgressPercentage(KnowledgeDocumentIndexProgress progress) => progress.TotalChunks == 0 ? 0 : progress.ProcessedChunks * 100 / progress.TotalChunks;
     private async Task RefreshAsync()
     {
@@ -161,5 +165,11 @@
         refreshCancellation.Cancel();
         refreshCancellation.Dispose();
         return ValueTask.CompletedTask;
+    }
+    private sealed class UploadState(Guid storeId, int totalFiles)
+    {
+        public Guid StoreId { get; } = storeId;
+        public int TotalFiles { get; } = totalFiles;
+        public int CompletedFiles { get; set; }
     }
 }
