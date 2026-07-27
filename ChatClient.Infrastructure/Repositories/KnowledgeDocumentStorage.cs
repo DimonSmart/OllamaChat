@@ -34,13 +34,6 @@ public sealed class KnowledgeDocumentStorage(IConfiguration configuration) : IKn
             await source.CopyToAsync(destination, ct);
         await File.WriteAllTextAsync(MarkdownPathFor(storeId, documentId), canonicalMarkdown, ct);
     }
-    public async Task WriteLegacyTextAsync(Guid storeId, Guid documentId, string legacyText, string canonicalMarkdown, CancellationToken ct = default)
-    {
-        var directory = DocumentDirectory(storeId, documentId);
-        Directory.CreateDirectory(directory);
-        await File.WriteAllTextAsync(Path.Combine(directory, "source.legacy.txt"), legacyText, ct);
-        await File.WriteAllTextAsync(MarkdownPathFor(storeId, documentId), canonicalMarkdown, ct);
-    }
     public Task DeleteAsync(Guid storeId, Guid documentId, CancellationToken ct = default) { var path = DocumentDirectory(storeId, documentId); if (Directory.Exists(path)) Directory.Delete(path, true); return Task.CompletedTask; }
     public Task DeleteStoreAsync(Guid storeId, CancellationToken ct = default) { var path = Path.Combine(_root, storeId.ToString("N")); if (Directory.Exists(path)) Directory.Delete(path, true); return Task.CompletedTask; }
     private string DocumentDirectory(Guid storeId, Guid documentId) => Path.Combine(_root, storeId.ToString("N"), "documents", documentId.ToString("N"));

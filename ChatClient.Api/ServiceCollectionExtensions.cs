@@ -113,7 +113,6 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<IKnowledgeDocumentIngestionService, KnowledgeDocumentIngestionService>();
         services.AddSingleton<IKnowledgeMarkdownChunker, KnowledgeMarkdownChunker>();
         services.AddSingleton<IKnowledgeIndexProgressTracker, KnowledgeIndexProgressTracker>();
-        services.AddSingleton<LegacyRagMigrationService>();
         services.AddSingleton<KnowledgeIndexBackgroundService>();
         services.AddSingleton<IKnowledgeIndexBackgroundService>(sp => sp.GetRequiredService<KnowledgeIndexBackgroundService>());
         services.AddHostedService(sp => sp.GetRequiredService<KnowledgeIndexBackgroundService>());
