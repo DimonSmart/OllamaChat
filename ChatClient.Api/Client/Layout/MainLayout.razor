@@ -44,19 +44,22 @@
     <MudDrawer id="nav-drawer" @bind-Open="_drawerOpen" ClipMode="DrawerClipMode.Always" Elevation="2">
         <NavMenu />
     </MudDrawer>
-    <MudMainContent Class="pt-13 pa-2">
-        @Body
+    <MudMainContent Class="pt-13 pa-2"
+                    Style="min-height: 100dvh; box-sizing: border-box; display: flex; flex-direction: column;">
+        <div class="app-page-content">
+            @Body
+        </div>
+        @if (!IsOnChatPage())
+        {
+            <footer class="app-footer">
+                <MudContainer>
+                    <MudText Align="Align.Center" Class="py-3 mud-text-secondary">
+                        <small>Ollama Chat - Local LLM Chat via Ollama API</small>
+                    </MudText>
+                </MudContainer>
+            </footer>
+        }
     </MudMainContent>
-    @if (!IsOnChatPage())
-    {
-        <footer class="footer mt-4">
-            <MudContainer>
-                <MudText Align="Align.Center" Class="p-3 mud-text-secondary">
-                    <small>Ollama Chat - Local LLM Chat via Ollama API</small>
-                </MudText>
-            </MudContainer>
-        </footer>
-    }
 </MudLayout>
 </CascadingValue>
 
