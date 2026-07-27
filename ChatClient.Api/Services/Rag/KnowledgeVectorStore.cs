@@ -3,21 +3,31 @@ using ChatClient.Infrastructure.Constants;
 using ChatClient.Infrastructure.Helpers;
 using Microsoft.Extensions.VectorData;
 using Microsoft.SemanticKernel.Connectors.SqliteVec;
+using System.Linq.Expressions;
 
 namespace ChatClient.Api.Services.Rag;
 
 public sealed class KnowledgeVectorStore(IConfiguration configuration)
 {
-    private readonly string _connectionString = new Microsoft.Data.Sqlite.SqliteConnectionStringBuilder { DataSource = StoragePathResolver.ResolveUserPath(configuration, configuration["KnowledgeVectorStore:DatabasePath"], FilePathConstants.DefaultKnowledgeVectorDatabaseFile) }.ToString();
+    private readonly SemaphoreSlim _writeLock = new(1, 1);
+    private readonly string _connectionString = new Microsoft.Data.Sqlite.SqliteConnectionStringBuilder
+    {
+        DataSource = StoragePathResolver.ResolveUserPath(configuration, configuration["KnowledgeVectorStore:DatabasePath"], FilePathConstants.DefaultKnowledgeVectorDatabaseFile),
+        DefaultTimeout = 60
+    }.ToString();
 
     public async Task ReplaceDocumentAsync(Guid storeId, Guid documentId, int dimension, IReadOnlyList<KnowledgeChunkRecord> chunks, CancellationToken ct)
     {
-        var collection = await GetOrCreateCollectionForWriteAsync(dimension, ct);
-        var store = storeId.ToString("N");
-        var document = documentId.ToString("N");
-        await foreach (var item in collection.GetAsync(x => x.KnowledgeStoreId == store && x.DocumentId == document, int.MaxValue, null, ct))
-            await collection.DeleteAsync(item.Id, ct);
-        await collection.UpsertAsync(chunks, ct);
+        await ExecuteWriteAsync(async () =>
+        {
+            var collection = await GetOrCreateCollectionForWriteAsync(dimension, ct);
+            var store = storeId.ToString("N");
+            var document = documentId.ToString("N");
+            var existingIds = await GetIdsAsync(collection, x => x.KnowledgeStoreId == store && x.DocumentId == document, ct);
+            foreach (var id in existingIds)
+                await collection.DeleteAsync(id, ct);
+            await collection.UpsertAsync(chunks, ct);
+        }, ct);
     }
 
     public async Task<IReadOnlyList<RagSearchResult>> SearchAsync(KnowledgeStore store, ReadOnlyMemory<float> query, int max, double threshold, CancellationToken ct)
@@ -37,20 +47,51 @@ public sealed class KnowledgeVectorStore(IConfiguration configuration)
     {
         if (dimension <= 0)
             return;
-        var id = storeId.ToString("N");
-        var collection = await GetOrCreateCollectionForWriteAsync(dimension, ct);
-        await foreach (var item in collection.GetAsync(x => x.KnowledgeStoreId == id, int.MaxValue, null, ct))
-            await collection.DeleteAsync(item.Id, ct);
+        await ExecuteWriteAsync(async () =>
+        {
+            var id = storeId.ToString("N");
+            var collection = await GetOrCreateCollectionForWriteAsync(dimension, ct);
+            var existingIds = await GetIdsAsync(collection, x => x.KnowledgeStoreId == id, ct);
+            foreach (var existingId in existingIds)
+                await collection.DeleteAsync(existingId, ct);
+        }, ct);
     }
     public async Task DeleteDocumentAsync(Guid storeId, Guid documentId, int dimension, CancellationToken ct)
     {
         if (dimension <= 0)
             return;
-        var store = storeId.ToString("N");
-        var document = documentId.ToString("N");
-        var collection = await GetOrCreateCollectionForWriteAsync(dimension, ct);
-        await foreach (var item in collection.GetAsync(x => x.KnowledgeStoreId == store && x.DocumentId == document, int.MaxValue, null, ct))
-            await collection.DeleteAsync(item.Id, ct);
+        await ExecuteWriteAsync(async () =>
+        {
+            var store = storeId.ToString("N");
+            var document = documentId.ToString("N");
+            var collection = await GetOrCreateCollectionForWriteAsync(dimension, ct);
+            var existingIds = await GetIdsAsync(collection, x => x.KnowledgeStoreId == store && x.DocumentId == document, ct);
+            foreach (var id in existingIds)
+                await collection.DeleteAsync(id, ct);
+        }, ct);
+    }
+
+    private async Task ExecuteWriteAsync(Func<Task> operation, CancellationToken ct)
+    {
+        await _writeLock.WaitAsync(ct);
+        try
+        {
+            await operation();
+        }
+        finally
+        {
+            _writeLock.Release();
+        }
+    }
+    private static async Task<List<string>> GetIdsAsync(
+        VectorStoreCollection<string, KnowledgeChunkRecord> collection,
+        Expression<Func<KnowledgeChunkRecord, bool>> filter,
+        CancellationToken ct)
+    {
+        var ids = new List<string>();
+        await foreach (var item in collection.GetAsync(filter, int.MaxValue, null, ct))
+            ids.Add(item.Id);
+        return ids;
     }
     private async Task<VectorStoreCollection<string, KnowledgeChunkRecord>> GetOrCreateCollectionForWriteAsync(int dimension, CancellationToken ct)
     {

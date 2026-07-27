@@ -11,7 +11,7 @@
         <MudSelect T="Guid?" Label="Knowledge Store" @bind-Value="selectedStoreId" Dense="true">
             @foreach (var store in stores)
             {
-                <MudSelectItem Value="@store.Id">@store.Name (@store.Index.State)</MudSelectItem>
+                <MudSelectItem T="Guid?" Value="@((Guid?)store.Id)">@store.Name (@store.Index.State)</MudSelectItem>
             }
         </MudSelect>
         <MudTextField @bind-Value="query" Label="Query" Immediate="true" />

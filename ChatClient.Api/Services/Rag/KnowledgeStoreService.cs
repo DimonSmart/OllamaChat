@@ -40,6 +40,16 @@ public sealed class KnowledgeStoreService(
             indexer.RequestRebuild();
     }
 
+    public async Task RequestReindexAsync(Guid storeId, CancellationToken ct = default)
+    {
+        var store = await RequiredAsync(storeId, ct);
+        store.Index.ForceRebuild = true;
+        if (store.Index.State != KnowledgeStoreIndexState.Indexing)
+            store.Index.State = KnowledgeStoreIndexState.Outdated;
+        await repository.SaveAsync(store, ct);
+        indexer.RequestRebuild();
+    }
+
     public async Task DeleteAsync(Guid storeId, CancellationToken ct = default)
     {
         var store = await GetAsync(storeId, ct);

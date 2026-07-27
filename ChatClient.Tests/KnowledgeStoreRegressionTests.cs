@@ -59,6 +59,32 @@ public sealed class KnowledgeStoreRegressionTests
     }
 
     [Fact]
+    public async Task RequestReindexAsync_RequestsFullRebuildAndKeepsActiveIndexingState()
+    {
+        var store = CreateReadyStore("Knowledge", 2);
+        store.Index.State = KnowledgeStoreIndexState.Indexing;
+        var repository = new Mock<IKnowledgeStoreRepository>(MockBehavior.Strict);
+        repository.Setup(service => service.GetAllAsync(It.IsAny<CancellationToken>())).ReturnsAsync([store]);
+        repository.Setup(service => service.SaveAsync(store, It.IsAny<CancellationToken>())).Returns(Task.CompletedTask);
+        var indexer = new Mock<IKnowledgeIndexBackgroundService>(MockBehavior.Strict);
+        indexer.Setup(service => service.RequestRebuild());
+        var service = new KnowledgeStoreService(
+            repository.Object,
+            Mock.Of<IKnowledgeDocumentStorage>(),
+            Mock.Of<IKnowledgeDocumentIngestionService>(),
+            Mock.Of<IAgentTemplateService>(),
+            Mock.Of<IUserSettingsService>(),
+            indexer.Object,
+            NullLogger<KnowledgeStoreService>.Instance);
+
+        await service.RequestReindexAsync(store.Id);
+
+        Assert.True(store.Index.ForceRebuild);
+        Assert.Equal(KnowledgeStoreIndexState.Indexing, store.Index.State);
+        indexer.Verify(service => service.RequestRebuild(), Times.Once);
+    }
+
+    [Fact]
     public void ApplyCurrentIngestionVersion_MarksLegacyStoreOutdated()
     {
         var store = CreateReadyStore("Knowledge", 2);
@@ -93,6 +119,61 @@ public sealed class KnowledgeStoreRegressionTests
         var result = Assert.Single(response.Results);
         Assert.Equal("First", result.KnowledgeStoreName);
         Assert.Equal("first", result.Content);
+    }
+
+    [Fact]
+    public async Task ReplaceDocumentAsync_ConcurrentWritesCompleteWithoutDatabaseLock()
+    {
+        await using var database = new TemporaryVectorDatabase();
+        var vectors = database.CreateStore();
+        var store = CreateReadyStore("Knowledge", 2);
+        var documents = Enumerable.Range(0, 12).Select(index => new KnowledgeDocument { Id = Guid.NewGuid(), FileName = $"{index}.md" }).ToList();
+
+        await Task.WhenAll(documents.Select((document, index) => vectors.ReplaceDocumentAsync(store.Id, document.Id, 2,
+        [
+            new KnowledgeChunkRecord
+            {
+                Id = $"{store.Id:N}:{document.Id:N}:0", KnowledgeStoreId = store.Id.ToString("N"), DocumentId = document.Id.ToString("N"),
+                FileName = document.FileName, Content = $"document {index}", Embedding = new float[] { 1, 0 }
+            }
+        ], CancellationToken.None)));
+
+        var results = await vectors.SearchAsync(store, new float[] { 1, 0 }, 20, -1, CancellationToken.None);
+        Assert.Equal(documents.Count, results.Count);
+    }
+
+    [Fact]
+    public async Task ReplaceDocumentAsync_ReplacesExistingDocumentWithoutDatabaseLock()
+    {
+        await using var database = new TemporaryVectorDatabase();
+        var vectors = database.CreateStore();
+        var store = CreateReadyStore("Knowledge", 2);
+        var documentId = Guid.NewGuid();
+        var first = new KnowledgeChunkRecord
+        {
+            Id = $"{store.Id:N}:{documentId:N}:0",
+            KnowledgeStoreId = store.Id.ToString("N"),
+            DocumentId = documentId.ToString("N"),
+            FileName = "notes.md",
+            Content = "first",
+            Embedding = new float[] { 1, 0 }
+        };
+        var replacement = new KnowledgeChunkRecord
+        {
+            Id = first.Id,
+            KnowledgeStoreId = first.KnowledgeStoreId,
+            DocumentId = first.DocumentId,
+            FileName = first.FileName,
+            Content = "replacement",
+            Embedding = first.Embedding
+        };
+
+        await vectors.ReplaceDocumentAsync(store.Id, documentId, 2, [first], CancellationToken.None);
+        await vectors.ReplaceDocumentAsync(store.Id, documentId, 2, [replacement], CancellationToken.None);
+
+        var results = await vectors.SearchAsync(store, new float[] { 1, 0 }, 5, -1, CancellationToken.None);
+        var result = Assert.Single(results);
+        Assert.Equal("replacement", result.Content);
     }
 
     private static KnowledgeStore CreateReadyStore(string name, int dimensions)

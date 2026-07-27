@@ -6,6 +6,7 @@ namespace ChatClient.Api.Services.Rag;
 public sealed class KnowledgeIndexBackgroundService(IServiceScopeFactory scopes, ILogger<KnowledgeIndexBackgroundService> logger) : BackgroundService, IKnowledgeIndexBackgroundService
 {
     private readonly SemaphoreSlim _signal = new(0, 1);
+    private bool _isFirstRebuild = true;
     public void RequestRebuild() { if (_signal.CurrentCount == 0) _signal.Release(); }
     public async Task DeleteStoreVectorsAsync(Guid id, int dimension, CancellationToken ct = default) { if (dimension > 0) { using var scope = scopes.CreateScope(); await scope.ServiceProvider.GetRequiredService<KnowledgeVectorStore>().DeleteStoreAsync(id, dimension, ct); } }
     public async Task DeleteDocumentVectorsAsync(Guid id, Guid documentId, CancellationToken ct = default) { using var scope = scopes.CreateScope(); var store = await scope.ServiceProvider.GetRequiredService<IKnowledgeStoreService>().GetAsync(id, ct); var dimension = store?.Index.IndexedConfiguration?.Dimensions ?? 0; if (dimension > 0) await scope.ServiceProvider.GetRequiredService<KnowledgeVectorStore>().DeleteDocumentAsync(id, documentId, dimension, ct); }
@@ -19,6 +20,16 @@ public sealed class KnowledgeIndexBackgroundService(IServiceScopeFactory scopes,
         var ollama = scope.ServiceProvider.GetRequiredService<IOllamaClientService>();
         var vectors = scope.ServiceProvider.GetRequiredService<KnowledgeVectorStore>();
         var allStores = await stores.GetAllAsync(ct);
+        if (_isFirstRebuild)
+        {
+            _isFirstRebuild = false;
+            foreach (var store in allStores.Where(store => store.Index.State == KnowledgeStoreIndexState.Indexing))
+            {
+                store.Index.State = KnowledgeStoreIndexState.Outdated;
+                await stores.UpdateAsync(store, ct);
+            }
+            allStores = await stores.GetAllAsync(ct);
+        }
         foreach (var store in allStores)
         {
             if (ApplyCurrentIngestionVersion(store))
@@ -32,7 +43,7 @@ public sealed class KnowledgeIndexBackgroundService(IServiceScopeFactory scopes,
                 snapshot.Index.State = KnowledgeStoreIndexState.Indexing;
                 await stores.UpdateAsync(snapshot, ct);
                 var indexed = snapshot.Configuration.Clone();
-                var rebuildAll = snapshot.Index.IndexedConfiguration is null || !snapshot.Configuration.Equals(snapshot.Index.IndexedConfiguration);
+                var rebuildAll = snapshot.Index.ForceRebuild || snapshot.Index.IndexedConfiguration is null || !snapshot.Configuration.Equals(snapshot.Index.IndexedConfiguration);
                 var documentsToIndex = SelectDocumentsToIndex(snapshot, rebuildAll);
                 foreach (var document in documentsToIndex)
                 {
@@ -63,6 +74,7 @@ public sealed class KnowledgeIndexBackgroundService(IServiceScopeFactory scopes,
                 current.Configuration.Dimensions = indexed.Dimensions;
                 current.Index.IndexedConfiguration = indexed;
                 current.Index.State = current.Documents.All(d => d.SourceHash == d.IndexedSourceHash) ? KnowledgeStoreIndexState.Ready : KnowledgeStoreIndexState.Outdated;
+                current.Index.ForceRebuild = false;
                 current.Index.CompletedUtc = DateTime.UtcNow;
                 current.Index.LastError = null;
                 await stores.UpdateAsync(current, ct);

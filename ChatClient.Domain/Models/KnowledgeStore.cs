@@ -34,6 +34,7 @@ public enum KnowledgeStoreIndexState { NotIndexed, Indexing, Ready, Outdated, Fa
 public sealed class KnowledgeStoreIndexMetadata
 {
     public KnowledgeStoreIndexState State { get; set; } = KnowledgeStoreIndexState.NotIndexed;
+    public bool ForceRebuild { get; set; }
     public KnowledgeStoreIndexConfiguration? IndexedConfiguration { get; set; }
     public string? LastError { get; set; }
     public DateTime? CompletedUtc { get; set; }
