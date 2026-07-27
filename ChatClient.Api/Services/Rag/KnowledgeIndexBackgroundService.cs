@@ -3,7 +3,7 @@ using ChatClient.Domain.Models;
 
 namespace ChatClient.Api.Services.Rag;
 
-public sealed class KnowledgeIndexBackgroundService(IServiceScopeFactory scopes, ILogger<KnowledgeIndexBackgroundService> logger) : BackgroundService, IKnowledgeIndexBackgroundService
+public sealed class KnowledgeIndexBackgroundService(IServiceScopeFactory scopes, ILogger<KnowledgeIndexBackgroundService> logger, IKnowledgeIndexProgressTracker progress) : BackgroundService, IKnowledgeIndexBackgroundService
 {
     private readonly SemaphoreSlim _signal = new(0, 1);
     private bool _isFirstRebuild = true;
@@ -51,11 +51,12 @@ public sealed class KnowledgeIndexBackgroundService(IServiceScopeFactory scopes,
                     var chunks = chunker.Chunk(document.FileName, content, indexed.MaxTokensPerChunk, indexed.OverlapTokens);
                     if (chunks.Count == 0)
                         continue;
+                    progress.Begin(snapshot.Id, document.Id, chunks.Count);
                     var first = await ollama.GenerateEmbeddingAsync(chunks[0].Content, new ServerModel(indexed.ServerId, indexed.Model), ct);
                     indexed.Dimensions = first.Length;
                     var records = new List<KnowledgeChunkRecord>();
                     for (var i = 0; i < chunks.Count; i++)
-                    { var embedding = i == 0 ? first : await ollama.GenerateEmbeddingAsync(chunks[i].Content, new ServerModel(indexed.ServerId, indexed.Model), ct); records.Add(chunks[i] with { Id = $"{snapshot.Id:N}:{document.Id:N}:{i}", KnowledgeStoreId = snapshot.Id.ToString("N"), DocumentId = document.Id.ToString("N"), Embedding = embedding }); }
+                    { var embedding = i == 0 ? first : await ollama.GenerateEmbeddingAsync(chunks[i].Content, new ServerModel(indexed.ServerId, indexed.Model), ct); records.Add(chunks[i] with { Id = $"{snapshot.Id:N}:{document.Id:N}:{i}", KnowledgeStoreId = snapshot.Id.ToString("N"), DocumentId = document.Id.ToString("N"), Embedding = embedding }); progress.Report(snapshot.Id, document.Id, i + 1); }
                     await vectors.ReplaceDocumentAsync(snapshot.Id, document.Id, indexed.Dimensions, records, ct);
                     var currentStore = await stores.GetAsync(snapshot.Id, ct);
                     var currentDocument = currentStore?.Documents.FirstOrDefault(x => x.Id == document.Id);
@@ -63,6 +64,7 @@ public sealed class KnowledgeIndexBackgroundService(IServiceScopeFactory scopes,
                     {
                         currentDocument.IndexedSourceHash = document.SourceHash;
                         await stores.UpdateAsync(currentStore, ct);
+                        progress.Complete(snapshot.Id, document.Id);
                     }
                 }
                 var current = await stores.GetAsync(snapshot.Id, ct);
@@ -82,6 +84,7 @@ public sealed class KnowledgeIndexBackgroundService(IServiceScopeFactory scopes,
                     await vectors.DeleteStoreAsync(current.Id, oldDimension.Value, ct);
             }
             catch (Exception ex) { var current = await stores.GetAsync(snapshot.Id, ct); if (current is not null) { current.Index.State = KnowledgeStoreIndexState.Failed; current.Index.LastError = ex.Message; await stores.UpdateAsync(current, ct); } logger.LogError(ex, "Knowledge Store indexing failed for {StoreId}", snapshot.Id); }
+            finally { progress.ClearStore(snapshot.Id); }
         }
     }
     private static bool NeedsIndexing(KnowledgeStore store) =>

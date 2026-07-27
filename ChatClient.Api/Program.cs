@@ -4,6 +4,7 @@ using ChatClient.Api.Services;
 using ChatClient.Api.Services.BuiltIn;
 using ChatClient.Api.Startup;
 using ChatClient.Api.VoiceInput;
+using ChatClient.Application.Services;
 using ChatClient.Application.Services.Agentic;
 using Serilog;
 using Serilog.Events;
@@ -76,6 +77,18 @@ try
 
     app.UseRouting();
 
+    app.MapGet("/api/knowledge-stores/{storeId:guid}/documents/{documentId:guid}/source", async (Guid storeId, Guid documentId, IKnowledgeStoreService stores, IKnowledgeDocumentStorage documents, CancellationToken cancellationToken) =>
+    {
+        var store = await stores.GetAsync(storeId, cancellationToken);
+        var document = store?.Documents.FirstOrDefault(item => item.Id == documentId);
+        if (document is null)
+            return Results.NotFound();
+
+        var source = await documents.OpenSourceReadAsync(storeId, documentId, cancellationToken);
+        return source is null
+            ? Results.NotFound()
+            : Results.File(source, document.ContentType ?? "application/octet-stream", document.FileName, enableRangeProcessing: true);
+    });
     app.MapVoiceInputEndpoints();
     app.MapRazorPages();
     app.MapBlazorHub();

@@ -4,6 +4,7 @@
 @using ChatClient.Domain.Models
 @using Microsoft.AspNetCore.Components.Forms
 @inject IKnowledgeStoreService Stores
+@inject IKnowledgeIndexProgressTracker IndexProgress
 @inject ISnackbar Snackbar
 
 <PageTitle>Knowledge Stores</PageTitle>
@@ -20,12 +21,14 @@
             @if (selected is not null)
             {
                 <MudStack Spacing="2">
-                    <MudTextField @bind-Value="selected.Name" Label="Name" />
-                    <MudTextField @bind-Value="selected.Description" Label="Description" Lines="3" />
+                    <MudTextField @bind-Value="selected.Name" Label="Name" Margin="Margin.Dense" />
+                    <MudTextField @bind-Value="selected.Description" Label="Description" Lines="3" Margin="Margin.Dense" />
                     <MudText Typo="Typo.subtitle1">Index configuration</MudText>
-                    <ServerModelPicker Value="GetEmbeddingSelection()" ValueChanged="OnEmbeddingSelectionChanged" ShowClearButton="false" UseDefaultsWhenUnset="false" />
-                    <MudNumericField @bind-Value="selected.Configuration.MaxTokensPerChunk" Label="Max tokens per chunk" Min="1" />
-                    <MudNumericField @bind-Value="selected.Configuration.OverlapTokens" Label="Overlap tokens" Min="0" />
+                    <ServerModelPicker Value="GetEmbeddingSelection()" ValueChanged="OnEmbeddingSelectionChanged" ShowClearButton="false" UseDefaultsWhenUnset="false" SelectVariant="Variant.Outlined" SelectMargin="Margin.Dense" FillAvailableWidth="false" />
+                    <MudStack Row="true" Wrap="Wrap.Wrap" Spacing="2">
+                        <MudNumericField @bind-Value="selected.Configuration.MaxTokensPerChunk" Label="Max tokens per chunk" Min="1" Margin="Margin.Dense" Style="width: 200px; max-width: 100%;" />
+                        <MudNumericField @bind-Value="selected.Configuration.OverlapTokens" Label="Overlap tokens" Min="0" Margin="Margin.Dense" Style="width: 200px; max-width: 100%;" />
+                    </MudStack>
                     @if (!string.IsNullOrWhiteSpace(selected.Index.LastError)) { <MudAlert Severity="Severity.Error">@selected.Index.LastError</MudAlert> }
                     <MudStack Row="true"><MudButton Color="Color.Primary" OnClick="SaveAsync">Save</MudButton><MudButton OnClick="ReindexAsync">Reindex</MudButton><MudButton Color="Color.Error" OnClick="DeleteAsync">Delete store</MudButton></MudStack>
                     <MudDivider />
@@ -34,7 +37,7 @@
                     <InputFile OnChange="UploadAsync" multiple />
                     <MudTable Items="selected.Documents" Dense="true">
                         <HeaderContent><MudTh>File</MudTh><MudTh>Size</MudTh><MudTh>Updated</MudTh><MudTh>Index status</MudTh><MudTh></MudTh></HeaderContent>
-                        <RowTemplate><MudTd>@context.FileName</MudTd><MudTd>@context.Size</MudTd><MudTd>@context.UpdatedUtc.ToLocalTime().ToString("g")</MudTd><MudTd>@GetDocumentIndexStatus(context)</MudTd><MudTd><MudIconButton Icon="@Icons.Material.Filled.Delete" Color="Color.Error" OnClick="@(() => DeleteDocumentAsync(context.Id))" /></MudTd></RowTemplate>
+                        <RowTemplate><MudTd><a href="@GetSourceUrl(context.Id)" target="_blank" rel="noopener noreferrer">@context.FileName</a></MudTd><MudTd>@context.Size</MudTd><MudTd>@context.UpdatedUtc.ToLocalTime().ToString("g")</MudTd><MudTd>@if (IndexProgress.Get(selected.Id, context.Id) is { } progress) { <MudStack Row="true" Spacing="1" AlignItems="AlignItems.Center"><MudText Typo="Typo.body2">Indexing @GetProgressPercentage(progress)%</MudText><MudProgressLinear Value="@GetProgressPercentage(progress)" Style="width: 72px;" /></MudStack> } else { @GetDocumentIndexStatus(context) }</MudTd><MudTd><MudIconButton Icon="@Icons.Material.Filled.Delete" Color="Color.Error" OnClick="@(() => DeleteDocumentAsync(context.Id))" /></MudTd></RowTemplate>
                     </MudTable>
                 </MudStack>
             }
@@ -104,13 +107,16 @@
         return selected.Index.State switch
         {
             KnowledgeStoreIndexState.Ready when document.SourceHash == document.IndexedSourceHash => "Indexed",
-            KnowledgeStoreIndexState.Indexing => "Indexing",
+            KnowledgeStoreIndexState.Indexing when document.SourceHash == document.IndexedSourceHash => "Indexed",
+            KnowledgeStoreIndexState.Indexing => "Pending",
             KnowledgeStoreIndexState.Failed => "Failed",
             KnowledgeStoreIndexState.NotIndexed => "Not indexed",
             KnowledgeStoreIndexState.Outdated => "Outdated",
             _ => "Pending"
         };
     }
+    private string GetSourceUrl(Guid documentId) => selected is null ? string.Empty : $"/api/knowledge-stores/{selected.Id}/documents/{documentId}/source";
+    private static int GetProgressPercentage(KnowledgeDocumentIndexProgress progress) => progress.TotalChunks == 0 ? 0 : progress.ProcessedChunks * 100 / progress.TotalChunks;
     private async Task RefreshAsync()
     {
         try

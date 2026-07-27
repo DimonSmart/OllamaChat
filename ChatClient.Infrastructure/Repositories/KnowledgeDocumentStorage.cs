@@ -12,10 +12,22 @@ public sealed class KnowledgeDocumentStorage(IConfiguration configuration) : IKn
         var path = MarkdownPathFor(storeId, documentId);
         return File.Exists(path) ? File.ReadAllTextAsync(path, ct).ContinueWith(x => (string?)x.Result, ct) : Task.FromResult<string?>(null);
     }
+    public Task<Stream?> OpenSourceReadAsync(Guid storeId, Guid documentId, CancellationToken ct = default)
+    {
+        var directory = DocumentDirectory(storeId, documentId);
+        if (!Directory.Exists(directory))
+            return Task.FromResult<Stream?>(null);
+
+        var sourcePath = Directory.EnumerateFiles(directory, "source.*", SearchOption.TopDirectoryOnly).FirstOrDefault();
+        Stream? stream = sourcePath is null ? null : new FileStream(sourcePath, FileMode.Open, FileAccess.Read, FileShare.Read);
+        return Task.FromResult(stream);
+    }
     public async Task WriteAsync(Guid storeId, Guid documentId, string fileName, Stream source, string canonicalMarkdown, CancellationToken ct = default)
     {
         var directory = DocumentDirectory(storeId, documentId);
         Directory.CreateDirectory(directory);
+        foreach (var existingSource in Directory.EnumerateFiles(directory, "source.*", SearchOption.TopDirectoryOnly))
+            File.Delete(existingSource);
         var extension = Path.GetExtension(fileName);
         var sourcePath = Path.Combine(directory, "source" + (string.IsNullOrWhiteSpace(extension) ? ".bin" : extension));
         await using (var destination = File.Create(sourcePath))

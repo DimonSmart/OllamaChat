@@ -5,10 +5,10 @@
 @inject IOpenAIClientService OpenAIService
 @inject IUserSettingsService UserSettingsService
 
-<MudStack Spacing="1" Row="true" AlignItems="AlignItems.Center" @attributes="Attributes" Style="flex: 1; min-width: 0;">
+<MudStack Spacing="1" Row="true" Wrap="Wrap.Wrap" AlignItems="AlignItems.Center" @attributes="Attributes" Style="@ContainerStyle">
     <MudSelect T="Guid?" Value="selectedServerId" ValueChanged="OnServerChanged" Placeholder="Server"
-               Variant="Variant.Filled" Dense="true" Margin="Margin.None"
-               Style="min-width:120px; flex:1;"
+               Variant="@SelectVariant" Dense="true" Margin="@SelectMargin"
+               Style="@SelectStyle"
                Text="@GetSelectedServerName()">
         @foreach (var server in servers)
         {
@@ -17,8 +17,8 @@
     </MudSelect>
 
     <MudSelect T="string" Value="selectedModel" ValueChanged="OnModelChanged" Placeholder="Model"
-               Variant="Variant.Filled" Disabled="@(!selectedServerId.HasValue || loading || loadError != null)" Dense="true" Margin="Margin.None"
-               Style="min-width:120px; flex:1;">
+               Variant="@SelectVariant" Disabled="@(!selectedServerId.HasValue || loading || loadError != null)" Dense="true" Margin="@SelectMargin"
+               Style="@SelectStyle">
         @foreach (var model in models)
         {
             <MudSelectItem Value="@model.Name">@model.Name</MudSelectItem>
@@ -50,6 +50,9 @@
     [Parameter] public EventCallback<ServerModelSelection> ValueChanged { get; set; }
     [Parameter] public bool ShowClearButton { get; set; } = false;
     [Parameter] public bool UseDefaultsWhenUnset { get; set; } = true;
+    [Parameter] public Variant SelectVariant { get; set; } = Variant.Filled;
+    [Parameter] public Margin SelectMargin { get; set; } = Margin.None;
+    [Parameter] public bool FillAvailableWidth { get; set; } = true;
     [Parameter(CaptureUnmatchedValues = true)] public Dictionary<string, object> Attributes { get; set; } = [];
 
     private Guid? selectedServerId;
@@ -58,6 +61,8 @@
     private List<OllamaModel> models = [];
     private bool loading;
     private string? loadError;
+    private string ContainerStyle => FillAvailableWidth ? "flex: 1; min-width: 0;" : "max-width: 600px; min-width: 0;";
+    private string SelectStyle => FillAvailableWidth ? "min-width:120px; flex:1;" : "min-width:220px; flex:1 1 220px;";
 
     protected override async Task OnInitializedAsync()
     {
