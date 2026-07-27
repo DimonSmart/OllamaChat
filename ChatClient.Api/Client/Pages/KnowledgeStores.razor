@@ -9,36 +9,42 @@
 
 <PageTitle>Knowledge Stores</PageTitle>
 
-<div class="knowledge-stores-workspace">
-    <aside class="knowledge-stores-master">
-        <MudStack Spacing="1">
+<MudGrid Spacing="2" Class="ma-0" Style="width: 100%;">
+    <MudItem xs="12" md="4" lg="3">
+        <MudStack Spacing="1" Style="min-height: calc(100vh - 78px); padding-right: 12px; border-right: 1px solid var(--mud-palette-lines-default);">
             <MudStack Row="true" AlignItems="AlignItems.Center">
                 <MudText Typo="Typo.h6">Knowledge Stores</MudText>
                 <MudSpacer />
-                <MudButton Color="Color.Primary" Size="Size.Small" StartIcon="@Icons.Material.Filled.Add" OnClick="CreateAsync">New store</MudButton>
+                <MudButton Color="Color.Primary" Variant="Variant.Text" Size="Size.Small" StartIcon="@Icons.Material.Filled.Add" OnClick="CreateAsync">New store</MudButton>
             </MudStack>
-            <MudTextField @bind-Value="storeSearch" Placeholder="Search stores..." Margin="Margin.Dense" Immediate="true"
-                          Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Search" />
+
+            <MudTextField @bind-Value="storeSearch"
+                          Placeholder="Search stores..."
+                          Variant="Variant.Outlined"
+                          Margin="Margin.Dense"
+                          Immediate="true"
+                          Adornment="Adornment.Start"
+                          AdornmentIcon="@Icons.Material.Filled.Search" />
+
+            <MudList T="Guid?" Dense="true" @bind-SelectedValue="selectedStoreId" Style="flex: 1; overflow-y: auto;">
+                @foreach (var store in FilteredStores)
+                {
+                    <MudListItem T="Guid?" Value="@store.Id" OnClick="@(() => Select(store.Id))">
+                        <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="1" Style="width: 100%; min-width: 0;">
+                            <MudIcon Icon="@Icons.Material.Filled.LibraryBooks" Size="Size.Small" />
+                            <MudText Typo="Typo.body2" Style="min-width: 0; overflow-wrap: anywhere;">@store.Name</MudText>
+                            <MudSpacer />
+                            <MudChip T="string" Size="Size.Small" Color="@GetStoreStatusColor(store)">@GetStoreIndexStatus(store)</MudChip>
+                        </MudStack>
+                    </MudListItem>
+                }
+            </MudList>
+
+            <MudText Typo="Typo.caption" Class="mud-text-secondary">@FilteredStores.Count @GetStoreCountLabel(FilteredStores.Count)</MudText>
         </MudStack>
+    </MudItem>
 
-        <MudList T="Guid?" Dense="true" Class="knowledge-store-list">
-            @foreach (var store in FilteredStores)
-            {
-                <MudListItem T="Guid?" Value="@store.Id" Class="@GetStoreItemClass(store)" OnClick="@(() => Select(store.Id))">
-                    <MudStack Row="true" AlignItems="AlignItems.Start" Spacing="1" Class="w-100">
-                        <MudIcon Icon="@Icons.Material.Filled.LibraryBooks" Size="Size.Small" Class="mt-1" />
-                        <MudText Typo="Typo.body2" Class="knowledge-store-name">@store.Name</MudText>
-                        <MudSpacer />
-                        <MudChip T="string" Size="Size.Small" Color="@GetStoreStatusColor(store)">@GetStoreIndexStatus(store)</MudChip>
-                    </MudStack>
-                </MudListItem>
-            }
-        </MudList>
-
-        <MudText Typo="Typo.caption" Color="Color.Secondary">@FilteredStores.Count @GetStoreCountLabel(FilteredStores.Count)</MudText>
-    </aside>
-
-    <main class="knowledge-stores-detail">
+    <MudItem xs="12" md="8" lg="9">
         @if (selected is null)
         {
             <MudText Color="Color.Secondary">Select a Knowledge Store to edit it.</MudText>
@@ -47,7 +53,7 @@
         {
             <MudStack Spacing="2">
                 <MudStack Row="true" Wrap="Wrap.Wrap" AlignItems="AlignItems.Center" Spacing="1">
-                    <MudText Typo="Typo.h6" Class="knowledge-store-title">@selected.Name</MudText>
+                    <MudText Typo="Typo.h6" Style="min-width: 0; overflow-wrap: anywhere;">@selected.Name</MudText>
                     <MudChip T="string" Size="Size.Small" Color="@GetStoreStatusColor(selected)">@GetStoreIndexStatus(selected)</MudChip>
                     <MudSpacer />
                     <MudButton Color="Color.Primary" Size="Size.Small" OnClick="SaveAsync">Save</MudButton>
@@ -63,10 +69,10 @@
                     <MudText Typo="Typo.subtitle1" Class="mb-1">General</MudText>
                     <MudGrid Spacing="1">
                         <MudItem xs="12" md="5">
-                            <MudTextField @bind-Value="selected.Name" Label="Name" Margin="Margin.Dense" />
+                            <MudTextField @bind-Value="selected.Name" Label="Name" Variant="Variant.Outlined" Margin="Margin.Dense" />
                         </MudItem>
                         <MudItem xs="12" md="7">
-                            <MudTextField @bind-Value="selected.Description" Label="Description" Lines="2" MaxLines="2" Margin="Margin.Dense" />
+                            <MudTextField @bind-Value="selected.Description" Label="Description" Variant="Variant.Outlined" Margin="Margin.Dense" />
                         </MudItem>
                     </MudGrid>
                 </section>
@@ -77,13 +83,19 @@
                     <MudText Typo="Typo.subtitle1" Class="mb-1">Index configuration</MudText>
                     <MudGrid Spacing="1">
                         <MudItem xs="12" md="7">
-                            <ServerModelPicker Value="GetEmbeddingSelection()" ValueChanged="OnEmbeddingSelectionChanged" ShowClearButton="false" UseDefaultsWhenUnset="false" SelectVariant="Variant.Outlined" SelectMargin="Margin.Dense" FillAvailableWidth="true" />
+                            <ServerModelPicker Value="GetEmbeddingSelection()"
+                                               ValueChanged="OnEmbeddingSelectionChanged"
+                                               ShowClearButton="false"
+                                               UseDefaultsWhenUnset="false"
+                                               SelectVariant="Variant.Outlined"
+                                               SelectMargin="Margin.Dense"
+                                               FillAvailableWidth="true" />
                         </MudItem>
                         <MudItem xs="6" md="3">
-                            <MudNumericField @bind-Value="selected.Configuration.MaxTokensPerChunk" Label="Chunk size" Min="1" Margin="Margin.Dense" />
+                            <MudNumericField @bind-Value="selected.Configuration.MaxTokensPerChunk" Label="Chunk size" Min="1" Variant="Variant.Outlined" Margin="Margin.Dense" />
                         </MudItem>
                         <MudItem xs="6" md="2">
-                            <MudNumericField @bind-Value="selected.Configuration.OverlapTokens" Label="Overlap" Min="0" Margin="Margin.Dense" />
+                            <MudNumericField @bind-Value="selected.Configuration.OverlapTokens" Label="Overlap" Min="0" Variant="Variant.Outlined" Margin="Margin.Dense" />
                         </MudItem>
                     </MudGrid>
                 </section>
@@ -97,15 +109,25 @@
 
                 <section>
                     <MudText Typo="Typo.subtitle1" Class="mb-1">Documents</MudText>
-                    <MudText Typo="Typo.body2" Color="Color.Secondary" Class="mb-1">Markdown/text files are processed directly. Other supported document formats require MarkItDown.</MudText>
+
                     <MudStack Row="true" Wrap="Wrap.Wrap" AlignItems="AlignItems.Center" Spacing="1">
                         <MudFileUpload T="IReadOnlyList<IBrowserFile>" @ref="uploadControl" FilesChanged="UploadAsync" multiple="true" MaximumFileCount="100" Disabled="@(activeUpload is not null)">
                             <CustomContent Context="upload">
                                 <MudButton Variant="Variant.Outlined" Size="Size.Small" StartIcon="@Icons.Material.Filled.Upload" Disabled="@(activeUpload is not null)" OnClick="upload.OpenFilePickerAsync">Upload files</MudButton>
                             </CustomContent>
                         </MudFileUpload>
-                        <MudText Typo="Typo.body2" Color="Color.Secondary">@GetDocumentSummary(selected)</MudText>
+                        <MudText Typo="Typo.body2" Class="mud-text-secondary">@GetDocumentSummary(selected)</MudText>
+                        <MudSpacer />
+                        <MudTextField @bind-Value="documentSearch"
+                                      Placeholder="Search files..."
+                                      Variant="Variant.Outlined"
+                                      Margin="Margin.Dense"
+                                      Immediate="true"
+                                      Adornment="Adornment.Start"
+                                      AdornmentIcon="@Icons.Material.Filled.Search"
+                                      Style="width: 280px; max-width: 100%;" />
                     </MudStack>
+
                     @if (IsUploadingFor(selected.Id))
                     {
                         <MudStack Spacing="0" Class="mt-1">
@@ -114,14 +136,7 @@
                         </MudStack>
                     }
 
-                    <MudStack Row="true" Wrap="Wrap.Wrap" AlignItems="AlignItems.Center" Class="mt-2">
-                        <MudText Typo="Typo.subtitle2">Files</MudText>
-                        <MudSpacer />
-                        <MudTextField @bind-Value="documentSearch" Placeholder="Search files..." Margin="Margin.Dense" Immediate="true"
-                                      Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Search" Class="knowledge-document-search" />
-                    </MudStack>
-
-                    <MudTable Items="FilteredDocuments" Dense="true" Hover="true" Breakpoint="Breakpoint.Sm" Class="knowledge-documents-table">
+                    <MudTable Items="FilteredDocuments" Dense="true" Hover="true" Breakpoint="Breakpoint.Sm" Class="mt-1">
                         <HeaderContent>
                             <MudTh>File</MudTh>
                             <MudTh>Size</MudTh>
@@ -143,7 +158,7 @@
                                 {
                                     <MudStack Row="true" Spacing="1" AlignItems="AlignItems.Center">
                                         <MudText Typo="Typo.body2">Indexing @GetProgressPercentage(progress)%</MudText>
-                                        <MudProgressLinear Value="@GetProgressPercentage(progress)" Class="knowledge-document-progress" />
+                                        <MudProgressLinear Value="@GetProgressPercentage(progress)" Style="width: 72px;" />
                                     </MudStack>
                                 }
                                 else
@@ -164,8 +179,8 @@
                 </section>
             </MudStack>
         }
-    </main>
-</div>
+    </MudItem>
+</MudGrid>
 
 @code {
     private List<KnowledgeStore> stores = [];
@@ -343,8 +358,8 @@
         _ => Color.Default
     };
 
-    private string GetStoreItemClass(KnowledgeStore store) => store.Id == selectedStoreId ? "knowledge-store-item selected" : "knowledge-store-item";
     private static string GetStoreCountLabel(int count) => count == 1 ? "store" : "stores";
+
     private static string FormatFileSize(long bytes)
     {
         string[] units = ["B", "KB", "MB", "GB", "TB"];
