@@ -83,7 +83,7 @@
     private async Task UploadAsync(InputFileChangeEventArgs args)
     {
         if (selected is null) return;
-        foreach (var file in args.GetMultipleFiles(20))
+        foreach (var file in args.GetMultipleFiles(100))
         {
             try { await using var stream = file.OpenReadStream(20 * 1024 * 1024); await Stores.AddOrUpdateDocumentAsync(selected.Id, file.Name, stream, file.ContentType); }
             catch (Exception ex) { Snackbar.Add($"{file.Name}: {ex.Message}", Severity.Error); }
