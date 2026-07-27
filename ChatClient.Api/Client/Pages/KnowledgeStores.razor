@@ -8,63 +8,211 @@
 @inject ISnackbar Snackbar
 
 <PageTitle>Knowledge Stores</PageTitle>
-<MudContainer MaxWidth="MaxWidth.Large" Class="mt-3">
-    <MudStack Row="true" AlignItems="AlignItems.Center"><MudText Class="page-header">Knowledge Stores</MudText><MudSpacer /><MudButton Color="Color.Primary" OnClick="CreateAsync">Create</MudButton></MudStack>
-    <MudGrid Class="mt-3">
-        <MudItem xs="12" md="4">
-            <MudList T="Guid?" Dense="true" @bind-SelectedValue="selectedStoreId">
-                @foreach (var item in stores)
-                { <MudListItem T="Guid?" Value="@item.Id" OnClick="@(() => Select(item.Id))">@item.Name <MudChip T="string" Size="Size.Small">@GetStoreIndexStatus(item)</MudChip></MudListItem> }
-            </MudList>
-        </MudItem>
-        <MudItem xs="12" md="8">
-            @if (selected is not null)
+
+<div class="knowledge-stores-workspace">
+    <aside class="knowledge-stores-master">
+        <MudStack Spacing="1">
+            <MudStack Row="true" AlignItems="AlignItems.Center">
+                <MudText Typo="Typo.h6">Knowledge Stores</MudText>
+                <MudSpacer />
+                <MudButton Color="Color.Primary" Size="Size.Small" StartIcon="@Icons.Material.Filled.Add" OnClick="CreateAsync">New store</MudButton>
+            </MudStack>
+            <MudTextField @bind-Value="storeSearch" Placeholder="Search stores..." Margin="Margin.Dense" Immediate="true"
+                          Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Search" />
+        </MudStack>
+
+        <MudList T="Guid?" Dense="true" Class="knowledge-store-list">
+            @foreach (var store in FilteredStores)
             {
-                <MudStack Spacing="2">
-                    <MudTextField @bind-Value="selected.Name" Label="Name" Margin="Margin.Dense" />
-                    <MudTextField @bind-Value="selected.Description" Label="Description" Lines="3" Margin="Margin.Dense" />
-                    <MudText Typo="Typo.subtitle1">Index configuration</MudText>
-                    <ServerModelPicker Value="GetEmbeddingSelection()" ValueChanged="OnEmbeddingSelectionChanged" ShowClearButton="false" UseDefaultsWhenUnset="false" SelectVariant="Variant.Outlined" SelectMargin="Margin.Dense" FillAvailableWidth="false" />
-                    <MudStack Row="true" Wrap="Wrap.Wrap" Spacing="2">
-                        <MudNumericField @bind-Value="selected.Configuration.MaxTokensPerChunk" Label="Max tokens per chunk" Min="1" Margin="Margin.Dense" Style="width: 200px; max-width: 100%;" />
-                        <MudNumericField @bind-Value="selected.Configuration.OverlapTokens" Label="Overlap tokens" Min="0" Margin="Margin.Dense" Style="width: 200px; max-width: 100%;" />
+                <MudListItem T="Guid?" Value="@store.Id" Class="@GetStoreItemClass(store)" OnClick="@(() => Select(store.Id))">
+                    <MudStack Row="true" AlignItems="AlignItems.Start" Spacing="1" Class="w-100">
+                        <MudIcon Icon="@Icons.Material.Filled.LibraryBooks" Size="Size.Small" Class="mt-1" />
+                        <MudText Typo="Typo.body2" Class="knowledge-store-name">@store.Name</MudText>
+                        <MudSpacer />
+                        <MudChip T="string" Size="Size.Small" Color="@GetStoreStatusColor(store)">@GetStoreIndexStatus(store)</MudChip>
                     </MudStack>
-                    @if (!string.IsNullOrWhiteSpace(selected.Index.LastError)) { <MudAlert Severity="Severity.Error">@selected.Index.LastError</MudAlert> }
-                    <MudStack Row="true"><MudButton Color="Color.Primary" OnClick="SaveAsync">Save</MudButton><MudButton OnClick="ReindexAsync">Reindex</MudButton><MudButton Color="Color.Error" OnClick="DeleteAsync">Delete store</MudButton></MudStack>
-                    <MudDivider />
-                    <MudText Typo="Typo.subtitle1">Documents</MudText>
-                    <MudText Typo="Typo.body2">Markdown/text files are processed directly. Other supported document formats require MarkItDown.</MudText>
-                    <InputFile @key="GetUploadInputKey()" OnChange="UploadAsync" multiple disabled="@(activeUpload is not null)" />
+                </MudListItem>
+            }
+        </MudList>
+
+        <MudText Typo="Typo.caption" Color="Color.Secondary">@FilteredStores.Count @GetStoreCountLabel(FilteredStores.Count)</MudText>
+    </aside>
+
+    <main class="knowledge-stores-detail">
+        @if (selected is null)
+        {
+            <MudText Color="Color.Secondary">Select a Knowledge Store to edit it.</MudText>
+        }
+        else
+        {
+            <MudStack Spacing="2">
+                <MudStack Row="true" Wrap="Wrap.Wrap" AlignItems="AlignItems.Center" Spacing="1">
+                    <MudText Typo="Typo.h6" Class="knowledge-store-title">@selected.Name</MudText>
+                    <MudChip T="string" Size="Size.Small" Color="@GetStoreStatusColor(selected)">@GetStoreIndexStatus(selected)</MudChip>
+                    <MudSpacer />
+                    <MudButton Color="Color.Primary" Size="Size.Small" OnClick="SaveAsync">Save</MudButton>
+                    <MudButton Variant="Variant.Outlined" Size="Size.Small" OnClick="ReindexAsync">Reindex</MudButton>
+                    <MudMenu Icon="@Icons.Material.Filled.MoreVert" Size="Size.Small" AnchorOrigin="Origin.BottomRight" TransformOrigin="Origin.TopRight">
+                        <MudMenuItem Icon="@Icons.Material.Filled.Delete" IconColor="Color.Error" OnClick="DeleteAsync">Delete store</MudMenuItem>
+                    </MudMenu>
+                </MudStack>
+
+                <MudDivider />
+
+                <section>
+                    <MudText Typo="Typo.subtitle1" Class="mb-1">General</MudText>
+                    <MudGrid Spacing="1">
+                        <MudItem xs="12" md="5">
+                            <MudTextField @bind-Value="selected.Name" Label="Name" Margin="Margin.Dense" />
+                        </MudItem>
+                        <MudItem xs="12" md="7">
+                            <MudTextField @bind-Value="selected.Description" Label="Description" Lines="2" MaxLines="2" Margin="Margin.Dense" />
+                        </MudItem>
+                    </MudGrid>
+                </section>
+
+                <MudDivider />
+
+                <section>
+                    <MudText Typo="Typo.subtitle1" Class="mb-1">Index configuration</MudText>
+                    <MudGrid Spacing="1">
+                        <MudItem xs="12" md="7">
+                            <ServerModelPicker Value="GetEmbeddingSelection()" ValueChanged="OnEmbeddingSelectionChanged" ShowClearButton="false" UseDefaultsWhenUnset="false" SelectVariant="Variant.Outlined" SelectMargin="Margin.Dense" FillAvailableWidth="true" />
+                        </MudItem>
+                        <MudItem xs="6" md="3">
+                            <MudNumericField @bind-Value="selected.Configuration.MaxTokensPerChunk" Label="Chunk size" Min="1" Margin="Margin.Dense" />
+                        </MudItem>
+                        <MudItem xs="6" md="2">
+                            <MudNumericField @bind-Value="selected.Configuration.OverlapTokens" Label="Overlap" Min="0" Margin="Margin.Dense" />
+                        </MudItem>
+                    </MudGrid>
+                </section>
+
+                @if (!string.IsNullOrWhiteSpace(selected.Index.LastError))
+                {
+                    <MudAlert Severity="Severity.Error" Dense="true">@selected.Index.LastError</MudAlert>
+                }
+
+                <MudDivider />
+
+                <section>
+                    <MudText Typo="Typo.subtitle1" Class="mb-1">Documents</MudText>
+                    <MudText Typo="Typo.body2" Color="Color.Secondary" Class="mb-1">Markdown/text files are processed directly. Other supported document formats require MarkItDown.</MudText>
+                    <MudStack Row="true" Wrap="Wrap.Wrap" AlignItems="AlignItems.Center" Spacing="1">
+                        <MudFileUpload T="IReadOnlyList<IBrowserFile>" @ref="uploadControl" FilesChanged="UploadAsync" multiple="true" MaximumFileCount="100" Disabled="@(activeUpload is not null)">
+                            <CustomContent Context="upload">
+                                <MudButton Variant="Variant.Outlined" Size="Size.Small" StartIcon="@Icons.Material.Filled.Upload" Disabled="@(activeUpload is not null)" OnClick="upload.OpenFilePickerAsync">Upload files</MudButton>
+                            </CustomContent>
+                        </MudFileUpload>
+                        <MudText Typo="Typo.body2" Color="Color.Secondary">@GetDocumentSummary(selected)</MudText>
+                    </MudStack>
                     @if (IsUploadingFor(selected.Id))
                     {
-                        <MudText Typo="Typo.body2">Uploading @activeUpload!.CompletedFiles / @activeUpload.TotalFiles</MudText>
+                        <MudStack Spacing="0" Class="mt-1">
+                            <MudText Typo="Typo.body2">Uploading @activeUpload!.CompletedFiles / @activeUpload.TotalFiles</MudText>
+                            <MudProgressLinear Value="@GetUploadPercentage()" />
+                        </MudStack>
                     }
-                    <MudTable Items="selected.Documents" Dense="true">
-                        <HeaderContent><MudTh>File</MudTh><MudTh>Size</MudTh><MudTh>Updated</MudTh><MudTh>Index status</MudTh><MudTh></MudTh></HeaderContent>
-                        <RowTemplate><MudTd><a href="@GetSourceUrl(context.Id)" target="_blank" rel="noopener noreferrer">@context.FileName</a></MudTd><MudTd>@context.Size</MudTd><MudTd>@context.UpdatedUtc.ToLocalTime().ToString("g")</MudTd><MudTd>@if (IndexProgress.Get(selected.Id, context.Id) is { } progress) { <MudStack Row="true" Spacing="1" AlignItems="AlignItems.Center"><MudText Typo="Typo.body2">Indexing @GetProgressPercentage(progress)%</MudText><MudProgressLinear Value="@GetProgressPercentage(progress)" Style="width: 72px;" /></MudStack> } else { @GetDocumentIndexStatus(context) }</MudTd><MudTd><MudIconButton Icon="@Icons.Material.Filled.Delete" Color="Color.Error" OnClick="@(() => DeleteDocumentAsync(context.Id))" /></MudTd></RowTemplate>
+
+                    <MudStack Row="true" Wrap="Wrap.Wrap" AlignItems="AlignItems.Center" Class="mt-2">
+                        <MudText Typo="Typo.subtitle2">Files</MudText>
+                        <MudSpacer />
+                        <MudTextField @bind-Value="documentSearch" Placeholder="Search files..." Margin="Margin.Dense" Immediate="true"
+                                      Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Search" Class="knowledge-document-search" />
+                    </MudStack>
+
+                    <MudTable Items="FilteredDocuments" Dense="true" Hover="true" Breakpoint="Breakpoint.Sm" Class="knowledge-documents-table">
+                        <HeaderContent>
+                            <MudTh>File</MudTh>
+                            <MudTh>Size</MudTh>
+                            <MudTh>Updated</MudTh>
+                            <MudTh>Status</MudTh>
+                            <MudTh></MudTh>
+                        </HeaderContent>
+                        <RowTemplate>
+                            <MudTd DataLabel="File">
+                                <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="1">
+                                    <MudIcon Icon="@Icons.Material.Filled.Description" Size="Size.Small" />
+                                    <a href="@GetSourceUrl(context.Id)" target="_blank" rel="noopener noreferrer">@context.FileName</a>
+                                </MudStack>
+                            </MudTd>
+                            <MudTd DataLabel="Size">@FormatFileSize(context.Size)</MudTd>
+                            <MudTd DataLabel="Updated">@context.UpdatedUtc.ToLocalTime().ToString("dd MMM yyyy HH:mm")</MudTd>
+                            <MudTd DataLabel="Status">
+                                @if (IndexProgress.Get(selected.Id, context.Id) is { } progress)
+                                {
+                                    <MudStack Row="true" Spacing="1" AlignItems="AlignItems.Center">
+                                        <MudText Typo="Typo.body2">Indexing @GetProgressPercentage(progress)%</MudText>
+                                        <MudProgressLinear Value="@GetProgressPercentage(progress)" Class="knowledge-document-progress" />
+                                    </MudStack>
+                                }
+                                else
+                                {
+                                    <MudChip T="string" Size="Size.Small" Color="@GetDocumentStatusColor(context)">@GetDocumentIndexStatus(context)</MudChip>
+                                }
+                            </MudTd>
+                            <MudTd Class="text-right">
+                                <MudMenu Icon="@Icons.Material.Filled.MoreVert" Size="Size.Small" AnchorOrigin="Origin.BottomRight" TransformOrigin="Origin.TopRight">
+                                    <MudMenuItem Icon="@Icons.Material.Filled.Delete" IconColor="Color.Error" OnClick="@(() => DeleteDocumentAsync(context.Id))">Delete</MudMenuItem>
+                                </MudMenu>
+                            </MudTd>
+                        </RowTemplate>
+                        <PagerContent>
+                            <MudTablePager PageSizeOptions="new int[] { 25, 50, 100 }" />
+                        </PagerContent>
                     </MudTable>
-                </MudStack>
-            }
-        </MudItem>
-    </MudGrid>
-</MudContainer>
+                </section>
+            </MudStack>
+        }
+    </main>
+</div>
 
 @code {
     private List<KnowledgeStore> stores = [];
     private Guid? selectedStoreId;
     private KnowledgeStore? selected;
     private UploadState? activeUpload;
-    private int uploadInputVersion;
+    private MudFileUpload<IReadOnlyList<IBrowserFile>>? uploadControl;
+    private string storeSearch = string.Empty;
+    private string documentSearch = string.Empty;
     private readonly CancellationTokenSource refreshCancellation = new();
+
+    private List<KnowledgeStore> FilteredStores => stores
+        .Where(store => string.IsNullOrWhiteSpace(storeSearch) || store.Name.Contains(storeSearch, StringComparison.OrdinalIgnoreCase))
+        .ToList();
+
+    private IEnumerable<KnowledgeDocument> FilteredDocuments => selected?.Documents
+        .Where(document => string.IsNullOrWhiteSpace(documentSearch) || document.FileName.Contains(documentSearch, StringComparison.OrdinalIgnoreCase))
+        ?? [];
+
     protected override async Task OnInitializedAsync()
     {
         await ReloadAsync();
         _ = RefreshAsync();
     }
-    private async Task ReloadAsync() { stores = (await Stores.GetAllAsync()).OrderBy(x => x.Name).ToList(); selected = selectedStoreId is Guid id ? stores.FirstOrDefault(x => x.Id == id) : null; }
-    private void Select(Guid id) { selectedStoreId = id; selected = stores.First(x => x.Id == id); uploadInputVersion++; }
-    private async Task CreateAsync() { var created = await Stores.CreateAsync("New Knowledge Store", null); selectedStoreId = created.Id; await ReloadAsync(); }
+
+    private async Task ReloadAsync()
+    {
+        stores = (await Stores.GetAllAsync()).OrderBy(x => x.Name).ToList();
+        selected = selectedStoreId is Guid id ? stores.FirstOrDefault(x => x.Id == id) : null;
+    }
+
+    private void Select(Guid id)
+    {
+        selectedStoreId = id;
+        selected = stores.First(x => x.Id == id);
+        documentSearch = string.Empty;
+    }
+
+    private async Task CreateAsync()
+    {
+        var created = await Stores.CreateAsync("New Knowledge Store", null);
+        selectedStoreId = created.Id;
+        await ReloadAsync();
+    }
+
     private ServerModelSelection GetEmbeddingSelection() => selected is null ? new(null, null) : new(selected.Configuration.ServerId, selected.Configuration.Model);
+
     private Task OnEmbeddingSelectionChanged(ServerModelSelection selection)
     {
         if (selected is not null)
@@ -72,8 +220,10 @@
             selected.Configuration.ServerId = selection.ServerId ?? Guid.Empty;
             selected.Configuration.Model = selection.ModelName ?? string.Empty;
         }
+
         return Task.CompletedTask;
     }
+
     private async Task SaveAsync()
     {
         if (selected is null) return;
@@ -82,23 +232,48 @@
             Snackbar.Add("Select an embedding server and model.", Severity.Error);
             return;
         }
+
         await Stores.UpdateAsync(selected);
         Snackbar.Add("Knowledge Store saved.", Severity.Success);
     }
-    private async Task ReindexAsync() { if (selected is null) return; await Stores.RequestReindexAsync(selected.Id); await ReloadAsync(); Snackbar.Add("Reindexing requested.", Severity.Info); }
-    private async Task DeleteAsync() { if (selected is null) return; await Stores.DeleteAsync(selected.Id); selectedStoreId = null; selected = null; await ReloadAsync(); }
-    private async Task UploadAsync(InputFileChangeEventArgs args)
+
+    private async Task ReindexAsync()
     {
         if (selected is null) return;
+        await Stores.RequestReindexAsync(selected.Id);
+        await ReloadAsync();
+        Snackbar.Add("Reindexing requested.", Severity.Info);
+    }
+
+    private async Task DeleteAsync()
+    {
+        if (selected is null) return;
+        await Stores.DeleteAsync(selected.Id);
+        selectedStoreId = null;
+        selected = null;
+        documentSearch = string.Empty;
+        await ReloadAsync();
+    }
+
+    private async Task UploadAsync(IReadOnlyList<IBrowserFile> files)
+    {
+        if (selected is null || files.Count == 0) return;
+
         var targetStoreId = selected.Id;
-        var files = args.GetMultipleFiles(100);
         activeUpload = new UploadState(targetStoreId, files.Count);
         try
         {
             foreach (var file in files)
             {
-                try { await using var stream = file.OpenReadStream(20 * 1024 * 1024); await Stores.AddOrUpdateDocumentAsync(targetStoreId, file.Name, stream, file.ContentType); }
-                catch (Exception ex) { Snackbar.Add($"{file.Name}: {ex.Message}", Severity.Error); }
+                try
+                {
+                    await using var stream = file.OpenReadStream(20 * 1024 * 1024);
+                    await Stores.AddOrUpdateDocumentAsync(targetStoreId, file.Name, stream, file.ContentType);
+                }
+                catch (Exception ex)
+                {
+                    Snackbar.Add($"{file.Name}: {ex.Message}", Severity.Error);
+                }
                 finally
                 {
                     activeUpload.CompletedFiles++;
@@ -109,11 +284,21 @@
         finally
         {
             activeUpload = null;
-            uploadInputVersion++;
+            if (uploadControl is not null)
+            {
+                await uploadControl.ClearAsync();
+            }
             await ReloadAsync();
         }
     }
-    private async Task DeleteDocumentAsync(Guid id) { if (selected is null) return; await Stores.DeleteDocumentAsync(selected.Id, id); await ReloadAsync(); }
+
+    private async Task DeleteDocumentAsync(Guid id)
+    {
+        if (selected is null) return;
+        await Stores.DeleteDocumentAsync(selected.Id, id);
+        await ReloadAsync();
+    }
+
     private string GetStoreIndexStatus(KnowledgeStore store) => store.Index.State switch
     {
         KnowledgeStoreIndexState.Ready => "Indexed",
@@ -123,10 +308,19 @@
         KnowledgeStoreIndexState.Failed => "Failed",
         _ => store.Index.State.ToString()
     };
+
+    private static Color GetStoreStatusColor(KnowledgeStore store) => store.Index.State switch
+    {
+        KnowledgeStoreIndexState.Ready => Color.Success,
+        KnowledgeStoreIndexState.Indexing => Color.Info,
+        KnowledgeStoreIndexState.Failed => Color.Error,
+        KnowledgeStoreIndexState.Outdated => Color.Warning,
+        _ => Color.Default
+    };
+
     private string GetDocumentIndexStatus(KnowledgeDocument document)
     {
-        if (selected is null)
-            return "Unknown";
+        if (selected is null) return "Unknown";
         return selected.Index.State switch
         {
             KnowledgeStoreIndexState.Ready when document.SourceHash == document.IndexedSourceHash => "Indexed",
@@ -138,10 +332,40 @@
             _ => "Pending"
         };
     }
-    private string GetSourceUrl(Guid documentId) => selected is null ? string.Empty : $"/api/knowledge-stores/{selected.Id}/documents/{documentId}/source";
+
+    private Color GetDocumentStatusColor(KnowledgeDocument document) => GetDocumentIndexStatus(document) switch
+    {
+        "Indexed" => Color.Success,
+        "Indexing" => Color.Info,
+        "Pending" => Color.Default,
+        "Failed" => Color.Error,
+        "Outdated" => Color.Warning,
+        _ => Color.Default
+    };
+
+    private string GetStoreItemClass(KnowledgeStore store) => store.Id == selectedStoreId ? "knowledge-store-item selected" : "knowledge-store-item";
+    private static string GetStoreCountLabel(int count) => count == 1 ? "store" : "stores";
+    private static string FormatFileSize(long bytes)
+    {
+        string[] units = ["B", "KB", "MB", "GB", "TB"];
+        double size = bytes;
+        var unit = 0;
+        while (size >= 1024 && unit < units.Length - 1)
+        {
+            size /= 1024;
+            unit++;
+        }
+
+        return unit == 0 ? $"{size:0} {units[unit]}" : $"{size:0.#} {units[unit]}";
+    }
+
+    private string GetDocumentSummary(KnowledgeStore store) => $"{store.Documents.Count} {GetDocumentCountLabel(store.Documents.Count)} · {FormatFileSize(store.Documents.Sum(document => document.Size))} · {GetStoreIndexStatus(store)}";
+    private static string GetDocumentCountLabel(int count) => count == 1 ? "file" : "files";
     private bool IsUploadingFor(Guid storeId) => activeUpload?.StoreId == storeId;
-    private (Guid? StoreId, int Version) GetUploadInputKey() => (selected?.Id, uploadInputVersion);
+    private double GetUploadPercentage() => activeUpload is null || activeUpload.TotalFiles == 0 ? 0 : activeUpload.CompletedFiles * 100d / activeUpload.TotalFiles;
+    private string GetSourceUrl(Guid documentId) => selected is null ? string.Empty : $"/api/knowledge-stores/{selected.Id}/documents/{documentId}/source";
     private static int GetProgressPercentage(KnowledgeDocumentIndexProgress progress) => progress.TotalChunks == 0 ? 0 : progress.ProcessedChunks * 100 / progress.TotalChunks;
+
     private async Task RefreshAsync()
     {
         try
@@ -160,12 +384,14 @@
         {
         }
     }
+
     public ValueTask DisposeAsync()
     {
         refreshCancellation.Cancel();
         refreshCancellation.Dispose();
         return ValueTask.CompletedTask;
     }
+
     private sealed class UploadState(Guid storeId, int totalFiles)
     {
         public Guid StoreId { get; } = storeId;
