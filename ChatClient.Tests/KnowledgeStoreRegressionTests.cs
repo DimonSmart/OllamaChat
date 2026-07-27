@@ -85,6 +85,40 @@ public sealed class KnowledgeStoreRegressionTests
     }
 
     [Fact]
+    public async Task UpdateAsync_FailedStoreDoesNotRequestAnotherRebuild()
+    {
+        var store = CreateReadyStore("Knowledge", 2);
+        store.Index.State = KnowledgeStoreIndexState.Failed;
+        var repository = new Mock<IKnowledgeStoreRepository>(MockBehavior.Strict);
+        repository.Setup(service => service.GetAllAsync(It.IsAny<CancellationToken>())).ReturnsAsync([store]);
+        repository.Setup(service => service.SaveAsync(store, It.IsAny<CancellationToken>())).Returns(Task.CompletedTask);
+        var indexer = new Mock<IKnowledgeIndexBackgroundService>(MockBehavior.Strict);
+        var service = new KnowledgeStoreService(
+            repository.Object,
+            Mock.Of<IKnowledgeDocumentStorage>(),
+            Mock.Of<IKnowledgeDocumentIngestionService>(),
+            Mock.Of<IAgentTemplateService>(),
+            Mock.Of<IUserSettingsService>(),
+            indexer.Object,
+            NullLogger<KnowledgeStoreService>.Instance);
+
+        await service.UpdateAsync(store);
+
+        indexer.Verify(service => service.RequestRebuild(), Times.Never);
+    }
+
+    [Fact]
+    public void NeedsIndexing_FailedStoreIsNotAutomaticallyRetried()
+    {
+        var store = CreateReadyStore("Knowledge", 2);
+        store.Index.State = KnowledgeStoreIndexState.Failed;
+        store.Documents[0].SourceHash = "current";
+        store.Documents[0].IndexedSourceHash = "previous";
+
+        Assert.False(KnowledgeIndexBackgroundService.NeedsIndexing(store));
+    }
+
+    [Fact]
     public void ApplyCurrentIngestionVersion_MarksLegacyStoreOutdated()
     {
         var store = CreateReadyStore("Knowledge", 2);
@@ -95,6 +129,19 @@ public sealed class KnowledgeStoreRegressionTests
         Assert.True(changed);
         Assert.Equal(KnowledgeStoreIndexConfiguration.CurrentIngestionVersion, store.Configuration.IngestionVersion);
         Assert.Equal(KnowledgeStoreIndexState.Outdated, store.Index.State);
+    }
+
+    [Fact]
+    public void ApplyCurrentIngestionVersion_PreservesFailedState()
+    {
+        var store = CreateReadyStore("Knowledge", 2);
+        store.Index.State = KnowledgeStoreIndexState.Failed;
+        store.Configuration.IngestionVersion = "markdown-header-v2";
+
+        var changed = KnowledgeIndexBackgroundService.ApplyCurrentIngestionVersion(store);
+
+        Assert.True(changed);
+        Assert.Equal(KnowledgeStoreIndexState.Failed, store.Index.State);
     }
 
     [Fact]

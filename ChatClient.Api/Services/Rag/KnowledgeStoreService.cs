@@ -36,7 +36,7 @@ public sealed class KnowledgeStoreService(
         if (store.Index.IndexedConfiguration is not null && !store.Configuration.Equals(store.Index.IndexedConfiguration) && store.Index.State == KnowledgeStoreIndexState.Ready)
             store.Index.State = KnowledgeStoreIndexState.Outdated;
         await repository.SaveAsync(store, ct);
-        if (store.Index.State is KnowledgeStoreIndexState.NotIndexed or KnowledgeStoreIndexState.Outdated or KnowledgeStoreIndexState.Failed)
+        if (store.Index.State is KnowledgeStoreIndexState.NotIndexed or KnowledgeStoreIndexState.Outdated)
             indexer.RequestRebuild();
     }
 

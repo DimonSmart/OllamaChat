@@ -87,9 +87,10 @@ public sealed class KnowledgeIndexBackgroundService(IServiceScopeFactory scopes,
             finally { progress.ClearStore(snapshot.Id); }
         }
     }
-    private static bool NeedsIndexing(KnowledgeStore store) =>
-        store.Index.State is KnowledgeStoreIndexState.NotIndexed or KnowledgeStoreIndexState.Outdated or KnowledgeStoreIndexState.Failed ||
-        store.Documents.Any(document => document.SourceHash != document.IndexedSourceHash);
+    internal static bool NeedsIndexing(KnowledgeStore store) =>
+        store.Index.State != KnowledgeStoreIndexState.Failed &&
+        (store.Index.State is KnowledgeStoreIndexState.NotIndexed or KnowledgeStoreIndexState.Outdated ||
+         store.Documents.Any(document => document.SourceHash != document.IndexedSourceHash));
 
     internal static IReadOnlyList<KnowledgeDocument> SelectDocumentsToIndex(KnowledgeStore store, bool rebuildAll) =>
         rebuildAll ? store.Documents : store.Documents.Where(document => document.SourceHash != document.IndexedSourceHash).ToList();
@@ -100,7 +101,8 @@ public sealed class KnowledgeIndexBackgroundService(IServiceScopeFactory scopes,
             return false;
 
         store.Configuration.IngestionVersion = KnowledgeStoreIndexConfiguration.CurrentIngestionVersion;
-        store.Index.State = KnowledgeStoreIndexState.Outdated;
+        if (store.Index.State != KnowledgeStoreIndexState.Failed)
+            store.Index.State = KnowledgeStoreIndexState.Outdated;
         return true;
     }
 
