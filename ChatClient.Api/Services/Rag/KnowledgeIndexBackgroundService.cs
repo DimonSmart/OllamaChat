@@ -1,8 +1,5 @@
 using ChatClient.Application.Services;
 using ChatClient.Domain.Models;
-using Microsoft.Extensions.DataIngestion;
-using Microsoft.Extensions.DataIngestion.Chunkers;
-using Microsoft.ML.Tokenizers;
 
 namespace ChatClient.Api.Services.Rag;
 
@@ -18,15 +15,14 @@ public sealed class KnowledgeIndexBackgroundService(IServiceScopeFactory scopes,
         using var scope = scopes.CreateScope();
         var stores = scope.ServiceProvider.GetRequiredService<IKnowledgeStoreService>();
         var payloads = scope.ServiceProvider.GetRequiredService<IKnowledgeDocumentStorage>();
-        var ingestion = scope.ServiceProvider.GetRequiredService<IKnowledgeDocumentIngestionService>();
+        var chunker = scope.ServiceProvider.GetRequiredService<IKnowledgeMarkdownChunker>();
         var ollama = scope.ServiceProvider.GetRequiredService<IOllamaClientService>();
         var vectors = scope.ServiceProvider.GetRequiredService<KnowledgeVectorStore>();
         var allStores = await stores.GetAllAsync(ct);
-        foreach (var store in allStores.Where(store => store.Configuration.IngestionVersion != KnowledgeStoreIndexConfiguration.CurrentIngestionVersion))
+        foreach (var store in allStores)
         {
-            store.Configuration.IngestionVersion = KnowledgeStoreIndexConfiguration.CurrentIngestionVersion;
-            store.Index.State = KnowledgeStoreIndexState.Outdated;
-            await stores.UpdateAsync(store, ct);
+            if (ApplyCurrentIngestionVersion(store))
+                await stores.UpdateAsync(store, ct);
         }
 
         foreach (var snapshot in allStores.Where(x => x.Documents.Count > 0 && NeedsIndexing(x)))
@@ -41,9 +37,7 @@ public sealed class KnowledgeIndexBackgroundService(IServiceScopeFactory scopes,
                 foreach (var document in documentsToIndex)
                 {
                     var content = await payloads.ReadCanonicalMarkdownAsync(snapshot.Id, document.Id, ct) ?? throw new InvalidOperationException($"Document '{document.FileName}' canonical Markdown is missing.");
-                    await using var markdown = new MemoryStream(System.Text.Encoding.UTF8.GetBytes(content), writable: false);
-                    var source = await ingestion.ReadCanonicalMarkdownAsync(document.FileName, markdown, ct);
-                    var chunks = await ChunkAsync(document.FileName, source, indexed.MaxTokensPerChunk, indexed.OverlapTokens, ct);
+                    var chunks = chunker.Chunk(document.FileName, content, indexed.MaxTokensPerChunk, indexed.OverlapTokens);
                     if (chunks.Count == 0)
                         continue;
                     var first = await ollama.GenerateEmbeddingAsync(chunks[0].Content, new ServerModel(indexed.ServerId, indexed.Model), ct);
@@ -85,12 +79,14 @@ public sealed class KnowledgeIndexBackgroundService(IServiceScopeFactory scopes,
     internal static IReadOnlyList<KnowledgeDocument> SelectDocumentsToIndex(KnowledgeStore store, bool rebuildAll) =>
         rebuildAll ? store.Documents : store.Documents.Where(document => document.SourceHash != document.IndexedSourceHash).ToList();
 
-    private static async Task<List<KnowledgeChunkRecord>> ChunkAsync(string fileName, IngestionDocument source, int max, int overlap, CancellationToken ct)
+    internal static bool ApplyCurrentIngestionVersion(KnowledgeStore store)
     {
-        var chunker = new HeaderChunker(new IngestionChunkerOptions(TiktokenTokenizer.CreateForEncoding("cl100k_base", null, null)) { MaxTokensPerChunk = max, OverlapTokens = overlap });
-        var result = new List<KnowledgeChunkRecord>();
-        await foreach (var chunk in chunker.ProcessAsync(source, ct))
-            result.Add(new KnowledgeChunkRecord { FileName = fileName, ChunkIndex = result.Count, Content = chunk.Content, Section = string.IsNullOrWhiteSpace(chunk.Context) ? null : chunk.Context });
-        return result;
+        if (store.Configuration.IngestionVersion == KnowledgeStoreIndexConfiguration.CurrentIngestionVersion)
+            return false;
+
+        store.Configuration.IngestionVersion = KnowledgeStoreIndexConfiguration.CurrentIngestionVersion;
+        store.Index.State = KnowledgeStoreIndexState.Outdated;
+        return true;
     }
+
 }

@@ -13,9 +13,7 @@
         <PackageReference Include="Microsoft.CodeAnalysis.CSharp.Scripting" Version="5.6.0" />
         <PackageReference Include="Microsoft.Extensions.AI" Version="10.8.1" />
         <PackageReference Include="Microsoft.Extensions.AI.OpenAI" Version="10.8.1" />
-        <PackageReference Include="Microsoft.Extensions.DataIngestion" Version="10.8.0-preview.1.26364.2" />
-        <PackageReference Include="Microsoft.Extensions.DataIngestion.Markdig" Version="10.8.0-preview.1.26364.2" />
-        <PackageReference Include="Microsoft.Extensions.DataIngestion.MarkItDown" Version="10.8.0-preview.1.26364.2" />
+        <PackageReference Include="Markdig" Version="0.45.0" />
         <PackageReference Include="Microsoft.Extensions.VectorData.Abstractions" Version="10.1.0" />
         <PackageReference Include="Microsoft.ML.Tokenizers.Data.Cl100kBase" Version="2.0.0" />
         <PackageReference Include="Microsoft.SemanticKernel.Connectors.SqliteVec" Version="1.74.0-preview" />
@@ -28,8 +26,6 @@
         <PackageReference Include="OpenAI" Version="2.12.0" />
         <PackageReference Include="Serilog.AspNetCore" Version="10.0.0" />
         <PackageReference Include="Serilog.Sinks.File" Version="7.0.0" />
-        <PackageReference Include="DocumentFormat.OpenXml" Version="3.5.1" />
-        <PackageReference Include="PdfPig" Version="0.1.15" />
         <PackageReference Include="Whisper.net" Version="1.9.1" />
         <PackageReference Include="Whisper.net.Runtime" Version="1.9.1" />
         <PackageReference Include="Z.Blazor.Diagrams" Version="3.0.4.1" />

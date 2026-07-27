@@ -59,6 +59,19 @@ public sealed class KnowledgeStoreRegressionTests
     }
 
     [Fact]
+    public void ApplyCurrentIngestionVersion_MarksLegacyStoreOutdated()
+    {
+        var store = CreateReadyStore("Knowledge", 2);
+        store.Configuration.IngestionVersion = "markdown-header-v2";
+
+        var changed = KnowledgeIndexBackgroundService.ApplyCurrentIngestionVersion(store);
+
+        Assert.True(changed);
+        Assert.Equal(KnowledgeStoreIndexConfiguration.CurrentIngestionVersion, store.Configuration.IngestionVersion);
+        Assert.Equal(KnowledgeStoreIndexState.Outdated, store.Index.State);
+    }
+
+    [Fact]
     public async Task SearchAsync_AppliesResultLimitGloballyAcrossStores()
     {
         await using var database = new TemporaryVectorDatabase();

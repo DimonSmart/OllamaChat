@@ -12,7 +12,7 @@ public sealed class KnowledgeStore
 
 public sealed class KnowledgeStoreIndexConfiguration : IEquatable<KnowledgeStoreIndexConfiguration>
 {
-    public const string CurrentIngestionVersion = "markdown-header-v2";
+    public const string CurrentIngestionVersion = "markdown-raw-v3";
     public Guid ServerId { get; set; }
     public string Model { get; set; } = string.Empty;
     public int Dimensions { get; set; }

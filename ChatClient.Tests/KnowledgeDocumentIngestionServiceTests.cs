@@ -1,5 +1,4 @@
 using ChatClient.Api.Services.Rag;
-using Microsoft.Extensions.Options;
 using System.Text;
 
 namespace ChatClient.Tests;
@@ -18,16 +17,22 @@ public sealed class KnowledgeDocumentIngestionServiceTests
     }
 
     [Fact]
-    public async Task PrepareAsync_RejectsComplexDocumentWhenMarkItDownIsNotConfigured()
+    public async Task PrepareAsync_WrapsMarkItDownConversionFailure()
     {
-        var service = CreateService();
+        var service = new KnowledgeDocumentIngestionService(new FailingConverter());
         await using var source = new MemoryStream([1, 2, 3]);
 
         var exception = await Assert.ThrowsAsync<InvalidOperationException>(() => service.PrepareAsync("book.pdf", source));
 
-        Assert.Equal("MarkItDown is not configured.", exception.Message);
+        Assert.Equal("MarkItDown conversion failed for 'book.pdf'.", exception.Message);
     }
 
     private static KnowledgeDocumentIngestionService CreateService() =>
-        new(Options.Create(new KnowledgeIngestionOptions()));
+        new(new FailingConverter());
+
+    private sealed class FailingConverter : IDocumentMarkdownConverter
+    {
+        public Task<string> ConvertAsync(string fileName, Stream content, string? contentType, CancellationToken cancellationToken) =>
+            throw new InvalidOperationException("MarkItDown MCP stopped unexpectedly.");
+    }
 }

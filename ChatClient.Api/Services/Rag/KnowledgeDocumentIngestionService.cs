@@ -1,10 +1,8 @@
-using Microsoft.Extensions.DataIngestion;
-using Microsoft.Extensions.Options;
 using System.Text;
 
 namespace ChatClient.Api.Services.Rag;
 
-public sealed class KnowledgeDocumentIngestionService(IOptions<KnowledgeIngestionOptions> options) : IKnowledgeDocumentIngestionService
+public sealed class KnowledgeDocumentIngestionService(IDocumentMarkdownConverter converter) : IKnowledgeDocumentIngestionService
 {
     public async Task<PreparedKnowledgeDocument> PrepareAsync(string fileName, Stream source, string? contentType = null, CancellationToken cancellationToken = default)
     {
@@ -19,23 +17,16 @@ public sealed class KnowledgeDocumentIngestionService(IOptions<KnowledgeIngestio
         return new PreparedKnowledgeDocument(bytes, NormalizeMarkdown(markdown));
     }
 
-    public async Task<IngestionDocument> ReadCanonicalMarkdownAsync(string fileName, Stream markdown, CancellationToken cancellationToken = default) =>
-        await new MarkdownReader().ReadAsync(markdown, fileName, "text/markdown", cancellationToken);
-
     private async Task<string> ConvertWithMarkItDownAsync(string fileName, byte[] source, string? contentType, CancellationToken cancellationToken)
     {
-        if (!Uri.TryCreate(options.Value.MarkItDownMcpEndpoint, UriKind.Absolute, out var endpoint))
-            throw new InvalidOperationException("MarkItDown is not configured.");
-
         try
         {
             await using var stream = new MemoryStream(source, writable: false);
-            var document = await new MarkItDownMcpReader(endpoint).ReadAsync(
-                stream,
-                fileName,
-                ResolveMediaType(fileName, contentType),
-                cancellationToken);
-            return GetMarkdown(document);
+            return await converter.ConvertAsync(fileName, stream, ResolveMediaType(fileName, contentType), cancellationToken);
+        }
+        catch (InvalidOperationException exception) when (exception.Message.StartsWith("MarkItDown is unavailable", StringComparison.Ordinal))
+        {
+            throw;
         }
         catch (Exception exception) when (exception is not OperationCanceledException)
         {
@@ -47,9 +38,6 @@ public sealed class KnowledgeDocumentIngestionService(IOptions<KnowledgeIngestio
         extension.Equals(".md", StringComparison.OrdinalIgnoreCase) ||
         extension.Equals(".markdown", StringComparison.OrdinalIgnoreCase) ||
         extension.Equals(".txt", StringComparison.OrdinalIgnoreCase);
-
-    private static string GetMarkdown(IngestionDocument document) =>
-        string.Join("\n", document.Sections.Select(section => section.GetMarkdown()));
 
     private static string ResolveMediaType(string fileName, string? contentType)
     {

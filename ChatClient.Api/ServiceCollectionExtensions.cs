@@ -109,7 +109,9 @@ public static class ServiceCollectionExtensions
             .BindConfiguration(KnowledgeIngestionOptions.SectionName);
         services.AddSingleton<IMcpFunctionIndexStore, McpFunctionIndexStore>();
         services.AddSingleton<KnowledgeVectorStore>();
+        services.AddSingleton<IDocumentMarkdownConverter, MarkItDownMarkdownConverter>();
         services.AddSingleton<IKnowledgeDocumentIngestionService, KnowledgeDocumentIngestionService>();
+        services.AddSingleton<IKnowledgeMarkdownChunker, KnowledgeMarkdownChunker>();
         services.AddSingleton<LegacyRagMigrationService>();
         services.AddSingleton<KnowledgeIndexBackgroundService>();
         services.AddSingleton<IKnowledgeIndexBackgroundService>(sp => sp.GetRequiredService<KnowledgeIndexBackgroundService>());
