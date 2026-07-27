@@ -12,9 +12,9 @@
     <MudStack Row="true" AlignItems="AlignItems.Center"><MudText Class="page-header">Knowledge Stores</MudText><MudSpacer /><MudButton Color="Color.Primary" OnClick="CreateAsync">Create</MudButton></MudStack>
     <MudGrid Class="mt-3">
         <MudItem xs="12" md="4">
-            <MudList T="Guid" Dense="true">
+            <MudList T="Guid?" Dense="true" @bind-SelectedValue="selectedStoreId">
                 @foreach (var item in stores)
-                { <MudListItem T="Guid" Value="@item.Id" OnClick="@(() => Select(item.Id))">@item.Name <MudChip T="string" Size="Size.Small">@GetStoreIndexStatus(item)</MudChip></MudListItem> }
+                { <MudListItem T="Guid?" Value="@item.Id" OnClick="@(() => Select(item.Id))">@item.Name <MudChip T="string" Size="Size.Small">@GetStoreIndexStatus(item)</MudChip></MudListItem> }
             </MudList>
         </MudItem>
         <MudItem xs="12" md="8">
@@ -34,7 +34,11 @@
                     <MudDivider />
                     <MudText Typo="Typo.subtitle1">Documents</MudText>
                     <MudText Typo="Typo.body2">Markdown/text files are processed directly. Other supported document formats require MarkItDown.</MudText>
-                    <InputFile OnChange="UploadAsync" multiple />
+                    <InputFile OnChange="UploadAsync" multiple disabled="@uploading" />
+                    @if (uploading)
+                    {
+                        <MudText Typo="Typo.body2">Uploading @uploadedFileCount / @uploadFileCount</MudText>
+                    }
                     <MudTable Items="selected.Documents" Dense="true">
                         <HeaderContent><MudTh>File</MudTh><MudTh>Size</MudTh><MudTh>Updated</MudTh><MudTh>Index status</MudTh><MudTh></MudTh></HeaderContent>
                         <RowTemplate><MudTd><a href="@GetSourceUrl(context.Id)" target="_blank" rel="noopener noreferrer">@context.FileName</a></MudTd><MudTd>@context.Size</MudTd><MudTd>@context.UpdatedUtc.ToLocalTime().ToString("g")</MudTd><MudTd>@if (IndexProgress.Get(selected.Id, context.Id) is { } progress) { <MudStack Row="true" Spacing="1" AlignItems="AlignItems.Center"><MudText Typo="Typo.body2">Indexing @GetProgressPercentage(progress)%</MudText><MudProgressLinear Value="@GetProgressPercentage(progress)" Style="width: 72px;" /></MudStack> } else { @GetDocumentIndexStatus(context) }</MudTd><MudTd><MudIconButton Icon="@Icons.Material.Filled.Delete" Color="Color.Error" OnClick="@(() => DeleteDocumentAsync(context.Id))" /></MudTd></RowTemplate>
@@ -47,16 +51,20 @@
 
 @code {
     private List<KnowledgeStore> stores = [];
+    private Guid? selectedStoreId;
     private KnowledgeStore? selected;
+    private bool uploading;
+    private int uploadFileCount;
+    private int uploadedFileCount;
     private readonly CancellationTokenSource refreshCancellation = new();
     protected override async Task OnInitializedAsync()
     {
         await ReloadAsync();
         _ = RefreshAsync();
     }
-    private async Task ReloadAsync() { stores = (await Stores.GetAllAsync()).OrderBy(x => x.Name).ToList(); if (selected is not null) selected = stores.FirstOrDefault(x => x.Id == selected.Id); }
-    private void Select(Guid id) => selected = stores.First(x => x.Id == id);
-    private async Task CreateAsync() { selected = await Stores.CreateAsync("New Knowledge Store", null); await ReloadAsync(); }
+    private async Task ReloadAsync() { stores = (await Stores.GetAllAsync()).OrderBy(x => x.Name).ToList(); selected = selectedStoreId is Guid id ? stores.FirstOrDefault(x => x.Id == id) : null; }
+    private void Select(Guid id) { selectedStoreId = id; selected = stores.First(x => x.Id == id); }
+    private async Task CreateAsync() { var created = await Stores.CreateAsync("New Knowledge Store", null); selectedStoreId = created.Id; await ReloadAsync(); }
     private ServerModelSelection GetEmbeddingSelection() => selected is null ? new(null, null) : new(selected.Configuration.ServerId, selected.Configuration.Model);
     private Task OnEmbeddingSelectionChanged(ServerModelSelection selection)
     {
@@ -79,16 +87,29 @@
         Snackbar.Add("Knowledge Store saved.", Severity.Success);
     }
     private async Task ReindexAsync() { if (selected is null) return; await Stores.RequestReindexAsync(selected.Id); await ReloadAsync(); Snackbar.Add("Reindexing requested.", Severity.Info); }
-    private async Task DeleteAsync() { if (selected is null) return; await Stores.DeleteAsync(selected.Id); selected = null; await ReloadAsync(); }
+    private async Task DeleteAsync() { if (selected is null) return; await Stores.DeleteAsync(selected.Id); selectedStoreId = null; selected = null; await ReloadAsync(); }
     private async Task UploadAsync(InputFileChangeEventArgs args)
     {
         if (selected is null) return;
-        foreach (var file in args.GetMultipleFiles(100))
+        var targetStoreId = selected.Id;
+        var files = args.GetMultipleFiles(100);
+        uploading = true;
+        uploadFileCount = files.Count;
+        uploadedFileCount = 0;
+        try
         {
-            try { await using var stream = file.OpenReadStream(20 * 1024 * 1024); await Stores.AddOrUpdateDocumentAsync(selected.Id, file.Name, stream, file.ContentType); }
-            catch (Exception ex) { Snackbar.Add($"{file.Name}: {ex.Message}", Severity.Error); }
+            foreach (var file in files)
+            {
+                try { await using var stream = file.OpenReadStream(20 * 1024 * 1024); await Stores.AddOrUpdateDocumentAsync(targetStoreId, file.Name, stream, file.ContentType); }
+                catch (Exception ex) { Snackbar.Add($"{file.Name}: {ex.Message}", Severity.Error); }
+                finally { uploadedFileCount++; }
+            }
         }
-        await ReloadAsync();
+        finally
+        {
+            uploading = false;
+            await ReloadAsync();
+        }
     }
     private async Task DeleteDocumentAsync(Guid id) { if (selected is null) return; await Stores.DeleteDocumentAsync(selected.Id, id); await ReloadAsync(); }
     private string GetStoreIndexStatus(KnowledgeStore store) => store.Index.State switch
