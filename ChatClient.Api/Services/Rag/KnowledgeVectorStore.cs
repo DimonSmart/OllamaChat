@@ -30,7 +30,7 @@ public sealed class KnowledgeVectorStore(IConfiguration configuration)
         }, ct);
     }
 
-    public async Task<IReadOnlyList<RagSearchResult>> SearchAsync(KnowledgeStore store, ReadOnlyMemory<float> query, int max, double threshold, CancellationToken ct)
+    public async Task<IReadOnlyList<RagSearchResult>> SearchAsync(KnowledgeStore store, ReadOnlyMemory<float> query, int max, double? minRelevanceScore, CancellationToken ct)
     {
         var dimension = store.Index.IndexedConfiguration?.Dimensions ?? 0;
         if (dimension != query.Length)
@@ -38,7 +38,14 @@ public sealed class KnowledgeVectorStore(IConfiguration configuration)
         var collection = await GetExistingCollectionForReadAsync(dimension, ct);
         var storeId = store.Id.ToString("N");
         var results = new List<RagSearchResult>();
-        await foreach (var result in collection.SearchAsync(query, max, new VectorSearchOptions<KnowledgeChunkRecord> { Filter = x => x.KnowledgeStoreId == storeId, ScoreThreshold = 1d - Math.Clamp(threshold, -1d, 1d), IncludeVectors = false }, ct))
+        var options = new VectorSearchOptions<KnowledgeChunkRecord>
+        {
+            Filter = x => x.KnowledgeStoreId == storeId,
+            IncludeVectors = false
+        };
+        if (minRelevanceScore is double threshold)
+            options.ScoreThreshold = 1d - Math.Clamp(threshold, -1d, 1d);
+        await foreach (var result in collection.SearchAsync(query, max, options, ct))
             results.Add(new RagSearchResult { FileName = result.Record.FileName, Section = result.Record.Section, Content = result.Record.Content, Score = 1d - (result.Score ?? 1d) });
         return results;
     }

@@ -169,6 +169,75 @@ public sealed class KnowledgeStoreRegressionTests
     }
 
     [Fact]
+    public async Task SearchAsync_DefaultOverloadAppliesConfiguredRelevanceThreshold()
+    {
+        await using var database = new TemporaryVectorDatabase();
+        var vectors = database.CreateStore();
+        var store = CreateReadyStore("Knowledge", 2);
+        await AddChunkAsync(vectors, store, new float[] { 0.6f, 0.8f }, "weak");
+        var stores = new Mock<IKnowledgeStoreService>(MockBehavior.Strict);
+        stores.Setup(service => service.GetAllAsync(It.IsAny<CancellationToken>())).ReturnsAsync([store]);
+        var settings = new Mock<IUserSettingsService>(MockBehavior.Strict);
+        settings.Setup(service => service.GetSettingsAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new UserSettings { Embedding = new EmbeddingSettings { RagMinRelevanceScore = 0.8 } });
+        var ollama = new Mock<IOllamaClientService>(MockBehavior.Strict);
+        ollama.Setup(service => service.GenerateEmbeddingAsync("query", It.IsAny<ServerModel>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync([1f, 0f]);
+        var service = new KnowledgeSearchService(stores.Object, settings.Object, ollama.Object, vectors);
+
+        var response = await service.SearchAsync([store.Id], "query", maxResults: 5);
+
+        Assert.Empty(response.Results);
+        settings.Verify(service => service.GetSettingsAsync(It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task SearchAsync_ExplicitNullThresholdReturnsWeakResultsBelowConfiguredThreshold()
+    {
+        await using var database = new TemporaryVectorDatabase();
+        var vectors = database.CreateStore();
+        var store = CreateReadyStore("Knowledge", 2);
+        await AddChunkAsync(vectors, store, new float[] { 0.6f, 0.8f }, "weak");
+        var stores = new Mock<IKnowledgeStoreService>(MockBehavior.Strict);
+        stores.Setup(service => service.GetAllAsync(It.IsAny<CancellationToken>())).ReturnsAsync([store]);
+        var settings = new Mock<IUserSettingsService>(MockBehavior.Strict);
+        var ollama = new Mock<IOllamaClientService>(MockBehavior.Strict);
+        ollama.Setup(service => service.GenerateEmbeddingAsync("query", It.IsAny<ServerModel>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync([1f, 0f]);
+        var service = new KnowledgeSearchService(stores.Object, settings.Object, ollama.Object, vectors);
+
+        var response = await service.SearchAsync([store.Id], "query", 5, minRelevanceScore: null);
+
+        var result = Assert.Single(response.Results);
+        Assert.Equal("weak", result.Content);
+        settings.Verify(service => service.GetSettingsAsync(It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task SearchAsync_NullThresholdStillAppliesGlobalResultLimitAcrossStores()
+    {
+        await using var database = new TemporaryVectorDatabase();
+        var vectors = database.CreateStore();
+        var first = CreateReadyStore("First", 2);
+        var second = CreateReadyStore("Second", 2);
+        await AddChunkAsync(vectors, first, new float[] { 1, 0 }, "first");
+        await AddChunkAsync(vectors, second, new float[] { 0.6f, 0.8f }, "second");
+        var stores = new Mock<IKnowledgeStoreService>(MockBehavior.Strict);
+        stores.Setup(service => service.GetAllAsync(It.IsAny<CancellationToken>())).ReturnsAsync([first, second]);
+        var settings = new Mock<IUserSettingsService>(MockBehavior.Strict);
+        var ollama = new Mock<IOllamaClientService>(MockBehavior.Strict);
+        ollama.Setup(service => service.GenerateEmbeddingAsync("query", It.IsAny<ServerModel>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync([1f, 0f]);
+        var service = new KnowledgeSearchService(stores.Object, settings.Object, ollama.Object, vectors);
+
+        var response = await service.SearchAsync([first.Id, second.Id], "query", 1, minRelevanceScore: null);
+
+        var result = Assert.Single(response.Results);
+        Assert.Equal("First", result.KnowledgeStoreName);
+        Assert.Equal("first", result.Content);
+    }
+
+    [Fact]
     public async Task ReplaceDocumentAsync_ConcurrentWritesCompleteWithoutDatabaseLock()
     {
         await using var database = new TemporaryVectorDatabase();
@@ -221,6 +290,21 @@ public sealed class KnowledgeStoreRegressionTests
         var results = await vectors.SearchAsync(store, new float[] { 1, 0 }, 5, -1, CancellationToken.None);
         var result = Assert.Single(results);
         Assert.Equal("replacement", result.Content);
+    }
+
+    [Fact]
+    public async Task VectorSearchAsync_NullThresholdDoesNotFilterWeakResults()
+    {
+        await using var database = new TemporaryVectorDatabase();
+        var vectors = database.CreateStore();
+        var store = CreateReadyStore("Knowledge", 2);
+        await AddChunkAsync(vectors, store, new float[] { 0.6f, 0.8f }, "weak");
+
+        var results = await vectors.SearchAsync(store, new float[] { 1, 0 }, 5, null, CancellationToken.None);
+
+        var result = Assert.Single(results);
+        Assert.Equal("weak", result.Content);
+        Assert.InRange(result.Score, 0.59d, 0.61d);
     }
 
     private static KnowledgeStore CreateReadyStore(string name, int dimensions)

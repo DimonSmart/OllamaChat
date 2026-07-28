@@ -8,21 +8,46 @@
 <PageTitle>Vector Search</PageTitle>
 <MudContainer MaxWidth="MaxWidth.Medium" Class="pa-4">
     <MudStack Spacing="2">
-        <MudSelect T="Guid?" Label="Knowledge Store" @bind-Value="selectedStoreId" Dense="true">
+        <MudSelect T="Guid?" Label="Knowledge Store" @bind-Value="selectedStoreId" Dense="true" Disabled="@isSearching">
             @foreach (var store in stores)
             {
                 <MudSelectItem T="Guid?" Value="@((Guid?)store.Id)">@store.Name (@store.Index.State)</MudSelectItem>
             }
         </MudSelect>
-        <MudTextField @bind-Value="query" Label="Query" Immediate="true" />
-        <MudButton OnClick="SearchAsync" Color="Color.Primary" Disabled="@(selectedStoreId is null)">Search</MudButton>
+        <MudTextField @bind-Value="query" Label="Query" Immediate="true" Disabled="@isSearching" />
+        <MudButton OnClick="SearchAsync" Color="Color.Primary" Disabled="@IsSearchDisabled">
+            @if (isSearching)
+            {
+                <MudProgressCircular Class="me-2" Indeterminate="true" Size="Size.Small" Color="Color.Inherit" />
+            }
+            @(isSearching ? "Searching..." : "Search")
+        </MudButton>
+        @if (isSearching)
+        {
+            <MudProgressLinear Indeterminate="true" Color="Color.Primary" />
+        }
+        @if (selectedStore is not null && !IsSelectedStoreReadyForSearch)
+        {
+            <MudAlert Severity="Severity.Warning" Dense="true">
+                This Knowledge Store is not ready for search. Complete indexing or reindex it with the current configuration.
+            </MudAlert>
+        }
+        @if (hasSearched && !isSearching && results.Count == 0 && IsSelectedStoreReadyForSearch)
+        {
+            <MudAlert Severity="Severity.Info" Dense="true">
+                No indexed chunks were returned for this Knowledge Store.
+            </MudAlert>
+        }
         @foreach (var result in results)
         {
             <MudPaper Class="pa-3">
                 <MudText Typo="Typo.subtitle2">@result.KnowledgeStoreName / @result.FileName</MudText>
                 @if (!string.IsNullOrWhiteSpace(result.Section)) { <MudText Typo="Typo.caption">@result.Section</MudText> }
                 <MudText Typo="Typo.body2">@result.Content</MudText>
-                <MudText Typo="Typo.caption">Score: @result.Score.ToString("0.###")</MudText>
+                <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="1">
+                    <MudProgressLinear Class="score-bar" Value="@GetScorePercentage(result.Score)" Color="@GetScoreColor(result.Score)" Rounded="true" />
+                    <MudText Typo="Typo.caption">@GetScorePercentage(result.Score).ToString("0")%</MudText>
+                </MudStack>
             </MudPaper>
         }
     </MudStack>
@@ -33,12 +58,67 @@
     private Guid? selectedStoreId;
     private string query = string.Empty;
     private List<RagSearchResult> results = [];
+    private bool isSearching;
+    private bool hasSearched;
+
+    private KnowledgeStore? selectedStore => selectedStoreId is Guid id ? stores.FirstOrDefault(store => store.Id == id) : null;
+    private bool IsSelectedStoreReadyForSearch => selectedStore is not null && IsStoreReadyForSearch(selectedStore);
+    private bool IsSearchDisabled => isSearching || selectedStore is null || string.IsNullOrWhiteSpace(query) || !IsSelectedStoreReadyForSearch;
 
     protected override async Task OnInitializedAsync() => stores = (await Stores.GetAllAsync()).OrderBy(x => x.Name).ToList();
+
     private async Task SearchAsync()
     {
-        if (selectedStoreId is not Guid id || string.IsNullOrWhiteSpace(query)) return;
-        try { results = (await Search.SearchAsync([id], query)).Results.ToList(); }
-        catch (Exception ex) { Snackbar.Add(ex.Message, Severity.Error); }
+        if (isSearching || selectedStoreId is not Guid id || string.IsNullOrWhiteSpace(query) || !IsSelectedStoreReadyForSearch)
+            return;
+
+        isSearching = true;
+        hasSearched = false;
+        results.Clear();
+
+        try
+        {
+            var response = await Search.SearchAsync(
+                [id],
+                query.Trim(),
+                maxResults: 5,
+                minRelevanceScore: null);
+            results = response.Results.ToList();
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add(ex.Message, Severity.Error);
+        }
+        finally
+        {
+            isSearching = false;
+            hasSearched = true;
+        }
+    }
+
+    private static bool IsStoreReadyForSearch(KnowledgeStore store) =>
+        store.Documents.Count > 0 &&
+        store.Index.State == KnowledgeStoreIndexState.Ready &&
+        store.Index.IndexedConfiguration?.Equals(store.Configuration) == true;
+
+    private static double GetScorePercentage(double score) => Math.Clamp(score, 0d, 1d) * 100d;
+
+    private static Color GetScoreColor(double score)
+    {
+        var percentage = GetScorePercentage(score);
+
+        return percentage switch
+        {
+            <= 25d => Color.Error,
+            < 50d => Color.Warning,
+            < 75d => Color.Info,
+            _ => Color.Success
+        };
     }
 }
+
+<style>
+    .score-bar {
+        width: 140px;
+    }
+</style>
