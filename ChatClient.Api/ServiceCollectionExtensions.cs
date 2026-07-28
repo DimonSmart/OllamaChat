@@ -8,12 +8,14 @@ using ChatClient.Api.Services;
 using ChatClient.Api.Services.AgentRuntime;
 using ChatClient.Api.Services.BuiltIn;
 using ChatClient.Api.Services.Rag;
+using ChatClient.Api.Services.Sandbox;
 using ChatClient.Api.Services.Seed;
 using ChatClient.Api.VoiceInput;
 using ChatClient.Application.Repositories;
 using ChatClient.Application.Services;
 using ChatClient.Application.Services.Agentic;
 using ChatClient.Application.Services.AgentRuntime;
+using ChatClient.Application.Services.Sandbox;
 using ChatClient.Application.Services.TaskSessions;
 using ChatClient.Infrastructure.Repositories;
 using ChatClient.Infrastructure.Services.TaskSessions;
@@ -86,6 +88,7 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<ITodoProviderProfileRepository, TodoProviderProfileRepository>();
         services.AddSingleton<IAgentModeProviderProfileRepository, AgentModeProviderProfileRepository>();
         services.AddSingleton<IFileAccessProviderProfileRepository, FileAccessProviderProfileRepository>();
+        services.AddSingleton<ISandboxProfileRepository, SandboxProfileRepository>();
         services.AddSingleton<IWorkflowDefinitionRepository, WorkflowDefinitionRepository>();
         services.AddSingleton<ILlmServerConfigRepository, LlmServerConfigRepository>();
         services.AddSingleton<IMcpServerConfigRepository, McpServerConfigRepository>();
@@ -96,6 +99,7 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<ITodoProviderProfileService, TodoProviderProfileService>();
         services.AddSingleton<IAgentModeProviderProfileService, AgentModeProviderProfileService>();
         services.AddSingleton<IFileAccessProviderProfileService, FileAccessProviderProfileService>();
+        services.AddSingleton<ISandboxProfileService, SandboxProfileService>();
         services.AddSingleton<IWorkflowDefinitionService, WorkflowDefinitionService>();
         services.AddSingleton<IUserSettingsService, UserSettingsService>();
         services.AddSingleton<IKnowledgeStoreService, KnowledgeStoreService>();
@@ -124,6 +128,8 @@ public static class ServiceCollectionExtensions
     private static IServiceCollection AddAgenticServices(this IServiceCollection services)
     {
         services.AddScoped<AgenticRuntimeAgentFactory>();
+        services.AddSingleton<ISandboxProvider, DockerSandboxProvider>();
+        services.AddSingleton<ISandboxProviderRegistry, SandboxProviderRegistry>();
         services.AddScoped<HarnessResponseEventProjector>();
         services.AddScoped<IAgenticExecutionRuntime, HttpAgenticExecutionRuntime>();
         services.AddScoped<AgenticChatEngineOrchestrator>();
@@ -191,6 +197,7 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<WorkflowDefinitionSeeder>();
         services.AddSingleton<LlmServerConfigSeeder>();
         services.AddSingleton<McpServerConfigSeeder>();
+        services.AddSingleton<SandboxProfileSeeder>();
 
         return services;
     }

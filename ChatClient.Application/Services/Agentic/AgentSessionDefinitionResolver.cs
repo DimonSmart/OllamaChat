@@ -1,6 +1,7 @@
 using ChatClient.Application.Helpers;
 using ChatClient.Application.Services;
 using ChatClient.Application.Services.AgentRuntime;
+using ChatClient.Application.Services.Sandbox;
 using ChatClient.Domain.Models;
 using System.Globalization;
 using System.Text.Json;
@@ -20,7 +21,8 @@ public sealed record AgentSessionDefinitionRequest
 public sealed record AgentSessionOverrides
 {
     public IReadOnlyList<McpServerSessionBinding>? McpServerBindings { get; init; }
-    public string? FileAccessWorkspace { get; init; }
+    public string? WorkspacePath { get; init; }
+    public Guid? SandboxProfileId { get; init; }
 
     public AgentSessionOverrides Snapshot() =>
         new()
@@ -28,7 +30,8 @@ public sealed record AgentSessionOverrides
             McpServerBindings = McpServerBindings?
                 .Select(static binding => binding.Clone())
                 .ToList(),
-            FileAccessWorkspace = FileAccessWorkspace
+            WorkspacePath = WorkspacePath,
+            SandboxProfileId = SandboxProfileId
         };
 }
 
@@ -68,7 +71,9 @@ public interface IAgentSessionDefinitionResolver
 public sealed class AgentSessionDefinitionResolver(
     IAgentDefinitionCatalog catalog,
     IWorkflowDefinitionPreflightValidator workflowPreflightValidator,
-    IAgentLaunchCapabilityValidator launchCapabilityValidator) : IAgentSessionDefinitionResolver
+    IAgentLaunchCapabilityValidator launchCapabilityValidator,
+    ISandboxProfileService sandboxProfileService,
+    ISandboxProviderRegistry sandboxProviderRegistry) : IAgentSessionDefinitionResolver
 {
     public async Task<AgentDefinitionLaunchValidation> ValidateAsync(
         AgentDefinitionReference reference,
@@ -167,21 +172,63 @@ public sealed class AgentSessionDefinitionResolver(
             .Select(static problem => new AgentDefinitionLaunchProblem(problem.Message))
             .Concat(ValidateInputs(descriptor.Inputs, request.Inputs))
             .ToList();
-        if (descriptor.LaunchCapabilities.SupportsFileAccessWorkspace)
+        if (descriptor.LaunchCapabilities.SupportsWorkspace)
         {
-            if (string.IsNullOrWhiteSpace(request.Overrides.FileAccessWorkspace))
+            if (string.IsNullOrWhiteSpace(request.Overrides.WorkspacePath))
                 problems.Add(new AgentDefinitionLaunchProblem("A workspace directory is required to start this agent."));
             else
             {
                 try
                 {
-                    var workspace = Path.GetFullPath(request.Overrides.FileAccessWorkspace);
+                    var workspace = Path.GetFullPath(request.Overrides.WorkspacePath);
                     if (!Directory.Exists(workspace))
                         problems.Add(new AgentDefinitionLaunchProblem($"Workspace directory does not exist: {workspace}"));
                 }
                 catch (Exception ex) when (ex is ArgumentException or NotSupportedException or PathTooLongException)
                 {
-                    problems.Add(new AgentDefinitionLaunchProblem($"Workspace path is invalid: {request.Overrides.FileAccessWorkspace}"));
+                    problems.Add(new AgentDefinitionLaunchProblem($"Workspace path is invalid: {request.Overrides.WorkspacePath}"));
+                }
+            }
+        }
+        if (descriptor.LaunchCapabilities.SupportsSandboxProfile)
+        {
+            if (request.Overrides.SandboxProfileId is not Guid sandboxProfileId || sandboxProfileId == Guid.Empty)
+            {
+                problems.Add(new AgentDefinitionLaunchProblem("A sandbox profile is required to start this agent."));
+            }
+            else
+            {
+                var profile = await sandboxProfileService.GetByIdAsync(sandboxProfileId);
+                if (profile is null)
+                {
+                    problems.Add(new AgentDefinitionLaunchProblem($"Sandbox profile '{sandboxProfileId}' was not found."));
+                }
+                else
+                {
+                    try
+                    {
+                        var provider = sandboxProviderRegistry.GetRequired(profile.ProviderType);
+                        var definition = provider.ParseDefinition(profile.Configuration);
+                        var validation = provider.ValidateDefinition(definition);
+                        if (!validation.IsValid)
+                        {
+                            foreach (var error in validation.Errors)
+                            {
+                                problems.Add(new AgentDefinitionLaunchProblem(error));
+                            }
+                        }
+
+                        var availability = await provider.CheckAvailabilityAsync(cancellationToken);
+                        if (!availability.IsAvailable)
+                        {
+                            problems.Add(new AgentDefinitionLaunchProblem(
+                                availability.ErrorMessage ?? $"Sandbox provider '{profile.ProviderType}' is not available."));
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        problems.Add(new AgentDefinitionLaunchProblem(ex.Message));
+                    }
                 }
             }
         }
@@ -203,11 +250,13 @@ public sealed class AgentSessionDefinitionResolver(
             }
         }
 
-        if (descriptor.LaunchCapabilities.SupportsFileAccessWorkspace && model is not null &&
+        if ((descriptor.LaunchCapabilities.SupportsWorkspace || descriptor.LaunchCapabilities.SupportsSandboxProfile) && model is not null &&
             !await launchCapabilityValidator.SupportsFunctionCallingAsync(model, cancellationToken))
         {
             problems.Add(new AgentDefinitionLaunchProblem(
-                "The selected model does not support function calling required by File Access."));
+                descriptor.LaunchCapabilities.SupportsSandboxProfile
+                    ? "The selected model does not support function calling required by shell execution."
+                    : "The selected model does not support function calling required by File Access."));
         }
 
         return (new AgentDefinitionLaunchValidation

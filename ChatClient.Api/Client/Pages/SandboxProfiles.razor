@@ -1,0 +1,185 @@
+@page "/sandbox-profiles"
+@using ChatClient.Api.Services.Sandbox
+@using ChatClient.Application.Services
+@using ChatClient.Application.Services.Sandbox
+@using ChatClient.Domain.Models
+@inject ISandboxProfileService SandboxProfileService
+@inject ISandboxProviderRegistry SandboxProviderRegistry
+@inject ISnackbar Snackbar
+
+<PageTitle>Sandbox Profiles</PageTitle>
+
+<MudContainer MaxWidth="MaxWidth.ExtraLarge" Class="mt-3">
+    <MudText Class="page-header">Sandbox Profiles</MudText>
+    <MudPaper Elevation="3" Class="pa-3 rounded-lg">
+        <MudToolBar Dense="true">
+            <MudButton Color="Color.Primary" Variant="Variant.Filled" StartIcon="@Icons.Material.Filled.Add" OnClick="Create">Add Sandbox Profile</MudButton>
+        </MudToolBar>
+        <MudDataGrid T="SandboxProfileRow" Items="profiles" Dense="true" Hover="true" Bordered="true" Class="mt-2">
+            <Columns>
+                <PropertyColumn Property="x => x.Profile.Name" Title="Name" />
+                <PropertyColumn Property="x => x.Profile.ProviderType" Title="Type" />
+                <PropertyColumn Property="x => x.Image" Title="Image" />
+                <PropertyColumn Property="x => x.Limits" Title="Limits" />
+                <PropertyColumn Property="x => x.Network" Title="Network" />
+                <TemplateColumn Title="Actions">
+                    <CellTemplate>
+                        <MudIconButton Icon="@Icons.Material.Filled.Edit" Size="Size.Small" OnClick="@(() => Edit(context.Item.Profile))" />
+                        <MudIconButton Icon="@Icons.Material.Filled.Delete" Color="Color.Error" Size="Size.Small" OnClick="@(() => ConfirmDelete(context.Item.Profile))" />
+                    </CellTemplate>
+                </TemplateColumn>
+            </Columns>
+        </MudDataGrid>
+    </MudPaper>
+</MudContainer>
+
+<MudDialog @bind-Visible="editing" Options="dialogOptions">
+    <TitleContent><MudText Typo="Typo.h6">@(isNew ? "Create Sandbox Profile" : "Edit Sandbox Profile")</MudText></TitleContent>
+    <DialogContent>
+        <MudTextField @bind-Value="model.Name" Label="Name" Required="true" Margin="Margin.Dense" />
+        <MudSelect T="string" Value="model.ProviderType" ValueChanged="OnProviderChanged" Label="Sandbox type" Margin="Margin.Dense">
+            @foreach (var provider in providerDescriptors)
+            {
+                <MudSelectItem T="string" Value="@provider.Type">@provider.DisplayName</MudSelectItem>
+            }
+        </MudSelect>
+        <MudTextField @bind-Value="model.Configuration" Label="YAML configuration" Lines="12" Margin="Margin.Dense" Immediate="true" HelperText="Provider-specific sandbox configuration in YAML." />
+    </DialogContent>
+    <DialogActions><MudButton OnClick="Close">Cancel</MudButton><MudButton Color="Color.Primary" OnClick="Save">Save</MudButton></DialogActions>
+</MudDialog>
+
+<MudDialog @bind-Visible="deleting" Options="dialogOptions">
+    <TitleContent><MudText Typo="Typo.h6">Delete Sandbox Profile</MudText></TitleContent>
+    <DialogContent><MudText>Delete "@profileToDelete?.Name"?</MudText></DialogContent>
+    <DialogActions><MudButton OnClick="CloseDelete">Cancel</MudButton><MudButton Color="Color.Error" OnClick="DeleteConfirmed">Delete</MudButton></DialogActions>
+</MudDialog>
+
+@code {
+    private sealed record SandboxProfileRow(SandboxProfile Profile, string Image, string Limits, string Network);
+
+    private List<SandboxProfileRow> profiles = [];
+    private List<SandboxProviderDescriptor> providerDescriptors = [];
+    private SandboxProfile model = new();
+    private bool editing;
+    private bool isNew;
+    private bool deleting;
+    private SandboxProfile? profileToDelete;
+    private readonly DialogOptions dialogOptions = new() { CloseButton = true, MaxWidth = MaxWidth.Large, FullWidth = true };
+
+    protected override async Task OnInitializedAsync()
+    {
+        providerDescriptors = SandboxProviderRegistry.GetProviders().ToList();
+        await Load();
+    }
+
+    private async Task Load()
+    {
+        profiles = (await SandboxProfileService.GetAllAsync())
+            .OrderBy(profile => profile.Name, StringComparer.OrdinalIgnoreCase)
+            .Select(ToRow)
+            .ToList();
+    }
+
+    private SandboxProfileRow ToRow(SandboxProfile profile)
+    {
+        try
+        {
+            var provider = SandboxProviderRegistry.GetRequired(profile.ProviderType);
+            var summary = provider.GetSummary(provider.ParseDefinition(profile.Configuration));
+            return new SandboxProfileRow(profile, summary.Image, summary.Limits, summary.Network);
+        }
+        catch (Exception ex)
+        {
+            return new SandboxProfileRow(profile, "Invalid", ex.Message, "Invalid");
+        }
+    }
+
+    private void Create()
+    {
+        var provider = providerDescriptors.FirstOrDefault();
+        model = new SandboxProfile
+        {
+            ProviderType = provider?.Type ?? string.Empty,
+            Configuration = provider?.DefaultConfiguration ?? string.Empty
+        };
+        isNew = true;
+        editing = true;
+    }
+
+    private void Edit(SandboxProfile value)
+    {
+        model = new SandboxProfile
+        {
+            Id = value.Id,
+            Name = value.Name,
+            ProviderType = value.ProviderType,
+            Configuration = value.Configuration,
+            CreatedAt = value.CreatedAt,
+            UpdatedAt = value.UpdatedAt
+        };
+        isNew = false;
+        editing = true;
+    }
+
+    private Task OnProviderChanged(string providerType)
+    {
+        model.ProviderType = providerType;
+        if (string.IsNullOrWhiteSpace(model.Configuration))
+        {
+            model.Configuration = providerDescriptors.FirstOrDefault(provider => provider.Type == providerType)?.DefaultConfiguration ?? string.Empty;
+        }
+
+        return Task.CompletedTask;
+    }
+
+    private async Task Save()
+    {
+        try
+        {
+            if (isNew)
+            {
+                await SandboxProfileService.CreateAsync(model);
+            }
+            else
+            {
+                await SandboxProfileService.UpdateAsync(model);
+            }
+
+            editing = false;
+            await Load();
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add(ex.Message, Severity.Error);
+        }
+    }
+
+    private void ConfirmDelete(SandboxProfile value)
+    {
+        profileToDelete = value;
+        deleting = true;
+    }
+
+    private async Task DeleteConfirmed()
+    {
+        if (profileToDelete is null)
+        {
+            return;
+        }
+
+        try
+        {
+            await SandboxProfileService.DeleteAsync(profileToDelete.Id);
+            deleting = false;
+            await Load();
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add(ex.Message, Severity.Error);
+        }
+    }
+
+    private void Close() => editing = false;
+
+    private void CloseDelete() => deleting = false;
+}

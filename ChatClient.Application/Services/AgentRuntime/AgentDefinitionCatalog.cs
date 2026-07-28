@@ -67,7 +67,8 @@ public sealed class AgentDefinitionCatalog(
             LaunchCapabilities = new AgentLaunchCapabilities
             {
                 SupportsMcpBindingOverrides = true,
-                SupportsFileAccessWorkspace = agent.FileAccessProviderProfileId is not null
+                SupportsWorkspace = agent.FileAccessProviderProfileId is not null || agent.EnableShell,
+                SupportsSandboxProfile = agent.EnableShell
             },
             DefaultMcpServerBindings = agent.McpServerBindings
                 .Select(static binding => binding.Clone())

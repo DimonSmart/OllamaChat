@@ -290,6 +290,10 @@
                 }
             </MudSelect>
             <MudCheckBox T="bool"
+                         @bind-Value="editingAgent.EnableShell"
+                         Label="Enable shell in sandbox"
+                         Class="mt-2" />
+            <MudCheckBox T="bool"
                          @bind-Value="editingAgent.ContinueUntilTodosComplete"
                          Label="Continue until TODOs are complete"
                          Class="mt-2" />
@@ -443,6 +447,7 @@
             TodoProviderProfileId = null,
             AgentModeProviderProfileId = null,
             FileAccessProviderProfileId = null,
+            EnableShell = false,
             ContinueUntilTodosComplete = false,
             MaxTodoCompletionIterations = 10,
             FunctionSettings = new FunctionSettings
@@ -502,6 +507,7 @@
             TodoProviderProfileId = agent.TodoProviderProfileId,
             AgentModeProviderProfileId = agent.AgentModeProviderProfileId,
             FileAccessProviderProfileId = agent.FileAccessProviderProfileId,
+            EnableShell = agent.EnableShell,
             ContinueUntilTodosComplete = agent.ContinueUntilTodosComplete,
             MaxTodoCompletionIterations = agent.MaxTodoCompletionIterations,
             CreatedAt = agent.CreatedAt,

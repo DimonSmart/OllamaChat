@@ -4,6 +4,7 @@
 @using System.Linq
 @using ChatClient.Api.Client.Components
 @using ChatClient.Application.Helpers
+@using ChatClient.Application.Services
 @using ChatClient.Application.Services.Agentic
 @using ChatClient.Application.Services.AgentRuntime
 @using ChatClient.Domain.Models
@@ -98,12 +99,22 @@
                                                      Description="Session-specific MCP bindings for this launch." />
                         }
 
-                        @if (selectedDefinition?.LaunchCapabilities.SupportsFileAccessWorkspace == true)
+                        @if (selectedDefinition?.LaunchCapabilities.SupportsWorkspace == true)
                         {
                             <MudTextField T="string" Label="Workspace" Value="fileAccessWorkspace"
                                           ValueChanged="OnFileAccessWorkspaceChanged" Variant="Variant.Outlined"
                                           Margin="Margin.Dense" Immediate="true"
                                           HelperText="Existing directory available to this conversation only." />
+                        }
+                        @if (selectedDefinition?.LaunchCapabilities.SupportsSandboxProfile == true)
+                        {
+                            <MudSelect T="Guid?" Label="Sandbox profile" Value="sandboxProfileId" ValueChanged="OnSandboxProfileChanged" Variant="Variant.Outlined" Margin="Margin.Dense">
+                                <MudSelectItem T="Guid?" Value="@((Guid?)null)">Select sandbox profile</MudSelectItem>
+                                @foreach (var profile in sandboxProfiles)
+                                {
+                                    <MudSelectItem T="Guid?" Value="@((Guid?)profile.Id)">@profile.Name</MudSelectItem>
+                                }
+                            </MudSelect>
                         }
 
                         @if (launchValidation.Problems.Count > 0)
@@ -160,7 +171,9 @@
     private IReadOnlyList<AgentInputDefinition> inputDefinitions = [];
     private readonly Dictionary<string, string> inputValues = new(StringComparer.OrdinalIgnoreCase);
     private List<McpServerSessionBinding> mcpServerBindings = [];
+    private List<SandboxProfile> sandboxProfiles = [];
     private string fileAccessWorkspace = string.Empty;
+    private Guid? sandboxProfileId;
     private AgentDefinitionLaunchValidation launchValidation = new()
     {
         CanLaunch = false
@@ -174,6 +187,9 @@
 
     [Inject]
     private IAgentSessionDefinitionResolver SessionDefinitionResolver { get; set; } = null!;
+
+    [Inject]
+    private ISandboxProfileService SandboxProfileService { get; set; } = null!;
 
     [CascadingParameter(Name = "UiModelSelection")]
     public ServerModelSelection UiModelSelection { get; set; } = new(null, null);
@@ -189,6 +205,9 @@
     protected override async Task LoadAgentsAsync()
     {
         catalogItems = (await AgentDefinitionCatalog.GetAllAsync()).ToList();
+        sandboxProfiles = (await SandboxProfileService.GetAllAsync())
+            .OrderBy(static profile => profile.Name, StringComparer.OrdinalIgnoreCase)
+            .ToList();
         var defaultItem = catalogItems.FirstOrDefault(item =>
             string.Equals(item.Name, DefaultAgentName, StringComparison.OrdinalIgnoreCase)) ?? catalogItems.FirstOrDefault();
         SetSelectedDefinition(defaultItem);
@@ -266,6 +285,8 @@
             .Select(static binding => binding.Clone())
             .ToList() ?? [];
         fileAccessWorkspace = string.Empty;
+        sandboxProfileId = sandboxProfiles.FirstOrDefault(profile =>
+            string.Equals(profile.Name, ".NET 10 Small", StringComparison.OrdinalIgnoreCase))?.Id;
         foreach (var input in inputDefinitions)
         {
             if (input.Kind == AgentInputDefinitionKind.Boolean)
@@ -324,14 +345,23 @@
         await RefreshLaunchValidationAsync();
     }
 
+    private async Task OnSandboxProfileChanged(Guid? value)
+    {
+        sandboxProfileId = value;
+        await RefreshLaunchValidationAsync();
+    }
+
     private AgentSessionOverrides BuildOverrides() => new()
     {
         McpServerBindings = selectedDefinition?.LaunchCapabilities.SupportsMcpBindingOverrides == true
             ? mcpServerBindings
             : null,
-        FileAccessWorkspace = selectedDefinition?.LaunchCapabilities.SupportsFileAccessWorkspace == true &&
+        WorkspacePath = selectedDefinition?.LaunchCapabilities.SupportsWorkspace == true &&
                               !string.IsNullOrWhiteSpace(fileAccessWorkspace)
             ? fileAccessWorkspace
+            : null,
+        SandboxProfileId = selectedDefinition?.LaunchCapabilities.SupportsSandboxProfile == true
+            ? sandboxProfileId
             : null
     };
 

@@ -1,5 +1,7 @@
+using ChatClient.Application.Services;
 using ChatClient.Application.Services.Agentic;
 using ChatClient.Application.Services.AgentRuntime;
+using ChatClient.Application.Services.Sandbox;
 using ChatClient.Domain.Models;
 
 namespace ChatClient.Tests;
@@ -113,13 +115,13 @@ public sealed class AgentSessionDefinitionResolverTests
             Name = "Agent",
             RuntimeKind = AgentRuntimeKind.LlmAgent,
             ModelRequirement = AgentModelRequirement.Required,
-            LaunchCapabilities = new AgentLaunchCapabilities { SupportsFileAccessWorkspace = true }
+            LaunchCapabilities = new AgentLaunchCapabilities { SupportsWorkspace = true }
         }, supportsFunctionCalling: false);
 
         var validation = await resolver.ValidateAsync(Reference, new AgentSessionDefinitionRequest
         {
             UiModelSelection = new ServerModelSelection(model.ServerId, model.ModelName),
-            Overrides = new AgentSessionOverrides { FileAccessWorkspace = AppContext.BaseDirectory }
+            Overrides = new AgentSessionOverrides { WorkspacePath = AppContext.BaseDirectory }
         });
 
         Assert.False(validation.CanLaunch);
@@ -173,7 +175,9 @@ public sealed class AgentSessionDefinitionResolverTests
         new(
             new StubCatalog(descriptor),
             new StubPreflightValidator(preflightProblems ?? []),
-            new StubLaunchCapabilityValidator(supportsFunctionCalling));
+            new StubLaunchCapabilityValidator(supportsFunctionCalling),
+            new StubSandboxProfileService(),
+            new StubSandboxProviderRegistry());
 
     private sealed class StubCatalog(AgentDefinitionDescriptor descriptor) : IAgentDefinitionCatalog
     {
@@ -208,5 +212,34 @@ public sealed class AgentSessionDefinitionResolverTests
             ServerModel model,
             CancellationToken cancellationToken = default) =>
             Task.FromResult(supportsFunctionCalling);
+    }
+
+    private sealed class StubSandboxProfileService : ISandboxProfileService
+    {
+        public Task<IReadOnlyCollection<SandboxProfile>> GetAllAsync() =>
+            Task.FromResult<IReadOnlyCollection<SandboxProfile>>([]);
+
+        public Task<SandboxProfile?> GetByIdAsync(Guid id) =>
+            Task.FromResult<SandboxProfile?>(null);
+
+        public Task CreateAsync(SandboxProfile profile) => Task.CompletedTask;
+
+        public Task UpdateAsync(SandboxProfile profile) => Task.CompletedTask;
+
+        public Task DeleteAsync(Guid id) => Task.CompletedTask;
+    }
+
+    private sealed class StubSandboxProviderRegistry : ISandboxProviderRegistry
+    {
+        public IReadOnlyList<SandboxProviderDescriptor> GetProviders() => [];
+
+        public ISandboxProvider GetRequired(string providerType) =>
+            throw new KeyNotFoundException(providerType);
+
+        public bool TryGet(string providerType, out ISandboxProvider provider)
+        {
+            provider = null!;
+            return false;
+        }
     }
 }

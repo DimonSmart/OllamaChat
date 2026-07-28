@@ -1,5 +1,6 @@
 namespace ChatClient.Application.Services.Agentic;
 
+using ChatClient.Application.Services.Sandbox;
 using ChatClient.Domain.Models;
 
 public sealed record AgentSessionStateViewModel(
@@ -8,7 +9,8 @@ public sealed record AgentSessionStateViewModel(
     bool HasTodoProvider,
     bool HasAgentModeProvider,
     IReadOnlyList<AgentSessionTodoItemViewModel> Todos,
-    AgentSessionFileAccessViewModel? FileAccess = null);
+    AgentSessionFileAccessViewModel? FileAccess = null,
+    AgentSessionSandboxViewModel? Sandbox = null);
 
 public sealed record AgentSessionTodoItemViewModel(
     int Id,
@@ -22,3 +24,11 @@ public sealed record AgentSessionFileAccessViewModel(
     FileAccessMode AccessMode,
     bool RequireReadApproval,
     bool RequireWriteApproval);
+
+public sealed record AgentSessionSandboxViewModel(
+    Guid ProfileId,
+    string ProfileName,
+    string ProviderType,
+    string Image,
+    string WorkspacePath,
+    SandboxState State);

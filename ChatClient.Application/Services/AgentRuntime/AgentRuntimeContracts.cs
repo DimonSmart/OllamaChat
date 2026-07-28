@@ -1,4 +1,5 @@
 using ChatClient.Application.Services.Agentic;
+using ChatClient.Application.Services.Sandbox;
 using ChatClient.Domain.Models;
 
 namespace ChatClient.Application.Services.AgentRuntime;
@@ -367,7 +368,8 @@ public sealed record AgentDefinitionDescriptor
 public sealed record AgentLaunchCapabilities
 {
     public bool SupportsMcpBindingOverrides { get; init; }
-    public bool SupportsFileAccessWorkspace { get; init; }
+    public bool SupportsWorkspace { get; init; }
+    public bool SupportsSandboxProfile { get; init; }
 }
 
 public sealed record AgentDefinitionLaunchProblem(string Message);
@@ -456,6 +458,8 @@ public sealed record AgentRuntimeCreationContext
     public ServerModel? DefaultModel { get; init; }
 
     public AgentSessionOverrides Overrides { get; init; } = new();
+
+    public SessionSandboxContext? Sandbox { get; init; }
 }
 
 public interface IAgentRunner

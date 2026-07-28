@@ -12,5 +12,13 @@ public sealed class AgentRunRequest
 
     public required string UserMessage { get; init; }
 
-    public string? FileAccessWorkspace { get; init; }
+    public string? WorkspacePath { get; init; }
+
+    public SandboxSessionLaunchConfiguration? Sandbox { get; init; }
 }
+
+public sealed record SandboxSessionLaunchConfiguration(
+    Guid ProfileId,
+    string ProfileName,
+    string ProviderType,
+    string Configuration);

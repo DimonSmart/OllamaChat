@@ -566,6 +566,7 @@ public sealed class UnifiedAgentRuntimeChatSessionServiceTests
         var rag = new Mock<IKnowledgeSearchService>(MockBehavior.Strict);
         var todoProfiles = new Mock<ITodoProviderProfileService>(MockBehavior.Strict);
         var agentModeProfiles = new Mock<IAgentModeProviderProfileService>(MockBehavior.Strict);
+        var sandboxProfiles = new Mock<ISandboxProfileService>(MockBehavior.Strict);
         if (withSessionStateProviders || availableModes is not null)
         {
             todoProfiles.Setup(service => service.GetByIdAsync(template.TodoProviderProfileId!.Value))
@@ -592,6 +593,7 @@ public sealed class UnifiedAgentRuntimeChatSessionServiceTests
             rag.Object,
             todoProfiles.Object,
             agentModeProfiles.Object,
+            sandboxProfiles.Object,
             Options.Create(new AgenticToolInvocationPolicyOptions()),
             NullLogger<AgenticRuntimeAgentFactory>.Instance,
             NullLoggerFactory.Instance);
