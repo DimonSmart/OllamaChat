@@ -1,4 +1,7 @@
-namespace ChatClient.Domain.Models;
+using ChatClient.Application.Services.Sandbox;
+using ChatClient.Domain.Models;
+
+namespace ChatClient.Application.Services.Agentic;
 
 public sealed class AgentRunRequest
 {
@@ -12,7 +15,5 @@ public sealed class AgentRunRequest
 
     public required string UserMessage { get; init; }
 
-    public string? WorkspacePath { get; init; }
-
-    public object? RuntimeSandbox { get; init; }
+    public AgentSessionRuntimeResources RuntimeResources { get; init; } = new();
 }

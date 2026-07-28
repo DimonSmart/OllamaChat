@@ -7,6 +7,7 @@ using ChatClient.Api.Services.BuiltIn;
 using ChatClient.Api.Services.AgentRuntime;
 using ChatClient.Application.Services.Agentic;
 using ChatClient.Application.Services.AgentRuntime;
+using ChatClient.Application.Services.Sandbox;
 #pragma warning disable MAAI001
 using Microsoft.Agents.AI;
 #pragma warning restore MAAI001
@@ -144,6 +145,7 @@ public sealed class OrchestrationWorkflowSessionBootstrapper(
                         .WithConfiguration(request.Configuration)
                         .WithConversation([])
                         .WithUserMessage(string.Empty)
+                        .WithRuntimeResources(request.CreationContext?.RuntimeResources ?? new AgentSessionRuntimeResources())
                         .Build();
                     var builtAgent = await runtimeAgentFactory.CreateAsync(
                         runtimeRequest,

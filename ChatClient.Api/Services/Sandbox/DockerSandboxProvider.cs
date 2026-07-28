@@ -2,6 +2,7 @@ using ChatClient.Application.Services.Sandbox;
 using Microsoft.Agents.AI.Tools.Shell;
 using Microsoft.Extensions.Logging;
 using System.ComponentModel;
+using System.Globalization;
 using YamlDotNet.Core;
 using YamlDotNet.Serialization;
 using YamlDotNet.Serialization.NamingConventions;
@@ -200,7 +201,7 @@ public sealed class DockerSandboxProvider(
             throw new InvalidOperationException("Docker sandbox user must use the 'UID:GID' format.");
         }
 
-        var containerName = $"ollamachat-{context.SessionId.ToLowerInvariant()}";
+        var containerName = $"ollamachat-sandbox-{context.SessionId.ToLowerInvariant()}";
         logger.LogInformation(
             "Starting Docker sandbox. SessionId={SessionId}, Image={Image}, Network={Network}, CpuLimit={CpuLimit}, MemoryMb={MemoryMb}, PidsLimit={PidsLimit}, ContainerName={ContainerName}",
             context.SessionId,
@@ -211,29 +212,52 @@ public sealed class DockerSandboxProvider(
             docker.PidsLimit,
             containerName);
 
-        var executor = new DockerShellExecutor(new DockerShellExecutorOptions
+        var executor = new DockerShellExecutor(BuildExecutorOptions(docker, context, user, containerName));
+
+        return Task.FromResult<ISandbox>(new DockerSandbox(context.WorkspacePath, executor));
+    }
+
+    internal static DockerShellExecutorOptions BuildExecutorOptions(
+        DockerSandboxDefinition definition,
+        SandboxCreateContext context,
+        ContainerUser user,
+        string containerName)
+    {
+        ArgumentNullException.ThrowIfNull(definition);
+        ArgumentNullException.ThrowIfNull(context);
+
+        return new DockerShellExecutorOptions
         {
-            Image = docker.Image,
+            Image = definition.Image,
             ContainerName = containerName,
             Mode = ShellMode.Persistent,
             HostWorkdir = context.WorkspacePath,
             ContainerWorkdir = DockerShellExecutor.DefaultContainerWorkdir,
             MountReadonly = false,
-            Network = docker.Network,
-            MemoryBytes = docker.MemoryMb * 1024L * 1024L,
-            PidsLimit = docker.PidsLimit,
+            Network = definition.Network,
+            MemoryBytes = definition.MemoryMb * 1024L * 1024L,
+            PidsLimit = definition.PidsLimit,
             User = user,
-            ReadOnlyRoot = docker.ReadOnlyRoot,
-            Timeout = TimeSpan.FromSeconds(docker.CommandTimeoutSeconds),
-            MaxOutputBytes = docker.MaxOutputKb * 1024,
+            ReadOnlyRoot = definition.ReadOnlyRoot,
+            Timeout = TimeSpan.FromSeconds(definition.CommandTimeoutSeconds),
+            MaxOutputBytes = definition.MaxOutputKb * 1024,
+            ExtraRunArgs =
+            [
+                "--cpus",
+                definition.CpuLimit.ToString(CultureInfo.InvariantCulture),
+                "--label",
+                "ollamachat.sandbox=true",
+                "--label",
+                $"ollamachat.session={context.SessionId}",
+                "--label",
+                $"ollamachat.profile-id={context.ProfileId:D}"
+            ],
             Environment = new Dictionary<string, string>
             {
                 ["OLLAMACHAT_SESSION_ID"] = context.SessionId,
                 ["OLLAMACHAT_SANDBOX_PROFILE"] = context.ProfileName
             }
-        });
-
-        return Task.FromResult<ISandbox>(new DockerSandbox(context.WorkspacePath, executor));
+        };
     }
 
     private static Dictionary<string, object?> ParseYamlMap(string configuration)

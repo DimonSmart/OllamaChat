@@ -1,6 +1,7 @@
-using ChatClient.Domain.Models;
 using ChatClient.Application.Services.Agentic;
 using ChatClient.Application.Services.Sandbox;
+using ChatClient.Api.Services.Sandbox;
+using ChatClient.Domain.Models;
 #pragma warning disable MAAI001
 using Microsoft.Agents.AI;
 #pragma warning restore MAAI001
@@ -26,7 +27,6 @@ public sealed class HttpAgenticExecutionRuntime(
         {
             buildResult = await runtimeAgentFactory.CreateAsync(
                 request,
-                request.RuntimeSandbox as ISandbox,
                 cancellationToken: cancellationToken);
         }
         catch (OperationCanceledException)
@@ -51,61 +51,104 @@ public sealed class HttpAgenticExecutionRuntime(
 
         var runOptions = BuildRunOptions(request, buildResult.Server, buildResult.ToolSet);
         var streamedText = false;
-        var projection = responseEventProjector.CreateProjection();
         string? streamError = null;
-
         var session = await buildResult.Agent.CreateSessionAsync(cancellationToken);
-        await using var updates = buildResult.Agent.RunStreamingAsync(
-                BuildChatMessages(request),
-                session,
-                runOptions,
-                cancellationToken)
-            .GetAsyncEnumerator(cancellationToken);
+        var nextInput = BuildChatMessages(request);
+        var toolApprovalCoordinator = request.RuntimeResources.ToolApprovalCoordinator;
 
         while (true)
         {
-            AgentResponseUpdate update;
-            try
+            var projection = responseEventProjector.CreateProjection();
+            ToolApprovalRequestContent? approvalRequest = null;
+
+            await using var updates = buildResult.Agent.RunStreamingAsync(
+                    nextInput,
+                    session,
+                    runOptions,
+                    cancellationToken)
+                .GetAsyncEnumerator(cancellationToken);
+
+            while (true)
             {
-                if (!await updates.MoveNextAsync())
+                AgentResponseUpdate update;
+                try
                 {
+                    if (!await updates.MoveNextAsync())
+                    {
+                        break;
+                    }
+
+                    update = updates.Current;
+                }
+                catch (OperationCanceledException)
+                {
+                    throw;
+                }
+                catch (Exception ex)
+                {
+                    logger.LogError(ex, "Agentic session failed for agent {AgentName}", request.Agent.AgentName);
+                    streamError = ex.Message;
                     break;
                 }
 
-                update = updates.Current;
-            }
-            catch (OperationCanceledException)
-            {
-                throw;
-            }
-            catch (Exception ex)
-            {
-                logger.LogError(ex, "Agentic session failed for agent {AgentName}", request.Agent.AgentName);
-                streamError = ex.Message;
-                break;
-            }
-
-            foreach (var responseEvent in projection.Project(update, buildResult.ToolSet.MetadataByName))
-            {
-                if (responseEvent is HarnessTextDelta textDelta)
+                foreach (var responseEvent in projection.Project(update, buildResult.ToolSet.MetadataByName))
                 {
-                    if (!string.IsNullOrWhiteSpace(textDelta.Text))
+                    if (responseEvent is HarnessToolApprovalRequested approval)
                     {
-                        streamedText = true;
+                        approvalRequest = update.Contents.OfType<ToolApprovalRequestContent>()
+                            .FirstOrDefault(content => content.RequestId == approval.RequestId);
+                        break;
+                    }
+
+                    if (responseEvent is HarnessTextDelta textDelta)
+                    {
+                        if (!string.IsNullOrWhiteSpace(textDelta.Text))
+                        {
+                            streamedText = true;
+                        }
+
+                        yield return new ChatEngineStreamChunk(
+                            request.Agent.AgentName,
+                            textDelta.Text,
+                            Event: responseEvent);
+                        continue;
                     }
 
                     yield return new ChatEngineStreamChunk(
                         request.Agent.AgentName,
-                        textDelta.Text,
+                        string.Empty,
                         Event: responseEvent);
-                    continue;
                 }
 
-                yield return new ChatEngineStreamChunk(
-                    request.Agent.AgentName,
-                    string.Empty,
-                    Event: responseEvent);
+                if (approvalRequest is not null || !string.IsNullOrWhiteSpace(streamError))
+                {
+                    break;
+                }
             }
+
+            if (!string.IsNullOrWhiteSpace(streamError) || approvalRequest is null)
+            {
+                break;
+            }
+
+            if (toolApprovalCoordinator is null)
+            {
+                throw new InvalidOperationException(
+                    "A session tool approval coordinator is required for shell-enabled agents.");
+            }
+
+            var approvalDecision = await toolApprovalCoordinator.RequestApprovalAsync(
+                new SessionToolApprovalRequest(
+                    approvalRequest.RequestId,
+                    GetApprovalToolName(approvalRequest),
+                    GetApprovalArguments(approvalRequest),
+                    IsStandingApprovalAllowed(GetApprovalToolName(approvalRequest))),
+                cancellationToken);
+            var approvalResponse = BuildApprovalResponse(approvalRequest, approvalDecision);
+            nextInput =
+            [
+                new ChatMessage(ChatRole.User, [approvalResponse])
+            ];
         }
 
         if (!string.IsNullOrWhiteSpace(streamError))
@@ -184,4 +227,39 @@ public sealed class HttpAgenticExecutionRuntime(
 
     private static ChatEngineStreamChunk ErrorChunk(string agentName, string message) =>
         new(agentName, message, IsFinal: true, IsError: true);
+
+    private static AIContent BuildApprovalResponse(
+        ToolApprovalRequestContent request,
+        ToolApprovalDecision decision) =>
+        decision switch
+        {
+            ToolApprovalDecision.ApproveOnce => request.CreateResponse(true, "User approved"),
+            ToolApprovalDecision.Deny => request.CreateResponse(false, "User denied"),
+            ToolApprovalDecision.AlwaysApproveTool => request.CreateAlwaysApproveToolResponse("User approved"),
+            ToolApprovalDecision.AlwaysApproveExactArguments => request.CreateAlwaysApproveToolWithArgumentsResponse("User approved"),
+            _ => throw new ArgumentOutOfRangeException(nameof(decision))
+        };
+
+    private static bool IsStandingApprovalAllowed(string toolName) =>
+        !toolName.StartsWith("file_access_", StringComparison.OrdinalIgnoreCase) &&
+        !string.Equals(toolName, SandboxToolNames.RunShell, StringComparison.OrdinalIgnoreCase);
+
+    private static string GetApprovalToolName(ToolApprovalRequestContent request) =>
+        request.ToolCall switch
+        {
+            FunctionCallContent functionCall => functionCall.Name,
+            McpServerToolCallContent mcpCall => mcpCall.Name,
+            _ => "unknown"
+        };
+
+    private static string GetApprovalArguments(ToolApprovalRequestContent request) =>
+        request.ToolCall switch
+        {
+            FunctionCallContent functionCall => SerializeArguments(functionCall.Arguments),
+            McpServerToolCallContent mcpCall => SerializeArguments(mcpCall.Arguments),
+            _ => "{}"
+        };
+
+    private static string SerializeArguments(object? value) =>
+        System.Text.Json.JsonSerializer.Serialize(value);
 }

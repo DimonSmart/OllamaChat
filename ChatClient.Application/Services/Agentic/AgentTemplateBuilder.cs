@@ -501,8 +501,7 @@ public sealed class AgentRunBuilder
                 _mcpServerBindings.Select(static binding => binding.Clone()).ToArray()),
             Conversation = _conversation.ToArray(),
             UserMessage = _userMessage,
-            WorkspacePath = _runtimeResources.WorkspacePath,
-            RuntimeSandbox = _runtimeResources.Sandbox
+            RuntimeResources = _runtimeResources
         };
     }
 

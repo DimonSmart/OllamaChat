@@ -41,7 +41,6 @@ public sealed class AgenticRuntimeAgentFactory(
 {
     internal async Task<HarnessAgentRuntimeDefinition> CreateAsync(
         AgentRunRequest request,
-        ISandbox? sessionSandbox = null,
         bool requireFunctionCalling = false,
         CancellationToken cancellationToken = default)
     {
@@ -90,6 +89,12 @@ public sealed class AgenticRuntimeAgentFactory(
                 $"Model '{request.ResolvedModel.ModelName}' does not support function calling required by File Access.");
         }
 
+        if (request.Agent.EnableShell && !supportsFunctions)
+        {
+            throw new InvalidOperationException(
+                $"Model '{request.ResolvedModel.ModelName}' does not support function calling required by sandbox shell execution.");
+        }
+
         var toolRequestContext = BuildToolRequestContext(request);
         var availableTools = supportsFunctions
             ? await appToolCatalog.ListToolsAsync(toolRequestContext, cancellationToken)
@@ -128,14 +133,16 @@ public sealed class AgenticRuntimeAgentFactory(
                 string.Join(", ", requestedFunctions));
         }
 
-        var workspacePath = request.WorkspacePath is null ? null : ValidateWorkspace(request.WorkspacePath);
+        var workspacePath = request.RuntimeResources.WorkspacePath is null
+            ? null
+            : ValidateWorkspace(request.RuntimeResources.WorkspacePath);
         var workspaceStore = fileAccessProfile is null
             ? null
             : new SessionWorkspaceAgentFileStore(workspacePath ?? throw new InvalidOperationException("A workspace directory is required for File Access."));
         SessionSandboxShellExecutor? shellExecutor = null;
         if (request.Agent.EnableShell)
         {
-            var sandbox = sessionSandbox;
+            var sandbox = request.RuntimeResources.Sandbox;
             if (sandbox is null)
             {
                 throw new InvalidOperationException("A sandbox session is required for shell-enabled agents.");

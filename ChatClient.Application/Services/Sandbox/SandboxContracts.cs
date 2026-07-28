@@ -1,3 +1,4 @@
+using ChatClient.Application.Services.Agentic;
 using ChatClient.Domain.Models;
 
 namespace ChatClient.Application.Services.Sandbox;
@@ -141,4 +142,6 @@ public sealed record AgentSessionRuntimeResources
     public string? WorkspacePath { get; init; }
 
     public ISandbox? Sandbox { get; init; }
+
+    public ISessionToolApprovalCoordinator? ToolApprovalCoordinator { get; init; }
 }
