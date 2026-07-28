@@ -4,6 +4,7 @@ using ChatClient.Api.Services.AgentRuntime;
 using ChatClient.Application.Services;
 using ChatClient.Application.Services.Agentic;
 using ChatClient.Application.Services.AgentRuntime;
+using ChatClient.Application.Services.Sandbox;
 using ChatClient.Domain.Models;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -489,6 +490,7 @@ public sealed class UnifiedAgentRuntimeChatSessionServiceTests
             new AgenticChatEngineStreamingBridge(),
             NullLogger<UnifiedAgentRuntimeChatSessionService>.Instance,
             null!,
+            new StubSandboxSessionFactory(),
             null!,
             new HarnessResponseEventProjector(NullLogger<HarnessResponseEventProjector>.Instance));
 
@@ -566,7 +568,6 @@ public sealed class UnifiedAgentRuntimeChatSessionServiceTests
         var rag = new Mock<IKnowledgeSearchService>(MockBehavior.Strict);
         var todoProfiles = new Mock<ITodoProviderProfileService>(MockBehavior.Strict);
         var agentModeProfiles = new Mock<IAgentModeProviderProfileService>(MockBehavior.Strict);
-        var sandboxProfiles = new Mock<ISandboxProfileService>(MockBehavior.Strict);
         if (withSessionStateProviders || availableModes is not null)
         {
             todoProfiles.Setup(service => service.GetByIdAsync(template.TodoProviderProfileId!.Value))
@@ -593,7 +594,6 @@ public sealed class UnifiedAgentRuntimeChatSessionServiceTests
             rag.Object,
             todoProfiles.Object,
             agentModeProfiles.Object,
-            sandboxProfiles.Object,
             Options.Create(new AgenticToolInvocationPolicyOptions()),
             NullLogger<AgenticRuntimeAgentFactory>.Instance,
             NullLoggerFactory.Instance);
@@ -604,6 +604,7 @@ public sealed class UnifiedAgentRuntimeChatSessionServiceTests
             new AgenticChatEngineStreamingBridge(),
             NullLogger<UnifiedAgentRuntimeChatSessionService>.Instance,
             templateService.Object,
+            new StubSandboxSessionFactory(),
             runtimeFactory,
             new HarnessResponseEventProjector(NullLogger<HarnessResponseEventProjector>.Instance));
         var request = new ChatEngineSessionStartRequest
@@ -881,5 +882,15 @@ public sealed class UnifiedAgentRuntimeChatSessionServiceTests
             AgentDefinitionReference reference,
             CancellationToken cancellationToken = default) =>
             await FindAsync(reference, cancellationToken) ?? throw new KeyNotFoundException();
+    }
+
+    private sealed class StubSandboxSessionFactory : ISandboxSessionFactory
+    {
+        public Task<SandboxSessionHandle> StartAsync(
+            Guid profileId,
+            string workspacePath,
+            string sessionId,
+            CancellationToken cancellationToken = default) =>
+            throw new NotSupportedException();
     }
 }

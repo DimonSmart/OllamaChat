@@ -26,6 +26,7 @@ public sealed class AgenticChatEngineOrchestrator(
             .WithConfiguration(request.Configuration)
             .WithConversation(conversation)
             .WithUserMessage(request.UserMessage)
+            .WithRuntimeResources(request.RuntimeResources)
             .Build();
 
         await foreach (var chunk in runtime.StreamAsync(runtimeRequest, cancellationToken))

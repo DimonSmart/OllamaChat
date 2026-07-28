@@ -1,3 +1,4 @@
+using ChatClient.Application.Services.Sandbox;
 using ChatClient.Domain.Models;
 using Microsoft.Extensions.AI;
 
@@ -332,6 +333,7 @@ public sealed class AgentRunBuilder
     private readonly List<AgentRunConversationMessage> _conversation = [];
     private ServerModel? _resolvedModel;
     private string _userMessage = string.Empty;
+    private AgentSessionRuntimeResources _runtimeResources = new();
 
     private AgentRunBuilder(AgentExecutionSpec agent)
     {
@@ -472,6 +474,12 @@ public sealed class AgentRunBuilder
         return this;
     }
 
+    public AgentRunBuilder WithRuntimeResources(AgentSessionRuntimeResources runtimeResources)
+    {
+        _runtimeResources = runtimeResources ?? new AgentSessionRuntimeResources();
+        return this;
+    }
+
     public AgentRunRequest Build()
     {
         if (_resolvedModel is null)
@@ -492,7 +500,9 @@ public sealed class AgentRunBuilder
                 _functions.ToArray(),
                 _mcpServerBindings.Select(static binding => binding.Clone()).ToArray()),
             Conversation = _conversation.ToArray(),
-            UserMessage = _userMessage
+            UserMessage = _userMessage,
+            WorkspacePath = _runtimeResources.WorkspacePath,
+            RuntimeSandbox = _runtimeResources.Sandbox
         };
     }
 

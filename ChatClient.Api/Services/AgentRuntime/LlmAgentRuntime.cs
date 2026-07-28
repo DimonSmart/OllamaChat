@@ -2,6 +2,7 @@ using ChatClient.Application.Helpers;
 using ChatClient.Application.Services;
 using ChatClient.Application.Services.Agentic;
 using ChatClient.Application.Services.AgentRuntime;
+using ChatClient.Application.Services.Sandbox;
 using ChatClient.Domain.Models;
 using System.Runtime.CompilerServices;
 using System.Text;
@@ -43,6 +44,7 @@ public sealed class LlmAgentRuntimeFactory(
                 AgentRuntimeKind.LlmAgent),
             runtimeAgent,
             context.Configuration,
+            context.RuntimeResources,
             orchestrator,
             logger);
     }
@@ -60,6 +62,7 @@ public sealed class LlmAgentRuntimeFactory(
             descriptor,
             runtimeAgent,
             context.Configuration,
+            context.RuntimeResources,
             orchestrator,
             logger);
     }
@@ -105,6 +108,7 @@ internal sealed class LlmAgentRuntime(
     AgentRuntimeDescriptor descriptor,
     ResolvedChatAgent agent,
     AppChatConfiguration configuration,
+    AgentSessionRuntimeResources runtimeResources,
     IChatEngineOrchestrator orchestrator,
     ILogger logger) : IAgentRuntime
 {
@@ -168,7 +172,8 @@ internal sealed class LlmAgentRuntime(
             Configuration = configuration,
             Messages = history,
             UserMessage = userMessage.Content,
-            Files = files
+            Files = files,
+            RuntimeResources = runtimeResources
         };
 
         var messageId = Guid.NewGuid().ToString("N");

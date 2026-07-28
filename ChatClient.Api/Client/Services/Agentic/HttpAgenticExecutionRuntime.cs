@@ -1,5 +1,6 @@
 using ChatClient.Domain.Models;
 using ChatClient.Application.Services.Agentic;
+using ChatClient.Application.Services.Sandbox;
 #pragma warning disable MAAI001
 using Microsoft.Agents.AI;
 #pragma warning restore MAAI001
@@ -25,6 +26,7 @@ public sealed class HttpAgenticExecutionRuntime(
         {
             buildResult = await runtimeAgentFactory.CreateAsync(
                 request,
+                request.RuntimeSandbox as ISandbox,
                 cancellationToken: cancellationToken);
         }
         catch (OperationCanceledException)

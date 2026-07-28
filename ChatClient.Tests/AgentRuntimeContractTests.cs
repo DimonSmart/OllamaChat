@@ -26,7 +26,8 @@ public sealed class AgentRuntimeContractTests
             new StubAgentTemplateService([agent]),
             new StubWorkflowDefinitionService([workflow]),
             new StubInputDefinitionProvider(),
-            new StubModelRequirementAnalyzer());
+            new StubModelRequirementAnalyzer(),
+            new StubLaunchCapabilityAnalyzer());
 
         var items = await catalog.GetAllAsync();
 
@@ -62,7 +63,8 @@ public sealed class AgentRuntimeContractTests
                 }
             ]),
             new StubInputDefinitionProvider(),
-            new StubModelRequirementAnalyzer());
+            new StubModelRequirementAnalyzer(),
+            new StubLaunchCapabilityAnalyzer());
 
         var workflow = await catalog.FindAsync(new AgentDefinitionReference(
             AgentDefinitionKind.SavedWorkflow,
@@ -144,6 +146,14 @@ public sealed class AgentRuntimeContractTests
             AgentDefinitionReference reference,
             CancellationToken cancellationToken = default) =>
             Task.FromResult(AgentModelRequirement.Required);
+    }
+
+    private sealed class StubLaunchCapabilityAnalyzer : IAgentDefinitionLaunchCapabilityAnalyzer
+    {
+        public Task<AgentLaunchCapabilities> AnalyzeAsync(
+            AgentDefinitionReference reference,
+            CancellationToken cancellationToken = default) =>
+            Task.FromResult(new AgentLaunchCapabilities());
     }
 
     private sealed class RecordingLlmFactory : ILlmAgentRuntimeFactory

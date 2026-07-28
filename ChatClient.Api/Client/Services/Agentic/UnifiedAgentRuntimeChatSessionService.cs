@@ -17,8 +17,9 @@ public sealed class UnifiedAgentRuntimeChatSessionService(
     IChatEngineStreamingBridge streamingBridge,
     ILogger<UnifiedAgentRuntimeChatSessionService> logger,
     IAgentTemplateService agentTemplateService,
+    ISandboxSessionFactory sandboxSessionFactory,
     AgenticRuntimeAgentFactory runtimeAgentFactory,
-    HarnessResponseEventProjector responseEventProjector) : IChatEngineSessionService
+    HarnessResponseEventProjector responseEventProjector) : IChatEngineSessionService, IAsyncDisposable
 {
     private readonly AppChat _chat = new();
     private readonly Dictionary<string, StreamingAppChatMessage> _activeStreamsByRuntimeMessageId =
@@ -31,8 +32,7 @@ public sealed class UnifiedAgentRuntimeChatSessionService(
     private IReadOnlyList<string> _directAvailableModes = [];
     private SessionWorkspaceAgentFileStore? _directFileAccessStore;
     private FileAccessProviderProfile? _directFileAccessProfile;
-    private SessionSandboxContext? _directSandboxContext;
-    private ISandbox? _directSandboxInstance;
+    private SandboxSessionHandle? _sandboxSession;
     private IReadOnlyDictionary<string, AgenticRegisteredTool> _directToolMetadata =
         new Dictionary<string, AgenticRegisteredTool>(StringComparer.OrdinalIgnoreCase);
     private TaskCompletionSource? _activeRunCompletion;
@@ -76,24 +76,37 @@ public sealed class UnifiedAgentRuntimeChatSessionService(
         }
 
         await ResetAsync(cancellationToken);
-
-        _parameters = request.Snapshot();
-        _chat.Reset();
-        ClearRunLocalState();
-        _chat.SetAgents(request.RuntimeParticipant is { } participant
-            ? [new AgentExecutionSpec
-            {
-                RuntimeAgentId = participant.Id,
-                AgentName = participant.Name,
-                Summary = participant.Description,
-                ShortName = participant.AvatarText
-            }]
-            : request.Agents.Select(static agent => agent.Agent.Clone()));
-        ChatReset?.Invoke();
-
-        if (request.RuntimeReference?.Kind == AgentDefinitionKind.SavedAgent)
+        try
         {
-            await CreateDirectConversationAsync(request, cancellationToken);
+            _parameters = request.Snapshot();
+            _chat.Reset();
+            ClearRunLocalState();
+            _chat.SetAgents(request.RuntimeParticipant is { } participant
+                ? [new AgentExecutionSpec
+                {
+                    RuntimeAgentId = participant.Id,
+                    AgentName = participant.Name,
+                    Summary = participant.Description,
+                    ShortName = participant.AvatarText
+                }]
+                : request.Agents.Select(static agent => agent.Agent.Clone()));
+            ChatReset?.Invoke();
+
+            if (request.RuntimeReference is { } runtimeReference)
+            {
+                var descriptor = await definitionCatalog.GetRequiredAsync(runtimeReference, cancellationToken);
+                _sandboxSession = await CreateSandboxSessionAsync(request, descriptor, cancellationToken);
+
+                if (runtimeReference.Kind == AgentDefinitionKind.SavedAgent)
+                {
+                    await CreateDirectConversationAsync(request, cancellationToken);
+                }
+            }
+        }
+        catch
+        {
+            await ResetAsync(cancellationToken);
+            throw;
         }
     }
 
@@ -102,14 +115,31 @@ public sealed class UnifiedAgentRuntimeChatSessionService(
     {
         var agent = _directAgent;
         var session = _directSession;
+        var sandboxSession = _sandboxSession;
+        var workflowWorkspacePath = _parameters?.Overrides.WorkspacePath;
         if (agent is null || session is null)
         {
-            return null;
+            return sandboxSession is null && string.IsNullOrWhiteSpace(workflowWorkspacePath)
+                ? null
+                : new AgentSessionStateViewModel(
+                    null,
+                    [],
+                    false,
+                    false,
+                    [],
+                    null,
+                    sandboxSession is null ? null : new AgentSessionSandboxViewModel(
+                        sandboxSession.ProfileId,
+                        sandboxSession.ProfileName,
+                        sandboxSession.ProviderType,
+                        sandboxSession.Summary.Image,
+                        sandboxSession.WorkspacePath,
+                        sandboxSession.Instance.State));
         }
 
         var todoProvider = agent.GetService<TodoProvider>();
         var modeProvider = agent.GetService<AgentModeProvider>();
-        if (todoProvider is null && modeProvider is null && _directFileAccessStore is null && _directSandboxContext is null)
+        if (todoProvider is null && modeProvider is null && _directFileAccessStore is null && sandboxSession is null)
         {
             return null;
         }
@@ -133,13 +163,13 @@ public sealed class UnifiedAgentRuntimeChatSessionService(
                 _directFileAccessProfile.AccessMode,
                 _directFileAccessProfile.RequireReadApproval,
                 _directFileAccessProfile.RequireWriteApproval),
-            _directSandboxContext is null ? null : new AgentSessionSandboxViewModel(
-                _directSandboxContext.ProfileId,
-                _directSandboxContext.ProfileName,
-                _directSandboxContext.ProviderType,
-                _directSandboxContext.Image,
-                _directSandboxContext.WorkspacePath,
-                _directSandboxContext.State));
+            sandboxSession is null ? null : new AgentSessionSandboxViewModel(
+                sandboxSession.ProfileId,
+                sandboxSession.ProfileName,
+                sandboxSession.ProviderType,
+                sandboxSession.Summary.Image,
+                sandboxSession.WorkspacePath,
+                sandboxSession.Instance.State));
     }
 
     public async Task SetFileAccessWorkspaceAsync(string workspace, CancellationToken cancellationToken = default)
@@ -151,7 +181,7 @@ public sealed class UnifiedAgentRuntimeChatSessionService(
                 throw new InvalidOperationException("Workspace cannot be changed while the agent is running.");
             if (PendingToolApproval is not null)
                 throw new InvalidOperationException("Workspace cannot be changed while tool approval is pending.");
-            if (_directSandboxContext is not null)
+            if (_sandboxSession is not null)
                 throw new InvalidOperationException("Workspace cannot be changed while this conversation has an active sandbox.");
             var store = _directFileAccessStore ?? throw new InvalidOperationException("This conversation does not use File Access.");
             store.SetWorkspace(workspace);
@@ -236,13 +266,15 @@ public sealed class UnifiedAgentRuntimeChatSessionService(
             await activeRun.WaitAsync(cancellationToken);
         }
 
+        SandboxSessionHandle? sandboxSession;
         lock (_lifecycleLock)
         {
             _directAgent = null;
             _directSession = null;
             _directFileAccessStore = null;
             _directFileAccessProfile = null;
-            _directSandboxContext = null;
+            sandboxSession = _sandboxSession;
+            _sandboxSession = null;
             _directAvailableModes = [];
             _directToolMetadata = new Dictionary<string, AgenticRegisteredTool>(StringComparer.OrdinalIgnoreCase);
             _pendingToolApprovalRequest = null;
@@ -257,10 +289,16 @@ public sealed class UnifiedAgentRuntimeChatSessionService(
             _resetting = false;
         }
 
-        if (_directSandboxInstance is not null)
+        if (sandboxSession is not null)
         {
-            await _directSandboxInstance.DisposeAsync();
-            _directSandboxInstance = null;
+            try
+            {
+                await sandboxSession.DisposeAsync();
+            }
+            catch (Exception ex)
+            {
+                logger.LogWarning(ex, "Sandbox cleanup failed during session reset.");
+            }
         }
 
         UpdateAnsweringState(false);
@@ -380,7 +418,8 @@ public sealed class UnifiedAgentRuntimeChatSessionService(
             {
                 Configuration = _parameters.Configuration,
                 DefaultModel = _parameters.RuntimeDefaultModel ?? _parameters.Agents.FirstOrDefault()?.Model,
-                Overrides = _parameters.Overrides
+                Overrides = _parameters.Overrides,
+                RuntimeResources = BuildRuntimeResources()
             };
             var descriptor = await definitionCatalog.GetRequiredAsync(
                 _parameters.RuntimeReference,
@@ -519,17 +558,6 @@ public sealed class UnifiedAgentRuntimeChatSessionService(
         }
 
         var resolved = ResolvedChatAgentFactory.Resolve(template, request.RuntimeDefaultModel);
-        SandboxSessionLaunchConfiguration? sandbox = null;
-        if (request.Overrides.SandboxProfileId is Guid sandboxProfileId && sandboxProfileId != Guid.Empty)
-        {
-            var profile = await runtimeAgentFactory.GetSandboxProfileAsync(sandboxProfileId, cancellationToken);
-            sandbox = new SandboxSessionLaunchConfiguration(
-                profile.Id,
-                profile.Name,
-                profile.ProviderType,
-                profile.Configuration);
-        }
-
         var build = await runtimeAgentFactory.CreateAsync(new AgentRunRequest
         {
             Agent = resolved.Agent,
@@ -537,20 +565,53 @@ public sealed class UnifiedAgentRuntimeChatSessionService(
             Configuration = request.Configuration,
             Conversation = [],
             UserMessage = string.Empty,
-            WorkspacePath = request.Overrides.WorkspacePath,
-            Sandbox = sandbox
-        }, cancellationToken: cancellationToken);
+            WorkspacePath = BuildRuntimeResources().WorkspacePath,
+            RuntimeSandbox = BuildRuntimeResources().Sandbox
+        }, _sandboxSession?.Instance, cancellationToken: cancellationToken);
 
         _directAgent = build.Agent;
         _directSession = await build.Agent.CreateSessionAsync(cancellationToken);
         _directAvailableModes = build.AvailableModes;
         _directFileAccessStore = build.FileAccessStore;
         _directFileAccessProfile = build.FileAccessProfile;
-        _directSandboxContext = build.Sandbox;
-        _directSandboxInstance = build.SandboxInstance;
         _directToolMetadata = build.ToolSet.MetadataByName;
         SessionStateChanged?.Invoke();
     }
+
+    private AgentSessionRuntimeResources BuildRuntimeResources() => new()
+    {
+        WorkspacePath = _sandboxSession?.WorkspacePath ?? _parameters?.Overrides.WorkspacePath,
+        Sandbox = _sandboxSession?.Instance
+    };
+
+    private async Task<SandboxSessionHandle?> CreateSandboxSessionAsync(
+        ChatEngineSessionStartRequest request,
+        AgentDefinitionDescriptor descriptor,
+        CancellationToken cancellationToken)
+    {
+        if (!descriptor.LaunchCapabilities.SupportsSandboxProfile)
+        {
+            return null;
+        }
+
+        if (request.Overrides.SandboxProfileId is not Guid sandboxProfileId || sandboxProfileId == Guid.Empty)
+        {
+            throw new InvalidOperationException("A sandbox profile is required to start this session.");
+        }
+
+        if (string.IsNullOrWhiteSpace(request.Overrides.WorkspacePath))
+        {
+            throw new InvalidOperationException("A workspace directory is required to start this session.");
+        }
+
+        return await sandboxSessionFactory.StartAsync(
+            sandboxProfileId,
+            request.Overrides.WorkspacePath,
+            _chat.Id.ToString("N"),
+            cancellationToken);
+    }
+
+    public ValueTask DisposeAsync() => new(ResetAsync());
 
     private async Task EnsureDirectConversationAsync(CancellationToken cancellationToken)
     {

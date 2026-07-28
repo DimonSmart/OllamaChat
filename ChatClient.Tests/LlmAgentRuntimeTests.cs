@@ -1,6 +1,7 @@
 using ChatClient.Api.Services.AgentRuntime;
 using ChatClient.Application.Services.Agentic;
 using ChatClient.Application.Services.AgentRuntime;
+using ChatClient.Application.Services.Sandbox;
 using ChatClient.Domain.Models;
 using Microsoft.Extensions.Logging.Abstractions;
 using System.Runtime.CompilerServices;
@@ -134,6 +135,7 @@ public sealed class LlmAgentRuntimeTests
                 new AgentExecutionSpec { Id = Guid.NewGuid(), AgentName = "Agent" },
                 new ServerModel(Guid.NewGuid(), "model")),
             new AppChatConfiguration("model", []),
+            new AgentSessionRuntimeResources(),
             orchestrator,
             NullLogger<LlmAgentRuntime>.Instance);
 

@@ -130,6 +130,7 @@ public static class ServiceCollectionExtensions
         services.AddScoped<AgenticRuntimeAgentFactory>();
         services.AddSingleton<ISandboxProvider, DockerSandboxProvider>();
         services.AddSingleton<ISandboxProviderRegistry, SandboxProviderRegistry>();
+        services.AddScoped<ISandboxSessionFactory, SandboxSessionFactory>();
         services.AddScoped<HarnessResponseEventProjector>();
         services.AddScoped<IAgenticExecutionRuntime, HttpAgenticExecutionRuntime>();
         services.AddScoped<AgenticChatEngineOrchestrator>();
@@ -155,6 +156,7 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IWorkflowAgentDraftMaterializer, WorkflowAgentDraftMaterializer>();
         services.AddScoped<IAgentInputDefinitionProvider, AgentInputDefinitionProvider>();
         services.AddScoped<IAgentDefinitionModelRequirementAnalyzer, WorkflowModelRequirementAnalyzer>();
+        services.AddScoped<IAgentDefinitionLaunchCapabilityAnalyzer, AgentDefinitionLaunchCapabilityAnalyzer>();
         services.AddScoped<IAgentDefinitionDependencyGraph, AgentDefinitionDependencyGraph>();
         services.AddScoped<IWorkflowDefinitionPreflightValidator, WorkflowDefinitionPreflightValidator>();
         services.AddScoped<LlmAgentRuntimeFactory>();

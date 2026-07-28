@@ -1,3 +1,4 @@
+using ChatClient.Application.Services.Sandbox;
 using Microsoft.Agents.AI.Tools.Shell;
 using Microsoft.Extensions.AI;
 using System.ComponentModel;
@@ -6,9 +7,9 @@ namespace ChatClient.Api.Services.Sandbox;
 
 public sealed class SessionSandboxShellExecutor : ShellExecutor
 {
-    private readonly DockerSandbox _sandbox;
+    private readonly ISandbox _sandbox;
 
-    public SessionSandboxShellExecutor(DockerSandbox sandbox)
+    public SessionSandboxShellExecutor(ISandbox sandbox)
     {
         _sandbox = sandbox;
     }
@@ -28,7 +29,7 @@ public sealed class SessionSandboxShellExecutor : ShellExecutor
             TimedOut: result.TimedOut);
     }
 
-    public override AIFunction AsAIFunction(string name = "run_shell", string? description = null, bool requireApproval = true)
+    public override AIFunction AsAIFunction(string name = SandboxToolNames.RunShell, string? description = null, bool requireApproval = true)
     {
         description ??= "Execute a single shell command inside the session sandbox and return stdout, stderr, and exit code. The sandbox starts in /workspace and persists for the life of the current chat session.";
         var fn = AIFunctionFactory.Create(

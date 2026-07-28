@@ -1,3 +1,4 @@
+using ChatClient.Application.Services.Sandbox;
 using ChatClient.Domain.Models;
 
 namespace ChatClient.Application.Services.Agentic;
@@ -15,4 +16,6 @@ public sealed class ChatEngineOrchestrationRequest
     public required string UserMessage { get; init; }
 
     public IReadOnlyList<AppChatMessageFile> Files { get; init; } = [];
+
+    public AgentSessionRuntimeResources RuntimeResources { get; init; } = new();
 }

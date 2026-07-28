@@ -245,6 +245,13 @@ public interface IAgentDefinitionModelRequirementAnalyzer
         CancellationToken cancellationToken = default);
 }
 
+public interface IAgentDefinitionLaunchCapabilityAnalyzer
+{
+    Task<AgentLaunchCapabilities> AnalyzeAsync(
+        AgentDefinitionReference reference,
+        CancellationToken cancellationToken = default);
+}
+
 public interface IWorkflowDefinitionPreflightValidator
 {
     Task<IReadOnlyList<AgentDefinitionLaunchProblem>> ValidateAsync(
@@ -459,7 +466,7 @@ public sealed record AgentRuntimeCreationContext
 
     public AgentSessionOverrides Overrides { get; init; } = new();
 
-    public SessionSandboxContext? Sandbox { get; init; }
+    public AgentSessionRuntimeResources RuntimeResources { get; init; } = new();
 }
 
 public interface IAgentRunner

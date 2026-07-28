@@ -217,13 +217,6 @@ public sealed class AgentSessionDefinitionResolver(
                                 problems.Add(new AgentDefinitionLaunchProblem(error));
                             }
                         }
-
-                        var availability = await provider.CheckAvailabilityAsync(cancellationToken);
-                        if (!availability.IsAvailable)
-                        {
-                            problems.Add(new AgentDefinitionLaunchProblem(
-                                availability.ErrorMessage ?? $"Sandbox provider '{profile.ProviderType}' is not available."));
-                        }
                     }
                     catch (Exception ex)
                     {

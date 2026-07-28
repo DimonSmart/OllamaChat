@@ -14,11 +14,5 @@ public sealed class AgentRunRequest
 
     public string? WorkspacePath { get; init; }
 
-    public SandboxSessionLaunchConfiguration? Sandbox { get; init; }
+    public object? RuntimeSandbox { get; init; }
 }
-
-public sealed record SandboxSessionLaunchConfiguration(
-    Guid ProfileId,
-    string ProfileName,
-    string ProviderType,
-    string Configuration);

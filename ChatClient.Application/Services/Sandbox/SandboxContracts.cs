@@ -37,6 +37,15 @@ public interface ISandboxProviderRegistry
     bool TryGet(string providerType, out ISandboxProvider provider);
 }
 
+public interface ISandboxSessionFactory
+{
+    Task<SandboxSessionHandle> StartAsync(
+        Guid profileId,
+        string workspacePath,
+        string sessionId,
+        CancellationToken cancellationToken = default);
+}
+
 public interface ISandbox : IAsyncDisposable
 {
     string ProviderType { get; }
@@ -94,6 +103,8 @@ public sealed record SandboxCommandResult(
 
 public sealed record SandboxCreateContext
 {
+    public required Guid ProfileId { get; init; }
+
     public required string SessionId { get; init; }
 
     public required string WorkspacePath { get; init; }
@@ -101,10 +112,33 @@ public sealed record SandboxCreateContext
     public required string ProfileName { get; init; }
 }
 
-public sealed record SessionSandboxContext(
-    Guid ProfileId,
-    string ProfileName,
-    string ProviderType,
-    string Image,
-    string WorkspacePath,
-    SandboxState State);
+public sealed class SandboxSessionHandle : IAsyncDisposable
+{
+    private readonly Func<ValueTask> _disposeAsync;
+
+    public SandboxSessionHandle(Func<ValueTask> disposeAsync)
+    {
+        _disposeAsync = disposeAsync;
+    }
+
+    public required Guid ProfileId { get; init; }
+
+    public required string ProfileName { get; init; }
+
+    public required string ProviderType { get; init; }
+
+    public required SandboxDefinitionSummary Summary { get; init; }
+
+    public required string WorkspacePath { get; init; }
+
+    public required ISandbox Instance { get; init; }
+
+    public ValueTask DisposeAsync() => _disposeAsync();
+}
+
+public sealed record AgentSessionRuntimeResources
+{
+    public string? WorkspacePath { get; init; }
+
+    public ISandbox? Sandbox { get; init; }
+}

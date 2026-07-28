@@ -7,7 +7,8 @@ public sealed class AgentDefinitionCatalog(
     IAgentTemplateService agentTemplateService,
     IWorkflowDefinitionService workflowDefinitionService,
     IAgentInputDefinitionProvider inputDefinitionProvider,
-    IAgentDefinitionModelRequirementAnalyzer modelRequirementAnalyzer) : IAgentDefinitionCatalog
+    IAgentDefinitionModelRequirementAnalyzer modelRequirementAnalyzer,
+    IAgentDefinitionLaunchCapabilityAnalyzer launchCapabilityAnalyzer) : IAgentDefinitionCatalog
 {
     public async Task<IReadOnlyList<AgentDefinitionDescriptor>> GetAllAsync(
         CancellationToken cancellationToken = default)
@@ -86,11 +87,13 @@ public sealed class AgentDefinitionCatalog(
         IReadOnlyList<AgentInputDefinition> inputs = [];
         var requirement = AgentModelRequirement.Required;
         var definitionProblems = new List<AgentDefinitionProblem>();
+        var launchCapabilities = new AgentLaunchCapabilities();
 
         try
         {
             inputs = await inputDefinitionProvider.GetInputsAsync(reference, cancellationToken);
             requirement = await modelRequirementAnalyzer.AnalyzeAsync(reference, cancellationToken);
+            launchCapabilities = await launchCapabilityAnalyzer.AnalyzeAsync(reference, cancellationToken);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
@@ -106,6 +109,7 @@ public sealed class AgentDefinitionCatalog(
             AvatarText = "WF",
             Inputs = inputs,
             ModelRequirement = requirement,
+            LaunchCapabilities = launchCapabilities,
             SupportsAttachments = true,
             DefinitionProblems = definitionProblems
         };

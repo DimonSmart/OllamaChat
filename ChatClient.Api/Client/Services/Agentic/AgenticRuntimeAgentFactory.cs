@@ -7,6 +7,7 @@ using ChatClient.Domain.Models;
 using Microsoft.Extensions.Options;
 #pragma warning disable MAAI001
 using Microsoft.Agents.AI;
+using Microsoft.Agents.AI.Tools.Shell;
 #pragma warning restore MAAI001
 using Microsoft.Extensions.AI;
 using ModelContextProtocol.Client;
@@ -22,9 +23,7 @@ internal sealed record HarnessAgentRuntimeDefinition(
     bool SupportsFunctionCalling,
     IReadOnlyList<string> AvailableModes,
     SessionWorkspaceAgentFileStore? FileAccessStore,
-    FileAccessProviderProfile? FileAccessProfile,
-    SessionSandboxContext? Sandbox,
-    ISandbox? SandboxInstance);
+    FileAccessProviderProfile? FileAccessProfile);
 
 public sealed class AgenticRuntimeAgentFactory(
     ILlmServerConfigService llmServerConfigService,
@@ -35,15 +34,14 @@ public sealed class AgenticRuntimeAgentFactory(
     IKnowledgeSearchService knowledgeSearchService,
     ITodoProviderProfileService todoProviderProfileService,
     IAgentModeProviderProfileService agentModeProviderProfileService,
-    ISandboxProfileService sandboxProfileService,
     IOptions<AgenticToolInvocationPolicyOptions> toolPolicyOptions,
     ILogger<AgenticRuntimeAgentFactory> logger,
     ILoggerFactory loggerFactory,
-    IFileAccessProviderProfileService? fileAccessProviderProfileService = null,
-    ISandboxProviderRegistry? sandboxProviderRegistry = null)
+    IFileAccessProviderProfileService? fileAccessProviderProfileService = null)
 {
     internal async Task<HarnessAgentRuntimeDefinition> CreateAsync(
         AgentRunRequest request,
+        ISandbox? sessionSandbox = null,
         bool requireFunctionCalling = false,
         CancellationToken cancellationToken = default)
     {
@@ -134,14 +132,13 @@ public sealed class AgenticRuntimeAgentFactory(
         var workspaceStore = fileAccessProfile is null
             ? null
             : new SessionWorkspaceAgentFileStore(workspacePath ?? throw new InvalidOperationException("A workspace directory is required for File Access."));
-        SessionSandboxContext? sandboxContext = null;
-        ISandbox? sandboxInstance = null;
         SessionSandboxShellExecutor? shellExecutor = null;
         if (request.Agent.EnableShell)
         {
-            if (request.Sandbox is null)
+            var sandbox = sessionSandbox;
+            if (sandbox is null)
             {
-                throw new InvalidOperationException("A sandbox profile is required for shell-enabled agents.");
+                throw new InvalidOperationException("A sandbox session is required for shell-enabled agents.");
             }
 
             if (workspacePath is null)
@@ -149,33 +146,12 @@ public sealed class AgenticRuntimeAgentFactory(
                 throw new InvalidOperationException("A workspace directory is required for shell-enabled agents.");
             }
 
-            var registry = sandboxProviderRegistry ?? throw new InvalidOperationException("Sandbox provider registry is not available.");
-            var provider = registry.GetRequired(request.Sandbox.ProviderType);
-            var definition = provider.ParseDefinition(request.Sandbox.Configuration);
-            var summary = provider.GetSummary(definition);
-            sandboxInstance = await provider.CreateAsync(
-                definition,
-                new SandboxCreateContext
-                {
-                    SessionId = Guid.NewGuid().ToString("N"),
-                    WorkspacePath = workspacePath,
-                    ProfileName = request.Sandbox.ProfileName
-                },
-                cancellationToken);
-            await sandboxInstance.InitializeAsync(cancellationToken);
-            if (sandboxInstance is not DockerSandbox dockerSandbox)
+            if (!string.Equals(sandbox.WorkspacePath, workspacePath, StringComparison.OrdinalIgnoreCase))
             {
-                throw new InvalidOperationException("The configured sandbox provider returned an unsupported sandbox runtime.");
+                throw new InvalidOperationException("The sandbox workspace must match the session workspace.");
             }
 
-            shellExecutor = new SessionSandboxShellExecutor(dockerSandbox);
-            sandboxContext = new SessionSandboxContext(
-                request.Sandbox.ProfileId,
-                request.Sandbox.ProfileName,
-                request.Sandbox.ProviderType,
-                summary.Image,
-                workspacePath,
-                dockerSandbox.State);
+            shellExecutor = new SessionSandboxShellExecutor(sandbox);
         }
         var runtimeAgent = CreateRuntimeAgent(
             chatClient,
@@ -196,20 +172,7 @@ public sealed class AgenticRuntimeAgentFactory(
             server,
             toolSet,
             supportsFunctions,
-            GetEffectiveModeNames(agentModeProfile), workspaceStore, fileAccessProfile, sandboxContext, sandboxInstance);
-    }
-
-    internal async Task<SandboxProfile> GetSandboxProfileAsync(Guid profileId, CancellationToken cancellationToken = default)
-    {
-        cancellationToken.ThrowIfCancellationRequested();
-
-        var profile = await sandboxProfileService.GetByIdAsync(profileId);
-        if (profile is null)
-        {
-            throw new InvalidOperationException($"Sandbox profile '{profileId}' was not found.");
-        }
-
-        return profile;
+            GetEffectiveModeNames(agentModeProfile), workspaceStore, fileAccessProfile);
     }
 
     private static AIAgent CreateRuntimeAgent(
@@ -250,7 +213,7 @@ public sealed class AgenticRuntimeAgentFactory(
             FileAccessStore = workspaceStore,
             FileAccessProviderOptions = fileAccessProfile is null ? null : BuildFileAccessProviderOptions(fileAccessProfile),
             DisableAgentSkillsProvider = true,
-            AIContextProviders = BuildKnowledgeContextProviders(
+            AIContextProviders = BuildContextProviders(
                 request,
                 knowledgeSearchService,
                 hasRagContent,
@@ -265,7 +228,16 @@ public sealed class AgenticRuntimeAgentFactory(
 
         if (shellExecutor is not null)
         {
-            agentOptions.ChatOptions.Tools.Add(shellExecutor.AsAIFunction(requireApproval: true));
+            if (agentOptions.ChatOptions.Tools.Any(tool =>
+                    string.Equals(tool.Name, SandboxToolNames.RunShell, StringComparison.OrdinalIgnoreCase)))
+            {
+                throw new InvalidOperationException(
+                    $"Tool name '{SandboxToolNames.RunShell}' is already registered for this agent.");
+            }
+
+            agentOptions.ChatOptions.Tools.Add(shellExecutor.AsAIFunction(
+                name: SandboxToolNames.RunShell,
+                requireApproval: true));
         }
 
         ConfigureTodoCompletionLoop(agentOptions, request.Agent);
@@ -396,7 +368,7 @@ public sealed class AgenticRuntimeAgentFactory(
         return normalized;
     }
 
-    internal static List<AIContextProvider> BuildKnowledgeContextProviders(
+    internal static List<AIContextProvider> BuildContextProviders(
         AgentRunRequest request,
         IKnowledgeSearchService knowledgeSearchService,
         bool hasRagContent,
@@ -419,6 +391,11 @@ public sealed class AgenticRuntimeAgentFactory(
         if (todoProfile is not null)
         {
             providers.Add(new TodoProvider(BuildTodoProviderOptions(todoProfile)));
+        }
+
+        if (shellExecutor is not null)
+        {
+            providers.Add(new ShellEnvironmentProvider(shellExecutor));
         }
 
         return providers;
