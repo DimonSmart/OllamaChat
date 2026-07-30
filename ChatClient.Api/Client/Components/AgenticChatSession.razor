@@ -33,7 +33,11 @@
 {
     <MudCollapse Expanded="showSessionState">
         <MudPaper Outlined="true" Class="session-state-panel">
-            <MudText Typo="Typo.subtitle2">Session state</MudText>
+            @{
+                var fileAccess = SessionState.FileAccess;
+                var sandbox = SessionState.Sandbox;
+                var workspacePath = fileAccess?.WorkspacePath ?? sandbox?.WorkspacePath;
+            }
             @if (SessionState.HasAgentModeProvider)
             {
                 <MudStack Row="true" Justify="Justify.SpaceBetween" AlignItems="AlignItems.Center">
@@ -86,26 +90,38 @@
                     }
                 }
             }
-            @if (SessionState.FileAccess is { } fileAccess)
+            @if (!string.IsNullOrWhiteSpace(workspacePath))
             {
                 <MudStack Class="mt-2" Spacing="1">
-                    <MudText Typo="Typo.caption" Class="mud-text-secondary">Workspace (@fileAccess.ProfileName)</MudText>
-                    <MudStack Row="true" AlignItems="AlignItems.Center">
-                        <MudTextField T="string" Value="workspaceInput" ValueChanged="value => workspaceInput = value" Dense="true" Margin="Margin.Dense"
-                                      Disabled="@(IsLlmAnswering || PendingToolApproval is not null || isChangingWorkspace || SessionState.Sandbox is not null)" Style="flex: 1" />
-                        <MudButton Size="Size.Small" Class="ml-1" Disabled="@(IsLlmAnswering || PendingToolApproval is not null || isChangingWorkspace || SessionState.Sandbox is not null || string.Equals(workspaceInput, fileAccess.WorkspacePath, StringComparison.Ordinal))" OnClick="ChangeWorkspaceAsync">Change</MudButton>
-                    </MudStack>
+                    <MudText Typo="Typo.caption" Class="mud-text-secondary">Workspace</MudText>
+                    @if (fileAccess is not null)
+                    {
+                        <MudStack Row="true" AlignItems="AlignItems.Center">
+                            <MudTextField T="string" Value="workspaceInput" ValueChanged="value => workspaceInput = value" Dense="true" Margin="Margin.Dense"
+                                          Disabled="@(IsLlmAnswering || PendingToolApproval is not null || isChangingWorkspace || sandbox is not null)" Style="flex: 1" />
+                            <MudButton Size="Size.Small" Class="ml-1" Disabled="@(IsLlmAnswering || PendingToolApproval is not null || isChangingWorkspace || sandbox is not null || string.Equals(workspaceInput, fileAccess.WorkspacePath, StringComparison.Ordinal))" OnClick="ChangeWorkspaceAsync">Change</MudButton>
+                        </MudStack>
+                    }
+                    else
+                    {
+                        <MudText Typo="Typo.body2">@workspacePath</MudText>
+                    }
                 </MudStack>
             }
-            @if (SessionState.Sandbox is { } sandbox)
+            @if (fileAccess is not null)
+            {
+                <MudStack Class="mt-2" Spacing="1">
+                    <MudText Typo="Typo.caption" Class="mud-text-secondary">File access profile</MudText>
+                    <MudText Typo="Typo.body2">@fileAccess.ProfileName</MudText>
+                </MudStack>
+            }
+            @if (sandbox is not null)
             {
                 <MudStack Class="mt-2" Spacing="1">
                     <MudText Typo="Typo.caption" Class="mud-text-secondary">Sandbox</MudText>
                     <MudText Typo="Typo.body2">@sandbox.ProfileName</MudText>
                     <MudText Typo="Typo.caption" Class="mud-text-secondary">Image</MudText>
                     <MudText Typo="Typo.body2">@sandbox.Image</MudText>
-                    <MudText Typo="Typo.caption" Class="mud-text-secondary">Workspace</MudText>
-                    <MudText Typo="Typo.body2">@sandbox.WorkspacePath</MudText>
                     <MudText Typo="Typo.caption" Class="mud-text-secondary">State</MudText>
                     <MudChip T="string" Size="Size.Small" Color="Color.Primary">@sandbox.State</MudChip>
                 </MudStack>

@@ -40,6 +40,14 @@ public sealed class UnifiedAgentRuntimeChatSessionServiceTests
         Assert.Equal(expected, UnifiedAgentRuntimeChatSessionService.ChangesHarnessSessionState(completed));
     }
 
+    [Theory]
+    [InlineData("C:\\Project", "C:\\Project\\", true)]
+    [InlineData("C:\\Project", "C:\\Other", false)]
+    public void HaveSameWorkspace_NormalizesTrailingSeparators(string fileAccessWorkspace, string sandboxWorkspace, bool expected)
+    {
+        Assert.Equal(expected, UnifiedAgentRuntimeChatSessionService.HaveSameWorkspace(fileAccessWorkspace, sandboxWorkspace));
+    }
+
     [Fact]
     public async Task DirectHarness_ReusesSessionForTwoTurnsAndResetStartsFreshConversation()
     {

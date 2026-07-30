@@ -185,25 +185,36 @@ public sealed class UnifiedAgentRuntimeChatSessionService(
                 .ToList();
         var mode = modeProvider is null ? null : await modeProvider.GetModeAsync(session, cancellationToken);
 
+        var fileAccess = _directFileAccessStore is null || _directFileAccessProfile is null ? null : new AgentSessionFileAccessViewModel(
+            _directFileAccessStore.WorkspacePath,
+            _directFileAccessProfile.Name,
+            _directFileAccessProfile.AccessMode,
+            _directFileAccessProfile.RequireReadApproval,
+            _directFileAccessProfile.RequireWriteApproval);
+        var sandbox = sandboxSession is null ? null : new AgentSessionSandboxViewModel(
+            sandboxSession.ProfileId,
+            sandboxSession.ProfileName,
+            sandboxSession.ProviderType,
+            sandboxSession.Summary.Image,
+            sandboxSession.WorkspacePath,
+            sandboxSession.Instance.State);
+
+        if (fileAccess is not null && sandbox is not null && !HaveSameWorkspace(fileAccess.WorkspacePath, sandbox.WorkspacePath))
+        {
+            logger.LogWarning(
+                "File Access workspace and Sandbox workspace are inconsistent. FileAccessWorkspace={FileAccessWorkspace}, SandboxWorkspace={SandboxWorkspace}",
+                fileAccess.WorkspacePath,
+                sandbox.WorkspacePath);
+        }
+
         return new AgentSessionStateViewModel(
             mode,
             _directAvailableModes,
             todoProvider is not null,
             modeProvider is not null,
             todos,
-            _directFileAccessStore is null || _directFileAccessProfile is null ? null : new AgentSessionFileAccessViewModel(
-                _directFileAccessStore.WorkspacePath,
-                _directFileAccessProfile.Name,
-                _directFileAccessProfile.AccessMode,
-                _directFileAccessProfile.RequireReadApproval,
-                _directFileAccessProfile.RequireWriteApproval),
-            sandboxSession is null ? null : new AgentSessionSandboxViewModel(
-                sandboxSession.ProfileId,
-                sandboxSession.ProfileName,
-                sandboxSession.ProviderType,
-                sandboxSession.Summary.Image,
-                sandboxSession.WorkspacePath,
-                sandboxSession.Instance.State));
+            fileAccess,
+            sandbox);
     }
 
     public async Task SetFileAccessWorkspaceAsync(string workspace, CancellationToken cancellationToken = default)
@@ -978,6 +989,27 @@ public sealed class UnifiedAgentRuntimeChatSessionService(
         "todos_complete" or
         "todos_remove" or
         "mode_set";
+
+    internal static bool HaveSameWorkspace(string fileAccessWorkspace, string sandboxWorkspace)
+    {
+        var comparison = OperatingSystem.IsWindows()
+            ? StringComparison.OrdinalIgnoreCase
+            : StringComparison.Ordinal;
+
+        return string.Equals(NormalizeWorkspacePath(fileAccessWorkspace), NormalizeWorkspacePath(sandboxWorkspace), comparison);
+    }
+
+    private static string NormalizeWorkspacePath(string workspacePath)
+    {
+        try
+        {
+            return Path.TrimEndingDirectorySeparator(Path.GetFullPath(workspacePath));
+        }
+        catch (Exception) when (!string.IsNullOrWhiteSpace(workspacePath))
+        {
+            return workspacePath.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+        }
+    }
 
     private static ToolInvocationViewState ToViewState(HarnessToolCallStarted value) => new(
         value.CallId, value.RegisteredName, value.OriginalName, value.Source, value.ServerName,
