@@ -3,6 +3,7 @@
 @inject NavigationManager NavigationManager
 @inject ChatClient.Application.Services.Agentic.IChatEngineSessionService AgenticChatService
 @inject IUserSettingsService UserSettingsService
+@inject ChatToolbarState ChatToolbar
 @using ChatClient.Domain.Models
 @using ChatClient.Api.Client.Pages
 @using ChatClient.Api.Client.Components
@@ -38,6 +39,25 @@
             </div>
         }
         <MudSpacer />
+        @if (IsOnChatPage() && ChatToolbar.IsAvailable)
+        {
+            @if (ChatToolbar.HasSessionState)
+            {
+                <MudTooltip Text="Session state">
+                    <MudIconButton Icon="@Icons.Material.Filled.FactCheck"
+                                   Size="Size.Small"
+                                   AriaLabel="Session state"
+                                   aria-expanded="@ChatToolbar.IsSessionStateOpen"
+                                   Color="@(ChatToolbar.IsSessionStateOpen ? Color.Primary : Color.Default)"
+                                   OnClick="ToggleSessionStateAsync" />
+                </MudTooltip>
+            }
+            <MudMenu Icon="@Icons.Material.Filled.ContentCopy" AnchorOrigin="Origin.TopRight" TransformOrigin="Origin.TopRight">
+                <MudMenuItem OnClick="@(() => ChatToolbar.CopyConversationAsync(ChatFormat.Text))">Copy as Text</MudMenuItem>
+                <MudMenuItem OnClick="@(() => ChatToolbar.CopyConversationAsync(ChatFormat.Markdown))">Copy as Markdown</MudMenuItem>
+                <MudMenuItem OnClick="@(() => ChatToolbar.CopyConversationAsync(ChatFormat.Html))">Copy as HTML</MudMenuItem>
+            </MudMenu>
+        }
         <MudIconButton Icon="@(DarkLightModeButtonIcon)" Color="Color.Inherit" OnClick="@DarkModeToggle" Size="Size.Small" />
         <MudIconButton Icon="@Icons.Material.Filled.MoreVert" Color="Color.Inherit" Edge="Edge.End" Size="Size.Small" />
     </MudAppBar>
@@ -81,6 +101,7 @@
         await base.OnInitializedAsync();
 
         AgenticChatService.AnsweringStateChanged += OnAnsweringStateChanged;
+        ChatToolbar.Changed += OnChatToolbarChanged;
         RefreshAnsweringState();
 
         var settings = await UserSettingsService.GetSettingsAsync();
@@ -109,6 +130,16 @@
     {
         RefreshAnsweringState();
         InvokeAsync(StateHasChanged);
+    }
+
+    private void OnChatToolbarChanged()
+    {
+        _ = InvokeAsync(StateHasChanged);
+    }
+
+    private async Task ToggleSessionStateAsync()
+    {
+        await ChatToolbar.ToggleSessionStateAsync();
     }
 
     private bool IsOnChatPage()
@@ -196,6 +227,7 @@
     public ValueTask DisposeAsync()
     {
         AgenticChatService.AnsweringStateChanged -= OnAnsweringStateChanged;
+        ChatToolbar.Changed -= OnChatToolbarChanged;
         return ValueTask.CompletedTask;
     }
 

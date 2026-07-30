@@ -17,6 +17,7 @@
     position: fixed !important;
     top: 0;
     right: 0;
+    overflow: hidden;
 }
 
 .session-state-drawer-layout {
@@ -73,6 +74,13 @@
 .chat-messages-container .mcp-call {
     min-width: 0;
     max-width: 100%;
+}
+
+.tool-approval-arguments {
+    max-width: 100%;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    word-break: break-word;
 }
 
 .chat-input-panel {

@@ -121,6 +121,7 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<IKnowledgeIndexBackgroundService>(sp => sp.GetRequiredService<KnowledgeIndexBackgroundService>());
         services.AddHostedService(sp => sp.GetRequiredService<KnowledgeIndexBackgroundService>());
         services.AddScoped<IKnowledgeSearchService, KnowledgeSearchService>();
+        services.AddScoped<ChatToolbarState>();
 
         return services;
     }

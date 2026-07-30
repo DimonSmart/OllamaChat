@@ -8,28 +8,11 @@
 @using Microsoft.JSInterop
 @using MudBlazor
 @using MudX
+@implements IDisposable
 @inject IJSRuntime JSRuntime
 @inject IDialogService DialogService
 @inject ILogger<AgenticChatSession> Logger
-
-<div class="chat-actions">
-    @if (SessionState is not null)
-    {
-        <MudTooltip Text="Session state">
-            <MudIconButton Icon="@Icons.Material.Filled.FactCheck"
-                           Size="Size.Small"
-                           AriaLabel="Session state"
-                           aria-expanded="@showSessionState"
-                           Color="@(showSessionState ? Color.Primary : Color.Default)"
-                           OnClick="ToggleSessionState" />
-        </MudTooltip>
-    }
-    <MudMenu Icon="@Icons.Material.Filled.ContentCopy" AnchorOrigin="Origin.TopRight" TransformOrigin="Origin.TopRight">
-        <MudMenuItem OnClick="@(() => OnCopyChat.InvokeAsync(ChatFormat.Text))">Copy as Text</MudMenuItem>
-        <MudMenuItem OnClick="@(() => OnCopyChat.InvokeAsync(ChatFormat.Markdown))">Copy as Markdown</MudMenuItem>
-        <MudMenuItem OnClick="@(() => OnCopyChat.InvokeAsync(ChatFormat.Html))">Copy as HTML</MudMenuItem>
-    </MudMenu>
-</div>
+@inject ChatToolbarState ChatToolbar
 
 @if (PendingToolApproval is not null)
 {
@@ -39,7 +22,7 @@
             <MudText Typo="Typo.caption" Class="mud-text-secondary">Tool</MudText>
             <MudText Typo="Typo.body2">@PendingToolApproval.ToolName</MudText>
             <MudText Typo="Typo.caption" Class="mud-text-secondary">Arguments</MudText>
-            <MudPaper Outlined="true" Class="pa-2"><pre class="ma-0">@PendingToolApproval.Arguments</pre></MudPaper>
+            <MudPaper Outlined="true" Class="pa-2"><pre class="ma-0 tool-approval-arguments">@PendingToolApproval.Arguments</pre></MudPaper>
             <MudStack Row="true" Spacing="1" Wrap="Wrap.Wrap">
                 <MudButton Variant="Variant.Outlined" Color="Color.Error" Disabled="isRespondingToToolApproval" OnClick="@(() => RespondToToolApprovalAsync(ToolApprovalDecision.Deny))">Deny</MudButton>
                 <MudButton Variant="Variant.Filled" Color="Color.Primary" Disabled="isRespondingToToolApproval" OnClick="@(() => RespondToToolApprovalAsync(ToolApprovalDecision.ApproveOnce))">Approve once</MudButton>
@@ -76,7 +59,7 @@
             <div class="session-state-drawer-layout">
                 <div class="session-state-drawer-header">
                     <MudText Typo="Typo.subtitle2">Session state</MudText>
-                    <MudTooltip Text="Close session state">
+                    <MudTooltip Text="Close session state" Placement="Placement.Left">
                         <MudIconButton Icon="@Icons.Material.Filled.Close"
                                        Size="Size.Small"
                                        AriaLabel="Close session state"
@@ -398,7 +381,11 @@
 
         if (SessionState?.FileAccess is { } fileAccess && !isChangingWorkspace)
             workspaceInput = fileAccess.WorkspacePath;
+
+        PublishToolbarState();
     }
+
+    public void Dispose() => ChatToolbar.Clear();
 
     private async Task ChangeWorkspaceAsync()
     {
@@ -408,9 +395,24 @@
         finally { isChangingWorkspace = false; }
     }
 
-    private void ToggleSessionState() => showSessionState = !showSessionState;
+    private Task ToggleSessionStateAsync()
+    {
+        showSessionState = !showSessionState;
+        PublishToolbarState();
+        return Task.CompletedTask;
+    }
 
-    private void CloseSessionState() => showSessionState = false;
+    private void CloseSessionState()
+    {
+        showSessionState = false;
+        PublishToolbarState();
+    }
+
+    private void PublishToolbarState() => ChatToolbar.Update(
+        SessionState is not null,
+        showSessionState,
+        ToggleSessionStateAsync,
+        format => OnCopyChat.InvokeAsync(format));
 
     private async Task OnAgentModeChangedAsync(string mode)
     {
