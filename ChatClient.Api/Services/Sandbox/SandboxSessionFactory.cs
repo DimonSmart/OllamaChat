@@ -1,4 +1,5 @@
 using ChatClient.Application.Services;
+using ChatClient.Application.Services.Agentic;
 using ChatClient.Application.Services.Sandbox;
 
 namespace ChatClient.Api.Services.Sandbox;
@@ -12,7 +13,8 @@ public sealed class SandboxSessionFactory(
         Guid profileId,
         string workspacePath,
         string sessionId,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        IProgress<ChatSessionStartProgress>? progress = null)
     {
         if (string.IsNullOrWhiteSpace(workspacePath))
         {
@@ -30,6 +32,9 @@ public sealed class SandboxSessionFactory(
             throw new InvalidOperationException(string.Join(Environment.NewLine, validation.Errors));
         }
 
+        progress?.Report(new ChatSessionStartProgress(
+            ChatSessionStartStage.CheckingSandboxAvailability,
+            $"Checking {provider.DisplayName} availability..."));
         var availability = await provider.CheckAvailabilityAsync(cancellationToken);
         if (!availability.IsAvailable)
         {
@@ -50,6 +55,9 @@ public sealed class SandboxSessionFactory(
         ISandbox? sandbox = null;
         try
         {
+            progress?.Report(new ChatSessionStartProgress(
+                ChatSessionStartStage.StartingSandbox,
+                $"Starting {provider.DisplayName} sandbox from {summary.Image}...{Environment.NewLine}The image may be downloaded on first launch."));
             sandbox = await provider.CreateAsync(
                 definition,
                 new SandboxCreateContext
@@ -61,7 +69,13 @@ public sealed class SandboxSessionFactory(
                 },
                 cancellationToken);
             await sandbox.InitializeAsync(cancellationToken);
+            progress?.Report(new ChatSessionStartProgress(
+                ChatSessionStartStage.VerifyingSandbox,
+                "Verifying sandbox workspace and shell..."));
             await RunStartupDiagnosticsAsync(sandbox, cancellationToken);
+            progress?.Report(new ChatSessionStartProgress(
+                ChatSessionStartStage.CreatingAgentSession,
+                "Creating agent session..."));
 
             logger.LogInformation(
                 "Sandbox session initialized. SessionId={SessionId}, ProfileId={ProfileId}, ProfileName={ProfileName}, ProviderType={ProviderType}, WorkspacePath={WorkspacePath}, ElapsedMs={ElapsedMs}",

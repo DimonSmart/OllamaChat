@@ -44,7 +44,8 @@ public interface ISandboxSessionFactory
         Guid profileId,
         string workspacePath,
         string sessionId,
-        CancellationToken cancellationToken = default);
+        CancellationToken cancellationToken = default,
+        IProgress<ChatSessionStartProgress>? progress = null);
 }
 
 public interface ISandbox : IAsyncDisposable

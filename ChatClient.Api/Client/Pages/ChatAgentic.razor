@@ -35,7 +35,7 @@
                 else
                 {
                     <MudStack Spacing="3">
-                        <MudSelect T="AgentDefinitionDescriptor" Label="Select Agent or Workflow" Value="selectedDefinition" ValueChanged="OnDefinitionChanged" Variant="Variant.Outlined" FullWidth="true" Dense="true">
+                        <MudSelect T="AgentDefinitionDescriptor" Label="Select Agent or Workflow" Value="selectedDefinition" ValueChanged="OnDefinitionChanged" Variant="Variant.Outlined" FullWidth="true" Dense="true" Disabled="@isStartingChat">
                             @foreach (var item in catalogItems)
                             {
                                 <MudSelectItem Value="@item">@item.Name (@GetKindLabel(item))</MudSelectItem>
@@ -60,7 +60,8 @@
                                                           Margin="Margin.Dense"
                                                           Placeholder="@input.Placeholder"
                                                           Lines="6"
-                                                          AutoGrow="true" />
+                                                          AutoGrow="true"
+                                                          Disabled="@isStartingChat" />
                                             break;
 
                                         case AgentInputDefinitionKind.Boolean:
@@ -68,7 +69,8 @@
                                                        Label="@GetInputLabel(input)"
                                                        Value="GetBooleanInputValue(input)"
                                                        ValueChanged="async value => await SetBooleanInputValueAsync(input.Key, value)"
-                                                       Color="Color.Primary" />
+                                                       Color="Color.Primary"
+                                                       Disabled="@isStartingChat" />
                                             if (!string.IsNullOrWhiteSpace(input.Description))
                                             {
                                                 <MudText Typo="Typo.caption" Class="mud-text-secondary">@input.Description</MudText>
@@ -84,7 +86,8 @@
                                                           Variant="Variant.Outlined"
                                                           Margin="Margin.Dense"
                                                           Placeholder="@input.Placeholder"
-                                                          InputType="@(input.Kind == AgentInputDefinitionKind.Number ? InputType.Number : InputType.Text)" />
+                                                          InputType="@(input.Kind == AgentInputDefinitionKind.Number ? InputType.Number : InputType.Text)"
+                                                          Disabled="@isStartingChat" />
                                             break;
                                     }
                                 }
@@ -96,7 +99,8 @@
                             <McpServerBindingsEditor Bindings="@mcpServerBindings"
                                                      BindingsChanged="OnMcpServerBindingsChanged"
                                                      Title="MCP Servers"
-                                                     Description="Session-specific MCP bindings for this launch." />
+                                                     Description="Session-specific MCP bindings for this launch."
+                                                     Disabled="@isStartingChat" />
                         }
 
                         @if (selectedDefinition?.LaunchCapabilities.SupportsWorkspace == true)
@@ -104,11 +108,12 @@
                             <MudTextField T="string" Label="Workspace" Value="fileAccessWorkspace"
                                           ValueChanged="OnFileAccessWorkspaceChanged" Variant="Variant.Outlined"
                                           Margin="Margin.Dense" Immediate="true"
-                                          HelperText="Existing directory available to this conversation only." />
+                                          HelperText="Existing directory available to this conversation only."
+                                          Disabled="@isStartingChat" />
                         }
                         @if (selectedDefinition?.LaunchCapabilities.SupportsSandboxProfile == true)
                         {
-                            <MudSelect T="Guid?" Label="Sandbox profile" Value="sandboxProfileId" ValueChanged="OnSandboxProfileChanged" Variant="Variant.Outlined" Margin="Margin.Dense">
+                            <MudSelect T="Guid?" Label="Sandbox profile" Value="sandboxProfileId" ValueChanged="OnSandboxProfileChanged" Variant="Variant.Outlined" Margin="Margin.Dense" Disabled="@isStartingChat">
                                 <MudSelectItem T="Guid?" Value="@((Guid?)null)">Select sandbox profile</MudSelectItem>
                                 @foreach (var profile in sandboxProfiles)
                                 {
@@ -127,6 +132,19 @@
                         {
                             <MudProgressLinear Color="Color.Primary" Indeterminate="true" />
                         }
+                        @if (isStartingChat)
+                        {
+                            <MudProgressLinear Color="Color.Primary" Indeterminate="true" />
+                            <MudText Typo="Typo.body2" Class="mud-text-secondary" Style="white-space: pre-line;">
+                                @startStatus
+                            </MudText>
+                        }
+                        @if (!string.IsNullOrWhiteSpace(startError))
+                        {
+                            <MudAlert Severity="Severity.Error" Dense="true" Variant="Variant.Outlined">
+                                @startError
+                            </MudAlert>
+                        }
 
                         <MudTooltip Text="Select server and model" Disabled="@CanStartChat">
                             <MudButton Variant="Variant.Filled"
@@ -135,7 +153,15 @@
                                        Size="Size.Medium"
                                        Disabled="@(!CanStartChat)"
                                        OnClick="StartChat">
-                                Start Chat
+                                @if (isStartingChat)
+                                {
+                                    <MudProgressCircular Color="Color.Inherit" Size="Size.Small" Indeterminate="true" Class="mr-2" />
+                                    <span>STARTING...</span>
+                                }
+                                else
+                                {
+                                    <span>Start Chat</span>
+                                }
                             </MudButton>
                         </MudTooltip>
                     </MudStack>
@@ -180,6 +206,9 @@
     };
     private long validationVersion;
     private bool isValidatingLaunch;
+    private bool isStartingChat;
+    private string? startStatus;
+    private string? startError;
     private ServerModelSelection previousUiModelSelection = new(null, null);
 
     [Inject]
@@ -196,7 +225,7 @@
 
     private ServerModel? effectiveModel;
 
-    private bool CanStartChat => launchValidation.CanLaunch && !isValidatingLaunch;
+    private bool CanStartChat => launchValidation.CanLaunch && !isValidatingLaunch && !isStartingChat;
 
     protected override bool CanSendMessages => selectedDefinition is not null;
 
@@ -230,45 +259,74 @@
 
     private async Task StartChat()
     {
-        if (selectedDefinition is null)
+        if (isStartingChat || selectedDefinition is null)
             return;
 
-        var resolved = await SessionDefinitionResolver.ResolveAsync(selectedDefinition.Reference, new AgentSessionDefinitionRequest
-        {
-            UiModelSelection = UiModelSelection,
-            Inputs = BuildInputs(),
-            Overrides = BuildOverrides()
-        });
-        if (!resolved.Validation.CanLaunch)
-        {
-            Snackbar.Add(string.Join(" ", resolved.Validation.Problems.Select(problem => problem.Message)), Severity.Error);
-            return;
-        }
-        effectiveModel = resolved.DefaultModel;
-
-        var chatConfiguration = new AppChatConfiguration(resolved.DefaultModel?.ModelName ?? string.Empty, []);
-        var request = new ChatEngineSessionStartRequest
-        {
-            Configuration = chatConfiguration,
-            Agents = [],
-            RuntimeParticipant = resolved.PresentationParticipant,
-            RuntimeReference = resolved.RuntimeReference,
-            RuntimeDefaultModel = resolved.DefaultModel,
-            RuntimeInputs = resolved.Inputs,
-            Overrides = BuildOverrides()
-        };
+        isStartingChat = true;
+        startError = null;
+        chatStarted = false;
+        SetStartStatus("Resolving agent configuration...");
+        StateHasChanged();
 
         try
         {
-            await ChatService.StartAsync(request);
+            var resolved = await SessionDefinitionResolver.ResolveAsync(selectedDefinition.Reference, new AgentSessionDefinitionRequest
+            {
+                UiModelSelection = UiModelSelection,
+                Inputs = BuildInputs(),
+                Overrides = BuildOverrides()
+            });
+            if (!resolved.Validation.CanLaunch)
+            {
+                startError = string.Join(" ", resolved.Validation.Problems.Select(problem => problem.Message));
+                Snackbar.Add(startError, Severity.Error);
+                return;
+            }
+            effectiveModel = resolved.DefaultModel;
+
+            var chatConfiguration = new AppChatConfiguration(resolved.DefaultModel?.ModelName ?? string.Empty, []);
+            var request = new ChatEngineSessionStartRequest
+            {
+                Configuration = chatConfiguration,
+                Agents = [],
+                RuntimeParticipant = resolved.PresentationParticipant,
+                RuntimeReference = resolved.RuntimeReference,
+                RuntimeDefaultModel = resolved.DefaultModel,
+                RuntimeInputs = resolved.Inputs,
+                Overrides = BuildOverrides()
+            };
+            var progress = new Progress<ChatSessionStartProgress>(value =>
+            {
+                startStatus = value.Message;
+                _ = InvokeAsync(StateHasChanged);
+            });
+
+            await ChatService.StartAsync(request, progress: progress);
             chatStarted = true;
-            StateHasChanged();
         }
-        catch (InvalidOperationException ex)
+        catch (OperationCanceledException)
         {
-            Snackbar.Add(ex.Message, Severity.Error);
+            Logger.LogInformation("Chat session startup was canceled.");
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Failed to start chat session.");
+            startError = $"Could not start chat: {ex.Message}";
+            Snackbar.Add(startError, Severity.Error);
+        }
+        finally
+        {
+            isStartingChat = false;
+            if (!chatStarted)
+            {
+                startStatus = null;
+            }
+
+            await InvokeAsync(StateHasChanged);
         }
     }
+
+    private void SetStartStatus(string message) => startStatus = message;
 
     private async Task OnDefinitionChanged(AgentDefinitionDescriptor? item)
     {

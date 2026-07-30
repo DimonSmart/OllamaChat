@@ -41,6 +41,7 @@ public sealed class UnifiedAgentRuntimeChatSessionService(
     private ToolApprovalRequestContent? _pendingToolApprovalRequest;
     private readonly object _lifecycleLock = new();
     private readonly SemaphoreSlim _runSetupGate = new(1, 1);
+    private readonly SemaphoreSlim _startGate = new(1, 1);
     private long _generation;
     private bool _resetting;
 
@@ -66,7 +67,8 @@ public sealed class UnifiedAgentRuntimeChatSessionService(
 
     public async Task StartAsync(
         ChatEngineSessionStartRequest request,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        IProgress<ChatSessionStartProgress>? progress = null)
     {
         ArgumentNullException.ThrowIfNull(request);
 
@@ -77,11 +79,24 @@ public sealed class UnifiedAgentRuntimeChatSessionService(
                 nameof(request));
         }
 
-        await ResetAsync(cancellationToken);
+        if (!await _startGate.WaitAsync(0, cancellationToken))
+        {
+            throw new InvalidOperationException("Chat session startup is already in progress.");
+        }
+
         try
         {
+            progress?.Report(new ChatSessionStartProgress(
+                ChatSessionStartStage.ResettingPreviousSession,
+                "Resetting previous session..."));
+            await ResetAsync(cancellationToken);
+
+            progress?.Report(new ChatSessionStartProgress(
+                ChatSessionStartStage.PreparingRuntime,
+                "Preparing runtime..."));
             _parameters = request.Snapshot();
             _chat.Reset();
+            var sessionId = _chat.Id.ToString("N");
             ClearRunLocalState();
             _toolApprovalCoordinator = new SessionToolApprovalCoordinator();
             _toolApprovalCoordinator.PendingRequestChanged += HandleCoordinatorPendingRequestChanged;
@@ -98,11 +113,22 @@ public sealed class UnifiedAgentRuntimeChatSessionService(
 
             if (request.RuntimeReference is { } runtimeReference)
             {
+                progress?.Report(new ChatSessionStartProgress(
+                    ChatSessionStartStage.ResolvingDefinition,
+                    "Resolving agent definition..."));
                 var descriptor = await definitionCatalog.GetRequiredAsync(runtimeReference, cancellationToken);
-                _sandboxSession = await CreateSandboxSessionAsync(request, descriptor, cancellationToken);
+                _sandboxSession = await CreateSandboxSessionAsync(
+                    request,
+                    descriptor,
+                    sessionId,
+                    cancellationToken,
+                    progress);
 
                 if (runtimeReference.Kind == AgentDefinitionKind.SavedAgent)
                 {
+                    progress?.Report(new ChatSessionStartProgress(
+                        ChatSessionStartStage.CreatingAgentSession,
+                        "Creating agent session..."));
                     await CreateDirectConversationAsync(request, cancellationToken);
                 }
             }
@@ -111,6 +137,10 @@ public sealed class UnifiedAgentRuntimeChatSessionService(
         {
             await ResetAsync(cancellationToken);
             throw;
+        }
+        finally
+        {
+            _startGate.Release();
         }
     }
 
@@ -610,7 +640,9 @@ public sealed class UnifiedAgentRuntimeChatSessionService(
     private async Task<SandboxSessionHandle?> CreateSandboxSessionAsync(
         ChatEngineSessionStartRequest request,
         AgentDefinitionDescriptor descriptor,
-        CancellationToken cancellationToken)
+        string sessionId,
+        CancellationToken cancellationToken,
+        IProgress<ChatSessionStartProgress>? progress)
     {
         if (!descriptor.LaunchCapabilities.SupportsSandboxProfile)
         {
@@ -630,11 +662,17 @@ public sealed class UnifiedAgentRuntimeChatSessionService(
         return await sandboxSessionFactory.StartAsync(
             sandboxProfileId,
             request.Overrides.WorkspacePath,
-            _chat.Id.ToString("N"),
-            cancellationToken);
+            sessionId,
+            cancellationToken,
+            progress);
     }
 
-    public ValueTask DisposeAsync() => new(ResetAsync());
+    public async ValueTask DisposeAsync()
+    {
+        await ResetAsync();
+        _startGate.Dispose();
+        _runSetupGate.Dispose();
+    }
 
     private async Task EnsureDirectConversationAsync(CancellationToken cancellationToken)
     {

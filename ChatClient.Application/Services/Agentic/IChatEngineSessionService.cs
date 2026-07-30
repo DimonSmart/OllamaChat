@@ -8,7 +8,10 @@ public interface IChatEngineSessionService : IChatSessionService
 
     ToolApprovalRequestViewModel? PendingToolApproval { get; }
 
-    Task StartAsync(ChatEngineSessionStartRequest request, CancellationToken cancellationToken = default);
+    Task StartAsync(
+        ChatEngineSessionStartRequest request,
+        CancellationToken cancellationToken = default,
+        IProgress<ChatSessionStartProgress>? progress = null);
 
     Task<AgentSessionStateViewModel?> GetSessionStateAsync(CancellationToken cancellationToken = default);
 
@@ -18,3 +21,18 @@ public interface IChatEngineSessionService : IChatSessionService
 
     Task RespondToToolApprovalAsync(ToolApprovalDecision decision, CancellationToken cancellationToken = default);
 }
+
+public enum ChatSessionStartStage
+{
+    ResettingPreviousSession,
+    ResolvingDefinition,
+    PreparingRuntime,
+    CheckingSandboxAvailability,
+    StartingSandbox,
+    VerifyingSandbox,
+    CreatingAgentSession
+}
+
+public sealed record ChatSessionStartProgress(
+    ChatSessionStartStage Stage,
+    string Message);

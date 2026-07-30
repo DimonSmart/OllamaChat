@@ -482,15 +482,76 @@ public sealed class UnifiedAgentRuntimeChatSessionServiceTests
         Assert.Equal("True", runner.LastRequest.Inputs["strict"]);
     }
 
-    private static UnifiedAgentRuntimeChatSessionService CreateService(IAgentRunner runner) =>
+    [Fact]
+    public async Task StartAsync_RejectsParallelStartupWithoutCreatingSecondSandbox()
+    {
+        var sandboxFactory = new BlockingSandboxSessionFactory();
+        var service = CreateService(new StubAgentRunner([]), sandboxFactory, CreateSandboxCatalog());
+        var request = CreateSandboxStartRequest();
+
+        var firstStart = service.StartAsync(request);
+        await sandboxFactory.WaitUntilCalledAsync();
+
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(
+            () => service.StartAsync(request));
+
+        Assert.Contains("startup is already in progress", exception.Message);
+        Assert.Equal(1, sandboxFactory.CallCount);
+
+        sandboxFactory.Complete();
+        await firstStart;
+
+        var state = await service.GetSessionStateAsync();
+        Assert.NotNull(state?.Sandbox);
+        Assert.False(service.RequiresReset);
+    }
+
+    [Fact]
+    public async Task StartAsync_PassesCurrentChatSessionIdToSandboxFactory()
+    {
+        var sandboxFactory = new BlockingSandboxSessionFactory();
+        var service = CreateService(new StubAgentRunner([]), sandboxFactory, CreateSandboxCatalog());
+
+        var startTask = service.StartAsync(CreateSandboxStartRequest());
+        await sandboxFactory.WaitUntilCalledAsync();
+
+        Assert.Equal(service.Id.ToString("N"), sandboxFactory.SessionIds.Single());
+
+        sandboxFactory.Complete();
+        await startTask;
+    }
+
+    [Fact]
+    public async Task StartAsync_ReleasesStartupGateAfterSandboxFailureAndAllowsRetry()
+    {
+        var sandboxFactory = new FailThenSucceedSandboxSessionFactory();
+        var service = CreateService(new StubAgentRunner([]), sandboxFactory, CreateSandboxCatalog());
+        var request = CreateSandboxStartRequest();
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() => service.StartAsync(request));
+
+        Assert.Null(await service.GetSessionStateAsync());
+        Assert.False(service.RequiresReset);
+
+        await service.StartAsync(request);
+
+        var state = await service.GetSessionStateAsync();
+        Assert.NotNull(state?.Sandbox);
+        Assert.Equal(2, sandboxFactory.CallCount);
+    }
+
+    private static UnifiedAgentRuntimeChatSessionService CreateService(
+        IAgentRunner runner,
+        ISandboxSessionFactory? sandboxSessionFactory = null,
+        IAgentDefinitionCatalog? definitionCatalog = null) =>
         new(
             runner,
-            new StubDefinitionCatalog(),
+            definitionCatalog ?? new StubDefinitionCatalog(),
             new AgentRunContextFactory(),
             new AgenticChatEngineStreamingBridge(),
             NullLogger<UnifiedAgentRuntimeChatSessionService>.Instance,
             null!,
-            new StubSandboxSessionFactory(),
+            sandboxSessionFactory ?? new StubSandboxSessionFactory(),
             null!,
             new HarnessResponseEventProjector(NullLogger<HarnessResponseEventProjector>.Instance));
 
@@ -774,6 +835,26 @@ public sealed class UnifiedAgentRuntimeChatSessionServiceTests
             RuntimeReference = new AgentDefinitionReference(AgentDefinitionKind.SavedWorkflow, "agent")
         };
 
+    private static ChatEngineSessionStartRequest CreateSandboxStartRequest() =>
+        new()
+        {
+            Configuration = new AppChatConfiguration("model", []),
+            Agents = [],
+            RuntimeReference = new AgentDefinitionReference(AgentDefinitionKind.SavedWorkflow, "agent"),
+            Overrides = new AgentSessionOverrides
+            {
+                WorkspacePath = Environment.CurrentDirectory,
+                SandboxProfileId = Guid.NewGuid()
+            }
+        };
+
+    private static StubDefinitionCatalog CreateSandboxCatalog() =>
+        new(new AgentLaunchCapabilities
+        {
+            SupportsWorkspace = true,
+            SupportsSandboxProfile = true
+        });
+
     public static TheoryData<IReadOnlyList<AgentRunEvent>, string> CompletedContentCases()
     {
         var data = new TheoryData<IReadOnlyList<AgentRunEvent>, string>
@@ -859,7 +940,7 @@ public sealed class UnifiedAgentRuntimeChatSessionServiceTests
         }
     }
 
-    private sealed class StubDefinitionCatalog : IAgentDefinitionCatalog
+    private sealed class StubDefinitionCatalog(AgentLaunchCapabilities? launchCapabilities = null) : IAgentDefinitionCatalog
     {
         public Task<IReadOnlyList<AgentDefinitionDescriptor>> GetAllAsync(
             CancellationToken cancellationToken = default) =>
@@ -875,7 +956,8 @@ public sealed class UnifiedAgentRuntimeChatSessionServiceTests
                 RuntimeKind = reference.Kind == AgentDefinitionKind.SavedWorkflow
                     ? AgentRuntimeKind.WorkflowAgent
                     : AgentRuntimeKind.LlmAgent,
-                ModelRequirement = AgentModelRequirement.Required
+                ModelRequirement = AgentModelRequirement.Required,
+                LaunchCapabilities = launchCapabilities ?? new AgentLaunchCapabilities()
             });
 
         public async Task<AgentDefinitionDescriptor> GetRequiredAsync(
@@ -890,7 +972,89 @@ public sealed class UnifiedAgentRuntimeChatSessionServiceTests
             Guid profileId,
             string workspacePath,
             string sessionId,
-            CancellationToken cancellationToken = default) =>
+            CancellationToken cancellationToken = default,
+            IProgress<ChatSessionStartProgress>? progress = null) =>
             throw new NotSupportedException();
+    }
+
+    private sealed class BlockingSandboxSessionFactory : ISandboxSessionFactory
+    {
+        private readonly TaskCompletionSource _called =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+        private readonly TaskCompletionSource _release =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public int CallCount { get; private set; }
+
+        public List<string> SessionIds { get; } = [];
+
+        public Task WaitUntilCalledAsync() => _called.Task.WaitAsync(TimeSpan.FromSeconds(3));
+
+        public void Complete() => _release.SetResult();
+
+        public async Task<SandboxSessionHandle> StartAsync(
+            Guid profileId,
+            string workspacePath,
+            string sessionId,
+            CancellationToken cancellationToken = default,
+            IProgress<ChatSessionStartProgress>? progress = null)
+        {
+            CallCount++;
+            SessionIds.Add(sessionId);
+            _called.TrySetResult();
+            await _release.Task.WaitAsync(cancellationToken);
+            return CreateSandboxHandle(profileId, workspacePath);
+        }
+    }
+
+    private sealed class FailThenSucceedSandboxSessionFactory : ISandboxSessionFactory
+    {
+        public int CallCount { get; private set; }
+
+        public Task<SandboxSessionHandle> StartAsync(
+            Guid profileId,
+            string workspacePath,
+            string sessionId,
+            CancellationToken cancellationToken = default,
+            IProgress<ChatSessionStartProgress>? progress = null)
+        {
+            CallCount++;
+            if (CallCount == 1)
+            {
+                throw new InvalidOperationException("Failed to start container (125): name conflict");
+            }
+
+            return Task.FromResult(CreateSandboxHandle(profileId, workspacePath));
+        }
+    }
+
+    private static SandboxSessionHandle CreateSandboxHandle(Guid profileId, string workspacePath)
+    {
+        var sandbox = new StubSandbox(workspacePath);
+        return new SandboxSessionHandle(() => sandbox.DisposeAsync())
+        {
+            ProfileId = profileId,
+            ProfileName = ".NET 10 Small",
+            ProviderType = "docker",
+            Summary = new SandboxDefinitionSummary("mcr.microsoft.com/dotnet/sdk:10.0-noble", "test", "none"),
+            WorkspacePath = workspacePath,
+            Instance = sandbox
+        };
+    }
+
+    private sealed class StubSandbox(string workspacePath) : ISandbox
+    {
+        public string ProviderType => "docker";
+
+        public string WorkspacePath => workspacePath;
+
+        public SandboxState State => SandboxState.Running;
+
+        public ValueTask DisposeAsync() => ValueTask.CompletedTask;
+
+        public Task InitializeAsync(CancellationToken cancellationToken = default) => Task.CompletedTask;
+
+        public Task<SandboxCommandResult> ExecuteAsync(string command, CancellationToken cancellationToken = default) =>
+            Task.FromResult(new SandboxCommandResult(string.Empty, string.Empty, 0, false));
     }
 }
