@@ -254,6 +254,9 @@ public sealed class DockerSandboxProvider(
             ],
             Environment = new Dictionary<string, string>
             {
+                ["HOME"] = $"{DockerShellExecutor.DefaultContainerWorkdir}/.sandbox-home",
+                ["DOTNET_CLI_HOME"] = $"{DockerShellExecutor.DefaultContainerWorkdir}/.sandbox-home",
+                ["NUGET_PACKAGES"] = $"{DockerShellExecutor.DefaultContainerWorkdir}/.nuget/packages",
                 ["OLLAMACHAT_SESSION_ID"] = context.SessionId,
                 ["OLLAMACHAT_SANDBOX_PROFILE"] = context.ProfileName
             }
