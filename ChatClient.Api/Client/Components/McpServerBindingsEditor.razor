@@ -121,7 +121,7 @@
                                 </div>
                             </div>
 
-                            <MudGrid>
+                            <MudGrid Spacing="1">
                                 <MudItem xs="12" md="5">
                                     <MudSelect T="Guid?"
                                                Label="MCP Server"
@@ -163,7 +163,7 @@
                                 {
                                     <div class="mcp-binding-section">
                                         <MudText Typo="Typo.subtitle2">Per-Usage Overrides</MudText>
-                                        <MudGrid>
+                                        <MudGrid Spacing="1">
                                             @foreach (var definition in selectedServer.OverrideDefinitions)
                                             {
                                                 <MudItem xs="12" md="6">

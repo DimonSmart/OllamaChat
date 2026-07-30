@@ -101,7 +101,9 @@
         }
     }
 
-    <MudButton Variant="Variant.Filled" OnClick="Call" Size="Size.Small" Disabled="@(string.IsNullOrEmpty(selectedServer) || string.IsNullOrEmpty(selectedFunction))">Go</MudButton>
+    <div class="app-compact-actions">
+        <MudButton Variant="Variant.Filled" OnClick="Call" Size="Size.Small" Disabled="@(string.IsNullOrEmpty(selectedServer) || string.IsNullOrEmpty(selectedFunction))">Go</MudButton>
+    </div>
 
     <MudSwitch @bind-Value="showRaw" 
                Label="@(showRaw ? "Raw" : "Simplified")" 

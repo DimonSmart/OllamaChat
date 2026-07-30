@@ -107,10 +107,6 @@
     padding: var(--app-control-gap) 0 0;
 }
 
-.mcp-binding-section :deep(.mud-grid) {
-    margin-top: var(--app-control-gap);
-}
-
 .mcp-binding-tools__toggle {
     margin-top: var(--app-control-gap);
 }

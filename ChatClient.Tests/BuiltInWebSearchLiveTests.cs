@@ -8,7 +8,7 @@ public sealed class BuiltInWebSearchLiveTests
 {
     private static readonly TimeSpan RealSearchTimeout = TimeSpan.FromMinutes(3);
 
-    [RealWebFact]
+    [Xunit.FactAttribute(Explicit = true)]
     [Trait("Category", "RealWebExploration")]
     public async Task BuiltInWebSearchLogic_WithRealQuery_ReturnsMultipleResults()
     {
@@ -18,7 +18,7 @@ public sealed class BuiltInWebSearchLiveTests
         Assert.True(result.Results.Count >= 2, $"Expected at least 2 results for a real search query, got {result.Results.Count}.");
     }
 
-    [RealWebFact]
+    [Xunit.FactAttribute(Explicit = true)]
     [Trait("Category", "RealWebExploration")]
     public async Task BuiltInWebSearchLogic_WithRealQueries_RunSequentiallyAndReturnMultipleResults()
     {

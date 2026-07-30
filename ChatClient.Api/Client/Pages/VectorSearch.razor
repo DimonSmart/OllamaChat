@@ -15,13 +15,15 @@
             }
         </MudSelect>
         <MudTextField @bind-Value="query" Label="Query" Immediate="true" Variant="Variant.Outlined" Margin="Margin.Dense" Disabled="@isSearching" />
-        <MudButton OnClick="SearchAsync" Color="Color.Primary" Size="Size.Small" Disabled="@IsSearchDisabled">
-            @if (isSearching)
-            {
-                <MudProgressCircular Class="me-2" Indeterminate="true" Size="Size.Small" Color="Color.Inherit" />
-            }
-            @(isSearching ? "Searching..." : "Search")
-        </MudButton>
+        <div class="app-compact-actions">
+            <MudButton OnClick="SearchAsync" Color="Color.Primary" Size="Size.Small" Disabled="@IsSearchDisabled">
+                @if (isSearching)
+                {
+                    <MudProgressCircular Class="me-2" Indeterminate="true" Size="Size.Small" Color="Color.Inherit" />
+                }
+                @(isSearching ? "Searching..." : "Search")
+            </MudButton>
+        </div>
         @if (isSearching)
         {
             <MudProgressLinear Indeterminate="true" Color="Color.Primary" />

@@ -14,7 +14,7 @@ using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using System.Text;
 using System.Text.Json;
-using Xunit.Abstractions;
+using Xunit;
 
 namespace ChatClient.Tests;
 
@@ -26,7 +26,7 @@ public sealed class RealWorkflowExecutionTests(ITestOutputHelper output)
     private const string WorkflowServerIdEnvironmentVariable = "CHATCLIENT_REAL_WORKFLOW_SERVER_ID";
     private const string WorkflowModelEnvironmentVariable = "CHATCLIENT_REAL_WORKFLOW_MODEL";
 
-    [RealWorkflowFact]
+    [Xunit.FactAttribute(Explicit = true)]
     [Obsolete]
     public async Task RunWorkflowFromSavedDefinitions_AndPrintTranscriptAndSummary()
     {
