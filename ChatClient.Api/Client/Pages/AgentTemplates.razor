@@ -161,15 +161,17 @@
                             </div>
                         </CellTemplate>
                     </TemplateColumn>
-                    <TemplateColumn CellStyle="display:flex; justify-content:flex-end;">
+                    <TemplateColumn Title="Actions">
                         <CellTemplate>
-                            <MudIconButton Icon="@Icons.Material.Filled.Edit"
-                                           Size="Size.Small"
-                                           OnClick="@(async () => await StartEditingAgent(context.Item))" />
-                            <MudIconButton Icon="@Icons.Material.Filled.Delete"
-                                           Size="Size.Small"
-                                           Color="Color.Error"
-                                           OnClick="() => ConfirmDeleteAgent(context.Item)" />
+                            <div style="display:flex; justify-content:flex-end;">
+                                <MudIconButton Icon="@Icons.Material.Filled.Edit"
+                                               Size="Size.Small"
+                                               OnClick="@(async () => await StartEditingAgent(context.Item))" />
+                                <MudIconButton Icon="@Icons.Material.Filled.Delete"
+                                               Size="Size.Small"
+                                               Color="Color.Error"
+                                               OnClick="() => ConfirmDeleteAgent(context.Item)" />
+                            </div>
                         </CellTemplate>
                     </TemplateColumn>
                 </Columns>
