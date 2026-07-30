@@ -270,21 +270,21 @@
 
             <MudDivider Class="my-2" />
             <MudText Typo="Typo.subtitle1">Harness</MudText>
-            <MudSelect T="Guid?" @bind-Value="editingAgent.TodoProviderProfileId" Label="Todo provider" Class="mt-2">
+            <MudSelect T="Guid?" @bind-Value="editingAgent.TodoProviderProfileId" Label="Todo provider" Dense="true" Margin="Margin.Dense" Class="mt-2">
                 <MudSelectItem T="Guid?" Value="@((Guid?)null)">None</MudSelectItem>
                 @foreach (var profile in todoProviderProfiles)
                 {
                     <MudSelectItem T="Guid?" Value="@((Guid?)profile.Id)">@profile.Name</MudSelectItem>
                 }
             </MudSelect>
-            <MudSelect T="Guid?" @bind-Value="editingAgent.AgentModeProviderProfileId" Label="Agent mode provider" Class="mt-2">
+            <MudSelect T="Guid?" @bind-Value="editingAgent.AgentModeProviderProfileId" Label="Agent mode provider" Dense="true" Margin="Margin.Dense" Class="mt-2">
                 <MudSelectItem T="Guid?" Value="@((Guid?)null)">None</MudSelectItem>
                 @foreach (var profile in agentModeProviderProfiles)
                 {
                     <MudSelectItem T="Guid?" Value="@((Guid?)profile.Id)">@profile.Name</MudSelectItem>
                 }
             </MudSelect>
-            <MudSelect T="Guid?" @bind-Value="editingAgent.FileAccessProviderProfileId" Label="File access provider" Class="mt-2">
+            <MudSelect T="Guid?" @bind-Value="editingAgent.FileAccessProviderProfileId" Label="File access provider" Dense="true" Margin="Margin.Dense" Class="mt-2">
                 <MudSelectItem T="Guid?" Value="@((Guid?)null)">None</MudSelectItem>
                 @foreach (var profile in fileAccessProviderProfiles)
                 {

@@ -1,0 +1,28 @@
+.server-model-picker__fields {
+    display: flex;
+    flex: 1 1 auto;
+    gap: 0.25rem;
+    min-width: 0;
+}
+
+.server-model-picker__fields > * {
+    min-width: 0;
+}
+
+.server-model-picker__compact-control {
+    display: none;
+}
+
+.server-model-picker__compact-popover {
+    min-width: 16rem;
+}
+
+@media (max-width: 480px) {
+    .server-model-picker--toolbar .server-model-picker__fields {
+        display: none;
+    }
+
+    .server-model-picker--toolbar .server-model-picker__compact-control {
+        display: block;
+    }
+}

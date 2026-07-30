@@ -12,91 +12,29 @@
     background-image: linear-gradient(180deg, rgb(5, 39, 103) 0%, #3a0647 70%);
 }
 
-.top-row {
-    background-color: #f7f7f7;
-    border-bottom: 1px solid #d6d5d5;
-    justify-content: flex-end;
-    height: 3.5rem;
-    display: flex;
-    align-items: center;
-    overflow: hidden; /* Prevent overflow */
-    padding: 0 1rem;
-}
-
-    .top-row ::deep a, .top-row ::deep .btn-link {
-        white-space: nowrap;
-        margin-left: 1.5rem;
-        text-decoration: none;
-    }
-
-    .top-row ::deep a:hover, .top-row ::deep .btn-link:hover {
-        text-decoration: underline;
-    }
-
-    .top-row ::deep a:first-child {
-        overflow: hidden;
-        text-overflow: ellipsis;
-    }
-
-@media (max-width: 640.98px) {
-    .top-row {
-        justify-content: space-between;
-        padding: 0 0.5rem !important;
-    }
-
-    .top-row ::deep a, .top-row ::deep .btn-link {
-        margin-left: 0;
-    }
-    
-    /* Hide some elements on small screens for space */
-    .top-row .mud-text {
-        display: none;
-    }
-}
-
-@media (min-width: 641px) {
-    .page {
-        flex-direction: row;
-    }
-
-    .sidebar {
-        width: 250px;
-        height: 100vh;
-        position: sticky;
-        top: 0;
-    }
-
-    .top-row {
-        position: sticky;
-        top: 0;
-        z-index: 1;
-    }
-
-    .top-row.auth ::deep a:first-child {
-        flex: 1;
-        text-align: right;
-        width: 0;
-    }
-
-    .top-row, article {
-        padding-left: 2rem !important;
-        padding-right: 1.5rem !important;
-    }
-}
-
-/* AppBar improvements */
-.mud-appbar {
-    overflow: hidden;
-}
-
-.mud-appbar .mud-toolbar {
+.application-toolbar .mud-toolbar {
     gap: 0.5rem;
     padding: 0 1rem;
 }
 
-/* Better text truncation for title */
-.mud-appbar .mud-typography {
+.application-toolbar__title {
+    flex-shrink: 0;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+}
+
+.application-toolbar__model-picker {
+    flex: 1 1 15rem;
+    min-width: 0;
+}
+
+@media (max-width: 800px) {
+    .application-toolbar__title {
+        display: none;
+    }
+
+    .application-toolbar .mud-toolbar {
+        padding: 0 0.5rem;
+    }
 }
