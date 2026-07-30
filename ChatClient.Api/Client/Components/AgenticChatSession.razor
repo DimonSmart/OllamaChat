@@ -19,6 +19,8 @@
             <MudIconButton Icon="@Icons.Material.Filled.FactCheck"
                            Size="Size.Small"
                            AriaLabel="Session state"
+                           aria-expanded="@showSessionState"
+                           Color="@(showSessionState ? Color.Primary : Color.Default)"
                            OnClick="ToggleSessionState" />
         </MudTooltip>
     }
@@ -28,107 +30,6 @@
         <MudMenuItem OnClick="@(() => OnCopyChat.InvokeAsync(ChatFormat.Html))">Copy as HTML</MudMenuItem>
     </MudMenu>
 </div>
-
-@if (SessionState is not null)
-{
-    <MudCollapse Expanded="showSessionState">
-        <MudPaper Outlined="true" Class="session-state-panel">
-            @{
-                var fileAccess = SessionState.FileAccess;
-                var sandbox = SessionState.Sandbox;
-                var workspacePath = fileAccess?.WorkspacePath ?? sandbox?.WorkspacePath;
-            }
-            @if (SessionState.HasAgentModeProvider)
-            {
-                <MudStack Row="true" Justify="Justify.SpaceBetween" AlignItems="AlignItems.Center">
-                    <MudText Typo="Typo.caption" Class="mud-text-secondary">Mode</MudText>
-                    @if (SessionState.AvailableModes.Count == 1)
-                    {
-                        <MudText Typo="Typo.body2">@SessionState.Mode</MudText>
-                    }
-                    else
-                    {
-                        <MudSelect T="string"
-                                   Value="SessionState.Mode"
-                                   ValueChanged="OnAgentModeChangedAsync"
-                                   Dense="true"
-                                   Margin="Margin.Dense"
-                                   Disabled="@(IsLlmAnswering || isChangingAgentMode || PendingToolApproval is not null)"
-                                   Style="min-width: 130px">
-                            @foreach (var mode in SessionState.AvailableModes)
-                            {
-                                <MudSelectItem T="string" Value="@mode">@mode</MudSelectItem>
-                            }
-                        </MudSelect>
-                    }
-                </MudStack>
-            }
-            @if (SessionState.HasTodoProvider)
-            {
-                var completed = SessionState.Todos.Count(todo => todo.IsComplete);
-                <MudStack Row="true" Justify="Justify.SpaceBetween" AlignItems="AlignItems.Center" Class="mt-2">
-                    <MudText Typo="Typo.caption" Class="mud-text-secondary">TODO</MudText>
-                    @if (SessionState.Todos.Count > 0)
-                    {
-                        <MudText Typo="Typo.caption">@completed/@SessionState.Todos.Count</MudText>
-                    }
-                </MudStack>
-                @if (SessionState.Todos.Count == 0)
-                {
-                    <MudText Typo="Typo.caption">No tasks</MudText>
-                }
-                else
-                {
-                    @foreach (var todo in SessionState.Todos)
-                    {
-                        <MudStack Row="true" Spacing="1" AlignItems="AlignItems.Center" Class="session-state-todo">
-                            <MudIcon Icon="@(todo.IsComplete ? Icons.Material.Filled.CheckCircle : Icons.Material.Outlined.RadioButtonUnchecked)"
-                                     Color="@(todo.IsComplete ? Color.Success : Color.Default)"
-                                     Size="Size.Small" />
-                            <MudText Typo="Typo.caption" Class="@(todo.IsComplete ? "session-state-todo-complete" : null)">@todo.Title</MudText>
-                        </MudStack>
-                    }
-                }
-            }
-            @if (!string.IsNullOrWhiteSpace(workspacePath))
-            {
-                <MudStack Class="mt-2" Spacing="1">
-                    <MudText Typo="Typo.caption" Class="mud-text-secondary">Workspace</MudText>
-                    @if (fileAccess is not null)
-                    {
-                        <MudStack Row="true" AlignItems="AlignItems.Center">
-                            <MudTextField T="string" Value="workspaceInput" ValueChanged="value => workspaceInput = value" Dense="true" Margin="Margin.Dense"
-                                          Disabled="@(IsLlmAnswering || PendingToolApproval is not null || isChangingWorkspace || sandbox is not null)" Style="flex: 1" />
-                            <MudButton Size="Size.Small" Class="ml-1" Disabled="@(IsLlmAnswering || PendingToolApproval is not null || isChangingWorkspace || sandbox is not null || string.Equals(workspaceInput, fileAccess.WorkspacePath, StringComparison.Ordinal))" OnClick="ChangeWorkspaceAsync">Change</MudButton>
-                        </MudStack>
-                    }
-                    else
-                    {
-                        <MudText Typo="Typo.body2">@workspacePath</MudText>
-                    }
-                </MudStack>
-            }
-            @if (fileAccess is not null)
-            {
-                <MudStack Class="mt-2" Spacing="1">
-                    <MudText Typo="Typo.caption" Class="mud-text-secondary">File access profile</MudText>
-                    <MudText Typo="Typo.body2">@fileAccess.ProfileName</MudText>
-                </MudStack>
-            }
-            @if (sandbox is not null)
-            {
-                <MudStack Class="mt-2" Spacing="1">
-                    <MudText Typo="Typo.caption" Class="mud-text-secondary">Sandbox</MudText>
-                    <MudText Typo="Typo.body2">@sandbox.ProfileName</MudText>
-                    <MudText Typo="Typo.caption" Class="mud-text-secondary">Image</MudText>
-                    <MudText Typo="Typo.body2">@sandbox.Image</MudText>
-                    <MudText Typo="Typo.caption" Class="mud-text-secondary">State</MudText>
-                    <MudChip T="string" Size="Size.Small" Color="Color.Primary">@sandbox.State</MudChip>
-                </MudStack>
-            }
-        </MudPaper>
-    </MudCollapse>
-}
 
 @if (PendingToolApproval is not null)
 {
@@ -156,7 +57,118 @@
     </MudPaper>
 }
 
-<div class="chat-messages-container" @ref="messagesElement">
+<MudDrawerContainer Class="session-state-drawer-container">
+    @if (SessionState is not null)
+    {
+        <MudDrawer @bind-Open="showSessionState"
+                   Anchor="Anchor.Right"
+                   Variant="DrawerVariant.Temporary"
+                   Fixed="false"
+                   Overlay="false"
+                   Elevation="8"
+                   Width="min(26rem, 100%)"
+                   Class="session-state-drawer">
+            @{
+                var fileAccess = SessionState.FileAccess;
+                var sandbox = SessionState.Sandbox;
+                var workspacePath = fileAccess?.WorkspacePath ?? sandbox?.WorkspacePath;
+            }
+            <div class="session-state-drawer-layout">
+                <div class="session-state-drawer-header">
+                    <MudText Typo="Typo.subtitle2">Session state</MudText>
+                    <MudTooltip Text="Close session state">
+                        <MudIconButton Icon="@Icons.Material.Filled.Close"
+                                       Size="Size.Small"
+                                       AriaLabel="Close session state"
+                                       OnClick="CloseSessionState" />
+                    </MudTooltip>
+                </div>
+                <div class="session-state-drawer-content">
+                    @if (SessionState.HasAgentModeProvider)
+                    {
+                        <MudStack Row="true" Justify="Justify.SpaceBetween" AlignItems="AlignItems.Center">
+                            <MudText Typo="Typo.caption" Class="mud-text-secondary">Mode</MudText>
+                            @if (SessionState.AvailableModes.Count == 1)
+                            {
+                                <MudText Typo="Typo.body2" Class="session-state-value" title="@SessionState.Mode">@SessionState.Mode</MudText>
+                            }
+                            else
+                            {
+                                <MudSelect T="string" Value="SessionState.Mode" ValueChanged="OnAgentModeChangedAsync" Dense="true" Margin="Margin.Dense" Disabled="@(IsLlmAnswering || isChangingAgentMode || PendingToolApproval is not null)" Style="min-width: 130px">
+                                    @foreach (var mode in SessionState.AvailableModes)
+                                    {
+                                        <MudSelectItem T="string" Value="@mode">@mode</MudSelectItem>
+                                    }
+                                </MudSelect>
+                            }
+                        </MudStack>
+                    }
+                    @if (SessionState.HasTodoProvider)
+                    {
+                        var completed = SessionState.Todos.Count(todo => todo.IsComplete);
+                        <MudStack Row="true" Justify="Justify.SpaceBetween" AlignItems="AlignItems.Center" Class="mt-2">
+                            <MudText Typo="Typo.caption" Class="mud-text-secondary">TODO</MudText>
+                            @if (SessionState.Todos.Count > 0)
+                            {
+                                <MudText Typo="Typo.caption">@completed/@SessionState.Todos.Count</MudText>
+                            }
+                        </MudStack>
+                        @if (SessionState.Todos.Count == 0)
+                        {
+                            <MudText Typo="Typo.caption">No tasks</MudText>
+                        }
+                        else
+                        {
+                            @foreach (var todo in SessionState.Todos)
+                            {
+                                <MudStack Row="true" Spacing="1" AlignItems="AlignItems.Center" Class="session-state-todo">
+                                    <MudIcon Icon="@(todo.IsComplete ? Icons.Material.Filled.CheckCircle : Icons.Material.Outlined.RadioButtonUnchecked)" Color="@(todo.IsComplete ? Color.Success : Color.Default)" Size="Size.Small" />
+                                    <MudText Typo="Typo.caption" Class="@(todo.IsComplete ? "session-state-todo-complete session-state-value" : "session-state-value")" title="@todo.Title">@todo.Title</MudText>
+                                </MudStack>
+                            }
+                        }
+                    }
+                    @if (!string.IsNullOrWhiteSpace(workspacePath))
+                    {
+                        <MudStack Class="mt-2" Spacing="1">
+                            <MudText Typo="Typo.caption" Class="mud-text-secondary">Workspace</MudText>
+                            @if (fileAccess is not null)
+                            {
+                                <MudStack Row="true" AlignItems="AlignItems.Center">
+                                    <MudTextField T="string" Value="workspaceInput" ValueChanged="value => workspaceInput = value" Dense="true" Margin="Margin.Dense" Disabled="@(IsLlmAnswering || PendingToolApproval is not null || isChangingWorkspace || sandbox is not null)" Style="flex: 1; min-width: 0" />
+                                    <MudButton Size="Size.Small" Class="ml-1" Disabled="@(IsLlmAnswering || PendingToolApproval is not null || isChangingWorkspace || sandbox is not null || string.Equals(workspaceInput, fileAccess.WorkspacePath, StringComparison.Ordinal))" OnClick="ChangeWorkspaceAsync">Change</MudButton>
+                                </MudStack>
+                            }
+                            else
+                            {
+                                <MudText Typo="Typo.body2" Class="session-state-value" title="@workspacePath">@workspacePath</MudText>
+                            }
+                        </MudStack>
+                    }
+                    @if (fileAccess is not null)
+                    {
+                        <MudStack Class="mt-2" Spacing="1">
+                            <MudText Typo="Typo.caption" Class="mud-text-secondary">File access profile</MudText>
+                            <MudText Typo="Typo.body2" Class="session-state-value" title="@fileAccess.ProfileName">@fileAccess.ProfileName</MudText>
+                        </MudStack>
+                    }
+                    @if (sandbox is not null)
+                    {
+                        <MudStack Class="mt-2" Spacing="1">
+                            <MudText Typo="Typo.caption" Class="mud-text-secondary">Sandbox</MudText>
+                            <MudText Typo="Typo.body2" Class="session-state-value" title="@sandbox.ProfileName">@sandbox.ProfileName</MudText>
+                            <MudText Typo="Typo.caption" Class="mud-text-secondary">Image</MudText>
+                            <MudText Typo="Typo.body2" Class="session-state-value" title="@sandbox.Image">@sandbox.Image</MudText>
+                            <MudText Typo="Typo.caption" Class="mud-text-secondary">State</MudText>
+                            <MudChip T="string" Size="Size.Small" Color="Color.Primary">@sandbox.State</MudChip>
+                        </MudStack>
+                    }
+                </div>
+            </div>
+        </MudDrawer>
+    }
+
+    <div class="chat-messages-container" @ref="messagesElement">
     @{
         var messageIndex = 0;
     }
@@ -305,7 +317,8 @@
                 }
         </MudXChat>
     }
-</div>
+    </div>
+</MudDrawerContainer>
 
 <div class="chat-input-panel">
     <MudStack>
@@ -381,6 +394,9 @@
 
     protected override void OnParametersSet()
     {
+        if (SessionState is null)
+            showSessionState = false;
+
         if (SessionState?.FileAccess is { } fileAccess && !isChangingWorkspace)
             workspaceInput = fileAccess.WorkspacePath;
     }
@@ -394,6 +410,8 @@
     }
 
     private void ToggleSessionState() => showSessionState = !showSessionState;
+
+    private void CloseSessionState() => showSessionState = false;
 
     private async Task OnAgentModeChangedAsync(string mode)
     {
