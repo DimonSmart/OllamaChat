@@ -22,7 +22,7 @@ public sealed class DockerSandboxProviderTests
     [InlineData(1, "1")]
     [InlineData(0.5, "0.5")]
     [InlineData(2.25, "2.25")]
-    public void BuildExecutorOptions_MapsCpuLimitAndApplicationLabels(
+    public void BuildExecutorOptions_MapsCpuLimitApplicationLabelsAndWritableDotNetPaths(
         double cpuLimit,
         string expectedCpuValue)
     {
@@ -51,6 +51,9 @@ public sealed class DockerSandboxProviderTests
 
         Assert.Equal("ollamachat-sandbox-session-123", options.ContainerName);
         Assert.Equal("C:\\workspace", options.HostWorkdir);
+        Assert.Equal("/workspace/.sandbox-home", options.Environment["HOME"]);
+        Assert.Equal("/workspace/.sandbox-home", options.Environment["DOTNET_CLI_HOME"]);
+        Assert.Equal("/workspace/.nuget/packages", options.Environment["NUGET_PACKAGES"]);
         Assert.Equal(
             [
                 "--cpus",
