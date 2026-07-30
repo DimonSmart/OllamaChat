@@ -1,3 +1,45 @@
+.app-compact-form {
+    display: flex;
+    flex-direction: column;
+    gap: var(--app-control-gap);
+}
+
+:root {
+    --app-control-gap: 0.5rem;
+    --app-section-gap: 0.75rem;
+    --app-surface-padding: 0.75rem 1rem;
+    --app-compact-panel-gap: 0.5rem;
+}
+
+.app-compact-section {
+    display: flex;
+    flex-direction: column;
+    gap: var(--app-control-gap);
+}
+
+.app-compact-actions {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: var(--app-control-gap);
+}
+
+.app-form-card {
+    width: 100%;
+}
+
+.app-form-card--narrow {
+    max-width: 37.5rem;
+}
+
+.app-compact-surface {
+    padding: var(--app-surface-padding);
+}
+
+.app-preformatted-status {
+    white-space: pre-line;
+}
+
 .mud-dialog-title {
     padding: 12px 16px 6px;
 }

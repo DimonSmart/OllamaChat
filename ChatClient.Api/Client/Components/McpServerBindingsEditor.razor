@@ -14,7 +14,7 @@
             <div class="mcp-bindings-editor__title-block">
                 @if (!string.IsNullOrWhiteSpace(Title))
                 {
-                    <MudText Typo="Typo.h6">@Title</MudText>
+                    <MudText Typo="Typo.subtitle1">@Title</MudText>
                 }
                 @if (!string.IsNullOrWhiteSpace(Description))
                 {
@@ -43,7 +43,7 @@
 
     @if (!_loadingServers && _availableServers.Count == 0)
     {
-        <MudAlert Severity="Severity.Warning" Dense="true" Variant="Variant.Outlined" Class="mt-3">
+        <MudAlert Severity="Severity.Warning" Dense="true" Variant="Variant.Outlined">
             No MCP servers are registered yet.
         </MudAlert>
     }
@@ -53,7 +53,7 @@
          Bindings.Count == 0 &&
          !string.IsNullOrWhiteSpace(EmptyBindingsText))
     {
-        <div class="mcp-bindings-editor__empty mt-3">
+        <div class="mcp-bindings-editor__empty">
             <MudText Typo="Typo.body2" Class="mud-text-secondary">
                 @EmptyBindingsText
             </MudText>
@@ -62,7 +62,7 @@
 
     @if (!_loadingServers && _availableServers.Count > 0 && Bindings.Count > 0)
     {
-        <MudExpansionPanels MultiExpansion="true" Class="mcp-bindings-editor__panels mt-3">
+        <MudExpansionPanels MultiExpansion="true" Class="mcp-bindings-editor__panels">
                 @for (var i = 0; i < Bindings.Count; i++)
                 {
                     var binding = Bindings[i];
@@ -127,7 +127,9 @@
                                                Label="MCP Server"
                                                Value="@binding.ServerId"
                                                ValueChanged="@(value => OnServerChangedAsync(binding, value))"
+                                               Variant="Variant.Outlined"
                                                Dense="true"
+                                               Margin="Margin.Dense"
                                                Disabled="@Disabled">
                                         @foreach (var server in _availableServers.Where(static server => server.Id.HasValue))
                                         {
@@ -140,6 +142,8 @@
                                                   Label="Display name (optional)"
                                                   Value="@binding.DisplayName"
                                                   ValueChanged="@(value => OnDisplayNameChangedAsync(binding, value))"
+                                                  Variant="Variant.Outlined"
+                                                  Margin="Margin.Dense"
                                                   Immediate="true"
                                                   Disabled="@Disabled" />
                                 </MudItem>
@@ -159,7 +163,7 @@
                                 {
                                     <div class="mcp-binding-section">
                                         <MudText Typo="Typo.subtitle2">Per-Usage Overrides</MudText>
-                                        <MudGrid Class="mt-2">
+                                        <MudGrid>
                                             @foreach (var definition in selectedServer.OverrideDefinitions)
                                             {
                                                 <MudItem xs="12" md="6">
@@ -172,7 +176,8 @@
                                                                              Label="@GetOverrideLabel(definition)"
                                                                              HelperText="@definition.Description"
                                                                              Immediate="true"
-                                                                             Dense="true"
+                                                                             Variant="Variant.Outlined"
+                                                                             Margin="Margin.Dense"
                                                                              Disabled="@Disabled" />
                                                             break;
                                                         case "bool":
@@ -196,6 +201,8 @@
                                                                           HelperText="@definition.Description"
                                                                           InputType="@(definition.Secret ? InputType.Password : InputType.Text)"
                                                                           Immediate="true"
+                                                                          Variant="Variant.Outlined"
+                                                                          Margin="Margin.Dense"
                                                                           Disabled="@Disabled" />
                                                             break;
                                                     }
@@ -243,6 +250,8 @@
                                                                   ValueChanged="@(value => OnRootChangedAsync(binding, currentRootIndex, value))"
                                                                   Label="@($"Root {currentRootIndex + 1}")"
                                                                   Immediate="true"
+                                                                  Variant="Variant.Outlined"
+                                                                  Margin="Margin.Dense"
                                                                   Disabled="@Disabled" />
                                                 </div>
                                                 <MudIconButton Icon="@Icons.Material.Filled.Delete"
@@ -262,7 +271,7 @@
                                                ValueChanged="@(value => OnSelectAllToolsChangedAsync(binding, value))"
                                                Disabled="@Disabled"
                                                Color="Color.Primary"
-                                               Class="mt-2">
+                                               Class="mcp-binding-tools__toggle">
                                         @GetToolToggleLabel(binding, toolOptions.Count)
                                     </MudSwitch>
 
@@ -274,7 +283,7 @@
                                     }
                                     else if (!string.IsNullOrWhiteSpace(toolLoadError))
                                     {
-                                        <MudAlert Severity="Severity.Warning" Dense="true" Variant="Variant.Outlined" Class="mt-2">
+                                        <MudAlert Severity="Severity.Warning" Dense="true" Variant="Variant.Outlined">
                                             @toolLoadError
                                         </MudAlert>
                                     }

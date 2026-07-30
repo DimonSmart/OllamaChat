@@ -6,16 +6,16 @@
 @inject ISnackbar Snackbar
 
 <PageTitle>Vector Search</PageTitle>
-<MudContainer MaxWidth="MaxWidth.Medium" Class="pa-4">
-    <MudStack Spacing="2">
-        <MudSelect T="Guid?" Label="Knowledge Store" @bind-Value="selectedStoreId" Dense="true" Disabled="@isSearching">
+<MudContainer MaxWidth="MaxWidth.Medium" Class="app-compact-surface">
+    <MudStack Spacing="0" Class="app-compact-form">
+        <MudSelect T="Guid?" Label="Knowledge Store" @bind-Value="selectedStoreId" Variant="Variant.Outlined" Dense="true" Margin="Margin.Dense" Disabled="@isSearching">
             @foreach (var store in stores)
             {
                 <MudSelectItem T="Guid?" Value="@((Guid?)store.Id)">@store.Name (@store.Index.State)</MudSelectItem>
             }
         </MudSelect>
-        <MudTextField @bind-Value="query" Label="Query" Immediate="true" Disabled="@isSearching" />
-        <MudButton OnClick="SearchAsync" Color="Color.Primary" Disabled="@IsSearchDisabled">
+        <MudTextField @bind-Value="query" Label="Query" Immediate="true" Variant="Variant.Outlined" Margin="Margin.Dense" Disabled="@isSearching" />
+        <MudButton OnClick="SearchAsync" Color="Color.Primary" Size="Size.Small" Disabled="@IsSearchDisabled">
             @if (isSearching)
             {
                 <MudProgressCircular Class="me-2" Indeterminate="true" Size="Size.Small" Color="Color.Inherit" />
@@ -40,7 +40,7 @@
         }
         @foreach (var result in results)
         {
-            <MudPaper Class="pa-3">
+            <MudPaper Class="app-compact-surface">
                 <MudText Typo="Typo.subtitle2">@result.KnowledgeStoreName / @result.FileName</MudText>
                 @if (!string.IsNullOrWhiteSpace(result.Section)) { <MudText Typo="Typo.caption">@result.Section</MudText> }
                 <MudText Typo="Typo.body2">@result.Content</MudText>
@@ -116,9 +116,3 @@
         };
     }
 }
-
-<style>
-    .score-bar {
-        width: 140px;
-    }
-</style>

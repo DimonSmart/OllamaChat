@@ -17,8 +17,8 @@
 <PageTitle>MCP Playground</PageTitle>
 <MudText Class="page-header">MCP Playground</MudText>
 
-<MudStack Spacing="2">
-    <MudSelect Label="Server" T="string" Value="@selectedServer" ValueChanged="OnServerChanged" Dense="true">
+<MudStack Spacing="0" Class="app-compact-form">
+    <MudSelect Label="Server" T="string" Value="@selectedServer" ValueChanged="OnServerChanged" Variant="Variant.Outlined" Dense="true" Margin="Margin.Dense">
         @foreach (var s in servers)
         {
             <MudSelectItem Value="@s">
@@ -40,7 +40,7 @@
         </MudAlert>
     }
 
-    <MudSelect Label="Function" T="string" Value="@selectedFunction" ValueChanged="OnFunctionChanged" Disabled="@(!tools.Any())" Dense="true">
+    <MudSelect Label="Function" T="string" Value="@selectedFunction" ValueChanged="OnFunctionChanged" Disabled="@(!tools.Any())" Variant="Variant.Outlined" Dense="true" Margin="Margin.Dense">
         @foreach (var t in tools)
         {
             <MudSelectItem Value="@t.Name">
@@ -77,25 +77,31 @@
                     case "integer":
                         <MudNumericField T="int?" Value="@(parameters[f.Name] as int?)"
                                          ValueChanged="v => parameters[f.Name] = v"
-                                         Label="@GetFieldLabel(f)" />
+                                         Label="@GetFieldLabel(f)"
+                                         Variant="Variant.Outlined"
+                                         Margin="Margin.Dense" />
                         break;
                     case "number":
                         <MudNumericField T="double?" Value="@(parameters[f.Name] as double?)"
                                          ValueChanged="v => parameters[f.Name] = v"
-                                         Label="@GetFieldLabel(f)" />
+                                         Label="@GetFieldLabel(f)"
+                                         Variant="Variant.Outlined"
+                                         Margin="Margin.Dense" />
                         break;
                     default:
                         <MudTextField T="string" Value="@(parameters.TryGetValue(f.Name, out var obj) ? obj?.ToString() : string.Empty)"
                                       ValueChanged="v => parameters[f.Name] = v"
-                                      Label="@GetFieldLabel(f)" />
+                                      Label="@GetFieldLabel(f)"
+                                      Variant="Variant.Outlined"
+                                      Margin="Margin.Dense" />
                         break;
                 }
-                <MudText Typo="Typo.caption" Class="mud-text-secondary mb-2">@GetFieldMetadata(f)</MudText>
+                <MudText Typo="Typo.caption" Class="mud-text-secondary">@GetFieldMetadata(f)</MudText>
             </MudStack>
         }
     }
 
-    <MudButton Variant="Variant.Filled" OnClick="Call" Disabled="@(string.IsNullOrEmpty(selectedServer) || string.IsNullOrEmpty(selectedFunction))">Go</MudButton>
+    <MudButton Variant="Variant.Filled" OnClick="Call" Size="Size.Small" Disabled="@(string.IsNullOrEmpty(selectedServer) || string.IsNullOrEmpty(selectedFunction))">Go</MudButton>
 
     <MudSwitch @bind-Value="showRaw" 
                Label="@(showRaw ? "Raw" : "Simplified")" 
@@ -104,7 +110,7 @@
 
     @if (!string.IsNullOrEmpty(rawResult) || !string.IsNullOrEmpty(contentResult))
     {
-        <MudPaper Class="pa-4 mcp-result" Outlined="true">
+        <MudPaper Class="app-compact-surface mcp-result" Outlined="true">
             <pre>@(showRaw ? rawResult : contentResult)</pre>
         </MudPaper>
     }

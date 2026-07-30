@@ -25,7 +25,7 @@
     }
     else if (!chatStarted)
     {
-        <MudCard Class="ma-auto" Style="max-width: 600px; width: 100%;">
+        <MudCard Class="ma-auto app-form-card app-form-card--narrow">
             <MudCardContent>
                 @if (catalogItems.Count == 0)
                 {
@@ -34,8 +34,8 @@
                 }
                 else
                 {
-                    <MudStack Spacing="3">
-                        <MudSelect T="AgentDefinitionDescriptor" Label="Select Agent or Workflow" Value="selectedDefinition" ValueChanged="OnDefinitionChanged" Variant="Variant.Outlined" FullWidth="true" Dense="true" Disabled="@isStartingChat">
+                    <MudStack Spacing="0" Class="app-compact-form">
+                        <MudSelect T="AgentDefinitionDescriptor" Label="Select Agent or Workflow" Value="selectedDefinition" ValueChanged="OnDefinitionChanged" Variant="Variant.Outlined" FullWidth="true" Dense="true" Margin="Margin.Dense" Disabled="@isStartingChat">
                             @foreach (var item in catalogItems)
                             {
                                 <MudSelectItem Value="@item">@item.Name (@GetKindLabel(item))</MudSelectItem>
@@ -44,7 +44,7 @@
 
                         @if (inputDefinitions.Count > 0)
                         {
-                            <MudStack Spacing="1">
+                            <MudStack Spacing="0" Class="app-compact-section">
                                 @foreach (var input in inputDefinitions)
                                 {
                                     @switch (input.Kind)
@@ -113,7 +113,7 @@
                         }
                         @if (selectedDefinition?.LaunchCapabilities.SupportsSandboxProfile == true)
                         {
-                            <MudSelect T="Guid?" Label="Sandbox profile" Value="sandboxProfileId" ValueChanged="OnSandboxProfileChanged" Variant="Variant.Outlined" Margin="Margin.Dense" Disabled="@isStartingChat">
+                            <MudSelect T="Guid?" Label="Sandbox profile" Value="sandboxProfileId" ValueChanged="OnSandboxProfileChanged" Variant="Variant.Outlined" Dense="true" Margin="Margin.Dense" Disabled="@isStartingChat">
                                 <MudSelectItem T="Guid?" Value="@((Guid?)null)">Select sandbox profile</MudSelectItem>
                                 @foreach (var profile in sandboxProfiles)
                                 {
@@ -135,7 +135,7 @@
                         @if (isStartingChat)
                         {
                             <MudProgressLinear Color="Color.Primary" Indeterminate="true" />
-                            <MudText Typo="Typo.body2" Class="mud-text-secondary" Style="white-space: pre-line;">
+                            <MudText Typo="Typo.body2" Class="mud-text-secondary app-preformatted-status">
                                 @startStatus
                             </MudText>
                         }
@@ -150,7 +150,7 @@
                             <MudButton Variant="Variant.Filled"
                                        Color="Color.Primary"
                                        FullWidth="true"
-                                       Size="Size.Medium"
+                                       Size="Size.Small"
                                        Disabled="@(!CanStartChat)"
                                        OnClick="StartChat">
                                 @if (isStartingChat)
