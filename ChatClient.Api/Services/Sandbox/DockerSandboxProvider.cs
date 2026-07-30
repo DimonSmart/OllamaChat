@@ -26,7 +26,7 @@ public sealed class DockerSandboxProvider(
     public string DefaultConfiguration =>
         """
         image: mcr.microsoft.com/dotnet/sdk:10.0-noble
-        network: none
+        network: bridge
         cpuLimit: 1
         memoryMb: 1024
         pidsLimit: 256
