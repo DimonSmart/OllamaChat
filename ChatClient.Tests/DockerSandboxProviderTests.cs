@@ -1,11 +1,23 @@
 using ChatClient.Api.Services.Sandbox;
 using ChatClient.Application.Services.Sandbox;
 using Microsoft.Agents.AI.Tools.Shell;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace ChatClient.Tests;
 
 public sealed class DockerSandboxProviderTests
 {
+    [Fact]
+    public void DefaultConfiguration_UsesBridgeNetwork()
+    {
+        var provider = new DockerSandboxProvider(NullLogger<DockerSandboxProvider>.Instance);
+
+        var definition = Assert.IsType<DockerSandboxDefinition>(
+            provider.ParseDefinition(provider.DefaultConfiguration));
+
+        Assert.Equal("bridge", definition.Network);
+    }
+
     [Theory]
     [InlineData(1, "1")]
     [InlineData(0.5, "0.5")]
