@@ -15,14 +15,23 @@ public sealed class SandboxProfileSeeder(
     public async Task SeedAsync()
     {
         var profiles = (await repository.GetAllAsync()).ToList();
-        if (profiles.Any(profile =>
-                profile.Id == DefaultDockerProfileId ||
-                string.Equals(profile.Name, DefaultDockerProfileName, StringComparison.OrdinalIgnoreCase)))
+        var provider = sandboxProviderRegistry.GetRequired(DockerSandboxProvider.ProviderType);
+        var existingProfile = profiles.FirstOrDefault(profile =>
+            profile.Id == DefaultDockerProfileId ||
+            string.Equals(profile.Name, DefaultDockerProfileName, StringComparison.OrdinalIgnoreCase));
+
+        if (existingProfile is not null)
         {
+            if (IsLegacyDefaultProfile(existingProfile, provider))
+            {
+                existingProfile.Configuration = provider.DefaultConfiguration;
+                existingProfile.UpdatedAt = DateTime.UtcNow;
+                await repository.SaveAllAsync(profiles);
+            }
+
             return;
         }
 
-        var provider = sandboxProviderRegistry.GetRequired(DockerSandboxProvider.ProviderType);
         var now = DateTime.UtcNow;
         profiles.Add(new SandboxProfile
         {
@@ -36,4 +45,25 @@ public sealed class SandboxProfileSeeder(
 
         await repository.SaveAllAsync(profiles);
     }
+
+    private static bool IsLegacyDefaultProfile(SandboxProfile profile, ISandboxProvider provider)
+    {
+        if (!string.Equals(profile.ProviderType, provider.Type, StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        var legacyConfiguration = provider.DefaultConfiguration.Replace(
+            "network: bridge",
+            "network: none",
+            StringComparison.Ordinal);
+
+        return string.Equals(
+            NormalizeConfiguration(profile.Configuration),
+            NormalizeConfiguration(legacyConfiguration),
+            StringComparison.Ordinal);
+    }
+
+    private static string NormalizeConfiguration(string configuration) =>
+        configuration.ReplaceLineEndings("\n").Trim();
 }
