@@ -11,6 +11,18 @@ public sealed class SandboxProfileSeeder(
 {
     private static readonly Guid DefaultDockerProfileId = Guid.Parse("6808d695-74fd-4bbf-a752-d4b1d74e7fd4");
     private const string DefaultDockerProfileName = ".NET 10 Small";
+    private const string LegacyDefaultDockerConfiguration =
+        """
+        image: mcr.microsoft.com/dotnet/sdk:10.0-noble
+        network: none
+        cpuLimit: 1
+        memoryMb: 1024
+        pidsLimit: 256
+        commandTimeoutSeconds: 600
+        maxOutputKb: 64
+        user: "65534:65534"
+        readOnlyRoot: true
+        """;
 
     public async Task SeedAsync()
     {
@@ -48,19 +60,15 @@ public sealed class SandboxProfileSeeder(
 
     private static bool IsLegacyDefaultProfile(SandboxProfile profile, ISandboxProvider provider)
     {
-        if (!string.Equals(profile.ProviderType, provider.Type, StringComparison.OrdinalIgnoreCase))
+        if (!string.Equals(profile.ProviderType, provider.Type, StringComparison.OrdinalIgnoreCase) ||
+            string.IsNullOrWhiteSpace(profile.Configuration))
         {
             return false;
         }
 
-        var legacyConfiguration = provider.DefaultConfiguration.Replace(
-            "network: bridge",
-            "network: none",
-            StringComparison.Ordinal);
-
         return string.Equals(
             NormalizeConfiguration(profile.Configuration),
-            NormalizeConfiguration(legacyConfiguration),
+            NormalizeConfiguration(LegacyDefaultDockerConfiguration),
             StringComparison.Ordinal);
     }
 
