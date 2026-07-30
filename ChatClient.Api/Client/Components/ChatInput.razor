@@ -16,7 +16,7 @@
 @inject ILogger<ChatInput> Logger
 @inject ISnackbar Snackbar
 
-<MudPaper Class="pa-2" Elevation="2">
+<MudPaper Class="chat-composer" Elevation="2">
     <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="1">
         @if (AllowFileAttachments)
         {
@@ -43,8 +43,8 @@
                       MaxLines="15"
                       InputId="@_messageInputId"
                       AutoGrow="true"
-                      Label="@Label"
-                      Variant="Variant.Outlined"
+                      Placeholder="@Label"
+                      Variant="Variant.Text"
                       Style="flex-grow:1"
                       Margin="Margin.Dense"
                       Adornment="Adornment.End"
@@ -52,7 +52,6 @@
                       AdornmentColor="@(ShowStopButton ? Color.Error : Color.Primary)"
                       OnAdornmentClick="HandleAdornmentClick"
                       OnKeyDown="HandleKeyDown"
-                      ShrinkLabel="true"
                       title="@(ShowStopButton ? "Stop generation" : "Send message (Ctrl+Enter)")" />
 
         @if (CanShowVoiceButton)

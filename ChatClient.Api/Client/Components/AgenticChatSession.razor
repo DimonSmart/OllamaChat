@@ -63,7 +63,7 @@
         <MudDrawer @bind-Open="showSessionState"
                    Anchor="Anchor.Right"
                    Variant="DrawerVariant.Temporary"
-                   Fixed="false"
+                   Fixed="true"
                    Overlay="false"
                    Elevation="8"
                    Width="min(26rem, 100%)"
@@ -168,7 +168,7 @@
         </MudDrawer>
     }
 
-    <div class="chat-messages-container" @ref="messagesElement">
+    <div class="chat-messages-container">
     @{
         var messageIndex = 0;
     }
@@ -385,7 +385,6 @@
     [Parameter]
     public EventCallback<ToolApprovalDecision> OnToolApprovalDecision { get; set; }
 
-    private ElementReference messagesElement;
     private bool showSessionState;
     private bool isChangingAgentMode;
     private bool isRespondingToToolApproval;
@@ -452,7 +451,7 @@
     {
         try
         {
-            await JSRuntime.InvokeVoidAsync("scrollToBottom", messagesElement);
+            await JSRuntime.InvokeVoidAsync("scrollToBottom");
         }
         catch (Exception ex)
         {
