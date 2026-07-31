@@ -238,7 +238,7 @@ public sealed class UnifiedAgentRuntimeChatSessionServiceTests
 
         await fixture.Service.SendAsync("A");
         Assert.NotNull(fixture.Service.PendingToolApproval);
-        await fixture.Service.RespondToToolApprovalAsync(ToolApprovalDecision.AlwaysApproveTool);
+        await fixture.Service.RespondToToolApprovalAsync(ToolApprovalDecision.ApproveForSession);
         Assert.Equal(2, testHarness.InvocationCount);
 
         await fixture.Service.SendAsync("B");
@@ -265,7 +265,7 @@ public sealed class UnifiedAgentRuntimeChatSessionServiceTests
 
         await fixture.Service.SendAsync("A");
         Assert.NotNull(fixture.Service.PendingToolApproval);
-        await fixture.Service.RespondToToolApprovalAsync(ToolApprovalDecision.AlwaysApproveExactArguments);
+        await fixture.Service.RespondToToolApprovalAsync(ToolApprovalDecision.ApproveForSession);
         Assert.Equal(1, testHarness.InvocationCount);
 
         await fixture.Service.SendAsync("A");
@@ -273,8 +273,8 @@ public sealed class UnifiedAgentRuntimeChatSessionServiceTests
         Assert.Equal(2, testHarness.InvocationCount);
 
         await fixture.Service.SendAsync("B");
-        Assert.NotNull(fixture.Service.PendingToolApproval);
-        Assert.Equal(2, testHarness.InvocationCount);
+        Assert.Null(fixture.Service.PendingToolApproval);
+        Assert.Equal(3, testHarness.InvocationCount);
     }
 
     [Fact]

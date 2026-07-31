@@ -142,7 +142,8 @@ public sealed class HttpAgenticExecutionRuntime(
                     approvalRequest.RequestId,
                     GetApprovalToolName(approvalRequest),
                     GetApprovalArguments(approvalRequest),
-                    IsStandingApprovalAllowed(GetApprovalToolName(approvalRequest))),
+                    GetSessionScope(GetApprovalToolName(approvalRequest)),
+                    request.RuntimeResources.WorkspacePath),
                 cancellationToken);
             var approvalResponse = BuildApprovalResponse(approvalRequest, approvalDecision);
             nextInput =
@@ -235,14 +236,12 @@ public sealed class HttpAgenticExecutionRuntime(
         {
             ToolApprovalDecision.ApproveOnce => request.CreateResponse(true, "User approved"),
             ToolApprovalDecision.Deny => request.CreateResponse(false, "User denied"),
-            ToolApprovalDecision.AlwaysApproveTool => request.CreateAlwaysApproveToolResponse("User approved"),
-            ToolApprovalDecision.AlwaysApproveExactArguments => request.CreateAlwaysApproveToolWithArgumentsResponse("User approved"),
+            ToolApprovalDecision.ApproveForSession => request.CreateAlwaysApproveToolResponse("User approved for this session"),
             _ => throw new ArgumentOutOfRangeException(nameof(decision))
         };
 
-    private static bool IsStandingApprovalAllowed(string toolName) =>
-        !toolName.StartsWith("file_access_", StringComparison.OrdinalIgnoreCase) &&
-        !string.Equals(toolName, SandboxToolNames.RunShell, StringComparison.OrdinalIgnoreCase);
+    private static ToolApprovalSessionScope GetSessionScope(string toolName) =>
+        new SessionToolApprovalPolicy().GetScope(toolName);
 
     private static string GetApprovalToolName(ToolApprovalRequestContent request) =>
         request.ToolCall switch

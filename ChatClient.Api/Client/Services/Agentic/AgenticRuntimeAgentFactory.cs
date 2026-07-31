@@ -262,7 +262,22 @@ public sealed class AgenticRuntimeAgentFactory(
             agentOptions.ChatOptions.ToolMode = ChatToolMode.Auto;
         }
 
-        return chatClient.AsHarnessAgent(agentOptions);
+        var agent = chatClient.AsHarnessAgent(agentOptions);
+        var approvalPolicy = request.RuntimeResources.ToolApprovalPolicy;
+        if (approvalPolicy is null)
+        {
+            return agent;
+        }
+
+        return new ToolApprovalAgent(agent, new ToolApprovalAgentOptions
+        {
+            AutoApprovalRules =
+            [
+                context => ValueTask.FromResult(approvalPolicy.IsApproved(
+                    context.FunctionCallContent.Name,
+                    request.RuntimeResources.WorkspacePath))
+            ]
+        });
     }
 
     internal static void ValidateTodoCompletionConfiguration(

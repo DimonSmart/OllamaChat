@@ -4,7 +4,8 @@ public sealed record SessionToolApprovalRequest(
     string RequestId,
     string ToolName,
     string Arguments,
-    bool AllowStandingApproval);
+    ToolApprovalSessionScope SessionScope,
+    string? WorkspacePath);
 
 public interface ISessionToolApprovalCoordinator
 {

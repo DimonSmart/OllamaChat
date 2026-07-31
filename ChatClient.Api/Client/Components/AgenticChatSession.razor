@@ -14,32 +14,6 @@
 @inject ILogger<AgenticChatSession> Logger
 @inject ChatToolbarState ChatToolbar
 
-@if (PendingToolApproval is not null)
-{
-    <MudPaper Outlined="true" Class="pa-4 mb-3">
-        <MudStack Spacing="2">
-            <MudText Typo="Typo.subtitle2">Approval required</MudText>
-            <MudText Typo="Typo.caption" Class="mud-text-secondary">Tool</MudText>
-            <MudText Typo="Typo.body2">@PendingToolApproval.ToolName</MudText>
-            <MudText Typo="Typo.caption" Class="mud-text-secondary">Arguments</MudText>
-            <MudPaper Outlined="true" Class="pa-2"><pre class="ma-0 tool-approval-arguments">@PendingToolApproval.Arguments</pre></MudPaper>
-            <MudStack Row="true" Spacing="1" Wrap="Wrap.Wrap">
-                <MudButton Variant="Variant.Outlined" Color="Color.Error" Disabled="isRespondingToToolApproval" OnClick="@(() => RespondToToolApprovalAsync(ToolApprovalDecision.Deny))">Deny</MudButton>
-                <MudButton Variant="Variant.Filled" Color="Color.Primary" Disabled="isRespondingToToolApproval" OnClick="@(() => RespondToToolApprovalAsync(ToolApprovalDecision.ApproveOnce))">Approve once</MudButton>
-                @if (PendingToolApproval.AllowStandingApproval)
-                {
-                    <MudButton Variant="Variant.Outlined" Disabled="isRespondingToToolApproval" OnClick="@(() => RespondToToolApprovalAsync(ToolApprovalDecision.AlwaysApproveTool))">Always approve this tool in this chat</MudButton>
-                    <MudButton Variant="Variant.Outlined" Disabled="isRespondingToToolApproval" OnClick="@(() => RespondToToolApprovalAsync(ToolApprovalDecision.AlwaysApproveExactArguments))">Always approve this exact call in this chat</MudButton>
-                }
-                @if (isRespondingToToolApproval)
-                {
-                    <MudProgressCircular Indeterminate="true" Size="Size.Small" />
-                }
-            </MudStack>
-        </MudStack>
-    </MudPaper>
-}
-
 <MudDrawerContainer Class="session-state-drawer-container">
     @if (SessionState is not null)
     {
@@ -371,6 +345,8 @@
     private bool showSessionState;
     private bool isChangingAgentMode;
     private bool isRespondingToToolApproval;
+    private IDialogReference? toolApprovalDialog;
+    private string? toolApprovalDialogRequestId;
     private bool isChangingWorkspace;
     private string workspaceInput = string.Empty;
 
@@ -383,6 +359,7 @@
             workspaceInput = fileAccess.WorkspacePath;
 
         PublishToolbarState();
+        SynchronizeToolApprovalDialog();
     }
 
     public void Dispose() => ChatToolbar.Clear();
@@ -447,6 +424,37 @@
         {
             isRespondingToToolApproval = false;
         }
+    }
+
+    private void SynchronizeToolApprovalDialog()
+    {
+        if (PendingToolApproval is null)
+        {
+            toolApprovalDialog?.Close();
+            toolApprovalDialog = null;
+            toolApprovalDialogRequestId = null;
+            return;
+        }
+
+        if (string.Equals(toolApprovalDialogRequestId, PendingToolApproval.RequestId, StringComparison.Ordinal)) return;
+        toolApprovalDialogRequestId = PendingToolApproval.RequestId;
+        var request = PendingToolApproval;
+        _ = InvokeAsync(async () =>
+        {
+            if (!string.Equals(PendingToolApproval?.RequestId, request.RequestId, StringComparison.Ordinal))
+            {
+                return;
+            }
+
+            var parameters = new DialogParameters<ToolApprovalDialog>
+            {
+                { dialog => dialog.Request, request },
+                { dialog => dialog.OnDecision, EventCallback.Factory.Create<ToolApprovalDecision>(this, RespondToToolApprovalAsync) }
+            };
+            toolApprovalDialog = await DialogService.ShowAsync<ToolApprovalDialog>(
+                "Approval required", parameters,
+                new DialogOptions { CloseButton = false, CloseOnEscapeKey = false, BackdropClick = false, MaxWidth = MaxWidth.Small, FullWidth = true });
+        });
     }
 
     public async Task ScrollToBottomAsync()

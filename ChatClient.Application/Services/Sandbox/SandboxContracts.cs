@@ -145,4 +145,6 @@ public sealed record AgentSessionRuntimeResources
     public ISandbox? Sandbox { get; init; }
 
     public ISessionToolApprovalCoordinator? ToolApprovalCoordinator { get; init; }
+
+    public SessionToolApprovalPolicy? ToolApprovalPolicy { get; init; }
 }

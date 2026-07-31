@@ -36,6 +36,7 @@ public sealed class UnifiedAgentRuntimeChatSessionService(
     private FileAccessProviderProfile? _directFileAccessProfile;
     private SandboxSessionHandle? _sandboxSession;
     private ISessionToolApprovalCoordinator? _toolApprovalCoordinator;
+    private SessionToolApprovalPolicy? _toolApprovalPolicy;
     private IReadOnlyDictionary<string, AgenticRegisteredTool> _directToolMetadata =
         new Dictionary<string, AgenticRegisteredTool>(StringComparer.OrdinalIgnoreCase);
     private TaskCompletionSource? _activeRunCompletion;
@@ -106,6 +107,7 @@ public sealed class UnifiedAgentRuntimeChatSessionService(
             var sessionId = _chat.Id.ToString("N");
             ClearRunLocalState();
             _toolApprovalCoordinator = new SessionToolApprovalCoordinator();
+            _toolApprovalPolicy = new SessionToolApprovalPolicy();
             _toolApprovalCoordinator.PendingRequestChanged += HandleCoordinatorPendingRequestChanged;
             _chat.SetAgents(request.RuntimeParticipant is { } participant
                 ? [new AgentExecutionSpec
@@ -239,6 +241,7 @@ public sealed class UnifiedAgentRuntimeChatSessionService(
                 throw new InvalidOperationException("Workspace cannot be changed while this conversation has an active sandbox.");
             var store = _directFileAccessStore ?? throw new InvalidOperationException("This conversation does not use File Access.");
             store.SetWorkspace(workspace);
+            _toolApprovalPolicy?.ClearFileAccessGrant();
             logger.LogInformation("File Access workspace changed to {Workspace}", store.WorkspacePath);
             SessionStateChanged?.Invoke();
         }
@@ -338,6 +341,7 @@ public sealed class UnifiedAgentRuntimeChatSessionService(
                 _toolApprovalCoordinator.CancelPending();
             }
             _toolApprovalCoordinator = null;
+            _toolApprovalPolicy = null;
             PendingToolApproval = null;
             _chat.Reset();
             ClearRunLocalState();
@@ -566,8 +570,8 @@ public sealed class UnifiedAgentRuntimeChatSessionService(
             if (_resetting || IsAnswering || RequiresReset)
                 throw new InvalidOperationException("The pending tool approval cannot be answered while this conversation is unavailable.");
 
-            if (PendingToolApproval is { AllowStandingApproval: false } && decision is
-                ToolApprovalDecision.AlwaysApproveTool or ToolApprovalDecision.AlwaysApproveExactArguments)
+            if (PendingToolApproval is { SessionScope: ToolApprovalSessionScope.None } &&
+                decision == ToolApprovalDecision.ApproveForSession)
                 throw new InvalidOperationException("Standing approval is not available for this tool.");
 
             coordinatorRequest = _toolApprovalCoordinator?.PendingRequest;
@@ -589,6 +593,12 @@ public sealed class UnifiedAgentRuntimeChatSessionService(
             generation = Interlocked.Read(ref _generation);
             _pendingToolApprovalRequest = null;
             PendingToolApproval = null;
+            if (decision == ToolApprovalDecision.ApproveForSession)
+            {
+                _toolApprovalPolicy?.Grant(
+                    coordinatorRequest?.ToolName ?? GetToolName(request),
+                    coordinatorRequest?.WorkspacePath ?? _directFileAccessStore?.WorkspacePath ?? _sandboxSession?.WorkspacePath);
+            }
             _cancellationTokenSource = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
             _activeRunCompletion = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
             UpdateAnsweringState(true);
@@ -603,8 +613,7 @@ public sealed class UnifiedAgentRuntimeChatSessionService(
         {
             ToolApprovalDecision.ApproveOnce => request.CreateResponse(true, "User approved"),
             ToolApprovalDecision.Deny => request.CreateResponse(false, "User denied"),
-            ToolApprovalDecision.AlwaysApproveTool => request.CreateAlwaysApproveToolResponse("User approved"),
-            ToolApprovalDecision.AlwaysApproveExactArguments => request.CreateAlwaysApproveToolWithArgumentsResponse("User approved"),
+            ToolApprovalDecision.ApproveForSession => request.CreateAlwaysApproveToolResponse("User approved for this session"),
             _ => throw new ArgumentOutOfRangeException(nameof(decision))
         };
 
@@ -656,6 +665,8 @@ public sealed class UnifiedAgentRuntimeChatSessionService(
         WorkspacePath = _sandboxSession?.WorkspacePath ?? _parameters?.Overrides.WorkspacePath,
         Sandbox = _sandboxSession?.Instance,
         ToolApprovalCoordinator = _toolApprovalCoordinator
+        ,
+        ToolApprovalPolicy = _toolApprovalPolicy
     };
 
     private async Task<SandboxSessionHandle?> CreateSandboxSessionAsync(
@@ -759,7 +770,8 @@ public sealed class UnifiedAgentRuntimeChatSessionService(
                             _pendingToolApprovalRequest = approvalRequest;
                             PendingToolApproval = new ToolApprovalRequestViewModel(
                                 approval.RequestId, approval.ToolName, approval.Arguments,
-                                IsStandingApprovalAllowed(approval.ToolName));
+                                GetSessionScope(approval.ToolName),
+                                _directFileAccessStore?.WorkspacePath ?? _sandboxSession?.WorkspacePath);
                             SessionStateChanged?.Invoke();
                         }
 
@@ -1176,7 +1188,8 @@ public sealed class UnifiedAgentRuntimeChatSessionService(
                 pendingRequest.RequestId,
                 pendingRequest.ToolName,
                 pendingRequest.Arguments,
-                pendingRequest.AllowStandingApproval);
+                pendingRequest.SessionScope,
+                pendingRequest.WorkspacePath);
 
         if (pendingRequest is not null)
         {
@@ -1190,9 +1203,15 @@ public sealed class UnifiedAgentRuntimeChatSessionService(
         SessionStateChanged?.Invoke();
     }
 
-    private static bool IsStandingApprovalAllowed(string toolName) =>
-        !toolName.StartsWith("file_access_", StringComparison.OrdinalIgnoreCase) &&
-        !string.Equals(toolName, SandboxToolNames.RunShell, StringComparison.OrdinalIgnoreCase);
+    private static ToolApprovalSessionScope GetSessionScope(string toolName) =>
+        new SessionToolApprovalPolicy().GetScope(toolName);
+
+    private static string GetToolName(ToolApprovalRequestContent request) => request.ToolCall switch
+    {
+        FunctionCallContent functionCall => functionCall.Name,
+        McpServerToolCallContent mcpCall => mcpCall.Name,
+        _ => "unknown"
+    };
 
     private static ActiveChatSessionInfo CreateActiveSession(ChatEngineSessionStartRequest parameters) =>
         new(

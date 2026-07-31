@@ -1,0 +1,59 @@
+@using ChatClient.Application.Services.Agentic
+@using MudBlazor
+
+<MudDialog>
+    <TitleContent><MudText Typo="Typo.h6">@Title</MudText></TitleContent>
+    <DialogContent>
+        <MudStack Spacing="2">
+            <MudText Typo="Typo.body2">@Request.ToolName</MudText>
+            @if (!string.IsNullOrWhiteSpace(Request.WorkspacePath))
+            {
+                <MudText Typo="Typo.caption">Workspace: @Request.WorkspacePath</MudText>
+            }
+            <MudText Typo="Typo.caption">Arguments</MudText>
+            <MudPaper Outlined="true" Class="pa-2" Style="max-height: 35vh; overflow: auto;"><pre class="ma-0">@Request.Arguments</pre></MudPaper>
+        </MudStack>
+    </DialogContent>
+    <DialogActions>
+        <MudButton Color="Color.Error" Disabled="isSubmitting" OnClick="@(() => SubmitAsync(ToolApprovalDecision.Deny))">Deny</MudButton>
+        <MudButton Color="Color.Primary" Variant="Variant.Filled" Disabled="isSubmitting" OnClick="@(() => SubmitAsync(ToolApprovalDecision.ApproveOnce))">Approve once</MudButton>
+        @if (Request.SessionScope != ToolApprovalSessionScope.None)
+        {
+            <MudButton Disabled="isSubmitting" OnClick="@(() => SubmitAsync(ToolApprovalDecision.ApproveForSession))">Approve for this session</MudButton>
+        }
+        @if (isSubmitting)
+        {
+            <MudProgressCircular Indeterminate="true" Size="Size.Small" />
+        }
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] private IMudDialogInstance? Dialog { get; set; }
+    [Parameter, EditorRequired] public ToolApprovalRequestViewModel Request { get; set; } = default!;
+    [Parameter, EditorRequired] public EventCallback<ToolApprovalDecision> OnDecision { get; set; }
+
+    private bool isSubmitting;
+
+    private string Title => Request.SessionScope switch
+    {
+        ToolApprovalSessionScope.SandboxCommands => "Sandbox command approval required",
+        ToolApprovalSessionScope.FileAccess => "File operation approval required",
+        _ => "Tool approval required"
+    };
+
+    private async Task SubmitAsync(ToolApprovalDecision decision)
+    {
+        if (isSubmitting) return;
+        isSubmitting = true;
+        try
+        {
+            await OnDecision.InvokeAsync(decision);
+            Dialog?.Close();
+        }
+        finally
+        {
+            isSubmitting = false;
+        }
+    }
+}

@@ -66,12 +66,20 @@ public sealed record ToolApprovalRequestViewModel(
     string RequestId,
     string ToolName,
     string Arguments,
-    bool AllowStandingApproval = true);
+    ToolApprovalSessionScope SessionScope = ToolApprovalSessionScope.Tool,
+    string? WorkspacePath = null);
+
+public enum ToolApprovalSessionScope
+{
+    None,
+    Tool,
+    FileAccess,
+    SandboxCommands
+}
 
 public enum ToolApprovalDecision
 {
-    ApproveOnce,
     Deny,
-    AlwaysApproveTool,
-    AlwaysApproveExactArguments
+    ApproveOnce,
+    ApproveForSession
 }
