@@ -73,6 +73,8 @@ public abstract class AgenticChatPageBase : ComponentBase, IAsyncDisposable
 
     protected virtual Task OnParametersSetCoreAsync() => Task.CompletedTask;
 
+    protected virtual Task OnChatResetCoreAsync() => Task.CompletedTask;
+
     protected abstract Task LoadAgentsAsync();
 
     protected abstract Task LoadUserSettingsAsync();
@@ -101,6 +103,9 @@ public abstract class AgenticChatPageBase : ComponentBase, IAsyncDisposable
         _sessionStateChangedHandler = () => _ = InvokeAsync(StateHasChanged);
         ChatViewModelService.SessionStateChanged += _sessionStateChangedHandler;
 
+        chatStarted = ChatService.HasActiveSession;
+        isLLMAnswering = ChatService.IsAnswering;
+
         isLoadingInitialData = false;
         StateHasChanged();
     }
@@ -128,7 +133,11 @@ public abstract class AgenticChatPageBase : ComponentBase, IAsyncDisposable
     protected virtual void OnChatReset()
     {
         chatStarted = false;
-        _ = InvokeAsync(StateHasChanged);
+        _ = InvokeAsync(async () =>
+        {
+            await OnChatResetCoreAsync();
+            StateHasChanged();
+        });
     }
 
     protected async Task SendChatMessageAsync((string text, IReadOnlyList<AppChatMessageFile> files) messageData)
@@ -263,7 +272,7 @@ public abstract class AgenticChatPageBase : ComponentBase, IAsyncDisposable
         }
     }
 
-    public virtual async ValueTask DisposeAsync()
+    public virtual ValueTask DisposeAsync()
     {
         ChatService.AnsweringStateChanged -= OnAnsweringStateChanged;
         ChatViewModelService.ChatReset -= OnChatReset;
@@ -274,8 +283,6 @@ public abstract class AgenticChatPageBase : ComponentBase, IAsyncDisposable
         if (_sessionStateChangedHandler is not null)
             ChatViewModelService.SessionStateChanged -= _sessionStateChangedHandler;
         elicitationHandlerRegistration?.Dispose();
-
-        await ChatService.CancelAsync();
-        await ChatService.ResetAsync();
+        return ValueTask.CompletedTask;
     }
 }

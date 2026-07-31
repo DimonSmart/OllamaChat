@@ -1,3 +1,4 @@
+using ChatClient.Application.Services.AgentRuntime;
 using ChatClient.Domain.Models;
 
 namespace ChatClient.Application.Services.Agentic;
@@ -5,6 +6,10 @@ namespace ChatClient.Application.Services.Agentic;
 public interface IChatEngineSessionService : IChatSessionService
 {
     event Action? SessionStateChanged;
+
+    bool HasActiveSession { get; }
+
+    ActiveChatSessionInfo? ActiveSession { get; }
 
     ToolApprovalRequestViewModel? PendingToolApproval { get; }
 
@@ -21,6 +26,12 @@ public interface IChatEngineSessionService : IChatSessionService
 
     Task RespondToToolApprovalAsync(ToolApprovalDecision decision, CancellationToken cancellationToken = default);
 }
+
+public sealed record ActiveChatSessionInfo(
+    AgentDefinitionReference RuntimeReference,
+    ServerModel? Model,
+    IReadOnlyDictionary<string, string> Inputs,
+    AgentSessionOverrides Overrides);
 
 public enum ChatSessionStartStage
 {

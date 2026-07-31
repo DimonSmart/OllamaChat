@@ -1,3 +1,4 @@
+using ChatClient.Api.Client.Pages;
 using ChatClient.Api.Client.Services.Agentic;
 using ChatClient.Api.Services;
 using ChatClient.Api.Services.AgentRuntime;
@@ -84,6 +85,37 @@ public sealed class UnifiedAgentRuntimeChatSessionServiceTests
         Assert.DoesNotContain(
             fixture.ChatClient.Requests[2].Messages,
             static message => message.Role == ChatRole.Assistant && message.Text == "answer-1");
+    }
+
+    [Fact]
+    public async Task StartAsync_ExposesActiveSessionUntilReset()
+    {
+        var fixture = CreateDirectFixture();
+
+        await fixture.Service.StartAsync(fixture.Request);
+
+        Assert.True(fixture.Service.HasActiveSession);
+        var activeSession = Assert.IsType<ActiveChatSessionInfo>(fixture.Service.ActiveSession);
+        Assert.Equal(fixture.Request.RuntimeReference, activeSession.RuntimeReference);
+        Assert.Equal(fixture.Request.RuntimeDefaultModel, activeSession.Model);
+
+        await fixture.Service.ResetAsync();
+
+        Assert.False(fixture.Service.HasActiveSession);
+        Assert.Null(fixture.Service.ActiveSession);
+    }
+
+    [Fact]
+    public async Task AgenticChatPageDispose_DoesNotCancelOrResetActiveSession()
+    {
+        var chatService = new Mock<IChatEngineSessionService>();
+        var viewModelService = new Mock<IAgenticChatViewModelService>();
+        var page = new TestAgenticChatPage(chatService.Object, viewModelService.Object);
+
+        await page.DisposeAsync();
+
+        chatService.Verify(service => service.CancelAsync(), Times.Never);
+        chatService.Verify(service => service.ResetAsync(It.IsAny<CancellationToken>()), Times.Never);
     }
 
     [Fact]
@@ -695,6 +727,21 @@ public sealed class UnifiedAgentRuntimeChatSessionServiceTests
         UnifiedAgentRuntimeChatSessionService Service,
         ChatEngineSessionStartRequest Request,
         RecordingChatClient ChatClient);
+
+    private sealed class TestAgenticChatPage : AgenticChatPageBase
+    {
+        public TestAgenticChatPage(
+            IChatEngineSessionService chatService,
+            IAgenticChatViewModelService viewModelService)
+        {
+            ChatService = chatService;
+            ChatViewModelService = viewModelService;
+        }
+
+        protected override Task LoadAgentsAsync() => Task.CompletedTask;
+
+        protected override Task LoadUserSettingsAsync() => Task.CompletedTask;
+    }
 
     private sealed class RecordingChatClient : IChatClient
     {

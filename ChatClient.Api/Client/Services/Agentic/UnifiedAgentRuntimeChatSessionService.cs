@@ -27,6 +27,7 @@ public sealed class UnifiedAgentRuntimeChatSessionService(
         new(StringComparer.Ordinal);
     private readonly HashSet<string> _completedRuntimeMessageIds = new(StringComparer.Ordinal);
     private ChatEngineSessionStartRequest? _parameters;
+    private ActiveChatSessionInfo? _activeSession;
     private CancellationTokenSource? _cancellationTokenSource;
     private AIAgent? _directAgent;
     private AgentSession? _directSession;
@@ -54,6 +55,12 @@ public sealed class UnifiedAgentRuntimeChatSessionService(
     public bool IsAnswering { get; private set; }
 
     public bool RequiresReset { get; private set; }
+
+    public bool HasActiveSession => _activeSession is not null;
+
+    public ActiveChatSessionInfo? ActiveSession => _activeSession is null
+        ? null
+        : SnapshotActiveSession(_activeSession);
 
     public ToolApprovalRequestViewModel? PendingToolApproval { get; private set; }
 
@@ -132,6 +139,8 @@ public sealed class UnifiedAgentRuntimeChatSessionService(
                     await CreateDirectConversationAsync(request, cancellationToken);
                 }
             }
+
+            _activeSession = CreateActiveSession(_parameters);
         }
         catch
         {
@@ -333,6 +342,7 @@ public sealed class UnifiedAgentRuntimeChatSessionService(
             _chat.Reset();
             ClearRunLocalState();
             _parameters = null;
+            _activeSession = null;
             _cancellationTokenSource?.Dispose();
             _cancellationTokenSource = null;
             _activeRunCompletion = null;
@@ -1183,6 +1193,35 @@ public sealed class UnifiedAgentRuntimeChatSessionService(
     private static bool IsStandingApprovalAllowed(string toolName) =>
         !toolName.StartsWith("file_access_", StringComparison.OrdinalIgnoreCase) &&
         !string.Equals(toolName, SandboxToolNames.RunShell, StringComparison.OrdinalIgnoreCase);
+
+    private static ActiveChatSessionInfo CreateActiveSession(ChatEngineSessionStartRequest parameters) =>
+        new(
+            parameters.RuntimeReference ?? throw new InvalidOperationException("Chat session runtime reference is not configured."),
+            parameters.RuntimeDefaultModel,
+            new ReadOnlyDictionary<string, string>(new Dictionary<string, string>(
+                parameters.RuntimeInputs,
+                StringComparer.OrdinalIgnoreCase)),
+            SnapshotOverrides(parameters.Overrides));
+
+    private static ActiveChatSessionInfo SnapshotActiveSession(ActiveChatSessionInfo session) =>
+        new(
+            session.RuntimeReference,
+            session.Model,
+            new ReadOnlyDictionary<string, string>(new Dictionary<string, string>(
+                session.Inputs,
+                StringComparer.OrdinalIgnoreCase)),
+            SnapshotOverrides(session.Overrides));
+
+    private static AgentSessionOverrides SnapshotOverrides(AgentSessionOverrides overrides) =>
+        new()
+        {
+            McpServerBindings = overrides.McpServerBindings?
+                .Select(static binding => binding.Clone())
+                .ToList()
+                .AsReadOnly(),
+            WorkspacePath = overrides.WorkspacePath,
+            SandboxProfileId = overrides.SandboxProfileId
+        };
 
     private static string ResolveRuntimeDisplayName(ChatEngineSessionStartRequest request) =>
         request.Agents.FirstOrDefault()?.Agent.AgentName ??

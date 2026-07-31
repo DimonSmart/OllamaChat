@@ -173,7 +173,7 @@
     {
         <AgenticChatSession @ref="chatSessionView"
                             Messages="ChatViewModelService.Messages"
-                            Agents="ChatService.Agents"
+                            Agents="DisplayedAgents"
                             IsLlmAnswering="isLLMAnswering"
                             SessionState="ChatViewModelService.SessionState"
                             PendingToolApproval="ChatService.PendingToolApproval"
@@ -227,9 +227,20 @@
 
     private bool CanStartChat => launchValidation.CanLaunch && !isValidatingLaunch && !isStartingChat;
 
-    protected override bool CanSendMessages => selectedDefinition is not null;
+    private IReadOnlyCollection<AgentExecutionSpec> DisplayedAgents =>
+        selectedDefinition is null && ChatService.HasActiveSession
+            ? ChatService.Agents.Select(static agent =>
+            {
+                var displayAgent = agent.Clone();
+                displayAgent.AgentName = "Active session";
+                return displayAgent;
+            }).ToList()
+            : ChatService.Agents;
 
-    protected override AgentDefinitionReference? CurrentRuntimeReference => selectedDefinition?.Reference;
+    protected override bool CanSendMessages => ChatService.HasActiveSession;
+
+    protected override AgentDefinitionReference? CurrentRuntimeReference =>
+        ChatService.ActiveSession?.RuntimeReference ?? selectedDefinition?.Reference;
 
     protected override async Task LoadAgentsAsync()
     {
@@ -237,9 +248,29 @@
         sandboxProfiles = (await SandboxProfileService.GetAllAsync())
             .OrderBy(static profile => profile.Name, StringComparer.OrdinalIgnoreCase)
             .ToList();
-        var defaultItem = catalogItems.FirstOrDefault(item =>
-            string.Equals(item.Name, DefaultAgentName, StringComparison.OrdinalIgnoreCase)) ?? catalogItems.FirstOrDefault();
-        SetSelectedDefinition(defaultItem);
+        if (ChatService.ActiveSession is { } activeSession)
+        {
+            selectedDefinition = catalogItems.FirstOrDefault(item => item.Reference == activeSession.RuntimeReference);
+            if (selectedDefinition is null)
+            {
+                Logger.LogWarning(
+                    "The active chat session definition {RuntimeReference} is no longer available in the catalog.",
+                    activeSession.RuntimeReference);
+            }
+
+            RestoreActiveSession(activeSession);
+            chatStarted = true;
+            isLLMAnswering = ChatService.IsAnswering;
+            return;
+        }
+
+        SetSelectedDefinition(GetDefaultDefinition());
+        await RefreshLaunchValidationAsync();
+    }
+
+    protected override async Task OnChatResetCoreAsync()
+    {
+        SetSelectedDefinition(GetDefaultDefinition());
         await RefreshLaunchValidationAsync();
     }
 
@@ -354,6 +385,27 @@
             else if (input.DefaultValue is not null)
                 inputValues[input.Key] = input.DefaultValue;
         }
+    }
+
+    private AgentDefinitionDescriptor? GetDefaultDefinition() =>
+        catalogItems.FirstOrDefault(item =>
+            string.Equals(item.Name, DefaultAgentName, StringComparison.OrdinalIgnoreCase)) ?? catalogItems.FirstOrDefault();
+
+    private void RestoreActiveSession(ActiveChatSessionInfo activeSession)
+    {
+        inputDefinitions = selectedDefinition?.Inputs ?? [];
+        inputValues.Clear();
+        foreach (var input in activeSession.Inputs)
+        {
+            inputValues[input.Key] = input.Value;
+        }
+
+        mcpServerBindings = activeSession.Overrides.McpServerBindings?
+            .Select(static binding => binding.Clone())
+            .ToList() ?? [];
+        fileAccessWorkspace = activeSession.Overrides.WorkspacePath ?? string.Empty;
+        sandboxProfileId = activeSession.Overrides.SandboxProfileId;
+        effectiveModel = activeSession.Model;
     }
 
     private static string GetKindLabel(AgentDefinitionDescriptor item) =>
