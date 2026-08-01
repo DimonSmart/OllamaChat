@@ -150,7 +150,7 @@ public sealed class AgenticRuntimeAgentFactory(
 
         if (toolSet.HasTools)
         {
-            logger.LogInformation(
+            logger.LogDebug(
                 "Registered {ToolCount} MCP tools for agent {AgentName}: [{ToolNames}]",
                 toolSet.Tools.Count,
                 request.Agent.AgentName,
