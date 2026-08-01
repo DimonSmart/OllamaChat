@@ -34,7 +34,7 @@ public sealed class CompactionStrategyResolverTests
     [Fact]
     public async Task ResolveAsync_ReturnsNullWhenProfileIsNotSelected()
     {
-        var resolver = new CompactionStrategyResolver(new StubBudgetResolver(), new StubChatClientFactory());
+        var resolver = CreateResolver();
         Assert.Null(await resolver.ResolveAsync(null, new ServerModel(Guid.NewGuid(), "primary"), new StubChatClient()));
     }
 
@@ -43,11 +43,14 @@ public sealed class CompactionStrategyResolverTests
     {
         var separateServer = Guid.NewGuid();
         var clients = new StubChatClientFactory();
-        var resolver = new CompactionStrategyResolver(new StubBudgetResolver(), clients);
+        var resolver = CreateResolver(clients);
         var primary = new StubChatClient();
-        var context = await resolver.ResolveAsync(new CompactionProfile { Name = "Context", Kind = CompactionProfileKinds.ContextWindow }, new ServerModel(Guid.NewGuid(), "primary"), primary);
-        Assert.IsType<ContextWindowCompactionStrategy>(context!.Strategy);
+        var context = await resolver.ResolveAsync(new CompactionProfile { Name = "Context", Kind = CompactionProfileKinds.ContextWindow, ToolResultThreshold = .55, TruncationThreshold = .85 }, new ServerModel(Guid.NewGuid(), "primary"), primary);
+        var contextStrategy = Assert.IsType<ContextWindowCompactionStrategy>(context!.Strategy);
         Assert.Equal(128_000, context.Budget.ContextWindowTokens);
+        Assert.Equal(0.55, contextStrategy.ToolEvictionThreshold);
+        Assert.Equal(0.85, contextStrategy.TruncationThreshold);
+        Assert.Equal([CompactionStageKinds.ToolResult, CompactionStageKinds.Truncation], context.StageKinds);
 
         var profile = new CompactionProfile
         {
@@ -55,10 +58,10 @@ public sealed class CompactionStrategyResolverTests
             Kind = CompactionProfileKinds.CustomPipeline,
             Stages =
             [
-                new() { Kind = CompactionStageKinds.ToolResult, TriggerTokenCount = 8_000, TargetTokenCount = 4_000 },
-                new() { Kind = CompactionStageKinds.Truncation, TriggerTokenCount = 7_000, TargetTokenCount = 3_000 },
-                new() { Kind = CompactionStageKinds.Summarization, TriggerTokenCount = 6_000, TargetTokenCount = 2_000 },
-                new() { Kind = CompactionStageKinds.SlidingWindow, TriggerTokenCount = 5_000, TargetTokenCount = 1_000 }
+                CompactionStageDefaults.Create(CompactionStageKinds.ToolResult),
+                CompactionStageDefaults.Create(CompactionStageKinds.Truncation),
+                CompactionStageDefaults.Create(CompactionStageKinds.Summarization),
+                CompactionStageDefaults.Create(CompactionStageKinds.SlidingWindow)
             ]
         };
         profile.Stages[2].SummarizerLlmId = separateServer;
@@ -79,9 +82,39 @@ public sealed class CompactionStrategyResolverTests
     public async Task ResolveAsync_RejectsInvalidStageBeforeInvocation()
     {
         var clients = new StubChatClientFactory();
-        var resolver = new CompactionStrategyResolver(new StubBudgetResolver(), clients);
-        var profile = new CompactionProfile { Name = "Invalid", Kind = CompactionProfileKinds.CustomPipeline, Stages = [new() { Kind = CompactionStageKinds.Summarization, TriggerTokenCount = 1, TargetTokenCount = 1, SummarizerLlmId = Guid.NewGuid(), SummarizerModelName = "summary" }] };
+        var resolver = CreateResolver(clients);
+        var invalid = CompactionStageDefaults.Create(CompactionStageKinds.Summarization);
+        invalid.Target.Value = invalid.Trigger.Value;
+        invalid.SummarizerLlmId = Guid.NewGuid();
+        invalid.SummarizerModelName = "summary";
+        var profile = new CompactionProfile { Name = "Invalid", Kind = CompactionProfileKinds.CustomPipeline, Stages = [invalid] };
         await Assert.ThrowsAsync<InvalidOperationException>(() => resolver.ResolveAsync(profile, new ServerModel(Guid.NewGuid(), "primary"), new StubChatClient()));
+        Assert.Empty(clients.Requests);
+    }
+
+    [Fact]
+    public async Task ResolveAsync_RejectsInvalidContextWindowThresholdsBeforeInvocation()
+    {
+        var resolver = CreateResolver();
+
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(() => resolver.ResolveAsync(
+            new CompactionProfile { Name = "Invalid", Kind = CompactionProfileKinds.ContextWindow, ToolResultThreshold = .90, TruncationThreshold = .80 },
+            new ServerModel(Guid.NewGuid(), "primary"),
+            new StubChatClient()));
+
+        Assert.Contains("invalid context-window thresholds", exception.Message);
+    }
+
+    [Fact]
+    public async Task ResolveAsync_RejectsZeroInputBudgetPercentTargetBeforeInvocation()
+    {
+        var clients = new StubChatClientFactory();
+        var stage = CompactionStageDefaults.Create(CompactionStageKinds.ToolResult);
+        stage.Target.Value = 0;
+        var profile = new CompactionProfile { Name = "Invalid", Kind = CompactionProfileKinds.CustomPipeline, Stages = [stage] };
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() => CreateResolver(clients).ResolveAsync(profile, new ServerModel(Guid.NewGuid(), "primary"), new StubChatClient()));
+
         Assert.Empty(clients.Requests);
     }
 
@@ -89,18 +122,18 @@ public sealed class CompactionStrategyResolverTests
     public async Task ResolveAsync_PrevalidatesLaterInvalidStageBeforeRequestingEarlierSeparateSummarizer()
     {
         var clients = new StubChatClientFactory();
-        var resolver = new CompactionStrategyResolver(new StubBudgetResolver(), clients);
+        var resolver = CreateResolver(clients);
         var profile = CreatePipelineWithEarlierSeparateSummarizer(new()
         {
             Kind = CompactionStageKinds.Truncation,
-            TriggerTokenCount = 4_000,
-            TargetTokenCount = 4_000
+            Trigger = new CompactionLimit { Kind = CompactionLimitKinds.Tokens, Value = 4_000 },
+            Target = new CompactionLimit { Kind = CompactionLimitKinds.Tokens, Value = 4_000 }
         });
 
         var exception = await Assert.ThrowsAsync<InvalidOperationException>(() =>
             resolver.ResolveAsync(profile, new ServerModel(Guid.NewGuid(), "primary"), new StubChatClient()));
 
-        Assert.Contains("invalid token targets", exception.Message);
+        Assert.Contains("invalid limits", exception.Message);
         Assert.Empty(clients.Requests);
     }
 
@@ -108,12 +141,12 @@ public sealed class CompactionStrategyResolverTests
     public async Task ResolveAsync_PrevalidatesLaterUnknownStageBeforeRequestingEarlierSeparateSummarizer()
     {
         var clients = new StubChatClientFactory();
-        var resolver = new CompactionStrategyResolver(new StubBudgetResolver(), clients);
+        var resolver = CreateResolver(clients);
         var profile = CreatePipelineWithEarlierSeparateSummarizer(new()
         {
             Kind = "unknown",
-            TriggerTokenCount = 4_000,
-            TargetTokenCount = 2_000
+            Trigger = new CompactionLimit { Kind = CompactionLimitKinds.Tokens, Value = 4_000 },
+            Target = new CompactionLimit { Kind = CompactionLimitKinds.Tokens, Value = 2_000 }
         });
 
         var exception = await Assert.ThrowsAsync<InvalidOperationException>(() =>
@@ -127,13 +160,13 @@ public sealed class CompactionStrategyResolverTests
     public async Task ResolveAsync_UsesPrimaryClientForPrimarySummarizer()
     {
         var clients = new StubChatClientFactory();
-        var resolver = new CompactionStrategyResolver(new StubBudgetResolver(), clients);
+        var resolver = CreateResolver(clients);
         var primary = new StubChatClient();
         var profile = new CompactionProfile
         {
             Name = "Primary",
             Kind = CompactionProfileKinds.CustomPipeline,
-            Stages = [new() { Kind = CompactionStageKinds.Summarization, TriggerTokenCount = 8_000, TargetTokenCount = 4_000 }]
+            Stages = [CompactionStageDefaults.Create(CompactionStageKinds.Summarization)]
         };
 
         var resolved = await resolver.ResolveAsync(profile, new ServerModel(Guid.NewGuid(), "primary"), primary);
@@ -143,9 +176,47 @@ public sealed class CompactionStrategyResolverTests
     }
 
     [Fact]
+    public async Task PreflightAsync_ValidatesSeparateSummarizerAvailabilityBeforeClientCreation()
+    {
+        var serverId = Guid.NewGuid();
+        var clients = new StubChatClientFactory();
+        var models = new StubModelCapabilityService();
+        var resolver = CreateResolver(clients, models);
+        var stage = CompactionStageDefaults.Create(CompactionStageKinds.Summarization);
+        stage.SummarizerLlmId = serverId;
+        stage.SummarizerModelName = "summary-model";
+        var profile = new CompactionProfile { Name = "Separate", Kind = CompactionProfileKinds.CustomPipeline, Stages = [stage] };
+
+        await resolver.PreflightAsync(profile);
+
+        Assert.Equal([new ServerModel(serverId, "summary-model")], models.Requests);
+        Assert.Empty(clients.Requests);
+    }
+
+    [Fact]
+    public async Task PreflightAsync_ReportsProfileStageAndModelWhenSeparateSummarizerIsUnavailable()
+    {
+        var serverId = Guid.NewGuid();
+        var models = new StubModelCapabilityService { Failure = new InvalidOperationException("Model endpoint did not respond.") };
+        var resolver = CreateResolver(models: models);
+        var stage = CompactionStageDefaults.Create(CompactionStageKinds.Summarization);
+        stage.SummarizerLlmId = serverId;
+        stage.SummarizerModelName = "summary-model";
+        var profile = new CompactionProfile { Name = "Separate", Kind = CompactionProfileKinds.CustomPipeline, Stages = [stage] };
+
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(() => resolver.PreflightAsync(profile));
+
+        Assert.Contains("Separate", exception.Message);
+        Assert.Contains("stage 1", exception.Message);
+        Assert.Contains(serverId.ToString(), exception.Message);
+        Assert.Contains("summary-model", exception.Message);
+        Assert.Contains("Model endpoint did not respond", exception.Message);
+    }
+
+    [Fact]
     public async Task ResolvedContextWindowProfile_ReachesHarnessOptions()
     {
-        var resolver = new CompactionStrategyResolver(new StubBudgetResolver(), new StubChatClientFactory());
+        var resolver = CreateResolver();
         var resolved = await resolver.ResolveAsync(
             new CompactionProfile { Name = "Context", Kind = CompactionProfileKinds.ContextWindow },
             new ServerModel(Guid.NewGuid(), "primary"),
@@ -183,6 +254,9 @@ public sealed class CompactionStrategyResolverTests
         public Task<CompactionBudget> ResolveAsync(CompactionProfile profile, ServerModel model) => Task.FromResult(new CompactionBudget(128_000, 8_000, 120_000));
     }
 
+    private static CompactionStrategyResolver CreateResolver(StubChatClientFactory? clients = null, StubModelCapabilityService? models = null) =>
+        new(new StubBudgetResolver(), clients ?? new StubChatClientFactory(), models ?? new StubModelCapabilityService());
+
     private static CompactionProfile CreatePipelineWithEarlierSeparateSummarizer(CompactionStage laterStage)
     {
         return new CompactionProfile
@@ -194,8 +268,8 @@ public sealed class CompactionStrategyResolverTests
                 new()
                 {
                     Kind = CompactionStageKinds.Summarization,
-                    TriggerTokenCount = 8_000,
-                    TargetTokenCount = 4_000,
+                    Trigger = new CompactionLimit { Kind = CompactionLimitKinds.Tokens, Value = 8_000 },
+                    Target = new CompactionLimit { Kind = CompactionLimitKinds.Tokens, Value = 4_000 },
                     SummarizerLlmId = Guid.NewGuid(),
                     SummarizerModelName = "summary"
                 },
@@ -212,6 +286,21 @@ public sealed class CompactionStrategyResolverTests
             Requests.Add(model);
             return Task.FromResult<IChatClient>(new StubChatClient());
         }
+    }
+
+    private sealed class StubModelCapabilityService : IModelCapabilityService
+    {
+        public List<ServerModel> Requests { get; } = [];
+        public Exception? Failure { get; init; }
+
+        public Task EnsureModelSupportedByServerAsync(ServerModel model, CancellationToken cancellationToken = default)
+        {
+            Requests.Add(model);
+            return Failure is null ? Task.CompletedTask : Task.FromException(Failure);
+        }
+
+        public Task<bool> SupportsFunctionCallingAsync(ServerModel model, CancellationToken cancellationToken = default) =>
+            Task.FromResult(true);
     }
 
     private sealed class StubChatClient : IChatClient

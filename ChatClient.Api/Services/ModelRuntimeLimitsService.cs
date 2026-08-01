@@ -53,7 +53,7 @@ public sealed class ModelRuntimeLimitsService(IModelRuntimeLimitsRepository repo
             throw new ArgumentException("Server ID is required.", nameof(limits));
         if (string.IsNullOrWhiteSpace(limits.ModelName))
             throw new ArgumentException("Model name is required.", nameof(limits));
-        if (limits.ContextWindowTokens <= 0 || limits.MaxOutputTokens <= 0 || limits.MaxOutputTokens >= limits.ContextWindowTokens)
+        if (!ModelRuntimeLimitValidation.HasValidTokenBudget(limits.ContextWindowTokens, limits.MaxOutputTokens))
             throw new ArgumentException("Context window and maximum output must be positive, and maximum output must be smaller than the context window.", nameof(limits));
         if (all.Any(item => (excluded is null || item.ServerId != excluded.Value.ServerId || !string.Equals(item.ModelName, excluded.Value.ModelName, StringComparison.OrdinalIgnoreCase)) &&
                             item.ServerId == limits.ServerId && string.Equals(item.ModelName, limits.ModelName, StringComparison.OrdinalIgnoreCase)))

@@ -60,6 +60,16 @@
                             }
                         </MudStack>
                     }
+                    @if (SessionState.Compaction is { } compaction)
+                    {
+                        <MudStack Class="mt-2" Spacing="1">
+                            <MudText Typo="Typo.caption" Class="mud-text-secondary">Compaction</MudText>
+                            <MudText Typo="Typo.body2" Class="session-state-value" title="@compaction.ProfileName">@compaction.ProfileName</MudText>
+                            <MudText Typo="Typo.caption" Class="session-state-value" title="@compaction.PolicySummary">@compaction.PolicySummary</MudText>
+                            <MudText Typo="Typo.caption" Class="mud-text-secondary">Input budget</MudText>
+                            <MudText Typo="Typo.body2">@compaction.InputBudgetTokens.ToString("N0") tokens</MudText>
+                        </MudStack>
+                    }
                     @if (SessionState.HasTodoProvider)
                     {
                         var completed = SessionState.Todos.Count(todo => todo.IsComplete);

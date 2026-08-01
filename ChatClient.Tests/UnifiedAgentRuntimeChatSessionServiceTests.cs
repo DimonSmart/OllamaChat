@@ -301,6 +301,22 @@ public sealed class UnifiedAgentRuntimeChatSessionServiceTests
     }
 
     [Fact]
+    public async Task GetSessionStateAsync_ProjectsResolvedCompactionWithoutRuntimeStrategy()
+    {
+        var fixture = CreateDirectFixture();
+        await fixture.Service.StartAsync(fixture.Request);
+        typeof(UnifiedAgentRuntimeChatSessionService)
+            .GetField("_directCompaction", BindingFlags.Instance | BindingFlags.NonPublic)!
+            .SetValue(fixture.Service, new AgentSessionCompactionViewModel("Balanced", 120_000, "Context window: tool results 50%, history 80%"));
+
+        var state = await fixture.Service.GetSessionStateAsync();
+
+        Assert.NotNull(state);
+        Assert.Equal("Balanced", state.Compaction!.ProfileName);
+        Assert.Equal(120_000, state.Compaction.InputBudgetTokens);
+    }
+
+    [Fact]
     public async Task SendAsync_ProjectsParticipantStreamsByRuntimeMessageId()
     {
         var runner = new StubAgentRunner([

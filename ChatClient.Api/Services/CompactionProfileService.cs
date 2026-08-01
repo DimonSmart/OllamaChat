@@ -73,27 +73,46 @@ public sealed class CompactionProfileService(
             throw new ArgumentException("Compaction profile kind is invalid.", nameof(profile));
         if (profile.BudgetSource is not (CompactionBudgetSources.SelectedModel or CompactionBudgetSources.Fixed))
             throw new ArgumentException("Compaction budget source is invalid.", nameof(profile));
-        if (profile.BudgetSource == CompactionBudgetSources.Fixed && (profile.ContextWindowTokens is null || profile.MaxOutputTokens is null))
-            throw new ArgumentException("Fixed budgets require context-window and maximum-output limits.", nameof(profile));
-        if (profile.ContextWindowTokens is int context && context <= 0 || profile.MaxOutputTokens is int output && output <= 0 || profile.ContextWindowTokens is int window && profile.MaxOutputTokens is int maxOutput && maxOutput >= window)
-            throw new ArgumentException("Compaction limits must be positive and maximum output must be smaller than the context window.", nameof(profile));
+        if (profile.BudgetSource == CompactionBudgetSources.Fixed &&
+            !ModelRuntimeLimitValidation.HasValidTokenBudget(profile.ContextWindowTokens, profile.MaxOutputTokens))
+            throw new ArgumentException("Fixed compaction budgets require positive limits and maximum output smaller than the context window.", nameof(profile));
         if (profile.Kind == CompactionProfileKinds.ContextWindow && profile.Stages.Count != 0)
             throw new ArgumentException("Context-window profiles cannot define custom stages.", nameof(profile));
+        if (profile.Kind == CompactionProfileKinds.ContextWindow &&
+            !HasValidContextWindowThresholds(profile.ToolResultThreshold, profile.TruncationThreshold))
+            throw new ArgumentException("Context-window thresholds must be greater than zero, at most one, and history truncation must not precede tool-result compaction.", nameof(profile));
         if (profile.Kind == CompactionProfileKinds.CustomPipeline && profile.Stages.Count == 0)
             throw new ArgumentException("Custom-pipeline profiles require at least one stage.", nameof(profile));
         foreach (var stage in profile.Stages)
             NormalizeAndValidateStage(stage);
     }
 
+    private static bool HasValidContextWindowThresholds(double toolResultThreshold, double truncationThreshold) =>
+        toolResultThreshold is > 0 and <= 1 &&
+        truncationThreshold is > 0 and <= 1 &&
+        truncationThreshold >= toolResultThreshold;
+
     private static void NormalizeAndValidateStage(CompactionStage stage)
     {
         stage.Kind = stage.Kind?.Trim().ToLowerInvariant() ?? string.Empty;
+        stage.Trigger ??= new CompactionLimit();
+        stage.Target ??= new CompactionLimit();
+        stage.Trigger.Kind = stage.Trigger.Kind?.Trim().ToLowerInvariant() ?? string.Empty;
+        stage.Target.Kind = stage.Target.Kind?.Trim().ToLowerInvariant() ?? string.Empty;
         stage.SummaryInstructions = NormalizeOptionalText(stage.SummaryInstructions);
         stage.SummarizerModelName = NormalizeOptionalText(stage.SummarizerModelName);
         if (stage.Kind is not (CompactionStageKinds.ToolResult or CompactionStageKinds.Truncation or CompactionStageKinds.Summarization or CompactionStageKinds.SlidingWindow))
             throw new ArgumentException("Compaction stage kind is invalid.", nameof(stage));
-        if (stage.TriggerTokenCount <= 0 || stage.TargetTokenCount <= 0 || stage.TargetTokenCount >= stage.TriggerTokenCount)
-            throw new ArgumentException("Compaction stage token limits must be positive and the target must be smaller than the trigger.", nameof(stage));
+        if (stage.Trigger.Kind != stage.Target.Kind || !IsSupportedLimitKind(stage.Kind, stage.Trigger.Kind))
+            throw new ArgumentException("Compaction stage trigger and target must use the same supported limit kind.", nameof(stage));
+        if (!HasValidLimitValue(stage.Trigger) || !HasValidLimitValue(stage.Target) || stage.Target.Value >= stage.Trigger.Value)
+            throw new ArgumentException("Compaction stage limits must be ordered nonnegative values with a trigger greater than its target.", nameof(stage));
+        if (stage.MinimumPreservedGroups < 0 || stage.MinimumPreservedTurns < 0)
+            throw new ArgumentException("Compaction stage preserved history settings cannot be negative.", nameof(stage));
+        if (stage.Kind == CompactionStageKinds.SlidingWindow)
+            stage.MinimumPreservedGroups = 0;
+        else
+            stage.MinimumPreservedTurns = 0;
         if (stage.Kind == CompactionStageKinds.Summarization)
         {
             var hasSummarizerServer = stage.SummarizerLlmId is Guid summarizerLlmId && summarizerLlmId != Guid.Empty;
@@ -103,9 +122,26 @@ public sealed class CompactionProfileService(
             if (stage.SummarizerLlmId == Guid.Empty)
                 throw new ArgumentException("A summarizer model ID cannot be empty.", nameof(stage));
         }
-        if (stage.Kind != CompactionStageKinds.Summarization && (stage.SummaryInstructions is not null || stage.SummarizerLlmId is not null || stage.SummarizerModelName is not null))
-            throw new ArgumentException("Only summarization stages can configure a summarizer.", nameof(stage));
+        if (stage.Kind != CompactionStageKinds.Summarization)
+        {
+            stage.SummaryInstructions = null;
+            stage.SummarizerLlmId = null;
+            stage.SummarizerModelName = null;
+        }
     }
+
+    private static bool IsSupportedLimitKind(string stageKind, string limitKind) => stageKind switch
+    {
+        CompactionStageKinds.SlidingWindow => limitKind == CompactionLimitKinds.Turns,
+        CompactionStageKinds.ToolResult or CompactionStageKinds.Truncation or CompactionStageKinds.Summarization =>
+            limitKind is CompactionLimitKinds.InputBudgetPercent or CompactionLimitKinds.Tokens or CompactionLimitKinds.Messages or CompactionLimitKinds.Groups,
+        _ => false
+    };
+
+    private static bool HasValidLimitValue(CompactionLimit limit) =>
+        double.IsFinite(limit.Value) &&
+        (limit.Kind == CompactionLimitKinds.InputBudgetPercent ? limit.Value is > 0 and <= 1 : limit.Value >= 0) &&
+        (limit.Kind == CompactionLimitKinds.InputBudgetPercent || limit.Value == Math.Truncate(limit.Value));
 
     private static string? NormalizeOptionalText(string? value) => string.IsNullOrWhiteSpace(value) ? null : value.Trim();
 }

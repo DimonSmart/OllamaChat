@@ -10,7 +10,13 @@ public sealed record AgentSessionStateViewModel(
     bool HasAgentModeProvider,
     IReadOnlyList<AgentSessionTodoItemViewModel> Todos,
     AgentSessionFileAccessViewModel? FileAccess = null,
-    AgentSessionSandboxViewModel? Sandbox = null);
+    AgentSessionSandboxViewModel? Sandbox = null,
+    AgentSessionCompactionViewModel? Compaction = null);
+
+public sealed record AgentSessionCompactionViewModel(
+    string ProfileName,
+    int InputBudgetTokens,
+    string PolicySummary);
 
 public sealed record AgentSessionTodoItemViewModel(
     int Id,

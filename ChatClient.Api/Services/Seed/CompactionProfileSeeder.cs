@@ -8,16 +8,14 @@ public sealed class CompactionProfileSeeder(ICompactionProfileRepository reposit
     public static readonly Guid BalancedProfileId = Guid.Parse("cba898a8-922b-43fc-9340-34e271918418");
     public const string BalancedProfileName = "Balanced";
 
-    public Task SeedAsync() => RestoreAsync(overwriteExisting: false);
+    public Task SeedAsync() => RestoreAsync(overwriteExisting: true);
 
     public Task RestoreAsync() => RestoreAsync(overwriteExisting: true);
 
     private async Task RestoreAsync(bool overwriteExisting)
     {
         var profiles = (await repository.GetAllAsync()).ToList();
-        var index = profiles.FindIndex(profile =>
-            profile.Id == BalancedProfileId ||
-            string.Equals(profile.Name, BalancedProfileName, StringComparison.OrdinalIgnoreCase));
+        var index = profiles.FindIndex(profile => profile.Id == BalancedProfileId);
         var balanced = CreateBalancedProfile();
 
         if (index < 0)
@@ -43,9 +41,9 @@ public sealed class CompactionProfileSeeder(ICompactionProfileRepository reposit
             Id = BalancedProfileId,
             Name = BalancedProfileName,
             Kind = CompactionProfileKinds.ContextWindow,
-            BudgetSource = CompactionBudgetSources.Fixed,
-            ContextWindowTokens = 128_000,
-            MaxOutputTokens = 8_000,
+            BudgetSource = CompactionBudgetSources.SelectedModel,
+            ToolResultThreshold = .50,
+            TruncationThreshold = .80,
             CreatedAt = now,
             UpdatedAt = now
         };

@@ -23,7 +23,8 @@ internal sealed record HarnessAgentRuntimeDefinition(
     bool SupportsFunctionCalling,
     IReadOnlyList<string> AvailableModes,
     SessionWorkspaceAgentFileStore? FileAccessStore,
-    FileAccessProviderProfile? FileAccessProfile);
+    FileAccessProviderProfile? FileAccessProfile,
+    AgentSessionCompactionViewModel? Compaction);
 
 public sealed class AgenticRuntimeAgentFactory(
     ILlmServerConfigService llmServerConfigService,
@@ -64,21 +65,27 @@ public sealed class AgenticRuntimeAgentFactory(
         }
         ValidateTodoCompletionConfiguration(request.Agent, todoProfile, agentModeProfile);
 
-        var chatClient = await llmChatClientFactory.CreateAsync(request.ResolvedModel, cancellationToken);
         var compactionProfile = await GetCompactionProfileAsync(request.Agent.CompactionProfileId);
         if (request.Agent.CompactionProfileId is Guid compactionProfileId && compactionProfileId != Guid.Empty && compactionProfile is null)
         {
             throw new InvalidOperationException($"Selected compaction profile '{compactionProfileId}' was not found.");
         }
+        if (compactionProfile is not null)
+        {
+            await (compactionStrategyResolver ?? throw new InvalidOperationException("Compaction strategy resolver is not configured."))
+                .PreflightAsync(compactionProfile, cancellationToken);
+        }
+        var chatClient = await llmChatClientFactory.CreateAsync(request.ResolvedModel, cancellationToken);
         var compaction = compactionProfile is null
             ? null
             : await (compactionStrategyResolver ?? throw new InvalidOperationException("Compaction strategy resolver is not configured."))
                 .ResolveAsync(compactionProfile, request.ResolvedModel, chatClient, cancellationToken);
         if (compaction is not null)
         {
-            logger.LogInformation("Applying compaction profile {ProfileName}: context={ContextWindowTokens}, output={MaxOutputTokens}, input={InputBudgetTokens}, stages=[{StageKinds}]",
+            logger.LogInformation("Resolved compaction policy for profile {ProfileName}: context={ContextWindowTokens}, output={MaxOutputTokens}, input={InputBudgetTokens}, policy={PolicySummary}, thresholds={AbsoluteThresholds}",
                 compactionProfile!.Name, compaction.Budget.ContextWindowTokens, compaction.Budget.MaxOutputTokens,
-                compaction.Budget.InputBudgetTokens, string.Join(", ", compaction.StageKinds));
+                compaction.Budget.InputBudgetTokens, CompactionPolicySummary.FormatPolicy(compactionProfile),
+                CompactionPolicySummary.FormatAbsoluteThresholds(compactionProfile, compaction.Budget));
         }
         bool supportsFunctions = await modelCapabilityService.SupportsFunctionCallingAsync(
             request.ResolvedModel,
@@ -212,7 +219,13 @@ public sealed class AgenticRuntimeAgentFactory(
             server,
             toolSet,
             supportsFunctions,
-            GetEffectiveModeNames(agentModeProfile), workspaceStore, fileAccessProfile);
+            GetEffectiveModeNames(agentModeProfile),
+            workspaceStore,
+            fileAccessProfile,
+            compaction is null ? null : new AgentSessionCompactionViewModel(
+                compactionProfile!.Name,
+                compaction.Budget.InputBudgetTokens,
+                CompactionPolicySummary.FormatPolicy(compactionProfile)));
     }
 
     private static AIAgent CreateRuntimeAgent(

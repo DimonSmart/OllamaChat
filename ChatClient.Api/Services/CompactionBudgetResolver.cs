@@ -22,7 +22,7 @@ public sealed class CompactionBudgetResolver(IModelRuntimeLimitsService runtimeL
             _ => throw new InvalidOperationException($"Compaction profile '{profile.Name}' has an invalid budget source.")
         };
 
-        if (limits.ContextWindowTokens <= 0 || limits.MaxOutputTokens <= 0 || limits.MaxOutputTokens >= limits.ContextWindowTokens)
+        if (!ModelRuntimeLimitValidation.HasValidTokenBudget(limits.ContextWindowTokens, limits.MaxOutputTokens))
             throw new InvalidOperationException($"Compaction profile '{profile.Name}' has invalid limits for model '{model.ModelName}' on server {model.ServerId}. Context window must exceed maximum output.");
 
         return new CompactionBudget(limits.ContextWindowTokens, limits.MaxOutputTokens, limits.ContextWindowTokens - limits.MaxOutputTokens);

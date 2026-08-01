@@ -28,11 +28,15 @@ public sealed class CompactionProfileServiceTests
             Assert.Equal([CompactionStageKinds.ToolResult, CompactionStageKinds.Truncation, CompactionStageKinds.Summarization, CompactionStageKinds.SlidingWindow], profile.Stages.Select(stage => stage.Kind));
 
             profile.Name = "Research updated";
+            profile.Stages[0].Kind = CompactionStageKinds.Truncation;
+            profile.Stages.Reverse();
+            var expectedStageIds = profile.Stages.Select(stage => stage.Id).ToArray();
             await service.UpdateAsync(profile);
             var persisted = Assert.Single(await service.GetAllAsync());
             Assert.Equal(createdAt, persisted.CreatedAt);
             Assert.True(persisted.UpdatedAt >= createdAt);
             Assert.Equal(profile.Stages.Select(stage => stage.Kind), persisted.Stages.Select(stage => stage.Kind));
+            Assert.Equal(expectedStageIds, persisted.Stages.Select(stage => stage.Id));
 
             await service.DeleteAsync(profile.Id);
             Assert.Empty(await service.GetAllAsync());
@@ -58,13 +62,23 @@ public sealed class CompactionProfileServiceTests
             }));
             await Assert.ThrowsAsync<ArgumentException>(() => service.CreateAsync(new CompactionProfile
             {
+                Name = "Invalid thresholds",
+                ToolResultThreshold = .81,
+                TruncationThreshold = .80
+            }));
+            await Assert.ThrowsAsync<ArgumentException>(() => service.CreateAsync(new CompactionProfile
+            {
                 Name = "Pipeline",
                 Kind = CompactionProfileKinds.CustomPipeline,
-                Stages = [new CompactionStage { Kind = "unknown", TriggerTokenCount = 100, TargetTokenCount = 50 }]
+                Stages = [new CompactionStage { Kind = "unknown", Trigger = new CompactionLimit { Kind = CompactionLimitKinds.Tokens, Value = 100 }, Target = new CompactionLimit { Kind = CompactionLimitKinds.Tokens, Value = 50 } }]
             }));
 
             await service.CreateAsync(CreatePipelineProfile("Unique"));
             await Assert.ThrowsAsync<ArgumentException>(() => service.CreateAsync(CreatePipelineProfile("unique")));
+
+            var zeroTarget = CreatePipelineProfile("Zero target");
+            zeroTarget.Stages[0].Target.Value = 0;
+            await Assert.ThrowsAsync<ArgumentException>(() => service.CreateAsync(zeroTarget));
         }
         finally { root.Delete(recursive: true); }
     }
@@ -115,6 +129,35 @@ public sealed class CompactionProfileServiceTests
     }
 
     [Fact]
+    public async Task SeedAsync_UpdatesBalancedByStableIdWithoutOverwritingUserProfiles()
+    {
+        var root = CreateRoot();
+        try
+        {
+            var repository = CreateProfileRepository(root.FullName);
+            var seeder = new CompactionProfileSeeder(repository);
+            var userProfile = new CompactionProfile { Name = "My balanced profile" };
+            var outdatedBalanced = CompactionProfileSeeder.CreateBalancedProfile();
+            outdatedBalanced.BudgetSource = CompactionBudgetSources.Fixed;
+            outdatedBalanced.ContextWindowTokens = 128_000;
+            outdatedBalanced.MaxOutputTokens = 8_000;
+            await repository.SaveAllAsync([userProfile, outdatedBalanced]);
+
+            await seeder.SeedAsync();
+
+            var profiles = await repository.GetAllAsync();
+            var balanced = Assert.Single(profiles, profile => profile.Id == CompactionProfileSeeder.BalancedProfileId);
+            Assert.Equal(CompactionBudgetSources.SelectedModel, balanced.BudgetSource);
+            Assert.Null(balanced.ContextWindowTokens);
+            Assert.Null(balanced.MaxOutputTokens);
+            Assert.Equal(.50, balanced.ToolResultThreshold);
+            Assert.Equal(.80, balanced.TruncationThreshold);
+            Assert.Equal(userProfile.Id, Assert.Single(profiles, profile => profile.Id == userProfile.Id).Id);
+        }
+        finally { root.Delete(recursive: true); }
+    }
+
+    [Fact]
     public async Task CreateAsync_RejectsPartialSummarizerSelection_AndPreservesPrimaryAndSeparateModes()
     {
         var root = CreateRoot();
@@ -150,6 +193,161 @@ public sealed class CompactionProfileServiceTests
         finally { root.Delete(recursive: true); }
     }
 
+    [Fact]
+    public async Task CreateAsync_NormalizesFieldsThatDoNotApplyToTheSelectedStageKind()
+    {
+        var root = CreateRoot();
+        try
+        {
+            var service = CreateService(root.FullName);
+            var profile = CreatePipelineProfile("Normalize stage fields");
+            var nonSummarizationStages = new[] { profile.Stages[0], profile.Stages[1], profile.Stages[3] };
+            foreach (var stage in nonSummarizationStages)
+            {
+                stage.SummaryInstructions = "Ignore this";
+                stage.SummarizerLlmId = Guid.NewGuid();
+                stage.SummarizerModelName = "summary-model";
+            }
+
+            var toolResult = profile.Stages[0];
+            toolResult.MinimumPreservedTurns = 5;
+            var slidingWindow = profile.Stages[3];
+            slidingWindow.MinimumPreservedGroups = 5;
+
+            await service.CreateAsync(profile);
+
+            Assert.Equal(0, toolResult.MinimumPreservedTurns);
+            Assert.All(nonSummarizationStages, stage =>
+            {
+                Assert.Null(stage.SummaryInstructions);
+                Assert.Null(stage.SummarizerLlmId);
+                Assert.Null(stage.SummarizerModelName);
+            });
+            Assert.Equal(0, slidingWindow.MinimumPreservedGroups);
+        }
+        finally { root.Delete(recursive: true); }
+    }
+
+    [Fact]
+    public async Task GetAllAsync_MigratesLegacyTokenStagesAndResavesModernLimits()
+    {
+        var root = CreateRoot();
+        try
+        {
+            var path = Path.Combine(root.FullName, "UserData", "compaction_profiles.json");
+            Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+            await File.WriteAllTextAsync(path, "[{\"Name\":\"Legacy\",\"Kind\":\"custom-pipeline\",\"Stages\":[{\"Kind\":\"tool-result\",\"TriggerTokenCount\":8000,\"TargetTokenCount\":4000}]}]");
+
+            var profile = Assert.Single(await CreateProfileRepository(root.FullName).GetAllAsync());
+            var stage = Assert.Single(profile.Stages);
+            Assert.Equal(CompactionLimitKinds.Tokens, stage.Trigger.Kind);
+            Assert.Equal(8_000, stage.Trigger.Value);
+            Assert.Equal(4_000, stage.Target.Value);
+
+            var resaved = await File.ReadAllTextAsync(path);
+            Assert.DoesNotContain("TriggerTokenCount", resaved);
+            Assert.Contains("\"Trigger\"", resaved);
+        }
+        finally { root.Delete(recursive: true); }
+    }
+
+    [Fact]
+    public void CompactionStageDefaults_UseRecommendedLimitsAndRetainedItems()
+    {
+        var toolResult = CompactionStageDefaults.Create(CompactionStageKinds.ToolResult);
+        var summarization = CompactionStageDefaults.Create(CompactionStageKinds.Summarization);
+        var truncation = CompactionStageDefaults.Create(CompactionStageKinds.Truncation);
+        var slidingWindow = CompactionStageDefaults.Create(CompactionStageKinds.SlidingWindow);
+
+        Assert.Equal((CompactionLimitKinds.InputBudgetPercent, .45d, .35d, 8, 0), (toolResult.Trigger.Kind, toolResult.Trigger.Value, toolResult.Target.Value, toolResult.MinimumPreservedGroups, toolResult.MinimumPreservedTurns));
+        Assert.Equal((CompactionLimitKinds.InputBudgetPercent, .65d, .50d, 8, 0), (summarization.Trigger.Kind, summarization.Trigger.Value, summarization.Target.Value, summarization.MinimumPreservedGroups, summarization.MinimumPreservedTurns));
+        Assert.Equal((CompactionLimitKinds.InputBudgetPercent, .80d, .70d, 4, 0), (truncation.Trigger.Kind, truncation.Trigger.Value, truncation.Target.Value, truncation.MinimumPreservedGroups, truncation.MinimumPreservedTurns));
+        Assert.Equal((CompactionLimitKinds.Turns, 20d, 12d, 0, 8), (slidingWindow.Trigger.Kind, slidingWindow.Trigger.Value, slidingWindow.Target.Value, slidingWindow.MinimumPreservedGroups, slidingWindow.MinimumPreservedTurns));
+        Assert.NotEqual(Guid.Empty, toolResult.Id);
+    }
+
+    [Fact]
+    public async Task GetAllAsync_NormalizesMissingAndDuplicateStageIds()
+    {
+        var root = CreateRoot();
+        try
+        {
+            var stageId = Guid.NewGuid();
+            var path = Path.Combine(root.FullName, "UserData", "compaction_profiles.json");
+            Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+            var legacy = new CompactionProfile
+            {
+                Name = "Identity",
+                Kind = CompactionProfileKinds.CustomPipeline,
+                Stages =
+                [
+                    CompactionStageDefaults.Create(CompactionStageKinds.ToolResult),
+                    CompactionStageDefaults.Create(CompactionStageKinds.Truncation),
+                    CompactionStageDefaults.Create(CompactionStageKinds.Summarization)
+                ]
+            };
+            legacy.Stages[0].Id = stageId;
+            legacy.Stages[1].Id = stageId;
+            legacy.Stages[2].Id = Guid.Empty;
+            await File.WriteAllTextAsync(path, JsonSerializer.Serialize(new[] { legacy }));
+
+            var profile = Assert.Single(await CreateProfileRepository(root.FullName).GetAllAsync());
+            Assert.Equal(3, profile.Stages.Select(stage => stage.Id).Distinct().Count());
+            Assert.All(profile.Stages, stage => Assert.NotEqual(Guid.Empty, stage.Id));
+
+            var resaved = await File.ReadAllTextAsync(path);
+            Assert.Equal(4, System.Text.RegularExpressions.Regex.Matches(resaved, "\\\"Id\\\"").Count);
+        }
+        finally { root.Delete(recursive: true); }
+    }
+
+    [Fact]
+    public async Task GetAllAsync_MigratesLegacyPercentLimitsAndRetainedCount()
+    {
+        var root = CreateRoot();
+        try
+        {
+            var path = Path.Combine(root.FullName, "UserData", "compaction_profiles.json");
+            Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+            await File.WriteAllTextAsync(path, """
+                [{"Name":"Legacy","Kind":"custom-pipeline","Stages":[
+                  {"Kind":"tool-result","Trigger":{"Kind":"input-budget-percentage","Value":45},"Target":{"Kind":"input-budget-percentage","Value":35},"RetainedCount":8},
+                  {"Kind":"sliding-window","Trigger":{"Kind":"turns","Value":20},"Target":{"Kind":"turns","Value":12},"RetainedCount":6}
+                ]}]
+                """);
+
+            var stages = Assert.Single(await CreateProfileRepository(root.FullName).GetAllAsync()).Stages;
+
+            Assert.Equal((CompactionLimitKinds.InputBudgetPercent, .45d, .35d, 8, 0), (stages[0].Trigger.Kind, stages[0].Trigger.Value, stages[0].Target.Value, stages[0].MinimumPreservedGroups, stages[0].MinimumPreservedTurns));
+            Assert.Equal((CompactionLimitKinds.Turns, 20d, 12d, 0, 6), (stages[1].Trigger.Kind, stages[1].Trigger.Value, stages[1].Target.Value, stages[1].MinimumPreservedGroups, stages[1].MinimumPreservedTurns));
+            var resaved = await File.ReadAllTextAsync(path);
+            Assert.DoesNotContain("RetainedCount", resaved);
+            Assert.DoesNotContain("input-budget-percentage", resaved);
+        }
+        finally { root.Delete(recursive: true); }
+    }
+
+    [Fact]
+    public async Task GetAllAsync_MigratesLegacyContextWindowPercentagesToFractionalThresholds()
+    {
+        var root = CreateRoot();
+        try
+        {
+            var path = Path.Combine(root.FullName, "UserData", "compaction_profiles.json");
+            Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+            await File.WriteAllTextAsync(path, "[{\"Name\":\"Legacy\",\"ToolResultThresholdPercentage\":50,\"TruncationThresholdPercentage\":80}]");
+
+            var profile = Assert.Single(await CreateProfileRepository(root.FullName).GetAllAsync());
+
+            Assert.Equal(.50, profile.ToolResultThreshold);
+            Assert.Equal(.80, profile.TruncationThreshold);
+            var resaved = await File.ReadAllTextAsync(path);
+            Assert.DoesNotContain("ThresholdPercentage", resaved);
+            Assert.Contains("ToolResultThreshold", resaved);
+        }
+        finally { root.Delete(recursive: true); }
+    }
+
     private static CompactionProfile CreatePipelineProfile(string name) => new()
     {
         Name = name,
@@ -157,10 +355,10 @@ public sealed class CompactionProfileServiceTests
         BudgetSource = CompactionBudgetSources.SelectedModel,
         Stages =
         [
-            new() { Kind = CompactionStageKinds.ToolResult, TriggerTokenCount = 8_000, TargetTokenCount = 4_000 },
-            new() { Kind = CompactionStageKinds.Truncation, TriggerTokenCount = 6_000, TargetTokenCount = 3_000 },
-            new() { Kind = CompactionStageKinds.Summarization, TriggerTokenCount = 4_000, TargetTokenCount = 2_000 },
-            new() { Kind = CompactionStageKinds.SlidingWindow, TriggerTokenCount = 2_000, TargetTokenCount = 1_000 }
+            CompactionStageDefaults.Create(CompactionStageKinds.ToolResult),
+            CompactionStageDefaults.Create(CompactionStageKinds.Truncation),
+            CompactionStageDefaults.Create(CompactionStageKinds.Summarization),
+            CompactionStageDefaults.Create(CompactionStageKinds.SlidingWindow)
         ]
     };
 

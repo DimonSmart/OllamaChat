@@ -208,7 +208,7 @@
         catch (Exception ex) { Snackbar.Add($"Could not save runtime limits: {ex.Message}", Severity.Error); }
     }
 
-    private bool ValidLimits() => limitsModel.ContextWindowTokens > 0 && limitsModel.MaxOutputTokens > 0 && limitsModel.MaxOutputTokens < limitsModel.ContextWindowTokens;
+    private bool ValidLimits() => ModelRuntimeLimitValidation.HasValidTokenBudget(limitsModel.ContextWindowTokens, limitsModel.MaxOutputTokens);
     private void ConfirmDeleteLimits(ModelRuntimeLimits limits) { limitsToDelete = limits; deletingLimits = true; }
     private async Task DeleteLimits()
     {

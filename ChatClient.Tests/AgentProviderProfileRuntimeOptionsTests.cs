@@ -131,16 +131,19 @@ public class AgentProviderProfileRuntimeOptionsTests
         var todoProfileId = Guid.NewGuid();
         var modeProfileId = Guid.NewGuid();
         var fileAccessProfileId = Guid.NewGuid();
+        var compactionProfileId = Guid.NewGuid();
         var spec = AgentExecutionSpecFactory.FromTemplate(new AgentTemplateDefinition
         {
             TodoProviderProfileId = todoProfileId,
             AgentModeProviderProfileId = modeProfileId,
-            FileAccessProviderProfileId = fileAccessProfileId
+            FileAccessProviderProfileId = fileAccessProfileId,
+            CompactionProfileId = compactionProfileId
         });
 
         Assert.Equal(todoProfileId, spec.TodoProviderProfileId);
         Assert.Equal(modeProfileId, spec.AgentModeProviderProfileId);
         Assert.Equal(fileAccessProfileId, spec.FileAccessProviderProfileId);
+        Assert.Equal(compactionProfileId, spec.CompactionProfileId);
     }
 
     [Fact]
@@ -149,17 +152,20 @@ public class AgentProviderProfileRuntimeOptionsTests
         var todoProfileId = Guid.NewGuid();
         var modeProfileId = Guid.NewGuid();
         var fileAccessProfileId = Guid.NewGuid();
+        var compactionProfileId = Guid.NewGuid();
 
         var clone = new AgentTemplateDefinition
         {
             TodoProviderProfileId = todoProfileId,
             AgentModeProviderProfileId = modeProfileId,
-            FileAccessProviderProfileId = fileAccessProfileId
+            FileAccessProviderProfileId = fileAccessProfileId,
+            CompactionProfileId = compactionProfileId
         }.Clone();
 
         Assert.Equal(todoProfileId, clone.TodoProviderProfileId);
         Assert.Equal(modeProfileId, clone.AgentModeProviderProfileId);
         Assert.Equal(fileAccessProfileId, clone.FileAccessProviderProfileId);
+        Assert.Equal(compactionProfileId, clone.CompactionProfileId);
     }
 
     [Fact]

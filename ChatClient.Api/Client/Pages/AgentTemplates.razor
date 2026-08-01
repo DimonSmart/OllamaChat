@@ -16,6 +16,7 @@
 @inject ITodoProviderProfileService TodoProviderProfileService
 @inject IAgentModeProviderProfileService AgentModeProviderProfileService
 @inject IFileAccessProviderProfileService FileAccessProviderProfileService
+@inject ICompactionProfileService CompactionProfileService
 
 <PageTitle>Agent Templates</PageTitle>
 
@@ -286,6 +287,17 @@
                     <MudSelectItem T="Guid?" Value="@((Guid?)profile.Id)">@profile.Name</MudSelectItem>
                 }
             </MudSelect>
+            <MudSelect T="Guid?" @bind-Value="editingAgent.CompactionProfileId" Label="Compaction profile" Dense="true" Margin="Margin.Dense" Class="mt-2">
+                <MudSelectItem T="Guid?" Value="@((Guid?)null)">None</MudSelectItem>
+                @foreach (var profile in compactionProfiles)
+                {
+                    <MudSelectItem T="Guid?" Value="@((Guid?)profile.Id)">@($"{profile.Name} — {CompactionProfilePresentation.FormatPolicy(profile)}")</MudSelectItem>
+                }
+            </MudSelect>
+            @if (HasUnavailableCompactionProfile())
+            {
+                <MudAlert Severity="Severity.Warning" Dense="true" Class="mt-2">The selected compaction profile is unavailable. Choose another profile or None before saving.</MudAlert>
+            }
             <MudCheckBox T="bool"
                          @bind-Value="editingAgent.EnableShell"
                          Label="Enable shell in sandbox"
@@ -354,6 +366,7 @@
     private List<TodoProviderProfile> todoProviderProfiles = new();
     private List<AgentModeProviderProfile> agentModeProviderProfiles = new();
     private List<FileAccessProviderProfile> fileAccessProviderProfiles = new();
+    private List<CompactionProfile> compactionProfiles = new();
     private DialogOptions dialogOptions = new()
     {
         CloseOnEscapeKey = true,
@@ -381,6 +394,9 @@
             .OrderBy(profile => profile.Name, StringComparer.OrdinalIgnoreCase)
             .ToList();
         fileAccessProviderProfiles = (await FileAccessProviderProfileService.GetAllAsync())
+            .OrderBy(profile => profile.Name, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+        compactionProfiles = (await CompactionProfileService.GetAllAsync())
             .OrderBy(profile => profile.Name, StringComparer.OrdinalIgnoreCase)
             .ToList();
     }
@@ -436,6 +452,7 @@
             TodoProviderProfileId = null,
             AgentModeProviderProfileId = null,
             FileAccessProviderProfileId = null,
+            CompactionProfileId = null,
             EnableShell = false,
             ContinueUntilTodosComplete = false,
             MaxTodoCompletionIterations = 10,
@@ -492,6 +509,7 @@
             TodoProviderProfileId = agent.TodoProviderProfileId,
             AgentModeProviderProfileId = agent.AgentModeProviderProfileId,
             FileAccessProviderProfileId = agent.FileAccessProviderProfileId,
+            CompactionProfileId = agent.CompactionProfileId,
             EnableShell = agent.EnableShell,
             ContinueUntilTodosComplete = agent.ContinueUntilTodosComplete,
             MaxTodoCompletionIterations = agent.MaxTodoCompletionIterations,
@@ -620,6 +638,12 @@
         return editingAgent.MaxTodoCompletionIterations is < 1 or > 100
             ? "Maximum autonomous iterations must be between 1 and 100."
             : null;
+    }
+
+    private bool HasUnavailableCompactionProfile()
+    {
+        return editingAgent.CompactionProfileId is Guid profileId &&
+               compactionProfiles.All(profile => profile.Id != profileId);
     }
 
     private bool HasConfiguredMcpBindings(AgentTemplateDefinition agent)

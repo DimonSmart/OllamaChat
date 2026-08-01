@@ -10,4 +10,14 @@ public sealed class ModelRuntimeLimits
     public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
 }
 
+public static class ModelRuntimeLimitValidation
+{
+    public static bool HasValidTokenBudget(int contextWindowTokens, int maxOutputTokens) =>
+        contextWindowTokens > 0 && maxOutputTokens > 0 && maxOutputTokens < contextWindowTokens;
+
+    public static bool HasValidTokenBudget(int? contextWindowTokens, int? maxOutputTokens) =>
+        contextWindowTokens is int context && maxOutputTokens is int output &&
+        HasValidTokenBudget(context, output);
+}
+
 public sealed record CompactionBudget(int ContextWindowTokens, int MaxOutputTokens, int InputBudgetTokens);

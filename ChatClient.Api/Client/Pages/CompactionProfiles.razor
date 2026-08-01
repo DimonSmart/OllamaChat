@@ -1,7 +1,6 @@
 @page "/compaction-profiles"
 @using ChatClient.Api.Services
 @inject ICompactionProfileService CompactionProfileService
-@inject ILlmServerConfigService LlmServerConfigService
 @inject ISnackbar Snackbar
 
 <PageTitle>Compaction Profiles</PageTitle>
@@ -17,7 +16,7 @@
         <MudDataGrid T="CompactionProfile" Items="filteredProfiles" Dense="true" Hover="true" Bordered="true" Class="mt-2">
             <Columns>
                 <PropertyColumn Property="x => x.Name" Title="Name" />
-                <TemplateColumn Title="Policy"><CellTemplate><MudText Typo="Typo.body2">@PolicySummary(context.Item)</MudText></CellTemplate></TemplateColumn>
+                <TemplateColumn Title="Policy"><CellTemplate><MudText Typo="Typo.body2">@CompactionProfilePresentation.FormatPolicy(context.Item)</MudText></CellTemplate></TemplateColumn>
                 <TemplateColumn Title="Budget"><CellTemplate><MudText Typo="Typo.body2">@BudgetSummary(context.Item)</MudText></CellTemplate></TemplateColumn>
                 <TemplateColumn Title="Actions" CellStyle="display:flex; justify-content:flex-end;"><CellTemplate>
                     <MudIconButton Icon="@Icons.Material.Filled.Edit" Size="Size.Small" AriaLabel="Edit compaction profile" OnClick="@(() => Edit(context.Item))" />
@@ -47,13 +46,19 @@
                 <MudStack Row="true" Spacing="2"><MudNumericField T="int?" @bind-Value="model.ContextWindowTokens" Label="Context window tokens" Required="true" Margin="Margin.Dense" /><MudNumericField T="int?" @bind-Value="model.MaxOutputTokens" Label="Maximum output tokens" Required="true" Margin="Margin.Dense" /></MudStack>
                 @if (!HasValidFixedBudget()) { <MudText Color="Color.Error" Typo="Typo.caption">Context window must be greater than maximum output.</MudText> }
             }
+            @if (model.Kind == CompactionProfileKinds.ContextWindow)
+            {
+                <MudStack Row="true" Spacing="2"><MudNumericField T="double" Value="@(model.ToolResultThreshold * 100)" ValueChanged="@(value => model.ToolResultThreshold = value / 100)" Label="Tool-result threshold (%)" Min="0.01" Max="100" Margin="Margin.Dense" /><MudNumericField T="double" Value="@(model.TruncationThreshold * 100)" ValueChanged="@(value => model.TruncationThreshold = value / 100)" Label="History truncation threshold (%)" Min="0.01" Max="100" Margin="Margin.Dense" /></MudStack>
+                @if (!HasValidContextWindowThresholds()) { <MudText Color="Color.Error" Typo="Typo.caption">Thresholds must be above 0% and at most 100%; history truncation cannot occur before tool-result compaction.</MudText> }
+            }
             @if (model.Kind == CompactionProfileKinds.CustomPipeline)
             {
                 <MudText Typo="Typo.h6" Class="mt-3 mb-1">Pipeline stages</MudText>
+                <MudExpansionPanels MultiExpansion="true" Outlined="true">
                 @for (var index = 0; index < model.Stages.Count; index++)
                 {
                     var stage = model.Stages[index];
-                    <MudPaper Outlined="true" Class="pa-2 mb-2">
+                    <MudExpansionPanel Text="@($"Stage {index + 1}: {stage.Kind}")">
                         <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="1">
                             <MudText Typo="Typo.subtitle2">Stage @(index + 1)</MudText><MudSpacer />
                             <MudIconButton Icon="@Icons.Material.Filled.KeyboardArrowUp" Size="Size.Small" Disabled="@(index == 0)" AriaLabel="Move stage up" OnClick="@(() => MoveStage(index, -1))" />
@@ -66,24 +71,44 @@
                             <MudSelectItem Value="@CompactionStageKinds.Summarization">Summarize history</MudSelectItem>
                             <MudSelectItem Value="@CompactionStageKinds.SlidingWindow">Keep sliding window</MudSelectItem>
                         </MudSelect>
-                        <MudStack Row="true" Spacing="2"><MudNumericField T="int" @bind-Value="stage.TriggerTokenCount" Label="Trigger tokens" Margin="Margin.Dense" /><MudNumericField T="int" @bind-Value="stage.TargetTokenCount" Label="Target tokens" Margin="Margin.Dense" /></MudStack>
-                        @if (!HasValidStageTokens(stage)) { <MudText Color="Color.Error" Typo="Typo.caption">Trigger and target must be positive; target must be lower than trigger.</MudText> }
+                        <MudSelect T="string" Value="stage.Trigger.Kind" ValueChanged="@(kind => ChangeLimitKind(stage, kind))" Label="Limit kind" Dense="true" Margin="Margin.Dense">
+                            @foreach (var limitKind in SupportedLimitKinds(stage.Kind)) { <MudSelectItem Value="@limitKind">@LimitKindLabel(limitKind)</MudSelectItem> }
+                        </MudSelect>
+                        <MudStack Row="true" Spacing="2">
+                            @if (stage.Trigger.Kind == CompactionLimitKinds.InputBudgetPercent)
+                            {
+                                <MudNumericField T="double" Value="@(stage.Trigger.Value * 100)" ValueChanged="@(value => stage.Trigger.Value = value / 100)" Label="Trigger (%)" Min="0.01" Max="100" Margin="Margin.Dense" />
+                                <MudNumericField T="double" Value="@(stage.Target.Value * 100)" ValueChanged="@(value => stage.Target.Value = value / 100)" Label="Target (%)" Min="0.01" Max="100" Margin="Margin.Dense" />
+                            }
+                            else
+                            {
+                                <MudNumericField T="double" @bind-Value="stage.Trigger.Value" Label="Trigger" Margin="Margin.Dense" />
+                                <MudNumericField T="double" @bind-Value="stage.Target.Value" Label="Target" Margin="Margin.Dense" />
+                            }
+                            @if (stage.Kind == CompactionStageKinds.SlidingWindow)
+                            {
+                                <MudNumericField T="int" @bind-Value="stage.MinimumPreservedTurns" Label="Retain recent turns" Min="0" Margin="Margin.Dense" />
+                            }
+                            else
+                            {
+                                <MudNumericField T="int" @bind-Value="stage.MinimumPreservedGroups" Label="Retain recent groups" Min="0" Margin="Margin.Dense" />
+                            }
+                        </MudStack>
+                        @if (!HasValidStageLimits(stage)) { <MudText Color="Color.Error" Typo="Typo.caption">Use the same supported limit kind, ordered nonnegative values, and a nonnegative retained count.</MudText> }
                         @if (stage.Kind == CompactionStageKinds.Summarization)
                         {
                             <MudAlert Severity="Severity.Warning" Dense="true" Class="mt-2">Generated summaries become trusted runtime context. Use only a trusted model and endpoint.</MudAlert>
                             <MudTextField @bind-Value="stage.SummaryInstructions" Label="Summary instructions" Lines="3" Margin="Margin.Dense" />
-                            <MudCheckBox T="bool" Value="@(stage.SummarizerLlmId is not null)" ValueChanged="@(useSeparate => ToggleSeparateSummarizer(stage, useSeparate))" Label="Use a separate trusted summarizer" Dense="true" />
-                            @if (stage.SummarizerLlmId is not null)
+                            <MudCheckBox T="bool" Value="@UsesSeparateSummarizer(stage)" ValueChanged="@(useSeparate => ToggleSeparateSummarizer(stage, useSeparate))" Label="Use a separate trusted summarizer" Dense="true" />
+                            @if (UsesSeparateSummarizer(stage))
                             {
-                                <MudSelect T="Guid?" @bind-Value="stage.SummarizerLlmId" Label="Summarizer server" Dense="true" Margin="Margin.Dense">
-                                    @foreach (var server in servers) { <MudSelectItem Value="@server.Id">@server.Name</MudSelectItem> }
-                                </MudSelect>
-                                <MudTextField @bind-Value="stage.SummarizerModelName" Label="Summarizer model" Margin="Margin.Dense" />
+                                <ServerModelPicker Value="@GetSummarizerSelection(stage)" ValueChanged="@(selection => SetSummarizerSelection(stage, selection))" ShowClearButton="true" UseDefaultsWhenUnset="false" Presentation="ServerModelPickerPresentation.Form" SelectMargin="Margin.Dense" FillAvailableWidth="false" />
                                 @if (stage.SummarizerLlmId is null || string.IsNullOrWhiteSpace(stage.SummarizerModelName)) { <MudText Color="Color.Error" Typo="Typo.caption">Choose both a server and model for a separate summarizer.</MudText> }
                             }
                         }
-                    </MudPaper>
+                    </MudExpansionPanel>
                 }
+                </MudExpansionPanels>
                 @if (model.Stages.Count == 0) { <MudText Color="Color.Error" Typo="Typo.caption">A custom pipeline requires at least one stage.</MudText> }
                 <MudButton Variant="Variant.Outlined" StartIcon="@Icons.Material.Filled.Add" Size="Size.Small" OnClick="AddStage">Add stage</MudButton>
             }
@@ -96,7 +121,7 @@
 
 @code {
     private List<CompactionProfile> profiles = [], filteredProfiles = [];
-    private List<LlmServerConfig> servers = [];
+    private readonly HashSet<CompactionStage> separateSummarizerStages = [];
     private CompactionProfile model = new();
     private CompactionProfile? deletingProfile;
     private MudForm? form;
@@ -104,25 +129,31 @@
     private readonly DialogOptions editOptions = new() { CloseButton = true, CloseOnEscapeKey = true, FullWidth = true, MaxWidth = MaxWidth.Large };
     private readonly DialogOptions deleteOptions = new() { CloseButton = true, CloseOnEscapeKey = true, MaxWidth = MaxWidth.ExtraSmall };
 
-    protected override async Task OnInitializedAsync() { servers = (await LlmServerConfigService.GetAllAsync()).ToList(); await Load(); }
+    protected override async Task OnInitializedAsync() => await Load();
     private async Task Load() { profiles = (await CompactionProfileService.GetAllAsync()).OrderBy(x => x.Name, StringComparer.OrdinalIgnoreCase).ToList(); filteredProfiles = profiles.ToList(); }
-    private void Search(string value) => filteredProfiles = string.IsNullOrWhiteSpace(value) ? profiles.ToList() : profiles.Where(x => x.Name.Contains(value, StringComparison.OrdinalIgnoreCase) || PolicySummary(x).Contains(value, StringComparison.OrdinalIgnoreCase)).ToList();
+    private void Search(string value) => filteredProfiles = string.IsNullOrWhiteSpace(value) ? profiles.ToList() : profiles.Where(x => x.Name.Contains(value, StringComparison.OrdinalIgnoreCase) || CompactionProfilePresentation.FormatPolicy(x).Contains(value, StringComparison.OrdinalIgnoreCase)).ToList();
     private void Create() { model = new CompactionProfile(); isNew = true; editing = true; }
     private void Edit(CompactionProfile value) { model = Copy(value); isNew = false; editing = true; }
-    private void AddStage() => model.Stages.Add(new CompactionStage { Kind = CompactionStageKinds.ToolResult, TriggerTokenCount = 8000, TargetTokenCount = 4000 });
-    private void RemoveStage(CompactionStage stage) => model.Stages.Remove(stage);
+    private void AddStage() => model.Stages.Add(CompactionStageDefaults.Create(CompactionStageKinds.ToolResult));
+    private void RemoveStage(CompactionStage stage) { separateSummarizerStages.Remove(stage); model.Stages.Remove(stage); }
     private void MoveStage(int index, int direction) { var target = index + direction; if (target < 0 || target >= model.Stages.Count) return; (model.Stages[index], model.Stages[target]) = (model.Stages[target], model.Stages[index]); }
-    private void ChangeStageKind(CompactionStage stage, string kind) { stage.Kind = kind; if (kind != CompactionStageKinds.Summarization) { stage.SummaryInstructions = null; stage.SummarizerLlmId = null; stage.SummarizerModelName = null; } }
-    private void ToggleSeparateSummarizer(CompactionStage stage, bool useSeparate) { if (useSeparate) { stage.SummarizerLlmId = servers.FirstOrDefault()?.Id; } else { stage.SummarizerLlmId = null; stage.SummarizerModelName = null; } }
+    private void ChangeStageKind(CompactionStage stage, string kind) { var defaults = CompactionStageDefaults.Create(kind); stage.Kind = defaults.Kind; stage.Trigger = defaults.Trigger; stage.Target = defaults.Target; stage.MinimumPreservedGroups = defaults.MinimumPreservedGroups; stage.MinimumPreservedTurns = defaults.MinimumPreservedTurns; if (kind != CompactionStageKinds.Summarization) { separateSummarizerStages.Remove(stage); stage.SummaryInstructions = null; stage.SummarizerLlmId = null; stage.SummarizerModelName = null; } }
+    private void ChangeLimitKind(CompactionStage stage, string kind) { stage.Trigger.Kind = kind; stage.Target.Kind = kind; }
+    private bool UsesSeparateSummarizer(CompactionStage stage) => separateSummarizerStages.Contains(stage) || stage.SummarizerLlmId is not null || !string.IsNullOrWhiteSpace(stage.SummarizerModelName);
+    private static ServerModelSelection GetSummarizerSelection(CompactionStage stage) => new(stage.SummarizerLlmId, stage.SummarizerModelName);
+    private void SetSummarizerSelection(CompactionStage stage, ServerModelSelection selection) { stage.SummarizerLlmId = selection.ServerId; stage.SummarizerModelName = selection.ModelName; if (selection.ServerId is null && string.IsNullOrWhiteSpace(selection.ModelName)) separateSummarizerStages.Remove(stage); else separateSummarizerStages.Add(stage); }
+    private void ToggleSeparateSummarizer(CompactionStage stage, bool useSeparate) { if (useSeparate) { separateSummarizerStages.Add(stage); } else { separateSummarizerStages.Remove(stage); stage.SummarizerLlmId = null; stage.SummarizerModelName = null; } }
     private async Task Save() { if (form is null) return; await form.ValidateAsync(); if (!form.IsValid || !IsValid()) return; try { saving = true; if (isNew) await CompactionProfileService.CreateAsync(model); else await CompactionProfileService.UpdateAsync(model); editing = false; await Load(); Snackbar.Add($"Compaction profile {(isNew ? "created" : "updated")}.", Severity.Success); } catch (Exception ex) { Snackbar.Add($"Could not save compaction profile: {ex.Message}", Severity.Error); } finally { saving = false; } }
-    private bool IsValid() => (model.BudgetSource != CompactionBudgetSources.Fixed || HasValidFixedBudget()) && (model.Kind != CompactionProfileKinds.CustomPipeline || model.Stages.Count > 0 && model.Stages.All(stage => HasValidStageTokens(stage) && (stage.Kind != CompactionStageKinds.Summarization || stage.SummarizerLlmId is null || !string.IsNullOrWhiteSpace(stage.SummarizerModelName))));
-    private bool HasValidFixedBudget() => model.ContextWindowTokens > 0 && model.MaxOutputTokens > 0 && model.MaxOutputTokens < model.ContextWindowTokens;
-    private static bool HasValidStageTokens(CompactionStage stage) => stage.TriggerTokenCount > 0 && stage.TargetTokenCount > 0 && stage.TargetTokenCount < stage.TriggerTokenCount;
+    private bool IsValid() => (model.BudgetSource != CompactionBudgetSources.Fixed || HasValidFixedBudget()) && (model.Kind != CompactionProfileKinds.ContextWindow || HasValidContextWindowThresholds()) && (model.Kind != CompactionProfileKinds.CustomPipeline || model.Stages.Count > 0 && model.Stages.All(stage => HasValidStageLimits(stage) && (stage.Kind != CompactionStageKinds.Summarization || stage.SummarizerLlmId is null || !string.IsNullOrWhiteSpace(stage.SummarizerModelName))));
+    private bool HasValidFixedBudget() => ModelRuntimeLimitValidation.HasValidTokenBudget(model.ContextWindowTokens, model.MaxOutputTokens);
+    private bool HasValidContextWindowThresholds() => model.ToolResultThreshold is > 0 and <= 1 && model.TruncationThreshold is > 0 and <= 1 && model.TruncationThreshold >= model.ToolResultThreshold;
+    private static bool HasValidStageLimits(CompactionStage stage) => stage.Trigger is not null && stage.Target is not null && stage.Trigger.Kind == stage.Target.Kind && SupportedLimitKinds(stage.Kind).Contains(stage.Trigger.Kind) && double.IsFinite(stage.Trigger.Value) && double.IsFinite(stage.Target.Value) && (stage.Trigger.Kind == CompactionLimitKinds.InputBudgetPercent ? stage.Trigger.Value is > 0 and <= 1 && stage.Target.Value is > 0 and <= 1 : stage.Trigger.Value >= 0 && stage.Target.Value >= 0) && stage.Trigger.Value > stage.Target.Value && (stage.Trigger.Kind == CompactionLimitKinds.InputBudgetPercent || stage.Trigger.Value == Math.Truncate(stage.Trigger.Value) && stage.Target.Value == Math.Truncate(stage.Target.Value)) && stage.MinimumPreservedGroups >= 0 && stage.MinimumPreservedTurns >= 0;
+    private static IReadOnlyList<string> SupportedLimitKinds(string stageKind) => stageKind == CompactionStageKinds.SlidingWindow ? [CompactionLimitKinds.Turns] : [CompactionLimitKinds.InputBudgetPercent, CompactionLimitKinds.Tokens, CompactionLimitKinds.Messages, CompactionLimitKinds.Groups];
+    private static string LimitKindLabel(string kind) => kind switch { CompactionLimitKinds.InputBudgetPercent => "Input budget (%)", CompactionLimitKinds.Tokens => "Tokens", CompactionLimitKinds.Messages => "Messages", CompactionLimitKinds.Turns => "Turns", CompactionLimitKinds.Groups => "Groups", _ => kind };
     private void ConfirmDelete(CompactionProfile value) { deletingProfile = value; deleting = true; }
     private async Task Delete() { if (deletingProfile is null) return; try { await CompactionProfileService.DeleteAsync(deletingProfile.Id); deleting = false; await Load(); Snackbar.Add("Compaction profile deleted.", Severity.Success); } catch (Exception ex) { Snackbar.Add($"Could not delete compaction profile: {ex.Message}", Severity.Error); } }
     private void Close() => editing = false; private void CloseDelete() => deleting = false;
     private static string ValidateName(string value) => string.IsNullOrWhiteSpace(value) ? "Name is required." : string.Empty;
-    private static string PolicySummary(CompactionProfile value) => value.Kind == CompactionProfileKinds.ContextWindow ? "Recommended context window" : string.Join(" → ", value.Stages.Select(x => x.Kind));
     private static string BudgetSummary(CompactionProfile value) => value.BudgetSource == CompactionBudgetSources.SelectedModel ? "Selected model limits" : $"Fixed: {value.ContextWindowTokens:N0} / {value.MaxOutputTokens:N0}";
-    private static CompactionProfile Copy(CompactionProfile value) => new() { Id = value.Id, Name = value.Name, Kind = value.Kind, BudgetSource = value.BudgetSource, ContextWindowTokens = value.ContextWindowTokens, MaxOutputTokens = value.MaxOutputTokens, CreatedAt = value.CreatedAt, UpdatedAt = value.UpdatedAt, Stages = value.Stages.Select(x => new CompactionStage { Kind = x.Kind, TriggerTokenCount = x.TriggerTokenCount, TargetTokenCount = x.TargetTokenCount, SummaryInstructions = x.SummaryInstructions, SummarizerLlmId = x.SummarizerLlmId, SummarizerModelName = x.SummarizerModelName }).ToList() };
+    private static CompactionProfile Copy(CompactionProfile value) => new() { Id = value.Id, Name = value.Name, Kind = value.Kind, BudgetSource = value.BudgetSource, ContextWindowTokens = value.ContextWindowTokens, MaxOutputTokens = value.MaxOutputTokens, ToolResultThreshold = value.ToolResultThreshold, TruncationThreshold = value.TruncationThreshold, CreatedAt = value.CreatedAt, UpdatedAt = value.UpdatedAt, Stages = value.Stages.Select(x => new CompactionStage { Id = x.Id, Kind = x.Kind, Trigger = new CompactionLimit { Kind = x.Trigger.Kind, Value = x.Trigger.Value }, Target = new CompactionLimit { Kind = x.Target.Kind, Value = x.Target.Value }, MinimumPreservedGroups = x.MinimumPreservedGroups, MinimumPreservedTurns = x.MinimumPreservedTurns, SummaryInstructions = x.SummaryInstructions, SummarizerLlmId = x.SummarizerLlmId, SummarizerModelName = x.SummarizerModelName }).ToList() };
 }

@@ -34,6 +34,7 @@ public sealed class UnifiedAgentRuntimeChatSessionService(
     private IReadOnlyList<string> _directAvailableModes = [];
     private SessionWorkspaceAgentFileStore? _directFileAccessStore;
     private FileAccessProviderProfile? _directFileAccessProfile;
+    private AgentSessionCompactionViewModel? _directCompaction;
     private SandboxSessionHandle? _sandboxSession;
     private ISessionToolApprovalCoordinator? _toolApprovalCoordinator;
     private SessionToolApprovalPolicy? _toolApprovalPolicy;
@@ -184,7 +185,7 @@ public sealed class UnifiedAgentRuntimeChatSessionService(
 
         var todoProvider = agent.GetService<TodoProvider>();
         var modeProvider = agent.GetService<AgentModeProvider>();
-        if (todoProvider is null && modeProvider is null && _directFileAccessStore is null && sandboxSession is null)
+        if (todoProvider is null && modeProvider is null && _directFileAccessStore is null && sandboxSession is null && _directCompaction is null)
         {
             return null;
         }
@@ -225,7 +226,8 @@ public sealed class UnifiedAgentRuntimeChatSessionService(
             modeProvider is not null,
             todos,
             fileAccess,
-            sandbox);
+            sandbox,
+            _directCompaction);
     }
 
     public async Task SetFileAccessWorkspaceAsync(string workspace, CancellationToken cancellationToken = default)
@@ -330,6 +332,7 @@ public sealed class UnifiedAgentRuntimeChatSessionService(
             _directSession = null;
             _directFileAccessStore = null;
             _directFileAccessProfile = null;
+            _directCompaction = null;
             sandboxSession = _sandboxSession;
             _sandboxSession = null;
             _directAvailableModes = [];
@@ -656,6 +659,7 @@ public sealed class UnifiedAgentRuntimeChatSessionService(
         _directAvailableModes = build.AvailableModes;
         _directFileAccessStore = build.FileAccessStore;
         _directFileAccessProfile = build.FileAccessProfile;
+        _directCompaction = build.Compaction;
         _directToolMetadata = build.ToolSet.MetadataByName;
         SessionStateChanged?.Invoke();
     }
