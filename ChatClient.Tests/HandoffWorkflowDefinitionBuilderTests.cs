@@ -216,6 +216,5 @@ public sealed class HandoffWorkflowDefinitionBuilderTests
         AgentTemplateBuilder
             .New(name, shortName)
             .WithInstructions("Test instructions.")
-            .AutoSelectTools(0)
             .Build();
 }

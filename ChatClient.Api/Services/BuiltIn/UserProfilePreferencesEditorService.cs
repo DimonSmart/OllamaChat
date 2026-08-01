@@ -3,11 +3,9 @@ using ChatClient.Api.Services;
 namespace ChatClient.Api.Services.BuiltIn;
 
 public sealed class UserProfilePreferencesEditorService(
-    IMcpClientService mcpClientService,
-    McpFunctionIndexService mcpFunctionIndexService)
+    IMcpClientService mcpClientService)
 {
     private readonly IMcpClientService _mcpClientService = mcpClientService;
-    private readonly McpFunctionIndexService _mcpFunctionIndexService = mcpFunctionIndexService;
 
     public string StorageFilePath => UserProfilePreferencesStore.FilePath;
 
@@ -27,7 +25,6 @@ public sealed class UserProfilePreferencesEditorService(
 
         await UserProfilePreferencesStore.SaveAsync(document, cancellationToken);
         await _mcpClientService.InvalidateAsync(cancellationToken);
-        _mcpFunctionIndexService.Invalidate();
     }
 
     private static void ValidateDocument(UserProfilePreferencesDocument document)

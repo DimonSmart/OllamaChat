@@ -21,7 +21,7 @@ It provides:
 
 ## Runtime Notes
 
-On startup, the app seeds agent/LLM/MCP configs, checks Ollama availability, builds MCP function index, and then starts UI/API endpoints.
+On startup, the app seeds agent/LLM/MCP configs, checks Ollama availability, and then starts UI/API endpoints.
 
 During chat execution, the Agentic pipeline builds history, injects optional RAG context, runs model/tool calls, and streams responses back to UI.
 

@@ -48,7 +48,6 @@ State the shared scenario crisply, name both sides, summarize each side's starti
 End by explicitly inviting participant_a_name and participant_b_name to argue.
 
 You speak only in the opening turn. Do not summarize the debate.")
-                .AutoSelectTools(0)
                 .Build()))
     .Agent("participant_a", agent => agent
         .Role("Participant A advocate")
@@ -74,7 +73,6 @@ You may introduce at most two plausible supplemental facts, examples, or pieces 
 Challenge participant_b_name directly on weak reasoning, contradictions, and unsupported additions.
 Keep each turn to 3-5 sentences, focused on the decisive clash.
 Speak to the other participants, not the user. Do not ask the user for input or summarize the whole debate.")
-                .AutoSelectTools(0)
                 .Build()))
     .Agent("participant_b", agent => agent
         .Role("Participant B advocate")
@@ -100,7 +98,6 @@ You may introduce at most two plausible supplemental facts, examples, or pieces 
 Challenge participant_a_name directly on weak reasoning, contradictions, and unsupported additions.
 Keep each turn to 3-5 sentences, focused on the decisive clash.
 Speak to the other participants, not the user. Do not ask the user for input or summarize the whole debate.")
-                .AutoSelectTools(0)
                 .Build()))
     .Agent("judge", agent => agent
         .Role("Debate quality judge")
@@ -144,7 +141,6 @@ Persist the verdict with session_save_summary using label final.
 Mark the workflow complete with session_set_phase.
 
 Speak only once, at the end of the debate.")
-                .AutoSelectTools(0)
                 .Build()))
     .UseGroupChat(groupChat => groupChat
         .Participants("host", "participant_a", "participant_b", "judge")

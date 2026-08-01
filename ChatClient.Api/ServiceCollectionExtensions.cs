@@ -66,12 +66,10 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<UserProfilePreferencesEditorService>();
         services.AddSingleton<TaskSessionStore>();
         services.AddSingleton<MarkdownDocumentIntakeService>();
-        services.AddSingleton<KernelService>();
         services.AddSingleton<IOllamaClientService, OllamaService>();
         services.AddSingleton<IOpenAIClientService, OpenAIClientService>();
         services.AddSingleton<IModelCapabilityService, ModelCapabilityService>();
         services.AddSingleton<IServerConnectionTestService, ServerConnectionTestService>();
-        services.AddSingleton<McpFunctionIndexService>();
         services.AddScoped<OllamaServerAvailabilityService>();
         services.AddOptions<VoiceInputOptions>()
             .BindConfiguration(VoiceInputOptions.SectionName);
@@ -111,7 +109,6 @@ public static class ServiceCollectionExtensions
     {
         services.AddOptions<KnowledgeIngestionOptions>()
             .BindConfiguration(KnowledgeIngestionOptions.SectionName);
-        services.AddSingleton<IMcpFunctionIndexStore, McpFunctionIndexStore>();
         services.AddSingleton<KnowledgeVectorStore>();
         services.AddSingleton<IDocumentMarkdownConverter, MarkItDownMarkdownConverter>();
         services.AddSingleton<IKnowledgeDocumentIngestionService, KnowledgeDocumentIngestionService>();

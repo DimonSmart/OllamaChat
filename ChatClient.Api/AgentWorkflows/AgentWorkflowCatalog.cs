@@ -35,6 +35,7 @@ public sealed class AgentWorkflowCatalog(IMcpServerConfigService mcpServerConfig
         throw new KeyNotFoundException($"Workflow template '{workflowId}' was not found.");
     }
 
+    [Obsolete]
     private static AgentWorkflowTemplate CreateInterviewCoachTemplate(IReadOnlyCollection<IMcpServerDescriptor> servers)
     {
         var capabilityAvailability = EvaluateCapabilities(servers);
@@ -198,7 +199,6 @@ public sealed class AgentWorkflowCatalog(IMcpServerConfigService mcpServerConfig
                 Never conduct the interview yourself.
                 Be brief, predictable, and explicit about who is taking over next.
                 """)
-            .AutoSelectTools(0)
             .Build();
 
     private static AgentTemplateDefinition CreateReceptionistAgent(IReadOnlyList<WorkflowStartInputDefinition> startInputs)
@@ -238,7 +238,6 @@ public sealed class AgentWorkflowCatalog(IMcpServerConfigService mcpServerConfig
 
                 Do not conduct the interview yourself. Do not summarize the whole session. Stay in the intake role.
                 """)
-            .AutoSelectTools(0)
             .Build();
     }
 
@@ -269,7 +268,6 @@ public sealed class AgentWorkflowCatalog(IMcpServerConfigService mcpServerConfig
 
                 Do not restart intake and do not generate the final summary.
                 """)
-            .AutoSelectTools(0)
             .Build();
 
     private static AgentTemplateDefinition CreateTechnicalAgent() =>
@@ -299,7 +297,6 @@ public sealed class AgentWorkflowCatalog(IMcpServerConfigService mcpServerConfig
 
                 Do not redo behavioural intake and do not produce the final report yourself.
                 """)
-            .AutoSelectTools(0)
             .Build();
 
     private static AgentTemplateDefinition CreateSummarizerAgent() =>
@@ -328,7 +325,6 @@ public sealed class AgentWorkflowCatalog(IMcpServerConfigService mcpServerConfig
 
                 Do not continue the interview phase yourself and do not restart intake.
                 """)
-            .AutoSelectTools(0)
             .Build();
 
     private static WorkflowCapabilityAvailabilitySummary EvaluateCapabilities(IReadOnlyCollection<IMcpServerDescriptor> servers)

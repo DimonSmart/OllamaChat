@@ -17,7 +17,6 @@ public static class WorkflowCodeTemplates
                             Replace this scaffold with the real workflow instructions.
                             Keep the response focused on the workflow's entry step.
                             """)
-                        .AutoSelectTools(0)
                         .Build()))
             .UseHandoff(handoff => handoff
                 .StartWith("triage"))

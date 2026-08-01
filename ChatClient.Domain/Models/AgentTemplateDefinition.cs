@@ -23,10 +23,6 @@ public sealed class AgentTemplateDefinition : AgentModelBase
             ContinueUntilTodosComplete = ContinueUntilTodosComplete,
             MaxTodoCompletionIterations = MaxTodoCompletionIterations,
             RuntimeAgentId = RuntimeAgentId,
-            FunctionSettings = new FunctionSettings
-            {
-                AutoSelectCount = FunctionSettings.AutoSelectCount
-            },
             McpServerBindings = McpServerBindings
                 .Select(static binding => binding.Clone())
                 .ToList(),

@@ -111,9 +111,6 @@ Built-in MCP server `built-in-knowledge-book` хранит иерархичес�
 {
   "AgentName": "Book Knowledge Agent",
   "ShortName": "BKA",
-  "FunctionSettings": {
-    "AutoSelectCount": 0
-  },
   "McpServerBindings": [
     {
       "ServerId": "da46c3f1-6bc6-4f0b-bd7b-6176daf6f6d8",

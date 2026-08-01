@@ -11,7 +11,7 @@
 @inject IOllamaClientService OllamaService
 @inject ISnackbar Snackbar
 @inject ILogger<AppSettings> Logger
-@inject McpFunctionIndexService McpFunctionIndexService
+@inject IKnowledgeIndexBackgroundService KnowledgeIndexBackgroundService
 
 <PageTitle>Application Settings</PageTitle>
 
@@ -175,13 +175,13 @@
                             <MudNumericField T="double" @bind-Value="_settings.Embedding.RagMinRelevanceScore" Label="Minimum relevance score" Min="-1" Max="1" Step="0.01" Variant="Variant.Outlined" Margin="Margin.Dense" Class="mt-2" />
                             <MudText Typo="Typo.caption" Class="mt-2">Text chunking parameters for building RAG indexes.</MudText>
                             <MudButton Variant="Variant.Outlined" Color="Color.Primary" OnClick="RestartEmbeddings" Size="Size.Small" Class="mt-2">
-                                Restart Embedding Generation
+                                Rebuild Knowledge Store Indexes
                             </MudButton>
                         </MudCardContent>
                     </MudCard>
 
                     <MudButtonGroup Class="mt-4">
-                        <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="SaveSettings" Size="Size.Small">
+                        <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="SaveSettingsFromButton" Size="Size.Small">
                             Save Application Settings
                         </MudButton>
                         <MudButton Variant="Variant.Outlined" Color="Color.Secondary" OnClick="ResetSettings" Size="Size.Small">
@@ -263,7 +263,12 @@
         }
     }
 
-    private async Task SaveSettings()
+    private async Task SaveSettingsFromButton()
+    {
+        await SaveSettings();
+    }
+
+    private async Task<bool> SaveSettings()
     {
         try
         {
@@ -274,32 +279,35 @@
                 if (!exists)
                 {
                     Snackbar.Add($"Embedding model '{_settings.Embedding.Model.ModelName}' not found.", Severity.Error);
-                    return;
+                    return false;
                 }
             }
 
             await UserSettingsService.SaveSettingsAsync(_settings);
             Snackbar.Add("Application settings saved successfully", Severity.Success);
+            return true;
         }
         catch (Exception ex)
         {
             Logger.LogError(ex, "Error saving settings");
             Snackbar.Add($"Failed to save settings: {ex.Message}", Severity.Error);
+            return false;
         }
     }
 
     private async Task RestartEmbeddings()
     {
-        await SaveSettings();
+        if (!await SaveSettings())
+            return;
         try
         {
-            await McpFunctionIndexService.RebuildAsync();
-            Snackbar.Add("Embedding generation restarted", Severity.Success);
+            KnowledgeIndexBackgroundService.RequestRebuild();
+            Snackbar.Add("Knowledge Store indexing restarted", Severity.Success);
         }
         catch (Exception ex)
         {
-            Logger.LogError(ex, "Error restarting embeddings");
-            Snackbar.Add("Failed to restart embedding generation", Severity.Error);
+            Logger.LogError(ex, "Error restarting Knowledge Store indexing");
+            Snackbar.Add("Failed to restart Knowledge Store indexing", Severity.Error);
         }
     }
 

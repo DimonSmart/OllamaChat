@@ -32,7 +32,6 @@ Frame the topic as a sharp conflict in 2-4 sentences.
 End by explicitly inviting {{agent:debater_a.displayName}} and {{agent:debater_b.displayName}} to clash.
 
 You speak only in the opening turn. Do not summarize the debate.")
-                .AutoSelectTools(0)
                 .Build()))
     .Agent("debater_a", agent => agent
         .UseAgentById("ab38adc6-74a2-4ccc-924b-eb1bce9d0985")
@@ -75,7 +74,6 @@ Persist the verdict with session_save_summary using label final.
 Mark the workflow complete with session_set_phase.
 
 Speak only once, at the end of the debate.")
-                .AutoSelectTools(0)
                 .Build()))
     .UseGroupChat(groupChat => groupChat
         .Participants("host", "debater_a", "debater_b", "judge")

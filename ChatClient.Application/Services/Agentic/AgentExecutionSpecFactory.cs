@@ -52,10 +52,6 @@ public static class AgentExecutionSpecFactory
         target.ContinueUntilTodosComplete = source.ContinueUntilTodosComplete;
         target.MaxTodoCompletionIterations = source.MaxTodoCompletionIterations;
         target.RuntimeAgentId = source.RuntimeAgentId;
-        target.FunctionSettings = new FunctionSettings
-        {
-            AutoSelectCount = source.FunctionSettings.AutoSelectCount
-        };
         target.McpServerBindings = source.McpServerBindings
             .Select(static binding => binding.Clone())
             .ToList();

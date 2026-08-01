@@ -267,7 +267,6 @@ public sealed class WorkflowDefinitionSeederTests
                         AgentTemplateBuilder
                             .New("Seeded Triage", "triage")
                             .WithInstructions("Route the request.")
-                            .AutoSelectTools(0)
                             .Build()))
                 .UseHandoff(handoff => handoff
                     .StartWith("triage"))
@@ -287,7 +286,6 @@ public sealed class WorkflowDefinitionSeederTests
                         AgentTemplateBuilder
                             .New("Seeded First", "first")
                             .WithInstructions("Do the first step.")
-                            .AutoSelectTools(0)
                             .Build()))
                 .Agent("second", agent => agent
                     .Role("Second")
@@ -295,7 +293,6 @@ public sealed class WorkflowDefinitionSeederTests
                         AgentTemplateBuilder
                             .New("Seeded Second", "second")
                             .WithInstructions("Do the second step.")
-                            .AutoSelectTools(0)
                             .Build()))
                 .UseSequential(sequential => sequential
                     .Order("first", "second"))

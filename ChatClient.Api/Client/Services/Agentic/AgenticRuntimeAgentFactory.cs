@@ -95,11 +95,17 @@ public sealed class AgenticRuntimeAgentFactory(
                 $"Model '{request.ResolvedModel.ModelName}' does not support function calling required by sandbox shell execution.");
         }
 
-        var toolRequestContext = BuildToolRequestContext(request);
+        var effectiveMcpBindings = McpServerSessionBindingMerger.Merge(
+            request.Agent.McpServerBindings,
+            request.Configuration.McpServerBindings);
+        var toolRequestContext = BuildToolRequestContext(effectiveMcpBindings);
         var availableTools = supportsFunctions
             ? await appToolCatalog.ListToolsAsync(toolRequestContext, cancellationToken)
             : [];
-        var requestedFunctions = ResolveRequestedFunctionNames(request, availableTools);
+        var requestedFunctions = ResolveRequestedFunctionNames(
+            request.Configuration,
+            effectiveMcpBindings,
+            availableTools);
 
         if (!supportsFunctions && requestedFunctions.Count > 0)
         {
@@ -124,6 +130,15 @@ public sealed class AgenticRuntimeAgentFactory(
                 mcpUserInteractionService,
                 logger)
             : AgenticToolSet.Empty;
+
+        if (toolSet.HasTools)
+        {
+            logger.LogInformation(
+                "Registered {ToolCount} MCP tools for agent {AgentName}: [{ToolNames}]",
+                toolSet.Tools.Count,
+                request.Agent.AgentName,
+                string.Join(", ", toolSet.MetadataByName.Keys));
+        }
 
         if (requestedFunctions.Count > 0 && !toolSet.HasTools)
         {
@@ -532,13 +547,14 @@ public sealed class AgenticRuntimeAgentFactory(
         return string.IsNullOrWhiteSpace(content) ? null : content;
     }
 
-    private IReadOnlyList<string> ResolveRequestedFunctionNames(
-        AgentRunRequest request,
+    internal static IReadOnlyList<string> ResolveRequestedFunctionNames(
+        AppChatConfiguration configuration,
+        IReadOnlyCollection<McpServerSessionBinding> effectiveMcpBindings,
         IReadOnlyCollection<AppToolDescriptor> availableTools)
     {
         HashSet<string> requested = new(StringComparer.OrdinalIgnoreCase);
 
-        foreach (var function in request.Configuration.Functions)
+        foreach (var function in configuration.Functions)
         {
             if (string.IsNullOrWhiteSpace(function))
             {
@@ -549,38 +565,21 @@ public sealed class AgenticRuntimeAgentFactory(
         }
 
         foreach (var function in McpBindingToolSelectionResolver.ResolveQualifiedToolNames(
-                     request.Agent.McpServerBindings,
+                     effectiveMcpBindings,
                      availableTools))
         {
             requested.Add(function);
         }
 
-        if (request.Agent.FunctionSettings.IsAutoSelectEnabled)
-        {
-            foreach (var tool in availableTools)
-            {
-                requested.Add(tool.QualifiedName);
-            }
-
-            logger.LogInformation(
-                "Agent {AgentName} uses AutoSelectCount={AutoSelectCount}; direct Harness registration includes all {ToolCount} tools allowed by current bindings.",
-                request.Agent.AgentName,
-                request.Agent.FunctionSettings.AutoSelectCount,
-                availableTools.Count);
-        }
-
         return requested.ToList();
     }
 
-    private static McpClientRequestContext BuildToolRequestContext(AgentRunRequest request)
+    private static McpClientRequestContext BuildToolRequestContext(
+        IReadOnlyCollection<McpServerSessionBinding> effectiveMcpBindings)
     {
-        var mergedBindings = McpServerSessionBindingMerger.Merge(
-            request.Agent.McpServerBindings,
-            request.Configuration.McpServerBindings);
-
-        return mergedBindings.Count == 0
+        return effectiveMcpBindings.Count == 0
             ? McpClientRequestContext.Empty
-            : new McpClientRequestContext(mergedBindings);
+            : new McpClientRequestContext(effectiveMcpBindings);
     }
 
     internal static AgenticToolInvocationPolicyOptions NormalizeToolPolicy(AgenticToolInvocationPolicyOptions? policy)

@@ -34,7 +34,6 @@ Routing rules:
 
 Never conduct the interview yourself.
 Be brief, predictable, and explicit about who is taking over next.")
-                .AutoSelectTools(0)
                 .Build())
         .Capability("task-session-store", "Task session store", capability => capability
             .Purpose("Read-only access to current phase and stored inputs so routing stays deterministic across turns.")
@@ -72,7 +71,6 @@ Responsibilities:
 - Fallback to triage only for unexpected requests outside the intake phase.
 
 Do not conduct the interview yourself. Do not summarize the whole session. Stay in the intake role.")
-                .AutoSelectTools(0)
                 .Build())
         .Capability("task-session-store", "Task session store", capability => capability
             .Purpose("Persistent shared state for workflow inputs, transcript turns, phase, and summary.")
@@ -107,7 +105,6 @@ Responsibilities:
 - Fallback to triage only for unexpected requests that break the phase flow.
 
 Do not restart intake and do not generate the final summary.")
-                .AutoSelectTools(0)
                 .Build())
         .Capability("task-session-store", "Task session store", capability => capability
             .Purpose("Persistent transcript and phase state across turns.")
@@ -142,7 +139,6 @@ Responsibilities:
 - Fallback to triage only for unexpected requests that break the phase flow.
 
 Do not redo behavioural intake and do not produce the final report yourself.")
-                .AutoSelectTools(0)
                 .Build())
         .Capability("task-session-store", "Task session store", capability => capability
             .Purpose("Persistent transcript and phase state across turns.")
@@ -176,7 +172,6 @@ Responsibilities:
 - Handoff back to triage only if the user asks for a new activity after the wrap-up.
 
 Do not continue the interview phase yourself and do not restart intake.")
-                .AutoSelectTools(0)
                 .Build())
         .Capability("task-session-store", "Task session store", capability => capability
             .Purpose("Read/write access to the transcript and final summary.")

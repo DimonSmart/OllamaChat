@@ -19,7 +19,6 @@ public class AgentTemplateBuilderTests
             .WithDefaultModel(serverId, "model-a")
             .WithTemperature(0.2)
             .WithRepeatPenalty(1.1)
-            .AutoSelectTools(6)
             .WithBinding("character-registry", binding => binding
                 .DisplayAs("Registry")
                 .OnlyTools("read_registry", "save_registry")
@@ -36,7 +35,6 @@ public class AgentTemplateBuilderTests
         Assert.Equal("model-a", definition.ModelName);
         Assert.Equal(0.2, definition.Temperature);
         Assert.Equal(1.1, definition.RepeatPenalty);
-        Assert.Equal(6, definition.FunctionSettings.AutoSelectCount);
         var binding = Assert.Single(definition.McpServerBindings);
         Assert.Equal("character-registry", binding.ServerName);
         Assert.Equal("Registry", binding.DisplayName);

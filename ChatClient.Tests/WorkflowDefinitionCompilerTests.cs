@@ -44,7 +44,6 @@ public sealed class WorkflowDefinitionCompilerTests
                         AgentTemplateBuilder
                             .New("Review Coordinator", "coordinator")
                             .WithInstructions("Coordinate the review and close it when complete.")
-                            .AutoSelectTools(0)
                             .Build()))
                 .Agent("analyst", agent => agent
                     .UseAgent("{{analystId:D}}")
@@ -232,7 +231,6 @@ public sealed class WorkflowDefinitionCompilerTests
                         AgentTemplateBuilder
                             .New("Demo Triage", "triage")
                             .WithInstructions("Test instructions.")
-                            .AutoSelectTools(0)
                             .Build()))
                 .UseHandoff(handoff => handoff
                     .StartWith("triage"))
@@ -338,7 +336,6 @@ public sealed class WorkflowDefinitionCompilerTests
                         AgentTemplateBuilder
                             .New("Avatar Host", "host")
                             .WithInstructions("Open the discussion.")
-                            .AutoSelectTools(0)
                             .Build()))
                 .Agent("reviewer_a", agent => agent
                     .Role("Reviewer A")
@@ -347,7 +344,6 @@ public sealed class WorkflowDefinitionCompilerTests
                         AgentTemplateBuilder
                             .New("Reviewer A", "reviewer_a")
                             .WithInstructions("Provide the first review.")
-                            .AutoSelectTools(0)
                             .Build()))
                 .Agent("reviewer_b", agent => agent
                     .Role("Reviewer B")
@@ -356,7 +352,6 @@ public sealed class WorkflowDefinitionCompilerTests
                         AgentTemplateBuilder
                             .New("Reviewer B", "reviewer_b")
                             .WithInstructions("Provide the second review.")
-                            .AutoSelectTools(0)
                             .Build()))
                 .Agent("closer", agent => agent
                     .Role("Closer")
@@ -365,7 +360,6 @@ public sealed class WorkflowDefinitionCompilerTests
                         AgentTemplateBuilder
                             .New("Review Closer", "closer")
                             .WithInstructions("Close the discussion.")
-                            .AutoSelectTools(0)
                             .Build()))
                 .UseGroupChat(groupChat => groupChat
                     .Participants("host", "reviewer_a", "reviewer_b", "closer")

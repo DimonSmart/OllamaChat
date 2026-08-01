@@ -11,7 +11,6 @@ var workflow = WorkflowDefinitionBuilder
                 .WithInstructions(
                     @"Review the user's proposal from an optimistic angle.
 Focus on upside, leverage, growth potential, and what could work unusually well.")
-                .AutoSelectTools(0)
                 .Build()))
     .Agent("skeptic", agent => agent
         .Role("Skeptical reviewer")
@@ -22,7 +21,6 @@ Focus on upside, leverage, growth potential, and what could work unusually well.
                 .WithInstructions(
                     @"Review the user's proposal from a skeptical angle.
 Focus on weak assumptions, execution risk, hidden cost, and likely failure modes.")
-                .AutoSelectTools(0)
                 .Build()))
     .Agent("operator", agent => agent
         .Role("Operational reviewer")
@@ -33,7 +31,6 @@ Focus on weak assumptions, execution risk, hidden cost, and likely failure modes
                 .WithInstructions(
                     @"Review the user's proposal from an execution angle.
 Focus on sequencing, dependencies, rollout checkpoints, and practical next steps.")
-                .AutoSelectTools(0)
                 .Build()))
     .UseConcurrent(concurrent => concurrent
         .Participants("optimist", "skeptic", "operator")

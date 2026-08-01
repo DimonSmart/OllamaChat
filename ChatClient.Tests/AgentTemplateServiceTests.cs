@@ -102,7 +102,6 @@ public class AgentTemplateServiceTests
             Assert.NotNull(retrieved);
             Assert.Equal("test-model", retrieved!.ModelName);
             Assert.Equal(Guid.Parse("3fa85f64-5717-4562-b3fc-2c963f66afa6"), retrieved.LlmId);
-            Assert.Equal(3, retrieved.FunctionSettings.AutoSelectCount);
             var binding = Assert.Single(retrieved.McpServerBindings);
             Assert.Null(binding.BindingId);
             Assert.Equal("srv", binding.ServerName);
@@ -111,6 +110,10 @@ public class AgentTemplateServiceTests
 
             var persistedJson = await File.ReadAllTextAsync(tempFile);
             Assert.DoesNotContain("\"BindingId\"", persistedJson);
+
+            await service.UpdateAsync(retrieved);
+            persistedJson = await File.ReadAllTextAsync(tempFile);
+            Assert.DoesNotContain("\"FunctionSettings\"", persistedJson);
         }
         finally
         {
@@ -262,10 +265,6 @@ public class AgentTemplateServiceTests
             {
                 AgentName = "C# Code Assistant",
                 Content = "Test content",
-                FunctionSettings = new FunctionSettings
-                {
-                    AutoSelectCount = 10
-                },
                 McpServerBindings =
                 [
                     new McpServerSessionBinding

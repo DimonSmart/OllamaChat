@@ -1,4 +1,4 @@
-﻿[
+[
     {
         "Id":  "8ded8ce4-944a-4db7-9da4-96fd3ab17638",
         "AgentName":  "Default Assistant",
@@ -9,9 +9,6 @@
         "LlmId":  null,
         "Temperature":  null,
         "RepeatPenalty":  null,
-        "FunctionSettings":  {
-                                 "AutoSelectCount":  1
-                             },
         "CreatedAt":  "2025-04-25T19:44:23.4935728Z",
         "UpdatedAt":  "2025-08-23T08:08:16.4659087Z",
         "McpServerBindings":  [
@@ -28,9 +25,6 @@
         "LlmId":  "3fa85f64-5717-4562-b3fc-2c963f66afa6",
         "Temperature":  null,
         "RepeatPenalty":  null,
-        "FunctionSettings":  {
-                                 "AutoSelectCount":  10
-                             },
         "McpServerBindings":  [
                                   {
                                       "BindingId":  "3f122e9c-5f97-4b96-a1ff-597d0451d4b4",
@@ -68,9 +62,6 @@
         "LlmId":  null,
         "Temperature":  null,
         "RepeatPenalty":  null,
-        "FunctionSettings":  {
-                                 "AutoSelectCount":  0
-                             },
         "CreatedAt":  "2025-05-02T22:27:07.811051Z",
         "UpdatedAt":  "2025-05-02T22:27:07.8110511Z",
         "McpServerBindings":  [
@@ -87,9 +78,6 @@
         "LlmId":  null,
         "Temperature":  null,
         "RepeatPenalty":  null,
-        "FunctionSettings":  {
-                                 "AutoSelectCount":  0
-                             },
         "CreatedAt":  "2025-06-12T10:00:00Z",
         "UpdatedAt":  "2025-06-12T10:00:00Z",
         "McpServerBindings":  [
@@ -106,9 +94,6 @@
         "LlmId":  null,
         "Temperature":  null,
         "RepeatPenalty":  null,
-        "FunctionSettings":  {
-                                 "AutoSelectCount":  0
-                             },
         "CreatedAt":  "2025-06-12T10:00:00Z",
         "UpdatedAt":  "2025-06-12T10:00:00Z",
         "McpServerBindings":  [
@@ -125,9 +110,6 @@
         "LlmId":  null,
         "Temperature":  null,
         "RepeatPenalty":  null,
-        "FunctionSettings":  {
-                                 "AutoSelectCount":  0
-                             },
         "CreatedAt":  "2025-06-12T10:00:00Z",
         "UpdatedAt":  "2025-06-12T10:00:00Z",
         "McpServerBindings":  [
@@ -144,9 +126,6 @@
         "LlmId":  null,
         "Temperature":  null,
         "RepeatPenalty":  null,
-        "FunctionSettings":  {
-                                 "AutoSelectCount":  0
-                             },
         "CreatedAt":  "2025-06-12T10:00:00Z",
         "UpdatedAt":  "2025-06-12T10:00:00Z",
         "McpServerBindings":  [
@@ -163,9 +142,6 @@
         "LlmId":  null,
         "Temperature":  null,
         "RepeatPenalty":  null,
-        "FunctionSettings":  {
-                                 "AutoSelectCount":  0
-                             },
         "CreatedAt":  "2025-06-12T10:00:00Z",
         "UpdatedAt":  "2025-06-12T10:00:00Z",
         "McpServerBindings":  [
@@ -182,9 +158,6 @@
         "LlmId":  null,
         "Temperature":  null,
         "RepeatPenalty":  null,
-        "FunctionSettings":  {
-                                 "AutoSelectCount":  0
-                             },
         "CreatedAt":  "2025-06-12T10:00:00Z",
         "UpdatedAt":  "2025-06-12T10:00:00Z",
         "McpServerBindings":  [
@@ -201,9 +174,6 @@
         "LlmId":  null,
         "Temperature":  null,
         "RepeatPenalty":  null,
-        "FunctionSettings":  {
-                                 "AutoSelectCount":  0
-                             },
         "CreatedAt":  "2025-08-14T09:26:09.414484Z",
         "UpdatedAt":  "2025-08-14T09:26:09.4144842Z",
         "McpServerBindings":  [
@@ -220,9 +190,6 @@
         "LlmId":  null,
         "Temperature":  0.8,
         "RepeatPenalty":  1.15,
-        "FunctionSettings":  {
-                                 "AutoSelectCount":  0
-                             },
         "CreatedAt":  "2025-08-14T14:30:57.431852Z",
         "UpdatedAt":  "2025-08-22T08:07:55.3240772Z",
         "McpServerBindings":  [
@@ -239,9 +206,6 @@
         "LlmId":  null,
         "Temperature":  0.8,
         "RepeatPenalty":  1.15,
-        "FunctionSettings":  {
-                                 "AutoSelectCount":  0
-                             },
         "CreatedAt":  "2025-08-14T14:34:44.4495257Z",
         "UpdatedAt":  "2025-08-22T08:08:08.0518974Z",
         "McpServerBindings":  [
@@ -258,9 +222,6 @@
         "LlmId":  null,
         "Temperature":  0.8,
         "RepeatPenalty":  1.15,
-        "FunctionSettings":  {
-                                 "AutoSelectCount":  0
-                             },
         "CreatedAt":  "2025-08-19T17:58:13.1013773Z",
         "UpdatedAt":  "2025-08-22T08:08:19.8125768Z",
         "McpServerBindings":  [
@@ -277,9 +238,6 @@
         "LlmId":  null,
         "Temperature":  null,
         "RepeatPenalty":  null,
-        "FunctionSettings":  {
-                                 "AutoSelectCount":  0
-                             },
         "CreatedAt":  "2025-08-20T23:56:30.9835296Z",
         "UpdatedAt":  "2025-08-22T08:37:20.3307008Z",
         "McpServerBindings":  [
@@ -296,9 +254,6 @@
         "LlmId":  null,
         "Temperature":  0.8,
         "RepeatPenalty":  1.15,
-        "FunctionSettings":  {
-                                 "AutoSelectCount":  0
-                             },
         "CreatedAt":  "2025-08-22T07:43:17.2877122Z",
         "UpdatedAt":  "2025-08-22T08:08:33.5664282Z",
         "McpServerBindings":  [
@@ -315,9 +270,6 @@
         "LlmId":  null,
         "Temperature":  null,
         "RepeatPenalty":  null,
-        "FunctionSettings":  {
-                                 "AutoSelectCount":  0
-                             },
         "CreatedAt":  "2025-08-22T09:26:26.971924Z",
         "UpdatedAt":  "2025-08-22T09:30:13.4736525Z",
         "McpServerBindings":  [
@@ -334,9 +286,6 @@
         "LlmId":  null,
         "Temperature":  null,
         "RepeatPenalty":  null,
-        "FunctionSettings":  {
-                                 "AutoSelectCount":  0
-                             },
         "CreatedAt":  "2025-08-22T09:27:01.5980328Z",
         "UpdatedAt":  "2025-08-22T09:30:29.7278953Z",
         "McpServerBindings":  [
@@ -353,9 +302,6 @@
         "LlmId":  null,
         "Temperature":  null,
         "RepeatPenalty":  null,
-        "FunctionSettings":  {
-                                 "AutoSelectCount":  0
-                             },
         "CreatedAt":  "2025-08-22T09:27:31.9787482Z",
         "UpdatedAt":  "2025-08-22T09:30:50.8342705Z",
         "McpServerBindings":  [
@@ -372,9 +318,6 @@
         "LlmId":  null,
         "Temperature":  null,
         "RepeatPenalty":  null,
-        "FunctionSettings":  {
-                                 "AutoSelectCount":  0
-                             },
         "CreatedAt":  "2025-08-22T09:27:56.0698509Z",
         "UpdatedAt":  "2025-08-22T09:31:10.4059087Z",
         "McpServerBindings":  [
@@ -391,9 +334,6 @@
         "LlmId":  null,
         "Temperature":  null,
         "RepeatPenalty":  null,
-        "FunctionSettings":  {
-                                 "AutoSelectCount":  0
-                             },
         "CreatedAt":  "2025-08-23T08:12:48.241472Z",
         "UpdatedAt":  "2025-09-08T18:01:20.3338781Z",
         "McpServerBindings":  [
@@ -410,9 +350,6 @@
         "LlmId":  null,
         "Temperature":  0.8,
         "RepeatPenalty":  1.15,
-        "FunctionSettings":  {
-                                 "AutoSelectCount":  0
-                             },
         "CreatedAt":  "2025-09-09T11:04:20.7931914Z",
         "UpdatedAt":  "2025-09-09T15:29:18.0102271Z",
         "McpServerBindings":  [

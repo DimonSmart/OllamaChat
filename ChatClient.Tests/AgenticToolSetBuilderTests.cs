@@ -82,6 +82,167 @@ public class AgenticToolSetBuilderTests
     }
 
     [Fact]
+    public void ResolveRequestedFunctionNames_CombinesExplicitFunctionsAndSelectedBindingTools()
+    {
+        var bindingId = Guid.NewGuid();
+        var request = CreateRunRequest(
+            functions: ["manual", "MANUAL", "  reports:export  "],
+            bindings:
+            [
+                new McpServerSessionBinding
+                {
+                    BindingId = bindingId,
+                    ServerName = "docs",
+                    Enabled = true,
+                    SelectAllTools = false,
+                    SelectedTools = ["search"]
+                }
+            ]);
+
+        var resolved = AgenticRuntimeAgentFactory.ResolveRequestedFunctionNames(
+            request.Configuration,
+            request.Agent.McpServerBindings,
+            [
+                CreateTool("docs", "search", bindingId: bindingId),
+                CreateTool("docs", "write", bindingId: bindingId),
+                CreateTool("reports", "export")
+            ]);
+
+        Assert.Equal(3, resolved.Count);
+        Assert.Contains("manual", resolved, StringComparer.OrdinalIgnoreCase);
+        Assert.Contains("reports:export", resolved, StringComparer.OrdinalIgnoreCase);
+        Assert.Contains($"binding:{bindingId:N}:search", resolved, StringComparer.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void ResolveRequestedFunctionNames_SelectAllBindingIncludesItsTools()
+    {
+        var bindingId = Guid.NewGuid();
+        var request = CreateRunRequest(
+            bindings:
+            [
+                new McpServerSessionBinding
+                {
+                    BindingId = bindingId,
+                    ServerName = "docs",
+                    Enabled = true,
+                    SelectAllTools = true
+                }
+            ]);
+
+        var resolved = AgenticRuntimeAgentFactory.ResolveRequestedFunctionNames(
+            request.Configuration,
+            request.Agent.McpServerBindings,
+            [
+                CreateTool("docs", "search", bindingId: bindingId),
+                CreateTool("docs", "write", bindingId: bindingId),
+                CreateTool("other", "unrelated")
+            ]);
+
+        Assert.Equal(
+            [$"binding:{bindingId:N}:search", $"binding:{bindingId:N}:write"],
+            resolved.OrderBy(static name => name, StringComparer.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public void ResolveRequestedFunctionNames_NoConfigurationDoesNotRegisterCataloguedTools()
+    {
+        var request = CreateRunRequest();
+
+        var resolved = AgenticRuntimeAgentFactory.ResolveRequestedFunctionNames(
+            request.Configuration,
+            request.Agent.McpServerBindings,
+            [CreateTool("docs", "search"), CreateTool("reports", "export")]);
+
+        Assert.Empty(resolved);
+    }
+
+    [Fact]
+    public void ResolveRequestedFunctionNames_SessionBindingAddsItsSelectedTools()
+    {
+        var agentBindingId = Guid.NewGuid();
+        var sessionBindingId = Guid.NewGuid();
+        var request = CreateRunRequest(
+            bindings:
+            [
+                new McpServerSessionBinding
+                {
+                    BindingId = agentBindingId,
+                    ServerName = "docs",
+                    Enabled = true,
+                    SelectAllTools = false,
+                    SelectedTools = ["search"]
+                }
+            ]);
+        var effectiveBindings = McpServerSessionBindingMerger.Merge(
+            request.Agent.McpServerBindings,
+            [
+                new McpServerSessionBinding
+                {
+                    BindingId = sessionBindingId,
+                    ServerName = "reports",
+                    Enabled = true,
+                    SelectAllTools = false,
+                    SelectedTools = ["export"]
+                }
+            ]);
+
+        var resolved = AgenticRuntimeAgentFactory.ResolveRequestedFunctionNames(
+            request.Configuration,
+            effectiveBindings,
+            [
+                CreateTool("docs", "search", bindingId: agentBindingId),
+                CreateTool("reports", "export", bindingId: sessionBindingId),
+                CreateTool("reports", "delete", bindingId: sessionBindingId)
+            ]);
+
+        Assert.Equal(
+            new[] { $"binding:{agentBindingId:N}:search", $"binding:{sessionBindingId:N}:export" }
+                .OrderBy(static name => name, StringComparer.OrdinalIgnoreCase),
+            resolved.OrderBy(static name => name, StringComparer.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public void ResolveRequestedFunctionNames_SessionOverrideNarrowsTemplateBinding()
+    {
+        var bindingId = Guid.NewGuid();
+        var request = CreateRunRequest(
+            bindings:
+            [
+                new McpServerSessionBinding
+                {
+                    BindingId = bindingId,
+                    ServerName = "docs",
+                    Enabled = true,
+                    SelectAllTools = true
+                }
+            ]);
+        var effectiveBindings = McpServerSessionBindingMerger.Merge(
+            request.Agent.McpServerBindings,
+            [
+                new McpServerSessionBinding
+                {
+                    BindingId = bindingId,
+                    ServerName = "docs",
+                    Enabled = true,
+                    SelectAllTools = false,
+                    SelectedTools = ["search"]
+                }
+            ]);
+
+        var resolved = AgenticRuntimeAgentFactory.ResolveRequestedFunctionNames(
+            request.Configuration,
+            effectiveBindings,
+            [
+                CreateTool("docs", "search", bindingId: bindingId),
+                CreateTool("docs", "write", bindingId: bindingId),
+                CreateTool("other", "unrelated")
+            ]);
+
+        Assert.Equal([$"binding:{bindingId:N}:search"], resolved);
+    }
+
+    [Fact]
     public void Build_QualifiedSelection_DoesNotBroadenToSameNamedTools()
     {
         var tools = new[]
@@ -287,13 +448,14 @@ public class AgenticToolSetBuilderTests
         string serverName,
         string toolName,
         string? bindingDisplayName = null,
+        Guid? bindingId = null,
         JsonElement? inputSchema = null,
         JsonElement? outputSchema = null,
         bool mayRequireUserInput = false,
         Func<Dictionary<string, object?>, CancellationToken, Task<object>>? executeAsync = null)
     {
         return new AppToolDescriptor(
-            QualifiedName: $"{serverName}:{toolName}",
+            QualifiedName: bindingId is Guid id ? $"binding:{id:N}:{toolName}" : $"{serverName}:{toolName}",
             ServerName: serverName,
             ToolName: toolName,
             DisplayName: toolName,
@@ -308,9 +470,25 @@ public class AgenticToolSetBuilderTests
             ExecuteAsync: executeAsync ?? ((_, _) => Task.FromResult<object>("ok")),
             BaseQualifiedName: $"{serverName}:{toolName}",
             BaseServerName: serverName,
-            BindingId: null,
+            BindingId: bindingId,
             BindingDisplayName: bindingDisplayName);
     }
+
+    private static AgentRunRequest CreateRunRequest(
+        IReadOnlyCollection<string>? functions = null,
+        IReadOnlyCollection<McpServerSessionBinding>? bindings = null) =>
+        new()
+        {
+            Agent = new AgentExecutionSpec
+            {
+                AgentName = "Test agent",
+                McpServerBindings = bindings?.ToList() ?? []
+            },
+            ResolvedModel = new ServerModel(Guid.NewGuid(), "test-model"),
+            Configuration = new AppChatConfiguration("test-model", functions ?? []),
+            Conversation = [],
+            UserMessage = "Hello"
+        };
 
     private static JsonElement CreateSchema()
     {

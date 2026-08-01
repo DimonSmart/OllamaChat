@@ -134,15 +134,10 @@
                                 var displayText = GetToolingDisplayText(context.Item);
                                 var tooltipText = GetToolingTooltip(context.Item);
                                 var hasAttachments = HasConfiguredMcpBindings(context.Item);
-                                var isAutoSelect = context.Item.FunctionSettings.IsAutoSelectEnabled;
                             }
                             @if (hasAttachments)
                             {
                                 <span style="color: #1976d2; font-size: 16px; font-weight: 600;" title="@tooltipText">@displayText</span>
-                            }
-                            else if (isAutoSelect)
-                            {
-                                <span title="@tooltipText">@displayText</span>
                             }
                             else
                             {
@@ -310,14 +305,6 @@
 
             <MudDivider Class="my-2" />
             <MudText Typo="Typo.subtitle1">Tooling</MudText>
-            <MudNumericField T="int"
-                             @bind-Value="editingAgent.FunctionSettings.AutoSelectCount"
-                             Label="Auto-select count"
-                             Class="mt-2"
-                             Immediate="true"
-                             Min="0"
-                             Max="10"
-                             HelperText="Set 0 to use only tools exposed by attached MCP servers." />
             <McpServerBindingsEditor Bindings="@editingAgent.McpServerBindings"
                                      BindingsChanged="OnMcpBindingsChanged"
                                      Class="mt-4" />
@@ -452,10 +439,6 @@
             EnableShell = false,
             ContinueUntilTodosComplete = false,
             MaxTodoCompletionIterations = 10,
-            FunctionSettings = new FunctionSettings
-            {
-                AutoSelectCount = 0
-            },
             McpServerBindings = []
         };
         editingServerModel = new ServerModelSelection(null, null);
@@ -514,10 +497,6 @@
             MaxTodoCompletionIterations = agent.MaxTodoCompletionIterations,
             CreatedAt = agent.CreatedAt,
             UpdatedAt = agent.UpdatedAt,
-            FunctionSettings = new FunctionSettings
-            {
-                AutoSelectCount = agent.FunctionSettings.AutoSelectCount
-            },
             KnowledgeStoreIds = agent.KnowledgeStoreIds.Distinct().ToList(),
             McpServerBindings = agent.McpServerBindings
                 .Select(static binding => binding.Clone())
@@ -656,7 +635,7 @@
             return activeBindings == 1 ? "1 MCP" : $"{activeBindings} MCP";
         }
 
-        return agent.FunctionSettings.GetDisplayText();
+        return "\u2212";
     }
 
     private string GetToolingTooltip(AgentTemplateDefinition agent)
@@ -664,7 +643,7 @@
         var activeBindings = agent.McpServerBindings.Where(binding => binding.Enabled && binding.HasIdentity).ToList();
         if (activeBindings.Count == 0)
         {
-            return agent.FunctionSettings.GetTooltipText();
+            return "No MCP attachments configured.";
         }
 
         var explicitToolCount = activeBindings

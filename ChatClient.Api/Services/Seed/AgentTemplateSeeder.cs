@@ -139,7 +139,6 @@ public sealed class AgentTemplateSeeder(
                left.LlmId == right.LlmId &&
                left.Temperature == right.Temperature &&
                left.RepeatPenalty == right.RepeatPenalty &&
-               left.FunctionSettings.AutoSelectCount == right.FunctionSettings.AutoSelectCount &&
                HaveEquivalentBindings(left.McpServerBindings, right.McpServerBindings);
     }
 

@@ -110,17 +110,6 @@ public sealed class AgentTemplateBuilder
         return this;
     }
 
-    public AgentTemplateBuilder AutoSelectTools(int autoSelectCount)
-    {
-        if (autoSelectCount < 0)
-        {
-            throw new ArgumentOutOfRangeException(nameof(autoSelectCount), "Auto-select count cannot be negative.");
-        }
-
-        _template.FunctionSettings.AutoSelectCount = autoSelectCount;
-        return this;
-    }
-
     public AgentTemplateBuilder ClearBindings()
     {
         _template.McpServerBindings.Clear();

@@ -33,7 +33,6 @@ internal static class ApplicationStartupExtensions
 
         if (ollamaStatus.IsAvailable)
         {
-            await scope.ServiceProvider.GetRequiredService<McpFunctionIndexService>().BuildIndexAsync();
             logger.LogInformation("Ollama is available and ready.");
             return;
         }
