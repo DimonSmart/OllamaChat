@@ -1,0 +1,128 @@
+@page "/compaction-profiles"
+@using ChatClient.Api.Services
+@inject ICompactionProfileService CompactionProfileService
+@inject ILlmServerConfigService LlmServerConfigService
+@inject ISnackbar Snackbar
+
+<PageTitle>Compaction Profiles</PageTitle>
+
+<MudContainer MaxWidth="MaxWidth.ExtraLarge" Class="mt-3">
+    <MudText Class="page-header">Compaction Profiles</MudText>
+    <MudPaper Elevation="3" Class="pa-3 rounded-lg">
+        <MudToolBar Dense="true">
+            <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Add" Size="Size.Small" OnClick="Create">Add Profile</MudButton>
+            <MudSpacer />
+            <MudTextField T="string" ValueChanged="Search" Placeholder="Search profiles..." Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Search" Immediate="true" Margin="Margin.Dense" Style="min-width: 280px;" />
+        </MudToolBar>
+        <MudDataGrid T="CompactionProfile" Items="filteredProfiles" Dense="true" Hover="true" Bordered="true" Class="mt-2">
+            <Columns>
+                <PropertyColumn Property="x => x.Name" Title="Name" />
+                <TemplateColumn Title="Policy"><CellTemplate><MudText Typo="Typo.body2">@PolicySummary(context.Item)</MudText></CellTemplate></TemplateColumn>
+                <TemplateColumn Title="Budget"><CellTemplate><MudText Typo="Typo.body2">@BudgetSummary(context.Item)</MudText></CellTemplate></TemplateColumn>
+                <TemplateColumn Title="Actions" CellStyle="display:flex; justify-content:flex-end;"><CellTemplate>
+                    <MudIconButton Icon="@Icons.Material.Filled.Edit" Size="Size.Small" AriaLabel="Edit compaction profile" OnClick="@(() => Edit(context.Item))" />
+                    <MudIconButton Icon="@Icons.Material.Filled.Delete" Color="Color.Error" Size="Size.Small" AriaLabel="Delete compaction profile" OnClick="@(() => ConfirmDelete(context.Item))" />
+                </CellTemplate></TemplateColumn>
+            </Columns>
+            <NoRecordsContent><MudText Class="pa-4">No compaction profiles found.</MudText></NoRecordsContent>
+        </MudDataGrid>
+    </MudPaper>
+</MudContainer>
+
+<MudDialog @bind-Visible="editing" Options="editOptions">
+    <TitleContent><MudText Typo="Typo.h6">@(isNew ? "Create Compaction Profile" : "Edit Compaction Profile")</MudText></TitleContent>
+    <DialogContent>
+        <MudForm @ref="form" Model="model">
+            <MudTextField @bind-Value="model.Name" Label="Name" Required="true" Immediate="true" Margin="Margin.Dense" Validation="@(new Func<string, string>(ValidateName))" />
+            <MudSelect T="string" @bind-Value="model.Kind" Label="Policy" Margin="Margin.Dense" Dense="true">
+                <MudSelectItem Value="@CompactionProfileKinds.ContextWindow">Recommended context window</MudSelectItem>
+                <MudSelectItem Value="@CompactionProfileKinds.CustomPipeline">Custom pipeline</MudSelectItem>
+            </MudSelect>
+            <MudSelect T="string" @bind-Value="model.BudgetSource" Label="Budget source" Margin="Margin.Dense" Dense="true">
+                <MudSelectItem Value="@CompactionBudgetSources.SelectedModel">Use selected model limits</MudSelectItem>
+                <MudSelectItem Value="@CompactionBudgetSources.Fixed">Fixed limits</MudSelectItem>
+            </MudSelect>
+            @if (model.BudgetSource == CompactionBudgetSources.Fixed)
+            {
+                <MudStack Row="true" Spacing="2"><MudNumericField T="int?" @bind-Value="model.ContextWindowTokens" Label="Context window tokens" Required="true" Margin="Margin.Dense" /><MudNumericField T="int?" @bind-Value="model.MaxOutputTokens" Label="Maximum output tokens" Required="true" Margin="Margin.Dense" /></MudStack>
+                @if (!HasValidFixedBudget()) { <MudText Color="Color.Error" Typo="Typo.caption">Context window must be greater than maximum output.</MudText> }
+            }
+            @if (model.Kind == CompactionProfileKinds.CustomPipeline)
+            {
+                <MudText Typo="Typo.h6" Class="mt-3 mb-1">Pipeline stages</MudText>
+                @for (var index = 0; index < model.Stages.Count; index++)
+                {
+                    var stage = model.Stages[index];
+                    <MudPaper Outlined="true" Class="pa-2 mb-2">
+                        <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="1">
+                            <MudText Typo="Typo.subtitle2">Stage @(index + 1)</MudText><MudSpacer />
+                            <MudIconButton Icon="@Icons.Material.Filled.KeyboardArrowUp" Size="Size.Small" Disabled="@(index == 0)" AriaLabel="Move stage up" OnClick="@(() => MoveStage(index, -1))" />
+                            <MudIconButton Icon="@Icons.Material.Filled.KeyboardArrowDown" Size="Size.Small" Disabled="@(index == model.Stages.Count - 1)" AriaLabel="Move stage down" OnClick="@(() => MoveStage(index, 1))" />
+                            <MudIconButton Icon="@Icons.Material.Filled.Delete" Color="Color.Error" Size="Size.Small" AriaLabel="Delete stage" OnClick="@(() => RemoveStage(stage))" />
+                        </MudStack>
+                        <MudSelect T="string" Value="stage.Kind" ValueChanged="@(kind => ChangeStageKind(stage, kind))" Label="Stage type" Dense="true" Margin="Margin.Dense">
+                            <MudSelectItem Value="@CompactionStageKinds.ToolResult">Compact tool results</MudSelectItem>
+                            <MudSelectItem Value="@CompactionStageKinds.Truncation">Truncate history</MudSelectItem>
+                            <MudSelectItem Value="@CompactionStageKinds.Summarization">Summarize history</MudSelectItem>
+                            <MudSelectItem Value="@CompactionStageKinds.SlidingWindow">Keep sliding window</MudSelectItem>
+                        </MudSelect>
+                        <MudStack Row="true" Spacing="2"><MudNumericField T="int" @bind-Value="stage.TriggerTokenCount" Label="Trigger tokens" Margin="Margin.Dense" /><MudNumericField T="int" @bind-Value="stage.TargetTokenCount" Label="Target tokens" Margin="Margin.Dense" /></MudStack>
+                        @if (!HasValidStageTokens(stage)) { <MudText Color="Color.Error" Typo="Typo.caption">Trigger and target must be positive; target must be lower than trigger.</MudText> }
+                        @if (stage.Kind == CompactionStageKinds.Summarization)
+                        {
+                            <MudAlert Severity="Severity.Warning" Dense="true" Class="mt-2">Generated summaries become trusted runtime context. Use only a trusted model and endpoint.</MudAlert>
+                            <MudTextField @bind-Value="stage.SummaryInstructions" Label="Summary instructions" Lines="3" Margin="Margin.Dense" />
+                            <MudCheckBox T="bool" Value="@(stage.SummarizerLlmId is not null)" ValueChanged="@(useSeparate => ToggleSeparateSummarizer(stage, useSeparate))" Label="Use a separate trusted summarizer" Dense="true" />
+                            @if (stage.SummarizerLlmId is not null)
+                            {
+                                <MudSelect T="Guid?" @bind-Value="stage.SummarizerLlmId" Label="Summarizer server" Dense="true" Margin="Margin.Dense">
+                                    @foreach (var server in servers) { <MudSelectItem Value="@server.Id">@server.Name</MudSelectItem> }
+                                </MudSelect>
+                                <MudTextField @bind-Value="stage.SummarizerModelName" Label="Summarizer model" Margin="Margin.Dense" />
+                                @if (stage.SummarizerLlmId is null || string.IsNullOrWhiteSpace(stage.SummarizerModelName)) { <MudText Color="Color.Error" Typo="Typo.caption">Choose both a server and model for a separate summarizer.</MudText> }
+                            }
+                        }
+                    </MudPaper>
+                }
+                @if (model.Stages.Count == 0) { <MudText Color="Color.Error" Typo="Typo.caption">A custom pipeline requires at least one stage.</MudText> }
+                <MudButton Variant="Variant.Outlined" StartIcon="@Icons.Material.Filled.Add" Size="Size.Small" OnClick="AddStage">Add stage</MudButton>
+            }
+        </MudForm>
+    </DialogContent>
+    <DialogActions><MudButton Size="Size.Small" OnClick="Close">Cancel</MudButton><MudButton Color="Color.Primary" Size="Size.Small" Disabled="saving" OnClick="Save">Save</MudButton></DialogActions>
+</MudDialog>
+
+<MudDialog @bind-Visible="deleting" Options="deleteOptions"><TitleContent><MudText Typo="Typo.h6">Delete Compaction Profile</MudText></TitleContent><DialogContent><MudText>Delete "@deletingProfile?.Name"?</MudText></DialogContent><DialogActions><MudButton Size="Size.Small" OnClick="CloseDelete">Cancel</MudButton><MudButton Color="Color.Error" Size="Size.Small" OnClick="Delete">Delete</MudButton></DialogActions></MudDialog>
+
+@code {
+    private List<CompactionProfile> profiles = [], filteredProfiles = [];
+    private List<LlmServerConfig> servers = [];
+    private CompactionProfile model = new();
+    private CompactionProfile? deletingProfile;
+    private MudForm? form;
+    private bool editing, deleting, isNew, saving;
+    private readonly DialogOptions editOptions = new() { CloseButton = true, CloseOnEscapeKey = true, FullWidth = true, MaxWidth = MaxWidth.Large };
+    private readonly DialogOptions deleteOptions = new() { CloseButton = true, CloseOnEscapeKey = true, MaxWidth = MaxWidth.ExtraSmall };
+
+    protected override async Task OnInitializedAsync() { servers = (await LlmServerConfigService.GetAllAsync()).ToList(); await Load(); }
+    private async Task Load() { profiles = (await CompactionProfileService.GetAllAsync()).OrderBy(x => x.Name, StringComparer.OrdinalIgnoreCase).ToList(); filteredProfiles = profiles.ToList(); }
+    private void Search(string value) => filteredProfiles = string.IsNullOrWhiteSpace(value) ? profiles.ToList() : profiles.Where(x => x.Name.Contains(value, StringComparison.OrdinalIgnoreCase) || PolicySummary(x).Contains(value, StringComparison.OrdinalIgnoreCase)).ToList();
+    private void Create() { model = new CompactionProfile(); isNew = true; editing = true; }
+    private void Edit(CompactionProfile value) { model = Copy(value); isNew = false; editing = true; }
+    private void AddStage() => model.Stages.Add(new CompactionStage { Kind = CompactionStageKinds.ToolResult, TriggerTokenCount = 8000, TargetTokenCount = 4000 });
+    private void RemoveStage(CompactionStage stage) => model.Stages.Remove(stage);
+    private void MoveStage(int index, int direction) { var target = index + direction; if (target < 0 || target >= model.Stages.Count) return; (model.Stages[index], model.Stages[target]) = (model.Stages[target], model.Stages[index]); }
+    private void ChangeStageKind(CompactionStage stage, string kind) { stage.Kind = kind; if (kind != CompactionStageKinds.Summarization) { stage.SummaryInstructions = null; stage.SummarizerLlmId = null; stage.SummarizerModelName = null; } }
+    private void ToggleSeparateSummarizer(CompactionStage stage, bool useSeparate) { if (useSeparate) { stage.SummarizerLlmId = servers.FirstOrDefault()?.Id; } else { stage.SummarizerLlmId = null; stage.SummarizerModelName = null; } }
+    private async Task Save() { if (form is null) return; await form.ValidateAsync(); if (!form.IsValid || !IsValid()) return; try { saving = true; if (isNew) await CompactionProfileService.CreateAsync(model); else await CompactionProfileService.UpdateAsync(model); editing = false; await Load(); Snackbar.Add($"Compaction profile {(isNew ? "created" : "updated")}.", Severity.Success); } catch (Exception ex) { Snackbar.Add($"Could not save compaction profile: {ex.Message}", Severity.Error); } finally { saving = false; } }
+    private bool IsValid() => (model.BudgetSource != CompactionBudgetSources.Fixed || HasValidFixedBudget()) && (model.Kind != CompactionProfileKinds.CustomPipeline || model.Stages.Count > 0 && model.Stages.All(stage => HasValidStageTokens(stage) && (stage.Kind != CompactionStageKinds.Summarization || stage.SummarizerLlmId is null || !string.IsNullOrWhiteSpace(stage.SummarizerModelName))));
+    private bool HasValidFixedBudget() => model.ContextWindowTokens > 0 && model.MaxOutputTokens > 0 && model.MaxOutputTokens < model.ContextWindowTokens;
+    private static bool HasValidStageTokens(CompactionStage stage) => stage.TriggerTokenCount > 0 && stage.TargetTokenCount > 0 && stage.TargetTokenCount < stage.TriggerTokenCount;
+    private void ConfirmDelete(CompactionProfile value) { deletingProfile = value; deleting = true; }
+    private async Task Delete() { if (deletingProfile is null) return; try { await CompactionProfileService.DeleteAsync(deletingProfile.Id); deleting = false; await Load(); Snackbar.Add("Compaction profile deleted.", Severity.Success); } catch (Exception ex) { Snackbar.Add($"Could not delete compaction profile: {ex.Message}", Severity.Error); } }
+    private void Close() => editing = false; private void CloseDelete() => deleting = false;
+    private static string ValidateName(string value) => string.IsNullOrWhiteSpace(value) ? "Name is required." : string.Empty;
+    private static string PolicySummary(CompactionProfile value) => value.Kind == CompactionProfileKinds.ContextWindow ? "Recommended context window" : string.Join(" → ", value.Stages.Select(x => x.Kind));
+    private static string BudgetSummary(CompactionProfile value) => value.BudgetSource == CompactionBudgetSources.SelectedModel ? "Selected model limits" : $"Fixed: {value.ContextWindowTokens:N0} / {value.MaxOutputTokens:N0}";
+    private static CompactionProfile Copy(CompactionProfile value) => new() { Id = value.Id, Name = value.Name, Kind = value.Kind, BudgetSource = value.BudgetSource, ContextWindowTokens = value.ContextWindowTokens, MaxOutputTokens = value.MaxOutputTokens, CreatedAt = value.CreatedAt, UpdatedAt = value.UpdatedAt, Stages = value.Stages.Select(x => new CompactionStage { Kind = x.Kind, TriggerTokenCount = x.TriggerTokenCount, TargetTokenCount = x.TargetTokenCount, SummaryInstructions = x.SummaryInstructions, SummarizerLlmId = x.SummarizerLlmId, SummarizerModelName = x.SummarizerModelName }).ToList() };
+}

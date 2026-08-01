@@ -23,6 +23,7 @@ internal static class ApplicationStartupExtensions
         await SeedTodoProviderProfilesAsync(scope.ServiceProvider);
         await SeedAgentModeProviderProfilesAsync(scope.ServiceProvider);
         await scope.ServiceProvider.GetRequiredService<SandboxProfileSeeder>().SeedAsync();
+        await scope.ServiceProvider.GetRequiredService<CompactionProfileSeeder>().SeedAsync();
         await scope.ServiceProvider.GetRequiredService<WorkflowDefinitionSeeder>().SeedAsync();
         await scope.ServiceProvider.GetRequiredService<LlmServerConfigSeeder>().SeedAsync();
         await scope.ServiceProvider.GetRequiredService<McpServerConfigSeeder>().SeedAsync();

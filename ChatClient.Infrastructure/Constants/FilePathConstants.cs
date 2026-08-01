@@ -10,6 +10,8 @@ public static class FilePathConstants
     public const string DefaultAgentModeProviderProfilesFile = "UserData/agent_mode_provider_profiles.json";
     public const string DefaultFileAccessProviderProfilesFile = "UserData/file_access_provider_profiles.json";
     public const string DefaultSandboxProfilesFile = "UserData/sandbox_profiles.json";
+    public const string DefaultCompactionProfilesFile = "UserData/compaction_profiles.json";
+    public const string DefaultModelRuntimeLimitsFile = "UserData/model_runtime_limits.json";
     public const string DefaultWorkflowDefinitionsFile = "UserData/workflow_definitions.json";
     public const string DefaultUserSettingsFile = "UserData/user_settings.json";
     public const string DefaultKnowledgeVectorDatabaseFile = "UserData/knowledge-stores/knowledge.sqlite";

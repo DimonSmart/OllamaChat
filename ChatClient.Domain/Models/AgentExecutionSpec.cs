@@ -19,6 +19,7 @@ public sealed class AgentExecutionSpec : AgentModelBase
             TodoProviderProfileId = TodoProviderProfileId,
             AgentModeProviderProfileId = AgentModeProviderProfileId,
             FileAccessProviderProfileId = FileAccessProviderProfileId,
+            CompactionProfileId = CompactionProfileId,
             EnableShell = EnableShell,
             ContinueUntilTodosComplete = ContinueUntilTodosComplete,
             MaxTodoCompletionIterations = MaxTodoCompletionIterations,

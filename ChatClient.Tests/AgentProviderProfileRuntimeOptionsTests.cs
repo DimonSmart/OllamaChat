@@ -1,8 +1,10 @@
 using ChatClient.Api.Client.Services.Agentic;
+using ChatClient.Api.Services;
 using ChatClient.Application.Services;
 using ChatClient.Application.Services.Agentic;
 using ChatClient.Domain.Models;
 using Microsoft.Agents.AI;
+using Microsoft.Agents.AI.Compaction;
 using Microsoft.Extensions.Logging.Abstractions;
 
 #pragma warning disable MAAI001
@@ -11,6 +13,34 @@ namespace ChatClient.Tests;
 
 public class AgentProviderProfileRuntimeOptionsTests
 {
+    [Fact]
+    public void BuildHarnessAgentOptions_AppliesResolvedCompactionWithoutReplacingStrategy()
+    {
+        var strategy = new ContextWindowCompactionStrategy(16_000, 2_000, 0.5, 0.8);
+        var resolved = new ResolvedCompactionStrategy(
+            strategy,
+            new CompactionBudget(16_000, 2_000, 14_000),
+            []);
+
+        var options = BuildHarnessAgentOptions(resolved);
+
+        Assert.False(options.DisableCompaction);
+        Assert.Same(strategy, options.CompactionStrategy);
+        Assert.Equal(16_000, options.MaxContextWindowTokens);
+        Assert.Equal(2_000, options.MaxOutputTokens);
+    }
+
+    [Fact]
+    public void BuildHarnessAgentOptions_DisablesCompactionWhenNoProfileIsResolved()
+    {
+        var options = BuildHarnessAgentOptions(null);
+
+        Assert.True(options.DisableCompaction);
+        Assert.Null(options.CompactionStrategy);
+        Assert.Null(options.MaxContextWindowTokens);
+        Assert.Null(options.MaxOutputTokens);
+    }
+
     [Fact]
     public void BuildTodoProviderOptions_MapsProfileAndRendersTemplate()
     {
@@ -198,6 +228,32 @@ public class AgentProviderProfileRuntimeOptionsTests
         var clone = spec.Clone();
         Assert.True(clone.ContinueUntilTodosComplete);
         Assert.Equal(7, clone.MaxTodoCompletionIterations);
+    }
+
+    private static HarnessAgentOptions BuildHarnessAgentOptions(ResolvedCompactionStrategy? compaction)
+    {
+        var request = new AgentRunRequest
+        {
+            Agent = new AgentExecutionSpec(),
+            ResolvedModel = new ServerModel(Guid.NewGuid(), "test-model"),
+            Configuration = new AppChatConfiguration("test-model", []),
+            Conversation = [],
+            UserMessage = "Hello"
+        };
+
+        return AgenticRuntimeAgentFactory.BuildHarnessAgentOptions(
+            request,
+            AgenticToolSet.Empty,
+            null!,
+            hasRagContent: false,
+            supportsFunctions: false,
+            todoProfile: null,
+            agentModeProfile: null,
+            fileAccessProfile: null,
+            workspaceStore: null,
+            shellExecutor: null,
+            NullLoggerFactory.Instance,
+            compaction);
     }
 }
 

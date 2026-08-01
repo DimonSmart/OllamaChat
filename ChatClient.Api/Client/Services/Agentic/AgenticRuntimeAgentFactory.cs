@@ -37,7 +37,9 @@ public sealed class AgenticRuntimeAgentFactory(
     IOptions<AgenticToolInvocationPolicyOptions> toolPolicyOptions,
     ILogger<AgenticRuntimeAgentFactory> logger,
     ILoggerFactory loggerFactory,
-    IFileAccessProviderProfileService? fileAccessProviderProfileService = null)
+    IFileAccessProviderProfileService? fileAccessProviderProfileService = null,
+    ICompactionProfileService? compactionProfileService = null,
+    ICompactionStrategyResolver? compactionStrategyResolver = null)
 {
     internal async Task<HarnessAgentRuntimeDefinition> CreateAsync(
         AgentRunRequest request,
@@ -63,6 +65,21 @@ public sealed class AgenticRuntimeAgentFactory(
         ValidateTodoCompletionConfiguration(request.Agent, todoProfile, agentModeProfile);
 
         var chatClient = await llmChatClientFactory.CreateAsync(request.ResolvedModel, cancellationToken);
+        var compactionProfile = await GetCompactionProfileAsync(request.Agent.CompactionProfileId);
+        if (request.Agent.CompactionProfileId is Guid compactionProfileId && compactionProfileId != Guid.Empty && compactionProfile is null)
+        {
+            throw new InvalidOperationException($"Selected compaction profile '{compactionProfileId}' was not found.");
+        }
+        var compaction = compactionProfile is null
+            ? null
+            : await (compactionStrategyResolver ?? throw new InvalidOperationException("Compaction strategy resolver is not configured."))
+                .ResolveAsync(compactionProfile, request.ResolvedModel, chatClient, cancellationToken);
+        if (compaction is not null)
+        {
+            logger.LogInformation("Applying compaction profile {ProfileName}: context={ContextWindowTokens}, output={MaxOutputTokens}, input={InputBudgetTokens}, stages=[{StageKinds}]",
+                compactionProfile!.Name, compaction.Budget.ContextWindowTokens, compaction.Budget.MaxOutputTokens,
+                compaction.Budget.InputBudgetTokens, string.Join(", ", compaction.StageKinds));
+        }
         bool supportsFunctions = await modelCapabilityService.SupportsFunctionCallingAsync(
             request.ResolvedModel,
             cancellationToken);
@@ -188,7 +205,8 @@ public sealed class AgenticRuntimeAgentFactory(
             fileAccessProfile,
             workspaceStore,
             shellExecutor,
-            loggerFactory);
+            loggerFactory,
+            compaction);
         return new HarnessAgentRuntimeDefinition(
             runtimeAgent,
             server,
@@ -210,43 +228,24 @@ public sealed class AgenticRuntimeAgentFactory(
         FileAccessProviderProfile? fileAccessProfile,
         SessionWorkspaceAgentFileStore? workspaceStore,
         SessionSandboxShellExecutor? shellExecutor,
-        ILoggerFactory loggerFactory)
+        ILoggerFactory loggerFactory,
+        ResolvedCompactionStrategy? compaction)
     {
         // Harness owns the function-invocation loop, session history and compaction.
         // The direct-chat service must not rebuild any of that state from its UI transcript.
-        var agentOptions = new HarnessAgentOptions
-        {
-            Id = string.IsNullOrWhiteSpace(request.Agent.AgentId) ? null : request.Agent.AgentId.Trim(),
-            Name = string.IsNullOrWhiteSpace(request.Agent.AgentName) ? null : request.Agent.AgentName.Trim(),
-            ChatOptions = new ChatOptions
-            {
-                Instructions = BuildInstructions(request.Agent),
-                Tools = toolSet.Tools.ToList(),
-                ModelId = request.ResolvedModel.ModelName,
-                Temperature = ResolveTemperature(request.ResolvedModel, request.Agent.Temperature)
-            },
-            DisableTodoProvider = true,
-            DisableAgentModeProvider = agentModeProfile is null,
-            AgentModeProviderOptions = agentModeProfile is null
-                ? null
-                : BuildAgentModeProviderOptions(agentModeProfile),
-            DisableWebSearch = true,
-            DisableFileMemory = true,
-            FileAccessStore = workspaceStore,
-            FileAccessProviderOptions = fileAccessProfile is null ? null : BuildFileAccessProviderOptions(fileAccessProfile),
-            DisableAgentSkillsProvider = true,
-            AIContextProviders = BuildContextProviders(
-                request,
-                knowledgeSearchService,
-                hasRagContent,
-                supportsFunctions,
-                loggerFactory,
-                todoProfile,
-                shellExecutor),
-#pragma warning disable MAAI001
-            DisableCompaction = true
-#pragma warning restore MAAI001
-        };
+        var agentOptions = BuildHarnessAgentOptions(
+            request,
+            toolSet,
+            knowledgeSearchService,
+            hasRagContent,
+            supportsFunctions,
+            todoProfile,
+            agentModeProfile,
+            fileAccessProfile,
+            workspaceStore,
+            shellExecutor,
+            loggerFactory,
+            compaction);
 
         if (shellExecutor is not null)
         {
@@ -293,6 +292,73 @@ public sealed class AgenticRuntimeAgentFactory(
                     request.RuntimeResources.WorkspacePath))
             ]
         });
+    }
+
+#pragma warning disable MAAI001
+    internal static HarnessAgentOptions BuildHarnessAgentOptions(
+        AgentRunRequest request,
+        AgenticToolSet toolSet,
+        IKnowledgeSearchService knowledgeSearchService,
+        bool hasRagContent,
+        bool supportsFunctions,
+        TodoProviderProfile? todoProfile,
+        AgentModeProviderProfile? agentModeProfile,
+        FileAccessProviderProfile? fileAccessProfile,
+        SessionWorkspaceAgentFileStore? workspaceStore,
+        SessionSandboxShellExecutor? shellExecutor,
+        ILoggerFactory loggerFactory,
+        ResolvedCompactionStrategy? compaction)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        ArgumentNullException.ThrowIfNull(toolSet);
+        ArgumentNullException.ThrowIfNull(loggerFactory);
+
+        return new HarnessAgentOptions
+        {
+            Id = string.IsNullOrWhiteSpace(request.Agent.AgentId) ? null : request.Agent.AgentId.Trim(),
+            Name = string.IsNullOrWhiteSpace(request.Agent.AgentName) ? null : request.Agent.AgentName.Trim(),
+            ChatOptions = new ChatOptions
+            {
+                Instructions = BuildInstructions(request.Agent),
+                Tools = toolSet.Tools.ToList(),
+                ModelId = request.ResolvedModel.ModelName,
+                Temperature = ResolveTemperature(request.ResolvedModel, request.Agent.Temperature)
+            },
+            DisableTodoProvider = true,
+            DisableAgentModeProvider = agentModeProfile is null,
+            AgentModeProviderOptions = agentModeProfile is null
+                ? null
+                : BuildAgentModeProviderOptions(agentModeProfile),
+            DisableWebSearch = true,
+            DisableFileMemory = true,
+            FileAccessStore = workspaceStore,
+            FileAccessProviderOptions = fileAccessProfile is null ? null : BuildFileAccessProviderOptions(fileAccessProfile),
+            DisableAgentSkillsProvider = true,
+            AIContextProviders = BuildContextProviders(
+                request,
+                knowledgeSearchService,
+                hasRagContent,
+                supportsFunctions,
+                loggerFactory,
+                todoProfile,
+                shellExecutor),
+#pragma warning disable MAAI001
+            DisableCompaction = compaction is null,
+            CompactionStrategy = compaction?.Strategy,
+            MaxContextWindowTokens = compaction?.Budget.ContextWindowTokens,
+            MaxOutputTokens = compaction?.Budget.MaxOutputTokens
+#pragma warning restore MAAI001
+        };
+    }
+#pragma warning restore MAAI001
+
+    private async Task<CompactionProfile?> GetCompactionProfileAsync(Guid? id)
+    {
+        if (id is not Guid profileId || profileId == Guid.Empty)
+            return null;
+        return compactionProfileService is null
+            ? null
+            : await compactionProfileService.GetByIdAsync(profileId);
     }
 
     internal static void ValidateTodoCompletionConfiguration(

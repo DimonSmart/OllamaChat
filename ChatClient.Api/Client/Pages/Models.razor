@@ -5,6 +5,8 @@
 @inject IOllamaClientService OllamaService
 @inject IOpenAIClientService OpenAIService
 @inject ILlmServerConfigService LlmServerConfigService
+@inject IModelRuntimeLimitsService ModelRuntimeLimitsService
+@inject ISnackbar Snackbar
 
 <MudContainer Class="mt-3">
     <MudText Class="page-header">Available Models</MudText>
@@ -44,6 +46,7 @@
                         <MudTh>Function Calling</MudTh>
                         <MudTh>Modified At</MudTh>
                         <MudTh>Size</MudTh>
+                        <MudTh>Runtime limits</MudTh>
                     </HeaderContent>
                     <RowTemplate>
                         <MudTd DataLabel="Name">@context.Name</MudTd>
@@ -69,16 +72,52 @@
                         </MudTd>
                         <MudTd DataLabel="Modified At">@FormatDate(context.ModifiedAt)</MudTd>
                         <MudTd DataLabel="Size">@FormatSize(context.Size)</MudTd>
+                        <MudTd DataLabel="Runtime limits"><MudButton Size="Size.Small" Variant="Variant.Text" OnClick="@(() => EditLimits(server.Server, context.Name))">@LimitsSummary(server.Server.Id ?? Guid.Empty, context.Name)</MudButton></MudTd>
                     </RowTemplate>
                 </MudTable>
             }
         }
     }
+
+    <MudPaper Elevation="3" Class="pa-3 mt-4 rounded-lg">
+        <MudText Typo="Typo.h6">Saved Runtime Limits</MudText>
+        <MudText Typo="Typo.body2" Class="mud-text-secondary">Limits remain available for models that are temporarily unavailable from their server.</MudText>
+        <MudDataGrid T="ModelRuntimeLimits" Items="runtimeLimits" Dense="true" Hover="true" Bordered="true" Class="mt-2">
+            <Columns>
+                <TemplateColumn Title="Server"><CellTemplate>@ServerName(context.Item.ServerId)</CellTemplate></TemplateColumn>
+                <PropertyColumn Property="x => x.ModelName" Title="Model" />
+                <TemplateColumn Title="Context window"><CellTemplate>@context.Item.ContextWindowTokens.ToString("N0")</CellTemplate></TemplateColumn>
+                <TemplateColumn Title="Maximum output"><CellTemplate>@context.Item.MaxOutputTokens.ToString("N0")</CellTemplate></TemplateColumn>
+                <TemplateColumn Title="Actions"><CellTemplate><MudIconButton Icon="@Icons.Material.Filled.Edit" Size="Size.Small" AriaLabel="Edit runtime limits" OnClick="@(() => EditLimits(context.Item))" /><MudIconButton Icon="@Icons.Material.Filled.Delete" Color="Color.Error" Size="Size.Small" AriaLabel="Remove runtime limits" OnClick="@(() => ConfirmDeleteLimits(context.Item))" /></CellTemplate></TemplateColumn>
+            </Columns>
+            <NoRecordsContent><MudText Class="pa-3">No runtime limits saved.</MudText></NoRecordsContent>
+        </MudDataGrid>
+    </MudPaper>
 </MudContainer>
+
+<MudDialog @bind-Visible="editingLimits" Options="limitsDialogOptions">
+    <TitleContent><MudText Typo="Typo.h6">Runtime Limits</MudText></TitleContent>
+    <DialogContent>
+        <MudText Typo="Typo.body2" Class="mb-2">@ServerName(limitsModel.ServerId) / @limitsModel.ModelName</MudText>
+        <MudNumericField T="int" @bind-Value="limitsModel.ContextWindowTokens" Label="Context window tokens" Required="true" Margin="Margin.Dense" />
+        <MudNumericField T="int" @bind-Value="limitsModel.MaxOutputTokens" Label="Maximum output tokens" Required="true" Margin="Margin.Dense" />
+        @if (!ValidLimits()) { <MudText Color="Color.Error" Typo="Typo.caption">Both limits must be positive and maximum output must be lower than the context window.</MudText> }
+    </DialogContent>
+    <DialogActions><MudButton Size="Size.Small" OnClick="CloseLimits">Cancel</MudButton><MudButton Color="Color.Primary" Size="Size.Small" OnClick="SaveLimits">Save</MudButton></DialogActions>
+</MudDialog>
+
+<MudDialog @bind-Visible="deletingLimits" Options="deleteDialogOptions"><TitleContent><MudText Typo="Typo.h6">Remove Runtime Limits</MudText></TitleContent><DialogContent><MudText>Remove limits for "@limitsToDelete?.ModelName"?</MudText></DialogContent><DialogActions><MudButton Size="Size.Small" OnClick="CloseDeleteLimits">Cancel</MudButton><MudButton Color="Color.Error" Size="Size.Small" OnClick="DeleteLimits">Remove</MudButton></DialogActions></MudDialog>
 
 @code {
     private List<ServerModels> _serverModels = [];
+    private List<ModelRuntimeLimits> runtimeLimits = [];
+    private ModelRuntimeLimits limitsModel = new();
+    private ModelRuntimeLimits? limitsToDelete;
     private bool _loading = true;
+    private bool editingLimits;
+    private bool deletingLimits;
+    private readonly DialogOptions limitsDialogOptions = new() { CloseButton = true, CloseOnEscapeKey = true, MaxWidth = MaxWidth.Small, FullWidth = true };
+    private readonly DialogOptions deleteDialogOptions = new() { CloseButton = true, CloseOnEscapeKey = true, MaxWidth = MaxWidth.ExtraSmall };
 
     protected override async Task OnInitializedAsync()
     {
@@ -109,6 +148,7 @@
                 }
             });
             _serverModels = (await Task.WhenAll(tasks)).ToList();
+            runtimeLimits = (await ModelRuntimeLimitsService.GetAllAsync()).OrderBy(limit => ServerName(limit.ServerId)).ThenBy(limit => limit.ModelName, StringComparer.OrdinalIgnoreCase).ToList();
         }
         finally
         {
@@ -135,6 +175,51 @@
         }
         return $"{len:0.##} {sizes[order]}";
     }
+
+    private string LimitsSummary(Guid serverId, string modelName)
+    {
+        var limits = runtimeLimits.FirstOrDefault(value => value.ServerId == serverId && string.Equals(value.ModelName, modelName, StringComparison.OrdinalIgnoreCase));
+        return limits is null ? "Set limits" : $"{limits.ContextWindowTokens:N0} / {limits.MaxOutputTokens:N0}";
+    }
+
+    private string ServerName(Guid serverId) => _serverModels.FirstOrDefault(value => value.Server.Id == serverId)?.Server.Name ?? $"Unavailable server ({serverId})";
+
+    private void EditLimits(LlmServerConfig server, string modelName)
+    {
+        var serverId = server.Id ?? Guid.Empty;
+        var existing = runtimeLimits.FirstOrDefault(value => value.ServerId == serverId && string.Equals(value.ModelName, modelName, StringComparison.OrdinalIgnoreCase));
+        limitsModel = existing is null ? new ModelRuntimeLimits { ServerId = serverId, ModelName = modelName } : CopyLimits(existing);
+        editingLimits = true;
+    }
+
+    private void EditLimits(ModelRuntimeLimits limits) { limitsModel = CopyLimits(limits); editingLimits = true; }
+
+    private async Task SaveLimits()
+    {
+        if (!ValidLimits()) return;
+        try
+        {
+            var exists = runtimeLimits.Any(value => value.ServerId == limitsModel.ServerId && string.Equals(value.ModelName, limitsModel.ModelName, StringComparison.OrdinalIgnoreCase));
+            if (exists) await ModelRuntimeLimitsService.UpdateAsync(limitsModel); else await ModelRuntimeLimitsService.CreateAsync(limitsModel);
+            runtimeLimits = (await ModelRuntimeLimitsService.GetAllAsync()).OrderBy(limit => ServerName(limit.ServerId)).ThenBy(limit => limit.ModelName, StringComparer.OrdinalIgnoreCase).ToList();
+            editingLimits = false;
+            Snackbar.Add("Runtime limits saved.", Severity.Success);
+        }
+        catch (Exception ex) { Snackbar.Add($"Could not save runtime limits: {ex.Message}", Severity.Error); }
+    }
+
+    private bool ValidLimits() => limitsModel.ContextWindowTokens > 0 && limitsModel.MaxOutputTokens > 0 && limitsModel.MaxOutputTokens < limitsModel.ContextWindowTokens;
+    private void ConfirmDeleteLimits(ModelRuntimeLimits limits) { limitsToDelete = limits; deletingLimits = true; }
+    private async Task DeleteLimits()
+    {
+        if (limitsToDelete is null) return;
+        try { await ModelRuntimeLimitsService.DeleteAsync(limitsToDelete.ServerId, limitsToDelete.ModelName); runtimeLimits.RemoveAll(value => value.ServerId == limitsToDelete.ServerId && string.Equals(value.ModelName, limitsToDelete.ModelName, StringComparison.OrdinalIgnoreCase)); deletingLimits = false; Snackbar.Add("Runtime limits removed.", Severity.Success); }
+        catch (Exception ex) { Snackbar.Add($"Could not remove runtime limits: {ex.Message}", Severity.Error); }
+    }
+
+    private void CloseLimits() => editingLimits = false;
+    private void CloseDeleteLimits() => deletingLimits = false;
+    private static ModelRuntimeLimits CopyLimits(ModelRuntimeLimits value) => new() { ServerId = value.ServerId, ModelName = value.ModelName, ContextWindowTokens = value.ContextWindowTokens, MaxOutputTokens = value.MaxOutputTokens, CreatedAt = value.CreatedAt, UpdatedAt = value.UpdatedAt };
 
     private sealed record ServerModels(LlmServerConfig Server, List<OllamaModel> Models, string? ErrorMessage);
 }

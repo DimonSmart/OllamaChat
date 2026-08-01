@@ -87,6 +87,8 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<IAgentModeProviderProfileRepository, AgentModeProviderProfileRepository>();
         services.AddSingleton<IFileAccessProviderProfileRepository, FileAccessProviderProfileRepository>();
         services.AddSingleton<ISandboxProfileRepository, SandboxProfileRepository>();
+        services.AddSingleton<ICompactionProfileRepository, CompactionProfileRepository>();
+        services.AddSingleton<IModelRuntimeLimitsRepository, ModelRuntimeLimitsRepository>();
         services.AddSingleton<IWorkflowDefinitionRepository, WorkflowDefinitionRepository>();
         services.AddSingleton<ILlmServerConfigRepository, LlmServerConfigRepository>();
         services.AddSingleton<IMcpServerConfigRepository, McpServerConfigRepository>();
@@ -98,6 +100,10 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<IAgentModeProviderProfileService, AgentModeProviderProfileService>();
         services.AddSingleton<IFileAccessProviderProfileService, FileAccessProviderProfileService>();
         services.AddSingleton<ISandboxProfileService, SandboxProfileService>();
+        services.AddSingleton<ICompactionProfileService, CompactionProfileService>();
+        services.AddSingleton<IModelRuntimeLimitsService, ModelRuntimeLimitsService>();
+        services.AddSingleton<ICompactionBudgetResolver, CompactionBudgetResolver>();
+        services.AddScoped<ICompactionStrategyResolver, CompactionStrategyResolver>();
         services.AddSingleton<IWorkflowDefinitionService, WorkflowDefinitionService>();
         services.AddSingleton<IUserSettingsService, UserSettingsService>();
         services.AddSingleton<IKnowledgeStoreService, KnowledgeStoreService>();
@@ -198,6 +204,7 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<LlmServerConfigSeeder>();
         services.AddSingleton<McpServerConfigSeeder>();
         services.AddSingleton<SandboxProfileSeeder>();
+        services.AddSingleton<CompactionProfileSeeder>();
 
         return services;
     }
