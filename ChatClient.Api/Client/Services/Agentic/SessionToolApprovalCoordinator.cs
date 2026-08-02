@@ -5,7 +5,7 @@ namespace ChatClient.Api.Client.Services.Agentic;
 internal sealed class SessionToolApprovalCoordinator : ISessionToolApprovalCoordinator
 {
     private readonly object _sync = new();
-    private PendingApprovalState? _pending;
+    private readonly LinkedList<PendingApprovalState> _pending = [];
 
     public SessionToolApprovalRequest? PendingRequest
     {
@@ -13,7 +13,7 @@ internal sealed class SessionToolApprovalCoordinator : ISessionToolApprovalCoord
         {
             lock (_sync)
             {
-                return _pending?.Request;
+                return _pending.First?.Value.Request;
             }
         }
     }
@@ -27,20 +27,18 @@ internal sealed class SessionToolApprovalCoordinator : ISessionToolApprovalCoord
         ArgumentNullException.ThrowIfNull(request);
 
         PendingApprovalState state;
+        var publish = false;
         lock (_sync)
         {
-            if (_pending is not null)
-            {
-                throw new InvalidOperationException("Another tool approval request is already pending for this session.");
-            }
-
             state = new PendingApprovalState(
                 request,
                 new TaskCompletionSource<ToolApprovalDecision>(TaskCreationOptions.RunContinuationsAsynchronously));
-            _pending = state;
+            publish = _pending.Count == 0;
+            _pending.AddLast(state);
         }
 
-        PendingRequestChanged?.Invoke();
+        if (publish)
+            PendingRequestChanged?.Invoke();
 
         if (!cancellationToken.CanBeCanceled)
         {
@@ -58,15 +56,15 @@ internal sealed class SessionToolApprovalCoordinator : ISessionToolApprovalCoord
         PendingApprovalState? state;
         lock (_sync)
         {
-            if (_pending is null ||
-                !string.Equals(_pending.Request.RequestId, requestId, StringComparison.Ordinal))
+            if (_pending.First is not { } head ||
+                !string.Equals(head.Value.Request.RequestId, requestId, StringComparison.Ordinal))
             {
                 return false;
             }
 
-            state = _pending;
+            state = head.Value;
             beforeCompletion(state.Request);
-            _pending = null;
+            _pending.RemoveFirst();
         }
 
         PendingRequestChanged?.Invoke();
@@ -76,46 +74,46 @@ internal sealed class SessionToolApprovalCoordinator : ISessionToolApprovalCoord
 
     public void CancelPending()
     {
-        PendingApprovalState? state;
+        PendingApprovalState[] states;
         lock (_sync)
         {
-            state = _pending;
-            _pending = null;
+            states = _pending.ToArray();
+            _pending.Clear();
         }
 
-        if (state is null)
+        if (states.Length == 0)
         {
             return;
         }
 
         PendingRequestChanged?.Invoke();
-        state.Completion.TrySetCanceled();
+        foreach (var state in states)
+            state.Completion.TrySetCanceled();
     }
 
     private async Task<ToolApprovalDecision> WaitWithCancellationAsync(
         PendingApprovalState state,
         CancellationToken cancellationToken)
     {
-        using var registration = cancellationToken.Register(static pendingState =>
-        {
-            ((PendingApprovalState)pendingState!).Completion.TrySetCanceled();
-        }, state);
+        using var registration = cancellationToken.Register(() => Cancel(state));
+        return await state.Completion.Task;
+    }
 
-        try
+    private void Cancel(PendingApprovalState state)
+    {
+        var publish = false;
+        lock (_sync)
         {
-            return await state.Completion.Task.WaitAsync(cancellationToken);
+            var node = _pending.Find(state);
+            if (node is null)
+                return;
+            publish = ReferenceEquals(node, _pending.First);
+            _pending.Remove(node);
         }
-        finally
-        {
-            lock (_sync)
-            {
-                if (ReferenceEquals(_pending, state))
-                {
-                    _pending = null;
-                    PendingRequestChanged?.Invoke();
-                }
-            }
-        }
+
+        if (publish)
+            PendingRequestChanged?.Invoke();
+        state.Completion.TrySetCanceled();
     }
 
     private sealed record PendingApprovalState(

@@ -50,4 +50,27 @@ public sealed class SessionToolApprovalPolicyTests
 
         Assert.False(new SessionToolApprovalPolicy().IsApproved("file_access_read"));
     }
+
+    [Fact]
+    public void Grant_OrdinaryToolDoesNotCrossRuntimeAgentBoundary()
+    {
+        var policy = new SessionToolApprovalPolicy();
+
+        policy.Grant("shared_name", "first-agent");
+
+        Assert.True(policy.IsApproved("shared_name", "first-agent"));
+        Assert.False(policy.IsApproved("shared_name", "second-agent"));
+    }
+
+    [Fact]
+    public void FileAccessNames_AreCaseSensitiveAndDoNotMatchOrdinaryTools()
+    {
+        var policy = new SessionToolApprovalPolicy();
+        policy.SetWorkspace(Path.GetTempPath());
+
+        policy.Grant("FILE_ACCESS_READ", "agent");
+
+        Assert.True(policy.IsApproved("FILE_ACCESS_READ", "agent"));
+        Assert.False(policy.IsApproved("file_access_read", "agent"));
+    }
 }

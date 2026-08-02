@@ -260,10 +260,22 @@ public sealed class AgenticRuntimeAgentFactory(
             loggerFactory,
             compaction);
 
+        if (fileAccessProfile is not null)
+        {
+            var scopeResolver = new ToolApprovalScopeResolver();
+            var conflictingTool = agentOptions.ChatOptions.Tools.FirstOrDefault(tool =>
+                scopeResolver.IsFileAccessTool(tool.Name));
+            if (conflictingTool is not null)
+            {
+                throw new InvalidOperationException(
+                    $"Tool name '{conflictingTool.Name}' is reserved by File Access and cannot be registered by another tool.");
+            }
+        }
+
         if (shellExecutor is not null)
         {
             if (agentOptions.ChatOptions.Tools.Any(tool =>
-                    string.Equals(tool.Name, SandboxToolNames.RunShell, StringComparison.OrdinalIgnoreCase)))
+                    string.Equals(tool.Name, SandboxToolNames.RunShell, StringComparison.Ordinal)))
             {
                 throw new InvalidOperationException(
                     $"Tool name '{SandboxToolNames.RunShell}' is already registered for this agent.");
@@ -296,7 +308,9 @@ public sealed class AgenticRuntimeAgentFactory(
             {
                 AutoApprovalRules =
                 [
-                    context => ValueTask.FromResult(approvalPolicy.IsApproved(context.FunctionCallContent.Name))
+                    context => ValueTask.FromResult(approvalPolicy.IsApproved(
+                        context.FunctionCallContent.Name,
+                        request.Agent.AgentId))
                 ]
             };
         }

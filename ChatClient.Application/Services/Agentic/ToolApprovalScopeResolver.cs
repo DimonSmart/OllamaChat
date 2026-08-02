@@ -6,16 +6,18 @@ namespace ChatClient.Application.Services.Agentic;
 public sealed class ToolApprovalScopeResolver
 {
     private static readonly ImmutableHashSet<string> FileAccessTools =
-        ImmutableHashSet.Create(StringComparer.OrdinalIgnoreCase,
+        ImmutableHashSet.Create(StringComparer.Ordinal,
             "file_access_read", "file_access_ls", "file_access_grep", "file_access_write",
             "file_access_replace", "file_access_replace_lines", "file_access_delete");
 
     public ToolApprovalSessionScope GetScope(string toolName) =>
-        string.Equals(toolName, SandboxToolNames.RunShell, StringComparison.OrdinalIgnoreCase)
+        string.Equals(toolName, SandboxToolNames.RunShell, StringComparison.Ordinal)
             ? ToolApprovalSessionScope.SandboxCommands
             : FileAccessTools.Contains(toolName)
                 ? ToolApprovalSessionScope.FileAccess
                 : ToolApprovalSessionScope.Tool;
+
+    public bool IsFileAccessTool(string toolName) => FileAccessTools.Contains(toolName);
 
     public string? GetWorkspace(ToolApprovalSessionScope scope, string? fileAccessWorkspace, string? sandboxWorkspace) =>
         scope switch

@@ -3,6 +3,7 @@ namespace ChatClient.Application.Services.Agentic;
 public sealed record SessionToolApprovalRequest(
     string RequestId,
     string ToolName,
+    string RuntimeAgentId,
     string Arguments,
     ToolApprovalSessionScope SessionScope,
     string? WorkspacePath);

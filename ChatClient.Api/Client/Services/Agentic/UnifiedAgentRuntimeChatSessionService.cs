@@ -31,6 +31,7 @@ public sealed class UnifiedAgentRuntimeChatSessionService(
     private CancellationTokenSource? _cancellationTokenSource;
     private AIAgent? _directAgent;
     private AgentSession? _directSession;
+    private string _directRuntimeAgentId = string.Empty;
     private IReadOnlyList<string> _directAvailableModes = [];
     private SessionWorkspaceAgentFileStore? _directFileAccessStore;
     private FileAccessProviderProfile? _directFileAccessProfile;
@@ -331,6 +332,7 @@ public sealed class UnifiedAgentRuntimeChatSessionService(
         {
             _directAgent = null;
             _directSession = null;
+            _directRuntimeAgentId = string.Empty;
             _directFileAccessStore = null;
             _directFileAccessProfile = null;
             _directCompaction = null;
@@ -582,7 +584,7 @@ public sealed class UnifiedAgentRuntimeChatSessionService(
             if (coordinatorRequest is not null)
             {
                 if (!_toolApprovalCoordinator!.TryRespond(coordinatorRequest.RequestId, decision, request =>
-                    ApplySessionGrant(request.ToolName, decision)))
+                    ApplySessionGrant(request.ToolName, request.RuntimeAgentId, decision)))
                 {
                     throw new InvalidOperationException("The pending tool approval is no longer active.");
                 }
@@ -608,7 +610,7 @@ public sealed class UnifiedAgentRuntimeChatSessionService(
             _runSetupGate.Release();
         }
 
-        AIContent response = ApplyToolApprovalDecision(GetToolName(request), decision, request);
+        AIContent response = ApplyToolApprovalDecision(GetToolName(request), _directRuntimeAgentId, decision, request);
 
         await RunDirectAsync([new ChatMessage(ChatRole.User, [response])], generation);
     }
@@ -645,6 +647,7 @@ public sealed class UnifiedAgentRuntimeChatSessionService(
         }, cancellationToken: cancellationToken);
 
         _directAgent = build.Agent;
+        _directRuntimeAgentId = resolved.Agent.AgentId;
         _directSession = await build.Agent.CreateSessionAsync(cancellationToken);
         _directAvailableModes = build.AvailableModes;
         _directFileAccessStore = build.FileAccessStore;
@@ -1207,18 +1210,19 @@ public sealed class UnifiedAgentRuntimeChatSessionService(
 
     private AIContent ApplyToolApprovalDecision(
         string toolName,
+        string runtimeAgentId,
         ToolApprovalDecision decision,
         ToolApprovalRequestContent? request = null)
     {
         var policy = _toolApprovalPolicy ?? throw new InvalidOperationException("Tool approval policy is unavailable.");
         return ToolApprovalDecisionApplier.Apply(
-            request ?? throw new ArgumentNullException(nameof(request)), toolName, decision, policy);
+            request ?? throw new ArgumentNullException(nameof(request)), toolName, runtimeAgentId, decision, policy);
     }
 
-    private void ApplySessionGrant(string toolName, ToolApprovalDecision decision)
+    private void ApplySessionGrant(string toolName, string runtimeAgentId, ToolApprovalDecision decision)
     {
         if (decision == ToolApprovalDecision.ApproveForSession)
-            (_toolApprovalPolicy ?? throw new InvalidOperationException("Tool approval policy is unavailable.")).Grant(toolName);
+            (_toolApprovalPolicy ?? throw new InvalidOperationException("Tool approval policy is unavailable.")).Grant(toolName, runtimeAgentId);
     }
 
     private static string GetToolName(ToolApprovalRequestContent request) => request.ToolCall switch

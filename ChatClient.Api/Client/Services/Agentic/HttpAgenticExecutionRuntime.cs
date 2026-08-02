@@ -143,6 +143,7 @@ public sealed class HttpAgenticExecutionRuntime(
                 new SessionToolApprovalRequest(
                     approvalRequest.RequestId,
                     toolName,
+                    request.Agent.AgentId,
                     GetApprovalArguments(approvalRequest),
                     scope,
                     ToolApprovalScopeResolver.GetWorkspace(
@@ -151,7 +152,7 @@ public sealed class HttpAgenticExecutionRuntime(
                         request.RuntimeResources.WorkspacePath)),
                 cancellationToken);
             var approvalResponse = BuildApprovalResponse(
-                approvalRequest, toolName, approvalDecision,
+                approvalRequest, toolName, request.Agent.AgentId, approvalDecision,
                 request.RuntimeResources.ToolApprovalPolicy);
             nextInput =
             [
@@ -239,11 +240,13 @@ public sealed class HttpAgenticExecutionRuntime(
     private static AIContent BuildApprovalResponse(
         ToolApprovalRequestContent request,
         string toolName,
+        string runtimeAgentId,
         ToolApprovalDecision decision,
         SessionToolApprovalPolicy? policy) =>
         ToolApprovalDecisionApplier.Apply(
             request,
             toolName,
+            runtimeAgentId,
             decision,
             policy ?? throw new InvalidOperationException("A session tool approval policy is required."));
 

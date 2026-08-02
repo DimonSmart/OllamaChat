@@ -9,6 +9,7 @@ internal static class ToolApprovalDecisionApplier
     public static AIContent Apply(
         ToolApprovalRequestContent request,
         string toolName,
+        string runtimeAgentId,
         ToolApprovalDecision decision,
         SessionToolApprovalPolicy policy)
     {
@@ -18,7 +19,7 @@ internal static class ToolApprovalDecisionApplier
             throw new ArgumentOutOfRangeException(nameof(decision));
 
         if (decision == ToolApprovalDecision.ApproveForSession)
-            policy.Grant(toolName);
+            policy.Grant(toolName, runtimeAgentId);
 
         return decision switch
         {
