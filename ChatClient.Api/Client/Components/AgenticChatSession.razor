@@ -357,6 +357,7 @@
     private bool isRespondingToToolApproval;
     private IDialogReference? toolApprovalDialog;
     private string? toolApprovalDialogRequestId;
+    private bool disposed;
     private bool isChangingWorkspace;
     private string workspaceInput = string.Empty;
 
@@ -372,7 +373,12 @@
         SynchronizeToolApprovalDialog();
     }
 
-    public void Dispose() => ChatToolbar.Clear();
+    public void Dispose()
+    {
+        disposed = true;
+        CloseToolApprovalDialog();
+        ChatToolbar.Clear();
+    }
 
     private async Task ChangeWorkspaceAsync()
     {
@@ -440,18 +446,17 @@
     {
         if (PendingToolApproval is null)
         {
-            toolApprovalDialog?.Close();
-            toolApprovalDialog = null;
-            toolApprovalDialogRequestId = null;
+            CloseToolApprovalDialog();
             return;
         }
 
         if (string.Equals(toolApprovalDialogRequestId, PendingToolApproval.RequestId, StringComparison.Ordinal)) return;
+        CloseToolApprovalDialog();
         toolApprovalDialogRequestId = PendingToolApproval.RequestId;
         var request = PendingToolApproval;
         _ = InvokeAsync(async () =>
         {
-            if (!string.Equals(PendingToolApproval?.RequestId, request.RequestId, StringComparison.Ordinal))
+            if (disposed || !string.Equals(PendingToolApproval?.RequestId, request.RequestId, StringComparison.Ordinal))
             {
                 return;
             }
@@ -461,10 +466,25 @@
                 { dialog => dialog.Request, request },
                 { dialog => dialog.OnDecision, EventCallback.Factory.Create<ToolApprovalDecision>(this, RespondToToolApprovalAsync) }
             };
-            toolApprovalDialog = await DialogService.ShowAsync<ToolApprovalDialog>(
+            var dialog = await DialogService.ShowAsync<ToolApprovalDialog>(
                 "Approval required", parameters,
                 new DialogOptions { CloseButton = false, CloseOnEscapeKey = false, BackdropClick = false, MaxWidth = MaxWidth.Small, FullWidth = true });
+            if (disposed || !string.Equals(PendingToolApproval?.RequestId, request.RequestId, StringComparison.Ordinal) ||
+                !string.Equals(toolApprovalDialogRequestId, request.RequestId, StringComparison.Ordinal))
+            {
+                dialog.Close();
+                return;
+            }
+
+            toolApprovalDialog = dialog;
         });
+    }
+
+    private void CloseToolApprovalDialog()
+    {
+        toolApprovalDialog?.Close();
+        toolApprovalDialog = null;
+        toolApprovalDialogRequestId = null;
     }
 
     public async Task ScrollToBottomAsync()

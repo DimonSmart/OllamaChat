@@ -1,36 +1,45 @@
+using ChatClient.Application.Services.Sandbox;
+
 namespace ChatClient.Application.Services.Agentic;
 
 public sealed class SessionToolApprovalPolicy
 {
-    public const string SandboxRunShellToolName = "run_shell";
     private readonly HashSet<string> _tools = new(StringComparer.OrdinalIgnoreCase);
-    private string? _fileAccessWorkspace;
+    private readonly ToolApprovalScopeResolver _scopeResolver;
+    private string? _currentWorkspace;
+    private string? _approvedFileAccessWorkspace;
 
-    public ToolApprovalSessionScope GetScope(string toolName) =>
-        string.Equals(toolName, SandboxRunShellToolName, StringComparison.OrdinalIgnoreCase)
-            ? ToolApprovalSessionScope.SandboxCommands
-            : toolName.StartsWith("file_access_", StringComparison.OrdinalIgnoreCase)
-                ? ToolApprovalSessionScope.FileAccess
-                : ToolApprovalSessionScope.Tool;
+    public SessionToolApprovalPolicy(ToolApprovalScopeResolver? scopeResolver = null) =>
+        _scopeResolver = scopeResolver ?? new ToolApprovalScopeResolver();
 
-    public bool IsApproved(string toolName, string? workspacePath) => GetScope(toolName) switch
+    public ToolApprovalSessionScope GetScope(string toolName) => _scopeResolver.GetScope(toolName);
+
+    public bool IsApproved(string toolName) => GetScope(toolName) switch
     {
-        ToolApprovalSessionScope.SandboxCommands => _tools.Contains(SandboxRunShellToolName),
-        ToolApprovalSessionScope.FileAccess => _fileAccessWorkspace is not null &&
-            string.Equals(_fileAccessWorkspace, NormalizeWorkspacePath(workspacePath), WorkspaceComparison),
+        ToolApprovalSessionScope.SandboxCommands => _tools.Contains(SandboxToolNames.RunShell),
+        ToolApprovalSessionScope.FileAccess => _approvedFileAccessWorkspace is not null &&
+            string.Equals(_approvedFileAccessWorkspace, _currentWorkspace, WorkspaceComparison),
         ToolApprovalSessionScope.Tool => _tools.Contains(toolName),
         _ => false
     };
 
-    public void Grant(string toolName, string? workspacePath)
+    public void SetWorkspace(string? workspace)
+    {
+        var normalized = NormalizeWorkspacePath(workspace);
+        if (!string.Equals(_currentWorkspace, normalized, WorkspaceComparison))
+            _approvedFileAccessWorkspace = null;
+        _currentWorkspace = normalized;
+    }
+
+    public void Grant(string toolName)
     {
         switch (GetScope(toolName))
         {
             case ToolApprovalSessionScope.FileAccess:
-                _fileAccessWorkspace = NormalizeWorkspacePath(workspacePath);
+                _approvedFileAccessWorkspace = _currentWorkspace;
                 break;
             case ToolApprovalSessionScope.SandboxCommands:
-                _tools.Add(SandboxRunShellToolName);
+                _tools.Add(SandboxToolNames.RunShell);
                 break;
             case ToolApprovalSessionScope.Tool:
                 _tools.Add(toolName);
@@ -38,7 +47,7 @@ public sealed class SessionToolApprovalPolicy
         }
     }
 
-    public void ClearFileAccessGrant() => _fileAccessWorkspace = null;
+    public void ClearFileAccessGrant() => _approvedFileAccessWorkspace = null;
 
     public static string? NormalizeWorkspacePath(string? workspacePath)
     {

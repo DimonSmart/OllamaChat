@@ -289,22 +289,19 @@ public sealed class AgenticRuntimeAgentFactory(
             agentOptions.ChatOptions.ToolMode = ChatToolMode.Auto;
         }
 
-        var agent = chatClient.AsHarnessAgent(agentOptions);
         var approvalPolicy = request.RuntimeResources.ToolApprovalPolicy;
-        if (approvalPolicy is null)
+        if (approvalPolicy is not null)
         {
-            return agent;
+            agentOptions.ToolApprovalAgentOptions = new ToolApprovalAgentOptions
+            {
+                AutoApprovalRules =
+                [
+                    context => ValueTask.FromResult(approvalPolicy.IsApproved(context.FunctionCallContent.Name))
+                ]
+            };
         }
 
-        return new ToolApprovalAgent(agent, new ToolApprovalAgentOptions
-        {
-            AutoApprovalRules =
-            [
-                context => ValueTask.FromResult(approvalPolicy.IsApproved(
-                    context.FunctionCallContent.Name,
-                    request.RuntimeResources.WorkspacePath))
-            ]
-        });
+        return chatClient.AsHarnessAgent(agentOptions);
     }
 
 #pragma warning disable MAAI001

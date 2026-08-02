@@ -242,7 +242,8 @@ public sealed class UnifiedAgentRuntimeChatSessionServiceTests
         Assert.Equal(2, testHarness.InvocationCount);
 
         await fixture.Service.SendAsync("B");
-        Assert.Null(fixture.Service.PendingToolApproval);
+        Assert.NotNull(fixture.Service.PendingToolApproval);
+        await fixture.Service.RespondToToolApprovalAsync(ToolApprovalDecision.ApproveOnce);
         Assert.Equal(3, testHarness.InvocationCount);
 
         await fixture.Service.ResetAsync();
@@ -253,28 +254,6 @@ public sealed class UnifiedAgentRuntimeChatSessionServiceTests
         await fixture.Service.SendAsync("A");
         Assert.NotNull(fixture.Service.PendingToolApproval);
         Assert.Equal(0, resetHarness.InvocationCount);
-    }
-
-    [Fact]
-    public async Task DirectHarness_ExactArgumentsApprovalOnlyAutoApprovesTheMatchingCall()
-    {
-        var fixture = CreateDirectFixture();
-        await fixture.Service.StartAsync(fixture.Request);
-        var testHarness = new ApprovalHarnessFixture();
-        InstallDirectHarness(fixture.Service, testHarness.Agent, testHarness.Session, []);
-
-        await fixture.Service.SendAsync("A");
-        Assert.NotNull(fixture.Service.PendingToolApproval);
-        await fixture.Service.RespondToToolApprovalAsync(ToolApprovalDecision.ApproveForSession);
-        Assert.Equal(1, testHarness.InvocationCount);
-
-        await fixture.Service.SendAsync("A");
-        Assert.Null(fixture.Service.PendingToolApproval);
-        Assert.Equal(2, testHarness.InvocationCount);
-
-        await fixture.Service.SendAsync("B");
-        Assert.Null(fixture.Service.PendingToolApproval);
-        Assert.Equal(3, testHarness.InvocationCount);
     }
 
     [Fact]

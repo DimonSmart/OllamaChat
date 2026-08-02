@@ -1,4 +1,4 @@
-namespace ChatClient.Api.Services.Sandbox;
+namespace ChatClient.Application.Services.Sandbox;
 
 public static class SandboxToolNames
 {

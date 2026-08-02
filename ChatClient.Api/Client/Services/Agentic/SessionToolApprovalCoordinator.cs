@@ -50,7 +50,10 @@ internal sealed class SessionToolApprovalCoordinator : ISessionToolApprovalCoord
         return WaitWithCancellationAsync(state, cancellationToken);
     }
 
-    public bool TryRespond(string requestId, ToolApprovalDecision decision)
+    public bool TryRespond(
+        string requestId,
+        ToolApprovalDecision decision,
+        Action<SessionToolApprovalRequest> beforeCompletion)
     {
         PendingApprovalState? state;
         lock (_sync)
@@ -62,6 +65,7 @@ internal sealed class SessionToolApprovalCoordinator : ISessionToolApprovalCoord
             }
 
             state = _pending;
+            beforeCompletion(state.Request);
             _pending = null;
         }
 

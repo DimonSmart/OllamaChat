@@ -137,15 +137,22 @@ public sealed class HttpAgenticExecutionRuntime(
                     "A session tool approval coordinator is required for shell-enabled agents.");
             }
 
+            var toolName = GetApprovalToolName(approvalRequest);
+            var scope = ToolApprovalScopeResolver.GetScope(toolName);
             var approvalDecision = await toolApprovalCoordinator.RequestApprovalAsync(
                 new SessionToolApprovalRequest(
                     approvalRequest.RequestId,
-                    GetApprovalToolName(approvalRequest),
+                    toolName,
                     GetApprovalArguments(approvalRequest),
-                    GetSessionScope(GetApprovalToolName(approvalRequest)),
-                    request.RuntimeResources.WorkspacePath),
+                    scope,
+                    ToolApprovalScopeResolver.GetWorkspace(
+                        scope,
+                        request.RuntimeResources.WorkspacePath,
+                        request.RuntimeResources.WorkspacePath)),
                 cancellationToken);
-            var approvalResponse = BuildApprovalResponse(approvalRequest, approvalDecision);
+            var approvalResponse = BuildApprovalResponse(
+                approvalRequest, toolName, approvalDecision,
+                request.RuntimeResources.ToolApprovalPolicy);
             nextInput =
             [
                 new ChatMessage(ChatRole.User, [approvalResponse])
@@ -231,17 +238,16 @@ public sealed class HttpAgenticExecutionRuntime(
 
     private static AIContent BuildApprovalResponse(
         ToolApprovalRequestContent request,
-        ToolApprovalDecision decision) =>
-        decision switch
-        {
-            ToolApprovalDecision.ApproveOnce => request.CreateResponse(true, "User approved"),
-            ToolApprovalDecision.Deny => request.CreateResponse(false, "User denied"),
-            ToolApprovalDecision.ApproveForSession => request.CreateAlwaysApproveToolResponse("User approved for this session"),
-            _ => throw new ArgumentOutOfRangeException(nameof(decision))
-        };
+        string toolName,
+        ToolApprovalDecision decision,
+        SessionToolApprovalPolicy? policy) =>
+        ToolApprovalDecisionApplier.Apply(
+            request,
+            toolName,
+            decision,
+            policy ?? throw new InvalidOperationException("A session tool approval policy is required."));
 
-    private static ToolApprovalSessionScope GetSessionScope(string toolName) =>
-        new SessionToolApprovalPolicy().GetScope(toolName);
+    private static readonly ToolApprovalScopeResolver ToolApprovalScopeResolver = new();
 
     private static string GetApprovalToolName(ToolApprovalRequestContent request) =>
         request.ToolCall switch

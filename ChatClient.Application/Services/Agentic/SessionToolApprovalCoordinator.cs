@@ -19,7 +19,8 @@ public interface ISessionToolApprovalCoordinator
 
     bool TryRespond(
         string requestId,
-        ToolApprovalDecision decision);
+        ToolApprovalDecision decision,
+        Action<SessionToolApprovalRequest> beforeCompletion);
 
     void CancelPending();
 }
