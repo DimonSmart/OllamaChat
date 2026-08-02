@@ -58,6 +58,9 @@ public sealed class CompactionProfileEditorState
 
     public void ChangeStageKind(CompactionStage stage, string kind)
     {
+        var switchingToSummarization =
+            kind == CompactionStageKinds.Summarization &&
+            stage.Kind != CompactionStageKinds.Summarization;
         var defaults = CompactionStageDefaults.Create(kind);
         stage.Kind = defaults.Kind;
         stage.Trigger = defaults.Trigger;
@@ -66,7 +69,17 @@ public sealed class CompactionProfileEditorState
         stage.MinimumPreservedTurns = defaults.MinimumPreservedTurns;
 
         if (kind == CompactionStageKinds.Summarization)
+        {
+            if (switchingToSummarization)
+            {
+                separateSummarizerStages.Remove(stage);
+                stage.SummaryInstructions = null;
+                stage.SummarizerLlmId = null;
+                stage.SummarizerModelName = null;
+            }
+
             return;
+        }
 
         separateSummarizerStages.Remove(stage);
         stage.SummaryInstructions = null;

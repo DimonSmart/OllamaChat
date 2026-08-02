@@ -80,6 +80,25 @@ public sealed class CompactionProfileEditorStateTests
     }
 
     [Fact]
+    public void ChangingToSummarization_UsesPrimaryModelByDefault()
+    {
+        var stage = CompactionStageDefaults.Create(CompactionStageKinds.ToolResult);
+        stage.SummaryInstructions = "stale instructions";
+        stage.SummarizerLlmId = Guid.NewGuid();
+        stage.SummarizerModelName = "stale model";
+        var state = new CompactionProfileEditorState();
+
+        state.ChangeStageKind(stage, CompactionStageKinds.Summarization);
+
+        Assert.Equal(CompactionStageKinds.Summarization, stage.Kind);
+        Assert.False(state.UsesSeparateSummarizer(stage));
+        Assert.Null(stage.SummaryInstructions);
+        Assert.Null(stage.SummarizerLlmId);
+        Assert.Null(stage.SummarizerModelName);
+        Assert.True(state.HasValidSummarizerConfiguration(stage));
+    }
+
+    [Fact]
     public void InitializingAnotherProfile_DoesNotRetainSeparateSummarizerState()
     {
         var separateStage = CompactionStageDefaults.Create(CompactionStageKinds.Summarization);
