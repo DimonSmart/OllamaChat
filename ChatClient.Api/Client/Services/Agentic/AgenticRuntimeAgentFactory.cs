@@ -29,7 +29,8 @@ internal sealed record ResolvedRagConfiguration(
     string? CitationsPrompt,
     RagRetrievalStrategy RetrievalStrategy,
     int MaxRetrievedContextTokens,
-    int AdjacentChunkCount);
+    int AdjacentChunkCount,
+    string? ProfileName);
 
 internal sealed class HarnessAgentRuntimeDefinition(
     AIAgent agent,
@@ -40,6 +41,7 @@ internal sealed class HarnessAgentRuntimeDefinition(
     SessionWorkspaceAgentFileStore? fileAccessStore,
     FileAccessProviderProfile? fileAccessProfile,
     AgentSessionCompactionViewModel? compaction,
+    IRagRetrievalTraceSink? ragRetrievalTraceSink,
     AgentRuntimeResources ownedResources) : IDisposable
 {
     public AIAgent Agent { get; } = agent;
@@ -50,6 +52,7 @@ internal sealed class HarnessAgentRuntimeDefinition(
     public SessionWorkspaceAgentFileStore? FileAccessStore { get; } = fileAccessStore;
     public FileAccessProviderProfile? FileAccessProfile { get; } = fileAccessProfile;
     public AgentSessionCompactionViewModel? Compaction { get; } = compaction;
+    public IRagRetrievalTraceSink? RagRetrievalTraceSink { get; } = ragRetrievalTraceSink;
 
     public void Dispose() => ownedResources.Dispose();
 }
@@ -253,22 +256,11 @@ public sealed class AgenticRuntimeAgentFactory(
 
                 shellExecutor = new SessionSandboxShellExecutor(sandbox);
             }
+            var ragTraceSink = hasConfiguredKnowledge ? new RagRetrievalTraceBuffer() : null;
             var runtimeAgent = CreateRuntimeAgent(
-                chatClient,
-                request,
-                server,
-                toolSet,
-                knowledgeSearchService,
-                hasConfiguredKnowledge,
-                supportsFunctions,
-                ragConfiguration,
-                todoProfile,
-                agentModeProfile,
-                fileAccessProfile,
-                workspaceStore,
-                shellExecutor,
-                loggerFactory,
-                compaction);
+                chatClient, request, server, toolSet, knowledgeSearchService, hasConfiguredKnowledge,
+                supportsFunctions, ragConfiguration, todoProfile, agentModeProfile, fileAccessProfile,
+                workspaceStore, shellExecutor, loggerFactory, compaction, ragTraceSink);
             return new HarnessAgentRuntimeDefinition(
                 runtimeAgent,
                 server,
@@ -281,6 +273,7 @@ public sealed class AgenticRuntimeAgentFactory(
                     compactionProfile!.Name,
                     compaction.Budget.InputBudgetTokens,
                     CompactionPolicySummary.FormatPolicy(compactionProfile)),
+                ragTraceSink,
                 resources);
         }
         catch
@@ -305,7 +298,8 @@ public sealed class AgenticRuntimeAgentFactory(
         SessionWorkspaceAgentFileStore? workspaceStore,
         SessionSandboxShellExecutor? shellExecutor,
         ILoggerFactory loggerFactory,
-        ResolvedCompactionStrategy? compaction)
+        ResolvedCompactionStrategy? compaction,
+        IRagRetrievalTraceSink? ragTraceSink)
     {
         // Harness owns the function-invocation loop, session history and compaction.
         // The direct-chat service must not rebuild any of that state from its UI transcript.
@@ -322,7 +316,8 @@ public sealed class AgenticRuntimeAgentFactory(
             workspaceStore,
             shellExecutor,
             loggerFactory,
-            compaction);
+            compaction,
+            ragTraceSink);
 
         if (fileAccessProfile is not null)
         {
@@ -392,7 +387,8 @@ public sealed class AgenticRuntimeAgentFactory(
         SessionWorkspaceAgentFileStore? workspaceStore,
         SessionSandboxShellExecutor? shellExecutor,
         ILoggerFactory loggerFactory,
-        ResolvedCompactionStrategy? compaction)
+        ResolvedCompactionStrategy? compaction,
+        IRagRetrievalTraceSink? ragTraceSink = null)
     {
         ArgumentNullException.ThrowIfNull(request);
         ArgumentNullException.ThrowIfNull(toolSet);
@@ -428,7 +424,8 @@ public sealed class AgenticRuntimeAgentFactory(
                 ragConfiguration,
                 loggerFactory,
                 todoProfile,
-                shellExecutor),
+                shellExecutor,
+                ragTraceSink),
 #pragma warning disable MAAI001
             DisableCompaction = compaction is null,
             CompactionStrategy = compaction?.Strategy,
@@ -571,7 +568,8 @@ public sealed class AgenticRuntimeAgentFactory(
         ResolvedRagConfiguration ragConfiguration,
         ILoggerFactory loggerFactory,
         TodoProviderProfile? todoProfile,
-        SessionSandboxShellExecutor? shellExecutor = null)
+        SessionSandboxShellExecutor? shellExecutor = null,
+        IRagRetrievalTraceSink? ragTraceSink = null)
     {
         List<AIContextProvider> providers = [];
 
@@ -581,7 +579,8 @@ public sealed class AgenticRuntimeAgentFactory(
                 request.Agent.KnowledgeStoreIds,
                 knowledgeSearchService,
                 ragConfiguration,
-                loggerFactory));
+                loggerFactory,
+                ragTraceSink));
         }
 
         if (todoProfile is not null)
@@ -601,7 +600,8 @@ public sealed class AgenticRuntimeAgentFactory(
         IReadOnlyCollection<Guid> knowledgeStoreIds,
         IKnowledgeSearchService knowledgeSearchService,
         ResolvedRagConfiguration configuration,
-        ILoggerFactory loggerFactory)
+        ILoggerFactory loggerFactory,
+        IRagRetrievalTraceSink? traceSink = null)
     {
         ArgumentNullException.ThrowIfNull(knowledgeSearchService);
         ArgumentNullException.ThrowIfNull(loggerFactory);
@@ -611,24 +611,32 @@ public sealed class AgenticRuntimeAgentFactory(
         return new TextSearchProvider(
             async (query, cancellationToken) =>
             {
-                var results = await SearchAgentKnowledgeAsync(
-                    allowedKnowledgeStoreIds,
-                    knowledgeSearchService,
-                    query,
-                    cancellationToken,
-                    configuration);
-
-                return results.Select(result => new TextSearchProvider.TextSearchResult
+                var traceId = Guid.NewGuid();
+                var startedAt = DateTimeOffset.UtcNow;
+                try
                 {
-                    SourceName = BuildKnowledgeSourceName(result),
-                    Text = result.Content,
-                    RawRepresentation = result
-                });
+                    var results = await SearchAgentKnowledgeAsync(allowedKnowledgeStoreIds, knowledgeSearchService, query, cancellationToken, configuration);
+                    traceSink?.Record(CreateTrace(traceId, query, configuration, results,
+                        results.Count == 0 ? RagRetrievalTraceStatus.NoResults : RagRetrievalTraceStatus.Succeeded,
+                        startedAt, null));
+
+                    return results.Select(result => new TextSearchProvider.TextSearchResult { SourceName = BuildKnowledgeSourceName(result), Text = result.Content, RawRepresentation = result });
+                }
+                catch (OperationCanceledException)
+                {
+                    traceSink?.Record(CreateTrace(traceId, query, configuration, [], RagRetrievalTraceStatus.Canceled, startedAt, null));
+                    throw;
+                }
+                catch (Exception ex)
+                {
+                    traceSink?.Record(CreateTrace(traceId, query, configuration, [], RagRetrievalTraceStatus.Failed, startedAt, ex.Message));
+                    throw;
+                }
             },
             new TextSearchProviderOptions
             {
                 SearchTime = configuration.SearchBehavior,
-                FunctionToolName = "search_agent_knowledge",
+                FunctionToolName = RagToolNames.SearchAgentKnowledge,
                 FunctionToolDescription = configuration.FunctionToolDescription,
                 ContextPrompt = configuration.ContextPrompt,
                 CitationsPrompt = configuration.CitationsPrompt,
@@ -723,8 +731,47 @@ public sealed class AgenticRuntimeAgentFactory(
             profile?.RequestCitations == false ? null : NormalizeOptionalText(profile?.CitationsPrompt) ?? "When retrieved knowledge materially supports the answer, identify the source document by name when available.",
             profile?.RetrievalStrategy ?? RagProviderRuntimeDefaults.RetrievalStrategy,
             profile?.MaxRetrievedContextTokens ?? RagProviderRuntimeDefaults.MaxRetrievedContextTokens,
-            profile?.AdjacentChunkCount ?? RagProviderRuntimeDefaults.AdjacentChunkCount);
+            profile?.AdjacentChunkCount ?? RagProviderRuntimeDefaults.AdjacentChunkCount,
+            profile?.Name);
     }
+
+    private static RagRetrievalTrace CreateTrace(
+        Guid id, string query, ResolvedRagConfiguration configuration,
+        IReadOnlyList<RagSearchResult> results, RagRetrievalTraceStatus status,
+        DateTimeOffset startedAt, string? error) => new()
+        {
+            Id = id,
+            Mode = configuration.SearchBehavior == TextSearchProviderOptions.TextSearchBehavior.OnDemandFunctionCalling
+            ? RagRetrievalInvocationMode.OnDemand : RagRetrievalInvocationMode.BeforeInvoke,
+            Status = status,
+            Query = query,
+            ProfileName = configuration.ProfileName,
+            Strategy = configuration.RetrievalStrategy,
+            MaxResults = configuration.MaxResults,
+            AppliedMinVectorRelevanceScore = configuration.MinRelevanceScore,
+            UsesApplicationDefaultThreshold = configuration.UsesApplicationDefaultThreshold,
+            MaxRetrievedContextTokens = configuration.MaxRetrievedContextTokens,
+            AdjacentChunkCount = configuration.AdjacentChunkCount,
+            StartedAt = startedAt,
+            CompletedAt = DateTimeOffset.UtcNow,
+            Error = error,
+            Excerpts = results.Select(result => new RagRetrievedExcerptTrace
+            {
+                KnowledgeStoreId = result.KnowledgeStoreId,
+                KnowledgeStoreName = result.KnowledgeStoreName,
+                DocumentId = result.DocumentId,
+                FileName = result.FileName,
+                Section = result.Section,
+                Content = result.Content,
+                Score = result.Score,
+                VectorScore = result.VectorScore,
+                VectorRank = result.VectorRank,
+                TextRank = result.TextRank,
+                StartChunkIndex = result.StartChunkIndex,
+                EndChunkIndex = result.EndChunkIndex,
+                IsTruncated = result.IsTruncated
+            }).ToArray()
+        };
 
     internal static void ConfigureToolMode(
         ChatOptions chatOptions,

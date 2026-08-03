@@ -28,6 +28,7 @@ public sealed class AgenticChatEngineOrchestrator(
             .WithUserMessage(request.UserMessage)
             .WithRuntimeResources(request.RuntimeResources)
             .Build();
+        runtimeRequest.RagTurnId = request.RagTurnId;
 
         await foreach (var chunk in runtime.StreamAsync(runtimeRequest, cancellationToken))
         {

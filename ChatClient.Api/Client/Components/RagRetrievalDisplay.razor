@@ -1,0 +1,52 @@
+@using ChatClient.Domain.Models
+@using MudBlazor
+
+<MudExpansionPanels Dense="true" Class="mt-2">
+    <MudExpansionPanel Icon="@Icons.Material.Filled.ManageSearch" Text="@Summary">
+        @foreach (var trace in Traces)
+        {
+            <MudPaper Outlined="true" Class="pa-2 mb-2">
+                <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="1">
+                    <MudChip T="string" Size="Size.Small">@Mode(trace.Mode)</MudChip>
+                    <MudChip T="string" Size="Size.Small">@trace.Strategy</MudChip>
+                    <MudText Typo="Typo.caption">@trace.Status · @Duration(trace)</MudText>
+                </MudStack>
+                <MudText Typo="Typo.caption">Profile: @(trace.ProfileName ?? "Built-in defaults") · Query: @trace.Query</MudText>
+                <MudText Typo="Typo.caption">Results: @trace.Excerpts.Count · Max: @trace.MaxResults · Threshold: @(trace.UsesApplicationDefaultThreshold ? "Application default" : trace.AppliedMinVectorRelevanceScore?.ToString("0.00") ?? "None")</MudText>
+                @if (!string.IsNullOrWhiteSpace(trace.Error))
+                {
+                    <MudAlert Dense="true" Severity="Severity.Error">@trace.Error</MudAlert>
+                }
+                @foreach (var excerpt in trace.Excerpts)
+                {
+                    <MudExpansionPanels Dense="true" Class="mt-1">
+                        <MudExpansionPanel Text="@($"{excerpt.KnowledgeStoreName} / {excerpt.FileName}{(string.IsNullOrWhiteSpace(excerpt.Section) ? string.Empty : " / " + excerpt.Section)}")">
+                            <MudText Typo="Typo.caption">Score: @excerpt.Score.ToString("0.00") @if (excerpt.VectorScore is not null) { <span>· Vector: @excerpt.VectorScore.Value.ToString("0.00")</span> } · Chunks: @excerpt.StartChunkIndex–@excerpt.EndChunkIndex @(excerpt.IsTruncated ? "· Truncated" : string.Empty)</MudText>
+                            <CopyButton Text="@excerpt.Content" Tooltip="Copy excerpt" AriaLabel="Copy excerpt" Size="Size.Small" />
+                            <MudPaper Outlined="true" Class="pa-2 rag-excerpt-content">@excerpt.Content</MudPaper>
+                        </MudExpansionPanel>
+                    </MudExpansionPanels>
+                }
+            </MudPaper>
+        }
+    </MudExpansionPanel>
+</MudExpansionPanels>
+
+@code {
+    [Parameter, EditorRequired] public IReadOnlyCollection<RagRetrievalTrace> Traces { get; set; } = [];
+
+    private string Summary
+    {
+        get
+        {
+            if (Traces.Any(trace => trace.Status == RagRetrievalTraceStatus.Failed)) return "RAG retrieval — failed";
+            var excerpts = Traces.Sum(trace => trace.Excerpts.Count);
+            if (excerpts == 0) return "RAG retrieval — no relevant excerpts";
+            var documents = Traces.SelectMany(trace => trace.Excerpts).Select(excerpt => (excerpt.KnowledgeStoreId, excerpt.DocumentId)).Distinct().Count();
+            return Traces.Count == 1 ? $"RAG retrieval — {excerpts} excerpts from {documents} documents" : $"RAG retrieval — {Traces.Count} searches, {excerpts} excerpts from {documents} documents";
+        }
+    }
+
+    private static string Mode(RagRetrievalInvocationMode mode) => mode == RagRetrievalInvocationMode.OnDemand ? "On demand" : "Before invoke";
+    private static string Duration(RagRetrievalTrace trace) => trace.CompletedAt is { } completed ? $"{(completed - trace.StartedAt).TotalMilliseconds:0} ms" : "Running";
+}

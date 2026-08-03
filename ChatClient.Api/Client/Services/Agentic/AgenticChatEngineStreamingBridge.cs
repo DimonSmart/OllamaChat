@@ -36,7 +36,8 @@ public sealed class AgenticChatEngineStreamingBridge : IChatEngineStreamingBridg
             message.Files,
             message.ToolInvocations,
             message.AgentId,
-            message.AgentName)
+            message.AgentName,
+            message.RagRetrievals)
         {
             Id = message.Id,
             IsCanceled = message.IsCanceled
@@ -56,7 +57,8 @@ public sealed class AgenticChatEngineStreamingBridge : IChatEngineStreamingBridg
             message.Files,
             message.ToolInvocations,
             message.AgentId,
-            message.AgentName)
+            message.AgentName,
+            message.RagRetrievals)
         {
             Id = message.Id,
             IsCanceled = true

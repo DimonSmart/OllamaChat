@@ -134,6 +134,11 @@ public sealed record AgentToolCallFailed(
     string Author,
     ToolInvocationViewState Invocation) : AgentRunEvent;
 
+public sealed record AgentRunRagRetrievalCompleted(
+    string MessageId,
+    string Author,
+    RagRetrievalTrace Trace) : AgentRunEvent;
+
 public sealed record AgentMessageCompleted(
     string MessageId,
     AgentOutputMessage Message) : AgentRunEvent;

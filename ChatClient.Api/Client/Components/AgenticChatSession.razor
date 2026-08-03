@@ -1,5 +1,6 @@
 @using System.Linq
 @using ChatClient.Api.Client.Services
+@using ChatClient.Api.Client.Services.Agentic
 @using ChatClient.Api.Client.ViewModels
 @using ChatClient.Application.Services.Agentic
 @using ChatClient.Domain.Models
@@ -251,9 +252,16 @@
                     }
                 }
 
+                @if (message.Role == AppChatRole.Assistant && message.RagRetrievals.Any())
+                {
+                    <RagRetrievalDisplay Traces="message.RagRetrievals" />
+                }
+
                 @if (message.ToolInvocations.Any())
                 {
-                    foreach (var call in message.ToolInvocations)
+                    foreach (var call in message.ToolInvocations.Where(call =>
+                        !string.Equals(call.OriginalName, RagToolNames.SearchAgentKnowledge, StringComparison.Ordinal) ||
+                        !message.RagRetrievals.Any(trace => trace.Status is RagRetrievalTraceStatus.Succeeded or RagRetrievalTraceStatus.NoResults)))
                     {
                         <ToolCallDisplay Call="@call" />
                     }

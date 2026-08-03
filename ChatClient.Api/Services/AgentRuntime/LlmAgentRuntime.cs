@@ -165,6 +165,7 @@ internal sealed class LlmAgentRuntime(
         var files = request.Attachments
             .Select(ToAppChatMessageFile)
             .ToList();
+        var messageId = Guid.NewGuid().ToString("N");
         var orchestrationRequest = new ChatEngineOrchestrationRequest
         {
             Agent = agent.Agent,
@@ -173,10 +174,10 @@ internal sealed class LlmAgentRuntime(
             Messages = history,
             UserMessage = userMessage.Content,
             Files = files,
-            RuntimeResources = runtimeResources
+            RuntimeResources = runtimeResources,
+            RagTurnId = messageId
         };
 
-        var messageId = Guid.NewGuid().ToString("N");
         var buffer = new List<string>();
         var completedMessages = new List<AgentOutputMessage>();
 
@@ -222,6 +223,12 @@ internal sealed class LlmAgentRuntime(
                         messageId,
                         Descriptor.Name,
                         ToViewState(failed)), cancellationToken);
+                }
+
+                if (chunk.RagRetrievals is not null)
+                {
+                    foreach (var trace in chunk.RagRetrievals)
+                        await writer.WriteAsync(new AgentRunRagRetrievalCompleted(messageId, Descriptor.Name, trace), cancellationToken);
                 }
 
                 if (chunk.IsFinal)

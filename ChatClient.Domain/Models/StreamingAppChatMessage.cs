@@ -20,6 +20,8 @@ public class StreamingAppChatMessage(
     public IReadOnlyList<AppChatMessageFile> Files { get; private set; } = [];
     private readonly List<ToolInvocationViewState> _toolInvocations = toolInvocations ?? [];
     public IReadOnlyCollection<ToolInvocationViewState> ToolInvocations => _toolInvocations.AsReadOnly();
+    private readonly List<RagRetrievalTrace> _ragRetrievals = [];
+    public IReadOnlyCollection<RagRetrievalTrace> RagRetrievals => _ragRetrievals.AsReadOnly();
     public string? AgentId { get; private set; } = agentId;
     public string? AgentName { get; private set; } = agentName;
 
@@ -86,6 +88,16 @@ public class StreamingAppChatMessage(
     public void UpdateToolInvocation(ToolInvocationViewState invocation)
     {
         StartToolInvocation(invocation);
+    }
+
+    public void AddOrUpdateRagRetrieval(RagRetrievalTrace trace)
+    {
+        ArgumentNullException.ThrowIfNull(trace);
+        var index = _ragRetrievals.FindIndex(item => item.Id == trace.Id);
+        if (index >= 0)
+            _ragRetrievals[index] = trace;
+        else
+            _ragRetrievals.Add(trace);
     }
 
     public void SetCanceled()

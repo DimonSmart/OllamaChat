@@ -18,4 +18,6 @@ public sealed class ChatEngineOrchestrationRequest
     public IReadOnlyList<AppChatMessageFile> Files { get; init; } = [];
 
     public AgentSessionRuntimeResources RuntimeResources { get; init; } = new();
+
+    public string? RagTurnId { get; init; }
 }

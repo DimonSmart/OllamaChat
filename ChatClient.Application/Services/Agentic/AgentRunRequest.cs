@@ -5,6 +5,7 @@ namespace ChatClient.Application.Services.Agentic;
 
 public sealed class AgentRunRequest
 {
+    public string? RagTurnId { get; set; }
     public required AgentExecutionSpec Agent { get; init; }
 
     public required ServerModel ResolvedModel { get; init; }

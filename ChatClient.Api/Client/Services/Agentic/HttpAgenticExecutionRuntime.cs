@@ -50,6 +50,8 @@ public sealed class HttpAgenticExecutionRuntime(
         }
 
         var runOptions = BuildRunOptions(request, buildResult.Server, buildResult.ToolSet);
+        var ragTurnId = request.RagTurnId ?? $"runtime-rag-{Guid.NewGuid():N}";
+        using var ragTurn = buildResult.RagRetrievalTraceSink?.BeginTurn(ragTurnId);
         var streamedText = false;
         string? streamError = null;
         var session = await buildResult.Agent.CreateSessionAsync(cancellationToken);
@@ -120,6 +122,10 @@ public sealed class HttpAgenticExecutionRuntime(
                         Event: responseEvent);
                 }
 
+                var traces = buildResult.RagRetrievalTraceSink?.Drain(ragTurnId) ?? [];
+                if (traces.Count > 0)
+                    yield return new ChatEngineStreamChunk(request.Agent.AgentName, string.Empty, RagRetrievals: traces);
+
                 if (approvalRequest is not null || !string.IsNullOrWhiteSpace(streamError))
                 {
                     break;
@@ -165,6 +171,10 @@ public sealed class HttpAgenticExecutionRuntime(
             yield return ErrorChunk(request.Agent.AgentName, streamError);
             yield break;
         }
+
+        var finalTraces = buildResult.RagRetrievalTraceSink?.Drain(ragTurnId) ?? [];
+        if (finalTraces.Count > 0)
+            yield return new ChatEngineStreamChunk(request.Agent.AgentName, string.Empty, RagRetrievals: finalTraces);
 
         if (!streamedText)
         {

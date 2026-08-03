@@ -5,4 +5,5 @@ public sealed record ChatEngineStreamChunk(
     string Content,
     bool IsFinal = false,
     bool IsError = false,
-    HarnessResponseEvent? Event = null);
+    HarnessResponseEvent? Event = null,
+    IReadOnlyList<ChatClient.Domain.Models.RagRetrievalTrace>? RagRetrievals = null);

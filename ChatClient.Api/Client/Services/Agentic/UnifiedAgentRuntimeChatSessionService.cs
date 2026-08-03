@@ -753,6 +753,7 @@ public sealed class UnifiedAgentRuntimeChatSessionService(
         var messageId = $"direct-harness-response-{Guid.NewGuid():N}";
         StreamingAppChatMessage? stream = null;
         var projection = responseEventProjector.CreateProjection();
+        using var ragTurn = _directRuntimeDefinition?.RagRetrievalTraceSink?.BeginTurn(messageId);
 
         try
         {
@@ -765,6 +766,15 @@ public sealed class UnifiedAgentRuntimeChatSessionService(
                 if (generation != Interlocked.Read(ref _generation))
                 {
                     break;
+                }
+
+                var traces = _directRuntimeDefinition?.RagRetrievalTraceSink?.Drain(messageId) ?? [];
+                if (traces.Count > 0)
+                {
+                    stream ??= await GetOrCreateStreamAsync(messageId, _chat.Agents.FirstOrDefault()?.AgentName ?? "Agent");
+                    foreach (var trace in traces)
+                        stream.AddOrUpdateRagRetrieval(trace);
+                    await (MessageUpdated?.Invoke(stream, false) ?? Task.CompletedTask);
                 }
 
                 foreach (var responseEvent in projection.Project(update, _directToolMetadata))
@@ -809,6 +819,14 @@ public sealed class UnifiedAgentRuntimeChatSessionService(
             if (generation != Interlocked.Read(ref _generation))
             {
                 return;
+            }
+
+            var finalTraces = _directRuntimeDefinition?.RagRetrievalTraceSink?.Drain(messageId) ?? [];
+            if (finalTraces.Count > 0)
+            {
+                stream ??= await GetOrCreateStreamAsync(messageId, _chat.Agents.FirstOrDefault()?.AgentName ?? "Agent");
+                foreach (var trace in finalTraces)
+                    stream.AddOrUpdateRagRetrieval(trace);
             }
 
             if (stream is not null)
@@ -931,6 +949,11 @@ public sealed class UnifiedAgentRuntimeChatSessionService(
 
             case AgentToolCallFailed failed:
                 await ApplyToolInvocationAsync(failed.MessageId, failed.Author, failed.Invocation);
+                break;
+            case AgentRunRagRetrievalCompleted retrieval:
+                var ragStream = await GetOrCreateStreamAsync(retrieval.MessageId, retrieval.Author);
+                ragStream.AddOrUpdateRagRetrieval(retrieval.Trace);
+                await (MessageUpdated?.Invoke(ragStream, false) ?? Task.CompletedTask);
                 break;
 
             case AgentMessageCompleted completed:

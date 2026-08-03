@@ -13,4 +13,5 @@ public interface IAppChatMessage : IEquatable<IAppChatMessage>
     bool IsCanceled { get; }
     IReadOnlyList<AppChatMessageFile> Files { get; }
     IReadOnlyCollection<ToolInvocationViewState> ToolInvocations { get; }
+    IReadOnlyCollection<RagRetrievalTrace> RagRetrievals { get; }
 }

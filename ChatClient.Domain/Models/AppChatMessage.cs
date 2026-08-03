@@ -14,6 +14,7 @@ public class AppChatMessage : IAppChatMessage
     public bool IsCanceled { get; set; }
     public IReadOnlyList<AppChatMessageFile> Files { get; set; } = [];
     public IReadOnlyCollection<ToolInvocationViewState> ToolInvocations { get; set; } = [];
+    public IReadOnlyCollection<RagRetrievalTrace> RagRetrievals { get; set; } = [];
     public bool IsStreaming => false;
 
     public bool Equals(IAppChatMessage? other)
@@ -58,6 +59,7 @@ public class AppChatMessage : IAppChatMessage
         IsCanceled = message.IsCanceled;
         Files = message.Files;
         ToolInvocations = message.ToolInvocations.ToList();
+        RagRetrievals = message.RagRetrievals.ToList();
     }
 
     public AppChatMessage(
@@ -68,7 +70,8 @@ public class AppChatMessage : IAppChatMessage
         IReadOnlyList<AppChatMessageFile>? files = null,
         IReadOnlyCollection<ToolInvocationViewState>? toolInvocations = null,
         string? agentId = null,
-        string? agentName = null)
+        string? agentName = null,
+        IReadOnlyCollection<RagRetrievalTrace>? ragRetrievals = null)
     {
         Id = Guid.NewGuid();
         Content = content ?? string.Empty;
@@ -79,5 +82,6 @@ public class AppChatMessage : IAppChatMessage
         Statistics = statistics;
         Files = files ?? [];
         ToolInvocations = toolInvocations ?? [];
+        RagRetrievals = ragRetrievals ?? [];
     }
 }
