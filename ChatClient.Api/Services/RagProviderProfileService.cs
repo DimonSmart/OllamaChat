@@ -56,14 +56,7 @@ public sealed class RagProviderProfileService(
             throw new ArgumentException("Profile name is required.", nameof(profile));
         if (profiles.Any(x => x.Id != excludedId && string.Equals(x.Name, profile.Name, StringComparison.OrdinalIgnoreCase)))
             throw new ArgumentException($"A RAG Provider profile named '{profile.Name}' already exists.", nameof(profile));
-        if (!Enum.IsDefined(profile.SearchMode))
-            throw new ArgumentException("Invalid RAG search mode.", nameof(profile));
-        if (profile.MaxResults is < 1 or > 50)
-            throw new ArgumentException("Maximum results must be between 1 and 50.", nameof(profile));
-        if (profile.MinRelevanceScore is double score && (!double.IsFinite(score) || score is < -1 or > 1))
-            throw new ArgumentException("Minimum relevance score must be finite and between -1 and 1.", nameof(profile));
-        if (profile.RecentMessageMemoryLimit is < 0 or > 50)
-            throw new ArgumentException("Recent message memory limit must be between 0 and 50.", nameof(profile));
+        RagProviderProfileValidator.Validate(profile);
     }
 
     private static string? NormalizeOptional(string? value) => string.IsNullOrWhiteSpace(value) ? null : value.Trim();

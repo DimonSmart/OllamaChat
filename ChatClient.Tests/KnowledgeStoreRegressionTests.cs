@@ -161,7 +161,7 @@ public sealed class KnowledgeStoreRegressionTests
         ollama.Setup(service => service.GenerateEmbeddingAsync("query", It.IsAny<ServerModel>(), It.IsAny<CancellationToken>())).ReturnsAsync([1f, 0f]);
         var service = new KnowledgeSearchService(stores.Object, settings.Object, ollama.Object, vectors);
 
-        var response = await service.SearchAsync([first.Id, second.Id], "query", maxResults: 1);
+        var response = await service.SearchAsync(new KnowledgeSearchRequest { KnowledgeStoreIds = [first.Id, second.Id], Query = "query", MaxResults = 1, UseApplicationDefaultThreshold = true });
 
         var result = Assert.Single(response.Results);
         Assert.Equal("First", result.KnowledgeStoreName);
@@ -185,7 +185,7 @@ public sealed class KnowledgeStoreRegressionTests
             .ReturnsAsync([1f, 0f]);
         var service = new KnowledgeSearchService(stores.Object, settings.Object, ollama.Object, vectors);
 
-        var response = await service.SearchAsync([store.Id], "query", maxResults: 5);
+        var response = await service.SearchAsync(new KnowledgeSearchRequest { KnowledgeStoreIds = [store.Id], Query = "query", MaxResults = 5, UseApplicationDefaultThreshold = true });
 
         Assert.Empty(response.Results);
         settings.Verify(service => service.GetSettingsAsync(It.IsAny<CancellationToken>()), Times.Once);
@@ -206,7 +206,7 @@ public sealed class KnowledgeStoreRegressionTests
             .ReturnsAsync([1f, 0f]);
         var service = new KnowledgeSearchService(stores.Object, settings.Object, ollama.Object, vectors);
 
-        var response = await service.SearchAsync([store.Id], "query", 5, minRelevanceScore: null);
+        var response = await service.SearchAsync(new KnowledgeSearchRequest { KnowledgeStoreIds = [store.Id], Query = "query", MaxResults = 5, MinVectorRelevanceScore = null });
 
         var result = Assert.Single(response.Results);
         Assert.Equal("weak", result.Content);
@@ -230,7 +230,7 @@ public sealed class KnowledgeStoreRegressionTests
             .ReturnsAsync([1f, 0f]);
         var service = new KnowledgeSearchService(stores.Object, settings.Object, ollama.Object, vectors);
 
-        var response = await service.SearchAsync([first.Id, second.Id], "query", 1, minRelevanceScore: null);
+        var response = await service.SearchAsync(new KnowledgeSearchRequest { KnowledgeStoreIds = [first.Id, second.Id], Query = "query", MaxResults = 1, MinVectorRelevanceScore = null });
 
         var result = Assert.Single(response.Results);
         Assert.Equal("First", result.KnowledgeStoreName);

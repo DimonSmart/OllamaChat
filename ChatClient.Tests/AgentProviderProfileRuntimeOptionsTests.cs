@@ -321,7 +321,7 @@ public class AgentProviderProfileRuntimeOptionsTests
     {
         var storeId = Guid.NewGuid();
         var search = new Mock<IKnowledgeSearchService>(MockBehavior.Strict);
-        search.Setup(x => x.SearchAsync(It.IsAny<IReadOnlyCollection<Guid>>(), "fact", 9, (double?)null, It.IsAny<CancellationToken>()))
+        search.Setup(x => x.SearchAsync(It.Is<KnowledgeSearchRequest>(r => r.Query == "fact" && r.MaxResults == 9 && r.MinVectorRelevanceScore == null && !r.UseApplicationDefaultThreshold), It.IsAny<CancellationToken>()))
             .ReturnsAsync(new RagSearchResponse());
         var profile = new RagProviderProfile { Name = "No threshold", MaxResults = 9, MinRelevanceScore = null };
 
@@ -369,9 +369,7 @@ public class AgentProviderProfileRuntimeOptionsTests
         var search = new Mock<IKnowledgeSearchService>(MockBehavior.Strict);
         var call = 0;
         search.Setup(service => service.SearchAsync(
-                It.Is<IReadOnlyCollection<Guid>>(ids => ids.SequenceEqual(new[] { attachedStoreId })),
-                It.IsAny<string>(),
-                5,
+                It.Is<KnowledgeSearchRequest>(r => r.KnowledgeStoreIds.SequenceEqual(new[] { attachedStoreId }) && r.Query == "fact" && r.MaxResults == 5 && r.UseApplicationDefaultThreshold),
                 It.IsAny<CancellationToken>()))
             .ReturnsAsync(() => ++call == 1
                 ? new RagSearchResponse()

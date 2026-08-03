@@ -24,9 +24,12 @@ internal sealed record ResolvedRagConfiguration(
     bool UsesApplicationDefaultThreshold,
     int RecentMessageMemoryLimit,
     IReadOnlyList<ChatRole>? RecentMessageRolesIncluded,
-    string FunctionToolDescription,
+    string? FunctionToolDescription,
     string ContextPrompt,
-    string? CitationsPrompt);
+    string? CitationsPrompt,
+    RagRetrievalStrategy RetrievalStrategy,
+    int MaxRetrievedContextTokens,
+    int AdjacentChunkCount);
 
 internal sealed class HarnessAgentRuntimeDefinition(
     AIAgent agent,
@@ -647,9 +650,17 @@ public sealed class AgenticRuntimeAgentFactory(
         ArgumentNullException.ThrowIfNull(knowledgeSearchService);
 
         var resolved = configuration ?? ResolveRagConfiguration(null, supportsFunctions: false);
-        var response = resolved.UsesApplicationDefaultThreshold
-            ? await knowledgeSearchService.SearchAsync(allowedKnowledgeStoreIds, query, resolved.MaxResults, cancellationToken)
-            : await knowledgeSearchService.SearchAsync(allowedKnowledgeStoreIds, query, resolved.MaxResults, resolved.MinRelevanceScore, cancellationToken);
+        var response = await knowledgeSearchService.SearchAsync(new KnowledgeSearchRequest
+        {
+            KnowledgeStoreIds = allowedKnowledgeStoreIds,
+            Query = query,
+            MaxResults = resolved.MaxResults,
+            UseApplicationDefaultThreshold = resolved.UsesApplicationDefaultThreshold,
+            MinVectorRelevanceScore = resolved.MinRelevanceScore,
+            Strategy = resolved.RetrievalStrategy,
+            MaxRetrievedContextTokens = resolved.MaxRetrievedContextTokens,
+            AdjacentChunkCount = resolved.AdjacentChunkCount
+        }, cancellationToken);
         return response.Results;
     }
 
@@ -685,6 +696,8 @@ public sealed class AgenticRuntimeAgentFactory(
 
     internal static ResolvedRagConfiguration ResolveRagConfiguration(RagProviderProfile? profile, bool supportsFunctions)
     {
+        if (profile is not null)
+            RagProviderProfileValidator.Validate(profile);
         var behavior = profile?.SearchMode switch
         {
             RagSearchMode.OnDemand => TextSearchProviderOptions.TextSearchBehavior.OnDemandFunctionCalling,
@@ -698,14 +711,19 @@ public sealed class AgenticRuntimeAgentFactory(
         var additional = NormalizeOptionalText(profile?.AdditionalContextInstructions);
         return new ResolvedRagConfiguration(
             behavior,
-            profile?.MaxResults ?? 5,
+            profile?.MaxResults ?? RagProviderRuntimeDefaults.MaxResults,
             profile?.MinRelevanceScore,
             profile is null,
-            profile?.RecentMessageMemoryLimit ?? 6,
+            profile?.RecentMessageMemoryLimit ?? RagProviderRuntimeDefaults.RecentMessageMemoryLimit,
             behavior == TextSearchProviderOptions.TextSearchBehavior.OnDemandFunctionCalling ? null : profile?.IncludeAssistantMessages == false ? [ChatRole.User] : [ChatRole.User, ChatRole.Assistant],
-            NormalizeOptionalText(profile?.FunctionToolDescription) ?? "Search the Knowledge Stores connected to this agent for information relevant to the current task. Use it when the answer may depend on that knowledge. The search can be called multiple times with different focused queries.",
+            behavior == TextSearchProviderOptions.TextSearchBehavior.BeforeAIInvoke
+                ? null
+                : NormalizeOptionalText(profile?.FunctionToolDescription) ?? "Search the Knowledge Stores connected to this agent for information relevant to the current task. Use it when the answer may depend on that knowledge. The search can be called multiple times with different focused queries.",
             additional is null ? fixedPrompt : $"{fixedPrompt}{Environment.NewLine}{additional}",
-            profile?.RequestCitations == false ? null : NormalizeOptionalText(profile?.CitationsPrompt) ?? "When retrieved knowledge materially supports the answer, identify the source document by name when available.");
+            profile?.RequestCitations == false ? null : NormalizeOptionalText(profile?.CitationsPrompt) ?? "When retrieved knowledge materially supports the answer, identify the source document by name when available.",
+            profile?.RetrievalStrategy ?? RagProviderRuntimeDefaults.RetrievalStrategy,
+            profile?.MaxRetrievedContextTokens ?? RagProviderRuntimeDefaults.MaxRetrievedContextTokens,
+            profile?.AdjacentChunkCount ?? RagProviderRuntimeDefaults.AdjacentChunkCount);
     }
 
     internal static void ConfigureToolMode(

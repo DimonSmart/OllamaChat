@@ -11,7 +11,6 @@
 @inject IOllamaClientService OllamaService
 @inject ISnackbar Snackbar
 @inject ILogger<AppSettings> Logger
-@inject IKnowledgeIndexBackgroundService KnowledgeIndexBackgroundService
 
 <PageTitle>Application Settings</PageTitle>
 
@@ -173,16 +172,10 @@
                         <MudCardContent>
                             <ServerModelPicker Value="_embeddingModel" ValueChanged="OnEmbeddingModelChanged" ShowClearButton="true" />
                             <MudText Typo="Typo.caption" Class="mt-2">
-                                Model used for generating embeddings.
+                                Default embedding model for new Knowledge Stores.
                             </MudText>
                             <MudGrid Spacing="2">
-                                <MudItem xs="12" sm="6" md="4"><MudNumericField T="int" @bind-Value="_settings.Embedding.RagMaxTokensPerChunk" Label="Maximum tokens per chunk" Min="1" Variant="Variant.Outlined" Margin="Margin.Dense" /></MudItem>
-                                <MudItem xs="12" sm="6" md="4"><MudNumericField T="int" @bind-Value="_settings.Embedding.RagOverlapTokens" Label="Overlap tokens" Min="0" Variant="Variant.Outlined" Margin="Margin.Dense" /></MudItem>
                                 <MudItem xs="12" sm="6" md="4"><MudNumericField T="double" @bind-Value="_settings.Embedding.RagMinRelevanceScore" Label="Default RAG minimum relevance score" HelperText="Used by agents that do not select a RAG Provider profile." Min="-1" Max="1" Step="0.01" Variant="Variant.Outlined" Margin="Margin.Dense" /></MudItem>
-                                <MudItem xs="12"><MudText Typo="Typo.caption">Text chunking parameters for building RAG indexes.</MudText></MudItem>
-                                <MudItem xs="12"><MudButton Variant="Variant.Outlined" Color="Color.Primary" OnClick="RestartEmbeddings" Size="Size.Small">
-                                    Rebuild Knowledge Store Indexes
-                                </MudButton></MudItem>
                             </MudGrid>
                         </MudCardContent>
                     </MudCard>
@@ -299,22 +292,6 @@
             Logger.LogError(ex, "Error saving settings");
             Snackbar.Add($"Failed to save settings: {ex.Message}", Severity.Error);
             return false;
-        }
-    }
-
-    private async Task RestartEmbeddings()
-    {
-        if (!await SaveSettings())
-            return;
-        try
-        {
-            KnowledgeIndexBackgroundService.RequestRebuild();
-            Snackbar.Add("Knowledge Store indexing restarted", Severity.Success);
-        }
-        catch (Exception ex)
-        {
-            Logger.LogError(ex, "Error restarting Knowledge Store indexing");
-            Snackbar.Add("Failed to restart Knowledge Store indexing", Severity.Error);
         }
     }
 

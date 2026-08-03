@@ -80,11 +80,13 @@
 
         try
         {
-            var response = await Search.SearchAsync(
-                [id],
-                query.Trim(),
-                maxResults: 5,
-                minRelevanceScore: null);
+            var response = await Search.SearchAsync(new KnowledgeSearchRequest
+            {
+                KnowledgeStoreIds = [id], Query = query.Trim(), MaxResults = 5,
+                Strategy = RagRetrievalStrategy.Vector, MinVectorRelevanceScore = null,
+                UseApplicationDefaultThreshold = false, AdjacentChunkCount = 0,
+                MaxRetrievedContextTokens = null
+            });
             results = response.Results.ToList();
         }
         catch (Exception ex)
