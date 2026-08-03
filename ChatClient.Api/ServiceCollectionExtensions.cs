@@ -117,7 +117,8 @@ public static class ServiceCollectionExtensions
     {
         services.AddOptions<KnowledgeIngestionOptions>()
             .BindConfiguration(KnowledgeIngestionOptions.SectionName);
-        services.AddSingleton<KnowledgeVectorStore>();
+        services.AddSingleton<IEmbeddingGeneratorResolver, EmbeddingGeneratorResolver>();
+        services.AddSingleton<IKnowledgeIndex, SqliteKnowledgeIndex>();
         services.AddSingleton<IDocumentMarkdownConverter, MarkItDownMarkdownConverter>();
         services.AddSingleton<IKnowledgeDocumentIngestionService, KnowledgeDocumentIngestionService>();
         services.AddSingleton<IKnowledgeMarkdownChunker, KnowledgeMarkdownChunker>();

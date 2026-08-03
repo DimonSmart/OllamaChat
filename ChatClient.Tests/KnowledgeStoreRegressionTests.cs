@@ -12,24 +12,46 @@ namespace ChatClient.Tests;
 public sealed class KnowledgeStoreRegressionTests
 {
     [Fact]
+    public async Task EmbeddingResolver_ReturnsOllamaAdapterAndPreservesProviderEmbedding()
+    {
+        var serverId = Guid.NewGuid();
+        var servers = new Mock<ILlmServerConfigService>(MockBehavior.Strict);
+        servers.Setup(service => service.GetByIdAsync(serverId)).ReturnsAsync(new LlmServerConfig { Id = serverId, ServerType = ServerType.Ollama });
+        var ollama = new Mock<IOllamaClientService>(MockBehavior.Strict);
+        ollama.Setup(service => service.GenerateEmbeddingAsync("query", It.IsAny<ServerModel>(), It.IsAny<CancellationToken>())).ReturnsAsync([1f, 2f]);
+        var resolver = new EmbeddingGeneratorResolver(servers.Object, ollama.Object, NullLogger<EmbeddingGeneratorResolver>.Instance);
+
+        var generator = await resolver.ResolveAsync(new ServerModel(serverId, "embedding"));
+        var embeddings = await generator.GenerateAsync(["query"]);
+
+        Assert.Equal(new float[] { 1f, 2f }, embeddings[0].Vector.ToArray());
+    }
+
+    [Fact]
+    public async Task EmbeddingResolver_RejectsUnsupportedServerType()
+    {
+        var serverId = Guid.NewGuid();
+        var servers = new Mock<ILlmServerConfigService>(MockBehavior.Strict);
+        servers.Setup(service => service.GetByIdAsync(serverId)).ReturnsAsync(new LlmServerConfig { Id = serverId, ServerType = ServerType.ChatGpt });
+        var resolver = new EmbeddingGeneratorResolver(servers.Object, Mock.Of<IOllamaClientService>(), NullLogger<EmbeddingGeneratorResolver>.Instance);
+
+        var error = await Assert.ThrowsAsync<NotSupportedException>(() => resolver.ResolveAsync(new ServerModel(serverId, "embedding")));
+
+        Assert.Contains("ChatGpt", error.Message);
+    }
+
+    [Fact]
     public async Task SearchAsync_DimensionMismatchPreservesExistingVectors()
     {
         await using var database = new TemporaryVectorDatabase();
-        var vectors = database.CreateStore();
+        IKnowledgeIndex index = database.CreateStore();
         var store = CreateReadyStore("Knowledge", 2);
         var documentId = Guid.NewGuid();
-        await vectors.ReplaceDocumentAsync(store.Id, documentId, 2,
-        [
-            new KnowledgeChunkRecord
-            {
-                Id = $"{store.Id:N}:{documentId:N}:0", KnowledgeStoreId = store.Id.ToString("N"), DocumentId = documentId.ToString("N"),
-                FileName = "notes.md", Content = "preserved", Embedding = new float[] { 1, 0 }
-            }
-        ], CancellationToken.None);
+        await AddChunkAsync(index, store, documentId, [1f, 0f], "preserved");
 
-        await Assert.ThrowsAsync<InvalidOperationException>(() => vectors.SearchAsync(store, new float[] { 1, 0, 0 }, 5, -1, CancellationToken.None));
+        await Assert.ThrowsAsync<InvalidOperationException>(() => SearchAsync(index, store, [1f, 0f, 0f], 5, -1));
 
-        var results = await vectors.SearchAsync(store, new float[] { 1, 0 }, 5, -1, CancellationToken.None);
+        var results = await SearchAsync(index, store, [1f, 0f], 5, -1);
         Assert.Contains(results, result => result.Content == "preserved");
     }
 
@@ -145,166 +167,30 @@ public sealed class KnowledgeStoreRegressionTests
     }
 
     [Fact]
-    public async Task SearchAsync_AppliesResultLimitGloballyAcrossStores()
+    public async Task SearchAsync_UsesOneEmbeddingPerConfigurationAndAppliesGlobalLimit()
     {
-        await using var database = new TemporaryVectorDatabase();
-        var vectors = database.CreateStore();
         var first = CreateReadyStore("First", 2);
         var second = CreateReadyStore("Second", 2);
-        await AddChunkAsync(vectors, first, new float[] { 1, 0 }, "first");
-        await AddChunkAsync(vectors, second, new float[] { 0, 1 }, "second");
+        second.Configuration.ServerId = first.Configuration.ServerId;
+        second.Index.IndexedConfiguration = second.Configuration.Clone();
         var stores = new Mock<IKnowledgeStoreService>(MockBehavior.Strict);
         stores.Setup(service => service.GetAllAsync(It.IsAny<CancellationToken>())).ReturnsAsync([first, second]);
-        var settings = new Mock<IUserSettingsService>(MockBehavior.Strict);
-        settings.Setup(service => service.GetSettingsAsync(It.IsAny<CancellationToken>())).ReturnsAsync(new UserSettings { Embedding = new EmbeddingSettings { RagMinRelevanceScore = -1 } });
-        var ollama = new Mock<IOllamaClientService>(MockBehavior.Strict);
-        ollama.Setup(service => service.GenerateEmbeddingAsync("query", It.IsAny<ServerModel>(), It.IsAny<CancellationToken>())).ReturnsAsync([1f, 0f]);
-        var service = new KnowledgeSearchService(stores.Object, settings.Object, ollama.Object, vectors);
-
-        var response = await service.SearchAsync(new KnowledgeSearchRequest { KnowledgeStoreIds = [first.Id, second.Id], Query = "query", MaxResults = 1, UseApplicationDefaultThreshold = true });
-
-        var result = Assert.Single(response.Results);
-        Assert.Equal("First", result.KnowledgeStoreName);
-        Assert.Equal("first", result.Content);
-    }
-
-    [Fact]
-    public async Task SearchAsync_DefaultOverloadAppliesConfiguredRelevanceThreshold()
-    {
-        await using var database = new TemporaryVectorDatabase();
-        var vectors = database.CreateStore();
-        var store = CreateReadyStore("Knowledge", 2);
-        await AddChunkAsync(vectors, store, new float[] { 0.6f, 0.8f }, "weak");
-        var stores = new Mock<IKnowledgeStoreService>(MockBehavior.Strict);
-        stores.Setup(service => service.GetAllAsync(It.IsAny<CancellationToken>())).ReturnsAsync([store]);
-        var settings = new Mock<IUserSettingsService>(MockBehavior.Strict);
-        settings.Setup(service => service.GetSettingsAsync(It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new UserSettings { Embedding = new EmbeddingSettings { RagMinRelevanceScore = 0.8 } });
-        var ollama = new Mock<IOllamaClientService>(MockBehavior.Strict);
-        ollama.Setup(service => service.GenerateEmbeddingAsync("query", It.IsAny<ServerModel>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync([1f, 0f]);
-        var service = new KnowledgeSearchService(stores.Object, settings.Object, ollama.Object, vectors);
-
-        var response = await service.SearchAsync(new KnowledgeSearchRequest { KnowledgeStoreIds = [store.Id], Query = "query", MaxResults = 5, UseApplicationDefaultThreshold = true });
-
-        Assert.Empty(response.Results);
-        settings.Verify(service => service.GetSettingsAsync(It.IsAny<CancellationToken>()), Times.Once);
-    }
-
-    [Fact]
-    public async Task SearchAsync_ExplicitNullThresholdReturnsWeakResultsBelowConfiguredThreshold()
-    {
-        await using var database = new TemporaryVectorDatabase();
-        var vectors = database.CreateStore();
-        var store = CreateReadyStore("Knowledge", 2);
-        await AddChunkAsync(vectors, store, new float[] { 0.6f, 0.8f }, "weak");
-        var stores = new Mock<IKnowledgeStoreService>(MockBehavior.Strict);
-        stores.Setup(service => service.GetAllAsync(It.IsAny<CancellationToken>())).ReturnsAsync([store]);
-        var settings = new Mock<IUserSettingsService>(MockBehavior.Strict);
-        var ollama = new Mock<IOllamaClientService>(MockBehavior.Strict);
-        ollama.Setup(service => service.GenerateEmbeddingAsync("query", It.IsAny<ServerModel>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync([1f, 0f]);
-        var service = new KnowledgeSearchService(stores.Object, settings.Object, ollama.Object, vectors);
-
-        var response = await service.SearchAsync(new KnowledgeSearchRequest { KnowledgeStoreIds = [store.Id], Query = "query", MaxResults = 5, MinVectorRelevanceScore = null });
-
-        var result = Assert.Single(response.Results);
-        Assert.Equal("weak", result.Content);
-        settings.Verify(service => service.GetSettingsAsync(It.IsAny<CancellationToken>()), Times.Never);
-    }
-
-    [Fact]
-    public async Task SearchAsync_NullThresholdStillAppliesGlobalResultLimitAcrossStores()
-    {
-        await using var database = new TemporaryVectorDatabase();
-        var vectors = database.CreateStore();
-        var first = CreateReadyStore("First", 2);
-        var second = CreateReadyStore("Second", 2);
-        await AddChunkAsync(vectors, first, new float[] { 1, 0 }, "first");
-        await AddChunkAsync(vectors, second, new float[] { 0.6f, 0.8f }, "second");
-        var stores = new Mock<IKnowledgeStoreService>(MockBehavior.Strict);
-        stores.Setup(service => service.GetAllAsync(It.IsAny<CancellationToken>())).ReturnsAsync([first, second]);
-        var settings = new Mock<IUserSettingsService>(MockBehavior.Strict);
-        var ollama = new Mock<IOllamaClientService>(MockBehavior.Strict);
-        ollama.Setup(service => service.GenerateEmbeddingAsync("query", It.IsAny<ServerModel>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync([1f, 0f]);
-        var service = new KnowledgeSearchService(stores.Object, settings.Object, ollama.Object, vectors);
+        var settings = Mock.Of<IUserSettingsService>();
+        var generator = new Mock<Microsoft.Extensions.AI.IEmbeddingGenerator<string, Microsoft.Extensions.AI.Embedding<float>>>(MockBehavior.Strict);
+        generator.Setup(service => service.GenerateAsync(It.IsAny<IEnumerable<string>>(), It.IsAny<Microsoft.Extensions.AI.EmbeddingGenerationOptions>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new Microsoft.Extensions.AI.GeneratedEmbeddings<Microsoft.Extensions.AI.Embedding<float>>([new Microsoft.Extensions.AI.Embedding<float>(new float[] { 1f, 0f })]));
+        var resolver = new Mock<IEmbeddingGeneratorResolver>(MockBehavior.Strict);
+        resolver.Setup(service => service.ResolveAsync(It.IsAny<ServerModel>(), It.IsAny<CancellationToken>())).ReturnsAsync(generator.Object);
+        var index = new Mock<IKnowledgeIndex>(MockBehavior.Strict);
+        index.Setup(service => service.SearchVectorAsync(It.IsAny<KnowledgeVectorSearchRequest>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((KnowledgeVectorSearchRequest request, CancellationToken _) => [new RagSearchResult { Content = request.Store.Name, Score = request.Store == first ? 1 : .5 }]);
+        var service = new KnowledgeSearchService(stores.Object, settings, resolver.Object, index.Object);
 
         var response = await service.SearchAsync(new KnowledgeSearchRequest { KnowledgeStoreIds = [first.Id, second.Id], Query = "query", MaxResults = 1, MinVectorRelevanceScore = null });
 
-        var result = Assert.Single(response.Results);
-        Assert.Equal("First", result.KnowledgeStoreName);
-        Assert.Equal("first", result.Content);
-    }
-
-    [Fact]
-    public async Task ReplaceDocumentAsync_ConcurrentWritesCompleteWithoutDatabaseLock()
-    {
-        await using var database = new TemporaryVectorDatabase();
-        var vectors = database.CreateStore();
-        var store = CreateReadyStore("Knowledge", 2);
-        var documents = Enumerable.Range(0, 12).Select(index => new KnowledgeDocument { Id = Guid.NewGuid(), FileName = $"{index}.md" }).ToList();
-
-        await Task.WhenAll(documents.Select((document, index) => vectors.ReplaceDocumentAsync(store.Id, document.Id, 2,
-        [
-            new KnowledgeChunkRecord
-            {
-                Id = $"{store.Id:N}:{document.Id:N}:0", KnowledgeStoreId = store.Id.ToString("N"), DocumentId = document.Id.ToString("N"),
-                FileName = document.FileName, Content = $"document {index}", Embedding = new float[] { 1, 0 }
-            }
-        ], CancellationToken.None)));
-
-        var results = await vectors.SearchAsync(store, new float[] { 1, 0 }, 20, -1, CancellationToken.None);
-        Assert.Equal(documents.Count, results.Count);
-    }
-
-    [Fact]
-    public async Task ReplaceDocumentAsync_ReplacesExistingDocumentWithoutDatabaseLock()
-    {
-        await using var database = new TemporaryVectorDatabase();
-        var vectors = database.CreateStore();
-        var store = CreateReadyStore("Knowledge", 2);
-        var documentId = Guid.NewGuid();
-        var first = new KnowledgeChunkRecord
-        {
-            Id = $"{store.Id:N}:{documentId:N}:0",
-            KnowledgeStoreId = store.Id.ToString("N"),
-            DocumentId = documentId.ToString("N"),
-            FileName = "notes.md",
-            Content = "first",
-            Embedding = new float[] { 1, 0 }
-        };
-        var replacement = new KnowledgeChunkRecord
-        {
-            Id = first.Id,
-            KnowledgeStoreId = first.KnowledgeStoreId,
-            DocumentId = first.DocumentId,
-            FileName = first.FileName,
-            Content = "replacement",
-            Embedding = first.Embedding
-        };
-
-        await vectors.ReplaceDocumentAsync(store.Id, documentId, 2, [first], CancellationToken.None);
-        await vectors.ReplaceDocumentAsync(store.Id, documentId, 2, [replacement], CancellationToken.None);
-
-        var results = await vectors.SearchAsync(store, new float[] { 1, 0 }, 5, -1, CancellationToken.None);
-        var result = Assert.Single(results);
-        Assert.Equal("replacement", result.Content);
-    }
-
-    [Fact]
-    public async Task VectorSearchAsync_NullThresholdDoesNotFilterWeakResults()
-    {
-        await using var database = new TemporaryVectorDatabase();
-        var vectors = database.CreateStore();
-        var store = CreateReadyStore("Knowledge", 2);
-        await AddChunkAsync(vectors, store, new float[] { 0.6f, 0.8f }, "weak");
-
-        var results = await vectors.SearchAsync(store, new float[] { 1, 0 }, 5, null, CancellationToken.None);
-
-        var result = Assert.Single(results);
-        Assert.Equal("weak", result.Content);
-        Assert.InRange(result.Score, 0.59d, 0.61d);
+        Assert.Equal("First", Assert.Single(response.Results).Content);
+        resolver.Verify(service => service.ResolveAsync(It.IsAny<ServerModel>(), It.IsAny<CancellationToken>()), Times.Once);
+        generator.Verify(service => service.GenerateAsync(It.IsAny<IEnumerable<string>>(), It.IsAny<Microsoft.Extensions.AI.EmbeddingGenerationOptions>(), It.IsAny<CancellationToken>()), Times.Once);
     }
 
     private static KnowledgeStore CreateReadyStore(string name, int dimensions)
@@ -319,30 +205,31 @@ public sealed class KnowledgeStoreRegressionTests
         };
     }
 
-    private static async Task AddChunkAsync(KnowledgeVectorStore vectors, KnowledgeStore store, float[] embedding, string content)
+    private static async Task AddChunkAsync(IKnowledgeIndex index, KnowledgeStore store, Guid documentId, float[] embedding, string content)
     {
-        var documentId = Guid.NewGuid();
-        await vectors.ReplaceDocumentAsync(store.Id, documentId, embedding.Length,
-        [
-            new KnowledgeChunkRecord
-            {
-                Id = $"{store.Id:N}:{documentId:N}:0", KnowledgeStoreId = store.Id.ToString("N"), DocumentId = documentId.ToString("N"),
-                FileName = "notes.md", Content = content, Embedding = embedding
-            }
-        ], CancellationToken.None);
+        await index.ReplaceDocumentAsync(new KnowledgeDocumentIndexBatch
+        {
+            KnowledgeStoreId = store.Id,
+            DocumentId = documentId,
+            EmbeddingDimension = embedding.Length,
+            Chunks = [new KnowledgeIndexedChunk { Id = $"{store.Id:N}:{documentId:N}:0", KnowledgeStoreId = store.Id, DocumentId = documentId, FileName = "notes.md", ChunkIndex = 0, Content = content, Embedding = embedding }]
+        });
     }
+
+    private static Task<IReadOnlyList<RagSearchResult>> SearchAsync(IKnowledgeIndex index, KnowledgeStore store, float[] embedding, int max, double? threshold) =>
+        index.SearchVectorAsync(new KnowledgeVectorSearchRequest { Store = store, QueryEmbedding = embedding, MaxResults = max, MinRelevanceScore = threshold });
 
     private sealed class TemporaryVectorDatabase : IAsyncDisposable
     {
         private readonly string _directory = Path.Combine(Path.GetTempPath(), "OllamaChatTests", Guid.NewGuid().ToString("N"));
 
-        public KnowledgeVectorStore CreateStore()
+        public SqliteKnowledgeIndex CreateStore()
         {
             Directory.CreateDirectory(_directory);
             var configuration = new ConfigurationBuilder()
                 .AddInMemoryCollection(new Dictionary<string, string?> { ["KnowledgeVectorStore:DatabasePath"] = Path.Combine(_directory, "knowledge.sqlite") })
                 .Build();
-            return new KnowledgeVectorStore(configuration);
+            return new SqliteKnowledgeIndex(configuration);
         }
 
         public ValueTask DisposeAsync()

@@ -3,7 +3,11 @@ using ChatClient.Domain.Models;
 
 namespace ChatClient.Api.Services.Rag;
 
-public sealed class KnowledgeSearchService(IKnowledgeStoreService stores, IUserSettingsService settings, IOllamaClientService ollama, KnowledgeVectorStore vectors) : IKnowledgeSearchService
+public sealed class KnowledgeSearchService(
+    IKnowledgeStoreService stores,
+    IUserSettingsService settings,
+    IEmbeddingGeneratorResolver embeddingGeneratorResolver,
+    IKnowledgeIndex knowledgeIndex) : IKnowledgeSearchService
 {
     public async Task<bool> HasReadyContentAsync(IReadOnlyCollection<Guid> ids, CancellationToken ct = default) => (await stores.GetAllAsync(ct)).Any(IsRetrievable(ids));
 
@@ -30,10 +34,18 @@ public sealed class KnowledgeSearchService(IKnowledgeStoreService stores, IUserS
         foreach (var group in selected.GroupBy(x => (x.Index.IndexedConfiguration!.ServerId, x.Index.IndexedConfiguration.Model)))
         {
             var profile = group.First().Index.IndexedConfiguration!;
-            var embedding = await ollama.GenerateEmbeddingAsync(trimmedQuery, new ServerModel(profile.ServerId, profile.Model), ct);
+            var generator = await embeddingGeneratorResolver.ResolveAsync(new ServerModel(profile.ServerId, profile.Model), ct);
+            var generated = await generator.GenerateAsync([trimmedQuery], cancellationToken: ct);
+            var embedding = generated[0].Vector;
             foreach (var store in group)
             {
-                var found = await vectors.SearchAsync(store, embedding, request.MaxResults, threshold, ct);
+                var found = await knowledgeIndex.SearchVectorAsync(new KnowledgeVectorSearchRequest
+                {
+                    Store = store,
+                    QueryEmbedding = embedding,
+                    MaxResults = request.MaxResults,
+                    MinRelevanceScore = threshold
+                }, ct);
                 foreach (var result in found)
                 {
                     result.KnowledgeStoreName = store.Name;

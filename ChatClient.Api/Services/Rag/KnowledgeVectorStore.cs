@@ -1,3 +1,4 @@
+using ChatClient.Application.Services;
 using ChatClient.Domain.Models;
 using ChatClient.Infrastructure.Constants;
 using ChatClient.Infrastructure.Helpers;
@@ -7,7 +8,7 @@ using System.Linq.Expressions;
 
 namespace ChatClient.Api.Services.Rag;
 
-public sealed class KnowledgeVectorStore(IConfiguration configuration)
+public sealed class SqliteKnowledgeIndex(IConfiguration configuration) : IKnowledgeIndex
 {
     private readonly SemaphoreSlim _writeLock = new(1, 1);
     private readonly string _connectionString = new Microsoft.Data.Sqlite.SqliteConnectionStringBuilder
@@ -16,41 +17,54 @@ public sealed class KnowledgeVectorStore(IConfiguration configuration)
         DefaultTimeout = 60
     }.ToString();
 
-    public async Task ReplaceDocumentAsync(Guid storeId, Guid documentId, int dimension, IReadOnlyList<KnowledgeChunkRecord> chunks, CancellationToken ct)
+    public async Task ReplaceDocumentAsync(KnowledgeDocumentIndexBatch batch, CancellationToken ct = default)
     {
         await ExecuteWriteAsync(async () =>
         {
-            var collection = await GetOrCreateCollectionForWriteAsync(dimension, ct);
-            var store = storeId.ToString("N");
-            var document = documentId.ToString("N");
+            var collection = await GetOrCreateCollectionForWriteAsync(batch.EmbeddingDimension, ct);
+            var store = batch.KnowledgeStoreId.ToString("N");
+            var document = batch.DocumentId.ToString("N");
             var existingIds = await GetIdsAsync(collection, x => x.KnowledgeStoreId == store && x.DocumentId == document, ct);
             foreach (var id in existingIds)
                 await collection.DeleteAsync(id, ct);
-            await collection.UpsertAsync(chunks, ct);
+            var records = batch.Chunks.Select(chunk => new SqliteKnowledgeChunkRecord
+            {
+                Id = chunk.Id,
+                KnowledgeStoreId = chunk.KnowledgeStoreId.ToString("N"),
+                DocumentId = chunk.DocumentId.ToString("N"),
+                FileName = chunk.FileName,
+                ChunkIndex = chunk.ChunkIndex,
+                Content = chunk.Content,
+                Section = chunk.Section,
+                Embedding = chunk.Embedding
+            }).ToList();
+            await collection.UpsertAsync(records, ct);
         }, ct);
     }
 
-    public async Task<IReadOnlyList<RagSearchResult>> SearchAsync(KnowledgeStore store, ReadOnlyMemory<float> query, int max, double? minRelevanceScore, CancellationToken ct)
+    public async Task<IReadOnlyList<RagSearchResult>> SearchVectorAsync(KnowledgeVectorSearchRequest request, CancellationToken ct = default)
     {
+        var store = request.Store;
+        var query = request.QueryEmbedding;
         var dimension = store.Index.IndexedConfiguration?.Dimensions ?? 0;
         if (dimension != query.Length)
             throw new InvalidOperationException($"Knowledge Store '{store.Name}' was indexed with dimension {dimension}, but the current embedding provider returned dimension {query.Length}. Reindex the Knowledge Store.");
         var collection = await GetExistingCollectionForReadAsync(dimension, ct);
         var storeId = store.Id.ToString("N");
         var results = new List<RagSearchResult>();
-        var options = new VectorSearchOptions<KnowledgeChunkRecord>
+        var options = new VectorSearchOptions<SqliteKnowledgeChunkRecord>
         {
             Filter = x => x.KnowledgeStoreId == storeId,
             IncludeVectors = false
         };
-        if (minRelevanceScore is double threshold)
+        if (request.MinRelevanceScore is double threshold)
             options.ScoreThreshold = 1d - Math.Clamp(threshold, -1d, 1d);
-        await foreach (var result in collection.SearchAsync(query, max, options, ct))
+        await foreach (var result in collection.SearchAsync(query, request.MaxResults, options, ct))
             results.Add(new RagSearchResult { FileName = result.Record.FileName, Section = result.Record.Section, Content = result.Record.Content, Score = 1d - (result.Score ?? 1d) });
         return results;
     }
 
-    public async Task DeleteStoreAsync(Guid storeId, int dimension, CancellationToken ct)
+    public async Task DeleteStoreAsync(Guid storeId, int dimension, CancellationToken ct = default)
     {
         if (dimension <= 0)
             return;
@@ -63,7 +77,7 @@ public sealed class KnowledgeVectorStore(IConfiguration configuration)
                 await collection.DeleteAsync(existingId, ct);
         }, ct);
     }
-    public async Task DeleteDocumentAsync(Guid storeId, Guid documentId, int dimension, CancellationToken ct)
+    public async Task DeleteDocumentAsync(Guid storeId, Guid documentId, int dimension, CancellationToken ct = default)
     {
         if (dimension <= 0)
             return;
@@ -91,8 +105,8 @@ public sealed class KnowledgeVectorStore(IConfiguration configuration)
         }
     }
     private static async Task<List<string>> GetIdsAsync(
-        VectorStoreCollection<string, KnowledgeChunkRecord> collection,
-        Expression<Func<KnowledgeChunkRecord, bool>> filter,
+        VectorStoreCollection<string, SqliteKnowledgeChunkRecord> collection,
+        Expression<Func<SqliteKnowledgeChunkRecord, bool>> filter,
         CancellationToken ct)
     {
         var ids = new List<string>();
@@ -100,16 +114,15 @@ public sealed class KnowledgeVectorStore(IConfiguration configuration)
             ids.Add(item.Id);
         return ids;
     }
-    private async Task<VectorStoreCollection<string, KnowledgeChunkRecord>> GetOrCreateCollectionForWriteAsync(int dimension, CancellationToken ct)
+    private async Task<VectorStoreCollection<string, SqliteKnowledgeChunkRecord>> GetOrCreateCollectionForWriteAsync(int dimension, CancellationToken ct)
     {
         if (dimension <= 0)
             throw new InvalidOperationException("Knowledge Store has no indexed embedding dimension.");
-        var definition = new VectorStoreCollectionDefinition { Properties = [new VectorStoreKeyProperty(nameof(KnowledgeChunkRecord.Id), typeof(string)), new VectorStoreDataProperty(nameof(KnowledgeChunkRecord.KnowledgeStoreId), typeof(string)), new VectorStoreDataProperty(nameof(KnowledgeChunkRecord.DocumentId), typeof(string)), new VectorStoreDataProperty(nameof(KnowledgeChunkRecord.FileName), typeof(string)), new VectorStoreDataProperty(nameof(KnowledgeChunkRecord.ChunkIndex), typeof(int)), new VectorStoreDataProperty(nameof(KnowledgeChunkRecord.Content), typeof(string)), new VectorStoreDataProperty(nameof(KnowledgeChunkRecord.Section), typeof(string)), new VectorStoreVectorProperty(nameof(KnowledgeChunkRecord.Embedding), typeof(ReadOnlyMemory<float>), dimension) { DistanceFunction = DistanceFunction.CosineDistance }] };
-        var collection = new SqliteVectorStore(_connectionString).GetCollection<string, KnowledgeChunkRecord>($"knowledge_chunks_{dimension}", definition);
+        var collection = new SqliteVectorStore(_connectionString).GetCollection<string, SqliteKnowledgeChunkRecord>($"knowledge_chunks_{dimension}", CreateDefinition(dimension));
         await collection.EnsureCollectionExistsAsync(ct);
         return collection;
     }
-    private async Task<VectorStoreCollection<string, KnowledgeChunkRecord>> GetExistingCollectionForReadAsync(int dimension, CancellationToken ct)
+    private async Task<VectorStoreCollection<string, SqliteKnowledgeChunkRecord>> GetExistingCollectionForReadAsync(int dimension, CancellationToken ct)
     {
         if (dimension <= 0)
             throw new InvalidOperationException("Knowledge Store has no indexed embedding dimension.");
@@ -122,9 +135,13 @@ public sealed class KnowledgeVectorStore(IConfiguration configuration)
             throw new InvalidOperationException($"Knowledge index collection for dimension {dimension} is missing. Reindex the Knowledge Store.");
         return CreateCollection(dimension);
     }
-    private VectorStoreCollection<string, KnowledgeChunkRecord> CreateCollection(int dimension)
+    private VectorStoreCollection<string, SqliteKnowledgeChunkRecord> CreateCollection(int dimension)
     {
-        var definition = new VectorStoreCollectionDefinition { Properties = [new VectorStoreKeyProperty(nameof(KnowledgeChunkRecord.Id), typeof(string)), new VectorStoreDataProperty(nameof(KnowledgeChunkRecord.KnowledgeStoreId), typeof(string)), new VectorStoreDataProperty(nameof(KnowledgeChunkRecord.DocumentId), typeof(string)), new VectorStoreDataProperty(nameof(KnowledgeChunkRecord.FileName), typeof(string)), new VectorStoreDataProperty(nameof(KnowledgeChunkRecord.ChunkIndex), typeof(int)), new VectorStoreDataProperty(nameof(KnowledgeChunkRecord.Content), typeof(string)), new VectorStoreDataProperty(nameof(KnowledgeChunkRecord.Section), typeof(string)), new VectorStoreVectorProperty(nameof(KnowledgeChunkRecord.Embedding), typeof(ReadOnlyMemory<float>), dimension) { DistanceFunction = DistanceFunction.CosineDistance }] };
-        return new SqliteVectorStore(_connectionString).GetCollection<string, KnowledgeChunkRecord>($"knowledge_chunks_{dimension}", definition);
+        return new SqliteVectorStore(_connectionString).GetCollection<string, SqliteKnowledgeChunkRecord>($"knowledge_chunks_{dimension}", CreateDefinition(dimension));
     }
+
+    private static VectorStoreCollectionDefinition CreateDefinition(int dimension) => new()
+    {
+        Properties = [new VectorStoreKeyProperty(nameof(SqliteKnowledgeChunkRecord.Id), typeof(string)), new VectorStoreDataProperty(nameof(SqliteKnowledgeChunkRecord.KnowledgeStoreId), typeof(string)), new VectorStoreDataProperty(nameof(SqliteKnowledgeChunkRecord.DocumentId), typeof(string)), new VectorStoreDataProperty(nameof(SqliteKnowledgeChunkRecord.FileName), typeof(string)), new VectorStoreDataProperty(nameof(SqliteKnowledgeChunkRecord.ChunkIndex), typeof(int)), new VectorStoreDataProperty(nameof(SqliteKnowledgeChunkRecord.Content), typeof(string)), new VectorStoreDataProperty(nameof(SqliteKnowledgeChunkRecord.Section), typeof(string)), new VectorStoreVectorProperty(nameof(SqliteKnowledgeChunkRecord.Embedding), typeof(ReadOnlyMemory<float>), dimension) { DistanceFunction = DistanceFunction.CosineDistance }]
+    };
 }

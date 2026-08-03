@@ -8,8 +8,8 @@ public sealed class KnowledgeIndexBackgroundService(IServiceScopeFactory scopes,
     private readonly SemaphoreSlim _signal = new(0, 1);
     private bool _isFirstRebuild = true;
     public void RequestRebuild() { if (_signal.CurrentCount == 0) _signal.Release(); }
-    public async Task DeleteStoreVectorsAsync(Guid id, int dimension, CancellationToken ct = default) { if (dimension > 0) { using var scope = scopes.CreateScope(); await scope.ServiceProvider.GetRequiredService<KnowledgeVectorStore>().DeleteStoreAsync(id, dimension, ct); } }
-    public async Task DeleteDocumentVectorsAsync(Guid id, Guid documentId, CancellationToken ct = default) { using var scope = scopes.CreateScope(); var store = await scope.ServiceProvider.GetRequiredService<IKnowledgeStoreService>().GetAsync(id, ct); var dimension = store?.Index.IndexedConfiguration?.Dimensions ?? 0; if (dimension > 0) await scope.ServiceProvider.GetRequiredService<KnowledgeVectorStore>().DeleteDocumentAsync(id, documentId, dimension, ct); }
+    public async Task DeleteStoreVectorsAsync(Guid id, int dimension, CancellationToken ct = default) { if (dimension > 0) { using var scope = scopes.CreateScope(); await scope.ServiceProvider.GetRequiredService<IKnowledgeIndex>().DeleteStoreAsync(id, dimension, ct); } }
+    public async Task DeleteDocumentVectorsAsync(Guid id, Guid documentId, CancellationToken ct = default) { using var scope = scopes.CreateScope(); var store = await scope.ServiceProvider.GetRequiredService<IKnowledgeStoreService>().GetAsync(id, ct); var dimension = store?.Index.IndexedConfiguration?.Dimensions ?? 0; if (dimension > 0) await scope.ServiceProvider.GetRequiredService<IKnowledgeIndex>().DeleteDocumentAsync(id, documentId, dimension, ct); }
     protected override async Task ExecuteAsync(CancellationToken ct) { RequestRebuild(); while (!ct.IsCancellationRequested) { await _signal.WaitAsync(ct); await RebuildAsync(ct); } }
     private async Task RebuildAsync(CancellationToken ct)
     {
@@ -17,8 +17,8 @@ public sealed class KnowledgeIndexBackgroundService(IServiceScopeFactory scopes,
         var stores = scope.ServiceProvider.GetRequiredService<IKnowledgeStoreService>();
         var payloads = scope.ServiceProvider.GetRequiredService<IKnowledgeDocumentStorage>();
         var chunker = scope.ServiceProvider.GetRequiredService<IKnowledgeMarkdownChunker>();
-        var ollama = scope.ServiceProvider.GetRequiredService<IOllamaClientService>();
-        var vectors = scope.ServiceProvider.GetRequiredService<KnowledgeVectorStore>();
+        var embeddingGeneratorResolver = scope.ServiceProvider.GetRequiredService<IEmbeddingGeneratorResolver>();
+        var knowledgeIndex = scope.ServiceProvider.GetRequiredService<IKnowledgeIndex>();
         var allStores = await stores.GetAllAsync(ct);
         if (_isFirstRebuild)
         {
@@ -43,6 +43,8 @@ public sealed class KnowledgeIndexBackgroundService(IServiceScopeFactory scopes,
                 snapshot.Index.State = KnowledgeStoreIndexState.Indexing;
                 await stores.UpdateAsync(snapshot, ct);
                 var indexed = snapshot.Configuration.Clone();
+                var generator = await embeddingGeneratorResolver.ResolveAsync(new ServerModel(indexed.ServerId, indexed.Model), ct);
+                logger.LogInformation("Indexing Knowledge Store {StoreId} with server {ServerId}, model {ModelName}, and index {IndexType}", snapshot.Id, indexed.ServerId, indexed.Model, knowledgeIndex.GetType().Name);
                 var rebuildAll = snapshot.Index.ForceRebuild || snapshot.Index.IndexedConfiguration is null || !snapshot.Configuration.Equals(snapshot.Index.IndexedConfiguration);
                 var documentsToIndex = SelectDocumentsToIndex(snapshot, rebuildAll);
                 foreach (var document in documentsToIndex)
@@ -51,13 +53,23 @@ public sealed class KnowledgeIndexBackgroundService(IServiceScopeFactory scopes,
                     var chunks = chunker.Chunk(document.FileName, content, indexed.MaxTokensPerChunk, indexed.OverlapTokens);
                     if (chunks.Count == 0)
                         continue;
+                    logger.LogInformation("Indexing {ChunkCount} chunks for Knowledge Store {StoreId}", chunks.Count, snapshot.Id);
                     progress.Begin(snapshot.Id, document.Id, chunks.Count);
-                    var first = await ollama.GenerateEmbeddingAsync(chunks[0].Content, new ServerModel(indexed.ServerId, indexed.Model), ct);
+                    var first = (await generator.GenerateAsync([chunks[0].Content], cancellationToken: ct))[0].Vector;
                     indexed.Dimensions = first.Length;
-                    var records = new List<KnowledgeChunkRecord>();
+                    if (indexed.Dimensions == 0)
+                        throw new InvalidOperationException($"Embedding provider returned an empty embedding for Knowledge Store '{snapshot.Name}'.");
+                    logger.LogInformation("Knowledge Store {StoreId} embeddings have dimension {EmbeddingDimension}", snapshot.Id, indexed.Dimensions);
+                    var records = new List<KnowledgeIndexedChunk>();
                     for (var i = 0; i < chunks.Count; i++)
-                    { var embedding = i == 0 ? first : await ollama.GenerateEmbeddingAsync(chunks[i].Content, new ServerModel(indexed.ServerId, indexed.Model), ct); records.Add(chunks[i] with { Id = $"{snapshot.Id:N}:{document.Id:N}:{i}", KnowledgeStoreId = snapshot.Id.ToString("N"), DocumentId = document.Id.ToString("N"), Embedding = embedding }); progress.Report(snapshot.Id, document.Id, i + 1); }
-                    await vectors.ReplaceDocumentAsync(snapshot.Id, document.Id, indexed.Dimensions, records, ct);
+                    {
+                        var embedding = i == 0 ? first : (await generator.GenerateAsync([chunks[i].Content], cancellationToken: ct))[0].Vector;
+                        if (embedding.Length != indexed.Dimensions)
+                            throw new InvalidOperationException($"Embedding provider returned inconsistent dimensions for Knowledge Store '{snapshot.Name}'. Expected {indexed.Dimensions}, received {embedding.Length}.");
+                        records.Add(new KnowledgeIndexedChunk { Id = $"{snapshot.Id:N}:{document.Id:N}:{i}", KnowledgeStoreId = snapshot.Id, DocumentId = document.Id, FileName = chunks[i].FileName, ChunkIndex = chunks[i].ChunkIndex, Content = chunks[i].Content, Section = chunks[i].Section, Embedding = embedding });
+                        progress.Report(snapshot.Id, document.Id, i + 1);
+                    }
+                    await knowledgeIndex.ReplaceDocumentAsync(new KnowledgeDocumentIndexBatch { KnowledgeStoreId = snapshot.Id, DocumentId = document.Id, EmbeddingDimension = indexed.Dimensions, Chunks = records }, ct);
                     var currentStore = await stores.GetAsync(snapshot.Id, ct);
                     var currentDocument = currentStore?.Documents.FirstOrDefault(x => x.Id == document.Id);
                     if (currentDocument is not null && currentStore is not null)
@@ -81,7 +93,7 @@ public sealed class KnowledgeIndexBackgroundService(IServiceScopeFactory scopes,
                 current.Index.LastError = null;
                 await stores.UpdateAsync(current, ct);
                 if (oldDimension is > 0 && oldDimension != indexed.Dimensions)
-                    await vectors.DeleteStoreAsync(current.Id, oldDimension.Value, ct);
+                    await knowledgeIndex.DeleteStoreAsync(current.Id, oldDimension.Value, ct);
             }
             catch (Exception ex) { var current = await stores.GetAsync(snapshot.Id, ct); if (current is not null) { current.Index.State = KnowledgeStoreIndexState.Failed; current.Index.LastError = ex.Message; await stores.UpdateAsync(current, ct); } logger.LogError(ex, "Knowledge Store indexing failed for {StoreId}", snapshot.Id); }
             finally { progress.ClearStore(snapshot.Id); }
