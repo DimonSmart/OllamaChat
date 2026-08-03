@@ -1,1 +1,26 @@
+.rag-retrieval {
+    padding: 0.15rem 0.35rem !important;
+    min-height: 0;
+}
+
+.rag-retrieval-toggle {
+    padding: 0;
+    border: 0;
+    color: var(--mud-palette-text-secondary);
+    background: transparent;
+    font: inherit;
+    font-size: 0.75rem;
+    line-height: 1.2;
+    cursor: pointer;
+}
+
+.rag-retrieval-toggle:hover {
+    color: var(--mud-palette-primary);
+    text-decoration: underline;
+}
+
+.rag-retrieval-details {
+    margin-top: 0.35rem;
+}
+
 .rag-excerpt-content { max-height: 14rem; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; }

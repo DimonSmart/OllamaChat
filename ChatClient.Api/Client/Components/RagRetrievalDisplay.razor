@@ -1,8 +1,16 @@
 @using ChatClient.Domain.Models
 @using MudBlazor
+@using MudX
 
-<MudExpansionPanels Dense="true" Class="mt-2">
-    <MudExpansionPanel Icon="@Icons.Material.Filled.ManageSearch" Text="@Summary">
+<MudXChatBubble Class="rag-retrieval">
+    @if (!isExpanded)
+    {
+        <button type="button" class="rag-retrieval-toggle" @onclick="Toggle" aria-expanded="false">@CompactSummary</button>
+    }
+    else
+    {
+        <button type="button" class="rag-retrieval-toggle" @onclick="Toggle" aria-expanded="true">@CompactSummary</button>
+        <div class="rag-retrieval-details">
         @foreach (var trace in Traces)
         {
             <MudPaper Outlined="true" Class="pa-2 mb-2">
@@ -29,23 +37,26 @@
                 }
             </MudPaper>
         }
-    </MudExpansionPanel>
-</MudExpansionPanels>
+        </div>
+    }
+</MudXChatBubble>
 
 @code {
     [Parameter, EditorRequired] public IReadOnlyCollection<RagRetrievalTrace> Traces { get; set; } = [];
 
-    private string Summary
+    private bool isExpanded;
+
+    private string CompactSummary
     {
         get
         {
-            if (Traces.Any(trace => trace.Status == RagRetrievalTraceStatus.Failed)) return "RAG retrieval — failed";
             var excerpts = Traces.Sum(trace => trace.Excerpts.Count);
-            if (excerpts == 0) return "RAG retrieval — no relevant excerpts";
             var documents = Traces.SelectMany(trace => trace.Excerpts).Select(excerpt => (excerpt.KnowledgeStoreId, excerpt.DocumentId)).Distinct().Count();
-            return Traces.Count == 1 ? $"RAG retrieval — {excerpts} excerpts from {documents} documents" : $"RAG retrieval — {Traces.Count} searches, {excerpts} excerpts from {documents} documents";
+            return $"(RAG:{excerpts}:{documents})";
         }
     }
+
+    private void Toggle() => isExpanded = !isExpanded;
 
     private static string Mode(RagRetrievalInvocationMode mode) => mode == RagRetrievalInvocationMode.OnDemand ? "On demand" : "Before invoke";
     private static string Duration(RagRetrievalTrace trace) => trace.CompletedAt is { } completed ? $"{(completed - trace.StartedAt).TotalMilliseconds:0} ms" : "Running";
