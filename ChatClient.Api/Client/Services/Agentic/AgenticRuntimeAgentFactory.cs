@@ -7,6 +7,7 @@ using ChatClient.Domain.Models;
 using Microsoft.Extensions.Options;
 #pragma warning disable MAAI001
 using Microsoft.Agents.AI;
+using Microsoft.Agents.AI.Compaction;
 using Microsoft.Agents.AI.Tools.Shell;
 #pragma warning restore MAAI001
 using Microsoft.Extensions.AI;
@@ -112,21 +113,24 @@ public sealed class AgenticRuntimeAgentFactory(
             bool supportsFunctions = await modelCapabilityService.SupportsFunctionCallingAsync(
                 request.ResolvedModel,
                 cancellationToken);
-            var hasRagContent = request.Agent.Id != Guid.Empty &&
-                                await knowledgeSearchService.HasReadyContentAsync(request.Agent.KnowledgeStoreIds, cancellationToken);
+            var hasConfiguredKnowledge = request.Agent.KnowledgeStoreIds.Count > 0;
+            var hasReadyKnowledge = hasConfiguredKnowledge &&
+                                    await knowledgeSearchService.HasReadyContentAsync(request.Agent.KnowledgeStoreIds, cancellationToken);
 
-            if (hasRagContent)
+            if (!hasConfiguredKnowledge)
             {
                 logger.LogInformation(
-                    "Agent {AgentName}: RAG enabled, behavior={Behavior}",
-                    request.Agent.AgentName,
-                    ResolveRagSearchBehavior(supportsFunctions));
+                    "Agent {AgentName}: RAG provider not configured because no Knowledge Stores are attached",
+                    request.Agent.AgentName);
             }
             else
             {
-                logger.LogDebug(
-                    "Agent {AgentName}: RAG provider not configured because no indexed knowledge is available",
-                    request.Agent.AgentName);
+                logger.LogInformation(
+                    "Agent {AgentName}: RAG enabled, behavior={Behavior}, configuredStores={StoreCount}, ready={Ready}",
+                    request.Agent.AgentName,
+                    ResolveRagSearchBehavior(supportsFunctions),
+                    request.Agent.KnowledgeStoreIds.Count,
+                    hasReadyKnowledge);
             }
 
             if (fileAccessProfile is not null && !supportsFunctions)
@@ -227,7 +231,7 @@ public sealed class AgenticRuntimeAgentFactory(
                 server,
                 toolSet,
                 knowledgeSearchService,
-                hasRagContent,
+                hasConfiguredKnowledge,
                 supportsFunctions,
                 todoProfile,
                 agentModeProfile,
@@ -263,7 +267,7 @@ public sealed class AgenticRuntimeAgentFactory(
         LlmServerConfig server,
         AgenticToolSet toolSet,
         IKnowledgeSearchService knowledgeSearchService,
-        bool hasRagContent,
+        bool hasConfiguredKnowledge,
         bool supportsFunctions,
         TodoProviderProfile? todoProfile,
         AgentModeProviderProfile? agentModeProfile,
@@ -279,7 +283,7 @@ public sealed class AgenticRuntimeAgentFactory(
             request,
             toolSet,
             knowledgeSearchService,
-            hasRagContent,
+            hasConfiguredKnowledge,
             supportsFunctions,
             todoProfile,
             agentModeProfile,
@@ -324,11 +328,7 @@ public sealed class AgenticRuntimeAgentFactory(
             agentOptions.ChatOptions.AdditionalProperties["repeat_penalty"] = repeatPenalty;
         }
 
-        if (toolSet.HasTools || (hasRagContent && supportsFunctions) || shellExecutor is not null)
-        {
-            agentOptions.ChatOptions.AllowMultipleToolCalls = true;
-            agentOptions.ChatOptions.ToolMode = ChatToolMode.Auto;
-        }
+        ConfigureToolMode(agentOptions.ChatOptions!, toolSet, hasConfiguredKnowledge, supportsFunctions, shellExecutor);
 
         var approvalPolicy = request.RuntimeResources.ToolApprovalPolicy;
         if (approvalPolicy is not null)
@@ -352,7 +352,7 @@ public sealed class AgenticRuntimeAgentFactory(
         AgentRunRequest request,
         AgenticToolSet toolSet,
         IKnowledgeSearchService knowledgeSearchService,
-        bool hasRagContent,
+        bool hasConfiguredKnowledge,
         bool supportsFunctions,
         TodoProviderProfile? todoProfile,
         AgentModeProviderProfile? agentModeProfile,
@@ -387,10 +387,11 @@ public sealed class AgenticRuntimeAgentFactory(
             FileAccessStore = workspaceStore,
             FileAccessProviderOptions = fileAccessProfile is null ? null : BuildFileAccessProviderOptions(fileAccessProfile),
             DisableAgentSkillsProvider = true,
+            ChatHistoryProvider = BuildChatHistoryProvider(compaction),
             AIContextProviders = BuildContextProviders(
                 request,
                 knowledgeSearchService,
-                hasRagContent,
+                hasConfiguredKnowledge,
                 supportsFunctions,
                 loggerFactory,
                 todoProfile,
@@ -527,7 +528,7 @@ public sealed class AgenticRuntimeAgentFactory(
     internal static List<AIContextProvider> BuildContextProviders(
         AgentRunRequest request,
         IKnowledgeSearchService knowledgeSearchService,
-        bool hasRagContent,
+        bool hasConfiguredKnowledge,
         bool supportsFunctions,
         ILoggerFactory loggerFactory,
         TodoProviderProfile? todoProfile,
@@ -535,7 +536,7 @@ public sealed class AgenticRuntimeAgentFactory(
     {
         List<AIContextProvider> providers = [];
 
-        if (hasRagContent && request.Agent.Id != Guid.Empty)
+        if (hasConfiguredKnowledge)
         {
             providers.Add(CreateRagProvider(
                 request.Agent.KnowledgeStoreIds,
@@ -566,18 +567,20 @@ public sealed class AgenticRuntimeAgentFactory(
         ArgumentNullException.ThrowIfNull(knowledgeSearchService);
         ArgumentNullException.ThrowIfNull(loggerFactory);
 
+        var allowedKnowledgeStoreIds = knowledgeStoreIds.ToArray();
+
         return new TextSearchProvider(
             async (query, cancellationToken) =>
             {
-                var response = await knowledgeSearchService.SearchAsync(
-                    knowledgeStoreIds,
+                var results = await SearchAgentKnowledgeAsync(
+                    allowedKnowledgeStoreIds,
+                    knowledgeSearchService,
                     query,
-                    maxResults: 5,
                     cancellationToken);
 
-                return response.Results.Select(result => new TextSearchProvider.TextSearchResult
+                return results.Select(result => new TextSearchProvider.TextSearchResult
                 {
-                    SourceName = $"{result.KnowledgeStoreName} / {result.FileName}",
+                    SourceName = BuildKnowledgeSourceName(result),
                     Text = result.Content,
                     RawRepresentation = result
                 });
@@ -599,11 +602,67 @@ public sealed class AgenticRuntimeAgentFactory(
             loggerFactory);
     }
 
+    internal static async Task<IReadOnlyList<RagSearchResult>> SearchAgentKnowledgeAsync(
+        IReadOnlyCollection<Guid> allowedKnowledgeStoreIds,
+        IKnowledgeSearchService knowledgeSearchService,
+        string query,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(allowedKnowledgeStoreIds);
+        ArgumentNullException.ThrowIfNull(knowledgeSearchService);
+
+        var response = await knowledgeSearchService.SearchAsync(
+            allowedKnowledgeStoreIds,
+            query,
+            maxResults: 5,
+            cancellationToken);
+        return response.Results;
+    }
+
+    internal static string BuildKnowledgeSourceName(RagSearchResult result)
+    {
+        ArgumentNullException.ThrowIfNull(result);
+
+        return string.IsNullOrWhiteSpace(result.Section)
+            ? $"{result.KnowledgeStoreName} / {result.FileName}"
+            : $"{result.KnowledgeStoreName} / {result.FileName} / {result.Section}";
+    }
+
+    internal static InMemoryChatHistoryProvider BuildChatHistoryProvider(
+        ResolvedCompactionStrategy? compaction) => new(new InMemoryChatHistoryProviderOptions
+        {
+            StorageInputRequestMessageFilter = messages => messages.Where(ShouldStoreChatHistoryMessage),
+            ChatReducer = compaction?.Strategy.AsChatReducer()
+        });
+
+    internal static bool ShouldStoreChatHistoryMessage(ChatMessage message)
+    {
+        ArgumentNullException.ThrowIfNull(message);
+        return message.GetAgentRequestMessageSourceType() != AgentRequestMessageSourceType.AIContextProvider;
+    }
+
 
     internal static TextSearchProviderOptions.TextSearchBehavior ResolveRagSearchBehavior(
         bool supportsFunctions) => supportsFunctions
         ? TextSearchProviderOptions.TextSearchBehavior.OnDemandFunctionCalling
         : TextSearchProviderOptions.TextSearchBehavior.BeforeAIInvoke;
+
+    internal static void ConfigureToolMode(
+        ChatOptions chatOptions,
+        AgenticToolSet toolSet,
+        bool hasConfiguredKnowledge,
+        bool supportsFunctions,
+        SessionSandboxShellExecutor? shellExecutor)
+    {
+        ArgumentNullException.ThrowIfNull(chatOptions);
+        ArgumentNullException.ThrowIfNull(toolSet);
+
+        if (toolSet.HasTools || (hasConfiguredKnowledge && supportsFunctions) || shellExecutor is not null)
+        {
+            chatOptions.AllowMultipleToolCalls = true;
+            chatOptions.ToolMode = ChatToolMode.Auto;
+        }
+    }
 
     internal static TodoProviderOptions BuildTodoProviderOptions(TodoProviderProfile profile)
     {

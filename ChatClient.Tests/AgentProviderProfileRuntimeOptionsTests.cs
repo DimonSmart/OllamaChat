@@ -5,7 +5,9 @@ using ChatClient.Application.Services.Agentic;
 using ChatClient.Domain.Models;
 using Microsoft.Agents.AI;
 using Microsoft.Agents.AI.Compaction;
+using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Logging.Abstractions;
+using Moq;
 
 #pragma warning disable MAAI001
 
@@ -116,7 +118,7 @@ public class AgentProviderProfileRuntimeOptionsTests
         var providers = AgenticRuntimeAgentFactory.BuildContextProviders(
             request,
             null!,
-            hasRagContent: false,
+            hasConfiguredKnowledge: false,
             supportsFunctions: false,
             loggerFactory: NullLoggerFactory.Instance,
             todoProfile: new TodoProviderProfile { Instructions = "Track the work." });
@@ -236,7 +238,128 @@ public class AgentProviderProfileRuntimeOptionsTests
         Assert.Equal(7, clone.MaxTodoCompletionIterations);
     }
 
-    private static HarnessAgentOptions BuildHarnessAgentOptions(ResolvedCompactionStrategy? compaction)
+    [Fact]
+    public void BuildContextProviders_AddsRagForConfiguredTemporaryAgent()
+    {
+        var request = new AgentRunRequest
+        {
+            Agent = new AgentExecutionSpec { Id = Guid.Empty, KnowledgeStoreIds = [Guid.NewGuid()] },
+            ResolvedModel = new ServerModel(Guid.NewGuid(), "test-model"),
+            Configuration = new AppChatConfiguration("test-model", []),
+            Conversation = [],
+            UserMessage = "Hello"
+        };
+
+        var providers = AgenticRuntimeAgentFactory.BuildContextProviders(
+            request,
+            Mock.Of<IKnowledgeSearchService>(),
+            hasConfiguredKnowledge: true,
+            supportsFunctions: true,
+            loggerFactory: NullLoggerFactory.Instance,
+            todoProfile: null);
+
+        Assert.Single(providers);
+        Assert.IsType<TextSearchProvider>(providers[0]);
+    }
+
+    [Fact]
+    public void BuildHarnessAgentOptions_EnablesOnDemandRagToolsForConfiguredKnowledge()
+    {
+        var options = BuildHarnessAgentOptions(null, hasConfiguredKnowledge: true, supportsFunctions: true);
+        var chatOptions = Assert.IsType<ChatOptions>(options.ChatOptions);
+
+        AgenticRuntimeAgentFactory.ConfigureToolMode(
+            chatOptions,
+            AgenticToolSet.Empty,
+            hasConfiguredKnowledge: true,
+            supportsFunctions: true,
+            shellExecutor: null);
+
+        Assert.True(chatOptions.AllowMultipleToolCalls);
+        Assert.Equal(ChatToolMode.Auto, chatOptions.ToolMode);
+        Assert.IsType<TextSearchProvider>(Assert.Single(options.AIContextProviders!));
+        Assert.Equal(
+            TextSearchProviderOptions.TextSearchBehavior.OnDemandFunctionCalling,
+            AgenticRuntimeAgentFactory.ResolveRagSearchBehavior(supportsFunctions: true));
+    }
+
+    [Fact]
+    public void ResolveRagSearchBehavior_UsesBeforeInvokeWithoutFunctionCalling()
+    {
+        Assert.Equal(
+            TextSearchProviderOptions.TextSearchBehavior.BeforeAIInvoke,
+            AgenticRuntimeAgentFactory.ResolveRagSearchBehavior(supportsFunctions: false));
+    }
+
+    [Fact]
+    public void BuildChatHistoryProvider_ExcludesOnlyAiContextMessagesAndKeepsCompactionReducer()
+    {
+        var aiContextMessage = new ChatMessage(ChatRole.User, "retrieved")
+            .WithAgentRequestMessageSource(AgentRequestMessageSourceType.AIContextProvider, "rag");
+
+        Assert.False(AgenticRuntimeAgentFactory.ShouldStoreChatHistoryMessage(aiContextMessage));
+        Assert.True(AgenticRuntimeAgentFactory.ShouldStoreChatHistoryMessage(new ChatMessage(ChatRole.User, "user")));
+        Assert.True(AgenticRuntimeAgentFactory.ShouldStoreChatHistoryMessage(new ChatMessage(ChatRole.Assistant, "assistant")));
+
+        Assert.Null(AgenticRuntimeAgentFactory.BuildChatHistoryProvider(null).ChatReducer);
+
+        var strategy = new ContextWindowCompactionStrategy(16_000, 2_000, 0.5, 0.8);
+        var provider = AgenticRuntimeAgentFactory.BuildChatHistoryProvider(new ResolvedCompactionStrategy(
+            strategy,
+            new CompactionBudget(16_000, 2_000, 14_000),
+            []));
+        Assert.NotNull(provider.ChatReducer);
+    }
+
+    [Theory]
+    [InlineData("Architecture", "system-design.md", "Load balancing", "Architecture / system-design.md / Load balancing")]
+    [InlineData("Architecture", "system-design.md", null, "Architecture / system-design.md")]
+    public void BuildKnowledgeSourceName_IncludesSectionWhenAvailable(
+        string storeName,
+        string fileName,
+        string? section,
+        string expected)
+    {
+        Assert.Equal(expected, AgenticRuntimeAgentFactory.BuildKnowledgeSourceName(new RagSearchResult
+        {
+            KnowledgeStoreName = storeName,
+            FileName = fileName,
+            Section = section
+        }));
+    }
+
+    [Fact]
+    public async Task SearchAgentKnowledgeAsync_UsesCurrentResultsAndOnlyAttachedStores()
+    {
+        var attachedStoreId = Guid.NewGuid();
+        var search = new Mock<IKnowledgeSearchService>(MockBehavior.Strict);
+        var call = 0;
+        search.Setup(service => service.SearchAsync(
+                It.Is<IReadOnlyCollection<Guid>>(ids => ids.SequenceEqual(new[] { attachedStoreId })),
+                It.IsAny<string>(),
+                5,
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(() => ++call == 1
+                ? new RagSearchResponse()
+                : new RagSearchResponse
+                {
+                    Results = [new RagSearchResult { Content = "indexed after agent creation" }]
+                });
+
+        var first = await AgenticRuntimeAgentFactory.SearchAgentKnowledgeAsync(
+            [attachedStoreId], search.Object, "fact", TestContext.Current.CancellationToken);
+        var second = await AgenticRuntimeAgentFactory.SearchAgentKnowledgeAsync(
+            [attachedStoreId], search.Object, "fact", TestContext.Current.CancellationToken);
+
+        Assert.Empty(first);
+        Assert.Equal("indexed after agent creation", Assert.Single(second).Content);
+        search.VerifyAll();
+    }
+
+    private static HarnessAgentOptions BuildHarnessAgentOptions(
+        ResolvedCompactionStrategy? compaction,
+        bool hasConfiguredKnowledge = false,
+        bool supportsFunctions = false)
     {
         var request = new AgentRunRequest
         {
@@ -250,9 +373,9 @@ public class AgentProviderProfileRuntimeOptionsTests
         return AgenticRuntimeAgentFactory.BuildHarnessAgentOptions(
             request,
             AgenticToolSet.Empty,
-            null!,
-            hasRagContent: false,
-            supportsFunctions: false,
+            hasConfiguredKnowledge ? Mock.Of<IKnowledgeSearchService>() : null!,
+            hasConfiguredKnowledge,
+            supportsFunctions,
             todoProfile: null,
             agentModeProfile: null,
             fileAccessProfile: null,

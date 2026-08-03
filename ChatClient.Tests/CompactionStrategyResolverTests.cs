@@ -283,7 +283,7 @@ public sealed class CompactionStrategyResolverTests
             },
             AgenticToolSet.Empty,
             null!,
-            hasRagContent: false,
+            hasConfiguredKnowledge: false,
             supportsFunctions: false,
             todoProfile: null,
             agentModeProfile: null,
