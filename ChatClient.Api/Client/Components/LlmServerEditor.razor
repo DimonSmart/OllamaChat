@@ -1,78 +1,74 @@
 @using ChatClient.Domain.Models
 
-<MudTextField @bind-Value="Server.Name"
+<MudGrid Spacing="2">
+<MudItem xs="12"><MudTextField @bind-Value="Server.Name"
               Label="Server Name"
               Required="true"
               Immediate="true"
-              Margin="Margin.Dense" />
+              Margin="Margin.Dense" /></MudItem>
 
-<MudSelect T="ServerType" @bind-Value="Server.ServerType" Label="Server Type" Dense="true" Margin="Margin.Dense" Class="mt-2">
+<MudItem xs="12" sm="6"><MudSelect T="ServerType" @bind-Value="Server.ServerType" Label="Server Type" Dense="true" Margin="Margin.Dense">
     <MudSelectItem Value="ServerType.Ollama">Ollama</MudSelectItem>
     <MudSelectItem Value="ServerType.ChatGpt">ChatGPT</MudSelectItem>
     <MudSelectItem Value="ServerType.Azure">Azure</MudSelectItem>
-</MudSelect>
+</MudSelect></MudItem>
 
-<MudTextField @bind-Value="Server.BaseUrl"
+<MudItem xs="12" sm="6"><MudNumericField T="int" @bind-Value="Server.HttpTimeoutSeconds"
+                 Label="HTTP Timeout (seconds)"
+                 Variant="Variant.Outlined"
+                 Min="1" Max="3600"
+                 Margin="Margin.Dense" /></MudItem>
+
+<MudItem xs="12"><MudTextField @bind-Value="Server.BaseUrl"
               Label="Base URL"
               Variant="Variant.Outlined"
               Margin="Margin.Dense"
-              Class="mt-2"
               Required="@(Server.ServerType == ServerType.Ollama)"
-              HelperText="@GetBaseUrlHelperText()" />
+              HelperText="@GetBaseUrlHelperText()" /></MudItem>
 
 @if (Server.ServerType is ServerType.ChatGpt or ServerType.Azure)
 {
-    <MudTextField @bind-Value="Server.ApiKey"
+    <MudItem xs="12" sm="6"><MudTextField @bind-Value="Server.ApiKey"
                   Label="API Key"
                   Variant="Variant.Outlined"
                   Margin="Margin.Dense"
-                  Class="mt-2"
-                  InputType="InputType.Password"
-                  HelperText="Optional inline key. Leave empty to use the local secret store." />
+                   InputType="InputType.Password"
+                   HelperText="Optional inline key. Leave empty to use the local secret store." /></MudItem>
 
-    <MudTextField @bind-Value="Server.ApiKeySecretName"
+    <MudItem xs="12" sm="6"><MudTextField @bind-Value="Server.ApiKeySecretName"
                   Label="API Key Secret Name"
                   Variant="Variant.Outlined"
                   Margin="Margin.Dense"
-                  Class="mt-2"
-                  HelperText="Optional secret alias. The app resolves LlmServers:ApiKeys:<name> from dotnet user-secrets." />
+                   HelperText="Optional secret alias. The app resolves LlmServers:ApiKeys:<name> from dotnet user-secrets." /></MudItem>
 }
 
 @if (Server.ServerType == ServerType.Azure)
 {
-    <MudTextField @bind-Value="Server.AzureDeploymentNamesText"
+    <MudItem xs="12"><MudTextField @bind-Value="Server.AzureDeploymentNamesText"
                   Label="Deployments"
                   Variant="Variant.Outlined"
                   Margin="Margin.Dense"
-                  Class="mt-2"
-                  Lines="6"
-                  HelperText="One deployment name per line. These names are shown in the model picker and used in Azure chat requests." />
+                   Lines="6"
+                   HelperText="One deployment name per line. These names are shown in the model picker and used in Azure chat requests." /></MudItem>
 }
 
 @if (Server.ServerType == ServerType.Ollama)
 {
-    <MudTextField @bind-Value="Server.Password"
+    <MudItem xs="12" sm="6"><MudTextField @bind-Value="Server.Password"
                   Label="Password"
                   Variant="Variant.Outlined"
                   InputType="InputType.Password"
                   Margin="Margin.Dense"
-                  Class="mt-2"
-                  HelperText="Optional password for Ollama server" />
+                   HelperText="Optional password for Ollama server" /></MudItem>
 }
-
-<MudNumericField T="int" @bind-Value="Server.HttpTimeoutSeconds"
-                 Label="HTTP Timeout (seconds)"
-                 Variant="Variant.Outlined"
-                 Min="1" Max="3600"
-                 Margin="Margin.Dense"
-                 Class="mt-2" />
 
 @if (Server.ServerType == ServerType.Ollama)
 {
-    <MudSwitch @bind-Value="Server.IgnoreSslErrors" Class="mt-2">
+    <MudItem xs="12" sm="6"><MudSwitch @bind-Value="Server.IgnoreSslErrors">
         Ignore SSL certificate errors
-    </MudSwitch>
+    </MudSwitch></MudItem>
 }
+</MudGrid>
 
 @code {
     [Parameter] public LlmServerConfig Server { get; set; } = new();

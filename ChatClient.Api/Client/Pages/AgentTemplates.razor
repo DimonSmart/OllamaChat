@@ -259,61 +259,63 @@
             <ServerModelPicker @bind-Value="editingServerModel" ShowClearButton="true" UseDefaultsWhenUnset="false" Class="mt-2" />
             <MudText Typo="Typo.caption">Leave blank to use chat's default model.</MudText>
 
-            <MudNumericField T="double?" @bind-Value="editingAgent.Temperature" Label="Temperature (Optional)" Margin="Margin.Dense" Class="mt-2" Immediate="true" Min="0" Max="2" Step="0.1" />
-
-            <MudNumericField T="double?" @bind-Value="editingAgent.RepeatPenalty" Label="Repeat Penalty (Optional)" Margin="Margin.Dense" Class="mt-2" Immediate="true" Min="0" Max="2" Step="0.1" />
+            <MudGrid Spacing="2">
+                <MudItem xs="12" sm="6" md="4"><MudNumericField T="double?" @bind-Value="editingAgent.Temperature" Label="Temperature (Optional)" Margin="Margin.Dense" Immediate="true" Min="0" Max="2" Step="0.1" /></MudItem>
+                <MudItem xs="12" sm="6" md="4"><MudNumericField T="double?" @bind-Value="editingAgent.RepeatPenalty" Label="Repeat Penalty (Optional)" Margin="Margin.Dense" Immediate="true" Min="0" Max="2" Step="0.1" /></MudItem>
+            </MudGrid>
             <MudText Typo="Typo.caption">Leave blank to use chat defaults.</MudText>
 
             <MudDivider Class="my-2" />
             <MudText Typo="Typo.subtitle1">Harness</MudText>
-            <MudSelect T="Guid?" @bind-Value="editingAgent.TodoProviderProfileId" Label="Todo provider" Dense="true" Margin="Margin.Dense" Class="mt-2">
+            <MudGrid Spacing="2">
+            <MudItem xs="12" md="6"><MudSelect T="Guid?" @bind-Value="editingAgent.TodoProviderProfileId" Label="Todo provider" Dense="true" Margin="Margin.Dense">
                 <MudSelectItem T="Guid?" Value="@((Guid?)null)">None</MudSelectItem>
                 @foreach (var profile in todoProviderProfiles)
                 {
                     <MudSelectItem T="Guid?" Value="@((Guid?)profile.Id)">@profile.Name</MudSelectItem>
                 }
-            </MudSelect>
-            <MudSelect T="Guid?" @bind-Value="editingAgent.AgentModeProviderProfileId" Label="Agent mode provider" Dense="true" Margin="Margin.Dense" Class="mt-2">
+            </MudSelect></MudItem>
+            <MudItem xs="12" md="6"><MudSelect T="Guid?" @bind-Value="editingAgent.AgentModeProviderProfileId" Label="Agent mode provider" Dense="true" Margin="Margin.Dense">
                 <MudSelectItem T="Guid?" Value="@((Guid?)null)">None</MudSelectItem>
                 @foreach (var profile in agentModeProviderProfiles)
                 {
                     <MudSelectItem T="Guid?" Value="@((Guid?)profile.Id)">@profile.Name</MudSelectItem>
                 }
-            </MudSelect>
-            <MudSelect T="Guid?" @bind-Value="editingAgent.FileAccessProviderProfileId" Label="File access provider" Dense="true" Margin="Margin.Dense" Class="mt-2">
+            </MudSelect></MudItem>
+            <MudItem xs="12" md="6"><MudSelect T="Guid?" @bind-Value="editingAgent.FileAccessProviderProfileId" Label="File access provider" Dense="true" Margin="Margin.Dense">
                 <MudSelectItem T="Guid?" Value="@((Guid?)null)">None</MudSelectItem>
                 @foreach (var profile in fileAccessProviderProfiles)
                 {
                     <MudSelectItem T="Guid?" Value="@((Guid?)profile.Id)">@profile.Name</MudSelectItem>
                 }
-            </MudSelect>
-            <MudSelect T="Guid?" @bind-Value="editingAgent.CompactionProfileId" Label="Compaction profile" Dense="true" Margin="Margin.Dense" Class="mt-2">
+            </MudSelect></MudItem>
+            <MudItem xs="12" md="6"><MudSelect T="Guid?" @bind-Value="editingAgent.CompactionProfileId" Label="Compaction profile" Dense="true" Margin="Margin.Dense">
                 <MudSelectItem T="Guid?" Value="@((Guid?)null)">None</MudSelectItem>
                 @foreach (var profile in compactionProfiles)
                 {
                     <MudSelectItem T="Guid?" Value="@((Guid?)profile.Id)">@($"{profile.Name} — {CompactionProfilePresentation.FormatPolicy(profile)}")</MudSelectItem>
                 }
-            </MudSelect>
+            </MudSelect></MudItem>
             @if (HasUnavailableCompactionProfile())
             {
-                <MudAlert Severity="Severity.Warning" Dense="true" Class="mt-2">The selected compaction profile is unavailable. Choose another profile or None before saving.</MudAlert>
+                <MudItem xs="12"><MudAlert Severity="Severity.Warning" Dense="true">The selected compaction profile is unavailable. Choose another profile or None before saving.</MudAlert></MudItem>
             }
-            <MudCheckBox T="bool"
+            </MudGrid>
+            <MudGrid Spacing="2">
+            <MudItem xs="12" sm="6"><MudCheckBox T="bool"
                          @bind-Value="editingAgent.EnableShell"
-                         Label="Enable shell in sandbox"
-                         Class="mt-2" />
-            <MudCheckBox T="bool"
+                         Label="Enable shell in sandbox" /></MudItem>
+            <MudItem xs="12" sm="6"><MudCheckBox T="bool"
                          @bind-Value="editingAgent.ContinueUntilTodosComplete"
-                         Label="Continue until TODOs are complete"
-                         Class="mt-2" />
-            <MudNumericField T="int"
+                         Label="Continue until TODOs are complete" /></MudItem>
+            <MudItem xs="12" sm="6" md="4"><MudNumericField T="int"
                              @bind-Value="editingAgent.MaxTodoCompletionIterations"
                              Label="Maximum autonomous iterations"
-                             Class="mt-2"
                              Immediate="true"
                              Min="1"
                              Max="100"
-                             Disabled="@(!editingAgent.ContinueUntilTodosComplete)" />
+                             Disabled="@(!editingAgent.ContinueUntilTodosComplete)" /></MudItem>
+            </MudGrid>
 
             <MudDivider Class="my-2" />
             <MudText Typo="Typo.subtitle1">Tooling</MudText>

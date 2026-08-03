@@ -25,11 +25,13 @@
 <MudDialog @bind-Visible="editing" Options="dialogOptions">
     <TitleContent><MudText Typo="Typo.h6">@(isNew ? "Create File Access Provider Profile" : "Edit File Access Provider Profile")</MudText></TitleContent>
     <DialogContent>
-        <MudTextField @bind-Value="model.Name" Label="Name" Required="true" Margin="Margin.Dense" />
-        <MudTextField @bind-Value="model.Instructions" Label="Instructions" Lines="6" Margin="Margin.Dense" HelperText="Leave empty to use Microsoft Agent Framework defaults." />
-        <MudSelect T="FileAccessMode" @bind-Value="model.AccessMode" Label="Access mode" Margin="Margin.Dense"><MudSelectItem Value="FileAccessMode.ReadOnly">Read-only</MudSelectItem><MudSelectItem Value="FileAccessMode.ReadWrite">Read-write</MudSelectItem></MudSelect>
-        <MudCheckBox @bind-Value="model.RequireReadApproval" Label="Require approval for reads" />
-        <MudCheckBox @bind-Value="model.RequireWriteApproval" Label="Require approval for writes" Disabled="@(model.AccessMode == FileAccessMode.ReadOnly)" />
+        <MudGrid Spacing="2">
+            <MudItem xs="12"><MudTextField @bind-Value="model.Name" Label="Name" Required="true" Margin="Margin.Dense" /></MudItem>
+            <MudItem xs="12"><MudTextField @bind-Value="model.Instructions" Label="Instructions" Lines="6" Margin="Margin.Dense" HelperText="Leave empty to use Microsoft Agent Framework defaults." /></MudItem>
+            <MudItem xs="12" sm="6" md="4"><MudSelect T="FileAccessMode" @bind-Value="model.AccessMode" Label="Access mode" Margin="Margin.Dense"><MudSelectItem Value="FileAccessMode.ReadOnly">Read-only</MudSelectItem><MudSelectItem Value="FileAccessMode.ReadWrite">Read-write</MudSelectItem></MudSelect></MudItem>
+            <MudItem xs="12" sm="6" md="4"><MudCheckBox @bind-Value="model.RequireReadApproval" Label="Require approval for reads" /></MudItem>
+            <MudItem xs="12" sm="6" md="4"><MudCheckBox @bind-Value="model.RequireWriteApproval" Label="Require approval for writes" Disabled="@(model.AccessMode == FileAccessMode.ReadOnly)" /></MudItem>
+        </MudGrid>
     </DialogContent>
     <DialogActions><MudButton OnClick="Close">Cancel</MudButton><MudButton Color="Color.Primary" OnClick="Save">Save</MudButton></DialogActions>
 </MudDialog>

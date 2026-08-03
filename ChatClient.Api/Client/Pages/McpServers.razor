@@ -224,31 +224,47 @@
     </TitleContent>
     <DialogContent>
         <MudForm @ref="editServerForm" Model="@editingServer">
-            <MudTextField @bind-Value="editingServer.Name"
+            <MudGrid Spacing="2">
+            <MudItem xs="12"><MudTextField @bind-Value="editingServer.Name"
                          Label="Server Name"
                          Required="true"
                          Immediate="true"
-                         Validation="@(new Func<string, string>(ValidateName))" />
+                         Validation="@(new Func<string, string>(ValidateName))" /></MudItem>
 
-            <MudSelect T="string" 
-                      Label="Server Type" 
-                      @bind-Value="serverType" 
-                      Required="true" 
+            <MudItem xs="12" sm="4"><MudSelect T="string"
+                      Label="Server Type"
+                      @bind-Value="serverType"
+                      Required="true"
                       Margin="Margin.Dense"
-                      Class="mt-2"
                       Immediate="true"
                       SelectedValuesChanged="OnServerTypeChanged"
                       Dense="true">
                 <MudSelectItem Value="@("local")">Local Command</MudSelectItem>
                 <MudSelectItem Value="@("remote")">Remote SSE</MudSelectItem>
-            </MudSelect>
+            </MudSelect></MudItem>
+
+            <MudItem xs="12" sm="8"><MudSelect T="string"
+                      Label="Sampling Model (Optional)"
+                      @bind-Value="editingServer.SamplingModel"
+                      Dense="true"
+                      Margin="Margin.Dense"
+                      Clearable="true"
+                      Placeholder="Select model for MCP sampling requests">
+                @foreach (var model in availableModels)
+                {
+                    <MudSelectItem Value="@model.Name">@model.Name</MudSelectItem>
+                }
+            </MudSelect></MudItem>
+            <MudItem xs="12"><MudText Typo="Typo.caption" Class="mud-text-secondary">
+                If not specified, the user's default model will be used for sampling requests from this server.
+            </MudText></MudItem>
+            </MudGrid>
 
             @if (serverType == "local")
             {
                 <MudTextField @bind-Value="editingServer.Command"
                             Label="Command"
                             Margin="Margin.Dense"
-                            Class="mt-2"
                             Required="true"
                             Immediate="true"
                             Validation="@(new Func<string, string>(ValidateCommand))"
@@ -257,7 +273,6 @@
                 <MudTextField @bind-Value="argumentsText"
                             Label="Arguments (optional)"
                             Margin="Margin.Dense"
-                            Class="mt-2"
                             Immediate="true"
                             Placeholder="Enter command arguments, one per line" 
                             Lines="3" />
@@ -267,30 +282,11 @@
                 <MudTextField @bind-Value="editingServer.Sse"
                            Label="SSE URL"
                            Margin="Margin.Dense"
-                           Class="mt-2"
                            Required="true"
                            Immediate="true"
                            Validation="@(new Func<string, string>(ValidateSse))"
                            Placeholder="Enter SSE URL (e.g. https://mcp.llmtxt.dev/sse)" />
             }
-
-            <MudSelect T="string"
-                      Label="Sampling Model (Optional)"
-                      @bind-Value="editingServer.SamplingModel"
-                      Dense="true"
-                      Margin="Margin.Dense"
-                      Class="mt-2"
-                      Clearable="true"
-                      Placeholder="Select model for MCP sampling requests">
-                @foreach (var model in availableModels)
-                {
-                    <MudSelectItem Value="@model.Name">@model.Name</MudSelectItem>
-                }
-            </MudSelect>
-            
-            <MudText Typo="Typo.caption" Class="mud-text-secondary mt-1">
-                If not specified, the user's default model will be used for sampling requests from this server.
-            </MudText>
 
             <MudDivider Class="my-2" />
             <McpOverrideDefinitionsEditor Definitions="@editingServer.OverrideDefinitions"

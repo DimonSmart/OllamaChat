@@ -99,9 +99,11 @@
     <TitleContent><MudText Typo="Typo.h6">Runtime Limits</MudText></TitleContent>
     <DialogContent>
         <MudText Typo="Typo.body2" Class="mb-2">@ServerName(limitsModel.ServerId) / @limitsModel.ModelName</MudText>
-        <MudNumericField T="int" @bind-Value="limitsModel.ContextWindowTokens" Label="Context window tokens" Required="true" Margin="Margin.Dense" />
-        <MudNumericField T="int" @bind-Value="limitsModel.MaxOutputTokens" Label="Maximum output tokens" Required="true" Margin="Margin.Dense" />
-        @if (!ValidLimits()) { <MudText Color="Color.Error" Typo="Typo.caption">Both limits must be positive and maximum output must be lower than the context window.</MudText> }
+        <MudGrid Spacing="2">
+            <MudItem xs="12" sm="6"><MudNumericField T="int" @bind-Value="limitsModel.ContextWindowTokens" Label="Context window tokens" Required="true" Margin="Margin.Dense" /></MudItem>
+            <MudItem xs="12" sm="6"><MudNumericField T="int" @bind-Value="limitsModel.MaxOutputTokens" Label="Maximum output tokens" Required="true" Margin="Margin.Dense" /></MudItem>
+            @if (!ValidLimits()) { <MudItem xs="12"><MudText Color="Color.Error" Typo="Typo.caption">Both limits must be positive and maximum output must be lower than the context window.</MudText></MudItem> }
+        </MudGrid>
     </DialogContent>
     <DialogActions><MudButton Size="Size.Small" OnClick="CloseLimits">Cancel</MudButton><MudButton Color="Color.Primary" Size="Size.Small" OnClick="SaveLimits">Save</MudButton></DialogActions>
 </MudDialog>

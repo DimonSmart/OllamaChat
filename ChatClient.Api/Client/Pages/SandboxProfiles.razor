@@ -36,14 +36,16 @@
 <MudDialog @bind-Visible="editing" Options="dialogOptions">
     <TitleContent><MudText Typo="Typo.h6">@(isNew ? "Create Sandbox Profile" : "Edit Sandbox Profile")</MudText></TitleContent>
     <DialogContent>
-        <MudTextField @bind-Value="model.Name" Label="Name" Required="true" Margin="Margin.Dense" />
-        <MudSelect T="string" Value="model.ProviderType" ValueChanged="OnProviderChanged" Label="Sandbox type" Margin="Margin.Dense">
+        <MudGrid Spacing="2">
+        <MudItem xs="12"><MudTextField @bind-Value="model.Name" Label="Name" Required="true" Margin="Margin.Dense" /></MudItem>
+        <MudItem xs="12" sm="6" md="4"><MudSelect T="string" Value="model.ProviderType" ValueChanged="OnProviderChanged" Label="Sandbox type" Margin="Margin.Dense">
             @foreach (var provider in providerDescriptors)
             {
                 <MudSelectItem T="string" Value="@provider.Type">@provider.DisplayName</MudSelectItem>
             }
-        </MudSelect>
-        <MudTextField @bind-Value="model.Configuration" Label="YAML configuration" Lines="12" Margin="Margin.Dense" Immediate="true" HelperText="Provider-specific sandbox configuration in YAML." />
+        </MudSelect></MudItem>
+        <MudItem xs="12"><MudTextField @bind-Value="model.Configuration" Label="YAML configuration" Lines="12" Margin="Margin.Dense" Immediate="true" HelperText="Provider-specific sandbox configuration in YAML." /></MudItem>
+        </MudGrid>
     </DialogContent>
     <DialogActions><MudButton OnClick="Close">Cancel</MudButton><MudButton Color="Color.Primary" OnClick="Save">Save</MudButton></DialogActions>
 </MudDialog>

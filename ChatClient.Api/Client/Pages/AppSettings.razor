@@ -39,14 +39,16 @@
 
                     <MudCard Class="mb-2" Elevation="1">
                         <MudCardContent Class="pt-0">
-                            <MudSelect T="AppChatHistoryMode" Label="History Processing" @bind-Value="_settings.ChatHistoryMode" Variant="Variant.Outlined" Dense="true" Margin="Margin.Dense">
-                                <MudSelectItem Value="@AppChatHistoryMode.None">None</MudSelectItem>
-                                <MudSelectItem Value="@AppChatHistoryMode.Truncate">Truncate</MudSelectItem>
-                                <MudSelectItem Value="@AppChatHistoryMode.Summarize">Summarize</MudSelectItem>
-                            </MudSelect>
-                            <MudText Typo="Typo.caption" Class="mt-2">
-                                Determines how message history is prepared before sending to the model.
-                            </MudText>
+                            <MudGrid Spacing="2">
+                                <MudItem xs="12" sm="6" md="4"><MudSelect T="AppChatHistoryMode" Label="History Processing" @bind-Value="_settings.ChatHistoryMode" Variant="Variant.Outlined" Dense="true" Margin="Margin.Dense">
+                                    <MudSelectItem Value="@AppChatHistoryMode.None">None</MudSelectItem>
+                                    <MudSelectItem Value="@AppChatHistoryMode.Truncate">Truncate</MudSelectItem>
+                                    <MudSelectItem Value="@AppChatHistoryMode.Summarize">Summarize</MudSelectItem>
+                                </MudSelect></MudItem>
+                                <MudItem xs="12"><MudText Typo="Typo.caption">
+                                    Determines how message history is prepared before sending to the model.
+                                </MudText></MudItem>
+                            </MudGrid>
                         </MudCardContent>
                     </MudCard>
 
@@ -69,12 +71,14 @@
                             <MudText Class="section-header">Chat Participants</MudText>
                         </MudCardHeader>
                         <MudCardContent Class="pt-0">
-                            <MudTextField T="string" Label="User Name" @bind-Value="_settings.UserName"
-                                          Variant="Variant.Outlined" Margin="Margin.Dense" Class="mb-2"
-                                          HelperText="Display name for user messages (leave empty to hide avatar)" />
-                            <MudTextField T="string" Label="Agent Name" @bind-Value="_settings.AgentName"
-                                          Variant="Variant.Outlined" Margin="Margin.Dense"
-                                          HelperText="Display name for AI assistant messages (leave empty to hide avatar)" />
+                            <MudGrid Spacing="2">
+                                <MudItem xs="12" sm="6"><MudTextField T="string" Label="User Name" @bind-Value="_settings.UserName"
+                                              Variant="Variant.Outlined" Margin="Margin.Dense"
+                                              HelperText="Display name for user messages (leave empty to hide avatar)" /></MudItem>
+                                <MudItem xs="12" sm="6"><MudTextField T="string" Label="Agent Name" @bind-Value="_settings.AgentName"
+                                              Variant="Variant.Outlined" Margin="Margin.Dense"
+                                              HelperText="Display name for AI assistant messages (leave empty to hide avatar)" /></MudItem>
+                            </MudGrid>
                         </MudCardContent>
                     </MudCard>
 
@@ -89,21 +93,21 @@
                                        Color="Color.Primary"
                                        Label="Enable voice input" />
 
-                            <MudSelect T="string"
+                            <MudGrid Spacing="2">
+                            <MudItem xs="12" sm="6" md="4"><MudSelect T="string"
                                        Value="_settings.VoiceInput.ModelType"
                                        ValueChanged="OnVoiceInputModelChanged"
                                        Label="Whisper Model"
                                        Variant="Variant.Outlined"
                                        Dense="true"
-                                       Class="mt-3"
                                        Disabled="@(_settings.VoiceInput.Status == VoiceInputInitializationStatus.Initializing)">
                                 @foreach (var option in VoiceInputModelOptions)
                                 {
                                     <MudSelectItem Value="@option.Value">@GetVoiceInputModelLabel(option)</MudSelectItem>
                                 }
-                            </MudSelect>
+                            </MudSelect></MudItem>
 
-                            <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2" Class="mt-3">
+                            <MudItem xs="12"><MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2">
                                 <MudButton Variant="Variant.Outlined"
                                            Color="Color.Primary"
                                            OnClick="InitializeVoiceInput"
@@ -124,43 +128,44 @@
                                          Size="Size.Small">
                                     @GetVoiceInputStatusText(_settings.VoiceInput.Status)
                                 </MudChip>
-                            </MudStack>
+                            </MudStack></MudItem>
 
                             @if (!string.IsNullOrWhiteSpace(_settings.VoiceInput.ErrorMessage))
                             {
-                                <MudText Typo="Typo.caption" Color="Color.Error" Class="mt-2">
+                                <MudItem xs="12"><MudText Typo="Typo.caption" Color="Color.Error">
                                     @_settings.VoiceInput.ErrorMessage
-                                </MudText>
+                                </MudText></MudItem>
                             }
                             else if (!string.IsNullOrWhiteSpace(_voiceInputActivityMessage))
                             {
-                                <MudText Typo="Typo.caption" Class="mt-2">
+                                <MudItem xs="12"><MudText Typo="Typo.caption">
                                     @_voiceInputActivityMessage
-                                </MudText>
+                                </MudText></MudItem>
                             }
 
                             @if (_voiceInputStorage.DownloadedModels.Count > 0)
                             {
-                                <MudText Typo="Typo.caption" Class="mt-2">
+                                <MudItem xs="12"><MudText Typo="Typo.caption">
                                     Downloaded models:
                                     @string.Join(", ", _voiceInputStorage.DownloadedModels.Select(model => $"{model.DisplayName} ({ChatDisplayHelper.FormatFileSize(model.SizeBytes)})"))
-                                </MudText>
-                                <MudText Typo="Typo.caption">
+                                </MudText></MudItem>
+                                <MudItem xs="12"><MudText Typo="Typo.caption">
                                     Disk usage: @ChatDisplayHelper.FormatFileSize(_voiceInputStorage.TotalBytes)
-                                </MudText>
+                                </MudText></MudItem>
                             }
                             else
                             {
-                                <MudText Typo="Typo.caption" Class="mt-2">
+                                <MudItem xs="12"><MudText Typo="Typo.caption">
                                     No Whisper models are currently stored locally.
-                                </MudText>
+                                </MudText></MudItem>
                             }
 
-                            <MudText Typo="Typo.caption" Class="mt-2">
+                            <MudItem xs="12"><MudText Typo="Typo.caption">
                                 Uses local Whisper speech recognition with automatic language detection.
                                 For Russian, `Small`, `Medium`, or `LargeV3Turbo` usually work better than `Base`.
                                 Do not use `*.En` models unless you only need English.
-                            </MudText>
+                            </MudText></MudItem>
+                            </MudGrid>
                         </MudCardContent>
                     </MudCard>
 
@@ -170,13 +175,15 @@
                             <MudText Typo="Typo.caption" Class="mt-2">
                                 Model used for generating embeddings.
                             </MudText>
-                            <MudNumericField T="int" @bind-Value="_settings.Embedding.RagMaxTokensPerChunk" Label="Maximum tokens per chunk" Min="1" Variant="Variant.Outlined" Margin="Margin.Dense" Class="mt-2" />
-                            <MudNumericField T="int" @bind-Value="_settings.Embedding.RagOverlapTokens" Label="Overlap tokens" Min="0" Variant="Variant.Outlined" Margin="Margin.Dense" Class="mt-2" />
-                            <MudNumericField T="double" @bind-Value="_settings.Embedding.RagMinRelevanceScore" Label="Minimum relevance score" Min="-1" Max="1" Step="0.01" Variant="Variant.Outlined" Margin="Margin.Dense" Class="mt-2" />
-                            <MudText Typo="Typo.caption" Class="mt-2">Text chunking parameters for building RAG indexes.</MudText>
-                            <MudButton Variant="Variant.Outlined" Color="Color.Primary" OnClick="RestartEmbeddings" Size="Size.Small" Class="mt-2">
-                                Rebuild Knowledge Store Indexes
-                            </MudButton>
+                            <MudGrid Spacing="2">
+                                <MudItem xs="12" sm="6" md="4"><MudNumericField T="int" @bind-Value="_settings.Embedding.RagMaxTokensPerChunk" Label="Maximum tokens per chunk" Min="1" Variant="Variant.Outlined" Margin="Margin.Dense" /></MudItem>
+                                <MudItem xs="12" sm="6" md="4"><MudNumericField T="int" @bind-Value="_settings.Embedding.RagOverlapTokens" Label="Overlap tokens" Min="0" Variant="Variant.Outlined" Margin="Margin.Dense" /></MudItem>
+                                <MudItem xs="12" sm="6" md="4"><MudNumericField T="double" @bind-Value="_settings.Embedding.RagMinRelevanceScore" Label="Minimum relevance score" Min="-1" Max="1" Step="0.01" Variant="Variant.Outlined" Margin="Margin.Dense" /></MudItem>
+                                <MudItem xs="12"><MudText Typo="Typo.caption">Text chunking parameters for building RAG indexes.</MudText></MudItem>
+                                <MudItem xs="12"><MudButton Variant="Variant.Outlined" Color="Color.Primary" OnClick="RestartEmbeddings" Size="Size.Small">
+                                    Rebuild Knowledge Store Indexes
+                                </MudButton></MudItem>
+                            </MudGrid>
                         </MudCardContent>
                     </MudCard>
 

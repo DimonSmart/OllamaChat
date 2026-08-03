@@ -41,21 +41,25 @@
     <TitleContent><MudText Typo="Typo.h6">@(isNewProfile ? "Create Agent Mode Provider Profile" : "Edit Agent Mode Provider Profile")</MudText></TitleContent>
     <DialogContent>
         <MudForm @ref="editForm" Model="editingProfile">
-            <MudTextField @bind-Value="editingProfile.Name" Label="Name" Required="true" Immediate="true" Margin="Margin.Dense" Validation="@(new Func<string, string>(ValidateName))" />
-            <MudTextField @bind-Value="editingProfile.Instructions" Label="Provider Instructions" Lines="8" Margin="Margin.Dense" Class="mt-2" HelperText="Optional custom instructions for AgentModeProvider. Leave empty to use Microsoft Agent Framework defaults. Custom instructions must contain: {available_modes} {current_mode}" />
-            <MudSelect T="string" @bind-Value="editingProfile.DefaultMode" Label="Default Mode" Required="true" Dense="true" Margin="Margin.Dense" Class="mt-2">
+            <MudGrid Spacing="2">
+            <MudItem xs="12"><MudTextField @bind-Value="editingProfile.Name" Label="Name" Required="true" Immediate="true" Margin="Margin.Dense" Validation="@(new Func<string, string>(ValidateName))" /></MudItem>
+            <MudItem xs="12"><MudTextField @bind-Value="editingProfile.Instructions" Label="Provider Instructions" Lines="8" Margin="Margin.Dense" HelperText="Optional custom instructions for AgentModeProvider. Leave empty to use Microsoft Agent Framework defaults. Custom instructions must contain: {available_modes} {current_mode}" /></MudItem>
+            <MudItem xs="12" sm="6" md="4"><MudSelect T="string" @bind-Value="editingProfile.DefaultMode" Label="Default Mode" Required="true" Dense="true" Margin="Margin.Dense">
                 @foreach (var mode in editingProfile.Modes.Where(mode => !string.IsNullOrWhiteSpace(mode.Name)))
                 {
                     <MudSelectItem T="string" Value="@mode.Name">@mode.Name</MudSelectItem>
                 }
-            </MudSelect>
+            </MudSelect></MudItem>
+            </MudGrid>
             <MudText Typo="Typo.h6" Class="mt-3 mb-2">Modes</MudText>
             @for (var index = 0; index < editingProfile.Modes.Count; index++)
             {
                 var mode = editingProfile.Modes[index];
                 <MudPaper Outlined="true" Class="pa-2 mb-2">
-                    <MudTextField @bind-Value="mode.Name" Label="Name" Required="true" Immediate="true" Margin="Margin.Dense" />
-                    <MudTextField @bind-Value="mode.Instructions" Label="Instructions" Lines="5" Required="true" Margin="Margin.Dense" Class="mt-1" />
+                    <MudGrid Spacing="2">
+                        <MudItem xs="12" sm="4"><MudTextField @bind-Value="mode.Name" Label="Name" Required="true" Immediate="true" Margin="Margin.Dense" /></MudItem>
+                        <MudItem xs="12" sm="8"><MudTextField @bind-Value="mode.Instructions" Label="Instructions" Lines="5" Required="true" Margin="Margin.Dense" /></MudItem>
+                    </MudGrid>
                     <MudStack Row="true" Justify="Justify.FlexEnd" Class="mt-1"><MudButton Color="Color.Error" Disabled="@(editingProfile.Modes.Count == 1)" StartIcon="@Icons.Material.Filled.Delete" Size="Size.Small" OnClick="@(() => DeleteMode(mode))">Delete</MudButton></MudStack>
                 </MudPaper>
             }
