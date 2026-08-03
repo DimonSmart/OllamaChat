@@ -30,6 +30,7 @@ public sealed class UnifiedAgentRuntimeChatSessionService(
     private ActiveChatSessionInfo? _activeSession;
     private CancellationTokenSource? _cancellationTokenSource;
     private AIAgent? _directAgent;
+    private HarnessAgentRuntimeDefinition? _directRuntimeDefinition;
     private AgentSession? _directSession;
     private string _directRuntimeAgentId = string.Empty;
     private IReadOnlyList<string> _directAvailableModes = [];
@@ -328,8 +329,11 @@ public sealed class UnifiedAgentRuntimeChatSessionService(
         }
 
         SandboxSessionHandle? sandboxSession;
+        HarnessAgentRuntimeDefinition? runtimeDefinition;
         lock (_lifecycleLock)
         {
+            runtimeDefinition = _directRuntimeDefinition;
+            _directRuntimeDefinition = null;
             _directAgent = null;
             _directSession = null;
             _directRuntimeAgentId = string.Empty;
@@ -359,6 +363,8 @@ public sealed class UnifiedAgentRuntimeChatSessionService(
             RequiresReset = false;
             _resetting = false;
         }
+
+        runtimeDefinition?.Dispose();
 
         if (sandboxSession is not null)
         {
@@ -646,9 +652,19 @@ public sealed class UnifiedAgentRuntimeChatSessionService(
             RuntimeResources = BuildRuntimeResources()
         }, cancellationToken: cancellationToken);
 
+        try
+        {
+            _directSession = await build.Agent.CreateSessionAsync(cancellationToken);
+        }
+        catch
+        {
+            build.Dispose();
+            throw;
+        }
+
+        _directRuntimeDefinition = build;
         _directAgent = build.Agent;
         _directRuntimeAgentId = resolved.Agent.AgentId;
-        _directSession = await build.Agent.CreateSessionAsync(cancellationToken);
         _directAvailableModes = build.AvailableModes;
         _directFileAccessStore = build.FileAccessStore;
         _directFileAccessProfile = build.FileAccessProfile;

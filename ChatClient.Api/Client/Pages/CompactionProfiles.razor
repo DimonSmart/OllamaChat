@@ -82,8 +82,8 @@
                             }
                             else
                             {
-                                <MudNumericField T="double" @bind-Value="stage.Trigger.Value" Label="Trigger" Margin="Margin.Dense" />
-                                <MudNumericField T="double" @bind-Value="stage.Target.Value" Label="Target" Margin="Margin.Dense" />
+                                <MudNumericField T="double" @bind-Value="stage.Trigger.Value" Label="Trigger" Min="@(stage.Trigger.Kind == CompactionLimitKinds.Tokens ? 1 : 0)" Margin="Margin.Dense" />
+                                <MudNumericField T="double" @bind-Value="stage.Target.Value" Label="Target" Min="@(stage.Target.Kind == CompactionLimitKinds.Tokens ? 1 : 0)" Margin="Margin.Dense" />
                             }
                             @if (stage.Kind == CompactionStageKinds.SlidingWindow)
                             {
@@ -94,7 +94,8 @@
                                 <MudNumericField T="int" @bind-Value="stage.MinimumPreservedGroups" Label="Retain recent groups" Min="0" Margin="Margin.Dense" />
                             }
                         </MudStack>
-                        @if (!HasValidStageLimits(stage)) { <MudText Color="Color.Error" Typo="Typo.caption">Use the same supported limit kind, ordered nonnegative values, and a nonnegative retained count.</MudText> }
+                        @if (!HasValidStageLimits(stage)) { <MudText Color="Color.Error" Typo="Typo.caption">Use supported ordered limits; token limits must be positive.</MudText> }
+                        @if (!HasValidResolvedFixedStageLimits(stage)) { <MudText Color="Color.Error" Typo="Typo.caption">These percentages resolve to invalid token thresholds for the fixed input budget.</MudText> }
                         @if (stage.Kind == CompactionStageKinds.Summarization)
                         {
                             <MudAlert Severity="Severity.Warning" Dense="true" Class="mt-2">Generated summaries become trusted runtime context. Use only a trusted model and endpoint.</MudAlert>
@@ -147,10 +148,20 @@
     private void SetSummarizerSelection(CompactionStage stage, ServerModelSelection selection) => editorState.SetSummarizerSelection(stage, selection.ServerId, selection.ModelName);
     private void ToggleSeparateSummarizer(CompactionStage stage, bool useSeparate) => editorState.ToggleSeparateSummarizer(stage, useSeparate);
     private async Task Save() { if (form is null) return; await form.ValidateAsync(); if (!form.IsValid || !IsValid()) return; try { saving = true; if (isNew) await CompactionProfileService.CreateAsync(model); else await CompactionProfileService.UpdateAsync(model); editing = false; await Load(); Snackbar.Add($"Compaction profile {(isNew ? "created" : "updated")}.", Severity.Success); } catch (Exception ex) { Snackbar.Add($"Could not save compaction profile: {ex.Message}", Severity.Error); } finally { saving = false; } }
-    private bool IsValid() => (model.BudgetSource != CompactionBudgetSources.Fixed || HasValidFixedBudget()) && (model.Kind != CompactionProfileKinds.ContextWindow || HasValidContextWindowThresholds()) && (model.Kind != CompactionProfileKinds.CustomPipeline || model.Stages.Count > 0 && model.Stages.All(stage => HasValidStageLimits(stage) && editorState.HasValidSummarizerConfiguration(stage)));
+    private bool IsValid() => (model.BudgetSource != CompactionBudgetSources.Fixed || HasValidFixedBudget()) && (model.Kind != CompactionProfileKinds.ContextWindow || HasValidContextWindowThresholds()) && (model.Kind != CompactionProfileKinds.CustomPipeline || model.Stages.Count > 0 && model.Stages.All(stage => HasValidStageLimits(stage) && HasValidResolvedFixedStageLimits(stage) && editorState.HasValidSummarizerConfiguration(stage)));
     private bool HasValidFixedBudget() => ModelRuntimeLimitValidation.HasValidTokenBudget(model.ContextWindowTokens, model.MaxOutputTokens);
     private bool HasValidContextWindowThresholds() => model.ToolResultThreshold is > 0 and <= 1 && model.TruncationThreshold is > 0 and <= 1 && model.TruncationThreshold >= model.ToolResultThreshold;
-    private static bool HasValidStageLimits(CompactionStage stage) => stage.Trigger is not null && stage.Target is not null && stage.Trigger.Kind == stage.Target.Kind && SupportedLimitKinds(stage.Kind).Contains(stage.Trigger.Kind) && double.IsFinite(stage.Trigger.Value) && double.IsFinite(stage.Target.Value) && (stage.Trigger.Kind == CompactionLimitKinds.InputBudgetPercent ? stage.Trigger.Value is > 0 and <= 1 && stage.Target.Value is > 0 and <= 1 : stage.Trigger.Value >= 0 && stage.Target.Value >= 0) && stage.Trigger.Value > stage.Target.Value && (stage.Trigger.Kind == CompactionLimitKinds.InputBudgetPercent || stage.Trigger.Value == Math.Truncate(stage.Trigger.Value) && stage.Target.Value == Math.Truncate(stage.Target.Value)) && stage.MinimumPreservedGroups >= 0 && stage.MinimumPreservedTurns >= 0;
+    private static bool HasValidStageLimits(CompactionStage stage) => stage.Trigger is not null && stage.Target is not null && stage.Trigger.Kind == stage.Target.Kind && SupportedLimitKinds(stage.Kind).Contains(stage.Trigger.Kind) && double.IsFinite(stage.Trigger.Value) && double.IsFinite(stage.Target.Value) && (stage.Trigger.Kind == CompactionLimitKinds.InputBudgetPercent ? stage.Trigger.Value is > 0 and <= 1 && stage.Target.Value is > 0 and <= 1 : stage.Trigger.Kind == CompactionLimitKinds.Tokens ? stage.Trigger.Value >= 1 && stage.Target.Value >= 1 : stage.Trigger.Value >= 0 && stage.Target.Value >= 0) && stage.Trigger.Value > stage.Target.Value && (stage.Trigger.Kind == CompactionLimitKinds.InputBudgetPercent || stage.Trigger.Value == Math.Truncate(stage.Trigger.Value) && stage.Target.Value == Math.Truncate(stage.Target.Value)) && stage.MinimumPreservedGroups >= 0 && stage.MinimumPreservedTurns >= 0;
+    private bool HasValidResolvedFixedStageLimits(CompactionStage stage)
+    {
+        if (model.BudgetSource != CompactionBudgetSources.Fixed || stage.Trigger.Kind != CompactionLimitKinds.InputBudgetPercent || !HasValidFixedBudget())
+            return true;
+
+        var inputBudget = model.ContextWindowTokens!.Value - model.MaxOutputTokens!.Value;
+        var trigger = checked((int)Math.Floor(inputBudget * stage.Trigger.Value));
+        var target = checked((int)Math.Floor(inputBudget * stage.Target.Value));
+        return trigger > 0 && target > 0 && target < trigger;
+    }
     private static IReadOnlyList<string> SupportedLimitKinds(string stageKind) => stageKind == CompactionStageKinds.SlidingWindow ? [CompactionLimitKinds.Turns] : [CompactionLimitKinds.InputBudgetPercent, CompactionLimitKinds.Tokens, CompactionLimitKinds.Messages, CompactionLimitKinds.Groups];
     private static string LimitKindLabel(string kind) => kind switch { CompactionLimitKinds.InputBudgetPercent => "Input budget (%)", CompactionLimitKinds.Tokens => "Tokens", CompactionLimitKinds.Messages => "Messages", CompactionLimitKinds.Turns => "Turns", CompactionLimitKinds.Groups => "Groups", _ => kind };
     private void ConfirmDelete(CompactionProfile value) { deletingProfile = value; deleting = true; }

@@ -16,15 +16,28 @@ using ModelContextProtocol.Client;
 
 namespace ChatClient.Api.Client.Services.Agentic;
 
-internal sealed record HarnessAgentRuntimeDefinition(
-    AIAgent Agent,
-    LlmServerConfig Server,
-    AgenticToolSet ToolSet,
-    bool SupportsFunctionCalling,
-    IReadOnlyList<string> AvailableModes,
-    SessionWorkspaceAgentFileStore? FileAccessStore,
-    FileAccessProviderProfile? FileAccessProfile,
-    AgentSessionCompactionViewModel? Compaction);
+internal sealed class HarnessAgentRuntimeDefinition(
+    AIAgent agent,
+    LlmServerConfig server,
+    AgenticToolSet toolSet,
+    bool supportsFunctionCalling,
+    IReadOnlyList<string> availableModes,
+    SessionWorkspaceAgentFileStore? fileAccessStore,
+    FileAccessProviderProfile? fileAccessProfile,
+    AgentSessionCompactionViewModel? compaction,
+    AgentRuntimeResources ownedResources) : IDisposable
+{
+    public AIAgent Agent { get; } = agent;
+    public LlmServerConfig Server { get; } = server;
+    public AgenticToolSet ToolSet { get; } = toolSet;
+    public bool SupportsFunctionCalling { get; } = supportsFunctionCalling;
+    public IReadOnlyList<string> AvailableModes { get; } = availableModes;
+    public SessionWorkspaceAgentFileStore? FileAccessStore { get; } = fileAccessStore;
+    public FileAccessProviderProfile? FileAccessProfile { get; } = fileAccessProfile;
+    public AgentSessionCompactionViewModel? Compaction { get; } = compaction;
+
+    public void Dispose() => ownedResources.Dispose();
+}
 
 public sealed class AgenticRuntimeAgentFactory(
     ILlmServerConfigService llmServerConfigService,
@@ -49,183 +62,199 @@ public sealed class AgenticRuntimeAgentFactory(
     {
         ArgumentNullException.ThrowIfNull(request);
 
-        var server = await llmServerConfigService.GetByIdAsync(request.ResolvedModel.ServerId);
-        if (server is null)
+        var resources = new AgentRuntimeResources(logger);
+        try
         {
-            throw new InvalidOperationException(
-                $"Configured LLM server '{request.ResolvedModel.ServerId}' was not found.");
-        }
 
-        var todoProfile = await GetTodoProviderProfileAsync(request.Agent.TodoProviderProfileId);
-        var agentModeProfile = await GetAgentModeProviderProfileAsync(request.Agent.AgentModeProviderProfileId);
-        var fileAccessProfile = await GetFileAccessProviderProfileAsync(request.Agent.FileAccessProviderProfileId);
-        if (request.Agent.FileAccessProviderProfileId is Guid fileAccessProfileId && fileAccessProfileId != Guid.Empty && fileAccessProfile is null)
-        {
-            throw new InvalidOperationException($"Selected File Access Provider profile '{fileAccessProfileId}' was not found.");
-        }
-        ValidateTodoCompletionConfiguration(request.Agent, todoProfile, agentModeProfile);
-
-        var compactionProfile = await GetCompactionProfileAsync(request.Agent.CompactionProfileId);
-        if (request.Agent.CompactionProfileId is Guid compactionProfileId && compactionProfileId != Guid.Empty && compactionProfile is null)
-        {
-            throw new InvalidOperationException($"Selected compaction profile '{compactionProfileId}' was not found.");
-        }
-        if (compactionProfile is not null)
-        {
-            await (compactionStrategyResolver ?? throw new InvalidOperationException("Compaction strategy resolver is not configured."))
-                .PreflightAsync(compactionProfile, cancellationToken);
-        }
-        var chatClient = await llmChatClientFactory.CreateAsync(request.ResolvedModel, cancellationToken);
-        var compaction = compactionProfile is null
-            ? null
-            : await (compactionStrategyResolver ?? throw new InvalidOperationException("Compaction strategy resolver is not configured."))
-                .ResolveAsync(compactionProfile, request.ResolvedModel, chatClient, cancellationToken);
-        if (compaction is not null)
-        {
-            logger.LogInformation("Resolved compaction policy for profile {ProfileName}: context={ContextWindowTokens}, output={MaxOutputTokens}, input={InputBudgetTokens}, policy={PolicySummary}, thresholds={AbsoluteThresholds}",
-                compactionProfile!.Name, compaction.Budget.ContextWindowTokens, compaction.Budget.MaxOutputTokens,
-                compaction.Budget.InputBudgetTokens, CompactionPolicySummary.FormatPolicy(compactionProfile),
-                CompactionPolicySummary.FormatAbsoluteThresholds(compactionProfile, compaction.Budget));
-        }
-        bool supportsFunctions = await modelCapabilityService.SupportsFunctionCallingAsync(
-            request.ResolvedModel,
-            cancellationToken);
-        var hasRagContent = request.Agent.Id != Guid.Empty &&
-                            await knowledgeSearchService.HasReadyContentAsync(request.Agent.KnowledgeStoreIds, cancellationToken);
-
-        if (hasRagContent)
-        {
-            logger.LogInformation(
-                "Agent {AgentName}: RAG enabled, behavior={Behavior}",
-                request.Agent.AgentName,
-                ResolveRagSearchBehavior(supportsFunctions));
-        }
-        else
-        {
-            logger.LogDebug(
-                "Agent {AgentName}: RAG provider not configured because no indexed knowledge is available",
-                request.Agent.AgentName);
-        }
-
-        if (fileAccessProfile is not null && !supportsFunctions)
-        {
-            throw new InvalidOperationException(
-                $"Model '{request.ResolvedModel.ModelName}' does not support function calling required by File Access.");
-        }
-
-        if (request.Agent.EnableShell && !supportsFunctions)
-        {
-            throw new InvalidOperationException(
-                $"Model '{request.ResolvedModel.ModelName}' does not support function calling required by sandbox shell execution.");
-        }
-
-        var effectiveMcpBindings = McpServerSessionBindingMerger.Merge(
-            request.Agent.McpServerBindings,
-            request.Configuration.McpServerBindings);
-        var toolRequestContext = BuildToolRequestContext(effectiveMcpBindings);
-        var availableTools = supportsFunctions
-            ? await appToolCatalog.ListToolsAsync(toolRequestContext, cancellationToken)
-            : [];
-        var requestedFunctions = ResolveRequestedFunctionNames(
-            request.Configuration,
-            effectiveMcpBindings,
-            availableTools);
-
-        if (!supportsFunctions && requestedFunctions.Count > 0)
-        {
-            if (requireFunctionCalling)
+            var server = await llmServerConfigService.GetByIdAsync(request.ResolvedModel.ServerId);
+            if (server is null)
             {
                 throw new InvalidOperationException(
-                    $"Model '{request.ResolvedModel.ModelName}' does not support function calling required by workflow agent '{request.Agent.AgentName}'.");
+                    $"Configured LLM server '{request.ResolvedModel.ServerId}' was not found.");
             }
 
-            logger.LogInformation(
-                "Model {ModelName} for agent {AgentName} does not support function calling. Skipping {FunctionCount} configured tools.",
-                request.ResolvedModel.ModelName,
-                request.Agent.AgentName,
-                requestedFunctions.Count);
-        }
-
-        var toolSet = supportsFunctions
-            ? AgenticToolSetBuilder.Build(
-                requestedFunctions,
-                availableTools,
-                NormalizeToolPolicy(toolPolicyOptions.Value),
-                mcpUserInteractionService,
-                logger)
-            : AgenticToolSet.Empty;
-
-        if (toolSet.HasTools)
-        {
-            logger.LogDebug(
-                "Registered {ToolCount} MCP tools for agent {AgentName}: [{ToolNames}]",
-                toolSet.Tools.Count,
-                request.Agent.AgentName,
-                string.Join(", ", toolSet.MetadataByName.Keys));
-        }
-
-        if (requestedFunctions.Count > 0 && !toolSet.HasTools)
-        {
-            logger.LogWarning(
-                "No MCP tools matched the configured function set for agent {AgentName}. Requested: [{RequestedFunctions}]",
-                request.Agent.AgentName,
-                string.Join(", ", requestedFunctions));
-        }
-
-        var workspacePath = request.RuntimeResources.WorkspacePath is null
-            ? null
-            : ValidateWorkspace(request.RuntimeResources.WorkspacePath);
-        var workspaceStore = fileAccessProfile is null
-            ? null
-            : new SessionWorkspaceAgentFileStore(workspacePath ?? throw new InvalidOperationException("A workspace directory is required for File Access."));
-        SessionSandboxShellExecutor? shellExecutor = null;
-        if (request.Agent.EnableShell)
-        {
-            var sandbox = request.RuntimeResources.Sandbox;
-            if (sandbox is null)
+            var todoProfile = await GetTodoProviderProfileAsync(request.Agent.TodoProviderProfileId);
+            var agentModeProfile = await GetAgentModeProviderProfileAsync(request.Agent.AgentModeProviderProfileId);
+            var fileAccessProfile = await GetFileAccessProviderProfileAsync(request.Agent.FileAccessProviderProfileId);
+            if (request.Agent.FileAccessProviderProfileId is Guid fileAccessProfileId && fileAccessProfileId != Guid.Empty && fileAccessProfile is null)
             {
-                throw new InvalidOperationException("A sandbox session is required for shell-enabled agents.");
+                throw new InvalidOperationException($"Selected File Access Provider profile '{fileAccessProfileId}' was not found.");
             }
+            ValidateTodoCompletionConfiguration(request.Agent, todoProfile, agentModeProfile);
 
-            if (workspacePath is null)
+            var compactionProfile = await GetCompactionProfileAsync(request.Agent.CompactionProfileId);
+            if (request.Agent.CompactionProfileId is Guid compactionProfileId && compactionProfileId != Guid.Empty && compactionProfile is null)
             {
-                throw new InvalidOperationException("A workspace directory is required for shell-enabled agents.");
+                throw new InvalidOperationException($"Selected compaction profile '{compactionProfileId}' was not found.");
             }
-
-            if (!string.Equals(sandbox.WorkspacePath, workspacePath, StringComparison.OrdinalIgnoreCase))
+            if (compactionProfile is not null)
             {
-                throw new InvalidOperationException("The sandbox workspace must match the session workspace.");
+                await (compactionStrategyResolver ?? throw new InvalidOperationException("Compaction strategy resolver is not configured."))
+                    .PreflightAsync(compactionProfile, cancellationToken);
+            }
+            var chatClient = resources.Own(await llmChatClientFactory.CreateAsync(request.ResolvedModel, cancellationToken));
+            var compaction = compactionProfile is null
+                ? null
+                : await (compactionStrategyResolver ?? throw new InvalidOperationException("Compaction strategy resolver is not configured."))
+                    .ResolveAsync(
+                        compactionProfile,
+                        request.ResolvedModel,
+                        chatClient,
+                        async (model, token) => resources.Own(await llmChatClientFactory.CreateAsync(model, token)),
+                        cancellationToken);
+            if (compaction is not null)
+            {
+                logger.LogInformation("Resolved compaction policy for profile {ProfileName}: context={ContextWindowTokens}, output={MaxOutputTokens}, input={InputBudgetTokens}, policy={PolicySummary}, thresholds={AbsoluteThresholds}",
+                    compactionProfile!.Name, compaction.Budget.ContextWindowTokens, compaction.Budget.MaxOutputTokens,
+                    compaction.Budget.InputBudgetTokens, CompactionPolicySummary.FormatPolicy(compactionProfile),
+                    CompactionPolicySummary.FormatAbsoluteThresholds(compactionProfile, compaction.Budget));
+            }
+            bool supportsFunctions = await modelCapabilityService.SupportsFunctionCallingAsync(
+                request.ResolvedModel,
+                cancellationToken);
+            var hasRagContent = request.Agent.Id != Guid.Empty &&
+                                await knowledgeSearchService.HasReadyContentAsync(request.Agent.KnowledgeStoreIds, cancellationToken);
+
+            if (hasRagContent)
+            {
+                logger.LogInformation(
+                    "Agent {AgentName}: RAG enabled, behavior={Behavior}",
+                    request.Agent.AgentName,
+                    ResolveRagSearchBehavior(supportsFunctions));
+            }
+            else
+            {
+                logger.LogDebug(
+                    "Agent {AgentName}: RAG provider not configured because no indexed knowledge is available",
+                    request.Agent.AgentName);
             }
 
-            shellExecutor = new SessionSandboxShellExecutor(sandbox);
+            if (fileAccessProfile is not null && !supportsFunctions)
+            {
+                throw new InvalidOperationException(
+                    $"Model '{request.ResolvedModel.ModelName}' does not support function calling required by File Access.");
+            }
+
+            if (request.Agent.EnableShell && !supportsFunctions)
+            {
+                throw new InvalidOperationException(
+                    $"Model '{request.ResolvedModel.ModelName}' does not support function calling required by sandbox shell execution.");
+            }
+
+            var effectiveMcpBindings = McpServerSessionBindingMerger.Merge(
+                request.Agent.McpServerBindings,
+                request.Configuration.McpServerBindings);
+            var toolRequestContext = BuildToolRequestContext(effectiveMcpBindings);
+            var availableTools = supportsFunctions
+                ? await appToolCatalog.ListToolsAsync(toolRequestContext, cancellationToken)
+                : [];
+            var requestedFunctions = ResolveRequestedFunctionNames(
+                request.Configuration,
+                effectiveMcpBindings,
+                availableTools);
+
+            if (!supportsFunctions && requestedFunctions.Count > 0)
+            {
+                if (requireFunctionCalling)
+                {
+                    throw new InvalidOperationException(
+                        $"Model '{request.ResolvedModel.ModelName}' does not support function calling required by workflow agent '{request.Agent.AgentName}'.");
+                }
+
+                logger.LogInformation(
+                    "Model {ModelName} for agent {AgentName} does not support function calling. Skipping {FunctionCount} configured tools.",
+                    request.ResolvedModel.ModelName,
+                    request.Agent.AgentName,
+                    requestedFunctions.Count);
+            }
+
+            var toolSet = supportsFunctions
+                ? AgenticToolSetBuilder.Build(
+                    requestedFunctions,
+                    availableTools,
+                    NormalizeToolPolicy(toolPolicyOptions.Value),
+                    mcpUserInteractionService,
+                    logger)
+                : AgenticToolSet.Empty;
+
+            if (toolSet.HasTools)
+            {
+                logger.LogDebug(
+                    "Registered {ToolCount} MCP tools for agent {AgentName}: [{ToolNames}]",
+                    toolSet.Tools.Count,
+                    request.Agent.AgentName,
+                    string.Join(", ", toolSet.MetadataByName.Keys));
+            }
+
+            if (requestedFunctions.Count > 0 && !toolSet.HasTools)
+            {
+                logger.LogWarning(
+                    "No MCP tools matched the configured function set for agent {AgentName}. Requested: [{RequestedFunctions}]",
+                    request.Agent.AgentName,
+                    string.Join(", ", requestedFunctions));
+            }
+
+            var workspacePath = request.RuntimeResources.WorkspacePath is null
+                ? null
+                : ValidateWorkspace(request.RuntimeResources.WorkspacePath);
+            var workspaceStore = fileAccessProfile is null
+                ? null
+                : new SessionWorkspaceAgentFileStore(workspacePath ?? throw new InvalidOperationException("A workspace directory is required for File Access."));
+            SessionSandboxShellExecutor? shellExecutor = null;
+            if (request.Agent.EnableShell)
+            {
+                var sandbox = request.RuntimeResources.Sandbox;
+                if (sandbox is null)
+                {
+                    throw new InvalidOperationException("A sandbox session is required for shell-enabled agents.");
+                }
+
+                if (workspacePath is null)
+                {
+                    throw new InvalidOperationException("A workspace directory is required for shell-enabled agents.");
+                }
+
+                if (!string.Equals(sandbox.WorkspacePath, workspacePath, StringComparison.OrdinalIgnoreCase))
+                {
+                    throw new InvalidOperationException("The sandbox workspace must match the session workspace.");
+                }
+
+                shellExecutor = new SessionSandboxShellExecutor(sandbox);
+            }
+            var runtimeAgent = CreateRuntimeAgent(
+                chatClient,
+                request,
+                server,
+                toolSet,
+                knowledgeSearchService,
+                hasRagContent,
+                supportsFunctions,
+                todoProfile,
+                agentModeProfile,
+                fileAccessProfile,
+                workspaceStore,
+                shellExecutor,
+                loggerFactory,
+                compaction);
+            return new HarnessAgentRuntimeDefinition(
+                runtimeAgent,
+                server,
+                toolSet,
+                supportsFunctions,
+                GetEffectiveModeNames(agentModeProfile),
+                workspaceStore,
+                fileAccessProfile,
+                compaction is null ? null : new AgentSessionCompactionViewModel(
+                    compactionProfile!.Name,
+                    compaction.Budget.InputBudgetTokens,
+                    CompactionPolicySummary.FormatPolicy(compactionProfile)),
+                resources);
         }
-        var runtimeAgent = CreateRuntimeAgent(
-            chatClient,
-            request,
-            server,
-            toolSet,
-            knowledgeSearchService,
-            hasRagContent,
-            supportsFunctions,
-            todoProfile,
-            agentModeProfile,
-            fileAccessProfile,
-            workspaceStore,
-            shellExecutor,
-            loggerFactory,
-            compaction);
-        return new HarnessAgentRuntimeDefinition(
-            runtimeAgent,
-            server,
-            toolSet,
-            supportsFunctions,
-            GetEffectiveModeNames(agentModeProfile),
-            workspaceStore,
-            fileAccessProfile,
-            compaction is null ? null : new AgentSessionCompactionViewModel(
-                compactionProfile!.Name,
-                compaction.Budget.InputBudgetTokens,
-                CompactionPolicySummary.FormatPolicy(compactionProfile)));
+        catch
+        {
+            resources.Dispose();
+            throw;
+        }
     }
 
     private static AIAgent CreateRuntimeAgent(

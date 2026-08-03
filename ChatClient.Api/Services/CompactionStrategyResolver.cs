@@ -11,6 +11,14 @@ public sealed record ResolvedCompactionStrategy(
     CompactionBudget Budget,
     IReadOnlyList<string> StageKinds);
 
+internal readonly record struct ResolvedCompactionLimit(string Kind, int Value);
+
+internal sealed record ResolvedStageLimits(
+    CompactionTrigger Trigger,
+    CompactionTrigger Target,
+    int TriggerValue,
+    int TargetValue);
+
 public interface ICompactionStrategyResolver
 {
     Task PreflightAsync(
@@ -21,12 +29,12 @@ public interface ICompactionStrategyResolver
         CompactionProfile? profile,
         ServerModel primaryModel,
         IChatClient primaryChatClient,
+        Func<ServerModel, CancellationToken, Task<IChatClient>> createOwnedChatClient,
         CancellationToken cancellationToken = default);
 }
 
 public sealed class CompactionStrategyResolver(
     ICompactionBudgetResolver budgetResolver,
-    ILlmChatClientFactory chatClientFactory,
     IModelCapabilityService modelCapabilityService) : ICompactionStrategyResolver
 {
     public async Task PreflightAsync(CompactionProfile profile, CancellationToken cancellationToken = default)
@@ -65,12 +73,14 @@ public sealed class CompactionStrategyResolver(
         CompactionProfile? profile,
         ServerModel primaryModel,
         IChatClient primaryChatClient,
+        Func<ServerModel, CancellationToken, Task<IChatClient>> createOwnedChatClient,
         CancellationToken cancellationToken = default)
     {
         if (profile is null)
             return null;
         ArgumentNullException.ThrowIfNull(primaryModel);
         ArgumentNullException.ThrowIfNull(primaryChatClient);
+        ArgumentNullException.ThrowIfNull(createOwnedChatClient);
         var budget = await budgetResolver.ResolveAsync(profile, primaryModel);
 
         if (profile.Kind == CompactionProfileKinds.ContextWindow)
@@ -95,20 +105,29 @@ public sealed class CompactionStrategyResolver(
             ValidateStage(stage, profile.Name);
         }
 
-        var strategies = new List<CompactionStrategy>();
-        var kinds = new List<string>();
-        foreach (var stage in profile.Stages)
+        var resolvedLimits = new List<ResolvedStageLimits>(profile.Stages.Count);
+        for (var index = 0; index < profile.Stages.Count; index++)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            var trigger = CreateTrigger(stage.Trigger, budget, isTarget: false);
-            var target = CreateTrigger(stage.Target, budget, isTarget: true);
+            var stage = profile.Stages[index];
+            resolvedLimits.Add(ResolveStageLimits(stage, budget, profile.Name, index + 1));
+        }
+
+        var strategies = new List<CompactionStrategy>();
+        var kinds = new List<string>();
+        var summarizers = new Dictionary<ServerModel, IChatClient>();
+        for (var index = 0; index < profile.Stages.Count; index++)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            var stage = profile.Stages[index];
+            var limits = resolvedLimits[index];
             CompactionStrategy strategy = stage.Kind switch
             {
-                CompactionStageKinds.ToolResult => new ToolResultCompactionStrategy(trigger, stage.MinimumPreservedGroups, target),
-                CompactionStageKinds.Truncation => new TruncationCompactionStrategy(trigger, stage.MinimumPreservedGroups, target),
-                CompactionStageKinds.SlidingWindow => new SlidingWindowCompactionStrategy(trigger, stage.MinimumPreservedTurns, target),
+                CompactionStageKinds.ToolResult => new ToolResultCompactionStrategy(limits.Trigger, stage.MinimumPreservedGroups, limits.Target),
+                CompactionStageKinds.Truncation => new TruncationCompactionStrategy(limits.Trigger, stage.MinimumPreservedGroups, limits.Target),
+                CompactionStageKinds.SlidingWindow => new SlidingWindowCompactionStrategy(limits.Trigger, stage.MinimumPreservedTurns, limits.Target),
                 CompactionStageKinds.Summarization => new SummarizationCompactionStrategy(
-                    await ResolveSummarizerClientAsync(stage, primaryChatClient, cancellationToken), trigger, stage.MinimumPreservedGroups, stage.SummaryInstructions, target),
+                    await ResolveSummarizerClientAsync(stage, primaryChatClient, summarizers, createOwnedChatClient, cancellationToken), limits.Trigger, stage.MinimumPreservedGroups, stage.SummaryInstructions, limits.Target),
                 _ => throw new InvalidOperationException($"Compaction profile '{profile.Name}' has unknown stage '{stage.Kind}'.")
             };
             strategies.Add(strategy);
@@ -118,13 +137,44 @@ public sealed class CompactionStrategyResolver(
         return new ResolvedCompactionStrategy(new PipelineCompactionStrategy(strategies), budget, kinds);
     }
 
-    private static CompactionTrigger CreateTrigger(CompactionLimit limit, CompactionBudget budget, bool isTarget)
+    private static ResolvedStageLimits ResolveStageLimits(CompactionStage stage, CompactionBudget budget, string profileName, int stageIndex)
     {
-        var value = limit.Kind == CompactionLimitKinds.InputBudgetPercent
-            ? checked((int)Math.Floor(budget.InputBudgetTokens * limit.Value))
-            : checked((int)limit.Value);
+        var trigger = ResolveLimit(stage.Trigger, budget, profileName, stageIndex, stage.Kind, "trigger");
+        var target = ResolveLimit(stage.Target, budget, profileName, stageIndex, stage.Kind, "target");
+        var tokenBased = trigger.Kind is CompactionLimitKinds.Tokens or CompactionLimitKinds.InputBudgetPercent;
+        var valid = tokenBased
+            ? trigger.Value > 0 && target.Value > 0 && target.Value < trigger.Value
+            : trigger.Value > 0 && target.Value >= 0 && target.Value < trigger.Value;
+        if (!valid)
+            throw CreateResolvedLimitException(stage, budget, profileName, stageIndex, trigger, target);
 
-        return (limit.Kind, isTarget) switch
+        return new ResolvedStageLimits(
+            CreateTrigger(trigger.Kind, trigger.Value, false),
+            CreateTrigger(target.Kind, target.Value, true),
+            trigger.Value,
+            target.Value);
+    }
+
+    private static ResolvedCompactionLimit ResolveLimit(CompactionLimit definition, CompactionBudget budget, string profileName, int stageIndex, string stageKind, string role)
+    {
+        try
+        {
+            var value = definition.Kind == CompactionLimitKinds.InputBudgetPercent
+                ? checked((int)Math.Floor(budget.InputBudgetTokens * definition.Value))
+                : checked((int)definition.Value);
+            return new ResolvedCompactionLimit(definition.Kind, value);
+        }
+        catch (Exception exception) when (exception is OverflowException)
+        {
+            throw new InvalidOperationException($"Compaction profile '{profileName}', stage {stageIndex} '{stageKind}' has an invalid {role} limit.", exception);
+        }
+    }
+
+    private static InvalidOperationException CreateResolvedLimitException(CompactionStage stage, CompactionBudget budget, string profileName, int stageIndex, ResolvedCompactionLimit trigger, ResolvedCompactionLimit target) =>
+        new($"Compaction profile '{profileName}', stage {stageIndex} '{stage.Kind}' with {trigger.Kind} limits resolves trigger {stage.Trigger.Value} to {trigger.Value} and target {stage.Target.Value} to {target.Value} (input budget {budget.InputBudgetTokens}). The target must be lower than a positive trigger{(trigger.Kind is CompactionLimitKinds.Tokens or CompactionLimitKinds.InputBudgetPercent ? " and both token thresholds must be positive" : string.Empty)}.");
+
+    private static CompactionTrigger CreateTrigger(string kind, int value, bool isTarget) =>
+        (kind, isTarget) switch
         {
             (CompactionLimitKinds.InputBudgetPercent or CompactionLimitKinds.Tokens, false) => CompactionTriggers.TokensExceed(value),
             (CompactionLimitKinds.InputBudgetPercent or CompactionLimitKinds.Tokens, true) => CompactionTriggers.TokensBelow(value),
@@ -134,9 +184,8 @@ public sealed class CompactionStrategyResolver(
             (CompactionLimitKinds.Turns, true) => index => index.IncludedTurnCount <= value,
             (CompactionLimitKinds.Groups, false) => CompactionTriggers.GroupsExceed(value),
             (CompactionLimitKinds.Groups, true) => index => index.IncludedGroupCount <= value,
-            _ => throw new InvalidOperationException($"Unsupported compaction limit kind '{limit.Kind}'.")
+            _ => throw new InvalidOperationException($"Unsupported compaction limit kind '{kind}'.")
         };
-    }
 
     private static void ValidateContextWindowThresholds(CompactionProfile profile)
     {
@@ -148,13 +197,18 @@ public sealed class CompactionStrategyResolver(
         }
     }
 
-    private async Task<IChatClient> ResolveSummarizerClientAsync(CompactionStage stage, IChatClient primaryChatClient, CancellationToken cancellationToken)
+    private static async Task<IChatClient> ResolveSummarizerClientAsync(CompactionStage stage, IChatClient primaryChatClient, Dictionary<ServerModel, IChatClient> summarizers, Func<ServerModel, CancellationToken, Task<IChatClient>> createOwnedChatClient, CancellationToken cancellationToken)
     {
         if (stage.SummarizerLlmId is null && stage.SummarizerModelName is null)
             return primaryChatClient;
         if (stage.SummarizerLlmId is not Guid serverId || serverId == Guid.Empty || string.IsNullOrWhiteSpace(stage.SummarizerModelName))
             throw new InvalidOperationException("A summarization stage requires both a valid server ID and model name for a separate summarizer.");
-        return await chatClientFactory.CreateAsync(new ServerModel(serverId, stage.SummarizerModelName), cancellationToken);
+        var model = new ServerModel(serverId, stage.SummarizerModelName);
+        if (summarizers.TryGetValue(model, out var client))
+            return client;
+        client = await createOwnedChatClient(model, cancellationToken);
+        summarizers.Add(model, client);
+        return client;
     }
 
     private static void ValidateStage(CompactionStage stage, string profileName)

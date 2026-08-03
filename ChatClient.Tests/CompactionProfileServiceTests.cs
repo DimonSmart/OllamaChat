@@ -79,6 +79,16 @@ public sealed class CompactionProfileServiceTests
             var zeroTarget = CreatePipelineProfile("Zero target");
             zeroTarget.Stages[0].Target.Value = 0;
             await Assert.ThrowsAsync<ArgumentException>(() => service.CreateAsync(zeroTarget));
+
+            var tokenTargetZero = CreatePipelineProfile("Token target zero");
+            tokenTargetZero.Stages[0].Trigger = new CompactionLimit { Kind = CompactionLimitKinds.Tokens, Value = 100 };
+            tokenTargetZero.Stages[0].Target = new CompactionLimit { Kind = CompactionLimitKinds.Tokens, Value = 0 };
+            await Assert.ThrowsAsync<ArgumentException>(() => service.CreateAsync(tokenTargetZero));
+
+            var tokenTriggerZero = CreatePipelineProfile("Token trigger zero");
+            tokenTriggerZero.Stages[0].Trigger = new CompactionLimit { Kind = CompactionLimitKinds.Tokens, Value = 0 };
+            tokenTriggerZero.Stages[0].Target = new CompactionLimit { Kind = CompactionLimitKinds.Tokens, Value = -1 };
+            await Assert.ThrowsAsync<ArgumentException>(() => service.CreateAsync(tokenTriggerZero));
         }
         finally { root.Delete(recursive: true); }
     }

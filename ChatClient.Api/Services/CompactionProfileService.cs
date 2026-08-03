@@ -105,8 +105,11 @@ public sealed class CompactionProfileService(
             throw new ArgumentException("Compaction stage kind is invalid.", nameof(stage));
         if (stage.Trigger.Kind != stage.Target.Kind || !IsSupportedLimitKind(stage.Kind, stage.Trigger.Kind))
             throw new ArgumentException("Compaction stage trigger and target must use the same supported limit kind.", nameof(stage));
-        if (!HasValidLimitValue(stage.Trigger) || !HasValidLimitValue(stage.Target) || stage.Target.Value >= stage.Trigger.Value)
-            throw new ArgumentException("Compaction stage limits must be ordered nonnegative values with a trigger greater than its target.", nameof(stage));
+        if (!HasValidLimitValue(stage.Trigger) || !HasValidLimitValue(stage.Target) ||
+            stage.Target.Value >= stage.Trigger.Value ||
+            (stage.Trigger.Kind == CompactionLimitKinds.Tokens &&
+             (stage.Trigger.Value <= 0 || stage.Target.Value <= 0)))
+            throw new ArgumentException("Compaction stage limits must be ordered values with a trigger greater than its target; token limits must be positive.", nameof(stage));
         if (stage.MinimumPreservedGroups < 0 || stage.MinimumPreservedTurns < 0)
             throw new ArgumentException("Compaction stage preserved history settings cannot be negative.", nameof(stage));
         if (stage.Kind == CompactionStageKinds.SlidingWindow)
