@@ -88,6 +88,7 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<IFileAccessProviderProfileRepository, FileAccessProviderProfileRepository>();
         services.AddSingleton<ISandboxProfileRepository, SandboxProfileRepository>();
         services.AddSingleton<ICompactionProfileRepository, CompactionProfileRepository>();
+        services.AddSingleton<IRagProviderProfileRepository, RagProviderProfileRepository>();
         services.AddSingleton<IModelRuntimeLimitsRepository, ModelRuntimeLimitsRepository>();
         services.AddSingleton<IWorkflowDefinitionRepository, WorkflowDefinitionRepository>();
         services.AddSingleton<ILlmServerConfigRepository, LlmServerConfigRepository>();
@@ -101,6 +102,7 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<IFileAccessProviderProfileService, FileAccessProviderProfileService>();
         services.AddSingleton<ISandboxProfileService, SandboxProfileService>();
         services.AddSingleton<ICompactionProfileService, CompactionProfileService>();
+        services.AddSingleton<IRagProviderProfileService, RagProviderProfileService>();
         services.AddSingleton<IModelRuntimeLimitsService, ModelRuntimeLimitsService>();
         services.AddSingleton<ICompactionBudgetResolver, CompactionBudgetResolver>();
         services.AddScoped<ICompactionStrategyResolver, CompactionStrategyResolver>();

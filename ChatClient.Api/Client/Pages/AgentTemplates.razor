@@ -17,6 +17,7 @@
 @inject IAgentModeProviderProfileService AgentModeProviderProfileService
 @inject IFileAccessProviderProfileService FileAccessProviderProfileService
 @inject ICompactionProfileService CompactionProfileService
+@inject IRagProviderProfileService RagProviderProfileService
 
 <PageTitle>Agent Templates</PageTitle>
 
@@ -296,9 +297,20 @@
                     <MudSelectItem T="Guid?" Value="@((Guid?)profile.Id)">@($"{profile.Name} — {CompactionProfilePresentation.FormatPolicy(profile)}")</MudSelectItem>
                 }
             </MudSelect></MudItem>
+            <MudItem xs="12" md="6"><MudSelect T="Guid?" @bind-Value="editingAgent.RagProviderProfileId" Label="RAG provider" Dense="true" Margin="Margin.Dense" HelperText="The profile controls retrieval behavior. Knowledge Store attachments determine whether RAG is enabled.">
+                <MudSelectItem T="Guid?" Value="@((Guid?)null)">Built-in defaults</MudSelectItem>
+                @foreach (var profile in ragProviderProfiles)
+                {
+                    <MudSelectItem T="Guid?" Value="@((Guid?)profile.Id)">@profile.Name</MudSelectItem>
+                }
+            </MudSelect></MudItem>
             @if (HasUnavailableCompactionProfile())
             {
                 <MudItem xs="12"><MudAlert Severity="Severity.Warning" Dense="true">The selected compaction profile is unavailable. Choose another profile or None before saving.</MudAlert></MudItem>
+            }
+            @if (HasUnavailableRagProfile())
+            {
+                <MudItem xs="12"><MudAlert Severity="Severity.Warning" Dense="true">The selected RAG Provider profile is unavailable. Choose another profile or Built-in defaults before saving.</MudAlert></MudItem>
             }
             </MudGrid>
             <MudGrid Spacing="2">
@@ -369,6 +381,7 @@
     private List<AgentModeProviderProfile> agentModeProviderProfiles = new();
     private List<FileAccessProviderProfile> fileAccessProviderProfiles = new();
     private List<CompactionProfile> compactionProfiles = new();
+    private List<RagProviderProfile> ragProviderProfiles = new();
     private DialogOptions dialogOptions = new()
     {
         CloseOnEscapeKey = true,
@@ -399,6 +412,9 @@
             .OrderBy(profile => profile.Name, StringComparer.OrdinalIgnoreCase)
             .ToList();
         compactionProfiles = (await CompactionProfileService.GetAllAsync())
+            .OrderBy(profile => profile.Name, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+        ragProviderProfiles = (await RagProviderProfileService.GetAllAsync())
             .OrderBy(profile => profile.Name, StringComparer.OrdinalIgnoreCase)
             .ToList();
     }
@@ -455,6 +471,7 @@
             AgentModeProviderProfileId = null,
             FileAccessProviderProfileId = null,
             CompactionProfileId = null,
+            RagProviderProfileId = null,
             EnableShell = false,
             ContinueUntilTodosComplete = false,
             MaxTodoCompletionIterations = 10,
@@ -512,6 +529,7 @@
             AgentModeProviderProfileId = agent.AgentModeProviderProfileId,
             FileAccessProviderProfileId = agent.FileAccessProviderProfileId,
             CompactionProfileId = agent.CompactionProfileId,
+            RagProviderProfileId = agent.RagProviderProfileId,
             EnableShell = agent.EnableShell,
             ContinueUntilTodosComplete = agent.ContinueUntilTodosComplete,
             MaxTodoCompletionIterations = agent.MaxTodoCompletionIterations,
@@ -646,6 +664,12 @@
     {
         return editingAgent.CompactionProfileId is Guid profileId &&
                compactionProfiles.All(profile => profile.Id != profileId);
+    }
+
+    private bool HasUnavailableRagProfile()
+    {
+        return editingAgent.RagProviderProfileId is Guid profileId &&
+               ragProviderProfiles.All(profile => profile.Id != profileId);
     }
 
     private bool HasConfiguredMcpBindings(AgentTemplateDefinition agent)

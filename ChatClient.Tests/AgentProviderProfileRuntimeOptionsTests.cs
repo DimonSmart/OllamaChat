@@ -120,6 +120,7 @@ public class AgentProviderProfileRuntimeOptionsTests
             null!,
             hasConfiguredKnowledge: false,
             supportsFunctions: false,
+            ragConfiguration: AgenticRuntimeAgentFactory.ResolveRagConfiguration(null, false),
             loggerFactory: NullLoggerFactory.Instance,
             todoProfile: new TodoProviderProfile { Instructions = "Track the work." });
 
@@ -255,6 +256,7 @@ public class AgentProviderProfileRuntimeOptionsTests
             Mock.Of<IKnowledgeSearchService>(),
             hasConfiguredKnowledge: true,
             supportsFunctions: true,
+            ragConfiguration: AgenticRuntimeAgentFactory.ResolveRagConfiguration(null, true),
             loggerFactory: NullLoggerFactory.Instance,
             todoProfile: null);
 
@@ -272,7 +274,7 @@ public class AgentProviderProfileRuntimeOptionsTests
             chatOptions,
             AgenticToolSet.Empty,
             hasConfiguredKnowledge: true,
-            supportsFunctions: true,
+            ragSearchBehavior: TextSearchProviderOptions.TextSearchBehavior.OnDemandFunctionCalling,
             shellExecutor: null);
 
         Assert.True(chatOptions.AllowMultipleToolCalls);
@@ -296,8 +298,11 @@ public class AgentProviderProfileRuntimeOptionsTests
     {
         var aiContextMessage = new ChatMessage(ChatRole.User, "retrieved")
             .WithAgentRequestMessageSource(AgentRequestMessageSourceType.AIContextProvider, "rag");
+        var loadedHistoryMessage = new ChatMessage(ChatRole.User, "loaded")
+            .WithAgentRequestMessageSource(AgentRequestMessageSourceType.ChatHistory, "history");
 
         Assert.False(AgenticRuntimeAgentFactory.ShouldStoreChatHistoryMessage(aiContextMessage));
+        Assert.False(AgenticRuntimeAgentFactory.ShouldStoreChatHistoryMessage(loadedHistoryMessage));
         Assert.True(AgenticRuntimeAgentFactory.ShouldStoreChatHistoryMessage(new ChatMessage(ChatRole.User, "user")));
         Assert.True(AgenticRuntimeAgentFactory.ShouldStoreChatHistoryMessage(new ChatMessage(ChatRole.Assistant, "assistant")));
 
@@ -309,6 +314,35 @@ public class AgentProviderProfileRuntimeOptionsTests
             new CompactionBudget(16_000, 2_000, 14_000),
             []));
         Assert.NotNull(provider.ChatReducer);
+    }
+
+    [Fact]
+    public async Task SearchAgentKnowledgeAsync_UsesExplicitProfileThresholdIncludingNull()
+    {
+        var storeId = Guid.NewGuid();
+        var search = new Mock<IKnowledgeSearchService>(MockBehavior.Strict);
+        search.Setup(x => x.SearchAsync(It.IsAny<IReadOnlyCollection<Guid>>(), "fact", 9, (double?)null, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new RagSearchResponse());
+        var profile = new RagProviderProfile { Name = "No threshold", MaxResults = 9, MinRelevanceScore = null };
+
+        await AgenticRuntimeAgentFactory.SearchAgentKnowledgeAsync([storeId], search.Object, "fact", TestContext.Current.CancellationToken, AgenticRuntimeAgentFactory.ResolveRagConfiguration(profile, false));
+
+        search.VerifyAll();
+    }
+
+    [Fact]
+    public void ResolveRagConfiguration_ExplicitBeforeInvokeDoesNotRequireToolMode()
+    {
+        var configuration = AgenticRuntimeAgentFactory.ResolveRagConfiguration(new RagProviderProfile { Name = "Always", SearchMode = RagSearchMode.BeforeInvoke, IncludeAssistantMessages = false, AdditionalContextInstructions = "Prioritize facts." }, true);
+        var options = new ChatOptions();
+
+        AgenticRuntimeAgentFactory.ConfigureToolMode(options, AgenticToolSet.Empty, true, configuration.SearchBehavior, null);
+
+        Assert.Equal(TextSearchProviderOptions.TextSearchBehavior.BeforeAIInvoke, configuration.SearchBehavior);
+        Assert.Null(options.ToolMode);
+        Assert.Single(configuration.RecentMessageRolesIncluded!);
+        Assert.Contains("untrusted reference data", configuration.ContextPrompt);
+        Assert.Contains("Prioritize facts.", configuration.ContextPrompt);
     }
 
     [Theory]
@@ -376,13 +410,14 @@ public class AgentProviderProfileRuntimeOptionsTests
             hasConfiguredKnowledge ? Mock.Of<IKnowledgeSearchService>() : null!,
             hasConfiguredKnowledge,
             supportsFunctions,
+            ragConfiguration: AgenticRuntimeAgentFactory.ResolveRagConfiguration(null, supportsFunctions),
             todoProfile: null,
             agentModeProfile: null,
             fileAccessProfile: null,
             workspaceStore: null,
             shellExecutor: null,
-            NullLoggerFactory.Instance,
-            compaction);
+            loggerFactory: NullLoggerFactory.Instance,
+            compaction: compaction);
     }
 }
 

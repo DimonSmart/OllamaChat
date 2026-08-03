@@ -1,0 +1,66 @@
+@page "/rag-provider-profiles"
+@using ChatClient.Application.Services
+@using ChatClient.Domain.Models
+@inject IRagProviderProfileService RagProviderProfileService
+@inject ISnackbar Snackbar
+
+<PageTitle>RAG Provider Profiles</PageTitle>
+
+<MudContainer MaxWidth="MaxWidth.ExtraLarge" Class="mt-3">
+    <MudText Class="page-header">RAG Provider Profiles</MudText>
+    <MudPaper Elevation="3" Class="pa-3 rounded-lg">
+        <MudToolBar Dense="true">
+            <MudButton Color="Color.Primary" Variant="Variant.Filled" StartIcon="@Icons.Material.Filled.Add" OnClick="Create">Add RAG Profile</MudButton>
+            <MudSpacer />
+            <MudTextField @bind-Value="search" Immediate="true" Placeholder="Search profiles..." Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Search" Margin="Margin.Dense" />
+        </MudToolBar>
+        @if (loading) { <MudProgressCircular Indeterminate="true" Class="ma-4" /> }
+        else if (!Filtered.Any()) { <MudText Class="ma-4">No RAG Provider Profiles yet.</MudText> }
+        else { <MudDataGrid T="RagProviderProfile" Items="Filtered" Dense="true" Hover="true" Bordered="true" Class="mt-2">
+            <Columns>
+                <PropertyColumn Property="x => x.Name" Title="Name" />
+                <PropertyColumn Property="x => x.SearchMode" Title="Search mode" />
+                <PropertyColumn Property="x => x.MaxResults" Title="Max results" />
+                <TemplateColumn Title="Min relevance"><CellTemplate>@(context.Item.MinRelevanceScore?.ToString("0.##") ?? "None")</CellTemplate></TemplateColumn>
+                <PropertyColumn Property="x => x.RecentMessageMemoryLimit" Title="Recent messages" />
+                <TemplateColumn Title="Assistant messages"><CellTemplate>@(context.Item.IncludeAssistantMessages ? "Included" : "User only")</CellTemplate></TemplateColumn>
+                <TemplateColumn Title="Citations"><CellTemplate>@(context.Item.RequestCitations ? "Requested" : "Off")</CellTemplate></TemplateColumn>
+                <TemplateColumn Title="Updated"><CellTemplate>@context.Item.UpdatedAt.ToLocalTime().ToString("g")</CellTemplate></TemplateColumn>
+                <TemplateColumn Title="Actions"><CellTemplate><MudIconButton Icon="@Icons.Material.Filled.Edit" Size="Size.Small" OnClick="@(() => Edit(context.Item))" /><MudIconButton Icon="@Icons.Material.Filled.Delete" Color="Color.Error" Size="Size.Small" OnClick="@(() => ConfirmDelete(context.Item))" /></CellTemplate></TemplateColumn>
+            </Columns><PagerContent><MudDataGridPager T="RagProviderProfile" PageSizeOptions="new[] { 10, 25, 50, 100 }" /></PagerContent>
+        </MudDataGrid> }
+    </MudPaper>
+</MudContainer>
+
+<MudDialog @bind-Visible="editing" Options="dialogOptions">
+    <TitleContent><MudText Typo="Typo.h6">@(isNew ? "Create RAG Provider Profile" : "Edit RAG Provider Profile")</MudText></TitleContent>
+    <DialogContent><MudGrid Spacing="2">
+        <MudItem xs="12"><MudTextField @bind-Value="model.Name" Label="Name" Required="true" Margin="Margin.Dense" /></MudItem>
+        <MudItem xs="12" sm="6"><MudSelect T="RagSearchMode" @bind-Value="model.SearchMode" Label="Search mode" Margin="Margin.Dense" HelperText="Auto uses tool search when function calling is available."><MudSelectItem Value="RagSearchMode.Auto">Auto</MudSelectItem><MudSelectItem Value="RagSearchMode.OnDemand">On demand</MudSelectItem><MudSelectItem Value="RagSearchMode.BeforeInvoke">Before invoke</MudSelectItem></MudSelect></MudItem>
+        <MudItem xs="12" sm="6"><MudNumericField T="int" @bind-Value="model.MaxResults" Label="Max results" Min="1" Max="50" Margin="Margin.Dense" /></MudItem>
+        <MudItem xs="12" sm="6"><MudNumericField T="double?" @bind-Value="model.MinRelevanceScore" Label="Minimum relevance" Min="-1" Max="1" Step="0.01" Margin="Margin.Dense" HelperText="Clear this value to disable threshold filtering." /></MudItem>
+        <MudItem xs="12" sm="6"><MudNumericField T="int" @bind-Value="model.RecentMessageMemoryLimit" Label="Recent messages" Min="0" Max="50" Margin="Margin.Dense" Disabled="@(model.SearchMode == RagSearchMode.OnDemand)" HelperText="On-demand search lets the model form the focused query through a tool call." /></MudItem>
+        <MudItem xs="12"><MudCheckBox @bind-Value="model.IncludeAssistantMessages" Disabled="@(model.SearchMode == RagSearchMode.OnDemand)" Label="Include assistant messages in retrieval context" /></MudItem>
+        <MudItem xs="12"><MudCheckBox @bind-Value="model.RequestCitations" Label="Request citations" /></MudItem>
+        <MudItem xs="12"><MudTextField @bind-Value="model.FunctionToolDescription" Label="Function tool description" Lines="3" Margin="Margin.Dense" /></MudItem>
+        <MudItem xs="12"><MudTextField @bind-Value="model.AdditionalContextInstructions" Label="Additional context instructions" Lines="4" Margin="Margin.Dense" HelperText="These supplement the built-in untrusted-data protection." /></MudItem>
+        <MudItem xs="12"><MudTextField @bind-Value="model.CitationsPrompt" Label="Citations prompt" Lines="3" Margin="Margin.Dense" Disabled="@(!model.RequestCitations)" /></MudItem>
+    </MudGrid></DialogContent>
+    <DialogActions><MudButton OnClick="Close">Cancel</MudButton><MudButton Color="Color.Primary" OnClick="Save">Save</MudButton></DialogActions>
+</MudDialog>
+<MudDialog @bind-Visible="deleting" Options="dialogOptions"><TitleContent><MudText Typo="Typo.h6">Delete RAG Provider Profile</MudText></TitleContent><DialogContent><MudText>Delete "@profileToDelete?.Name"?</MudText></DialogContent><DialogActions><MudButton OnClick="CloseDelete">Cancel</MudButton><MudButton Color="Color.Error" OnClick="Delete">Delete</MudButton></DialogActions></MudDialog>
+
+@code {
+    private List<RagProviderProfile> profiles = []; private RagProviderProfile model = new(); private RagProviderProfile? profileToDelete;
+    private bool loading = true, editing, deleting, isNew; private string search = string.Empty;
+    private readonly DialogOptions dialogOptions = new() { CloseButton = true, MaxWidth = MaxWidth.Medium, FullWidth = true };
+    private IEnumerable<RagProviderProfile> Filtered => profiles.Where(x => string.IsNullOrWhiteSpace(search) || x.Name.Contains(search, StringComparison.OrdinalIgnoreCase));
+    protected override async Task OnInitializedAsync() => await Load();
+    private async Task Load() { loading = true; try { profiles = (await RagProviderProfileService.GetAllAsync()).OrderBy(x => x.Name, StringComparer.OrdinalIgnoreCase).ToList(); } catch (Exception ex) { Snackbar.Add(ex.Message, Severity.Error); } finally { loading = false; } }
+    private void Create() { model = new(); isNew = true; editing = true; }
+    private void Edit(RagProviderProfile value) { model = new() { Id = value.Id, Name = value.Name, SearchMode = value.SearchMode, MaxResults = value.MaxResults, MinRelevanceScore = value.MinRelevanceScore, RecentMessageMemoryLimit = value.RecentMessageMemoryLimit, IncludeAssistantMessages = value.IncludeAssistantMessages, FunctionToolDescription = value.FunctionToolDescription, AdditionalContextInstructions = value.AdditionalContextInstructions, RequestCitations = value.RequestCitations, CitationsPrompt = value.CitationsPrompt, CreatedAt = value.CreatedAt, UpdatedAt = value.UpdatedAt }; isNew = false; editing = true; }
+    private async Task Save() { try { if (isNew) await RagProviderProfileService.CreateAsync(model); else await RagProviderProfileService.UpdateAsync(model); editing = false; await Load(); } catch (Exception ex) { Snackbar.Add(ex.Message, Severity.Error); } }
+    private void ConfirmDelete(RagProviderProfile value) { profileToDelete = value; deleting = true; }
+    private async Task Delete() { if (profileToDelete is null) return; try { await RagProviderProfileService.DeleteAsync(profileToDelete.Id); deleting = false; await Load(); } catch (Exception ex) { Snackbar.Add(ex.Message, Severity.Error); } }
+    private void Close() => editing = false; private void CloseDelete() => deleting = false;
+}

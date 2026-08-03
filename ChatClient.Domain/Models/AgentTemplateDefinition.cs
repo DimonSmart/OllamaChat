@@ -20,6 +20,7 @@ public sealed class AgentTemplateDefinition : AgentModelBase
             AgentModeProviderProfileId = AgentModeProviderProfileId,
             FileAccessProviderProfileId = FileAccessProviderProfileId,
             CompactionProfileId = CompactionProfileId,
+            RagProviderProfileId = RagProviderProfileId,
             EnableShell = EnableShell,
             ContinueUntilTodosComplete = ContinueUntilTodosComplete,
             MaxTodoCompletionIterations = MaxTodoCompletionIterations,

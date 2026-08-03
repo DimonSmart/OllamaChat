@@ -20,6 +20,7 @@ public sealed class AgentExecutionSpec : AgentModelBase
             AgentModeProviderProfileId = AgentModeProviderProfileId,
             FileAccessProviderProfileId = FileAccessProviderProfileId,
             CompactionProfileId = CompactionProfileId,
+            RagProviderProfileId = RagProviderProfileId,
             EnableShell = EnableShell,
             ContinueUntilTodosComplete = ContinueUntilTodosComplete,
             MaxTodoCompletionIterations = MaxTodoCompletionIterations,

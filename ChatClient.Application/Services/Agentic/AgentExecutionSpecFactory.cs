@@ -49,6 +49,7 @@ public static class AgentExecutionSpecFactory
         target.AgentModeProviderProfileId = source.AgentModeProviderProfileId;
         target.FileAccessProviderProfileId = source.FileAccessProviderProfileId;
         target.CompactionProfileId = source.CompactionProfileId;
+        target.RagProviderProfileId = source.RagProviderProfileId;
         target.EnableShell = source.EnableShell;
         target.ContinueUntilTodosComplete = source.ContinueUntilTodosComplete;
         target.MaxTodoCompletionIterations = source.MaxTodoCompletionIterations;

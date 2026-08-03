@@ -178,7 +178,7 @@
                             <MudGrid Spacing="2">
                                 <MudItem xs="12" sm="6" md="4"><MudNumericField T="int" @bind-Value="_settings.Embedding.RagMaxTokensPerChunk" Label="Maximum tokens per chunk" Min="1" Variant="Variant.Outlined" Margin="Margin.Dense" /></MudItem>
                                 <MudItem xs="12" sm="6" md="4"><MudNumericField T="int" @bind-Value="_settings.Embedding.RagOverlapTokens" Label="Overlap tokens" Min="0" Variant="Variant.Outlined" Margin="Margin.Dense" /></MudItem>
-                                <MudItem xs="12" sm="6" md="4"><MudNumericField T="double" @bind-Value="_settings.Embedding.RagMinRelevanceScore" Label="Minimum relevance score" Min="-1" Max="1" Step="0.01" Variant="Variant.Outlined" Margin="Margin.Dense" /></MudItem>
+                                <MudItem xs="12" sm="6" md="4"><MudNumericField T="double" @bind-Value="_settings.Embedding.RagMinRelevanceScore" Label="Default RAG minimum relevance score" HelperText="Used by agents that do not select a RAG Provider profile." Min="-1" Max="1" Step="0.01" Variant="Variant.Outlined" Margin="Margin.Dense" /></MudItem>
                                 <MudItem xs="12"><MudText Typo="Typo.caption">Text chunking parameters for building RAG indexes.</MudText></MudItem>
                                 <MudItem xs="12"><MudButton Variant="Variant.Outlined" Color="Color.Primary" OnClick="RestartEmbeddings" Size="Size.Small">
                                     Rebuild Knowledge Store Indexes

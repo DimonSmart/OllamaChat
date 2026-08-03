@@ -285,13 +285,14 @@ public sealed class CompactionStrategyResolverTests
             null!,
             hasConfiguredKnowledge: false,
             supportsFunctions: false,
+            ragConfiguration: AgenticRuntimeAgentFactory.ResolveRagConfiguration(null, false),
             todoProfile: null,
             agentModeProfile: null,
             fileAccessProfile: null,
             workspaceStore: null,
             shellExecutor: null,
-            NullLoggerFactory.Instance,
-            resolved);
+            loggerFactory: NullLoggerFactory.Instance,
+            compaction: resolved);
 
         Assert.False(options.DisableCompaction);
         Assert.Same(resolved!.Strategy, options.CompactionStrategy);
