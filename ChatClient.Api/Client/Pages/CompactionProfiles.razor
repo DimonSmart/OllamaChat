@@ -32,28 +32,38 @@
     <TitleContent><MudText Typo="Typo.h6">@(isNew ? "Create Compaction Profile" : "Edit Compaction Profile")</MudText></TitleContent>
     <DialogContent>
         <MudForm @ref="form" Model="model">
-            <MudTextField @bind-Value="model.Name" Label="Name" Required="true" Immediate="true" Margin="Margin.Dense" Validation="@(new Func<string, string>(ValidateName))" />
-            <MudSelect T="string" Value="model.Kind" ValueChanged="ChangeProfileKind" Label="Policy" Margin="Margin.Dense" Dense="true">
-                <MudSelectItem Value="@CompactionProfileKinds.ContextWindow">Recommended context window</MudSelectItem>
-                <MudSelectItem Value="@CompactionProfileKinds.CustomPipeline">Custom pipeline</MudSelectItem>
-            </MudSelect>
-            <MudSelect T="string" @bind-Value="model.BudgetSource" Label="Budget source" Margin="Margin.Dense" Dense="true">
-                <MudSelectItem Value="@CompactionBudgetSources.SelectedModel">Use selected model limits</MudSelectItem>
-                <MudSelectItem Value="@CompactionBudgetSources.Fixed">Fixed limits</MudSelectItem>
-            </MudSelect>
+            <MudGrid Spacing="2">
+                <MudItem xs="12">
+                    <MudTextField @bind-Value="model.Name" Label="Name" Required="true" Immediate="true" Margin="Margin.Dense" Validation="@(new Func<string, string>(ValidateName))" />
+                </MudItem>
+                <MudItem xs="12" sm="6" md="4">
+                    <MudSelect T="string" Value="model.Kind" ValueChanged="ChangeProfileKind" Label="Policy" Margin="Margin.Dense" Dense="true">
+                        <MudSelectItem Value="@CompactionProfileKinds.ContextWindow">Recommended context window</MudSelectItem>
+                        <MudSelectItem Value="@CompactionProfileKinds.CustomPipeline">Custom pipeline</MudSelectItem>
+                    </MudSelect>
+                </MudItem>
+                <MudItem xs="12" sm="6" md="4">
+                    <MudSelect T="string" @bind-Value="model.BudgetSource" Label="Budget source" Margin="Margin.Dense" Dense="true">
+                        <MudSelectItem Value="@CompactionBudgetSources.SelectedModel">Use selected model limits</MudSelectItem>
+                        <MudSelectItem Value="@CompactionBudgetSources.Fixed">Fixed limits</MudSelectItem>
+                    </MudSelect>
+                </MudItem>
             @if (model.BudgetSource == CompactionBudgetSources.Fixed)
             {
-                <MudStack Row="true" Spacing="2"><MudNumericField T="int?" @bind-Value="model.ContextWindowTokens" Label="Context window tokens" Required="true" Margin="Margin.Dense" /><MudNumericField T="int?" @bind-Value="model.MaxOutputTokens" Label="Maximum output tokens" Required="true" Margin="Margin.Dense" /></MudStack>
-                @if (!HasValidFixedBudget()) { <MudText Color="Color.Error" Typo="Typo.caption">Context window must be greater than maximum output.</MudText> }
+                <MudItem xs="12" sm="6" md="3"><MudNumericField T="int?" @bind-Value="model.ContextWindowTokens" Label="Context window tokens" Required="true" Margin="Margin.Dense" /></MudItem>
+                <MudItem xs="12" sm="6" md="3"><MudNumericField T="int?" @bind-Value="model.MaxOutputTokens" Label="Maximum output tokens" Required="true" Margin="Margin.Dense" /></MudItem>
+                @if (!HasValidFixedBudget()) { <MudItem xs="12"><MudText Color="Color.Error" Typo="Typo.caption">Context window must be greater than maximum output.</MudText></MudItem> }
             }
             @if (model.Kind == CompactionProfileKinds.ContextWindow)
             {
-                <MudStack Row="true" Spacing="2"><MudNumericField T="double" Value="@(model.ToolResultThreshold * 100)" ValueChanged="@(value => model.ToolResultThreshold = value / 100)" Label="Tool-result threshold (%)" Min="0.01" Max="100" Margin="Margin.Dense" /><MudNumericField T="double" Value="@(model.TruncationThreshold * 100)" ValueChanged="@(value => model.TruncationThreshold = value / 100)" Label="History truncation threshold (%)" Min="0.01" Max="100" Margin="Margin.Dense" /></MudStack>
-                @if (!HasValidContextWindowThresholds()) { <MudText Color="Color.Error" Typo="Typo.caption">Thresholds must be above 0% and at most 100%; history truncation cannot occur before tool-result compaction.</MudText> }
+                <MudItem xs="12" sm="6" md="3"><MudNumericField T="double" Value="@(model.ToolResultThreshold * 100)" ValueChanged="@(value => model.ToolResultThreshold = value / 100)" Label="Tool-result threshold (%)" Min="0.01" Max="100" Margin="Margin.Dense" /></MudItem>
+                <MudItem xs="12" sm="6" md="3"><MudNumericField T="double" Value="@(model.TruncationThreshold * 100)" ValueChanged="@(value => model.TruncationThreshold = value / 100)" Label="History truncation threshold (%)" Min="0.01" Max="100" Margin="Margin.Dense" /></MudItem>
+                @if (!HasValidContextWindowThresholds()) { <MudItem xs="12"><MudText Color="Color.Error" Typo="Typo.caption">Thresholds must be above 0% and at most 100%; history truncation cannot occur before tool-result compaction.</MudText></MudItem> }
             }
             @if (model.Kind == CompactionProfileKinds.CustomPipeline)
             {
-                <MudText Typo="Typo.h6" Class="mt-3 mb-1">Pipeline stages</MudText>
+                <MudItem xs="12"><MudText Typo="Typo.h6" Class="mt-3 mb-1">Pipeline stages</MudText></MudItem>
+                <MudItem xs="12">
                 <MudExpansionPanels MultiExpansion="true" Outlined="true">
                 @for (var index = 0; index < model.Stages.Count; index++)
                 {
@@ -65,54 +75,56 @@
                             <MudIconButton Icon="@Icons.Material.Filled.KeyboardArrowDown" Size="Size.Small" Disabled="@(index == model.Stages.Count - 1)" AriaLabel="Move stage down" OnClick="@(() => MoveStage(index, 1))" />
                             <MudIconButton Icon="@Icons.Material.Filled.Delete" Color="Color.Error" Size="Size.Small" AriaLabel="Delete stage" OnClick="@(() => RemoveStage(stage))" />
                         </MudStack>
-                        <MudSelect T="string" Value="stage.Kind" ValueChanged="@(kind => ChangeStageKind(stage, kind))" Label="Stage type" Dense="true" Margin="Margin.Dense">
-                            <MudSelectItem Value="@CompactionStageKinds.ToolResult">Compact tool results</MudSelectItem>
-                            <MudSelectItem Value="@CompactionStageKinds.Truncation">Truncate history</MudSelectItem>
-                            <MudSelectItem Value="@CompactionStageKinds.Summarization">Summarize history</MudSelectItem>
-                            <MudSelectItem Value="@CompactionStageKinds.SlidingWindow">Keep sliding window</MudSelectItem>
-                        </MudSelect>
-                        <MudSelect T="string" Value="stage.Trigger.Kind" ValueChanged="@(kind => ChangeLimitKind(stage, kind))" Label="Limit kind" Dense="true" Margin="Margin.Dense">
-                            @foreach (var limitKind in SupportedLimitKinds(stage.Kind)) { <MudSelectItem Value="@limitKind">@LimitKindLabel(limitKind)</MudSelectItem> }
-                        </MudSelect>
-                        <MudStack Row="true" Spacing="2">
+                        <MudGrid Spacing="2">
+                            <MudItem xs="12" sm="6" md="4"><MudSelect T="string" Value="stage.Kind" ValueChanged="@(kind => ChangeStageKind(stage, kind))" Label="Stage type" Dense="true" Margin="Margin.Dense">
+                                <MudSelectItem Value="@CompactionStageKinds.ToolResult">Compact tool results</MudSelectItem>
+                                <MudSelectItem Value="@CompactionStageKinds.Truncation">Truncate history</MudSelectItem>
+                                <MudSelectItem Value="@CompactionStageKinds.Summarization">Summarize history</MudSelectItem>
+                                <MudSelectItem Value="@CompactionStageKinds.SlidingWindow">Keep sliding window</MudSelectItem>
+                            </MudSelect></MudItem>
+                            <MudItem xs="12" sm="6" md="4"><MudSelect T="string" Value="stage.Trigger.Kind" ValueChanged="@(kind => ChangeLimitKind(stage, kind))" Label="Limit kind" Dense="true" Margin="Margin.Dense">
+                                @foreach (var limitKind in SupportedLimitKinds(stage.Kind)) { <MudSelectItem Value="@limitKind">@LimitKindLabel(limitKind)</MudSelectItem> }
+                            </MudSelect></MudItem>
                             @if (stage.Trigger.Kind == CompactionLimitKinds.InputBudgetPercent)
                             {
-                                <MudNumericField T="double" Value="@(stage.Trigger.Value * 100)" ValueChanged="@(value => stage.Trigger.Value = value / 100)" Label="Trigger (%)" Min="0.01" Max="100" Margin="Margin.Dense" />
-                                <MudNumericField T="double" Value="@(stage.Target.Value * 100)" ValueChanged="@(value => stage.Target.Value = value / 100)" Label="Target (%)" Min="0.01" Max="100" Margin="Margin.Dense" />
+                                <MudItem xs="12" sm="6" md="4"><MudNumericField T="double" Value="@(stage.Trigger.Value * 100)" ValueChanged="@(value => stage.Trigger.Value = value / 100)" Label="Trigger (%)" Min="0.01" Max="100" Margin="Margin.Dense" /></MudItem>
+                                <MudItem xs="12" sm="6" md="4"><MudNumericField T="double" Value="@(stage.Target.Value * 100)" ValueChanged="@(value => stage.Target.Value = value / 100)" Label="Target (%)" Min="0.01" Max="100" Margin="Margin.Dense" /></MudItem>
                             }
                             else
                             {
-                                <MudNumericField T="double" @bind-Value="stage.Trigger.Value" Label="Trigger" Min="@(stage.Trigger.Kind == CompactionLimitKinds.Tokens ? 1 : 0)" Margin="Margin.Dense" />
-                                <MudNumericField T="double" @bind-Value="stage.Target.Value" Label="Target" Min="@(stage.Target.Kind == CompactionLimitKinds.Tokens ? 1 : 0)" Margin="Margin.Dense" />
+                                <MudItem xs="12" sm="6" md="4"><MudNumericField T="double" @bind-Value="stage.Trigger.Value" Label="Trigger" Min="@(stage.Trigger.Kind == CompactionLimitKinds.Tokens ? 1 : 0)" Margin="Margin.Dense" /></MudItem>
+                                <MudItem xs="12" sm="6" md="4"><MudNumericField T="double" @bind-Value="stage.Target.Value" Label="Target" Min="@(stage.Target.Kind == CompactionLimitKinds.Tokens ? 1 : 0)" Margin="Margin.Dense" /></MudItem>
                             }
                             @if (stage.Kind == CompactionStageKinds.SlidingWindow)
                             {
-                                <MudNumericField T="int" @bind-Value="stage.MinimumPreservedTurns" Label="Retain recent turns" Min="0" Margin="Margin.Dense" />
+                                <MudItem xs="12" sm="6" md="4"><MudNumericField T="int" @bind-Value="stage.MinimumPreservedTurns" Label="Retain recent turns" Min="0" Margin="Margin.Dense" /></MudItem>
                             }
                             else
                             {
-                                <MudNumericField T="int" @bind-Value="stage.MinimumPreservedGroups" Label="Retain recent groups" Min="0" Margin="Margin.Dense" />
+                                <MudItem xs="12" sm="6" md="4"><MudNumericField T="int" @bind-Value="stage.MinimumPreservedGroups" Label="Retain recent groups" Min="0" Margin="Margin.Dense" /></MudItem>
                             }
-                        </MudStack>
-                        @if (!HasValidStageLimits(stage)) { <MudText Color="Color.Error" Typo="Typo.caption">Use supported ordered limits; token limits must be positive.</MudText> }
-                        @if (!HasValidResolvedFixedStageLimits(stage)) { <MudText Color="Color.Error" Typo="Typo.caption">These percentages resolve to invalid token thresholds for the fixed input budget.</MudText> }
+                            @if (!HasValidStageLimits(stage)) { <MudItem xs="12"><MudText Color="Color.Error" Typo="Typo.caption">Use supported ordered limits; token limits must be positive.</MudText></MudItem> }
+                            @if (!HasValidResolvedFixedStageLimits(stage)) { <MudItem xs="12"><MudText Color="Color.Error" Typo="Typo.caption">These percentages resolve to invalid token thresholds for the fixed input budget.</MudText></MudItem> }
                         @if (stage.Kind == CompactionStageKinds.Summarization)
                         {
-                            <MudAlert Severity="Severity.Warning" Dense="true" Class="mt-2">Generated summaries become trusted runtime context. Use only a trusted model and endpoint.</MudAlert>
-                            <MudTextField @bind-Value="stage.SummaryInstructions" Label="Summary instructions" Lines="3" Margin="Margin.Dense" />
-                            <MudCheckBox T="bool" Value="@UsesSeparateSummarizer(stage)" ValueChanged="@(useSeparate => ToggleSeparateSummarizer(stage, useSeparate))" Label="Use a separate trusted summarizer" Dense="true" />
+                            <MudItem xs="12"><MudAlert Severity="Severity.Warning" Dense="true" Class="mt-2">Generated summaries become trusted runtime context. Use only a trusted model and endpoint.</MudAlert></MudItem>
+                            <MudItem xs="12"><MudTextField @bind-Value="stage.SummaryInstructions" Label="Summary instructions" Lines="3" Margin="Margin.Dense" /></MudItem>
+                            <MudItem xs="12"><MudCheckBox T="bool" Value="@UsesSeparateSummarizer(stage)" ValueChanged="@(useSeparate => ToggleSeparateSummarizer(stage, useSeparate))" Label="Use a separate trusted summarizer" Dense="true" /></MudItem>
                             @if (UsesSeparateSummarizer(stage))
                             {
-                                <ServerModelPicker Value="@GetSummarizerSelection(stage)" ValueChanged="@(selection => SetSummarizerSelection(stage, selection))" ShowClearButton="true" UseDefaultsWhenUnset="false" Presentation="ServerModelPickerPresentation.Form" SelectMargin="Margin.Dense" FillAvailableWidth="false" />
-                                @if (!editorState.HasValidSummarizerConfiguration(stage)) { <MudText Color="Color.Error" Typo="Typo.caption">Select both a server and model, or disable the separate summarizer.</MudText> }
+                                <MudItem xs="12"><ServerModelPicker Value="@GetSummarizerSelection(stage)" ValueChanged="@(selection => SetSummarizerSelection(stage, selection))" ShowClearButton="true" UseDefaultsWhenUnset="false" Presentation="ServerModelPickerPresentation.Form" SelectMargin="Margin.Dense" FillAvailableWidth="false" /></MudItem>
+                                @if (!editorState.HasValidSummarizerConfiguration(stage)) { <MudItem xs="12"><MudText Color="Color.Error" Typo="Typo.caption">Select both a server and model, or disable the separate summarizer.</MudText></MudItem> }
                             }
                         }
+                        </MudGrid>
                     </MudExpansionPanel>
                 }
                 </MudExpansionPanels>
-                @if (model.Stages.Count == 0) { <MudText Color="Color.Error" Typo="Typo.caption">A custom pipeline requires at least one stage.</MudText> }
-                <MudButton Variant="Variant.Outlined" StartIcon="@Icons.Material.Filled.Add" Size="Size.Small" OnClick="AddStage">Add stage</MudButton>
+                </MudItem>
+                @if (model.Stages.Count == 0) { <MudItem xs="12"><MudText Color="Color.Error" Typo="Typo.caption">A custom pipeline requires at least one stage.</MudText></MudItem> }
+                <MudItem xs="12"><MudButton Variant="Variant.Outlined" StartIcon="@Icons.Material.Filled.Add" Size="Size.Small" OnClick="AddStage">Add stage</MudButton></MudItem>
             }
+            </MudGrid>
         </MudForm>
     </DialogContent>
     <DialogActions><MudButton Size="Size.Small" OnClick="Close">Cancel</MudButton><MudButton Color="Color.Primary" Size="Size.Small" Disabled="saving" OnClick="Save">Save</MudButton></DialogActions>
