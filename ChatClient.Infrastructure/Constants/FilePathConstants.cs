@@ -9,6 +9,7 @@ public static class FilePathConstants
     public const string DefaultTodoProviderProfilesFile = "UserData/todo_provider_profiles.json";
     public const string DefaultAgentModeProviderProfilesFile = "UserData/agent_mode_provider_profiles.json";
     public const string DefaultFileAccessProviderProfilesFile = "UserData/file_access_provider_profiles.json";
+    public const string DefaultAgentSkillsProfilesFile = "UserData/agent_skills_profiles.json";
     public const string DefaultSandboxProfilesFile = "UserData/sandbox_profiles.json";
     public const string DefaultCompactionProfilesFile = "UserData/compaction_profiles.json";
     public const string DefaultRagProviderProfilesFile = "UserData/rag_provider_profiles.json";

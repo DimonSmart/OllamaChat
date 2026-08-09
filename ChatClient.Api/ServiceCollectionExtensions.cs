@@ -86,6 +86,7 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<ITodoProviderProfileRepository, TodoProviderProfileRepository>();
         services.AddSingleton<IAgentModeProviderProfileRepository, AgentModeProviderProfileRepository>();
         services.AddSingleton<IFileAccessProviderProfileRepository, FileAccessProviderProfileRepository>();
+        services.AddSingleton<IAgentSkillsProfileRepository, AgentSkillsProfileRepository>();
         services.AddSingleton<ISandboxProfileRepository, SandboxProfileRepository>();
         services.AddSingleton<ICompactionProfileRepository, CompactionProfileRepository>();
         services.AddSingleton<IRagProviderProfileRepository, RagProviderProfileRepository>();
@@ -100,6 +101,7 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<ITodoProviderProfileService, TodoProviderProfileService>();
         services.AddSingleton<IAgentModeProviderProfileService, AgentModeProviderProfileService>();
         services.AddSingleton<IFileAccessProviderProfileService, FileAccessProviderProfileService>();
+        services.AddSingleton<IAgentSkillsProfileService, AgentSkillsProfileService>();
         services.AddSingleton<ISandboxProfileService, SandboxProfileService>();
         services.AddSingleton<ICompactionProfileService, CompactionProfileService>();
         services.AddSingleton<IRagProviderProfileService, RagProviderProfileService>();

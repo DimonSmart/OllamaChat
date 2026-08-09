@@ -71,6 +71,10 @@
                             <MudText Typo="Typo.body2">@compaction.InputBudgetTokens.ToString("N0") tokens</MudText>
                         </MudStack>
                     }
+                    @if (SessionState.Skills is { Count: > 0 } skills)
+                    {
+                        <MudStack Class="mt-2" Spacing="1"><MudText Typo="Typo.caption" Class="mud-text-secondary">Skills: @skills.Count</MudText>@foreach (var skill in skills) { <MudText Typo="Typo.caption" title="@skill.SourcePath">@skill.Name — @skill.Description</MudText> }</MudStack>
+                    }
                     @if (SessionState.HasTodoProvider)
                     {
                         var completed = SessionState.Todos.Count(todo => todo.IsComplete);
@@ -103,8 +107,7 @@
                             @if (fileAccess is not null)
                             {
                                 <MudStack Row="true" AlignItems="AlignItems.Center">
-                                    <MudTextField T="string" Value="workspaceInput" ValueChanged="value => workspaceInput = value" Dense="true" Margin="Margin.Dense" Disabled="@(IsLlmAnswering || PendingToolApproval is not null || isChangingWorkspace || sandbox is not null)" Style="flex: 1; min-width: 0" />
-                                    <MudButton Size="Size.Small" Class="ml-1" Disabled="@(IsLlmAnswering || PendingToolApproval is not null || isChangingWorkspace || sandbox is not null || string.Equals(workspaceInput, fileAccess.WorkspacePath, StringComparison.Ordinal))" OnClick="ChangeWorkspaceAsync">Change</MudButton>
+                                    <MudText Typo="Typo.body2" Class="session-state-value" title="@fileAccess.WorkspacePath">@fileAccess.WorkspacePath</MudText>
                                 </MudStack>
                             }
                             else

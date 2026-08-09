@@ -19,6 +19,7 @@ public sealed class AgentTemplateDefinition : AgentModelBase
             TodoProviderProfileId = TodoProviderProfileId,
             AgentModeProviderProfileId = AgentModeProviderProfileId,
             FileAccessProviderProfileId = FileAccessProviderProfileId,
+            SkillsProviderProfileId = SkillsProviderProfileId,
             CompactionProfileId = CompactionProfileId,
             RagProviderProfileId = RagProviderProfileId,
             EnableShell = EnableShell,

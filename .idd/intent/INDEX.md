@@ -38,3 +38,4 @@ Git history is the source for deleted or previous document versions.
 | IDD-0024 | Spec | File Access Provider profiles | Reusable direct-agent file-access policies | — |
 | IDD-0025 | Spec | Sandbox profiles | Reusable isolated shell-execution profiles | — |
 | IDD-0026 | Spec | Agent compaction profiles | Reusable Harness context-compaction policies | — |
+| IDD-0027 | Spec | Agent skills provider profiles | Reusable Harness file-based skills | — |

@@ -48,6 +48,7 @@ public static class AgentExecutionSpecFactory
         target.TodoProviderProfileId = source.TodoProviderProfileId;
         target.AgentModeProviderProfileId = source.AgentModeProviderProfileId;
         target.FileAccessProviderProfileId = source.FileAccessProviderProfileId;
+        target.SkillsProviderProfileId = source.SkillsProviderProfileId;
         target.CompactionProfileId = source.CompactionProfileId;
         target.RagProviderProfileId = source.RagProviderProfileId;
         target.EnableShell = source.EnableShell;

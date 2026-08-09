@@ -16,6 +16,7 @@
 @inject ITodoProviderProfileService TodoProviderProfileService
 @inject IAgentModeProviderProfileService AgentModeProviderProfileService
 @inject IFileAccessProviderProfileService FileAccessProviderProfileService
+@inject IAgentSkillsProfileService AgentSkillsProfileService
 @inject ICompactionProfileService CompactionProfileService
 @inject IRagProviderProfileService RagProviderProfileService
 
@@ -290,6 +291,7 @@
                     <MudSelectItem T="Guid?" Value="@((Guid?)profile.Id)">@profile.Name</MudSelectItem>
                 }
             </MudSelect></MudItem>
+            <MudItem xs="12" md="6"><MudSelect T="Guid?" @bind-Value="editingAgent.SkillsProviderProfileId" Label="Skills Provider" Dense="true" Margin="Margin.Dense"><MudSelectItem T="Guid?" Value="@((Guid?)null)">None</MudSelectItem>@foreach (var profile in skillsProfiles) { <MudSelectItem T="Guid?" Value="@((Guid?)profile.Id)">@profile.Name</MudSelectItem> }</MudSelect></MudItem>
             <MudItem xs="12" md="6"><MudSelect T="Guid?" @bind-Value="editingAgent.CompactionProfileId" Label="Compaction profile" Dense="true" Margin="Margin.Dense">
                 <MudSelectItem T="Guid?" Value="@((Guid?)null)">None</MudSelectItem>
                 @foreach (var profile in compactionProfiles)
@@ -380,6 +382,7 @@
     private List<TodoProviderProfile> todoProviderProfiles = new();
     private List<AgentModeProviderProfile> agentModeProviderProfiles = new();
     private List<FileAccessProviderProfile> fileAccessProviderProfiles = new();
+    private List<AgentSkillsProfile> skillsProfiles = new();
     private List<CompactionProfile> compactionProfiles = new();
     private List<RagProviderProfile> ragProviderProfiles = new();
     private DialogOptions dialogOptions = new()
@@ -411,6 +414,7 @@
         fileAccessProviderProfiles = (await FileAccessProviderProfileService.GetAllAsync())
             .OrderBy(profile => profile.Name, StringComparer.OrdinalIgnoreCase)
             .ToList();
+        skillsProfiles = (await AgentSkillsProfileService.GetAllAsync()).OrderBy(profile => profile.Name, StringComparer.OrdinalIgnoreCase).ToList();
         compactionProfiles = (await CompactionProfileService.GetAllAsync())
             .OrderBy(profile => profile.Name, StringComparer.OrdinalIgnoreCase)
             .ToList();
@@ -470,6 +474,7 @@
             TodoProviderProfileId = null,
             AgentModeProviderProfileId = null,
             FileAccessProviderProfileId = null,
+            SkillsProviderProfileId = null,
             CompactionProfileId = null,
             RagProviderProfileId = null,
             EnableShell = false,
@@ -528,6 +533,7 @@
             TodoProviderProfileId = agent.TodoProviderProfileId,
             AgentModeProviderProfileId = agent.AgentModeProviderProfileId,
             FileAccessProviderProfileId = agent.FileAccessProviderProfileId,
+            SkillsProviderProfileId = agent.SkillsProviderProfileId,
             CompactionProfileId = agent.CompactionProfileId,
             RagProviderProfileId = agent.RagProviderProfileId,
             EnableShell = agent.EnableShell,

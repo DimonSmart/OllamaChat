@@ -37,6 +37,7 @@ public sealed class UnifiedAgentRuntimeChatSessionService(
     private SessionWorkspaceAgentFileStore? _directFileAccessStore;
     private FileAccessProviderProfile? _directFileAccessProfile;
     private AgentSessionCompactionViewModel? _directCompaction;
+    private IReadOnlyList<AgentSessionSkillViewModel> _directSkills = [];
     private SandboxSessionHandle? _sandboxSession;
     private ISessionToolApprovalCoordinator? _toolApprovalCoordinator;
     private SessionToolApprovalPolicy? _toolApprovalPolicy;
@@ -188,7 +189,7 @@ public sealed class UnifiedAgentRuntimeChatSessionService(
 
         var todoProvider = agent.GetService<TodoProvider>();
         var modeProvider = agent.GetService<AgentModeProvider>();
-        if (todoProvider is null && modeProvider is null && _directFileAccessStore is null && sandboxSession is null && _directCompaction is null)
+        if (todoProvider is null && modeProvider is null && _directFileAccessStore is null && sandboxSession is null && _directCompaction is null && _directSkills.Count == 0)
         {
             return null;
         }
@@ -230,7 +231,8 @@ public sealed class UnifiedAgentRuntimeChatSessionService(
             todos,
             fileAccess,
             sandbox,
-            _directCompaction);
+            _directCompaction,
+            _directSkills);
     }
 
     public async Task SetFileAccessWorkspaceAsync(string workspace, CancellationToken cancellationToken = default)
@@ -238,17 +240,7 @@ public sealed class UnifiedAgentRuntimeChatSessionService(
         await _runSetupGate.WaitAsync(cancellationToken);
         try
         {
-            if (IsAnswering)
-                throw new InvalidOperationException("Workspace cannot be changed while the agent is running.");
-            if (PendingToolApproval is not null)
-                throw new InvalidOperationException("Workspace cannot be changed while tool approval is pending.");
-            if (_sandboxSession is not null)
-                throw new InvalidOperationException("Workspace cannot be changed while this conversation has an active sandbox.");
-            var store = _directFileAccessStore ?? throw new InvalidOperationException("This conversation does not use File Access.");
-            store.SetWorkspace(workspace);
-            _toolApprovalPolicy?.SetWorkspace(store.WorkspacePath);
-            logger.LogInformation("File Access workspace changed to {Workspace}", store.WorkspacePath);
-            SessionStateChanged?.Invoke();
+            throw new InvalidOperationException("Workspace cannot be changed after the conversation has started. Start a new conversation to use another workspace.");
         }
         finally { _runSetupGate.Release(); }
     }
@@ -340,6 +332,7 @@ public sealed class UnifiedAgentRuntimeChatSessionService(
             _directFileAccessStore = null;
             _directFileAccessProfile = null;
             _directCompaction = null;
+            _directSkills = [];
             sandboxSession = _sandboxSession;
             _sandboxSession = null;
             _directAvailableModes = [];
@@ -669,6 +662,7 @@ public sealed class UnifiedAgentRuntimeChatSessionService(
         _directFileAccessStore = build.FileAccessStore;
         _directFileAccessProfile = build.FileAccessProfile;
         _directCompaction = build.Compaction;
+        _directSkills = build.Skills;
         _directToolMetadata = build.ToolSet.MetadataByName;
         SessionStateChanged?.Invoke();
     }

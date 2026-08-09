@@ -41,6 +41,7 @@ internal sealed class HarnessAgentRuntimeDefinition(
     SessionWorkspaceAgentFileStore? fileAccessStore,
     FileAccessProviderProfile? fileAccessProfile,
     AgentSessionCompactionViewModel? compaction,
+    IReadOnlyList<AgentSessionSkillViewModel> skills,
     IRagRetrievalTraceSink? ragRetrievalTraceSink,
     AgentRuntimeResources ownedResources) : IDisposable
 {
@@ -52,6 +53,7 @@ internal sealed class HarnessAgentRuntimeDefinition(
     public SessionWorkspaceAgentFileStore? FileAccessStore { get; } = fileAccessStore;
     public FileAccessProviderProfile? FileAccessProfile { get; } = fileAccessProfile;
     public AgentSessionCompactionViewModel? Compaction { get; } = compaction;
+    public IReadOnlyList<AgentSessionSkillViewModel> Skills { get; } = skills;
     public IRagRetrievalTraceSink? RagRetrievalTraceSink { get; } = ragRetrievalTraceSink;
 
     public void Dispose() => ownedResources.Dispose();
@@ -70,6 +72,7 @@ public sealed class AgenticRuntimeAgentFactory(
     ILogger<AgenticRuntimeAgentFactory> logger,
     ILoggerFactory loggerFactory,
     IFileAccessProviderProfileService? fileAccessProviderProfileService = null,
+    IAgentSkillsProfileService? agentSkillsProfileService = null,
     ICompactionProfileService? compactionProfileService = null,
     ICompactionStrategyResolver? compactionStrategyResolver = null,
     IRagProviderProfileService? ragProviderProfileService = null)
@@ -95,6 +98,9 @@ public sealed class AgenticRuntimeAgentFactory(
             var todoProfile = await GetTodoProviderProfileAsync(request.Agent.TodoProviderProfileId);
             var agentModeProfile = await GetAgentModeProviderProfileAsync(request.Agent.AgentModeProviderProfileId);
             var fileAccessProfile = await GetFileAccessProviderProfileAsync(request.Agent.FileAccessProviderProfileId);
+            var skillsProfile = await GetAgentSkillsProfileAsync(request.Agent.SkillsProviderProfileId);
+            if (request.Agent.SkillsProviderProfileId is Guid skillsProfileId && skillsProfileId != Guid.Empty && skillsProfile is null)
+                throw new InvalidOperationException($"Selected Skills Provider profile '{skillsProfileId}' was not found.");
             var ragProfile = await GetRagProviderProfileAsync(request.Agent.RagProviderProfileId);
             if (request.Agent.RagProviderProfileId is Guid ragProfileId && ragProfileId != Guid.Empty && ragProfile is null)
                 throw new InvalidOperationException($"Selected RAG Provider profile '{ragProfileId}' was not found.");
@@ -232,6 +238,9 @@ public sealed class AgenticRuntimeAgentFactory(
             var workspacePath = request.RuntimeResources.WorkspacePath is null
                 ? null
                 : ValidateWorkspace(request.RuntimeResources.WorkspacePath);
+            var skills = skillsProfile is null ? new AgentSkillsDiscoveryResult([], []) : AgentSkillsDiscovery.Discover(skillsProfile, workspacePath, logger);
+            if (skillsProfile is not null)
+                logger.LogInformation("Agent {AgentName}: skills enabled, profile={ProfileName}, loaded={LoadedCount}, ignored={IgnoredCount}", request.Agent.AgentName, skillsProfile.Name, skills.Skills.Count, skills.Diagnostics.Count);
             var workspaceStore = fileAccessProfile is null
                 ? null
                 : new SessionWorkspaceAgentFileStore(workspacePath ?? throw new InvalidOperationException("A workspace directory is required for File Access."));
@@ -260,7 +269,7 @@ public sealed class AgenticRuntimeAgentFactory(
             var runtimeAgent = CreateRuntimeAgent(
                 chatClient, request, server, toolSet, knowledgeSearchService, hasConfiguredKnowledge,
                 supportsFunctions, ragConfiguration, todoProfile, agentModeProfile, fileAccessProfile,
-                workspaceStore, shellExecutor, loggerFactory, compaction, ragTraceSink);
+                workspaceStore, shellExecutor, loggerFactory, compaction, ragTraceSink, skills.Source);
             return new HarnessAgentRuntimeDefinition(
                 runtimeAgent,
                 server,
@@ -273,6 +282,7 @@ public sealed class AgenticRuntimeAgentFactory(
                     compactionProfile!.Name,
                     compaction.Budget.InputBudgetTokens,
                     CompactionPolicySummary.FormatPolicy(compactionProfile)),
+                skills.Skills.Select(x => new AgentSessionSkillViewModel(x.Name, x.Description, x.SourcePath, x.SourceKind)).ToList(),
                 ragTraceSink,
                 resources);
         }
@@ -299,7 +309,8 @@ public sealed class AgenticRuntimeAgentFactory(
         SessionSandboxShellExecutor? shellExecutor,
         ILoggerFactory loggerFactory,
         ResolvedCompactionStrategy? compaction,
-        IRagRetrievalTraceSink? ragTraceSink)
+        IRagRetrievalTraceSink? ragTraceSink,
+        AgentSkillsSource? skillsSource)
     {
         // Harness owns the function-invocation loop, session history and compaction.
         // The direct-chat service must not rebuild any of that state from its UI transcript.
@@ -317,7 +328,8 @@ public sealed class AgenticRuntimeAgentFactory(
             shellExecutor,
             loggerFactory,
             compaction,
-            ragTraceSink);
+            ragTraceSink,
+            skillsSource);
 
         if (fileAccessProfile is not null)
         {
@@ -388,7 +400,8 @@ public sealed class AgenticRuntimeAgentFactory(
         SessionSandboxShellExecutor? shellExecutor,
         ILoggerFactory loggerFactory,
         ResolvedCompactionStrategy? compaction,
-        IRagRetrievalTraceSink? ragTraceSink = null)
+        IRagRetrievalTraceSink? ragTraceSink = null,
+        AgentSkillsSource? skillsSource = null)
     {
         ArgumentNullException.ThrowIfNull(request);
         ArgumentNullException.ThrowIfNull(toolSet);
@@ -414,7 +427,8 @@ public sealed class AgenticRuntimeAgentFactory(
             DisableFileMemory = true,
             FileAccessStore = workspaceStore,
             FileAccessProviderOptions = fileAccessProfile is null ? null : BuildFileAccessProviderOptions(fileAccessProfile),
-            DisableAgentSkillsProvider = true,
+            DisableAgentSkillsProvider = skillsSource is null,
+            AgentSkillsSource = skillsSource,
             ChatHistoryProvider = BuildChatHistoryProvider(compaction),
             AIContextProviders = BuildContextProviders(
                 request,
@@ -534,6 +548,11 @@ public sealed class AgenticRuntimeAgentFactory(
     private async Task<FileAccessProviderProfile?> GetFileAccessProviderProfileAsync(Guid? profileId) =>
         profileId is Guid id && id != Guid.Empty && fileAccessProviderProfileService is not null
             ? await fileAccessProviderProfileService.GetByIdAsync(id)
+            : null;
+
+    private async Task<AgentSkillsProfile?> GetAgentSkillsProfileAsync(Guid? profileId) =>
+        profileId is Guid id && id != Guid.Empty && agentSkillsProfileService is not null
+            ? await agentSkillsProfileService.GetByIdAsync(id)
             : null;
 
 #pragma warning disable MAAI001
