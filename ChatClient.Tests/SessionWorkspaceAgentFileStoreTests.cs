@@ -14,15 +14,15 @@ public sealed class SessionWorkspaceAgentFileStoreTests
         Directory.CreateDirectory(second);
         try
         {
-            await File.WriteAllTextAsync(Path.Combine(first, "first.txt"), "first");
-            await File.WriteAllTextAsync(Path.Combine(second, "second.txt"), "second");
+            await File.WriteAllTextAsync(Path.Combine(first, "first.txt"), "first", cancellationToken: TestContext.Current.CancellationToken);
+            await File.WriteAllTextAsync(Path.Combine(second, "second.txt"), "second", cancellationToken: TestContext.Current.CancellationToken);
             var store = new SessionWorkspaceAgentFileStore(first);
 
-            Assert.Equal("first", await store.ReadAsync("first.txt"));
+            Assert.Equal("first", await store.ReadAsync("first.txt", cancellationToken: TestContext.Current.CancellationToken));
             store.SetWorkspace(second);
 
-            Assert.Null(await store.ReadAsync("first.txt"));
-            Assert.Equal("second", await store.ReadAsync("second.txt"));
+            Assert.Null(await store.ReadAsync("first.txt", cancellationToken: TestContext.Current.CancellationToken));
+            Assert.Equal("second", await store.ReadAsync("second.txt", cancellationToken: TestContext.Current.CancellationToken));
             Assert.Equal(Path.GetFullPath(second), store.WorkspacePath);
         }
         finally

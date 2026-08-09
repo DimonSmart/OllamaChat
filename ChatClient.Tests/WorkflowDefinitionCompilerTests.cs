@@ -13,7 +13,7 @@ public sealed class WorkflowDefinitionCompilerTests
         var compiler = new WorkflowDefinitionCompiler();
         var sourceCode = await ReadSeedWorkflowSourceAsync("interview-coach-fixed-handoff.workflow.csx");
 
-        var result = await compiler.CompileAsync(sourceCode);
+        var result = await compiler.CompileAsync(sourceCode, cancellationToken: TestContext.Current.CancellationToken);
         var workflow = Assert.IsType<AgentWorkflowDefinition>(result.Workflow);
 
         Assert.Equal("handoff", result.Kind);
@@ -72,7 +72,7 @@ public sealed class WorkflowDefinitionCompilerTests
             workflow
             """";
 
-        var result = await compiler.CompileAsync(sourceCode);
+        var result = await compiler.CompileAsync(sourceCode, cancellationToken: TestContext.Current.CancellationToken);
         var workflow = Assert.IsType<AgentWorkflowDefinition>(result.Workflow);
 
         Assert.Equal("handoff", result.Kind);
@@ -107,7 +107,7 @@ public sealed class WorkflowDefinitionCompilerTests
 
         foreach (var template in await LoadSeedWorkflowSourcesAsync())
         {
-            var result = await compiler.CompileAsync(template.SourceCode);
+            var result = await compiler.CompileAsync(template.SourceCode, cancellationToken: TestContext.Current.CancellationToken);
 
             Assert.NotNull(result.Workflow);
             kinds.Add(result.Kind);
@@ -125,7 +125,7 @@ public sealed class WorkflowDefinitionCompilerTests
         var compiler = new WorkflowDefinitionCompiler();
         var sourceCode = await ReadFirstSeedWorkflowSourceByKindAsync(compiler, WorkflowDefinitionKinds.GroupChat);
 
-        var result = await compiler.CompileAsync(sourceCode);
+        var result = await compiler.CompileAsync(sourceCode, cancellationToken: TestContext.Current.CancellationToken);
         var workflow = Assert.IsType<GroupChatWorkflowDefinition>(result.Workflow);
 
         Assert.Equal(WorkflowDefinitionKinds.GroupChat, result.Kind);
@@ -143,7 +143,7 @@ public sealed class WorkflowDefinitionCompilerTests
         var compiler = new WorkflowDefinitionCompiler();
         var sourceCode = await ReadSeedWorkflowSourceAsync("scenario-dispute-group-chat.workflow.csx");
 
-        var result = await compiler.CompileAsync(sourceCode);
+        var result = await compiler.CompileAsync(sourceCode, cancellationToken: TestContext.Current.CancellationToken);
         var workflow = Assert.IsType<GroupChatWorkflowDefinition>(result.Workflow);
 
         Assert.Equal(WorkflowDefinitionKinds.GroupChat, result.Kind);
@@ -189,7 +189,7 @@ public sealed class WorkflowDefinitionCompilerTests
             workflow
             """;
 
-        var result = await compiler.CompileAsync(sourceCode);
+        var result = await compiler.CompileAsync(sourceCode, cancellationToken: TestContext.Current.CancellationToken);
         var workflow = Assert.IsType<GroupChatWorkflowDefinition>(result.Workflow);
 
         Assert.Equal(GroupChatWorkflowManagerKind.Programmable, workflow.Manager.Kind);
@@ -207,7 +207,7 @@ public sealed class WorkflowDefinitionCompilerTests
     {
         var compiler = new WorkflowDefinitionCompiler();
 
-        var result = await compiler.CompileAsync(WorkflowCodeTemplates.NewWorkflowScaffold);
+        var result = await compiler.CompileAsync(WorkflowCodeTemplates.NewWorkflowScaffold, cancellationToken: TestContext.Current.CancellationToken);
         var workflow = Assert.IsType<AgentWorkflowDefinition>(result.Workflow);
 
         Assert.Equal(WorkflowDefinitionKinds.Handoff, result.Kind);
@@ -237,7 +237,7 @@ public sealed class WorkflowDefinitionCompilerTests
                 .Build();
             """;
 
-        var result = await compiler.CompileAsync(sourceCode);
+        var result = await compiler.CompileAsync(sourceCode, cancellationToken: TestContext.Current.CancellationToken);
 
         Assert.Equal("demo", result.WorkflowId);
         Assert.Equal("Demo Workflow", result.DisplayName);
@@ -265,7 +265,7 @@ public sealed class WorkflowDefinitionCompilerTests
             workflow
             """;
 
-        var result = await compiler.CompileAsync(sourceCode);
+        var result = await compiler.CompileAsync(sourceCode, cancellationToken: TestContext.Current.CancellationToken);
         var workflow = Assert.IsType<AgentWorkflowDefinition>(result.Workflow);
 
         var agent = Assert.Single(workflow.Agents);
@@ -305,7 +305,7 @@ public sealed class WorkflowDefinitionCompilerTests
             workflow
             """;
 
-        var result = await compiler.CompileAsync(sourceCode);
+        var result = await compiler.CompileAsync(sourceCode, cancellationToken: TestContext.Current.CancellationToken);
         var workflow = Assert.IsType<AgentWorkflowDefinition>(result.Workflow);
 
         Assert.Equal("legacy-handoff", result.WorkflowId);
@@ -374,7 +374,7 @@ public sealed class WorkflowDefinitionCompilerTests
             workflow
             """;
 
-        var result = await compiler.CompileAsync(sourceCode);
+        var result = await compiler.CompileAsync(sourceCode, cancellationToken: TestContext.Current.CancellationToken);
         var workflow = Assert.IsType<GroupChatWorkflowDefinition>(result.Workflow);
 
         var host = workflow.Agents.Single(agent => agent.Id == "host");
@@ -394,7 +394,7 @@ public sealed class WorkflowDefinitionCompilerTests
         var compiler = new WorkflowDefinitionCompiler();
 
         var exception = await Assert.ThrowsAsync<WorkflowCompilationException>(() =>
-            compiler.CompileAsync("var workflow = ;"));
+            compiler.CompileAsync("var workflow = ;", cancellationToken: TestContext.Current.CancellationToken));
 
         Assert.Contains("Line 1", exception.Message, StringComparison.OrdinalIgnoreCase);
     }

@@ -362,7 +362,7 @@ public class AgenticToolSetBuilderTests
             NullLogger.Instance);
 
         var function = Assert.IsAssignableFrom<AIFunction>(Assert.Single(toolSet.MetadataByName).Value.Tool);
-        var result = await function.InvokeAsync(new AIFunctionArguments());
+        var result = await function.InvokeAsync(new AIFunctionArguments(), cancellationToken: TestContext.Current.CancellationToken);
 
         Assert.Equal("recovered", result?.ToString());
         Assert.Equal(2, attempts);
@@ -428,7 +428,7 @@ public class AgenticToolSetBuilderTests
         var function = Assert.IsAssignableFrom<AIFunction>(Assert.Single(toolSet.MetadataByName).Value.Tool);
 
         await Assert.ThrowsAnyAsync<OperationCanceledException>(async () =>
-            await function.InvokeAsync(new AIFunctionArguments()));
+            await function.InvokeAsync(new AIFunctionArguments(), cancellationToken: TestContext.Current.CancellationToken));
 
         Assert.Equal(2, attempts);
         Assert.Equal(2, interaction.ScopeStarts);

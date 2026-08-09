@@ -22,7 +22,7 @@ public sealed class AgentDefinitionDependencyGraphTests
             c
         ]);
 
-        var analysis = await graph.AnalyzeAsync(Reference(a));
+        var analysis = await graph.AnalyzeAsync(Reference(a), cancellationToken: TestContext.Current.CancellationToken);
 
         Assert.Empty(analysis.Problems);
         Assert.Equal(["A", "B", "C"], analysis.Nodes.Select(static node => node.DisplayName).Order().ToArray());
@@ -49,7 +49,7 @@ public sealed class AgentDefinitionDependencyGraphTests
             ],
             compiler: compiler);
 
-        var analysis = await graph.AnalyzeAsync(Reference(a));
+        var analysis = await graph.AnalyzeAsync(Reference(a), cancellationToken: TestContext.Current.CancellationToken);
 
         Assert.Empty(analysis.Problems);
         Assert.Equal(4, analysis.Nodes.Count);
@@ -87,7 +87,7 @@ public sealed class AgentDefinitionDependencyGraphTests
         var root = ids[path[0]];
         var graph = CreateGraph(workflows);
 
-        var analysis = await graph.AnalyzeAsync(Reference(root));
+        var analysis = await graph.AnalyzeAsync(Reference(root), cancellationToken: TestContext.Current.CancellationToken);
 
         var problem = Assert.Single(analysis.Problems);
         Assert.Contains("Workflow dependency cycle detected", problem.Message);
@@ -103,7 +103,7 @@ public sealed class AgentDefinitionDependencyGraphTests
             Workflow("Release Review", out var root, ("implementation", "Implementation", missing))
         ]);
 
-        var analysis = await graph.AnalyzeAsync(Reference(root));
+        var analysis = await graph.AnalyzeAsync(Reference(root), cancellationToken: TestContext.Current.CancellationToken);
 
         var problem = Assert.Single(analysis.Problems);
         Assert.Contains("Release Review", problem.Message);
@@ -125,7 +125,7 @@ public sealed class AgentDefinitionDependencyGraphTests
                     missingAgent)))
         ]);
 
-        var analysis = await graph.AnalyzeAsync(Reference(root));
+        var analysis = await graph.AnalyzeAsync(Reference(root), cancellationToken: TestContext.Current.CancellationToken);
 
         var problem = Assert.Single(analysis.Problems);
         Assert.Contains("Release Review", problem.Message);
@@ -145,7 +145,7 @@ public sealed class AgentDefinitionDependencyGraphTests
             ],
             compiler: compiler);
 
-        var analysis = await graph.AnalyzeAsync(Reference(root));
+        var analysis = await graph.AnalyzeAsync(Reference(root), cancellationToken: TestContext.Current.CancellationToken);
 
         var problem = Assert.Single(analysis.Problems);
         Assert.Contains("Release Review", problem.Message);
@@ -166,7 +166,7 @@ public sealed class AgentDefinitionDependencyGraphTests
             ],
             maximumDepth: 2);
 
-        Assert.Empty((await validGraph.AnalyzeAsync(Reference(validRoot))).Problems);
+        Assert.Empty((await validGraph.AnalyzeAsync(Reference(validRoot), cancellationToken: TestContext.Current.CancellationToken)).Problems);
 
         var invalidC = Workflow("C", out var invalidCId);
         var invalidB = Workflow("B", out var invalidBId, ("to-c", "To C", invalidCId));
@@ -179,7 +179,7 @@ public sealed class AgentDefinitionDependencyGraphTests
             ],
             maximumDepth: 2);
 
-        var problem = Assert.Single((await invalidGraph.AnalyzeAsync(Reference(invalidRoot))).Problems);
+        var problem = Assert.Single((await invalidGraph.AnalyzeAsync(Reference(invalidRoot), cancellationToken: TestContext.Current.CancellationToken)).Problems);
         Assert.Contains("Workflow nesting limit exceeded", problem.Message);
         Assert.Contains("A", problem.Message);
         Assert.Contains("B", problem.Message);
@@ -198,7 +198,7 @@ public sealed class AgentDefinitionDependencyGraphTests
             "to-a", "To A", new AgentDefinitionReference(AgentDefinitionKind.SavedWorkflow, aId.ToString("D"))));
         var graph = CreateGraph([a, b]);
 
-        var analysis = await graph.AnalyzeAsync(Reference(aId.ToString("N")));
+        var analysis = await graph.AnalyzeAsync(Reference(aId.ToString("N")), cancellationToken: TestContext.Current.CancellationToken);
 
         Assert.Contains(analysis.Problems, static problem =>
             problem.Message.Contains("Workflow dependency cycle detected", StringComparison.Ordinal));

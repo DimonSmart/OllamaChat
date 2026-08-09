@@ -53,14 +53,14 @@ public sealed class UnifiedAgentRuntimeChatSessionServiceTests
     public async Task DirectHarness_ReusesSessionForTwoTurnsAndResetStartsFreshConversation()
     {
         var fixture = CreateDirectFixture();
-        await fixture.Service.StartAsync(fixture.Request);
+        await fixture.Service.StartAsync(fixture.Request, cancellationToken: TestContext.Current.CancellationToken);
         var firstConversationId = fixture.Service.Id;
 
-        await fixture.Service.SendAsync("first");
+        await fixture.Service.SendAsync("first", cancellationToken: TestContext.Current.CancellationToken);
         await fixture.Service.SendAsync("second", [
             new AppChatMessageFile("notes.txt", 5, "text/plain", Encoding.UTF8.GetBytes("notes")),
             new AppChatMessageFile("pixel.png", 3, "image/png", [1, 2, 3])
-        ]);
+        ], cancellationToken: TestContext.Current.CancellationToken);
 
         Assert.Equal(2, fixture.ChatClient.Requests.Count);
         Assert.Equal("first", CurrentUserText(fixture.ChatClient.Requests[0].Messages));
@@ -75,12 +75,12 @@ public sealed class UnifiedAgentRuntimeChatSessionServiceTests
             fixture.ChatClient.Requests[1].Messages,
             static message => message.Role == ChatRole.Assistant && message.Text == "answer-1");
 
-        await fixture.Service.ResetAsync();
+        await fixture.Service.ResetAsync(cancellationToken: TestContext.Current.CancellationToken);
 
         Assert.NotEqual(firstConversationId, fixture.Service.Id);
         Assert.Empty(fixture.Service.Messages);
-        await fixture.Service.StartAsync(fixture.Request);
-        await fixture.Service.SendAsync("fresh");
+        await fixture.Service.StartAsync(fixture.Request, cancellationToken: TestContext.Current.CancellationToken);
+        await fixture.Service.SendAsync("fresh", cancellationToken: TestContext.Current.CancellationToken);
         Assert.Equal("fresh", CurrentUserText(fixture.ChatClient.Requests[2].Messages));
         Assert.DoesNotContain(
             fixture.ChatClient.Requests[2].Messages,
@@ -92,14 +92,14 @@ public sealed class UnifiedAgentRuntimeChatSessionServiceTests
     {
         var fixture = CreateDirectFixture();
 
-        await fixture.Service.StartAsync(fixture.Request);
+        await fixture.Service.StartAsync(fixture.Request, cancellationToken: TestContext.Current.CancellationToken);
 
         Assert.True(fixture.Service.HasActiveSession);
         var activeSession = Assert.IsType<ActiveChatSessionInfo>(fixture.Service.ActiveSession);
         Assert.Equal(fixture.Request.RuntimeReference, activeSession.RuntimeReference);
         Assert.Equal(fixture.Request.RuntimeDefaultModel, activeSession.Model);
 
-        await fixture.Service.ResetAsync();
+        await fixture.Service.ResetAsync(cancellationToken: TestContext.Current.CancellationToken);
 
         Assert.False(fixture.Service.HasActiveSession);
         Assert.Null(fixture.Service.ActiveSession);
@@ -123,9 +123,9 @@ public sealed class UnifiedAgentRuntimeChatSessionServiceTests
     {
         var fixture = CreateDirectFixture(withSessionStateProviders: true);
 
-        await fixture.Service.StartAsync(fixture.Request);
+        await fixture.Service.StartAsync(fixture.Request, cancellationToken: TestContext.Current.CancellationToken);
 
-        var state = await fixture.Service.GetSessionStateAsync();
+        var state = await fixture.Service.GetSessionStateAsync(cancellationToken: TestContext.Current.CancellationToken);
 
         Assert.NotNull(state);
         Assert.True(state.HasTodoProvider);
@@ -140,10 +140,10 @@ public sealed class UnifiedAgentRuntimeChatSessionServiceTests
     {
         var fixture = CreateDirectFixture(availableModes: ["Plan", "Execute"]);
 
-        await fixture.Service.StartAsync(fixture.Request);
-        await fixture.Service.SetAgentModeAsync("Execute");
+        await fixture.Service.StartAsync(fixture.Request, cancellationToken: TestContext.Current.CancellationToken);
+        await fixture.Service.SetAgentModeAsync("Execute", cancellationToken: TestContext.Current.CancellationToken);
 
-        var state = await fixture.Service.GetSessionStateAsync();
+        var state = await fixture.Service.GetSessionStateAsync(cancellationToken: TestContext.Current.CancellationToken);
         Assert.NotNull(state);
         Assert.Equal("Execute", state.Mode);
         Assert.Equal(["Plan", "Execute"], state.AvailableModes);
@@ -156,17 +156,17 @@ public sealed class UnifiedAgentRuntimeChatSessionServiceTests
     {
         var fixture = CreateDirectFixture(availableModes: ["Plan", "Execute"]);
 
-        await fixture.Service.StartAsync(fixture.Request);
-        await fixture.Service.SetAgentModeAsync("Execute");
-        await fixture.Service.SendAsync("first");
-        await fixture.Service.SendAsync("second");
+        await fixture.Service.StartAsync(fixture.Request, cancellationToken: TestContext.Current.CancellationToken);
+        await fixture.Service.SetAgentModeAsync("Execute", cancellationToken: TestContext.Current.CancellationToken);
+        await fixture.Service.SendAsync("first", cancellationToken: TestContext.Current.CancellationToken);
+        await fixture.Service.SendAsync("second", cancellationToken: TestContext.Current.CancellationToken);
 
-        Assert.Equal("Execute", (await fixture.Service.GetSessionStateAsync())!.Mode);
+        Assert.Equal("Execute", (await fixture.Service.GetSessionStateAsync(cancellationToken: TestContext.Current.CancellationToken))!.Mode);
         Assert.Equal(2, fixture.ChatClient.Requests.Count);
 
-        await fixture.Service.StartAsync(fixture.Request);
+        await fixture.Service.StartAsync(fixture.Request, cancellationToken: TestContext.Current.CancellationToken);
 
-        Assert.Equal("Plan", (await fixture.Service.GetSessionStateAsync())!.Mode);
+        Assert.Equal("Plan", (await fixture.Service.GetSessionStateAsync(cancellationToken: TestContext.Current.CancellationToken))!.Mode);
     }
 
     [Fact]
@@ -174,13 +174,13 @@ public sealed class UnifiedAgentRuntimeChatSessionServiceTests
     {
         var fixture = CreateDirectFixture(availableModes: ["Research", "Verification"]);
 
-        await fixture.Service.StartAsync(fixture.Request);
+        await fixture.Service.StartAsync(fixture.Request, cancellationToken: TestContext.Current.CancellationToken);
 
         var exception = await Assert.ThrowsAsync<InvalidOperationException>(
-            () => fixture.Service.SetAgentModeAsync("Execute"));
+            () => fixture.Service.SetAgentModeAsync("Execute", cancellationToken: TestContext.Current.CancellationToken));
 
         Assert.Contains("not available", exception.Message);
-        Assert.Equal("Research", (await fixture.Service.GetSessionStateAsync())!.Mode);
+        Assert.Equal("Research", (await fixture.Service.GetSessionStateAsync(cancellationToken: TestContext.Current.CancellationToken))!.Mode);
         Assert.Empty(fixture.Service.Messages);
         Assert.Empty(fixture.ChatClient.Requests);
     }
@@ -189,69 +189,69 @@ public sealed class UnifiedAgentRuntimeChatSessionServiceTests
     public async Task SetAgentModeAsync_RejectsModeChangeWhileToolApprovalIsPending()
     {
         var fixture = CreateDirectFixture(availableModes: ["Plan", "Execute"]);
-        await fixture.Service.StartAsync(fixture.Request);
+        await fixture.Service.StartAsync(fixture.Request, cancellationToken: TestContext.Current.CancellationToken);
         SetPendingApproval(fixture.Service);
 
         await Assert.ThrowsAsync<InvalidOperationException>(
-            () => fixture.Service.SetAgentModeAsync("Execute"));
+            () => fixture.Service.SetAgentModeAsync("Execute", cancellationToken: TestContext.Current.CancellationToken));
 
-        Assert.Equal("Plan", (await fixture.Service.GetSessionStateAsync())!.Mode);
+        Assert.Equal("Plan", (await fixture.Service.GetSessionStateAsync(cancellationToken: TestContext.Current.CancellationToken))!.Mode);
     }
 
     [Fact]
     public async Task DirectHarness_ToolApprovalUsesFrameworkRulesAndPreservesSessionState()
     {
         var fixture = CreateDirectFixture(availableModes: ["Plan", "Execute"]);
-        await fixture.Service.StartAsync(fixture.Request);
+        await fixture.Service.StartAsync(fixture.Request, cancellationToken: TestContext.Current.CancellationToken);
 
         var testHarness = new ApprovalHarnessFixture();
         InstallDirectHarness(fixture.Service, testHarness.Agent, testHarness.Session, ["Plan", "Execute"]);
-        await fixture.Service.SetAgentModeAsync("Execute");
-        var stateBeforeApproval = (await fixture.Service.GetSessionStateAsync())!;
+        await fixture.Service.SetAgentModeAsync("Execute", cancellationToken: TestContext.Current.CancellationToken);
+        var stateBeforeApproval = (await fixture.Service.GetSessionStateAsync(cancellationToken: TestContext.Current.CancellationToken))!;
         Assert.True(stateBeforeApproval.HasTodoProvider);
         Assert.Empty(stateBeforeApproval.Todos);
 
-        await fixture.Service.SendAsync("A");
+        await fixture.Service.SendAsync("A", cancellationToken: TestContext.Current.CancellationToken);
 
         Assert.NotNull(fixture.Service.PendingToolApproval);
         Assert.Equal(0, testHarness.InvocationCount);
         Assert.False(fixture.Service.IsAnswering);
         Assert.False(fixture.Service.RequiresReset);
-        var stateAfterApproval = (await fixture.Service.GetSessionStateAsync())!;
+        var stateAfterApproval = (await fixture.Service.GetSessionStateAsync(cancellationToken: TestContext.Current.CancellationToken))!;
         Assert.Equal("Execute", stateAfterApproval.Mode);
         Assert.True(stateAfterApproval.HasTodoProvider);
         Assert.Empty(stateAfterApproval.Todos);
 
-        await fixture.Service.RespondToToolApprovalAsync(ToolApprovalDecision.ApproveOnce);
+        await fixture.Service.RespondToToolApprovalAsync(ToolApprovalDecision.ApproveOnce, cancellationToken: TestContext.Current.CancellationToken);
 
         Assert.Equal(1, testHarness.InvocationCount);
         Assert.Null(fixture.Service.PendingToolApproval);
         Assert.False(fixture.Service.RequiresReset);
-        Assert.Equal("Execute", (await fixture.Service.GetSessionStateAsync())!.Mode);
+        Assert.Equal("Execute", (await fixture.Service.GetSessionStateAsync(cancellationToken: TestContext.Current.CancellationToken))!.Mode);
 
-        await fixture.Service.SendAsync("Deny");
+        await fixture.Service.SendAsync("Deny", cancellationToken: TestContext.Current.CancellationToken);
         Assert.NotNull(fixture.Service.PendingToolApproval);
-        await fixture.Service.RespondToToolApprovalAsync(ToolApprovalDecision.Deny);
+        await fixture.Service.RespondToToolApprovalAsync(ToolApprovalDecision.Deny, cancellationToken: TestContext.Current.CancellationToken);
         Assert.Equal(1, testHarness.InvocationCount);
         Assert.Null(fixture.Service.PendingToolApproval);
         Assert.False(fixture.Service.RequiresReset);
 
-        await fixture.Service.SendAsync("A");
+        await fixture.Service.SendAsync("A", cancellationToken: TestContext.Current.CancellationToken);
         Assert.NotNull(fixture.Service.PendingToolApproval);
-        await fixture.Service.RespondToToolApprovalAsync(ToolApprovalDecision.ApproveForSession);
+        await fixture.Service.RespondToToolApprovalAsync(ToolApprovalDecision.ApproveForSession, cancellationToken: TestContext.Current.CancellationToken);
         Assert.Equal(2, testHarness.InvocationCount);
 
-        await fixture.Service.SendAsync("B");
+        await fixture.Service.SendAsync("B", cancellationToken: TestContext.Current.CancellationToken);
         Assert.NotNull(fixture.Service.PendingToolApproval);
-        await fixture.Service.RespondToToolApprovalAsync(ToolApprovalDecision.ApproveOnce);
+        await fixture.Service.RespondToToolApprovalAsync(ToolApprovalDecision.ApproveOnce, cancellationToken: TestContext.Current.CancellationToken);
         Assert.Equal(3, testHarness.InvocationCount);
 
-        await fixture.Service.ResetAsync();
-        await fixture.Service.StartAsync(fixture.Request);
+        await fixture.Service.ResetAsync(cancellationToken: TestContext.Current.CancellationToken);
+        await fixture.Service.StartAsync(fixture.Request, cancellationToken: TestContext.Current.CancellationToken);
         var resetHarness = new ApprovalHarnessFixture();
         InstallDirectHarness(fixture.Service, resetHarness.Agent, resetHarness.Session, ["Plan", "Execute"]);
 
-        await fixture.Service.SendAsync("A");
+        await fixture.Service.SendAsync("A", cancellationToken: TestContext.Current.CancellationToken);
         Assert.NotNull(fixture.Service.PendingToolApproval);
         Assert.Equal(0, resetHarness.InvocationCount);
     }
@@ -263,7 +263,7 @@ public sealed class UnifiedAgentRuntimeChatSessionServiceTests
         SetPendingApproval(service);
 
         await Assert.ThrowsAsync<ArgumentOutOfRangeException>(
-            () => service.RespondToToolApprovalAsync((ToolApprovalDecision)999));
+            () => service.RespondToToolApprovalAsync((ToolApprovalDecision)999, cancellationToken: TestContext.Current.CancellationToken));
 
         Assert.NotNull(service.PendingToolApproval);
         Assert.False(service.IsAnswering);
@@ -274,21 +274,21 @@ public sealed class UnifiedAgentRuntimeChatSessionServiceTests
     {
         var fixture = CreateDirectFixture();
 
-        await fixture.Service.StartAsync(fixture.Request);
+        await fixture.Service.StartAsync(fixture.Request, cancellationToken: TestContext.Current.CancellationToken);
 
-        Assert.Null(await fixture.Service.GetSessionStateAsync());
+        Assert.Null(await fixture.Service.GetSessionStateAsync(cancellationToken: TestContext.Current.CancellationToken));
     }
 
     [Fact]
     public async Task GetSessionStateAsync_ProjectsResolvedCompactionWithoutRuntimeStrategy()
     {
         var fixture = CreateDirectFixture();
-        await fixture.Service.StartAsync(fixture.Request);
+        await fixture.Service.StartAsync(fixture.Request, cancellationToken: TestContext.Current.CancellationToken);
         typeof(UnifiedAgentRuntimeChatSessionService)
             .GetField("_directCompaction", BindingFlags.Instance | BindingFlags.NonPublic)!
             .SetValue(fixture.Service, new AgentSessionCompactionViewModel("Balanced", 120_000, "Context window: tool results 50%, history 80%"));
 
-        var state = await fixture.Service.GetSessionStateAsync();
+        var state = await fixture.Service.GetSessionStateAsync(cancellationToken: TestContext.Current.CancellationToken);
 
         Assert.NotNull(state);
         Assert.Equal("Balanced", state.Compaction!.ProfileName);
@@ -315,9 +315,9 @@ public sealed class UnifiedAgentRuntimeChatSessionServiceTests
             })
         ]);
         var service = CreateService(runner);
-        await service.StartAsync(CreateStartRequest());
+        await service.StartAsync(CreateStartRequest(), cancellationToken: TestContext.Current.CancellationToken);
 
-        await service.SendAsync("go");
+        await service.SendAsync("go", cancellationToken: TestContext.Current.CancellationToken);
 
         var assistants = service.Messages
             .Where(static message => message.Role == AppChatRole.Assistant)
@@ -342,9 +342,9 @@ public sealed class UnifiedAgentRuntimeChatSessionServiceTests
             })
         ]);
         var service = CreateService(runner);
-        await service.StartAsync(CreateStartRequest());
+        await service.StartAsync(CreateStartRequest(), cancellationToken: TestContext.Current.CancellationToken);
 
-        await service.SendAsync("go");
+        await service.SendAsync("go", cancellationToken: TestContext.Current.CancellationToken);
 
         var assistant = Assert.Single(
             service.Messages,
@@ -370,9 +370,9 @@ public sealed class UnifiedAgentRuntimeChatSessionServiceTests
             ])
             .ToList();
         var service = CreateService(new StubAgentRunner(events));
-        await service.StartAsync(CreateStartRequest());
+        await service.StartAsync(CreateStartRequest(), cancellationToken: TestContext.Current.CancellationToken);
 
-        await service.SendAsync("go");
+        await service.SendAsync("go", cancellationToken: TestContext.Current.CancellationToken);
 
         var assistant = Assert.Single(
             service.Messages,
@@ -394,9 +394,9 @@ public sealed class UnifiedAgentRuntimeChatSessionServiceTests
                 Messages = [new AgentOutputMessage("Agent", "answer")]
             })
         ]));
-        await service.StartAsync(CreateStartRequest());
+        await service.StartAsync(CreateStartRequest(), cancellationToken: TestContext.Current.CancellationToken);
 
-        await service.SendAsync("go");
+        await service.SendAsync("go", cancellationToken: TestContext.Current.CancellationToken);
 
         var assistant = Assert.Single(
             service.Messages,
@@ -413,9 +413,9 @@ public sealed class UnifiedAgentRuntimeChatSessionServiceTests
             new AgentTextDelta("m1", "Agent", "partial"),
             new AgentRunFailed(new AgentRunError("execution_failed", "boom", true))
         ]));
-        await service.StartAsync(CreateStartRequest());
+        await service.StartAsync(CreateStartRequest(), cancellationToken: TestContext.Current.CancellationToken);
 
-        await service.SendAsync("go");
+        await service.SendAsync("go", cancellationToken: TestContext.Current.CancellationToken);
 
         var assistants = service.Messages
             .Where(static message => message.Role == AppChatRole.Assistant)
@@ -431,9 +431,9 @@ public sealed class UnifiedAgentRuntimeChatSessionServiceTests
     {
         var runner = new BlockingAgentRunner();
         var service = CreateService(runner);
-        await service.StartAsync(CreateStartRequest());
+        await service.StartAsync(CreateStartRequest(), cancellationToken: TestContext.Current.CancellationToken);
 
-        var sendTask = service.SendAsync("go");
+        var sendTask = service.SendAsync("go", cancellationToken: TestContext.Current.CancellationToken);
         await runner.WaitUntilStreamingAsync();
 
         await service.CancelAsync();
@@ -449,10 +449,10 @@ public sealed class UnifiedAgentRuntimeChatSessionServiceTests
             static message => message.Content.StartsWith("Agent runtime error:", StringComparison.Ordinal));
         Assert.False(service.IsAnswering);
         Assert.True(service.RequiresReset);
-        await Assert.ThrowsAsync<InvalidOperationException>(() => service.SendAsync("must not continue"));
+        await Assert.ThrowsAsync<InvalidOperationException>(() => service.SendAsync("must not continue", cancellationToken: TestContext.Current.CancellationToken));
 
         var canceledConversationId = service.Id;
-        await service.ResetAsync();
+        await service.ResetAsync(cancellationToken: TestContext.Current.CancellationToken);
         Assert.NotEqual(canceledConversationId, service.Id);
         Assert.Empty(service.Messages);
         Assert.False(service.RequiresReset);
@@ -470,14 +470,14 @@ public sealed class UnifiedAgentRuntimeChatSessionServiceTests
             })
         ]);
         var service = CreateService(runner);
-        await service.StartAsync(CreateStartRequest());
+        await service.StartAsync(CreateStartRequest(), cancellationToken: TestContext.Current.CancellationToken);
         var file = new AppChatMessageFile(
             "notes.md",
             7,
             "text/markdown",
             Encoding.UTF8.GetBytes("# Notes"));
 
-        await service.SendAsync("go", [file]);
+        await service.SendAsync("go", [file], cancellationToken: TestContext.Current.CancellationToken);
 
         var attachment = Assert.Single(runner.LastRequest!.Attachments);
         Assert.Equal("notes.md", attachment.Name);
@@ -509,9 +509,9 @@ public sealed class UnifiedAgentRuntimeChatSessionServiceTests
                 ["strict"] = "True"
             }
         };
-        await service.StartAsync(request);
+        await service.StartAsync(request, cancellationToken: TestContext.Current.CancellationToken);
 
-        await service.SendAsync("go");
+        await service.SendAsync("go", cancellationToken: TestContext.Current.CancellationToken);
 
         Assert.Equal("runtime design", runner.LastRequest!.Inputs["topic"]);
         Assert.Equal("True", runner.LastRequest.Inputs["strict"]);
@@ -524,11 +524,11 @@ public sealed class UnifiedAgentRuntimeChatSessionServiceTests
         var service = CreateService(new StubAgentRunner([]), sandboxFactory, CreateSandboxCatalog());
         var request = CreateSandboxStartRequest();
 
-        var firstStart = service.StartAsync(request);
+        var firstStart = service.StartAsync(request, cancellationToken: TestContext.Current.CancellationToken);
         await sandboxFactory.WaitUntilCalledAsync();
 
         var exception = await Assert.ThrowsAsync<InvalidOperationException>(
-            () => service.StartAsync(request));
+            () => service.StartAsync(request, cancellationToken: TestContext.Current.CancellationToken));
 
         Assert.Contains("startup is already in progress", exception.Message);
         Assert.Equal(1, sandboxFactory.CallCount);
@@ -536,7 +536,7 @@ public sealed class UnifiedAgentRuntimeChatSessionServiceTests
         sandboxFactory.Complete();
         await firstStart;
 
-        var state = await service.GetSessionStateAsync();
+        var state = await service.GetSessionStateAsync(cancellationToken: TestContext.Current.CancellationToken);
         Assert.NotNull(state?.Sandbox);
         Assert.False(service.RequiresReset);
     }
@@ -547,7 +547,7 @@ public sealed class UnifiedAgentRuntimeChatSessionServiceTests
         var sandboxFactory = new BlockingSandboxSessionFactory();
         var service = CreateService(new StubAgentRunner([]), sandboxFactory, CreateSandboxCatalog());
 
-        var startTask = service.StartAsync(CreateSandboxStartRequest());
+        var startTask = service.StartAsync(CreateSandboxStartRequest(), cancellationToken: TestContext.Current.CancellationToken);
         await sandboxFactory.WaitUntilCalledAsync();
 
         Assert.Equal(service.Id.ToString("N"), sandboxFactory.SessionIds.Single());
@@ -563,14 +563,14 @@ public sealed class UnifiedAgentRuntimeChatSessionServiceTests
         var service = CreateService(new StubAgentRunner([]), sandboxFactory, CreateSandboxCatalog());
         var request = CreateSandboxStartRequest();
 
-        await Assert.ThrowsAsync<InvalidOperationException>(() => service.StartAsync(request));
+        await Assert.ThrowsAsync<InvalidOperationException>(() => service.StartAsync(request, cancellationToken: TestContext.Current.CancellationToken));
 
-        Assert.Null(await service.GetSessionStateAsync());
+        Assert.Null(await service.GetSessionStateAsync(cancellationToken: TestContext.Current.CancellationToken));
         Assert.False(service.RequiresReset);
 
-        await service.StartAsync(request);
+        await service.StartAsync(request, cancellationToken: TestContext.Current.CancellationToken);
 
-        var state = await service.GetSessionStateAsync();
+        var state = await service.GetSessionStateAsync(cancellationToken: TestContext.Current.CancellationToken);
         Assert.NotNull(state?.Sandbox);
         Assert.Equal(2, sandboxFactory.CallCount);
     }

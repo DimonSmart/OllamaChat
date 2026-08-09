@@ -50,10 +50,10 @@ public sealed class RealWorkflowExecutionTests(ITestOutputHelper output)
                 string.Equals(workflow.WorkflowId, options.WorkflowName, StringComparison.OrdinalIgnoreCase));
         Assert.NotNull(savedWorkflow);
 
-        var compiled = await workflowCompiler.CompileAsync(savedWorkflow!.SourceCode);
+        var compiled = await workflowCompiler.CompileAsync(savedWorkflow!.SourceCode, cancellationToken: TestContext.Current.CancellationToken);
         Assert.NotNull(compiled.Workflow);
 
-        var workflow = await workflowMaterializer.MaterializeAsync(compiled.Workflow!);
+        var workflow = await workflowMaterializer.MaterializeAsync(compiled.Workflow!, cancellationToken: TestContext.Current.CancellationToken);
         var model = await ResolveModelAsync(userSettingsService, options);
         var runtimeAgents = workflow.Participants
             .Select(agent => ResolvedChatAgentFactory.Resolve(GetRequiredAgentDraft(agent), model))
@@ -69,15 +69,15 @@ public sealed class RealWorkflowExecutionTests(ITestOutputHelper output)
             StartInputs = BuildStartInputs(options, workflow)
         };
 
-        await workflowSessionService.StartAsync(request);
+        await workflowSessionService.StartAsync(request, cancellationToken: TestContext.Current.CancellationToken);
 
         if (workflow.Execution.Mode == AgentWorkflowExecutionMode.Autonomous)
         {
-            await workflowSessionService.KickoffAsync();
+            await workflowSessionService.KickoffAsync(cancellationToken: TestContext.Current.CancellationToken);
         }
         else
         {
-            await workflowSessionService.SendAsync(options.InitialMessage);
+            await workflowSessionService.SendAsync(options.InitialMessage, cancellationToken: TestContext.Current.CancellationToken);
         }
 
         var transcript = workflowSessionService.Messages.ToList();

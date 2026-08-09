@@ -22,7 +22,7 @@ public sealed class AgentSessionDefinitionResolverTests
             ModelRequirement = AgentModelRequirement.Required
         });
 
-        var validation = await resolver.ValidateAsync(Reference, new AgentSessionDefinitionRequest());
+        var validation = await resolver.ValidateAsync(Reference, new AgentSessionDefinitionRequest(), cancellationToken: TestContext.Current.CancellationToken);
 
         Assert.False(validation.CanLaunch);
         Assert.Contains(validation.Problems, problem => problem.Message.Contains("model selection", StringComparison.OrdinalIgnoreCase));
@@ -41,7 +41,7 @@ public sealed class AgentSessionDefinitionResolverTests
             ModelRequirement = requirement
         });
 
-        var validation = await resolver.ValidateAsync(Reference, new AgentSessionDefinitionRequest());
+        var validation = await resolver.ValidateAsync(Reference, new AgentSessionDefinitionRequest(), cancellationToken: TestContext.Current.CancellationToken);
 
         Assert.True(validation.CanLaunch);
     }
@@ -54,7 +54,7 @@ public sealed class AgentSessionDefinitionResolverTests
         var validation = await resolver.ValidateAsync(Reference, new AgentSessionDefinitionRequest
         {
             Inputs = new Dictionary<string, string> { ["value"] = "1,23" }
-        });
+        }, cancellationToken: TestContext.Current.CancellationToken);
 
         Assert.True(validation.CanLaunch);
     }
@@ -67,7 +67,7 @@ public sealed class AgentSessionDefinitionResolverTests
         var validation = await resolver.ValidateAsync(Reference, new AgentSessionDefinitionRequest
         {
             Inputs = new Dictionary<string, string> { ["value"] = "{ invalid" }
-        });
+        }, cancellationToken: TestContext.Current.CancellationToken);
 
         Assert.False(validation.CanLaunch);
         Assert.Contains(validation.Problems, problem => problem.Message == "Input 'Value' must contain valid JSON.");
@@ -81,7 +81,7 @@ public sealed class AgentSessionDefinitionResolverTests
         var resolved = await resolver.ResolveAsync(Reference, new AgentSessionDefinitionRequest
         {
             Inputs = new Dictionary<string, string> { ["value"] = bool.FalseString }
-        });
+        }, cancellationToken: TestContext.Current.CancellationToken);
 
         Assert.Equal(bool.FalseString, resolved.Inputs["value"]);
     }
@@ -99,7 +99,7 @@ public sealed class AgentSessionDefinitionResolverTests
             },
             [new AgentDefinitionLaunchProblem("preflight failed")]);
 
-        var validation = await resolver.ValidateAsync(Reference, new AgentSessionDefinitionRequest());
+        var validation = await resolver.ValidateAsync(Reference, new AgentSessionDefinitionRequest(), cancellationToken: TestContext.Current.CancellationToken);
 
         Assert.False(validation.CanLaunch);
         Assert.Contains(validation.Problems, problem => problem.Message == "preflight failed");
@@ -122,7 +122,7 @@ public sealed class AgentSessionDefinitionResolverTests
         {
             UiModelSelection = new ServerModelSelection(model.ServerId, model.ModelName),
             Overrides = new AgentSessionOverrides { WorkspacePath = AppContext.BaseDirectory }
-        });
+        }, cancellationToken: TestContext.Current.CancellationToken);
 
         Assert.False(validation.CanLaunch);
         Assert.Contains(validation.Problems, problem => problem.Message.Contains("function calling required by File Access", StringComparison.OrdinalIgnoreCase));
@@ -143,7 +143,7 @@ public sealed class AgentSessionDefinitionResolverTests
         var validation = await resolver.ValidateAsync(Reference, new AgentSessionDefinitionRequest
         {
             UiModelSelection = new ServerModelSelection(model.ServerId, model.ModelName)
-        });
+        }, cancellationToken: TestContext.Current.CancellationToken);
 
         Assert.True(validation.CanLaunch);
         Assert.DoesNotContain(validation.Problems, problem => problem.Message.Contains("File Access", StringComparison.OrdinalIgnoreCase));

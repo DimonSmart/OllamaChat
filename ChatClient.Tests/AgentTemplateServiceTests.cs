@@ -108,11 +108,11 @@ public class AgentTemplateServiceTests
             Assert.False(binding.SelectAllTools);
             Assert.Equal(["fn1", "fn2"], binding.SelectedTools);
 
-            var persistedJson = await File.ReadAllTextAsync(tempFile);
+            var persistedJson = await File.ReadAllTextAsync(tempFile, cancellationToken: TestContext.Current.CancellationToken);
             Assert.DoesNotContain("\"BindingId\"", persistedJson);
 
             await service.UpdateAsync(retrieved);
-            persistedJson = await File.ReadAllTextAsync(tempFile);
+            persistedJson = await File.ReadAllTextAsync(tempFile, cancellationToken: TestContext.Current.CancellationToken);
             Assert.DoesNotContain("\"FunctionSettings\"", persistedJson);
         }
         finally
@@ -232,7 +232,7 @@ public class AgentTemplateServiceTests
 
             var repoReloadedLogger = new LoggerFactory().CreateLogger<AgentTemplateRepository>();
             var repositoryReloaded = new AgentTemplateRepository(config, repoReloadedLogger);
-            var persistedAgents = (await repositoryReloaded.GetAllAsync()).ToList();
+            var persistedAgents = (await repositoryReloaded.GetAllAsync(cancellationToken: TestContext.Current.CancellationToken)).ToList();
 
             Assert.Single(persistedAgents, static agent => agent.Id == Guid.Empty);
             Assert.Equal(2, persistedAgents.Count(agent => agent.Id == duplicateId));
@@ -315,7 +315,7 @@ public class AgentTemplateServiceTests
 
             var repoReloadedLogger = new LoggerFactory().CreateLogger<AgentTemplateRepository>();
             var repositoryReloaded = new AgentTemplateRepository(config, repoReloadedLogger);
-            var persistedAgent = Assert.Single(await repositoryReloaded.GetAllAsync());
+            var persistedAgent = Assert.Single(await repositoryReloaded.GetAllAsync(cancellationToken: TestContext.Current.CancellationToken));
             Assert.Equal(2, persistedAgent.McpServerBindings.Count);
             Assert.All(persistedAgent.McpServerBindings, static binding =>
             {
@@ -323,7 +323,7 @@ public class AgentTemplateServiceTests
                 Assert.NotEqual(Guid.Empty, binding.BindingId);
             });
 
-            var persistedJson = await File.ReadAllTextAsync(tempFile);
+            var persistedJson = await File.ReadAllTextAsync(tempFile, cancellationToken: TestContext.Current.CancellationToken);
             Assert.Equal(2, Regex.Matches(persistedJson, "\"BindingId\"").Count);
         }
         finally

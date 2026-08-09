@@ -28,9 +28,9 @@ public sealed class OrchestrationWorkflowChatSessionServiceTests
                 Messages = [new HeadlessWorkflowOutputMessage("m1", "host", "Host", "final answer")]
             })
         ]));
-        await service.StartAsync(CreateStartRequest());
+        await service.StartAsync(CreateStartRequest(), cancellationToken: TestContext.Current.CancellationToken);
 
-        await service.SendAsync("go");
+        await service.SendAsync("go", cancellationToken: TestContext.Current.CancellationToken);
 
         Assert.Equal("task-1", service.TaskSessionId);
         var assistant = Assert.Single(service.Messages, message => message.Role == AppChatRole.Assistant);
@@ -56,9 +56,9 @@ public sealed class OrchestrationWorkflowChatSessionServiceTests
             })
         ]);
         var service = CreateService(runner);
-        await service.StartAsync(CreateStartRequest());
+        await service.StartAsync(CreateStartRequest(), cancellationToken: TestContext.Current.CancellationToken);
 
-        await service.KickoffAsync();
+        await service.KickoffAsync(cancellationToken: TestContext.Current.CancellationToken);
 
         Assert.Null(runner.LastTurnRequest!.UserMessage);
         Assert.DoesNotContain(service.Messages, message => message.Role == AppChatRole.User);
@@ -79,10 +79,10 @@ public sealed class OrchestrationWorkflowChatSessionServiceTests
             })
         ]);
         var service = CreateService(runner);
-        await service.StartAsync(CreateStartRequest());
+        await service.StartAsync(CreateStartRequest(), cancellationToken: TestContext.Current.CancellationToken);
         var file = new AppChatMessageFile("notes.md", 5, "text/markdown", [1, 2, 3, 4, 5]);
 
-        await service.SendAsync("go", [file]);
+        await service.SendAsync("go", [file], cancellationToken: TestContext.Current.CancellationToken);
 
         Assert.Same(file, Assert.Single(runner.LastTurnRequest!.UserFiles));
     }
@@ -93,9 +93,9 @@ public sealed class OrchestrationWorkflowChatSessionServiceTests
     {
         var runner = new BlockingHeadlessWorkflowRunner();
         var service = CreateService(runner);
-        await service.StartAsync(CreateStartRequest());
+        await service.StartAsync(CreateStartRequest(), cancellationToken: TestContext.Current.CancellationToken);
 
-        var sendTask = service.SendAsync("go");
+        var sendTask = service.SendAsync("go", cancellationToken: TestContext.Current.CancellationToken);
         await runner.WaitUntilStreamingAsync();
 
         await service.CancelAsync();
@@ -113,9 +113,9 @@ public sealed class OrchestrationWorkflowChatSessionServiceTests
     public async Task SendAsync_FailureCancelsStreamsAndAddsOneErrorMessage()
     {
         var service = CreateService(new FailingHeadlessWorkflowRunner());
-        await service.StartAsync(CreateStartRequest());
+        await service.StartAsync(CreateStartRequest(), cancellationToken: TestContext.Current.CancellationToken);
 
-        await service.SendAsync("go");
+        await service.SendAsync("go", cancellationToken: TestContext.Current.CancellationToken);
 
         var assistants = service.Messages.Where(message => message.Role == AppChatRole.Assistant).ToList();
         Assert.Equal(2, assistants.Count);
@@ -130,11 +130,11 @@ public sealed class OrchestrationWorkflowChatSessionServiceTests
     {
         var runner = new StubHeadlessWorkflowRunner([]);
         var service = CreateService(runner);
-        await service.StartAsync(CreateStartRequest());
+        await service.StartAsync(CreateStartRequest(), cancellationToken: TestContext.Current.CancellationToken);
         var taskSessionId = service.TaskSessionId;
 
-        await service.SendAsync("first");
-        await service.SendAsync("second");
+        await service.SendAsync("first", cancellationToken: TestContext.Current.CancellationToken);
+        await service.SendAsync("second", cancellationToken: TestContext.Current.CancellationToken);
 
         Assert.Equal(1, runner.StartCount);
         Assert.Equal(2, runner.RunTurnCount);
@@ -150,11 +150,11 @@ public sealed class OrchestrationWorkflowChatSessionServiceTests
     {
         var runner = new StubHeadlessWorkflowRunner([]);
         var service = CreateService(runner);
-        await service.StartAsync(CreateStartRequest());
+        await service.StartAsync(CreateStartRequest(), cancellationToken: TestContext.Current.CancellationToken);
         var taskSessionId = service.TaskSessionId;
 
-        await service.KickoffAsync();
-        await service.SendAsync("continue");
+        await service.KickoffAsync(cancellationToken: TestContext.Current.CancellationToken);
+        await service.SendAsync("continue", cancellationToken: TestContext.Current.CancellationToken);
 
         Assert.Equal(1, runner.StartCount);
         Assert.Equal(2, runner.RunTurnCount);
@@ -167,13 +167,13 @@ public sealed class OrchestrationWorkflowChatSessionServiceTests
     {
         var runner = new StubHeadlessWorkflowRunner([]);
         var service = CreateService(runner);
-        await service.StartAsync(CreateStartRequest());
-        await service.SendAsync("first");
+        await service.StartAsync(CreateStartRequest(), cancellationToken: TestContext.Current.CancellationToken);
+        await service.SendAsync("first", cancellationToken: TestContext.Current.CancellationToken);
         var firstSession = Assert.Single(runner.Sessions);
 
-        await service.ResetAsync();
-        await service.StartAsync(CreateStartRequest());
-        await service.SendAsync("second");
+        await service.ResetAsync(cancellationToken: TestContext.Current.CancellationToken);
+        await service.StartAsync(CreateStartRequest(), cancellationToken: TestContext.Current.CancellationToken);
+        await service.SendAsync("second", cancellationToken: TestContext.Current.CancellationToken);
 
         Assert.True(firstSession.IsDisposed);
         Assert.Equal(2, runner.StartCount);
@@ -186,10 +186,10 @@ public sealed class OrchestrationWorkflowChatSessionServiceTests
     {
         var runner = new StubHeadlessWorkflowRunner([]);
         var service = CreateService(runner);
-        await service.StartAsync(CreateStartRequest());
+        await service.StartAsync(CreateStartRequest(), cancellationToken: TestContext.Current.CancellationToken);
 
-        await service.SendAsync("first");
-        await service.SendAsync("second");
+        await service.SendAsync("first", cancellationToken: TestContext.Current.CancellationToken);
+        await service.SendAsync("second", cancellationToken: TestContext.Current.CancellationToken);
 
         var session = Assert.Single(runner.Sessions);
         Assert.Equal(2, session.TurnCounter);

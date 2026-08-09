@@ -28,7 +28,7 @@ public class ServerConnectionTestServiceTests
         };
 
         // Act
-        var result = await service.TestConnectionAsync(server);
+        var result = await service.TestConnectionAsync(server, cancellationToken: TestContext.Current.CancellationToken);
 
         // Assert
         Assert.False(result.IsSuccessful);
@@ -55,7 +55,7 @@ public class ServerConnectionTestServiceTests
         };
 
         // Act
-        var result = await service.TestConnectionAsync(server);
+        var result = await service.TestConnectionAsync(server, cancellationToken: TestContext.Current.CancellationToken);
 
         // Assert
         Assert.False(result.IsSuccessful);
@@ -81,7 +81,7 @@ public class ServerConnectionTestServiceTests
         };
 
         // Act
-        var result = await service.TestConnectionAsync(server);
+        var result = await service.TestConnectionAsync(server, cancellationToken: TestContext.Current.CancellationToken);
 
         // Assert
         Assert.False(result.IsSuccessful);
@@ -108,7 +108,7 @@ public class ServerConnectionTestServiceTests
         };
 
         // Act
-        var result = await service.TestConnectionAsync(server);
+        var result = await service.TestConnectionAsync(server, cancellationToken: TestContext.Current.CancellationToken);
 
         // Assert
         // Should try to use the API key from configuration
@@ -134,7 +134,7 @@ public class ServerConnectionTestServiceTests
             AzureDeploymentNamesText = ""
         };
 
-        var result = await service.TestConnectionAsync(server);
+        var result = await service.TestConnectionAsync(server, cancellationToken: TestContext.Current.CancellationToken);
 
         Assert.False(result.IsSuccessful);
         Assert.Contains("Configure at least one Azure deployment name", result.ErrorMessage);

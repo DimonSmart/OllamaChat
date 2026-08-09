@@ -21,8 +21,8 @@ public sealed class KnowledgeStoreRegressionTests
         ollama.Setup(service => service.GenerateEmbeddingAsync("query", It.IsAny<ServerModel>(), It.IsAny<CancellationToken>())).ReturnsAsync([1f, 2f]);
         var resolver = new EmbeddingGeneratorResolver(servers.Object, ollama.Object, NullLogger<EmbeddingGeneratorResolver>.Instance);
 
-        var generator = await resolver.ResolveAsync(new ServerModel(serverId, "embedding"));
-        var embeddings = await generator.GenerateAsync(["query"]);
+        var generator = await resolver.ResolveAsync(new ServerModel(serverId, "embedding"), cancellationToken: TestContext.Current.CancellationToken);
+        var embeddings = await generator.GenerateAsync(["query"], cancellationToken: TestContext.Current.CancellationToken);
 
         Assert.Equal(new float[] { 1f, 2f }, embeddings[0].Vector.ToArray());
     }
@@ -35,7 +35,7 @@ public sealed class KnowledgeStoreRegressionTests
         servers.Setup(service => service.GetByIdAsync(serverId)).ReturnsAsync(new LlmServerConfig { Id = serverId, ServerType = ServerType.ChatGpt });
         var resolver = new EmbeddingGeneratorResolver(servers.Object, Mock.Of<IOllamaClientService>(), NullLogger<EmbeddingGeneratorResolver>.Instance);
 
-        var error = await Assert.ThrowsAsync<NotSupportedException>(() => resolver.ResolveAsync(new ServerModel(serverId, "embedding")));
+        var error = await Assert.ThrowsAsync<NotSupportedException>(() => resolver.ResolveAsync(new ServerModel(serverId, "embedding"), cancellationToken: TestContext.Current.CancellationToken));
 
         Assert.Contains("ChatGpt", error.Message);
     }
@@ -74,7 +74,7 @@ public sealed class KnowledgeStoreRegressionTests
             NullLogger<KnowledgeStoreService>.Instance);
         store.Configuration.MaxTokensPerChunk++;
 
-        await service.UpdateAsync(store);
+        await service.UpdateAsync(store, TestContext.Current.CancellationToken);
 
         Assert.Equal(KnowledgeStoreIndexState.Outdated, store.Index.State);
         indexer.Verify(service => service.RequestRebuild(), Times.Once);
@@ -99,7 +99,7 @@ public sealed class KnowledgeStoreRegressionTests
             indexer.Object,
             NullLogger<KnowledgeStoreService>.Instance);
 
-        await service.RequestReindexAsync(store.Id);
+        await service.RequestReindexAsync(store.Id, TestContext.Current.CancellationToken);
 
         Assert.True(store.Index.ForceRebuild);
         Assert.Equal(KnowledgeStoreIndexState.Indexing, store.Index.State);
@@ -124,7 +124,7 @@ public sealed class KnowledgeStoreRegressionTests
             indexer.Object,
             NullLogger<KnowledgeStoreService>.Instance);
 
-        await service.UpdateAsync(store);
+        await service.UpdateAsync(store, TestContext.Current.CancellationToken);
 
         indexer.Verify(service => service.RequestRebuild(), Times.Never);
     }
@@ -186,7 +186,7 @@ public sealed class KnowledgeStoreRegressionTests
             .ReturnsAsync((KnowledgeVectorSearchRequest request, CancellationToken _) => [new RagSearchResult { Content = request.Store.Name, Score = request.Store == first ? 1 : .5 }]);
         var service = new KnowledgeSearchService(stores.Object, settings, resolver.Object, index.Object);
 
-        var response = await service.SearchAsync(new KnowledgeSearchRequest { KnowledgeStoreIds = [first.Id, second.Id], Query = "query", MaxResults = 1, MinVectorRelevanceScore = null });
+        var response = await service.SearchAsync(new KnowledgeSearchRequest { KnowledgeStoreIds = [first.Id, second.Id], Query = "query", MaxResults = 1, MinVectorRelevanceScore = null }, TestContext.Current.CancellationToken);
 
         Assert.Equal("First", Assert.Single(response.Results).Content);
         resolver.Verify(service => service.ResolveAsync(It.IsAny<ServerModel>(), It.IsAny<CancellationToken>()), Times.Once);

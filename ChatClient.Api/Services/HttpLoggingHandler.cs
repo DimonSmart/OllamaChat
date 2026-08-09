@@ -17,7 +17,7 @@ public class HttpLoggingHandler(ILogger<HttpLoggingHandler> logger) : Delegating
         return response;
     }
 
-    private async Task LogRequestAsync(HttpRequestMessage request, CancellationToken ct)
+    private async Task LogRequestAsync(HttpRequestMessage request, CancellationToken cancellationToken)
     {
         if (!logger.IsEnabled(LogLevel.Debug))
             return;
@@ -48,7 +48,7 @@ public class HttpLoggingHandler(ILogger<HttpLoggingHandler> logger) : Delegating
                     sb.AppendLine($"  {header.Key}: {string.Join(", ", header.Value)}");
             }
 
-            var content = await SafeReadAsStringAsync(request.Content, ct);
+            var content = await SafeReadAsStringAsync(request.Content, cancellationToken);
             if (!string.IsNullOrEmpty(content))
             {
                 sb.AppendLine("Body:");
@@ -59,7 +59,7 @@ public class HttpLoggingHandler(ILogger<HttpLoggingHandler> logger) : Delegating
         logger.LogDebug(sb.ToString());
     }
 
-    private async Task LogResponseAsync(HttpResponseMessage response, CancellationToken ct)
+    private async Task LogResponseAsync(HttpResponseMessage response, CancellationToken cancellationToken)
     {
         if (!logger.IsEnabled(LogLevel.Debug))
             return;
@@ -90,7 +90,7 @@ public class HttpLoggingHandler(ILogger<HttpLoggingHandler> logger) : Delegating
             }
             else
             {
-                var content = await SafeReadAsStringAsync(response.Content, ct);
+                var content = await SafeReadAsStringAsync(response.Content, cancellationToken);
                 if (!string.IsNullOrEmpty(content))
                 {
                     sb.AppendLine("Body:");
@@ -102,11 +102,11 @@ public class HttpLoggingHandler(ILogger<HttpLoggingHandler> logger) : Delegating
         logger.LogDebug(sb.ToString());
     }
 
-    private static async Task<string?> SafeReadAsStringAsync(HttpContent content, CancellationToken ct)
+    private static async Task<string?> SafeReadAsStringAsync(HttpContent content, CancellationToken cancellationToken)
     {
         try
         {
-            return await content.ReadAsStringAsync(ct);
+            return await content.ReadAsStringAsync(cancellationToken);
         }
         catch
         {

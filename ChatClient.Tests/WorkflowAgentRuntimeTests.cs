@@ -49,7 +49,7 @@ public sealed class WorkflowAgentRuntimeTests
             ["a", "w", "b"]);
         var parentContext = CreateContext();
 
-        var events = await CollectAsync(runtime.RunAsync(CreateRequest(), parentContext));
+        var events = await CollectAsync(runtime.RunAsync(CreateRequest(), parentContext, cancellationToken: TestContext.Current.CancellationToken));
 
         Assert.Equal(
             [
@@ -89,7 +89,7 @@ public sealed class WorkflowAgentRuntimeTests
             })
         ]));
 
-        var events = await CollectAsync(runtime.RunAsync(CreateRequest(), CreateContext()));
+        var events = await CollectAsync(runtime.RunAsync(CreateRequest(), CreateContext(), cancellationToken: TestContext.Current.CancellationToken));
 
         var delta = Assert.IsType<AgentTextDelta>(events[0]);
         Assert.Equal("m1", delta.MessageId);
@@ -121,7 +121,7 @@ public sealed class WorkflowAgentRuntimeTests
             })
         ]));
 
-        var events = await CollectAsync(runtime.RunAsync(CreateRequest(), CreateContext()));
+        var events = await CollectAsync(runtime.RunAsync(CreateRequest(), CreateContext(), cancellationToken: TestContext.Current.CancellationToken));
 
         Assert.DoesNotContain(events, static runEvent => runEvent.GetType().Name.Contains("Started", StringComparison.Ordinal));
         Assert.Contains(events, static runEvent => runEvent is AgentTextDelta);
@@ -153,7 +153,7 @@ public sealed class WorkflowAgentRuntimeTests
                 new AgentInputMessage(AgentMessageRole.Assistant, "assistant-1"),
                 new AgentInputMessage(AgentMessageRole.User, "user-2")
             ]
-        }, CreateContext()));
+        }, CreateContext(), cancellationToken: TestContext.Current.CancellationToken));
 
         Assert.Equal(
             $"Previous conversation:{Environment.NewLine}{Environment.NewLine}" +
@@ -176,7 +176,7 @@ public sealed class WorkflowAgentRuntimeTests
                 new AgentInputMessage(AgentMessageRole.User, "go"),
                 new AgentInputMessage(AgentMessageRole.Assistant, "late")
             ]
-        }, CreateContext()));
+        }, CreateContext(), cancellationToken: TestContext.Current.CancellationToken));
 
         var failure = Assert.IsType<AgentRunFailed>(Assert.Single(events));
         Assert.Equal("invalid_input", failure.Error.Code);
@@ -206,7 +206,7 @@ public sealed class WorkflowAgentRuntimeTests
         {
             Messages = [new AgentInputMessage(AgentMessageRole.User, "go")],
             Attachments = [new AgentInputAttachment("doc.md", "text/markdown", "# Doc")]
-        }, CreateContext()));
+        }, CreateContext(), cancellationToken: TestContext.Current.CancellationToken));
 
         var input = Assert.Single(runner.LastStartRequest!.StartInputs);
         Assert.Equal("document", input.Key);
@@ -221,7 +221,7 @@ public sealed class WorkflowAgentRuntimeTests
         IReadOnlyList<WorkflowStartInputDefinition> inputs)
     {
         var events = await CollectAsync(CreateRuntime(new StubHeadlessWorkflowRunner([]), inputs)
-            .RunAsync(request, CreateContext()));
+            .RunAsync(request, CreateContext(), cancellationToken: TestContext.Current.CancellationToken));
 
         var failure = Assert.IsType<AgentRunFailed>(Assert.Single(events));
         Assert.Equal("invalid_input", failure.Error.Code);
@@ -233,7 +233,7 @@ public sealed class WorkflowAgentRuntimeTests
     public async Task RunAsync_MapsExceptions(Exception exception, string expectedCode)
     {
         var events = await CollectAsync(CreateRuntime(new ThrowingHeadlessWorkflowRunner(exception))
-            .RunAsync(CreateRequest(), CreateContext()));
+            .RunAsync(CreateRequest(), CreateContext(), cancellationToken: TestContext.Current.CancellationToken));
 
         var failure = Assert.IsType<AgentRunFailed>(Assert.Single(events));
         Assert.Equal(expectedCode, failure.Error.Code);
@@ -264,8 +264,8 @@ public sealed class WorkflowAgentRuntimeTests
         ]);
         var runtime = CreateRuntime(runner);
 
-        await CollectAsync(runtime.RunAsync(CreateRequest(), CreateContext()));
-        await CollectAsync(runtime.RunAsync(CreateRequest(), CreateContext()));
+        await CollectAsync(runtime.RunAsync(CreateRequest(), CreateContext(), cancellationToken: TestContext.Current.CancellationToken));
+        await CollectAsync(runtime.RunAsync(CreateRequest(), CreateContext(), cancellationToken: TestContext.Current.CancellationToken));
 
         Assert.Equal(2, runner.StartCount);
     }

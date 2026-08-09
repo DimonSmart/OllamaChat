@@ -148,7 +148,7 @@ public sealed class HandoffRuntimeWorkflowBuilderTests
             .WithOutputFrom(executor)
             .Build();
 
-        await using var run = await InProcessExecution.OpenStreamingAsync(workflow, "handoff-regression");
+        await using var run = await InProcessExecution.OpenStreamingAsync(workflow, "handoff-regression", cancellationToken: TestContext.Current.CancellationToken);
 
         var conversationAccepted = await run.TrySendMessageAsync<IEnumerable<ChatMessage>>(
             [new ChatMessage(ChatRole.User, "hello handoff")]);

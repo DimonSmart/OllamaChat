@@ -36,7 +36,7 @@ public class BuiltInMarkdownDocumentMcpServerIntegrationTests
             Another chapter.
             """);
         var client = await fixture.CreateClientAsync();
-        var tools = (await client.ListToolsAsync()).ToList();
+        var tools = (await client.ListToolsAsync(cancellationToken: TestContext.Current.CancellationToken)).ToList();
 
         Assert.Contains(tools, static tool => string.Equals(tool.Name, "doc_get_context", StringComparison.Ordinal));
         Assert.Contains(tools, static tool => string.Equals(tool.Name, "doc_list_headings", StringComparison.Ordinal));
@@ -204,7 +204,7 @@ public class BuiltInMarkdownDocumentMcpServerIntegrationTests
         await using var fixture = new MarkdownDocumentMcpFixture();
         await fixture.WriteSourceAsync("# Only Heading");
         var client = await fixture.CreateClientAsync();
-        var tool = (await client.ListToolsAsync())
+        var tool = (await client.ListToolsAsync(cancellationToken: TestContext.Current.CancellationToken))
             .First(static candidate => string.Equals(candidate.Name, "doc_list_items", StringComparison.Ordinal));
 
         var fields = McpPlaygroundToolFormHelper.CreateFields(tool.JsonSchema);
@@ -220,7 +220,7 @@ public class BuiltInMarkdownDocumentMcpServerIntegrationTests
         await using var fixture = new MarkdownDocumentMcpFixture();
         await fixture.WriteSourceAsync("# Chapter");
         var client = await fixture.CreateClientAsync();
-        var tool = (await client.ListToolsAsync())
+        var tool = (await client.ListToolsAsync(cancellationToken: TestContext.Current.CancellationToken))
             .First(static candidate => string.Equals(candidate.Name, "doc_apply_operations", StringComparison.Ordinal));
 
         var result = await CallToolAsync(
@@ -253,7 +253,7 @@ public class BuiltInMarkdownDocumentMcpServerIntegrationTests
         await using var fixture = new MarkdownDocumentMcpFixture();
         await fixture.WriteSourceAsync("# Chapter");
         var client = await fixture.CreateClientAsync();
-        var tool = (await client.ListToolsAsync())
+        var tool = (await client.ListToolsAsync(cancellationToken: TestContext.Current.CancellationToken))
             .First(static candidate => string.Equals(candidate.Name, "cursor_next", StringComparison.Ordinal));
 
         var result = await CallToolAsync(

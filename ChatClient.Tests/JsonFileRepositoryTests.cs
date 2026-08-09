@@ -19,8 +19,8 @@ public class JsonFileRepositoryTests
         {
             var repo = new JsonFileRepository<Sample>(path, NullLogger.Instance);
             var sample = new Sample { Name = "test", Value = 1 };
-            await repo.WriteAsync(sample);
-            var loaded = await repo.ReadAsync();
+            await repo.WriteAsync(sample, cancellationToken: TestContext.Current.CancellationToken);
+            var loaded = await repo.ReadAsync(cancellationToken: TestContext.Current.CancellationToken);
             Assert.NotNull(loaded);
             Assert.Equal("test", loaded!.Name);
             Assert.Equal(1, loaded.Value);
@@ -44,8 +44,8 @@ public class JsonFileRepositoryTests
                 d.Name = "updated";
                 d.Value = 2;
                 return Task.CompletedTask;
-            }, new Sample());
-            var loaded = await repo.ReadAsync();
+            }, new Sample(), cancellationToken: TestContext.Current.CancellationToken);
+            var loaded = await repo.ReadAsync(cancellationToken: TestContext.Current.CancellationToken);
             Assert.NotNull(loaded);
             Assert.Equal("updated", loaded!.Name);
             Assert.Equal(2, loaded.Value);
@@ -65,7 +65,7 @@ public class JsonFileRepositoryTests
         {
             var repo1 = new JsonFileRepository<Sample>(path, NullLogger.Instance);
             var repo2 = new JsonFileRepository<Sample>(path, NullLogger.Instance);
-            await repo1.WriteAsync(new Sample { Name = "counter", Value = 0 });
+            await repo1.WriteAsync(new Sample { Name = "counter", Value = 0 }, cancellationToken: TestContext.Current.CancellationToken);
 
             var tasks = Enumerable.Range(0, 24)
                 .Select(index =>
@@ -83,7 +83,7 @@ public class JsonFileRepositoryTests
 
             await Task.WhenAll(tasks);
 
-            var loaded = await repo1.ReadAsync();
+            var loaded = await repo1.ReadAsync(cancellationToken: TestContext.Current.CancellationToken);
             Assert.NotNull(loaded);
             Assert.Equal(24, loaded!.Value);
         }

@@ -16,7 +16,7 @@ public class KnowledgeBookMcpServerIntegrationTests
     {
         await using var fixture = new KnowledgeBookMcpFixture();
         var client = await fixture.CreateClientAsync();
-        var tools = (await client.ListToolsAsync()).ToList();
+        var tools = (await client.ListToolsAsync(cancellationToken: TestContext.Current.CancellationToken)).ToList();
 
         Assert.Contains(tools, static tool => string.Equals(tool.Name, "kb_get_context", StringComparison.Ordinal));
         Assert.Contains(tools, static tool => string.Equals(tool.Name, "kb_list_headings", StringComparison.Ordinal));
@@ -133,7 +133,7 @@ public class KnowledgeBookMcpServerIntegrationTests
     {
         await using var fixture = new KnowledgeBookMcpFixture();
         var client = await fixture.CreateClientAsync();
-        var tool = (await client.ListToolsAsync())
+        var tool = (await client.ListToolsAsync(cancellationToken: TestContext.Current.CancellationToken))
             .First(static candidate => string.Equals(candidate.Name, "kb_list_headings", StringComparison.Ordinal));
 
         var fields = McpPlaygroundToolFormHelper.CreateFields(tool.JsonSchema);
@@ -147,7 +147,7 @@ public class KnowledgeBookMcpServerIntegrationTests
     {
         await using var fixture = new KnowledgeBookMcpFixture();
         var client = await fixture.CreateClientAsync();
-        var tool = (await client.ListToolsAsync())
+        var tool = (await client.ListToolsAsync(cancellationToken: TestContext.Current.CancellationToken))
             .First(static candidate => string.Equals(candidate.Name, "kb_insert_section", StringComparison.Ordinal));
 
         var result = await CallToolAsync(

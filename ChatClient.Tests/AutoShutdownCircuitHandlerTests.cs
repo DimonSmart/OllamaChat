@@ -24,8 +24,8 @@ public class AutoShutdownCircuitHandlerTests
         var lifetime = new TestLifetime();
         var handler = new AutoShutdownCircuitHandler(lifetime, NullLogger<AutoShutdownCircuitHandler>.Instance);
 
-        await handler.OnConnectionUpAsync(CreateCircuit("c1"), default);
-        await handler.OnConnectionDownAsync(CreateCircuit("c1"), default);
+        await handler.OnConnectionUpAsync(CreateCircuit("c1"), TestContext.Current.CancellationToken);
+        await handler.OnConnectionDownAsync(CreateCircuit("c1"), TestContext.Current.CancellationToken);
         Assert.False(lifetime.Stopped);
 
         await WaitUntilAsync(() => lifetime.Stopped, TimeSpan.FromSeconds(6));
@@ -38,12 +38,12 @@ public class AutoShutdownCircuitHandlerTests
         var lifetime = new TestLifetime();
         var handler = new AutoShutdownCircuitHandler(lifetime, NullLogger<AutoShutdownCircuitHandler>.Instance);
 
-        await handler.OnConnectionUpAsync(CreateCircuit("c1"), default);
-        await handler.OnConnectionDownAsync(CreateCircuit("c1"), default);
+        await handler.OnConnectionUpAsync(CreateCircuit("c1"), TestContext.Current.CancellationToken);
+        await handler.OnConnectionDownAsync(CreateCircuit("c1"), TestContext.Current.CancellationToken);
 
-        await Task.Delay(TimeSpan.FromMilliseconds(100));
-        await handler.OnConnectionUpAsync(CreateCircuit("c1"), default);
-        await Task.Delay(TimeSpan.FromSeconds(3));
+        await Task.Delay(TimeSpan.FromMilliseconds(100), cancellationToken: TestContext.Current.CancellationToken);
+        await handler.OnConnectionUpAsync(CreateCircuit("c1"), TestContext.Current.CancellationToken);
+        await Task.Delay(TimeSpan.FromSeconds(3), cancellationToken: TestContext.Current.CancellationToken);
 
         Assert.False(lifetime.Stopped);
     }
@@ -54,10 +54,10 @@ public class AutoShutdownCircuitHandlerTests
         var lifetime = new TestLifetime();
         var handler = new AutoShutdownCircuitHandler(lifetime, NullLogger<AutoShutdownCircuitHandler>.Instance);
 
-        await handler.OnConnectionUpAsync(CreateCircuit("c1"), default);
-        await handler.OnConnectionUpAsync(CreateCircuit("c2"), default);
-        await handler.OnConnectionDownAsync(CreateCircuit("c1"), default);
-        await Task.Delay(TimeSpan.FromSeconds(3));
+        await handler.OnConnectionUpAsync(CreateCircuit("c1"), TestContext.Current.CancellationToken);
+        await handler.OnConnectionUpAsync(CreateCircuit("c2"), TestContext.Current.CancellationToken);
+        await handler.OnConnectionDownAsync(CreateCircuit("c1"), TestContext.Current.CancellationToken);
+        await Task.Delay(TimeSpan.FromSeconds(3), cancellationToken: TestContext.Current.CancellationToken);
 
         Assert.False(lifetime.Stopped);
     }

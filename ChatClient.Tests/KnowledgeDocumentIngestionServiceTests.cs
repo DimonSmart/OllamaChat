@@ -11,7 +11,7 @@ public sealed class KnowledgeDocumentIngestionServiceTests
         var service = CreateService();
         await using var source = new MemoryStream(Encoding.UTF8.GetBytes("\r\n# Title\r\n\r\nText\r\n\r\n"));
 
-        var prepared = await service.PrepareAsync("notes.md", source);
+        var prepared = await service.PrepareAsync("notes.md", source, cancellationToken: TestContext.Current.CancellationToken);
 
         Assert.Equal("# Title\n\nText\n", prepared.CanonicalMarkdown);
     }
@@ -22,7 +22,7 @@ public sealed class KnowledgeDocumentIngestionServiceTests
         var service = new KnowledgeDocumentIngestionService(new FailingConverter());
         await using var source = new MemoryStream([1, 2, 3]);
 
-        var exception = await Assert.ThrowsAsync<InvalidOperationException>(() => service.PrepareAsync("book.pdf", source));
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(() => service.PrepareAsync("book.pdf", source, cancellationToken: TestContext.Current.CancellationToken));
 
         Assert.Equal("MarkItDown conversion failed for 'book.pdf'.", exception.Message);
     }

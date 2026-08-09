@@ -67,10 +67,10 @@ public sealed class OllamaService(
 
     public bool EmbeddingsAvailable => _embeddingError is null;
 
-    public Task<float[]> GenerateEmbeddingAsync(string input, ServerModel model, CancellationToken ct = default)
-        => GenerateEmbeddingInternalAsync(input, model.ModelName, model.ServerId, ct);
+    public Task<float[]> GenerateEmbeddingAsync(string input, ServerModel model, CancellationToken cancellationToken = default)
+        => GenerateEmbeddingInternalAsync(input, model.ModelName, model.ServerId, cancellationToken);
 
-    private async Task<float[]> GenerateEmbeddingInternalAsync(string input, string modelId, Guid serverId, CancellationToken ct)
+    private async Task<float[]> GenerateEmbeddingInternalAsync(string input, string modelId, Guid serverId, CancellationToken cancellationToken)
     {
         if (_embeddingError is not null)
             throw new InvalidOperationException("Embedding service unavailable. Restart the application.", _embeddingError);
@@ -80,7 +80,7 @@ public sealed class OllamaService(
 
         try
         {
-            var resp = await client.EmbedAsync(req, ct);
+            var resp = await client.EmbedAsync(req, cancellationToken);
             return resp.Embeddings.First();
         }
         catch (HttpRequestException ex) when (ex.StatusCode == System.Net.HttpStatusCode.NotFound)

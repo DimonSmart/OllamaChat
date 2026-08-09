@@ -105,13 +105,13 @@ public sealed class CompactionProfileServiceTests
             var service = new CompactionProfileService(profileRepository, agentRepository, seeder);
             var profile = CreatePipelineProfile("Used");
             await service.CreateAsync(profile);
-            await agentRepository.SaveAllAsync([new AgentTemplateDefinition { AgentName = "Research agent", Content = "Research", CompactionProfileId = profile.Id }]);
+            await agentRepository.SaveAllAsync([new AgentTemplateDefinition { AgentName = "Research agent", Content = "Research", CompactionProfileId = profile.Id }], cancellationToken: TestContext.Current.CancellationToken);
 
             var error = await Assert.ThrowsAsync<InvalidOperationException>(() => service.DeleteAsync(profile.Id));
             Assert.Contains("Research agent", error.Message);
 
-            await File.WriteAllTextAsync(Path.Combine(root.FullName, "UserData", "agent_templates.json"), "[{\"AgentName\":\"Legacy\",\"Content\":\"x\"}]");
-            var legacy = Assert.Single(await agentRepository.GetAllAsync());
+            await File.WriteAllTextAsync(Path.Combine(root.FullName, "UserData", "agent_templates.json"), "[{\"AgentName\":\"Legacy\",\"Content\":\"x\"}]", cancellationToken: TestContext.Current.CancellationToken);
+            var legacy = Assert.Single(await agentRepository.GetAllAsync(cancellationToken: TestContext.Current.CancellationToken));
             Assert.Null(legacy.CompactionProfileId);
         }
         finally { root.Delete(recursive: true); }
@@ -125,7 +125,7 @@ public sealed class CompactionProfileServiceTests
         {
             var profileRepository = CreateProfileRepository(root.FullName);
             var agentRepository = CreateAgentRepository(root.FullName);
-            await agentRepository.SaveAllAsync([new AgentTemplateDefinition { AgentName = "Existing", Content = "x" }]);
+            await agentRepository.SaveAllAsync([new AgentTemplateDefinition { AgentName = "Existing", Content = "x" }], cancellationToken: TestContext.Current.CancellationToken);
             var service = new CompactionProfileService(profileRepository, agentRepository, new CompactionProfileSeeder(profileRepository));
 
             await service.RestoreBuiltInAsync();
@@ -133,7 +133,7 @@ public sealed class CompactionProfileServiceTests
             var balanced = Assert.Single(await service.GetAllAsync());
             Assert.Equal(CompactionProfileSeeder.BalancedProfileId, balanced.Id);
             Assert.Equal("Balanced", balanced.Name);
-            Assert.Null((Assert.Single(await agentRepository.GetAllAsync())).CompactionProfileId);
+            Assert.Null((Assert.Single(await agentRepository.GetAllAsync(cancellationToken: TestContext.Current.CancellationToken))).CompactionProfileId);
         }
         finally { root.Delete(recursive: true); }
     }
@@ -151,11 +151,11 @@ public sealed class CompactionProfileServiceTests
             outdatedBalanced.BudgetSource = CompactionBudgetSources.Fixed;
             outdatedBalanced.ContextWindowTokens = 128_000;
             outdatedBalanced.MaxOutputTokens = 8_000;
-            await repository.SaveAllAsync([userProfile, outdatedBalanced]);
+            await repository.SaveAllAsync([userProfile, outdatedBalanced], cancellationToken: TestContext.Current.CancellationToken);
 
             await seeder.SeedAsync();
 
-            var profiles = await repository.GetAllAsync();
+            var profiles = await repository.GetAllAsync(cancellationToken: TestContext.Current.CancellationToken);
             var balanced = Assert.Single(profiles, profile => profile.Id == CompactionProfileSeeder.BalancedProfileId);
             Assert.Equal(CompactionBudgetSources.SelectedModel, balanced.BudgetSource);
             Assert.Null(balanced.ContextWindowTokens);
@@ -246,15 +246,15 @@ public sealed class CompactionProfileServiceTests
         {
             var path = Path.Combine(root.FullName, "UserData", "compaction_profiles.json");
             Directory.CreateDirectory(Path.GetDirectoryName(path)!);
-            await File.WriteAllTextAsync(path, "[{\"Name\":\"Legacy\",\"Kind\":\"custom-pipeline\",\"Stages\":[{\"Kind\":\"tool-result\",\"TriggerTokenCount\":8000,\"TargetTokenCount\":4000}]}]");
+            await File.WriteAllTextAsync(path, "[{\"Name\":\"Legacy\",\"Kind\":\"custom-pipeline\",\"Stages\":[{\"Kind\":\"tool-result\",\"TriggerTokenCount\":8000,\"TargetTokenCount\":4000}]}]", cancellationToken: TestContext.Current.CancellationToken);
 
-            var profile = Assert.Single(await CreateProfileRepository(root.FullName).GetAllAsync());
+            var profile = Assert.Single(await CreateProfileRepository(root.FullName).GetAllAsync(cancellationToken: TestContext.Current.CancellationToken));
             var stage = Assert.Single(profile.Stages);
             Assert.Equal(CompactionLimitKinds.Tokens, stage.Trigger.Kind);
             Assert.Equal(8_000, stage.Trigger.Value);
             Assert.Equal(4_000, stage.Target.Value);
 
-            var resaved = await File.ReadAllTextAsync(path);
+            var resaved = await File.ReadAllTextAsync(path, cancellationToken: TestContext.Current.CancellationToken);
             Assert.DoesNotContain("TriggerTokenCount", resaved);
             Assert.Contains("\"Trigger\"", resaved);
         }
@@ -299,13 +299,13 @@ public sealed class CompactionProfileServiceTests
             legacy.Stages[0].Id = stageId;
             legacy.Stages[1].Id = stageId;
             legacy.Stages[2].Id = Guid.Empty;
-            await File.WriteAllTextAsync(path, JsonSerializer.Serialize(new[] { legacy }));
+            await File.WriteAllTextAsync(path, JsonSerializer.Serialize(new[] { legacy }), cancellationToken: TestContext.Current.CancellationToken);
 
-            var profile = Assert.Single(await CreateProfileRepository(root.FullName).GetAllAsync());
+            var profile = Assert.Single(await CreateProfileRepository(root.FullName).GetAllAsync(cancellationToken: TestContext.Current.CancellationToken));
             Assert.Equal(3, profile.Stages.Select(stage => stage.Id).Distinct().Count());
             Assert.All(profile.Stages, stage => Assert.NotEqual(Guid.Empty, stage.Id));
 
-            var resaved = await File.ReadAllTextAsync(path);
+            var resaved = await File.ReadAllTextAsync(path, cancellationToken: TestContext.Current.CancellationToken);
             Assert.Equal(4, System.Text.RegularExpressions.Regex.Matches(resaved, "\\\"Id\\\"").Count);
         }
         finally { root.Delete(recursive: true); }
@@ -324,13 +324,13 @@ public sealed class CompactionProfileServiceTests
                   {"Kind":"tool-result","Trigger":{"Kind":"input-budget-percentage","Value":45},"Target":{"Kind":"input-budget-percentage","Value":35},"RetainedCount":8},
                   {"Kind":"sliding-window","Trigger":{"Kind":"turns","Value":20},"Target":{"Kind":"turns","Value":12},"RetainedCount":6}
                 ]}]
-                """);
+                """, cancellationToken: TestContext.Current.CancellationToken);
 
-            var stages = Assert.Single(await CreateProfileRepository(root.FullName).GetAllAsync()).Stages;
+            var stages = Assert.Single(await CreateProfileRepository(root.FullName).GetAllAsync(cancellationToken: TestContext.Current.CancellationToken)).Stages;
 
             Assert.Equal((CompactionLimitKinds.InputBudgetPercent, .45d, .35d, 8, 0), (stages[0].Trigger.Kind, stages[0].Trigger.Value, stages[0].Target.Value, stages[0].MinimumPreservedGroups, stages[0].MinimumPreservedTurns));
             Assert.Equal((CompactionLimitKinds.Turns, 20d, 12d, 0, 6), (stages[1].Trigger.Kind, stages[1].Trigger.Value, stages[1].Target.Value, stages[1].MinimumPreservedGroups, stages[1].MinimumPreservedTurns));
-            var resaved = await File.ReadAllTextAsync(path);
+            var resaved = await File.ReadAllTextAsync(path, cancellationToken: TestContext.Current.CancellationToken);
             Assert.DoesNotContain("RetainedCount", resaved);
             Assert.DoesNotContain("input-budget-percentage", resaved);
         }
@@ -345,13 +345,13 @@ public sealed class CompactionProfileServiceTests
         {
             var path = Path.Combine(root.FullName, "UserData", "compaction_profiles.json");
             Directory.CreateDirectory(Path.GetDirectoryName(path)!);
-            await File.WriteAllTextAsync(path, "[{\"Name\":\"Legacy\",\"ToolResultThresholdPercentage\":50,\"TruncationThresholdPercentage\":80}]");
+            await File.WriteAllTextAsync(path, "[{\"Name\":\"Legacy\",\"ToolResultThresholdPercentage\":50,\"TruncationThresholdPercentage\":80}]", cancellationToken: TestContext.Current.CancellationToken);
 
-            var profile = Assert.Single(await CreateProfileRepository(root.FullName).GetAllAsync());
+            var profile = Assert.Single(await CreateProfileRepository(root.FullName).GetAllAsync(cancellationToken: TestContext.Current.CancellationToken));
 
             Assert.Equal(.50, profile.ToolResultThreshold);
             Assert.Equal(.80, profile.TruncationThreshold);
-            var resaved = await File.ReadAllTextAsync(path);
+            var resaved = await File.ReadAllTextAsync(path, cancellationToken: TestContext.Current.CancellationToken);
             Assert.DoesNotContain("ThresholdPercentage", resaved);
             Assert.Contains("ToolResultThreshold", resaved);
         }

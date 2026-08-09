@@ -24,7 +24,7 @@ public sealed class WorkflowParticipantUnificationTests
                 .FromSavedAgent("Code Reviewer"))
             .Build();
 
-        var normalized = await normalizer.NormalizeAsync(workflow);
+        var normalized = await normalizer.NormalizeAsync(workflow, cancellationToken: TestContext.Current.CancellationToken);
 
         var participant = Assert.Single(normalized.Participants);
         var source = Assert.IsType<SavedDefinitionParticipantSource>(participant.Source);
@@ -44,7 +44,7 @@ public sealed class WorkflowParticipantUnificationTests
         });
 
         var exception = await Assert.ThrowsAsync<InvalidOperationException>(() =>
-            normalizer.NormalizeAsync(workflow));
+            normalizer.NormalizeAsync(workflow, cancellationToken: TestContext.Current.CancellationToken));
 
         Assert.Contains("Missing Agent", exception.Message, StringComparison.Ordinal);
         Assert.Contains("was not found", exception.Message, StringComparison.OrdinalIgnoreCase);
@@ -66,7 +66,7 @@ public sealed class WorkflowParticipantUnificationTests
         });
 
         var exception = await Assert.ThrowsAsync<InvalidOperationException>(() =>
-            normalizer.NormalizeAsync(workflow));
+            normalizer.NormalizeAsync(workflow, cancellationToken: TestContext.Current.CancellationToken));
 
         Assert.Contains("ambiguous", exception.Message, StringComparison.OrdinalIgnoreCase);
     }
@@ -105,7 +105,7 @@ public sealed class WorkflowParticipantUnificationTests
             ParticipantOrder = ["by-source-name", "by-agent-draft", "by-saved-template"]
         };
 
-        var normalized = await normalizer.NormalizeAsync(workflow);
+        var normalized = await normalizer.NormalizeAsync(workflow, cancellationToken: TestContext.Current.CancellationToken);
 
         Assert.All(normalized.Participants, participant =>
         {
@@ -131,7 +131,7 @@ public sealed class WorkflowParticipantUnificationTests
 
         var problems = await validator.ValidateAsync(new AgentDefinitionReference(
             AgentDefinitionKind.SavedWorkflow,
-            workflowId.ToString("D")));
+            workflowId.ToString("D")), cancellationToken: TestContext.Current.CancellationToken);
 
         var problem = Assert.Single(problems);
         Assert.Contains("Missing Agent", problem.Message, StringComparison.Ordinal);
@@ -152,7 +152,7 @@ public sealed class WorkflowParticipantUnificationTests
         });
 
         var exception = await Assert.ThrowsAsync<InvalidOperationException>(() =>
-            normalizer.NormalizeAsync(workflow));
+            normalizer.NormalizeAsync(workflow, cancellationToken: TestContext.Current.CancellationToken));
 
         Assert.Equal(
             "Workflow participant 'ambiguous' defines more than one executable source.",
@@ -169,7 +169,7 @@ public sealed class WorkflowParticipantUnificationTests
         var workflow = CreateSequentialWorkflow(participant);
 
         var exception = await Assert.ThrowsAsync<InvalidOperationException>(() =>
-            normalizer.NormalizeAsync(workflow));
+            normalizer.NormalizeAsync(workflow, cancellationToken: TestContext.Current.CancellationToken));
 
         Assert.Equal(
             $"Workflow participant '{participant.Id}' defines more than one executable source.",
@@ -190,7 +190,7 @@ public sealed class WorkflowParticipantUnificationTests
                 savedAgent.Id.ToString("D")))
         });
 
-        var participant = Assert.Single(await resolver.ResolveAsync(workflow));
+        var participant = Assert.Single(await resolver.ResolveAsync(workflow, cancellationToken: TestContext.Current.CancellationToken));
 
         var source = Assert.IsType<MaterializedLlmParticipantSource>(participant.Source);
         Assert.Equal("Original", source.Agent.AgentName);
@@ -218,13 +218,13 @@ public sealed class WorkflowParticipantUnificationTests
                 }
             }
         });
-        var participants = await resolver.ResolveAsync(workflow);
+        var participants = await resolver.ResolveAsync(workflow, cancellationToken: TestContext.Current.CancellationToken);
         var inlineFactory = new RecordingInlineRuntimeFactory([
             new AgentRunCompleted(CreateResult("done"))
         ]);
         var runtime = CreateSequentialRuntime(workflow, participants, inlineFactory);
 
-        var events = await CollectAsync(runtime.RunAsync(CreateRequest(), CreateContext()));
+        var events = await CollectAsync(runtime.RunAsync(CreateRequest(), CreateContext(), cancellationToken: TestContext.Current.CancellationToken));
 
         Assert.IsType<AgentRunCompleted>(events.Last());
         var call = Assert.Single(inlineFactory.Calls);
@@ -255,13 +255,13 @@ public sealed class WorkflowParticipantUnificationTests
                 }
             }
         });
-        var participants = await resolver.ResolveAsync(workflow);
+        var participants = await resolver.ResolveAsync(workflow, cancellationToken: TestContext.Current.CancellationToken);
         var inlineFactory = new RecordingInlineRuntimeFactory([
             new AgentRunCompleted(CreateResult("done"))
         ]);
         var runtime = CreateSequentialRuntime(workflow, participants, inlineFactory);
 
-        await CollectAsync(runtime.RunAsync(CreateRequest(), CreateContext()));
+        await CollectAsync(runtime.RunAsync(CreateRequest(), CreateContext(), cancellationToken: TestContext.Current.CancellationToken));
 
         Assert.Equal(
             "Base instructions\n\nAppended instructions",
@@ -303,7 +303,7 @@ public sealed class WorkflowParticipantUnificationTests
             CreateReferencedParticipant(),
             request,
             creationContext,
-            CreateContext()));
+            CreateContext(), cancellationToken: TestContext.Current.CancellationToken));
         var referencedFailure = Assert.IsType<AgentRunFailed>(Assert.Single(referencedEvents));
         Assert.Equal("runtime_protocol_violation", referencedFailure.Error.Code);
 
@@ -311,7 +311,7 @@ public sealed class WorkflowParticipantUnificationTests
             CreateMaterializedParticipant(),
             request,
             creationContext,
-            CreateContext()));
+            CreateContext(), cancellationToken: TestContext.Current.CancellationToken));
         var inlineFailure = Assert.IsType<AgentRunFailed>(Assert.Single(inlineEvents));
         Assert.Equal("runtime_protocol_violation", inlineFailure.Error.Code);
     }

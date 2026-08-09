@@ -16,9 +16,9 @@ public sealed class PhilosopherWorkflowDefinitionTests
             "Data",
             "workflows",
             "philosopher-battle-group-chat.workflow.csx");
-        var sourceCode = await File.ReadAllTextAsync(sourcePath);
+        var sourceCode = await File.ReadAllTextAsync(sourcePath, cancellationToken: TestContext.Current.CancellationToken);
 
-        var compiled = await new WorkflowDefinitionCompiler().CompileAsync(sourceCode);
+        var compiled = await new WorkflowDefinitionCompiler().CompileAsync(sourceCode, cancellationToken: TestContext.Current.CancellationToken);
         var workflow = Assert.IsType<GroupChatWorkflowDefinition>(compiled.Workflow);
 
         AssertSavedAgentReference(workflow, "debater_a", KantAgentId);
@@ -44,7 +44,7 @@ public sealed class PhilosopherWorkflowDefinitionTests
             workflow
             """;
 
-        var compiled = await new WorkflowDefinitionCompiler().CompileAsync(sourceCode);
+        var compiled = await new WorkflowDefinitionCompiler().CompileAsync(sourceCode, cancellationToken: TestContext.Current.CancellationToken);
         var workflow = Assert.IsType<SequentialWorkflowDefinition>(compiled.Workflow);
         var participant = Assert.Single(workflow.Participants);
         var source = Assert.IsType<SavedAgentNameParticipantSource>(participant.Source);

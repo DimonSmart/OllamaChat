@@ -12,7 +12,7 @@ public class TodoProviderProfileServiceTests
     public async Task CrudOperations_PersistProfilesAndPreserveCreationTimestamp()
     {
         var tempFile = Path.GetTempFileName();
-        await File.WriteAllTextAsync(tempFile, "[]");
+        await File.WriteAllTextAsync(tempFile, "[]", cancellationToken: TestContext.Current.CancellationToken);
         try
         {
             var service = CreateService(tempFile);
@@ -55,7 +55,7 @@ public class TodoProviderProfileServiceTests
     public async Task CreateAsync_RejectsEmptyAndCaseInsensitiveDuplicateNames_AndAllowsEmptyOptionalText()
     {
         var tempFile = Path.GetTempFileName();
-        await File.WriteAllTextAsync(tempFile, "[]");
+        await File.WriteAllTextAsync(tempFile, "[]", cancellationToken: TestContext.Current.CancellationToken);
         try
         {
             var service = CreateService(tempFile);

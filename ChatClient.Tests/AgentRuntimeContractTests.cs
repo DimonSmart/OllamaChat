@@ -29,7 +29,7 @@ public sealed class AgentRuntimeContractTests
             new StubModelRequirementAnalyzer(),
             new StubLaunchCapabilityAnalyzer());
 
-        var items = await catalog.GetAllAsync();
+        var items = await catalog.GetAllAsync(cancellationToken: TestContext.Current.CancellationToken);
 
         Assert.Contains(items, item =>
             item.Reference == new AgentDefinitionReference(AgentDefinitionKind.SavedAgent, sharedId.ToString("D")) &&
@@ -68,10 +68,10 @@ public sealed class AgentRuntimeContractTests
 
         var workflow = await catalog.FindAsync(new AgentDefinitionReference(
             AgentDefinitionKind.SavedWorkflow,
-            sharedId.ToString("D")));
+            sharedId.ToString("D")), cancellationToken: TestContext.Current.CancellationToken);
         var missing = await catalog.FindAsync(new AgentDefinitionReference(
             AgentDefinitionKind.SavedWorkflow,
-            Guid.NewGuid().ToString("D")));
+            Guid.NewGuid().ToString("D")), cancellationToken: TestContext.Current.CancellationToken);
 
         Assert.NotNull(workflow);
         Assert.Equal("Workflow", workflow.Name);
@@ -91,10 +91,10 @@ public sealed class AgentRuntimeContractTests
 
         var agentRuntime = await factory.CreateAsync(
             new AgentDefinitionReference(AgentDefinitionKind.SavedAgent, "agent-1"),
-            context);
+            context, cancellationToken: TestContext.Current.CancellationToken);
         var workflowRuntime = await factory.CreateAsync(
             new AgentDefinitionReference(AgentDefinitionKind.SavedWorkflow, "workflow-1"),
-            context);
+            context, cancellationToken: TestContext.Current.CancellationToken);
 
         Assert.Equal("agent-1", llmFactory.LastId);
         Assert.Equal("workflow-1", workflowFactory.LastId);

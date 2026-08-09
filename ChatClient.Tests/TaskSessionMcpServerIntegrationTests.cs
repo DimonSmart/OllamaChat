@@ -15,7 +15,7 @@ public sealed class TaskSessionMcpServerIntegrationTests
     {
         await using var fixture = new TaskSessionMcpFixture();
         var client = await fixture.CreateClientAsync();
-        var tools = (await client.ListToolsAsync()).ToList();
+        var tools = (await client.ListToolsAsync(cancellationToken: TestContext.Current.CancellationToken)).ToList();
 
         Assert.Contains(tools, static tool => string.Equals(tool.Name, "session_get_context", StringComparison.Ordinal));
         Assert.Contains(tools, static tool => string.Equals(tool.Name, "session_create", StringComparison.Ordinal));
@@ -151,7 +151,7 @@ public sealed class TaskSessionMcpServerIntegrationTests
     {
         await using var fixture = new TaskSessionMcpFixture();
         var initialClient = await fixture.CreateClientAsync();
-        var initialToolMap = (await initialClient.ListToolsAsync())
+        var initialToolMap = (await initialClient.ListToolsAsync(cancellationToken: TestContext.Current.CancellationToken))
             .ToDictionary(static tool => tool.Name, StringComparer.OrdinalIgnoreCase);
 
         var created = GetStructuredContent(await CallToolAsync(
@@ -163,7 +163,7 @@ public sealed class TaskSessionMcpServerIntegrationTests
         var sessionId = GetProperty(created, "sessionId").GetString();
 
         var boundClient = await fixture.CreateClientAsync(sessionId);
-        var toolMap = (await boundClient.ListToolsAsync())
+        var toolMap = (await boundClient.ListToolsAsync(cancellationToken: TestContext.Current.CancellationToken))
             .ToDictionary(static tool => tool.Name, StringComparer.OrdinalIgnoreCase);
 
         var phaseUpdated = GetStructuredContent(await CallToolAsync(

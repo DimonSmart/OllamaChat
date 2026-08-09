@@ -12,7 +12,7 @@ public class AgentModeProviderProfileServiceTests
     public async Task CrudOperations_PersistModesAndPreserveCreationTimestamp()
     {
         var tempFile = Path.GetTempFileName();
-        await File.WriteAllTextAsync(tempFile, "[]");
+        await File.WriteAllTextAsync(tempFile, "[]", cancellationToken: TestContext.Current.CancellationToken);
         try
         {
             var service = CreateService(tempFile);
@@ -51,7 +51,7 @@ public class AgentModeProviderProfileServiceTests
     public async Task CreateAsync_ValidatesProfileModesDefaultAndInstructions()
     {
         var tempFile = Path.GetTempFileName();
-        await File.WriteAllTextAsync(tempFile, "[]");
+        await File.WriteAllTextAsync(tempFile, "[]", cancellationToken: TestContext.Current.CancellationToken);
         try
         {
             var service = CreateService(tempFile);

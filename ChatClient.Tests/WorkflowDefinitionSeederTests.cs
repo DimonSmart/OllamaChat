@@ -47,7 +47,7 @@ public sealed class WorkflowDefinitionSeederTests
                     CreatedAt = DateTime.UtcNow,
                     UpdatedAt = DateTime.UtcNow
                 }
-            ]);
+            ], cancellationToken: TestContext.Current.CancellationToken);
 
             var seeder = new WorkflowDefinitionSeeder(
                 repository,
@@ -58,7 +58,7 @@ public sealed class WorkflowDefinitionSeederTests
 
             await seeder.SeedAsync();
 
-            var all = await repository.GetAllAsync();
+            var all = await repository.GetAllAsync(cancellationToken: TestContext.Current.CancellationToken);
 
             Assert.Contains(all, workflow => string.Equals(
                 workflow.WorkflowId,
@@ -132,7 +132,7 @@ public sealed class WorkflowDefinitionSeederTests
                     CreatedAt = createdAt,
                     UpdatedAt = createdAt
                 }
-            ]);
+            ], cancellationToken: TestContext.Current.CancellationToken);
 
             var seeder = new WorkflowDefinitionSeeder(
                 repository,
@@ -144,7 +144,7 @@ public sealed class WorkflowDefinitionSeederTests
             await seeder.SeedAsync();
 
             var existing = Assert.Single(
-                await repository.GetAllAsync(),
+                await repository.GetAllAsync(cancellationToken: TestContext.Current.CancellationToken),
                 workflow => string.Equals(
                     workflow.WorkflowId,
                     "philosopher-battle-group-chat",
@@ -219,7 +219,7 @@ public sealed class WorkflowDefinitionSeederTests
                     CreatedAt = createdAt,
                     UpdatedAt = createdAt
                 }
-            ]);
+            ], cancellationToken: TestContext.Current.CancellationToken);
 
             var seeder = new WorkflowDefinitionSeeder(
                 repository,
@@ -231,7 +231,7 @@ public sealed class WorkflowDefinitionSeederTests
             await seeder.RestoreSeededAsync();
 
             var refreshed = Assert.Single(
-                await repository.GetAllAsync(),
+                await repository.GetAllAsync(cancellationToken: TestContext.Current.CancellationToken),
                 workflow => string.Equals(
                     workflow.WorkflowId,
                     "philosopher-battle-group-chat",

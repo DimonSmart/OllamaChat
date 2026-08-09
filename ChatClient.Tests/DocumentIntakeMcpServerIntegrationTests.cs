@@ -16,7 +16,7 @@ public sealed class DocumentIntakeMcpServerIntegrationTests
         await using var fixture = new DocumentIntakeMcpFixture();
         await fixture.WriteSourceAsync("resume.md", "# Candidate Resume\nBuilt APIs and workers.\n");
         var client = await fixture.CreateClientAsync();
-        var tools = (await client.ListToolsAsync()).ToList();
+        var tools = (await client.ListToolsAsync(cancellationToken: TestContext.Current.CancellationToken)).ToList();
 
         Assert.Contains(tools, static tool => string.Equals(tool.Name, "docintake_read_document", StringComparison.Ordinal));
         Assert.Contains(tools, static tool => string.Equals(tool.Name, "docintake_prepare_markdown", StringComparison.Ordinal));
@@ -51,7 +51,7 @@ public sealed class DocumentIntakeMcpServerIntegrationTests
         await using var fixture = new DocumentIntakeMcpFixture();
         await fixture.WriteSourceAsync("resume.pdf", "not-a-real-pdf");
         var client = await fixture.CreateClientAsync();
-        var tool = (await client.ListToolsAsync())
+        var tool = (await client.ListToolsAsync(cancellationToken: TestContext.Current.CancellationToken))
             .First(static candidate => string.Equals(candidate.Name, "docintake_read_document", StringComparison.Ordinal));
 
         var result = await CallToolAsync(

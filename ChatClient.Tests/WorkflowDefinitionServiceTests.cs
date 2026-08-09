@@ -12,7 +12,7 @@ public sealed class WorkflowDefinitionServiceTests
     public async Task CreateAsync_AssignsIdNormalizesAndPersistsWorkflow()
     {
         var tempFile = Path.GetTempFileName();
-        await File.WriteAllTextAsync(tempFile, "[]");
+        await File.WriteAllTextAsync(tempFile, "[]", cancellationToken: TestContext.Current.CancellationToken);
 
         try
         {
@@ -51,7 +51,7 @@ public sealed class WorkflowDefinitionServiceTests
     public async Task UpdateAsync_PreservesCreatedAtAndUpdatesStoredWorkflow()
     {
         var tempFile = Path.GetTempFileName();
-        await File.WriteAllTextAsync(tempFile, "[]");
+        await File.WriteAllTextAsync(tempFile, "[]", cancellationToken: TestContext.Current.CancellationToken);
 
         try
         {
@@ -65,7 +65,7 @@ public sealed class WorkflowDefinitionServiceTests
 
             await service.CreateAsync(workflow);
             var createdAt = workflow.CreatedAt;
-            await Task.Delay(20);
+            await Task.Delay(20, cancellationToken: TestContext.Current.CancellationToken);
 
             workflow.DisplayName = "Updated Demo";
             workflow.Description = "Updated description";
@@ -93,7 +93,7 @@ public sealed class WorkflowDefinitionServiceTests
     public async Task DeleteAsync_RemovesWorkflowFromStore()
     {
         var tempFile = Path.GetTempFileName();
-        await File.WriteAllTextAsync(tempFile, "[]");
+        await File.WriteAllTextAsync(tempFile, "[]", cancellationToken: TestContext.Current.CancellationToken);
 
         try
         {
@@ -123,7 +123,7 @@ public sealed class WorkflowDefinitionServiceTests
     public async Task CreateAsync_NormalizesGroupChatWorkflowKind()
     {
         var tempFile = Path.GetTempFileName();
-        await File.WriteAllTextAsync(tempFile, "[]");
+        await File.WriteAllTextAsync(tempFile, "[]", cancellationToken: TestContext.Current.CancellationToken);
 
         try
         {
@@ -168,7 +168,7 @@ public sealed class WorkflowDefinitionServiceTests
   }
 ]
 """;
-        await File.WriteAllTextAsync(tempFile, persistedJson);
+        await File.WriteAllTextAsync(tempFile, persistedJson, cancellationToken: TestContext.Current.CancellationToken);
 
         try
         {
@@ -181,7 +181,7 @@ public sealed class WorkflowDefinitionServiceTests
             Assert.Equal(" Debate Workflow ", workflow.DisplayName);
             Assert.Equal(" Example description ", workflow.Description);
             Assert.Equal(" source ", workflow.SourceCode);
-            Assert.Equal(persistedJson, await File.ReadAllTextAsync(tempFile));
+            Assert.Equal(persistedJson, await File.ReadAllTextAsync(tempFile, cancellationToken: TestContext.Current.CancellationToken));
         }
         finally
         {
@@ -193,7 +193,7 @@ public sealed class WorkflowDefinitionServiceTests
     public async Task CreateAsync_RejectsUnknownWorkflowKind()
     {
         var tempFile = Path.GetTempFileName();
-        await File.WriteAllTextAsync(tempFile, "[]");
+        await File.WriteAllTextAsync(tempFile, "[]", cancellationToken: TestContext.Current.CancellationToken);
 
         try
         {

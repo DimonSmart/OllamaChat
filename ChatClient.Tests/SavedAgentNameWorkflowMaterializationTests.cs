@@ -40,8 +40,8 @@ public sealed class SavedAgentNameWorkflowMaterializationTests
             workflow
             """;
 
-        var compiled = await new WorkflowDefinitionCompiler().CompileAsync(sourceCode);
-        var materialized = await materializer.MaterializeAsync(compiled.Workflow!);
+        var compiled = await new WorkflowDefinitionCompiler().CompileAsync(sourceCode, cancellationToken: TestContext.Current.CancellationToken);
+        var materialized = await materializer.MaterializeAsync(compiled.Workflow!, cancellationToken: TestContext.Current.CancellationToken);
         var workflow = Assert.IsType<GroupChatWorkflowDefinition>(materialized);
 
         AssertMaterializedAgent(workflow, "debater_a", kant);

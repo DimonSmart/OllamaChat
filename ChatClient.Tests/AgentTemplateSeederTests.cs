@@ -48,7 +48,7 @@ public sealed class AgentTemplateSeederTests
                     CreatedAt = DateTime.UtcNow,
                     UpdatedAt = DateTime.UtcNow
                 }
-            ]);
+            ], cancellationToken: TestContext.Current.CancellationToken);
 
             var seeder = new AgentTemplateSeeder(
                 repository,
@@ -58,7 +58,7 @@ public sealed class AgentTemplateSeederTests
 
             await seeder.SeedAsync();
 
-            var all = await repository.GetAllAsync();
+            var all = await repository.GetAllAsync(cancellationToken: TestContext.Current.CancellationToken);
 
             Assert.Contains(all, agent => string.Equals(agent.AgentName, "User Agent", StringComparison.Ordinal));
             Assert.Contains(all, agent => agent.Id == SeededAssistantId);
@@ -104,7 +104,7 @@ public sealed class AgentTemplateSeederTests
                     CreatedAt = createdAt,
                     UpdatedAt = createdAt
                 }
-            ]);
+            ], cancellationToken: TestContext.Current.CancellationToken);
 
             var seeder = new AgentTemplateSeeder(
                 repository,
@@ -115,7 +115,7 @@ public sealed class AgentTemplateSeederTests
             await seeder.SeedAsync();
 
             var seeded = Assert.Single(
-                await repository.GetAllAsync(),
+                await repository.GetAllAsync(cancellationToken: TestContext.Current.CancellationToken),
                 agent => agent.Id == SeededPhilosopherId);
 
             Assert.Equal(createdAt, seeded.CreatedAt);
@@ -172,7 +172,7 @@ public sealed class AgentTemplateSeederTests
                     CreatedAt = createdAt,
                     UpdatedAt = createdAt
                 }
-            ]);
+            ], cancellationToken: TestContext.Current.CancellationToken);
 
             var seeder = new AgentTemplateSeeder(
                 repository,
@@ -182,7 +182,7 @@ public sealed class AgentTemplateSeederTests
 
             await seeder.RestoreSeededAsync();
 
-            var all = (await repository.GetAllAsync()).ToList();
+            var all = (await repository.GetAllAsync(cancellationToken: TestContext.Current.CancellationToken)).ToList();
             var restored = Assert.Single(all, agent => agent.Id == SeededPhilosopherId);
             var custom = Assert.Single(all, agent => agent.Id == customId);
 

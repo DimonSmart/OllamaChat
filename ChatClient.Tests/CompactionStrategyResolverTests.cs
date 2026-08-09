@@ -35,7 +35,7 @@ public sealed class CompactionStrategyResolverTests
     public async Task ResolveAsync_ReturnsNullWhenProfileIsNotSelected()
     {
         var resolver = CreateResolver();
-        Assert.Null(await resolver.ResolveAsync(null, new ServerModel(Guid.NewGuid(), "primary"), new StubChatClient(), CreateOwnedChatClient));
+        Assert.Null(await resolver.ResolveAsync(null, new ServerModel(Guid.NewGuid(), "primary"), new StubChatClient(), CreateOwnedChatClient, cancellationToken: TestContext.Current.CancellationToken));
     }
 
     [Fact]
@@ -45,7 +45,7 @@ public sealed class CompactionStrategyResolverTests
         var clients = new StubChatClientFactory();
         var resolver = CreateResolver(clients);
         var primary = new StubChatClient();
-        var context = await resolver.ResolveAsync(new CompactionProfile { Name = "Context", Kind = CompactionProfileKinds.ContextWindow, ToolResultThreshold = .55, TruncationThreshold = .85 }, new ServerModel(Guid.NewGuid(), "primary"), primary, clients.CreateAsync);
+        var context = await resolver.ResolveAsync(new CompactionProfile { Name = "Context", Kind = CompactionProfileKinds.ContextWindow, ToolResultThreshold = .55, TruncationThreshold = .85 }, new ServerModel(Guid.NewGuid(), "primary"), primary, clients.CreateAsync, cancellationToken: TestContext.Current.CancellationToken);
         var contextStrategy = Assert.IsType<ContextWindowCompactionStrategy>(context!.Strategy);
         Assert.Equal(128_000, context.Budget.ContextWindowTokens);
         Assert.Equal(0.55, contextStrategy.ToolEvictionThreshold);
@@ -67,7 +67,7 @@ public sealed class CompactionStrategyResolverTests
         profile.Stages[2].SummarizerLlmId = separateServer;
         profile.Stages[2].SummarizerModelName = "summary-model";
 
-        var resolved = await resolver.ResolveAsync(profile, new ServerModel(Guid.NewGuid(), "primary"), primary, clients.CreateAsync);
+        var resolved = await resolver.ResolveAsync(profile, new ServerModel(Guid.NewGuid(), "primary"), primary, clients.CreateAsync, cancellationToken: TestContext.Current.CancellationToken);
         var pipeline = Assert.IsType<PipelineCompactionStrategy>(resolved!.Strategy);
         Assert.Collection(pipeline.Strategies,
             strategy => Assert.IsType<ToolResultCompactionStrategy>(strategy),
@@ -88,7 +88,7 @@ public sealed class CompactionStrategyResolverTests
         invalid.SummarizerLlmId = Guid.NewGuid();
         invalid.SummarizerModelName = "summary";
         var profile = new CompactionProfile { Name = "Invalid", Kind = CompactionProfileKinds.CustomPipeline, Stages = [invalid] };
-        await Assert.ThrowsAsync<InvalidOperationException>(() => resolver.ResolveAsync(profile, new ServerModel(Guid.NewGuid(), "primary"), new StubChatClient(), clients.CreateAsync));
+        await Assert.ThrowsAsync<InvalidOperationException>(() => resolver.ResolveAsync(profile, new ServerModel(Guid.NewGuid(), "primary"), new StubChatClient(), clients.CreateAsync, cancellationToken: TestContext.Current.CancellationToken));
         Assert.Empty(clients.Requests);
     }
 
@@ -100,7 +100,7 @@ public sealed class CompactionStrategyResolverTests
         var exception = await Assert.ThrowsAsync<InvalidOperationException>(() => resolver.ResolveAsync(
             new CompactionProfile { Name = "Invalid", Kind = CompactionProfileKinds.ContextWindow, ToolResultThreshold = .90, TruncationThreshold = .80 },
             new ServerModel(Guid.NewGuid(), "primary"),
-            new StubChatClient(), CreateOwnedChatClient));
+            new StubChatClient(), CreateOwnedChatClient, cancellationToken: TestContext.Current.CancellationToken));
 
         Assert.Contains("invalid context-window thresholds", exception.Message);
     }
@@ -113,7 +113,7 @@ public sealed class CompactionStrategyResolverTests
         stage.Target.Value = 0;
         var profile = new CompactionProfile { Name = "Invalid", Kind = CompactionProfileKinds.CustomPipeline, Stages = [stage] };
 
-        await Assert.ThrowsAsync<InvalidOperationException>(() => CreateResolver(clients).ResolveAsync(profile, new ServerModel(Guid.NewGuid(), "primary"), new StubChatClient(), clients.CreateAsync));
+        await Assert.ThrowsAsync<InvalidOperationException>(() => CreateResolver(clients).ResolveAsync(profile, new ServerModel(Guid.NewGuid(), "primary"), new StubChatClient(), clients.CreateAsync, cancellationToken: TestContext.Current.CancellationToken));
 
         Assert.Empty(clients.Requests);
     }
@@ -131,7 +131,7 @@ public sealed class CompactionStrategyResolverTests
         });
 
         var exception = await Assert.ThrowsAsync<InvalidOperationException>(() =>
-            resolver.ResolveAsync(profile, new ServerModel(Guid.NewGuid(), "primary"), new StubChatClient(), clients.CreateAsync));
+            resolver.ResolveAsync(profile, new ServerModel(Guid.NewGuid(), "primary"), new StubChatClient(), clients.CreateAsync, cancellationToken: TestContext.Current.CancellationToken));
 
         Assert.Contains("invalid limits", exception.Message);
         Assert.Empty(clients.Requests);
@@ -150,7 +150,7 @@ public sealed class CompactionStrategyResolverTests
         });
 
         var exception = await Assert.ThrowsAsync<InvalidOperationException>(() =>
-            resolver.ResolveAsync(profile, new ServerModel(Guid.NewGuid(), "primary"), new StubChatClient(), clients.CreateAsync));
+            resolver.ResolveAsync(profile, new ServerModel(Guid.NewGuid(), "primary"), new StubChatClient(), clients.CreateAsync, cancellationToken: TestContext.Current.CancellationToken));
 
         Assert.Contains("unknown stage", exception.Message);
         Assert.Empty(clients.Requests);
@@ -169,7 +169,7 @@ public sealed class CompactionStrategyResolverTests
             Stages = [CompactionStageDefaults.Create(CompactionStageKinds.Summarization)]
         };
 
-        var resolved = await resolver.ResolveAsync(profile, new ServerModel(Guid.NewGuid(), "primary"), primary, clients.CreateAsync);
+        var resolved = await resolver.ResolveAsync(profile, new ServerModel(Guid.NewGuid(), "primary"), primary, clients.CreateAsync, cancellationToken: TestContext.Current.CancellationToken);
         var summary = Assert.IsType<SummarizationCompactionStrategy>(Assert.Single(Assert.IsType<PipelineCompactionStrategy>(resolved!.Strategy).Strategies));
         Assert.Same(primary, summary.ChatClient);
         Assert.Empty(clients.Requests);
@@ -186,7 +186,7 @@ public sealed class CompactionStrategyResolverTests
         stage.SummarizerModelName = "summary";
         var profile = new CompactionProfile { Name = "Tiny", Kind = CompactionProfileKinds.CustomPipeline, Stages = [stage] };
 
-        var zero = await Assert.ThrowsAsync<InvalidOperationException>(() => CreateResolver(clients).ResolveAsync(profile, new ServerModel(Guid.NewGuid(), "primary"), new StubChatClient(), clients.CreateAsync));
+        var zero = await Assert.ThrowsAsync<InvalidOperationException>(() => CreateResolver(clients).ResolveAsync(profile, new ServerModel(Guid.NewGuid(), "primary"), new StubChatClient(), clients.CreateAsync, cancellationToken: TestContext.Current.CancellationToken));
         Assert.Contains("Tiny", zero.Message);
         Assert.Contains("stage 1", zero.Message);
         Assert.Contains("to 1", zero.Message);
@@ -195,7 +195,7 @@ public sealed class CompactionStrategyResolverTests
 
         stage.Trigger.Value = .000015;
         stage.Target.Value = .00001;
-        var equal = await Assert.ThrowsAsync<InvalidOperationException>(() => CreateResolver(clients).ResolveAsync(profile, new ServerModel(Guid.NewGuid(), "primary"), new StubChatClient(), clients.CreateAsync));
+        var equal = await Assert.ThrowsAsync<InvalidOperationException>(() => CreateResolver(clients).ResolveAsync(profile, new ServerModel(Guid.NewGuid(), "primary"), new StubChatClient(), clients.CreateAsync, cancellationToken: TestContext.Current.CancellationToken));
         Assert.Contains("to 1", equal.Message);
         Assert.Empty(clients.Requests);
     }
@@ -219,7 +219,7 @@ public sealed class CompactionStrategyResolverTests
         };
         var profile = new CompactionProfile { Name = "Messages", Kind = CompactionProfileKinds.CustomPipeline, Stages = [first, second] };
 
-        var resolved = await CreateResolver(clients).ResolveAsync(profile, new ServerModel(Guid.NewGuid(), "primary"), new StubChatClient(), clients.CreateAsync);
+        var resolved = await CreateResolver(clients).ResolveAsync(profile, new ServerModel(Guid.NewGuid(), "primary"), new StubChatClient(), clients.CreateAsync, cancellationToken: TestContext.Current.CancellationToken);
 
         Assert.NotNull(resolved);
         Assert.Single(clients.Requests);
@@ -237,7 +237,7 @@ public sealed class CompactionStrategyResolverTests
         stage.SummarizerModelName = "summary-model";
         var profile = new CompactionProfile { Name = "Separate", Kind = CompactionProfileKinds.CustomPipeline, Stages = [stage] };
 
-        await resolver.PreflightAsync(profile);
+        await resolver.PreflightAsync(profile, cancellationToken: TestContext.Current.CancellationToken);
 
         Assert.Equal([new ServerModel(serverId, "summary-model")], models.Requests);
         Assert.Empty(clients.Requests);
@@ -254,7 +254,7 @@ public sealed class CompactionStrategyResolverTests
         stage.SummarizerModelName = "summary-model";
         var profile = new CompactionProfile { Name = "Separate", Kind = CompactionProfileKinds.CustomPipeline, Stages = [stage] };
 
-        var exception = await Assert.ThrowsAsync<InvalidOperationException>(() => resolver.PreflightAsync(profile));
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(() => resolver.PreflightAsync(profile, cancellationToken: TestContext.Current.CancellationToken));
 
         Assert.Contains("Separate", exception.Message);
         Assert.Contains("stage 1", exception.Message);
@@ -270,7 +270,7 @@ public sealed class CompactionStrategyResolverTests
         var resolved = await resolver.ResolveAsync(
             new CompactionProfile { Name = "Context", Kind = CompactionProfileKinds.ContextWindow },
             new ServerModel(Guid.NewGuid(), "primary"),
-            new StubChatClient(), CreateOwnedChatClient);
+            new StubChatClient(), CreateOwnedChatClient, cancellationToken: TestContext.Current.CancellationToken);
 
         var options = AgenticRuntimeAgentFactory.BuildHarnessAgentOptions(
             new AgentRunRequest

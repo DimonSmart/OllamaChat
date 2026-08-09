@@ -54,7 +54,7 @@ public class VoiceInputServiceTests
             };
 
             using var service = CreateService(tempDirectory, userSettingsService);
-            var settings = await service.GetSettingsAsync();
+            var settings = await service.GetSettingsAsync(cancellationToken: TestContext.Current.CancellationToken);
 
             Assert.Equal(VoiceInputInitializationStatus.NotInitialized, settings.Status);
             Assert.Equal(1, userSettingsService.SaveCount);
@@ -73,7 +73,7 @@ public class VoiceInputServiceTests
 
         try
         {
-            await File.WriteAllTextAsync(Path.Combine(tempDirectory, "ggml-small.bin"), "model");
+            await File.WriteAllTextAsync(Path.Combine(tempDirectory, "ggml-small.bin"), "model", cancellationToken: TestContext.Current.CancellationToken);
 
             var userSettingsService = new TestUserSettingsService
             {
@@ -88,7 +88,7 @@ public class VoiceInputServiceTests
             };
 
             using var service = CreateService(tempDirectory, userSettingsService);
-            var settings = await service.GetSettingsAsync();
+            var settings = await service.GetSettingsAsync(cancellationToken: TestContext.Current.CancellationToken);
 
             Assert.Equal(VoiceInputInitializationStatus.Ready, settings.Status);
             Assert.Equal(0, userSettingsService.SaveCount);
@@ -119,7 +119,7 @@ public class VoiceInputServiceTests
             };
 
             using var service = CreateService(tempDirectory, userSettingsService, configuredModelType: "Small");
-            var settings = await service.GetSettingsAsync();
+            var settings = await service.GetSettingsAsync(cancellationToken: TestContext.Current.CancellationToken);
 
             Assert.Equal("Small", settings.ModelType);
             Assert.Equal(1, userSettingsService.SaveCount);
@@ -138,13 +138,13 @@ public class VoiceInputServiceTests
 
         try
         {
-            await File.WriteAllTextAsync(Path.Combine(tempDirectory, "ggml-small.bin"), "12345");
-            await File.WriteAllTextAsync(Path.Combine(tempDirectory, "ggml-base.bin"), "123");
+            await File.WriteAllTextAsync(Path.Combine(tempDirectory, "ggml-small.bin"), "12345", cancellationToken: TestContext.Current.CancellationToken);
+            await File.WriteAllTextAsync(Path.Combine(tempDirectory, "ggml-base.bin"), "123", cancellationToken: TestContext.Current.CancellationToken);
 
             var userSettingsService = new TestUserSettingsService();
             using var service = CreateService(tempDirectory, userSettingsService);
 
-            var storageInfo = await service.GetStorageInfoAsync();
+            var storageInfo = await service.GetStorageInfoAsync(cancellationToken: TestContext.Current.CancellationToken);
 
             Assert.Equal(8, storageInfo.TotalBytes);
             Assert.Collection(
@@ -176,8 +176,8 @@ public class VoiceInputServiceTests
         {
             var modelFilePath = Path.Combine(tempDirectory, "ggml-small.bin");
             var partialDownloadPath = Path.Combine(tempDirectory, "ggml-large-v3.bin.download");
-            await File.WriteAllTextAsync(modelFilePath, "model");
-            await File.WriteAllTextAsync(partialDownloadPath, "partial");
+            await File.WriteAllTextAsync(modelFilePath, "model", cancellationToken: TestContext.Current.CancellationToken);
+            await File.WriteAllTextAsync(partialDownloadPath, "partial", cancellationToken: TestContext.Current.CancellationToken);
 
             var userSettingsService = new TestUserSettingsService
             {
@@ -193,7 +193,7 @@ public class VoiceInputServiceTests
             };
 
             using var service = CreateService(tempDirectory, userSettingsService);
-            var settings = await service.ClearDownloadedModelsAsync();
+            var settings = await service.ClearDownloadedModelsAsync(cancellationToken: TestContext.Current.CancellationToken);
 
             Assert.False(File.Exists(modelFilePath));
             Assert.False(File.Exists(partialDownloadPath));

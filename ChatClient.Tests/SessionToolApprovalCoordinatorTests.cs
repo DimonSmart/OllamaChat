@@ -9,8 +9,8 @@ public sealed class SessionToolApprovalCoordinatorTests
     public async Task RequestApprovalAsync_QueuesConcurrentRequestsInFifoOrder()
     {
         var coordinator = new SessionToolApprovalCoordinator();
-        var first = coordinator.RequestApprovalAsync(Request("first"));
-        var second = coordinator.RequestApprovalAsync(Request("second"));
+        var first = coordinator.RequestApprovalAsync(Request("first"), cancellationToken: TestContext.Current.CancellationToken);
+        var second = coordinator.RequestApprovalAsync(Request("second"), cancellationToken: TestContext.Current.CancellationToken);
 
         Assert.Equal("first", coordinator.PendingRequest?.RequestId);
         Assert.True(coordinator.TryRespond("first", ToolApprovalDecision.ApproveOnce, _ => { }));
@@ -28,7 +28,7 @@ public sealed class SessionToolApprovalCoordinatorTests
         var coordinator = new SessionToolApprovalCoordinator();
         using var cancellation = new CancellationTokenSource();
         var first = coordinator.RequestApprovalAsync(Request("first"), cancellation.Token);
-        var second = coordinator.RequestApprovalAsync(Request("second"));
+        var second = coordinator.RequestApprovalAsync(Request("second"), cancellationToken: TestContext.Current.CancellationToken);
 
         cancellation.Cancel();
 
@@ -41,7 +41,7 @@ public sealed class SessionToolApprovalCoordinatorTests
     {
         var coordinator = new SessionToolApprovalCoordinator();
         var policy = new SessionToolApprovalPolicy();
-        var approval = coordinator.RequestApprovalAsync(Request("request"));
+        var approval = coordinator.RequestApprovalAsync(Request("request"), cancellationToken: TestContext.Current.CancellationToken);
 
         Assert.True(coordinator.TryRespond(
             "request",

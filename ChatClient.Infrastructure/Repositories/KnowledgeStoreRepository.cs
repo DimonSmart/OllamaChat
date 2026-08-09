@@ -24,11 +24,11 @@ public sealed class KnowledgeStoreRepository : IKnowledgeStoreRepository
             stores[index] = CloneWithoutPayload(store);
     }, cancellationToken);
     public Task DeleteAsync(Guid storeId, CancellationToken cancellationToken = default) => ModifyAsync(stores => stores.RemoveAll(x => x.Id == storeId), cancellationToken);
-    private async Task ModifyAsync(Action<List<KnowledgeStore>> change, CancellationToken ct)
+    private async Task ModifyAsync(Action<List<KnowledgeStore>> change, CancellationToken cancellationToken)
     {
-        await _gate.WaitAsync(ct);
+        await _gate.WaitAsync(cancellationToken);
         try
-        { var stores = await _repository.ReadAsync(ct) ?? []; change(stores); await _repository.WriteAsync(stores, ct); }
+        { var stores = await _repository.ReadAsync(cancellationToken) ?? []; change(stores); await _repository.WriteAsync(stores, cancellationToken); }
         finally { _gate.Release(); }
     }
     private static KnowledgeStore CloneWithoutPayload(KnowledgeStore store) => new()

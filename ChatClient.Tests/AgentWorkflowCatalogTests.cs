@@ -24,7 +24,7 @@ public sealed class AgentWorkflowCatalogTests
             }
         ]));
 
-        var template = await catalog.GetRequiredAsync("interview-coach-fixed-handoff");
+        var template = await catalog.GetRequiredAsync("interview-coach-fixed-handoff", cancellationToken: TestContext.Current.CancellationToken);
 
         Assert.Equal("interview-coach-fixed-handoff", template.Id);
         Assert.True(template.Assessment.FluentBuilderIsSufficient);
@@ -80,7 +80,7 @@ public sealed class AgentWorkflowCatalogTests
             }
         ]));
 
-        var template = await catalog.GetRequiredAsync("interview-coach-fixed-handoff");
+        var template = await catalog.GetRequiredAsync("interview-coach-fixed-handoff", cancellationToken: TestContext.Current.CancellationToken);
         Assert.Contains(
             template.Assessment.MissingProjectPieces,
             static note => note.Contains("not full resume parsing like MarkItDown", StringComparison.OrdinalIgnoreCase));
@@ -109,7 +109,7 @@ public sealed class AgentWorkflowCatalogTests
             }
         ]));
 
-        var template = await catalog.GetRequiredAsync("interview-coach-fixed-handoff");
+        var template = await catalog.GetRequiredAsync("interview-coach-fixed-handoff", cancellationToken: TestContext.Current.CancellationToken);
         var receptionist = Assert.Single(template.Workflow.Agents, static agent => agent.Id == "receptionist");
 
         Assert.All(receptionist.CapabilityRequirements, static requirement =>

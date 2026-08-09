@@ -15,7 +15,7 @@ public class BuiltInWebMcpServerIntegrationTests
     {
         await using var fixture = new BuiltInWebMcpFixture();
         var client = await fixture.CreateClientAsync();
-        var tool = (await client.ListToolsAsync())
+        var tool = (await client.ListToolsAsync(cancellationToken: TestContext.Current.CancellationToken))
             .First(candidate => string.Equals(candidate.Name, "search", StringComparison.Ordinal));
 
         Assert.True(tool.ReturnJsonSchema.HasValue);
@@ -32,7 +32,7 @@ public class BuiltInWebMcpServerIntegrationTests
     {
         await using var fixture = new BuiltInWebMcpFixture();
         var client = await fixture.CreateClientAsync();
-        var tool = (await client.ListToolsAsync())
+        var tool = (await client.ListToolsAsync(cancellationToken: TestContext.Current.CancellationToken))
             .First(candidate => string.Equals(candidate.Name, "search", StringComparison.Ordinal));
 
         var schema = tool.JsonSchema;
@@ -52,7 +52,7 @@ public class BuiltInWebMcpServerIntegrationTests
     {
         await using var fixture = new BuiltInWebMcpFixture();
         var client = await fixture.CreateClientAsync();
-        var tool = (await client.ListToolsAsync())
+        var tool = (await client.ListToolsAsync(cancellationToken: TestContext.Current.CancellationToken))
             .First(candidate => string.Equals(candidate.Name, "search", StringComparison.Ordinal));
 
         Assert.Contains("not a guarantee", tool.Description, StringComparison.OrdinalIgnoreCase);
@@ -65,7 +65,7 @@ public class BuiltInWebMcpServerIntegrationTests
     {
         await using var fixture = new BuiltInWebMcpFixture();
         var client = await fixture.CreateClientAsync();
-        var tool = (await client.ListToolsAsync())
+        var tool = (await client.ListToolsAsync(cancellationToken: TestContext.Current.CancellationToken))
             .First(candidate => string.Equals(candidate.Name, "download", StringComparison.Ordinal));
 
         var schema = tool.JsonSchema;
@@ -92,7 +92,7 @@ public class BuiltInWebMcpServerIntegrationTests
     {
         await using var fixture = new BuiltInWebMcpFixture();
         var client = await fixture.CreateClientAsync();
-        var tool = (await client.ListToolsAsync())
+        var tool = (await client.ListToolsAsync(cancellationToken: TestContext.Current.CancellationToken))
             .First(candidate => string.Equals(candidate.Name, "download", StringComparison.Ordinal));
 
         Assert.Contains("exactly one of 'page' or 'url'", tool.Description, StringComparison.OrdinalIgnoreCase);
@@ -106,7 +106,7 @@ public class BuiltInWebMcpServerIntegrationTests
     {
         await using var fixture = new BuiltInWebMcpFixture();
         var client = await fixture.CreateClientAsync();
-        var tool = (await client.ListToolsAsync())
+        var tool = (await client.ListToolsAsync(cancellationToken: TestContext.Current.CancellationToken))
             .First(candidate => string.Equals(candidate.Name, "download", StringComparison.Ordinal));
 
         Assert.True(tool.ReturnJsonSchema.HasValue);

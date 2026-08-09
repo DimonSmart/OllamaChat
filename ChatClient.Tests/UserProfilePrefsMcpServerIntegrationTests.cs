@@ -23,7 +23,7 @@ public sealed class UserProfilePrefsMcpServerIntegrationTests
             """);
 
         var client = await fixture.CreateClientAsync();
-        var toolMap = (await client.ListToolsAsync())
+        var toolMap = (await client.ListToolsAsync(cancellationToken: TestContext.Current.CancellationToken))
             .ToDictionary(static tool => tool.Name, StringComparer.OrdinalIgnoreCase);
 
         var firstResult = GetStructuredContent(await CallToolAsync(

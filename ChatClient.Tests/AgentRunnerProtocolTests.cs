@@ -13,7 +13,7 @@ public sealed class AgentRunnerProtocolTests
     {
         var events = await CollectAsync(CreateRunner(new StubRuntime([
             new AgentRunCompleted(CreateResult("final", "m1"))
-        ])).RunAsync(CreateReference(), CreateRequest(), CreateCreationContext(), CreateRunContext()));
+        ])).RunAsync(CreateReference(), CreateRequest(), CreateCreationContext(), CreateRunContext(), cancellationToken: TestContext.Current.CancellationToken));
 
         Assert.Single(events);
         Assert.IsType<AgentRunCompleted>(events[0]);
@@ -24,7 +24,7 @@ public sealed class AgentRunnerProtocolTests
     {
         var events = await CollectAsync(CreateRunner(new StubRuntime([
             new AgentRunFailed(new AgentRunError("execution_failed", "failed", true))
-        ])).RunAsync(CreateReference(), CreateRequest(), CreateCreationContext(), CreateRunContext()));
+        ])).RunAsync(CreateReference(), CreateRequest(), CreateCreationContext(), CreateRunContext(), cancellationToken: TestContext.Current.CancellationToken));
 
         Assert.Single(events);
         Assert.IsType<AgentRunFailed>(events[0]);
@@ -41,7 +41,7 @@ public sealed class AgentRunnerProtocolTests
             CreateReference(),
             CreateRequest(),
             CreateCreationContext(),
-            CreateRunContext()));
+            CreateRunContext(), cancellationToken: TestContext.Current.CancellationToken));
 
         var failed = Assert.IsType<AgentRunFailed>(Assert.Single(events));
         Assert.Equal("runtime_protocol_violation", failed.Error.Code);
@@ -61,7 +61,7 @@ public sealed class AgentRunnerProtocolTests
         var events = await CollectAsync(executor.ExecuteAsync(
             runtime,
             CreateRequest(),
-            CreateRunContext()));
+            CreateRunContext(), cancellationToken: TestContext.Current.CancellationToken));
 
         Assert.Equal(2, events.Count);
         Assert.IsType<AgentTextDelta>(events[0]);
@@ -80,7 +80,7 @@ public sealed class AgentRunnerProtocolTests
         var events = await CollectAsync(executor.ExecuteAsync(
             runtime,
             CreateRequest(),
-            CreateRunContext()));
+            CreateRunContext(), cancellationToken: TestContext.Current.CancellationToken));
 
         Assert.Equal(2, events.Count);
         Assert.IsType<AgentTextDelta>(events[0]);
@@ -97,7 +97,7 @@ public sealed class AgentRunnerProtocolTests
         var events = await CollectAsync(executor.ExecuteAsync(
             new StubRuntime(runtimeEvents),
             CreateRequest(),
-            CreateRunContext()));
+            CreateRunContext(), cancellationToken: TestContext.Current.CancellationToken));
 
         Assert.Equal("runtime_protocol_violation", Assert.IsType<AgentRunFailed>(Assert.Single(events)).Error.Code);
     }
@@ -111,7 +111,7 @@ public sealed class AgentRunnerProtocolTests
         var events = await CollectAsync(executor.ExecuteAsync(
             new ThrowingRuntime(exception),
             CreateRequest(),
-            CreateRunContext()));
+            CreateRunContext(), cancellationToken: TestContext.Current.CancellationToken));
 
         var failure = Assert.IsType<AgentRunFailed>(Assert.Single(events));
         Assert.Equal("runtime_execution_failed", failure.Error.Code);
@@ -131,7 +131,7 @@ public sealed class AgentRunnerProtocolTests
                            CreateReference(),
                            CreateRequest(),
                            CreateCreationContext(),
-                           CreateRunContext()))
+                           CreateRunContext(), cancellationToken: TestContext.Current.CancellationToken))
         {
             events.Add(runEvent);
         }
@@ -153,7 +153,7 @@ public sealed class AgentRunnerProtocolTests
                            CreateReference(),
                            CreateRequest(),
                            CreateCreationContext(),
-                           CreateRunContext()))
+                           CreateRunContext(), cancellationToken: TestContext.Current.CancellationToken))
         {
             events.Add(runEvent);
         }
@@ -172,7 +172,7 @@ public sealed class AgentRunnerProtocolTests
             CreateReference(),
             CreateRequest(),
             CreateCreationContext(),
-            CreateRunContext()));
+            CreateRunContext(), cancellationToken: TestContext.Current.CancellationToken));
 
         var failed = Assert.IsType<AgentRunFailed>(Assert.Single(events));
         Assert.Equal("runtime_execution_failed", failed.Error.Code);
@@ -194,7 +194,7 @@ public sealed class AgentRunnerProtocolTests
             CreateReference(),
             CreateRequest(),
             CreateCreationContext(),
-            CreateRunContext()));
+            CreateRunContext(), cancellationToken: TestContext.Current.CancellationToken));
 
         var failed = Assert.IsType<AgentRunFailed>(Assert.Single(events));
         Assert.Same(error, failed.Error);
@@ -211,7 +211,7 @@ public sealed class AgentRunnerProtocolTests
             CreateReference(),
             CreateRequest(),
             CreateCreationContext(),
-            CreateRunContext()));
+            CreateRunContext(), cancellationToken: TestContext.Current.CancellationToken));
 
         Assert.IsType<AgentTextDelta>(events[0]);
         var failed = Assert.IsType<AgentRunFailed>(events[1]);
@@ -266,7 +266,7 @@ public sealed class AgentRunnerProtocolTests
             new AgentDefinitionReference(AgentDefinitionKind.SavedWorkflow, "missing"),
             CreateRequest(),
             CreateCreationContext(),
-            CreateRunContext(new AgentDefinitionReference(AgentDefinitionKind.SavedWorkflow, "missing"))));
+            CreateRunContext(new AgentDefinitionReference(AgentDefinitionKind.SavedWorkflow, "missing")), cancellationToken: TestContext.Current.CancellationToken));
 
         var failed = Assert.IsType<AgentRunFailed>(Assert.Single(events));
         Assert.Equal("workflow_not_found", failed.Error.Code);
@@ -292,7 +292,7 @@ public sealed class AgentRunnerProtocolTests
         var logger = new CapturingLogger<AgentRunner>();
 
         await CollectAsync(CreateRunner(new StubRuntime(events), logger).RunAsync(
-            CreateReference(), CreateRequest(), CreateCreationContext(), CreateRunContext()));
+            CreateReference(), CreateRequest(), CreateCreationContext(), CreateRunContext(), cancellationToken: TestContext.Current.CancellationToken));
 
         var properties = logger.Entries.Single(static entry => entry.Message.Contains("Agent run finished.", StringComparison.Ordinal)).Properties;
         Assert.Equal(expectedOutcome, properties["Outcome"]);
@@ -321,7 +321,7 @@ public sealed class AgentRunnerProtocolTests
             new AgentRunCompleted(CreateResult("final", "m1"))
         ]), abandonedLogger);
         await using (var enumerator = abandonedRunner.RunAsync(
-                         CreateReference(), CreateRequest(), CreateCreationContext(), CreateRunContext()).GetAsyncEnumerator())
+                         CreateReference(), CreateRequest(), CreateCreationContext(), CreateRunContext(), cancellationToken: TestContext.Current.CancellationToken).GetAsyncEnumerator(cancellationToken: TestContext.Current.CancellationToken))
         {
             Assert.True(await enumerator.MoveNextAsync());
         }
@@ -338,7 +338,7 @@ public sealed class AgentRunnerProtocolTests
         var runner = CreateRunner(new ThrowingRuntimeFactory(new InvalidOperationException("factory failed")), logger);
 
         var events = await CollectAsync(runner.RunAsync(
-            CreateReference(), CreateRequest(), CreateCreationContext(), CreateRunContext()));
+            CreateReference(), CreateRequest(), CreateCreationContext(), CreateRunContext(), cancellationToken: TestContext.Current.CancellationToken));
 
         var failure = Assert.IsType<AgentRunFailed>(Assert.Single(events));
         Assert.Equal("runtime_creation_failed", failure.Error.Code);

@@ -9,9 +9,9 @@ public sealed class KnowledgeSearchService(
     IEmbeddingGeneratorResolver embeddingGeneratorResolver,
     IKnowledgeIndex knowledgeIndex) : IKnowledgeSearchService
 {
-    public async Task<bool> HasReadyContentAsync(IReadOnlyCollection<Guid> ids, CancellationToken ct = default) => (await stores.GetAllAsync(ct)).Any(IsRetrievable(ids));
+    public async Task<bool> HasReadyContentAsync(IReadOnlyCollection<Guid> ids, CancellationToken cancellationToken = default) => (await stores.GetAllAsync(cancellationToken)).Any(IsRetrievable(ids));
 
-    public async Task<RagSearchResponse> SearchAsync(KnowledgeSearchRequest request, CancellationToken ct = default)
+    public async Task<RagSearchResponse> SearchAsync(KnowledgeSearchRequest request, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(request);
         if (!Enum.IsDefined(request.Strategy))
@@ -23,9 +23,9 @@ public sealed class KnowledgeSearchService(
         if (request.MaxRetrievedContextTokens is <= 0)
             throw new ArgumentException("Context token budget must be positive when specified.", nameof(request));
         var threshold = request.UseApplicationDefaultThreshold
-            ? (await settings.GetSettingsAsync(ct)).Embedding.RagMinRelevanceScore
+            ? (await settings.GetSettingsAsync(cancellationToken)).Embedding.RagMinRelevanceScore
             : request.MinVectorRelevanceScore;
-        var selected = (await stores.GetAllAsync(ct)).Where(IsRetrievable(request.KnowledgeStoreIds)).ToList();
+        var selected = (await stores.GetAllAsync(cancellationToken)).Where(IsRetrievable(request.KnowledgeStoreIds)).ToList();
         if (selected.Count == 0 || string.IsNullOrWhiteSpace(request.Query))
             return new RagSearchResponse();
 
@@ -34,8 +34,8 @@ public sealed class KnowledgeSearchService(
         foreach (var group in selected.GroupBy(x => (x.Index.IndexedConfiguration!.ServerId, x.Index.IndexedConfiguration.Model)))
         {
             var profile = group.First().Index.IndexedConfiguration!;
-            var generator = await embeddingGeneratorResolver.ResolveAsync(new ServerModel(profile.ServerId, profile.Model), ct);
-            var generated = await generator.GenerateAsync([trimmedQuery], cancellationToken: ct);
+            var generator = await embeddingGeneratorResolver.ResolveAsync(new ServerModel(profile.ServerId, profile.Model), cancellationToken);
+            var generated = await generator.GenerateAsync([trimmedQuery], cancellationToken: cancellationToken);
             var embedding = generated[0].Vector;
             foreach (var store in group)
             {
@@ -45,7 +45,7 @@ public sealed class KnowledgeSearchService(
                     QueryEmbedding = embedding,
                     MaxResults = request.MaxResults,
                     MinRelevanceScore = threshold
-                }, ct);
+                }, cancellationToken);
                 foreach (var result in found)
                 {
                     result.KnowledgeStoreName = store.Name;

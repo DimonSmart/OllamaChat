@@ -26,7 +26,7 @@ public sealed class AgentRuntimeAIAgentAdapterTests
         ]);
         var adapter = CreateAdapter(parentContext, invoker);
 
-        var updates = await CollectAsync(adapter.RunStreamingAsync("go"));
+        var updates = await CollectAsync(adapter.RunStreamingAsync("go", cancellationToken: TestContext.Current.CancellationToken));
 
         Assert.NotNull(invoker.ParentContext);
         Assert.Equal(parentContext.RunId, invoker.ParentContext.RunId);
@@ -52,7 +52,7 @@ public sealed class AgentRuntimeAIAgentAdapterTests
             new StubParticipantInvoker([new AgentRunFailed(error)]));
 
         var exception = await Assert.ThrowsAsync<AgentRunFailedException>(() =>
-            CollectAsync(adapter.RunStreamingAsync("go")));
+            CollectAsync(adapter.RunStreamingAsync("go", cancellationToken: TestContext.Current.CancellationToken)));
 
         Assert.Same(error, exception.Error);
         Assert.Equal("workflow_cycle_detected", exception.Error.Code);
@@ -88,7 +88,7 @@ public sealed class AgentRuntimeAIAgentAdapterTests
 
         var updates = await CollectAsync(CreateAdapter(
             CreateParentContext(),
-            new StubParticipantInvoker(events)).RunStreamingAsync("go"));
+            new StubParticipantInvoker(events)).RunStreamingAsync("go", cancellationToken: TestContext.Current.CancellationToken));
 
         Assert.Equal("hello world", string.Concat(updates.Select(static update => update.Text)));
     }

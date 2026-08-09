@@ -21,7 +21,7 @@ public sealed class AgentInputDefinitionProviderTests
                 StartAgentId = "agent"
             }));
 
-        var inputs = await provider.GetInputsAsync(new AgentDefinitionReference(AgentDefinitionKind.SavedAgent, "agent"));
+        var inputs = await provider.GetInputsAsync(new AgentDefinitionReference(AgentDefinitionKind.SavedAgent, "agent"), cancellationToken: TestContext.Current.CancellationToken);
 
         Assert.Empty(inputs);
     }
@@ -40,7 +40,7 @@ public sealed class AgentInputDefinitionProviderTests
                 StartAgentId = "agent"
             }));
 
-        var inputs = await provider.GetInputsAsync(new AgentDefinitionReference(AgentDefinitionKind.SavedWorkflow, workflowId.ToString("D")));
+        var inputs = await provider.GetInputsAsync(new AgentDefinitionReference(AgentDefinitionKind.SavedWorkflow, workflowId.ToString("D")), cancellationToken: TestContext.Current.CancellationToken);
 
         Assert.Empty(inputs);
     }
@@ -67,7 +67,7 @@ public sealed class AgentInputDefinitionProviderTests
                 ]
             }));
 
-        var inputs = await provider.GetInputsAsync(new AgentDefinitionReference(AgentDefinitionKind.SavedWorkflow, workflowId.ToString("D")));
+        var inputs = await provider.GetInputsAsync(new AgentDefinitionReference(AgentDefinitionKind.SavedWorkflow, workflowId.ToString("D")), cancellationToken: TestContext.Current.CancellationToken);
 
         Assert.Equal(
             [

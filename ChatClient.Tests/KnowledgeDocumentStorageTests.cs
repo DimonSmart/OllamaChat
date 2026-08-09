@@ -17,12 +17,12 @@ public sealed class KnowledgeDocumentStorageTests
             var documentId = Guid.NewGuid();
             await using var source = new MemoryStream("original source"u8.ToArray());
 
-            await storage.WriteAsync(storeId, documentId, "notes.txt", source, "canonical");
-            await using var reopened = await storage.OpenSourceReadAsync(storeId, documentId);
+            await storage.WriteAsync(storeId, documentId, "notes.txt", source, "canonical", TestContext.Current.CancellationToken);
+            await using var reopened = await storage.OpenSourceReadAsync(storeId, documentId, TestContext.Current.CancellationToken);
 
             Assert.NotNull(reopened);
             using var reader = new StreamReader(reopened);
-            Assert.Equal("original source", await reader.ReadToEndAsync());
+            Assert.Equal("original source", await reader.ReadToEndAsync(cancellationToken: TestContext.Current.CancellationToken));
         }
         finally
         {

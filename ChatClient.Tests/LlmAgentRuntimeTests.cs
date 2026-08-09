@@ -25,7 +25,7 @@ public sealed class LlmAgentRuntimeTests
                 new AgentInputMessage(AgentMessageRole.Assistant, "assistant-1"),
                 new AgentInputMessage(AgentMessageRole.User, "user-2")
             ]
-        }, CreateContext()));
+        }, CreateContext(), cancellationToken: TestContext.Current.CancellationToken));
 
         Assert.Equal("user-2", orchestrator.LastRequest!.UserMessage);
         Assert.Equal(
@@ -40,7 +40,7 @@ public sealed class LlmAgentRuntimeTests
         var events = await CollectAsync(CreateRuntime(new StubOrchestrator([
             new ChatEngineStreamChunk("Agent", "hel"),
             new ChatEngineStreamChunk("Agent", "lo", IsFinal: true)
-        ])).RunAsync(CreateRequest(), CreateContext()));
+        ])).RunAsync(CreateRequest(), CreateContext(), cancellationToken: TestContext.Current.CancellationToken));
 
         var deltas = events.OfType<AgentTextDelta>().ToList();
         var completed = Assert.Single(events.OfType<AgentMessageCompleted>());
@@ -59,7 +59,7 @@ public sealed class LlmAgentRuntimeTests
     {
         var events = await CollectAsync(CreateRuntime(new StubOrchestrator([
             new ChatEngineStreamChunk("Agent", "done", IsFinal: true)
-        ])).RunAsync(CreateRequest(), CreateContext()));
+        ])).RunAsync(CreateRequest(), CreateContext(), cancellationToken: TestContext.Current.CancellationToken));
 
         Assert.Single(events.OfType<AgentRunCompleted>());
         Assert.DoesNotContain(events, static runEvent => runEvent is AgentRunFailed);
@@ -70,7 +70,7 @@ public sealed class LlmAgentRuntimeTests
     [MemberData(nameof(FailureOrchestrators))]
     public async Task RunAsync_FailuresEmitSingleFailure(IChatEngineOrchestrator orchestrator)
     {
-        var events = await CollectAsync(CreateRuntime(orchestrator).RunAsync(CreateRequest(), CreateContext()));
+        var events = await CollectAsync(CreateRuntime(orchestrator).RunAsync(CreateRequest(), CreateContext(), cancellationToken: TestContext.Current.CancellationToken));
 
         Assert.Single(events.OfType<AgentRunFailed>());
         Assert.DoesNotContain(events, static runEvent => runEvent is AgentRunCompleted);
@@ -103,7 +103,7 @@ public sealed class LlmAgentRuntimeTests
                 new AgentInputAttachment("notes.txt", "text/plain", "hello") { Data = textBytes },
                 new AgentInputAttachment("image.bin", "application/octet-stream", Convert.ToBase64String(binaryBytes)) { Data = binaryBytes }
             ]
-        }, CreateContext()));
+        }, CreateContext(), cancellationToken: TestContext.Current.CancellationToken));
 
         Assert.Collection(
             orchestrator.LastRequest!.Files,

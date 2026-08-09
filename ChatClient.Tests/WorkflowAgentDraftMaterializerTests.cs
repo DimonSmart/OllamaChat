@@ -8,6 +8,7 @@ namespace ChatClient.Tests;
 public sealed class WorkflowAgentDraftMaterializerTests
 {
     [Fact]
+    [Obsolete]
     public async Task MaterializeAsync_LoadsSavedAgentTemplateAndAppliesOverrides()
     {
         var savedAgent = new AgentTemplateDefinition
@@ -34,7 +35,7 @@ public sealed class WorkflowAgentDraftMaterializerTests
 
         var materializer = new WorkflowAgentDraftMaterializer(new StubAgentTemplateService([savedAgent]));
 
-        var materialized = await materializer.MaterializeAsync(workflow);
+        var materialized = await materializer.MaterializeAsync(workflow, cancellationToken: TestContext.Current.CancellationToken);
 
         var technical = Assert.Single(materialized.Participants);
         var technicalAgent = Assert.IsType<InlineAgentParticipantSource>(technical.Source).Agent;
@@ -51,6 +52,7 @@ public sealed class WorkflowAgentDraftMaterializerTests
     }
 
     [Fact]
+    [Obsolete]
     public async Task MaterializeAsync_ThrowsWhenSavedAgentIdIsUnknown()
     {
         var savedAgents = new[]
@@ -70,12 +72,13 @@ public sealed class WorkflowAgentDraftMaterializerTests
         var materializer = new WorkflowAgentDraftMaterializer(new StubAgentTemplateService(savedAgents));
 
         var exception = await Assert.ThrowsAsync<InvalidOperationException>(() =>
-            materializer.MaterializeAsync(workflow));
+            materializer.MaterializeAsync(workflow, cancellationToken: TestContext.Current.CancellationToken));
 
         Assert.Contains("was not found", exception.Message, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
+    [Obsolete]
     public async Task MaterializeAsync_AppendsSavedAgentInstructionsWhenRequested()
     {
         var savedAgent = new AgentTemplateDefinition
@@ -99,7 +102,7 @@ public sealed class WorkflowAgentDraftMaterializerTests
 
         var materializer = new WorkflowAgentDraftMaterializer(new StubAgentTemplateService([savedAgent]));
 
-        var materialized = await materializer.MaterializeAsync(workflow);
+        var materialized = await materializer.MaterializeAsync(workflow, cancellationToken: TestContext.Current.CancellationToken);
 
         var technical = Assert.Single(materialized.Participants);
         Assert.Equal(
@@ -108,6 +111,7 @@ public sealed class WorkflowAgentDraftMaterializerTests
     }
 
     [Fact]
+    [Obsolete]
     public async Task MaterializeAsync_PreservesExplicitWorkflowSummaryOverSavedAgentSummary()
     {
         var savedAgent = new AgentTemplateDefinition
@@ -131,7 +135,7 @@ public sealed class WorkflowAgentDraftMaterializerTests
 
         var materializer = new WorkflowAgentDraftMaterializer(new StubAgentTemplateService([savedAgent]));
 
-        var materialized = await materializer.MaterializeAsync(workflow);
+        var materialized = await materializer.MaterializeAsync(workflow, cancellationToken: TestContext.Current.CancellationToken);
 
         var technical = Assert.Single(materialized.Participants);
         Assert.Equal("Workflow-specific summary", technical.Summary);
@@ -173,7 +177,7 @@ public sealed class WorkflowAgentDraftMaterializerTests
 
         var materializer = new WorkflowAgentDraftMaterializer(new StubAgentTemplateService([]));
 
-        var materialized = await materializer.MaterializeAsync(workflow);
+        var materialized = await materializer.MaterializeAsync(workflow, cancellationToken: TestContext.Current.CancellationToken);
 
         var groupChat = Assert.IsType<GroupChatWorkflowDefinition>(materialized);
         Assert.Equal(WorkflowDefinitionKinds.GroupChat, groupChat.Kind);
@@ -234,7 +238,7 @@ public sealed class WorkflowAgentDraftMaterializerTests
 
         var materializer = new WorkflowAgentDraftMaterializer(new StubAgentTemplateService(savedAgents));
 
-        var materialized = await materializer.MaterializeAsync(workflow);
+        var materialized = await materializer.MaterializeAsync(workflow, cancellationToken: TestContext.Current.CancellationToken);
         var groupChat = Assert.IsType<GroupChatWorkflowDefinition>(materialized);
         var host = groupChat.Agents.Single(agent => agent.Id == "host");
         var debaterA = groupChat.Agents.Single(agent => agent.Id == "debater_a");

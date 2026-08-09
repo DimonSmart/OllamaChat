@@ -85,8 +85,8 @@ public class UserSettingsServiceTests
                 }
             };
 
-            await service.SaveSettingsAsync(testSettings);
-            var loadedSettings = await service.GetSettingsAsync();
+            await service.SaveSettingsAsync(testSettings, cancellationToken: TestContext.Current.CancellationToken);
+            var loadedSettings = await service.GetSettingsAsync(cancellationToken: TestContext.Current.CancellationToken);
 
             Assert.Equal(testSettings.DefaultModel.ModelName, loadedSettings.DefaultModel.ModelName);
             Assert.Equal(testSettings.DefaultModel.ServerId, loadedSettings.DefaultModel.ServerId);
@@ -112,7 +112,7 @@ public class UserSettingsServiceTests
             serviceLogger,
             new MockLlmServerConfigService());
 
-        await Assert.ThrowsAsync<IOException>(() => service.SaveSettingsAsync(new UserSettings()));
+        await Assert.ThrowsAsync<IOException>(() => service.SaveSettingsAsync(new UserSettings(), cancellationToken: TestContext.Current.CancellationToken));
     }
 
     [Fact]
@@ -145,7 +145,7 @@ public class UserSettingsServiceTests
                     ModelType = "Base",
                     RecognitionLanguage = "auto"
                 }
-            });
+            }, cancellationToken: TestContext.Current.CancellationToken);
 
             await service.SaveVoiceInputSettingsAsync(new VoiceInputSettings
             {
@@ -153,9 +153,9 @@ public class UserSettingsServiceTests
                 Status = VoiceInputInitializationStatus.Ready,
                 ModelType = "Small",
                 RecognitionLanguage = "auto"
-            });
+            }, cancellationToken: TestContext.Current.CancellationToken);
 
-            var loadedSettings = await service.GetSettingsAsync();
+            var loadedSettings = await service.GetSettingsAsync(cancellationToken: TestContext.Current.CancellationToken);
 
             Assert.Equal("Test User", loadedSettings.UserName);
             Assert.True(loadedSettings.VoiceInput.IsEnabled);
