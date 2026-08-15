@@ -238,7 +238,9 @@ public sealed class AgenticRuntimeAgentFactory(
             var workspacePath = request.RuntimeResources.WorkspacePath is null
                 ? null
                 : ValidateWorkspace(request.RuntimeResources.WorkspacePath);
-            var skills = skillsProfile is null ? new AgentSkillsDiscoveryResult([], []) : AgentSkillsDiscovery.Discover(skillsProfile, workspacePath, logger);
+            var skills = skillsProfile is null ? new AgentSkillsDiscoveryResult([], [], null) : AgentSkillsDiscovery.Discover(skillsProfile, workspacePath, logger);
+            if (skills.Source is not null)
+                resources.Own(skills.Source);
             if (skillsProfile is not null)
                 logger.LogInformation("Agent {AgentName}: skills enabled, profile={ProfileName}, loaded={LoadedCount}, ignored={IgnoredCount}", request.Agent.AgentName, skillsProfile.Name, skills.Skills.Count, skills.Diagnostics.Count);
             var workspaceStore = fileAccessProfile is null
