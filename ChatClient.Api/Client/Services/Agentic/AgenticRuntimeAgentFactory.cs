@@ -42,6 +42,7 @@ internal sealed class HarnessAgentRuntimeDefinition(
     FileAccessProviderProfile? fileAccessProfile,
     AgentSessionCompactionViewModel? compaction,
     IReadOnlyList<AgentSessionSkillViewModel> skills,
+    IReadOnlyList<string> skillDiagnostics,
     IRagRetrievalTraceSink? ragRetrievalTraceSink,
     AgentRuntimeResources ownedResources) : IDisposable
 {
@@ -54,6 +55,7 @@ internal sealed class HarnessAgentRuntimeDefinition(
     public FileAccessProviderProfile? FileAccessProfile { get; } = fileAccessProfile;
     public AgentSessionCompactionViewModel? Compaction { get; } = compaction;
     public IReadOnlyList<AgentSessionSkillViewModel> Skills { get; } = skills;
+    public IReadOnlyList<string> SkillDiagnostics { get; } = skillDiagnostics;
     public IRagRetrievalTraceSink? RagRetrievalTraceSink { get; } = ragRetrievalTraceSink;
 
     public void Dispose() => ownedResources.Dispose();
@@ -238,7 +240,9 @@ public sealed class AgenticRuntimeAgentFactory(
             var workspacePath = request.RuntimeResources.WorkspacePath is null
                 ? null
                 : ValidateWorkspace(request.RuntimeResources.WorkspacePath);
-            var skills = skillsProfile is null ? new AgentSkillsDiscoveryResult([], [], null) : AgentSkillsDiscovery.Discover(skillsProfile, workspacePath, logger);
+            var skills = skillsProfile is null
+                ? new AgentSkillsDiscoveryResult([], [], null)
+                : await AgentSkillsDiscovery.DiscoverAsync(skillsProfile, workspacePath, logger, cancellationToken);
             if (skills.Source is not null)
                 resources.Own(skills.Source);
             if (skillsProfile is not null)
@@ -285,6 +289,7 @@ public sealed class AgenticRuntimeAgentFactory(
                     compaction.Budget.InputBudgetTokens,
                     CompactionPolicySummary.FormatPolicy(compactionProfile)),
                 skills.Skills.Select(x => new AgentSessionSkillViewModel(x.Name, x.Description, x.SourcePath, x.SourceKind)).ToList(),
+                skills.Diagnostics,
                 ragTraceSink,
                 resources);
         }

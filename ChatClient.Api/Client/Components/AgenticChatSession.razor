@@ -71,9 +71,9 @@
                             <MudText Typo="Typo.body2">@compaction.InputBudgetTokens.ToString("N0") tokens</MudText>
                         </MudStack>
                     }
-                    @if (SessionState.Skills is { Count: > 0 } skills)
+                    @if ((SessionState.Skills?.Count ?? 0) > 0 || (SessionState.SkillDiagnostics?.Count ?? 0) > 0)
                     {
-                        <MudStack Class="mt-2" Spacing="1"><MudText Typo="Typo.caption" Class="mud-text-secondary">Skills: @skills.Count</MudText>@foreach (var skill in skills) { <MudText Typo="Typo.caption" title="@skill.SourcePath">@skill.Name — @skill.Description</MudText> }</MudStack>
+                        <MudStack Class="mt-2" Spacing="1"><MudText Typo="Typo.caption" Class="mud-text-secondary">Skills: @(SessionState.Skills?.Count ?? 0)</MudText>@foreach (var skill in SessionState.Skills ?? []) { <MudText Typo="Typo.caption" title="@skill.SourcePath">@skill.Name — @skill.Description</MudText> } @if (SessionState.SkillDiagnostics is { Count: > 0 } diagnostics) { <MudText Typo="Typo.caption" Class="mud-text-secondary">@diagnostics.Count ignored</MudText>@foreach (var diagnostic in diagnostics) { <MudText Typo="Typo.caption">@diagnostic</MudText> } }</MudStack>
                     }
                     @if (SessionState.HasTodoProvider)
                     {

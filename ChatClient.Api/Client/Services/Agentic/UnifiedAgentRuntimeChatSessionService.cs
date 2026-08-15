@@ -38,6 +38,7 @@ public sealed class UnifiedAgentRuntimeChatSessionService(
     private FileAccessProviderProfile? _directFileAccessProfile;
     private AgentSessionCompactionViewModel? _directCompaction;
     private IReadOnlyList<AgentSessionSkillViewModel> _directSkills = [];
+    private IReadOnlyList<string> _directSkillDiagnostics = [];
     private SandboxSessionHandle? _sandboxSession;
     private ISessionToolApprovalCoordinator? _toolApprovalCoordinator;
     private SessionToolApprovalPolicy? _toolApprovalPolicy;
@@ -189,7 +190,7 @@ public sealed class UnifiedAgentRuntimeChatSessionService(
 
         var todoProvider = agent.GetService<TodoProvider>();
         var modeProvider = agent.GetService<AgentModeProvider>();
-        if (todoProvider is null && modeProvider is null && _directFileAccessStore is null && sandboxSession is null && _directCompaction is null && _directSkills.Count == 0)
+        if (todoProvider is null && modeProvider is null && _directFileAccessStore is null && sandboxSession is null && _directCompaction is null && _directSkills.Count == 0 && _directSkillDiagnostics.Count == 0)
         {
             return null;
         }
@@ -232,7 +233,8 @@ public sealed class UnifiedAgentRuntimeChatSessionService(
             fileAccess,
             sandbox,
             _directCompaction,
-            _directSkills);
+            _directSkills,
+            _directSkillDiagnostics);
     }
 
     public async Task SetFileAccessWorkspaceAsync(string workspace, CancellationToken cancellationToken = default)
@@ -333,6 +335,7 @@ public sealed class UnifiedAgentRuntimeChatSessionService(
             _directFileAccessProfile = null;
             _directCompaction = null;
             _directSkills = [];
+            _directSkillDiagnostics = [];
             sandboxSession = _sandboxSession;
             _sandboxSession = null;
             _directAvailableModes = [];
@@ -663,6 +666,7 @@ public sealed class UnifiedAgentRuntimeChatSessionService(
         _directFileAccessProfile = build.FileAccessProfile;
         _directCompaction = build.Compaction;
         _directSkills = build.Skills;
+        _directSkillDiagnostics = build.SkillDiagnostics;
         _directToolMetadata = build.ToolSet.MetadataByName;
         SessionStateChanged?.Invoke();
     }

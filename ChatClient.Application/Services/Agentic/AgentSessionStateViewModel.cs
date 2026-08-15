@@ -12,7 +12,8 @@ public sealed record AgentSessionStateViewModel(
     AgentSessionFileAccessViewModel? FileAccess = null,
     AgentSessionSandboxViewModel? Sandbox = null,
     AgentSessionCompactionViewModel? Compaction = null,
-    IReadOnlyList<AgentSessionSkillViewModel>? Skills = null);
+    IReadOnlyList<AgentSessionSkillViewModel>? Skills = null,
+    IReadOnlyList<string>? SkillDiagnostics = null);
 
 public sealed record AgentSessionSkillViewModel(string Name, string Description, string SourcePath, AgentSkillSourceKind SourceKind);
 

@@ -14,7 +14,11 @@ internal sealed record AgentSkillsDiscoveryResult(
 internal static class AgentSkillsDiscovery
 {
     private static readonly string[] Excluded = [".git", "bin", "obj", "node_modules", "packages"];
-    public static AgentSkillsDiscoveryResult Discover(AgentSkillsProfile profile, string? workspacePath, ILogger logger)
+    public static async Task<AgentSkillsDiscoveryResult> DiscoverAsync(
+        AgentSkillsProfile profile,
+        string? workspacePath,
+        ILogger logger,
+        CancellationToken cancellationToken)
     {
         List<string> diagnostics = [];
         List<(string Path, AgentSkillSourceKind Kind)> directories = [];
@@ -39,7 +43,7 @@ internal static class AgentSkillsDiscovery
             {
                 var skillFilePath = Path.GetFullPath(Path.Combine(root, match.Path));
                 var skillDirectory = Path.GetDirectoryName(skillFilePath)!;
-                if (!skillDirectory.StartsWith(Path.TrimEndingDirectorySeparator(root) + Path.DirectorySeparatorChar, OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal) ||
+                if (!IsContainedByRoot(skillDirectory, root) ||
                     !Path.GetFileName(skillFilePath).Equals("SKILL.md", StringComparison.OrdinalIgnoreCase))
                     continue;
                 if (seenDirectories.Add(skillDirectory))
@@ -51,36 +55,75 @@ internal static class AgentSkillsDiscovery
             return new([], diagnostics, null);
 
         var skills = new List<DiscoveredAgentSkill>();
+        var runtimeSources = new List<AgentSkillsSource>();
         var names = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        try
+        foreach (var directory in directories)
         {
-            foreach (var directory in directories)
+            cancellationToken.ThrowIfCancellationRequested();
+            var source = new CachingAgentSkillsSource(new AgentFileSkillsSource(directory.Path));
+            try
             {
-                using var fileSource = new AgentFileSkillsSource(directory.Path);
-                // The framework owns SKILL.md parsing and preserves all files in the skill directory.
-                var loaded = fileSource.GetSkillsAsync(null!, CancellationToken.None).GetAwaiter().GetResult();
-                foreach (var skill in loaded.Where(skill => names.Add(skill.Frontmatter.Name)))
+                // The native source is loaded once here and its framework cache is retained for the session.
+                var loaded = await source.GetSkillsAsync(null!, cancellationToken);
+                if (loaded.Count == 0)
+                {
+                    diagnostics.Add($"Skill directory '{directory.Path}' was ignored by Agent Framework: invalid or unsupported SKILL.md.");
+                    source.Dispose();
+                    continue;
+                }
+
+                var selected = false;
+                foreach (var skill in loaded)
                 {
                     var fileSkill = skill as AgentFileSkill;
+                    var sourcePath = fileSkill?.Path ?? directory.Path;
+                    if (!names.Add(skill.Frontmatter.Name))
+                    {
+                        var loadedSkill = skills.First(x => string.Equals(x.Name, skill.Frontmatter.Name, StringComparison.OrdinalIgnoreCase));
+                        diagnostics.Add($"Skill '{skill.Frontmatter.Name}' from '{sourcePath}' ignored: same name already loaded from '{loadedSkill.SourcePath}'.");
+                        continue;
+                    }
+
+                    selected = true;
                     skills.Add(new DiscoveredAgentSkill(
                         skill.Frontmatter.Name,
                         skill.Frontmatter.Description,
-                        fileSkill?.Path ?? directory.Path,
+                        sourcePath,
                         directory.Kind));
                 }
+
+                if (selected)
+                    runtimeSources.Add(source);
+                else
+                    source.Dispose();
             }
-            if (skills.Count == 0)
-                return new([], diagnostics, null);
-            if (directories.Count > skills.Count)
-                diagnostics.Add($"{directories.Count - skills.Count} duplicate skill directory or directories were ignored using first configured source precedence.");
-            var effectiveSource = new AggregatingAgentSkillsSource(skills.Select(skill => new AgentFileSkillsSource(skill.SourcePath)));
-            return new(skills, diagnostics, effectiveSource);
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                source.Dispose();
+                foreach (var selectedSource in runtimeSources)
+                    selectedSource.Dispose();
+                throw;
+            }
+            catch (Exception exception)
+            {
+                source.Dispose();
+                logger.LogWarning(exception, "Agent Framework rejected skill directory {Path}.", directory.Path);
+                diagnostics.Add($"Skill directory '{directory.Path}' was ignored by Agent Framework: {exception.Message}");
+            }
         }
-        catch (Exception exception)
-        {
-            logger.LogWarning(exception, "Native Agent Skills discovery failed.");
-            diagnostics.Add($"Native Agent Skills discovery failed: {exception.Message}");
+
+        if (skills.Count == 0)
             return new([], diagnostics, null);
-        }
+
+        return new(skills, diagnostics, new AggregatingAgentSkillsSource(runtimeSources));
+    }
+
+    private static bool IsContainedByRoot(string directory, string root)
+    {
+        var comparison = OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal;
+        var normalizedDirectory = Path.TrimEndingDirectorySeparator(Path.GetFullPath(directory));
+        var normalizedRoot = Path.TrimEndingDirectorySeparator(Path.GetFullPath(root));
+        return string.Equals(normalizedDirectory, normalizedRoot, comparison) ||
+            normalizedDirectory.StartsWith(normalizedRoot + Path.DirectorySeparatorChar, comparison);
     }
 }
