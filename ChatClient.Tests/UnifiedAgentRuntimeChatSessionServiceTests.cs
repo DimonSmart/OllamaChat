@@ -15,6 +15,7 @@ using System.Reflection;
 using System.Runtime.CompilerServices;
 using System.Text;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using AgentModeProviderOptions = Microsoft.Agents.AI.AgentModeProviderOptions;
 using AgentSession = Microsoft.Agents.AI.AgentSession;
 using AIAgent = Microsoft.Agents.AI.AIAgent;
@@ -107,6 +108,18 @@ public sealed class UnifiedAgentRuntimeChatSessionServiceTests
     }
 
     [Fact]
+    public void HaveEquivalentWorkspacePaths_UsesOsAwareNormalizedComparison()
+    {
+        var workspace = Path.Combine(Path.GetTempPath(), "HarnessWorkspace");
+
+        Assert.True(UnifiedAgentRuntimeChatSessionService.HaveEquivalentWorkspacePaths(workspace, workspace + Path.DirectorySeparatorChar));
+        Assert.Equal(OperatingSystem.IsWindows(), UnifiedAgentRuntimeChatSessionService.HaveEquivalentWorkspacePaths(workspace, workspace.ToLowerInvariant()));
+        Assert.False(UnifiedAgentRuntimeChatSessionService.HaveEquivalentWorkspacePaths(workspace, Path.Combine(Path.GetTempPath(), "OtherHarnessWorkspace")));
+        Assert.False(UnifiedAgentRuntimeChatSessionService.HaveEquivalentWorkspacePaths(null, workspace));
+        Assert.True(UnifiedAgentRuntimeChatSessionService.HaveEquivalentWorkspacePaths(null, null));
+    }
+
+    [Fact]
     public async Task HarnessSession_RoundTripsWithoutInvokingTheModelDuringRestore()
     {
         var fixture = CreateDirectFixture();
@@ -148,6 +161,105 @@ public sealed class UnifiedAgentRuntimeChatSessionServiceTests
         Assert.Equal(0.35f, request.Options?.Temperature);
         Assert.Equal(1.15, request.Options?.AdditionalProperties?["repeat_penalty"]);
         Assert.Equal("Test Agent", fixture.Service.Messages.Last().AgentName);
+    }
+
+    [Fact]
+    public async Task HarnessSession_RestorePreservesAgentMode()
+    {
+        var fixture = CreateDirectFixture(availableModes: ["Plan", "Execute"]);
+        await fixture.Service.StartAsync(fixture.Request, cancellationToken: TestContext.Current.CancellationToken);
+        await fixture.Service.SetAgentModeAsync("Execute", cancellationToken: TestContext.Current.CancellationToken);
+        var snapshot = await fixture.Service.ExportHarnessSessionAsync(TestContext.Current.CancellationToken);
+
+        await fixture.Service.RestoreHarnessSessionAsync(snapshot, TestContext.Current.CancellationToken);
+
+        Assert.Equal("Execute", (await fixture.Service.GetSessionStateAsync(TestContext.Current.CancellationToken))!.Mode);
+    }
+
+    [Fact]
+    public async Task RestoreHarnessSessionAsync_DistinguishesNullAndEmptyMcpParameterValues()
+    {
+        var fixture = CreateDirectFixture(mcpBindings:
+        [
+            new McpServerSessionBinding
+            {
+                ServerName = "github",
+                Parameters = new Dictionary<string, string?> { ["token"] = null }
+            }
+        ]);
+        await fixture.Service.StartAsync(fixture.Request, cancellationToken: TestContext.Current.CancellationToken);
+        var snapshot = await fixture.Service.ExportHarnessSessionAsync(TestContext.Current.CancellationToken);
+        var node = SnapshotNode(snapshot);
+        node["Overrides"]!["McpServerBindings"]!.AsArray()[0]!["Parameters"]!["token"] = string.Empty;
+
+        await AssertRestoreRejectedAndKeepsSessionUsableAsync(fixture, node.ToJsonString(), "different MCP bindings");
+    }
+
+    [Theory]
+    [InlineData("binding")]
+    [InlineData("selected tools")]
+    [InlineData("roots")]
+    [InlineData("parameters")]
+    public async Task RestoreHarnessSessionAsync_RejectsMalformedMcpBindingsWithoutReplacingTheCurrentSession(string malformedPart)
+    {
+        var fixture = CreateDirectFixture(mcpBindings: [new McpServerSessionBinding { ServerName = "github" }]);
+        await fixture.Service.StartAsync(fixture.Request, cancellationToken: TestContext.Current.CancellationToken);
+        var node = SnapshotNode(await fixture.Service.ExportHarnessSessionAsync(TestContext.Current.CancellationToken));
+        var bindings = node["Overrides"]!["McpServerBindings"]!.AsArray();
+        switch (malformedPart)
+        {
+            case "binding":
+                bindings[0] = null;
+                break;
+            case "selected tools":
+                bindings[0]!["SelectedTools"] = null;
+                break;
+            case "roots":
+                bindings[0]!["Roots"] = null;
+                break;
+            case "parameters":
+                bindings[0]!["Parameters"] = null;
+                break;
+        }
+
+        await AssertRestoreRejectedAndKeepsSessionUsableAsync(fixture, node.ToJsonString(), "not a valid Harness session snapshot");
+    }
+
+    [Theory]
+    [MemberData(nameof(IncompatibleSnapshotMutations))]
+    public async Task RestoreHarnessSessionAsync_RejectsIncompatibleSnapshotsWithoutReplacingTheCurrentSession(
+        string _,
+        Action<JsonObject> mutate)
+    {
+        var fixture = CreateDirectFixture();
+        await fixture.Service.StartAsync(fixture.Request, cancellationToken: TestContext.Current.CancellationToken);
+        var snapshot = await fixture.Service.ExportHarnessSessionAsync(TestContext.Current.CancellationToken);
+        var node = SnapshotNode(snapshot);
+        mutate(node);
+
+        await AssertRestoreRejectedAndKeepsSessionUsableAsync(fixture, node.ToJsonString());
+    }
+
+    public static IEnumerable<object[]> IncompatibleSnapshotMutations()
+    {
+        yield return ["saved agent", (Action<JsonObject>)(node => node["SavedAgentId"] = Guid.NewGuid().ToString())];
+        yield return ["model server", (Action<JsonObject>)(node => node["ModelServerId"] = Guid.NewGuid().ToString())];
+        yield return ["model", (Action<JsonObject>)(node => node["ModelName"] = "other-model")];
+        yield return ["agent configuration", (Action<JsonObject>)(node => node["AgentUpdatedAt"] = DateTime.UtcNow.AddDays(-1))];
+        yield return ["workspace", (Action<JsonObject>)(node => node["Overrides"]!["WorkspacePath"] = Path.Combine(Path.GetTempPath(), "different-workspace"))];
+        yield return ["sandbox", (Action<JsonObject>)(node => node["Overrides"]!["SandboxProfileId"] = Guid.NewGuid().ToString())];
+        yield return ["format", (Action<JsonObject>)(node => node["FormatVersion"] = 99)];
+        yield return ["missing overrides", (Action<JsonObject>)(node => node["Overrides"] = null)];
+        yield return ["missing session", (Action<JsonObject>)(node => node.Remove("Session"))];
+    }
+
+    [Fact]
+    public async Task RestoreHarnessSessionAsync_RejectsInvalidJsonWithoutReplacingTheCurrentSession()
+    {
+        var fixture = CreateDirectFixture();
+        await fixture.Service.StartAsync(fixture.Request, cancellationToken: TestContext.Current.CancellationToken);
+
+        await AssertRestoreRejectedAndKeepsSessionUsableAsync(fixture, "not json");
     }
 
     [Fact]
@@ -863,6 +975,25 @@ public sealed class UnifiedAgentRuntimeChatSessionServiceTests
     private static string CurrentUserText(IReadOnlyList<ChatMessage> messages) =>
         string.Concat(messages.Last(static message => message.Role == ChatRole.User)
             .Contents.OfType<TextContent>().Select(static content => content.Text));
+
+    private static JsonObject SnapshotNode(string snapshotJson) =>
+        JsonNode.Parse(snapshotJson)!.AsObject();
+
+    private static async Task AssertRestoreRejectedAndKeepsSessionUsableAsync(
+        DirectFixture fixture,
+        string snapshotJson,
+        string? expectedMessage = null)
+    {
+        var originalAgent = GetPrivateField<AIAgent>(fixture.Service, "_directAgent");
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(
+            () => fixture.Service.RestoreHarnessSessionAsync(snapshotJson, TestContext.Current.CancellationToken));
+        if (expectedMessage is not null)
+            Assert.Contains(expectedMessage, exception.Message);
+
+        Assert.Same(originalAgent, GetPrivateField<AIAgent>(fixture.Service, "_directAgent"));
+        await fixture.Service.SendAsync("still active", cancellationToken: TestContext.Current.CancellationToken);
+        Assert.Equal("still active", CurrentUserText(fixture.ChatClient.Requests[^1].Messages));
+    }
 
     private static string WithSession(string snapshotJson, string sessionJson)
     {

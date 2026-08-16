@@ -656,8 +656,7 @@ public sealed class UnifiedAgentRuntimeChatSessionService(
         catch (JsonException ex) { logger.LogWarning(ex, "Harness session snapshot JSON could not be read."); throw new InvalidOperationException("The selected file is not a valid Harness session snapshot."); }
         if (snapshot.FormatVersion != HarnessSessionSnapshot.CurrentFormatVersion)
             throw new InvalidOperationException($"Harness session snapshot format {snapshot.FormatVersion} is not supported.");
-        if (snapshot.Session.ValueKind is JsonValueKind.Undefined or JsonValueKind.Null)
-            throw new InvalidOperationException("The Harness session snapshot does not contain a session payload.");
+        ValidateSnapshotStructure(snapshot);
 
         await _runSetupGate.WaitAsync(cancellationToken);
         try
@@ -672,7 +671,7 @@ public sealed class UnifiedAgentRuntimeChatSessionService(
             var model = _parameters.RuntimeDefaultModel ?? throw new InvalidOperationException("The selected model is unavailable.");
             if (model.ServerId != snapshot.ModelServerId || !string.Equals(model.ModelName, snapshot.ModelName, StringComparison.Ordinal))
                 throw new InvalidOperationException("This Harness session was created with a different model.");
-            if (!string.Equals(_parameters.Overrides.WorkspacePath, snapshot.Overrides.WorkspacePath, StringComparison.OrdinalIgnoreCase))
+            if (!HaveEquivalentWorkspacePaths(_parameters.Overrides.WorkspacePath, snapshot.Overrides.WorkspacePath))
                 throw new InvalidOperationException("This Harness session was created with a different workspace.");
             if (_parameters.Overrides.SandboxProfileId != snapshot.Overrides.SandboxProfileId)
                 throw new InvalidOperationException("This Harness session was created with a different sandbox profile.");
@@ -1213,6 +1212,14 @@ public sealed class UnifiedAgentRuntimeChatSessionService(
         return string.Equals(NormalizeWorkspacePath(fileAccessWorkspace), NormalizeWorkspacePath(sandboxWorkspace), comparison);
     }
 
+    internal static bool HaveEquivalentWorkspacePaths(string? left, string? right)
+    {
+        if (left is null || right is null)
+            return left is null && right is null;
+
+        return HaveSameWorkspace(left, right);
+    }
+
     private static string NormalizeWorkspacePath(string workspacePath)
     {
         try
@@ -1472,26 +1479,73 @@ public sealed class UnifiedAgentRuntimeChatSessionService(
         catch (Exception ex) { logger.LogWarning(ex, "Could not dispose the replacement sandbox after restore preparation failed."); }
     }
 
+    private static void ValidateSnapshotStructure(HarnessSessionSnapshot snapshot)
+    {
+        if (snapshot.Overrides is null ||
+            snapshot.Session.ValueKind is JsonValueKind.Undefined or JsonValueKind.Null ||
+            !AreValidMcpBindings(snapshot.Overrides.McpServerBindings))
+        {
+            throw new InvalidOperationException("The selected file is not a valid Harness session snapshot.");
+        }
+    }
+
+    private static bool AreValidMcpBindings(IReadOnlyCollection<McpServerSessionBinding>? bindings) =>
+        bindings is null || bindings.All(static binding =>
+            binding is not null &&
+            binding.SelectedTools is not null &&
+            binding.Roots is not null &&
+            binding.Parameters is not null &&
+            binding.SelectedTools.All(static tool => tool is not null) &&
+            binding.Roots.All(static root => root is not null));
+
     private static bool HaveEquivalentMcpBindings(
         IReadOnlyCollection<McpServerSessionBinding>? left,
-        IReadOnlyCollection<McpServerSessionBinding>? right) =>
-        CanonicalizeMcpBindings(left).SequenceEqual(CanonicalizeMcpBindings(right), StringComparer.Ordinal);
-
-    private static IEnumerable<string> CanonicalizeMcpBindings(IReadOnlyCollection<McpServerSessionBinding>? bindings) =>
-        (bindings ?? []).Select(CanonicalizeMcpBinding).Order(StringComparer.Ordinal);
-
-    private static string CanonicalizeMcpBinding(McpServerSessionBinding binding)
+        IReadOnlyCollection<McpServerSessionBinding>? right)
     {
-        static string Values(IEnumerable<string> values) => string.Join("\u001f", values.Order(StringComparer.Ordinal));
-        var parameters = binding.Parameters
-            .OrderBy(static pair => pair.Key, StringComparer.OrdinalIgnoreCase)
-            .Select(static pair => $"{pair.Key.ToUpperInvariant()}={pair.Value}");
-        return string.Join("\u001e", [
-            binding.BindingId?.ToString("D") ?? string.Empty,
-            binding.ServerId?.ToString("D") ?? string.Empty,
-            binding.ServerName?.Trim().ToUpperInvariant() ?? string.Empty,
-            binding.Enabled.ToString(), binding.SelectAllTools.ToString(),
-            Values(binding.SelectedTools), Values(binding.Roots), Values(parameters)]);
+        var unmatched = (right ?? []).ToList();
+        foreach (var binding in left ?? [])
+        {
+            var index = unmatched.FindIndex(candidate => HaveEquivalentMcpBinding(binding, candidate));
+            if (index < 0)
+                return false;
+            unmatched.RemoveAt(index);
+        }
+
+        return unmatched.Count == 0;
+    }
+
+    private static bool HaveEquivalentMcpBinding(McpServerSessionBinding left, McpServerSessionBinding right) =>
+        left.BindingId == right.BindingId &&
+        left.ServerId == right.ServerId &&
+        string.Equals(left.ServerName?.Trim(), right.ServerName?.Trim(), StringComparison.OrdinalIgnoreCase) &&
+        left.Enabled == right.Enabled &&
+        left.SelectAllTools == right.SelectAllTools &&
+        HaveEquivalentValues(left.SelectedTools, right.SelectedTools) &&
+        HaveEquivalentValues(left.Roots, right.Roots) &&
+        HaveEquivalentParameters(left.Parameters, right.Parameters);
+
+    private static bool HaveEquivalentValues(IEnumerable<string> left, IEnumerable<string> right) =>
+        left.Order(StringComparer.Ordinal).SequenceEqual(right.Order(StringComparer.Ordinal), StringComparer.Ordinal);
+
+    private static bool HaveEquivalentParameters(
+        IReadOnlyDictionary<string, string?> left,
+        IReadOnlyDictionary<string, string?> right)
+    {
+        if (left.Count != right.Count)
+            return false;
+
+        var unmatched = right.ToList();
+        foreach (var (key, value) in left)
+        {
+            var index = unmatched.FindIndex(pair =>
+                string.Equals(pair.Key, key, StringComparison.OrdinalIgnoreCase) &&
+                string.Equals(pair.Value, value, StringComparison.Ordinal));
+            if (index < 0)
+                return false;
+            unmatched.RemoveAt(index);
+        }
+
+        return unmatched.Count == 0;
     }
 
     private static string ResolveRuntimeDisplayName(ChatEngineSessionStartRequest request) =>
