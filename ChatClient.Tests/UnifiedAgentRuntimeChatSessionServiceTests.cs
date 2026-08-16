@@ -19,6 +19,7 @@ using System.Text.Json.Nodes;
 using AgentModeProviderOptions = Microsoft.Agents.AI.AgentModeProviderOptions;
 using AgentSession = Microsoft.Agents.AI.AgentSession;
 using AIAgent = Microsoft.Agents.AI.AIAgent;
+using BackgroundAgentsProvider = Microsoft.Agents.AI.BackgroundAgentsProvider;
 using HarnessAgentOptions = Microsoft.Agents.AI.HarnessAgentOptions;
 using TodoProvider = Microsoft.Agents.AI.TodoProvider;
 
@@ -354,6 +355,51 @@ public sealed class UnifiedAgentRuntimeChatSessionServiceTests
 
         Assert.Equal(2, sandboxes.StartCount);
         Assert.Equal("after sandbox cleanup failure", CurrentUserText(fixture.ChatClient.Requests[^1].Messages));
+    }
+
+    [Fact]
+    public async Task HarnessSession_IncompleteBackgroundTaskRejectsExportAndRestoreWithoutReplacingCurrentResources()
+    {
+        var sandboxes = new TrackingSandboxSessionFactory();
+        var fixture = CreateDirectFixture(sandboxSessionFactory: sandboxes, supportsSandbox: true);
+        await fixture.Service.StartAsync(fixture.Request, cancellationToken: TestContext.Current.CancellationToken);
+        var snapshot = await fixture.Service.ExportHarnessSessionAsync(TestContext.Current.CancellationToken);
+        var currentRuntime = GetPrivateField<HarnessAgentRuntimeDefinition>(fixture.Service, "_directRuntimeDefinition");
+        var currentSandbox = Assert.Single(sandboxes.Sandboxes);
+        var backgroundTask = new BackgroundTaskHarnessFixture();
+
+        try
+        {
+            await backgroundTask.StartTaskAsync(TestContext.Current.CancellationToken);
+#pragma warning disable MAAI001
+            var provider = backgroundTask.Agent.GetService<BackgroundAgentsProvider>();
+            Assert.NotNull(provider);
+            Assert.NotEmpty(provider.GetIncompleteTasks(backgroundTask.Session));
+#pragma warning restore MAAI001
+            InstallDirectHarness(fixture.Service, backgroundTask.Agent, backgroundTask.Session, []);
+
+            var exportException = await Assert.ThrowsAsync<InvalidOperationException>(
+                () => fixture.Service.ExportHarnessSessionAsync(TestContext.Current.CancellationToken));
+            var restoreException = await Assert.ThrowsAsync<InvalidOperationException>(
+                () => fixture.Service.RestoreHarnessSessionAsync(snapshot, TestContext.Current.CancellationToken));
+
+            Assert.Contains("Background Agents are still running", exportException.Message);
+            Assert.Contains("Background Agents are still running", restoreException.Message);
+            Assert.Same(backgroundTask.Agent, GetPrivateField<AIAgent>(fixture.Service, "_directAgent"));
+            Assert.Same(backgroundTask.Session, GetPrivateField<AgentSession>(fixture.Service, "_directSession"));
+            Assert.Same(currentRuntime, GetPrivateField<HarnessAgentRuntimeDefinition>(fixture.Service, "_directRuntimeDefinition"));
+            Assert.Equal(0, fixture.ChatClient.DisposeCount);
+            Assert.Equal(0, currentSandbox.DisposeCount);
+            Assert.Equal(1, sandboxes.StartCount);
+
+            await fixture.Service.SendAsync("still active", cancellationToken: TestContext.Current.CancellationToken);
+
+            Assert.Equal("still active", CurrentUserText(backgroundTask.ParentClient.Requests[^1].Messages));
+        }
+        finally
+        {
+            backgroundTask.Complete();
+        }
     }
 
     [Fact]
@@ -1044,8 +1090,11 @@ public sealed class UnifiedAgentRuntimeChatSessionServiceTests
     {
         public List<RecordedChatRequest> Requests { get; } = [];
 
+        public int DisposeCount { get; private set; }
+
         public void Dispose()
         {
+            DisposeCount++;
         }
 
         public object? GetService(Type serviceType, object? serviceKey = null) =>
@@ -1072,6 +1121,141 @@ public sealed class UnifiedAgentRuntimeChatSessionServiceTests
     }
 
     private sealed record RecordedChatRequest(IReadOnlyList<ChatMessage> Messages, ChatOptions? Options);
+
+    private sealed class BackgroundTaskHarnessFixture
+    {
+        private readonly BlockingBackgroundTaskChatClient _childClient = new();
+
+#pragma warning disable MAAI001
+        public BackgroundTaskHarnessFixture()
+        {
+            var child = _childClient.AsHarnessAgent(new HarnessAgentOptions
+            {
+                Name = "Worker",
+                DisableTodoProvider = true,
+                DisableAgentModeProvider = true,
+                DisableWebSearch = true,
+                DisableFileMemory = true,
+                DisableAgentSkillsProvider = true,
+                DisableCompaction = true
+            });
+            ParentClient = new BackgroundTaskParentChatClient();
+            Agent = ParentClient.AsHarnessAgent(new HarnessAgentOptions
+            {
+                Name = "Parent",
+                BackgroundAgents = [child],
+                DisableTodoProvider = true,
+                DisableAgentModeProvider = true,
+                DisableWebSearch = true,
+                DisableFileMemory = true,
+                DisableAgentSkillsProvider = true,
+                DisableCompaction = true
+            });
+            Session = Agent.CreateSessionAsync().GetAwaiter().GetResult();
+        }
+#pragma warning restore MAAI001
+
+        public AIAgent Agent { get; }
+
+        public AgentSession Session { get; }
+
+        public BackgroundTaskParentChatClient ParentClient { get; }
+
+        public void Complete() => _childClient.Complete();
+
+        public async Task StartTaskAsync(CancellationToken cancellationToken)
+        {
+            await foreach (var _ in Agent.RunStreamingAsync(
+                               [new ChatMessage(ChatRole.User, "start background work")],
+                               Session,
+                               cancellationToken: cancellationToken))
+            {
+            }
+        }
+    }
+
+    private sealed class BackgroundTaskParentChatClient : IChatClient
+    {
+        public List<RecordedChatRequest> Requests { get; } = [];
+
+        public void Dispose()
+        {
+        }
+
+        public object? GetService(Type serviceType, object? serviceKey = null) =>
+            serviceType == typeof(ChatClientMetadata)
+                ? new ChatClientMetadata("background-parent", null, "background-parent")
+                : null;
+
+        public Task<ChatResponse> GetResponseAsync(
+            IEnumerable<ChatMessage> messages,
+            ChatOptions? options = null,
+            CancellationToken cancellationToken = default) =>
+            Task.FromResult(new ChatResponse(new ChatMessage(ChatRole.Assistant, "started")));
+
+        public async IAsyncEnumerable<ChatResponseUpdate> GetStreamingResponseAsync(
+            IEnumerable<ChatMessage> messages,
+            ChatOptions? options = null,
+            [EnumeratorCancellation] CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            var materializedMessages = messages.Select(static message => message.Clone()).ToList();
+            Requests.Add(new RecordedChatRequest(materializedMessages, options));
+            if (!materializedMessages.SelectMany(static message => message.Contents).OfType<FunctionResultContent>().Any())
+            {
+                yield return new ChatResponseUpdate(ChatRole.Assistant,
+                [
+                    new FunctionCallContent(
+                        "background-task",
+                        "background_agents_start_task",
+                        new Dictionary<string, object?>
+                        {
+                            ["agentName"] = "Worker",
+                            ["input"] = "work",
+                            ["description"] = "long-running work"
+                        })
+                ]);
+                yield break;
+            }
+
+            await Task.Yield();
+            yield return new ChatResponseUpdate(ChatRole.Assistant, "started");
+        }
+    }
+
+    private sealed class BlockingBackgroundTaskChatClient : IChatClient
+    {
+        private readonly TaskCompletionSource _completion = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public void Complete() => _completion.TrySetResult();
+
+        public void Dispose()
+        {
+        }
+
+        public object? GetService(Type serviceType, object? serviceKey = null) =>
+            serviceType == typeof(ChatClientMetadata)
+                ? new ChatClientMetadata("background-child", null, "background-child")
+                : null;
+
+        public async Task<ChatResponse> GetResponseAsync(
+            IEnumerable<ChatMessage> messages,
+            ChatOptions? options = null,
+            CancellationToken cancellationToken = default)
+        {
+            await _completion.Task.WaitAsync(cancellationToken);
+            return new ChatResponse(new ChatMessage(ChatRole.Assistant, "completed"));
+        }
+
+        public async IAsyncEnumerable<ChatResponseUpdate> GetStreamingResponseAsync(
+            IEnumerable<ChatMessage> messages,
+            ChatOptions? options = null,
+            [EnumeratorCancellation] CancellationToken cancellationToken = default)
+        {
+            await _completion.Task.WaitAsync(cancellationToken);
+            yield return new ChatResponseUpdate(ChatRole.Assistant, "completed");
+        }
+    }
 
     private sealed class ApprovalHarnessFixture
     {
@@ -1360,6 +1544,34 @@ public sealed class UnifiedAgentRuntimeChatSessionServiceTests
         }
     }
 
+    private sealed class TrackingSandboxSessionFactory : ISandboxSessionFactory
+    {
+        public int StartCount { get; private set; }
+
+        public List<TrackingSandbox> Sandboxes { get; } = [];
+
+        public Task<SandboxSessionHandle> StartAsync(
+            Guid profileId,
+            string workspacePath,
+            string sessionId,
+            CancellationToken cancellationToken = default,
+            IProgress<ChatSessionStartProgress>? progress = null)
+        {
+            StartCount++;
+            var sandbox = new TrackingSandbox(workspacePath);
+            Sandboxes.Add(sandbox);
+            return Task.FromResult(new SandboxSessionHandle(sandbox.DisposeAsync)
+            {
+                ProfileId = profileId,
+                ProfileName = "Test sandbox",
+                ProviderType = "test",
+                Summary = new SandboxDefinitionSummary("test", "test", "none"),
+                WorkspacePath = workspacePath,
+                Instance = sandbox
+            });
+        }
+    }
+
     private sealed class BlockingSandboxSessionFactory : ISandboxSessionFactory
     {
         private readonly TaskCompletionSource _called =
@@ -1434,6 +1646,28 @@ public sealed class UnifiedAgentRuntimeChatSessionServiceTests
         public SandboxState State => SandboxState.Running;
 
         public ValueTask DisposeAsync() => ValueTask.CompletedTask;
+
+        public Task InitializeAsync(CancellationToken cancellationToken = default) => Task.CompletedTask;
+
+        public Task<SandboxCommandResult> ExecuteAsync(string command, CancellationToken cancellationToken = default) =>
+            Task.FromResult(new SandboxCommandResult(string.Empty, string.Empty, 0, false));
+    }
+
+    private sealed class TrackingSandbox(string workspacePath) : ISandbox
+    {
+        public int DisposeCount { get; private set; }
+
+        public string ProviderType => "test";
+
+        public string WorkspacePath => workspacePath;
+
+        public SandboxState State => SandboxState.Running;
+
+        public ValueTask DisposeAsync()
+        {
+            DisposeCount++;
+            return ValueTask.CompletedTask;
+        }
 
         public Task InitializeAsync(CancellationToken cancellationToken = default) => Task.CompletedTask;
 
