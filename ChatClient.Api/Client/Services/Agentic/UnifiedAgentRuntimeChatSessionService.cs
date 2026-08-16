@@ -742,7 +742,7 @@ public sealed class UnifiedAgentRuntimeChatSessionService(
             }
             try
             {
-                _chat.Reset();
+                _chat.ClearTranscript();
                 await AddMessageAsync(new AppChatMessage("Harness session restored. Previous conversation context is stored in the restored AgentSession.", DateTime.Now, AppChatRole.System));
                 ChatReset?.Invoke();
                 SessionStateChanged?.Invoke();

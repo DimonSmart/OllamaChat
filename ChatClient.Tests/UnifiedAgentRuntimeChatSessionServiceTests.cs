@@ -14,6 +14,7 @@ using Moq;
 using System.Reflection;
 using System.Runtime.CompilerServices;
 using System.Text;
+using System.Text.Json;
 using AgentModeProviderOptions = Microsoft.Agents.AI.AgentModeProviderOptions;
 using AgentSession = Microsoft.Agents.AI.AgentSession;
 using AIAgent = Microsoft.Agents.AI.AIAgent;
@@ -125,6 +126,31 @@ public sealed class UnifiedAgentRuntimeChatSessionServiceTests
     }
 
     [Fact]
+    public async Task HarnessSession_RestorePreservesCurrentSavedAgentConfigurationForTheNextTurn()
+    {
+        var fixture = CreateDirectFixture();
+        await fixture.Service.StartAsync(fixture.Request, cancellationToken: TestContext.Current.CancellationToken);
+        var originalAgent = Assert.Single(fixture.Service.Agents);
+
+        await fixture.Service.SendAsync("before export", cancellationToken: TestContext.Current.CancellationToken);
+        var snapshot = await fixture.Service.ExportHarnessSessionAsync(TestContext.Current.CancellationToken);
+
+        await fixture.Service.RestoreHarnessSessionAsync(snapshot, TestContext.Current.CancellationToken);
+
+        var restoredAgent = Assert.Single(fixture.Service.Agents);
+        Assert.Equal(originalAgent.AgentId, restoredAgent.AgentId);
+        Assert.Equal("Test Agent", restoredAgent.AgentName);
+
+        await fixture.Service.SendAsync("after restore", cancellationToken: TestContext.Current.CancellationToken);
+
+        var request = fixture.ChatClient.Requests[^1];
+        Assert.Equal("test-model", request.Options?.ModelId);
+        Assert.Equal(0.35f, request.Options?.Temperature);
+        Assert.Equal(1.15, request.Options?.AdditionalProperties?["repeat_penalty"]);
+        Assert.Equal("Test Agent", fixture.Service.Messages.Last().AgentName);
+    }
+
+    [Fact]
     public async Task RestoreHarnessSessionAsync_RejectsChangedMcpBindingsWithoutReplacingTheSession()
     {
         var fixture = CreateDirectFixture(mcpBindings:
@@ -165,6 +191,55 @@ public sealed class UnifiedAgentRuntimeChatSessionServiceTests
 
         Assert.Contains("different MCP bindings", exception.Message);
         Assert.Same(originalAgent, GetPrivateField<AIAgent>(fixture.Service, "_directAgent"));
+    }
+
+    [Fact]
+    public async Task RestoreHarnessSessionAsync_WhenDeserializationFails_KeepsTheCurrentSessionUsable()
+    {
+        var fixture = CreateDirectFixture();
+        await fixture.Service.StartAsync(fixture.Request, cancellationToken: TestContext.Current.CancellationToken);
+        await fixture.Service.SendAsync("before export", cancellationToken: TestContext.Current.CancellationToken);
+        var snapshot = await fixture.Service.ExportHarnessSessionAsync(TestContext.Current.CancellationToken);
+        var originalAgent = GetPrivateField<AIAgent>(fixture.Service, "_directAgent");
+        var invalidSnapshot = WithSession(snapshot, "true");
+
+        await Assert.ThrowsAsync<InvalidOperationException>(
+            () => fixture.Service.RestoreHarnessSessionAsync(invalidSnapshot, TestContext.Current.CancellationToken));
+
+        Assert.Same(originalAgent, GetPrivateField<AIAgent>(fixture.Service, "_directAgent"));
+        await fixture.Service.SendAsync("still active", cancellationToken: TestContext.Current.CancellationToken);
+        Assert.Equal("still active", CurrentUserText(fixture.ChatClient.Requests[^1].Messages));
+    }
+
+    [Fact]
+    public async Task RestoreHarnessSessionAsync_DoesNotPersistSessionApprovalGrants()
+    {
+        var fixture = CreateDirectFixture();
+        await fixture.Service.StartAsync(fixture.Request, cancellationToken: TestContext.Current.CancellationToken);
+        var policy = GetPrivateField<SessionToolApprovalPolicy>(fixture.Service, "_toolApprovalPolicy");
+        policy.Grant("protected_operation", "test-agent");
+        Assert.True(policy.IsApproved("protected_operation", "test-agent"));
+        var snapshot = await fixture.Service.ExportHarnessSessionAsync(TestContext.Current.CancellationToken);
+
+        await fixture.Service.RestoreHarnessSessionAsync(snapshot, TestContext.Current.CancellationToken);
+
+        var restoredPolicy = GetPrivateField<SessionToolApprovalPolicy>(fixture.Service, "_toolApprovalPolicy");
+        Assert.False(restoredPolicy.IsApproved("protected_operation", "test-agent"));
+    }
+
+    [Fact]
+    public async Task RestoreHarnessSessionAsync_WhenPreviousSandboxCleanupFails_KeepsRestoredSessionUsable()
+    {
+        var sandboxes = new DisposeFailingThenSucceedingSandboxSessionFactory();
+        var fixture = CreateDirectFixture(sandboxSessionFactory: sandboxes, supportsSandbox: true);
+        await fixture.Service.StartAsync(fixture.Request, cancellationToken: TestContext.Current.CancellationToken);
+        var snapshot = await fixture.Service.ExportHarnessSessionAsync(TestContext.Current.CancellationToken);
+
+        await fixture.Service.RestoreHarnessSessionAsync(snapshot, TestContext.Current.CancellationToken);
+        await fixture.Service.SendAsync("after sandbox cleanup failure", cancellationToken: TestContext.Current.CancellationToken);
+
+        Assert.Equal(2, sandboxes.StartCount);
+        Assert.Equal("after sandbox cleanup failure", CurrentUserText(fixture.ChatClient.Requests[^1].Messages));
     }
 
     [Fact]
@@ -688,14 +763,16 @@ public sealed class UnifiedAgentRuntimeChatSessionServiceTests
     private static DirectFixture CreateDirectFixture(
         bool withSessionStateProviders = false,
         IReadOnlyList<string>? availableModes = null,
-        IReadOnlyList<McpServerSessionBinding>? mcpBindings = null)
+        IReadOnlyList<McpServerSessionBinding>? mcpBindings = null,
+        ISandboxSessionFactory? sandboxSessionFactory = null,
+        bool supportsSandbox = false)
     {
         var templateId = Guid.NewGuid();
         var serverId = Guid.NewGuid();
         var template = new AgentTemplateDefinition
         {
             Id = templateId,
-            AgentName = "Harness test agent",
+            AgentName = "Test Agent",
             Content = "Answer deterministically.",
             Temperature = 0.35,
             RepeatPenalty = 1.15
@@ -758,21 +835,26 @@ public sealed class UnifiedAgentRuntimeChatSessionServiceTests
             NullLoggerFactory.Instance);
         var service = new UnifiedAgentRuntimeChatSessionService(
             new StubAgentRunner([]),
-            new StubDefinitionCatalog(),
+            new StubDefinitionCatalog(supportsSandbox ? new AgentLaunchCapabilities { SupportsSandboxProfile = true } : null),
             new AgentRunContextFactory(),
             new AgenticChatEngineStreamingBridge(),
             NullLogger<UnifiedAgentRuntimeChatSessionService>.Instance,
             templateService.Object,
-            new StubSandboxSessionFactory(),
+            sandboxSessionFactory ?? new StubSandboxSessionFactory(),
             runtimeFactory,
             new HarnessResponseEventProjector(NullLogger<HarnessResponseEventProjector>.Instance));
         var request = new ChatEngineSessionStartRequest
         {
             Configuration = new AppChatConfiguration("test-model", []),
-            Agents = [],
+            Agents = [new ResolvedChatAgent(AgentExecutionSpecFactory.FromTemplate(template, model), model)],
             RuntimeReference = new AgentDefinitionReference(AgentDefinitionKind.SavedAgent, templateId.ToString()),
             RuntimeDefaultModel = model,
-            Overrides = new AgentSessionOverrides { McpServerBindings = mcpBindings }
+            Overrides = new AgentSessionOverrides
+            {
+                McpServerBindings = mcpBindings,
+                WorkspacePath = supportsSandbox ? Environment.CurrentDirectory : null,
+                SandboxProfileId = supportsSandbox ? Guid.NewGuid() : null
+            }
         };
 
         return new DirectFixture(service, request, chatClient);
@@ -781,6 +863,23 @@ public sealed class UnifiedAgentRuntimeChatSessionServiceTests
     private static string CurrentUserText(IReadOnlyList<ChatMessage> messages) =>
         string.Concat(messages.Last(static message => message.Role == ChatRole.User)
             .Contents.OfType<TextContent>().Select(static content => content.Text));
+
+    private static string WithSession(string snapshotJson, string sessionJson)
+    {
+        var snapshot = JsonSerializer.Deserialize<HarnessSessionSnapshot>(snapshotJson)!;
+        using var session = JsonDocument.Parse(sessionJson);
+        return JsonSerializer.Serialize(new HarnessSessionSnapshot
+        {
+            SavedAgentId = snapshot.SavedAgentId,
+            AgentName = snapshot.AgentName,
+            AgentUpdatedAt = snapshot.AgentUpdatedAt,
+            ModelServerId = snapshot.ModelServerId,
+            ModelName = snapshot.ModelName,
+            CreatedAtUtc = snapshot.CreatedAtUtc,
+            Overrides = snapshot.Overrides,
+            Session = session.RootElement.Clone()
+        });
+    }
 
     private static T GetPrivateField<T>(object instance, string name) where T : class =>
         Assert.IsAssignableFrom<T>(instance.GetType().GetField(name, BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(instance));
@@ -1095,6 +1194,37 @@ public sealed class UnifiedAgentRuntimeChatSessionServiceTests
             CancellationToken cancellationToken = default,
             IProgress<ChatSessionStartProgress>? progress = null) =>
             throw new NotSupportedException();
+    }
+
+    private sealed class DisposeFailingThenSucceedingSandboxSessionFactory : ISandboxSessionFactory
+    {
+        public int StartCount { get; private set; }
+
+        public Task<SandboxSessionHandle> StartAsync(
+            Guid profileId,
+            string workspacePath,
+            string sessionId,
+            CancellationToken cancellationToken = default,
+            IProgress<ChatSessionStartProgress>? progress = null)
+        {
+            StartCount++;
+            var failOnDispose = StartCount == 1;
+            var sandbox = new StubSandbox(workspacePath);
+            return Task.FromResult(new SandboxSessionHandle(() =>
+            {
+                if (failOnDispose)
+                    throw new InvalidOperationException("Expected old sandbox cleanup failure.");
+                return ValueTask.CompletedTask;
+            })
+            {
+                ProfileId = profileId,
+                ProfileName = "Test sandbox",
+                ProviderType = "test",
+                Summary = new SandboxDefinitionSummary("test", "test", "none"),
+                WorkspacePath = workspacePath,
+                Instance = sandbox
+            });
+        }
     }
 
     private sealed class BlockingSandboxSessionFactory : ISandboxSessionFactory

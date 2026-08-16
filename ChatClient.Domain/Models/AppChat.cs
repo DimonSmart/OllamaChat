@@ -28,10 +28,15 @@ public class AppChat
     public void Reset()
     {
         Id = Guid.NewGuid();
-        Messages.Clear();
+        ClearTranscript();
         _agentsById.Clear();
-        FirstUserMessage = null;
         InitialModel = null;
+    }
+
+    public void ClearTranscript()
+    {
+        Messages.Clear();
+        FirstUserMessage = null;
     }
 }
 
