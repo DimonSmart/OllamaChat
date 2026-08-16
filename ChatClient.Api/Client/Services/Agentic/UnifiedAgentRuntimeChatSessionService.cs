@@ -628,11 +628,7 @@ public sealed class UnifiedAgentRuntimeChatSessionService(
         {
             if (_resetting || IsAnswering || RequiresReset || PendingToolApproval is not null || _directAgent is null || _directSession is null || _parameters?.RuntimeReference?.Kind != AgentDefinitionKind.SavedAgent)
                 throw new InvalidOperationException("A stable direct Harness session is required to export a session.");
-#pragma warning disable MAAI001
-            var backgroundAgents = _directAgent.GetService<BackgroundAgentsProvider>();
-            if (backgroundAgents is not null && backgroundAgents.GetIncompleteTasks(_directSession).Any())
-                throw new InvalidOperationException("The Harness session cannot be exported while Background Agents are still running. Wait for them to finish and try again.");
-#pragma warning restore MAAI001
+            EnsureNoIncompleteBackgroundTasks(_directAgent, _directSession, "exported");
             if (!Guid.TryParse(_parameters.RuntimeReference.Id, out var agentId) || _parameters.RuntimeDefaultModel is null)
                 throw new InvalidOperationException("The saved agent and model are unavailable for session export.");
             var template = await agentTemplateService.GetByIdAsync(agentId) ?? throw new InvalidOperationException("The saved agent used by this session no longer exists.");
@@ -668,6 +664,9 @@ public sealed class UnifiedAgentRuntimeChatSessionService(
         {
             if (_resetting || IsAnswering || RequiresReset || PendingToolApproval is not null || _parameters?.RuntimeReference?.Kind != AgentDefinitionKind.SavedAgent)
                 throw new InvalidOperationException("Restore is available only for an idle direct Saved Agent conversation.");
+            if (_directAgent is null || _directSession is null)
+                throw new InvalidOperationException("A stable direct Harness session is required to restore a session.");
+            EnsureNoIncompleteBackgroundTasks(_directAgent, _directSession, "replaced");
             if (!Guid.TryParse(_parameters.RuntimeReference.Id, out var currentId) || currentId != snapshot.SavedAgentId)
                 throw new InvalidOperationException("This Harness session belongs to a different Saved Agent.");
             var model = _parameters.RuntimeDefaultModel ?? throw new InvalidOperationException("The selected model is unavailable.");
@@ -677,6 +676,8 @@ public sealed class UnifiedAgentRuntimeChatSessionService(
                 throw new InvalidOperationException("This Harness session was created with a different workspace.");
             if (_parameters.Overrides.SandboxProfileId != snapshot.Overrides.SandboxProfileId)
                 throw new InvalidOperationException("This Harness session was created with a different sandbox profile.");
+            if (!HaveEquivalentMcpBindings(_parameters.Overrides.McpServerBindings, snapshot.Overrides.McpServerBindings))
+                throw new InvalidOperationException("This Harness session was created with different MCP bindings. Restore it with the original launch configuration.");
             if (!string.IsNullOrWhiteSpace(snapshot.Overrides.WorkspacePath) && !Directory.Exists(snapshot.Overrides.WorkspacePath))
                 throw new InvalidOperationException($"The workspace used by this Harness session no longer exists: {snapshot.Overrides.WorkspacePath}");
             var template = await agentTemplateService.GetByIdAsync(snapshot.SavedAgentId) ?? throw new InvalidOperationException("The Saved Agent used by this Harness session was deleted.");
@@ -689,35 +690,58 @@ public sealed class UnifiedAgentRuntimeChatSessionService(
             coordinator.PendingRequestChanged += HandleCoordinatorPendingRequestChanged;
             HarnessAgentRuntimeDefinition? replacement = null;
             SandboxSessionHandle? replacementSandbox = null;
+            AgentSession? restoredSession = null;
             try
             {
                 var descriptor = await definitionCatalog.GetRequiredAsync(_parameters.RuntimeReference, cancellationToken);
                 replacementSandbox = await CreateSandboxSessionAsync(
                     _parameters, descriptor, Guid.NewGuid().ToString("N"), cancellationToken, null);
                 replacement = await CreateDirectRuntimeAsync(_parameters, coordinator, policy, replacementSandbox, cancellationToken);
-                var restoredSession = await replacement.Agent.DeserializeSessionAsync(snapshot.Session, cancellationToken: cancellationToken);
-                var previousRuntime = _directRuntimeDefinition;
-                var previousCoordinator = _toolApprovalCoordinator;
-                var previousSandbox = _sandboxSession;
-                _directRuntimeDefinition = replacement;
-                _directAgent = replacement.Agent;
-                _directSession = restoredSession;
-                _directAvailableModes = replacement.AvailableModes;
-                _directFileAccessStore = replacement.FileAccessStore;
-                _directFileAccessProfile = replacement.FileAccessProfile;
-                _directCompaction = replacement.Compaction;
-                _directSkills = replacement.Skills;
-                _directSkillDiagnostics = replacement.SkillDiagnostics;
-                _directBackgroundAgents = replacement.BackgroundAgents;
-                _directToolMetadata = replacement.ToolSet.MetadataByName;
-                _toolApprovalCoordinator = coordinator;
-                _toolApprovalPolicy = policy;
-                replacement = null;
-                _sandboxSession = replacementSandbox;
-                previousCoordinator?.PendingRequestChanged -= HandleCoordinatorPendingRequestChanged;
-                previousRuntime?.Dispose();
-                if (previousSandbox is not null)
-                    await previousSandbox.DisposeAsync();
+                restoredSession = await replacement.Agent.DeserializeSessionAsync(snapshot.Session, cancellationToken: cancellationToken);
+            }
+            catch (Exception ex)
+            {
+                replacement?.Dispose();
+                if (replacementSandbox is not null)
+                    await DisposeSandboxAfterRestoreFailureAsync(replacementSandbox);
+                coordinator.PendingRequestChanged -= HandleCoordinatorPendingRequestChanged;
+                logger.LogWarning(ex, "Harness session restore preparation failed.");
+                throw new InvalidOperationException("Could not restore the Harness session. The current conversation is unchanged.");
+            }
+
+            // Commit is deliberately limited to ownership transfer: no awaits or external callbacks.
+            var previousRuntime = _directRuntimeDefinition;
+            var previousCoordinator = _toolApprovalCoordinator;
+            var previousSandbox = _sandboxSession;
+            _directRuntimeDefinition = replacement;
+            _directAgent = replacement.Agent;
+            _directSession = restoredSession;
+            _directAvailableModes = replacement.AvailableModes;
+            _directFileAccessStore = replacement.FileAccessStore;
+            _directFileAccessProfile = replacement.FileAccessProfile;
+            _directCompaction = replacement.Compaction;
+            _directSkills = replacement.Skills;
+            _directSkillDiagnostics = replacement.SkillDiagnostics;
+            _directBackgroundAgents = replacement.BackgroundAgents;
+            _directToolMetadata = replacement.ToolSet.MetadataByName;
+            _toolApprovalCoordinator = coordinator;
+            _toolApprovalPolicy = policy;
+            _sandboxSession = replacementSandbox;
+            replacement = null;
+            replacementSandbox = null;
+            previousCoordinator?.PendingRequestChanged -= HandleCoordinatorPendingRequestChanged;
+
+            try
+            { previousRuntime?.Dispose(); }
+            catch (Exception ex) { logger.LogWarning(ex, "Could not dispose the previous Harness runtime after restore."); }
+            if (previousSandbox is not null)
+            {
+                try
+                { await previousSandbox.DisposeAsync(); }
+                catch (Exception ex) { logger.LogWarning(ex, "Could not dispose the previous sandbox after restore."); }
+            }
+            try
+            {
                 _chat.Reset();
                 await AddMessageAsync(new AppChatMessage("Harness session restored. Previous conversation context is stored in the restored AgentSession.", DateTime.Now, AppChatRole.System));
                 ChatReset?.Invoke();
@@ -725,12 +749,7 @@ public sealed class UnifiedAgentRuntimeChatSessionService(
             }
             catch (Exception ex)
             {
-                replacement?.Dispose();
-                if (replacementSandbox is not null && !ReferenceEquals(replacementSandbox, _sandboxSession))
-                    await replacementSandbox.DisposeAsync();
-                coordinator.PendingRequestChanged -= HandleCoordinatorPendingRequestChanged;
-                logger.LogWarning(ex, "Harness session restore failed.");
-                throw new InvalidOperationException("Could not restore the Harness session. The current conversation is unchanged.");
+                logger.LogWarning(ex, "Harness session was restored, but the chat presentation could not be refreshed.");
             }
         }
         finally { _runSetupGate.Release(); }
@@ -1436,6 +1455,44 @@ public sealed class UnifiedAgentRuntimeChatSessionService(
             WorkspacePath = overrides.WorkspacePath,
             SandboxProfileId = overrides.SandboxProfileId
         };
+
+    private void EnsureNoIncompleteBackgroundTasks(AIAgent agent, AgentSession session, string operation)
+    {
+#pragma warning disable MAAI001
+        var backgroundAgents = agent.GetService<BackgroundAgentsProvider>();
+        if (backgroundAgents is not null && backgroundAgents.GetIncompleteTasks(session).Any())
+            throw new InvalidOperationException($"The current Harness session cannot be {operation} while Background Agents are still running. Wait for them to finish and try again.");
+#pragma warning restore MAAI001
+    }
+
+    private async Task DisposeSandboxAfterRestoreFailureAsync(SandboxSessionHandle sandbox)
+    {
+        try
+        { await sandbox.DisposeAsync(); }
+        catch (Exception ex) { logger.LogWarning(ex, "Could not dispose the replacement sandbox after restore preparation failed."); }
+    }
+
+    private static bool HaveEquivalentMcpBindings(
+        IReadOnlyCollection<McpServerSessionBinding>? left,
+        IReadOnlyCollection<McpServerSessionBinding>? right) =>
+        CanonicalizeMcpBindings(left).SequenceEqual(CanonicalizeMcpBindings(right), StringComparer.Ordinal);
+
+    private static IEnumerable<string> CanonicalizeMcpBindings(IReadOnlyCollection<McpServerSessionBinding>? bindings) =>
+        (bindings ?? []).Select(CanonicalizeMcpBinding).Order(StringComparer.Ordinal);
+
+    private static string CanonicalizeMcpBinding(McpServerSessionBinding binding)
+    {
+        static string Values(IEnumerable<string> values) => string.Join("\u001f", values.Order(StringComparer.Ordinal));
+        var parameters = binding.Parameters
+            .OrderBy(static pair => pair.Key, StringComparer.OrdinalIgnoreCase)
+            .Select(static pair => $"{pair.Key.ToUpperInvariant()}={pair.Value}");
+        return string.Join("\u001e", [
+            binding.BindingId?.ToString("D") ?? string.Empty,
+            binding.ServerId?.ToString("D") ?? string.Empty,
+            binding.ServerName?.Trim().ToUpperInvariant() ?? string.Empty,
+            binding.Enabled.ToString(), binding.SelectAllTools.ToString(),
+            Values(binding.SelectedTools), Values(binding.Roots), Values(parameters)]);
+    }
 
     private static string ResolveRuntimeDisplayName(ChatEngineSessionStartRequest request) =>
         request.Agents.FirstOrDefault()?.Agent.AgentName ??

@@ -106,6 +106,68 @@ public sealed class UnifiedAgentRuntimeChatSessionServiceTests
     }
 
     [Fact]
+    public async Task HarnessSession_RoundTripsWithoutInvokingTheModelDuringRestore()
+    {
+        var fixture = CreateDirectFixture();
+        await fixture.Service.StartAsync(fixture.Request, cancellationToken: TestContext.Current.CancellationToken);
+        await fixture.Service.SendAsync("before export", cancellationToken: TestContext.Current.CancellationToken);
+
+        var snapshot = await fixture.Service.ExportHarnessSessionAsync(TestContext.Current.CancellationToken);
+        var callsBeforeRestore = fixture.ChatClient.Requests.Count;
+
+        await fixture.Service.RestoreHarnessSessionAsync(snapshot, TestContext.Current.CancellationToken);
+
+        Assert.Equal(callsBeforeRestore, fixture.ChatClient.Requests.Count);
+        await fixture.Service.SendAsync("after restore", cancellationToken: TestContext.Current.CancellationToken);
+        Assert.Contains(
+            fixture.ChatClient.Requests[^1].Messages,
+            static message => message.Role == ChatRole.Assistant && message.Text == "answer-1");
+    }
+
+    [Fact]
+    public async Task RestoreHarnessSessionAsync_RejectsChangedMcpBindingsWithoutReplacingTheSession()
+    {
+        var fixture = CreateDirectFixture(mcpBindings:
+        [
+            new McpServerSessionBinding
+            {
+                BindingId = Guid.NewGuid(),
+                ServerName = "github",
+                Enabled = true,
+                SelectAllTools = false,
+                SelectedTools = ["search", "fetch"],
+                Roots = ["C:\\Workspace"],
+                Parameters = new Dictionary<string, string?> { ["token"] = "one" }
+            }
+        ]);
+        await fixture.Service.StartAsync(fixture.Request, cancellationToken: TestContext.Current.CancellationToken);
+        var snapshot = await fixture.Service.ExportHarnessSessionAsync(TestContext.Current.CancellationToken);
+        var originalAgent = GetPrivateField<AIAgent>(fixture.Service, "_directAgent");
+
+        var requestSnapshot = fixture.Request.Snapshot();
+        var changedParameters = new ChatEngineSessionStartRequest
+        {
+            Configuration = requestSnapshot.Configuration,
+            Agents = requestSnapshot.Agents,
+            RuntimeParticipant = requestSnapshot.RuntimeParticipant,
+            RuntimeReference = requestSnapshot.RuntimeReference,
+            RuntimeDefaultModel = requestSnapshot.RuntimeDefaultModel,
+            RuntimeInputs = requestSnapshot.RuntimeInputs,
+            Overrides = new AgentSessionOverrides
+            {
+                McpServerBindings = [new McpServerSessionBinding { ServerName = "filesystem" }]
+            }
+        };
+        SetPrivateField(fixture.Service, "_parameters", changedParameters);
+
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(
+            () => fixture.Service.RestoreHarnessSessionAsync(snapshot, TestContext.Current.CancellationToken));
+
+        Assert.Contains("different MCP bindings", exception.Message);
+        Assert.Same(originalAgent, GetPrivateField<AIAgent>(fixture.Service, "_directAgent"));
+    }
+
+    [Fact]
     public async Task AgenticChatPageDispose_DoesNotCancelOrResetActiveSession()
     {
         var chatService = new Mock<IChatEngineSessionService>();
@@ -625,7 +687,8 @@ public sealed class UnifiedAgentRuntimeChatSessionServiceTests
 
     private static DirectFixture CreateDirectFixture(
         bool withSessionStateProviders = false,
-        IReadOnlyList<string>? availableModes = null)
+        IReadOnlyList<string>? availableModes = null,
+        IReadOnlyList<McpServerSessionBinding>? mcpBindings = null)
     {
         var templateId = Guid.NewGuid();
         var serverId = Guid.NewGuid();
@@ -708,7 +771,8 @@ public sealed class UnifiedAgentRuntimeChatSessionServiceTests
             Configuration = new AppChatConfiguration("test-model", []),
             Agents = [],
             RuntimeReference = new AgentDefinitionReference(AgentDefinitionKind.SavedAgent, templateId.ToString()),
-            RuntimeDefaultModel = model
+            RuntimeDefaultModel = model,
+            Overrides = new AgentSessionOverrides { McpServerBindings = mcpBindings }
         };
 
         return new DirectFixture(service, request, chatClient);
@@ -717,6 +781,12 @@ public sealed class UnifiedAgentRuntimeChatSessionServiceTests
     private static string CurrentUserText(IReadOnlyList<ChatMessage> messages) =>
         string.Concat(messages.Last(static message => message.Role == ChatRole.User)
             .Contents.OfType<TextContent>().Select(static content => content.Text));
+
+    private static T GetPrivateField<T>(object instance, string name) where T : class =>
+        Assert.IsAssignableFrom<T>(instance.GetType().GetField(name, BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(instance));
+
+    private static void SetPrivateField(object instance, string name, object? value) =>
+        instance.GetType().GetField(name, BindingFlags.Instance | BindingFlags.NonPublic)!.SetValue(instance, value);
 
     private sealed record DirectFixture(
         UnifiedAgentRuntimeChatSessionService Service,
