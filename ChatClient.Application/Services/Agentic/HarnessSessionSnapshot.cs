@@ -14,6 +14,6 @@ public sealed class HarnessSessionSnapshot
     public Guid ModelServerId { get; init; }
     public string ModelName { get; init; } = string.Empty;
     public DateTime CreatedAtUtc { get; init; }
-    public AgentSessionOverrides Overrides { get; init; } = new();
+    public required AgentSessionOverrides Overrides { get; init; }
     public required JsonElement Session { get; init; }
 }

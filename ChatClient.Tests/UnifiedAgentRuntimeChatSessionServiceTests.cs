@@ -250,7 +250,9 @@ public sealed class UnifiedAgentRuntimeChatSessionServiceTests
         yield return ["sandbox", (Action<JsonObject>)(node => node["Overrides"]!["SandboxProfileId"] = Guid.NewGuid().ToString())];
         yield return ["format", (Action<JsonObject>)(node => node["FormatVersion"] = 99)];
         yield return ["missing overrides", (Action<JsonObject>)(node => node["Overrides"] = null)];
+        yield return ["absent overrides", (Action<JsonObject>)(node => node.Remove("Overrides"))];
         yield return ["missing session", (Action<JsonObject>)(node => node.Remove("Session"))];
+        yield return ["null session", (Action<JsonObject>)(node => node["Session"] = null)];
     }
 
     [Fact]
