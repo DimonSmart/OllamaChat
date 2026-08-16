@@ -336,14 +336,21 @@ public sealed class AgenticRuntimeAgentFactory(
 
         var service = agentTemplateService ?? throw new InvalidOperationException(
             "Saved agent service is not configured for Background Agents.");
+        var templates = new List<AgentTemplateDefinition>(backgroundAgentIds.Count);
+        foreach (var backgroundAgentId in backgroundAgentIds)
+        {
+            templates.Add(await service.GetByIdAsync(backgroundAgentId)
+                ?? throw new InvalidOperationException(
+                    $"Background agent '{backgroundAgentId}' configured for agent '{parentRequest.Agent.AgentName}' was not found."));
+        }
+
+        ValidateBackgroundAgentNames(parentRequest.Agent.AgentName, templates);
+
         var definitions = new List<HarnessAgentRuntimeDefinition>(backgroundAgentIds.Count);
         try
         {
-            foreach (var backgroundAgentId in backgroundAgentIds)
+            foreach (var template in templates)
             {
-                var template = await service.GetByIdAsync(backgroundAgentId)
-                    ?? throw new InvalidOperationException(
-                        $"Background agent '{backgroundAgentId}' configured for agent '{parentRequest.Agent.AgentName}' was not found.");
                 var model = ResolveBackgroundModel(template, parentRequest.ResolvedModel);
                 var childRequest = new AgentRunRequest
                 {
@@ -375,6 +382,28 @@ public sealed class AgenticRuntimeAgentFactory(
             }
 
             throw;
+        }
+    }
+
+    private static void ValidateBackgroundAgentNames(
+        string parentAgentName,
+        IReadOnlyCollection<AgentTemplateDefinition> templates)
+    {
+        HashSet<string> names = new(StringComparer.OrdinalIgnoreCase);
+        foreach (var template in templates)
+        {
+            var name = template.AgentName?.Trim();
+            if (string.IsNullOrEmpty(name))
+            {
+                throw new InvalidOperationException(
+                    $"Background Agents configured for '{parentAgentName}' must have non-empty names.");
+            }
+
+            if (!names.Add(name))
+            {
+                throw new InvalidOperationException(
+                    $"Background Agents configured for '{parentAgentName}' must have unique names. Duplicate name: '{name}'.");
+            }
         }
     }
 
