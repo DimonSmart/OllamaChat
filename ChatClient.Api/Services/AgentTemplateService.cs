@@ -23,6 +23,7 @@ public class AgentTemplateService(IAgentTemplateRepository repository) : IAgentT
     {
         var templates = await LoadTemplatesAsync();
         EnsureBindingIds(template);
+        NormalizeBackgroundAgentIds(template);
         var usedIds = templates
             .Select(static item => item.Id)
             .Where(static id => id != Guid.Empty)
@@ -44,6 +45,7 @@ public class AgentTemplateService(IAgentTemplateRepository repository) : IAgentT
     {
         var templates = await LoadTemplatesAsync();
         EnsureBindingIds(template);
+        NormalizeBackgroundAgentIds(template);
         var index = templates.FindIndex(item => item.Id == template.Id);
         if (index == -1)
             throw new KeyNotFoundException($"Agent template with ID {template.Id} not found");
@@ -92,6 +94,14 @@ public class AgentTemplateService(IAgentTemplateRepository repository) : IAgentT
         while (!usedIds.Add(id));
 
         return id;
+    }
+
+    private static void NormalizeBackgroundAgentIds(AgentTemplateDefinition template)
+    {
+        template.BackgroundAgentIds = template.BackgroundAgentIds
+            .Where(id => id != Guid.Empty && id != template.Id)
+            .Distinct()
+            .ToList();
     }
 }
 

@@ -22,6 +22,7 @@ public sealed class AgentExecutionSpec : AgentModelBase
             SkillsProviderProfileId = SkillsProviderProfileId,
             CompactionProfileId = CompactionProfileId,
             RagProviderProfileId = RagProviderProfileId,
+            BackgroundAgentIds = BackgroundAgentIds.ToList(),
             EnableShell = EnableShell,
             ContinueUntilTodosComplete = ContinueUntilTodosComplete,
             MaxTodoCompletionIterations = MaxTodoCompletionIterations,

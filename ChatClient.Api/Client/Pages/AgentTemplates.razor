@@ -315,6 +315,18 @@
                 <MudItem xs="12"><MudAlert Severity="Severity.Warning" Dense="true">The selected RAG Provider profile is unavailable. Choose another profile or Built-in defaults before saving.</MudAlert></MudItem>
             }
             </MudGrid>
+            <MudDivider Class="my-2" />
+            <MudText Typo="Typo.subtitle1">Background Agents</MudText>
+            <MudText Typo="Typo.caption" Class="mud-text-secondary">Agents that this Harness agent may delegate tasks to.</MudText>
+            <MudStack Spacing="0" Class="mt-1">
+                @foreach (var candidate in BackgroundAgentCandidates())
+                {
+                    <MudCheckBox T="bool" Value="@editingAgent.BackgroundAgentIds.Contains(candidate.Id)" ValueChanged="@(selected => SetBackgroundAgent(candidate.Id, selected))">
+                        <MudText Typo="Typo.body2">@candidate.AgentName</MudText>
+                        <MudText Typo="Typo.caption" Class="mud-text-secondary">@(string.IsNullOrWhiteSpace(candidate.Summary) ? "No summary" : candidate.Summary)</MudText>
+                    </MudCheckBox>
+                }
+            </MudStack>
             <MudGrid Spacing="2">
             <MudItem xs="12" sm="6"><MudCheckBox T="bool"
                          @bind-Value="editingAgent.EnableShell"
@@ -477,6 +489,7 @@
             SkillsProviderProfileId = null,
             CompactionProfileId = null,
             RagProviderProfileId = null,
+            BackgroundAgentIds = [],
             EnableShell = false,
             ContinueUntilTodosComplete = false,
             MaxTodoCompletionIterations = 10,
@@ -536,6 +549,7 @@
             SkillsProviderProfileId = agent.SkillsProviderProfileId,
             CompactionProfileId = agent.CompactionProfileId,
             RagProviderProfileId = agent.RagProviderProfileId,
+            BackgroundAgentIds = agent.BackgroundAgentIds.Distinct().ToList(),
             EnableShell = agent.EnableShell,
             ContinueUntilTodosComplete = agent.ContinueUntilTodosComplete,
             MaxTodoCompletionIterations = agent.MaxTodoCompletionIterations,
@@ -568,6 +582,18 @@
     {
         if (selected && !editingAgent.KnowledgeStoreIds.Contains(storeId)) editingAgent.KnowledgeStoreIds.Add(storeId);
         if (!selected) editingAgent.KnowledgeStoreIds.Remove(storeId);
+    }
+
+    private IEnumerable<AgentTemplateDefinition> BackgroundAgentCandidates() => agents
+        .Where(candidate => candidate.Id != Guid.Empty && candidate.Id != editingAgent.Id)
+        .OrderBy(candidate => candidate.AgentName, StringComparer.OrdinalIgnoreCase);
+
+    private void SetBackgroundAgent(Guid agentId, bool selected)
+    {
+        if (selected && agentId != Guid.Empty && agentId != editingAgent.Id && !editingAgent.BackgroundAgentIds.Contains(agentId))
+            editingAgent.BackgroundAgentIds.Add(agentId);
+        if (!selected)
+            editingAgent.BackgroundAgentIds.Remove(agentId);
     }
 
     private void ConfirmRestoreBuiltInAgents()

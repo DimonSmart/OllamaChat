@@ -154,4 +154,23 @@ public class AgentTemplateBuilderTests
 
         Assert.Equal("host", description.AgentId);
     }
+
+    [Fact]
+    public void CloneAndExecutionMapping_PreserveBackgroundAgentIds()
+    {
+        var first = Guid.NewGuid();
+        var second = Guid.NewGuid();
+        var template = new AgentTemplateDefinition
+        {
+            AgentName = "Coordinator",
+            BackgroundAgentIds = [first, second]
+        };
+
+        var clone = template.Clone();
+        var execution = AgentExecutionSpecFactory.FromTemplate(template);
+
+        Assert.Equal([first, second], clone.BackgroundAgentIds);
+        Assert.Equal([first, second], execution.BackgroundAgentIds);
+        Assert.NotSame(template.BackgroundAgentIds, clone.BackgroundAgentIds);
+    }
 }

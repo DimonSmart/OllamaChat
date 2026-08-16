@@ -22,6 +22,7 @@ public abstract class AgentModelBase
     public Guid? SkillsProviderProfileId { get; set; }
     public Guid? CompactionProfileId { get; set; }
     public Guid? RagProviderProfileId { get; set; }
+    public List<Guid> BackgroundAgentIds { get; set; } = [];
     public bool EnableShell { get; set; }
     public bool ContinueUntilTodosComplete { get; set; }
     public int MaxTodoCompletionIterations { get; set; } = 10;

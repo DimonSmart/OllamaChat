@@ -13,7 +13,10 @@ public sealed record AgentSessionStateViewModel(
     AgentSessionSandboxViewModel? Sandbox = null,
     AgentSessionCompactionViewModel? Compaction = null,
     IReadOnlyList<AgentSessionSkillViewModel>? Skills = null,
-    IReadOnlyList<string>? SkillDiagnostics = null);
+    IReadOnlyList<string>? SkillDiagnostics = null,
+    IReadOnlyList<AgentSessionBackgroundAgentViewModel>? BackgroundAgents = null);
+
+public sealed record AgentSessionBackgroundAgentViewModel(string Name, string Summary, string? ModelName);
 
 public sealed record AgentSessionSkillViewModel(string Name, string Description, string SourcePath, AgentSkillSourceKind SourceKind);
 

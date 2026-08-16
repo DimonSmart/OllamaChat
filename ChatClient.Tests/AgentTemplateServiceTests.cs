@@ -331,4 +331,61 @@ public class AgentTemplateServiceTests
             File.Delete(tempFile);
         }
     }
+
+    [Fact]
+    public async Task UpdateAsync_NormalizesBackgroundAgentIdsAndRejectsSelfReference()
+    {
+        var tempFile = Path.GetTempFileName();
+        File.WriteAllText(tempFile, "[]");
+        try
+        {
+            var config = new ConfigurationBuilder()
+                .AddInMemoryCollection(new Dictionary<string, string?> { ["AgentTemplates:FilePath"] = tempFile })
+                .Build();
+            var repository = new AgentTemplateRepository(config, new LoggerFactory().CreateLogger<AgentTemplateRepository>());
+            var service = new AgentTemplateService(repository);
+            var childId = Guid.NewGuid();
+            var agent = new AgentTemplateDefinition
+            {
+                Id = Guid.NewGuid(),
+                AgentName = "Coordinator",
+                Content = "Delegate work.",
+                BackgroundAgentIds = []
+            };
+            await service.CreateAsync(agent);
+
+            agent.BackgroundAgentIds = [Guid.Empty, agent.Id, childId, childId];
+            await service.UpdateAsync(agent);
+
+            Assert.Equal([childId], agent.BackgroundAgentIds);
+            var loaded = await service.GetByIdAsync(agent.Id);
+            Assert.Equal([childId], loaded!.BackgroundAgentIds);
+        }
+        finally
+        {
+            File.Delete(tempFile);
+        }
+    }
+
+    [Fact]
+    public async Task GetByIdAsync_OldSerializedAgentHasEmptyBackgroundAgents()
+    {
+        var tempFile = Path.GetTempFileName();
+        File.WriteAllText(tempFile, """[{"Id":"24d79938-c3a3-44ae-86ed-22e4f43d9c35","AgentName":"Old","Content":"Old agent"}]""");
+        try
+        {
+            var config = new ConfigurationBuilder()
+                .AddInMemoryCollection(new Dictionary<string, string?> { ["AgentTemplates:FilePath"] = tempFile })
+                .Build();
+            var repository = new AgentTemplateRepository(config, new LoggerFactory().CreateLogger<AgentTemplateRepository>());
+            var loaded = await new AgentTemplateService(repository).GetByIdAsync(Guid.Parse("24d79938-c3a3-44ae-86ed-22e4f43d9c35"));
+
+            Assert.NotNull(loaded);
+            Assert.Empty(loaded!.BackgroundAgentIds);
+        }
+        finally
+        {
+            File.Delete(tempFile);
+        }
+    }
 }

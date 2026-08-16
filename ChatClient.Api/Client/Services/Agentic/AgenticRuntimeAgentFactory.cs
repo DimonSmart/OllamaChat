@@ -43,6 +43,7 @@ internal sealed class HarnessAgentRuntimeDefinition(
     AgentSessionCompactionViewModel? compaction,
     IReadOnlyList<AgentSessionSkillViewModel> skills,
     IReadOnlyList<string> skillDiagnostics,
+    IReadOnlyList<AgentSessionBackgroundAgentViewModel> backgroundAgents,
     IRagRetrievalTraceSink? ragRetrievalTraceSink,
     AgentRuntimeResources ownedResources) : IDisposable
 {
@@ -56,6 +57,7 @@ internal sealed class HarnessAgentRuntimeDefinition(
     public AgentSessionCompactionViewModel? Compaction { get; } = compaction;
     public IReadOnlyList<AgentSessionSkillViewModel> Skills { get; } = skills;
     public IReadOnlyList<string> SkillDiagnostics { get; } = skillDiagnostics;
+    public IReadOnlyList<AgentSessionBackgroundAgentViewModel> BackgroundAgents { get; } = backgroundAgents;
     public IRagRetrievalTraceSink? RagRetrievalTraceSink { get; } = ragRetrievalTraceSink;
 
     public void Dispose() => ownedResources.Dispose();
@@ -77,11 +79,13 @@ public sealed class AgenticRuntimeAgentFactory(
     IAgentSkillsProfileService? agentSkillsProfileService = null,
     ICompactionProfileService? compactionProfileService = null,
     ICompactionStrategyResolver? compactionStrategyResolver = null,
-    IRagProviderProfileService? ragProviderProfileService = null)
+    IRagProviderProfileService? ragProviderProfileService = null,
+    IAgentTemplateService? agentTemplateService = null)
 {
     internal async Task<HarnessAgentRuntimeDefinition> CreateAsync(
         AgentRunRequest request,
         bool requireFunctionCalling = false,
+        bool includeBackgroundAgents = true,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(request);
@@ -142,6 +146,12 @@ public sealed class AgenticRuntimeAgentFactory(
             bool supportsFunctions = await modelCapabilityService.SupportsFunctionCallingAsync(
                 request.ResolvedModel,
                 cancellationToken);
+            var backgroundAgentIds = NormalizeBackgroundAgentIds(request.Agent.BackgroundAgentIds, request.Agent.Id);
+            if (includeBackgroundAgents && backgroundAgentIds.Count > 0 && !supportsFunctions)
+            {
+                throw new InvalidOperationException(
+                    $"Model '{request.ResolvedModel.ModelName}' does not support function calling required by Background Agents.");
+            }
             var configuredKnowledgeStoreIds = request.Agent.KnowledgeStoreIds
                 .Where(id => id != Guid.Empty)
                 .Distinct()
@@ -272,10 +282,19 @@ public sealed class AgenticRuntimeAgentFactory(
                 shellExecutor = new SessionSandboxShellExecutor(sandbox);
             }
             var ragTraceSink = hasConfiguredKnowledge ? new RagRetrievalTraceBuffer() : null;
+            var backgroundDefinitions = includeBackgroundAgents
+                ? await BuildBackgroundAgentsAsync(request, backgroundAgentIds, cancellationToken)
+                : [];
+            foreach (var backgroundDefinition in backgroundDefinitions)
+            {
+                resources.Own(backgroundDefinition);
+            }
+
             var runtimeAgent = CreateRuntimeAgent(
                 chatClient, request, server, toolSet, knowledgeSearchService, hasConfiguredKnowledge,
                 supportsFunctions, ragConfiguration, todoProfile, agentModeProfile, fileAccessProfile,
-                workspaceStore, shellExecutor, loggerFactory, compaction, ragTraceSink, skills.Source);
+                workspaceStore, shellExecutor, loggerFactory, compaction, ragTraceSink, skills.Source,
+                backgroundDefinitions.Select(static definition => definition.Agent).ToList());
             return new HarnessAgentRuntimeDefinition(
                 runtimeAgent,
                 server,
@@ -290,6 +309,10 @@ public sealed class AgenticRuntimeAgentFactory(
                     CompactionPolicySummary.FormatPolicy(compactionProfile)),
                 skills.Skills.Select(x => new AgentSessionSkillViewModel(x.Name, x.Description, x.SourcePath, x.SourceKind)).ToList(),
                 skills.Diagnostics,
+                backgroundDefinitions.Select(definition => new AgentSessionBackgroundAgentViewModel(
+                    definition.Agent.Name ?? string.Empty,
+                    definition.Agent.Description ?? string.Empty,
+                    null)).ToList(),
                 ragTraceSink,
                 resources);
         }
@@ -298,6 +321,80 @@ public sealed class AgenticRuntimeAgentFactory(
             resources.Dispose();
             throw;
         }
+    }
+
+    private async Task<IReadOnlyList<HarnessAgentRuntimeDefinition>> BuildBackgroundAgentsAsync(
+        AgentRunRequest parentRequest,
+        IReadOnlyList<Guid> backgroundAgentIds,
+        CancellationToken cancellationToken)
+    {
+        if (backgroundAgentIds.Count == 0)
+        {
+            logger.LogInformation("Agent {AgentName}: Background Agents disabled/not configured", parentRequest.Agent.AgentName);
+            return [];
+        }
+
+        var service = agentTemplateService ?? throw new InvalidOperationException(
+            "Saved agent service is not configured for Background Agents.");
+        var definitions = new List<HarnessAgentRuntimeDefinition>(backgroundAgentIds.Count);
+        try
+        {
+            foreach (var backgroundAgentId in backgroundAgentIds)
+            {
+                var template = await service.GetByIdAsync(backgroundAgentId)
+                    ?? throw new InvalidOperationException(
+                        $"Background agent '{backgroundAgentId}' configured for agent '{parentRequest.Agent.AgentName}' was not found.");
+                var model = ResolveBackgroundModel(template, parentRequest.ResolvedModel);
+                var childRequest = new AgentRunRequest
+                {
+                    Agent = AgentExecutionSpecFactory.FromTemplate(template, model),
+                    ResolvedModel = model,
+                    Configuration = parentRequest.Configuration,
+                    Conversation = [],
+                    UserMessage = string.Empty,
+                    RuntimeResources = parentRequest.RuntimeResources
+                };
+                definitions.Add(await CreateAsync(
+                    childRequest,
+                    includeBackgroundAgents: false,
+                    cancellationToken: cancellationToken));
+            }
+
+            logger.LogInformation("Agent {AgentName}: Background Agents enabled, count={BackgroundAgentCount}",
+                parentRequest.Agent.AgentName, definitions.Count);
+            logger.LogDebug("Agent {AgentName}: Background Agents: {BackgroundAgents}",
+                parentRequest.Agent.AgentName,
+                string.Join(", ", definitions.Select(definition => $"{definition.Agent.Name} ({definition.Agent.Id})")));
+            return definitions;
+        }
+        catch
+        {
+            foreach (var definition in definitions)
+            {
+                definition.Dispose();
+            }
+
+            throw;
+        }
+    }
+
+    private static IReadOnlyList<Guid> NormalizeBackgroundAgentIds(IEnumerable<Guid>? ids, Guid parentId) =>
+        (ids ?? [])
+            .Where(id => id != Guid.Empty)
+            .Distinct()
+            .Select(id => id == parentId
+                ? throw new InvalidOperationException("An agent cannot be configured as its own Background Agent.")
+                : id)
+            .ToList();
+
+    private static ServerModel ResolveBackgroundModel(AgentTemplateDefinition template, ServerModel parentModel)
+    {
+        if (template.LlmId is Guid serverId && serverId != Guid.Empty && !string.IsNullOrWhiteSpace(template.ModelName))
+        {
+            return new ServerModel(serverId, template.ModelName.Trim());
+        }
+
+        return parentModel;
     }
 
     private static AIAgent CreateRuntimeAgent(
@@ -317,7 +414,8 @@ public sealed class AgenticRuntimeAgentFactory(
         ILoggerFactory loggerFactory,
         ResolvedCompactionStrategy? compaction,
         IRagRetrievalTraceSink? ragTraceSink,
-        AgentSkillsSource? skillsSource)
+        AgentSkillsSource? skillsSource,
+        IReadOnlyList<AIAgent> backgroundAgents)
     {
         // Harness owns the function-invocation loop, session history and compaction.
         // The direct-chat service must not rebuild any of that state from its UI transcript.
@@ -336,7 +434,8 @@ public sealed class AgenticRuntimeAgentFactory(
             loggerFactory,
             compaction,
             ragTraceSink,
-            skillsSource);
+            skillsSource,
+            backgroundAgents);
 
         if (fileAccessProfile is not null)
         {
@@ -408,7 +507,8 @@ public sealed class AgenticRuntimeAgentFactory(
         ILoggerFactory loggerFactory,
         ResolvedCompactionStrategy? compaction,
         IRagRetrievalTraceSink? ragTraceSink = null,
-        AgentSkillsSource? skillsSource = null)
+        AgentSkillsSource? skillsSource = null,
+        IReadOnlyList<AIAgent>? backgroundAgents = null)
     {
         ArgumentNullException.ThrowIfNull(request);
         ArgumentNullException.ThrowIfNull(toolSet);
@@ -418,6 +518,8 @@ public sealed class AgenticRuntimeAgentFactory(
         {
             Id = string.IsNullOrWhiteSpace(request.Agent.AgentId) ? null : request.Agent.AgentId.Trim(),
             Name = string.IsNullOrWhiteSpace(request.Agent.AgentName) ? null : request.Agent.AgentName.Trim(),
+            Description = string.IsNullOrWhiteSpace(request.Agent.Summary) ? null : request.Agent.Summary.Trim(),
+            BackgroundAgents = backgroundAgents is { Count: > 0 } ? backgroundAgents.ToList() : null,
             ChatOptions = new ChatOptions
             {
                 Instructions = BuildInstructions(request.Agent),

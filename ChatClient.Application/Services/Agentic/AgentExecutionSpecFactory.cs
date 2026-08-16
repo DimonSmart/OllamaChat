@@ -51,6 +51,7 @@ public static class AgentExecutionSpecFactory
         target.SkillsProviderProfileId = source.SkillsProviderProfileId;
         target.CompactionProfileId = source.CompactionProfileId;
         target.RagProviderProfileId = source.RagProviderProfileId;
+        target.BackgroundAgentIds = source.BackgroundAgentIds.Distinct().ToList();
         target.EnableShell = source.EnableShell;
         target.ContinueUntilTodosComplete = source.ContinueUntilTodosComplete;
         target.MaxTodoCompletionIterations = source.MaxTodoCompletionIterations;
