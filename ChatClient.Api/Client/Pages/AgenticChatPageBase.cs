@@ -132,7 +132,7 @@ public abstract class AgenticChatPageBase : ComponentBase, IAsyncDisposable
 
     protected virtual void OnChatReset()
     {
-        chatStarted = false;
+        chatStarted = ChatService.HasActiveSession;
         _ = InvokeAsync(async () =>
         {
             await OnChatResetCoreAsync();

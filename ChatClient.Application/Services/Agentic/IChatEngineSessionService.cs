@@ -24,6 +24,10 @@ public interface IChatEngineSessionService : IChatSessionService
 
     Task SetFileAccessWorkspaceAsync(string workspace, CancellationToken cancellationToken = default);
 
+    Task<string> ExportHarnessSessionAsync(CancellationToken cancellationToken = default);
+
+    Task RestoreHarnessSessionAsync(string snapshotJson, CancellationToken cancellationToken = default);
+
     Task RespondToToolApprovalAsync(ToolApprovalDecision decision, CancellationToken cancellationToken = default);
 }
 

@@ -9,6 +9,7 @@
 @using ChatClient.Application.Services.AgentRuntime
 @using ChatClient.Domain.Models
 @using Microsoft.AspNetCore.Components
+@using Microsoft.AspNetCore.Components.Forms
 @using MudBlazor
 @inherits AgenticChatPageBase
 
@@ -171,6 +172,17 @@
     }
     else
     {
+        <MudStack Row="true" Spacing="1" Class="mb-2">
+            <MudButton Variant="Variant.Outlined" Size="Size.Small" StartIcon="@Icons.Material.Filled.Download"
+                       Disabled="@(isLLMAnswering || ChatService.PendingToolApproval is not null)" OnClick="ExportHarnessSessionAsync">
+                Export Harness Session
+            </MudButton>
+            <MudButton Variant="Variant.Outlined" Size="Size.Small" StartIcon="@Icons.Material.Filled.Upload"
+                       Disabled="@(isLLMAnswering || ChatService.PendingToolApproval is not null)" OnClick="OpenHarnessSessionPickerAsync">
+                Restore Harness Session
+            </MudButton>
+            <InputFile id="harness-session-file" OnChange="RestoreHarnessSessionAsync" accept="application/json,.json" style="display:none" />
+        </MudStack>
         <AgenticChatSession @ref="chatSessionView"
                             Messages="ChatViewModelService.Messages"
                             Agents="DisplayedAgents"
@@ -358,6 +370,37 @@
     }
 
     private void SetStartStatus(string message) => startStatus = message;
+
+    private async Task ExportHarnessSessionAsync()
+    {
+        try
+        {
+            var json = await ChatService.ExportHarnessSessionAsync();
+            await JSRuntime.InvokeVoidAsync("downloadTextFile", "ollamachat-harness-session.json", json);
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "Harness session export failed.");
+            Snackbar.Add(ex.Message, Severity.Error);
+        }
+    }
+
+    private Task OpenHarnessSessionPickerAsync() => JSRuntime.InvokeVoidAsync("clickElement", "harness-session-file").AsTask();
+
+    private async Task RestoreHarnessSessionAsync(InputFileChangeEventArgs args)
+    {
+        try
+        {
+            using var reader = new StreamReader(args.File.OpenReadStream(10 * 1024 * 1024));
+            await ChatService.RestoreHarnessSessionAsync(await reader.ReadToEndAsync());
+            Snackbar.Add("Harness session restored.", Severity.Success);
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "Harness session restore failed.");
+            Snackbar.Add(ex.Message, Severity.Error);
+        }
+    }
 
     private async Task OnDefinitionChanged(AgentDefinitionDescriptor? item)
     {

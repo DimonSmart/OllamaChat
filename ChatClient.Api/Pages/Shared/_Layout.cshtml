@@ -70,6 +70,17 @@
         window.copyText = function (text) {
             return navigator.clipboard.writeText(text);
         }
+        window.clickElement = function (id) {
+            document.getElementById(id)?.click();
+        }
+        window.downloadTextFile = function (fileName, content) {
+            const url = URL.createObjectURL(new Blob([content], { type: 'application/json' }));
+            const link = document.createElement('a');
+            link.href = url;
+            link.download = fileName;
+            link.click();
+            URL.revokeObjectURL(url);
+        }
     </script>
 </body>
 </html>

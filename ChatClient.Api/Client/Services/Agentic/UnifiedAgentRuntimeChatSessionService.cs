@@ -8,6 +8,7 @@ using Microsoft.Agents.AI;
 using Microsoft.Extensions.AI;
 using System.Collections.ObjectModel;
 using System.Text;
+using System.Text.Json;
 
 namespace ChatClient.Api.Client.Services.Agentic;
 
@@ -620,6 +621,121 @@ public sealed class UnifiedAgentRuntimeChatSessionService(
         await RunDirectAsync([new ChatMessage(ChatRole.User, [response])], generation);
     }
 
+    public async Task<string> ExportHarnessSessionAsync(CancellationToken cancellationToken = default)
+    {
+        await _runSetupGate.WaitAsync(cancellationToken);
+        try
+        {
+            if (_resetting || IsAnswering || RequiresReset || PendingToolApproval is not null || _directAgent is null || _directSession is null || _parameters?.RuntimeReference?.Kind != AgentDefinitionKind.SavedAgent)
+                throw new InvalidOperationException("A stable direct Harness session is required to export a session.");
+#pragma warning disable MAAI001
+            var backgroundAgents = _directAgent.GetService<BackgroundAgentsProvider>();
+            if (backgroundAgents is not null && backgroundAgents.GetIncompleteTasks(_directSession).Any())
+                throw new InvalidOperationException("The Harness session cannot be exported while Background Agents are still running. Wait for them to finish and try again.");
+#pragma warning restore MAAI001
+            if (!Guid.TryParse(_parameters.RuntimeReference.Id, out var agentId) || _parameters.RuntimeDefaultModel is null)
+                throw new InvalidOperationException("The saved agent and model are unavailable for session export.");
+            var template = await agentTemplateService.GetByIdAsync(agentId) ?? throw new InvalidOperationException("The saved agent used by this session no longer exists.");
+            var state = await _directAgent.SerializeSessionAsync(_directSession, cancellationToken: cancellationToken);
+            return JsonSerializer.Serialize(new HarnessSessionSnapshot
+            {
+                SavedAgentId = agentId,
+                AgentName = template.AgentName,
+                AgentUpdatedAt = template.UpdatedAt,
+                ModelServerId = _parameters.RuntimeDefaultModel.ServerId,
+                ModelName = _parameters.RuntimeDefaultModel.ModelName,
+                CreatedAtUtc = DateTime.UtcNow,
+                Overrides = SnapshotOverrides(_parameters.Overrides),
+                Session = state
+            });
+        }
+        finally { _runSetupGate.Release(); }
+    }
+
+    public async Task RestoreHarnessSessionAsync(string snapshotJson, CancellationToken cancellationToken = default)
+    {
+        HarnessSessionSnapshot snapshot;
+        try
+        { snapshot = JsonSerializer.Deserialize<HarnessSessionSnapshot>(snapshotJson) ?? throw new JsonException("The snapshot is empty."); }
+        catch (JsonException ex) { logger.LogWarning(ex, "Harness session snapshot JSON could not be read."); throw new InvalidOperationException("The selected file is not a valid Harness session snapshot."); }
+        if (snapshot.FormatVersion != HarnessSessionSnapshot.CurrentFormatVersion)
+            throw new InvalidOperationException($"Harness session snapshot format {snapshot.FormatVersion} is not supported.");
+        if (snapshot.Session.ValueKind is JsonValueKind.Undefined or JsonValueKind.Null)
+            throw new InvalidOperationException("The Harness session snapshot does not contain a session payload.");
+
+        await _runSetupGate.WaitAsync(cancellationToken);
+        try
+        {
+            if (_resetting || IsAnswering || RequiresReset || PendingToolApproval is not null || _parameters?.RuntimeReference?.Kind != AgentDefinitionKind.SavedAgent)
+                throw new InvalidOperationException("Restore is available only for an idle direct Saved Agent conversation.");
+            if (!Guid.TryParse(_parameters.RuntimeReference.Id, out var currentId) || currentId != snapshot.SavedAgentId)
+                throw new InvalidOperationException("This Harness session belongs to a different Saved Agent.");
+            var model = _parameters.RuntimeDefaultModel ?? throw new InvalidOperationException("The selected model is unavailable.");
+            if (model.ServerId != snapshot.ModelServerId || !string.Equals(model.ModelName, snapshot.ModelName, StringComparison.Ordinal))
+                throw new InvalidOperationException("This Harness session was created with a different model.");
+            if (!string.Equals(_parameters.Overrides.WorkspacePath, snapshot.Overrides.WorkspacePath, StringComparison.OrdinalIgnoreCase))
+                throw new InvalidOperationException("This Harness session was created with a different workspace.");
+            if (_parameters.Overrides.SandboxProfileId != snapshot.Overrides.SandboxProfileId)
+                throw new InvalidOperationException("This Harness session was created with a different sandbox profile.");
+            if (!string.IsNullOrWhiteSpace(snapshot.Overrides.WorkspacePath) && !Directory.Exists(snapshot.Overrides.WorkspacePath))
+                throw new InvalidOperationException($"The workspace used by this Harness session no longer exists: {snapshot.Overrides.WorkspacePath}");
+            var template = await agentTemplateService.GetByIdAsync(snapshot.SavedAgentId) ?? throw new InvalidOperationException("The Saved Agent used by this Harness session was deleted.");
+            if (template.UpdatedAt != snapshot.AgentUpdatedAt)
+                throw new InvalidOperationException($"This Harness session was created with an older configuration of agent '{template.AgentName}'. Restore it with the original agent configuration or create a new session.");
+
+            var policy = new SessionToolApprovalPolicy();
+            policy.SetWorkspace(snapshot.Overrides.WorkspacePath);
+            var coordinator = new SessionToolApprovalCoordinator();
+            coordinator.PendingRequestChanged += HandleCoordinatorPendingRequestChanged;
+            HarnessAgentRuntimeDefinition? replacement = null;
+            SandboxSessionHandle? replacementSandbox = null;
+            try
+            {
+                var descriptor = await definitionCatalog.GetRequiredAsync(_parameters.RuntimeReference, cancellationToken);
+                replacementSandbox = await CreateSandboxSessionAsync(
+                    _parameters, descriptor, Guid.NewGuid().ToString("N"), cancellationToken, null);
+                replacement = await CreateDirectRuntimeAsync(_parameters, coordinator, policy, replacementSandbox, cancellationToken);
+                var restoredSession = await replacement.Agent.DeserializeSessionAsync(snapshot.Session, cancellationToken: cancellationToken);
+                var previousRuntime = _directRuntimeDefinition;
+                var previousCoordinator = _toolApprovalCoordinator;
+                var previousSandbox = _sandboxSession;
+                _directRuntimeDefinition = replacement;
+                _directAgent = replacement.Agent;
+                _directSession = restoredSession;
+                _directAvailableModes = replacement.AvailableModes;
+                _directFileAccessStore = replacement.FileAccessStore;
+                _directFileAccessProfile = replacement.FileAccessProfile;
+                _directCompaction = replacement.Compaction;
+                _directSkills = replacement.Skills;
+                _directSkillDiagnostics = replacement.SkillDiagnostics;
+                _directBackgroundAgents = replacement.BackgroundAgents;
+                _directToolMetadata = replacement.ToolSet.MetadataByName;
+                _toolApprovalCoordinator = coordinator;
+                _toolApprovalPolicy = policy;
+                replacement = null;
+                _sandboxSession = replacementSandbox;
+                previousCoordinator?.PendingRequestChanged -= HandleCoordinatorPendingRequestChanged;
+                previousRuntime?.Dispose();
+                if (previousSandbox is not null)
+                    await previousSandbox.DisposeAsync();
+                _chat.Reset();
+                await AddMessageAsync(new AppChatMessage("Harness session restored. Previous conversation context is stored in the restored AgentSession.", DateTime.Now, AppChatRole.System));
+                ChatReset?.Invoke();
+                SessionStateChanged?.Invoke();
+            }
+            catch (Exception ex)
+            {
+                replacement?.Dispose();
+                if (replacementSandbox is not null && !ReferenceEquals(replacementSandbox, _sandboxSession))
+                    await replacementSandbox.DisposeAsync();
+                coordinator.PendingRequestChanged -= HandleCoordinatorPendingRequestChanged;
+                logger.LogWarning(ex, "Harness session restore failed.");
+                throw new InvalidOperationException("Could not restore the Harness session. The current conversation is unchanged.");
+            }
+        }
+        finally { _runSetupGate.Release(); }
+    }
+
     private async Task CreateDirectConversationAsync(
         ChatEngineSessionStartRequest request,
         CancellationToken cancellationToken)
@@ -629,6 +745,42 @@ public sealed class UnifiedAgentRuntimeChatSessionService(
         {
             throw new InvalidOperationException("The saved agent and model must be resolved before starting a conversation.");
         }
+
+        var build = await CreateDirectRuntimeAsync(request, _toolApprovalCoordinator!, _toolApprovalPolicy!, _sandboxSession, cancellationToken);
+
+        try
+        {
+            _directSession = await build.Agent.CreateSessionAsync(cancellationToken);
+        }
+        catch
+        {
+            build.Dispose();
+            throw;
+        }
+
+        _directRuntimeDefinition = build;
+        _directAgent = build.Agent;
+        _directRuntimeAgentId = (await agentTemplateService.GetByIdAsync(templateId))!.AgentId;
+        _directAvailableModes = build.AvailableModes;
+        _directFileAccessStore = build.FileAccessStore;
+        _directFileAccessProfile = build.FileAccessProfile;
+        _directCompaction = build.Compaction;
+        _directSkills = build.Skills;
+        _directSkillDiagnostics = build.SkillDiagnostics;
+        _directBackgroundAgents = build.BackgroundAgents;
+        _directToolMetadata = build.ToolSet.MetadataByName;
+        SessionStateChanged?.Invoke();
+    }
+
+    private async Task<HarnessAgentRuntimeDefinition> CreateDirectRuntimeAsync(
+        ChatEngineSessionStartRequest request,
+        ISessionToolApprovalCoordinator approvalCoordinator,
+        SessionToolApprovalPolicy approvalPolicy,
+        SandboxSessionHandle? sandboxSession,
+        CancellationToken cancellationToken)
+    {
+        if (!Guid.TryParse(request.RuntimeReference!.Id, out var templateId) || request.RuntimeDefaultModel is null)
+            throw new InvalidOperationException("The saved agent and model must be resolved before starting a conversation.");
 
         var template = await agentTemplateService.GetByIdAsync(templateId)
             ?? throw new InvalidOperationException($"Saved agent '{request.RuntimeReference.Id}' was not found.");
@@ -648,41 +800,24 @@ public sealed class UnifiedAgentRuntimeChatSessionService(
             Configuration = request.Configuration,
             Conversation = [],
             UserMessage = string.Empty,
-            RuntimeResources = BuildRuntimeResources()
+            RuntimeResources = BuildRuntimeResources(approvalCoordinator, approvalPolicy, sandboxSession)
         }, cancellationToken: cancellationToken);
-
-        try
-        {
-            _directSession = await build.Agent.CreateSessionAsync(cancellationToken);
-        }
-        catch
-        {
-            build.Dispose();
-            throw;
-        }
-
-        _directRuntimeDefinition = build;
-        _directAgent = build.Agent;
-        _directRuntimeAgentId = resolved.Agent.AgentId;
-        _directAvailableModes = build.AvailableModes;
-        _directFileAccessStore = build.FileAccessStore;
-        _directFileAccessProfile = build.FileAccessProfile;
-        _directCompaction = build.Compaction;
-        _directSkills = build.Skills;
-        _directSkillDiagnostics = build.SkillDiagnostics;
-        _directBackgroundAgents = build.BackgroundAgents;
-        _directToolMetadata = build.ToolSet.MetadataByName;
-        SessionStateChanged?.Invoke();
+        return build;
     }
 
-    private AgentSessionRuntimeResources BuildRuntimeResources() => new()
-    {
-        WorkspacePath = _sandboxSession?.WorkspacePath ?? _parameters?.Overrides.WorkspacePath,
-        Sandbox = _sandboxSession?.Instance,
-        ToolApprovalCoordinator = _toolApprovalCoordinator
-        ,
-        ToolApprovalPolicy = _toolApprovalPolicy
-    };
+    private AgentSessionRuntimeResources BuildRuntimeResources() =>
+        BuildRuntimeResources(_toolApprovalCoordinator!, _toolApprovalPolicy!, _sandboxSession);
+
+    private AgentSessionRuntimeResources BuildRuntimeResources(
+        ISessionToolApprovalCoordinator approvalCoordinator,
+        SessionToolApprovalPolicy approvalPolicy,
+        SandboxSessionHandle? sandboxSession) => new()
+        {
+            WorkspacePath = sandboxSession?.WorkspacePath ?? _parameters?.Overrides.WorkspacePath,
+            Sandbox = sandboxSession?.Instance,
+            ToolApprovalCoordinator = approvalCoordinator,
+            ToolApprovalPolicy = approvalPolicy
+        };
 
     private async Task<SandboxSessionHandle?> CreateSandboxSessionAsync(
         ChatEngineSessionStartRequest request,
