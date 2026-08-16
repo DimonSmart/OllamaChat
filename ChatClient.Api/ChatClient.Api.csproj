@@ -1,4 +1,4 @@
-﻿<Project Sdk="Microsoft.NET.Sdk.Web">
+<Project Sdk="Microsoft.NET.Sdk.Web">
     <PropertyGroup>
         <TargetFramework>net10.0</TargetFramework>
         <Nullable>enable</Nullable>
@@ -7,10 +7,10 @@
   </PropertyGroup>
             <ItemGroup>
         <PackageReference Include="HtmlAgilityPack" Version="1.12.4" />
-        <PackageReference Include="Microsoft.Agents.AI" Version="1.15.0-preview.260722.1" />
-        <PackageReference Include="Microsoft.Agents.AI.Harness" Version="1.15.0-preview.260722.1" />
-        <PackageReference Include="Microsoft.Agents.AI.Tools.Shell" Version="1.15.0-preview.260722.1" />
-        <PackageReference Include="Microsoft.Agents.AI.Workflows" Version="1.15.0-preview.260722.1" />
+        <PackageReference Include="Microsoft.Agents.AI" Version="1.17.0" />
+        <PackageReference Include="Microsoft.Agents.AI.Harness" Version="1.17.0" />
+        <PackageReference Include="Microsoft.Agents.AI.Tools.Shell" Version="1.17.0-preview.260804.1" />
+        <PackageReference Include="Microsoft.Agents.AI.Workflows" Version="1.17.0" />
         <PackageReference Include="Microsoft.CodeAnalysis.CSharp.Scripting" Version="5.6.0" />
         <PackageReference Include="Microsoft.Extensions.AI" Version="10.8.1" />
         <PackageReference Include="Microsoft.Extensions.AI.OpenAI" Version="10.8.1" />
