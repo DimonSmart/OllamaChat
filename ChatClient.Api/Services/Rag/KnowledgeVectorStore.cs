@@ -2,8 +2,8 @@ using ChatClient.Application.Services;
 using ChatClient.Domain.Models;
 using ChatClient.Infrastructure.Constants;
 using ChatClient.Infrastructure.Helpers;
+using CommunityToolkit.VectorData.SqliteVec;
 using Microsoft.Extensions.VectorData;
-using Microsoft.SemanticKernel.Connectors.SqliteVec;
 using System.Linq.Expressions;
 
 namespace ChatClient.Api.Services.Rag;
