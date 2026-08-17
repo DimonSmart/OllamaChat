@@ -6,7 +6,7 @@
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="../ChatClient.Domain/ChatClient.Domain.csproj" />
-    <PackageReference Include="Microsoft.Extensions.AI" Version="10.8.1" />
+    <PackageReference Include="Microsoft.Extensions.AI" Version="10.9.0" />
     <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="10.0.11" />
   </ItemGroup>
 </Project>
