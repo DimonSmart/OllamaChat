@@ -24,6 +24,7 @@ public abstract class AgentModelBase
     public Guid? RagProviderProfileId { get; set; }
     public List<Guid> BackgroundAgentIds { get; set; } = [];
     public bool EnableShell { get; set; }
+    public bool EnableFileMemory { get; set; }
     public bool ContinueUntilTodosComplete { get; set; }
     public int MaxTodoCompletionIterations { get; set; } = 10;
     public List<McpServerSessionBinding> McpServerBindings { get; set; } = [];

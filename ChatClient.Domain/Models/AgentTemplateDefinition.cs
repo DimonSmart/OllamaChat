@@ -24,6 +24,7 @@ public sealed class AgentTemplateDefinition : AgentModelBase
             RagProviderProfileId = RagProviderProfileId,
             BackgroundAgentIds = BackgroundAgentIds.ToList(),
             EnableShell = EnableShell,
+            EnableFileMemory = EnableFileMemory,
             ContinueUntilTodosComplete = ContinueUntilTodosComplete,
             MaxTodoCompletionIterations = MaxTodoCompletionIterations,
             RuntimeAgentId = RuntimeAgentId,

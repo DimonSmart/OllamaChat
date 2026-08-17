@@ -291,6 +291,7 @@
                     <MudSelectItem T="Guid?" Value="@((Guid?)profile.Id)">@profile.Name</MudSelectItem>
                 }
             </MudSelect></MudItem>
+            <MudItem xs="12" md="6"><MudCheckBox @bind-Value="editingAgent.EnableFileMemory" Label="Enable file-based agent memory" /><MudText Typo="Typo.caption" Class="mud-text-secondary">Lets the agent keep its own notes and working memory between turns.</MudText></MudItem>
             <MudItem xs="12" md="6"><MudSelect T="Guid?" @bind-Value="editingAgent.SkillsProviderProfileId" Label="Skills Provider" Dense="true" Margin="Margin.Dense"><MudSelectItem T="Guid?" Value="@((Guid?)null)">None</MudSelectItem>@foreach (var profile in skillsProfiles) { <MudSelectItem T="Guid?" Value="@((Guid?)profile.Id)">@profile.Name</MudSelectItem> }</MudSelect></MudItem>
             <MudItem xs="12" md="6"><MudSelect T="Guid?" @bind-Value="editingAgent.CompactionProfileId" Label="Compaction profile" Dense="true" Margin="Margin.Dense">
                 <MudSelectItem T="Guid?" Value="@((Guid?)null)">None</MudSelectItem>
@@ -491,6 +492,7 @@
             RagProviderProfileId = null,
             BackgroundAgentIds = [],
             EnableShell = false,
+            EnableFileMemory = false,
             ContinueUntilTodosComplete = false,
             MaxTodoCompletionIterations = 10,
             McpServerBindings = []
@@ -551,6 +553,7 @@
             RagProviderProfileId = agent.RagProviderProfileId,
             BackgroundAgentIds = agent.BackgroundAgentIds.Distinct().ToList(),
             EnableShell = agent.EnableShell,
+            EnableFileMemory = agent.EnableFileMemory,
             ContinueUntilTodosComplete = agent.ContinueUntilTodosComplete,
             MaxTodoCompletionIterations = agent.MaxTodoCompletionIterations,
             CreatedAt = agent.CreatedAt,

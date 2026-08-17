@@ -7,6 +7,16 @@ namespace ChatClient.Tests;
 public class AgentTemplateBuilderTests
 {
     [Fact]
+    public void FileMemory_DefaultsToDisabled_AndIsRetainedByCloneAndExecutionSpec()
+    {
+        var template = new AgentTemplateDefinition { EnableFileMemory = true };
+
+        Assert.True(template.Clone().EnableFileMemory);
+        Assert.True(AgentExecutionSpecFactory.FromTemplate(template).EnableFileMemory);
+        Assert.False(new AgentTemplateDefinition().EnableFileMemory);
+    }
+
+    [Fact]
     public void NewAgent_BuildsDefinitionWithBindings()
     {
         var serverId = Guid.NewGuid();

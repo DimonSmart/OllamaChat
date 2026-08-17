@@ -53,6 +53,7 @@ public static class AgentExecutionSpecFactory
         target.RagProviderProfileId = source.RagProviderProfileId;
         target.BackgroundAgentIds = source.BackgroundAgentIds.Distinct().ToList();
         target.EnableShell = source.EnableShell;
+        target.EnableFileMemory = source.EnableFileMemory;
         target.ContinueUntilTodosComplete = source.ContinueUntilTodosComplete;
         target.MaxTodoCompletionIterations = source.MaxTodoCompletionIterations;
         target.RuntimeAgentId = source.RuntimeAgentId;

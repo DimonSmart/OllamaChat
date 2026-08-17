@@ -13,6 +13,8 @@ using Microsoft.Agents.AI.Tools.Shell;
 using Microsoft.Extensions.AI;
 using ModelContextProtocol.Client;
 using ChatClient.Api.Diagnostics;
+using ChatClient.Infrastructure.Constants;
+using ChatClient.Infrastructure.Helpers;
 
 #pragma warning disable MAAI001
 
@@ -41,6 +43,7 @@ internal sealed class HarnessAgentRuntimeDefinition(
     IReadOnlyList<string> availableModes,
     SessionWorkspaceAgentFileStore? fileAccessStore,
     FileAccessProviderProfile? fileAccessProfile,
+    AgentFileStore? fileMemoryStore,
     AgentSessionCompactionViewModel? compaction,
     IReadOnlyList<AgentSessionSkillViewModel> skills,
     IReadOnlyList<string> skillDiagnostics,
@@ -55,6 +58,7 @@ internal sealed class HarnessAgentRuntimeDefinition(
     public IReadOnlyList<string> AvailableModes { get; } = availableModes;
     public SessionWorkspaceAgentFileStore? FileAccessStore { get; } = fileAccessStore;
     public FileAccessProviderProfile? FileAccessProfile { get; } = fileAccessProfile;
+    public AgentFileStore? FileMemoryStore { get; } = fileMemoryStore;
     public AgentSessionCompactionViewModel? Compaction { get; } = compaction;
     public IReadOnlyList<AgentSessionSkillViewModel> Skills { get; } = skills;
     public IReadOnlyList<string> SkillDiagnostics { get; } = skillDiagnostics;
@@ -81,7 +85,8 @@ public sealed class AgenticRuntimeAgentFactory(
     ICompactionProfileService? compactionProfileService = null,
     ICompactionStrategyResolver? compactionStrategyResolver = null,
     IRagProviderProfileService? ragProviderProfileService = null,
-    IAgentTemplateService? agentTemplateService = null)
+    IAgentTemplateService? agentTemplateService = null,
+    IConfiguration? configuration = null)
 {
     internal async Task<HarnessAgentRuntimeDefinition> CreateAsync(
         AgentRunRequest request,
@@ -261,6 +266,12 @@ public sealed class AgenticRuntimeAgentFactory(
             var workspaceStore = fileAccessProfile is null
                 ? null
                 : new SessionWorkspaceAgentFileStore(workspacePath ?? throw new InvalidOperationException("A workspace directory is required for File Access."));
+            var fileMemoryStore = request.Agent.EnableFileMemory
+                ? new FileSystemAgentFileStore(StoragePathResolver.ResolveUserPath(
+                    configuration ?? throw new InvalidOperationException("Application configuration is required for File Memory."),
+                    configuration?["AgentFileMemory:RootPath"],
+                    FilePathConstants.DefaultAgentFileMemoryDirectory))
+                : null;
             SessionSandboxShellExecutor? shellExecutor = null;
             if (request.Agent.EnableShell)
             {
@@ -294,7 +305,7 @@ public sealed class AgenticRuntimeAgentFactory(
             var runtimeAgent = CreateRuntimeAgent(
                 chatClient, request, server, toolSet, knowledgeSearchService, hasConfiguredKnowledge,
                 supportsFunctions, ragConfiguration, todoProfile, agentModeProfile, fileAccessProfile,
-                workspaceStore, shellExecutor, loggerFactory, compaction, ragTraceSink, skills.Source,
+                workspaceStore, fileMemoryStore, shellExecutor, loggerFactory, compaction, ragTraceSink, skills.Source,
                 backgroundDefinitions.Select(static definition => definition.Agent).ToList());
             return new HarnessAgentRuntimeDefinition(
                 runtimeAgent,
@@ -304,6 +315,7 @@ public sealed class AgenticRuntimeAgentFactory(
                 GetEffectiveModeNames(agentModeProfile),
                 workspaceStore,
                 fileAccessProfile,
+                fileMemoryStore,
                 compaction is null ? null : new AgentSessionCompactionViewModel(
                     compactionProfile!.Name,
                     compaction.Budget.InputBudgetTokens,
@@ -440,6 +452,7 @@ public sealed class AgenticRuntimeAgentFactory(
         AgentModeProviderProfile? agentModeProfile,
         FileAccessProviderProfile? fileAccessProfile,
         SessionWorkspaceAgentFileStore? workspaceStore,
+        AgentFileStore? fileMemoryStore,
         SessionSandboxShellExecutor? shellExecutor,
         ILoggerFactory loggerFactory,
         ResolvedCompactionStrategy? compaction,
@@ -460,6 +473,7 @@ public sealed class AgenticRuntimeAgentFactory(
             agentModeProfile,
             fileAccessProfile,
             workspaceStore,
+            fileMemoryStore,
             shellExecutor,
             loggerFactory,
             compaction,
@@ -533,6 +547,7 @@ public sealed class AgenticRuntimeAgentFactory(
         AgentModeProviderProfile? agentModeProfile,
         FileAccessProviderProfile? fileAccessProfile,
         SessionWorkspaceAgentFileStore? workspaceStore,
+        AgentFileStore? fileMemoryStore,
         SessionSandboxShellExecutor? shellExecutor,
         ILoggerFactory loggerFactory,
         ResolvedCompactionStrategy? compaction,
@@ -565,7 +580,8 @@ public sealed class AgenticRuntimeAgentFactory(
                 ? null
                 : BuildAgentModeProviderOptions(agentModeProfile),
             DisableWebSearch = true,
-            DisableFileMemory = true,
+            DisableFileMemory = !request.Agent.EnableFileMemory,
+            FileMemoryStore = fileMemoryStore,
             FileAccessStore = workspaceStore,
             FileAccessProviderOptions = fileAccessProfile is null ? null : BuildFileAccessProviderOptions(fileAccessProfile),
             DisableAgentSkillsProvider = skillsSource is null,

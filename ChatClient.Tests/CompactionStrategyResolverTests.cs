@@ -290,6 +290,7 @@ public sealed class CompactionStrategyResolverTests
             agentModeProfile: null,
             fileAccessProfile: null,
             workspaceStore: null,
+            fileMemoryStore: null,
             shellExecutor: null,
             loggerFactory: NullLoggerFactory.Instance,
             compaction: resolved);

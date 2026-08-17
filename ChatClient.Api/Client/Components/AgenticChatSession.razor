@@ -135,6 +135,27 @@
                             <MudText Typo="Typo.body2" Class="session-state-value" title="@fileAccess.ProfileName">@fileAccess.ProfileName</MudText>
                         </MudStack>
                     }
+                    @if (SessionState.FileMemory is { } fileMemory)
+                    {
+                        <MudStack Class="mt-2" Spacing="1">
+                            <MudStack Row="true" Justify="Justify.SpaceBetween" AlignItems="AlignItems.Center">
+                                <MudText Typo="Typo.caption" Class="mud-text-secondary">File Memory</MudText>
+                                <MudButton Size="Size.Small" Variant="Variant.Text" Disabled="@(fileMemory.Files.Count == 0 || IsLlmAnswering)" OnClick="OnClearFileMemory">Clear memory</MudButton>
+                            </MudStack>
+                            @if (fileMemory.Files.Count == 0)
+                            {
+                                <MudText Typo="Typo.caption">No memories yet</MudText>
+                            }
+                            else
+                            {
+                                @foreach (var memory in fileMemory.Files)
+                                {
+                                    <MudButton Variant="Variant.Text" Size="Size.Small" Class="justify-start" OnClick="@(() => OnViewFileMemory.InvokeAsync(memory.Name))">@memory.Name</MudButton>
+                                    @if (!string.IsNullOrWhiteSpace(memory.Description)) { <MudText Typo="Typo.caption" Class="mud-text-secondary">@memory.Description</MudText> }
+                                }
+                            }
+                        </MudStack>
+                    }
                     @if (sandbox is not null)
                     {
                         <MudStack Class="mt-2" Spacing="1">
@@ -380,6 +401,12 @@
 
     [Parameter]
     public EventCallback<string> OnFileAccessWorkspaceChanged { get; set; }
+
+    [Parameter]
+    public EventCallback<string> OnViewFileMemory { get; set; }
+
+    [Parameter]
+    public EventCallback OnClearFileMemory { get; set; }
 
     [Parameter]
     public EventCallback<ToolApprovalDecision> OnToolApprovalDecision { get; set; }

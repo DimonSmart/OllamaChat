@@ -174,6 +174,27 @@ public abstract class AgenticChatPageBase : ComponentBase, IAsyncDisposable
         catch (Exception ex) { Snackbar.Add($"Could not change workspace: {ex.Message}", Severity.Error); }
     }
 
+    protected async Task ViewFileMemoryAsync(string name)
+    {
+        try
+        {
+            var content = await ChatService.ReadFileMemoryAsync(name);
+            if (content is not null)
+                await JSRuntime.InvokeVoidAsync("alert", $"File Memory — {name}\n\n{content}");
+        }
+        catch (Exception ex) { Snackbar.Add($"Could not read file memory: {ex.Message}", Severity.Error); }
+    }
+
+    protected async Task ClearFileMemoryAsync()
+    {
+        var confirmed = await JSRuntime.InvokeAsync<bool>("confirm", "Delete all File Memory entries for the current session?");
+        if (!confirmed)
+            return;
+        try
+        { await ChatService.ClearFileMemoryAsync(); }
+        catch (Exception ex) { Snackbar.Add($"Could not clear file memory: {ex.Message}", Severity.Error); }
+    }
+
     protected async Task RespondToToolApprovalAsync(ToolApprovalDecision decision)
     {
         try

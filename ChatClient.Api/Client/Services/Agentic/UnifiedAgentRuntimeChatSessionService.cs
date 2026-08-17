@@ -10,6 +10,8 @@ using System.Collections.ObjectModel;
 using System.Text;
 using System.Text.Json;
 
+#pragma warning disable MAAI001
+
 namespace ChatClient.Api.Client.Services.Agentic;
 
 public sealed class UnifiedAgentRuntimeChatSessionService(
@@ -38,6 +40,7 @@ public sealed class UnifiedAgentRuntimeChatSessionService(
     private IReadOnlyList<string> _directAvailableModes = [];
     private SessionWorkspaceAgentFileStore? _directFileAccessStore;
     private FileAccessProviderProfile? _directFileAccessProfile;
+    private AgentFileStore? _directFileMemoryStore;
     private AgentSessionCompactionViewModel? _directCompaction;
     private IReadOnlyList<AgentSessionSkillViewModel> _directSkills = [];
     private IReadOnlyList<string> _directSkillDiagnostics = [];
@@ -182,6 +185,7 @@ public sealed class UnifiedAgentRuntimeChatSessionService(
                     false,
                     [],
                     null,
+                    null,
                     sandboxSession is null ? null : new AgentSessionSandboxViewModel(
                         sandboxSession.ProfileId,
                         sandboxSession.ProfileName,
@@ -193,7 +197,7 @@ public sealed class UnifiedAgentRuntimeChatSessionService(
 
         var todoProvider = agent.GetService<TodoProvider>();
         var modeProvider = agent.GetService<AgentModeProvider>();
-        if (todoProvider is null && modeProvider is null && _directFileAccessStore is null && sandboxSession is null && _directCompaction is null && _directSkills.Count == 0 && _directSkillDiagnostics.Count == 0 && _directBackgroundAgents.Count == 0)
+        if (todoProvider is null && modeProvider is null && _directFileAccessStore is null && _directFileMemoryStore is null && sandboxSession is null && _directCompaction is null && _directSkills.Count == 0 && _directSkillDiagnostics.Count == 0 && _directBackgroundAgents.Count == 0)
         {
             return null;
         }
@@ -218,6 +222,7 @@ public sealed class UnifiedAgentRuntimeChatSessionService(
             sandboxSession.Summary.Image,
             sandboxSession.WorkspacePath,
             sandboxSession.Instance.State);
+        var fileMemory = await GetFileMemoryStateAsync(agent, session, cancellationToken);
 
         if (fileAccess is not null && sandbox is not null && !HaveSameWorkspace(fileAccess.WorkspacePath, sandbox.WorkspacePath))
         {
@@ -234,6 +239,7 @@ public sealed class UnifiedAgentRuntimeChatSessionService(
             modeProvider is not null,
             todos,
             fileAccess,
+            fileMemory,
             sandbox,
             _directCompaction,
             _directSkills,
@@ -249,6 +255,29 @@ public sealed class UnifiedAgentRuntimeChatSessionService(
             throw new InvalidOperationException("Workspace cannot be changed after the conversation has started. Start a new conversation to use another workspace.");
         }
         finally { _runSetupGate.Release(); }
+    }
+
+    public async Task<string?> ReadFileMemoryAsync(string name, CancellationToken cancellationToken = default)
+    {
+        var state = await GetFileMemoryStateAsync(_directAgent, _directSession, cancellationToken);
+        return state is null || _directFileMemoryStore is null || !state.Files.Any(file => string.Equals(file.Name, name, StringComparison.Ordinal))
+            ? null
+            : await _directFileMemoryStore.ReadAsync(CombineMemoryPath(state.WorkingFolder, name), cancellationToken);
+    }
+
+    public async Task ClearFileMemoryAsync(CancellationToken cancellationToken = default)
+    {
+        var state = await GetFileMemoryStateAsync(_directAgent, _directSession, cancellationToken);
+        if (state is null || _directFileMemoryStore is null)
+            return;
+
+        foreach (var entry in await _directFileMemoryStore.ListChildrenAsync(state.WorkingFolder, cancellationToken))
+        {
+            if (entry.Type == FileStoreEntry.File)
+                await _directFileMemoryStore.DeleteAsync(CombineMemoryPath(state.WorkingFolder, entry.Name), cancellationToken);
+        }
+
+        SessionStateChanged?.Invoke();
     }
 
     public async Task SetAgentModeAsync(string mode, CancellationToken cancellationToken = default)
@@ -338,6 +367,7 @@ public sealed class UnifiedAgentRuntimeChatSessionService(
             _directRuntimeAgentId = string.Empty;
             _directFileAccessStore = null;
             _directFileAccessProfile = null;
+            _directFileMemoryStore = null;
             _directCompaction = null;
             _directSkills = [];
             _directSkillDiagnostics = [];
@@ -721,6 +751,7 @@ public sealed class UnifiedAgentRuntimeChatSessionService(
             _directAvailableModes = replacement.AvailableModes;
             _directFileAccessStore = replacement.FileAccessStore;
             _directFileAccessProfile = replacement.FileAccessProfile;
+            _directFileMemoryStore = replacement.FileMemoryStore;
             _directCompaction = replacement.Compaction;
             _directSkills = replacement.Skills;
             _directSkillDiagnostics = replacement.SkillDiagnostics;
@@ -785,6 +816,7 @@ public sealed class UnifiedAgentRuntimeChatSessionService(
         _directAvailableModes = build.AvailableModes;
         _directFileAccessStore = build.FileAccessStore;
         _directFileAccessProfile = build.FileAccessProfile;
+        _directFileMemoryStore = build.FileMemoryStore;
         _directCompaction = build.Compaction;
         _directSkills = build.Skills;
         _directSkillDiagnostics = build.SkillDiagnostics;
@@ -1209,6 +1241,32 @@ public sealed class UnifiedAgentRuntimeChatSessionService(
         "todos_remove" or
         "mode_set";
 
+    private async Task<AgentSessionFileMemoryViewModel?> GetFileMemoryStateAsync(
+        AIAgent? agent,
+        AgentSession? session,
+        CancellationToken cancellationToken)
+    {
+        if (agent?.GetService<FileMemoryProvider>() is not { } provider || session is null || _directFileMemoryStore is null)
+            return null;
+
+        var stateKey = provider.StateKeys.SingleOrDefault();
+        if (string.IsNullOrWhiteSpace(stateKey) || !session.StateBag.TryGetValue(stateKey, out FileMemoryState? state))
+            return new AgentSessionFileMemoryViewModel(string.Empty, []);
+
+        var files = (await _directFileMemoryStore.ListChildrenAsync(state.WorkingFolder, cancellationToken))
+            .Where(entry => entry.Type == FileStoreEntry.File && !IsInternalMemoryFile(entry.Name))
+            .Select(static entry => new AgentSessionFileMemoryEntryViewModel(entry.Name, null))
+            .ToList();
+        return new AgentSessionFileMemoryViewModel(state.WorkingFolder, files);
+    }
+
+    private static string CombineMemoryPath(string workingFolder, string name) =>
+        string.IsNullOrWhiteSpace(workingFolder) ? name : $"{workingFolder.TrimEnd('/')}/{name}";
+
+    private static bool IsInternalMemoryFile(string name) =>
+        name.Equals("memories.md", StringComparison.OrdinalIgnoreCase) ||
+        name.EndsWith("_description.md", StringComparison.OrdinalIgnoreCase);
+
     internal static bool HaveSameWorkspace(string fileAccessWorkspace, string sandboxWorkspace)
     {
         var comparison = OperatingSystem.IsWindows()
@@ -1577,3 +1635,5 @@ public sealed class UnifiedAgentRuntimeChatSessionService(
         file.Name.EndsWith(".markdown", StringComparison.OrdinalIgnoreCase) ||
         file.Name.EndsWith(".txt", StringComparison.OrdinalIgnoreCase);
 }
+
+#pragma warning restore MAAI001

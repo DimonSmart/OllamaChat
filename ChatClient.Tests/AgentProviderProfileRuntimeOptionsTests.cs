@@ -15,6 +15,16 @@ namespace ChatClient.Tests;
 
 public class AgentProviderProfileRuntimeOptionsTests
 {
+    [Theory]
+    [InlineData(false, true)]
+    [InlineData(true, false)]
+    public void BuildHarnessAgentOptions_MapsFileMemoryEnablement(bool enabled, bool disabled)
+    {
+        var options = BuildHarnessAgentOptions(null, enableFileMemory: enabled);
+
+        Assert.Equal(disabled, options.DisableFileMemory);
+    }
+
     [Fact]
     public void BuildHarnessAgentOptions_AppliesResolvedCompactionWithoutReplacingStrategy()
     {
@@ -391,11 +401,12 @@ public class AgentProviderProfileRuntimeOptionsTests
     private static HarnessAgentOptions BuildHarnessAgentOptions(
         ResolvedCompactionStrategy? compaction,
         bool hasConfiguredKnowledge = false,
-        bool supportsFunctions = false)
+        bool supportsFunctions = false,
+        bool enableFileMemory = false)
     {
         var request = new AgentRunRequest
         {
-            Agent = new AgentExecutionSpec(),
+            Agent = new AgentExecutionSpec { EnableFileMemory = enableFileMemory },
             ResolvedModel = new ServerModel(Guid.NewGuid(), "test-model"),
             Configuration = new AppChatConfiguration("test-model", []),
             Conversation = [],
@@ -413,6 +424,7 @@ public class AgentProviderProfileRuntimeOptionsTests
             agentModeProfile: null,
             fileAccessProfile: null,
             workspaceStore: null,
+            fileMemoryStore: null,
             shellExecutor: null,
             loggerFactory: NullLoggerFactory.Instance,
             compaction: compaction);

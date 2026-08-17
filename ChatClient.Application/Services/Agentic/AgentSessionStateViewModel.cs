@@ -10,6 +10,7 @@ public sealed record AgentSessionStateViewModel(
     bool HasAgentModeProvider,
     IReadOnlyList<AgentSessionTodoItemViewModel> Todos,
     AgentSessionFileAccessViewModel? FileAccess = null,
+    AgentSessionFileMemoryViewModel? FileMemory = null,
     AgentSessionSandboxViewModel? Sandbox = null,
     AgentSessionCompactionViewModel? Compaction = null,
     IReadOnlyList<AgentSessionSkillViewModel>? Skills = null,
@@ -37,6 +38,12 @@ public sealed record AgentSessionFileAccessViewModel(
     FileAccessMode AccessMode,
     bool RequireReadApproval,
     bool RequireWriteApproval);
+
+public sealed record AgentSessionFileMemoryViewModel(
+    string WorkingFolder,
+    IReadOnlyList<AgentSessionFileMemoryEntryViewModel> Files);
+
+public sealed record AgentSessionFileMemoryEntryViewModel(string Name, string? Description);
 
 public sealed record AgentSessionSandboxViewModel(
     Guid ProfileId,

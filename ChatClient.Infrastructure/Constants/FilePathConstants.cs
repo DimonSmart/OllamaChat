@@ -19,5 +19,6 @@ public static class FilePathConstants
     public const string DefaultKnowledgeVectorDatabaseFile = "UserData/knowledge-stores/knowledge.sqlite";
     public const string DefaultWebSearchCacheDirectory = "UserData/web_search_cache";
     public const string DefaultVoiceInputDirectory = "UserData/voice-input";
+    public const string DefaultAgentFileMemoryDirectory = "UserData/agent-file-memory";
     public const string DefaultSeedDataDirectory = "Data";
 }
