@@ -28,13 +28,13 @@
 @code {
     private HarnessTraceSessionSnapshot snapshot = new([]);
     private string? selectedRunId;
-    private string? manuallySelectedRunId;
+    private bool followLatest = true;
     private HarnessTraceRunSnapshot? SelectedRun => snapshot.Runs.FirstOrDefault(run => run.RunId == selectedRunId);
     protected override void OnInitialized() { TraceSession.Changed += Changed; Refresh(); }
     private void Changed() => _ = InvokeAsync(() => { Refresh(); StateHasChanged(); });
-    private void Refresh() { snapshot = TraceSession.GetSnapshot(); if (manuallySelectedRunId is null || !snapshot.Runs.Any(run => run.RunId == manuallySelectedRunId)) selectedRunId = snapshot.Runs.FirstOrDefault()?.RunId; else selectedRunId = manuallySelectedRunId; }
-    private Task SelectRun(string runId) { selectedRunId = runId; manuallySelectedRunId = runId; return Task.CompletedTask; }
-    private void Clear() { manuallySelectedRunId = null; TraceSession.Clear(); }
+    private void Refresh() { snapshot = TraceSession.GetSnapshot(); if (followLatest || !snapshot.Runs.Any(run => run.RunId == selectedRunId)) selectedRunId = snapshot.Runs.FirstOrDefault()?.RunId; }
+    private Task SelectRun(string runId) { selectedRunId = runId; followLatest = string.Equals(runId, snapshot.Runs.FirstOrDefault()?.RunId, StringComparison.Ordinal); return Task.CompletedTask; }
+    private void Clear() { followLatest = true; TraceSession.Clear(); }
     private static string RunLabel(HarnessTraceRunSnapshot run) => $"Run {run.RunId[^Math.Min(8, run.RunId.Length)..]} · {run.Status} · {run.Spans.Count} spans";
     private static IReadOnlyList<TraceNode> BuildForest(HarnessTraceRunSnapshot run)
     {

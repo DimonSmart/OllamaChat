@@ -398,6 +398,7 @@
     protected override void OnParametersSet()
     {
         if (SessionState is null) showSessionState = false;
+        if (!HasHarnessTrace) showTrace = false;
 
         if (SessionState?.FileAccess is { } fileAccess && !isChangingWorkspace)
             workspaceInput = fileAccess.WorkspacePath;
@@ -445,7 +446,7 @@
         return Task.CompletedTask;
     }
 
-    private Task ToggleTraceAsync() { showTrace = !showTrace; PublishToolbarState(); return Task.CompletedTask; }
+    private Task ToggleTraceAsync() { if (!HasHarnessTrace) return Task.CompletedTask; showTrace = !showTrace; PublishToolbarState(); return Task.CompletedTask; }
 
     private void PublishToolbarState() => ChatToolbar.Update(
         SessionState is not null,

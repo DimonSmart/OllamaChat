@@ -38,6 +38,7 @@ public sealed class HarnessTraceSessionTests
             span.SetTag("api_key", "secret");
             span.AddEvent(new ActivityEvent("event", tags: new ActivityTagsCollection { { "detail", "value" } }));
             span.SetStatus(ActivityStatusCode.Error, "failure");
+            span.Stop();
         }
 
         var spanSnapshot = Assert.Single(Assert.Single(session.GetSnapshot().Runs).Spans);
@@ -56,5 +57,74 @@ public sealed class HarnessTraceSessionTests
         using var run = session.TryBeginRun("run");
         Parallel.For(0, 100, _ => { using var span = HarnessSource.StartActivity("parallel"); _ = session.GetSnapshot().Runs.SelectMany(item => item.Spans).Count(); });
         Assert.NotEmpty(session.GetSnapshot().Runs);
+    }
+
+    [Fact]
+    public async Task ConcurrentSessionsCaptureOnlyTheirOwnActivities()
+    {
+        using var hub = new HarnessTelemetryListenerHub(NullLogger<HarnessTelemetryListenerHub>.Instance);
+        using var sessionA = new HarnessTraceSession(hub, NullLogger<HarnessTraceSession>.Instance);
+        using var sessionB = new HarnessTraceSession(hub, NullLogger<HarnessTraceSession>.Instance);
+
+        await Task.WhenAll(
+            Task.Run(() => Capture(sessionA, "A")),
+            Task.Run(() => Capture(sessionB, "B")));
+
+        Assert.All(Assert.Single(sessionA.GetSnapshot().Runs).Spans, span => Assert.StartsWith("A", span.DisplayName));
+        Assert.All(Assert.Single(sessionB.GetSnapshot().Runs).Spans, span => Assert.StartsWith("B", span.DisplayName));
+    }
+
+    [Fact]
+    public void NewRootTraceInCurrentRunIsBoundAndRetained()
+    {
+        using var hub = new HarnessTelemetryListenerHub(NullLogger<HarnessTelemetryListenerHub>.Instance);
+        using var session = new HarnessTraceSession(hub, NullLogger<HarnessTraceSession>.Instance);
+        using var run = session.TryBeginRun("run");
+        var traceId = ActivityTraceId.CreateRandom();
+        using var parent = new Activity("new-root-parent")
+            .SetParentId($"00-{traceId}-{ActivitySpanId.CreateRandom()}-01")
+            .Start();
+        using var additionalRoot = HarnessSource.StartActivity("additional-root", ActivityKind.Internal);
+
+        var snapshot = Assert.Single(session.GetSnapshot().Runs);
+        Assert.Equal(2, snapshot.TraceIds.Count);
+        Assert.Contains(snapshot.Spans, span => span.TraceId == traceId.ToString());
+    }
+
+    [Fact]
+    public void ClearRemovesRoutesAndRetention()
+    {
+        using var hub = new HarnessTelemetryListenerHub(NullLogger<HarnessTelemetryListenerHub>.Instance);
+        using var session = new HarnessTraceSession(hub, NullLogger<HarnessTraceSession>.Instance);
+        using var run = session.TryBeginRun("run");
+        var traceId = Assert.Single(session.GetSnapshot().Runs).TraceId;
+        session.Clear();
+        using var late = HarnessSource.StartActivity("late", ActivityKind.Internal, new ActivityContext(ActivityTraceId.CreateFromString(traceId), ActivitySpanId.CreateRandom(), ActivityTraceFlags.Recorded));
+        Assert.Empty(session.GetSnapshot().Runs);
+    }
+
+    [Fact]
+    public void RunStatusAndBoundedRetentionAreReported()
+    {
+        using var hub = new HarnessTelemetryListenerHub(NullLogger<HarnessTelemetryListenerHub>.Instance);
+        using var session = new HarnessTraceSession(hub, NullLogger<HarnessTraceSession>.Instance);
+        for (var index = 0; index <= HarnessTraceSession.MaxRunsPerSession; index++)
+        {
+            using var run = session.TryBeginRun($"run-{index}");
+            if (index == HarnessTraceSession.MaxRunsPerSession)
+                run!.Cancel();
+        }
+        var runs = session.GetSnapshot().Runs;
+        Assert.Equal(HarnessTraceSession.MaxRunsPerSession, runs.Count);
+        Assert.Equal(HarnessTraceRunStatus.Canceled, runs[0].Status);
+    }
+
+    private static void Capture(HarnessTraceSession session, string prefix)
+    {
+        using var run = session.TryBeginRun(prefix);
+        for (var index = 0; index != 10; index++)
+        {
+            using var span = HarnessSource.StartActivity($"{prefix}-{index}");
+        }
     }
 }
