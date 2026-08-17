@@ -18,7 +18,8 @@
 <MudDrawerContainer Class="session-state-drawer-container">
     @if (SessionState is not null || showTrace)
     {
-        <MudDrawer @bind-Open="showSessionState"
+        <MudDrawer Open="@InspectorDockOpen"
+                   OpenChanged="OnInspectorDockOpenChanged"
                    Anchor="Anchor.Right"
                    Variant="DrawerVariant.Temporary"
                    Fixed="true"
@@ -348,6 +349,9 @@
     public bool IsMultiAgent { get; set; }
 
     [Parameter]
+    public bool HasHarnessTrace { get; set; }
+
+    [Parameter]
     public bool AllowMessageDeletion { get; set; }
 
     [Parameter]
@@ -382,6 +386,7 @@
 
     private bool showSessionState;
     private bool showTrace;
+    private bool InspectorDockOpen => showSessionState || showTrace;
     private bool isChangingAgentMode;
     private bool isRespondingToToolApproval;
     private IDialogReference? toolApprovalDialog;
@@ -429,12 +434,23 @@
         PublishToolbarState();
     }
 
+    private Task OnInspectorDockOpenChanged(bool open)
+    {
+        if (!open)
+        {
+            showSessionState = false;
+            showTrace = false;
+            PublishToolbarState();
+        }
+        return Task.CompletedTask;
+    }
+
     private Task ToggleTraceAsync() { showTrace = !showTrace; PublishToolbarState(); return Task.CompletedTask; }
 
     private void PublishToolbarState() => ChatToolbar.Update(
         SessionState is not null,
         showSessionState,
-        true,
+        HasHarnessTrace,
         showTrace,
         ToggleSessionStateAsync,
         ToggleTraceAsync,

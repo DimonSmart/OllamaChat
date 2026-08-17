@@ -190,6 +190,7 @@
                             Messages="ChatViewModelService.Messages"
                             Agents="DisplayedAgents"
                             IsLlmAnswering="isLLMAnswering"
+                            HasHarnessTrace="@(ChatService.ActiveSession?.RuntimeReference.Kind == AgentDefinitionKind.SavedAgent)"
                             SessionState="ChatViewModelService.SessionState"
                             PendingToolApproval="ChatService.PendingToolApproval"
                             RequiresReset="ChatService.RequiresReset"

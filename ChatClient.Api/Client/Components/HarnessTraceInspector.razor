@@ -1,20 +1,67 @@
 @using ChatClient.Api.Client.Services.Agentic
+@using System.Diagnostics
+@using Microsoft.AspNetCore.Components.Rendering
 @implements IDisposable
 @inject HarnessTraceSession TraceSession
 
 <div class="session-state-drawer-layout">
-    <div class="session-state-drawer-header"><MudText Typo="Typo.subtitle2">Trace (@TraceSession.Runs.Count)</MudText><MudButton Size="Size.Small" Variant="Variant.Text" OnClick="TraceSession.Clear">Clear</MudButton></div>
+    <div class="session-state-drawer-header"><MudText Typo="Typo.subtitle2">Trace (@snapshot.Runs.Count)</MudText><MudButton Size="Size.Small" Variant="Variant.Text" OnClick="Clear">Clear</MudButton></div>
     <div class="session-state-drawer-content">
-        @if (!TraceSession.Runs.Any()) { <MudText Typo="Typo.body2" Class="mud-text-secondary">No trace runs yet</MudText> }
-        @foreach (var run in TraceSession.Runs)
+        @if (snapshot.Runs.Count == 0)
+        { <MudText Typo="Typo.body2" Class="mud-text-secondary">No trace runs yet</MudText> }
+        else
         {
-            <MudPaper Class="pa-2 mb-2" Elevation="0"><MudText Typo="Typo.caption">Run @run.RunId[^8..] · @run.Status · @run.Spans.Count spans</MudText>
-            @if (run.IsTruncated) { <MudText Typo="Typo.caption" Color="Color.Warning">Trace truncated</MudText> }
-            @foreach (var span in run.Spans.OrderBy(x => x.StartedAt))
-            { <MudStack Row="true" Justify="Justify.SpaceBetween"><MudText Typo="Typo.caption" title="@span.SourceName">@span.DisplayName</MudText><MudText Typo="Typo.caption" Color="@(span.StatusCode == System.Diagnostics.ActivityStatusCode.Error ? Color.Error : Color.Default)">@(span.Duration?.ToString("g") ?? "Running")</MudText></MudStack> }
-            </MudPaper>
+            <MudSelect T="string" Value="selectedRunId" ValueChanged="SelectRun" Dense="true" Label="Run">
+                @foreach (var run in snapshot.Runs) { <MudSelectItem Value="@run.RunId">@RunLabel(run)</MudSelectItem> }
+            </MudSelect>
+            @if (SelectedRun is { } run)
+            {
+                <MudText Typo="Typo.caption" Class="mt-2">@run.Status · @((run.CompletedAt - run.StartedAt)?.ToString("g") ?? "Running") · @run.Spans.Count spans</MudText>
+                <MudText Typo="Typo.caption" Class="mud-text-secondary">Trace: @run.TraceId</MudText>
+                @if (run.IsTruncated) { <MudText Typo="Typo.caption" Color="Color.Warning">Trace truncated</MudText> }
+                @foreach (var node in BuildForest(run)) { @RenderNode(node, 0) }
+            }
         }
     </div>
 </div>
 
-@code { protected override void OnInitialized() => TraceSession.Changed += Changed; private void Changed() => _ = InvokeAsync(StateHasChanged); public void Dispose() => TraceSession.Changed -= Changed; }
+@code {
+    private HarnessTraceSessionSnapshot snapshot = new([]);
+    private string? selectedRunId;
+    private string? manuallySelectedRunId;
+    private HarnessTraceRunSnapshot? SelectedRun => snapshot.Runs.FirstOrDefault(run => run.RunId == selectedRunId);
+    protected override void OnInitialized() { TraceSession.Changed += Changed; Refresh(); }
+    private void Changed() => _ = InvokeAsync(() => { Refresh(); StateHasChanged(); });
+    private void Refresh() { snapshot = TraceSession.GetSnapshot(); if (manuallySelectedRunId is null || !snapshot.Runs.Any(run => run.RunId == manuallySelectedRunId)) selectedRunId = snapshot.Runs.FirstOrDefault()?.RunId; else selectedRunId = manuallySelectedRunId; }
+    private Task SelectRun(string runId) { selectedRunId = runId; manuallySelectedRunId = runId; return Task.CompletedTask; }
+    private void Clear() { manuallySelectedRunId = null; TraceSession.Clear(); }
+    private static string RunLabel(HarnessTraceRunSnapshot run) => $"Run {run.RunId[^Math.Min(8, run.RunId.Length)..]} · {run.Status} · {run.Spans.Count} spans";
+    private static IReadOnlyList<TraceNode> BuildForest(HarnessTraceRunSnapshot run)
+    {
+        var nodes = run.Spans.Select(span => new TraceNode(span)).ToDictionary(node => $"{node.Span.TraceId}/{node.Span.SpanId}"); var roots = new List<TraceNode>();
+        foreach (var node in nodes.Values) { var parentKey = $"{node.Span.TraceId}/{node.Span.ParentSpanId}"; if (!string.IsNullOrEmpty(node.Span.ParentSpanId) && nodes.TryGetValue(parentKey, out var parent)) parent.Children.Add(node); else roots.Add(node); }
+        Sort(roots); return roots;
+    }
+    private static void Sort(List<TraceNode> nodes) { nodes.Sort((left, right) => left.Span.StartedAt.CompareTo(right.Span.StartedAt)); foreach (var node in nodes) Sort(node.Children); }
+    private RenderFragment RenderNode(TraceNode node, int depth) => builder =>
+    {
+        var sequence = 0; builder.OpenElement(sequence++, "div"); builder.AddAttribute(sequence++, "style", $"margin-left:{depth * 16}px");
+        builder.OpenElement(sequence++, "details"); builder.OpenElement(sequence++, "summary"); builder.AddContent(sequence++, node.Span.DisplayName);
+        var operation = node.Span.Tags.FirstOrDefault(tag => tag.Key == "gen_ai.operation.name")?.Value; if (operation is not null) builder.AddContent(sequence++, $" [{operation}]");
+        builder.AddContent(sequence++, $" · {(node.Span.Duration?.ToString("g") ?? "Running")}"); builder.CloseElement();
+        builder.AddContent(sequence++, RenderDetails(node.Span)); foreach (var child in node.Children) builder.AddContent(sequence++, RenderNode(child, depth + 1)); builder.CloseElement(); builder.CloseElement();
+    };
+    private RenderFragment RenderDetails(HarnessTraceSpanSnapshot span) => builder =>
+    {
+        var sequence = 0; builder.OpenElement(sequence++, "div"); builder.AddAttribute(sequence++, "class", "pa-2");
+        builder.AddContent(sequence++, $"Source: {span.SourceName} · Kind: {span.Kind} · Started: {span.StartedAt.LocalDateTime:g} · Status: {span.StatusCode} {span.StatusDescription}");
+        builder.OpenElement(sequence++, "div"); builder.AddContent(sequence++, $"Trace ID: {span.TraceId} · Span ID: {span.SpanId} · Parent Span ID: {span.ParentSpanId}"); builder.CloseElement();
+        AddSection(builder, ref sequence, "Attributes", span.Tags.Select(tag => $"{tag.Key}: {tag.Value}"));
+        AddSection(builder, ref sequence, "Events", span.Events.SelectMany(item => new[] { $"{item.Timestamp.LocalDateTime:g} · {item.Name}" }.Concat(item.Tags.Select(tag => $"  {tag.Key}: {tag.Value}"))));
+        AddSection(builder, ref sequence, "Links", span.Links.SelectMany(link => new[] { $"{link.TraceId} / {link.SpanId} · {link.TraceFlags}" }.Concat(link.Tags.Select(tag => $"  {tag.Key}: {tag.Value}"))));
+        builder.CloseElement();
+    };
+    private static void AddSection(RenderTreeBuilder builder, ref int sequence, string title, IEnumerable<string> entries) { builder.OpenElement(sequence++, "details"); builder.OpenElement(sequence++, "summary"); builder.AddContent(sequence++, title); builder.CloseElement(); foreach (var entry in entries) { builder.OpenElement(sequence++, "div"); builder.AddContent(sequence++, entry); builder.CloseElement(); } builder.CloseElement(); }
+    private sealed class TraceNode(HarnessTraceSpanSnapshot span) { public HarnessTraceSpanSnapshot Span { get; } = span; public List<TraceNode> Children { get; } = []; }
+    public void Dispose() => TraceSession.Changed -= Changed;
+}

@@ -912,7 +912,7 @@ public sealed class UnifiedAgentRuntimeChatSessionService(
         StreamingAppChatMessage? stream = null;
         var projection = responseEventProjector.CreateProjection();
         using var ragTurn = _directRuntimeDefinition?.RagRetrievalTraceSink?.BeginTurn(messageId);
-        using var traceRun = harnessTraceSession?.BeginRun(messageId);
+        using var traceRun = harnessTraceSession?.TryBeginRun(messageId);
 
         try
         {
