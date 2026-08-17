@@ -119,6 +119,41 @@ public sealed class HarnessTraceSessionTests
         Assert.Equal(HarnessTraceRunStatus.Canceled, runs[0].Status);
     }
 
+    [Fact]
+    public void RedactsAndTruncatesAttributesAndBoundsSpans()
+    {
+        using var hub = new HarnessTelemetryListenerHub(NullLogger<HarnessTelemetryListenerHub>.Instance);
+        using var session = new HarnessTraceSession(hub, NullLogger<HarnessTraceSession>.Instance);
+        using var run = session.TryBeginRun("run");
+        using (var tagged = HarnessSource.StartActivity("tagged"))
+        {
+            tagged!.SetTag("authorization", "Bearer secret");
+            tagged.SetTag("payload", new string('x', HarnessTraceSession.MaxAttributeValueLength + 1));
+        }
+        for (var index = 0; index < HarnessTraceSession.MaxSpansPerRun; index++)
+        {
+            using var span = HarnessSource.StartActivity($"span-{index}");
+        }
+
+        var result = Assert.Single(session.GetSnapshot().Runs);
+        Assert.True(result.IsTruncated);
+        Assert.Equal(HarnessTraceSession.MaxSpansPerRun, result.Spans.Count);
+        var taggedSpan = Assert.Single(result.Spans, span => span.DisplayName == "tagged");
+        Assert.Contains(taggedSpan.Tags, tag => tag is { Key: "authorization", Value: "[REDACTED]" });
+        Assert.Contains(taggedSpan.Tags, tag => tag.Key == "payload" && tag.Value.EndsWith('…'));
+    }
+
+    [Fact]
+    public void DisposeRemovesCaptureRoute()
+    {
+        using var hub = new HarnessTelemetryListenerHub(NullLogger<HarnessTelemetryListenerHub>.Instance);
+        var session = new HarnessTraceSession(hub, NullLogger<HarnessTraceSession>.Instance);
+        using var run = session.TryBeginRun("run");
+        session.Dispose();
+        using var span = HarnessSource.StartActivity("after-dispose");
+        Assert.Empty(session.GetSnapshot().Runs);
+    }
+
     private static void Capture(HarnessTraceSession session, string prefix)
     {
         using var run = session.TryBeginRun(prefix);
