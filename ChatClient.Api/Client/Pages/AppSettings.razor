@@ -180,6 +180,14 @@
                         </MudCardContent>
                     </MudCard>
 
+                    <MudCard Class="mb-4" Elevation="1">
+                        <MudCardContent>
+                            <MudTextField T="string" Label="Workspaces root" @bind-Value="_settings.WorkspacesRoot"
+                                          Variant="Variant.Outlined" Margin="Margin.Dense" FullWidth="true"
+                                          HelperText="Base directory used when creating new workspaces." />
+                        </MudCardContent>
+                    </MudCard>
+
                     <MudButtonGroup Class="mt-4">
                         <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="SaveSettingsFromButton" Size="Size.Small">
                             Save Application Settings

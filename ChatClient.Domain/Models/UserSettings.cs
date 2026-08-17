@@ -31,4 +31,8 @@ public class UserSettings
 
     [JsonPropertyName("voiceInput")]
     public VoiceInputSettings VoiceInput { get; set; } = new();
+
+    [JsonPropertyName("workspacesRoot")]
+    public string WorkspacesRoot { get; set; } = Path.Combine(
+        Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "OllamaChat", "Workspaces");
 }

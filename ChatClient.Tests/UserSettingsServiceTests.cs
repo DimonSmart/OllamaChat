@@ -76,6 +76,7 @@ public class UserSettingsServiceTests
             {
                 DefaultModel = new(serverId, "test-model"),
                 UserName = "Test User",
+                WorkspacesRoot = Path.Combine(tempDir, "workspaces"),
                 VoiceInput = new VoiceInputSettings
                 {
                     IsEnabled = true,
@@ -95,12 +96,37 @@ public class UserSettingsServiceTests
             Assert.Equal(VoiceInputInitializationStatus.Ready, loadedSettings.VoiceInput.Status);
             Assert.Equal("Small", loadedSettings.VoiceInput.ModelType);
             Assert.Equal("auto", loadedSettings.VoiceInput.RecognitionLanguage);
+            Assert.Equal(testSettings.WorkspacesRoot, loadedSettings.WorkspacesRoot);
         }
         finally
         {
             if (Directory.Exists(tempDir))
                 Directory.Delete(tempDir, true);
         }
+    }
+
+    [Fact]
+    public async Task GetSettingsAsync_OldJsonWithoutWorkspacesRoot_UsesDefault()
+    {
+        var tempDir = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString());
+        Directory.CreateDirectory(tempDir);
+        var filePath = Path.Combine(tempDir, "user_settings.json");
+        await File.WriteAllTextAsync(filePath, "{\"userName\":\"Test User\"}", TestContext.Current.CancellationToken);
+
+        try
+        {
+            var config = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["UserSettings:FilePath"] = filePath
+            }).Build();
+            var repository = new UserSettingsRepository(config, new LoggerFactory().CreateLogger<UserSettingsRepository>());
+            var service = new UserSettingsService(repository, new LoggerFactory().CreateLogger<UserSettingsService>(), new MockLlmServerConfigService());
+
+            var settings = await service.GetSettingsAsync(TestContext.Current.CancellationToken);
+
+            Assert.Equal(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "OllamaChat", "Workspaces"), settings.WorkspacesRoot);
+        }
+        finally { Directory.Delete(tempDir, true); }
     }
 
     [Fact]

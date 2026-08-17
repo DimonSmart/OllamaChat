@@ -111,6 +111,7 @@ public static class ServiceCollectionExtensions
         services.AddScoped<ICompactionStrategyResolver, CompactionStrategyResolver>();
         services.AddSingleton<IWorkflowDefinitionService, WorkflowDefinitionService>();
         services.AddSingleton<IUserSettingsService, UserSettingsService>();
+        services.AddSingleton<IWorkspaceDirectoryService, WorkspaceDirectoryService>();
         services.AddSingleton<IKnowledgeStoreService, KnowledgeStoreService>();
 
         return services;

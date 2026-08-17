@@ -106,11 +106,18 @@
 
                         @if (selectedDefinition?.LaunchCapabilities.SupportsWorkspace == true)
                         {
-                            <MudTextField T="string" Label="Workspace" Value="fileAccessWorkspace"
-                                          ValueChanged="OnFileAccessWorkspaceChanged" Variant="Variant.Outlined"
-                                          Margin="Margin.Dense" Immediate="true"
-                                          HelperText="Existing directory available to this conversation only."
-                                          Disabled="@isStartingChat" />
+                            <MudStack Row="true" Spacing="1" AlignItems="AlignItems.Center">
+                                <MudTextField T="string" Label="Workspace" Value="fileAccessWorkspace"
+                                              ValueChanged="OnFileAccessWorkspaceChanged" Variant="Variant.Outlined"
+                                              Margin="Margin.Dense" Immediate="true" Class="flex-grow-1"
+                                              HelperText="Existing directory available to this conversation only."
+                                              Disabled="@isStartingChat" />
+                                <MudButton Variant="Variant.Outlined" OnClick="OpenWorkspacePickerAsync" Disabled="@isStartingChat">Open...</MudButton>
+                                <MudTooltip Text="Enter a workspace name to create it under the configured Workspaces root.">
+                                    <MudButton Variant="Variant.Outlined" Color="Color.Primary" OnClick="CreateWorkspaceAsync"
+                                               Disabled="@(isStartingChat || !WorkspaceDirectoryService.IsValidWorkspaceName(fileAccessWorkspace))">Create</MudButton>
+                                </MudTooltip>
+                            </MudStack>
                         }
                         @if (selectedDefinition?.LaunchCapabilities.SupportsSandboxProfile == true)
                         {
@@ -237,6 +244,9 @@
 
     [Inject]
     private ISandboxProfileService SandboxProfileService { get; set; } = null!;
+
+    [Inject]
+    private IWorkspaceDirectoryService WorkspaceDirectoryService { get; set; } = null!;
 
     [CascadingParameter(Name = "UiModelSelection")]
     public ServerModelSelection UiModelSelection { get; set; } = new(null, null);
@@ -502,6 +512,54 @@
     {
         fileAccessWorkspace = value;
         await RefreshLaunchValidationAsync();
+    }
+
+    private async Task OpenWorkspacePickerAsync()
+    {
+        var initialPath = GetWorkspacePickerInitialPath();
+        var parameters = new DialogParameters<WorkspaceDirectoryPickerDialog>
+        {
+            { dialog => dialog.InitialPath, initialPath }
+        };
+        var dialog = await DialogService.ShowAsync<WorkspaceDirectoryPickerDialog>(
+            "Select workspace", parameters,
+            new DialogOptions { MaxWidth = MaxWidth.Medium, FullWidth = true, CloseButton = true });
+        var result = await dialog.Result;
+        if (result?.Canceled != false || result.Data is not string selectedPath)
+            return;
+
+        fileAccessWorkspace = selectedPath;
+        await RefreshLaunchValidationAsync();
+    }
+
+    private async Task CreateWorkspaceAsync()
+    {
+        try
+        {
+            fileAccessWorkspace = WorkspaceDirectoryService.CreateWorkspace(userSettings.WorkspacesRoot, fileAccessWorkspace);
+            await RefreshLaunchValidationAsync();
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "Could not create workspace.");
+            Snackbar.Add($"Could not create workspace: {ex.Message}", Severity.Error);
+        }
+    }
+
+    private string GetWorkspacePickerInitialPath()
+    {
+        foreach (var candidate in new[]
+                 {
+                     fileAccessWorkspace,
+                     userSettings.WorkspacesRoot,
+                     Environment.GetFolderPath(Environment.SpecialFolder.UserProfile)
+                 })
+        {
+            if (!string.IsNullOrWhiteSpace(candidate) && Directory.Exists(candidate))
+                return WorkspaceDirectoryService.NormalizePath(candidate);
+        }
+
+        return WorkspaceDirectoryService.GetFileSystemRoots().FirstOrDefault() ?? Path.GetPathRoot(Environment.CurrentDirectory) ?? Environment.CurrentDirectory;
     }
 
     private async Task OnSandboxProfileChanged(Guid? value)

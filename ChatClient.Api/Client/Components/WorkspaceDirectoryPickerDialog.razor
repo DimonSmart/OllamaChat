@@ -1,0 +1,67 @@
+@using ChatClient.Application.Services
+@inject IWorkspaceDirectoryService WorkspaceDirectoryService
+
+<MudDialog>
+    <TitleContent><MudText Typo="Typo.h6">Select workspace</MudText></TitleContent>
+    <DialogContent>
+        <MudText Typo="Typo.caption" Class="mud-text-secondary text-break">@currentPath</MudText>
+        @if (!string.IsNullOrWhiteSpace(error))
+        {
+            <MudAlert Severity="Severity.Error" Dense="true" Class="mt-2">@error</MudAlert>
+        }
+        <MudStack Spacing="0" Class="mt-2" Style="max-height: 45vh; overflow-y: auto;">
+            @if (parentPath is not null)
+            {
+                <MudButton FullWidth="true" Variant="Variant.Text" Class="justify-start" OnClick="GoToParentAsync"><MudIcon Icon="@Icons.Material.Filled.DriveFolderUpload" />[..]</MudButton>
+            }
+            @foreach (var root in roots)
+            {
+                <MudButton @key="root" FullWidth="true" Variant="Variant.Text" Class="justify-start" OnClick="@(() => NavigateAsync(root))"><MudIcon Icon="@Icons.Material.Filled.Storage" />@root</MudButton>
+            }
+            @foreach (var directory in directories)
+            {
+                <MudButton @key="directory" FullWidth="true" Variant="Variant.Text" Class="justify-start" OnClick="@(() => NavigateAsync(directory))"><MudIcon Icon="@Icons.Material.Filled.Folder" />@Path.GetFileName(directory)</MudButton>
+            }
+        </MudStack>
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="Cancel">Cancel</MudButton>
+        <MudButton Color="Color.Primary" Variant="Variant.Filled" OnClick="Select">Select</MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] private IMudDialogInstance? Dialog { get; set; }
+    [Parameter, EditorRequired] public string InitialPath { get; set; } = string.Empty;
+    private IReadOnlyList<string> directories = [];
+    private IReadOnlyList<string> roots = [];
+    private string? parentPath;
+    private string currentPath = string.Empty;
+    private string? error;
+
+    protected override Task OnInitializedAsync() => NavigateAsync(InitialPath);
+
+    private Task GoToParentAsync() => parentPath is null ? Task.CompletedTask : NavigateAsync(parentPath);
+
+    private Task NavigateAsync(string path)
+    {
+        try
+        {
+            currentPath = WorkspaceDirectoryService.NormalizePath(path);
+            directories = WorkspaceDirectoryService.GetDirectories(currentPath);
+            parentPath = WorkspaceDirectoryService.GetParent(currentPath);
+            roots = parentPath is null ? WorkspaceDirectoryService.GetFileSystemRoots() : [];
+            error = null;
+        }
+        catch (Exception ex)
+        {
+            directories = [];
+            error = $"Could not open directory: {ex.Message}";
+        }
+
+        return Task.CompletedTask;
+    }
+
+    private void Select() => Dialog?.Close(DialogResult.Ok(currentPath));
+    private void Cancel() => Dialog?.Cancel();
+}
