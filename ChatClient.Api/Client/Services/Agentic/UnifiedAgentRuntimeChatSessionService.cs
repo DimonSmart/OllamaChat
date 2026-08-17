@@ -1279,7 +1279,9 @@ public sealed class UnifiedAgentRuntimeChatSessionService(
     internal static string GetDescriptionFileName(string memoryFileName)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(memoryFileName);
-        return $"{Path.GetFileNameWithoutExtension(memoryFileName)}_description.md";
+        var extensionIndex = memoryFileName.LastIndexOf('.');
+        var baseName = extensionIndex > 0 ? memoryFileName[..extensionIndex] : memoryFileName;
+        return $"{baseName}_description.md";
     }
 
     internal static bool HaveSameWorkspace(string fileAccessWorkspace, string sandboxWorkspace)

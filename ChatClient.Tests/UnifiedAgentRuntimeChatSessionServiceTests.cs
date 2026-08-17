@@ -8,6 +8,7 @@ using ChatClient.Application.Services.AgentRuntime;
 using ChatClient.Application.Services.Sandbox;
 using ChatClient.Domain.Models;
 using Microsoft.Extensions.AI;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using Moq;
@@ -20,6 +21,8 @@ using AgentModeProviderOptions = Microsoft.Agents.AI.AgentModeProviderOptions;
 using AgentSession = Microsoft.Agents.AI.AgentSession;
 using AIAgent = Microsoft.Agents.AI.AIAgent;
 using BackgroundAgentsProvider = Microsoft.Agents.AI.BackgroundAgentsProvider;
+using FileMemoryProvider = Microsoft.Agents.AI.FileMemoryProvider;
+using FileMemoryState = Microsoft.Agents.AI.FileMemoryState;
 using FileSystemAgentFileStore = Microsoft.Agents.AI.FileSystemAgentFileStore;
 using HarnessAgentOptions = Microsoft.Agents.AI.HarnessAgentOptions;
 using TodoProvider = Microsoft.Agents.AI.TodoProvider;
@@ -169,6 +172,133 @@ public sealed class UnifiedAgentRuntimeChatSessionServiceTests
             Assert.True(enabled!.FileMemory!.Enabled);
             Assert.Empty(enabled.FileMemory.Files);
 
+        }
+        finally
+        {
+            if (Directory.Exists(directory))
+                Directory.Delete(directory, recursive: true);
+        }
+    }
+
+    [Theory]
+    [InlineData("project.md", "project_description.md")]
+    [InlineData("project.notes.md", "project.notes_description.md")]
+    [InlineData("project", "project_description.md")]
+    [InlineData(".hidden", ".hidden_description.md")]
+    public void GetDescriptionFileName_MatchesFrameworkSidecarNaming(string memoryFileName, string expected)
+    {
+        Assert.Equal(expected, UnifiedAgentRuntimeChatSessionService.GetDescriptionFileName(memoryFileName));
+    }
+
+    [Fact]
+    public async Task FileMemory_PersistsBetweenRunsOfTheSameHarnessSession()
+    {
+        await using var fixture = new FileMemoryHarnessFixture();
+        var session = await fixture.Agent.CreateSessionAsync(TestContext.Current.CancellationToken);
+
+        await RunHarnessAsync(fixture.Agent, session);
+        var before = GetFileMemoryState(fixture.Agent, session);
+        await fixture.Store.WriteAsync($"{before.WorkingFolder}/project.md", "Blue Parrot", TestContext.Current.CancellationToken);
+
+        await RunHarnessAsync(fixture.Agent, session);
+        var after = GetFileMemoryState(fixture.Agent, session);
+
+        Assert.Equal(before.WorkingFolder, after.WorkingFolder);
+        Assert.True(await fixture.Store.FileExistsAsync($"{after.WorkingFolder}/project.md", TestContext.Current.CancellationToken));
+        Assert.Equal("Blue Parrot", await fixture.Store.ReadAsync($"{after.WorkingFolder}/project.md", TestContext.Current.CancellationToken));
+    }
+
+    [Fact]
+    public async Task FileMemory_IsolatedBetweenHarnessSessions()
+    {
+        await using var fixture = new FileMemoryHarnessFixture();
+        var sessionA = await fixture.Agent.CreateSessionAsync(TestContext.Current.CancellationToken);
+        var sessionB = await fixture.Agent.CreateSessionAsync(TestContext.Current.CancellationToken);
+
+        await RunHarnessAsync(fixture.Agent, sessionA);
+        await RunHarnessAsync(fixture.Agent, sessionB);
+        var stateA = GetFileMemoryState(fixture.Agent, sessionA);
+        var stateB = GetFileMemoryState(fixture.Agent, sessionB);
+        await fixture.Store.WriteAsync($"{stateA.WorkingFolder}/a.md", "A", TestContext.Current.CancellationToken);
+
+        Assert.NotEqual(stateA.WorkingFolder, stateB.WorkingFolder);
+        Assert.True(await fixture.Store.FileExistsAsync($"{stateA.WorkingFolder}/a.md", TestContext.Current.CancellationToken));
+        Assert.False(await fixture.Store.FileExistsAsync($"{stateB.WorkingFolder}/a.md", TestContext.Current.CancellationToken));
+    }
+
+    [Fact]
+    public async Task GetSessionStateAsync_ProjectsDescriptionsAndHidesFrameworkInternalMemoryFiles()
+    {
+        await using var harness = new FileMemoryHarnessFixture();
+        var session = await harness.Agent.CreateSessionAsync(TestContext.Current.CancellationToken);
+        await RunHarnessAsync(harness.Agent, session);
+        var memory = GetFileMemoryState(harness.Agent, session);
+        await harness.Store.WriteAsync($"{memory.WorkingFolder}/project.md", "Blue Parrot", TestContext.Current.CancellationToken);
+        await harness.Store.WriteAsync($"{memory.WorkingFolder}/project_description.md", "Project information", TestContext.Current.CancellationToken);
+
+        var fixture = CreateDirectFixture();
+        InstallDirectHarness(fixture.Service, harness.Agent, session, []);
+        SetPrivateField(fixture.Service, "_directFileMemoryStore", harness.Store);
+
+        var state = await fixture.Service.GetSessionStateAsync(TestContext.Current.CancellationToken);
+
+        var fileMemory = Assert.IsType<AgentSessionFileMemoryViewModel>(state!.FileMemory);
+        Assert.True(fileMemory.Enabled);
+        var entry = Assert.Single(fileMemory.Files);
+        Assert.Equal("project.md", entry.Name);
+        Assert.Equal("Project information", entry.Description);
+        Assert.DoesNotContain(fileMemory.Files, file => file.Name is "memories.md" or "project_description.md");
+    }
+
+    [Fact]
+    public async Task ClearFileMemoryAsync_ClearsOnlyTheActiveHarnessSession()
+    {
+        await using var harness = new FileMemoryHarnessFixture();
+        var sessionA = await harness.Agent.CreateSessionAsync(TestContext.Current.CancellationToken);
+        var sessionB = await harness.Agent.CreateSessionAsync(TestContext.Current.CancellationToken);
+        await RunHarnessAsync(harness.Agent, sessionA);
+        await RunHarnessAsync(harness.Agent, sessionB);
+        var stateA = GetFileMemoryState(harness.Agent, sessionA);
+        var stateB = GetFileMemoryState(harness.Agent, sessionB);
+        await harness.Store.WriteAsync($"{stateA.WorkingFolder}/a.md", "A", TestContext.Current.CancellationToken);
+        await harness.Store.WriteAsync($"{stateA.WorkingFolder}/a_description.md", "A description", TestContext.Current.CancellationToken);
+        await harness.Store.WriteAsync($"{stateB.WorkingFolder}/b.md", "B", TestContext.Current.CancellationToken);
+
+        var fixture = CreateDirectFixture();
+        InstallDirectHarness(fixture.Service, harness.Agent, sessionA, []);
+        SetPrivateField(fixture.Service, "_directFileMemoryStore", harness.Store);
+        await fixture.Service.ClearFileMemoryAsync(TestContext.Current.CancellationToken);
+
+        Assert.Empty(await harness.Store.ListChildrenAsync(stateA.WorkingFolder, TestContext.Current.CancellationToken));
+        Assert.True(await harness.Store.FileExistsAsync($"{stateB.WorkingFolder}/b.md", TestContext.Current.CancellationToken));
+    }
+
+    [Fact]
+    public async Task FileMemory_RunCompletionRaisesStateChangedAndRefreshesProjection()
+    {
+        var directory = Path.Combine(Path.GetTempPath(), $"ollamachat-file-memory-{Guid.NewGuid():N}");
+        try
+        {
+            var configuration = new ConfigurationBuilder()
+                .AddInMemoryCollection(new Dictionary<string, string?> { ["AgentFileMemory:RootPath"] = directory })
+                .Build();
+            var fixture = CreateDirectFixture(enableFileMemory: true, supportsFunctionCalling: true, configuration: configuration);
+            var stateChanged = 0;
+            fixture.Service.SessionStateChanged += () => stateChanged++;
+
+            await fixture.Service.StartAsync(fixture.Request, TestContext.Current.CancellationToken);
+            await fixture.Service.SendAsync("first", cancellationToken: TestContext.Current.CancellationToken);
+            var initial = await fixture.Service.GetSessionStateAsync(TestContext.Current.CancellationToken);
+            var workingFolder = Assert.IsType<AgentSessionFileMemoryViewModel>(initial!.FileMemory).WorkingFolder!;
+            var store = GetPrivateField<Microsoft.Agents.AI.AgentFileStore>(fixture.Service, "_directFileMemoryStore");
+            await store.WriteAsync($"{workingFolder}/project.md", "Blue Parrot", TestContext.Current.CancellationToken);
+            stateChanged = 0;
+
+            await fixture.Service.SendAsync("second", cancellationToken: TestContext.Current.CancellationToken);
+            var refreshed = await fixture.Service.GetSessionStateAsync(TestContext.Current.CancellationToken);
+
+            Assert.True(stateChanged > 0);
+            Assert.Contains(refreshed!.FileMemory!.Files, file => file.Name == "project.md");
         }
         finally
         {
@@ -991,13 +1121,33 @@ public sealed class UnifiedAgentRuntimeChatSessionServiceTests
             .SetValue(service, availableModes);
     }
 
+    private static async Task RunHarnessAsync(AIAgent agent, AgentSession session)
+    {
+        await foreach (var _ in agent.RunStreamingAsync(
+                           [new ChatMessage(ChatRole.User, "Initialize file memory.")],
+                           session,
+                           cancellationToken: TestContext.Current.CancellationToken))
+        {
+        }
+    }
+
+    private static FileMemoryState GetFileMemoryState(AIAgent agent, AgentSession session)
+    {
+        var provider = Assert.IsType<FileMemoryProvider>(agent.GetService<FileMemoryProvider>());
+        var stateKey = Assert.Single(provider.StateKeys);
+        Assert.True(session.StateBag.TryGetValue(stateKey, out FileMemoryState? state));
+        return Assert.IsType<FileMemoryState>(state);
+    }
+
     private static DirectFixture CreateDirectFixture(
         bool withSessionStateProviders = false,
         IReadOnlyList<string>? availableModes = null,
         IReadOnlyList<McpServerSessionBinding>? mcpBindings = null,
         ISandboxSessionFactory? sandboxSessionFactory = null,
         bool supportsSandbox = false,
-        bool enableFileMemory = false)
+        bool enableFileMemory = false,
+        bool supportsFunctionCalling = false,
+        IConfiguration? configuration = null)
     {
         var templateId = Guid.NewGuid();
         var serverId = Guid.NewGuid();
@@ -1031,8 +1181,10 @@ public sealed class UnifiedAgentRuntimeChatSessionServiceTests
             .ReturnsAsync(chatClient);
         var capabilities = new Mock<IModelCapabilityService>(MockBehavior.Strict);
         capabilities.Setup(service => service.SupportsFunctionCallingAsync(model, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(false);
+            .ReturnsAsync(supportsFunctionCalling);
         var tools = new Mock<IAppToolCatalog>(MockBehavior.Strict);
+        tools.Setup(catalog => catalog.ListToolsAsync(It.IsAny<McpClientRequestContext?>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync([]);
         var interaction = new Mock<IMcpUserInteractionService>(MockBehavior.Strict);
         var rag = new Mock<IKnowledgeSearchService>(MockBehavior.Strict);
         var todoProfiles = new Mock<ITodoProviderProfileService>(MockBehavior.Strict);
@@ -1065,7 +1217,8 @@ public sealed class UnifiedAgentRuntimeChatSessionServiceTests
             agentModeProfiles.Object,
             Options.Create(new AgenticToolInvocationPolicyOptions()),
             NullLogger<AgenticRuntimeAgentFactory>.Instance,
-            NullLoggerFactory.Instance);
+            NullLoggerFactory.Instance,
+            configuration: configuration);
         var service = new UnifiedAgentRuntimeChatSessionService(
             new StubAgentRunner([]),
             new StubDefinitionCatalog(supportsSandbox ? new AgentLaunchCapabilities { SupportsSandboxProfile = true } : null),
@@ -1143,6 +1296,39 @@ public sealed class UnifiedAgentRuntimeChatSessionServiceTests
         UnifiedAgentRuntimeChatSessionService Service,
         ChatEngineSessionStartRequest Request,
         RecordingChatClient ChatClient);
+
+#pragma warning disable MAAI001
+    private sealed class FileMemoryHarnessFixture : IAsyncDisposable
+    {
+        private readonly string _directory = Path.Combine(Path.GetTempPath(), $"ollamachat-file-memory-{Guid.NewGuid():N}");
+
+        public FileMemoryHarnessFixture()
+        {
+            Store = new FileSystemAgentFileStore(_directory);
+            Agent = new RecordingChatClient().AsHarnessAgent(new HarnessAgentOptions
+            {
+                DisableTodoProvider = true,
+                DisableAgentModeProvider = true,
+                DisableWebSearch = true,
+                DisableFileMemory = false,
+                FileMemoryStore = Store,
+                DisableAgentSkillsProvider = true,
+                DisableCompaction = true
+            });
+        }
+        public AIAgent Agent { get; }
+
+        public FileSystemAgentFileStore Store { get; }
+
+        public ValueTask DisposeAsync()
+        {
+            if (Directory.Exists(_directory))
+                Directory.Delete(_directory, recursive: true);
+
+            return ValueTask.CompletedTask;
+        }
+    }
+#pragma warning restore MAAI001
 
     private sealed class TestAgenticChatPage : AgenticChatPageBase
     {
