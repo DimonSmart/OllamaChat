@@ -16,7 +16,7 @@
 @inject ChatToolbarState ChatToolbar
 
 <MudDrawerContainer Class="session-state-drawer-container">
-    @if (SessionState is not null)
+    @if (SessionState is not null || showTrace)
     {
         <MudDrawer @bind-Open="showSessionState"
                    Anchor="Anchor.Right"
@@ -24,13 +24,14 @@
                    Fixed="true"
                    Overlay="false"
                    Elevation="8"
-                   Width="min(26rem, 100%)"
+                   Width="@(showSessionState && showTrace ? "min(72rem, 80vw)" : showTrace ? "min(44rem, 100%)" : "min(26rem, 100%)")"
                    Class="session-state-drawer">
-            @{
-                var fileAccess = SessionState.FileAccess;
-                var sandbox = SessionState.Sandbox;
-                var workspacePath = fileAccess?.WorkspacePath ?? sandbox?.WorkspacePath;
-            }
+            <div style="display: flex; height: 100%; min-width: 0;">
+            @if (showSessionState && SessionState is not null)
+            {
+            var fileAccess = SessionState.FileAccess;
+            var sandbox = SessionState.Sandbox;
+            var workspacePath = fileAccess?.WorkspacePath ?? sandbox?.WorkspacePath;
             <div class="session-state-drawer-layout">
                 <div class="session-state-drawer-header">
                     <MudText Typo="Typo.subtitle2">Session state</MudText>
@@ -145,6 +146,12 @@
                         </MudStack>
                     }
                 </div>
+            </div>
+            }
+            @if (showTrace)
+            {
+                <div style="flex: 1 1 38rem; min-width: 0; border-left: @(showSessionState ? "1px solid var(--mud-palette-lines-default)" : "none");"><HarnessTraceInspector /></div>
+            }
             </div>
         </MudDrawer>
     }
@@ -374,6 +381,7 @@
     public EventCallback<ToolApprovalDecision> OnToolApprovalDecision { get; set; }
 
     private bool showSessionState;
+    private bool showTrace;
     private bool isChangingAgentMode;
     private bool isRespondingToToolApproval;
     private IDialogReference? toolApprovalDialog;
@@ -384,8 +392,7 @@
 
     protected override void OnParametersSet()
     {
-        if (SessionState is null)
-            showSessionState = false;
+        if (SessionState is null) showSessionState = false;
 
         if (SessionState?.FileAccess is { } fileAccess && !isChangingWorkspace)
             workspaceInput = fileAccess.WorkspacePath;
@@ -422,10 +429,15 @@
         PublishToolbarState();
     }
 
+    private Task ToggleTraceAsync() { showTrace = !showTrace; PublishToolbarState(); return Task.CompletedTask; }
+
     private void PublishToolbarState() => ChatToolbar.Update(
         SessionState is not null,
         showSessionState,
+        true,
+        showTrace,
         ToggleSessionStateAsync,
+        ToggleTraceAsync,
         format => OnCopyChat.InvokeAsync(format));
 
     private async Task OnAgentModeChangedAsync(string mode)

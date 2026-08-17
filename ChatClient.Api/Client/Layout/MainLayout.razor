@@ -52,6 +52,10 @@
                                    OnClick="ToggleSessionStateAsync" />
                 </MudTooltip>
             }
+            @if (ChatToolbar.HasTrace)
+            {
+                <MudTooltip Text="Harness trace"><MudIconButton Icon="@Icons.Material.Filled.AccountTree" Size="Size.Small" AriaLabel="Harness trace" aria-expanded="@ChatToolbar.IsTraceOpen" Color="@(ChatToolbar.IsTraceOpen ? Color.Primary : Color.Default)" OnClick="ToggleTraceAsync" /></MudTooltip>
+            }
             <MudMenu Icon="@Icons.Material.Filled.ContentCopy" AnchorOrigin="Origin.TopRight" TransformOrigin="Origin.TopRight">
                 <MudMenuItem OnClick="@(() => ChatToolbar.CopyConversationAsync(ChatFormat.Text))">Copy as Text</MudMenuItem>
                 <MudMenuItem OnClick="@(() => ChatToolbar.CopyConversationAsync(ChatFormat.Markdown))">Copy as Markdown</MudMenuItem>
@@ -141,6 +145,7 @@
     {
         await ChatToolbar.ToggleSessionStateAsync();
     }
+    private async Task ToggleTraceAsync() => await ChatToolbar.ToggleTraceAsync();
 
     private bool IsOnChatPage()
     {

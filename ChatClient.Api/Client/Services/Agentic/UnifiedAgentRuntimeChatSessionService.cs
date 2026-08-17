@@ -21,7 +21,8 @@ public sealed class UnifiedAgentRuntimeChatSessionService(
     IAgentTemplateService agentTemplateService,
     ISandboxSessionFactory sandboxSessionFactory,
     AgenticRuntimeAgentFactory runtimeAgentFactory,
-    HarnessResponseEventProjector responseEventProjector) : IChatEngineSessionService, IAsyncDisposable
+    HarnessResponseEventProjector responseEventProjector,
+    HarnessTraceSession? harnessTraceSession = null) : IChatEngineSessionService, IAsyncDisposable
 {
     private readonly AppChat _chat = new();
     private readonly Dictionary<string, StreamingAppChatMessage> _activeStreamsByRuntimeMessageId =
@@ -299,6 +300,7 @@ public sealed class UnifiedAgentRuntimeChatSessionService(
 
     public async Task ResetAsync(CancellationToken cancellationToken = default)
     {
+        harnessTraceSession?.Clear();
         Task? activeRun;
         lock (_lifecycleLock)
         {
@@ -650,6 +652,7 @@ public sealed class UnifiedAgentRuntimeChatSessionService(
 
     public async Task RestoreHarnessSessionAsync(string snapshotJson, CancellationToken cancellationToken = default)
     {
+        harnessTraceSession?.Clear();
         HarnessSessionSnapshot snapshot;
         try
         { snapshot = JsonSerializer.Deserialize<HarnessSessionSnapshot>(snapshotJson) ?? throw new JsonException("The snapshot is empty."); }
@@ -909,6 +912,7 @@ public sealed class UnifiedAgentRuntimeChatSessionService(
         StreamingAppChatMessage? stream = null;
         var projection = responseEventProjector.CreateProjection();
         using var ragTurn = _directRuntimeDefinition?.RagRetrievalTraceSink?.BeginTurn(messageId);
+        using var traceRun = harnessTraceSession?.BeginRun(messageId);
 
         try
         {
@@ -995,6 +999,7 @@ public sealed class UnifiedAgentRuntimeChatSessionService(
         }
         catch (OperationCanceledException)
         {
+            traceRun?.Cancel();
             if (generation == Interlocked.Read(ref _generation))
             {
                 RequiresReset = true;
@@ -1004,6 +1009,7 @@ public sealed class UnifiedAgentRuntimeChatSessionService(
         }
         catch (Exception ex)
         {
+            traceRun?.Fail();
             if (generation == Interlocked.Read(ref _generation))
             {
                 RequiresReset = true;

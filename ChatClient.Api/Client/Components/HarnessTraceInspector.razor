@@ -1,0 +1,20 @@
+@using ChatClient.Api.Client.Services.Agentic
+@implements IDisposable
+@inject HarnessTraceSession TraceSession
+
+<div class="session-state-drawer-layout">
+    <div class="session-state-drawer-header"><MudText Typo="Typo.subtitle2">Trace (@TraceSession.Runs.Count)</MudText><MudButton Size="Size.Small" Variant="Variant.Text" OnClick="TraceSession.Clear">Clear</MudButton></div>
+    <div class="session-state-drawer-content">
+        @if (!TraceSession.Runs.Any()) { <MudText Typo="Typo.body2" Class="mud-text-secondary">No trace runs yet</MudText> }
+        @foreach (var run in TraceSession.Runs)
+        {
+            <MudPaper Class="pa-2 mb-2" Elevation="0"><MudText Typo="Typo.caption">Run @run.RunId[^8..] · @run.Status · @run.Spans.Count spans</MudText>
+            @if (run.IsTruncated) { <MudText Typo="Typo.caption" Color="Color.Warning">Trace truncated</MudText> }
+            @foreach (var span in run.Spans.OrderBy(x => x.StartedAt))
+            { <MudStack Row="true" Justify="Justify.SpaceBetween"><MudText Typo="Typo.caption" title="@span.SourceName">@span.DisplayName</MudText><MudText Typo="Typo.caption" Color="@(span.StatusCode == System.Diagnostics.ActivityStatusCode.Error ? Color.Error : Color.Default)">@(span.Duration?.ToString("g") ?? "Running")</MudText></MudStack> }
+            </MudPaper>
+        }
+    </div>
+</div>
+
+@code { protected override void OnInitialized() => TraceSession.Changed += Changed; private void Changed() => _ = InvokeAsync(StateHasChanged); public void Dispose() => TraceSession.Changed -= Changed; }

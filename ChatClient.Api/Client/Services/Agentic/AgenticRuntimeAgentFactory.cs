@@ -12,6 +12,7 @@ using Microsoft.Agents.AI.Tools.Shell;
 #pragma warning restore MAAI001
 using Microsoft.Extensions.AI;
 using ModelContextProtocol.Client;
+using ChatClient.Api.Diagnostics;
 
 #pragma warning disable MAAI001
 
@@ -545,6 +546,8 @@ public sealed class AgenticRuntimeAgentFactory(
 
         return new HarnessAgentOptions
         {
+            DisableOpenTelemetry = false,
+            OpenTelemetrySourceName = HarnessTelemetry.ActivitySourceName,
             Id = string.IsNullOrWhiteSpace(request.Agent.AgentId) ? null : request.Agent.AgentId.Trim(),
             Name = string.IsNullOrWhiteSpace(request.Agent.AgentName) ? null : request.Agent.AgentName.Trim(),
             Description = string.IsNullOrWhiteSpace(request.Agent.Summary) ? null : request.Agent.Summary.Trim(),

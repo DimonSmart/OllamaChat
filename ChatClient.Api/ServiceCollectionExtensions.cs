@@ -4,6 +4,7 @@ using ChatClient.Api.AgentWorkflows.GroupChat;
 using ChatClient.Api.AgentWorkflows.Runtime;
 using ChatClient.Api.Client.Services;
 using ChatClient.Api.Client.Services.Agentic;
+using ChatClient.Api.Diagnostics;
 using ChatClient.Api.Services;
 using ChatClient.Api.Services.AgentRuntime;
 using ChatClient.Api.Services.BuiltIn;
@@ -130,6 +131,8 @@ public static class ServiceCollectionExtensions
         services.AddHostedService(sp => sp.GetRequiredService<KnowledgeIndexBackgroundService>());
         services.AddScoped<IKnowledgeSearchService, KnowledgeSearchService>();
         services.AddScoped<ChatToolbarState>();
+        services.AddSingleton<HarnessTelemetryListenerHub>();
+        services.AddScoped<HarnessTraceSession>();
 
         return services;
     }
