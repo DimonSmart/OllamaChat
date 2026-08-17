@@ -202,6 +202,51 @@ public sealed class HarnessTraceSessionTests
     }
 
     [Fact]
+    public void MoreThanMaxEventsAreTruncated()
+    {
+        using var hub = new HarnessTelemetryListenerHub(NullLogger<HarnessTelemetryListenerHub>.Instance);
+        using var session = new HarnessTraceSession(hub, NullLogger<HarnessTraceSession>.Instance);
+        using var run = session.TryBeginRun("run");
+        using (var span = HarnessSource.StartActivity("events"))
+        {
+            for (var index = 0; index < HarnessTraceSession.MaxEventsPerSpan + 20; index++)
+            {
+                var tags = new ActivityTagsCollection { { "event_index", index } };
+                if (index == 0)
+                {
+                    tags.Add("api_key", "secret");
+                    tags.Add("payload", new string('x', HarnessTraceSession.MaxAttributeValueLength + 1));
+                }
+                span!.AddEvent(new ActivityEvent($"event-{index}", tags: tags));
+            }
+        }
+
+        var snapshot = Assert.Single(Assert.Single(session.GetSnapshot().Runs).Spans);
+        Assert.Equal(HarnessTraceSession.MaxEventsPerSpan, snapshot.Events.Count);
+        Assert.True(snapshot.EventsTruncated);
+        Assert.Equal(Enumerable.Range(0, HarnessTraceSession.MaxEventsPerSpan).Select(index => $"event-{index}"), snapshot.Events.Select(item => item.Name));
+        Assert.DoesNotContain(snapshot.Events, item => item.Name == $"event-{HarnessTraceSession.MaxEventsPerSpan}");
+        var firstEvent = snapshot.Events[0];
+        Assert.Contains(firstEvent.Tags, tag => tag is { Key: "api_key", Value: "[REDACTED]" });
+        Assert.Contains(firstEvent.Tags, tag => tag.Key == "payload" && tag.Value.EndsWith('…'));
+    }
+
+    [Fact]
+    public void ExactlyMaxEventsAreNotMarkedAsTruncated()
+    {
+        using var hub = new HarnessTelemetryListenerHub(NullLogger<HarnessTelemetryListenerHub>.Instance);
+        using var session = new HarnessTraceSession(hub, NullLogger<HarnessTraceSession>.Instance);
+        using var run = session.TryBeginRun("run");
+        using (var span = HarnessSource.StartActivity("events"))
+            for (var index = 0; index < HarnessTraceSession.MaxEventsPerSpan; index++)
+                span!.AddEvent(new ActivityEvent($"event-{index}"));
+
+        var snapshot = Assert.Single(Assert.Single(session.GetSnapshot().Runs).Spans);
+        Assert.Equal(HarnessTraceSession.MaxEventsPerSpan, snapshot.Events.Count);
+        Assert.False(snapshot.EventsTruncated);
+    }
+
+    [Fact]
     public void DisposeRemovesCaptureRoute()
     {
         using var hub = new HarnessTelemetryListenerHub(NullLogger<HarnessTelemetryListenerHub>.Instance);

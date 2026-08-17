@@ -7,7 +7,7 @@ public enum HarnessTraceRunStatus { Running, Completed, Canceled, Failed }
 public sealed record HarnessTraceAttribute(string Key, string Value);
 public sealed record HarnessTraceEventSnapshot(string Name, DateTimeOffset Timestamp, IReadOnlyList<HarnessTraceAttribute> Tags);
 public sealed record HarnessTraceLinkSnapshot(string TraceId, string SpanId, ActivityTraceFlags TraceFlags, IReadOnlyList<HarnessTraceAttribute> Tags);
-public sealed record HarnessTraceSpanSnapshot(string TraceId, string SpanId, string ParentSpanId, string DisplayName, string SourceName, ActivityKind Kind, DateTimeOffset StartedAt, TimeSpan? Duration, ActivityStatusCode StatusCode, string? StatusDescription, IReadOnlyList<HarnessTraceAttribute> Tags, IReadOnlyList<HarnessTraceEventSnapshot> Events, IReadOnlyList<HarnessTraceLinkSnapshot> Links);
+public sealed record HarnessTraceSpanSnapshot(string TraceId, string SpanId, string ParentSpanId, string DisplayName, string SourceName, ActivityKind Kind, DateTimeOffset StartedAt, TimeSpan? Duration, ActivityStatusCode StatusCode, string? StatusDescription, IReadOnlyList<HarnessTraceAttribute> Tags, IReadOnlyList<HarnessTraceEventSnapshot> Events, bool EventsTruncated, IReadOnlyList<HarnessTraceLinkSnapshot> Links);
 public sealed record HarnessTraceRunSnapshot(string RunId, DateTimeOffset StartedAt, DateTimeOffset? CompletedAt, HarnessTraceRunStatus Status, bool IsTruncated, string TraceId, IReadOnlyList<string> TraceIds, IReadOnlyList<HarnessTraceSpanSnapshot> Spans);
 public sealed record HarnessTraceSessionSnapshot(IReadOnlyList<HarnessTraceRunSnapshot> Runs);
 
@@ -15,7 +15,7 @@ public sealed class HarnessTraceSession : IDisposable
 {
     private readonly HarnessTelemetryListenerHub hub;
     private readonly ILogger<HarnessTraceSession> logger;
-    public const int MaxRunsPerSession = 20, MaxSpansPerRun = 1000, MaxAttributeValueLength = 4096;
+    public const int MaxRunsPerSession = 20, MaxSpansPerRun = 1000, MaxEventsPerSpan = 100, MaxAttributeValueLength = 4096;
     private static readonly ActivitySource CaptureSource = new(HarnessTelemetry.CaptureSourceName);
     private readonly object _gate = new();
     private readonly Dictionary<string, MutableRun> _runsById = new(StringComparer.Ordinal);
@@ -186,7 +186,10 @@ public sealed class HarnessTraceSession : IDisposable
         public TimeSpan? Duration { get; private set; }
         public ActivityStatusCode StatusCode { get; private set; }
         public string? StatusDescription { get; private set; }
-        public IReadOnlyList<HarnessTraceAttribute> Tags { get; private set; } = []; public IReadOnlyList<HarnessTraceEventSnapshot> Events { get; private set; } = []; public IReadOnlyList<HarnessTraceLinkSnapshot> Links { get; private set; } = [];
+        public IReadOnlyList<HarnessTraceAttribute> Tags { get; private set; } = [];
+        public IReadOnlyList<HarnessTraceEventSnapshot> Events { get; private set; } = [];
+        public bool EventsTruncated { get; private set; }
+        public IReadOnlyList<HarnessTraceLinkSnapshot> Links { get; private set; } = [];
         public void UpdateFinal(Activity activity)
         {
             DisplayName = activity.DisplayName;
@@ -194,10 +197,12 @@ public sealed class HarnessTraceSession : IDisposable
             StatusCode = activity.Status;
             StatusDescription = activity.StatusDescription;
             Tags = Attributes(activity.TagObjects);
-            Events = activity.Events.Select(e => new HarnessTraceEventSnapshot(e.Name, e.Timestamp, Attributes(e.Tags))).ToArray();
+            var events = activity.Events.Take(MaxEventsPerSpan + 1).ToArray();
+            EventsTruncated = events.Length > MaxEventsPerSpan;
+            Events = events.Take(MaxEventsPerSpan).Select(e => new HarnessTraceEventSnapshot(e.Name, e.Timestamp, Attributes(e.Tags))).ToArray();
             Links = activity.Links.Select(link => new HarnessTraceLinkSnapshot(link.Context.TraceId.ToString(), link.Context.SpanId.ToString(), link.Context.TraceFlags, Attributes(link.Tags))).ToArray();
         }
-        public HarnessTraceSpanSnapshot ToSnapshot() => new(TraceId, SpanId, ParentSpanId, DisplayName, SourceName, Kind, StartedAt, Duration, StatusCode, StatusDescription, Tags.ToArray(), Events.ToArray(), Links.ToArray());
+        public HarnessTraceSpanSnapshot ToSnapshot() => new(TraceId, SpanId, ParentSpanId, DisplayName, SourceName, Kind, StartedAt, Duration, StatusCode, StatusDescription, Tags.ToArray(), Events.ToArray(), EventsTruncated, Links.ToArray());
         private static IReadOnlyList<HarnessTraceAttribute> Attributes(IEnumerable<KeyValuePair<string, object?>> values) => values.Select(value => new HarnessTraceAttribute(value.Key, Clean(value.Key, value.Value?.ToString() ?? string.Empty))).ToArray();
     }
     private static string GetSpanKey(Activity activity) => $"{activity.TraceId}/{activity.SpanId}";

@@ -58,6 +58,7 @@
         builder.OpenElement(sequence++, "div"); builder.AddContent(sequence++, $"Trace ID: {span.TraceId} · Span ID: {span.SpanId} · Parent Span ID: {span.ParentSpanId}"); builder.CloseElement();
         AddSection(builder, ref sequence, "Attributes", span.Tags.Select(tag => $"{tag.Key}: {tag.Value}"));
         AddSection(builder, ref sequence, "Events", span.Events.SelectMany(item => new[] { $"{item.Timestamp.LocalDateTime:g} · {item.Name}" }.Concat(item.Tags.Select(tag => $"  {tag.Key}: {tag.Value}"))));
+        if (span.EventsTruncated) { builder.OpenElement(sequence++, "div"); builder.AddAttribute(sequence++, "class", "mud-text-warning"); builder.AddContent(sequence++, $"Events truncated — showing first {HarnessTraceSession.MaxEventsPerSpan}"); builder.CloseElement(); }
         AddSection(builder, ref sequence, "Links", span.Links.SelectMany(link => new[] { $"{link.TraceId} / {link.SpanId} · {link.TraceFlags}" }.Concat(link.Tags.Select(tag => $"  {tag.Key}: {tag.Value}"))));
         builder.CloseElement();
     };
