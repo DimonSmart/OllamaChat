@@ -197,11 +197,6 @@ public sealed class UnifiedAgentRuntimeChatSessionService(
 
         var todoProvider = agent.GetService<TodoProvider>();
         var modeProvider = agent.GetService<AgentModeProvider>();
-        if (todoProvider is null && modeProvider is null && _directFileAccessStore is null && _directFileMemoryStore is null && sandboxSession is null && _directCompaction is null && _directSkills.Count == 0 && _directSkillDiagnostics.Count == 0 && _directBackgroundAgents.Count == 0)
-        {
-            return null;
-        }
-
         var todos = todoProvider is null
             ? []
             : (await todoProvider.GetAllTodosAsync(session, cancellationToken))
@@ -260,7 +255,7 @@ public sealed class UnifiedAgentRuntimeChatSessionService(
     public async Task<string?> ReadFileMemoryAsync(string name, CancellationToken cancellationToken = default)
     {
         var state = await GetFileMemoryStateAsync(_directAgent, _directSession, cancellationToken);
-        return state is null || _directFileMemoryStore is null || !state.Files.Any(file => string.Equals(file.Name, name, StringComparison.Ordinal))
+        return state is null || !state.Enabled || string.IsNullOrWhiteSpace(state.WorkingFolder) || _directFileMemoryStore is null || !state.Files.Any(file => string.Equals(file.Name, name, StringComparison.Ordinal))
             ? null
             : await _directFileMemoryStore.ReadAsync(CombineMemoryPath(state.WorkingFolder, name), cancellationToken);
     }
@@ -268,7 +263,7 @@ public sealed class UnifiedAgentRuntimeChatSessionService(
     public async Task ClearFileMemoryAsync(CancellationToken cancellationToken = default)
     {
         var state = await GetFileMemoryStateAsync(_directAgent, _directSession, cancellationToken);
-        if (state is null || _directFileMemoryStore is null)
+        if (state is null || !state.Enabled || string.IsNullOrWhiteSpace(state.WorkingFolder) || _directFileMemoryStore is null)
             return;
 
         foreach (var entry in await _directFileMemoryStore.ListChildrenAsync(state.WorkingFolder, cancellationToken))
@@ -1246,18 +1241,32 @@ public sealed class UnifiedAgentRuntimeChatSessionService(
         AgentSession? session,
         CancellationToken cancellationToken)
     {
-        if (agent?.GetService<FileMemoryProvider>() is not { } provider || session is null || _directFileMemoryStore is null)
+        if (agent is null || session is null)
             return null;
+
+        if (_directFileMemoryStore is null)
+            return new AgentSessionFileMemoryViewModel(false, null, []);
+
+        if (agent.GetService<FileMemoryProvider>() is not { } provider)
+            return new AgentSessionFileMemoryViewModel(true, null, []);
 
         var stateKey = provider.StateKeys.SingleOrDefault();
         if (string.IsNullOrWhiteSpace(stateKey) || !session.StateBag.TryGetValue(stateKey, out FileMemoryState? state))
-            return new AgentSessionFileMemoryViewModel(string.Empty, []);
+            return new AgentSessionFileMemoryViewModel(true, null, []);
 
-        var files = (await _directFileMemoryStore.ListChildrenAsync(state.WorkingFolder, cancellationToken))
-            .Where(entry => entry.Type == FileStoreEntry.File && !IsInternalMemoryFile(entry.Name))
-            .Select(static entry => new AgentSessionFileMemoryEntryViewModel(entry.Name, null))
-            .ToList();
-        return new AgentSessionFileMemoryViewModel(state.WorkingFolder, files);
+        var entries = await _directFileMemoryStore.ListChildrenAsync(state.WorkingFolder, cancellationToken);
+        var entryNames = entries.Where(entry => entry.Type == FileStoreEntry.File).Select(entry => entry.Name)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var files = new List<AgentSessionFileMemoryEntryViewModel>();
+        foreach (var entry in entries.Where(entry => entry.Type == FileStoreEntry.File && !IsInternalMemoryFile(entry.Name)))
+        {
+            var descriptionFileName = GetDescriptionFileName(entry.Name);
+            var description = entryNames.Contains(descriptionFileName)
+                ? await _directFileMemoryStore.ReadAsync(CombineMemoryPath(state.WorkingFolder, descriptionFileName), cancellationToken)
+                : null;
+            files.Add(new AgentSessionFileMemoryEntryViewModel(entry.Name, description));
+        }
+        return new AgentSessionFileMemoryViewModel(true, state.WorkingFolder, files);
     }
 
     private static string CombineMemoryPath(string workingFolder, string name) =>
@@ -1266,6 +1275,12 @@ public sealed class UnifiedAgentRuntimeChatSessionService(
     private static bool IsInternalMemoryFile(string name) =>
         name.Equals("memories.md", StringComparison.OrdinalIgnoreCase) ||
         name.EndsWith("_description.md", StringComparison.OrdinalIgnoreCase);
+
+    internal static string GetDescriptionFileName(string memoryFileName)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(memoryFileName);
+        return $"{Path.GetFileNameWithoutExtension(memoryFileName)}_description.md";
+    }
 
     internal static bool HaveSameWorkspace(string fileAccessWorkspace, string sandboxWorkspace)
     {

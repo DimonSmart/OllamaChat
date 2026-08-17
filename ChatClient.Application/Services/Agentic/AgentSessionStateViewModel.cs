@@ -40,7 +40,8 @@ public sealed record AgentSessionFileAccessViewModel(
     bool RequireWriteApproval);
 
 public sealed record AgentSessionFileMemoryViewModel(
-    string WorkingFolder,
+    bool Enabled,
+    string? WorkingFolder,
     IReadOnlyList<AgentSessionFileMemoryEntryViewModel> Files);
 
 public sealed record AgentSessionFileMemoryEntryViewModel(string Name, string? Description);

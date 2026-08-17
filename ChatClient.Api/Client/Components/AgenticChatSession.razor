@@ -140,9 +140,13 @@
                         <MudStack Class="mt-2" Spacing="1">
                             <MudStack Row="true" Justify="Justify.SpaceBetween" AlignItems="AlignItems.Center">
                                 <MudText Typo="Typo.caption" Class="mud-text-secondary">File Memory</MudText>
-                                <MudButton Size="Size.Small" Variant="Variant.Text" Disabled="@(fileMemory.Files.Count == 0 || IsLlmAnswering)" OnClick="OnClearFileMemory">Clear memory</MudButton>
+                                <MudButton Size="Size.Small" Variant="Variant.Text" Disabled="@(!fileMemory.Enabled || fileMemory.Files.Count == 0 || IsLlmAnswering)" OnClick="OnClearFileMemory">Clear memory</MudButton>
                             </MudStack>
-                            @if (fileMemory.Files.Count == 0)
+                            @if (!fileMemory.Enabled)
+                            {
+                                <MudText Typo="Typo.caption">Disabled</MudText>
+                            }
+                            else if (fileMemory.Files.Count == 0)
                             {
                                 <MudText Typo="Typo.caption">No memories yet</MudText>
                             }

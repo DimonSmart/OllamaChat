@@ -20,8 +20,11 @@ using AgentModeProviderOptions = Microsoft.Agents.AI.AgentModeProviderOptions;
 using AgentSession = Microsoft.Agents.AI.AgentSession;
 using AIAgent = Microsoft.Agents.AI.AIAgent;
 using BackgroundAgentsProvider = Microsoft.Agents.AI.BackgroundAgentsProvider;
+using FileSystemAgentFileStore = Microsoft.Agents.AI.FileSystemAgentFileStore;
 using HarnessAgentOptions = Microsoft.Agents.AI.HarnessAgentOptions;
 using TodoProvider = Microsoft.Agents.AI.TodoProvider;
+
+#pragma warning disable MAAI001
 
 namespace ChatClient.Tests;
 
@@ -106,6 +109,72 @@ public sealed class UnifiedAgentRuntimeChatSessionServiceTests
 
         Assert.False(fixture.Service.HasActiveSession);
         Assert.Null(fixture.Service.ActiveSession);
+    }
+
+    [Fact]
+    public async Task DirectHarness_FileMemoryWithoutFunctionCalling_FailsBeforeRun()
+    {
+        var fixture = CreateDirectFixture(enableFileMemory: true);
+
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(
+            () => fixture.Service.StartAsync(fixture.Request, TestContext.Current.CancellationToken));
+
+        Assert.Contains("function calling required by File Memory", exception.Message);
+        Assert.Empty(fixture.ChatClient.Requests);
+    }
+
+    [Fact]
+    public async Task GetSessionStateAsync_DistinguishesDisabledFromEnabledEmptyFileMemory()
+    {
+        var fixture = CreateDirectFixture();
+        var disabledAgent = new RecordingChatClient().AsHarnessAgent(new HarnessAgentOptions
+        {
+            DisableTodoProvider = true,
+            DisableAgentModeProvider = true,
+            DisableWebSearch = true,
+            DisableFileMemory = true,
+            DisableAgentSkillsProvider = true,
+            DisableCompaction = true
+        });
+        var disabledSession = await disabledAgent.CreateSessionAsync(TestContext.Current.CancellationToken);
+        InstallDirectHarness(fixture.Service, disabledAgent, disabledSession, []);
+
+        var disabled = await fixture.Service.GetSessionStateAsync(TestContext.Current.CancellationToken);
+
+        Assert.NotNull(disabled?.FileMemory);
+        Assert.False(disabled!.FileMemory!.Enabled);
+        Assert.Empty(disabled.FileMemory.Files);
+
+        var directory = Path.Combine(Path.GetTempPath(), $"ollamachat-file-memory-{Guid.NewGuid():N}");
+        try
+        {
+            var store = new FileSystemAgentFileStore(directory);
+            var enabledAgent = new RecordingChatClient().AsHarnessAgent(new HarnessAgentOptions
+            {
+                DisableTodoProvider = true,
+                DisableAgentModeProvider = true,
+                DisableWebSearch = true,
+                DisableFileMemory = false,
+                FileMemoryStore = store,
+                DisableAgentSkillsProvider = true,
+                DisableCompaction = true
+            });
+            var enabledSession = await enabledAgent.CreateSessionAsync(TestContext.Current.CancellationToken);
+            InstallDirectHarness(fixture.Service, enabledAgent, enabledSession, []);
+            SetPrivateField(fixture.Service, "_directFileMemoryStore", store);
+
+            var enabled = await fixture.Service.GetSessionStateAsync(TestContext.Current.CancellationToken);
+
+            Assert.NotNull(enabled?.FileMemory);
+            Assert.True(enabled!.FileMemory!.Enabled);
+            Assert.Empty(enabled.FileMemory.Files);
+
+        }
+        finally
+        {
+            if (Directory.Exists(directory))
+                Directory.Delete(directory, recursive: true);
+        }
     }
 
     [Fact]
@@ -567,13 +636,15 @@ public sealed class UnifiedAgentRuntimeChatSessionServiceTests
     }
 
     [Fact]
-    public async Task GetSessionStateAsync_ReturnsNullForDirectAgentWithoutProviders()
+    public async Task GetSessionStateAsync_ShowsDisabledFileMemoryForDirectAgentWithoutProviders()
     {
         var fixture = CreateDirectFixture();
 
         await fixture.Service.StartAsync(fixture.Request, cancellationToken: TestContext.Current.CancellationToken);
 
-        Assert.Null(await fixture.Service.GetSessionStateAsync(cancellationToken: TestContext.Current.CancellationToken));
+        var state = await fixture.Service.GetSessionStateAsync(cancellationToken: TestContext.Current.CancellationToken);
+
+        Assert.False(state!.FileMemory!.Enabled);
     }
 
     [Fact]
@@ -925,7 +996,8 @@ public sealed class UnifiedAgentRuntimeChatSessionServiceTests
         IReadOnlyList<string>? availableModes = null,
         IReadOnlyList<McpServerSessionBinding>? mcpBindings = null,
         ISandboxSessionFactory? sandboxSessionFactory = null,
-        bool supportsSandbox = false)
+        bool supportsSandbox = false,
+        bool enableFileMemory = false)
     {
         var templateId = Guid.NewGuid();
         var serverId = Guid.NewGuid();
@@ -935,7 +1007,8 @@ public sealed class UnifiedAgentRuntimeChatSessionServiceTests
             AgentName = "Test Agent",
             Content = "Answer deterministically.",
             Temperature = 0.35,
-            RepeatPenalty = 1.15
+            RepeatPenalty = 1.15,
+            EnableFileMemory = enableFileMemory
         };
         if (withSessionStateProviders || availableModes is not null)
         {
@@ -1675,3 +1748,5 @@ public sealed class UnifiedAgentRuntimeChatSessionServiceTests
             Task.FromResult(new SandboxCommandResult(string.Empty, string.Empty, 0, false));
     }
 }
+
+#pragma warning restore MAAI001

@@ -158,6 +158,11 @@ public sealed class AgenticRuntimeAgentFactory(
                 throw new InvalidOperationException(
                     $"Model '{request.ResolvedModel.ModelName}' does not support function calling required by Background Agents.");
             }
+            if (request.Agent.EnableFileMemory && !supportsFunctions)
+            {
+                throw new InvalidOperationException(
+                    $"Model '{request.ResolvedModel.ModelName}' does not support function calling required by File Memory.");
+            }
             var configuredKnowledgeStoreIds = request.Agent.KnowledgeStoreIds
                 .Where(id => id != Guid.Empty)
                 .Distinct()
