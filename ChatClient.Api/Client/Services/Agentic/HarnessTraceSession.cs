@@ -39,29 +39,52 @@ public sealed class HarnessTraceSession : IDisposable
 
     public HarnessTraceRunScope? TryBeginRun(string runId)
     {
+        Activity? root = null;
+        MutableRun? run = null;
+        IDisposable? correlation = null;
+        var registered = false;
+        var added = false;
         try
         {
             if (_disposed)
                 return null;
             // A synthetic parent context gives the capture root a fresh trace without inheriting Activity.Current.
-            var root = CaptureSource.StartActivity("HarnessRun", ActivityKind.Internal,
+            root = CaptureSource.StartActivity("HarnessRun", ActivityKind.Internal,
                 new ActivityContext(ActivityTraceId.CreateRandom(), ActivitySpanId.CreateRandom(), ActivityTraceFlags.Recorded));
             if (root is null)
             { logger.LogWarning("Harness trace capture is unavailable; continuing without diagnostics."); return null; }
-            var run = new MutableRun(runId, DateTimeOffset.UtcNow, root.TraceId.ToString());
+            run = new MutableRun(runId, DateTimeOffset.UtcNow, root.TraceId.ToString());
             lock (_gate)
             {
                 if (_disposed)
                 { root.Dispose(); return null; }
                 _runsById.Add(run.RunId, run);
+                added = true;
                 TrimRuns();
             }
             hub.Register(root.TraceId, this, run.RunId);
-            var correlation = hub.Activate(this, run.RunId);
+            registered = true;
+            correlation = hub.Activate(this, run.RunId);
             NotifyLater();
             return new(this, root, run, correlation);
         }
-        catch (Exception ex) { logger.LogWarning(ex, "Could not start Harness trace capture; continuing without diagnostics."); return null; }
+        catch (Exception ex)
+        {
+            correlation?.Dispose();
+            if (registered && run is not null)
+                hub.UnregisterRun(this, run.RunId);
+            if (added && run is not null)
+                lock (_gate)
+                    if (_runsById.TryGetValue(run.RunId, out var recordedRun) && ReferenceEquals(recordedRun, run))
+                        _runsById.Remove(run.RunId);
+            if (root is not null)
+            {
+                root.Stop();
+                root.Dispose();
+            }
+            logger.LogWarning(ex, "Could not start Harness trace capture; continuing without diagnostics.");
+            return null;
+        }
     }
 
     internal bool TryBindTrace(string runId, string traceId)
@@ -83,13 +106,13 @@ public sealed class HarnessTraceSession : IDisposable
             {
                 if (_disposed || !_runsById.TryGetValue(runId, out var run))
                     return;
-                var spanKey = $"{activity.TraceId}/{activity.SpanId}";
+                var spanKey = GetSpanKey(activity);
                 if (!run.Spans.TryGetValue(spanKey, out var span))
                 {
                     if (run.Spans.Count >= MaxSpansPerRun)
                     { run.IsTruncated = true; return; }
                     span = new(activity);
-                    run.Spans.Add(span.SpanId, span);
+                    run.Spans.Add(spanKey, span);
                 }
                 if (stopped)
                     span.UpdateFinal(activity);
@@ -124,8 +147,7 @@ public sealed class HarnessTraceSession : IDisposable
     }
     private void UnregisterRun(MutableRun run)
     {
-        foreach (var traceId in run.TraceIds)
-            hub.Unregister(ActivityTraceId.CreateFromString(traceId), this, run.RunId);
+        hub.UnregisterRun(this, run.RunId);
     }
     private void NotifyLater() { if (Interlocked.Exchange(ref _notificationPending, 1) == 0) _notificationTimer.Change(TimeSpan.FromMilliseconds(100), Timeout.InfiniteTimeSpan); }
     private void NotifyNow() { _notificationTimer.Change(Timeout.InfiniteTimeSpan, Timeout.InfiniteTimeSpan); Interlocked.Exchange(ref _notificationPending, 0); RaiseChanged(); }
@@ -153,8 +175,7 @@ public sealed class HarnessTraceSession : IDisposable
     }
     internal sealed class MutableSpan
     {
-        private readonly Activity activity;
-        public MutableSpan(Activity activity) { this.activity = activity; TraceId = activity.TraceId.ToString(); SpanId = activity.SpanId.ToString(); ParentSpanId = activity.ParentSpanId.ToString(); SourceName = activity.Source.Name; Kind = activity.Kind; StartedAt = activity.StartTimeUtc; DisplayName = activity.DisplayName; }
+        public MutableSpan(Activity activity) { TraceId = activity.TraceId.ToString(); SpanId = activity.SpanId.ToString(); ParentSpanId = activity.ParentSpanId.ToString(); SourceName = activity.Source.Name; Kind = activity.Kind; StartedAt = activity.StartTimeUtc; DisplayName = activity.DisplayName; }
         public string TraceId { get; }
         public string SpanId { get; }
         public string ParentSpanId { get; }
@@ -166,9 +187,19 @@ public sealed class HarnessTraceSession : IDisposable
         public ActivityStatusCode StatusCode { get; private set; }
         public string? StatusDescription { get; private set; }
         public IReadOnlyList<HarnessTraceAttribute> Tags { get; private set; } = []; public IReadOnlyList<HarnessTraceEventSnapshot> Events { get; private set; } = []; public IReadOnlyList<HarnessTraceLinkSnapshot> Links { get; private set; } = [];
-        public void UpdateFinal(Activity activity) { DisplayName = activity.DisplayName; Duration = activity.Duration; StatusCode = activity.Status; StatusDescription = activity.StatusDescription; Tags = Attributes(activity.TagObjects); Events = activity.Events.Select(e => new HarnessTraceEventSnapshot(e.Name, e.Timestamp, Attributes(e.Tags))).ToArray(); Links = activity.Links.Select(link => new HarnessTraceLinkSnapshot(link.Context.TraceId.ToString(), link.Context.SpanId.ToString(), link.Context.TraceFlags, Attributes(link.Tags))).ToArray(); }
-        public HarnessTraceSpanSnapshot ToSnapshot() { UpdateFinal(activity); return new(TraceId, SpanId, ParentSpanId, DisplayName, SourceName, Kind, StartedAt, Duration, StatusCode, StatusDescription, Tags.ToArray(), Events.ToArray(), Links.ToArray()); }
+        public void UpdateFinal(Activity activity)
+        {
+            DisplayName = activity.DisplayName;
+            Duration = activity.Duration;
+            StatusCode = activity.Status;
+            StatusDescription = activity.StatusDescription;
+            Tags = Attributes(activity.TagObjects);
+            Events = activity.Events.Select(e => new HarnessTraceEventSnapshot(e.Name, e.Timestamp, Attributes(e.Tags))).ToArray();
+            Links = activity.Links.Select(link => new HarnessTraceLinkSnapshot(link.Context.TraceId.ToString(), link.Context.SpanId.ToString(), link.Context.TraceFlags, Attributes(link.Tags))).ToArray();
+        }
+        public HarnessTraceSpanSnapshot ToSnapshot() => new(TraceId, SpanId, ParentSpanId, DisplayName, SourceName, Kind, StartedAt, Duration, StatusCode, StatusDescription, Tags.ToArray(), Events.ToArray(), Links.ToArray());
         private static IReadOnlyList<HarnessTraceAttribute> Attributes(IEnumerable<KeyValuePair<string, object?>> values) => values.Select(value => new HarnessTraceAttribute(value.Key, Clean(value.Key, value.Value?.ToString() ?? string.Empty))).ToArray();
     }
+    private static string GetSpanKey(Activity activity) => $"{activity.TraceId}/{activity.SpanId}";
     private static string Clean(string key, string value) { string[] sensitive = ["authorization", "api-key", "api_key", "apikey", "token", "password", "passwd", "secret", "cookie", "connectionstring", "connection_string"]; return sensitive.Any(word => key.Contains(word, StringComparison.OrdinalIgnoreCase)) ? "[REDACTED]" : value.Length > MaxAttributeValueLength ? value[..MaxAttributeValueLength] + "…" : value; }
 }

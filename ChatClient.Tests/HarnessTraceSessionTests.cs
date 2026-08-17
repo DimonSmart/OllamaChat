@@ -25,14 +25,18 @@ public sealed class HarnessTraceSessionTests
     }
 
     [Fact]
-    public void FinalActivitySnapshotContainsMutableTelemetryData()
+    public void SpanLifecyclePersistsFinalTelemetryWithoutRetainingActivity()
     {
         using var hub = new HarnessTelemetryListenerHub(NullLogger<HarnessTelemetryListenerHub>.Instance);
         using var session = new HarnessTraceSession(hub, NullLogger<HarnessTraceSession>.Instance);
         using var run = session.TryBeginRun("run");
+        string? spanId = null;
         using (var span = HarnessSource.StartActivity("initial", ActivityKind.Client))
         {
             Assert.NotNull(span);
+            var running = Assert.Single(Assert.Single(session.GetSnapshot().Runs).Spans);
+            Assert.Null(running.Duration);
+            spanId = running.SpanId;
             span!.DisplayName = "final";
             span.SetTag("gen_ai.operation.name", "chat");
             span.SetTag("api_key", "secret");
@@ -42,7 +46,9 @@ public sealed class HarnessTraceSessionTests
         }
 
         var spanSnapshot = Assert.Single(Assert.Single(session.GetSnapshot().Runs).Spans);
+        Assert.Equal(spanId, spanSnapshot.SpanId);
         Assert.Equal("final", spanSnapshot.DisplayName);
+        Assert.NotNull(spanSnapshot.Duration);
         Assert.Equal(ActivityStatusCode.Error, spanSnapshot.StatusCode);
         Assert.Equal("failure", spanSnapshot.StatusDescription);
         Assert.Contains(spanSnapshot.Tags, tag => tag is { Key: "api_key", Value: "[REDACTED]" });
@@ -99,6 +105,8 @@ public sealed class HarnessTraceSessionTests
         using var run = session.TryBeginRun("run");
         var traceId = Assert.Single(session.GetSnapshot().Runs).TraceId;
         session.Clear();
+        Assert.Equal(0, hub.RouteCount);
+        Assert.Equal(0, hub.SpanRouteCount);
         using var late = HarnessSource.StartActivity("late", ActivityKind.Internal, new ActivityContext(ActivityTraceId.CreateFromString(traceId), ActivitySpanId.CreateRandom(), ActivityTraceFlags.Recorded));
         Assert.Empty(session.GetSnapshot().Runs);
     }
@@ -117,6 +125,56 @@ public sealed class HarnessTraceSessionTests
         var runs = session.GetSnapshot().Runs;
         Assert.Equal(HarnessTraceSession.MaxRunsPerSession, runs.Count);
         Assert.Equal(HarnessTraceRunStatus.Canceled, runs[0].Status);
+    }
+
+    [Fact]
+    public void CompletedAndFailedRunStatusesAreReported()
+    {
+        using var hub = new HarnessTelemetryListenerHub(NullLogger<HarnessTelemetryListenerHub>.Instance);
+        using var session = new HarnessTraceSession(hub, NullLogger<HarnessTraceSession>.Instance);
+        using (session.TryBeginRun("completed"))
+        { }
+        using (var failed = session.TryBeginRun("failed"))
+            failed!.Fail();
+
+        var runs = session.GetSnapshot().Runs;
+        Assert.Equal(HarnessTraceRunStatus.Completed, Assert.Single(runs, run => run.RunId == "completed").Status);
+        Assert.Equal(HarnessTraceRunStatus.Failed, Assert.Single(runs, run => run.RunId == "failed").Status);
+    }
+
+    [Fact]
+    public void NotificationsAreCoalesced()
+    {
+        using var hub = new HarnessTelemetryListenerHub(NullLogger<HarnessTelemetryListenerHub>.Instance);
+        using var session = new HarnessTraceSession(hub, NullLogger<HarnessTraceSession>.Instance);
+        using var run = session.TryBeginRun("run");
+        using var notified = new ManualResetEventSlim();
+        var notifications = 0;
+        session.Changed += () => { Interlocked.Increment(ref notifications); notified.Set(); };
+
+        for (var index = 0; index < 5; index++)
+            using (HarnessSource.StartActivity($"span-{index}"))
+            { }
+
+        Assert.True(notified.Wait(TimeSpan.FromSeconds(1)));
+        Thread.Sleep(150);
+        Assert.Equal(1, Volatile.Read(ref notifications));
+    }
+
+    [Fact]
+    public void EvictionRemovesRoutesForRunningSpans()
+    {
+        using var hub = new HarnessTelemetryListenerHub(NullLogger<HarnessTelemetryListenerHub>.Instance);
+        using var session = new HarnessTraceSession(hub, NullLogger<HarnessTraceSession>.Instance);
+        using var first = session.TryBeginRun("first");
+        using var active = HarnessSource.StartActivity("active");
+
+        for (var index = 0; index < HarnessTraceSession.MaxRunsPerSession; index++)
+            using (session.TryBeginRun($"run-{index}"))
+            { }
+
+        Assert.Equal(0, hub.SpanRouteCount);
+        Assert.Equal(HarnessTraceSession.MaxRunsPerSession, session.GetSnapshot().Runs.Count);
     }
 
     [Fact]
@@ -149,9 +207,25 @@ public sealed class HarnessTraceSessionTests
         using var hub = new HarnessTelemetryListenerHub(NullLogger<HarnessTelemetryListenerHub>.Instance);
         var session = new HarnessTraceSession(hub, NullLogger<HarnessTraceSession>.Instance);
         using var run = session.TryBeginRun("run");
+        using var active = HarnessSource.StartActivity("active");
         session.Dispose();
+        Assert.Equal(0, hub.RouteCount);
+        Assert.Equal(0, hub.SpanRouteCount);
         using var span = HarnessSource.StartActivity("after-dispose");
         Assert.Empty(session.GetSnapshot().Runs);
+    }
+
+    [Fact]
+    public void DuplicateRunDoesNotChangeAmbientActivity()
+    {
+        using var hub = new HarnessTelemetryListenerHub(NullLogger<HarnessTelemetryListenerHub>.Instance);
+        using var session = new HarnessTraceSession(hub, NullLogger<HarnessTraceSession>.Instance);
+        using var run = session.TryBeginRun("run");
+        var current = Activity.Current;
+
+        Assert.Null(session.TryBeginRun("run"));
+        Assert.Same(current, Activity.Current);
+        Assert.Single(session.GetSnapshot().Runs);
     }
 
     private static void Capture(HarnessTraceSession session, string prefix)

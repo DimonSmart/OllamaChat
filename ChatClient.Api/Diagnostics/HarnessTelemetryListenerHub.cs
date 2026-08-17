@@ -34,7 +34,22 @@ public sealed class HarnessTelemetryListenerHub : IDisposable
 
     internal IDisposable Activate(HarnessTraceSession session, string runId) => new CorrelationScope(this, _currentRun.Value, new(session, runId));
     internal void Register(ActivityTraceId traceId, HarnessTraceSession session, string runId) => _routes[traceId.ToString()] = new(session, runId);
-    internal void Unregister(ActivityTraceId traceId, HarnessTraceSession session, string runId) => _routes.TryRemove(new KeyValuePair<string, TraceRoute>(traceId.ToString(), new(session, runId)));
+    internal void UnregisterRun(HarnessTraceSession session, string runId)
+    {
+        var route = new TraceRoute(session, runId);
+        RemoveRoutes(_routes, route);
+        RemoveRoutes(_spanRoutes, route);
+    }
+
+    internal int RouteCount => _routes.Count;
+    internal int SpanRouteCount => _spanRoutes.Count;
+
+    private static void RemoveRoutes(ConcurrentDictionary<string, TraceRoute> routes, TraceRoute route)
+    {
+        foreach (var entry in routes)
+            if (entry.Value == route)
+                routes.TryRemove(entry);
+    }
 
     private void Route(Activity activity, bool stopped)
     {
