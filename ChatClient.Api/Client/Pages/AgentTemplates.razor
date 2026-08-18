@@ -318,14 +318,12 @@
             </MudGrid>
             <MudDivider Class="my-2" />
             <MudText Typo="Typo.subtitle1">Background Agents</MudText>
-            <MudText Typo="Typo.caption" Class="mud-text-secondary">Agents that this Harness agent may delegate tasks to.</MudText>
             <MudAutocomplete T="AgentTemplateDefinition"
                              Value="selectedBackgroundAgent"
                              ValueChanged="SetSelectedBackgroundAgent"
                              SearchFunc="SearchBackgroundAgents"
                              ToStringFunc="@(agent => agent?.AgentName ?? string.Empty)"
-                             Placeholder="Search agents..."
-                             Label="Add background agent"
+                             Placeholder="Search and add agent..."
                              Dense="true"
                              Clearable="true"
                              ResetValueOnEmptyText="true"
