@@ -319,15 +319,31 @@
             <MudDivider Class="my-2" />
             <MudText Typo="Typo.subtitle1">Background Agents</MudText>
             <MudText Typo="Typo.caption" Class="mud-text-secondary">Agents that this Harness agent may delegate tasks to.</MudText>
-            <MudStack Spacing="0" Class="mt-1">
-                @foreach (var candidate in BackgroundAgentCandidates())
-                {
-                    <MudCheckBox T="bool" Value="@editingAgent.BackgroundAgentIds.Contains(candidate.Id)" ValueChanged="@(selected => SetBackgroundAgent(candidate.Id, selected))">
-                        <MudText Typo="Typo.body2">@candidate.AgentName</MudText>
-                        <MudText Typo="Typo.caption" Class="mud-text-secondary">@(string.IsNullOrWhiteSpace(candidate.Summary) ? "No summary" : candidate.Summary)</MudText>
-                    </MudCheckBox>
-                }
-            </MudStack>
+            <MudAutocomplete T="AgentTemplateDefinition"
+                             Value="selectedBackgroundAgent"
+                             ValueChanged="SetSelectedBackgroundAgent"
+                             SearchFunc="SearchBackgroundAgents"
+                             ToStringFunc="@(agent => agent?.AgentName ?? string.Empty)"
+                             Placeholder="Search agents..."
+                             Label="Add background agent"
+                             Dense="true"
+                             Clearable="true"
+                             ResetValueOnEmptyText="true"
+                             Class="mt-1">
+                <ItemTemplate Context="agent">
+                    <MudText Typo="Typo.body2">@agent.AgentName</MudText>
+                    <MudText Typo="Typo.caption" Class="mud-text-secondary">@(string.IsNullOrWhiteSpace(agent.Summary) ? "No summary" : agent.Summary)</MudText>
+                </ItemTemplate>
+            </MudAutocomplete>
+            @if (SelectedBackgroundAgents().Any())
+            {
+                <MudChipSet T="Guid" Class="mt-2">
+                    @foreach (var candidate in SelectedBackgroundAgents())
+                    {
+                        <MudChip T="Guid" Value="@candidate.Id" OnClose="@(() => SetBackgroundAgent(candidate.Id, false))">@candidate.AgentName</MudChip>
+                    }
+                </MudChipSet>
+            }
             <MudGrid Spacing="2">
             <MudItem xs="12" sm="6"><MudCheckBox T="bool"
                          @bind-Value="editingAgent.EnableShell"
@@ -398,6 +414,7 @@
     private List<AgentSkillsProfile> skillsProfiles = new();
     private List<CompactionProfile> compactionProfiles = new();
     private List<RagProviderProfile> ragProviderProfiles = new();
+    private AgentTemplateDefinition? selectedBackgroundAgent;
     private DialogOptions dialogOptions = new()
     {
         CloseOnEscapeKey = true,
@@ -498,6 +515,7 @@
             McpServerBindings = []
         };
         editingServerModel = new ServerModelSelection(null, null);
+        selectedBackgroundAgent = null;
         showEditAgentDialog = true;
     }
 
@@ -565,6 +583,7 @@
         };
 
         editingServerModel = new ServerModelSelection(agent.LlmId, agent.ModelName);
+        selectedBackgroundAgent = null;
         showEditAgentDialog = true;
     }
 
@@ -588,8 +607,41 @@
     }
 
     private IEnumerable<AgentTemplateDefinition> BackgroundAgentCandidates() => agents
-        .Where(candidate => candidate.Id != Guid.Empty && candidate.Id != editingAgent.Id)
+        .Where(candidate => candidate.Id != Guid.Empty &&
+                            candidate.Id != editingAgent.Id &&
+                            !editingAgent.BackgroundAgentIds.Contains(candidate.Id))
         .OrderBy(candidate => candidate.AgentName, StringComparer.OrdinalIgnoreCase);
+
+    private IEnumerable<AgentTemplateDefinition> SelectedBackgroundAgents() => agents
+        .Where(candidate => editingAgent.BackgroundAgentIds.Contains(candidate.Id))
+        .OrderBy(candidate => candidate.AgentName, StringComparer.OrdinalIgnoreCase);
+
+    private Task<IEnumerable<AgentTemplateDefinition>> SearchBackgroundAgents(
+        string text,
+        CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+
+        var candidates = BackgroundAgentCandidates();
+        if (!string.IsNullOrWhiteSpace(text))
+        {
+            candidates = candidates.Where(candidate =>
+                candidate.AgentName.Contains(text, StringComparison.OrdinalIgnoreCase) ||
+                candidate.Summary.Contains(text, StringComparison.OrdinalIgnoreCase));
+        }
+
+        return Task.FromResult(candidates);
+    }
+
+    private void SetSelectedBackgroundAgent(AgentTemplateDefinition? agent)
+    {
+        if (agent is not null)
+        {
+            SetBackgroundAgent(agent.Id, true);
+        }
+
+        selectedBackgroundAgent = null;
+    }
 
     private void SetBackgroundAgent(Guid agentId, bool selected)
     {
