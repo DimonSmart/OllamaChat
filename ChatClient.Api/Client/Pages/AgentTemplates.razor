@@ -237,150 +237,75 @@
     </TitleContent>
     <DialogContent>
         <MudForm @ref="editAgentForm" Model="@editingAgent">
-            <MudTextField @bind-Value="editingAgent.AgentName"
-                          Label="Agent Name"
-                          Required="true"
-                          Immediate="true"
-                          Validation="@(new Func<string, string>(ValidateName))" />
+            <MudExpansionPanels MultiExpansion="true" Dense="true" Outlined="true" Elevation="0">
+                <MudExpansionPanel Text="General" Expanded="true" KeepContentAlive="true">
+                    <MudStack Spacing="2">
+                        <MudTextField @bind-Value="editingAgent.AgentName" Label="Agent Name" Variant="Variant.Outlined" Margin="Margin.Dense" Required="true" Immediate="true" Validation="@(new Func<string, string>(ValidateName))" />
+                        <MudGrid Spacing="2">
+                            <MudItem xs="12" md="4"><MudTextField @bind-Value="editingAgent.ShortName" Label="Short Name" Variant="Variant.Outlined" Margin="Margin.Dense" Immediate="true" HelperText="Overrides the global agent name." HelperTextOnFocus="true" /></MudItem>
+                            <MudItem xs="12" md="8"><MudTextField @bind-Value="editingAgent.Summary" Label="Summary" Variant="Variant.Outlined" Margin="Margin.Dense" Lines="2" Immediate="true" HelperText="A short description of this saved agent." HelperTextOnFocus="true" /></MudItem>
+                        </MudGrid>
+                        <MudTextField @bind-Value="editingAgent.Content" Label="Instructions" Variant="Variant.Outlined" Margin="Margin.Dense" Lines="10" Required="true" Immediate="true" Validation="@(new Func<string, string>(ValidateContent))" />
+                    </MudStack>
+                </MudExpansionPanel>
 
-            <MudTextField @bind-Value="editingAgent.ShortName"
-                          Label="Short Name (Optional)"
-                          Class="mt-4"
-                          Immediate="true"
-                          HelperText="Custom short name for this agent. If empty, uses global agent name from settings."
-                          Placeholder="Enter short name..." />
+                <MudExpansionPanel Text="Model" Expanded="true" KeepContentAlive="true">
+                    <MudStack Spacing="2">
+                        <ServerModelPicker @bind-Value="editingServerModel" ShowClearButton="true" UseDefaultsWhenUnset="false" SelectVariant="Variant.Outlined" SelectMargin="Margin.Dense" />
+                        <MudGrid Spacing="2">
+                            <MudItem xs="12" sm="6"><MudNumericField T="double?" @bind-Value="editingAgent.Temperature" Label="Temperature" Variant="Variant.Outlined" Margin="Margin.Dense" Immediate="true" Min="0" Max="2" Step="0.1" /></MudItem>
+                            <MudItem xs="12" sm="6"><MudNumericField T="double?" @bind-Value="editingAgent.RepeatPenalty" Label="Repeat Penalty" Variant="Variant.Outlined" Margin="Margin.Dense" Immediate="true" Min="0" Max="2" Step="0.1" /></MudItem>
+                        </MudGrid>
+                        <MudText Typo="Typo.caption" Class="mud-text-secondary">Unset values inherit chat defaults.</MudText>
+                    </MudStack>
+                </MudExpansionPanel>
 
-            <MudTextField @bind-Value="editingAgent.Summary"
-                          Label="Summary (Optional)"
-                          Lines="2"
-                          Class="mt-4"
-                          Immediate="true"
-                          HelperText="Short description of what this saved agent is for."
-                          Placeholder="Enter a short summary..." />
+                <MudExpansionPanel Text="Harness" KeepContentAlive="true">
+                    <MudStack Spacing="2">
+                        <MudGrid Spacing="2">
+                            <MudItem xs="12" md="6"><MudSelect T="Guid?" @bind-Value="editingAgent.TodoProviderProfileId" Label="Todo provider" Variant="Variant.Outlined" Dense="true" Margin="Margin.Dense"><MudSelectItem T="Guid?" Value="@((Guid?)null)">None</MudSelectItem>@foreach (var profile in todoProviderProfiles) { <MudSelectItem T="Guid?" Value="@((Guid?)profile.Id)">@profile.Name</MudSelectItem> }</MudSelect></MudItem>
+                            <MudItem xs="12" md="6"><MudSelect T="Guid?" @bind-Value="editingAgent.AgentModeProviderProfileId" Label="Agent mode provider" Variant="Variant.Outlined" Dense="true" Margin="Margin.Dense"><MudSelectItem T="Guid?" Value="@((Guid?)null)">None</MudSelectItem>@foreach (var profile in agentModeProviderProfiles) { <MudSelectItem T="Guid?" Value="@((Guid?)profile.Id)">@profile.Name</MudSelectItem> }</MudSelect></MudItem>
+                            <MudItem xs="12" md="6"><MudCheckBox T="bool" @bind-Value="editingAgent.ContinueUntilTodosComplete" Label="Continue until TODOs are complete" /></MudItem>
+                            <MudItem xs="12" md="6"><MudNumericField T="int" @bind-Value="editingAgent.MaxTodoCompletionIterations" Label="Maximum autonomous iterations" Variant="Variant.Outlined" Margin="Margin.Dense" Immediate="true" Min="1" Max="100" Disabled="@(!editingAgent.ContinueUntilTodosComplete)" /></MudItem>
+                            <MudItem xs="12" md="6"><MudSelect T="Guid?" @bind-Value="editingAgent.FileAccessProviderProfileId" Label="File access provider" Variant="Variant.Outlined" Dense="true" Margin="Margin.Dense"><MudSelectItem T="Guid?" Value="@((Guid?)null)">None</MudSelectItem>@foreach (var profile in fileAccessProviderProfiles) { <MudSelectItem T="Guid?" Value="@((Guid?)profile.Id)">@profile.Name</MudSelectItem> }</MudSelect></MudItem>
+                            <MudItem xs="12" md="6"><MudCheckBox @bind-Value="editingAgent.EnableFileMemory" Label="Enable file-based agent memory" /></MudItem>
+                            <MudItem xs="12" md="6"><MudSelect T="Guid?" @bind-Value="editingAgent.SkillsProviderProfileId" Label="Skills provider" Variant="Variant.Outlined" Dense="true" Margin="Margin.Dense"><MudSelectItem T="Guid?" Value="@((Guid?)null)">None</MudSelectItem>@foreach (var profile in skillsProfiles) { <MudSelectItem T="Guid?" Value="@((Guid?)profile.Id)">@profile.Name</MudSelectItem> }</MudSelect></MudItem>
+                            <MudItem xs="12" md="6"><MudSelect T="Guid?" @bind-Value="editingAgent.CompactionProfileId" Label="Compaction profile" Variant="Variant.Outlined" Dense="true" Margin="Margin.Dense"><MudSelectItem T="Guid?" Value="@((Guid?)null)">None</MudSelectItem>@foreach (var profile in compactionProfiles) { <MudSelectItem T="Guid?" Value="@((Guid?)profile.Id)">@($"{profile.Name} — {CompactionProfilePresentation.FormatPolicy(profile)}")</MudSelectItem> }</MudSelect></MudItem>
+                            @if (HasUnavailableCompactionProfile()) { <MudItem xs="12"><MudAlert Severity="Severity.Warning" Dense="true">The selected compaction profile is unavailable. Choose another profile or None before saving.</MudAlert></MudItem> }
+                        </MudGrid>
+                    </MudStack>
+                </MudExpansionPanel>
 
-            <ServerModelPicker @bind-Value="editingServerModel" ShowClearButton="true" UseDefaultsWhenUnset="false" Class="mt-2" />
-            <MudText Typo="Typo.caption">Leave blank to use chat's default model.</MudText>
+                <MudExpansionPanel Text="Tools" KeepContentAlive="true">
+                    <MudStack Spacing="2">
+                        <MudCheckBox T="bool" @bind-Value="editingAgent.EnableShell" Label="Enable shell in sandbox" />
+                        <McpServerBindingsEditor Bindings="@editingAgent.McpServerBindings" BindingsChanged="OnMcpBindingsChanged" />
+                    </MudStack>
+                </MudExpansionPanel>
 
-            <MudGrid Spacing="2">
-                <MudItem xs="12" sm="6" md="4"><MudNumericField T="double?" @bind-Value="editingAgent.Temperature" Label="Temperature (Optional)" Margin="Margin.Dense" Immediate="true" Min="0" Max="2" Step="0.1" /></MudItem>
-                <MudItem xs="12" sm="6" md="4"><MudNumericField T="double?" @bind-Value="editingAgent.RepeatPenalty" Label="Repeat Penalty (Optional)" Margin="Margin.Dense" Immediate="true" Min="0" Max="2" Step="0.1" /></MudItem>
-            </MudGrid>
-            <MudText Typo="Typo.caption">Leave blank to use chat defaults.</MudText>
+                <MudExpansionPanel Text="Knowledge &amp; Retrieval" KeepContentAlive="true">
+                    <MudStack Spacing="2">
+                        <MudSelect T="Guid?" @bind-Value="editingAgent.RagProviderProfileId" Label="RAG provider" Variant="Variant.Outlined" Dense="true" Margin="Margin.Dense" HelperText="Knowledge Stores enable retrieval; the RAG profile controls how retrieval works." HelperTextOnFocus="true">
+                            <MudSelectItem T="Guid?" Value="@((Guid?)null)">Built-in defaults</MudSelectItem>
+                            @foreach (var profile in ragProviderProfiles) { <MudSelectItem T="Guid?" Value="@((Guid?)profile.Id)">@profile.Name</MudSelectItem> }
+                        </MudSelect>
+                        @if (HasUnavailableRagProfile()) { <MudAlert Severity="Severity.Warning" Dense="true">The selected RAG Provider profile is unavailable. Choose another profile or Built-in defaults before saving.</MudAlert> }
+                        <MudText Typo="Typo.subtitle2">Knowledge Stores</MudText>
+                        <MudStack Spacing="0">
+                            @foreach (var store in knowledgeStores) { <MudCheckBox T="bool" Value="@editingAgent.KnowledgeStoreIds.Contains(store.Id)" ValueChanged="@(selected => SetKnowledgeStoreAttachment(store.Id, selected))" Label="@($"{store.Name} ({store.Index.State})")" /> }
+                        </MudStack>
+                    </MudStack>
+                </MudExpansionPanel>
 
-            <MudDivider Class="my-2" />
-            <MudText Typo="Typo.subtitle1">Harness</MudText>
-            <MudGrid Spacing="2">
-            <MudItem xs="12" md="6"><MudSelect T="Guid?" @bind-Value="editingAgent.TodoProviderProfileId" Label="Todo provider" Dense="true" Margin="Margin.Dense">
-                <MudSelectItem T="Guid?" Value="@((Guid?)null)">None</MudSelectItem>
-                @foreach (var profile in todoProviderProfiles)
-                {
-                    <MudSelectItem T="Guid?" Value="@((Guid?)profile.Id)">@profile.Name</MudSelectItem>
-                }
-            </MudSelect></MudItem>
-            <MudItem xs="12" md="6"><MudSelect T="Guid?" @bind-Value="editingAgent.AgentModeProviderProfileId" Label="Agent mode provider" Dense="true" Margin="Margin.Dense">
-                <MudSelectItem T="Guid?" Value="@((Guid?)null)">None</MudSelectItem>
-                @foreach (var profile in agentModeProviderProfiles)
-                {
-                    <MudSelectItem T="Guid?" Value="@((Guid?)profile.Id)">@profile.Name</MudSelectItem>
-                }
-            </MudSelect></MudItem>
-            <MudItem xs="12" md="6"><MudSelect T="Guid?" @bind-Value="editingAgent.FileAccessProviderProfileId" Label="File access provider" Dense="true" Margin="Margin.Dense">
-                <MudSelectItem T="Guid?" Value="@((Guid?)null)">None</MudSelectItem>
-                @foreach (var profile in fileAccessProviderProfiles)
-                {
-                    <MudSelectItem T="Guid?" Value="@((Guid?)profile.Id)">@profile.Name</MudSelectItem>
-                }
-            </MudSelect></MudItem>
-            <MudItem xs="12" md="6"><MudCheckBox @bind-Value="editingAgent.EnableFileMemory" Label="Enable file-based agent memory" /><MudText Typo="Typo.caption" Class="mud-text-secondary">Lets the agent keep its own notes and working memory between turns.</MudText></MudItem>
-            <MudItem xs="12" md="6"><MudSelect T="Guid?" @bind-Value="editingAgent.SkillsProviderProfileId" Label="Skills Provider" Dense="true" Margin="Margin.Dense"><MudSelectItem T="Guid?" Value="@((Guid?)null)">None</MudSelectItem>@foreach (var profile in skillsProfiles) { <MudSelectItem T="Guid?" Value="@((Guid?)profile.Id)">@profile.Name</MudSelectItem> }</MudSelect></MudItem>
-            <MudItem xs="12" md="6"><MudSelect T="Guid?" @bind-Value="editingAgent.CompactionProfileId" Label="Compaction profile" Dense="true" Margin="Margin.Dense">
-                <MudSelectItem T="Guid?" Value="@((Guid?)null)">None</MudSelectItem>
-                @foreach (var profile in compactionProfiles)
-                {
-                    <MudSelectItem T="Guid?" Value="@((Guid?)profile.Id)">@($"{profile.Name} — {CompactionProfilePresentation.FormatPolicy(profile)}")</MudSelectItem>
-                }
-            </MudSelect></MudItem>
-            <MudItem xs="12" md="6"><MudSelect T="Guid?" @bind-Value="editingAgent.RagProviderProfileId" Label="RAG provider" Dense="true" Margin="Margin.Dense" HelperText="The profile controls retrieval behavior. Knowledge Store attachments determine whether RAG is enabled.">
-                <MudSelectItem T="Guid?" Value="@((Guid?)null)">Built-in defaults</MudSelectItem>
-                @foreach (var profile in ragProviderProfiles)
-                {
-                    <MudSelectItem T="Guid?" Value="@((Guid?)profile.Id)">@profile.Name</MudSelectItem>
-                }
-            </MudSelect></MudItem>
-            @if (HasUnavailableCompactionProfile())
-            {
-                <MudItem xs="12"><MudAlert Severity="Severity.Warning" Dense="true">The selected compaction profile is unavailable. Choose another profile or None before saving.</MudAlert></MudItem>
-            }
-            @if (HasUnavailableRagProfile())
-            {
-                <MudItem xs="12"><MudAlert Severity="Severity.Warning" Dense="true">The selected RAG Provider profile is unavailable. Choose another profile or Built-in defaults before saving.</MudAlert></MudItem>
-            }
-            </MudGrid>
-            <MudDivider Class="my-2" />
-            <MudText Typo="Typo.subtitle1">Background Agents</MudText>
-            <MudAutocomplete T="AgentTemplateDefinition"
-                             Value="selectedBackgroundAgent"
-                             ValueChanged="SetSelectedBackgroundAgent"
-                             SearchFunc="SearchBackgroundAgents"
-                             ToStringFunc="@(agent => agent?.AgentName ?? string.Empty)"
-                             Placeholder="Search and add agent..."
-                             Dense="true"
-                             Clearable="true"
-                             ResetValueOnEmptyText="true"
-                             Class="mt-1">
-                <ItemTemplate Context="agent">
-                    <MudText Typo="Typo.body2">@agent.AgentName</MudText>
-                    <MudText Typo="Typo.caption" Class="mud-text-secondary">@(string.IsNullOrWhiteSpace(agent.Summary) ? "No summary" : agent.Summary)</MudText>
-                </ItemTemplate>
-            </MudAutocomplete>
-            @if (SelectedBackgroundAgents().Any())
-            {
-                <MudChipSet T="Guid" Class="mt-2">
-                    @foreach (var candidate in SelectedBackgroundAgents())
-                    {
-                        <MudChip T="Guid" Value="@candidate.Id" OnClose="@(() => SetBackgroundAgent(candidate.Id, false))">@candidate.AgentName</MudChip>
-                    }
-                </MudChipSet>
-            }
-            <MudGrid Spacing="2">
-            <MudItem xs="12" sm="6"><MudCheckBox T="bool"
-                         @bind-Value="editingAgent.EnableShell"
-                         Label="Enable shell in sandbox" /></MudItem>
-            <MudItem xs="12" sm="6"><MudCheckBox T="bool"
-                         @bind-Value="editingAgent.ContinueUntilTodosComplete"
-                         Label="Continue until TODOs are complete" /></MudItem>
-            <MudItem xs="12" sm="6" md="4"><MudNumericField T="int"
-                             @bind-Value="editingAgent.MaxTodoCompletionIterations"
-                             Label="Maximum autonomous iterations"
-                             Immediate="true"
-                             Min="1"
-                             Max="100"
-                             Disabled="@(!editingAgent.ContinueUntilTodosComplete)" /></MudItem>
-            </MudGrid>
-
-            <MudDivider Class="my-2" />
-            <MudText Typo="Typo.subtitle1">Tooling</MudText>
-            <McpServerBindingsEditor Bindings="@editingAgent.McpServerBindings"
-                                     BindingsChanged="OnMcpBindingsChanged"
-                                     Class="mt-4" />
-
-            <MudTextField @bind-Value="editingAgent.Content"
-                          Label="Agent Description"
-                          Lines="10"
-                          Class="mt-4"
-                          Required="true"
-                          Immediate="true"
-                          Validation="@(new Func<string, string>(ValidateContent))"
-                          Placeholder="Enter agent description here..." />
-
-            <MudDivider Class="my-2" />
-            <MudText Typo="Typo.subtitle1" Class="mb-2">Knowledge Stores</MudText>
-            <MudStack Spacing="0">
-                @foreach (var store in knowledgeStores)
-                {
-                    <MudCheckBox T="bool" Value="@editingAgent.KnowledgeStoreIds.Contains(store.Id)" ValueChanged="@(selected => SetKnowledgeStoreAttachment(store.Id, selected))" Label="@($"{store.Name} ({store.Index.State})")" />
-                }
-            </MudStack>
+                <MudExpansionPanel Text="Background Agents" KeepContentAlive="true">
+                    <MudStack Spacing="2">
+                        <MudAutocomplete T="AgentTemplateDefinition" Value="selectedBackgroundAgent" ValueChanged="SetSelectedBackgroundAgent" SearchFunc="SearchBackgroundAgents" ToStringFunc="@(agent => agent?.AgentName ?? string.Empty)" Placeholder="Search and add agent..." Variant="Variant.Outlined" Dense="true" Clearable="true" ResetValueOnEmptyText="true">
+                            <ItemTemplate Context="agent"><MudText Typo="Typo.body2">@agent.AgentName</MudText><MudText Typo="Typo.caption" Class="mud-text-secondary">@(string.IsNullOrWhiteSpace(agent.Summary) ? "No summary" : agent.Summary)</MudText></ItemTemplate>
+                        </MudAutocomplete>
+                        @if (SelectedBackgroundAgents().Any()) { <MudChipSet T="Guid">@foreach (var candidate in SelectedBackgroundAgents()) { <MudChip T="Guid" Value="@candidate.Id" OnClose="@(() => SetBackgroundAgent(candidate.Id, false))">@candidate.AgentName</MudChip> }</MudChipSet> }
+                    </MudStack>
+                </MudExpansionPanel>
+            </MudExpansionPanels>
         </MudForm>
     </DialogContent>
     <DialogActions>
@@ -424,7 +349,7 @@
     {
         CloseOnEscapeKey = true,
         CloseButton = true,
-        MaxWidth = MaxWidth.Medium,
+        MaxWidth = MaxWidth.Large,
         FullWidth = true
     };
 
