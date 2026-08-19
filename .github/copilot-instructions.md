@@ -52,6 +52,7 @@
 
 ### MudBlazor
 - MudDialog visibility property is "Visible", not IsVisible
+- For application UI, layout, MudBlazor composition, density, and visual consistency rules, follow `.idd/intent/IDD-0023.spec-compact-user-interface.md`.
 
 ### C# Conventions
 - Use PascalCase for classes, methods, properties, and public fields.

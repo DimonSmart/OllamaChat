@@ -1,0 +1,57 @@
+<MudToolBar Dense="true" Class="app-page-toolbar">
+    <MudButton Variant="Variant.Filled"
+               Color="Color.Primary"
+               Size="Size.Small"
+               StartIcon="@AddIcon"
+               Disabled="AddDisabled"
+               OnClick="OnAdd">
+        @AddText
+    </MudButton>
+    @Actions
+    @if (HasSearch)
+    {
+        <MudSpacer />
+        <MudTextField T="string"
+                      Value="SearchText"
+                      ValueChanged="SearchTextChanged"
+                      Placeholder="@SearchPlaceholder"
+                      aria-label="@SearchPlaceholder"
+                      Adornment="Adornment.Start"
+                      AdornmentIcon="@Icons.Material.Filled.Search"
+                      Immediate="true"
+                      DebounceInterval="SearchDebounceInterval"
+                      Margin="Margin.Dense"
+                      Class="app-page-search" />
+    }
+</MudToolBar>
+
+@code {
+    [Parameter, EditorRequired]
+    public string AddText { get; set; } = string.Empty;
+
+    [Parameter, EditorRequired]
+    public EventCallback OnAdd { get; set; }
+
+    [Parameter]
+    public string AddIcon { get; set; } = Icons.Material.Filled.Add;
+
+    [Parameter]
+    public bool AddDisabled { get; set; }
+
+    [Parameter]
+    public RenderFragment? Actions { get; set; }
+
+    [Parameter]
+    public string? SearchText { get; set; }
+
+    [Parameter]
+    public EventCallback<string> SearchTextChanged { get; set; }
+
+    [Parameter]
+    public string SearchPlaceholder { get; set; } = "Search...";
+
+    [Parameter]
+    public int SearchDebounceInterval { get; set; } = 300;
+
+    private bool HasSearch => SearchTextChanged.HasDelegate;
+}

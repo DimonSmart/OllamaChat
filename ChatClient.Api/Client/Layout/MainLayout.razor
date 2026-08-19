@@ -20,7 +20,7 @@
 <CascadingValue Value="@pickerModel" Name="UiModelSelection">
 <MudLayout>
     <MudAppBar Elevation="1" Dense="true" Class="application-toolbar">
-        <MudIconButton Icon="@Icons.Material.Filled.Menu" Color="Color.Inherit" Edge="Edge.Start" OnClick="@((e) => DrawerToggle())" Size="Size.Small" />
+        <MudTooltip Text="Toggle navigation"><MudIconButton Icon="@Icons.Material.Filled.Menu" Color="Color.Inherit" Edge="Edge.Start" OnClick="@((e) => DrawerToggle())" Size="Size.Small" aria-label="Toggle navigation" /></MudTooltip>
         <MudText Typo="Typo.h6" Class="ml-3 application-toolbar__title">Ollama chat with MCP</MudText>
         @if (ActiveChatHasAgents())
         {
@@ -45,7 +45,7 @@
                 <MudTooltip Text="Session state">
                     <MudIconButton Icon="@Icons.Material.Filled.FactCheck"
                                    Size="Size.Small"
-                                   AriaLabel="Session state"
+                                   aria-label="Session state"
                                    aria-expanded="@ChatToolbar.IsSessionStateOpen"
                                    Color="@(ChatToolbar.IsSessionStateOpen ? Color.Primary : Color.Default)"
                                    OnClick="ToggleSessionStateAsync" />
@@ -53,7 +53,7 @@
             }
             @if (ChatToolbar.HasTrace)
             {
-                <MudTooltip Text="Harness trace"><MudIconButton Icon="@Icons.Material.Filled.AccountTree" Size="Size.Small" AriaLabel="Harness trace" aria-expanded="@ChatToolbar.IsTraceOpen" Color="@(ChatToolbar.IsTraceOpen ? Color.Primary : Color.Default)" OnClick="ToggleTraceAsync" /></MudTooltip>
+                <MudTooltip Text="Harness trace"><MudIconButton Icon="@Icons.Material.Filled.AccountTree" Size="Size.Small" aria-label="Harness trace" aria-expanded="@ChatToolbar.IsTraceOpen" Color="@(ChatToolbar.IsTraceOpen ? Color.Primary : Color.Default)" OnClick="ToggleTraceAsync" /></MudTooltip>
             }
             <MudMenu Icon="@Icons.Material.Filled.ContentCopy" AnchorOrigin="Origin.TopRight" TransformOrigin="Origin.TopRight">
                 <MudMenuItem OnClick="@(() => ChatToolbar.CopyConversationAsync(ChatFormat.Text))">Copy as Text</MudMenuItem>
@@ -61,8 +61,7 @@
                 <MudMenuItem OnClick="@(() => ChatToolbar.CopyConversationAsync(ChatFormat.Html))">Copy as HTML</MudMenuItem>
             </MudMenu>
         }
-        <MudIconButton Icon="@(DarkLightModeButtonIcon)" Color="Color.Inherit" OnClick="@DarkModeToggle" Size="Size.Small" />
-        <MudIconButton Icon="@Icons.Material.Filled.MoreVert" Color="Color.Inherit" Edge="Edge.End" Size="Size.Small" />
+        <MudTooltip Text="Toggle light and dark theme"><MudIconButton Icon="@(DarkLightModeButtonIcon)" Color="Color.Inherit" OnClick="@DarkModeToggle" Size="Size.Small" aria-label="Toggle light and dark theme" /></MudTooltip>
     </MudAppBar>
     <MudDrawer id="nav-drawer" @bind-Open="_drawerOpen" ClipMode="DrawerClipMode.Always" Elevation="2">
         <NavMenu />

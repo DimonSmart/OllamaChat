@@ -9,8 +9,7 @@
 @inject IModelRuntimeLimitsService ModelRuntimeLimitsService
 @inject ISnackbar Snackbar
 
-<MudContainer Class="app-page">
-    <MudText Class="page-header">Available Models</MudText>
+<AppPage Title="Available Models">
 
     @if (_loading)
     {
@@ -59,21 +58,21 @@
                         <MudTd DataLabel="Image Support" Class="app-table-cell--center">
                             @if (context.SupportsImages)
                             {
-                                <MudTooltip Text="Supports images"><MudIcon Icon="@Icons.Material.Filled.Image" Color="Color.Default" Class="app-capability" AriaLabel="Supports images" /></MudTooltip>
+                                <MudTooltip Text="Supports images"><MudIcon Icon="@Icons.Material.Filled.Image" Color="Color.Default" Class="app-capability" aria-label="Supports images" /></MudTooltip>
                             }
                             else
                             {
-                                <MudTooltip Text="Text only"><MudIcon Icon="@Icons.Material.Filled.Remove" Color="Color.Default" Class="app-capability" AriaLabel="Text only" /></MudTooltip>
+                                <MudTooltip Text="Text only"><MudIcon Icon="@Icons.Material.Filled.Remove" Color="Color.Default" Class="app-capability" aria-label="Text only" /></MudTooltip>
                             }
                         </MudTd>
                         <MudTd DataLabel="Function Calling" Class="app-table-cell--center">
                             @if (context.SupportsFunctionCalling)
                             {
-                                <MudTooltip Text="Function calling support detected; verify before relying on it"><MudIcon Icon="@Icons.Material.Filled.Build" Color="Color.Default" Class="app-capability" AriaLabel="Function calling support detected" /></MudTooltip>
+                                <MudTooltip Text="Function calling support detected; verify before relying on it"><MudIcon Icon="@Icons.Material.Filled.Build" Color="Color.Default" Class="app-capability" aria-label="Function calling support detected" /></MudTooltip>
                             }
                             else
                             {
-                                <MudTooltip Text="No function calling support detected"><MudIcon Icon="@Icons.Material.Filled.Remove" Color="Color.Default" Class="app-capability" AriaLabel="No function calling support detected" /></MudTooltip>
+                                <MudTooltip Text="No function calling support detected"><MudIcon Icon="@Icons.Material.Filled.Remove" Color="Color.Default" Class="app-capability" aria-label="No function calling support detected" /></MudTooltip>
                             }
                         </MudTd>
                         <MudTd DataLabel="Modified At">@FormatDate(context.ModifiedAt)</MudTd>
@@ -86,21 +85,20 @@
         }
     }
 
-    <MudPaper Elevation="3" Class="pa-3 mt-4 rounded-lg">
-        <MudText Typo="Typo.h6">Saved Runtime Limits</MudText>
+    <AppSection Title="Saved Runtime Limits">
         <MudText Typo="Typo.body2" Class="mud-text-secondary">Limits remain available for models that are temporarily unavailable from their server.</MudText>
-        <MudDataGrid T="ModelRuntimeLimits" Items="runtimeLimits" Dense="true" Hover="true" Bordered="true" Class="mt-2">
+        <MudDataGrid T="ModelRuntimeLimits" Items="runtimeLimits" Dense="true" Hover="true" Bordered="true">
             <Columns>
                 <TemplateColumn Title="Server"><CellTemplate>@ServerName(context.Item.ServerId)</CellTemplate></TemplateColumn>
                 <PropertyColumn Property="x => x.ModelName" Title="Model" />
                 <TemplateColumn Title="Context window"><CellTemplate>@context.Item.ContextWindowTokens.ToString("N0")</CellTemplate></TemplateColumn>
                 <TemplateColumn Title="Maximum output"><CellTemplate>@context.Item.MaxOutputTokens.ToString("N0")</CellTemplate></TemplateColumn>
-                <TemplateColumn Title="Actions"><CellTemplate><div class="app-table-actions"><MudTooltip Text="Edit runtime limits"><MudIconButton Icon="@Icons.Material.Filled.Edit" Size="Size.Small" AriaLabel="Edit runtime limits" OnClick="@(() => EditLimits(context.Item))" /></MudTooltip><MudTooltip Text="Remove runtime limits"><MudIconButton Icon="@Icons.Material.Filled.Delete" Color="Color.Error" Size="Size.Small" AriaLabel="Remove runtime limits" OnClick="@(() => ConfirmDeleteLimits(context.Item))" /></MudTooltip></div></CellTemplate></TemplateColumn>
+                <TemplateColumn Title="Actions"><CellTemplate><div class="app-table-actions"><MudTooltip Text="Edit runtime limits"><MudIconButton Icon="@Icons.Material.Filled.Edit" Size="Size.Small" aria-label="Edit runtime limits" OnClick="@(() => EditLimits(context.Item))" /></MudTooltip><MudTooltip Text="Remove runtime limits"><MudIconButton Icon="@Icons.Material.Filled.Delete" Color="Color.Error" Size="Size.Small" aria-label="Remove runtime limits" OnClick="@(() => ConfirmDeleteLimits(context.Item))" /></MudTooltip></div></CellTemplate></TemplateColumn>
             </Columns>
             <NoRecordsContent><MudText Class="pa-3">No runtime limits saved.</MudText></NoRecordsContent>
         </MudDataGrid>
-    </MudPaper>
-</MudContainer>
+    </AppSection>
+</AppPage>
 
 <MudDialog @bind-Visible="editingLimits" Options="limitsDialogOptions">
     <TitleContent><MudText Typo="Typo.h6">Runtime Limits</MudText></TitleContent>
@@ -112,7 +110,7 @@
             @if (!ValidLimits()) { <MudItem xs="12"><MudText Color="Color.Error" Typo="Typo.caption">Both limits must be positive and maximum output must be lower than the context window.</MudText></MudItem> }
         </MudGrid>
     </DialogContent>
-    <DialogActions><MudButton Size="Size.Small" OnClick="CloseLimits">Cancel</MudButton><MudButton Color="Color.Primary" Size="Size.Small" OnClick="SaveLimits">Save</MudButton></DialogActions>
+    <DialogActions><MudButton Size="Size.Small" OnClick="CloseLimits">Cancel</MudButton><MudButton Variant="Variant.Filled" Color="Color.Primary" Size="Size.Small" OnClick="SaveLimits">Save</MudButton></DialogActions>
 </MudDialog>
 
 <MudDialog @bind-Visible="deletingLimits" Options="deleteDialogOptions"><TitleContent><MudText Typo="Typo.h6">Remove Runtime Limits</MudText></TitleContent><DialogContent><MudText>Remove limits for "@limitsToDelete?.ModelName"?</MudText></DialogContent><DialogActions><MudButton Size="Size.Small" OnClick="CloseDeleteLimits">Cancel</MudButton><MudButton Color="Color.Error" Size="Size.Small" OnClick="DeleteLimits">Remove</MudButton></DialogActions></MudDialog>

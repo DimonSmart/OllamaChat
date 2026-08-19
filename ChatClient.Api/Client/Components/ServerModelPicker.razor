@@ -5,11 +5,10 @@
 @inject IOpenAIClientService OpenAIService
 @inject IUserSettingsService UserSettingsService
 
-<MudStack Spacing="1" Row="true" Wrap="@(AllowWrap ? Wrap.Wrap : Wrap.NoWrap)" AlignItems="AlignItems.Center" @attributes="Attributes" Style="@ContainerStyle" Class="@PickerClass">
+<MudStack Spacing="1" Row="true" Wrap="@(AllowWrap ? Wrap.Wrap : Wrap.NoWrap)" AlignItems="AlignItems.Center" @attributes="Attributes" Class="@PickerClass">
     <div class="server-model-picker__fields">
     <MudSelect T="Guid?" Value="selectedServerId" ValueChanged="OnServerChanged" Placeholder="Server"
-               Variant="@EffectiveSelectVariant" Dense="true" Margin="@EffectiveSelectMargin"
-               Style="@SelectStyle"
+               Variant="@EffectiveSelectVariant" Dense="true" Margin="@EffectiveSelectMargin" Class="@SelectClass"
                Text="@GetSelectedServerName()">
         @foreach (var server in servers)
         {
@@ -18,8 +17,7 @@
     </MudSelect>
 
     <MudSelect T="string" Value="selectedModel" ValueChanged="OnModelChanged" Placeholder="Model"
-               Variant="@EffectiveSelectVariant" Disabled="@(!selectedServerId.HasValue || loading || loadError != null)" Dense="true" Margin="@EffectiveSelectMargin"
-               Style="@SelectStyle">
+               Variant="@EffectiveSelectVariant" Disabled="@(!selectedServerId.HasValue || loading || loadError != null)" Dense="true" Margin="@EffectiveSelectMargin" Class="@SelectClass">
         @foreach (var model in models)
         {
             <MudSelectItem Value="@model.Name">@model.Name</MudSelectItem>
@@ -33,7 +31,7 @@
             <MudButton Variant="Variant.Text"
                        Size="Size.Small"
                        EndIcon="@Icons.Material.Filled.ArrowDropDown"
-                       AriaLabel="Select server and model"
+                       aria-label="Select server and model"
                        OnClick="ToggleCompactPicker">
                 @GetCompactSelectionText()
             </MudButton>
@@ -104,13 +102,10 @@
     private bool AllowWrap => Presentation == ServerModelPickerPresentation.Form;
     private Variant EffectiveSelectVariant => Presentation == ServerModelPickerPresentation.Toolbar ? Variant.Text : SelectVariant;
     private Margin EffectiveSelectMargin => Presentation == ServerModelPickerPresentation.Toolbar ? Margin.Dense : SelectMargin;
-    private string PickerClass => $"{(Presentation == ServerModelPickerPresentation.Toolbar ? "server-model-picker--toolbar" : "server-model-picker--form")} {Class}";
-    private string ContainerStyle => Presentation == ServerModelPickerPresentation.Toolbar || FillAvailableWidth
-        ? "flex: 1; min-width: 0;"
-        : "max-width: 600px; min-width: 0;";
-    private string SelectStyle => Presentation == ServerModelPickerPresentation.Toolbar || FillAvailableWidth
-        ? "min-width:120px; flex:1;"
-        : "min-width:220px; flex:1 1 220px;";
+    private string PickerClass => $"{(Presentation == ServerModelPickerPresentation.Toolbar ? "server-model-picker--toolbar" : "server-model-picker--form")} {(FillAvailableWidth ? "server-model-picker--fluid" : "server-model-picker--bounded")} {Class}";
+    private string SelectClass => FillAvailableWidth || Presentation == ServerModelPickerPresentation.Toolbar
+        ? "server-model-picker__select--fluid"
+        : "server-model-picker__select--bounded";
 
     protected override async Task OnInitializedAsync()
     {

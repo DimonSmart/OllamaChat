@@ -1,0 +1,14 @@
+<section class="app-section">
+    <MudText Class="section-header">@Title</MudText>
+    <div class="app-section__content">
+        @ChildContent
+    </div>
+</section>
+
+@code {
+    [Parameter, EditorRequired]
+    public string Title { get; set; } = string.Empty;
+
+    [Parameter, EditorRequired]
+    public RenderFragment ChildContent { get; set; } = null!;
+}

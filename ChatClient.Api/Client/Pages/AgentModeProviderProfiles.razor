@@ -3,16 +3,8 @@
 @inject IAgentModeProviderProfileService AgentModeProviderProfileService
 @inject ISnackbar Snackbar
 
-<PageTitle>Agent Mode Provider Profiles</PageTitle>
-
-<MudContainer MaxWidth="MaxWidth.ExtraLarge" Class="mt-3">
-    <MudText Class="page-header">Agent Mode Provider Profiles</MudText>
-    <MudPaper Elevation="3" Class="pa-3 rounded-lg">
-        <MudToolBar Dense="true">
-            <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Add" OnClick="CreateProfile" Class="px-4" Size="Size.Small">Add Agent Mode Profile</MudButton>
-            <MudSpacer />
-            <MudTextField T="string" ValueChanged="OnSearch" Placeholder="Search profiles..." AriaLabel="Search profiles" Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Search" IconSize="Size.Medium" Immediate="true" DebounceInterval="300" Margin="Margin.Dense" Class="app-page-search" />
-        </MudToolBar>
+<AppPage Title="Agent Mode Provider Profiles">
+    <AppCrudToolbar AddText="Add Agent Mode Profile" OnAdd="CreateProfile" SearchText="@searchText" SearchTextChanged="OnSearch" SearchPlaceholder="Search profiles..." />
 
         @if (loading)
         {
@@ -20,7 +12,7 @@
         }
         else
         {
-            <MudDataGrid T="AgentModeProviderProfile" Items="@filteredProfiles" ReadOnly="true" Bordered="true" Hover="true" Striped="true" Dense="true" FixedHeader="true" Class="mt-2">
+            <MudDataGrid T="AgentModeProviderProfile" Items="@filteredProfiles" ReadOnly="true" Bordered="true" Hover="true" Striped="true" Dense="true" FixedHeader="true">
                 <Columns>
                     <PropertyColumn Property="x => x.Name" Title="Name" />
                     <PropertyColumn Property="x => x.DefaultMode" Title="Default Mode" />
@@ -28,14 +20,13 @@
                     <TemplateColumn Title="Instructions"><CellTemplate><MudText Typo="Typo.body2" Class="mud-text-truncate">@Preview(context.Item.Instructions, "Default")</MudText></CellTemplate></TemplateColumn>
                     <TemplateColumn Title="Updated"><CellTemplate><MudText Typo="Typo.body2">@context.Item.UpdatedAt.ToLocalTime().ToString("g")</MudText></CellTemplate></TemplateColumn>
                     <TemplateColumn Title="Created"><CellTemplate><MudText Typo="Typo.body2">@context.Item.CreatedAt.ToLocalTime().ToString("g")</MudText></CellTemplate></TemplateColumn>
-                    <TemplateColumn Title="Actions"><CellTemplate><div class="app-table-actions"><MudTooltip Text="Edit profile"><MudIconButton Icon="@Icons.Material.Filled.Edit" Size="Size.Small" AriaLabel="Edit profile" OnClick="@(() => EditProfile(context.Item))" /></MudTooltip><MudTooltip Text="Delete profile"><MudIconButton Icon="@Icons.Material.Filled.Delete" Color="Color.Error" Size="Size.Small" AriaLabel="Delete profile" OnClick="@(() => ConfirmDelete(context.Item))" /></MudTooltip></div></CellTemplate></TemplateColumn>
+                    <TemplateColumn Title="Actions"><CellTemplate><div class="app-table-actions"><MudTooltip Text="Edit profile"><MudIconButton Icon="@Icons.Material.Filled.Edit" Size="Size.Small" aria-label="Edit profile" OnClick="@(() => EditProfile(context.Item))" /></MudTooltip><MudTooltip Text="Delete profile"><MudIconButton Icon="@Icons.Material.Filled.Delete" Color="Color.Error" Size="Size.Small" aria-label="Delete profile" OnClick="@(() => ConfirmDelete(context.Item))" /></MudTooltip></div></CellTemplate></TemplateColumn>
                 </Columns>
                 <PagerContent><MudDataGridPager T="AgentModeProviderProfile" PageSizeOptions="new[] { 10, 25, 50, 100 }" /></PagerContent>
-                <NoRecordsContent><MudStack AlignItems="AlignItems.Center" Justify="Justify.Center" Class="py-8"><MudIcon Icon="@Icons.Material.Filled.Tune" Color="Color.Secondary" Size="Size.Large" /><MudText Typo="Typo.h6" Class="mt-4">No Agent Mode Provider profiles found</MudText><MudText Typo="Typo.body2" Class="mud-text-secondary">Click "Add Agent Mode Profile" to create one.</MudText></MudStack></NoRecordsContent>
+                <NoRecordsContent><MudText Class="pa-3">No Agent Mode Provider profiles yet.</MudText></NoRecordsContent>
             </MudDataGrid>
         }
-    </MudPaper>
-</MudContainer>
+</AppPage>
 
 <MudDialog @bind-Visible="showEditDialog" Options="editDialogOptions">
     <TitleContent><MudText Typo="Typo.h6">@(isNewProfile ? "Create Agent Mode Provider Profile" : "Edit Agent Mode Provider Profile")</MudText></TitleContent>
@@ -66,14 +57,10 @@
             <MudButton Variant="Variant.Outlined" StartIcon="@Icons.Material.Filled.Add" Size="Size.Small" OnClick="AddMode">Add Mode</MudButton>
         </MudForm>
     </DialogContent>
-    <DialogActions><MudButton OnClick="CloseEditDialog" Size="Size.Small">Cancel</MudButton><MudButton Color="Color.Primary" OnClick="SaveProfile" Disabled="saving" Size="Size.Small">Save</MudButton></DialogActions>
+    <DialogActions><MudButton OnClick="CloseEditDialog" Size="Size.Small">Cancel</MudButton><MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="SaveProfile" Disabled="saving" Size="Size.Small">Save</MudButton></DialogActions>
 </MudDialog>
 
-<MudDialog @bind-Visible="showDeleteDialog" Options="deleteDialogOptions">
-    <TitleContent><MudText Typo="Typo.h6">Delete Agent Mode Provider Profile</MudText></TitleContent>
-    <DialogContent><MudText>Are you sure you want to delete "@profileToDelete?.Name"?</MudText></DialogContent>
-    <DialogActions><MudButton OnClick="CloseDeleteDialog" Size="Size.Small">Cancel</MudButton><MudButton Color="Color.Error" OnClick="DeleteProfile" Size="Size.Small">Delete</MudButton></DialogActions>
-</MudDialog>
+<AppDeleteDialog @bind-Visible="showDeleteDialog" Title="Delete Agent Mode Provider Profile" Message="@($"Delete \"{profileToDelete?.Name}\"?")" OnConfirm="DeleteProfile" Options="deleteDialogOptions" />
 
 @code {
     private List<AgentModeProviderProfile> profiles = [];
@@ -127,7 +114,6 @@
         catch (Exception ex) { Snackbar.Add($"Could not delete Agent Mode Provider profile: {ex.Message}", Severity.Error); }
     }
     private void CloseEditDialog() => showEditDialog = false;
-    private void CloseDeleteDialog() => showDeleteDialog = false;
     private static string ValidateName(string value) => string.IsNullOrWhiteSpace(value) ? "Name is required." : string.Empty;
     private static bool Contains(string? value, string search) => value?.Contains(search, StringComparison.OrdinalIgnoreCase) == true;
     private static string Preview(string? value, string emptyText = "") => string.IsNullOrWhiteSpace(value) ? emptyText : value.Length <= 100 ? value : $"{value[..100]}…";

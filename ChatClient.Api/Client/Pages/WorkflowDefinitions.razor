@@ -9,43 +9,19 @@
 @inject WorkflowDefinitionSeeder WorkflowDefinitionSeeder
 @inject ISnackbar Snackbar
 
-<PageTitle>Workflow Definitions Management</PageTitle>
-
-<MudContainer MaxWidth="MaxWidth.ExtraLarge" Class="app-page">
-    <MudText Class="page-header">Workflow Definitions</MudText>
-
-    <MudPaper Elevation="3" Class="pa-3 rounded-lg">
-        <MudToolBar Dense="true" Class="app-page-toolbar">
-            <MudButton Variant="Variant.Filled"
-                       Color="Color.Primary"
-                       StartIcon="@Icons.Material.Filled.Add"
-                       OnClick="AddNewWorkflowAsync"
-                       Disabled="@restoringBuiltInWorkflows"
-                       Class="px-4"
-                       Size="Size.Small">
-                Add Workflow
-            </MudButton>
+<AppPage Title="Workflow Definitions">
+    <AppCrudToolbar AddText="Add Workflow" OnAdd="AddNewWorkflowAsync" AddDisabled="restoringBuiltInWorkflows" SearchTextChanged="OnSearch" SearchPlaceholder="Search workflows...">
+        <Actions>
             <MudButton Variant="Variant.Outlined"
                        Color="Color.Default"
                        StartIcon="@Icons.Material.Filled.Restore"
                        OnClick="ConfirmRestoreBuiltInWorkflows"
                        Disabled="@(loading || restoringBuiltInWorkflows)"
-                       Class="ml-2"
                        Size="Size.Small">
                 Restore Built-ins
             </MudButton>
-            <MudSpacer />
-            <MudTextField T="string"
-                          ValueChanged="OnSearch"
-                          Placeholder="Search workflows..."
-                          Adornment="Adornment.Start"
-                          AdornmentIcon="@Icons.Material.Filled.Search"
-                          IconSize="Size.Medium"
-                          Margin="Margin.Dense"
-                          Class="app-page-search"
-                          Immediate="true"
-                          DebounceInterval="300" />
-        </MudToolBar>
+        </Actions>
+    </AppCrudToolbar>
 
         @if (loading)
         {
@@ -63,8 +39,7 @@
                          Striped="true"
                          Dense="true"
                          FixedHeader="true"
-                         Height="100%"
-                         Class="mt-2">
+                         Height="100%">
                 <Columns>
                     <TemplateColumn Title="Name" isEditable="false">
                         <CellTemplate>
@@ -86,7 +61,7 @@
                         <CellTemplate>
                             <MudChip T="string"
                                      Size="Size.Small"
-                                     Color="@GetWorkflowKindColor(context.Item.Kind)"
+                                     Color="Color.Default"
                                      Variant="Variant.Outlined">
                                 @context.Item.Kind
                             </MudChip>
@@ -103,40 +78,28 @@
                     </TemplateColumn>
                     <TemplateColumn>
                         <CellTemplate><div class="app-table-actions">
-                            <MudIconButton Icon="@Icons.Material.Filled.Edit"
+                            <MudTooltip Text="Edit workflow"><MudIconButton Icon="@Icons.Material.Filled.Edit"
                                            Size="Size.Small"
-                                           OnClick="@(() => StartEditingWorkflowAsync(context.Item))" />
-                            <MudIconButton Icon="@Icons.Material.Filled.Delete"
+                                           aria-label="Edit workflow"
+                                           OnClick="@(() => StartEditingWorkflowAsync(context.Item))" /></MudTooltip>
+                            <MudTooltip Text="Delete workflow"><MudIconButton Icon="@Icons.Material.Filled.Delete"
                                            Size="Size.Small"
                                            Color="Color.Error"
-                                           OnClick="@(() => ConfirmDeleteWorkflow(context.Item))" />
+                                           aria-label="Delete workflow"
+                                           OnClick="@(() => ConfirmDeleteWorkflow(context.Item))" /></MudTooltip>
                         </div></CellTemplate>
                     </TemplateColumn>
                 </Columns>
                 <PagerContent>
                     <MudDataGridPager T="SavedWorkflowDefinition" PageSizeOptions="new[] { 10, 25, 50, 100 }" />
                 </PagerContent>
-                <NoRecordsContent>
-                    <MudPaper Elevation="0">
-                        <MudStack AlignItems="AlignItems.Center" Justify="Justify.Center" Class="py-8">
-                            <MudIcon Icon="@Icons.Material.Filled.Description" Color="Color.Secondary" Size="Size.Large" />
-                            <MudText Typo="Typo.h6" Class="mt-4">No workflow definitions found</MudText>
-                            <MudText Typo="Typo.body2" Class="mud-text-secondary">Click "Add Workflow" to create one.</MudText>
-                        </MudStack>
-                    </MudPaper>
-                </NoRecordsContent>
+                <NoRecordsContent><MudText Class="pa-3">No workflow definitions yet.</MudText></NoRecordsContent>
                 <LoadingContent>
-                    <MudPaper Elevation="0">
-                        <MudStack AlignItems="AlignItems.Center" Justify="Justify.Center" Class="pa-8">
-                            <MudProgressCircular Color="Color.Primary" Indeterminate="true" Size="Size.Medium" />
-                            <MudText Typo="Typo.body1" Class="ml-4">Loading workflow definitions...</MudText>
-                        </MudStack>
-                    </MudPaper>
+                    <MudStack Row="true" AlignItems="AlignItems.Center" Justify="Justify.Center" Class="pa-3"><MudProgressCircular Color="Color.Primary" Indeterminate="true" Size="Size.Small" /><MudText>Loading workflow definitions...</MudText></MudStack>
                 </LoadingContent>
             </MudDataGrid>
         }
-    </MudPaper>
-</MudContainer>
+</AppPage>
 
 <MudDialog @bind-Visible="@showDeleteDialog" Options="deleteDialogOptions">
     <TitleContent>
@@ -200,7 +163,7 @@
                             <MudText Typo="Typo.subtitle2">@compiledEditingWorkflow.DisplayName</MudText>
                             <MudChip T="string"
                                      Size="Size.Small"
-                                     Color="@GetWorkflowKindColor(compiledEditingWorkflow.Kind)"
+                                     Color="Color.Default"
                                      Variant="Variant.Outlined">
                                 @compiledEditingWorkflow.Kind
                             </MudChip>
@@ -229,7 +192,7 @@
                    Disabled="@string.IsNullOrWhiteSpace(editingWorkflowSource)">
             Validate
         </MudButton>
-        <MudButton Color="Color.Primary"
+        <MudButton Variant="Variant.Filled" Color="Color.Primary"
                    OnClick="SaveWorkflowAsync"
                    Size="Size.Small"
                    Disabled="@string.IsNullOrWhiteSpace(editingWorkflowSource)">
@@ -553,14 +516,4 @@
             : firstLine;
     }
 
-    private static Color GetWorkflowKindColor(string kind)
-    {
-        return WorkflowDefinitionKinds.Normalize(kind) switch
-        {
-            WorkflowDefinitionKinds.Sequential => Color.Secondary,
-            WorkflowDefinitionKinds.Concurrent => Color.Warning,
-            WorkflowDefinitionKinds.GroupChat => Color.Info,
-            _ => Color.Primary
-        };
-    }
 }

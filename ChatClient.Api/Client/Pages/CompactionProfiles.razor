@@ -3,30 +3,21 @@
 @inject ICompactionProfileService CompactionProfileService
 @inject ISnackbar Snackbar
 
-<PageTitle>Compaction Profiles</PageTitle>
-
-<MudContainer MaxWidth="MaxWidth.ExtraLarge" Class="mt-3">
-    <MudText Class="page-header">Compaction Profiles</MudText>
-    <MudPaper Elevation="3" Class="pa-3 rounded-lg">
-        <MudToolBar Dense="true">
-            <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Add" Size="Size.Small" OnClick="Create">Add Profile</MudButton>
-            <MudSpacer />
-            <MudTextField T="string" ValueChanged="Search" Placeholder="Search profiles..." AriaLabel="Search profiles" Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Search" Immediate="true" Margin="Margin.Dense" Class="app-page-search" />
-        </MudToolBar>
-        <MudDataGrid T="CompactionProfile" Items="filteredProfiles" Dense="true" Hover="true" Bordered="true" Class="mt-2">
+<AppPage Title="Compaction Profiles">
+    <AppCrudToolbar AddText="Add Profile" OnAdd="Create" SearchTextChanged="Search" SearchPlaceholder="Search profiles..." />
+    <MudDataGrid T="CompactionProfile" Items="filteredProfiles" Dense="true" Hover="true" Bordered="true">
             <Columns>
                 <PropertyColumn Property="x => x.Name" Title="Name" />
                 <TemplateColumn Title="Policy"><CellTemplate><MudText Typo="Typo.body2">@CompactionProfilePresentation.FormatPolicy(context.Item)</MudText></CellTemplate></TemplateColumn>
                 <TemplateColumn Title="Budget"><CellTemplate><MudText Typo="Typo.body2">@BudgetSummary(context.Item)</MudText></CellTemplate></TemplateColumn>
                 <TemplateColumn Title="Actions"><CellTemplate><div class="app-table-actions">
-                    <MudIconButton Icon="@Icons.Material.Filled.Edit" Size="Size.Small" AriaLabel="Edit compaction profile" OnClick="@(() => Edit(context.Item))" />
-                    <MudIconButton Icon="@Icons.Material.Filled.Delete" Color="Color.Error" Size="Size.Small" AriaLabel="Delete compaction profile" OnClick="@(() => ConfirmDelete(context.Item))" />
+                    <MudTooltip Text="Edit profile"><MudIconButton Icon="@Icons.Material.Filled.Edit" Size="Size.Small" aria-label="Edit compaction profile" OnClick="@(() => Edit(context.Item))" /></MudTooltip>
+                    <MudTooltip Text="Delete profile"><MudIconButton Icon="@Icons.Material.Filled.Delete" Color="Color.Error" Size="Size.Small" aria-label="Delete compaction profile" OnClick="@(() => ConfirmDelete(context.Item))" /></MudTooltip>
                 </div></CellTemplate></TemplateColumn>
             </Columns>
-            <NoRecordsContent><MudText Class="pa-4">No compaction profiles found.</MudText></NoRecordsContent>
-        </MudDataGrid>
-    </MudPaper>
-</MudContainer>
+            <NoRecordsContent><MudText Class="pa-3">No compaction profiles yet.</MudText></NoRecordsContent>
+    </MudDataGrid>
+</AppPage>
 
 <MudDialog @bind-Visible="editing" Options="editOptions">
     <TitleContent><MudText Typo="Typo.h6">@(isNew ? "Create Compaction Profile" : "Edit Compaction Profile")</MudText></TitleContent>
@@ -71,9 +62,9 @@
                     <MudExpansionPanel Text="@($"Stage {index + 1}: {stage.Kind}")">
                         <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="1">
                             <MudText Typo="Typo.subtitle2">Stage @(index + 1)</MudText><MudSpacer />
-                            <MudIconButton Icon="@Icons.Material.Filled.KeyboardArrowUp" Size="Size.Small" Disabled="@(index == 0)" AriaLabel="Move stage up" OnClick="@(() => MoveStage(index, -1))" />
-                            <MudIconButton Icon="@Icons.Material.Filled.KeyboardArrowDown" Size="Size.Small" Disabled="@(index == model.Stages.Count - 1)" AriaLabel="Move stage down" OnClick="@(() => MoveStage(index, 1))" />
-                            <MudIconButton Icon="@Icons.Material.Filled.Delete" Color="Color.Error" Size="Size.Small" AriaLabel="Delete stage" OnClick="@(() => RemoveStage(stage))" />
+                            <MudIconButton Icon="@Icons.Material.Filled.KeyboardArrowUp" Size="Size.Small" Disabled="@(index == 0)" aria-label="Move stage up" OnClick="@(() => MoveStage(index, -1))" />
+                            <MudIconButton Icon="@Icons.Material.Filled.KeyboardArrowDown" Size="Size.Small" Disabled="@(index == model.Stages.Count - 1)" aria-label="Move stage down" OnClick="@(() => MoveStage(index, 1))" />
+                            <MudIconButton Icon="@Icons.Material.Filled.Delete" Color="Color.Error" Size="Size.Small" aria-label="Delete stage" OnClick="@(() => RemoveStage(stage))" />
                         </MudStack>
                         <MudGrid Spacing="2">
                             <MudItem xs="12" sm="6" md="4"><MudSelect T="string" Value="stage.Kind" ValueChanged="@(kind => ChangeStageKind(stage, kind))" Label="Stage type" Dense="true" Margin="Margin.Dense">
@@ -127,10 +118,10 @@
             </MudGrid>
         </MudForm>
     </DialogContent>
-    <DialogActions><MudButton Size="Size.Small" OnClick="Close">Cancel</MudButton><MudButton Color="Color.Primary" Size="Size.Small" Disabled="saving" OnClick="Save">Save</MudButton></DialogActions>
+    <DialogActions><MudButton Size="Size.Small" OnClick="Close">Cancel</MudButton><MudButton Variant="Variant.Filled" Color="Color.Primary" Size="Size.Small" Disabled="saving" OnClick="Save">Save</MudButton></DialogActions>
 </MudDialog>
 
-<MudDialog @bind-Visible="deleting" Options="deleteOptions"><TitleContent><MudText Typo="Typo.h6">Delete Compaction Profile</MudText></TitleContent><DialogContent><MudText>Delete "@deletingProfile?.Name"?</MudText></DialogContent><DialogActions><MudButton Size="Size.Small" OnClick="CloseDelete">Cancel</MudButton><MudButton Color="Color.Error" Size="Size.Small" OnClick="Delete">Delete</MudButton></DialogActions></MudDialog>
+<AppDeleteDialog @bind-Visible="deleting" Title="Delete Compaction Profile" Message="@($"Delete \"{deletingProfile?.Name}\"?")" OnConfirm="Delete" Options="deleteOptions" />
 
 <MudDialog @bind-Visible="confirmingContextWindowSwitch" Options="contextWindowSwitchOptions"><TitleContent><MudText Typo="Typo.h6">Switch to context-window policy?</MudText></TitleContent><DialogContent><MudText>The configured custom pipeline will be removed.</MudText><MudText>This action cannot be undone after saving.</MudText></DialogContent><DialogActions><MudButton Size="Size.Small" OnClick="CancelContextWindowSwitch">Cancel</MudButton><MudButton Color="Color.Error" Size="Size.Small" OnClick="ConfirmContextWindowSwitch">Switch policy</MudButton></DialogActions></MudDialog>
 
@@ -194,7 +185,7 @@
     private void ConfirmContextWindowSwitch() { editorState.ChangeProfileKind(model, CompactionProfileKinds.ContextWindow); confirmingContextWindowSwitch = false; }
     private void CancelContextWindowSwitch() => confirmingContextWindowSwitch = false;
     private async Task Delete() { if (deletingProfile is null) return; try { await CompactionProfileService.DeleteAsync(deletingProfile.Id); deleting = false; await Load(); Snackbar.Add("Compaction profile deleted.", Severity.Success); } catch (Exception ex) { Snackbar.Add($"Could not delete compaction profile: {ex.Message}", Severity.Error); } }
-    private void Close() => editing = false; private void CloseDelete() => deleting = false;
+    private void Close() => editing = false;
     private static string ValidateName(string value) => string.IsNullOrWhiteSpace(value) ? "Name is required." : string.Empty;
     private static string BudgetSummary(CompactionProfile value) => value.BudgetSource == CompactionBudgetSources.SelectedModel ? "Selected model limits" : $"Fixed: {value.ContextWindowTokens:N0} / {value.MaxOutputTokens:N0}";
     private static CompactionProfile Copy(CompactionProfile value) => new() { Id = value.Id, Name = value.Name, Kind = value.Kind, BudgetSource = value.BudgetSource, ContextWindowTokens = value.ContextWindowTokens, MaxOutputTokens = value.MaxOutputTokens, ToolResultThreshold = value.ToolResultThreshold, TruncationThreshold = value.TruncationThreshold, CreatedAt = value.CreatedAt, UpdatedAt = value.UpdatedAt, Stages = value.Stages.Select(x => new CompactionStage { Id = x.Id, Kind = x.Kind, Trigger = new CompactionLimit { Kind = x.Trigger.Kind, Value = x.Trigger.Value }, Target = new CompactionLimit { Kind = x.Target.Kind, Value = x.Target.Value }, MinimumPreservedGroups = x.MinimumPreservedGroups, MinimumPreservedTurns = x.MinimumPreservedTurns, SummaryInstructions = x.SummaryInstructions, SummarizerLlmId = x.SummarizerLlmId, SummarizerModelName = x.SummarizerModelName }).ToList() };

@@ -1,8 +1,29 @@
+.server-model-picker--toolbar,
+.server-model-picker--fluid {
+    flex: 1;
+    min-width: 0;
+}
+
+.server-model-picker--bounded {
+    max-width: 37.5rem;
+    min-width: 0;
+}
+
 .server-model-picker__fields {
     display: flex;
     flex: 1 1 auto;
     gap: 0.25rem;
     min-width: 0;
+}
+
+.server-model-picker__select--fluid {
+    min-width: 7.5rem;
+    flex: 1;
+}
+
+.server-model-picker__select--bounded {
+    min-width: 13.75rem;
+    flex: 1 1 13.75rem;
 }
 
 .server-model-picker__fields > * {

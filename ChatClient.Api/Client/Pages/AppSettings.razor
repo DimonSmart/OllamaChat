@@ -12,196 +12,97 @@
 @inject ISnackbar Snackbar
 @inject ILogger<AppSettings> Logger
 
-<PageTitle>Application Settings</PageTitle>
-
 <OllamaCheck>
-    <MudContainer MaxWidth="MaxWidth.Medium" Class="mt-3">
-        <MudText Class="page-header">Application Settings</MudText>
-
+    <AppPage Title="Application Settings" Layout="AppPageLayout.Form">
         @if (_loading)
         {
-            <MudProgressCircular Color="Color.Primary" Indeterminate="true" />
-            <MudText Class="ml-2">Loading settings...</MudText>
+            <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="1">
+                <MudProgressCircular Color="Color.Primary" Indeterminate="true" Size="Size.Small" />
+                <MudText>Loading settings...</MudText>
+            </MudStack>
         }
         else
         {
-            <MudPaper Elevation="3" Class="pa-3 rounded-lg">
-                <MudForm @ref="_form" Model="@_settings">
-                    <MudCard Class="mb-2" Elevation="1">
-                        <MudCardContent>
-                            <ServerModelPicker Value="_defaultModel" ValueChanged="OnDefaultModelChanged" ShowClearButton="true" />
-                            <MudText Typo="Typo.caption" Class="mt-2">
-                                This server and model will be selected by default when starting a new chat.
-                            </MudText>
-                        </MudCardContent>
-                    </MudCard>
+            <MudForm @ref="_form" Model="@_settings" Class="app-form">
+                <AppSection Title="General">
+                    <MudText Typo="Typo.body2">Default chat model</MudText>
+                    <ServerModelPicker Value="_defaultModel" ValueChanged="OnDefaultModelChanged" ShowClearButton="true" />
+                    <MudGrid Spacing="2">
+                        <MudItem xs="12" sm="6" md="4"><MudSelect T="AppChatHistoryMode" Label="History processing" @bind-Value="_settings.ChatHistoryMode" Variant="Variant.Outlined" Dense="true" Margin="Margin.Dense">
+                            <MudSelectItem Value="@AppChatHistoryMode.None">None</MudSelectItem>
+                            <MudSelectItem Value="@AppChatHistoryMode.Truncate">Truncate</MudSelectItem>
+                            <MudSelectItem Value="@AppChatHistoryMode.Summarize">Summarize</MudSelectItem>
+                        </MudSelect></MudItem>
+                    </MudGrid>
+                </AppSection>
 
-                    <MudCard Class="mb-2" Elevation="1">
-                        <MudCardContent Class="pt-0">
-                            <MudGrid Spacing="2">
-                                <MudItem xs="12" sm="6" md="4"><MudSelect T="AppChatHistoryMode" Label="History Processing" @bind-Value="_settings.ChatHistoryMode" Variant="Variant.Outlined" Dense="true" Margin="Margin.Dense">
-                                    <MudSelectItem Value="@AppChatHistoryMode.None">None</MudSelectItem>
-                                    <MudSelectItem Value="@AppChatHistoryMode.Truncate">Truncate</MudSelectItem>
-                                    <MudSelectItem Value="@AppChatHistoryMode.Summarize">Summarize</MudSelectItem>
-                                </MudSelect></MudItem>
-                                <MudItem xs="12"><MudText Typo="Typo.caption">
-                                    Determines how message history is prepared before sending to the model.
-                                </MudText></MudItem>
-                            </MudGrid>
-                        </MudCardContent>
-                    </MudCard>
+                <AppSection Title="Chat">
+                    <MudTextField T="string" Label="Default chat message" @bind-Value="_settings.DefaultChatMessage" Lines="3" Variant="Variant.Outlined" Margin="Margin.Dense" />
+                    <MudTextField T="string" Label="Default multi-agent chat message" @bind-Value="_settings.DefaultMultiAgentChatMessage" Lines="3" Variant="Variant.Outlined" Margin="Margin.Dense" />
+                    <MudGrid Spacing="2">
+                        <MudItem xs="12" sm="6"><MudTextField T="string" Label="User name" @bind-Value="_settings.UserName" Variant="Variant.Outlined" Margin="Margin.Dense" HelperText="Leave empty to hide the avatar." /></MudItem>
+                        <MudItem xs="12" sm="6"><MudTextField T="string" Label="Agent name" @bind-Value="_settings.AgentName" Variant="Variant.Outlined" Margin="Margin.Dense" HelperText="Leave empty to hide the avatar." /></MudItem>
+                    </MudGrid>
+                </AppSection>
 
-                    <MudCard Class="mb-2" Elevation="1">
-                        <MudCardContent>
-                            <MudTextField T="string" Label="Default Chat Message" @bind-Value="_settings.DefaultChatMessage"
-                                          Lines="3" Variant="Variant.Outlined" Margin="Margin.Dense" HelperText="Pre-filled message in the chat input (useful for testing)" />
-                        </MudCardContent>
-                    </MudCard>
-
-                    <MudCard Class="mb-2" Elevation="1">
-                        <MudCardContent>
-                            <MudTextField T="string" Label="Default Multiagent Chat Message" @bind-Value="_settings.DefaultMultiAgentChatMessage"
-                                          Lines="3" Variant="Variant.Outlined" Margin="Margin.Dense" HelperText="Pre-filled message in the multiagent chat input" />
-                        </MudCardContent>
-                    </MudCard>
-
-                    <MudCard Class="mb-2" Elevation="1">
-                        <MudCardHeader Class="pb-2">
-                            <MudText Class="section-header">Chat Participants</MudText>
-                        </MudCardHeader>
-                        <MudCardContent Class="pt-0">
-                            <MudGrid Spacing="2">
-                                <MudItem xs="12" sm="6"><MudTextField T="string" Label="User Name" @bind-Value="_settings.UserName"
-                                              Variant="Variant.Outlined" Margin="Margin.Dense"
-                                              HelperText="Display name for user messages (leave empty to hide avatar)" /></MudItem>
-                                <MudItem xs="12" sm="6"><MudTextField T="string" Label="Agent Name" @bind-Value="_settings.AgentName"
-                                              Variant="Variant.Outlined" Margin="Margin.Dense"
-                                              HelperText="Display name for AI assistant messages (leave empty to hide avatar)" /></MudItem>
-                            </MudGrid>
-                        </MudCardContent>
-                    </MudCard>
-
-                    <MudCard Class="mb-2" Elevation="1">
-                        <MudCardHeader Class="pb-2">
-                            <MudText Class="section-header">Voice Input</MudText>
-                        </MudCardHeader>
-                        <MudCardContent Class="pt-0">
-                            <MudSwitch T="bool"
-                                       Value="_settings.VoiceInput.IsEnabled"
-                                       ValueChanged="OnVoiceInputEnabledChanged"
-                                       Color="Color.Primary"
-                                       Label="Enable voice input" />
-
-                            <MudGrid Spacing="2">
-                            <MudItem xs="12" sm="6" md="4"><MudSelect T="string"
-                                       Value="_settings.VoiceInput.ModelType"
-                                       ValueChanged="OnVoiceInputModelChanged"
-                                       Label="Whisper Model"
-                                       Variant="Variant.Outlined"
-                                       Dense="true"
-                                       Disabled="@(_settings.VoiceInput.Status == VoiceInputInitializationStatus.Initializing)">
-                                @foreach (var option in VoiceInputModelOptions)
-                                {
-                                    <MudSelectItem Value="@option.Value">@GetVoiceInputModelLabel(option)</MudSelectItem>
-                                }
-                            </MudSelect></MudItem>
-
-                            <MudItem xs="12"><MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2">
-                                <MudButton Variant="Variant.Outlined"
-                                           Color="Color.Primary"
-                                           Size="Size.Small"
-                                           OnClick="InitializeVoiceInput"
-                                           Disabled="@(_settings.VoiceInput.Status == VoiceInputInitializationStatus.Initializing)">
-                                    Initialize
-                                </MudButton>
-
-                                <MudButton Variant="Variant.Outlined"
-                                           Color="Color.Default"
-                                           Size="Size.Small"
-                                           OnClick="ClearDownloadedVoiceModels"
-                                           Disabled="@(_settings.VoiceInput.Status == VoiceInputInitializationStatus.Initializing || _voiceInputStorage.TotalBytes == 0)">
-                                    Clear Downloaded Models
-                                </MudButton>
-
-                                <MudChip T="string"
-                                         Color="@GetVoiceInputStatusColor(_settings.VoiceInput.Status)"
-                                         Variant="Variant.Outlined"
-                                         Size="Size.Small">
-                                    @GetVoiceInputStatusText(_settings.VoiceInput.Status)
-                                </MudChip>
-                            </MudStack></MudItem>
-
-                            @if (!string.IsNullOrWhiteSpace(_settings.VoiceInput.ErrorMessage))
+                <AppSection Title="Voice Input">
+                    <MudSwitch T="bool" Value="_settings.VoiceInput.IsEnabled" ValueChanged="OnVoiceInputEnabledChanged" Color="Color.Primary" Label="Enable voice input" />
+                    <MudGrid Spacing="2">
+                        <MudItem xs="12" sm="6" md="4"><MudSelect T="string" Value="_settings.VoiceInput.ModelType" ValueChanged="OnVoiceInputModelChanged" Label="Whisper model" Variant="Variant.Outlined" Dense="true" Margin="Margin.Dense" Disabled="@(_settings.VoiceInput.Status == VoiceInputInitializationStatus.Initializing)">
+                            @foreach (var option in VoiceInputModelOptions)
                             {
-                                <MudItem xs="12"><MudText Typo="Typo.caption" Color="Color.Error">
-                                    @_settings.VoiceInput.ErrorMessage
-                                </MudText></MudItem>
+                                <MudSelectItem Value="@option.Value">@GetVoiceInputModelLabel(option)</MudSelectItem>
                             }
-                            else if (!string.IsNullOrWhiteSpace(_voiceInputActivityMessage))
-                            {
-                                <MudItem xs="12"><MudText Typo="Typo.caption">
-                                    @_voiceInputActivityMessage
-                                </MudText></MudItem>
-                            }
-
+                        </MudSelect></MudItem>
+                    </MudGrid>
+                    <div class="app-form-actions">
+                        <MudButton Variant="Variant.Outlined" Color="Color.Default" Size="Size.Small" OnClick="InitializeVoiceInput" Disabled="@(_settings.VoiceInput.Status == VoiceInputInitializationStatus.Initializing)">Initialize</MudButton>
+                        <MudButton Variant="Variant.Outlined" Color="Color.Default" Size="Size.Small" OnClick="ClearDownloadedVoiceModels" Disabled="@(_settings.VoiceInput.Status == VoiceInputInitializationStatus.Initializing || _voiceInputStorage.TotalBytes == 0)">Clear downloaded models</MudButton>
+                        <MudChip T="string" Color="@GetVoiceInputStatusColor(_settings.VoiceInput.Status)" Variant="Variant.Outlined" Size="Size.Small">@GetVoiceInputStatusText(_settings.VoiceInput.Status)</MudChip>
+                    </div>
+                    @if (!string.IsNullOrWhiteSpace(_settings.VoiceInput.ErrorMessage))
+                    {
+                        <MudText Typo="Typo.caption" Color="Color.Error">@_settings.VoiceInput.ErrorMessage</MudText>
+                    }
+                    else if (!string.IsNullOrWhiteSpace(_voiceInputActivityMessage))
+                    {
+                        <MudText Typo="Typo.caption">@_voiceInputActivityMessage</MudText>
+                    }
+                    <MudExpansionPanels Outlined="true">
+                        <MudExpansionPanel Text="Storage and model guidance">
                             @if (_voiceInputStorage.DownloadedModels.Count > 0)
                             {
-                                <MudItem xs="12"><MudText Typo="Typo.caption">
-                                    Downloaded models:
-                                    @string.Join(", ", _voiceInputStorage.DownloadedModels.Select(model => $"{model.DisplayName} ({ChatDisplayHelper.FormatFileSize(model.SizeBytes)})"))
-                                </MudText></MudItem>
-                                <MudItem xs="12"><MudText Typo="Typo.caption">
-                                    Disk usage: @ChatDisplayHelper.FormatFileSize(_voiceInputStorage.TotalBytes)
-                                </MudText></MudItem>
+                                <MudText Typo="Typo.body2">Downloaded models: @string.Join(", ", _voiceInputStorage.DownloadedModels.Select(model => $"{model.DisplayName} ({ChatDisplayHelper.FormatFileSize(model.SizeBytes)})"))</MudText>
+                                <MudText Typo="Typo.body2">Disk usage: @ChatDisplayHelper.FormatFileSize(_voiceInputStorage.TotalBytes)</MudText>
                             }
                             else
                             {
-                                <MudItem xs="12"><MudText Typo="Typo.caption">
-                                    No Whisper models are currently stored locally.
-                                </MudText></MudItem>
+                                <MudText Typo="Typo.body2">No Whisper models stored locally.</MudText>
                             }
+                            <MudText Typo="Typo.body2">Uses local Whisper speech recognition with automatic language detection. Small, Medium, or Large V3 Turbo generally work better for Russian; *.En models support English only.</MudText>
+                        </MudExpansionPanel>
+                    </MudExpansionPanels>
+                </AppSection>
 
-                            <MudItem xs="12"><MudText Typo="Typo.caption">
-                                Uses local Whisper speech recognition with automatic language detection.
-                                For Russian, `Small`, `Medium`, or `LargeV3Turbo` usually work better than `Base`.
-                                Do not use `*.En` models unless you only need English.
-                            </MudText></MudItem>
-                            </MudGrid>
-                        </MudCardContent>
-                    </MudCard>
+                <AppSection Title="Retrieval">
+                    <MudText Typo="Typo.body2">Default embedding model for new Knowledge Stores</MudText>
+                    <ServerModelPicker Value="_embeddingModel" ValueChanged="OnEmbeddingModelChanged" ShowClearButton="true" />
+                    <MudGrid Spacing="2">
+                        <MudItem xs="12" sm="6" md="4"><MudNumericField T="double" @bind-Value="_settings.Embedding.RagMinRelevanceScore" Label="Default RAG minimum relevance score" HelperText="Used when no RAG Provider profile is selected." Min="-1" Max="1" Step="0.01" Variant="Variant.Outlined" Margin="Margin.Dense" /></MudItem>
+                    </MudGrid>
+                </AppSection>
 
-                    <MudCard Class="mb-4" Elevation="1">
-                        <MudCardContent>
-                            <ServerModelPicker Value="_embeddingModel" ValueChanged="OnEmbeddingModelChanged" ShowClearButton="true" />
-                            <MudText Typo="Typo.caption" Class="mt-2">
-                                Default embedding model for new Knowledge Stores.
-                            </MudText>
-                            <MudGrid Spacing="2">
-                                <MudItem xs="12" sm="6" md="4"><MudNumericField T="double" @bind-Value="_settings.Embedding.RagMinRelevanceScore" Label="Default RAG minimum relevance score" HelperText="Used by agents that do not select a RAG Provider profile." Min="-1" Max="1" Step="0.01" Variant="Variant.Outlined" Margin="Margin.Dense" /></MudItem>
-                            </MudGrid>
-                        </MudCardContent>
-                    </MudCard>
+                <AppSection Title="Workspace">
+                    <MudTextField T="string" Label="Workspaces root" @bind-Value="_settings.WorkspacesRoot" Variant="Variant.Outlined" Margin="Margin.Dense" FullWidth="true" />
+                </AppSection>
 
-                    <MudCard Class="mb-4" Elevation="1">
-                        <MudCardContent>
-                            <MudTextField T="string" Label="Workspaces root" @bind-Value="_settings.WorkspacesRoot"
-                                          Variant="Variant.Outlined" Margin="Margin.Dense" FullWidth="true"
-                                          HelperText="Base directory used when creating new workspaces." />
-                        </MudCardContent>
-                    </MudCard>
-
-                    <MudButtonGroup Class="mt-4">
-                        <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="SaveSettingsFromButton" Size="Size.Small">
-                            Save Application Settings
-                        </MudButton>
-                        <MudButton Variant="Variant.Outlined" Color="Color.Default" OnClick="ResetSettings" Size="Size.Small">
-                            Reset
-                        </MudButton>
-                    </MudButtonGroup>
-                </MudForm>
-            </MudPaper>
+                <div class="app-form-actions">
+                    <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="SaveSettingsFromButton" Size="Size.Small">Save application settings</MudButton>
+                    <MudButton Variant="Variant.Outlined" Color="Color.Default" OnClick="ResetSettings" Size="Size.Small">Reset</MudButton>
+                </div>
+            </MudForm>
         }
-    </MudContainer>
+    </AppPage>
 </OllamaCheck>
 
 @code {

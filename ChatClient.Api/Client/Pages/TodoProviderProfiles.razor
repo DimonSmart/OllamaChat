@@ -3,23 +3,8 @@
 @inject ITodoProviderProfileService TodoProviderProfileService
 @inject ISnackbar Snackbar
 
-<PageTitle>Todo Provider Profiles</PageTitle>
-
-<MudContainer MaxWidth="MaxWidth.ExtraLarge" Class="mt-3">
-    <MudText Class="page-header">Todo Provider Profiles</MudText>
-
-    <MudPaper Elevation="3" Class="pa-3 rounded-lg">
-        <MudToolBar Dense="true">
-            <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Add"
-                       OnClick="CreateProfile" Class="px-4" Size="Size.Small">
-                Add Todo Profile
-            </MudButton>
-            <MudSpacer />
-            <MudTextField T="string" ValueChanged="OnSearch" Placeholder="Search profiles..."
-                          Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Search"
-                          IconSize="Size.Medium" Immediate="true" DebounceInterval="300"
-                          Margin="Margin.Dense" Class="app-page-search" />
-        </MudToolBar>
+<AppPage Title="Todo Provider Profiles">
+    <AppCrudToolbar AddText="Add Todo Profile" OnAdd="CreateProfile" SearchText="@searchText" SearchTextChanged="OnSearch" SearchPlaceholder="Search profiles..." />
 
         @if (loading)
         {
@@ -28,7 +13,7 @@
         else
         {
             <MudDataGrid T="TodoProviderProfile" Items="@filteredProfiles" ReadOnly="true" Bordered="true" Hover="true"
-                         Striped="true" Dense="true" FixedHeader="true" Class="mt-2">
+                         Striped="true" Dense="true" FixedHeader="true">
                 <Columns>
                     <PropertyColumn Property="x => x.Name" Title="Name" />
                     <TemplateColumn Title="Instructions">
@@ -48,23 +33,16 @@
                     </TemplateColumn>
                     <TemplateColumn Title="Actions">
                         <CellTemplate><div class="app-table-actions">
-                            <MudIconButton Icon="@Icons.Material.Filled.Edit" Size="Size.Small" OnClick="@(() => EditProfile(context.Item))" />
-                            <MudIconButton Icon="@Icons.Material.Filled.Delete" Color="Color.Error" Size="Size.Small" OnClick="@(() => ConfirmDelete(context.Item))" />
+                            <MudTooltip Text="Edit profile"><MudIconButton Icon="@Icons.Material.Filled.Edit" Size="Size.Small" aria-label="Edit profile" OnClick="@(() => EditProfile(context.Item))" /></MudTooltip>
+                            <MudTooltip Text="Delete profile"><MudIconButton Icon="@Icons.Material.Filled.Delete" Color="Color.Error" Size="Size.Small" aria-label="Delete profile" OnClick="@(() => ConfirmDelete(context.Item))" /></MudTooltip>
                         </div></CellTemplate>
                     </TemplateColumn>
                 </Columns>
                 <PagerContent><MudDataGridPager T="TodoProviderProfile" PageSizeOptions="new[] { 10, 25, 50, 100 }" /></PagerContent>
-                <NoRecordsContent>
-                    <MudStack AlignItems="AlignItems.Center" Justify="Justify.Center" Class="py-8">
-                        <MudIcon Icon="@Icons.Material.Filled.Checklist" Color="Color.Secondary" Size="Size.Large" />
-                        <MudText Typo="Typo.h6" Class="mt-4">No Todo Provider profiles found</MudText>
-                        <MudText Typo="Typo.body2" Class="mud-text-secondary">Click "Add Todo Profile" to create one.</MudText>
-                    </MudStack>
-                </NoRecordsContent>
+                <NoRecordsContent><MudText Class="pa-3">No Todo Provider profiles yet.</MudText></NoRecordsContent>
             </MudDataGrid>
         }
-    </MudPaper>
-</MudContainer>
+</AppPage>
 
 <MudDialog @bind-Visible="showEditDialog" Options="editDialogOptions">
     <TitleContent><MudText Typo="Typo.h6">@(isNewProfile ? "Create Todo Provider Profile" : "Edit Todo Provider Profile")</MudText></TitleContent>
@@ -82,18 +60,11 @@
     </DialogContent>
     <DialogActions>
         <MudButton OnClick="CloseEditDialog" Size="Size.Small">Cancel</MudButton>
-        <MudButton Color="Color.Primary" OnClick="SaveProfile" Disabled="saving" Size="Size.Small">Save</MudButton>
+        <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="SaveProfile" Disabled="saving" Size="Size.Small">Save</MudButton>
     </DialogActions>
 </MudDialog>
 
-<MudDialog @bind-Visible="showDeleteDialog" Options="deleteDialogOptions">
-    <TitleContent><MudText Typo="Typo.h6">Delete Todo Provider Profile</MudText></TitleContent>
-    <DialogContent><MudText>Are you sure you want to delete "@profileToDelete?.Name"?</MudText></DialogContent>
-    <DialogActions>
-        <MudButton OnClick="CloseDeleteDialog" Size="Size.Small">Cancel</MudButton>
-        <MudButton Color="Color.Error" OnClick="DeleteProfile" Size="Size.Small">Delete</MudButton>
-    </DialogActions>
-</MudDialog>
+<AppDeleteDialog @bind-Visible="showDeleteDialog" Title="Delete Todo Provider Profile" Message="@($"Delete \"{profileToDelete?.Name}\"?")" OnConfirm="DeleteProfile" Options="deleteDialogOptions" />
 
 @code {
     private List<TodoProviderProfile> profiles = [];
@@ -212,7 +183,6 @@
     }
 
     private void CloseEditDialog() => showEditDialog = false;
-    private void CloseDeleteDialog() => showDeleteDialog = false;
     private static string ValidateName(string value) => string.IsNullOrWhiteSpace(value) ? "Name is required." : string.Empty;
     private static bool Contains(string? value, string search) => value?.Contains(search, StringComparison.OrdinalIgnoreCase) == true;
     private static string Preview(string? value, string emptyText = "") => string.IsNullOrWhiteSpace(value) ? emptyText : value.Length <= 100 ? value : $"{value[..100]}…";

@@ -1,0 +1,25 @@
+<PageTitle>@Title</PageTitle>
+
+<MudContainer MaxWidth="@ResolvedMaxWidth" Class="app-page">
+    <MudText Class="page-header">@Title</MudText>
+    <div class="app-page__content">
+        @ChildContent
+    </div>
+</MudContainer>
+
+@code {
+    [Parameter, EditorRequired]
+    public string Title { get; set; } = string.Empty;
+
+    [Parameter, EditorRequired]
+    public RenderFragment ChildContent { get; set; } = null!;
+
+    [Parameter]
+    public AppPageLayout Layout { get; set; } = AppPageLayout.Management;
+
+    private MaxWidth ResolvedMaxWidth => Layout switch
+    {
+        AppPageLayout.Form => MaxWidth.Medium,
+        _ => MaxWidth.ExtraLarge
+    };
+}
