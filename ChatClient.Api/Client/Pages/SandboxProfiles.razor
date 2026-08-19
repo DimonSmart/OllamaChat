@@ -9,11 +9,11 @@
 
 <PageTitle>Sandbox Profiles</PageTitle>
 
-<MudContainer MaxWidth="MaxWidth.ExtraLarge" Class="mt-3">
+<MudContainer MaxWidth="MaxWidth.ExtraLarge" Class="app-page">
     <MudText Class="page-header">Sandbox Profiles</MudText>
     <MudPaper Elevation="3" Class="pa-3 rounded-lg">
-        <MudToolBar Dense="true">
-            <MudButton Color="Color.Primary" Variant="Variant.Filled" StartIcon="@Icons.Material.Filled.Add" OnClick="Create">Add Sandbox Profile</MudButton>
+        <MudToolBar Dense="true" Class="app-page-toolbar">
+            <MudButton Color="Color.Primary" Variant="Variant.Filled" StartIcon="@Icons.Material.Filled.Add" Size="Size.Small" OnClick="Create">Add Sandbox Profile</MudButton>
         </MudToolBar>
         <MudDataGrid T="SandboxProfileRow" Items="profiles" Dense="true" Hover="true" Bordered="true" Class="mt-2">
             <Columns>
@@ -24,8 +24,7 @@
                 <PropertyColumn Property="x => x.Network" Title="Network" />
                 <TemplateColumn Title="Actions">
                     <CellTemplate>
-                        <MudIconButton Icon="@Icons.Material.Filled.Edit" Size="Size.Small" OnClick="@(() => Edit(context.Item.Profile))" />
-                        <MudIconButton Icon="@Icons.Material.Filled.Delete" Color="Color.Error" Size="Size.Small" OnClick="@(() => ConfirmDelete(context.Item.Profile))" />
+                        <div class="app-table-actions"><MudTooltip Text="Edit profile"><MudIconButton Icon="@Icons.Material.Filled.Edit" Size="Size.Small" AriaLabel="Edit profile" OnClick="@(() => Edit(context.Item.Profile))" /></MudTooltip><MudTooltip Text="Delete profile"><MudIconButton Icon="@Icons.Material.Filled.Delete" Color="Color.Error" Size="Size.Small" AriaLabel="Delete profile" OnClick="@(() => ConfirmDelete(context.Item.Profile))" /></MudTooltip></div>
                     </CellTemplate>
                 </TemplateColumn>
             </Columns>
@@ -47,13 +46,13 @@
         <MudItem xs="12"><MudTextField @bind-Value="model.Configuration" Label="YAML configuration" Lines="12" Margin="Margin.Dense" Immediate="true" HelperText="Provider-specific sandbox configuration in YAML." /></MudItem>
         </MudGrid>
     </DialogContent>
-    <DialogActions><MudButton OnClick="Close">Cancel</MudButton><MudButton Color="Color.Primary" OnClick="Save">Save</MudButton></DialogActions>
+    <DialogActions><MudButton Size="Size.Small" OnClick="Close">Cancel</MudButton><MudButton Color="Color.Primary" Size="Size.Small" OnClick="Save">Save</MudButton></DialogActions>
 </MudDialog>
 
 <MudDialog @bind-Visible="deleting" Options="dialogOptions">
     <TitleContent><MudText Typo="Typo.h6">Delete Sandbox Profile</MudText></TitleContent>
     <DialogContent><MudText>Delete "@profileToDelete?.Name"?</MudText></DialogContent>
-    <DialogActions><MudButton OnClick="CloseDelete">Cancel</MudButton><MudButton Color="Color.Error" OnClick="DeleteConfirmed">Delete</MudButton></DialogActions>
+    <DialogActions><MudButton Size="Size.Small" OnClick="CloseDelete">Cancel</MudButton><MudButton Color="Color.Error" Size="Size.Small" OnClick="DeleteConfirmed">Delete</MudButton></DialogActions>
 </MudDialog>
 
 @code {

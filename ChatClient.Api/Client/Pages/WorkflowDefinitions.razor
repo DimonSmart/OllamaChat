@@ -169,7 +169,7 @@
         <MudButton Color="Color.Warning"
                    Disabled="@restoringBuiltInWorkflows"
                    OnClick="RestoreBuiltInWorkflowsAsync"
-                   Size="Size.Medium">
+                   Size="Size.Small">
             Restore
         </MudButton>
     </DialogActions>
@@ -225,13 +225,13 @@
         <MudButton Variant="Variant.Outlined"
                    Color="Color.Default"
                    OnClick="ValidateWorkflowAsync"
-                   Size="Size.Medium"
+                   Size="Size.Small"
                    Disabled="@string.IsNullOrWhiteSpace(editingWorkflowSource)">
             Validate
         </MudButton>
         <MudButton Color="Color.Primary"
                    OnClick="SaveWorkflowAsync"
-                   Size="Size.Medium"
+                   Size="Size.Small"
                    Disabled="@string.IsNullOrWhiteSpace(editingWorkflowSource)">
             Save
         </MudButton>

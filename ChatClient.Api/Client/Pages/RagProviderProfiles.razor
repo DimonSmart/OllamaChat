@@ -6,13 +6,13 @@
 
 <PageTitle>RAG Provider Profiles</PageTitle>
 
-<MudContainer MaxWidth="MaxWidth.ExtraLarge" Class="mt-3">
+<MudContainer MaxWidth="MaxWidth.ExtraLarge" Class="app-page">
     <MudText Class="page-header">RAG Provider Profiles</MudText>
     <MudPaper Elevation="3" Class="pa-3 rounded-lg">
-        <MudToolBar Dense="true">
-            <MudButton Color="Color.Primary" Variant="Variant.Filled" StartIcon="@Icons.Material.Filled.Add" OnClick="Create">Add RAG Profile</MudButton>
+        <MudToolBar Dense="true" Class="app-page-toolbar">
+            <MudButton Color="Color.Primary" Variant="Variant.Filled" StartIcon="@Icons.Material.Filled.Add" Size="Size.Small" OnClick="Create">Add RAG Profile</MudButton>
             <MudSpacer />
-            <MudTextField @bind-Value="search" Immediate="true" Placeholder="Search profiles..." Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Search" Margin="Margin.Dense" />
+            <MudTextField @bind-Value="search" Immediate="true" Placeholder="Search profiles..." AriaLabel="Search profiles" Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Search" Margin="Margin.Dense" Class="app-page-search" />
         </MudToolBar>
         @if (loading) { <MudProgressCircular Indeterminate="true" Class="ma-4" /> }
         else if (!Filtered.Any()) { <MudText Class="ma-4">No RAG Provider Profiles yet.</MudText> }
@@ -29,7 +29,7 @@
                 <TemplateColumn Title="Assistant messages"><CellTemplate>@(context.Item.IncludeAssistantMessages ? "Included" : "User only")</CellTemplate></TemplateColumn>
                 <TemplateColumn Title="Citations"><CellTemplate>@(context.Item.RequestCitations ? "Requested" : "Off")</CellTemplate></TemplateColumn>
                 <TemplateColumn Title="Updated"><CellTemplate>@context.Item.UpdatedAt.ToLocalTime().ToString("g")</CellTemplate></TemplateColumn>
-                <TemplateColumn Title="Actions"><CellTemplate><MudIconButton Icon="@Icons.Material.Filled.Edit" Size="Size.Small" OnClick="@(() => Edit(context.Item))" /><MudIconButton Icon="@Icons.Material.Filled.Delete" Color="Color.Error" Size="Size.Small" OnClick="@(() => ConfirmDelete(context.Item))" /></CellTemplate></TemplateColumn>
+                <TemplateColumn Title="Actions"><CellTemplate><div class="app-table-actions"><MudTooltip Text="Edit profile"><MudIconButton Icon="@Icons.Material.Filled.Edit" Size="Size.Small" AriaLabel="Edit profile" OnClick="@(() => Edit(context.Item))" /></MudTooltip><MudTooltip Text="Delete profile"><MudIconButton Icon="@Icons.Material.Filled.Delete" Color="Color.Error" Size="Size.Small" AriaLabel="Delete profile" OnClick="@(() => ConfirmDelete(context.Item))" /></MudTooltip></div></CellTemplate></TemplateColumn>
             </Columns><PagerContent><MudDataGridPager T="RagProviderProfile" PageSizeOptions="new[] { 10, 25, 50, 100 }" /></PagerContent>
         </MudDataGrid> }
     </MudPaper>
@@ -54,7 +54,7 @@
     </MudGrid></MudForm></DialogContent>
     <DialogActions><MudButton Size="Size.Small" OnClick="Close">Cancel</MudButton><MudButton Size="Size.Small" Color="Color.Primary" Disabled="@saving" OnClick="Save">@(saving ? "Saving..." : "Save")</MudButton></DialogActions>
 </MudDialog>
-<MudDialog @bind-Visible="deleting" Options="dialogOptions"><TitleContent><MudText Typo="Typo.h6">Delete RAG Provider Profile</MudText></TitleContent><DialogContent><MudText>Delete "@profileToDelete?.Name"?</MudText></DialogContent><DialogActions><MudButton OnClick="CloseDelete">Cancel</MudButton><MudButton Color="Color.Error" OnClick="Delete">Delete</MudButton></DialogActions></MudDialog>
+<MudDialog @bind-Visible="deleting" Options="dialogOptions"><TitleContent><MudText Typo="Typo.h6">Delete RAG Provider Profile</MudText></TitleContent><DialogContent><MudText>Delete "@profileToDelete?.Name"?</MudText></DialogContent><DialogActions><MudButton Size="Size.Small" OnClick="CloseDelete">Cancel</MudButton><MudButton Color="Color.Error" Size="Size.Small" OnClick="Delete">Delete</MudButton></DialogActions></MudDialog>
 
 @code {
     private List<RagProviderProfile> profiles = []; private RagProviderProfile model = new(); private RagProviderProfile? profileToDelete;

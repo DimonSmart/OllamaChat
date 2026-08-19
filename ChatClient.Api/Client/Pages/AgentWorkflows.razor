@@ -118,8 +118,9 @@
 
                                     @if (HasWorkflowSource)
                                     {
-                                        <MudButton Variant="Variant.Outlined"
+                                        <MudButton Variant="Variant.Filled"
                                                    Color="Color.Primary"
+                                                   Size="Size.Small"
                                                    StartIcon="@Icons.Material.Filled.Check"
                                                    Disabled="@(!CanCompileWorkflow)"
                                                    OnClick="CompileWorkflowAsync">
@@ -502,10 +503,10 @@
         </MudStack>
     </DialogContent>
     <DialogActions>
-        <MudButton OnClick="CloseLoadWorkflowDialog" Size="Size.Medium">Cancel</MudButton>
+        <MudButton OnClick="CloseLoadWorkflowDialog" Size="Size.Small">Cancel</MudButton>
         <MudButton Color="Color.Primary"
                    OnClick="ConfirmLoadWorkflowAsync"
-                   Size="Size.Medium"
+                   Size="Size.Small"
                    Disabled="@(!selectedWorkflowIdToLoad.HasValue)">
             OK
         </MudButton>

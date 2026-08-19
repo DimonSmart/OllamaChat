@@ -112,10 +112,10 @@
                                               Margin="Margin.Dense" Immediate="true" Class="flex-grow-1"
                                               HelperText="Existing directory available to this conversation only."
                                               Disabled="@isStartingChat" />
-                                <MudStack Row="true" Spacing="1" Class="mt-2">
-                                    <MudButton Variant="Variant.Outlined" OnClick="OpenWorkspacePickerAsync" Disabled="@isStartingChat">Open...</MudButton>
+                                <MudStack Row="true" Spacing="1" AlignItems="AlignItems.Center" Class="mt-2">
+                                    <MudButton Variant="Variant.Outlined" Color="Color.Default" Size="Size.Small" OnClick="OpenWorkspacePickerAsync" Disabled="@isStartingChat">Open...</MudButton>
                                     <MudTooltip Text="Enter a workspace name to create it under the configured Workspaces root.">
-                                        <MudButton Variant="Variant.Outlined" Color="Color.Primary" OnClick="CreateWorkspaceAsync"
+                                        <MudButton Variant="Variant.Outlined" Color="Color.Default" Size="Size.Small" OnClick="CreateWorkspaceAsync"
                                                    Disabled="@(isStartingChat || !WorkspaceDirectoryService.IsValidWorkspaceName(fileAccessWorkspace))">Create</MudButton>
                                     </MudTooltip>
                                 </MudStack>

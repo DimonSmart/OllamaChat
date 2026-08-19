@@ -109,13 +109,15 @@
                             <MudItem xs="12"><MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2">
                                 <MudButton Variant="Variant.Outlined"
                                            Color="Color.Primary"
+                                           Size="Size.Small"
                                            OnClick="InitializeVoiceInput"
                                            Disabled="@(_settings.VoiceInput.Status == VoiceInputInitializationStatus.Initializing)">
                                     Initialize
                                 </MudButton>
 
                                 <MudButton Variant="Variant.Outlined"
-                                           Color="Color.Secondary"
+                                           Color="Color.Default"
+                                           Size="Size.Small"
                                            OnClick="ClearDownloadedVoiceModels"
                                            Disabled="@(_settings.VoiceInput.Status == VoiceInputInitializationStatus.Initializing || _voiceInputStorage.TotalBytes == 0)">
                                     Clear Downloaded Models
@@ -192,7 +194,7 @@
                         <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="SaveSettingsFromButton" Size="Size.Small">
                             Save Application Settings
                         </MudButton>
-                        <MudButton Variant="Variant.Outlined" Color="Color.Secondary" OnClick="ResetSettings" Size="Size.Small">
+                        <MudButton Variant="Variant.Outlined" Color="Color.Default" OnClick="ResetSettings" Size="Size.Small">
                             Reset
                         </MudButton>
                     </MudButtonGroup>

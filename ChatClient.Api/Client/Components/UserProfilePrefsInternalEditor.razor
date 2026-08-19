@@ -20,18 +20,21 @@ else
             <MudButton Variant="Variant.Filled"
                        Color="Color.Primary"
                        StartIcon="@Icons.Material.Filled.Save"
+                       Size="Size.Small"
                        Disabled="@_saving"
                        OnClick="SaveAsync">
                 Save
             </MudButton>
             <MudButton Variant="Variant.Outlined"
                        StartIcon="@Icons.Material.Filled.Refresh"
+                       Size="Size.Small"
                        Disabled="@_saving"
                        OnClick="ReloadAsync">
                 Reload
             </MudButton>
             <MudButton Variant="Variant.Outlined"
                        StartIcon="@Icons.Material.Filled.CleaningServices"
+                       Size="Size.Small"
                        Disabled="@_saving"
                        OnClick="ClearValues">
                 Clear Values
@@ -39,6 +42,7 @@ else
             <MudButton Variant="Variant.Outlined"
                        Color="Color.Warning"
                        StartIcon="@Icons.Material.Filled.Restore"
+                       Size="Size.Small"
                        Disabled="@_saving"
                        OnClick="RestoreDefaults">
                 Restore Defaults
@@ -46,6 +50,7 @@ else
             <MudButton Variant="Variant.Text"
                        Color="Color.Primary"
                        StartIcon="@Icons.Material.Filled.Add"
+                       Size="Size.Small"
                        Disabled="@_saving"
                        OnClick="AddDefinition">
                 Add Field
@@ -139,6 +144,8 @@ else
                             <MudTd DataLabel="Actions">
                                 <MudIconButton Icon="@Icons.Material.Filled.Delete"
                                                Color="Color.Error"
+                                               Size="Size.Small"
+                                               AriaLabel="Delete field"
                                                OnClick="@(() => RemoveDefinition(context))" />
                             </MudTd>
                         </RowTemplate>
@@ -189,6 +196,8 @@ else
                             <MudTd DataLabel="Actions">
                                 <MudIconButton Icon="@Icons.Material.Filled.DeleteSweep"
                                                Color="Color.Error"
+                                               Size="Size.Small"
+                                               AriaLabel="Clear value"
                                                Disabled="@(!HasValue(context.Key))"
                                                OnClick="@(() => ClearValue(context.Key))" />
                             </MudTd>
