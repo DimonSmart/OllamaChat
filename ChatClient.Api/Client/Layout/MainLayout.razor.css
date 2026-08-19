@@ -38,3 +38,9 @@
         padding: 0 0.5rem;
     }
 }
+.app-main-content {
+    min-height: 100dvh;
+    box-sizing: border-box;
+    display: flex;
+    flex-direction: column;
+}

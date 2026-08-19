@@ -480,9 +480,8 @@
                     @foreach (var workflow in filteredSavedWorkflows)
                     {
                         var isSelected = workflow.Id == selectedWorkflowIdToLoad;
-                        <MudPaper Class="@($"pa-3 workflow-load-item {(isSelected ? "workflow-load-item-selected" : string.Empty)}")"
+                        <MudPaper Class="@($"pa-3 cursor-pointer workflow-load-item {(isSelected ? "workflow-load-item-selected" : string.Empty)}")"
                                   Outlined="true"
-                                  Style="cursor:pointer;"
                                   @onclick="() => SelectWorkflowToLoad(workflow.Id)"
                                   @ondblclick="ConfirmLoadWorkflowAsync">
                             <MudStack Spacing="1">

@@ -192,7 +192,7 @@
                        Disabled="@(isLLMAnswering || ChatService.PendingToolApproval is not null || ChatService.RequiresReset)" OnClick="OpenHarnessSessionPickerAsync">
                 Restore Harness Session
             </MudButton>
-            <InputFile id="harness-session-file" OnChange="RestoreHarnessSessionAsync" accept="application/json,.json" style="display:none" />
+            <InputFile id="harness-session-file" OnChange="RestoreHarnessSessionAsync" accept="application/json,.json" class="app-hidden-input" />
         </MudStack>
         }
         <AgenticChatSession @ref="chatSessionView"

@@ -5,13 +5,13 @@
 <MudXChatBubble Class="@($"think-line {(isExpanded ? "expanded" : "collapsed")}")" OnClick="Toggle">
     @if (isExpanded)
     {
-        <MudText Typo="Typo.caption" Class="mud-text-secondary" Style="font-style: italic;">
+        <MudText Typo="Typo.caption" Class="mud-text-secondary font-italic">
             @((MarkupString)HtmlText)
         </MudText>
     }
     else
     {
-        <MudText Typo="Typo.caption" Class="mud-text-secondary" Style="font-style: italic;">
+        <MudText Typo="Typo.caption" Class="mud-text-secondary font-italic">
             @ThoughtIcon @Truncate(PlainText, 100)
         </MudText>
     }

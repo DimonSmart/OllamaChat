@@ -53,8 +53,7 @@
                           AdornmentIcon="@Icons.Material.Filled.Search"
                           IconSize="Size.Medium"
                           Margin="Margin.Dense"
-                          Class="mt-0"
-                          Style="min-width: 300px;"
+                          Class="app-page-search"
                           Immediate="true"
                           DebounceInterval="300" />
         </MudToolBar>
@@ -126,12 +125,12 @@
                             </div>
                         </CellTemplate>
                     </TemplateColumn>
-                    <TemplateColumn Title="Knowledge Stores" isEditable="false" CellStyle="text-align:center; width:80px;">
+                    <TemplateColumn Title="Knowledge Stores" isEditable="false" Class="app-table-cell--center">
                         <CellTemplate>
                             @context.Item.KnowledgeStoreIds.Count
                         </CellTemplate>
                     </TemplateColumn>
-                    <TemplateColumn Title="Tools" isEditable="false" CellStyle="text-align:center; width:120px;">
+                    <TemplateColumn Title="Tools" isEditable="false" Class="app-table-cell--center">
                         <CellTemplate>
                             @{
                                 var displayText = GetToolingDisplayText(context.Item);
@@ -140,11 +139,11 @@
                             }
                             @if (hasAttachments)
                             {
-                                <span style="color: #1976d2; font-size: 16px; font-weight: 600;" title="@tooltipText">@displayText</span>
+                                <MudText Typo="Typo.body2" Color="Color.Primary" title="@tooltipText">@displayText</MudText>
                             }
                             else
                             {
-                                <span style="color: #9e9e9e; font-size: 18px;" title="@tooltipText">@displayText</span>
+                                <MudText Typo="Typo.body2" Class="mud-text-secondary" title="@tooltipText">@displayText</MudText>
                             }
                         </CellTemplate>
                     </TemplateColumn>
@@ -161,7 +160,7 @@
                     </TemplateColumn>
                     <TemplateColumn Title="Actions">
                         <CellTemplate>
-                            <div style="display:flex; justify-content:flex-end;">
+                            <div class="app-table-actions">
                                 <MudIconButton Icon="@Icons.Material.Filled.Edit"
                                                Size="Size.Small"
                                                OnClick="@(async () => await StartEditingAgent(context.Item))" />

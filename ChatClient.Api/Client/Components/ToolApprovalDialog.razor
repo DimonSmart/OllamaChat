@@ -11,7 +11,7 @@
                 <MudText Typo="Typo.caption">Workspace: @Request.WorkspacePath</MudText>
             }
             <MudText Typo="Typo.caption">Arguments</MudText>
-            <MudPaper Outlined="true" Class="pa-2" Style="max-height: 35vh; overflow: auto;"><pre class="ma-0">@Request.Arguments</pre></MudPaper>
+            <MudPaper Outlined="true" Class="pa-2 app-scrollable-panel tool-approval-arguments"><pre class="ma-0">@Request.Arguments</pre></MudPaper>
         </MudStack>
     </DialogContent>
     <DialogActions>

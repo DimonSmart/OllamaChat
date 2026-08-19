@@ -1,0 +1,5 @@
+.agentic-chat-session-layout { display: flex; height: 100%; min-width: 0; }
+.agentic-chat-mode-select { min-width: 8.125rem; }
+.agentic-chat-trace { flex: 1 1 38rem; min-width: 0; }
+.agentic-chat-trace--split { border-left: 1px solid var(--mud-palette-lines-default); }
+.agentic-chat-image-preview { max-width: 150px; max-height: 150px; object-fit: cover; }

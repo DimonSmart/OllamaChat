@@ -27,7 +27,7 @@
                    Elevation="8"
                    Width="@(showSessionState && showTrace ? "min(72rem, 80vw)" : showTrace ? "min(44rem, 100%)" : "min(26rem, 100%)")"
                    Class="session-state-drawer">
-            <div style="display: flex; height: 100%; min-width: 0;">
+            <div class="agentic-chat-session-layout">
             @if (showSessionState && SessionState is not null)
             {
             var fileAccess = SessionState.FileAccess;
@@ -54,7 +54,7 @@
                             }
                             else
                             {
-                                <MudSelect T="string" Value="SessionState.Mode" ValueChanged="OnAgentModeChangedAsync" Dense="true" Margin="Margin.Dense" Disabled="@(IsLlmAnswering || isChangingAgentMode || PendingToolApproval is not null)" Style="min-width: 130px">
+                                <MudSelect T="string" Value="SessionState.Mode" ValueChanged="OnAgentModeChangedAsync" Dense="true" Margin="Margin.Dense" Disabled="@(IsLlmAnswering || isChangingAgentMode || PendingToolApproval is not null)" Class="agentic-chat-mode-select">
                                     @foreach (var mode in SessionState.AvailableModes)
                                     {
                                         <MudSelectItem T="string" Value="@mode">@mode</MudSelectItem>
@@ -176,7 +176,7 @@
             }
             @if (showTrace)
             {
-                <div style="flex: 1 1 38rem; min-width: 0; border-left: @(showSessionState ? "1px solid var(--mud-palette-lines-default)" : "none");"><HarnessTraceInspector /></div>
+                <div class="@(showSessionState ? "agentic-chat-trace agentic-chat-trace--split" : "agentic-chat-trace")"><HarnessTraceInspector /></div>
             }
             </div>
         </MudDrawer>
@@ -265,7 +265,7 @@
                                     <div class="image-thumbnail">
                                         <img src="@GetImageDataUrl(file)"
                                              alt="@file.Name"
-                                             style="max-width: 150px; max-height: 150px; object-fit: cover;"
+                                             class="agentic-chat-image-preview"
                                              @onclick="@(() => ShowFullSizeImage(file))" />
                                         <MudText Typo="Typo.caption" Class="image-caption mt-1 text-center">
                                             @file.Name (@FormatFileSize(file.Size))

@@ -42,8 +42,7 @@
                           AdornmentIcon="@Icons.Material.Filled.Search"
                           IconSize="Size.Medium"
                           Margin="Margin.Dense"
-                          Class="mt-0"
-                          Style="min-width: 300px;"
+                          Class="app-page-search"
                           Immediate="true"
                           DebounceInterval="300" />
         </MudToolBar>
@@ -131,8 +130,8 @@
                             </div>
                         </CellTemplate>
                     </TemplateColumn>
-                    <TemplateColumn CellStyle="display:flex; justify-content:flex-end;">
-                        <CellTemplate>
+                    <TemplateColumn>
+                        <CellTemplate><div class="app-table-actions">
                             <MudIconButton Icon="@Icons.Material.Filled.PlayArrow"
                                          Size="Size.Small"
                                          OnClick="@(() => NavigateToPlayground(context.Item))" />
@@ -152,7 +151,7 @@
                                          Color="Color.Error"
                                          Disabled="@(!CanModify(context.Item))"
                                          OnClick="() => ConfirmDelete(context.Item)" />
-                        </CellTemplate>
+                        </div></CellTemplate>
                     </TemplateColumn>
                 </Columns>
                 <PagerContent>

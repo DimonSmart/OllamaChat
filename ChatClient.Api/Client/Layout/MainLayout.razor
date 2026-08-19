@@ -29,8 +29,7 @@
                        Variant="Variant.Outlined"
                        StartIcon="@Icons.Material.Filled.AddCircle"
                        Size="Size.Small"
-                       Class="ml-4"
-                       Style="flex-shrink: 0;">New Chat</MudButton>
+                       Class="ml-4 flex-shrink-0">New Chat</MudButton>
         }
         @if (!isLLMAnswering)
         {
@@ -68,8 +67,7 @@
     <MudDrawer id="nav-drawer" @bind-Open="_drawerOpen" ClipMode="DrawerClipMode.Always" Elevation="2">
         <NavMenu />
     </MudDrawer>
-    <MudMainContent Class="pt-13 pa-2"
-                    Style="min-height: 100dvh; box-sizing: border-box; display: flex; flex-direction: column;">
+    <MudMainContent Class="pt-13 pa-2 app-main-content">
         <div class="app-page-content">
             @Body
         </div>

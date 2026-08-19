@@ -1,0 +1,4 @@
+.workspace-directory-list {
+    max-height: 45vh;
+    overflow-y: auto;
+}

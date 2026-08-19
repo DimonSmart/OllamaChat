@@ -9,7 +9,7 @@
 @inject IModelRuntimeLimitsService ModelRuntimeLimitsService
 @inject ISnackbar Snackbar
 
-<MudContainer Class="mt-3">
+<MudContainer Class="app-page">
     <MudText Class="page-header">Available Models</MudText>
 
     @if (_loading)
@@ -23,7 +23,8 @@
     }
     else
     {
-        <MudTextField @bind-Value="_modelFilter" Label="Filter models" Placeholder="Type a model name" Immediate="true" Clearable="true" Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Search" Class="mb-3" />
+        <MudTextField @bind-Value="_modelFilter" Label="Filter models" Placeholder="Type a model name" Immediate="true" Clearable="true" Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Search" Class="app-page-search mb-3" />
+        <MudText Typo="Typo.caption" Class="mud-text-secondary mb-3">Function calling support is inferred from model metadata and naming patterns; verify it before relying on it.</MudText>
         @foreach (var server in _serverModels)
         {
             <MudText Typo="Typo.h6" Class="mt-4">@server.Server.Name</MudText>
@@ -38,10 +39,6 @@
             else
             {
                 var filteredModels = ModelDiscoveryHelper.FilterByName(server.Models, _modelFilter);
-                <MudAlert Severity="Severity.Info" Class="mb-3">
-                    Function calling support detection is based on model metadata and naming patterns.
-                    The actual capabilities may vary and should be verified through testing.
-                </MudAlert>
                 @if (filteredModels.Count == 0)
                 {
                     <MudAlert Severity="Severity.Info" Class="mb-4">No models match the filter.</MudAlert>
@@ -59,29 +56,29 @@
                     </HeaderContent>
                     <RowTemplate>
                         <MudTd DataLabel="Name">@context.Name</MudTd>
-                        <MudTd DataLabel="Image Support" Style="text-align: center;">
+                        <MudTd DataLabel="Image Support" Class="app-table-cell--center">
                             @if (context.SupportsImages)
                             {
-                                <span style="color: #4caf50; font-size: 20px; font-weight: bold;" title="Supports images">✓</span>
+                                <MudTooltip Text="Supports images"><MudIcon Icon="@Icons.Material.Filled.Image" Color="Color.Default" Class="app-capability" AriaLabel="Supports images" /></MudTooltip>
                             }
                             else
                             {
-                                <span style="color: #9e9e9e; font-size: 20px;" title="Text only">−</span>
+                                <MudTooltip Text="Text only"><MudIcon Icon="@Icons.Material.Filled.Remove" Color="Color.Default" Class="app-capability" AriaLabel="Text only" /></MudTooltip>
                             }
                         </MudTd>
-                        <MudTd DataLabel="Function Calling" Style="text-align: center;">
+                        <MudTd DataLabel="Function Calling" Class="app-table-cell--center">
                             @if (context.SupportsFunctionCalling)
                             {
-                                <span style="color: #2196f3; font-size: 20px; font-weight: bold;" title="Function calling support detected (may not be accurate)">⚙</span>
+                                <MudTooltip Text="Function calling support detected; verify before relying on it"><MudIcon Icon="@Icons.Material.Filled.Build" Color="Color.Default" Class="app-capability" AriaLabel="Function calling support detected" /></MudTooltip>
                             }
                             else
                             {
-                                <span style="color: #9e9e9e; font-size: 20px;" title="No function calling support detected">−</span>
+                                <MudTooltip Text="No function calling support detected"><MudIcon Icon="@Icons.Material.Filled.Remove" Color="Color.Default" Class="app-capability" AriaLabel="No function calling support detected" /></MudTooltip>
                             }
                         </MudTd>
                         <MudTd DataLabel="Modified At">@FormatDate(context.ModifiedAt)</MudTd>
                         <MudTd DataLabel="Size">@FormatSize(context.Size)</MudTd>
-                        <MudTd DataLabel="Runtime limits"><MudButton Size="Size.Small" Variant="Variant.Text" OnClick="@(() => EditLimits(server.Server, context.Name))">@LimitsSummary(server.Server.Id ?? Guid.Empty, context.Name)</MudButton></MudTd>
+                        <MudTd DataLabel="Runtime limits"><MudButton Size="Size.Small" Variant="Variant.Text" Color="Color.Default" OnClick="@(() => EditLimits(server.Server, context.Name))">@LimitsSummary(server.Server.Id ?? Guid.Empty, context.Name)</MudButton></MudTd>
                     </RowTemplate>
                 </MudTable>
                 }
@@ -98,7 +95,7 @@
                 <PropertyColumn Property="x => x.ModelName" Title="Model" />
                 <TemplateColumn Title="Context window"><CellTemplate>@context.Item.ContextWindowTokens.ToString("N0")</CellTemplate></TemplateColumn>
                 <TemplateColumn Title="Maximum output"><CellTemplate>@context.Item.MaxOutputTokens.ToString("N0")</CellTemplate></TemplateColumn>
-                <TemplateColumn Title="Actions"><CellTemplate><MudIconButton Icon="@Icons.Material.Filled.Edit" Size="Size.Small" AriaLabel="Edit runtime limits" OnClick="@(() => EditLimits(context.Item))" /><MudIconButton Icon="@Icons.Material.Filled.Delete" Color="Color.Error" Size="Size.Small" AriaLabel="Remove runtime limits" OnClick="@(() => ConfirmDeleteLimits(context.Item))" /></CellTemplate></TemplateColumn>
+                <TemplateColumn Title="Actions"><CellTemplate><div class="app-table-actions"><MudTooltip Text="Edit runtime limits"><MudIconButton Icon="@Icons.Material.Filled.Edit" Size="Size.Small" AriaLabel="Edit runtime limits" OnClick="@(() => EditLimits(context.Item))" /></MudTooltip><MudTooltip Text="Remove runtime limits"><MudIconButton Icon="@Icons.Material.Filled.Delete" Color="Color.Error" Size="Size.Small" AriaLabel="Remove runtime limits" OnClick="@(() => ConfirmDeleteLimits(context.Item))" /></MudTooltip></div></CellTemplate></TemplateColumn>
             </Columns>
             <NoRecordsContent><MudText Class="pa-3">No runtime limits saved.</MudText></NoRecordsContent>
         </MudDataGrid>

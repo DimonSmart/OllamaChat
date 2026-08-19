@@ -18,7 +18,7 @@
             <MudTextField T="string" ValueChanged="OnSearch" Placeholder="Search profiles..."
                           Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Search"
                           IconSize="Size.Medium" Immediate="true" DebounceInterval="300"
-                          Margin="Margin.Dense" Style="min-width: 300px;" />
+                          Margin="Margin.Dense" Class="app-page-search" />
         </MudToolBar>
 
         @if (loading)
@@ -46,11 +46,11 @@
                     <TemplateColumn Title="Created">
                         <CellTemplate><MudText Typo="Typo.body2">@context.Item.CreatedAt.ToLocalTime().ToString("g")</MudText></CellTemplate>
                     </TemplateColumn>
-                    <TemplateColumn Title="Actions" CellStyle="display:flex; justify-content:flex-end;">
-                        <CellTemplate>
+                    <TemplateColumn Title="Actions">
+                        <CellTemplate><div class="app-table-actions">
                             <MudIconButton Icon="@Icons.Material.Filled.Edit" Size="Size.Small" OnClick="@(() => EditProfile(context.Item))" />
                             <MudIconButton Icon="@Icons.Material.Filled.Delete" Color="Color.Error" Size="Size.Small" OnClick="@(() => ConfirmDelete(context.Item))" />
-                        </CellTemplate>
+                        </div></CellTemplate>
                     </TemplateColumn>
                 </Columns>
                 <PagerContent><MudDataGridPager T="TodoProviderProfile" PageSizeOptions="new[] { 10, 25, 50, 100 }" /></PagerContent>

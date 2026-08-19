@@ -36,6 +36,16 @@
     overflow-wrap: anywhere;
 }
 
+.knowledge-store-row {
+    width: 100%;
+    min-width: 0;
+}
+
+.knowledge-picker-label {
+    min-width: 7.5rem;
+    flex: 1;
+}
+
 .knowledge-stores-detail {
     min-width: 0;
 }

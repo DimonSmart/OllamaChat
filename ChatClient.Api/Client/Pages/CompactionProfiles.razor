@@ -11,17 +11,17 @@
         <MudToolBar Dense="true">
             <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Add" Size="Size.Small" OnClick="Create">Add Profile</MudButton>
             <MudSpacer />
-            <MudTextField T="string" ValueChanged="Search" Placeholder="Search profiles..." Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Search" Immediate="true" Margin="Margin.Dense" Style="min-width: 280px;" />
+            <MudTextField T="string" ValueChanged="Search" Placeholder="Search profiles..." AriaLabel="Search profiles" Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Search" Immediate="true" Margin="Margin.Dense" Class="app-page-search" />
         </MudToolBar>
         <MudDataGrid T="CompactionProfile" Items="filteredProfiles" Dense="true" Hover="true" Bordered="true" Class="mt-2">
             <Columns>
                 <PropertyColumn Property="x => x.Name" Title="Name" />
                 <TemplateColumn Title="Policy"><CellTemplate><MudText Typo="Typo.body2">@CompactionProfilePresentation.FormatPolicy(context.Item)</MudText></CellTemplate></TemplateColumn>
                 <TemplateColumn Title="Budget"><CellTemplate><MudText Typo="Typo.body2">@BudgetSummary(context.Item)</MudText></CellTemplate></TemplateColumn>
-                <TemplateColumn Title="Actions" CellStyle="display:flex; justify-content:flex-end;"><CellTemplate>
+                <TemplateColumn Title="Actions"><CellTemplate><div class="app-table-actions">
                     <MudIconButton Icon="@Icons.Material.Filled.Edit" Size="Size.Small" AriaLabel="Edit compaction profile" OnClick="@(() => Edit(context.Item))" />
                     <MudIconButton Icon="@Icons.Material.Filled.Delete" Color="Color.Error" Size="Size.Small" AriaLabel="Delete compaction profile" OnClick="@(() => ConfirmDelete(context.Item))" />
-                </CellTemplate></TemplateColumn>
+                </div></CellTemplate></TemplateColumn>
             </Columns>
             <NoRecordsContent><MudText Class="pa-4">No compaction profiles found.</MudText></NoRecordsContent>
         </MudDataGrid>

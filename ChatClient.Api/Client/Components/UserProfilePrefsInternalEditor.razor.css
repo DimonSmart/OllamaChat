@@ -1,0 +1,7 @@
+.user-profile-key-column { width: 12%; }
+.user-profile-description-column, .user-profile-prompt-column { width: 20%; }
+.user-profile-default-column { width: 12%; }
+.user-profile-values-column { width: 16%; }
+.user-profile-actions-column { width: 4%; }
+.user-profile-description-wide-column { width: 30%; }
+.user-profile-actions-compact-column { width: 60px; }

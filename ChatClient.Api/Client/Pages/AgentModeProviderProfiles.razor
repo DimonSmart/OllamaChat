@@ -11,7 +11,7 @@
         <MudToolBar Dense="true">
             <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Add" OnClick="CreateProfile" Class="px-4" Size="Size.Small">Add Agent Mode Profile</MudButton>
             <MudSpacer />
-            <MudTextField T="string" ValueChanged="OnSearch" Placeholder="Search profiles..." Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Search" IconSize="Size.Medium" Immediate="true" DebounceInterval="300" Margin="Margin.Dense" Style="min-width: 300px;" />
+            <MudTextField T="string" ValueChanged="OnSearch" Placeholder="Search profiles..." AriaLabel="Search profiles" Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Search" IconSize="Size.Medium" Immediate="true" DebounceInterval="300" Margin="Margin.Dense" Class="app-page-search" />
         </MudToolBar>
 
         @if (loading)
@@ -28,7 +28,7 @@
                     <TemplateColumn Title="Instructions"><CellTemplate><MudText Typo="Typo.body2" Class="mud-text-truncate">@Preview(context.Item.Instructions, "Default")</MudText></CellTemplate></TemplateColumn>
                     <TemplateColumn Title="Updated"><CellTemplate><MudText Typo="Typo.body2">@context.Item.UpdatedAt.ToLocalTime().ToString("g")</MudText></CellTemplate></TemplateColumn>
                     <TemplateColumn Title="Created"><CellTemplate><MudText Typo="Typo.body2">@context.Item.CreatedAt.ToLocalTime().ToString("g")</MudText></CellTemplate></TemplateColumn>
-                    <TemplateColumn Title="Actions" CellStyle="display:flex; justify-content:flex-end;"><CellTemplate><MudIconButton Icon="@Icons.Material.Filled.Edit" Size="Size.Small" OnClick="@(() => EditProfile(context.Item))" /><MudIconButton Icon="@Icons.Material.Filled.Delete" Color="Color.Error" Size="Size.Small" OnClick="@(() => ConfirmDelete(context.Item))" /></CellTemplate></TemplateColumn>
+                    <TemplateColumn Title="Actions"><CellTemplate><div class="app-table-actions"><MudTooltip Text="Edit profile"><MudIconButton Icon="@Icons.Material.Filled.Edit" Size="Size.Small" AriaLabel="Edit profile" OnClick="@(() => EditProfile(context.Item))" /></MudTooltip><MudTooltip Text="Delete profile"><MudIconButton Icon="@Icons.Material.Filled.Delete" Color="Color.Error" Size="Size.Small" AriaLabel="Delete profile" OnClick="@(() => ConfirmDelete(context.Item))" /></MudTooltip></div></CellTemplate></TemplateColumn>
                 </Columns>
                 <PagerContent><MudDataGridPager T="AgentModeProviderProfile" PageSizeOptions="new[] { 10, 25, 50, 100 }" /></PagerContent>
                 <NoRecordsContent><MudStack AlignItems="AlignItems.Center" Justify="Justify.Center" Class="py-8"><MudIcon Icon="@Icons.Material.Filled.Tune" Color="Color.Secondary" Size="Size.Large" /><MudText Typo="Typo.h6" Class="mt-4">No Agent Mode Provider profiles found</MudText><MudText Typo="Typo.body2" Class="mud-text-secondary">Click "Add Agent Mode Profile" to create one.</MudText></MudStack></NoRecordsContent>

@@ -11,6 +11,83 @@
     --app-compact-panel-gap: 0.5rem;
 }
 
+/* Layout */
+.app-page {
+    padding-top: 0.75rem;
+}
+
+.app-page-toolbar {
+    min-height: 3rem;
+    gap: var(--app-control-gap);
+    padding-inline: 0;
+}
+
+.app-page-search {
+    min-width: min(18.75rem, 100%);
+}
+
+/* Forms */
+.app-form {
+    display: flex;
+    flex-direction: column;
+    gap: var(--app-section-gap);
+}
+
+.app-form-actions {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: var(--app-control-gap);
+}
+
+/* Tables */
+.app-table-actions {
+    display: flex;
+    justify-content: flex-end;
+    align-items: center;
+    gap: 0.125rem;
+}
+
+.app-table-cell--center {
+    text-align: center;
+}
+
+.app-table-cell--compact {
+    width: 5rem;
+}
+
+/* Status */
+.app-status {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: var(--app-control-gap);
+}
+
+.app-capability {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 1.5rem;
+}
+
+.app-scrollable-panel {
+    overflow: auto;
+}
+
+.app-hidden-input {
+    display: none;
+}
+
+/* Feature-specific components */
+.ollama-check-loading {
+    height: 50vh;
+}
+
+.tool-approval-arguments {
+    max-height: 35vh;
+}
+
 .app-compact-section {
     display: flex;
     flex-direction: column;

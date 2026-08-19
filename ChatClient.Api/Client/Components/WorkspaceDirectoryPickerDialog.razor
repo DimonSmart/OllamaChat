@@ -9,7 +9,7 @@
         {
             <MudAlert Severity="Severity.Error" Dense="true" Class="mt-2">@error</MudAlert>
         }
-        <MudStack Spacing="0" Class="mt-2" Style="max-height: 45vh; overflow-y: auto;">
+        <MudStack Spacing="0" Class="mt-2 workspace-directory-list">
             @if (parentPath is not null)
             {
                 <MudButton FullWidth="true" Variant="Variant.Text" Class="justify-start" OnClick="GoToParentAsync"><MudIcon Icon="@Icons.Material.Filled.DriveFolderUpload" />[..]</MudButton>
