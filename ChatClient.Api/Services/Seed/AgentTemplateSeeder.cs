@@ -9,18 +9,26 @@ public sealed class AgentTemplateSeeder(
     IAgentTemplateRepository repository,
     IConfiguration configuration,
     IHostEnvironment environment,
-    ILogger<AgentTemplateSeeder> logger)
+    ILogger<AgentTemplateSeeder> logger,
+    IFileAccessProviderProfileRepository? fileAccessProfileRepository = null)
 {
     private static readonly Guid FallbackDefaultAssistantId = Guid.Parse("8d0f96a8-f827-4529-a5e9-c924dad2b6fc");
     private static readonly Guid FallbackCodeAssistantId = Guid.Parse("2e8a9f16-d8a6-40ee-9545-c5f84fc18f50");
+    private static readonly Guid SeededCodeAssistantId = Guid.Parse("24d79938-c3a3-44ae-86ed-22e4f43d9c35");
+    private static readonly Guid ReadmeWriterId = Guid.Parse("0ec2d881-8c37-4f45-9b53-1f564a82fca2");
+    private static readonly Guid ReadmeWriterFileAccessProfileId = Guid.Parse("f70eab25-56c8-4f22-bcd6-b7d325634193");
+    private const string ReadmeWriterFileAccessProfileName = "README Writer Workspace";
 
     private readonly IAgentTemplateRepository _repository = repository;
     private readonly IConfiguration _configuration = configuration;
     private readonly IHostEnvironment _environment = environment;
     private readonly ILogger<AgentTemplateSeeder> _logger = logger;
+    private readonly IFileAccessProviderProfileRepository? _fileAccessProfileRepository = fileAccessProfileRepository;
 
     public async Task SeedAsync()
     {
+        await SeedReadmeWriterFileAccessProfileAsync();
+
         var existing = (await _repository.GetAllAsync()).ToList();
         var seeded = await LoadSeedTemplatesAsync();
         if (seeded.Count == 0)
@@ -41,6 +49,8 @@ public sealed class AgentTemplateSeeder(
             hasChanges = true;
         }
 
+        hasChanges = AttachReadmeWriterToCodeAssistant(existing) || hasChanges;
+
         if (hasChanges || existing.Count == 0)
         {
             await _repository.SaveAllAsync(existing);
@@ -49,6 +59,8 @@ public sealed class AgentTemplateSeeder(
 
     public async Task RestoreSeededAsync()
     {
+        await SeedReadmeWriterFileAccessProfileAsync();
+
         var existing = (await _repository.GetAllAsync()).ToList();
         var seeded = await LoadSeedTemplatesAsync();
         if (seeded.Count == 0)
@@ -70,6 +82,8 @@ public sealed class AgentTemplateSeeder(
 
             hasChanges = UpsertSeededTemplate(existing, existingIndex, template) || hasChanges;
         }
+
+        hasChanges = AttachReadmeWriterToCodeAssistant(existing) || hasChanges;
 
         if (hasChanges)
         {
@@ -93,6 +107,7 @@ public sealed class AgentTemplateSeeder(
                 var seeded = JsonSerializer.Deserialize<List<AgentTemplateDefinition>>(json, new JsonSerializerOptions(JsonSerializerDefaults.Web));
                 if (seeded is { Count: > 0 })
                 {
+                    EnsureReadmeWriter(seeded);
                     return seeded;
                 }
             }
@@ -102,7 +117,100 @@ public sealed class AgentTemplateSeeder(
             }
         }
 
-        return CreateFallbackAgents();
+        var fallbackAgents = CreateFallbackAgents();
+        EnsureReadmeWriter(fallbackAgents);
+        return fallbackAgents;
+    }
+
+    private async Task SeedReadmeWriterFileAccessProfileAsync()
+    {
+        if (_fileAccessProfileRepository is null)
+        {
+            return;
+        }
+
+        var profiles = (await _fileAccessProfileRepository.GetAllAsync()).ToList();
+        if (profiles.Any(profile => profile.Id == ReadmeWriterFileAccessProfileId))
+        {
+            return;
+        }
+
+        var now = DateTime.UtcNow;
+        profiles.Add(new FileAccessProviderProfile
+        {
+            Id = ReadmeWriterFileAccessProfileId,
+            Name = ReadmeWriterFileAccessProfileName,
+            Instructions =
+                "Inspect the workspace as needed. Modify only README.md and Markdown documentation files under docs/. " +
+                "Never modify source code, project files, build scripts, or application configuration.",
+            AccessMode = FileAccessMode.ReadWrite,
+            RequireReadApproval = false,
+            RequireWriteApproval = false,
+            CreatedAt = now,
+            UpdatedAt = now
+        });
+
+        await _fileAccessProfileRepository.SaveAllAsync(profiles);
+    }
+
+    private static void EnsureReadmeWriter(List<AgentTemplateDefinition> templates)
+    {
+        if (!templates.Any(template => template.Id == ReadmeWriterId))
+        {
+            templates.Add(CreateReadmeWriter());
+        }
+
+        var codeAssistant = templates.FirstOrDefault(template => template.Id == SeededCodeAssistantId) ??
+                            templates.FirstOrDefault(template => template.Id == FallbackCodeAssistantId);
+        if (codeAssistant is not null && !codeAssistant.BackgroundAgentIds.Contains(ReadmeWriterId))
+        {
+            codeAssistant.BackgroundAgentIds.Add(ReadmeWriterId);
+        }
+    }
+
+    private static bool AttachReadmeWriterToCodeAssistant(List<AgentTemplateDefinition> templates)
+    {
+        var codeAssistant = templates.FirstOrDefault(template => template.Id == SeededCodeAssistantId) ??
+                            templates.FirstOrDefault(template => template.Id == FallbackCodeAssistantId);
+        if (codeAssistant is null || codeAssistant.BackgroundAgentIds.Contains(ReadmeWriterId))
+        {
+            return false;
+        }
+
+        codeAssistant.BackgroundAgentIds.Add(ReadmeWriterId);
+        codeAssistant.UpdatedAt = DateTime.UtcNow;
+        return true;
+    }
+
+    private static AgentTemplateDefinition CreateReadmeWriter()
+    {
+        return new AgentTemplateDefinition
+        {
+            Id = ReadmeWriterId,
+            AgentName = "README Writer",
+            Summary = "Documentation specialist that creates attractive project README files and supporting Markdown documentation.",
+            ShortName = "README",
+            Content =
+                """
+                You are a software documentation specialist responsible for presenting projects clearly and attractively.
+
+                README.md is the project's landing page and business card. Write it in an attractive, promotional but factual style. Quickly communicate what the project is, why it is useful, its key capabilities, and how to get started. Make README.md easy to scan and visually strong on GitHub.
+
+                Never invent claims, capabilities, benchmark results, adoption numbers, integrations, badges, links, guarantees, or other facts. Base every statement on the project files and available context.
+
+                Keep README.md focused and concise. Do not turn it into exhaustive technical documentation. Move substantial architecture, API, configuration, deployment, implementation, troubleshooting, and similar technical details into appropriate Markdown files under docs/ and link to them from README.md.
+
+                Inspect the project files as needed before writing. You may create or update README.md and Markdown documentation files under docs/. Do not modify source code, project files, build scripts, or application configuration. Preserve useful existing documentation unless there is a clear reason to reorganize it.
+
+                Follow project-specific documentation conventions and skills when they are available, provided they do not require inventing facts. When acting as a subagent, make the requested documentation changes directly and return a concise summary of what you changed.
+                """,
+            FileAccessProviderProfileId = ReadmeWriterFileAccessProfileId,
+            EnableShell = false,
+            EnableFileMemory = false,
+            McpServerBindings = [],
+            KnowledgeStoreIds = [],
+            BackgroundAgentIds = []
+        };
     }
 
     private static bool UpsertSeededTemplate(
@@ -139,6 +247,11 @@ public sealed class AgentTemplateSeeder(
                left.LlmId == right.LlmId &&
                left.Temperature == right.Temperature &&
                left.RepeatPenalty == right.RepeatPenalty &&
+               left.FileAccessProviderProfileId == right.FileAccessProviderProfileId &&
+               left.EnableShell == right.EnableShell &&
+               left.EnableFileMemory == right.EnableFileMemory &&
+               left.BackgroundAgentIds.SequenceEqual(right.BackgroundAgentIds) &&
+               left.KnowledgeStoreIds.SequenceEqual(right.KnowledgeStoreIds) &&
                HaveEquivalentBindings(left.McpServerBindings, right.McpServerBindings);
     }
 
@@ -218,4 +331,3 @@ public sealed class AgentTemplateSeeder(
         }
     }
 }
-
