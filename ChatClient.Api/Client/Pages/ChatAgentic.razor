@@ -106,13 +106,12 @@
 
                         @if (selectedDefinition?.LaunchCapabilities.SupportsWorkspace == true)
                         {
-                            <MudStack Row="true" Spacing="1" AlignItems="AlignItems.Start">
+                            <MudStack Row="true" Spacing="1" AlignItems="AlignItems.Center">
                                 <MudTextField T="string" Label="Workspace" Value="fileAccessWorkspace"
                                               ValueChanged="OnFileAccessWorkspaceChanged" Variant="Variant.Outlined"
                                               Margin="Margin.Dense" Immediate="true" Class="flex-grow-1"
-                                              HelperText="Existing directory available to this conversation only."
                                               Disabled="@isStartingChat" />
-                                <MudStack Row="true" Spacing="1" AlignItems="AlignItems.Center" Class="mt-2">
+                                <MudStack Row="true" Spacing="1" AlignItems="AlignItems.Center">
                                     <MudButton Variant="Variant.Outlined" Color="Color.Default" Size="Size.Small" OnClick="OpenWorkspacePickerAsync" Disabled="@isStartingChat">Open...</MudButton>
                                     <MudTooltip Text="Enter a workspace name to create it under the configured Workspaces root.">
                                         <MudButton Variant="Variant.Outlined" Color="Color.Default" Size="Size.Small" OnClick="CreateWorkspaceAsync"
