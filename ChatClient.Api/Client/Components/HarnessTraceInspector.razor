@@ -1,11 +1,34 @@
 @using ChatClient.Api.Client.Services.Agentic
 @using System.Diagnostics
+@using Microsoft.AspNetCore.Components
 @using Microsoft.AspNetCore.Components.Rendering
 @implements IDisposable
 @inject HarnessTraceSession TraceSession
 
 <div class="session-state-drawer-layout">
-    <div class="session-state-drawer-header"><MudText Typo="Typo.subtitle2">Trace (@snapshot.Runs.Count)</MudText><MudButton Size="Size.Small" Variant="Variant.Text" OnClick="Clear">Clear</MudButton></div>
+    <div class="session-state-drawer-header">
+        <MudText Typo="Typo.subtitle2">
+            Trace (@snapshot.Runs.Count)
+        </MudText>
+
+        <MudStack Row="true"
+                  AlignItems="AlignItems.Center"
+                  Spacing="1">
+            <MudButton Size="Size.Small"
+                       Variant="Variant.Text"
+                       OnClick="Clear">
+                Clear
+            </MudButton>
+
+            <MudTooltip Text="Close trace"
+                        Placement="Placement.Left">
+                <MudIconButton Icon="@Icons.Material.Filled.Close"
+                               Size="Size.Small"
+                               aria-label="Close trace"
+                               OnClick="CloseAsync" />
+            </MudTooltip>
+        </MudStack>
+    </div>
     <div class="session-state-drawer-content">
         @if (snapshot.Runs.Count == 0)
         { <MudText Typo="Typo.body2" Class="mud-text-secondary">No trace runs yet</MudText> }
@@ -26,6 +49,9 @@
 </div>
 
 @code {
+    [Parameter]
+    public EventCallback OnClose { get; set; }
+
     private HarnessTraceSessionSnapshot snapshot = new([]);
     private string? selectedRunId;
     private bool followLatest = true;
@@ -35,6 +61,7 @@
     private void Refresh() { snapshot = TraceSession.GetSnapshot(); if (followLatest || !snapshot.Runs.Any(run => run.RunId == selectedRunId)) selectedRunId = snapshot.Runs.FirstOrDefault()?.RunId; }
     private Task SelectRun(string runId) { selectedRunId = runId; followLatest = string.Equals(runId, snapshot.Runs.FirstOrDefault()?.RunId, StringComparison.Ordinal); return Task.CompletedTask; }
     private void Clear() { followLatest = true; TraceSession.Clear(); }
+    private Task CloseAsync() => OnClose.InvokeAsync();
     private static string RunLabel(HarnessTraceRunSnapshot run) => $"Run {run.RunId[^Math.Min(8, run.RunId.Length)..]} · {run.Status} · {run.Spans.Count} spans";
     private static IReadOnlyList<TraceNode> BuildForest(HarnessTraceRunSnapshot run)
     {

@@ -176,7 +176,7 @@
             }
             @if (showTrace)
             {
-                <div class="@(showSessionState ? "agentic-chat-trace agentic-chat-trace--split" : "agentic-chat-trace")"><HarnessTraceInspector /></div>
+                <div class="@(showSessionState ? "agentic-chat-trace agentic-chat-trace--split" : "agentic-chat-trace")"><HarnessTraceInspector OnClose="CloseTrace" /></div>
             }
             </div>
         </MudDrawer>
@@ -463,6 +463,12 @@
     private void CloseSessionState()
     {
         showSessionState = false;
+        PublishToolbarState();
+    }
+
+    private void CloseTrace()
+    {
+        showTrace = false;
         PublishToolbarState();
     }
 

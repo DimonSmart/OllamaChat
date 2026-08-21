@@ -12,10 +12,10 @@
 }
 
 .session-state-drawer {
-    height: 100dvh;
+    height: calc(100dvh - var(--mud-appbar-height) + var(--mud-appbar-height) / 4);
     max-width: 100vw;
     position: fixed !important;
-    top: 0;
+    top: calc(var(--mud-appbar-height) - var(--mud-appbar-height) / 4);
     right: 0;
     overflow: hidden;
 }
