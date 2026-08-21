@@ -25,12 +25,14 @@
                            multiple="true"
                            MaximumFileCount="10"
                            Accept=".pdf,.txt,.doc,.docx,.jpg,.jpeg,.png,.gif,.bmp,.webp">
-                <ActivatorContent>
+                <CustomContent Context="fileUpload">
                     <MudIconButton Icon="@Icons.Material.Filled.AttachFile"
                                    Color="Color.Primary"
                                    Size="Size.Small"
-                                   tooltip="Attach files (max 10)" />
-                </ActivatorContent>
+                                   OnClick="@fileUpload.OpenFilePickerAsync"
+                                   aria-label="Attach files (max 10)"
+                                   title="Attach files (max 10)" />
+                </CustomContent>
             </MudFileUpload>
         }
 
@@ -42,7 +44,7 @@
                       Lines="3"
                       MaxLines="15"
                       InputId="@_messageInputId"
-                      AutoGrow="true"
+                      Sizing="Sizing.Auto"
                       Placeholder="@Label"
                       Variant="Variant.Text"
                       Class="flex-grow-1"

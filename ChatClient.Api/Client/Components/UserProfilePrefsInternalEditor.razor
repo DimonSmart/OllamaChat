@@ -67,7 +67,7 @@ else
                       Placeholder="Provides configured user profile fields for personalization, such as display name, preferred language, timezone, tone, and other user-specific preferences."
                       HelperText="Prefer one short declarative sentence that starts with 'Provides ...' and names the most relevant field examples." />
 
-        <MudTabs Rounded="true" Elevation="0" PanelClass="pt-2">
+        <MudTabs Rounded="true" Elevation="0" TabPanelsClass="pt-2">
             <MudTabPanel Text="Definitions">
                 <MudAlert Severity="Severity.Info" Dense="true" Variant="Variant.Outlined" Class="mb-3">
                     Definitions control what the personalization MCP server advertises and which keys are valid for stored values.
@@ -145,7 +145,7 @@ else
                                 <MudIconButton Icon="@Icons.Material.Filled.Delete"
                                                Color="Color.Error"
                                                Size="Size.Small"
-                                               AriaLabel="Delete field"
+                                               aria-label="Delete field"
                                                OnClick="@(() => RemoveDefinition(context))" />
                             </MudTd>
                         </RowTemplate>
@@ -197,7 +197,7 @@ else
                                 <MudIconButton Icon="@Icons.Material.Filled.DeleteSweep"
                                                Color="Color.Error"
                                                Size="Size.Small"
-                                               AriaLabel="Clear value"
+                                               aria-label="Clear value"
                                                Disabled="@(!HasValue(context.Key))"
                                                OnClick="@(() => ClearValue(context.Key))" />
                             </MudTd>
