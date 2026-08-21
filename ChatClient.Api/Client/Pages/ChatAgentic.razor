@@ -131,7 +131,7 @@
                             </MudSelect>
                         }
 
-                        @if (launchValidation.Problems.Count > 0)
+                        @if (!isStartingChat && launchValidation.Problems.Count > 0)
                         {
                             <MudAlert Severity="Severity.Error" Dense="true" Variant="Variant.Outlined">
                                 @string.Join(" ", launchValidation.Problems.Select(problem => problem.Message))
