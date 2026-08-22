@@ -11,6 +11,7 @@ public class AppChatMessage : IAppChatMessage
     public string? AgentId { get; set; }
     public string? AgentName { get; set; }
     public string? Statistics { get; set; }
+    public ChatRunUsage? Usage { get; set; }
     public bool IsCanceled { get; set; }
     public IReadOnlyList<AppChatMessageFile> Files { get; set; } = [];
     public IReadOnlyCollection<ToolInvocationViewState> ToolInvocations { get; set; } = [];
@@ -56,6 +57,7 @@ public class AppChatMessage : IAppChatMessage
         AgentId = message.AgentId;
         AgentName = message.AgentName;
         Statistics = message.Statistics;
+        Usage = message.Usage;
         IsCanceled = message.IsCanceled;
         Files = message.Files;
         ToolInvocations = message.ToolInvocations.ToList();
@@ -71,7 +73,8 @@ public class AppChatMessage : IAppChatMessage
         IReadOnlyCollection<ToolInvocationViewState>? toolInvocations = null,
         string? agentId = null,
         string? agentName = null,
-        IReadOnlyCollection<RagRetrievalTrace>? ragRetrievals = null)
+        IReadOnlyCollection<RagRetrievalTrace>? ragRetrievals = null,
+        ChatRunUsage? usage = null)
     {
         Id = Guid.NewGuid();
         Content = content ?? string.Empty;
@@ -80,6 +83,7 @@ public class AppChatMessage : IAppChatMessage
         AgentId = agentId;
         AgentName = agentName;
         Statistics = statistics;
+        Usage = usage;
         Files = files ?? [];
         ToolInvocations = toolInvocations ?? [];
         RagRetrievals = ragRetrievals ?? [];

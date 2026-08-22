@@ -12,5 +12,7 @@ public interface IChatEngineStreamingBridge
 
     AppChatMessage Complete(StreamingAppChatMessage message, string finalContent, string? statistics = null);
 
+    AppChatMessage Complete(StreamingAppChatMessage message, string finalContent, string? statistics, ChatRunUsage? usage);
+
     AppChatMessage Cancel(StreamingAppChatMessage message);
 }

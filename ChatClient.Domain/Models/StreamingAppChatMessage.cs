@@ -16,6 +16,7 @@ public class StreamingAppChatMessage(
     public DateTime MsgDateTime { get; private set; } = msgDateTime;
     public AppChatRole Role { get; private set; } = role;
     public string? Statistics { get; private set; } = string.Empty;
+    public ChatRunUsage? Usage { get; private set; }
     public bool IsCanceled { get; private set; }
     public IReadOnlyList<AppChatMessageFile> Files { get; private set; } = [];
     private readonly List<ToolInvocationViewState> _toolInvocations = toolInvocations ?? [];
@@ -83,6 +84,11 @@ public class StreamingAppChatMessage(
         {
             _toolInvocations.Add(invocation);
         }
+    }
+
+    public void SetUsage(ChatRunUsage? usage)
+    {
+        Usage = usage;
     }
 
     public void UpdateToolInvocation(ToolInvocationViewState invocation)

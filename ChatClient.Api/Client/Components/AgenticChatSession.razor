@@ -313,7 +313,8 @@
                     }
                 }
 
-                @if (message.IsStreaming || message.IsCanceled || !string.IsNullOrEmpty(message.Statistics))
+                @{ var usageSummary = ChatRunUsageFormatter.Format(message.Usage); }
+                @if (message.IsStreaming || message.IsCanceled || !string.IsNullOrEmpty(message.Statistics) || usageSummary is not null)
                 {
                     <MudXChatFooter>
                         @if (message.IsStreaming)
@@ -332,6 +333,12 @@
                                 <MudText Typo="Typo.caption" Class="mud-text-secondary">
                                     @((MarkupString)message.Statistics)
                                 </MudText>
+                            </div>
+                        }
+                        @if (usageSummary is not null)
+                        {
+                            <div class="mt-1">
+                                <MudText Typo="Typo.caption" Class="mud-text-secondary">@usageSummary</MudText>
                             </div>
                         }
                     </MudXChatFooter>

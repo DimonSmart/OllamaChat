@@ -1,4 +1,5 @@
 using ChatClient.Api.Diagnostics;
+using ChatClient.Domain.Models;
 using System.Diagnostics;
 
 namespace ChatClient.Api.Client.Services.Agentic;
@@ -35,6 +36,14 @@ public sealed class HarnessTraceSession : IDisposable
     {
         lock (_gate)
             return new(_runsById.Values.OrderByDescending(run => run.StartedAt).Select(run => new HarnessTraceRunSnapshot(run.RunId, run.StartedAt, run.CompletedAt, run.Status, run.IsTruncated, run.PrimaryTraceId, run.TraceIds.ToArray(), run.Spans.Values.OrderBy(span => span.StartedAt).Select(span => span.ToSnapshot()).ToArray())).ToArray());
+    }
+
+    public ChatRunUsage? GetUsage(string runId, HarnessRunUsageAggregator aggregator)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(runId);
+        ArgumentNullException.ThrowIfNull(aggregator);
+        var run = GetSnapshot().Runs.FirstOrDefault(run => run.RunId == runId);
+        return run is null ? null : aggregator.Aggregate(run);
     }
 
     public HarnessTraceRunScope? TryBeginRun(string runId)

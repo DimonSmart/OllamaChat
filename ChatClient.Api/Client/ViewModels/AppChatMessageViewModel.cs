@@ -19,6 +19,7 @@ public class AppChatMessageViewModel
     public DateTime MsgDateTime { get; set; }
     public AppChatRole Role { get; set; }
     public string? Statistics { get; set; }
+    public ChatRunUsage? Usage { get; set; }
     public bool IsStreaming { get; set; }
     public bool IsCanceled { get; set; }
     public IReadOnlyList<AppChatMessageFile> Files { get; set; } = [];
@@ -34,6 +35,7 @@ public class AppChatMessageViewModel
         AgentId = message.AgentId;
         AgentName = message.AgentName;
         Statistics = message.Statistics;
+        Usage = message.Usage;
         IsStreaming = message.IsStreaming;
         IsCanceled = message.IsCanceled;
         Files = message.Files;

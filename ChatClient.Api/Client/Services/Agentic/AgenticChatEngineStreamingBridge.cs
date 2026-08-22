@@ -18,14 +18,23 @@ public sealed class AgenticChatEngineStreamingBridge : IChatEngineStreamingBridg
 
     public AppChatMessage Complete(StreamingAppChatMessage message, string? statistics = null)
     {
-        return Complete(message, message.Content, statistics);
+        return Complete(message, message.Content, statistics, null);
     }
 
     public AppChatMessage Complete(StreamingAppChatMessage message, string finalContent, string? statistics = null)
     {
+        return Complete(message, finalContent, statistics, null);
+    }
+
+    public AppChatMessage Complete(StreamingAppChatMessage message, string finalContent, string? statistics, ChatRunUsage? usage)
+    {
         if (!string.IsNullOrEmpty(statistics))
         {
             message.SetStatistics(statistics);
+        }
+        if (usage is not null)
+        {
+            message.SetUsage(usage);
         }
 
         var finalMessage = new AppChatMessage(
@@ -37,7 +46,8 @@ public sealed class AgenticChatEngineStreamingBridge : IChatEngineStreamingBridg
             message.ToolInvocations,
             message.AgentId,
             message.AgentName,
-            message.RagRetrievals)
+            message.RagRetrievals,
+            message.Usage)
         {
             Id = message.Id,
             IsCanceled = message.IsCanceled
@@ -58,7 +68,8 @@ public sealed class AgenticChatEngineStreamingBridge : IChatEngineStreamingBridg
             message.ToolInvocations,
             message.AgentId,
             message.AgentName,
-            message.RagRetrievals)
+            message.RagRetrievals,
+            message.Usage)
         {
             Id = message.Id,
             IsCanceled = true

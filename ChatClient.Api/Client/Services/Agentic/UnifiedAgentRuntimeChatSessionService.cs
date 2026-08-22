@@ -29,6 +29,7 @@ public sealed class UnifiedAgentRuntimeChatSessionService(
     private readonly AppChat _chat = new();
     private readonly Dictionary<string, StreamingAppChatMessage> _activeStreamsByRuntimeMessageId =
         new(StringComparer.Ordinal);
+    private static readonly HarnessRunUsageAggregator runUsageAggregator = new();
     private readonly HashSet<string> _completedRuntimeMessageIds = new(StringComparer.Ordinal);
     private ChatEngineSessionStartRequest? _parameters;
     private ActiveChatSessionInfo? _activeSession;
@@ -939,7 +940,7 @@ public sealed class UnifiedAgentRuntimeChatSessionService(
         StreamingAppChatMessage? stream = null;
         var projection = responseEventProjector.CreateProjection();
         using var ragTurn = _directRuntimeDefinition?.RagRetrievalTraceSink?.BeginTurn(messageId);
-        using var traceRun = harnessTraceSession?.TryBeginRun(messageId);
+        HarnessTraceSession.HarnessTraceRunScope? traceRun = harnessTraceSession?.TryBeginRun(messageId);
 
         try
         {
@@ -1017,7 +1018,10 @@ public sealed class UnifiedAgentRuntimeChatSessionService(
 
             if (stream is not null)
             {
-                var final = streamingBridge.Complete(stream, "HarnessAgent");
+                traceRun?.Dispose();
+                traceRun = null;
+                var usage = harnessTraceSession?.GetUsage(messageId, runUsageAggregator);
+                var final = streamingBridge.Complete(stream, stream.Content, null, usage);
                 ReplaceMessage(stream, final);
                 await (MessageUpdated?.Invoke(final, true) ?? Task.CompletedTask);
                 _activeStreamsByRuntimeMessageId.Remove(messageId);
@@ -1048,6 +1052,7 @@ public sealed class UnifiedAgentRuntimeChatSessionService(
         }
         finally
         {
+            traceRun?.Dispose();
             if (generation == Interlocked.Read(ref _generation))
             {
                 _cancellationTokenSource?.Dispose();
