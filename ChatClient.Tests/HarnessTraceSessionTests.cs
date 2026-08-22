@@ -39,7 +39,9 @@ public sealed class HarnessTraceSessionTests
             spanId = running.SpanId;
             span!.DisplayName = "final";
             span.SetTag("gen_ai.operation.name", "chat");
+            span.SetTag("gen_ai.usage.input_tokens", 1234);
             span.SetTag("api_key", "secret");
+            span.SetTag("authorization_token", "secret-token");
             span.AddEvent(new ActivityEvent("event", tags: new ActivityTagsCollection { { "detail", "value" } }));
             span.SetStatus(ActivityStatusCode.Error, "failure");
             span.Stop();
@@ -51,7 +53,9 @@ public sealed class HarnessTraceSessionTests
         Assert.NotNull(spanSnapshot.Duration);
         Assert.Equal(ActivityStatusCode.Error, spanSnapshot.StatusCode);
         Assert.Equal("failure", spanSnapshot.StatusDescription);
+        Assert.Contains(spanSnapshot.Tags, tag => tag is { Key: "gen_ai.usage.input_tokens", Value: "1234" });
         Assert.Contains(spanSnapshot.Tags, tag => tag is { Key: "api_key", Value: "[REDACTED]" });
+        Assert.Contains(spanSnapshot.Tags, tag => tag is { Key: "authorization_token", Value: "[REDACTED]" });
         Assert.Single(spanSnapshot.Events);
     }
 

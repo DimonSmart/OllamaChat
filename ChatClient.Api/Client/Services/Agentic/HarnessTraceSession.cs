@@ -215,5 +215,12 @@ public sealed class HarnessTraceSession : IDisposable
         private static IReadOnlyList<HarnessTraceAttribute> Attributes(IEnumerable<KeyValuePair<string, object?>> values) => values.Select(value => new HarnessTraceAttribute(value.Key, Clean(value.Key, value.Value?.ToString() ?? string.Empty))).ToArray();
     }
     private static string GetSpanKey(Activity activity) => $"{activity.TraceId}/{activity.SpanId}";
-    private static string Clean(string key, string value) { string[] sensitive = ["authorization", "api-key", "api_key", "apikey", "token", "password", "passwd", "secret", "cookie", "connectionstring", "connection_string"]; return sensitive.Any(word => key.Contains(word, StringComparison.OrdinalIgnoreCase)) ? "[REDACTED]" : value.Length > MaxAttributeValueLength ? value[..MaxAttributeValueLength] + "…" : value; }
+    private static string Clean(string key, string value)
+    {
+        var isGenAiUsage = key.StartsWith("gen_ai.usage.", StringComparison.Ordinal);
+        string[] sensitive = ["authorization", "api-key", "api_key", "apikey", "token", "password", "passwd", "secret", "cookie", "connectionstring", "connection_string"];
+        return !isGenAiUsage && sensitive.Any(word => key.Contains(word, StringComparison.OrdinalIgnoreCase))
+            ? "[REDACTED]"
+            : value.Length > MaxAttributeValueLength ? value[..MaxAttributeValueLength] + "…" : value;
+    }
 }
