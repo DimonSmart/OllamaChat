@@ -313,8 +313,8 @@
                     }
                 }
 
-                @{ var usageSummary = ChatRunUsageFormatter.Format(message.Usage); }
-                @if (message.IsStreaming || message.IsCanceled || !string.IsNullOrEmpty(message.Statistics) || usageSummary is not null)
+                @{ var usage = message.Usage is { LlmCalls: > 0 } value ? value : null; }
+                @if (message.IsStreaming || message.IsCanceled || !string.IsNullOrEmpty(message.Statistics) || usage is not null)
                 {
                     <MudXChatFooter>
                         @if (message.IsStreaming)
@@ -335,10 +335,23 @@
                                 </MudText>
                             </div>
                         }
-                        @if (usageSummary is not null)
+                        @if (usage is not null)
                         {
                             <div class="mt-1">
-                                <MudText Typo="Typo.caption" Class="mud-text-secondary">@usageSummary</MudText>
+                                <MudText Typo="Typo.caption" Class="mud-text-secondary">
+                                    @if (usage.InputTokens is { } input && usage.OutputTokens is { } output && usage.TotalTokens is { } total)
+                                    {
+                                        <MudTooltip Text="Input tokens"><span>↑ @ChatRunUsageFormatter.FormatTokens(input)</span></MudTooltip>
+                                        <span>&nbsp;&nbsp;</span>
+                                        <MudTooltip Text="Output tokens"><span>↓ @ChatRunUsageFormatter.FormatTokens(output)</span></MudTooltip>
+                                        <span>&nbsp;&nbsp;</span>
+                                        <MudTooltip Text="Total tokens"><span>Σ @ChatRunUsageFormatter.FormatTokens(total)</span></MudTooltip>
+                                        <span> · </span>
+                                    }
+                                    <MudTooltip Text="LLM calls"><span>@ChatRunUsageFormatter.FormatLlmCalls(usage.LlmCalls)</span></MudTooltip>
+                                    <span> · </span>
+                                    <MudTooltip Text="Run duration"><span>@ChatRunUsageFormatter.FormatDuration(usage.Duration)</span></MudTooltip>
+                                </MudText>
                             </div>
                         }
                     </MudXChatFooter>

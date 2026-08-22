@@ -12,14 +12,18 @@ public static class ChatRunUsageFormatter
 
         var parts = new List<string>();
         if (usage.InputTokens is { } input && usage.OutputTokens is { } output && usage.TotalTokens is { } total)
-            parts.Add($"↑ {input.ToString("N0", CultureInfo.InvariantCulture)}  ↓ {output.ToString("N0", CultureInfo.InvariantCulture)}  Σ {total.ToString("N0", CultureInfo.InvariantCulture)}");
+            parts.Add($"↑ {FormatTokens(input)}  ↓ {FormatTokens(output)}  Σ {FormatTokens(total)}");
 
-        parts.Add($"{usage.LlmCalls} LLM {(usage.LlmCalls == 1 ? "call" : "calls")}");
+        parts.Add(FormatLlmCalls(usage.LlmCalls));
         parts.Add(FormatDuration(usage.Duration));
         return string.Join(" · ", parts);
     }
 
-    private static string FormatDuration(TimeSpan duration)
+    public static string FormatTokens(long tokens) => tokens.ToString("N0", CultureInfo.InvariantCulture);
+
+    public static string FormatLlmCalls(int calls) => $"{calls} LLM {(calls == 1 ? "call" : "calls")}";
+
+    public static string FormatDuration(TimeSpan duration)
     {
         if (duration < TimeSpan.Zero)
             duration = TimeSpan.Zero;
