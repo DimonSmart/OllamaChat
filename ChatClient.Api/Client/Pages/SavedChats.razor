@@ -29,7 +29,10 @@
                         <MudSpacer />
                         <MudText Typo="Typo.caption">@chat.UpdatedAtUtc.ToLocalTime().ToString("g")</MudText>
                         <MudTooltip Text="Rename">
-                            <MudIconButton Icon="@Icons.Material.Filled.Edit" Size="Size.Small" aria-label="Rename chat" OnClick:StopPropagation="true" OnClick="@(() => BeginRename(chat))" />
+                            <MudIconButton Icon="@Icons.Material.Filled.Edit" Size="Size.Small" aria-label="Rename chat" OnClick="@(() => BeginRename(chat))" />
+                        </MudTooltip>
+                        <MudTooltip Text="Delete chat">
+                            <MudIconButton Icon="@Icons.Material.Filled.Delete" Color="Color.Error" Size="Size.Small" aria-label="Delete chat" OnClick="@(() => ConfirmDelete(chat))" />
                         </MudTooltip>
                     </MudStack>
                 </MudListItem>
@@ -46,12 +49,16 @@
     }
 </AppPage>
 
+<AppDeleteDialog @bind-Visible="_deleting" Title="Delete saved chat" Message="@($"Delete \"{_chatToDelete?.Title}\"?")" OnConfirm="DeleteAsync" />
+
 @code {
     private List<SavedChatSummary> _chats = [];
     private string _search = string.Empty;
     private bool _loading = true;
     private SavedChatSummary? _renaming;
+    private SavedChatSummary? _chatToDelete;
     private string _renameTitle = string.Empty;
+    private bool _deleting;
     private IReadOnlyList<SavedChatSummary> FilteredChats => _chats.Where(chat => string.IsNullOrWhiteSpace(_search) || chat.Title.Contains(_search, StringComparison.OrdinalIgnoreCase)).ToList();
 
     protected override async Task OnInitializedAsync()
@@ -70,12 +77,27 @@
     private Task OnSearchChanged(string value) { _search = value; return Task.CompletedTask; }
     private void BeginRename(SavedChatSummary chat) { _renaming = chat; _renameTitle = chat.Title; }
     private void CancelRename() => _renaming = null;
+    private void ConfirmDelete(SavedChatSummary chat) { _chatToDelete = chat; _deleting = true; }
 
     private async Task RenameAsync()
     {
         if (_renaming is null) return;
         try { await SavedChatService.RenameAsync(_renaming.Id, _renameTitle); _renaming = null; await ReloadAsync(); }
         catch { Snackbar.Add("Could not rename saved chat.", Severity.Error); }
+    }
+
+    private async Task DeleteAsync()
+    {
+        if (_chatToDelete is null) return;
+        try
+        {
+            await SavedChatService.DeleteAsync(_chatToDelete.Id);
+            _deleting = false;
+            _chatToDelete = null;
+            await ReloadAsync();
+            Snackbar.Add("Saved chat deleted.", Severity.Success);
+        }
+        catch (Exception ex) { Snackbar.Add($"Could not delete saved chat: {ex.Message}", Severity.Error); }
     }
 
     private async Task OpenAsync(Guid id)

@@ -53,6 +53,12 @@ public sealed class SavedChatService(IUserSettingsService settingsService, ISave
         }, cancellationToken);
     }
 
+    public async Task DeleteAsync(Guid id, CancellationToken cancellationToken = default)
+    {
+        var settings = await settingsService.GetSettingsAsync(cancellationToken);
+        await repository.DeleteAsync(settings.SavedChats.StorageRoot, id, cancellationToken);
+    }
+
     public async Task<bool> IsAutoSaveEnabledAsync(CancellationToken cancellationToken = default) =>
         (await settingsService.GetSettingsAsync(cancellationToken)).SavedChats.AutoSaveEnabled;
 }

@@ -89,6 +89,26 @@ public sealed class FileSavedChatRepositoryTests
         finally { Directory.Delete(root, true); }
     }
 
+    [Fact]
+    public async Task DeleteAsync_RemovesOnlyTheRequestedSavedChat()
+    {
+        var root = CreateRoot();
+        try
+        {
+            var repository = new FileSavedChatRepository(NullLogger<FileSavedChatRepository>.Instance);
+            var deleted = CreateChat();
+            var retained = CreateChat();
+            await repository.SaveAsync(root, deleted, TestContext.Current.CancellationToken);
+            await repository.SaveAsync(root, retained, TestContext.Current.CancellationToken);
+
+            await repository.DeleteAsync(root, deleted.Id, TestContext.Current.CancellationToken);
+
+            Assert.Null(await repository.GetAsync(root, deleted.Id, TestContext.Current.CancellationToken));
+            Assert.NotNull(await repository.GetAsync(root, retained.Id, TestContext.Current.CancellationToken));
+        }
+        finally { Directory.Delete(root, true); }
+    }
+
     private static string CreateRoot()
     {
         var root = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N"));

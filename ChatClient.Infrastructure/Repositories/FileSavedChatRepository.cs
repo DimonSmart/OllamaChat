@@ -87,6 +87,17 @@ public sealed class FileSavedChatRepository(ILogger<FileSavedChatRepository> log
         }, cancellationToken);
     }
 
+    public Task DeleteAsync(string storageRoot, Guid id, CancellationToken cancellationToken = default)
+    {
+        var target = GetPath(storageRoot, id);
+        return WithFileGateAsync(target, () =>
+        {
+            if (File.Exists(target))
+                File.Delete(target);
+            return Task.CompletedTask;
+        }, cancellationToken);
+    }
+
     public async Task<IReadOnlyList<SavedChatSummary>> GetAllAsync(string storageRoot, CancellationToken cancellationToken = default)
     {
         if (!Directory.Exists(storageRoot))
