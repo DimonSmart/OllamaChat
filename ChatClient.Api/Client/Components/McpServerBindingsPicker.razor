@@ -94,20 +94,30 @@
                                 @foreach (var binding in Bindings)
                                 {
                                     var state = GetBindingState(binding);
-                                    <MudButton Variant="Variant.Text"
-                                               Color="Color.Default"
-                                               FullWidth="true"
-                                               Class="@GetRowClass(binding)"
-                                               OnClick="@(() => ShowBindingAsync(binding))">
-                                        <span class="mcp-bindings-picker__name">@GetBindingName(binding)</span>
-                                        @if (!string.IsNullOrWhiteSpace(state))
-                                        {
-                                            <span class="mcp-bindings-picker__state">@state</span>
-                                        }
-                                        <MudIcon Icon="@Icons.Material.Filled.ChevronRight"
-                                                 Size="Size.Small"
-                                                 aria-hidden="true" />
-                                    </MudButton>
+                                    <MudStack Row="true" Spacing="0" AlignItems="AlignItems.Center" role="listitem">
+                                        <MudButton Variant="Variant.Text"
+                                                   Color="Color.Default"
+                                                   FullWidth="true"
+                                                   Class="@GetRowClass(binding)"
+                                                   OnClick="@(() => ShowBindingAsync(binding))">
+                                            <span class="mcp-bindings-picker__name">@GetBindingName(binding)</span>
+                                            @if (!string.IsNullOrWhiteSpace(state))
+                                            {
+                                                <span class="mcp-bindings-picker__state">@state</span>
+                                            }
+                                            <MudIcon Icon="@Icons.Material.Filled.ChevronRight"
+                                                     Size="Size.Small"
+                                                     aria-hidden="true" />
+                                        </MudButton>
+                                        <MudTooltip Text="Remove MCP server">
+                                            <MudIconButton Icon="@Icons.Material.Filled.Delete"
+                                                           Size="Size.Small"
+                                                           Color="Color.Error"
+                                                           aria-label="Remove MCP server"
+                                                           Disabled="@Disabled"
+                                                           OnClick="@(() => RemoveBindingAsync(binding))" />
+                                        </MudTooltip>
+                                    </MudStack>
                                 }
                             </div>
                         }
@@ -264,6 +274,26 @@
         Bindings.Add(binding);
         _adding = false;
         _selectedBinding = null;
+        await BindingsChanged.InvokeAsync(Bindings);
+    }
+
+    private async Task RemoveBindingAsync(McpServerSessionBinding binding)
+    {
+        if (!Bindings.Remove(binding))
+        {
+            return;
+        }
+
+        if (binding.BindingId is Guid bindingId)
+        {
+            _warningBindings.Remove(bindingId);
+        }
+
+        if (ReferenceEquals(_selectedBinding, binding))
+        {
+            _selectedBinding = null;
+        }
+
         await BindingsChanged.InvokeAsync(Bindings);
     }
 
