@@ -1,0 +1,255 @@
+@using ChatClient.Domain.Models
+@using ChatClient.Api.Services
+@inject IAppToolCatalog AppToolCatalog
+
+<div class="mcp-server-tool-selector">
+    @if (_loading)
+    {
+        <div class="mcp-server-tool-selector__status" role="status">
+            <MudProgressCircular Indeterminate="true" Color="Color.Primary" Size="Size.Small" />
+        </div>
+    }
+    else if (!string.IsNullOrWhiteSpace(_loadError))
+    {
+        <MudAlert Severity="Severity.Warning" Dense="true" Variant="Variant.Outlined">
+            @_loadError
+        </MudAlert>
+    }
+    else if (_tools.Count == 0)
+    {
+        <MudText Typo="Typo.body2" Class="mcp-server-tool-selector__empty">
+            No tools were returned for this MCP server.
+        </MudText>
+    }
+    else
+    {
+        <table class="mcp-server-tool-selector__table" aria-label="MCP tools">
+            <thead>
+                <tr>
+                    <th class="mcp-server-tool-selector__check-cell">
+                        <MudCheckBox T="bool"
+                                     Value="@AreAllToolsSelected"
+                                     ValueChanged="OnSelectAllChangedAsync"
+                                     Dense="true"
+                                     Disabled="@Disabled"
+                                     aria-label="Select all tools" />
+                    </th>
+                    <th scope="col">Tool</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var tool in _tools)
+                {
+                    <tr>
+                        <td class="mcp-server-tool-selector__check-cell">
+                            <MudCheckBox T="bool"
+                                         Value="@IsToolSelected(tool.ToolName)"
+                                         ValueChanged="@(value => OnToolSelectionChangedAsync(tool.ToolName, value))"
+                                         Dense="true"
+                                         Disabled="@Disabled"
+                                         aria-label="@($"Select {tool.ToolName}")" />
+                        </td>
+                        <td class="mcp-server-tool-selector__tool-name" title="@GetToolTitle(tool)">
+                            @tool.ToolName
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    }
+</div>
+
+@code {
+    [Parameter] public McpServerSessionBinding Binding { get; set; } = default!;
+    [Parameter] public EventCallback<McpServerSessionBinding> BindingChanged { get; set; }
+    [Parameter] public bool Disabled { get; set; }
+    [Parameter] public EventCallback<McpServerSessionBinding> ToolLoadFailed { get; set; }
+    [Parameter] public EventCallback<McpServerSessionBinding> ToolLoadSucceeded { get; set; }
+
+    private List<AppToolDescriptor> _tools = [];
+    private string? _toolCacheKey;
+    private string? _loadError;
+    private bool _loading;
+
+    private bool AreAllToolsSelected =>
+        _tools.Count > 0 &&
+        (Binding.SelectAllTools || _tools.All(tool => IsToolSelected(tool.ToolName)));
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (Binding is null)
+        {
+            return;
+        }
+
+        if (Binding.BindingId is not Guid bindingId || bindingId == Guid.Empty)
+        {
+            Binding.BindingId = Guid.NewGuid();
+            await BindingChanged.InvokeAsync(Binding);
+        }
+
+        var cacheKey = BuildToolCacheKey(Binding);
+        if (string.Equals(_toolCacheKey, cacheKey, StringComparison.Ordinal))
+        {
+            return;
+        }
+
+        await LoadToolsAsync(cacheKey);
+    }
+
+    private async Task LoadToolsAsync(string cacheKey)
+    {
+        _loading = true;
+        _loadError = null;
+
+        try
+        {
+            var requestContext = new McpClientRequestContext([Binding.Clone()]);
+            var tools = await AppToolCatalog.ListToolsAsync(requestContext);
+            _tools = tools
+                .Where(tool => MatchesBinding(tool, Binding))
+                .OrderBy(static tool => tool.ToolName, StringComparer.OrdinalIgnoreCase)
+                .ToList();
+            _toolCacheKey = cacheKey;
+
+            if (NormalizeSelection())
+            {
+                await BindingChanged.InvokeAsync(Binding);
+            }
+
+            await ToolLoadSucceeded.InvokeAsync(Binding);
+        }
+        catch (Exception ex)
+        {
+            _tools = [];
+            _loadError = ex.Message;
+            await ToolLoadFailed.InvokeAsync(Binding);
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private async Task OnSelectAllChangedAsync(bool value)
+    {
+        Binding.SelectAllTools = value;
+        Binding.SelectedTools.Clear();
+        await BindingChanged.InvokeAsync(Binding);
+    }
+
+    private async Task OnToolSelectionChangedAsync(string toolName, bool value)
+    {
+        if (Binding.SelectAllTools)
+        {
+            if (value)
+            {
+                return;
+            }
+
+            Binding.SelectAllTools = false;
+            Binding.SelectedTools = _tools
+                .Select(static tool => tool.ToolName)
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToList();
+        }
+
+        if (value)
+        {
+            if (!Binding.SelectedTools.Contains(toolName, StringComparer.OrdinalIgnoreCase))
+            {
+                Binding.SelectedTools.Add(toolName);
+            }
+        }
+        else
+        {
+            Binding.SelectedTools.RemoveAll(
+                selectedTool => string.Equals(selectedTool, toolName, StringComparison.OrdinalIgnoreCase));
+        }
+
+        NormalizeSelection();
+        await BindingChanged.InvokeAsync(Binding);
+    }
+
+    private bool NormalizeSelection()
+    {
+        if (Binding.SelectAllTools)
+        {
+            if (Binding.SelectedTools.Count == 0)
+            {
+                return false;
+            }
+
+            Binding.SelectedTools.Clear();
+            return true;
+        }
+
+        var availableToolNames = _tools
+            .Select(static tool => tool.ToolName)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var normalizedSelection = Binding.SelectedTools
+            .Where(availableToolNames.Contains)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        var changed = !Binding.SelectedTools.SequenceEqual(normalizedSelection, StringComparer.OrdinalIgnoreCase);
+        if (changed)
+        {
+            Binding.SelectedTools = normalizedSelection;
+        }
+
+        if (_tools.Count > 0 && Binding.SelectedTools.Count == _tools.Count)
+        {
+            Binding.SelectAllTools = true;
+            Binding.SelectedTools.Clear();
+            return true;
+        }
+
+        return changed;
+    }
+
+    private bool IsToolSelected(string toolName) =>
+        Binding.SelectAllTools ||
+        Binding.SelectedTools.Contains(toolName, StringComparer.OrdinalIgnoreCase);
+
+    private static bool MatchesBinding(AppToolDescriptor tool, McpServerSessionBinding binding)
+    {
+        if (binding.BindingId is Guid bindingId && bindingId != Guid.Empty)
+        {
+            return tool.BindingId == bindingId;
+        }
+
+        return !string.IsNullOrWhiteSpace(binding.ServerName) &&
+               string.Equals(tool.BaseServerName, binding.ServerName.Trim(), StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static string BuildToolCacheKey(McpServerSessionBinding binding)
+    {
+        var parameters = binding.Parameters
+            .OrderBy(static pair => pair.Key, StringComparer.OrdinalIgnoreCase)
+            .Select(static pair => $"{pair.Key}={pair.Value}")
+            .ToArray();
+        var roots = binding.Roots
+            .OrderBy(static root => root, StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+
+        return string.Join(
+            "|",
+            binding.BindingId?.ToString("D") ?? string.Empty,
+            binding.ServerId?.ToString("D") ?? binding.ServerName ?? string.Empty,
+            string.Join(";", roots),
+            string.Join(";", parameters));
+    }
+
+    private static string GetToolTitle(AppToolDescriptor tool)
+    {
+        if (!string.IsNullOrWhiteSpace(tool.Description))
+        {
+            return tool.Description;
+        }
+
+        return string.Equals(tool.DisplayName, tool.ToolName, StringComparison.OrdinalIgnoreCase)
+            ? tool.ToolName
+            : tool.DisplayName;
+    }
+}

@@ -35,16 +35,11 @@
                         </MudText>
                     </div>
                     <div class="mcp-bindings-picker__detail">
-                        <McpServerBindingsEditor Bindings="@GetDetailBindings()"
-                                                 BindingsChanged="OnDetailBindingsChanged"
-                                                 AvailableServers="@_availableServers"
-                                                 ToolLoadFailed="OnToolLoadFailed"
-                                                 ToolLoadSucceeded="OnToolLoadSucceeded"
-                                                 Title=""
-                                                 Description=""
-                                                 EmptyBindingsText=""
-                                                 ExpandAllBindings="true"
-                                                 Disabled="@Disabled" />
+                        <McpServerToolSelector Binding="@_selectedBinding"
+                                               BindingChanged="OnSelectedBindingChanged"
+                                               ToolLoadFailed="OnToolLoadFailed"
+                                               ToolLoadSucceeded="OnToolLoadSucceeded"
+                                               Disabled="@Disabled" />
                     </div>
                 }
                 else if (_adding)
@@ -272,24 +267,8 @@
         await BindingsChanged.InvokeAsync(Bindings);
     }
 
-    private List<McpServerSessionBinding> GetDetailBindings() =>
-        _selectedBinding is null ? [] : [_selectedBinding];
-
-    private async Task OnDetailBindingsChanged(List<McpServerSessionBinding> detailBindings)
-    {
-        if (_selectedBinding is not null && detailBindings.Count == 0)
-        {
-            if (_selectedBinding.BindingId is Guid bindingId)
-            {
-                _warningBindings.Remove(bindingId);
-            }
-
-            Bindings.Remove(_selectedBinding);
-            _selectedBinding = null;
-        }
-
-        await BindingsChanged.InvokeAsync(Bindings);
-    }
+    private Task OnSelectedBindingChanged(McpServerSessionBinding binding) =>
+        BindingsChanged.InvokeAsync(Bindings);
 
     private void OnToolLoadFailed(McpServerSessionBinding binding)
     {
