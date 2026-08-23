@@ -526,6 +526,89 @@ public sealed class UnifiedAgentRuntimeChatSessionServiceTests
     }
 
     [Fact]
+    public async Task RestoreSavedChatAsync_WhenNativeDeserializationFails_KeepsCurrentChatUsable()
+    {
+        var fixture = CreateDirectFixture();
+        await fixture.Service.StartAsync(fixture.Request, cancellationToken: TestContext.Current.CancellationToken);
+        await fixture.Service.SendAsync("active chat", cancellationToken: TestContext.Current.CancellationToken);
+        var activeChatId = fixture.Service.Id;
+        var activeAgent = GetPrivateField<AIAgent>(fixture.Service, "_directAgent");
+        var snapshot = await fixture.Service.ExportHarnessSessionAsync(TestContext.Current.CancellationToken);
+
+        var saved = CreateSavedChat(fixture, WithSession(snapshot, "true"));
+        await Assert.ThrowsAsync<InvalidOperationException>(
+            () => fixture.Service.RestoreSavedChatAsync(saved, TestContext.Current.CancellationToken));
+
+        Assert.Equal(activeChatId, fixture.Service.Id);
+        Assert.Same(activeAgent, GetPrivateField<AIAgent>(fixture.Service, "_directAgent"));
+        Assert.Equal("active chat", fixture.Service.Messages.First().Content);
+        await fixture.Service.SendAsync("still active", cancellationToken: TestContext.Current.CancellationToken);
+        Assert.Equal("still active", CurrentUserText(fixture.ChatClient.Requests[^1].Messages));
+    }
+
+    [Fact]
+    public async Task RestoreSavedChatAsync_RestoresExactTranscriptWithoutManualRestoreMessage()
+    {
+        var fixture = CreateDirectFixture();
+        await fixture.Service.StartAsync(fixture.Request, cancellationToken: TestContext.Current.CancellationToken);
+        await fixture.Service.SendAsync("Q1", cancellationToken: TestContext.Current.CancellationToken);
+        var snapshot = await fixture.Service.ExportHarnessSessionAsync(TestContext.Current.CancellationToken);
+        var saved = CreateSavedChat(fixture, snapshot);
+
+        await fixture.Service.RestoreSavedChatAsync(saved, TestContext.Current.CancellationToken);
+
+        Assert.Equal(saved.Messages.Select(static message => message.Content), fixture.Service.Messages.Select(static message => message.Content));
+        Assert.DoesNotContain(fixture.Service.Messages, message => message.Content.Contains("Harness session restored", StringComparison.Ordinal));
+        await fixture.Service.SendAsync("Q2", cancellationToken: TestContext.Current.CancellationToken);
+        Assert.Equal("Q2", CurrentUserText(fixture.ChatClient.Requests[^1].Messages));
+        Assert.Contains(fixture.ChatClient.Requests[^1].Messages, message => message.Role == ChatRole.User && message.Text == "Q1");
+    }
+
+    [Fact]
+    public async Task RestoreSavedChatAsync_RejectsSavedAgentWithoutNativeSessionBeforeMutation()
+    {
+        var fixture = CreateDirectFixture();
+        await fixture.Service.StartAsync(fixture.Request, cancellationToken: TestContext.Current.CancellationToken);
+        var activeChatId = fixture.Service.Id;
+        var activeAgent = GetPrivateField<AIAgent>(fixture.Service, "_directAgent");
+
+        var saved = CreateSavedChat(fixture, null);
+        await Assert.ThrowsAsync<InvalidOperationException>(
+            () => fixture.Service.RestoreSavedChatAsync(saved, TestContext.Current.CancellationToken));
+
+        Assert.Equal(activeChatId, fixture.Service.Id);
+        Assert.Same(activeAgent, GetPrivateField<AIAgent>(fixture.Service, "_directAgent"));
+    }
+
+    [Fact]
+    public async Task CheckpointAfterRootChange_UsesOpenedChatStorageRootAndPersistentId()
+    {
+        var savedChats = new Mock<ISavedChatService>(MockBehavior.Strict);
+        var titleGenerator = new Mock<IChatTitleGenerator>(MockBehavior.Strict);
+        titleGenerator.Setup(generator => generator.Generate(It.IsAny<string>())).Returns("Generated");
+        savedChats.Setup(service => service.IsAutoSaveEnabledAsync(It.IsAny<CancellationToken>())).ReturnsAsync(true);
+        SavedChatDocument? checkpoint = null;
+        savedChats.Setup(service => service.GetAsync(It.IsAny<string>(), It.IsAny<Guid>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((string _, Guid _, CancellationToken _) => null);
+        savedChats.Setup(service => service.SaveCheckpointAsync(It.IsAny<SavedChatDocument>(), It.IsAny<CancellationToken>()))
+            .Callback<SavedChatDocument, CancellationToken>((document, _) => checkpoint = document)
+            .Returns(Task.CompletedTask);
+        var fixture = CreateDirectFixture(savedChatService: savedChats.Object, chatTitleGenerator: titleGenerator.Object);
+        await fixture.Service.StartAsync(fixture.Request, cancellationToken: TestContext.Current.CancellationToken);
+        var snapshot = await fixture.Service.ExportHarnessSessionAsync(TestContext.Current.CancellationToken);
+        var rootA = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N"));
+        var saved = CreateSavedChat(fixture, snapshot);
+        saved.StorageRoot = rootA;
+
+        await fixture.Service.RestoreSavedChatAsync(saved, TestContext.Current.CancellationToken);
+        await fixture.Service.SendAsync("continued", cancellationToken: TestContext.Current.CancellationToken);
+
+        Assert.NotNull(checkpoint);
+        Assert.Equal(saved.Id, checkpoint.Id);
+        Assert.Equal(Path.GetFullPath(rootA), checkpoint.StorageRoot);
+    }
+
+    [Fact]
     public async Task RestoreHarnessSessionAsync_DoesNotPersistSessionApprovalGrants()
     {
         var fixture = CreateDirectFixture();
@@ -1147,7 +1230,9 @@ public sealed class UnifiedAgentRuntimeChatSessionServiceTests
         bool supportsSandbox = false,
         bool enableFileMemory = false,
         bool supportsFunctionCalling = false,
-        IConfiguration? configuration = null)
+        IConfiguration? configuration = null,
+        ISavedChatService? savedChatService = null,
+        IChatTitleGenerator? chatTitleGenerator = null)
     {
         var templateId = Guid.NewGuid();
         var serverId = Guid.NewGuid();
@@ -1219,6 +1304,31 @@ public sealed class UnifiedAgentRuntimeChatSessionServiceTests
             NullLogger<AgenticRuntimeAgentFactory>.Instance,
             NullLoggerFactory.Instance,
             configuration: configuration);
+        var resolver = new Mock<IAgentSessionDefinitionResolver>(MockBehavior.Strict);
+        var descriptor = new AgentDefinitionDescriptor
+        {
+            Reference = new AgentDefinitionReference(AgentDefinitionKind.SavedAgent, templateId.ToString()),
+            Name = template.AgentName,
+            RuntimeKind = AgentRuntimeKind.LlmAgent,
+            ModelRequirement = AgentModelRequirement.Required
+        };
+        var launchValidation = new AgentDefinitionLaunchValidation { CanLaunch = true };
+        resolver.Setup(value => value.ValidateAsync(It.IsAny<AgentDefinitionReference>(), It.IsAny<AgentSessionDefinitionRequest>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(launchValidation);
+        resolver.Setup(value => value.ResolveAsync(It.IsAny<AgentDefinitionReference>(), It.IsAny<AgentSessionDefinitionRequest>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new ResolvedAgentSessionDefinition
+            {
+                Descriptor = descriptor,
+                RuntimeReference = descriptor.Reference,
+                DefaultModel = model,
+                PresentationParticipant = new ChatRuntimeParticipantDescriptor
+                {
+                    Id = template.AgentId,
+                    Name = template.AgentName,
+                    RuntimeKind = AgentRuntimeKind.LlmAgent
+                },
+                Validation = launchValidation
+            });
         var service = new UnifiedAgentRuntimeChatSessionService(
             new StubAgentRunner([]),
             new StubDefinitionCatalog(supportsSandbox ? new AgentLaunchCapabilities { SupportsSandboxProfile = true } : null),
@@ -1228,7 +1338,10 @@ public sealed class UnifiedAgentRuntimeChatSessionServiceTests
             templateService.Object,
             sandboxSessionFactory ?? new StubSandboxSessionFactory(),
             runtimeFactory,
-            new HarnessResponseEventProjector(NullLogger<HarnessResponseEventProjector>.Instance));
+            new HarnessResponseEventProjector(NullLogger<HarnessResponseEventProjector>.Instance),
+            savedChatService,
+            chatTitleGenerator,
+            definitionResolver: resolver.Object);
         var request = new ChatEngineSessionStartRequest
         {
             Configuration = new AppChatConfiguration("test-model", []),
@@ -1285,6 +1398,24 @@ public sealed class UnifiedAgentRuntimeChatSessionServiceTests
             Session = session.RootElement.Clone()
         });
     }
+
+    private static SavedChatDocument CreateSavedChat(DirectFixture fixture, string? snapshot) => new()
+    {
+        Id = Guid.NewGuid(),
+        StorageRoot = Path.GetTempPath(),
+        Title = "Saved",
+        CreatedAtUtc = DateTime.UtcNow,
+        UpdatedAtUtc = DateTime.UtcNow,
+        Launch = new SavedChatLaunchSnapshot
+        {
+            RuntimeReference = new SavedChatRuntimeReference(
+                fixture.Request.RuntimeReference!.Kind.ToString(), fixture.Request.RuntimeReference.Id),
+            Model = fixture.Request.RuntimeDefaultModel,
+            Overrides = new SavedChatOverrides()
+        },
+        Messages = fixture.Service.Messages.Select(static message => new AppChatMessage(message)).ToList(),
+        NativeSession = snapshot is null ? null : new SavedChatNativeSession { SnapshotJson = snapshot }
+    };
 
     private static T GetPrivateField<T>(object instance, string name) where T : class =>
         Assert.IsAssignableFrom<T>(instance.GetType().GetField(name, BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(instance));

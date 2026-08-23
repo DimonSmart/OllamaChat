@@ -50,6 +50,45 @@ public sealed class FileSavedChatRepositoryTests
         finally { Directory.Delete(root, true); }
     }
 
+    [Fact]
+    public async Task ConcurrentCheckpointAndRename_RetainsManualTitleAndLatestTranscript()
+    {
+        var root = CreateRoot();
+        try
+        {
+            var repository = new FileSavedChatRepository(NullLogger<FileSavedChatRepository>.Instance);
+            var chat = CreateChat();
+            await repository.SaveAsync(root, chat, TestContext.Current.CancellationToken);
+
+            var checkpoint = new SavedChatDocument
+            {
+                Id = chat.Id,
+                Title = "Automatic title",
+                CreatedAtUtc = chat.CreatedAtUtc,
+                UpdatedAtUtc = DateTime.UtcNow,
+                Launch = chat.Launch,
+                Messages = [new AppChatMessage("latest", DateTime.Now, AppChatRole.Assistant)]
+            };
+            await Task.WhenAll(
+                repository.UpdateAsync(root, chat.Id, current =>
+                {
+                    current.Title = "Manual title";
+                    current.IsTitleManual = true;
+                    return current;
+                }, TestContext.Current.CancellationToken),
+                repository.SaveCheckpointAsync(root, checkpoint, TestContext.Current.CancellationToken));
+            await repository.SaveCheckpointAsync(root, checkpoint, TestContext.Current.CancellationToken);
+
+            var saved = await repository.GetAsync(root, chat.Id, TestContext.Current.CancellationToken);
+            Assert.NotNull(saved);
+            Assert.Equal("Manual title", saved.Title);
+            Assert.True(saved.IsTitleManual);
+            Assert.Equal("latest", Assert.Single(saved.Messages).Content);
+            Assert.Empty(Directory.EnumerateFiles(root, "*.tmp-*"));
+        }
+        finally { Directory.Delete(root, true); }
+    }
+
     private static string CreateRoot()
     {
         var root = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N"));

@@ -63,8 +63,7 @@ public sealed class UnifiedAgentRuntimeChatSessionService(
     private readonly SemaphoreSlim _startGate = new(1, 1);
     private long _generation;
     private bool _resetting;
-    private Guid? _savedChatId;
-    private string? _savedChatStorageRoot;
+    private SavedChatHandle? _savedChat;
     private bool _persistenceHealthy = true;
 
     public event Action<bool>? AnsweringStateChanged;
@@ -333,8 +332,7 @@ public sealed class UnifiedAgentRuntimeChatSessionService(
 
     public async Task ResetAsync(CancellationToken cancellationToken = default)
     {
-        _savedChatId = null;
-        _savedChatStorageRoot = null;
+        _savedChat = null;
         harnessTraceSession?.Clear();
         Task? activeRun;
         lock (_lifecycleLock)
@@ -684,6 +682,43 @@ public sealed class UnifiedAgentRuntimeChatSessionService(
         if (IsAnswering || PendingToolApproval is not null || RequiresReset)
             throw new InvalidOperationException("Finish or stop the current response before opening another chat.");
 
+        if (kind == AgentDefinitionKind.SavedAgent && string.IsNullOrWhiteSpace(chat.NativeSession?.SnapshotJson))
+            throw new InvalidOperationException("This saved chat does not contain a resumable Harness session.");
+        chat.StorageRoot = Path.GetFullPath(chat.StorageRoot ?? throw new InvalidOperationException("Saved chat storage root is missing."));
+
+        if (!await _startGate.WaitAsync(0, cancellationToken))
+            throw new InvalidOperationException("Chat session startup is already in progress.");
+
+        try
+        {
+            await _runSetupGate.WaitAsync(cancellationToken);
+            try
+            {
+                if (_resetting || IsAnswering || PendingToolApproval is not null || RequiresReset)
+                    throw new InvalidOperationException("Finish or stop the current response before opening another chat.");
+
+                var prepared = await PrepareSavedChatRestoreAsync(chat, kind, cancellationToken);
+                try
+                {
+                    CommitSavedChatRestore(prepared);
+                }
+                catch
+                {
+                    await prepared.DisposeAsync();
+                    throw;
+                }
+            }
+            finally { _runSetupGate.Release(); }
+        }
+        finally { _startGate.Release(); }
+    }
+
+    private async Task<PreparedSavedChatRestore> PrepareSavedChatRestoreAsync(
+        SavedChatDocument chat,
+        AgentDefinitionKind kind,
+        CancellationToken cancellationToken)
+    {
+
         var reference = new AgentDefinitionReference(kind, chat.Launch.RuntimeReference.Id);
         var resolutionRequest = new AgentSessionDefinitionRequest
         {
@@ -704,7 +739,7 @@ public sealed class UnifiedAgentRuntimeChatSessionService(
         if (!resolved.Validation.CanLaunch)
             throw new InvalidOperationException(string.Join(" ", resolved.Validation.Problems.Select(static problem => problem.Message)));
         HarnessSessionSnapshot? nativeSnapshot = null;
-        if (kind == AgentDefinitionKind.SavedAgent && chat.NativeSession is not null)
+        if (kind == AgentDefinitionKind.SavedAgent)
         {
             try
             {
@@ -731,7 +766,7 @@ public sealed class UnifiedAgentRuntimeChatSessionService(
             if (template.UpdatedAt != nativeSnapshot.AgentUpdatedAt)
                 throw new InvalidOperationException("The saved Harness session was created with an older agent configuration.");
         }
-        await StartAsync(new ChatEngineSessionStartRequest
+        var request = new ChatEngineSessionStartRequest
         {
             Configuration = new AppChatConfiguration(chat.Launch.Model?.ModelName ?? string.Empty, []),
             Agents = [],
@@ -740,13 +775,85 @@ public sealed class UnifiedAgentRuntimeChatSessionService(
             RuntimeInputs = new Dictionary<string, string>(resolved.Inputs, StringComparer.OrdinalIgnoreCase),
             Overrides = resolutionRequest.Overrides,
             RuntimeParticipant = resolved.PresentationParticipant
-        }, cancellationToken);
-        if (nativeSnapshot is not null)
-            await RestoreHarnessSessionAsync(chat.NativeSession!.SnapshotJson, cancellationToken);
-        foreach (var message in chat.Messages)
-            await AddMessageAsync(new AppChatMessage(message));
-        _savedChatId = chat.Id;
-        _savedChatStorageRoot = chat.StorageRoot;
+        };
+        var descriptor = await definitionCatalog.GetRequiredAsync(request.RuntimeReference!, cancellationToken);
+        SandboxSessionHandle? sandbox = null;
+        HarnessAgentRuntimeDefinition? runtime = null;
+        ISessionToolApprovalCoordinator? coordinator = null;
+        try
+        {
+            sandbox = await CreateSandboxSessionAsync(request, descriptor, Guid.NewGuid().ToString("N"), cancellationToken, null);
+            if (kind == AgentDefinitionKind.SavedAgent)
+            {
+                var policy = new SessionToolApprovalPolicy();
+                policy.SetWorkspace(sandbox?.WorkspacePath ?? request.Overrides.WorkspacePath);
+                coordinator = new SessionToolApprovalCoordinator();
+                runtime = await CreateDirectRuntimeAsync(request, coordinator, policy, sandbox, cancellationToken);
+                var session = await runtime.Agent.DeserializeSessionAsync(nativeSnapshot!.Session, cancellationToken: cancellationToken);
+                var template = await agentTemplateService.GetByIdAsync(nativeSnapshot.SavedAgentId)
+                    ?? throw new InvalidOperationException("The Saved Agent used by this chat was deleted.");
+                return new PreparedSavedChatRestore(request, chat, sandbox, runtime, session, coordinator, policy, template.AgentId);
+            }
+
+            return new PreparedSavedChatRestore(request, chat, sandbox, null, null, null, null, string.Empty);
+        }
+        catch (Exception ex)
+        {
+            runtime?.Dispose();
+            if (sandbox is not null)
+                await DisposeSandboxAfterRestoreFailureAsync(sandbox);
+            logger.LogWarning(ex, "Saved chat restore preparation failed.");
+            throw new InvalidOperationException("Could not restore the saved chat. The current conversation is unchanged.");
+        }
+    }
+
+    private void CommitSavedChatRestore(PreparedSavedChatRestore prepared)
+    {
+        var previousRuntime = _directRuntimeDefinition;
+        var previousCoordinator = _toolApprovalCoordinator;
+        var previousSandbox = _sandboxSession;
+        previousCoordinator?.PendingRequestChanged -= HandleCoordinatorPendingRequestChanged;
+
+        _parameters = prepared.Request.Snapshot();
+        _activeSession = CreateActiveSession(_parameters);
+        _directRuntimeDefinition = prepared.Runtime;
+        _directAgent = prepared.Runtime?.Agent;
+        _directSession = prepared.Session;
+        _directRuntimeAgentId = prepared.RuntimeAgentId;
+        _directAvailableModes = prepared.Runtime?.AvailableModes ?? [];
+        _directFileAccessStore = prepared.Runtime?.FileAccessStore;
+        _directFileAccessProfile = prepared.Runtime?.FileAccessProfile;
+        _directFileMemoryStore = prepared.Runtime?.FileMemoryStore;
+        _directCompaction = prepared.Runtime?.Compaction;
+        _directSkills = prepared.Runtime?.Skills ?? [];
+        _directSkillDiagnostics = prepared.Runtime?.SkillDiagnostics ?? [];
+        _directBackgroundAgents = prepared.Runtime?.BackgroundAgents ?? [];
+        _directToolMetadata = prepared.Runtime?.ToolSet.MetadataByName ?? new Dictionary<string, AgenticRegisteredTool>(StringComparer.OrdinalIgnoreCase);
+        _toolApprovalCoordinator = prepared.Coordinator;
+        _toolApprovalPolicy = prepared.Policy;
+        if (_toolApprovalCoordinator is not null)
+            _toolApprovalCoordinator.PendingRequestChanged += HandleCoordinatorPendingRequestChanged;
+        _sandboxSession = prepared.Sandbox;
+        _savedChat = new SavedChatHandle(prepared.Chat.Id, prepared.Chat.StorageRoot!);
+        prepared.TransferOwnership();
+
+        _chat.Reset();
+        _chat.SetAgents(_parameters.RuntimeParticipant is { } participant
+            ? [new AgentExecutionSpec { RuntimeAgentId = participant.Id, AgentName = participant.Name, Summary = participant.Description, ShortName = participant.AvatarText }]
+            : _parameters.Agents.Select(static agent => agent.Agent.Clone()));
+        foreach (var message in prepared.Chat.Messages)
+            _chat.Messages.Add(new AppChatMessage(message));
+        ClearRunLocalState();
+        RequiresReset = false;
+        _persistenceHealthy = true;
+
+        try
+        { previousRuntime?.Dispose(); }
+        catch (Exception ex) { logger.LogWarning(ex, "Could not dispose the previous Harness runtime after saved chat restore."); }
+        if (previousSandbox is not null)
+            _ = DisposeSandboxAfterRestoreFailureAsync(previousSandbox);
+        ChatReset?.Invoke();
+        SessionStateChanged?.Invoke();
     }
 
     public async Task RestoreHarnessSessionAsync(string snapshotJson, CancellationToken cancellationToken = default)
@@ -1351,6 +1458,41 @@ public sealed class UnifiedAgentRuntimeChatSessionService(
     private static string CombineMemoryPath(string workingFolder, string name) =>
         string.IsNullOrWhiteSpace(workingFolder) ? name : $"{workingFolder.TrimEnd('/')}/{name}";
 
+    private sealed record SavedChatHandle(Guid Id, string StorageRoot);
+
+    private sealed class PreparedSavedChatRestore(
+        ChatEngineSessionStartRequest request,
+        SavedChatDocument chat,
+        SandboxSessionHandle? sandbox,
+        HarnessAgentRuntimeDefinition? runtime,
+        AgentSession? session,
+        ISessionToolApprovalCoordinator? coordinator,
+        SessionToolApprovalPolicy? policy,
+        string runtimeAgentId) : IAsyncDisposable
+    {
+        public ChatEngineSessionStartRequest Request { get; } = request;
+        public SavedChatDocument Chat { get; } = chat;
+        public SandboxSessionHandle? Sandbox { get; private set; } = sandbox;
+        public HarnessAgentRuntimeDefinition? Runtime { get; private set; } = runtime;
+        public AgentSession? Session { get; } = session;
+        public ISessionToolApprovalCoordinator? Coordinator { get; } = coordinator;
+        public SessionToolApprovalPolicy? Policy { get; } = policy;
+        public string RuntimeAgentId { get; } = runtimeAgentId;
+
+        public void TransferOwnership()
+        {
+            Runtime = null;
+            Sandbox = null;
+        }
+
+        public async ValueTask DisposeAsync()
+        {
+            Runtime?.Dispose();
+            if (Sandbox is not null)
+                await Sandbox.DisposeAsync();
+        }
+    }
+
     private static bool IsInternalMemoryFile(string name) =>
         name.Equals("memories.md", StringComparison.OrdinalIgnoreCase) ||
         name.EndsWith("_description.md", StringComparison.OrdinalIgnoreCase);
@@ -1523,7 +1665,9 @@ public sealed class UnifiedAgentRuntimeChatSessionService(
 
         try
         {
-            var existing = _savedChatId is { } id ? await savedChatService.GetAsync(id) : null;
+            var existing = _savedChat is { } handle
+                ? await savedChatService.GetAsync(handle.StorageRoot, handle.Id)
+                : null;
             var firstUserMessage = _chat.Messages.FirstOrDefault(static message => message.Role == AppChatRole.User)?.Content ?? string.Empty;
             var now = DateTime.UtcNow;
             var nativeSession = _parameters.RuntimeReference.Kind == AgentDefinitionKind.SavedAgent
@@ -1531,7 +1675,7 @@ public sealed class UnifiedAgentRuntimeChatSessionService(
                 : null;
             var document = new SavedChatDocument
             {
-                Id = existing?.Id ?? Guid.NewGuid(),
+                Id = _savedChat?.Id ?? existing?.Id ?? Guid.NewGuid(),
                 CreatedAtUtc = existing?.CreatedAtUtc ?? now,
                 UpdatedAtUtc = now,
                 Title = existing?.Title ?? chatTitleGenerator.Generate(firstUserMessage),
@@ -1550,11 +1694,10 @@ public sealed class UnifiedAgentRuntimeChatSessionService(
                 },
                 Messages = _chat.Messages.Where(static message => !message.IsStreaming).Select(static message => new AppChatMessage(message)).ToList(),
                 NativeSession = nativeSession,
-                StorageRoot = _savedChatStorageRoot ?? existing?.StorageRoot
+                StorageRoot = _savedChat?.StorageRoot ?? existing?.StorageRoot
             };
-            await savedChatService.SaveAsync(document);
-            _savedChatId = document.Id;
-            _savedChatStorageRoot = document.StorageRoot;
+            await savedChatService.SaveCheckpointAsync(document);
+            _savedChat = new SavedChatHandle(document.Id, document.StorageRoot ?? throw new InvalidOperationException("Saved chat storage root is missing."));
             _persistenceHealthy = true;
         }
         catch (Exception ex)

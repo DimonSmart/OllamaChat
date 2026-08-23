@@ -55,6 +55,38 @@ public sealed class FileSavedChatRepository(ILogger<FileSavedChatRepository> log
         return document;
     }
 
+    public async Task UpdateAsync(string storageRoot, Guid id, Func<SavedChatDocument, SavedChatDocument> update, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(update);
+        var target = GetPath(storageRoot, id);
+        await WithFileGateAsync(target, async () =>
+        {
+            var current = await ReadRequiredAsync(target, cancellationToken);
+            var updated = update(current) ?? throw new InvalidOperationException("Saved chat update returned no document.");
+            if (updated.Id != id)
+                throw new InvalidOperationException("A saved chat update cannot change its identifier.");
+            await WriteAsync(storageRoot, target, updated, cancellationToken);
+        }, cancellationToken);
+    }
+
+    public async Task SaveCheckpointAsync(string storageRoot, SavedChatDocument chat, CancellationToken cancellationToken = default)
+    {
+        var target = GetPath(storageRoot, chat.Id);
+        await WithFileGateAsync(target, async () =>
+        {
+            if (File.Exists(target))
+            {
+                var current = await ReadRequiredAsync(target, cancellationToken);
+                if (current.IsTitleManual)
+                {
+                    chat.Title = current.Title;
+                    chat.IsTitleManual = true;
+                }
+            }
+            await WriteAsync(storageRoot, target, chat, cancellationToken);
+        }, cancellationToken);
+    }
+
     public async Task<IReadOnlyList<SavedChatSummary>> GetAllAsync(string storageRoot, CancellationToken cancellationToken = default)
     {
         if (!Directory.Exists(storageRoot))
@@ -83,6 +115,27 @@ public sealed class FileSavedChatRepository(ILogger<FileSavedChatRepository> log
     }
 
     private static string GetPath(string root, Guid id) => Path.Combine(Path.GetFullPath(root), $"{id:N}.json");
+
+    private static async Task<SavedChatDocument> ReadRequiredAsync(string path, CancellationToken cancellationToken) =>
+        JsonSerializer.Deserialize<SavedChatDocument>(await File.ReadAllTextAsync(path, cancellationToken), JsonOptions)
+        ?? throw new InvalidDataException("Saved chat file is invalid.");
+
+    private static async Task WriteAsync(string storageRoot, string target, SavedChatDocument chat, CancellationToken cancellationToken)
+    {
+        Directory.CreateDirectory(storageRoot);
+        var temporary = target + ".tmp-" + Guid.NewGuid().ToString("N");
+        try
+        {
+            await File.WriteAllTextAsync(temporary, JsonSerializer.Serialize(chat, JsonOptions), cancellationToken);
+            File.Move(temporary, target, true);
+        }
+        finally
+        {
+            try
+            { if (File.Exists(temporary)) File.Delete(temporary); }
+            catch { }
+        }
+    }
 
     private static async Task WithFileGateAsync(string path, Func<Task> action, CancellationToken cancellationToken)
     {

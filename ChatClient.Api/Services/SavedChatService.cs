@@ -18,6 +18,9 @@ public sealed class SavedChatService(IUserSettingsService settingsService, ISave
         return await repository.GetAsync(settings.SavedChats.StorageRoot, id, cancellationToken);
     }
 
+    public Task<SavedChatDocument?> GetAsync(string storageRoot, Guid id, CancellationToken cancellationToken = default) =>
+        repository.GetAsync(storageRoot, id, cancellationToken);
+
     public async Task SaveAsync(SavedChatDocument chat, CancellationToken cancellationToken = default)
     {
         var settings = await settingsService.GetSettingsAsync(cancellationToken);
@@ -28,15 +31,26 @@ public sealed class SavedChatService(IUserSettingsService settingsService, ISave
         }
     }
 
+    public async Task SaveCheckpointAsync(SavedChatDocument chat, CancellationToken cancellationToken = default)
+    {
+        var settings = await settingsService.GetSettingsAsync(cancellationToken);
+        if (settings.SavedChats.AutoSaveEnabled)
+        {
+            chat.StorageRoot ??= Path.GetFullPath(settings.SavedChats.StorageRoot);
+            await repository.SaveCheckpointAsync(chat.StorageRoot, chat, cancellationToken);
+        }
+    }
+
     public async Task RenameAsync(Guid id, string title, CancellationToken cancellationToken = default)
     {
         var settings = await settingsService.GetSettingsAsync(cancellationToken);
-        var chat = await repository.GetAsync(settings.SavedChats.StorageRoot, id, cancellationToken)
-            ?? throw new InvalidOperationException("Saved chat does not exist.");
-        chat.Title = string.IsNullOrWhiteSpace(title) ? "New chat" : title.Trim();
-        chat.IsTitleManual = true;
-        chat.UpdatedAtUtc = DateTime.UtcNow;
-        await repository.SaveAsync(settings.SavedChats.StorageRoot, chat, cancellationToken);
+        await repository.UpdateAsync(settings.SavedChats.StorageRoot, id, chat =>
+        {
+            chat.Title = string.IsNullOrWhiteSpace(title) ? "New chat" : title.Trim();
+            chat.IsTitleManual = true;
+            chat.UpdatedAtUtc = DateTime.UtcNow;
+            return chat;
+        }, cancellationToken);
     }
 
     public async Task<bool> IsAutoSaveEnabledAsync(CancellationToken cancellationToken = default) =>
