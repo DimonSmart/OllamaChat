@@ -54,6 +54,28 @@ public static class McpBindingPresentation
         return null;
     }
 
+    public static string GetCompactToolState(McpServerSessionBinding binding)
+    {
+        ArgumentNullException.ThrowIfNull(binding);
+
+        if (!binding.Enabled)
+        {
+            return "Off";
+        }
+
+        if (binding.SelectAllTools)
+        {
+            return "All tools";
+        }
+
+        return binding.SelectedTools.Count switch
+        {
+            0 => "No tools",
+            1 => "1 tool",
+            var count => $"{count} tools"
+        };
+    }
+
     public static string BuildToolDescription(string? description, McpServerSessionBinding? binding)
     {
         var normalizedDescription = description?.Trim() ?? string.Empty;

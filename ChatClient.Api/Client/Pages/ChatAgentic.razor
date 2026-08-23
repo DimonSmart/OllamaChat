@@ -97,10 +97,8 @@
 
                         @if (selectedDefinition?.LaunchCapabilities.SupportsMcpBindingOverrides == true)
                         {
-                            <McpServerBindingsEditor Bindings="@mcpServerBindings"
+                            <McpServerBindingsPicker Bindings="@mcpServerBindings"
                                                      BindingsChanged="OnMcpServerBindingsChanged"
-                                                     Title="MCP Servers"
-                                                     Description="Session-specific MCP bindings for this launch."
                                                      Disabled="@isStartingChat" />
                         }
 

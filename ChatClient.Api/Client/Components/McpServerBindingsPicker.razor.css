@@ -1,0 +1,85 @@
+.mcp-bindings-picker {
+    min-width: 0;
+    max-width: 100%;
+}
+
+.mcp-bindings-picker__summary {
+    min-width: 0;
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.mcp-bindings-picker__popover {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    width: min(24rem, calc(100vw - 2rem));
+    max-height: min(38rem, calc(100vh - 4rem));
+    overflow: auto;
+    padding: 0.5rem;
+}
+
+.mcp-bindings-picker__rows {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+}
+
+.mcp-bindings-picker__row {
+    min-width: 0;
+}
+
+.mcp-bindings-picker__row :deep(.mud-button-label) {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto auto;
+    align-items: center;
+    gap: 0.5rem;
+    width: 100%;
+    text-align: left;
+}
+
+.mcp-bindings-picker__row--off {
+    opacity: 0.72;
+}
+
+.mcp-bindings-picker__name {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.mcp-bindings-picker__state,
+.mcp-bindings-picker__loading,
+.mcp-bindings-picker__empty {
+    color: var(--mud-palette-text-secondary);
+}
+
+.mcp-bindings-picker__state {
+    white-space: nowrap;
+}
+
+.mcp-bindings-picker__empty,
+.mcp-bindings-picker__loading {
+    padding: 0.5rem;
+}
+
+.mcp-bindings-picker__detail-header {
+    display: flex;
+    align-items: center;
+    gap: 0.25rem;
+    min-width: 0;
+}
+
+.mcp-bindings-picker__detail-title {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.mcp-bindings-picker__detail {
+    min-width: 0;
+}

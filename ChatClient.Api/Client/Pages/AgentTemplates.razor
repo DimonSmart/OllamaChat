@@ -241,7 +241,7 @@
                 <MudExpansionPanel Text="Tools" KeepContentAlive="true">
                     <MudStack Spacing="2">
                         <MudCheckBox T="bool" @bind-Value="editingAgent.EnableShell" Label="Enable shell in sandbox" />
-                        <McpServerBindingsEditor Bindings="@editingAgent.McpServerBindings" BindingsChanged="OnMcpBindingsChanged" />
+                        <McpServerBindingsPicker Bindings="@editingAgent.McpServerBindings" BindingsChanged="OnMcpBindingsChanged" />
                     </MudStack>
                 </MudExpansionPanel>
 
@@ -755,10 +755,6 @@
                     return $"Attachment '{GetBindingDisplayName(binding, serverDescriptor)}' requires override '{label}'.";
                 }
 
-                if (!binding.SelectAllTools && binding.SelectedTools.Count == 0)
-                {
-                    return $"Attachment '{GetBindingDisplayName(binding, serverDescriptor)}' must either expose all tools or select at least one tool.";
-                }
             }
 
             normalizedBindings.Add(binding);

@@ -1,0 +1,314 @@
+@using ChatClient.Application.Services
+@using ChatClient.Domain.Models
+@using ChatClient.Api.Services
+@inject IMcpServerConfigService McpServerConfigService
+@inject ISnackbar Snackbar
+
+<div class="mcp-bindings-picker @Class" @onkeydown="OnKeyDown">
+    <MudMenu @bind-Open="_open"
+             Disabled="Disabled"
+             Dense="true"
+             Label="@GetSummary()"
+             AriaLabel="Configure MCP servers"
+             EndIcon="@Icons.Material.Filled.ArrowDropDown"
+             Variant="Variant.Text"
+             Size="Size.Small"
+             Class="mcp-bindings-picker__summary"
+             title="@GetSummary()"
+             AnchorOrigin="Origin.BottomCenter"
+             TransformOrigin="Origin.TopCenter">
+        <ChildContent>
+            <div class="mcp-bindings-picker__popover" @onkeydown="OnKeyDown">
+                @if (_loadingServers)
+                {
+                    <div class="mcp-bindings-picker__loading" role="status">Loading…</div>
+                }
+                else if (_selectedBinding is not null)
+                {
+                    <div class="mcp-bindings-picker__detail-header">
+                        <MudIconButton Icon="@Icons.Material.Filled.ArrowBack"
+                                       Size="Size.Small"
+                                       aria-label="Back to MCP servers"
+                                       OnClick="ShowBindings" />
+                        <MudText Typo="Typo.subtitle2" Class="mcp-bindings-picker__detail-title">
+                            @GetBindingName(_selectedBinding)
+                        </MudText>
+                    </div>
+                    <div class="mcp-bindings-picker__detail">
+                        <McpServerBindingsEditor Bindings="@GetDetailBindings()"
+                                                 BindingsChanged="OnDetailBindingsChanged"
+                                                 AvailableServers="@_availableServers"
+                                                 ToolLoadFailed="OnToolLoadFailed"
+                                                 ToolLoadSucceeded="OnToolLoadSucceeded"
+                                                 Title=""
+                                                 Description=""
+                                                 EmptyBindingsText=""
+                                                 ExpandAllBindings="true"
+                                                 Disabled="@Disabled" />
+                    </div>
+                }
+                else if (_adding)
+                {
+                    <div class="mcp-bindings-picker__detail-header">
+                        <MudIconButton Icon="@Icons.Material.Filled.ArrowBack"
+                                       Size="Size.Small"
+                                       aria-label="Cancel adding MCP server"
+                                       OnClick="CancelAdding" />
+                        <MudText Typo="Typo.subtitle2">Add MCP server</MudText>
+                    </div>
+                    <MudSelect T="Guid?"
+                               Label="Server"
+                               Value="@((Guid?)null)"
+                               ValueChanged="AddSelectedServerAsync"
+                               Variant="Variant.Text"
+                               Dense="true"
+                               Margin="Margin.Dense"
+                               FullWidth="true"
+                               Disabled="@Disabled">
+                        @foreach (var server in _availableServers.Where(static server => server.Id.HasValue))
+                        {
+                            <MudSelectItem Value="@server.Id">@server.Name</MudSelectItem>
+                        }
+                    </MudSelect>
+                }
+                else
+                {
+                    @if (_availableServers.Count == 0)
+                    {
+                        <MudText Typo="Typo.body2" Class="mcp-bindings-picker__empty">
+                            No MCP servers configured
+                        </MudText>
+                        <MudButton Variant="Variant.Text"
+                                   Color="Color.Primary"
+                                   Size="Size.Small"
+                                   Href="/mcp-servers">
+                            Configure MCP servers
+                        </MudButton>
+                    }
+                    else
+                    {
+                        @if (Bindings.Count == 0)
+                        {
+                            <MudText Typo="Typo.body2" Class="mcp-bindings-picker__empty">
+                                No MCP servers
+                            </MudText>
+                        }
+                        else
+                        {
+                            <div class="mcp-bindings-picker__rows" role="list" aria-label="MCP server bindings">
+                                @foreach (var binding in Bindings)
+                                {
+                                    <MudButton Variant="Variant.Text"
+                                               Color="Color.Default"
+                                               FullWidth="true"
+                                               Class="@GetRowClass(binding)"
+                                               OnClick="@(() => ShowBindingAsync(binding))">
+                                        <span class="mcp-bindings-picker__name">@GetBindingName(binding)</span>
+                                        <span class="mcp-bindings-picker__state">@GetBindingState(binding)</span>
+                                        <MudIcon Icon="@Icons.Material.Filled.ChevronRight"
+                                                 Size="Size.Small"
+                                                 aria-hidden="true" />
+                                    </MudButton>
+                                }
+                            </div>
+                        }
+
+                        <MudButton Variant="Variant.Text"
+                                   Color="Color.Primary"
+                                   Size="Size.Small"
+                                   StartIcon="@Icons.Material.Filled.Add"
+                                   OnClick="BeginAdding"
+                                   Disabled="@Disabled">
+                            Add MCP server
+                        </MudButton>
+                    }
+                }
+            </div>
+        </ChildContent>
+    </MudMenu>
+</div>
+
+@code {
+    [Parameter] public List<McpServerSessionBinding> Bindings { get; set; } = [];
+    [Parameter] public EventCallback<List<McpServerSessionBinding>> BindingsChanged { get; set; }
+    [Parameter] public bool Disabled { get; set; }
+    [Parameter] public string? Class { get; set; }
+
+    private List<IMcpServerDescriptor> _availableServers = [];
+    private McpServerSessionBinding? _selectedBinding;
+    private readonly HashSet<Guid> _warningBindings = [];
+    private bool _loadingServers;
+    private bool _adding;
+    private bool _open;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            _loadingServers = true;
+            _availableServers = (await McpServerConfigService.GetAllAsync())
+                .OrderBy(static server => server.Name, StringComparer.OrdinalIgnoreCase)
+                .ToList();
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Failed to load MCP servers: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _loadingServers = false;
+        }
+    }
+
+    protected override void OnParametersSet()
+    {
+        if (Disabled)
+        {
+            _open = false;
+        }
+
+        if (_selectedBinding is not null && !Bindings.Contains(_selectedBinding))
+        {
+            _selectedBinding = null;
+        }
+    }
+
+    private string GetSummary()
+    {
+        if (_loadingServers)
+        {
+            return "MCP · Loading…";
+        }
+
+        return Bindings.Count switch
+        {
+            0 => "MCP · None",
+            1 => $"MCP · {GetBindingName(Bindings[0])}",
+            _ => $"MCP · {Bindings.Count} servers"
+        };
+    }
+
+    private string GetBindingName(McpServerSessionBinding binding)
+    {
+        var displayName = binding.DisplayName?.Trim();
+        if (!string.IsNullOrWhiteSpace(displayName))
+        {
+            return displayName;
+        }
+
+        return _availableServers.FirstOrDefault(binding.Matches)?.Name
+            ?? binding.ServerName
+            ?? "Unavailable server";
+    }
+
+    private string GetBindingState(McpServerSessionBinding binding)
+    {
+        if (binding.Enabled &&
+            binding.BindingId is Guid bindingId &&
+            _warningBindings.Contains(bindingId))
+        {
+            return "Warning";
+        }
+
+        return McpBindingPresentation.GetCompactToolState(binding);
+    }
+
+    private static string GetRowClass(McpServerSessionBinding binding) =>
+        binding.Enabled
+            ? "mcp-bindings-picker__row"
+            : "mcp-bindings-picker__row mcp-bindings-picker__row--off";
+
+    private void BeginAdding()
+    {
+        _selectedBinding = null;
+        _adding = true;
+    }
+
+    private void CancelAdding() => _adding = false;
+
+    private void ShowBindings()
+    {
+        _selectedBinding = null;
+        _adding = false;
+    }
+
+    private async Task ShowBindingAsync(McpServerSessionBinding binding)
+    {
+        _adding = false;
+        _selectedBinding = binding;
+        await Task.CompletedTask;
+    }
+
+    private async Task AddSelectedServerAsync(Guid? serverId)
+    {
+        if (serverId is not Guid resolvedServerId || resolvedServerId == Guid.Empty)
+        {
+            return;
+        }
+
+        var server = _availableServers.FirstOrDefault(candidate => candidate.Id == resolvedServerId);
+        if (server is null)
+        {
+            return;
+        }
+
+        var binding = new McpServerSessionBinding
+        {
+            BindingId = Guid.NewGuid(),
+            ServerId = server.Id,
+            ServerName = server.Name,
+            Enabled = true,
+            SelectAllTools = true,
+            SelectedTools = []
+        };
+
+        Bindings.Add(binding);
+        _adding = false;
+        _selectedBinding = null;
+        await BindingsChanged.InvokeAsync(Bindings);
+    }
+
+    private List<McpServerSessionBinding> GetDetailBindings() =>
+        _selectedBinding is null ? [] : [_selectedBinding];
+
+    private async Task OnDetailBindingsChanged(List<McpServerSessionBinding> detailBindings)
+    {
+        if (_selectedBinding is not null && detailBindings.Count == 0)
+        {
+            if (_selectedBinding.BindingId is Guid bindingId)
+            {
+                _warningBindings.Remove(bindingId);
+            }
+
+            Bindings.Remove(_selectedBinding);
+            _selectedBinding = null;
+        }
+
+        await BindingsChanged.InvokeAsync(Bindings);
+    }
+
+    private void OnToolLoadFailed(McpServerSessionBinding binding)
+    {
+        if (binding.BindingId is Guid bindingId)
+        {
+            _warningBindings.Add(bindingId);
+        }
+    }
+
+    private void OnToolLoadSucceeded(McpServerSessionBinding binding)
+    {
+        if (binding.BindingId is Guid bindingId)
+        {
+            _warningBindings.Remove(bindingId);
+        }
+    }
+
+    private void OnKeyDown(KeyboardEventArgs args)
+    {
+        if (args.Key == "Escape")
+        {
+            _open = false;
+            ShowBindings();
+        }
+    }
+}

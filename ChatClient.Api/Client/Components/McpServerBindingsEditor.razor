@@ -8,6 +8,8 @@
 @inject ISnackbar Snackbar
 
 <section class="@BuildEditorClass()">
+    @if (!string.IsNullOrWhiteSpace(Title) || !string.IsNullOrWhiteSpace(Description))
+    {
     <div class="@BuildHeaderClass()">
         @if (!string.IsNullOrWhiteSpace(Title) || !string.IsNullOrWhiteSpace(Description))
         {
@@ -24,15 +26,8 @@
                 }
             </div>
         }
-        <MudButton Variant="Variant.Text"
-                   Color="Color.Primary"
-                   Size="Size.Small"
-                   StartIcon="@Icons.Material.Filled.Add"
-                   OnClick="AddBindingAsync"
-                   Disabled="@(_loadingServers || _availableServers.Count == 0 || Disabled)">
-            MCP
-        </MudButton>
     </div>
+    }
 
     @if (_loadingServers)
     {
@@ -94,10 +89,12 @@
                                     {
                                         <MudIconButton Icon="@Icons.Material.Filled.KeyboardArrowUp"
                                                        Size="Size.Small"
+                                                       aria-label="Move MCP binding up"
                                                        Disabled="@(Disabled || bindingIndex == 0)"
                                                        OnClick="@(() => MoveBindingAsync(bindingIndex, -1))" />
                                         <MudIconButton Icon="@Icons.Material.Filled.KeyboardArrowDown"
                                                        Size="Size.Small"
+                                                       aria-label="Move MCP binding down"
                                                        Disabled="@(Disabled || bindingIndex >= Bindings.Count - 1)"
                                                        OnClick="@(() => MoveBindingAsync(bindingIndex, 1))" />
                                     }
@@ -257,6 +254,7 @@
                                                 <MudIconButton Icon="@Icons.Material.Filled.Delete"
                                                                Color="Color.Error"
                                                                Size="Size.Small"
+                                                               aria-label="Remove Root"
                                                                Disabled="@Disabled"
                                                                OnClick="@(() => RemoveRootAsync(binding, currentRootIndex))" />
                                             </div>
@@ -345,6 +343,10 @@
     [Parameter] public string EmptyBindingsText { get; set; } = "No run-specific MCP bindings configured.";
     [Parameter] public string? Class { get; set; }
     [Parameter] public bool Disabled { get; set; }
+    [Parameter] public bool ExpandAllBindings { get; set; }
+    [Parameter] public IReadOnlyList<IMcpServerDescriptor>? AvailableServers { get; set; }
+    [Parameter] public EventCallback<McpServerSessionBinding> ToolLoadFailed { get; set; }
+    [Parameter] public EventCallback<McpServerSessionBinding> ToolLoadSucceeded { get; set; }
 
     private readonly Dictionary<Guid, List<AppToolDescriptor>> _toolsByBindingId = new();
     private readonly Dictionary<Guid, string> _toolCacheKeys = new();
@@ -356,12 +358,39 @@
 
     protected override async Task OnInitializedAsync()
     {
-        await LoadServersAsync();
+        if (AvailableServers is null)
+        {
+            await LoadServersAsync();
+        }
+        else
+        {
+            _availableServers = AvailableServers
+                .OrderBy(static server => server.Name, StringComparer.OrdinalIgnoreCase)
+                .ToList();
+        }
     }
 
     protected override async Task OnParametersSetAsync()
     {
+        if (AvailableServers is not null)
+        {
+            _availableServers = AvailableServers
+                .OrderBy(static server => server.Name, StringComparer.OrdinalIgnoreCase)
+                .ToList();
+        }
+
         var changed = NormalizeBindings();
+        if (ExpandAllBindings)
+        {
+            foreach (var bindingId in Bindings
+                         .Select(static binding => binding.BindingId)
+                         .OfType<Guid>()
+                         .Where(static bindingId => bindingId != Guid.Empty))
+            {
+                _expandedBindings.Add(bindingId);
+            }
+        }
+
         if (changed)
         {
             await NotifyChangedAsync();
@@ -468,23 +497,6 @@
         return changed;
     }
 
-    private async Task AddBindingAsync()
-    {
-        var binding = new McpServerSessionBinding
-        {
-            BindingId = Guid.NewGuid(),
-            Enabled = true,
-            SelectAllTools = true
-        };
-
-        Bindings.Add(binding);
-        if (binding.BindingId is Guid bindingId)
-        {
-            _expandedBindings.Add(bindingId);
-        }
-        await NotifyChangedAsync();
-    }
-
     private async Task RemoveBindingAsync(McpServerSessionBinding binding)
     {
         Bindings.Remove(binding);
@@ -493,6 +505,7 @@
             _toolsByBindingId.Remove(bindingId);
             _toolCacheKeys.Remove(bindingId);
             _toolErrors.Remove(bindingId);
+            await ToolLoadSucceeded.InvokeAsync(binding);
             _loadingToolBindings.Remove(bindingId);
             _expandedBindings.Remove(bindingId);
         }
@@ -717,6 +730,7 @@
         {
             _toolErrors[bindingId] = ex.Message;
             _toolsByBindingId[bindingId] = [];
+            await ToolLoadFailed.InvokeAsync(binding);
         }
         finally
         {
@@ -775,7 +789,7 @@
     private static string GetBindingHeader(McpServerSessionBinding binding, IMcpServerDescriptor? server, int index)
     {
         var serverName = server?.Name ?? binding.ServerName ?? $"MCP Server {index + 1}";
-        var displayName = McpBindingPresentation.GetBindingLabel(binding);
+        var displayName = binding.DisplayName?.Trim();
 
         if (string.IsNullOrWhiteSpace(displayName) ||
             string.Equals(displayName, serverName, StringComparison.OrdinalIgnoreCase))
@@ -970,4 +984,3 @@
     private Task NotifyChangedAsync() =>
         BindingsChanged.InvokeAsync(Bindings);
 }
-
