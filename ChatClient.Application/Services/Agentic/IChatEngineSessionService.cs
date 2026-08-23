@@ -32,7 +32,10 @@ public interface IChatEngineSessionService : IChatSessionService
 
     Task RestoreHarnessSessionAsync(string snapshotJson, CancellationToken cancellationToken = default);
 
-    Task RestoreSavedChatAsync(SavedChatDocument chat, CancellationToken cancellationToken = default);
+    Task RestoreSavedChatAsync(
+        SavedChatDocument chat,
+        CancellationToken cancellationToken = default,
+        IProgress<ChatSessionRestoreProgress>? progress = null);
 
     Task RespondToToolApprovalAsync(ToolApprovalDecision decision, CancellationToken cancellationToken = default);
 }
@@ -56,4 +59,19 @@ public enum ChatSessionStartStage
 
 public sealed record ChatSessionStartProgress(
     ChatSessionStartStage Stage,
+    string Message);
+
+public enum ChatSessionRestoreStage
+{
+    ValidatingSavedChat,
+    ResolvingDefinition,
+    CheckingSandboxAvailability,
+    StartingSandbox,
+    VerifyingSandbox,
+    RestoringAgentSession,
+    RestoringConversation
+}
+
+public sealed record ChatSessionRestoreProgress(
+    ChatSessionRestoreStage Stage,
     string Message);

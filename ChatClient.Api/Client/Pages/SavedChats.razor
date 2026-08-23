@@ -3,13 +3,15 @@
 @using ChatClient.Application.Services
 @using ChatClient.Application.Services.Agentic
 @using ChatClient.Domain.Models
+@using System.Diagnostics
 @inject ISavedChatService SavedChatService
 @inject IChatEngineSessionService ChatService
 @inject NavigationManager Navigation
 @inject ISnackbar Snackbar
+@inject ILogger<SavedChats> Logger
 
 <AppPage Title="Chats" Layout="AppPageLayout.Form">
-    <MudTextField T="string" Value="_search" ValueChanged="OnSearchChanged" Label="Search chats" Placeholder="Search chats" Immediate="true" Variant="Variant.Outlined" Margin="Margin.Dense" Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Search" />
+    <MudTextField T="string" Value="_search" ValueChanged="OnSearchChanged" Label="Search chats" Placeholder="Search chats" Immediate="true" Variant="Variant.Outlined" Margin="Margin.Dense" Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Search" Disabled="@IsOpeningChat" />
     @if (_loading)
     {
         <MudProgressCircular Indeterminate="true" Size="Size.Small" />
@@ -23,16 +25,25 @@
         <MudList T="string" Dense="true">
             @foreach (var chat in FilteredChats)
             {
-                <MudListItem T="string" OnClick="@(() => OpenAsync(chat.Id))">
+                <MudListItem T="string" OnClick="@(() => OpenAsync(chat.Id))" Disabled="@IsOpeningChat">
                     <MudStack Row="true" AlignItems="AlignItems.Center" Class="w-100">
-                        <MudText>@chat.Title</MudText>
+                        <MudStack Spacing="0">
+                            <MudText>@chat.Title</MudText>
+                            @if (_openingChatId == chat.Id)
+                            {
+                                <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="1">
+                                    <MudProgressCircular Indeterminate="true" Size="Size.Small" />
+                                    <MudText Typo="Typo.caption">@_openStatus</MudText>
+                                </MudStack>
+                            }
+                        </MudStack>
                         <MudSpacer />
                         <MudText Typo="Typo.caption">@chat.UpdatedAtUtc.ToLocalTime().ToString("g")</MudText>
                         <MudTooltip Text="Rename">
-                            <MudIconButton Icon="@Icons.Material.Filled.Edit" Size="Size.Small" aria-label="Rename chat" OnClick="@(() => BeginRename(chat))" />
+                            <MudIconButton Icon="@Icons.Material.Filled.Edit" Size="Size.Small" aria-label="Rename chat" OnClick="@(() => BeginRename(chat))" Disabled="@IsOpeningChat" />
                         </MudTooltip>
                         <MudTooltip Text="Delete chat">
-                            <MudIconButton Icon="@Icons.Material.Filled.Delete" Color="Color.Error" Size="Size.Small" aria-label="Delete chat" OnClick="@(() => ConfirmDelete(chat))" />
+                            <MudIconButton Icon="@Icons.Material.Filled.Delete" Color="Color.Error" Size="Size.Small" aria-label="Delete chat" OnClick="@(() => ConfirmDelete(chat))" Disabled="@IsOpeningChat" />
                         </MudTooltip>
                     </MudStack>
                 </MudListItem>
@@ -42,9 +53,9 @@
     @if (_renaming is not null)
     {
         <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="1">
-            <MudTextField T="string" @bind-Value="_renameTitle" Label="Chat name" Variant="Variant.Outlined" Margin="Margin.Dense" />
-            <MudButton Size="Size.Small" Variant="Variant.Filled" Color="Color.Primary" OnClick="RenameAsync">Save</MudButton>
-            <MudButton Size="Size.Small" Variant="Variant.Text" OnClick="CancelRename">Cancel</MudButton>
+            <MudTextField T="string" @bind-Value="_renameTitle" Label="Chat name" Variant="Variant.Outlined" Margin="Margin.Dense" Disabled="@IsOpeningChat" />
+            <MudButton Size="Size.Small" Variant="Variant.Filled" Color="Color.Primary" OnClick="RenameAsync" Disabled="@IsOpeningChat">Save</MudButton>
+            <MudButton Size="Size.Small" Variant="Variant.Text" OnClick="CancelRename" Disabled="@IsOpeningChat">Cancel</MudButton>
         </MudStack>
     }
 </AppPage>
@@ -59,6 +70,9 @@
     private SavedChatSummary? _chatToDelete;
     private string _renameTitle = string.Empty;
     private bool _deleting;
+    private Guid? _openingChatId;
+    private string? _openStatus;
+    private bool IsOpeningChat => _openingChatId is not null;
     private IReadOnlyList<SavedChatSummary> FilteredChats => _chats.Where(chat => string.IsNullOrWhiteSpace(_search) || chat.Title.Contains(_search, StringComparison.OrdinalIgnoreCase)).ToList();
 
     protected override async Task OnInitializedAsync()
@@ -74,10 +88,10 @@
         finally { _loading = false; }
     }
 
-    private Task OnSearchChanged(string value) { _search = value; return Task.CompletedTask; }
-    private void BeginRename(SavedChatSummary chat) { _renaming = chat; _renameTitle = chat.Title; }
+    private Task OnSearchChanged(string value) { if (!IsOpeningChat) _search = value; return Task.CompletedTask; }
+    private void BeginRename(SavedChatSummary chat) { if (!IsOpeningChat) { _renaming = chat; _renameTitle = chat.Title; } }
     private void CancelRename() => _renaming = null;
-    private void ConfirmDelete(SavedChatSummary chat) { _chatToDelete = chat; _deleting = true; }
+    private void ConfirmDelete(SavedChatSummary chat) { if (!IsOpeningChat) { _chatToDelete = chat; _deleting = true; } }
 
     private async Task RenameAsync()
     {
@@ -102,12 +116,30 @@
 
     private async Task OpenAsync(Guid id)
     {
+        if (IsOpeningChat)
+            return;
+
+        _openingChatId = id;
+        _openStatus = "Loading saved chat...";
+        var openStartedAt = Stopwatch.GetTimestamp();
+        await InvokeAsync(StateHasChanged);
         try
         {
             var chat = await SavedChatService.GetAsync(id) ?? throw new InvalidOperationException("Saved chat file is invalid.");
-            await ChatService.RestoreSavedChatAsync(chat);
+            Logger.LogInformation("Saved chat loaded. ChatId={ChatId}, ElapsedMs={ElapsedMs}", id, Stopwatch.GetElapsedTime(openStartedAt).TotalMilliseconds);
+            var progress = new Progress<ChatSessionRestoreProgress>(value =>
+            {
+                _openStatus = value.Message;
+                _ = InvokeAsync(StateHasChanged);
+            });
+            await ChatService.RestoreSavedChatAsync(chat, progress: progress);
             Navigation.NavigateTo("/chat");
         }
         catch (Exception ex) { Snackbar.Add(ex.Message, Severity.Error); }
+        finally
+        {
+            _openingChatId = null;
+            _openStatus = null;
+        }
     }
 }

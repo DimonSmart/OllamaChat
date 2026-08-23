@@ -534,14 +534,16 @@ public sealed class UnifiedAgentRuntimeChatSessionServiceTests
         var activeChatId = fixture.Service.Id;
         var activeAgent = GetPrivateField<AIAgent>(fixture.Service, "_directAgent");
         var snapshot = await fixture.Service.ExportHarnessSessionAsync(TestContext.Current.CancellationToken);
+        var progress = new RecordingProgress<ChatSessionRestoreProgress>();
 
         var saved = CreateSavedChat(fixture, WithSession(snapshot, "true"));
         await Assert.ThrowsAsync<InvalidOperationException>(
-            () => fixture.Service.RestoreSavedChatAsync(saved, TestContext.Current.CancellationToken));
+            () => fixture.Service.RestoreSavedChatAsync(saved, TestContext.Current.CancellationToken, progress));
 
         Assert.Equal(activeChatId, fixture.Service.Id);
         Assert.Same(activeAgent, GetPrivateField<AIAgent>(fixture.Service, "_directAgent"));
         Assert.Equal("active chat", fixture.Service.Messages.First().Content);
+        Assert.DoesNotContain(progress.Values, value => value.Stage == ChatSessionRestoreStage.RestoringConversation);
         await fixture.Service.SendAsync("still active", cancellationToken: TestContext.Current.CancellationToken);
         Assert.Equal("still active", CurrentUserText(fixture.ChatClient.Requests[^1].Messages));
     }
@@ -562,6 +564,48 @@ public sealed class UnifiedAgentRuntimeChatSessionServiceTests
         await fixture.Service.SendAsync("Q2", cancellationToken: TestContext.Current.CancellationToken);
         Assert.Equal("Q2", CurrentUserText(fixture.ChatClient.Requests[^1].Messages));
         Assert.Contains(fixture.ChatClient.Requests[^1].Messages, message => message.Role == ChatRole.User && message.Text == "Q1");
+    }
+
+    [Fact]
+    public async Task RestoreSavedChatAsync_ReportsRealRestorePhasesInPreparationOrder()
+    {
+        var fixture = CreateDirectFixture();
+        await fixture.Service.StartAsync(fixture.Request, cancellationToken: TestContext.Current.CancellationToken);
+        var snapshot = await fixture.Service.ExportHarnessSessionAsync(TestContext.Current.CancellationToken);
+        var progress = new RecordingProgress<ChatSessionRestoreProgress>();
+
+        await fixture.Service.RestoreSavedChatAsync(
+            CreateSavedChat(fixture, snapshot),
+            TestContext.Current.CancellationToken,
+            progress);
+
+        Assert.Collection(progress.Values,
+            value => Assert.Equal(ChatSessionRestoreStage.ValidatingSavedChat, value.Stage),
+            value => Assert.Equal(ChatSessionRestoreStage.ResolvingDefinition, value.Stage),
+            value => Assert.Equal(ChatSessionRestoreStage.RestoringAgentSession, value.Stage),
+            value => Assert.Equal(ChatSessionRestoreStage.RestoringConversation, value.Stage));
+    }
+
+    [Fact]
+    public async Task RestoreSavedChatAsync_ForwardsSandboxPreparationPhases()
+    {
+        var sandboxFactory = new ProgressReportingSandboxSessionFactory();
+        var fixture = CreateDirectFixture(sandboxSessionFactory: sandboxFactory, supportsSandbox: true);
+        await fixture.Service.StartAsync(fixture.Request, cancellationToken: TestContext.Current.CancellationToken);
+        var snapshot = await fixture.Service.ExportHarnessSessionAsync(TestContext.Current.CancellationToken);
+        var saved = CreateSavedChat(fixture, snapshot);
+        saved.Launch.Overrides = new SavedChatOverrides
+        {
+            WorkspacePath = fixture.Request.Overrides.WorkspacePath,
+            SandboxProfileId = fixture.Request.Overrides.SandboxProfileId
+        };
+        var progress = new RecordingProgress<ChatSessionRestoreProgress>();
+
+        await fixture.Service.RestoreSavedChatAsync(saved, TestContext.Current.CancellationToken, progress);
+
+        Assert.Contains(progress.Values, value => value.Stage == ChatSessionRestoreStage.CheckingSandboxAvailability);
+        Assert.Contains(progress.Values, value => value.Stage == ChatSessionRestoreStage.StartingSandbox);
+        Assert.Contains(progress.Values, value => value.Stage == ChatSessionRestoreStage.VerifyingSandbox);
     }
 
     [Fact]
@@ -1901,6 +1945,29 @@ public sealed class UnifiedAgentRuntimeChatSessionServiceTests
             CancellationToken cancellationToken = default,
             IProgress<ChatSessionStartProgress>? progress = null) =>
             throw new NotSupportedException();
+    }
+
+    private sealed class ProgressReportingSandboxSessionFactory : ISandboxSessionFactory
+    {
+        public Task<SandboxSessionHandle> StartAsync(
+            Guid profileId,
+            string workspacePath,
+            string sessionId,
+            CancellationToken cancellationToken = default,
+            IProgress<ChatSessionStartProgress>? progress = null)
+        {
+            progress?.Report(new ChatSessionStartProgress(ChatSessionStartStage.CheckingSandboxAvailability, "Checking Docker availability..."));
+            progress?.Report(new ChatSessionStartProgress(ChatSessionStartStage.StartingSandbox, "Starting Docker sandbox..."));
+            progress?.Report(new ChatSessionStartProgress(ChatSessionStartStage.VerifyingSandbox, "Verifying sandbox workspace and shell..."));
+            return Task.FromResult(CreateSandboxHandle(profileId, workspacePath));
+        }
+    }
+
+    private sealed class RecordingProgress<T> : IProgress<T>
+    {
+        public List<T> Values { get; } = [];
+
+        public void Report(T value) => Values.Add(value);
     }
 
     private sealed class DisposeFailingThenSucceedingSandboxSessionFactory : ISandboxSessionFactory

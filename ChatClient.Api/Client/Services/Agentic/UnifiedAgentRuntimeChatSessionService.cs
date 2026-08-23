@@ -8,6 +8,7 @@ using Microsoft.Agents.AI;
 using Microsoft.Extensions.AI;
 using MudBlazor;
 using System.Collections.ObjectModel;
+using System.Diagnostics;
 using System.Text;
 using System.Text.Json;
 
@@ -671,9 +672,17 @@ public sealed class UnifiedAgentRuntimeChatSessionService(
         finally { _runSetupGate.Release(); }
     }
 
-    public async Task RestoreSavedChatAsync(SavedChatDocument chat, CancellationToken cancellationToken = default)
+    public async Task RestoreSavedChatAsync(
+        SavedChatDocument chat,
+        CancellationToken cancellationToken = default,
+        IProgress<ChatSessionRestoreProgress>? progress = null)
     {
         ArgumentNullException.ThrowIfNull(chat);
+        var restoreStartedAt = Stopwatch.GetTimestamp();
+        logger.LogInformation("Saved chat restore started. ChatId={ChatId}", chat.Id);
+        progress?.Report(new ChatSessionRestoreProgress(
+            ChatSessionRestoreStage.ValidatingSavedChat,
+            "Validating saved chat..."));
         if (chat.FormatVersion > SavedChatDocument.CurrentFormatVersion)
             throw new InvalidOperationException("The saved chat format is newer than this OllamaChat version.");
         if (chat.FormatVersion != SavedChatDocument.CurrentFormatVersion || chat.Launch.RuntimeReference is null ||
@@ -697,10 +706,14 @@ public sealed class UnifiedAgentRuntimeChatSessionService(
                 if (_resetting || IsAnswering || PendingToolApproval is not null || RequiresReset)
                     throw new InvalidOperationException("Finish or stop the current response before opening another chat.");
 
-                var prepared = await PrepareSavedChatRestoreAsync(chat, kind, cancellationToken);
+                var prepared = await PrepareSavedChatRestoreAsync(chat, kind, cancellationToken, progress, restoreStartedAt);
                 try
                 {
+                    progress?.Report(new ChatSessionRestoreProgress(
+                        ChatSessionRestoreStage.RestoringConversation,
+                        "Restoring conversation..."));
                     CommitSavedChatRestore(prepared);
+                    logger.LogInformation("Saved chat restore completed. ChatId={ChatId}, ElapsedMs={ElapsedMs}", chat.Id, Stopwatch.GetElapsedTime(restoreStartedAt).TotalMilliseconds);
                 }
                 catch
                 {
@@ -716,7 +729,9 @@ public sealed class UnifiedAgentRuntimeChatSessionService(
     private async Task<PreparedSavedChatRestore> PrepareSavedChatRestoreAsync(
         SavedChatDocument chat,
         AgentDefinitionKind kind,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        IProgress<ChatSessionRestoreProgress>? progress,
+        long restoreStartedAt)
     {
 
         var reference = new AgentDefinitionReference(kind, chat.Launch.RuntimeReference.Id);
@@ -732,12 +747,16 @@ public sealed class UnifiedAgentRuntimeChatSessionService(
             }
         };
         var resolver = definitionResolver ?? throw new InvalidOperationException("Saved chat restore is unavailable because the definition resolver is not configured.");
+        progress?.Report(new ChatSessionRestoreProgress(
+            ChatSessionRestoreStage.ResolvingDefinition,
+            "Resolving agent configuration..."));
         var validation = await resolver.ValidateAsync(reference, resolutionRequest, cancellationToken);
         if (!validation.CanLaunch)
             throw new InvalidOperationException(string.Join(" ", validation.Problems.Select(static problem => problem.Message)));
         var resolved = await resolver.ResolveAsync(reference, resolutionRequest, cancellationToken);
         if (!resolved.Validation.CanLaunch)
             throw new InvalidOperationException(string.Join(" ", resolved.Validation.Problems.Select(static problem => problem.Message)));
+        logger.LogInformation("Saved chat definition resolved. ChatId={ChatId}, ElapsedMs={ElapsedMs}", chat.Id, Stopwatch.GetElapsedTime(restoreStartedAt).TotalMilliseconds);
         HarnessSessionSnapshot? nativeSnapshot = null;
         if (kind == AgentDefinitionKind.SavedAgent)
         {
@@ -782,14 +801,20 @@ public sealed class UnifiedAgentRuntimeChatSessionService(
         ISessionToolApprovalCoordinator? coordinator = null;
         try
         {
-            sandbox = await CreateSandboxSessionAsync(request, descriptor, Guid.NewGuid().ToString("N"), cancellationToken, null);
+            sandbox = await CreateSandboxSessionAsync(request, descriptor, Guid.NewGuid().ToString("N"), cancellationToken, CreateRestoreSandboxProgress(progress));
+            if (sandbox is not null)
+                logger.LogInformation("Saved chat sandbox prepared. ChatId={ChatId}, ElapsedMs={ElapsedMs}", chat.Id, Stopwatch.GetElapsedTime(restoreStartedAt).TotalMilliseconds);
             if (kind == AgentDefinitionKind.SavedAgent)
             {
+                progress?.Report(new ChatSessionRestoreProgress(
+                    ChatSessionRestoreStage.RestoringAgentSession,
+                    "Restoring agent session..."));
                 var policy = new SessionToolApprovalPolicy();
                 policy.SetWorkspace(sandbox?.WorkspacePath ?? request.Overrides.WorkspacePath);
                 coordinator = new SessionToolApprovalCoordinator();
                 runtime = await CreateDirectRuntimeAsync(request, coordinator, policy, sandbox, cancellationToken);
                 var session = await runtime.Agent.DeserializeSessionAsync(nativeSnapshot!.Session, cancellationToken: cancellationToken);
+                logger.LogInformation("Saved chat agent session restored. ChatId={ChatId}, ElapsedMs={ElapsedMs}", chat.Id, Stopwatch.GetElapsedTime(restoreStartedAt).TotalMilliseconds);
                 var template = await agentTemplateService.GetByIdAsync(nativeSnapshot.SavedAgentId)
                     ?? throw new InvalidOperationException("The Saved Agent used by this chat was deleted.");
                 return new PreparedSavedChatRestore(request, chat, sandbox, runtime, session, coordinator, policy, template.AgentId);
@@ -805,6 +830,31 @@ public sealed class UnifiedAgentRuntimeChatSessionService(
             logger.LogWarning(ex, "Saved chat restore preparation failed.");
             throw new InvalidOperationException("Could not restore the saved chat. The current conversation is unchanged.");
         }
+    }
+
+    private static IProgress<ChatSessionStartProgress>? CreateRestoreSandboxProgress(
+        IProgress<ChatSessionRestoreProgress>? progress)
+    {
+        if (progress is null)
+            return null;
+
+        return new CallbackProgress<ChatSessionStartProgress>(value =>
+        {
+            var stage = value.Stage switch
+            {
+                ChatSessionStartStage.CheckingSandboxAvailability => ChatSessionRestoreStage.CheckingSandboxAvailability,
+                ChatSessionStartStage.StartingSandbox => ChatSessionRestoreStage.StartingSandbox,
+                ChatSessionStartStage.VerifyingSandbox => ChatSessionRestoreStage.VerifyingSandbox,
+                _ => (ChatSessionRestoreStage?)null
+            };
+            if (stage is not null)
+                progress.Report(new ChatSessionRestoreProgress(stage.Value, value.Message));
+        });
+    }
+
+    private sealed class CallbackProgress<T>(Action<T> report) : IProgress<T>
+    {
+        public void Report(T value) => report(value);
     }
 
     private void CommitSavedChatRestore(PreparedSavedChatRestore prepared)
