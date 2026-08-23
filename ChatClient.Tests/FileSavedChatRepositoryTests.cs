@@ -109,6 +109,32 @@ public sealed class FileSavedChatRepositoryTests
         finally { Directory.Delete(root, true); }
     }
 
+    [Fact]
+    public async Task ConcurrentDeleteAndUpdateCheckpoint_LeavesTheDeletedChatAbsent()
+    {
+        var root = CreateRoot();
+        try
+        {
+            var repository = new FileSavedChatRepository(NullLogger<FileSavedChatRepository>.Instance);
+            var chat = CreateChat();
+            await repository.SaveAsync(root, chat, TestContext.Current.CancellationToken);
+
+            await Task.WhenAll(
+                repository.DeleteAsync(root, chat.Id, TestContext.Current.CancellationToken),
+                repository.UpdateCheckpointAsync(root, new SavedChatDocument
+                {
+                    Id = chat.Id,
+                    Title = chat.Title,
+                    CreatedAtUtc = chat.CreatedAtUtc,
+                    UpdatedAtUtc = DateTime.UtcNow,
+                    Launch = chat.Launch
+                }, TestContext.Current.CancellationToken));
+
+            Assert.Null(await repository.GetAsync(root, chat.Id, TestContext.Current.CancellationToken));
+        }
+        finally { Directory.Delete(root, true); }
+    }
+
     private static string CreateRoot()
     {
         var root = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N"));

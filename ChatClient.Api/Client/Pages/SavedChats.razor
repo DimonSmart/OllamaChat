@@ -40,10 +40,10 @@
                         <MudSpacer />
                         <MudText Typo="Typo.caption">@chat.UpdatedAtUtc.ToLocalTime().ToString("g")</MudText>
                         <MudTooltip Text="Rename">
-                            <MudIconButton Icon="@Icons.Material.Filled.Edit" Size="Size.Small" aria-label="Rename chat" OnClick="@(() => BeginRename(chat))" Disabled="@IsOpeningChat" />
+                            <MudIconButton Icon="@Icons.Material.Filled.Edit" Size="Size.Small" aria-label="Rename chat" OnClick="@(() => BeginRename(chat))" OnClick:StopPropagation="true" Disabled="@IsOpeningChat" />
                         </MudTooltip>
                         <MudTooltip Text="Delete chat">
-                            <MudIconButton Icon="@Icons.Material.Filled.Delete" Color="Color.Error" Size="Size.Small" aria-label="Delete chat" OnClick="@(() => ConfirmDelete(chat))" Disabled="@IsOpeningChat" />
+                            <MudIconButton Icon="@Icons.Material.Filled.Delete" Color="Color.Error" Size="Size.Small" aria-label="Delete chat" OnClick="@(() => ConfirmDelete(chat))" OnClick:StopPropagation="true" Disabled="@IsOpeningChat" />
                         </MudTooltip>
                     </MudStack>
                 </MudListItem>

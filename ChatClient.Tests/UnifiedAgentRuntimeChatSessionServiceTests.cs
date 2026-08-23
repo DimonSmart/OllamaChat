@@ -1,5 +1,6 @@
 using ChatClient.Api.Client.Pages;
 using ChatClient.Api.Client.Services.Agentic;
+using ChatClient.Api.Diagnostics;
 using ChatClient.Api.Services;
 using ChatClient.Api.Services.AgentRuntime;
 using ChatClient.Application.Services;
@@ -7,6 +8,7 @@ using ChatClient.Application.Services.Agentic;
 using ChatClient.Application.Services.AgentRuntime;
 using ChatClient.Application.Services.Sandbox;
 using ChatClient.Domain.Models;
+using ChatClient.Infrastructure.Repositories;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -549,6 +551,43 @@ public sealed class UnifiedAgentRuntimeChatSessionServiceTests
     }
 
     [Fact]
+    public async Task RestoreSavedChatAsync_WhenSuccessful_ClearsThePreviousChatTrace()
+    {
+        using var hub = new HarnessTelemetryListenerHub(NullLogger<HarnessTelemetryListenerHub>.Instance);
+        using var trace = new HarnessTraceSession(hub, NullLogger<HarnessTraceSession>.Instance);
+        var fixture = CreateDirectFixture(harnessTraceSession: trace);
+        await fixture.Service.StartAsync(fixture.Request, cancellationToken: TestContext.Current.CancellationToken);
+        using (trace.TryBeginRun("chat-a"))
+        {
+        }
+        Assert.NotEmpty(trace.GetSnapshot().Runs);
+
+        var snapshot = await fixture.Service.ExportHarnessSessionAsync(TestContext.Current.CancellationToken);
+        await fixture.Service.RestoreSavedChatAsync(CreateSavedChat(fixture, snapshot), TestContext.Current.CancellationToken);
+
+        Assert.Empty(trace.GetSnapshot().Runs);
+    }
+
+    [Fact]
+    public async Task RestoreSavedChatAsync_WhenPreparationFails_PreservesTheCurrentChatTrace()
+    {
+        using var hub = new HarnessTelemetryListenerHub(NullLogger<HarnessTelemetryListenerHub>.Instance);
+        using var trace = new HarnessTraceSession(hub, NullLogger<HarnessTraceSession>.Instance);
+        var fixture = CreateDirectFixture(harnessTraceSession: trace);
+        await fixture.Service.StartAsync(fixture.Request, cancellationToken: TestContext.Current.CancellationToken);
+        using (trace.TryBeginRun("chat-a"))
+        {
+        }
+        var traceBeforeRestore = trace.GetSnapshot();
+
+        var snapshot = await fixture.Service.ExportHarnessSessionAsync(TestContext.Current.CancellationToken);
+        await Assert.ThrowsAsync<InvalidOperationException>(() => fixture.Service.RestoreSavedChatAsync(
+            CreateSavedChat(fixture, WithSession(snapshot, "true")), TestContext.Current.CancellationToken));
+
+        Assert.Equal(traceBeforeRestore.Runs.Select(run => run.RunId), trace.GetSnapshot().Runs.Select(run => run.RunId));
+    }
+
+    [Fact]
     public async Task RestoreSavedChatAsync_RestoresExactTranscriptWithoutManualRestoreMessage()
     {
         var fixture = CreateDirectFixture();
@@ -632,17 +671,19 @@ public sealed class UnifiedAgentRuntimeChatSessionServiceTests
         titleGenerator.Setup(generator => generator.Generate(It.IsAny<string>())).Returns("Generated");
         savedChats.Setup(service => service.IsAutoSaveEnabledAsync(It.IsAny<CancellationToken>())).ReturnsAsync(true);
         SavedChatDocument? checkpoint = null;
+        SavedChatDocument? openedChat = null;
         savedChats.Setup(service => service.GetAsync(It.IsAny<string>(), It.IsAny<Guid>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync((string _, Guid _, CancellationToken _) => null);
-        savedChats.Setup(service => service.SaveCheckpointAsync(It.IsAny<SavedChatDocument>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((string _, Guid _, CancellationToken _) => openedChat);
+        savedChats.Setup(service => service.UpdateCheckpointAsync(It.IsAny<SavedChatDocument>(), It.IsAny<CancellationToken>()))
             .Callback<SavedChatDocument, CancellationToken>((document, _) => checkpoint = document)
-            .Returns(Task.CompletedTask);
+            .ReturnsAsync(true);
         var fixture = CreateDirectFixture(savedChatService: savedChats.Object, chatTitleGenerator: titleGenerator.Object);
         await fixture.Service.StartAsync(fixture.Request, cancellationToken: TestContext.Current.CancellationToken);
         var snapshot = await fixture.Service.ExportHarnessSessionAsync(TestContext.Current.CancellationToken);
         var rootA = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N"));
         var saved = CreateSavedChat(fixture, snapshot);
         saved.StorageRoot = rootA;
+        openedChat = saved;
 
         await fixture.Service.RestoreSavedChatAsync(saved, TestContext.Current.CancellationToken);
         await fixture.Service.SendAsync("continued", cancellationToken: TestContext.Current.CancellationToken);
@@ -650,6 +691,47 @@ public sealed class UnifiedAgentRuntimeChatSessionServiceTests
         Assert.NotNull(checkpoint);
         Assert.Equal(saved.Id, checkpoint.Id);
         Assert.Equal(Path.GetFullPath(rootA), checkpoint.StorageRoot);
+    }
+
+    [Fact]
+    public async Task CheckpointAfterActiveSavedChatDeletion_DoesNotRecreateItAndNewChatCanAutosave()
+    {
+        var root = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N"));
+        try
+        {
+            var settings = new Mock<IUserSettingsService>(MockBehavior.Strict);
+            settings.Setup(service => service.GetSettingsAsync(It.IsAny<CancellationToken>())).ReturnsAsync(new UserSettings
+            {
+                SavedChats = new SavedChatsSettings { AutoSaveEnabled = true, StorageRoot = root }
+            });
+            var savedChats = new SavedChatService(settings.Object, new FileSavedChatRepository(NullLogger<FileSavedChatRepository>.Instance));
+            var titleGenerator = new Mock<IChatTitleGenerator>(MockBehavior.Strict);
+            titleGenerator.Setup(generator => generator.Generate(It.IsAny<string>())).Returns("Generated");
+            var fixture = CreateDirectFixture(savedChatService: savedChats, chatTitleGenerator: titleGenerator.Object);
+            await fixture.Service.StartAsync(fixture.Request, cancellationToken: TestContext.Current.CancellationToken);
+            var snapshot = await fixture.Service.ExportHarnessSessionAsync(TestContext.Current.CancellationToken);
+            var saved = CreateSavedChat(fixture, snapshot);
+            saved.StorageRoot = root;
+            await savedChats.SaveAsync(saved, TestContext.Current.CancellationToken);
+
+            await fixture.Service.RestoreSavedChatAsync(saved, TestContext.Current.CancellationToken);
+            await savedChats.DeleteAsync(saved.Id, TestContext.Current.CancellationToken);
+            await fixture.Service.SendAsync("continues after deletion", cancellationToken: TestContext.Current.CancellationToken);
+
+            Assert.Equal("continues after deletion", CurrentUserText(fixture.ChatClient.Requests[^1].Messages));
+            Assert.False(File.Exists(Path.Combine(root, $"{saved.Id:N}.json")));
+
+            await fixture.Service.StartAsync(fixture.Request, cancellationToken: TestContext.Current.CancellationToken);
+            await fixture.Service.SendAsync("new chat", cancellationToken: TestContext.Current.CancellationToken);
+
+            var newChat = Assert.Single(await savedChats.GetAllAsync(TestContext.Current.CancellationToken));
+            Assert.NotEqual(saved.Id, newChat.Id);
+        }
+        finally
+        {
+            if (Directory.Exists(root))
+                Directory.Delete(root, recursive: true);
+        }
     }
 
     [Fact]
@@ -1276,7 +1358,8 @@ public sealed class UnifiedAgentRuntimeChatSessionServiceTests
         bool supportsFunctionCalling = false,
         IConfiguration? configuration = null,
         ISavedChatService? savedChatService = null,
-        IChatTitleGenerator? chatTitleGenerator = null)
+        IChatTitleGenerator? chatTitleGenerator = null,
+        HarnessTraceSession? harnessTraceSession = null)
     {
         var templateId = Guid.NewGuid();
         var serverId = Guid.NewGuid();
@@ -1385,6 +1468,7 @@ public sealed class UnifiedAgentRuntimeChatSessionServiceTests
             new HarnessResponseEventProjector(NullLogger<HarnessResponseEventProjector>.Instance),
             savedChatService,
             chatTitleGenerator,
+            harnessTraceSession,
             definitionResolver: resolver.Object);
         var request = new ChatEngineSessionStartRequest
         {

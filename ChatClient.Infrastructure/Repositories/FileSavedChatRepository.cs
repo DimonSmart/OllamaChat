@@ -87,6 +87,27 @@ public sealed class FileSavedChatRepository(ILogger<FileSavedChatRepository> log
         }, cancellationToken);
     }
 
+    public async Task<bool> UpdateCheckpointAsync(string storageRoot, SavedChatDocument chat, CancellationToken cancellationToken = default)
+    {
+        var target = GetPath(storageRoot, chat.Id);
+        var updated = false;
+        await WithFileGateAsync(target, async () =>
+        {
+            if (!File.Exists(target))
+                return;
+
+            var current = await ReadRequiredAsync(target, cancellationToken);
+            if (current.IsTitleManual)
+            {
+                chat.Title = current.Title;
+                chat.IsTitleManual = true;
+            }
+            await WriteAsync(storageRoot, target, chat, cancellationToken);
+            updated = true;
+        }, cancellationToken);
+        return updated;
+    }
+
     public Task DeleteAsync(string storageRoot, Guid id, CancellationToken cancellationToken = default)
     {
         var target = GetPath(storageRoot, id);

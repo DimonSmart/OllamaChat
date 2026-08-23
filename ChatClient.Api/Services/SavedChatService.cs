@@ -41,6 +41,16 @@ public sealed class SavedChatService(IUserSettingsService settingsService, ISave
         }
     }
 
+    public async Task<bool> UpdateCheckpointAsync(SavedChatDocument chat, CancellationToken cancellationToken = default)
+    {
+        var settings = await settingsService.GetSettingsAsync(cancellationToken);
+        if (!settings.SavedChats.AutoSaveEnabled)
+            return true;
+
+        chat.StorageRoot ??= Path.GetFullPath(settings.SavedChats.StorageRoot);
+        return await repository.UpdateCheckpointAsync(chat.StorageRoot, chat, cancellationToken);
+    }
+
     public async Task RenameAsync(Guid id, string title, CancellationToken cancellationToken = default)
     {
         var settings = await settingsService.GetSettingsAsync(cancellationToken);

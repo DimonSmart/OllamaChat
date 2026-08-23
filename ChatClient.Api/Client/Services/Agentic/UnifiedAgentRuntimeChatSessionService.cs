@@ -65,6 +65,7 @@ public sealed class UnifiedAgentRuntimeChatSessionService(
     private long _generation;
     private bool _resetting;
     private SavedChatHandle? _savedChat;
+    private bool _savedChatPersistenceSuppressed;
     private bool _persistenceHealthy = true;
 
     public event Action<bool>? AnsweringStateChanged;
@@ -334,6 +335,7 @@ public sealed class UnifiedAgentRuntimeChatSessionService(
     public async Task ResetAsync(CancellationToken cancellationToken = default)
     {
         _savedChat = null;
+        _savedChatPersistenceSuppressed = false;
         harnessTraceSession?.Clear();
         Task? activeRun;
         lock (_lifecycleLock)
@@ -885,6 +887,7 @@ public sealed class UnifiedAgentRuntimeChatSessionService(
             _toolApprovalCoordinator.PendingRequestChanged += HandleCoordinatorPendingRequestChanged;
         _sandboxSession = prepared.Sandbox;
         _savedChat = new SavedChatHandle(prepared.Chat.Id, prepared.Chat.StorageRoot!);
+        _savedChatPersistenceSuppressed = false;
         prepared.TransferOwnership();
 
         _chat.Reset();
@@ -896,6 +899,7 @@ public sealed class UnifiedAgentRuntimeChatSessionService(
         ClearRunLocalState();
         RequiresReset = false;
         _persistenceHealthy = true;
+        harnessTraceSession?.Clear();
 
         try
         { previousRuntime?.Dispose(); }
@@ -1709,15 +1713,22 @@ public sealed class UnifiedAgentRuntimeChatSessionService(
 
     private async Task CheckpointCurrentAsync()
     {
-        if (savedChatService is null || chatTitleGenerator is null || RequiresReset || PendingToolApproval is not null || _parameters?.RuntimeReference is null ||
+        if (_savedChatPersistenceSuppressed || savedChatService is null || chatTitleGenerator is null || RequiresReset || PendingToolApproval is not null || _parameters?.RuntimeReference is null ||
             _chat.Messages.Any(static message => message.IsStreaming) || !await savedChatService.IsAutoSaveEnabledAsync())
             return;
 
         try
         {
-            var existing = _savedChat is { } handle
+            var handle = _savedChat;
+            var existing = handle is { }
                 ? await savedChatService.GetAsync(handle.StorageRoot, handle.Id)
                 : null;
+            if (handle is not null && existing is null)
+            {
+                _savedChat = null;
+                _savedChatPersistenceSuppressed = true;
+                return;
+            }
             var firstUserMessage = _chat.Messages.FirstOrDefault(static message => message.Role == AppChatRole.User)?.Content ?? string.Empty;
             var now = DateTime.UtcNow;
             var nativeSession = _parameters.RuntimeReference.Kind == AgentDefinitionKind.SavedAgent
@@ -1725,7 +1736,7 @@ public sealed class UnifiedAgentRuntimeChatSessionService(
                 : null;
             var document = new SavedChatDocument
             {
-                Id = _savedChat?.Id ?? existing?.Id ?? Guid.NewGuid(),
+                Id = handle?.Id ?? existing?.Id ?? Guid.NewGuid(),
                 CreatedAtUtc = existing?.CreatedAtUtc ?? now,
                 UpdatedAtUtc = now,
                 Title = existing?.Title ?? chatTitleGenerator.Generate(firstUserMessage),
@@ -1744,9 +1755,17 @@ public sealed class UnifiedAgentRuntimeChatSessionService(
                 },
                 Messages = _chat.Messages.Where(static message => !message.IsStreaming).Select(static message => new AppChatMessage(message)).ToList(),
                 NativeSession = nativeSession,
-                StorageRoot = _savedChat?.StorageRoot ?? existing?.StorageRoot
+                StorageRoot = handle?.StorageRoot ?? existing?.StorageRoot
             };
-            await savedChatService.SaveCheckpointAsync(document);
+            var checkpointed = handle is null
+                ? await SaveNewCheckpointAsync(document)
+                : await savedChatService.UpdateCheckpointAsync(document);
+            if (!checkpointed)
+            {
+                _savedChat = null;
+                _savedChatPersistenceSuppressed = true;
+                return;
+            }
             _savedChat = new SavedChatHandle(document.Id, document.StorageRoot ?? throw new InvalidOperationException("Saved chat storage root is missing."));
             _persistenceHealthy = true;
         }
@@ -1759,6 +1778,12 @@ public sealed class UnifiedAgentRuntimeChatSessionService(
                 snackbar?.Add("The response completed, but this chat could not be saved.", Severity.Warning);
             }
         }
+    }
+
+    private async Task<bool> SaveNewCheckpointAsync(SavedChatDocument document)
+    {
+        await savedChatService!.SaveCheckpointAsync(document);
+        return true;
     }
 
     private async Task<string> CreateHarnessSnapshotAsync(CancellationToken cancellationToken = default)

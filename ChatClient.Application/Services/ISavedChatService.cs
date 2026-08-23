@@ -9,6 +9,7 @@ public interface ISavedChatService
     Task<SavedChatDocument?> GetAsync(string storageRoot, Guid id, CancellationToken cancellationToken = default);
     Task SaveAsync(SavedChatDocument chat, CancellationToken cancellationToken = default);
     Task SaveCheckpointAsync(SavedChatDocument chat, CancellationToken cancellationToken = default);
+    Task<bool> UpdateCheckpointAsync(SavedChatDocument chat, CancellationToken cancellationToken = default);
     Task RenameAsync(Guid id, string title, CancellationToken cancellationToken = default);
     Task DeleteAsync(Guid id, CancellationToken cancellationToken = default);
     Task<bool> IsAutoSaveEnabledAsync(CancellationToken cancellationToken = default);
