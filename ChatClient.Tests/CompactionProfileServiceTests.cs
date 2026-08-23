@@ -195,7 +195,7 @@ public sealed class CompactionProfileServiceTests
             separate.Stages[2].SummarizerModelName = "  gpt-5-mini  ";
             await service.CreateAsync(separate);
 
-            var persisted = Assert.Single((await service.GetAllAsync()).Where(profile => profile.Id == separate.Id));
+            var persisted = Assert.Single((await service.GetAllAsync()), profile => profile.Id == separate.Id);
             Assert.Equal(summarizerServerId, persisted.Stages[2].SummarizerLlmId);
             Assert.Equal("gpt-5-mini", persisted.Stages[2].SummarizerModelName);
             Assert.Equal(separate.Stages.Select(stage => stage.Kind), persisted.Stages.Select(stage => stage.Kind));
