@@ -41,6 +41,8 @@ public sealed class AgenticChatViewModelService : IAgenticChatViewModelService, 
         _chatService.MessageAdded += _messageAddedHandler;
         _chatService.MessageUpdated += _messageUpdatedHandler;
         _chatService.SessionStateChanged += _sessionStateChangedHandler;
+
+        SynchronizeMessages();
     }
 
     private async Task OnMessageAdded(IAppChatMessage domainMessage)
@@ -75,10 +77,16 @@ public sealed class AgenticChatViewModelService : IAgenticChatViewModelService, 
     private void OnChatReset()
     {
         Interlocked.Increment(ref _sessionStateGeneration);
-        _messages.Clear();
+        SynchronizeMessages();
         SessionState = null;
         ChatReset?.Invoke();
         SessionStateChanged?.Invoke();
+    }
+
+    private void SynchronizeMessages()
+    {
+        _messages.Clear();
+        _messages.AddRange(_chatService.Messages.Select(AppChatMessageViewModel.CreateFromDomainModel));
     }
 
     private void OnSessionStateChanged()
