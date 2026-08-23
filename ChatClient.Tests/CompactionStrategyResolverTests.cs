@@ -26,7 +26,7 @@ public sealed class CompactionStrategyResolverTests
         var services = new ServiceCollection();
         services.AddApplicationServices(configuration, environment);
 
-        var descriptor = Assert.Single(services.Where(static service => service.ServiceType == typeof(ICompactionStrategyResolver)));
+        var descriptor = Assert.Single(services, static service => service.ServiceType == typeof(ICompactionStrategyResolver));
 
         Assert.Equal(ServiceLifetime.Scoped, descriptor.Lifetime);
     }
