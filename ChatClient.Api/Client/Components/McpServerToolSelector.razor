@@ -25,7 +25,7 @@
     {
         <table class="mcp-server-tool-selector__table" aria-label="MCP tools">
             <thead>
-                <tr>
+                <tr class="mcp-server-tool-selector__master-row">
                     <th class="mcp-server-tool-selector__check-cell">
                         <MudCheckBox T="bool"
                                      Value="@AreAllToolsSelected"
@@ -34,7 +34,14 @@
                                      Disabled="@Disabled"
                                      aria-label="Select all tools" />
                     </th>
-                    <th scope="col">Tool</th>
+                    <th scope="col">
+                        <div class="mcp-server-tool-selector__master-content">
+                            <span class="mcp-server-tool-selector__master-label">Select all tools</span>
+                            <span class="mcp-server-tool-selector__selection-summary">
+                                @SelectedToolCount of @_tools.Count selected
+                            </span>
+                        </div>
+                    </th>
                 </tr>
             </thead>
             <tbody>
@@ -74,6 +81,11 @@
     private bool AreAllToolsSelected =>
         _tools.Count > 0 &&
         (Binding.SelectAllTools || _tools.All(tool => IsToolSelected(tool.ToolName)));
+
+    private int SelectedToolCount =>
+        Binding.SelectAllTools
+            ? _tools.Count
+            : _tools.Count(tool => IsToolSelected(tool.ToolName));
 
     protected override async Task OnParametersSetAsync()
     {

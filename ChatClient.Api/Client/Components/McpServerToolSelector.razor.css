@@ -34,6 +34,34 @@
     text-align: left;
 }
 
+.mcp-server-tool-selector__master-row {
+    background: var(--mud-palette-background-gray, rgba(127, 127, 127, 0.08));
+}
+
+.mcp-server-tool-selector__master-content {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    min-width: 0;
+}
+
+.mcp-server-tool-selector__master-label {
+    min-width: 0;
+    overflow: hidden;
+    color: var(--mud-palette-text-primary);
+    font-weight: 700;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.mcp-server-tool-selector__selection-summary {
+    flex: 0 0 auto;
+    margin-left: auto;
+    color: var(--mud-palette-text-secondary);
+    font-weight: 400;
+    white-space: nowrap;
+}
+
 .mcp-server-tool-selector__table tbody tr:last-child td {
     border-bottom: 0;
 }
