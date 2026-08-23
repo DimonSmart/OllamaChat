@@ -32,12 +32,13 @@
 }
 
 .mcp-bindings-picker__row :deep(.mud-button-label) {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) auto auto;
+    display: flex;
     align-items: center;
+    justify-content: flex-start;
     gap: 0.5rem;
     width: 100%;
     text-align: left;
+    text-transform: none;
 }
 
 .mcp-bindings-picker__row--off {
@@ -45,6 +46,7 @@
 }
 
 .mcp-bindings-picker__name {
+    flex: 1 1 auto;
     min-width: 0;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -58,6 +60,7 @@
 }
 
 .mcp-bindings-picker__state {
+    flex: 0 0 auto;
     white-space: nowrap;
 }
 

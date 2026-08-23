@@ -54,7 +54,7 @@ public static class McpBindingPresentation
         return null;
     }
 
-    public static string GetCompactToolState(McpServerSessionBinding binding)
+    public static string? GetCompactToolState(McpServerSessionBinding binding)
     {
         ArgumentNullException.ThrowIfNull(binding);
 
@@ -65,14 +65,14 @@ public static class McpBindingPresentation
 
         if (binding.SelectAllTools)
         {
-            return "All tools";
+            return null;
         }
 
         return binding.SelectedTools.Count switch
         {
             0 => "No tools",
-            1 => "1 tool",
-            var count => $"{count} tools"
+            1 => "1 selected",
+            var count => $"{count} selected"
         };
     }
 

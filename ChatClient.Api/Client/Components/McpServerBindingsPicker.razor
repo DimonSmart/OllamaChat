@@ -98,13 +98,17 @@
                             <div class="mcp-bindings-picker__rows" role="list" aria-label="MCP server bindings">
                                 @foreach (var binding in Bindings)
                                 {
+                                    var state = GetBindingState(binding);
                                     <MudButton Variant="Variant.Text"
                                                Color="Color.Default"
                                                FullWidth="true"
                                                Class="@GetRowClass(binding)"
                                                OnClick="@(() => ShowBindingAsync(binding))">
                                         <span class="mcp-bindings-picker__name">@GetBindingName(binding)</span>
-                                        <span class="mcp-bindings-picker__state">@GetBindingState(binding)</span>
+                                        @if (!string.IsNullOrWhiteSpace(state))
+                                        {
+                                            <span class="mcp-bindings-picker__state">@state</span>
+                                        }
                                         <MudIcon Icon="@Icons.Material.Filled.ChevronRight"
                                                  Size="Size.Small"
                                                  aria-hidden="true" />
@@ -201,7 +205,7 @@
             ?? "Unavailable server";
     }
 
-    private string GetBindingState(McpServerSessionBinding binding)
+    private string? GetBindingState(McpServerSessionBinding binding)
     {
         if (binding.Enabled &&
             binding.BindingId is Guid bindingId &&

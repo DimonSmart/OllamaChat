@@ -7,15 +7,15 @@ public class McpBindingPresentationTests
 {
     [Theory]
     [InlineData(false, true, 0, "Off")]
-    [InlineData(true, true, 0, "All tools")]
+    [InlineData(true, true, 0, null)]
     [InlineData(true, false, 0, "No tools")]
-    [InlineData(true, false, 1, "1 tool")]
-    [InlineData(true, false, 3, "3 tools")]
+    [InlineData(true, false, 1, "1 selected")]
+    [InlineData(true, false, 3, "3 selected")]
     public void GetCompactToolState_FormatsSemanticState(
         bool enabled,
         bool selectAllTools,
         int selectedToolCount,
-        string expected)
+        string? expected)
     {
         var binding = new McpServerSessionBinding
         {
