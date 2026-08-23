@@ -1,0 +1,91 @@
+@page "/chats"
+@using ChatClient.Api.Client.Components
+@using ChatClient.Application.Services
+@using ChatClient.Application.Services.Agentic
+@using ChatClient.Domain.Models
+@inject ISavedChatService SavedChatService
+@inject IChatEngineSessionService ChatService
+@inject NavigationManager Navigation
+@inject ISnackbar Snackbar
+
+<AppPage Title="Chats" Layout="AppPageLayout.Form">
+    <MudTextField T="string" Value="_search" ValueChanged="OnSearchChanged" Label="Search chats" Placeholder="Search chats" Immediate="true" Variant="Variant.Outlined" Margin="Margin.Dense" Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Search" />
+    @if (_loading)
+    {
+        <MudProgressCircular Indeterminate="true" Size="Size.Small" />
+    }
+    else if (FilteredChats.Count == 0)
+    {
+        <MudText Typo="Typo.body2">No saved chats.</MudText>
+    }
+    else
+    {
+        <MudList T="string" Dense="true">
+            @foreach (var chat in FilteredChats)
+            {
+                <MudListItem T="string" OnClick="@(() => OpenAsync(chat.Id))">
+                    <MudStack Row="true" AlignItems="AlignItems.Center" Class="w-100">
+                        <MudText>@chat.Title</MudText>
+                        <MudSpacer />
+                        <MudText Typo="Typo.caption">@chat.UpdatedAtUtc.ToLocalTime().ToString("g")</MudText>
+                        <MudTooltip Text="Rename">
+                            <MudIconButton Icon="@Icons.Material.Filled.Edit" Size="Size.Small" aria-label="Rename chat" OnClick:StopPropagation="true" OnClick="@(() => BeginRename(chat))" />
+                        </MudTooltip>
+                    </MudStack>
+                </MudListItem>
+            }
+        </MudList>
+    }
+    @if (_renaming is not null)
+    {
+        <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="1">
+            <MudTextField T="string" @bind-Value="_renameTitle" Label="Chat name" Variant="Variant.Outlined" Margin="Margin.Dense" />
+            <MudButton Size="Size.Small" Variant="Variant.Filled" Color="Color.Primary" OnClick="RenameAsync">Save</MudButton>
+            <MudButton Size="Size.Small" Variant="Variant.Text" OnClick="CancelRename">Cancel</MudButton>
+        </MudStack>
+    }
+</AppPage>
+
+@code {
+    private List<SavedChatSummary> _chats = [];
+    private string _search = string.Empty;
+    private bool _loading = true;
+    private SavedChatSummary? _renaming;
+    private string _renameTitle = string.Empty;
+    private IReadOnlyList<SavedChatSummary> FilteredChats => _chats.Where(chat => string.IsNullOrWhiteSpace(_search) || chat.Title.Contains(_search, StringComparison.OrdinalIgnoreCase)).ToList();
+
+    protected override async Task OnInitializedAsync()
+    {
+        await ReloadAsync();
+    }
+
+    private async Task ReloadAsync()
+    {
+        _loading = true;
+        try { _chats = (await SavedChatService.GetAllAsync()).ToList(); }
+        catch { Snackbar.Add("Could not load saved chats.", Severity.Error); }
+        finally { _loading = false; }
+    }
+
+    private Task OnSearchChanged(string value) { _search = value; return Task.CompletedTask; }
+    private void BeginRename(SavedChatSummary chat) { _renaming = chat; _renameTitle = chat.Title; }
+    private void CancelRename() => _renaming = null;
+
+    private async Task RenameAsync()
+    {
+        if (_renaming is null) return;
+        try { await SavedChatService.RenameAsync(_renaming.Id, _renameTitle); _renaming = null; await ReloadAsync(); }
+        catch { Snackbar.Add("Could not rename saved chat.", Severity.Error); }
+    }
+
+    private async Task OpenAsync(Guid id)
+    {
+        try
+        {
+            var chat = await SavedChatService.GetAsync(id) ?? throw new InvalidOperationException("Saved chat file is invalid.");
+            await ChatService.RestoreSavedChatAsync(chat);
+            Navigation.NavigateTo("/chat");
+        }
+        catch (Exception ex) { Snackbar.Add(ex.Message, Severity.Error); }
+    }
+}

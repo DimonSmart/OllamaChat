@@ -35,4 +35,7 @@ public class UserSettings
     [JsonPropertyName("workspacesRoot")]
     public string WorkspacesRoot { get; set; } = Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "OllamaChat", "Workspaces");
+
+    [JsonPropertyName("savedChats")]
+    public SavedChatsSettings SavedChats { get; set; } = new();
 }

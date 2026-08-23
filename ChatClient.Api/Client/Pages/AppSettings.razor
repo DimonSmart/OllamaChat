@@ -96,6 +96,11 @@
                     <MudTextField T="string" Label="Workspaces root" @bind-Value="_settings.WorkspacesRoot" Variant="Variant.Outlined" Margin="Margin.Dense" FullWidth="true" />
                 </AppSection>
 
+                <AppSection Title="Saved Chats">
+                    <MudSwitch T="bool" @bind-Value="_settings.SavedChats.AutoSaveEnabled" Color="Color.Primary" Label="Automatically save completed chats" />
+                    <MudTextField T="string" Label="Saved Chats root" @bind-Value="_settings.SavedChats.StorageRoot" Variant="Variant.Outlined" Margin="Margin.Dense" FullWidth="true" />
+                </AppSection>
+
                 <div class="app-form-actions">
                     <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="SaveSettingsFromButton" Size="Size.Small">Save application settings</MudButton>
                     <MudButton Variant="Variant.Outlined" Color="Color.Default" OnClick="ResetSettings" Size="Size.Small">Reset</MudButton>

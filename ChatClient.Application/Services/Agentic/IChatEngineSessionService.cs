@@ -32,6 +32,8 @@ public interface IChatEngineSessionService : IChatSessionService
 
     Task RestoreHarnessSessionAsync(string snapshotJson, CancellationToken cancellationToken = default);
 
+    Task RestoreSavedChatAsync(SavedChatDocument chat, CancellationToken cancellationToken = default);
+
     Task RespondToToolApprovalAsync(ToolApprovalDecision decision, CancellationToken cancellationToken = default);
 }
 

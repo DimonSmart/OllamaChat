@@ -28,6 +28,8 @@ public class UserSettingsService(IUserSettingsRepository repository, ILogger<Use
 
         settings.Embedding ??= new EmbeddingSettings();
         settings.VoiceInput ??= new VoiceInputSettings();
+        settings.SavedChats ??= new SavedChatsSettings();
+        settings.SavedChats.TitleGeneration ??= new ChatTitleGenerationSettings();
 
         if (updated || !_repository.Exists)
             await SaveSettingsAsync(settings, cancellationToken);

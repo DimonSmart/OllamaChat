@@ -24,6 +24,8 @@ public sealed class UnifiedAgentRuntimeChatSessionService(
     ISandboxSessionFactory sandboxSessionFactory,
     AgenticRuntimeAgentFactory runtimeAgentFactory,
     HarnessResponseEventProjector responseEventProjector,
+    ISavedChatService? savedChatService = null,
+    IChatTitleGenerator? chatTitleGenerator = null,
     HarnessTraceSession? harnessTraceSession = null) : IChatEngineSessionService, IAsyncDisposable
 {
     private readonly AppChat _chat = new();
@@ -58,6 +60,7 @@ public sealed class UnifiedAgentRuntimeChatSessionService(
     private readonly SemaphoreSlim _startGate = new(1, 1);
     private long _generation;
     private bool _resetting;
+    private Guid? _savedChatId;
 
     public event Action<bool>? AnsweringStateChanged;
     public event Action? ChatReset;
@@ -325,6 +328,7 @@ public sealed class UnifiedAgentRuntimeChatSessionService(
 
     public async Task ResetAsync(CancellationToken cancellationToken = default)
     {
+        _savedChatId = null;
         harnessTraceSession?.Clear();
         Task? activeRun;
         lock (_lifecycleLock)
@@ -582,6 +586,7 @@ public sealed class UnifiedAgentRuntimeChatSessionService(
         {
             if (generation == Interlocked.Read(ref _generation))
             {
+                await CheckpointCurrentAsync();
                 ClearRunLocalState();
                 _cancellationTokenSource?.Dispose();
                 _cancellationTokenSource = null;
@@ -674,6 +679,38 @@ public sealed class UnifiedAgentRuntimeChatSessionService(
             });
         }
         finally { _runSetupGate.Release(); }
+    }
+
+    public async Task RestoreSavedChatAsync(SavedChatDocument chat, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(chat);
+        if (chat.FormatVersion > SavedChatDocument.CurrentFormatVersion)
+            throw new InvalidOperationException("The saved chat format is newer than this OllamaChat version.");
+        if (chat.FormatVersion != SavedChatDocument.CurrentFormatVersion || chat.Launch.RuntimeReference is null ||
+            !Enum.TryParse<AgentDefinitionKind>(chat.Launch.RuntimeReference.Kind, out var kind))
+            throw new InvalidOperationException("Saved chat file is invalid.");
+        if (IsAnswering || PendingToolApproval is not null || RequiresReset)
+            throw new InvalidOperationException("Finish or stop the current response before opening another chat.");
+
+        var reference = new AgentDefinitionReference(kind, chat.Launch.RuntimeReference.Id);
+        await definitionCatalog.GetRequiredAsync(reference, cancellationToken);
+        await StartAsync(new ChatEngineSessionStartRequest
+        {
+            Configuration = new AppChatConfiguration(chat.Launch.Model?.ModelName ?? string.Empty, []),
+            Agents = [],
+            RuntimeReference = reference,
+            RuntimeDefaultModel = chat.Launch.Model,
+            RuntimeInputs = new Dictionary<string, string>(chat.Launch.Inputs, StringComparer.OrdinalIgnoreCase),
+            Overrides = new AgentSessionOverrides
+            {
+                WorkspacePath = chat.Launch.Overrides.WorkspacePath,
+                SandboxProfileId = chat.Launch.Overrides.SandboxProfileId,
+                McpServerBindings = chat.Launch.Overrides.McpServerBindings?.Select(static binding => binding.Clone()).ToList()
+            }
+        }, cancellationToken);
+        foreach (var message in chat.Messages)
+            await AddMessageAsync(new AppChatMessage(message));
+        _savedChatId = chat.Id;
     }
 
     public async Task RestoreHarnessSessionAsync(string snapshotJson, CancellationToken cancellationToken = default)
@@ -1055,6 +1092,7 @@ public sealed class UnifiedAgentRuntimeChatSessionService(
             traceRun?.Dispose();
             if (generation == Interlocked.Read(ref _generation))
             {
+                await CheckpointCurrentAsync();
                 _cancellationTokenSource?.Dispose();
                 _cancellationTokenSource = null;
                 UpdateAnsweringState(false);
@@ -1431,6 +1469,47 @@ public sealed class UnifiedAgentRuntimeChatSessionService(
     {
         _activeStreamsByRuntimeMessageId.Clear();
         _completedRuntimeMessageIds.Clear();
+    }
+
+    private async Task CheckpointCurrentAsync()
+    {
+        if (savedChatService is null || chatTitleGenerator is null || RequiresReset || PendingToolApproval is not null || _parameters?.RuntimeReference is null ||
+            _chat.Messages.Any(static message => message.IsStreaming) || !await savedChatService.IsAutoSaveEnabledAsync())
+            return;
+
+        try
+        {
+            var existing = _savedChatId is { } id ? await savedChatService.GetAsync(id) : null;
+            var firstUserMessage = _chat.Messages.FirstOrDefault(static message => message.Role == AppChatRole.User)?.Content ?? string.Empty;
+            var now = DateTime.UtcNow;
+            var document = new SavedChatDocument
+            {
+                Id = existing?.Id ?? Guid.NewGuid(),
+                CreatedAtUtc = existing?.CreatedAtUtc ?? now,
+                UpdatedAtUtc = now,
+                Title = existing?.Title ?? chatTitleGenerator.Generate(firstUserMessage),
+                IsTitleManual = existing?.IsTitleManual ?? false,
+                Launch = new SavedChatLaunchSnapshot
+                {
+                    RuntimeReference = new SavedChatRuntimeReference(_parameters.RuntimeReference.Kind.ToString(), _parameters.RuntimeReference.Id),
+                    Model = _parameters.RuntimeDefaultModel,
+                    Inputs = new Dictionary<string, string>(_parameters.RuntimeInputs, StringComparer.OrdinalIgnoreCase),
+                    Overrides = new SavedChatOverrides
+                    {
+                        WorkspacePath = _parameters.Overrides.WorkspacePath,
+                        SandboxProfileId = _parameters.Overrides.SandboxProfileId,
+                        McpServerBindings = _parameters.Overrides.McpServerBindings?.Select(static binding => binding.Clone()).ToList()
+                    }
+                },
+                Messages = _chat.Messages.Where(static message => !message.IsStreaming).Select(static message => new AppChatMessage(message)).ToList()
+            };
+            await savedChatService.SaveAsync(document);
+            _savedChatId = document.Id;
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "Could not checkpoint the current saved chat.");
+        }
     }
 
     private async Task AddMessageAsync(IAppChatMessage message)

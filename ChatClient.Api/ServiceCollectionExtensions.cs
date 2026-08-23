@@ -96,6 +96,7 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<ILlmServerConfigRepository, LlmServerConfigRepository>();
         services.AddSingleton<IMcpServerConfigRepository, McpServerConfigRepository>();
         services.AddSingleton<IUserSettingsRepository, UserSettingsRepository>();
+        services.AddSingleton<ISavedChatRepository, FileSavedChatRepository>();
         services.AddSingleton<ITaskSessionRepository, SqliteTaskSessionRepository>();
         services.AddSingleton<IWorkflowExecutionPolicy, WorkflowExecutionPolicy>();
         services.AddSingleton<IAgentTemplateService, AgentTemplateService>();
@@ -111,6 +112,8 @@ public static class ServiceCollectionExtensions
         services.AddScoped<ICompactionStrategyResolver, CompactionStrategyResolver>();
         services.AddSingleton<IWorkflowDefinitionService, WorkflowDefinitionService>();
         services.AddSingleton<IUserSettingsService, UserSettingsService>();
+        services.AddSingleton<ISavedChatService, SavedChatService>();
+        services.AddSingleton<IChatTitleGenerator, FirstMessageChatTitleGenerator>();
         services.AddSingleton<IWorkspaceDirectoryService, WorkspaceDirectoryService>();
         services.AddSingleton<IKnowledgeStoreService, KnowledgeStoreService>();
 
