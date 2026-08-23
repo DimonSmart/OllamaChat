@@ -661,19 +661,6 @@ public sealed class UnifiedAgentRuntimeChatSessionService(
         await RunDirectAsync([new ChatMessage(ChatRole.User, [response])], generation);
     }
 
-    public async Task<string> ExportHarnessSessionAsync(CancellationToken cancellationToken = default)
-    {
-        await _runSetupGate.WaitAsync(cancellationToken);
-        try
-        {
-            if (_resetting || IsAnswering || RequiresReset || PendingToolApproval is not null || _directAgent is null || _directSession is null || _parameters?.RuntimeReference?.Kind != AgentDefinitionKind.SavedAgent)
-                throw new InvalidOperationException("A stable direct Harness session is required to export a session.");
-            EnsureNoIncompleteBackgroundTasks(_directAgent, _directSession, "exported");
-            return await CreateHarnessSnapshotAsync(cancellationToken);
-        }
-        finally { _runSetupGate.Release(); }
-    }
-
     public async Task RestoreSavedChatAsync(
         SavedChatDocument chat,
         CancellationToken cancellationToken = default,
@@ -908,114 +895,6 @@ public sealed class UnifiedAgentRuntimeChatSessionService(
             _ = DisposeSandboxAfterRestoreFailureAsync(previousSandbox);
         ChatReset?.Invoke();
         SessionStateChanged?.Invoke();
-    }
-
-    public async Task RestoreHarnessSessionAsync(string snapshotJson, CancellationToken cancellationToken = default)
-    {
-        harnessTraceSession?.Clear();
-        HarnessSessionSnapshot snapshot;
-        try
-        { snapshot = JsonSerializer.Deserialize<HarnessSessionSnapshot>(snapshotJson) ?? throw new JsonException("The snapshot is empty."); }
-        catch (JsonException ex) { logger.LogWarning(ex, "Harness session snapshot JSON could not be read."); throw new InvalidOperationException("The selected file is not a valid Harness session snapshot."); }
-        if (snapshot.FormatVersion != HarnessSessionSnapshot.CurrentFormatVersion)
-            throw new InvalidOperationException($"Harness session snapshot format {snapshot.FormatVersion} is not supported.");
-        ValidateSnapshotStructure(snapshot);
-
-        await _runSetupGate.WaitAsync(cancellationToken);
-        try
-        {
-            if (_resetting || IsAnswering || RequiresReset || PendingToolApproval is not null || _parameters?.RuntimeReference?.Kind != AgentDefinitionKind.SavedAgent)
-                throw new InvalidOperationException("Restore is available only for an idle direct Saved Agent conversation.");
-            if (_directAgent is null || _directSession is null)
-                throw new InvalidOperationException("A stable direct Harness session is required to restore a session.");
-            EnsureNoIncompleteBackgroundTasks(_directAgent, _directSession, "replaced");
-            if (!Guid.TryParse(_parameters.RuntimeReference.Id, out var currentId) || currentId != snapshot.SavedAgentId)
-                throw new InvalidOperationException("This Harness session belongs to a different Saved Agent.");
-            var model = _parameters.RuntimeDefaultModel ?? throw new InvalidOperationException("The selected model is unavailable.");
-            if (model.ServerId != snapshot.ModelServerId || !string.Equals(model.ModelName, snapshot.ModelName, StringComparison.Ordinal))
-                throw new InvalidOperationException("This Harness session was created with a different model.");
-            if (!HaveEquivalentWorkspacePaths(_parameters.Overrides.WorkspacePath, snapshot.Overrides.WorkspacePath))
-                throw new InvalidOperationException("This Harness session was created with a different workspace.");
-            if (_parameters.Overrides.SandboxProfileId != snapshot.Overrides.SandboxProfileId)
-                throw new InvalidOperationException("This Harness session was created with a different sandbox profile.");
-            if (!HaveEquivalentMcpBindings(_parameters.Overrides.McpServerBindings, snapshot.Overrides.McpServerBindings))
-                throw new InvalidOperationException("This Harness session was created with different MCP bindings. Restore it with the original launch configuration.");
-            if (!string.IsNullOrWhiteSpace(snapshot.Overrides.WorkspacePath) && !Directory.Exists(snapshot.Overrides.WorkspacePath))
-                throw new InvalidOperationException($"The workspace used by this Harness session no longer exists: {snapshot.Overrides.WorkspacePath}");
-            var template = await agentTemplateService.GetByIdAsync(snapshot.SavedAgentId) ?? throw new InvalidOperationException("The Saved Agent used by this Harness session was deleted.");
-            if (template.UpdatedAt != snapshot.AgentUpdatedAt)
-                throw new InvalidOperationException($"This Harness session was created with an older configuration of agent '{template.AgentName}'. Restore it with the original agent configuration or create a new session.");
-
-            var policy = new SessionToolApprovalPolicy();
-            policy.SetWorkspace(snapshot.Overrides.WorkspacePath);
-            var coordinator = new SessionToolApprovalCoordinator();
-            coordinator.PendingRequestChanged += HandleCoordinatorPendingRequestChanged;
-            HarnessAgentRuntimeDefinition? replacement = null;
-            SandboxSessionHandle? replacementSandbox = null;
-            AgentSession? restoredSession = null;
-            try
-            {
-                var descriptor = await definitionCatalog.GetRequiredAsync(_parameters.RuntimeReference, cancellationToken);
-                replacementSandbox = await CreateSandboxSessionAsync(
-                    _parameters, descriptor, Guid.NewGuid().ToString("N"), cancellationToken, null);
-                replacement = await CreateDirectRuntimeAsync(_parameters, coordinator, policy, replacementSandbox, cancellationToken);
-                restoredSession = await replacement.Agent.DeserializeSessionAsync(snapshot.Session, cancellationToken: cancellationToken);
-            }
-            catch (Exception ex)
-            {
-                replacement?.Dispose();
-                if (replacementSandbox is not null)
-                    await DisposeSandboxAfterRestoreFailureAsync(replacementSandbox);
-                coordinator.PendingRequestChanged -= HandleCoordinatorPendingRequestChanged;
-                logger.LogWarning(ex, "Harness session restore preparation failed.");
-                throw new InvalidOperationException("Could not restore the Harness session. The current conversation is unchanged.");
-            }
-
-            // Commit is deliberately limited to ownership transfer: no awaits or external callbacks.
-            var previousRuntime = _directRuntimeDefinition;
-            var previousCoordinator = _toolApprovalCoordinator;
-            var previousSandbox = _sandboxSession;
-            _directRuntimeDefinition = replacement;
-            _directAgent = replacement.Agent;
-            _directSession = restoredSession;
-            _directAvailableModes = replacement.AvailableModes;
-            _directFileAccessStore = replacement.FileAccessStore;
-            _directFileAccessProfile = replacement.FileAccessProfile;
-            _directFileMemoryStore = replacement.FileMemoryStore;
-            _directCompaction = replacement.Compaction;
-            _directSkills = replacement.Skills;
-            _directSkillDiagnostics = replacement.SkillDiagnostics;
-            _directBackgroundAgents = replacement.BackgroundAgents;
-            _directToolMetadata = replacement.ToolSet.MetadataByName;
-            _toolApprovalCoordinator = coordinator;
-            _toolApprovalPolicy = policy;
-            _sandboxSession = replacementSandbox;
-            replacement = null;
-            replacementSandbox = null;
-            previousCoordinator?.PendingRequestChanged -= HandleCoordinatorPendingRequestChanged;
-
-            try
-            { previousRuntime?.Dispose(); }
-            catch (Exception ex) { logger.LogWarning(ex, "Could not dispose the previous Harness runtime after restore."); }
-            if (previousSandbox is not null)
-            {
-                try
-                { await previousSandbox.DisposeAsync(); }
-                catch (Exception ex) { logger.LogWarning(ex, "Could not dispose the previous sandbox after restore."); }
-            }
-            try
-            {
-                _chat.ClearTranscript();
-                await AddMessageAsync(new AppChatMessage("Harness session restored. Previous conversation context is stored in the restored AgentSession.", DateTime.Now, AppChatRole.System));
-                ChatReset?.Invoke();
-                SessionStateChanged?.Invoke();
-            }
-            catch (Exception ex)
-            {
-                logger.LogWarning(ex, "Harness session was restored, but the chat presentation could not be refreshed.");
-            }
-        }
-        finally { _runSetupGate.Release(); }
     }
 
     private async Task CreateDirectConversationAsync(

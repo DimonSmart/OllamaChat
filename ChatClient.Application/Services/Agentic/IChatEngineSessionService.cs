@@ -28,10 +28,6 @@ public interface IChatEngineSessionService : IChatSessionService
 
     Task ClearFileMemoryAsync(CancellationToken cancellationToken = default);
 
-    Task<string> ExportHarnessSessionAsync(CancellationToken cancellationToken = default);
-
-    Task RestoreHarnessSessionAsync(string snapshotJson, CancellationToken cancellationToken = default);
-
     Task RestoreSavedChatAsync(
         SavedChatDocument chat,
         CancellationToken cancellationToken = default,
