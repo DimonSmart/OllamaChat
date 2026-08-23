@@ -3,6 +3,7 @@
 @page "/chat-agentic"
 @using System.Linq
 @using ChatClient.Api.Client.Components
+@using ChatClient.Api.Client.Models
 @using ChatClient.Application.Helpers
 @using ChatClient.Application.Services
 @using ChatClient.Application.Services.Agentic
@@ -130,6 +131,12 @@
                             </MudSelect>
                         }
 
+                        <ServerModelPicker Value="ModelSelectionContext.Value"
+                                           ValueChanged="ModelSelectionContext.SetValueAsync"
+                                           Presentation="ServerModelPickerPresentation.Toolbar"
+                                           Disabled="isStartingChat"
+                                           Class="chat-launch-model-selector" />
+
                         @if (!isStartingChat && launchValidation.Problems.Count > 0)
                         {
                             <MudAlert Severity="Severity.Error" Dense="true" Variant="Variant.Outlined">
@@ -236,6 +243,9 @@
 
     [CascadingParameter(Name = "UiModelSelection")]
     public ServerModelSelection UiModelSelection { get; set; } = new(null, null);
+
+    [CascadingParameter(Name = "UiModelSelectionContext")]
+    public UiModelSelectionContext ModelSelectionContext { get; set; } = null!;
 
     private ServerModel? effectiveModel;
 

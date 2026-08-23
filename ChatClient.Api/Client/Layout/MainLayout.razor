@@ -7,6 +7,7 @@
 @using ChatClient.Domain.Models
 @using ChatClient.Api.Client.Pages
 @using ChatClient.Api.Client.Components
+@using ChatClient.Api.Client.Models
 @using ChatClient.Api.Services
 @using ChatClient.Api.Client.Styling
 @using System.Linq
@@ -17,6 +18,7 @@
 <MudSnackbarProvider />
 <MudPopoverProvider />
 <MudXProvider />
+<CascadingValue Value="@modelSelectionContext" Name="UiModelSelectionContext">
 <CascadingValue Value="@pickerModel" Name="UiModelSelection">
 <MudLayout>
     <MudAppBar Elevation="1" Dense="true" Class="application-toolbar">
@@ -31,7 +33,7 @@
                        Size="Size.Small"
                        Class="ml-4 flex-shrink-0">New Chat</MudButton>
         }
-        @if (!isLLMAnswering)
+        @if (!IsOnChatPage())
         {
             <div class="ml-2 application-toolbar__model-picker">
                 <ServerModelPicker Value="pickerModel" ValueChanged="OnModelChanged" Presentation="ServerModelPickerPresentation.Toolbar" />
@@ -83,6 +85,7 @@
     </MudMainContent>
 </MudLayout>
 </CascadingValue>
+</CascadingValue>
 
 <div id="blazor-error-ui" data-nosnippet>
     An unhandled error has occurred.
@@ -93,20 +96,21 @@
 @code {
     private bool _drawerOpen = true;
     private bool _isDarkMode = true;
-    private bool isLLMAnswering;
     private ServerModelSelection pickerModel = new(null, null);
+    private UiModelSelectionContext modelSelectionContext = null!;
     private MudTheme? _theme = null;
 
     protected override async Task OnInitializedAsync()
     {
         await base.OnInitializedAsync();
 
-        AgenticChatService.AnsweringStateChanged += OnAnsweringStateChanged;
+        modelSelectionContext = new UiModelSelectionContext(pickerModel, OnModelChanged);
+
         ChatToolbar.Changed += OnChatToolbarChanged;
-        RefreshAnsweringState();
 
         var settings = await UserSettingsService.GetSettingsAsync();
         pickerModel = settings.DefaultModel;
+        modelSelectionContext.UpdateValue(pickerModel);
 
         _theme = AppTheme.Create(_lightPalette, _darkPalette);
     }
@@ -119,18 +123,6 @@
     private void DarkModeToggle()
     {
         _isDarkMode = !_isDarkMode;
-    }
-
-    protected override void OnParametersSet()
-    {
-        base.OnParametersSet();
-        RefreshAnsweringState();
-    }
-
-    private void OnAnsweringStateChanged(bool answering)
-    {
-        RefreshAnsweringState();
-        InvokeAsync(StateHasChanged);
     }
 
     private void OnChatToolbarChanged()
@@ -152,14 +144,6 @@
                currentPath == "/chat-agentic";
     }
 
-    private bool IsOnAgenticChatPage()
-    {
-        var currentPath = NavigationManager.ToAbsoluteUri(NavigationManager.Uri).LocalPath;
-        return string.Equals(currentPath, "/", StringComparison.OrdinalIgnoreCase) ||
-               string.Equals(currentPath, "/chat", StringComparison.OrdinalIgnoreCase) ||
-               string.Equals(currentPath, "/chat-agentic", StringComparison.OrdinalIgnoreCase);
-    }
-
     private bool ActiveChatHasAgents() => AgenticChatService.Agents.Any();
 
     private async Task NewChat()
@@ -179,6 +163,7 @@
     private async Task OnModelChanged(ServerModelSelection model)
     {
         pickerModel = model;
+        modelSelectionContext.UpdateValue(model);
 
         var settings = await UserSettingsService.GetSettingsAsync();
         settings.DefaultModel = model;
@@ -233,13 +218,7 @@
 
     public ValueTask DisposeAsync()
     {
-        AgenticChatService.AnsweringStateChanged -= OnAnsweringStateChanged;
         ChatToolbar.Changed -= OnChatToolbarChanged;
         return ValueTask.CompletedTask;
-    }
-
-    private void RefreshAnsweringState()
-    {
-        isLLMAnswering = IsOnAgenticChatPage() && AgenticChatService.IsAnswering;
     }
 }

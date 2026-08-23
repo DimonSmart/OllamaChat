@@ -5,40 +5,26 @@
 @inject IOpenAIClientService OpenAIService
 @inject IUserSettingsService UserSettingsService
 
-<MudStack Spacing="1" Row="true" Wrap="@(AllowWrap ? Wrap.Wrap : Wrap.NoWrap)" AlignItems="AlignItems.Center" @attributes="Attributes" Class="@PickerClass">
-    <div class="server-model-picker__fields">
-    <MudSelect T="Guid?" Value="selectedServerId" ValueChanged="OnServerChanged" Placeholder="Server"
-               Variant="@EffectiveSelectVariant" Dense="true" Margin="@EffectiveSelectMargin" Class="@SelectClass"
-               Text="@GetSelectedServerName()">
-        @foreach (var server in servers)
-        {
-            <MudSelectItem Value="@server.Id">@server.Name</MudSelectItem>
-        }
-    </MudSelect>
-
-    <MudSelect T="string" Value="selectedModel" ValueChanged="OnModelChanged" Placeholder="Model"
-               Variant="@EffectiveSelectVariant" Disabled="@(!selectedServerId.HasValue || loading || loadError != null)" Dense="true" Margin="@EffectiveSelectMargin" Class="@SelectClass">
-        @foreach (var model in models)
-        {
-            <MudSelectItem Value="@model.Name">@model.Name</MudSelectItem>
-        }
-    </MudSelect>
-    </div>
-
-    @if (Presentation == ServerModelPickerPresentation.Toolbar)
+<MudStack Spacing="1" Row="true" Wrap="@(IsCompact ? Wrap.NoWrap : Wrap.Wrap)" AlignItems="AlignItems.Center" @attributes="Attributes" Class="@PickerClass">
+    @if (IsCompact)
     {
-        <div class="server-model-picker__compact-control">
-            <MudButton Variant="Variant.Text"
-                       Size="Size.Small"
-                       EndIcon="@Icons.Material.Filled.ArrowDropDown"
-                       aria-label="Select server and model"
-                       OnClick="ToggleCompactPicker">
-                @GetCompactSelectionText()
-            </MudButton>
-            <MudPopover Open="compactPickerOpen" AnchorOrigin="Origin.BottomCenter" TransformOrigin="Origin.TopCenter">
-                <MudStack Spacing="1" Class="pa-2 server-model-picker__compact-popover">
-                    <MudSelect T="Guid?" Value="selectedServerId" ValueChanged="OnServerChanged" Placeholder="Server"
-                               Variant="Variant.Text" Dense="true" Margin="Margin.Dense"
+        <div class="server-model-picker__compact-control" @onkeydown="OnCompactPickerKeyDown">
+            <MudMenu @bind-Open="compactPickerOpen"
+                     Disabled="Disabled"
+                     Dense="true"
+                     Label="@GetCompactSelectionText()"
+                     AriaLabel="Select server and model"
+                     EndIcon="@Icons.Material.Filled.ArrowDropDown"
+                     Variant="Variant.Text"
+                     Size="Size.Small"
+                     Class="server-model-picker__summary"
+                     title="@GetCompactSelectionText()"
+                     AnchorOrigin="@CompactAnchorOrigin"
+                     TransformOrigin="@CompactTransformOrigin">
+                <ChildContent>
+                <MudStack Spacing="1" Class="pa-2 server-model-picker__compact-popover" @onkeydown="OnCompactPickerKeyDown">
+                    <MudSelect T="Guid?" Value="selectedServerId" ValueChanged="OnServerChanged" Label="Server"
+                               Variant="Variant.Text" Disabled="Disabled" Dense="true" Margin="Margin.Dense"
                                FullWidth="true"
                                Text="@GetSelectedServerName()">
                         @foreach (var server in servers)
@@ -47,8 +33,8 @@
                         }
                     </MudSelect>
 
-                    <MudSelect T="string" Value="selectedModel" ValueChanged="OnModelChanged" Placeholder="Model"
-                               Variant="Variant.Text" Disabled="@(!selectedServerId.HasValue || loading || loadError != null)" Dense="true" Margin="Margin.Dense"
+                    <MudSelect @key="selectedServerId" T="string" Value="selectedModel" ValueChanged="OnModelChanged" Label="Model"
+                               Variant="Variant.Text" Disabled="@(Disabled || !selectedServerId.HasValue || loading || loadError != null)" Dense="true" Margin="Margin.Dense"
                                FullWidth="true">
                         @foreach (var model in models)
                         {
@@ -56,11 +42,33 @@
                         }
                     </MudSelect>
                 </MudStack>
-            </MudPopover>
+                </ChildContent>
+            </MudMenu>
         </div>
     }
-    
-    @if (Presentation != ServerModelPickerPresentation.Toolbar && ShowClearButton && (selectedServerId.HasValue || !string.IsNullOrEmpty(selectedModel)))
+    else
+    {
+        <div class="server-model-picker__fields">
+            <MudSelect T="Guid?" Value="selectedServerId" ValueChanged="OnServerChanged" Placeholder="Server"
+                       Variant="@SelectVariant" Disabled="Disabled" Dense="true" Margin="@SelectMargin" Class="@SelectClass"
+                       Text="@GetSelectedServerName()">
+                @foreach (var server in servers)
+                {
+                    <MudSelectItem Value="@server.Id">@server.Name</MudSelectItem>
+                }
+            </MudSelect>
+
+            <MudSelect @key="selectedServerId" T="string" Value="selectedModel" ValueChanged="OnModelChanged" Placeholder="Model"
+                       Variant="@SelectVariant" Disabled="@(Disabled || !selectedServerId.HasValue || loading || loadError != null)" Dense="true" Margin="@SelectMargin" Class="@SelectClass">
+                @foreach (var model in models)
+                {
+                    <MudSelectItem Value="@model.Name">@model.Name</MudSelectItem>
+                }
+            </MudSelect>
+        </div>
+    }
+
+    @if (!IsCompact && ShowClearButton && (selectedServerId.HasValue || !string.IsNullOrEmpty(selectedModel)))
     {
         <MudIconButton Icon="@Icons.Material.Filled.Clear" 
                        Size="Size.Small" 
@@ -89,6 +97,7 @@
     [Parameter] public Margin SelectMargin { get; set; } = Margin.Dense;
     [Parameter] public bool FillAvailableWidth { get; set; } = true;
     [Parameter] public ServerModelPickerPresentation Presentation { get; set; } = ServerModelPickerPresentation.Form;
+    [Parameter] public bool Disabled { get; set; }
     [Parameter] public string? Class { get; set; }
     [Parameter(CaptureUnmatchedValues = true)] public Dictionary<string, object> Attributes { get; set; } = [];
 
@@ -99,13 +108,23 @@
     private bool loading;
     private string? loadError;
     private bool compactPickerOpen;
-    private bool AllowWrap => Presentation == ServerModelPickerPresentation.Form;
-    private Variant EffectiveSelectVariant => Presentation == ServerModelPickerPresentation.Toolbar ? Variant.Text : SelectVariant;
-    private Margin EffectiveSelectMargin => Presentation == ServerModelPickerPresentation.Toolbar ? Margin.Dense : SelectMargin;
-    private string PickerClass => $"{(Presentation == ServerModelPickerPresentation.Toolbar ? "server-model-picker--toolbar" : "server-model-picker--form")} {(FillAvailableWidth ? "server-model-picker--fluid" : "server-model-picker--bounded")} {Class}";
-    private string SelectClass => FillAvailableWidth || Presentation == ServerModelPickerPresentation.Toolbar
+    private bool IsCompact => Presentation is ServerModelPickerPresentation.Toolbar or ServerModelPickerPresentation.Composer;
+    private Origin CompactAnchorOrigin => Presentation == ServerModelPickerPresentation.Composer
+        ? Origin.TopCenter
+        : Origin.BottomCenter;
+    private Origin CompactTransformOrigin => Presentation == ServerModelPickerPresentation.Composer
+        ? Origin.BottomCenter
+        : Origin.TopCenter;
+    private string PickerClass => $"{(IsCompact ? "server-model-picker--compact" : "server-model-picker--form")} {(FillAvailableWidth ? "server-model-picker--fluid" : "server-model-picker--bounded")} {Class}";
+    private string SelectClass => FillAvailableWidth
         ? "server-model-picker__select--fluid"
         : "server-model-picker__select--bounded";
+
+    protected override void OnParametersSet()
+    {
+        if (Disabled)
+            compactPickerOpen = false;
+    }
 
     protected override async Task OnInitializedAsync()
     {
@@ -152,9 +171,10 @@
         await NotifyValueChanged();
     }
 
-    private void ToggleCompactPicker()
+    private void OnCompactPickerKeyDown(KeyboardEventArgs args)
     {
-        compactPickerOpen = !compactPickerOpen;
+        if (args.Key == "Escape")
+            compactPickerOpen = false;
     }
 
     private async Task OnClearSelection()
@@ -240,7 +260,7 @@
     {
         var serverName = GetSelectedServerName();
         var serverLabel = string.IsNullOrWhiteSpace(serverName) ? "Server" : serverName;
-        var modelLabel = string.IsNullOrWhiteSpace(selectedModel) ? "Model" : selectedModel;
+        var modelLabel = string.IsNullOrWhiteSpace(selectedModel) ? "Select model" : selectedModel;
         return string.IsNullOrWhiteSpace(serverName) && string.IsNullOrWhiteSpace(selectedModel)
             ? "Select model"
             : $"{serverLabel} · {modelLabel}";

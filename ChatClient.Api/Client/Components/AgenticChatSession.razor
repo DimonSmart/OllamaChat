@@ -371,6 +371,7 @@
         }
         <ChatInput OnSend="OnSendMessage"
                    Disabled="@(RequiresReset || PendingToolApproval is not null)"
+                   ModelSelectorDisabled="@(IsLlmAnswering || RequiresReset || PendingToolApproval is not null)"
                    ShowStopButton="@(IsLlmAnswering && PendingToolApproval is null)"
                    OnStopClick="OnStop"
                    IsMultiAgent="IsMultiAgent" />

@@ -106,6 +106,24 @@
     padding-bottom: 0;
 }
 
+.chat-composer__model-selector {
+    display: flex;
+    min-width: 0;
+    max-width: 100%;
+    padding-left: 2.25rem;
+}
+
+.chat-launch-model-selector {
+    min-width: 0;
+    max-width: 100%;
+}
+
+@media (max-width: 480px) {
+    .chat-composer__model-selector {
+        padding-left: 0;
+    }
+}
+
 @media (max-width: 959px) {
     .chat-input-panel {
         left: 1rem;

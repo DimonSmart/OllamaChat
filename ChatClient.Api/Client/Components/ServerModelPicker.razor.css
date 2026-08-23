@@ -1,4 +1,3 @@
-.server-model-picker--toolbar,
 .server-model-picker--fluid {
     flex: 1;
     min-width: 0;
@@ -31,19 +30,24 @@
 }
 
 .server-model-picker__compact-control {
-    display: none;
+    min-width: 0;
+    max-width: 100%;
+}
+
+.server-model-picker__summary {
+    max-width: 100%;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
 
 .server-model-picker__compact-popover {
     min-width: 16rem;
+    max-width: min(22rem, calc(100vw - 2rem));
 }
 
-@media (max-width: 480px) {
-    .server-model-picker--toolbar .server-model-picker__fields {
-        display: none;
-    }
-
-    .server-model-picker--toolbar .server-model-picker__compact-control {
-        display: block;
-    }
+.server-model-picker--compact {
+    min-width: 0;
+    max-width: 100%;
 }
