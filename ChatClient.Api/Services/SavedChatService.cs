@@ -22,7 +22,10 @@ public sealed class SavedChatService(IUserSettingsService settingsService, ISave
     {
         var settings = await settingsService.GetSettingsAsync(cancellationToken);
         if (settings.SavedChats.AutoSaveEnabled)
-            await repository.SaveAsync(settings.SavedChats.StorageRoot, chat, cancellationToken);
+        {
+            chat.StorageRoot ??= Path.GetFullPath(settings.SavedChats.StorageRoot);
+            await repository.SaveAsync(chat.StorageRoot, chat, cancellationToken);
+        }
     }
 
     public async Task RenameAsync(Guid id, string title, CancellationToken cancellationToken = default)

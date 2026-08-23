@@ -1,6 +1,7 @@
 using ChatClient.Application.Repositories;
 using ChatClient.Domain.Models;
 using Microsoft.Extensions.Logging;
+using System.Collections.Concurrent;
 using System.Text.Json;
 
 namespace ChatClient.Infrastructure.Repositories;
@@ -8,30 +9,49 @@ namespace ChatClient.Infrastructure.Repositories;
 public sealed class FileSavedChatRepository(ILogger<FileSavedChatRepository> logger) : ISavedChatRepository
 {
     private static readonly JsonSerializerOptions JsonOptions = new() { WriteIndented = true, PropertyNameCaseInsensitive = true };
+    private static readonly ConcurrentDictionary<string, SemaphoreSlim> FileGates = new(StringComparer.OrdinalIgnoreCase);
 
     public async Task SaveAsync(string storageRoot, SavedChatDocument chat, CancellationToken cancellationToken = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(storageRoot);
-        Directory.CreateDirectory(storageRoot);
         var target = GetPath(storageRoot, chat.Id);
-        var temporary = target + ".tmp";
-        var json = JsonSerializer.Serialize(chat, JsonOptions);
-        await File.WriteAllTextAsync(temporary, json, cancellationToken);
-        File.Move(temporary, target, true);
+        await WithFileGateAsync(target, async () =>
+        {
+            Directory.CreateDirectory(storageRoot);
+            var temporary = target + ".tmp-" + Guid.NewGuid().ToString("N");
+            try
+            {
+                var json = JsonSerializer.Serialize(chat, JsonOptions);
+                await File.WriteAllTextAsync(temporary, json, cancellationToken);
+                File.Move(temporary, target, true);
+            }
+            finally
+            {
+                try
+                { if (File.Exists(temporary)) File.Delete(temporary); }
+                catch { }
+            }
+        }, cancellationToken);
     }
 
     public async Task<SavedChatDocument?> GetAsync(string storageRoot, Guid id, CancellationToken cancellationToken = default)
     {
         var path = GetPath(storageRoot, id);
-        if (!File.Exists(path))
+        SavedChatDocument? document = null;
+        await WithFileGateAsync(path, async () =>
+        {
+            if (File.Exists(path))
+                document = JsonSerializer.Deserialize<SavedChatDocument>(await File.ReadAllTextAsync(path, cancellationToken), JsonOptions);
+        }, cancellationToken);
+        if (document is null && !File.Exists(path))
             return null;
-        var document = JsonSerializer.Deserialize<SavedChatDocument>(await File.ReadAllTextAsync(path, cancellationToken), JsonOptions);
         if (document is null)
             throw new InvalidDataException("Saved chat file is invalid.");
         if (document.FormatVersion > SavedChatDocument.CurrentFormatVersion)
             throw new InvalidDataException("The saved chat format is newer than this OllamaChat version.");
         if (document.FormatVersion != SavedChatDocument.CurrentFormatVersion)
             throw new InvalidDataException("Saved chat file is invalid.");
+        document.StorageRoot = Path.GetFullPath(storageRoot);
         return document;
     }
 
@@ -63,4 +83,13 @@ public sealed class FileSavedChatRepository(ILogger<FileSavedChatRepository> log
     }
 
     private static string GetPath(string root, Guid id) => Path.Combine(Path.GetFullPath(root), $"{id:N}.json");
+
+    private static async Task WithFileGateAsync(string path, Func<Task> action, CancellationToken cancellationToken)
+    {
+        var gate = FileGates.GetOrAdd(Path.GetFullPath(path), static _ => new SemaphoreSlim(1, 1));
+        await gate.WaitAsync(cancellationToken);
+        try
+        { await action(); }
+        finally { gate.Release(); }
+    }
 }

@@ -14,28 +14,29 @@ public sealed class SavedChatDocument
     [JsonPropertyName("launch")] public SavedChatLaunchSnapshot Launch { get; set; } = new();
     [JsonPropertyName("messages")] public List<AppChatMessage> Messages { get; set; } = [];
     [JsonPropertyName("nativeSession")] public SavedChatNativeSession? NativeSession { get; set; }
+    [JsonIgnore] public string? StorageRoot { get; set; }
 }
 
 public sealed class SavedChatLaunchSnapshot
 {
-    public SavedChatRuntimeReference? RuntimeReference { get; set; }
-    public ServerModel? Model { get; set; }
-    public Dictionary<string, string> Inputs { get; set; } = new(StringComparer.OrdinalIgnoreCase);
-    public SavedChatOverrides Overrides { get; set; } = new();
+    [JsonPropertyName("runtimeReference")] public SavedChatRuntimeReference? RuntimeReference { get; set; }
+    [JsonPropertyName("model")] public ServerModel? Model { get; set; }
+    [JsonPropertyName("inputs")] public Dictionary<string, string> Inputs { get; set; } = new(StringComparer.OrdinalIgnoreCase);
+    [JsonPropertyName("overrides")] public SavedChatOverrides Overrides { get; set; } = new();
 }
 
 public sealed class SavedChatOverrides
 {
-    public List<McpServerSessionBinding>? McpServerBindings { get; set; }
-    public string? WorkspacePath { get; set; }
-    public Guid? SandboxProfileId { get; set; }
+    [JsonPropertyName("mcpServerBindings")] public List<McpServerSessionBinding>? McpServerBindings { get; set; }
+    [JsonPropertyName("workspacePath")] public string? WorkspacePath { get; set; }
+    [JsonPropertyName("sandboxProfileId")] public Guid? SandboxProfileId { get; set; }
 }
 
-public sealed record SavedChatRuntimeReference(string Kind, string Id);
+public sealed record SavedChatRuntimeReference([property: JsonPropertyName("kind")] string Kind, [property: JsonPropertyName("id")] string Id);
 
 public sealed class SavedChatNativeSession
 {
-    public string SessionJson { get; set; } = string.Empty;
+    [JsonPropertyName("snapshot")] public string SnapshotJson { get; set; } = string.Empty;
 }
 
 public sealed record SavedChatSummary(Guid Id, string Title, DateTime UpdatedAtUtc, DateTime CreatedAtUtc, SavedChatRuntimeReference? RuntimeReference);

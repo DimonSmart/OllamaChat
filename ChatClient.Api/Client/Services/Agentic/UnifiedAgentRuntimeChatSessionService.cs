@@ -6,6 +6,7 @@ using ChatClient.Application.Services.Sandbox;
 using ChatClient.Domain.Models;
 using Microsoft.Agents.AI;
 using Microsoft.Extensions.AI;
+using MudBlazor;
 using System.Collections.ObjectModel;
 using System.Text;
 using System.Text.Json;
@@ -26,7 +27,9 @@ public sealed class UnifiedAgentRuntimeChatSessionService(
     HarnessResponseEventProjector responseEventProjector,
     ISavedChatService? savedChatService = null,
     IChatTitleGenerator? chatTitleGenerator = null,
-    HarnessTraceSession? harnessTraceSession = null) : IChatEngineSessionService, IAsyncDisposable
+    HarnessTraceSession? harnessTraceSession = null,
+    IAgentSessionDefinitionResolver? definitionResolver = null,
+    ISnackbar? snackbar = null) : IChatEngineSessionService, IAsyncDisposable
 {
     private readonly AppChat _chat = new();
     private readonly Dictionary<string, StreamingAppChatMessage> _activeStreamsByRuntimeMessageId =
@@ -61,6 +64,8 @@ public sealed class UnifiedAgentRuntimeChatSessionService(
     private long _generation;
     private bool _resetting;
     private Guid? _savedChatId;
+    private string? _savedChatStorageRoot;
+    private bool _persistenceHealthy = true;
 
     public event Action<bool>? AnsweringStateChanged;
     public event Action? ChatReset;
@@ -329,6 +334,7 @@ public sealed class UnifiedAgentRuntimeChatSessionService(
     public async Task ResetAsync(CancellationToken cancellationToken = default)
     {
         _savedChatId = null;
+        _savedChatStorageRoot = null;
         harnessTraceSession?.Clear();
         Task? activeRun;
         lock (_lifecycleLock)
@@ -662,21 +668,7 @@ public sealed class UnifiedAgentRuntimeChatSessionService(
             if (_resetting || IsAnswering || RequiresReset || PendingToolApproval is not null || _directAgent is null || _directSession is null || _parameters?.RuntimeReference?.Kind != AgentDefinitionKind.SavedAgent)
                 throw new InvalidOperationException("A stable direct Harness session is required to export a session.");
             EnsureNoIncompleteBackgroundTasks(_directAgent, _directSession, "exported");
-            if (!Guid.TryParse(_parameters.RuntimeReference.Id, out var agentId) || _parameters.RuntimeDefaultModel is null)
-                throw new InvalidOperationException("The saved agent and model are unavailable for session export.");
-            var template = await agentTemplateService.GetByIdAsync(agentId) ?? throw new InvalidOperationException("The saved agent used by this session no longer exists.");
-            var state = await _directAgent.SerializeSessionAsync(_directSession, cancellationToken: cancellationToken);
-            return JsonSerializer.Serialize(new HarnessSessionSnapshot
-            {
-                SavedAgentId = agentId,
-                AgentName = template.AgentName,
-                AgentUpdatedAt = template.UpdatedAt,
-                ModelServerId = _parameters.RuntimeDefaultModel.ServerId,
-                ModelName = _parameters.RuntimeDefaultModel.ModelName,
-                CreatedAtUtc = DateTime.UtcNow,
-                Overrides = SnapshotOverrides(_parameters.Overrides),
-                Session = state
-            });
+            return await CreateHarnessSnapshotAsync(cancellationToken);
         }
         finally { _runSetupGate.Release(); }
     }
@@ -693,24 +685,68 @@ public sealed class UnifiedAgentRuntimeChatSessionService(
             throw new InvalidOperationException("Finish or stop the current response before opening another chat.");
 
         var reference = new AgentDefinitionReference(kind, chat.Launch.RuntimeReference.Id);
-        await definitionCatalog.GetRequiredAsync(reference, cancellationToken);
-        await StartAsync(new ChatEngineSessionStartRequest
+        var resolutionRequest = new AgentSessionDefinitionRequest
         {
-            Configuration = new AppChatConfiguration(chat.Launch.Model?.ModelName ?? string.Empty, []),
-            Agents = [],
-            RuntimeReference = reference,
-            RuntimeDefaultModel = chat.Launch.Model,
-            RuntimeInputs = new Dictionary<string, string>(chat.Launch.Inputs, StringComparer.OrdinalIgnoreCase),
+            UiModelSelection = chat.Launch.Model is null ? new ServerModelSelection(null, null) : new ServerModelSelection(chat.Launch.Model.ServerId, chat.Launch.Model.ModelName),
+            Inputs = new Dictionary<string, string>(chat.Launch.Inputs, StringComparer.OrdinalIgnoreCase),
             Overrides = new AgentSessionOverrides
             {
                 WorkspacePath = chat.Launch.Overrides.WorkspacePath,
                 SandboxProfileId = chat.Launch.Overrides.SandboxProfileId,
                 McpServerBindings = chat.Launch.Overrides.McpServerBindings?.Select(static binding => binding.Clone()).ToList()
             }
+        };
+        var resolver = definitionResolver ?? throw new InvalidOperationException("Saved chat restore is unavailable because the definition resolver is not configured.");
+        var validation = await resolver.ValidateAsync(reference, resolutionRequest, cancellationToken);
+        if (!validation.CanLaunch)
+            throw new InvalidOperationException(string.Join(" ", validation.Problems.Select(static problem => problem.Message)));
+        var resolved = await resolver.ResolveAsync(reference, resolutionRequest, cancellationToken);
+        if (!resolved.Validation.CanLaunch)
+            throw new InvalidOperationException(string.Join(" ", resolved.Validation.Problems.Select(static problem => problem.Message)));
+        HarnessSessionSnapshot? nativeSnapshot = null;
+        if (kind == AgentDefinitionKind.SavedAgent && chat.NativeSession is not null)
+        {
+            try
+            {
+                nativeSnapshot = JsonSerializer.Deserialize<HarnessSessionSnapshot>(chat.NativeSession.SnapshotJson)
+                    ?? throw new JsonException("The snapshot is empty.");
+            }
+            catch (JsonException)
+            {
+                throw new InvalidOperationException("The saved chat contains an invalid Harness session snapshot.");
+            }
+
+            if (nativeSnapshot.FormatVersion != HarnessSessionSnapshot.CurrentFormatVersion)
+                throw new InvalidOperationException($"Harness session snapshot format {nativeSnapshot.FormatVersion} is not supported.");
+            ValidateSnapshotStructure(nativeSnapshot);
+            if (!Guid.TryParse(reference.Id, out var savedAgentId) || nativeSnapshot.SavedAgentId != savedAgentId ||
+                resolved.DefaultModel is null || nativeSnapshot.ModelServerId != resolved.DefaultModel.ServerId ||
+                !string.Equals(nativeSnapshot.ModelName, resolved.DefaultModel.ModelName, StringComparison.Ordinal) ||
+                !HaveEquivalentWorkspacePaths(resolutionRequest.Overrides.WorkspacePath, nativeSnapshot.Overrides.WorkspacePath) ||
+                resolutionRequest.Overrides.SandboxProfileId != nativeSnapshot.Overrides.SandboxProfileId ||
+                !HaveEquivalentMcpBindings(resolutionRequest.Overrides.McpServerBindings, nativeSnapshot.Overrides.McpServerBindings))
+                throw new InvalidOperationException("The saved Harness session is incompatible with its saved launch configuration.");
+            var template = await agentTemplateService.GetByIdAsync(savedAgentId)
+                ?? throw new InvalidOperationException("The Saved Agent used by this chat was deleted.");
+            if (template.UpdatedAt != nativeSnapshot.AgentUpdatedAt)
+                throw new InvalidOperationException("The saved Harness session was created with an older agent configuration.");
+        }
+        await StartAsync(new ChatEngineSessionStartRequest
+        {
+            Configuration = new AppChatConfiguration(chat.Launch.Model?.ModelName ?? string.Empty, []),
+            Agents = [],
+            RuntimeReference = resolved.RuntimeReference,
+            RuntimeDefaultModel = resolved.DefaultModel,
+            RuntimeInputs = new Dictionary<string, string>(resolved.Inputs, StringComparer.OrdinalIgnoreCase),
+            Overrides = resolutionRequest.Overrides,
+            RuntimeParticipant = resolved.PresentationParticipant
         }, cancellationToken);
+        if (nativeSnapshot is not null)
+            await RestoreHarnessSessionAsync(chat.NativeSession!.SnapshotJson, cancellationToken);
         foreach (var message in chat.Messages)
             await AddMessageAsync(new AppChatMessage(message));
         _savedChatId = chat.Id;
+        _savedChatStorageRoot = chat.StorageRoot;
     }
 
     public async Task RestoreHarnessSessionAsync(string snapshotJson, CancellationToken cancellationToken = default)
@@ -1482,6 +1518,9 @@ public sealed class UnifiedAgentRuntimeChatSessionService(
             var existing = _savedChatId is { } id ? await savedChatService.GetAsync(id) : null;
             var firstUserMessage = _chat.Messages.FirstOrDefault(static message => message.Role == AppChatRole.User)?.Content ?? string.Empty;
             var now = DateTime.UtcNow;
+            var nativeSession = _parameters.RuntimeReference.Kind == AgentDefinitionKind.SavedAgent
+                ? new SavedChatNativeSession { SnapshotJson = await CreateHarnessSnapshotAsync() }
+                : null;
             var document = new SavedChatDocument
             {
                 Id = existing?.Id ?? Guid.NewGuid(),
@@ -1501,15 +1540,45 @@ public sealed class UnifiedAgentRuntimeChatSessionService(
                         McpServerBindings = _parameters.Overrides.McpServerBindings?.Select(static binding => binding.Clone()).ToList()
                     }
                 },
-                Messages = _chat.Messages.Where(static message => !message.IsStreaming).Select(static message => new AppChatMessage(message)).ToList()
+                Messages = _chat.Messages.Where(static message => !message.IsStreaming).Select(static message => new AppChatMessage(message)).ToList(),
+                NativeSession = nativeSession,
+                StorageRoot = _savedChatStorageRoot ?? existing?.StorageRoot
             };
             await savedChatService.SaveAsync(document);
             _savedChatId = document.Id;
+            _savedChatStorageRoot = document.StorageRoot;
+            _persistenceHealthy = true;
         }
         catch (Exception ex)
         {
             logger.LogWarning(ex, "Could not checkpoint the current saved chat.");
+            if (_persistenceHealthy)
+            {
+                _persistenceHealthy = false;
+                snackbar?.Add("The response completed, but this chat could not be saved.", Severity.Warning);
+            }
         }
+    }
+
+    private async Task<string> CreateHarnessSnapshotAsync(CancellationToken cancellationToken = default)
+    {
+        if (_directAgent is null || _directSession is null || _parameters?.RuntimeReference?.Kind != AgentDefinitionKind.SavedAgent ||
+            !Guid.TryParse(_parameters.RuntimeReference.Id, out var agentId) || _parameters.RuntimeDefaultModel is null)
+            throw new InvalidOperationException("A stable direct Harness session is required to export a session.");
+        EnsureNoIncompleteBackgroundTasks(_directAgent, _directSession, "saved");
+        var template = await agentTemplateService.GetByIdAsync(agentId) ?? throw new InvalidOperationException("The saved agent used by this session no longer exists.");
+        var state = await _directAgent.SerializeSessionAsync(_directSession, cancellationToken: cancellationToken);
+        return JsonSerializer.Serialize(new HarnessSessionSnapshot
+        {
+            SavedAgentId = agentId,
+            AgentName = template.AgentName,
+            AgentUpdatedAt = template.UpdatedAt,
+            ModelServerId = _parameters.RuntimeDefaultModel.ServerId,
+            ModelName = _parameters.RuntimeDefaultModel.ModelName,
+            CreatedAtUtc = DateTime.UtcNow,
+            Overrides = SnapshotOverrides(_parameters.Overrides),
+            Session = state
+        });
     }
 
     private async Task AddMessageAsync(IAppChatMessage message)

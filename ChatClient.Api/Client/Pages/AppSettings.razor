@@ -99,6 +99,10 @@
                 <AppSection Title="Saved Chats">
                     <MudSwitch T="bool" @bind-Value="_settings.SavedChats.AutoSaveEnabled" Color="Color.Primary" Label="Automatically save completed chats" />
                     <MudTextField T="string" Label="Saved Chats root" @bind-Value="_settings.SavedChats.StorageRoot" Variant="Variant.Outlined" Margin="Margin.Dense" FullWidth="true" />
+                    <MudText Typo="Typo.body2">Automatic title model</MudText>
+                    <ServerModelPicker Value="_savedChatsTitleModel" ValueChanged="OnSavedChatsTitleModelChanged" ShowClearButton="true" />
+                    <MudTextField T="string" Label="Automatic title prompt" @bind-Value="_settings.SavedChats.TitleGeneration.Prompt" Variant="Variant.Outlined" Margin="Margin.Dense" FullWidth="true" />
+                    <MudText Typo="Typo.caption">Reserved for automatic title generation; the current version uses the first user message.</MudText>
                 </AppSection>
 
                 <div class="app-form-actions">
@@ -114,6 +118,7 @@
     private UserSettings _settings = new();
     private ServerModelSelection _defaultModel = new(null, null);
     private ServerModelSelection _embeddingModel = new(null, null);
+    private ServerModelSelection _savedChatsTitleModel = new(null, null);
     private VoiceInputStorageInfo _voiceInputStorage = new();
     private static readonly IReadOnlyList<VoiceInputModelOption> VoiceInputModelOptions =
     [
@@ -161,6 +166,14 @@
         return Task.CompletedTask;
     }
 
+    private Task OnSavedChatsTitleModelChanged(ServerModelSelection model)
+    {
+        _savedChatsTitleModel = model;
+        _settings.SavedChats.TitleGeneration.ServerId = model.ServerId;
+        _settings.SavedChats.TitleGeneration.ModelName = model.ModelName;
+        return Task.CompletedTask;
+    }
+
     private async Task LoadSettings()
     {
         try
@@ -170,6 +183,7 @@
             _voiceInputStorage = await VoiceInputService.GetStorageInfoAsync();
             _defaultModel = _settings.DefaultModel;
             _embeddingModel = _settings.Embedding.Model;
+            _savedChatsTitleModel = new ServerModelSelection(_settings.SavedChats.TitleGeneration.ServerId, _settings.SavedChats.TitleGeneration.ModelName);
             _voiceInputActivityMessage = string.Empty;
         }
         catch (Exception ex)
