@@ -1384,11 +1384,19 @@ public sealed class UnifiedAgentRuntimeChatSessionService(
     {
         try
         {
-            return Path.TrimEndingDirectorySeparator(Path.GetFullPath(workspacePath));
+            // Normalize separators, resolve to absolute path and trim trailing separator
+            var sep = Path.DirectorySeparatorChar;
+            var alt = Path.AltDirectorySeparatorChar;
+            var normalizedInput = workspacePath.Replace('\\', sep).Replace(alt, sep);
+
+            var full = Path.GetFullPath(normalizedInput);
+            return Path.TrimEndingDirectorySeparator(full);
         }
         catch (Exception) when (!string.IsNullOrWhiteSpace(workspacePath))
         {
-            return workspacePath.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+            var sep = Path.DirectorySeparatorChar;
+            var alt = Path.AltDirectorySeparatorChar;
+            return workspacePath.TrimEnd(sep, alt);
         }
     }
 
