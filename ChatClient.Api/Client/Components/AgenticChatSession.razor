@@ -305,11 +305,18 @@
 
                 @if (message.ToolInvocations.Any())
                 {
-                    foreach (var call in message.ToolInvocations.Where(call =>
+                    var visibleToolInvocations = message.ToolInvocations.Where(call =>
                         !string.Equals(call.OriginalName, RagToolNames.SearchAgentKnowledge, StringComparison.Ordinal) ||
-                        !message.RagRetrievals.Any(trace => trace.Status is RagRetrievalTraceStatus.Succeeded or RagRetrievalTraceStatus.NoResults)))
+                        !message.RagRetrievals.Any(trace => trace.Status is RagRetrievalTraceStatus.Succeeded or RagRetrievalTraceStatus.NoResults)).ToList();
+
+                    if (visibleToolInvocations.Count > 0)
                     {
-                        <ToolCallDisplay Call="@call" />
+                        <div class="tool-call-list">
+                            @foreach (var call in visibleToolInvocations)
+                            {
+                                <ToolCallDisplay Call="@call" />
+                            }
+                        </div>
                     }
                 }
 

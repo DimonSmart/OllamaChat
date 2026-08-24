@@ -29,9 +29,15 @@
     }
     else
     {
-        <MudText Typo="Typo.caption" Class="mud-text-secondary font-italic">
-            🛠 @ToolDisplayName — @Call.Status
-        </MudText>
+        <div class="mcp-call-summary">
+            <MudIcon Icon="@Icons.Material.Filled.Build" Size="Size.Small" Class="mcp-call-tool-icon" />
+            <MudText Typo="Typo.caption" Class="mud-text-secondary font-italic mcp-call-summary-text">
+                @ToolDisplayName
+            </MudText>
+            <MudTooltip Text="@Call.Status.ToString()">
+                <MudIcon Icon="@StatusIcon" Color="@StatusColor" Size="Size.Small" Class="@StatusIconClass" />
+            </MudTooltip>
+        </div>
     }
 </MudXChatBubble>
 
@@ -44,5 +50,27 @@
         string.Equals(Call.ServerName, "unknown", StringComparison.OrdinalIgnoreCase)
             ? Call.OriginalName.Replace('_', ' ')
             : $"{Call.ServerName}.{Call.OriginalName}";
+
+    private string StatusIcon => Call.Status switch
+    {
+        ToolInvocationStatus.Running => Icons.Material.Filled.Sync,
+        ToolInvocationStatus.Succeeded => Icons.Material.Filled.CheckCircle,
+        ToolInvocationStatus.Canceled => Icons.Material.Filled.Cancel,
+        _ => Icons.Material.Filled.Error
+    };
+
+    private Color StatusColor => Call.Status switch
+    {
+        ToolInvocationStatus.Running => Color.Info,
+        ToolInvocationStatus.Succeeded => Color.Success,
+        ToolInvocationStatus.Canceled => Color.Warning,
+        _ => Color.Error
+    };
+
+    private string StatusIconClass =>
+        Call.Status == ToolInvocationStatus.Running
+            ? "mcp-call-status-icon mcp-call-status-running"
+            : "mcp-call-status-icon";
+
     private void Toggle() => isExpanded = !isExpanded;
 }

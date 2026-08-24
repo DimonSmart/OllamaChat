@@ -367,6 +367,12 @@
     }
 }
 
+@keyframes mcp-call-status-spin {
+    to {
+        transform: rotate(360deg);
+    }
+}
+
 /* Think content styles */
 .think-content-collapsed {
     max-height: 3em;
@@ -413,6 +419,71 @@
     cursor: pointer;
     font-style: italic;
     margin: 0.25rem 0;
+}
+
+.tool-call-list {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-start;
+    gap: 0.25rem;
+    width: 100%;
+    min-width: 0;
+    max-width: 100%;
+    margin: 0.25rem 0;
+    justify-self: stretch;
+}
+
+.mudx-chat-start > .tool-call-list {
+    grid-column-start: 2;
+    justify-content: flex-start;
+}
+
+.mudx-chat-end > .tool-call-list {
+    grid-column-start: 1;
+    justify-content: flex-end;
+}
+
+.tool-call-list > .mcp-call {
+    margin: 0;
+}
+
+.tool-call-list > .mcp-call.collapsed {
+    flex: 0 1 auto;
+    width: fit-content;
+}
+
+.tool-call-list > .mcp-call.expanded {
+    flex: 1 0 100%;
+    width: 100%;
+}
+
+.tool-call-list > .mcp-call::before {
+    content: none !important;
+}
+
+.mcp-call-summary {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+    min-width: 0;
+    max-width: 100%;
+}
+
+.mcp-call-summary-text {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.mcp-call-tool-icon,
+.mcp-call-status-icon {
+    flex: 0 0 auto;
+    font-size: 1rem !important;
+}
+
+.mcp-call-status-running {
+    animation: mcp-call-status-spin 1s linear infinite;
 }
 
 /* MudX leaves clickable bubbles unclipped, allowing the ripple to overflow the chat panel. */
