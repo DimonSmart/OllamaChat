@@ -10,6 +10,7 @@ public static class AppMarkdown
         .UseAdvancedExtensions()
         .UseMathematics()
         .UseSlashParensMath()
+        .UseSoftlineBreakAsHardlineBreak()
         .Build();
 
     public static string ToHtml(string? markdown) =>
