@@ -135,10 +135,14 @@ public sealed class FileSavedChatRepository(ILogger<FileSavedChatRepository> log
                     !root.TryGetProperty("title", out var titleValue) || !root.TryGetProperty("updatedAtUtc", out var updatedValue))
                     continue;
                 var created = root.TryGetProperty("createdAtUtc", out var createdValue) ? createdValue.GetDateTime() : updatedValue.GetDateTime();
-                SavedChatRuntimeReference? reference = null;
-                if (root.TryGetProperty("launch", out var launch) && launch.TryGetProperty("runtimeReference", out var runtime))
-                    reference = runtime.Deserialize<SavedChatRuntimeReference>(JsonOptions);
-                items.Add(new SavedChatSummary(id, titleValue.GetString() ?? "New chat", updatedValue.GetDateTime(), created, reference));
+                if (!root.TryGetProperty("launch", out var launch) ||
+                    !launch.TryGetProperty("agentName", out var agentNameValue) ||
+                    string.IsNullOrWhiteSpace(agentNameValue.GetString()))
+                    continue;
+                SavedChatRuntimeReference? reference = launch.TryGetProperty("runtimeReference", out var runtime)
+                    ? runtime.Deserialize<SavedChatRuntimeReference>(JsonOptions)
+                    : null;
+                items.Add(new SavedChatSummary(id, titleValue.GetString() ?? "New chat", agentNameValue.GetString()!, updatedValue.GetDateTime(), created, reference));
             }
             catch (Exception ex) when (ex is JsonException or IOException or UnauthorizedAccessException)
             { logger.LogWarning(ex, "Skipping unreadable saved chat file {Path}.", path); }

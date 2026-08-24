@@ -8,7 +8,7 @@ namespace ChatClient.Tests;
 public sealed class FileSavedChatRepositoryTests
 {
     [Fact]
-    public async Task SaveAndGetAllAsync_RoundTripsRuntimeReferenceAndUsesCamelCaseMetadata()
+    public async Task SaveAndGetAllAsync_RoundTripsAgentNameAndRuntimeReferenceAndUsesCamelCaseMetadata()
     {
         var root = CreateRoot();
         try
@@ -19,8 +19,10 @@ public sealed class FileSavedChatRepositoryTests
 
             var summary = Assert.Single(await repository.GetAllAsync(root, TestContext.Current.CancellationToken));
             Assert.Equal(chat.Launch.RuntimeReference, summary.RuntimeReference);
+            Assert.Equal(chat.Launch.AgentName, summary.AgentName);
             var json = await File.ReadAllTextAsync(Path.Combine(root, $"{chat.Id:N}.json"), TestContext.Current.CancellationToken);
             Assert.Contains("\"runtimeReference\"", json, StringComparison.Ordinal);
+            Assert.Contains("\"agentName\"", json, StringComparison.Ordinal);
         }
         finally { Directory.Delete(root, true); }
     }
@@ -148,6 +150,10 @@ public sealed class FileSavedChatRepositoryTests
         Title = "Chat",
         CreatedAtUtc = DateTime.UtcNow,
         UpdatedAtUtc = DateTime.UtcNow,
-        Launch = new SavedChatLaunchSnapshot { RuntimeReference = new SavedChatRuntimeReference("SavedAgent", Guid.NewGuid().ToString()) }
+        Launch = new SavedChatLaunchSnapshot
+        {
+            RuntimeReference = new SavedChatRuntimeReference("SavedAgent", Guid.NewGuid().ToString()),
+            AgentName = "Test Agent"
+        }
     };
 }

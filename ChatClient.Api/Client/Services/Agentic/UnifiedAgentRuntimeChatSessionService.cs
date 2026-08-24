@@ -1623,6 +1623,7 @@ public sealed class UnifiedAgentRuntimeChatSessionService(
                 Launch = new SavedChatLaunchSnapshot
                 {
                     RuntimeReference = new SavedChatRuntimeReference(_parameters.RuntimeReference.Kind.ToString(), _parameters.RuntimeReference.Id),
+                    AgentName = _chat.Agents.FirstOrDefault()?.AgentName ?? throw new InvalidOperationException("The saved chat agent name is unavailable."),
                     Model = _parameters.RuntimeDefaultModel,
                     Inputs = new Dictionary<string, string>(_parameters.RuntimeInputs, StringComparer.OrdinalIgnoreCase),
                     Overrides = new SavedChatOverrides

@@ -29,6 +29,7 @@
                     <MudStack Row="true" AlignItems="AlignItems.Center" Class="w-100">
                         <MudStack Spacing="0">
                             <MudText>@chat.Title</MudText>
+                            <MudText Typo="Typo.caption">Agent · @chat.AgentName</MudText>
                             @if (_openingChatId == chat.Id)
                             {
                                 <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="1">
@@ -73,7 +74,10 @@
     private Guid? _openingChatId;
     private string? _openStatus;
     private bool IsOpeningChat => _openingChatId is not null;
-    private IReadOnlyList<SavedChatSummary> FilteredChats => _chats.Where(chat => string.IsNullOrWhiteSpace(_search) || chat.Title.Contains(_search, StringComparison.OrdinalIgnoreCase)).ToList();
+    private IReadOnlyList<SavedChatSummary> FilteredChats => _chats.Where(chat =>
+        string.IsNullOrWhiteSpace(_search) ||
+        chat.Title.Contains(_search, StringComparison.OrdinalIgnoreCase) ||
+        chat.AgentName.Contains(_search, StringComparison.OrdinalIgnoreCase)).ToList();
 
     protected override async Task OnInitializedAsync()
     {

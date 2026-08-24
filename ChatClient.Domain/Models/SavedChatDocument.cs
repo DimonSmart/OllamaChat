@@ -4,7 +4,7 @@ namespace ChatClient.Domain.Models;
 
 public sealed class SavedChatDocument
 {
-    public const int CurrentFormatVersion = 1;
+    public const int CurrentFormatVersion = 2;
     [JsonPropertyName("formatVersion")] public int FormatVersion { get; set; } = CurrentFormatVersion;
     [JsonPropertyName("id")] public Guid Id { get; set; }
     [JsonPropertyName("title")] public string Title { get; set; } = string.Empty;
@@ -20,6 +20,7 @@ public sealed class SavedChatDocument
 public sealed class SavedChatLaunchSnapshot
 {
     [JsonPropertyName("runtimeReference")] public SavedChatRuntimeReference? RuntimeReference { get; set; }
+    [JsonPropertyName("agentName")] public string AgentName { get; set; } = string.Empty;
     [JsonPropertyName("model")] public ServerModel? Model { get; set; }
     [JsonPropertyName("inputs")] public Dictionary<string, string> Inputs { get; set; } = new(StringComparer.OrdinalIgnoreCase);
     [JsonPropertyName("overrides")] public SavedChatOverrides Overrides { get; set; } = new();
@@ -39,4 +40,4 @@ public sealed class SavedChatNativeSession
     [JsonPropertyName("snapshot")] public string SnapshotJson { get; set; } = string.Empty;
 }
 
-public sealed record SavedChatSummary(Guid Id, string Title, DateTime UpdatedAtUtc, DateTime CreatedAtUtc, SavedChatRuntimeReference? RuntimeReference);
+public sealed record SavedChatSummary(Guid Id, string Title, string AgentName, DateTime UpdatedAtUtc, DateTime CreatedAtUtc, SavedChatRuntimeReference? RuntimeReference);
