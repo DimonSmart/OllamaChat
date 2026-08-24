@@ -8,3 +8,12 @@
 .session-state-drawer-layout ::deep details[open] > summary {
     list-style-type: disclosure-open;
 }
+
+.session-state-drawer-layout ::deep .trace-agent-visual {
+    display: inline-block;
+    margin-right: .25rem;
+    font-size: 1em;
+    line-height: 1;
+    vertical-align: baseline;
+    white-space: nowrap;
+}

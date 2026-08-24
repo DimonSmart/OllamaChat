@@ -43,7 +43,7 @@
                 <MudText Typo="Typo.caption" Class="mt-2">@run.Status · @FormatDuration(run.CompletedAt - run.StartedAt) · @run.Spans.Count spans</MudText>
                 <MudText Typo="Typo.caption" Class="mud-text-secondary">Trace: @run.TraceId</MudText>
                 @if (run.IsTruncated) { <MudText Typo="Typo.caption" Color="Color.Warning">Trace truncated</MudText> }
-                @foreach (var node in BuildForest(run)) { @RenderNode(node, 0) }
+                @RenderRun(run)
             }
         }
     </div>
@@ -54,16 +54,46 @@
     public EventCallback OnClose { get; set; }
 
     private HarnessTraceSessionSnapshot snapshot = new([]);
+    private readonly Dictionary<string, AgentVisualIdentityMap> agentVisualsByRun = new(StringComparer.Ordinal);
     private string? selectedRunId;
     private bool followLatest = true;
     private HarnessTraceRunSnapshot? SelectedRun => snapshot.Runs.FirstOrDefault(run => run.RunId == selectedRunId);
     protected override void OnInitialized() { TraceSession.Changed += Changed; Refresh(); }
     private void Changed() => _ = InvokeAsync(() => { Refresh(); StateHasChanged(); });
-    private void Refresh() { snapshot = TraceSession.GetSnapshot(); if (followLatest || !snapshot.Runs.Any(run => run.RunId == selectedRunId)) selectedRunId = snapshot.Runs.FirstOrDefault()?.RunId; }
+    private void Refresh()
+    {
+        snapshot = TraceSession.GetSnapshot();
+        var activeRunIds = snapshot.Runs.Select(run => run.RunId).ToHashSet(StringComparer.Ordinal);
+        foreach (var runId in agentVisualsByRun.Keys.Where(runId => !activeRunIds.Contains(runId)).ToArray()) agentVisualsByRun.Remove(runId);
+        if (followLatest || !snapshot.Runs.Any(run => run.RunId == selectedRunId)) selectedRunId = snapshot.Runs.FirstOrDefault()?.RunId;
+    }
     private Task SelectRun(string runId) { selectedRunId = runId; followLatest = string.Equals(runId, snapshot.Runs.FirstOrDefault()?.RunId, StringComparison.Ordinal); return Task.CompletedTask; }
-    private void Clear() { followLatest = true; TraceSession.Clear(); }
+    private void Clear() { followLatest = true; agentVisualsByRun.Clear(); TraceSession.Clear(); }
     private Task CloseAsync() => OnClose.InvokeAsync();
     private static string RunLabel(HarnessTraceRunSnapshot run) => $"Run {run.StartedAt.LocalDateTime:T} · {run.Status} · {run.Spans.Count} spans";
+    private RenderFragment RenderRun(HarnessTraceRunSnapshot run)
+    {
+        var roots = BuildForest(run);
+        var visuals = GetAgentVisuals(run.RunId);
+        foreach (var node in Enumerate(roots).OrderBy(node => node.Span.StartedAt))
+        {
+            var agentIdentity = AgentIdentity(node);
+            if (!string.IsNullOrWhiteSpace(agentIdentity)) visuals.GetOrAdd(agentIdentity);
+        }
+
+        return builder =>
+        {
+            var sequence = 0;
+            foreach (var root in roots) builder.AddContent(sequence++, RenderNode(root, 0, visuals));
+        };
+    }
+    private AgentVisualIdentityMap GetAgentVisuals(string runId)
+    {
+        if (agentVisualsByRun.TryGetValue(runId, out var visuals)) return visuals;
+        visuals = new AgentVisualIdentityMap();
+        agentVisualsByRun.Add(runId, visuals);
+        return visuals;
+    }
     private static IReadOnlyList<TraceNode> BuildForest(HarnessTraceRunSnapshot run)
     {
         var nodes = run.Spans.Select(span => new TraceNode(span)).ToDictionary(node => $"{node.Span.TraceId}/{node.Span.SpanId}"); var roots = new List<TraceNode>();
@@ -71,24 +101,39 @@
         Sort(roots); return roots;
     }
     private static void Sort(List<TraceNode> nodes) { nodes.Sort((left, right) => left.Span.StartedAt.CompareTo(right.Span.StartedAt)); foreach (var node in nodes) Sort(node.Children); }
-    private RenderFragment RenderNode(TraceNode node, int depth) => builder =>
+    private static IEnumerable<TraceNode> Enumerate(IEnumerable<TraceNode> nodes)
+    {
+        foreach (var node in nodes)
+        {
+            yield return node;
+            foreach (var child in Enumerate(node.Children)) yield return child;
+        }
+    }
+    private RenderFragment RenderNode(TraceNode node, int depth, AgentVisualIdentityMap visuals) => builder =>
     {
         var sequence = 0; builder.OpenElement(sequence++, "div"); builder.AddAttribute(sequence++, "style", $"margin-left:{depth * 16}px");
-        builder.OpenElement(sequence++, "details"); builder.OpenElement(sequence++, "summary"); builder.AddContent(sequence++, SpanDisplayName(node));
+        builder.OpenElement(sequence++, "details"); builder.OpenElement(sequence++, "summary");
+        var agentIdentity = AgentIdentity(node);
+        if (!string.IsNullOrWhiteSpace(agentIdentity))
+        {
+            var visual = visuals.GetOrAdd(agentIdentity);
+            builder.OpenElement(sequence++, "span"); builder.AddAttribute(sequence++, "class", "trace-agent-visual"); builder.AddContent(sequence++, visual.DisplayText); builder.CloseElement();
+        }
+        builder.AddContent(sequence++, SpanDisplayName(node));
         builder.AddContent(sequence++, $" · {FormatDuration(node.Span.Duration)}"); builder.CloseElement();
-        builder.AddContent(sequence++, RenderDetails(node.Span)); foreach (var child in node.Children) builder.AddContent(sequence++, RenderNode(child, depth + 1)); builder.CloseElement(); builder.CloseElement();
+        builder.AddContent(sequence++, RenderDetails(node.Span)); foreach (var child in node.Children) builder.AddContent(sequence++, RenderNode(child, depth + 1, visuals)); builder.CloseElement(); builder.CloseElement();
     };
+    private static string? AgentIdentity(TraceNode node)
+    {
+        if (!string.Equals(SpanDisplayName(node.Span), "background_agents.start_task", StringComparison.Ordinal)) return null;
+        return AgentVisualIdentityResolver.Resolve(node.Span, node.Children.Select(child => child.Span));
+    }
     private static string SpanDisplayName(TraceNode node)
     {
         var displayName = SpanDisplayName(node.Span);
         if (!string.Equals(displayName, "background_agents.start_task", StringComparison.Ordinal)) return displayName;
 
-        var agentName = node.Children
-            .Select(child => child.Span)
-            .Where(span => string.Equals(TagValue(span, "gen_ai.operation.name"), "invoke_agent", StringComparison.Ordinal))
-            .Select(span => TagValue(span, "gen_ai.agent.name"))
-            .FirstOrDefault(name => !string.IsNullOrWhiteSpace(name));
-
+        var agentName = AgentVisualIdentityResolver.FindAgentName(node.Span, node.Children.Select(child => child.Span));
         return string.IsNullOrWhiteSpace(agentName) ? displayName : $"{displayName} · {agentName}";
     }
     private static string SpanDisplayName(HarnessTraceSpanSnapshot span)
