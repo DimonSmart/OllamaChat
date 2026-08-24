@@ -40,3 +40,4 @@ Git history is the source for deleted or previous document versions.
 | IDD-0026 | Spec | Agent compaction profiles | Reusable Harness context-compaction policies | — |
 | IDD-0027 | Spec | Agent skills provider profiles | Reusable Harness file-based skills | — |
 | IDD-0028 | Spec | Saved chats | Local persistent resumable chats | — |
+| IDD-0029 | Spec | Development startup | Backend-only development and executable browser-launch behavior | — |

@@ -77,6 +77,7 @@ try
 
     app.UseRouting();
 
+    app.MapGet("/healthz", () => Results.Ok(new { status = "ok" }));
     app.MapGet("/api/knowledge-stores/{storeId:guid}/documents/{documentId:guid}/source", async (Guid storeId, Guid documentId, IKnowledgeStoreService stores, IKnowledgeDocumentStorage documents, CancellationToken cancellationToken) =>
     {
         var store = await stores.GetAsync(storeId, cancellationToken);
@@ -93,7 +94,11 @@ try
     app.MapRazorPages();
     app.MapBlazorHub();
     app.MapFallbackToPage("/_Host");
-    app.RegisterBrowserLaunch();
+
+    if (!app.Environment.IsDevelopment())
+    {
+        app.RegisterBrowserLaunch();
+    }
 
     await app.RunAsync();
 }
