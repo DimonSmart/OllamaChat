@@ -1,5 +1,8 @@
+using ChatClient.Api;
 using ChatClient.Api.Services;
 using Microsoft.AspNetCore.Components.Server.Circuits;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging.Abstractions;
 using System.Reflection;
@@ -9,6 +12,26 @@ namespace ChatClient.Tests;
 
 public class AutoShutdownCircuitHandlerTests
 {
+    [Theory]
+    [InlineData("Development", false)]
+    [InlineData("Production", true)]
+    public void AddApplicationServices_RegistersAutoShutdownOnlyOutsideDevelopment(
+        string environmentName,
+        bool expectedRegistration)
+    {
+        var services = new ServiceCollection();
+        var configuration = new ConfigurationBuilder().Build();
+        var environment = new TestHostEnvironment { EnvironmentName = environmentName };
+
+        services.AddApplicationServices(configuration, environment);
+
+        var registration = services.SingleOrDefault(descriptor =>
+            descriptor.ServiceType == typeof(CircuitHandler) &&
+            descriptor.ImplementationType == typeof(AutoShutdownCircuitHandler));
+
+        Assert.Equal(expectedRegistration, registration is not null);
+    }
+
     private sealed class TestLifetime : IHostApplicationLifetime
     {
         public bool Stopped { get; private set; }
@@ -16,6 +39,14 @@ public class AutoShutdownCircuitHandlerTests
         public CancellationToken ApplicationStopping => CancellationToken.None;
         public CancellationToken ApplicationStopped => CancellationToken.None;
         public void StopApplication() => Stopped = true;
+    }
+
+    private sealed class TestHostEnvironment : IHostEnvironment
+    {
+        public string EnvironmentName { get; set; } = Environments.Development;
+        public string ApplicationName { get; set; } = "ChatClient.Tests";
+        public string ContentRootPath { get; set; } = AppContext.BaseDirectory;
+        public Microsoft.Extensions.FileProviders.IFileProvider ContentRootFileProvider { get; set; } = null!;
     }
 
     [Fact]

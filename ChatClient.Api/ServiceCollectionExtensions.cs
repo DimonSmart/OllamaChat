@@ -252,7 +252,10 @@ public static class ServiceCollectionExtensions
         services.AddMudServices();
         services.AddSingleton<IMcpServerInternalEditorRegistry, McpServerInternalEditorRegistry>();
 
-        services.AddSingleton<CircuitHandler, AutoShutdownCircuitHandler>();
+        if (!environment.IsDevelopment())
+        {
+            services.AddSingleton<CircuitHandler, AutoShutdownCircuitHandler>();
+        }
 
         return services;
     }
