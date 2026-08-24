@@ -1,33 +1,30 @@
-﻿{
-  "$schema": "https://json.schemastore.org/launchsettings.json",
+{
   "profiles": {
     "http": {
       "commandName": "Project",
-      "dotnetRunMessages": true,
-      "launchBrowser": false,
-      "launchUrl": "",
       "environmentVariables": {
         "ASPNETCORE_ENVIRONMENT": "Development"
-      }
+      },
+      "dotnetRunMessages": true
     },
     "https": {
       "commandName": "Project",
-      "dotnetRunMessages": true,
-      "launchBrowser": false,
-      "launchUrl": "",
+      "launchBrowser": true,
+      "launchUrl": "https://localhost:5001",
       "environmentVariables": {
         "ASPNETCORE_ENVIRONMENT": "Development"
-      }
+      },
+      "dotnetRunMessages": true
     },
     "backend": {
       "commandName": "Project",
-      "dotnetRunMessages": true,
-      "launchBrowser": false,
-      "applicationUrl": "http://127.0.0.1:5080",
       "environmentVariables": {
         "ASPNETCORE_ENVIRONMENT": "Development",
         "OLLAMACHAT_DISABLE_BROWSER_LAUNCH": "1"
-      }
+      },
+      "dotnetRunMessages": true,
+      "applicationUrl": "http://127.0.0.1:5080"
     }
-  }
+  },
+  "$schema": "https://json.schemastore.org/launchsettings.json"
 }
