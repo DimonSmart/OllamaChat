@@ -38,7 +38,7 @@ public sealed class AgentDefinitionLaunchCapabilityAnalyzer(
 
             var agent = await agentTemplateService.GetByIdAsync(agentId)
                 ?? throw new KeyNotFoundException($"Saved agent '{reference.Id}' was not found.");
-            return AnalyzeAgent(agent);
+            return await AnalyzeAgentAsync(agent, visited, cancellationToken);
         }
 
         if (!Guid.TryParse(reference.Id, out var workflowId))
@@ -82,6 +82,27 @@ public sealed class AgentDefinitionLaunchCapabilityAnalyzer(
         };
     }
 
+    private async Task<AgentLaunchCapabilities> AnalyzeAgentAsync(
+        AgentTemplateDefinition agent,
+        HashSet<string> visited,
+        CancellationToken cancellationToken)
+    {
+        var capabilities = AnalyzeAgent(agent);
+
+        foreach (var backgroundAgentId in agent.BackgroundAgentIds.Distinct())
+        {
+            var backgroundCapabilities = await AnalyzeAsync(
+                new AgentDefinitionReference(
+                    AgentDefinitionKind.SavedAgent,
+                    backgroundAgentId.ToString("D")),
+                visited,
+                cancellationToken);
+            capabilities = Merge(capabilities, backgroundCapabilities);
+        }
+
+        return capabilities;
+    }
+
     private static AgentLaunchCapabilities AnalyzeAgent(AgentTemplateDefinition agent)
     {
         var supportsSandbox = agent.EnableShell;
@@ -91,4 +112,14 @@ public sealed class AgentDefinitionLaunchCapabilityAnalyzer(
             SupportsSandboxProfile = supportsSandbox
         };
     }
+
+    private static AgentLaunchCapabilities Merge(
+        AgentLaunchCapabilities left,
+        AgentLaunchCapabilities right) =>
+        new()
+        {
+            SupportsMcpBindingOverrides = left.SupportsMcpBindingOverrides || right.SupportsMcpBindingOverrides,
+            SupportsWorkspace = left.SupportsWorkspace || right.SupportsWorkspace,
+            SupportsSandboxProfile = left.SupportsSandboxProfile || right.SupportsSandboxProfile
+        };
 }

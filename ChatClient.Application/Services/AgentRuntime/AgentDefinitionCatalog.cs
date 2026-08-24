@@ -18,8 +18,13 @@ public sealed class AgentDefinitionCatalog(
         var agents = await agentTemplateService.GetAllAsync();
         var workflows = await workflowDefinitionService.GetAllAsync();
 
-        return agents.Select(CreateAgentDescriptor)
-            .Concat(await Task.WhenAll(workflows.Select(workflow => CreateWorkflowDescriptorAsync(workflow, cancellationToken))))
+        var agentDescriptors = await Task.WhenAll(
+            agents.Select(agent => CreateAgentDescriptorAsync(agent, cancellationToken)));
+        var workflowDescriptors = await Task.WhenAll(
+            workflows.Select(workflow => CreateWorkflowDescriptorAsync(workflow, cancellationToken)));
+
+        return agentDescriptors
+            .Concat(workflowDescriptors)
             .OrderBy(static item => item.Name, StringComparer.OrdinalIgnoreCase)
             .ThenBy(static item => item.Reference.Kind)
             .ThenBy(static item => item.Reference.Id, StringComparer.OrdinalIgnoreCase)
@@ -38,7 +43,7 @@ public sealed class AgentDefinitionCatalog(
         return reference.Kind switch
         {
             AgentDefinitionKind.SavedAgent => await agentTemplateService.GetByIdAsync(id) is { } agent
-                ? CreateAgentDescriptor(agent)
+                ? await CreateAgentDescriptorAsync(agent, cancellationToken)
                 : null,
             AgentDefinitionKind.SavedWorkflow => await workflowDefinitionService.GetByIdAsync(id) is { } workflow
                 ? await CreateWorkflowDescriptorAsync(workflow, cancellationToken)
@@ -53,29 +58,53 @@ public sealed class AgentDefinitionCatalog(
         await FindAsync(reference, cancellationToken) ??
         throw new KeyNotFoundException($"Saved definition '{reference.Kind}:{reference.Id}' was not found.");
 
-    private static AgentDefinitionDescriptor CreateAgentDescriptor(Domain.Models.AgentTemplateDefinition agent) =>
-        new()
+    private async Task<AgentDefinitionDescriptor> CreateAgentDescriptorAsync(
+        Domain.Models.AgentTemplateDefinition agent,
+        CancellationToken cancellationToken)
+    {
+        var reference = new AgentDefinitionReference(
+            AgentDefinitionKind.SavedAgent,
+            agent.Id.ToString("D"));
+        var definitionProblems = new List<AgentDefinitionProblem>();
+        var launchCapabilities = new AgentLaunchCapabilities
         {
-            Reference = new AgentDefinitionReference(
-                AgentDefinitionKind.SavedAgent,
-                agent.Id.ToString("D")),
+            SupportsMcpBindingOverrides = true,
+            SupportsWorkspace = agent.FileAccessProviderProfileId is not null || agent.EnableShell,
+            SupportsSandboxProfile = agent.EnableShell
+        };
+
+        try
+        {
+            var effectiveCapabilities = await launchCapabilityAnalyzer.AnalyzeAsync(reference, cancellationToken);
+            launchCapabilities = new AgentLaunchCapabilities
+            {
+                SupportsMcpBindingOverrides = true,
+                SupportsWorkspace = effectiveCapabilities.SupportsWorkspace,
+                SupportsSandboxProfile = effectiveCapabilities.SupportsSandboxProfile
+            };
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            definitionProblems.Add(new AgentDefinitionProblem($"Invalid saved agent definition: {ex.Message}"));
+        }
+
+        return new AgentDefinitionDescriptor
+        {
+            Reference = reference,
             Name = agent.AgentName,
             Description = agent.Summary,
             RuntimeKind = AgentRuntimeKind.LlmAgent,
-            AvatarText = agent.AvatarText,
+            AvatarText = agent.AvatarText ?? string.Empty,
             ConfiguredModel = new ServerModelSelection(agent.LlmId, agent.ModelName),
             ModelRequirement = AgentModelRequirement.Required,
-            LaunchCapabilities = new AgentLaunchCapabilities
-            {
-                SupportsMcpBindingOverrides = true,
-                SupportsWorkspace = agent.FileAccessProviderProfileId is not null || agent.EnableShell,
-                SupportsSandboxProfile = agent.EnableShell
-            },
+            LaunchCapabilities = launchCapabilities,
             DefaultMcpServerBindings = agent.McpServerBindings
                 .Select(static binding => binding.Clone())
                 .ToList(),
-            SupportsAttachments = true
+            SupportsAttachments = true,
+            DefinitionProblems = definitionProblems
         };
+    }
 
     private async Task<AgentDefinitionDescriptor> CreateWorkflowDescriptorAsync(
         Domain.Models.SavedWorkflowDefinition workflow,

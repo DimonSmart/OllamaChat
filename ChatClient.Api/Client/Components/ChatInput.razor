@@ -52,6 +52,7 @@
                       Adornment="Adornment.End"
                       AdornmentIcon="@(ShowStopButton ? Icons.Material.Filled.Stop : Icons.Material.Filled.Send)"
                       AdornmentColor="@(ShowStopButton ? Color.Error : Color.Primary)"
+                      AdornmentAriaLabel="@(ShowStopButton ? "Stop generation" : "Send message")"
                       OnAdornmentClick="HandleAdornmentClick"
                       OnKeyDown="HandleKeyDown"
                       title="@(ShowStopButton ? "Stop generation" : "Send message (Ctrl+Enter)")" />

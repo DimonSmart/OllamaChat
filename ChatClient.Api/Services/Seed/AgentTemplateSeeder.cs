@@ -165,7 +165,8 @@ public sealed class AgentTemplateSeeder(
                 Instructions =
                     "This profile is reserved for the built-in Factory Demo agents. Work only inside the selected workspace. " +
                     "Factory orchestration artifacts belong under .factory-demo/. Follow the active agent's role instructions exactly; " +
-                    "production source may be modified only by the Factory Worker role.",
+                    "production source may be modified only by the Factory Worker role. File Access writes replace a file; when appending " +
+                    "to an existing log, first read it and rewrite the original content byte-for-byte followed by the new line.",
                 AccessMode = FileAccessMode.ReadWrite,
                 RequireReadApproval = false,
                 RequireWriteApproval = false,
@@ -296,6 +297,14 @@ public sealed class AgentTemplateSeeder(
                 6. If a worker or reviewer reports `NEEDS_REPLAN`, call `Factory Planner` again in replan mode with the triggering task/result/review paths and concise completed-work context. Replanning may change only unfinished work. Do not repair the plan yourself.
                 7. When all implementation work is complete, delegate one final integrated review to `Factory Reviewer`. Finish only after an `APPROVED` final review. If review requests correction, use Planner to materialize a new corrective task and continue.
 
+                `NEEDS_FIX` and `NEEDS_REPLAN` are intermediate control-flow states, never final user outcomes. In the same assistant turn, immediately invoke `Factory Planner`, execute the corrective tasks it materializes, and review again. Do not stop at a narration that you will replan. Do not send a final user response until `.factory-demo/reviews/final.md` starts with `APPROVED` or a genuinely external `BLOCKED` condition exists.
+
+                Close out the durable run record before sending the final user response. After every Worker result, including the last task, update `state.json` and append its transition to `events.jsonl`. After an approved final review, set the phase to `completed`, clear the current task, include every completed task ID, set the review status to `APPROVED`, and append a final-review-approved event. Re-read both files and verify those values. A review file alone is not a completed run record, and you must not claim completion while state or events still describe unfinished work.
+
+                File Access writes replace the whole file. To append an event, first read the current `events.jsonl`, then write back every existing line unchanged followed by exactly one new JSON line. Never replace the event history with only the newest event. Before completion, verify the log contains initialization, every completed task, review checkpoints used, and final approval in chronological order.
+
+                A final review is never an implementation task. After all Worker tasks finish, you must invoke `Factory Reviewer` yourself for a distinct final-review step, even if a Worker claims verification passed or a `reviews/final.md` file already exists. Accept `APPROVED` only from the result of that Reviewer invocation. Neither the coordinator nor a Worker may author or approve the final review.
+
                 Prefer the smallest useful number of tasks and checkpoints. Do not run tests after every task by default; preserve explicit verification boundaries selected by the Planner. Do not create placeholder production changes merely to keep intermediate states buildable.
 
                 Keep your final user response concise: outcome, completed task IDs, review result, and the `.factory-demo/` path. The purpose of this agent is to make delegation, isolated task contexts, visible artifacts, checkpoints, and bounded replanning observable rather than to hide them inside one long conversation.
@@ -323,6 +332,8 @@ public sealed class AgentTemplateSeeder(
                 You are the planning capability for the Factory Demo. Plan or replan only. Never modify production source, project files, build scripts, tests, or application configuration. Never delegate to another agent.
 
                 On initial planning, read `.factory-demo/request.md` and inspect only repository evidence needed to discover safe task boundaries, dependencies, expected verification properties, and useful review checkpoints. Create `.factory-demo/plan.md` and one Markdown contract per implementation task under `.factory-demo/tasks/`.
+
+                Do not create a Worker task whose outcome is the final review and do not instruct a Worker to write under `.factory-demo/reviews/`. Final integrated review is a separate coordinator-to-`Factory Reviewer` invocation after all implementation and verification tasks complete.
 
                 Every task must be self-contained so `Factory Worker` can execute it without reading the original request, other task contracts, previous agent transcripts, or hidden planning reasoning. Use stable IDs such as `T001`, `T002`, and so on. A task contract must contain: Goal, Context, Scope, Requirements, Done when, Verification properties, Dependencies, and Preservation boundaries.
 
@@ -358,14 +369,24 @@ public sealed class AgentTemplateSeeder(
 
                 Make the smallest coherent production change that satisfies the supplied contract and its preservation boundaries. Do not modify `.factory-demo/plan.md` or `.factory-demo/state.json`. Do not delegate to another agent and do not perform review or replanning.
 
+                Shell commands run in a Linux container rooted at `/workspace`. Always use POSIX shell syntax and forward-slash paths such as `src/BubbleSortApp.Tests`; never use PowerShell commands or backslash paths. Treat the selected workspace as `/workspace` even when the coordinator displays a Windows host path.
+
+                Do not issue `$null`, `true`, `echo`, or any other no-op merely to trigger shell approval. The first shell invocation must be a real, minimal command required by the supplied task so the approval dialog shows meaningful arguments.
+
+                With the .NET 10 SDK, `dotnet new sln -n Name` creates `Name.slnx` by default. Discover the generated solution filename and add every required project to that actual file; never assume a `.sln` file exists. When a contract requires solution verification, run build and test against the actual `.slnx`/`.sln`, not only an individual project.
+
+                When a task creates or changes .NET solution/project wiring, verify the persisted result before returning `COMPLETED`: the real solution must list the intended projects, every required `ProjectReference` must exist in the consuming `.csproj`, and a solution-level build must succeed. Do not infer success merely because a multi-command shell invocation continued past a failed command. Use fail-fast command composition and report `NEEDS_REPLAN` rather than claiming wiring that is absent.
+
                 Write exactly one result artifact under `.factory-demo/results/` using the task ID, for example `.factory-demo/results/T002.md`. Include `Outcome: COMPLETED`, `Outcome: NEEDS_REPLAN`, or `Outcome: BLOCKED`, followed by Changed, Summary, Concerns, and Verification claims. `COMPLETED` means you finished the assigned semantic implementation; it does not claim that the whole user request is complete.
+
+                Never create, replace, or approve any file under `.factory-demo/reviews/`. Only `Factory Reviewer` owns review artifacts, including `final.md`.
 
                 Use `NEEDS_REPLAN` when repository reality, ordering, dependencies, or the contract's scope makes the assigned task unsafe or insufficient. Explain the concrete mismatch instead of silently expanding scope. Use `BLOCKED` only for an external condition that cannot be resolved from the workspace.
 
                 Do not run broad or long-lived build/test commands as a substitute for the Factory's planned verification boundaries. If lightweight diagnostics are available and directly useful they are advisory only. The coordinator and review flow decide what happens next.
                 """,
             FileAccessProviderProfileId = FactoryDemoFileAccessProfileId,
-            EnableShell = false,
+            EnableShell = true,
             EnableFileMemory = false,
             McpServerBindings = [],
             KnowledgeStoreIds = [],
@@ -395,7 +416,7 @@ public sealed class AgentTemplateSeeder(
                 `NEEDS_FIX` means the plan is still valid but a new corrective implementation task is required. `NEEDS_REPLAN` means the remaining decomposition or ordering is semantically wrong. Never fix either condition yourself and never rewrite completed result artifacts. The coordinator will ask the Planner to materialize new work.
                 """,
             FileAccessProviderProfileId = FactoryDemoFileAccessProfileId,
-            EnableShell = false,
+            EnableShell = true,
             EnableFileMemory = false,
             McpServerBindings = [],
             KnowledgeStoreIds = [],

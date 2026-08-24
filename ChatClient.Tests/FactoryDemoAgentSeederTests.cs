@@ -64,16 +64,36 @@ public sealed class FactoryDemoAgentSeederTests
             Assert.Empty(worker.BackgroundAgentIds);
             Assert.Empty(reviewer.BackgroundAgentIds);
 
+            Assert.False(coordinator.EnableShell);
+            Assert.False(planner.EnableShell);
+            Assert.True(worker.EnableShell);
+            Assert.True(reviewer.EnableShell);
+            Assert.Contains("NEEDS_FIX` and `NEEDS_REPLAN` are intermediate control-flow states", coordinator.Content);
+            Assert.Contains("Do not stop at a narration that you will replan", coordinator.Content);
+            Assert.Contains("Close out the durable run record before sending the final user response", coordinator.Content);
+            Assert.Contains("set the phase to `completed`", coordinator.Content);
+            Assert.Contains("Never replace the event history with only the newest event", coordinator.Content);
+            Assert.Contains("you must invoke `Factory Reviewer` yourself", coordinator.Content);
+            Assert.Contains("Accept `APPROVED` only from the result of that Reviewer invocation", coordinator.Content);
+            Assert.Contains("Do not create a Worker task whose outcome is the final review", planner.Content);
+            Assert.Contains("Shell commands run in a Linux container rooted at `/workspace`", worker.Content);
+            Assert.Contains("never use PowerShell commands or backslash paths", worker.Content);
+            Assert.Contains("Do not issue `$null`, `true`, `echo`, or any other no-op", worker.Content);
+            Assert.Contains("creates `Name.slnx` by default", worker.Content);
+            Assert.Contains("every required `ProjectReference` must exist", worker.Content);
+            Assert.Contains("Use fail-fast command composition", worker.Content);
+            Assert.Contains("Never create, replace, or approve any file under `.factory-demo/reviews/`", worker.Content);
+
             foreach (var template in new[] { coordinator, planner, worker, reviewer })
             {
                 Assert.Equal(FactoryDemoFileAccessProfileId, template.FileAccessProviderProfileId);
-                Assert.False(template.EnableShell);
                 Assert.False(template.EnableFileMemory);
             }
 
             var profiles = await fileAccessRepository.GetAllAsync(TestContext.Current.CancellationToken);
             var profile = Assert.Single(profiles, item => item.Id == FactoryDemoFileAccessProfileId);
             Assert.Equal("Factory Demo Workspace", profile.Name);
+            Assert.Contains("File Access writes replace a file", profile.Instructions);
             Assert.Equal(FileAccessMode.ReadWrite, profile.AccessMode);
             Assert.False(profile.RequireReadApproval);
             Assert.False(profile.RequireWriteApproval);

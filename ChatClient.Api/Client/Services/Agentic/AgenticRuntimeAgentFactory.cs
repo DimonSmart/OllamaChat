@@ -311,7 +311,8 @@ public sealed class AgenticRuntimeAgentFactory(
                 chatClient, request, server, toolSet, knowledgeSearchService, hasConfiguredKnowledge,
                 supportsFunctions, ragConfiguration, todoProfile, agentModeProfile, fileAccessProfile,
                 workspaceStore, fileMemoryStore, shellExecutor, loggerFactory, compaction, ragTraceSink, skills.Source,
-                backgroundDefinitions.Select(static definition => definition.Agent).ToList());
+                backgroundDefinitions.Select(static definition => definition.Agent).ToList(),
+                isBackgroundAgent: !includeBackgroundAgents);
             return new HarnessAgentRuntimeDefinition(
                 runtimeAgent,
                 server,
@@ -463,7 +464,8 @@ public sealed class AgenticRuntimeAgentFactory(
         ResolvedCompactionStrategy? compaction,
         IRagRetrievalTraceSink? ragTraceSink,
         AgentSkillsSource? skillsSource,
-        IReadOnlyList<AIAgent> backgroundAgents)
+        IReadOnlyList<AIAgent> backgroundAgents,
+        bool isBackgroundAgent)
     {
         // Harness owns the function-invocation loop, session history and compaction.
         // The direct-chat service must not rebuild any of that state from its UI transcript.
@@ -507,9 +509,20 @@ public sealed class AgenticRuntimeAgentFactory(
                     $"Tool name '{SandboxToolNames.RunShell}' is already registered for this agent.");
             }
 
-            agentOptions.ChatOptions.Tools.Add(shellExecutor.AsAIFunction(
-                name: SandboxToolNames.RunShell,
-                requireApproval: true));
+            var shellFunction = isBackgroundAgent
+                ? shellExecutor.AsCoordinatedAIFunction(
+                    request.RuntimeResources.ToolApprovalCoordinator
+                        ?? throw new InvalidOperationException("A tool approval coordinator is required for a shell-enabled Background Agent."),
+                    request.RuntimeResources.ToolApprovalPolicy
+                        ?? throw new InvalidOperationException("A tool approval policy is required for a shell-enabled Background Agent."),
+                    request.Agent.AgentId,
+                    request.RuntimeResources.WorkspacePath
+                        ?? throw new InvalidOperationException("A workspace directory is required for a shell-enabled Background Agent."),
+                    name: SandboxToolNames.RunShell)
+                : shellExecutor.AsAIFunction(
+                    name: SandboxToolNames.RunShell,
+                    requireApproval: true);
+            agentOptions.ChatOptions.Tools.Add(shellFunction);
         }
 
         ConfigureTodoCompletionLoop(agentOptions, request.Agent);

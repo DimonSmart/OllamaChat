@@ -19,6 +19,7 @@ public sealed class HarnessResponseEventProjector(ILogger<HarnessResponseEventPr
         };
 
         private readonly Dictionary<string, PendingToolCall> _pendingCalls = new(StringComparer.Ordinal);
+        private readonly HashSet<string> _suppressedCallIds = new(StringComparer.Ordinal);
 
         public IReadOnlyList<HarnessResponseEvent> Project(
             AgentResponseUpdate update,
@@ -40,8 +41,15 @@ public sealed class HarnessResponseEventProjector(ILogger<HarnessResponseEventPr
                         events.Add(new HarnessTextDelta(text.Text));
                         break;
 
+                    case FunctionCallContent call when IsBackgroundAgentControlCall(call.Name):
+                        _suppressedCallIds.Add(call.CallId);
+                        break;
+
                     case FunctionCallContent call:
                         events.Add(ProjectCall(call, metadataByName, update.CreatedAt));
+                        break;
+
+                    case FunctionResultContent result when _suppressedCallIds.Remove(result.CallId):
                         break;
 
                     case FunctionResultContent result:
@@ -73,6 +81,9 @@ public sealed class HarnessResponseEventProjector(ILogger<HarnessResponseEventPr
 
             return events;
         }
+
+        private static bool IsBackgroundAgentControlCall(string name) =>
+            name.StartsWith("background_agents_", StringComparison.Ordinal);
 
         private HarnessToolCallStarted ProjectCall(
             FunctionCallContent call,

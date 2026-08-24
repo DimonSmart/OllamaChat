@@ -36,12 +36,25 @@
                 else
                 {
                     <MudStack Spacing="0" Class="app-compact-form">
-                        <MudSelect T="AgentDefinitionDescriptor" Label="Select Agent or Workflow" Value="selectedDefinition" ValueChanged="OnDefinitionChanged" Variant="Variant.Outlined" FullWidth="true" Dense="true" Margin="Margin.Dense" Disabled="@isStartingChat">
-                            @foreach (var item in catalogItems)
-                            {
-                                <MudSelectItem Value="@item">@item.Name (@GetKindLabel(item))</MudSelectItem>
-                            }
-                        </MudSelect>
+                        @if (isStartingChat)
+                        {
+                            <MudTextField T="string"
+                                          Label="Selected Agent or Workflow"
+                                          Value="@GetSelectedDefinitionLabel()"
+                                          Variant="Variant.Outlined"
+                                          FullWidth="true"
+                                          Margin="Margin.Dense"
+                                          ReadOnly="true" />
+                        }
+                        else
+                        {
+                            <MudSelect T="AgentDefinitionDescriptor" Label="Select Agent or Workflow" Value="selectedDefinition" ValueChanged="OnDefinitionChanged" Variant="Variant.Outlined" FullWidth="true" Dense="true" Margin="Margin.Dense">
+                                @foreach (var item in catalogItems)
+                                {
+                                    <MudSelectItem Value="@item">@item.Name (@GetKindLabel(item))</MudSelectItem>
+                                }
+                            </MudSelect>
+                        }
 
                         @if (inputDefinitions.Count > 0)
                         {
@@ -380,6 +393,11 @@
     }
 
     private void SetStartStatus(string message) => startStatus = message;
+
+    private string GetSelectedDefinitionLabel() =>
+        selectedDefinition is null
+            ? string.Empty
+            : $"{selectedDefinition.Name} ({GetKindLabel(selectedDefinition)})";
 
     private async Task OnDefinitionChanged(AgentDefinitionDescriptor? item)
     {

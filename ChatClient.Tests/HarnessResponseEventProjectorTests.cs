@@ -116,5 +116,25 @@ public sealed class HarnessResponseEventProjectorTests
         Assert.Contains("test", approvalEvent.Arguments);
     }
 
+    [Fact]
+    public void Project_HidesBackgroundAgentControlCallsAndResults()
+    {
+        var projector = new HarnessResponseEventProjector(
+            NullLogger<HarnessResponseEventProjector>.Instance).CreateProjection();
+        var metadata = new Dictionary<string, AgenticRegisteredTool>();
+
+        var callEvents = projector.Project(new AgentResponseUpdate(ChatRole.Assistant,
+        [
+            new FunctionCallContent("background-call", "background_agents_start")
+        ]), metadata);
+        var resultEvents = projector.Project(new AgentResponseUpdate(ChatRole.Assistant,
+        [
+            new FunctionResultContent("background-call", new { taskId = "task-1" })
+        ]), metadata);
+
+        Assert.Empty(callEvents);
+        Assert.Empty(resultEvents);
+    }
+
     private sealed class UnknownContent : AIContent;
 }
