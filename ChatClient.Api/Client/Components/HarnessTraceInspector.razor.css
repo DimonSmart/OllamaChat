@@ -1,0 +1,10 @@
+.session-state-drawer-layout ::deep summary {
+    display: list-item;
+    list-style-position: inside;
+    list-style-type: disclosure-closed;
+    cursor: pointer;
+}
+
+.session-state-drawer-layout ::deep details[open] > summary {
+    list-style-type: disclosure-open;
+}

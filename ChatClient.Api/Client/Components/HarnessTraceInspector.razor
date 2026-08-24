@@ -74,15 +74,28 @@
     private RenderFragment RenderNode(TraceNode node, int depth) => builder =>
     {
         var sequence = 0; builder.OpenElement(sequence++, "div"); builder.AddAttribute(sequence++, "style", $"margin-left:{depth * 16}px");
-        builder.OpenElement(sequence++, "details"); builder.OpenElement(sequence++, "summary"); builder.AddContent(sequence++, SpanDisplayName(node.Span));
+        builder.OpenElement(sequence++, "details"); builder.OpenElement(sequence++, "summary"); builder.AddContent(sequence++, SpanDisplayName(node));
         builder.AddContent(sequence++, $" · {FormatDuration(node.Span.Duration)}"); builder.CloseElement();
         builder.AddContent(sequence++, RenderDetails(node.Span)); foreach (var child in node.Children) builder.AddContent(sequence++, RenderNode(child, depth + 1)); builder.CloseElement(); builder.CloseElement();
     };
+    private static string SpanDisplayName(TraceNode node)
+    {
+        var displayName = SpanDisplayName(node.Span);
+        if (!string.Equals(displayName, "background_agents.start_task", StringComparison.Ordinal)) return displayName;
+
+        var agentName = node.Children
+            .Select(child => child.Span)
+            .Where(span => string.Equals(TagValue(span, "gen_ai.operation.name"), "invoke_agent", StringComparison.Ordinal))
+            .Select(span => TagValue(span, "gen_ai.agent.name"))
+            .FirstOrDefault(name => !string.IsNullOrWhiteSpace(name));
+
+        return string.IsNullOrWhiteSpace(agentName) ? displayName : $"{displayName} · {agentName}";
+    }
     private static string SpanDisplayName(HarnessTraceSpanSnapshot span)
     {
         var displayName = span.DisplayName;
-        var operation = span.Tags.FirstOrDefault(tag => tag.Key == "gen_ai.operation.name")?.Value;
-        var agentName = span.Tags.FirstOrDefault(tag => tag.Key == "gen_ai.agent.name")?.Value;
+        var operation = TagValue(span, "gen_ai.operation.name");
+        var agentName = TagValue(span, "gen_ai.agent.name");
         if (string.Equals(operation, "invoke_agent", StringComparison.Ordinal) && !string.IsNullOrWhiteSpace(agentName))
         {
             var prefix = $"invoke_agent {agentName}";
@@ -96,6 +109,7 @@
         if (displayName.StartsWith(executeToolPrefix, StringComparison.Ordinal)) displayName = displayName[executeToolPrefix.Length..];
         return CompactToolName(displayName);
     }
+    private static string? TagValue(HarnessTraceSpanSnapshot span, string key) => span.Tags.FirstOrDefault(tag => tag.Key == key)?.Value;
     private static string CompactToolName(string displayName)
     {
         const string fileAccessPrefix = "file_access_";
