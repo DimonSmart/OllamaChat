@@ -51,6 +51,71 @@
     text-overflow: ellipsis;
 }
 
+.session-state-section {
+    margin-top: 0.95rem;
+    padding-top: 0.85rem;
+    border-top: 1px solid var(--mud-palette-lines-default);
+}
+
+.session-state-section:first-child {
+    margin-top: 0;
+    padding-top: 0;
+    border-top: 0;
+}
+
+.session-state-section-heading {
+    margin-bottom: 0.55rem;
+}
+
+.session-state-section-title {
+    font-weight: 600 !important;
+}
+
+.session-state-section-count {
+    color: var(--mud-palette-text-secondary);
+    font-variant-numeric: tabular-nums;
+}
+
+.session-state-agent + .session-state-agent {
+    margin-top: 0.65rem;
+}
+
+.session-state-agent-name {
+    font-weight: 600 !important;
+}
+
+.session-state-agent-description {
+    margin-top: 0.1rem;
+    color: var(--mud-palette-text-secondary);
+    line-height: 1.4;
+}
+
+.session-state-field + .session-state-field {
+    margin-top: 0.6rem;
+}
+
+.session-state-field-label {
+    display: block;
+    margin-bottom: 0.1rem;
+    color: var(--mud-palette-text-secondary);
+}
+
+.session-state-subsection {
+    margin-top: 0.7rem;
+}
+
+.session-state-subsection-header {
+    min-height: 1.75rem;
+}
+
+.session-state-status-row {
+    margin-top: 0.7rem;
+}
+
+.session-state-status-row .session-state-field-label {
+    margin-bottom: 0;
+}
+
 .session-state-todo {
     min-height: 1.4rem;
 }

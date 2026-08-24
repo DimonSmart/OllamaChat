@@ -31,6 +31,7 @@
             @if (showSessionState && SessionState is not null)
             {
             var fileAccess = SessionState.FileAccess;
+            var fileMemory = SessionState.FileMemory;
             var sandbox = SessionState.Sandbox;
             var workspacePath = fileAccess?.WorkspacePath ?? sandbox?.WorkspacePath;
             <div class="session-state-drawer-layout">
@@ -79,13 +80,22 @@
                     }
                     @if ((SessionState.BackgroundAgents?.Count ?? 0) > 0)
                     {
-                        <MudStack Class="mt-2" Spacing="1">
-                            <MudText Typo="Typo.caption" Class="mud-text-secondary">Background Agents (@SessionState.BackgroundAgents!.Count)</MudText>
+                        <section class="session-state-section">
+                            <MudStack Row="true" Spacing="1" AlignItems="AlignItems.Center" Class="session-state-section-heading">
+                                <MudText Typo="Typo.subtitle2" Class="session-state-section-title">Background Agents</MudText>
+                                <MudText Typo="Typo.caption" Class="session-state-section-count">@SessionState.BackgroundAgents!.Count</MudText>
+                            </MudStack>
                             @foreach (var agent in SessionState.BackgroundAgents)
                             {
-                                <MudText Typo="Typo.caption" title="@agent.Summary">@agent.Name@(string.IsNullOrWhiteSpace(agent.Summary) ? string.Empty : $" — {agent.Summary}")</MudText>
+                                <div class="session-state-agent">
+                                    <MudText Typo="Typo.body2" Class="session-state-agent-name">@agent.Name</MudText>
+                                    @if (!string.IsNullOrWhiteSpace(agent.Summary))
+                                    {
+                                        <MudText Typo="Typo.caption" Class="session-state-agent-description" title="@agent.Summary">@agent.Summary</MudText>
+                                    }
+                                </div>
                             }
-                        </MudStack>
+                        </section>
                     }
                     @if (SessionState.HasTodoProvider)
                     {
@@ -112,64 +122,71 @@
                             }
                         }
                     }
-                    @if (!string.IsNullOrWhiteSpace(workspacePath))
+                    @if (!string.IsNullOrWhiteSpace(workspacePath) || fileAccess is not null || fileMemory is not null)
                     {
-                        <MudStack Class="mt-2" Spacing="1">
-                            <MudText Typo="Typo.caption" Class="mud-text-secondary">Workspace</MudText>
+                        <section class="session-state-section">
+                            <MudText Typo="Typo.subtitle2" Class="session-state-section-title">Workspace</MudText>
+                            @if (!string.IsNullOrWhiteSpace(workspacePath))
+                            {
+                                <div class="session-state-field">
+                                    <MudText Typo="Typo.caption" Class="session-state-field-label">Path</MudText>
+                                    <MudText Typo="Typo.body2" Class="session-state-value" title="@workspacePath">@workspacePath</MudText>
+                                </div>
+                            }
                             @if (fileAccess is not null)
                             {
-                                <MudStack Row="true" AlignItems="AlignItems.Center">
-                                    <MudText Typo="Typo.body2" Class="session-state-value" title="@fileAccess.WorkspacePath">@fileAccess.WorkspacePath</MudText>
-                                </MudStack>
+                                <div class="session-state-field">
+                                    <MudText Typo="Typo.caption" Class="session-state-field-label">File access</MudText>
+                                    <MudText Typo="Typo.body2" Class="session-state-value" title="@fileAccess.ProfileName">@fileAccess.ProfileName</MudText>
+                                </div>
                             }
-                            else
+                            @if (fileMemory is not null)
                             {
-                                <MudText Typo="Typo.body2" Class="session-state-value" title="@workspacePath">@workspacePath</MudText>
+                                <div class="session-state-subsection">
+                                    <MudStack Row="true" Justify="Justify.SpaceBetween" AlignItems="AlignItems.Center" Class="session-state-subsection-header">
+                                        <MudText Typo="Typo.caption" Class="session-state-field-label">File Memory</MudText>
+                                        <MudButton Size="Size.Small" Variant="Variant.Text" Disabled="@(!fileMemory.Enabled || fileMemory.Files.Count == 0 || IsLlmAnswering)" OnClick="OnClearFileMemory">Clear memory</MudButton>
+                                    </MudStack>
+                                    @if (!fileMemory.Enabled)
+                                    {
+                                        <MudText Typo="Typo.caption">Disabled</MudText>
+                                    }
+                                    else if (fileMemory.Files.Count == 0)
+                                    {
+                                        <MudText Typo="Typo.caption">No memories yet</MudText>
+                                    }
+                                    else
+                                    {
+                                        @foreach (var memory in fileMemory.Files)
+                                        {
+                                            <MudButton Variant="Variant.Text" Size="Size.Small" Class="justify-start" OnClick="@(() => OnViewFileMemory.InvokeAsync(memory.Name))">@memory.Name</MudButton>
+                                            @if (!string.IsNullOrWhiteSpace(memory.Description))
+                                            {
+                                                <MudText Typo="Typo.caption" Class="mud-text-secondary">@memory.Description</MudText>
+                                            }
+                                        }
+                                    }
+                                </div>
                             }
-                        </MudStack>
-                    }
-                    @if (fileAccess is not null)
-                    {
-                        <MudStack Class="mt-2" Spacing="1">
-                            <MudText Typo="Typo.caption" Class="mud-text-secondary">File access profile</MudText>
-                            <MudText Typo="Typo.body2" Class="session-state-value" title="@fileAccess.ProfileName">@fileAccess.ProfileName</MudText>
-                        </MudStack>
-                    }
-                    @if (SessionState.FileMemory is { } fileMemory)
-                    {
-                        <MudStack Class="mt-2" Spacing="1">
-                            <MudStack Row="true" Justify="Justify.SpaceBetween" AlignItems="AlignItems.Center">
-                                <MudText Typo="Typo.caption" Class="mud-text-secondary">File Memory</MudText>
-                                <MudButton Size="Size.Small" Variant="Variant.Text" Disabled="@(!fileMemory.Enabled || fileMemory.Files.Count == 0 || IsLlmAnswering)" OnClick="OnClearFileMemory">Clear memory</MudButton>
-                            </MudStack>
-                            @if (!fileMemory.Enabled)
-                            {
-                                <MudText Typo="Typo.caption">Disabled</MudText>
-                            }
-                            else if (fileMemory.Files.Count == 0)
-                            {
-                                <MudText Typo="Typo.caption">No memories yet</MudText>
-                            }
-                            else
-                            {
-                                @foreach (var memory in fileMemory.Files)
-                                {
-                                    <MudButton Variant="Variant.Text" Size="Size.Small" Class="justify-start" OnClick="@(() => OnViewFileMemory.InvokeAsync(memory.Name))">@memory.Name</MudButton>
-                                    @if (!string.IsNullOrWhiteSpace(memory.Description)) { <MudText Typo="Typo.caption" Class="mud-text-secondary">@memory.Description</MudText> }
-                                }
-                            }
-                        </MudStack>
+                        </section>
                     }
                     @if (sandbox is not null)
                     {
-                        <MudStack Class="mt-2" Spacing="1">
-                            <MudText Typo="Typo.caption" Class="mud-text-secondary">Sandbox</MudText>
-                            <MudText Typo="Typo.body2" Class="session-state-value" title="@sandbox.ProfileName">@sandbox.ProfileName</MudText>
-                            <MudText Typo="Typo.caption" Class="mud-text-secondary">Image</MudText>
-                            <MudText Typo="Typo.body2" Class="session-state-value" title="@sandbox.Image">@sandbox.Image</MudText>
-                            <MudText Typo="Typo.caption" Class="mud-text-secondary">State</MudText>
-                            <MudChip T="string" Size="Size.Small" Color="Color.Primary">@sandbox.State</MudChip>
-                        </MudStack>
+                        <section class="session-state-section">
+                            <MudText Typo="Typo.subtitle2" Class="session-state-section-title">Sandbox</MudText>
+                            <div class="session-state-field">
+                                <MudText Typo="Typo.caption" Class="session-state-field-label">Profile</MudText>
+                                <MudText Typo="Typo.body2" Class="session-state-value" title="@sandbox.ProfileName">@sandbox.ProfileName</MudText>
+                            </div>
+                            <div class="session-state-field">
+                                <MudText Typo="Typo.caption" Class="session-state-field-label">Image</MudText>
+                                <MudText Typo="Typo.body2" Class="session-state-value" title="@sandbox.Image">@sandbox.Image</MudText>
+                            </div>
+                            <MudStack Row="true" Justify="Justify.SpaceBetween" AlignItems="AlignItems.Center" Class="session-state-status-row">
+                                <MudText Typo="Typo.caption" Class="session-state-field-label">State</MudText>
+                                <MudChip T="string" Size="Size.Small" Color="Color.Primary">@sandbox.State</MudChip>
+                            </MudStack>
+                        </section>
                     }
                 </div>
             </div>
