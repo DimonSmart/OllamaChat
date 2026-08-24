@@ -1,5 +1,6 @@
 @using ChatClient.Api.Client.Services.Agentic
 @using System.Diagnostics
+@using System.Globalization
 @using Microsoft.AspNetCore.Components
 @using Microsoft.AspNetCore.Components.Rendering
 @implements IDisposable
@@ -39,7 +40,7 @@
             </MudSelect>
             @if (SelectedRun is { } run)
             {
-                <MudText Typo="Typo.caption" Class="mt-2">@run.Status · @((run.CompletedAt - run.StartedAt)?.ToString("g") ?? "Running") · @run.Spans.Count spans</MudText>
+                <MudText Typo="Typo.caption" Class="mt-2">@run.Status · @FormatDuration(run.CompletedAt - run.StartedAt) · @run.Spans.Count spans</MudText>
                 <MudText Typo="Typo.caption" Class="mud-text-secondary">Trace: @run.TraceId</MudText>
                 @if (run.IsTruncated) { <MudText Typo="Typo.caption" Color="Color.Warning">Trace truncated</MudText> }
                 @foreach (var node in BuildForest(run)) { @RenderNode(node, 0) }
@@ -74,19 +75,44 @@
     {
         var sequence = 0; builder.OpenElement(sequence++, "div"); builder.AddAttribute(sequence++, "style", $"margin-left:{depth * 16}px");
         builder.OpenElement(sequence++, "details"); builder.OpenElement(sequence++, "summary"); builder.AddContent(sequence++, SpanDisplayName(node.Span));
-        var operation = node.Span.Tags.FirstOrDefault(tag => tag.Key == "gen_ai.operation.name")?.Value; if (operation is not null) builder.AddContent(sequence++, $" [{operation}]");
-        builder.AddContent(sequence++, $" · {(node.Span.Duration?.ToString("g") ?? "Running")}"); builder.CloseElement();
+        builder.AddContent(sequence++, $" · {FormatDuration(node.Span.Duration)}"); builder.CloseElement();
         builder.AddContent(sequence++, RenderDetails(node.Span)); foreach (var child in node.Children) builder.AddContent(sequence++, RenderNode(child, depth + 1)); builder.CloseElement(); builder.CloseElement();
     };
     private static string SpanDisplayName(HarnessTraceSpanSnapshot span)
     {
+        var displayName = span.DisplayName;
         var operation = span.Tags.FirstOrDefault(tag => tag.Key == "gen_ai.operation.name")?.Value;
         var agentName = span.Tags.FirstOrDefault(tag => tag.Key == "gen_ai.agent.name")?.Value;
-        if (!string.Equals(operation, "invoke_agent", StringComparison.Ordinal) || string.IsNullOrWhiteSpace(agentName)) return span.DisplayName;
-        var prefix = $"invoke_agent {agentName}";
-        if (!span.DisplayName.StartsWith(prefix + "(", StringComparison.Ordinal)) return span.DisplayName;
-        var closing = span.DisplayName.IndexOf(')', prefix.Length + 1);
-        return closing < 0 ? span.DisplayName : prefix + span.DisplayName[(closing + 1)..];
+        if (string.Equals(operation, "invoke_agent", StringComparison.Ordinal) && !string.IsNullOrWhiteSpace(agentName))
+        {
+            var prefix = $"invoke_agent {agentName}";
+            if (displayName.StartsWith(prefix + "(", StringComparison.Ordinal))
+            {
+                var closing = displayName.IndexOf(')', prefix.Length + 1);
+                if (closing >= 0) displayName = prefix + displayName[(closing + 1)..];
+            }
+        }
+        const string executeToolPrefix = "execute_tool ";
+        if (displayName.StartsWith(executeToolPrefix, StringComparison.Ordinal)) displayName = displayName[executeToolPrefix.Length..];
+        return CompactToolName(displayName);
+    }
+    private static string CompactToolName(string displayName)
+    {
+        const string fileAccessPrefix = "file_access_";
+        if (displayName.StartsWith(fileAccessPrefix, StringComparison.Ordinal)) return $"file_access.{displayName[fileAccessPrefix.Length..]}";
+        const string backgroundAgentsPrefix = "background_agents_";
+        if (displayName.StartsWith(backgroundAgentsPrefix, StringComparison.Ordinal)) return $"background_agents.{displayName[backgroundAgentsPrefix.Length..]}";
+        return displayName;
+    }
+    private static string FormatDuration(TimeSpan? duration)
+    {
+        if (duration is null) return "Running";
+        var value = duration.Value;
+        if (value.TotalMilliseconds < 1) return $"{Math.Round(value.TotalMilliseconds * 1000):0} µs";
+        if (value.TotalSeconds < 1) return $"{value.TotalMilliseconds.ToString("0.#", CultureInfo.InvariantCulture)} ms";
+        if (value.TotalMinutes < 1) return $"{value.TotalSeconds.ToString("0.#", CultureInfo.InvariantCulture)} s";
+        if (value.TotalHours < 1) return $"{(int)value.TotalMinutes}m {value.Seconds}s";
+        return $"{(int)value.TotalHours}h {value.Minutes}m";
     }
     private RenderFragment RenderDetails(HarnessTraceSpanSnapshot span) => builder =>
     {
