@@ -18,7 +18,22 @@
 @inject ISnackbar Snackbar
 
 <MudPaper Class="chat-composer" Elevation="2">
-    <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="1">
+    <MudTextField T="string"
+                  Disabled="Disabled"
+                  Value="CurrentText"
+                  ValueChanged="OnCurrentTextChanged"
+                  DebounceInterval="200"
+                  Lines="3"
+                  MaxLines="15"
+                  Sizing="InputSizing.Auto"
+                  InputId="@_messageInputId"
+                  Placeholder="@Label"
+                  Variant="Variant.Text"
+                  Class="w-100"
+                  Margin="Margin.Dense"
+                  OnKeyDown="HandleKeyDown" />
+
+    <div class="d-flex align-center gap-1">
         @if (AllowFileAttachments)
         {
             <MudFileUpload T="IReadOnlyList<IBrowserFile>"
@@ -37,26 +52,21 @@
             </MudFileUpload>
         }
 
-        <MudTextField T="string"
-                      Disabled="Disabled"
-                      Value="CurrentText"
-                      ValueChanged="OnCurrentTextChanged"
-                      DebounceInterval="200"
-                      Lines="3"
-                      MaxLines="15"
-                      Sizing="InputSizing.Auto"
-                      InputId="@_messageInputId"
-                      Placeholder="@Label"
-                      Variant="Variant.Text"
-                      Class="flex-grow-1"
-                      Margin="Margin.Dense"
-                      Adornment="Adornment.End"
-                      AdornmentIcon="@(ShowStopButton ? Icons.Material.Filled.Stop : Icons.Material.Filled.Send)"
-                      AdornmentColor="@(ShowStopButton ? Color.Error : Color.Primary)"
-                      AdornmentAriaLabel="@(ShowStopButton ? "Stop generation" : "Send message")"
-                      OnAdornmentClick="HandleAdornmentClick"
-                      OnKeyDown="HandleKeyDown"
-                      title="@(ShowStopButton ? "Stop generation" : "Send message (Ctrl+Enter)")" />
+        <ServerModelPicker Value="ModelSelectionContext.Value"
+                           ValueChanged="ModelSelectionContext.SetValueAsync"
+                           Presentation="ServerModelPickerPresentation.Composer"
+                           FillAvailableWidth="false"
+                           Disabled="ModelSelectorDisabled" />
+
+        <div class="flex-grow-1"></div>
+
+        <MudIconButton Icon="@(ShowStopButton ? Icons.Material.Filled.Stop : Icons.Material.Filled.Send)"
+                       Color="@(ShowStopButton ? Color.Error : Color.Primary)"
+                       Size="Size.Small"
+                       Disabled="Disabled"
+                       OnClick="HandleAdornmentClick"
+                       aria-label="@(ShowStopButton ? "Stop generation" : "Send message")"
+                       title="@(ShowStopButton ? "Stop generation" : "Send message (Ctrl+Enter)")" />
 
         @if (CanShowVoiceButton)
         {
@@ -92,13 +102,6 @@
                 }
             </div>
         }
-    </MudStack>
-
-    <div class="chat-composer__model-selector">
-        <ServerModelPicker Value="ModelSelectionContext.Value"
-                           ValueChanged="ModelSelectionContext.SetValueAsync"
-                           Presentation="ServerModelPickerPresentation.Composer"
-                           Disabled="ModelSelectorDisabled" />
     </div>
 
     @if (attachedFiles.Count > 0)
