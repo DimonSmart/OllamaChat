@@ -35,6 +35,48 @@ public sealed class LlmAgentRuntimeTests
     }
 
     [Fact]
+    public async Task RunAsync_WorkflowParticipantAcceptsNoUserMessageAndKeepsConversationAsHistory()
+    {
+        var orchestrator = new StubOrchestrator([new ChatEngineStreamChunk("Agent", "done", IsFinal: true)]);
+        var runtime = CreateRuntime(orchestrator);
+
+        var events = await CollectAsync(runtime.RunAsync(new AgentRuntimeRunRequest
+        {
+            InvocationKind = AgentRuntimeInvocationKind.WorkflowParticipant,
+            Messages =
+            [
+                new AgentInputMessage(AgentMessageRole.User, "original request"),
+                new AgentInputMessage(AgentMessageRole.Assistant, "previous participant")
+            ]
+        }, CreateContext(), cancellationToken: TestContext.Current.CancellationToken));
+
+        Assert.Single(events.OfType<AgentRunCompleted>());
+        Assert.Equal(string.Empty, orchestrator.LastRequest!.UserMessage);
+        Assert.Equal(
+            [AppChatRole.User, AppChatRole.Assistant],
+            orchestrator.LastRequest.Messages.Select(static message => message.Role));
+        Assert.Equal(
+            ["original request", "previous participant"],
+            orchestrator.LastRequest.Messages.Select(static message => message.Content));
+    }
+
+    [Fact]
+    public async Task RunAsync_UserMessageInvocationStillRejectsMissingUserMessage()
+    {
+        var orchestrator = new StubOrchestrator([]);
+        var runtime = CreateRuntime(orchestrator);
+
+        var events = await CollectAsync(runtime.RunAsync(new AgentRuntimeRunRequest
+        {
+            Messages = []
+        }, CreateContext(), cancellationToken: TestContext.Current.CancellationToken));
+
+        var failed = Assert.Single(events.OfType<AgentRunFailed>());
+        Assert.Equal("invalid_input", failed.Error.Code);
+        Assert.Null(orchestrator.LastRequest);
+    }
+
+    [Fact]
     public async Task RunAsync_UsesOneMessageIdForDeltasCompletionAndFinalResult()
     {
         var events = await CollectAsync(CreateRuntime(new StubOrchestrator([

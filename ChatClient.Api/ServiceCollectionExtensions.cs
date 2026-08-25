@@ -156,8 +156,6 @@ public static class ServiceCollectionExtensions
         services.AddScoped<OrchestrationWorkflowEventStreamProcessor>();
         services.AddScoped<OrchestrationWorkflowPassExecutor>();
         services.AddScoped<IHeadlessWorkflowRunner, HeadlessWorkflowRunner>();
-        services.AddScoped<IOrchestrationWorkflowSessionService, OrchestrationWorkflowChatSessionService>();
-        services.AddScoped<IOrchestrationWorkflowChatViewModelService, OrchestrationWorkflowChatViewModelService>();
         services.AddScoped<IAgentDefinitionCatalog, AgentDefinitionCatalog>();
         services.AddOptions<AgentRuntimeOptions>()
             .Validate(static options => options.MaximumWorkflowNestingDepth > 0,
@@ -173,6 +171,7 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IAgentInputDefinitionProvider, AgentInputDefinitionProvider>();
         services.AddScoped<IAgentDefinitionModelRequirementAnalyzer, WorkflowModelRequirementAnalyzer>();
         services.AddScoped<IAgentDefinitionLaunchCapabilityAnalyzer, AgentDefinitionLaunchCapabilityAnalyzer>();
+        services.AddScoped<IAgentDefinitionLaunchBehaviorAnalyzer, WorkflowLaunchBehaviorAnalyzer>();
         services.AddScoped<IAgentDefinitionDependencyGraph, AgentDefinitionDependencyGraph>();
         services.AddScoped<IWorkflowDefinitionPreflightValidator, WorkflowDefinitionPreflightValidator>();
         services.AddScoped<LlmAgentRuntimeFactory>();

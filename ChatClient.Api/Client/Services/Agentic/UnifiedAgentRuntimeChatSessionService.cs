@@ -441,14 +441,24 @@ public sealed class UnifiedAgentRuntimeChatSessionService(
     public async Task SendAsync(
         string text,
         IReadOnlyList<AppChatMessageFile>? files = null,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default) =>
+        await RunAsync(text, files ?? [], includeUserMessage: true, cancellationToken);
+
+    public Task RunOnStartAsync(CancellationToken cancellationToken = default) =>
+        RunAsync(null, [], includeUserMessage: false, cancellationToken);
+
+    private async Task RunAsync(
+        string? text,
+        IReadOnlyList<AppChatMessageFile> files,
+        bool includeUserMessage,
+        CancellationToken cancellationToken)
     {
         if (_parameters is null)
         {
             throw new InvalidOperationException("Chat session not started.");
         }
 
-        if (string.IsNullOrWhiteSpace(text) || IsAnswering || _resetting || PendingToolApproval is not null)
+        if ((includeUserMessage && string.IsNullOrWhiteSpace(text)) || IsAnswering || _resetting || PendingToolApproval is not null)
         {
             return;
         }
@@ -461,6 +471,16 @@ public sealed class UnifiedAgentRuntimeChatSessionService(
         if (_parameters.RuntimeReference is null)
         {
             throw new InvalidOperationException("Unified agent runtime reference is not configured.");
+        }
+
+        if (!includeUserMessage && _parameters.RuntimeReference.Kind != AgentDefinitionKind.SavedWorkflow)
+        {
+            throw new InvalidOperationException("Only workflows can run when a chat starts.");
+        }
+
+        if (!includeUserMessage && _parameters.LaunchBehavior != AgentLaunchBehavior.RunOnStart)
+        {
+            throw new InvalidOperationException("This workflow waits for a user message.");
         }
 
         await _runSetupGate.WaitAsync(cancellationToken);
@@ -488,8 +508,11 @@ public sealed class UnifiedAgentRuntimeChatSessionService(
                 return;
             }
 
-            var userMessage = new AppChatMessage(text, DateTime.Now, AppChatRole.User, files: files ?? []);
-            await AddMessageAsync(userMessage);
+            if (includeUserMessage)
+            {
+                var userMessage = new AppChatMessage(text!, DateTime.Now, AppChatRole.User, files: files);
+                await AddMessageAsync(userMessage);
+            }
             _cancellationTokenSource = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
             _activeRunCompletion = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
             UpdateAnsweringState(true);
@@ -501,7 +524,7 @@ public sealed class UnifiedAgentRuntimeChatSessionService(
 
         if (_parameters.RuntimeReference.Kind == AgentDefinitionKind.SavedAgent)
         {
-            await SendDirectAsync(text, files ?? [], generation, cancellationToken);
+            await SendDirectAsync(text!, files, generation, cancellationToken);
             return;
         }
 
@@ -511,6 +534,9 @@ public sealed class UnifiedAgentRuntimeChatSessionService(
         {
             var runtimeRequest = new AgentRuntimeRunRequest
             {
+                InvocationKind = includeUserMessage
+                    ? AgentRuntimeInvocationKind.UserMessage
+                    : AgentRuntimeInvocationKind.RunOnStart,
                 Messages = _chat.Messages
                     .Where(static message => !message.IsStreaming)
                     .Where(static message => message.Role is AppChatRole.System or AppChatRole.User or AppChatRole.Assistant)
@@ -526,7 +552,7 @@ public sealed class UnifiedAgentRuntimeChatSessionService(
                 Inputs = new Dictionary<string, string>(
                     _parameters.RuntimeInputs,
                     StringComparer.OrdinalIgnoreCase),
-                Attachments = (files ?? [])
+                Attachments = files
                     .Select(ToAgentInputAttachment)
                     .ToList()
             };
@@ -780,6 +806,9 @@ public sealed class UnifiedAgentRuntimeChatSessionService(
             Agents = [],
             RuntimeReference = resolved.RuntimeReference,
             RuntimeDefaultModel = resolved.DefaultModel,
+            LaunchBehavior = Enum.TryParse<AgentLaunchBehavior>(chat.Launch.LaunchBehavior, out var launchBehavior)
+                ? launchBehavior
+                : resolved.Descriptor.LaunchBehavior,
             RuntimeInputs = new Dictionary<string, string>(resolved.Inputs, StringComparer.OrdinalIgnoreCase),
             Overrides = resolutionRequest.Overrides,
             RuntimeParticipant = resolved.PresentationParticipant
@@ -1514,6 +1543,17 @@ public sealed class UnifiedAgentRuntimeChatSessionService(
 
     private async Task AddFailureAsync(AgentRunError error)
     {
+        if (error.Exception is not null)
+        {
+            logger.LogError(error.Exception, "Agent runtime failed with code {ErrorCode}.", error.Code);
+        }
+        else
+        {
+            logger.LogWarning(
+                "Agent runtime failed with code {ErrorCode}: {ErrorMessage}",
+                error.Code,
+                error.Message);
+        }
         await CancelActiveStreamsAsync();
         await AddMessageAsync(new AppChatMessage(
             $"Agent runtime error: {error.Message}",
@@ -1625,6 +1665,7 @@ public sealed class UnifiedAgentRuntimeChatSessionService(
                     RuntimeReference = new SavedChatRuntimeReference(_parameters.RuntimeReference.Kind.ToString(), _parameters.RuntimeReference.Id),
                     AgentName = _chat.Agents.FirstOrDefault()?.AgentName ?? throw new InvalidOperationException("The saved chat agent name is unavailable."),
                     Model = _parameters.RuntimeDefaultModel,
+                    LaunchBehavior = _parameters.LaunchBehavior.ToString(),
                     Inputs = new Dictionary<string, string>(_parameters.RuntimeInputs, StringComparer.OrdinalIgnoreCase),
                     Overrides = new SavedChatOverrides
                     {

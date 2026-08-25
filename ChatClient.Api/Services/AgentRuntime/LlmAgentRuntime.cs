@@ -136,11 +136,16 @@ internal sealed class LlmAgentRuntime(
         ChannelWriter<AgentRunEvent> writer,
         CancellationToken cancellationToken)
     {
-        var currentUserMessageIndex = FindCurrentUserMessageIndex(request.Messages);
+        var isWorkflowParticipantTurn =
+            request.InvocationKind == AgentRuntimeInvocationKind.WorkflowParticipant;
+        var currentUserMessageIndex = isWorkflowParticipantTurn
+            ? -1
+            : FindCurrentUserMessageIndex(request.Messages);
         var userMessage = currentUserMessageIndex >= 0
             ? request.Messages[currentUserMessageIndex]
             : null;
-        if (userMessage is null || string.IsNullOrWhiteSpace(userMessage.Content))
+        if (!isWorkflowParticipantTurn &&
+            (userMessage is null || string.IsNullOrWhiteSpace(userMessage.Content)))
         {
             await writer.WriteAsync(new AgentRunFailed(new AgentRunError(
                 "invalid_input",
@@ -150,7 +155,9 @@ internal sealed class LlmAgentRuntime(
             return;
         }
 
-        var trailingMessages = request.Messages.Skip(currentUserMessageIndex + 1).ToList();
+        var trailingMessages = currentUserMessageIndex >= 0
+            ? request.Messages.Skip(currentUserMessageIndex + 1).ToList()
+            : [];
         if (trailingMessages.Count > 0)
         {
             await writer.WriteAsync(new AgentRunFailed(new AgentRunError(
@@ -161,7 +168,9 @@ internal sealed class LlmAgentRuntime(
             return;
         }
 
-        var history = BuildHistory(request.Messages.Take(currentUserMessageIndex));
+        var history = BuildHistory(currentUserMessageIndex >= 0
+            ? request.Messages.Take(currentUserMessageIndex)
+            : request.Messages);
         var files = request.Attachments
             .Select(ToAppChatMessageFile)
             .ToList();
@@ -172,7 +181,7 @@ internal sealed class LlmAgentRuntime(
             ResolvedModel = agent.Model,
             Configuration = configuration,
             Messages = history,
-            UserMessage = userMessage.Content,
+            UserMessage = userMessage?.Content ?? string.Empty,
             Files = files,
             RuntimeResources = runtimeResources,
             RagTurnId = messageId

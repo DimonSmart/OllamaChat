@@ -15,6 +15,8 @@ public sealed class ChatEngineSessionStartRequest
 
     public ServerModel? RuntimeDefaultModel { get; init; }
 
+    public AgentLaunchBehavior LaunchBehavior { get; init; } = AgentLaunchBehavior.WaitForUserMessage;
+
     public IReadOnlyDictionary<string, string> RuntimeInputs { get; init; } =
         new Dictionary<string, string>();
 
@@ -28,6 +30,7 @@ public sealed class ChatEngineSessionStartRequest
             RuntimeParticipant = RuntimeParticipant,
             RuntimeReference = RuntimeReference,
             RuntimeDefaultModel = RuntimeDefaultModel,
+            LaunchBehavior = LaunchBehavior,
             RuntimeInputs = new Dictionary<string, string>(
                 RuntimeInputs,
                 StringComparer.OrdinalIgnoreCase),

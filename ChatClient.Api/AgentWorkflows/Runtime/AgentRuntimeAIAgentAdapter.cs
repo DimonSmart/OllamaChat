@@ -61,6 +61,7 @@ public sealed class AgentRuntimeAIAgentAdapter(
         };
         var request = new AgentRuntimeRunRequest
         {
+            InvocationKind = AgentRuntimeInvocationKind.WorkflowParticipant,
             Messages = messages
                 .Select(ToInputMessage)
                 .Where(static message => !string.IsNullOrWhiteSpace(message.Content))

@@ -30,10 +30,20 @@ public sealed record AgentRuntimeRunRequest
 {
     public required IReadOnlyList<AgentInputMessage> Messages { get; init; }
 
+    public AgentRuntimeInvocationKind InvocationKind { get; init; } =
+        AgentRuntimeInvocationKind.UserMessage;
+
     public IReadOnlyDictionary<string, string> Inputs { get; init; } =
         new Dictionary<string, string>();
 
     public IReadOnlyList<AgentInputAttachment> Attachments { get; init; } = [];
+}
+
+public enum AgentRuntimeInvocationKind
+{
+    UserMessage,
+    RunOnStart,
+    WorkflowParticipant
 }
 
 public sealed record AgentInputMessage(
@@ -257,6 +267,19 @@ public interface IAgentDefinitionLaunchCapabilityAnalyzer
         CancellationToken cancellationToken = default);
 }
 
+public interface IAgentDefinitionLaunchBehaviorAnalyzer
+{
+    Task<AgentLaunchBehavior> AnalyzeAsync(
+        AgentDefinitionReference reference,
+        CancellationToken cancellationToken = default);
+}
+
+public enum AgentLaunchBehavior
+{
+    WaitForUserMessage,
+    RunOnStart
+}
+
 public interface IWorkflowDefinitionPreflightValidator
 {
     Task<IReadOnlyList<AgentDefinitionLaunchProblem>> ValidateAsync(
@@ -365,6 +388,8 @@ public sealed record AgentDefinitionDescriptor
     public AgentModelRequirement ModelRequirement { get; init; }
 
     public AgentLaunchCapabilities LaunchCapabilities { get; init; } = new();
+
+    public AgentLaunchBehavior LaunchBehavior { get; init; } = AgentLaunchBehavior.WaitForUserMessage;
 
     public IReadOnlyList<McpServerSessionBinding> DefaultMcpServerBindings { get; init; } = [];
 

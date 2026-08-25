@@ -112,7 +112,11 @@ internal sealed class WorkflowAgentRuntime(
         var userMessage = currentUserMessageIndex >= 0
             ? request.Messages[currentUserMessageIndex]
             : null;
-        if (userMessage is null || string.IsNullOrWhiteSpace(userMessage.Content))
+        var runsWithoutUserMessage =
+            workflow.Execution.Mode == AgentWorkflowExecutionMode.Autonomous &&
+            request.InvocationKind is AgentRuntimeInvocationKind.RunOnStart or
+                AgentRuntimeInvocationKind.WorkflowParticipant;
+        if (!runsWithoutUserMessage && (userMessage is null || string.IsNullOrWhiteSpace(userMessage.Content)))
         {
             yield return new AgentRunFailed(new AgentRunError(
                 "invalid_input",
@@ -121,7 +125,7 @@ internal sealed class WorkflowAgentRuntime(
             yield break;
         }
 
-        if (request.Messages.Skip(currentUserMessageIndex + 1).Any())
+        if (currentUserMessageIndex >= 0 && request.Messages.Skip(currentUserMessageIndex + 1).Any())
         {
             yield return new AgentRunFailed(new AgentRunError(
                 "invalid_input",
@@ -182,9 +186,11 @@ internal sealed class WorkflowAgentRuntime(
         {
             var events = activeSession.RunTurnAsync(new HeadlessWorkflowTurnRequest
             {
-                UserMessage = BuildWorkflowUserMessage(
-                    request.Messages.Take(currentUserMessageIndex),
-                    userMessage.Content)
+                UserMessage = userMessage is null
+                    ? null
+                    : BuildWorkflowUserMessage(
+                        request.Messages.Take(currentUserMessageIndex),
+                        userMessage.Content)
             }, cancellationToken);
 
             await using var enumerator = events.GetAsyncEnumerator(cancellationToken);
@@ -634,7 +640,10 @@ internal static class SequentialParticipantRequestBuilder
     {
         if (previousResult is null)
         {
-            return workflowRequest;
+            return workflowRequest with
+            {
+                InvocationKind = AgentRuntimeInvocationKind.WorkflowParticipant
+            };
         }
 
         var originalUserMessage = workflowRequest.Messages
@@ -656,6 +665,7 @@ internal static class SequentialParticipantRequestBuilder
 
         return new AgentRuntimeRunRequest
         {
+            InvocationKind = AgentRuntimeInvocationKind.WorkflowParticipant,
             Messages = messages,
             Inputs = workflowRequest.Inputs,
             Attachments = []

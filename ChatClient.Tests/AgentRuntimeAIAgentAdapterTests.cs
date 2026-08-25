@@ -30,7 +30,29 @@ public sealed class AgentRuntimeAIAgentAdapterTests
 
         Assert.NotNull(invoker.ParentContext);
         Assert.Equal(parentContext.RunId, invoker.ParentContext.RunId);
+        Assert.Equal(AgentRuntimeInvocationKind.WorkflowParticipant, invoker.Request!.InvocationKind);
         Assert.All(updates, update => Assert.NotEqual(parentContext.RunId, update.ResponseId));
+    }
+
+    [Fact]
+    public async Task RunStreamingAsync_EmptyWorkflowTurnIsExplicitParticipantInvocation()
+    {
+        var invoker = new StubParticipantInvoker([
+            new AgentRunCompleted(new AgentRunResult
+            {
+                FinalMessage = new AgentOutputMessage("Inner", "opened"),
+                FinalMessageId = "message-1"
+            })
+        ]);
+        var adapter = CreateAdapter(CreateParentContext(), invoker);
+
+        await CollectAsync(adapter.RunStreamingAsync(
+            Array.Empty<ChatMessage>(),
+            cancellationToken: TestContext.Current.CancellationToken));
+
+        Assert.NotNull(invoker.Request);
+        Assert.Empty(invoker.Request.Messages);
+        Assert.Equal(AgentRuntimeInvocationKind.WorkflowParticipant, invoker.Request.InvocationKind);
     }
 
     [Fact]
@@ -163,6 +185,8 @@ public sealed class AgentRuntimeAIAgentAdapterTests
     {
         public AppAgentRunContext? ParentContext { get; private set; }
 
+        public AgentRuntimeRunRequest? Request { get; private set; }
+
         public async IAsyncEnumerable<AgentRunEvent> InvokeAsync(
             ResolvedWorkflowParticipant participant,
             AgentRuntimeRunRequest request,
@@ -171,6 +195,7 @@ public sealed class AgentRuntimeAIAgentAdapterTests
             [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken = default)
         {
             ParentContext = parentContext;
+            Request = request;
             foreach (var runEvent in events)
             {
                 cancellationToken.ThrowIfCancellationRequested();

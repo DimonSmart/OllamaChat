@@ -132,6 +132,46 @@ public sealed class WorkflowAgentRuntimeTests
 
     [Fact]
     [Obsolete]
+    public async Task RunAsync_AutonomousWorkflowAcceptsNoUserMessage()
+    {
+        var runner = new StubHeadlessWorkflowRunner([
+            new HeadlessWorkflowCompleted(new HeadlessWorkflowResult
+            {
+                FinalMessageId = "final",
+                FinalAuthor = "Workflow",
+                FinalContent = "done"
+            })
+        ]);
+        var runtime = CreateRuntime(runner, executionMode: AgentWorkflowExecutionMode.Autonomous);
+
+        var events = await CollectAsync(runtime.RunAsync(
+            new AgentRuntimeRunRequest
+            {
+                InvocationKind = AgentRuntimeInvocationKind.RunOnStart,
+                Messages = []
+            },
+            CreateContext(),
+            cancellationToken: TestContext.Current.CancellationToken));
+
+        Assert.Null(runner.LastTurnRequest!.UserMessage);
+        Assert.IsType<AgentRunCompleted>(Assert.Single(events));
+    }
+
+    [Fact]
+    [Obsolete]
+    public async Task RunAsync_InteractiveWorkflowRejectsNoUserMessage()
+    {
+        var events = await CollectAsync(CreateRuntime(new StubHeadlessWorkflowRunner([])).RunAsync(
+            new AgentRuntimeRunRequest { Messages = [] },
+            CreateContext(),
+            cancellationToken: TestContext.Current.CancellationToken));
+
+        var failure = Assert.IsType<AgentRunFailed>(Assert.Single(events));
+        Assert.Equal("invalid_input", failure.Error.Code);
+    }
+
+    [Fact]
+    [Obsolete]
     public async Task RunAsync_FormatsHistoryAndKeepsLastUserOnlyInCurrentRequest()
     {
         var runner = new StubHeadlessWorkflowRunner([
@@ -352,7 +392,8 @@ public sealed class WorkflowAgentRuntimeTests
     [Obsolete]
     private static WorkflowAgentRuntime CreateRuntime(
         IHeadlessWorkflowRunner runner,
-        IReadOnlyList<WorkflowStartInputDefinition>? startInputs = null) =>
+        IReadOnlyList<WorkflowStartInputDefinition>? startInputs = null,
+        AgentWorkflowExecutionMode executionMode = AgentWorkflowExecutionMode.Interactive) =>
         new(
             new AgentRuntimeDescriptor("workflow", "Workflow", "Runs a workflow", AgentRuntimeKind.WorkflowAgent),
             new AgentWorkflowDefinition
@@ -360,6 +401,7 @@ public sealed class WorkflowAgentRuntimeTests
                 Id = "workflow",
                 DisplayName = "Workflow",
                 StartAgentId = "agent",
+                Execution = new AgentWorkflowExecutionDefinition { Mode = executionMode, MaxAutomaticTurns = 10 },
                 StartInputs = (startInputs ?? []).ToList(),
                 Agents =
                 [

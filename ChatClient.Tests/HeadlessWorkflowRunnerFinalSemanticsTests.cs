@@ -135,17 +135,20 @@ public sealed class HeadlessWorkflowRunnerFinalSemanticsTests
     [Fact]
     public async Task GroupChat_FallsBackToLastParticipantMessageAndReturnsNullWhenNoResult()
     {
+        var store = CreateTaskSessionStore();
+        var session = await store.CreateSessionAsync("group-missing-summary", null, CancellationToken.None);
         var workflow = new GroupChatWorkflowDefinition
         {
             Id = "workflow",
-            DisplayName = "Workflow"
+            DisplayName = "Workflow",
+            Execution = new AgentWorkflowExecutionDefinition { CompletionSummaryLabel = "final" }
         };
 
         var result = await ResolveAsync(workflow, [
             Message("a1", "a", "Agent", "first"),
             Message("b1", "b", "Agent", "second")
-        ]);
-        var empty = await ResolveAsync(workflow, []);
+        ], store, session.SessionId);
+        var empty = await ResolveAsync(workflow, [], store, session.SessionId);
 
         Assert.Equal("second", result!.FinalContent);
         Assert.Null(empty);
@@ -174,6 +177,7 @@ public sealed class HeadlessWorkflowRunnerFinalSemanticsTests
         Assert.Equal(messages[1].Message.Id.ToString("N"), result.FinalMessageId);
     }
 
+    [Obsolete]
     private static Task<HeadlessWorkflowResult?> ResolveAsync(
         IOrchestrationWorkflowDefinition workflow,
         IReadOnlyList<OrchestrationCompletedAssistantMessage> messages,

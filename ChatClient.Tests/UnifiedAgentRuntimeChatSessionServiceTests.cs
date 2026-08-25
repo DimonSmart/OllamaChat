@@ -893,6 +893,113 @@ public sealed class UnifiedAgentRuntimeChatSessionServiceTests
     }
 
     [Fact]
+    public async Task RunOnStartAsync_ExecutesWorkflowWithoutUserMessage()
+    {
+        var runner = new StubAgentRunner([
+            new AgentRunCompleted(new AgentRunResult
+            {
+                FinalMessage = new AgentOutputMessage("Workflow", "done"),
+                FinalMessageId = "final",
+                Messages = [new AgentOutputMessage("Workflow", "done")]
+            })
+        ]);
+        var service = CreateService(runner);
+        await service.StartAsync(CreateStartRequest(), cancellationToken: TestContext.Current.CancellationToken);
+
+        await service.RunOnStartAsync(TestContext.Current.CancellationToken);
+
+        Assert.Equal(AgentRuntimeInvocationKind.RunOnStart, runner.LastRequest!.InvocationKind);
+        Assert.Empty(runner.LastRequest!.Messages);
+        Assert.DoesNotContain(service.Messages, static message => message.Role == AppChatRole.User);
+        Assert.Contains(service.Messages, static message => message.Role == AppChatRole.Assistant && message.Content == "done");
+        Assert.False(service.IsAnswering);
+    }
+
+    [Fact]
+    public async Task AutonomousWorkflow_CheckpointAndRestoreRetainLaunchAndParticipantMessages()
+    {
+        SavedChatDocument? checkpoint = null;
+        var savedChats = new Mock<ISavedChatService>(MockBehavior.Strict);
+        savedChats.Setup(service => service.IsAutoSaveEnabledAsync(It.IsAny<CancellationToken>())).ReturnsAsync(true);
+        savedChats.Setup(service => service.SaveCheckpointAsync(It.IsAny<SavedChatDocument>(), It.IsAny<CancellationToken>()))
+            .Callback<SavedChatDocument, CancellationToken>((document, _) =>
+            {
+                document.StorageRoot = Path.GetTempPath();
+                checkpoint = document;
+            })
+            .Returns(Task.CompletedTask);
+        var titleGenerator = new Mock<IChatTitleGenerator>(MockBehavior.Strict);
+        titleGenerator.Setup(generator => generator.Generate(string.Empty)).Returns("New chat");
+        var descriptor = new AgentDefinitionDescriptor
+        {
+            Reference = new AgentDefinitionReference(AgentDefinitionKind.SavedWorkflow, "workflow"),
+            Name = "Workflow",
+            RuntimeKind = AgentRuntimeKind.WorkflowAgent,
+            ModelRequirement = AgentModelRequirement.None,
+            LaunchBehavior = AgentLaunchBehavior.RunOnStart
+        };
+        var resolver = new Mock<IAgentSessionDefinitionResolver>(MockBehavior.Strict);
+        resolver.Setup(value => value.ValidateAsync(descriptor.Reference, It.IsAny<AgentSessionDefinitionRequest>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new AgentDefinitionLaunchValidation { CanLaunch = true });
+        resolver.Setup(value => value.ResolveAsync(descriptor.Reference, It.IsAny<AgentSessionDefinitionRequest>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new ResolvedAgentSessionDefinition
+            {
+                Descriptor = descriptor,
+                RuntimeReference = descriptor.Reference,
+                Inputs = new Dictionary<string, string> { ["topic"] = "runtime" },
+                PresentationParticipant = new ChatRuntimeParticipantDescriptor
+                {
+                    Id = "workflow",
+                    Name = "Workflow",
+                    RuntimeKind = AgentRuntimeKind.WorkflowAgent
+                },
+                Validation = new AgentDefinitionLaunchValidation { CanLaunch = true }
+            });
+        var runner = new StubAgentRunner([
+            new AgentMessageCompleted("judge", new AgentOutputMessage("Judge", "verdict")),
+            new AgentRunCompleted(new AgentRunResult
+            {
+                FinalMessage = new AgentOutputMessage("Judge", "verdict"),
+                FinalMessageId = "judge",
+                Messages = [new AgentOutputMessage("Judge", "verdict")]
+            })
+        ]);
+        var service = CreateService(
+            runner,
+            savedChatService: savedChats.Object,
+            chatTitleGenerator: titleGenerator.Object,
+            definitionResolver: resolver.Object);
+        await service.StartAsync(new ChatEngineSessionStartRequest
+        {
+            Configuration = new AppChatConfiguration("model", []),
+            Agents = [],
+            RuntimeReference = descriptor.Reference,
+            RuntimeParticipant = new ChatRuntimeParticipantDescriptor
+            {
+                Id = "workflow",
+                Name = "Workflow",
+                RuntimeKind = AgentRuntimeKind.WorkflowAgent
+            },
+            RuntimeInputs = new Dictionary<string, string> { ["topic"] = "runtime" },
+            LaunchBehavior = AgentLaunchBehavior.RunOnStart
+        }, cancellationToken: TestContext.Current.CancellationToken);
+
+        await service.RunOnStartAsync(TestContext.Current.CancellationToken);
+        var saved = Assert.IsType<SavedChatDocument>(checkpoint);
+        Assert.Equal("RunOnStart", saved.Launch.LaunchBehavior);
+        Assert.Equal("runtime", saved.Launch.Inputs["topic"]);
+        Assert.Null(saved.NativeSession);
+
+        await service.RestoreSavedChatAsync(saved, TestContext.Current.CancellationToken);
+
+        Assert.Equal(descriptor.Reference, service.ActiveSession!.RuntimeReference);
+        Assert.Equal("runtime", service.ActiveSession.Inputs["topic"]);
+        var restored = Assert.Single(service.Messages, static message => message.Role == AppChatRole.Assistant);
+        Assert.Equal("Judge", restored.AgentName);
+        Assert.Equal("verdict", restored.Content);
+    }
+
+    [Fact]
     public async Task SendAsync_FailedRunCancelsStreamsAndAddsOneErrorMessage()
     {
         var service = CreateService(new StubAgentRunner([
@@ -1064,7 +1171,10 @@ public sealed class UnifiedAgentRuntimeChatSessionServiceTests
     private static UnifiedAgentRuntimeChatSessionService CreateService(
         IAgentRunner runner,
         ISandboxSessionFactory? sandboxSessionFactory = null,
-        IAgentDefinitionCatalog? definitionCatalog = null) =>
+        IAgentDefinitionCatalog? definitionCatalog = null,
+        ISavedChatService? savedChatService = null,
+        IChatTitleGenerator? chatTitleGenerator = null,
+        IAgentSessionDefinitionResolver? definitionResolver = null) =>
         new(
             runner,
             definitionCatalog ?? new StubDefinitionCatalog(),
@@ -1074,7 +1184,10 @@ public sealed class UnifiedAgentRuntimeChatSessionServiceTests
             null!,
             sandboxSessionFactory ?? new StubSandboxSessionFactory(),
             null!,
-            new HarnessResponseEventProjector(NullLogger<HarnessResponseEventProjector>.Instance));
+            new HarnessResponseEventProjector(NullLogger<HarnessResponseEventProjector>.Instance),
+            savedChatService,
+            chatTitleGenerator,
+            definitionResolver: definitionResolver);
 
     private static void SetPendingApproval(UnifiedAgentRuntimeChatSessionService service)
     {
@@ -1659,7 +1772,8 @@ public sealed class UnifiedAgentRuntimeChatSessionServiceTests
         {
             Configuration = new AppChatConfiguration("model", []),
             Agents = [],
-            RuntimeReference = new AgentDefinitionReference(AgentDefinitionKind.SavedWorkflow, "agent")
+            RuntimeReference = new AgentDefinitionReference(AgentDefinitionKind.SavedWorkflow, "agent"),
+            LaunchBehavior = AgentLaunchBehavior.RunOnStart
         };
 
     private static ChatEngineSessionStartRequest CreateSandboxStartRequest() =>

@@ -113,6 +113,43 @@ public sealed class GroupChatRuntimeWorkflowBuilderTests
         Assert.False(shouldTerminate);
     }
 
+    [Fact]
+    public async Task PrefixCycleSuffix_AllowsClosingJudgeBeforeMaximumIterations()
+    {
+        var manager = new ConfiguredProgrammableGroupChatManager(
+            [
+                CreateAgent("host", "Host"),
+                CreateAgent("participant_a", "Participant A"),
+                CreateAgent("participant_b", "Participant B"),
+                CreateAgent("judge", "Judge")
+            ],
+            ["host", "participant_a", "participant_b", "judge"],
+            new GroupChatWorkflowManagerDefinition
+            {
+                Kind = GroupChatWorkflowManagerKind.Programmable,
+                MaximumIterations = 10,
+                Program = GroupChatManagerPrograms.PrefixCycleSuffix(
+                    prefix: ["host"],
+                    cycle: ["participant_a", "participant_b"],
+                    suffix: ["participant_a", "participant_b", "judge"]),
+                ProgramDisplayName = "PrefixCycleSuffix"
+            },
+            []);
+        var beforeJudge = Enumerable.Range(0, 9)
+            .Select(_ => new ChatMessage(ChatRole.Assistant, "completed turn"))
+            .ToList();
+
+        var judge = await InvokeSelectNextAgentAsync(manager, beforeJudge);
+        var stopsBeforeJudge = await InvokeShouldTerminateAsync(manager, beforeJudge);
+        var stopsAfterJudge = await InvokeShouldTerminateAsync(
+            manager,
+            beforeJudge.Append(new ChatMessage(ChatRole.Assistant, "verdict")).ToList());
+
+        Assert.Equal("Judge", judge.Name);
+        Assert.False(stopsBeforeJudge);
+        Assert.True(stopsAfterJudge);
+    }
+
     private static AIAgent CreateAgent(string id, string name)
     {
         return new StubAgent(id, name);

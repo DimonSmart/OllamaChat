@@ -358,6 +358,7 @@
                 RuntimeParticipant = resolved.PresentationParticipant,
                 RuntimeReference = resolved.RuntimeReference,
                 RuntimeDefaultModel = resolved.DefaultModel,
+                LaunchBehavior = resolved.Descriptor.LaunchBehavior,
                 RuntimeInputs = resolved.Inputs,
                 Overrides = BuildOverrides()
             };
@@ -369,6 +370,10 @@
 
             await ChatService.StartAsync(request, progress: progress);
             chatStarted = true;
+            if (resolved.Descriptor.LaunchBehavior == AgentLaunchBehavior.RunOnStart)
+            {
+                await ChatService.RunOnStartAsync();
+            }
         }
         catch (OperationCanceledException)
         {

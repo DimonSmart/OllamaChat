@@ -430,6 +430,16 @@ public sealed class SqliteTaskSessionRepository : ITaskSessionRepository
         string label,
         CancellationToken cancellationToken = default)
     {
+        return await TryGetSummaryAsync(databaseFilePath, sessionId, label, cancellationToken)
+            ?? throw new InvalidOperationException("summary_not_found");
+    }
+
+    public async Task<TaskSessionSummarySnapshot?> TryGetSummaryAsync(
+        string databaseFilePath,
+        string sessionId,
+        string label,
+        CancellationToken cancellationToken = default)
+    {
         var normalizedDatabaseFilePath = NormalizeDatabaseFilePath(databaseFilePath);
         var normalizedSessionId = NormalizeRequired(sessionId, "session_id_required");
         var normalizedLabel = NormalizeRequired(label, "summary_label_required");
@@ -449,9 +459,7 @@ public sealed class SqliteTaskSessionRepository : ITaskSessionRepository
 
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
         if (!await reader.ReadAsync(cancellationToken))
-        {
-            throw new InvalidOperationException("summary_not_found");
-        }
+            return null;
 
         return new TaskSessionSummarySnapshot(
             SessionId: reader.GetString(0),

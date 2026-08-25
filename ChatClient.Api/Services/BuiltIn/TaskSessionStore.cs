@@ -176,6 +176,19 @@ public sealed class TaskSessionStore(
             cancellationToken);
     }
 
+    public Task<TaskSessionSummarySnapshot?> TryGetSummaryAsync(
+        string? sessionId,
+        string label,
+        CancellationToken cancellationToken)
+    {
+        var storage = ResolveStorage();
+        return repository.TryGetSummaryAsync(
+            storage.DatabaseFilePath,
+            ResolveExistingSessionId(sessionId),
+            NormalizeRequired(label, "summary_label_required"),
+            cancellationToken);
+    }
+
     private TaskSessionStorage ResolveStorage()
     {
         var configuredPath = sessionContext.Binding?.Parameters.TryGetValue(DatabaseFileParameter, out var databaseFile) == true &&

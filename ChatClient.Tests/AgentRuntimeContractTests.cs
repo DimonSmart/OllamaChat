@@ -27,7 +27,8 @@ public sealed class AgentRuntimeContractTests
             new StubWorkflowDefinitionService([workflow]),
             new StubInputDefinitionProvider(),
             new StubModelRequirementAnalyzer(),
-            new StubLaunchCapabilityAnalyzer());
+            new StubLaunchCapabilityAnalyzer(),
+            new StubLaunchBehaviorAnalyzer());
 
         var items = await catalog.GetAllAsync(cancellationToken: TestContext.Current.CancellationToken);
 
@@ -39,6 +40,7 @@ public sealed class AgentRuntimeContractTests
         Assert.Contains(items, item =>
             item.Reference == new AgentDefinitionReference(AgentDefinitionKind.SavedWorkflow, sharedId.ToString("D")) &&
             item.RuntimeKind == AgentRuntimeKind.WorkflowAgent &&
+            item.LaunchBehavior == AgentLaunchBehavior.RunOnStart &&
             item.Name == "Review Flow" &&
             item.Description == "Reviews drafts");
     }
@@ -64,7 +66,8 @@ public sealed class AgentRuntimeContractTests
             ]),
             new StubInputDefinitionProvider(),
             new StubModelRequirementAnalyzer(),
-            new StubLaunchCapabilityAnalyzer());
+            new StubLaunchCapabilityAnalyzer(),
+            new StubLaunchBehaviorAnalyzer());
 
         var workflow = await catalog.FindAsync(new AgentDefinitionReference(
             AgentDefinitionKind.SavedWorkflow,
@@ -154,6 +157,16 @@ public sealed class AgentRuntimeContractTests
             AgentDefinitionReference reference,
             CancellationToken cancellationToken = default) =>
             Task.FromResult(new AgentLaunchCapabilities());
+    }
+
+    private sealed class StubLaunchBehaviorAnalyzer : IAgentDefinitionLaunchBehaviorAnalyzer
+    {
+        public Task<AgentLaunchBehavior> AnalyzeAsync(
+            AgentDefinitionReference reference,
+            CancellationToken cancellationToken = default) =>
+            Task.FromResult(reference.Kind == AgentDefinitionKind.SavedWorkflow
+                ? AgentLaunchBehavior.RunOnStart
+                : AgentLaunchBehavior.WaitForUserMessage);
     }
 
     private sealed class RecordingLlmFactory : ILlmAgentRuntimeFactory

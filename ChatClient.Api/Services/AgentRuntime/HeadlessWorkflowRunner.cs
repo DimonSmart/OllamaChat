@@ -526,11 +526,11 @@ public sealed class HeadlessWorkflowRunner(
     {
         if (!string.IsNullOrWhiteSpace(request.Workflow.Execution.CompletionSummaryLabel))
         {
-            var snapshot = await taskSessionStore.GetSummaryAsync(
+            var snapshot = await taskSessionStore.TryGetSummaryAsync(
                 taskSessionId,
                 request.Workflow.Execution.CompletionSummaryLabel,
                 cancellationToken);
-            if (!string.IsNullOrWhiteSpace(snapshot.Markdown))
+            if (!string.IsNullOrWhiteSpace(snapshot?.Markdown))
             {
                 return new OrchestrationCompletedAssistantMessage(
                     new AppChatMessage(

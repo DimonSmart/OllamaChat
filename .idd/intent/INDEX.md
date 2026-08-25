@@ -13,7 +13,6 @@ Git history is the source for deleted or previous document versions.
 | Document | Role | Area | Notes | Replaces |
 | --- | --- | --- | --- | --- |
 | IDD-0001 | Spec | Agentic chat | Conversational agent and workflow execution | — |
-| IDD-0002 | Spec | Agent orchestrations | Configure and run orchestration sessions | — |
 | IDD-0003 | Spec | Workflow definitions | Manage programmable workflows | — |
 | IDD-0004 | Spec | Vector search | Shared Knowledge Stores and retrieval | — |
 | IDD-0005 | Spec | Agent templates | Reusable agent configuration | — |

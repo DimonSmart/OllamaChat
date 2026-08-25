@@ -76,4 +76,10 @@ public interface ITaskSessionRepository
         string sessionId,
         string label,
         CancellationToken cancellationToken = default);
+
+    Task<TaskSessionSummarySnapshot?> TryGetSummaryAsync(
+        string databaseFilePath,
+        string sessionId,
+        string label,
+        CancellationToken cancellationToken = default);
 }

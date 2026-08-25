@@ -21,7 +21,8 @@ public sealed class AgentDefinitionLaunchCapabilityAnalyzerTests
             new EmptyWorkflowDefinitionService(),
             new EmptyInputDefinitionProvider(),
             new RequiredModelAnalyzer(),
-            analyzer);
+            analyzer,
+            new WaitForUserMessageAnalyzer());
 
         var descriptor = await catalog.FindAsync(
             new AgentDefinitionReference(
@@ -136,5 +137,13 @@ public sealed class AgentDefinitionLaunchCapabilityAnalyzerTests
             AgentDefinitionReference reference,
             CancellationToken cancellationToken = default) =>
             Task.FromResult(AgentModelRequirement.Required);
+    }
+
+    private sealed class WaitForUserMessageAnalyzer : IAgentDefinitionLaunchBehaviorAnalyzer
+    {
+        public Task<AgentLaunchBehavior> AnalyzeAsync(
+            AgentDefinitionReference reference,
+            CancellationToken cancellationToken = default) =>
+            Task.FromResult(AgentLaunchBehavior.WaitForUserMessage);
     }
 }

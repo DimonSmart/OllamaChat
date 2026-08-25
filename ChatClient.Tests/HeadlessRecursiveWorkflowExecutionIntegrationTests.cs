@@ -826,6 +826,9 @@ public sealed class HeadlessRecursiveWorkflowExecutionIntegrationTests
         public Task<TaskSessionSummarySnapshot> GetSummaryAsync(string databaseFilePath, string sessionId, string label, CancellationToken cancellationToken = default) =>
             Task.FromResult(_sessions[sessionId].Summaries[label]);
 
+        public Task<TaskSessionSummarySnapshot?> TryGetSummaryAsync(string databaseFilePath, string sessionId, string label, CancellationToken cancellationToken = default) =>
+            Task.FromResult(_sessions[sessionId].Summaries.GetValueOrDefault(label));
+
         private sealed class Session(string id, string? title, string? description)
         {
             public string? Phase { get; set; }

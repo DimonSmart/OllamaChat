@@ -60,6 +60,7 @@ public sealed class AgentInputDefinitionProviderTests
                 StartInputs =
                 [
                     Input("title", WorkflowStartInputKind.Text, "hello", true),
+                    Input("subtitle", WorkflowStartInputKind.Text, "optional", false),
                     Input("enabled", WorkflowStartInputKind.Boolean, "true", false),
                     Input("count", WorkflowStartInputKind.Number, "42", false),
                     Input("payload", WorkflowStartInputKind.Json, "{\"a\":1}", false),
@@ -72,14 +73,17 @@ public sealed class AgentInputDefinitionProviderTests
         Assert.Equal(
             [
                 AgentInputDefinitionKind.Text,
+                AgentInputDefinitionKind.Text,
                 AgentInputDefinitionKind.Boolean,
                 AgentInputDefinitionKind.Number,
                 AgentInputDefinitionKind.Json,
                 AgentInputDefinitionKind.MarkdownDocument
             ],
             inputs.Select(static input => input.Kind).ToArray());
-        Assert.Equal(["hello", "true", "42", "{\"a\":1}", "# Doc"], inputs.Select(static input => input.DefaultValue).ToArray());
-        Assert.Equal([true, false, false, false, true], inputs.Select(static input => input.IsRequired).ToArray());
+        Assert.Equal(["hello", "optional", "true", "42", "{\"a\":1}", "# Doc"], inputs.Select(static input => input.DefaultValue).ToArray());
+        Assert.Equal([true, false, false, false, false, true], inputs.Select(static input => input.IsRequired).ToArray());
+        Assert.All(inputs, input => Assert.Equal($"Description for {input.Key}", input.Description));
+        Assert.All(inputs, input => Assert.Equal($"Enter {input.Key}", input.Placeholder));
     }
 
     private static WorkflowStartInputDefinition Input(
@@ -91,9 +95,11 @@ public sealed class AgentInputDefinitionProviderTests
         {
             Key = key,
             DisplayName = key,
+            Description = $"Description for {key}",
             Kind = kind,
             DefaultValue = defaultValue,
-            IsRequired = required
+            IsRequired = required,
+            Placeholder = $"Enter {key}"
         };
 
     private sealed class StubCompiler(IOrchestrationWorkflowDefinition workflow) : IWorkflowDefinitionCompiler
