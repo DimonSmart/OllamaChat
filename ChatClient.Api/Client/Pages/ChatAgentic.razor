@@ -108,13 +108,6 @@
                             </MudStack>
                         }
 
-                        @if (selectedDefinition?.LaunchCapabilities.SupportsMcpBindingOverrides == true)
-                        {
-                            <McpServerBindingsPicker Bindings="@mcpServerBindings"
-                                                     BindingsChanged="OnMcpServerBindingsChanged"
-                                                     Disabled="@isStartingChat" />
-                        }
-
                         @if (selectedDefinition?.LaunchCapabilities.SupportsWorkspace == true)
                         {
                             <MudStack Row="true" Spacing="1" AlignItems="AlignItems.Center">
@@ -142,11 +135,21 @@
                             </MudSelect>
                         }
 
-                        <ServerModelPicker Value="ModelSelectionContext.Value"
-                                           ValueChanged="ModelSelectionContext.SetValueAsync"
-                                           Presentation="ServerModelPickerPresentation.Toolbar"
-                                           Disabled="isStartingChat"
-                                           Class="chat-launch-model-selector" />
+                        <MudStack Row="true" Spacing="1" Wrap="Wrap.Wrap" AlignItems="AlignItems.Center">
+                            @if (selectedDefinition?.LaunchCapabilities.SupportsMcpBindingOverrides == true)
+                            {
+                                <McpServerBindingsPicker Bindings="@mcpServerBindings"
+                                                         BindingsChanged="OnMcpServerBindingsChanged"
+                                                         Disabled="@isStartingChat" />
+                            }
+
+                            <ServerModelPicker Value="ModelSelectionContext.Value"
+                                               ValueChanged="ModelSelectionContext.SetValueAsync"
+                                               Presentation="ServerModelPickerPresentation.Toolbar"
+                                               FillAvailableWidth="false"
+                                               Disabled="isStartingChat"
+                                               Class="chat-launch-model-selector" />
+                        </MudStack>
 
                         @if (!isStartingChat && launchValidation.Problems.Count > 0)
                         {
