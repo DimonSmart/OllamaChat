@@ -108,6 +108,13 @@
                             </MudStack>
                         }
 
+                        @if (selectedDefinition?.LaunchCapabilities.SupportsMcpBindingOverrides == true)
+                        {
+                            <McpServerBindingsPicker Bindings="@mcpServerBindings"
+                                                     BindingsChanged="OnMcpServerBindingsChanged"
+                                                     Disabled="@isStartingChat" />
+                        }
+
                         @if (selectedDefinition?.LaunchCapabilities.SupportsWorkspace == true)
                         {
                             <MudStack Row="true" Spacing="1" AlignItems="AlignItems.Center">
@@ -135,21 +142,11 @@
                             </MudSelect>
                         }
 
-                        <MudStack Row="true" Spacing="1" Wrap="Wrap.Wrap" AlignItems="AlignItems.Center">
-                            @if (selectedDefinition?.LaunchCapabilities.SupportsMcpBindingOverrides == true)
-                            {
-                                <McpServerBindingsPicker Bindings="@mcpServerBindings"
-                                                         BindingsChanged="OnMcpServerBindingsChanged"
-                                                         Disabled="@isStartingChat" />
-                            }
-
-                            <ServerModelPicker Value="ModelSelectionContext.Value"
-                                               ValueChanged="ModelSelectionContext.SetValueAsync"
-                                               Presentation="ServerModelPickerPresentation.Toolbar"
-                                               FillAvailableWidth="false"
-                                               Disabled="isStartingChat"
-                                               Class="chat-launch-model-selector" />
-                        </MudStack>
+                        <ServerModelPicker Value="ModelSelectionContext.Value"
+                                           ValueChanged="ModelSelectionContext.SetValueAsync"
+                                           Presentation="ServerModelPickerPresentation.Toolbar"
+                                           Disabled="isStartingChat"
+                                           Class="chat-launch-model-selector" />
 
                         @if (!isStartingChat && launchValidation.Problems.Count > 0)
                         {
@@ -448,91 +445,52 @@
             inputValues[input.Key] = input.Value;
         }
 
-        mcpServerBindings = activeSession.Overrides.McpServerBindings
+        mcpServerBindings = activeSession.Overrides.McpServerBindings?
             .Select(static binding => binding.Clone())
-            .ToList();
-        fileAccessWorkspace = activeSession.Overrides.FileAccessWorkspace ?? string.Empty;
+            .ToList() ?? [];
+        fileAccessWorkspace = activeSession.Overrides.WorkspacePath ?? string.Empty;
         sandboxProfileId = activeSession.Overrides.SandboxProfileId;
-        effectiveModel = activeSession.RuntimeDefaultModel;
+        effectiveModel = activeSession.Model;
     }
+
+    private static string GetKindLabel(AgentDefinitionDescriptor item) =>
+        item.RuntimeKind == AgentRuntimeKind.WorkflowAgent ? "workflow" : "agent";
 
     private IReadOnlyDictionary<string, string> BuildInputs() =>
-        inputValues.ToDictionary(static entry => entry.Key, static entry => entry.Value, StringComparer.OrdinalIgnoreCase);
+        inputDefinitions
+            .Where(input => inputValues.TryGetValue(input.Key, out var value) &&
+                            (!string.IsNullOrWhiteSpace(value) || input.Kind == AgentInputDefinitionKind.Boolean))
+            .ToDictionary(
+                input => input.Key,
+                input => inputValues[input.Key],
+                StringComparer.OrdinalIgnoreCase);
 
-    private AgentSessionOverrides BuildOverrides() => new()
+    private string GetInputValue(AgentInputDefinition input) =>
+        inputValues.TryGetValue(input.Key, out var value)
+            ? value
+            : input.DefaultValue ?? string.Empty;
+
+    private async Task SetInputValueAsync(string key, string? value)
     {
-        McpServerBindings = mcpServerBindings.Select(static binding => binding.Clone()).ToList(),
-        FileAccessWorkspace = string.IsNullOrWhiteSpace(fileAccessWorkspace) ? null : fileAccessWorkspace.Trim(),
-        SandboxProfileId = sandboxProfileId
-    };
-
-    private async Task RefreshLaunchValidationAsync()
-    {
-        var currentVersion = ++validationVersion;
-        isValidatingLaunch = true;
-        try
-        {
-            if (selectedDefinition is null)
-            {
-                launchValidation = new AgentDefinitionLaunchValidation
-                {
-                    CanLaunch = false,
-                    Problems =
-                    [
-                        new AgentDefinitionLaunchProblem
-                        {
-                            Code = AgentDefinitionLaunchProblemCode.DefinitionUnavailable,
-                            Message = "Select an agent or workflow."
-                        }
-                    ]
-                };
-                return;
-            }
-
-            var result = await SessionDefinitionResolver.ResolveAsync(selectedDefinition.Reference, new AgentSessionDefinitionRequest
-            {
-                UiModelSelection = UiModelSelection,
-                Inputs = BuildInputs(),
-                Overrides = BuildOverrides()
-            });
-            if (currentVersion == validationVersion)
-            {
-                launchValidation = result.Validation;
-                effectiveModel = result.DefaultModel;
-            }
-        }
-        catch (Exception ex)
-        {
-            Logger.LogError(ex, "Failed to validate chat launch configuration.");
-            if (currentVersion == validationVersion)
-            {
-                launchValidation = new AgentDefinitionLaunchValidation
-                {
-                    CanLaunch = false,
-                    Problems =
-                    [
-                        new AgentDefinitionLaunchProblem
-                        {
-                            Code = AgentDefinitionLaunchProblemCode.Unknown,
-                            Message = $"Could not validate launch configuration: {ex.Message}"
-                        }
-                    ]
-                };
-            }
-        }
-        finally
-        {
-            if (currentVersion == validationVersion)
-            {
-                isValidatingLaunch = false;
-                await InvokeAsync(StateHasChanged);
-            }
-        }
+        inputValues[key] = value ?? string.Empty;
+        await RefreshLaunchValidationAsync();
     }
+
+    private bool GetBooleanInputValue(AgentInputDefinition input) =>
+        bool.TryParse(GetInputValue(input), out var value) && value;
+
+    private async Task SetBooleanInputValueAsync(string key, bool value)
+    {
+        inputValues[key] = value.ToString();
+        await RefreshLaunchValidationAsync();
+    }
+
+    private static string GetInputLabel(AgentInputDefinition input) =>
+        input.IsRequired ? $"{input.DisplayName} *" : input.DisplayName;
 
     private async Task OnMcpServerBindingsChanged(List<McpServerSessionBinding> bindings)
     {
-        mcpServerBindings = bindings.Select(static binding => binding.Clone()).ToList();
+        mcpServerBindings = bindings;
         await RefreshLaunchValidationAsync();
     }
 
@@ -542,40 +500,140 @@
         await RefreshLaunchValidationAsync();
     }
 
+    private async Task OpenWorkspacePickerAsync()
+    {
+        var initialPath = GetWorkspacePickerInitialPath();
+        var parameters = new DialogParameters<WorkspaceDirectoryPickerDialog>
+        {
+            { dialog => dialog.InitialPath, initialPath }
+        };
+        var dialog = await DialogService.ShowAsync<WorkspaceDirectoryPickerDialog>(
+            "Select workspace", parameters,
+            new DialogOptions { MaxWidth = MaxWidth.Medium, FullWidth = true, CloseButton = true });
+        var result = await dialog.Result;
+        if (result?.Canceled != false || result.Data is not string selectedPath)
+            return;
+
+        fileAccessWorkspace = selectedPath;
+        await RefreshLaunchValidationAsync();
+    }
+
+    private async Task CreateWorkspaceAsync()
+    {
+        try
+        {
+            fileAccessWorkspace = WorkspaceDirectoryService.CreateWorkspace(userSettings.WorkspacesRoot, fileAccessWorkspace);
+            await RefreshLaunchValidationAsync();
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "Could not create workspace.");
+            Snackbar.Add($"Could not create workspace: {ex.Message}", Severity.Error);
+        }
+    }
+
+    private string GetWorkspacePickerInitialPath()
+    {
+        foreach (var candidate in new[]
+                 {
+                     fileAccessWorkspace,
+                     userSettings.WorkspacesRoot,
+                     Environment.GetFolderPath(Environment.SpecialFolder.UserProfile)
+                 })
+        {
+            if (!string.IsNullOrWhiteSpace(candidate) && Directory.Exists(candidate))
+                return WorkspaceDirectoryService.NormalizePath(candidate);
+        }
+
+        return WorkspaceDirectoryService.GetFileSystemRoots().FirstOrDefault() ?? Path.GetPathRoot(Environment.CurrentDirectory) ?? Environment.CurrentDirectory;
+    }
+
     private async Task OnSandboxProfileChanged(Guid? value)
     {
         sandboxProfileId = value;
         await RefreshLaunchValidationAsync();
     }
 
-    private static string GetInputLabel(AgentInputDefinition input) =>
-        input.Required ? $"{input.Name} *" : input.Name;
-
-    private string GetInputValue(AgentInputDefinition input) =>
-        inputValues.GetValueOrDefault(input.Key, string.Empty);
-
-    private bool GetBooleanInputValue(AgentInputDefinition input) =>
-        bool.TryParse(GetInputValue(input), out var value) && value;
-
-    private async Task SetInputValueAsync(string key, string value)
+    private AgentSessionOverrides BuildOverrides() => new()
     {
-        inputValues[key] = value;
-        await RefreshLaunchValidationAsync();
-    }
-
-    private Task SetBooleanInputValueAsync(string key, bool value) =>
-        SetInputValueAsync(key, value.ToString());
-
-    private static string NormalizeBoolean(string value) =>
-        bool.TryParse(value, out var parsed) ? parsed.ToString() : bool.FalseString;
-
-    private static string GetKindLabel(AgentDefinitionDescriptor descriptor) => descriptor.Kind switch
-    {
-        AgentDefinitionKind.SavedAgent => "Agent",
-        AgentDefinitionKind.WorkflowDefinition => "Workflow",
-        _ => descriptor.Kind.ToString()
+        McpServerBindings = selectedDefinition?.LaunchCapabilities.SupportsMcpBindingOverrides == true
+            ? mcpServerBindings
+            : null,
+        WorkspacePath = selectedDefinition?.LaunchCapabilities.SupportsWorkspace == true &&
+                              !string.IsNullOrWhiteSpace(fileAccessWorkspace)
+            ? fileAccessWorkspace
+            : null,
+        SandboxProfileId = selectedDefinition?.LaunchCapabilities.SupportsSandboxProfile == true
+            ? sandboxProfileId
+            : null
     };
 
+    private async Task RefreshLaunchValidationAsync()
+    {
+        var version = System.Threading.Interlocked.Increment(ref validationVersion);
+        if (selectedDefinition is null)
+        {
+            launchValidation = new AgentDefinitionLaunchValidation
+            {
+                CanLaunch = false
+            };
+            isValidatingLaunch = false;
+            await InvokeAsync(StateHasChanged);
+            return;
+        }
+
+        isValidatingLaunch = true;
+        await InvokeAsync(StateHasChanged);
+
+        var reference = selectedDefinition.Reference;
+        var request = new AgentSessionDefinitionRequest
+        {
+            UiModelSelection = UiModelSelection,
+            Inputs = BuildInputs(),
+            Overrides = BuildOverrides()
+        };
+
+        try
+        {
+            var validation = await SessionDefinitionResolver.ValidateAsync(reference, request);
+            if (version != System.Threading.Volatile.Read(ref validationVersion))
+            {
+                return;
+            }
+
+            launchValidation = validation;
+        }
+        catch (Exception ex)
+        {
+            if (version != System.Threading.Volatile.Read(ref validationVersion))
+            {
+                return;
+            }
+
+            Logger.LogWarning(ex, "Launch validation failed.");
+            launchValidation = new AgentDefinitionLaunchValidation
+            {
+                CanLaunch = false,
+                Problems = [new AgentDefinitionLaunchProblem(ex.Message)]
+            };
+        }
+        finally
+        {
+            if (version == System.Threading.Volatile.Read(ref validationVersion))
+            {
+                isValidatingLaunch = false;
+            }
+        }
+
+        await InvokeAsync(StateHasChanged);
+    }
+
     private static bool SameSelection(ServerModelSelection left, ServerModelSelection right) =>
-        left.ServerId == right.ServerId && string.Equals(left.ModelName, right.ModelName, StringComparison.Ordinal);
+        left.ServerId == right.ServerId &&
+        string.Equals(left.ModelName, right.ModelName, StringComparison.Ordinal);
+
+    private static string NormalizeBoolean(string value) =>
+        bool.TryParse(value, out var parsed)
+            ? parsed.ToString()
+            : value;
 }
