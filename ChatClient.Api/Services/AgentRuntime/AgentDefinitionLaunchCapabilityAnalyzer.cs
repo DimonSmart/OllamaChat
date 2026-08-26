@@ -1,5 +1,4 @@
 using ChatClient.Api.AgentWorkflows;
-using ChatClient.Api.AgentWorkflows.Compatibility;
 using ChatClient.Application.Services;
 using ChatClient.Application.Services.AgentRuntime;
 using ChatClient.Domain.Models;
@@ -9,8 +8,7 @@ namespace ChatClient.Api.Services.AgentRuntime;
 public sealed class AgentDefinitionLaunchCapabilityAnalyzer(
     IAgentTemplateService agentTemplateService,
     IWorkflowDefinitionService workflowDefinitionService,
-    IWorkflowDefinitionCompiler workflowDefinitionCompiler,
-    ILegacyWorkflowDefinitionNormalizer legacyWorkflowDefinitionNormalizer) : IAgentDefinitionLaunchCapabilityAnalyzer
+    IWorkflowDefinitionCompiler workflowDefinitionCompiler) : IAgentDefinitionLaunchCapabilityAnalyzer
 {
     public Task<AgentLaunchCapabilities> AnalyzeAsync(
         AgentDefinitionReference reference,
@@ -51,11 +49,10 @@ public sealed class AgentDefinitionLaunchCapabilityAnalyzer(
         var compiled = await workflowDefinitionCompiler.CompileAsync(workflow.SourceCode, cancellationToken);
         var definition = compiled.Workflow
             ?? throw new InvalidOperationException("Workflow compilation did not return a workflow definition.");
-        var normalized = await legacyWorkflowDefinitionNormalizer.NormalizeAsync(definition, cancellationToken);
 
         var supportsWorkspace = false;
         var supportsSandbox = false;
-        foreach (var participant in normalized.Participants)
+        foreach (var participant in definition.Participants)
         {
             var participantCapabilities = await AnalyzeParticipantAsync(participant, visited, cancellationToken);
             supportsWorkspace |= participantCapabilities.SupportsWorkspace;

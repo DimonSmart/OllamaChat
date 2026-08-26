@@ -1,5 +1,4 @@
 using ChatClient.Api.AgentWorkflows;
-using ChatClient.Api.AgentWorkflows.Compatibility;
 using ChatClient.Api.AgentWorkflows.GroupChat;
 using ChatClient.Api.AgentWorkflows.Runtime;
 using ChatClient.Api.Client.Services.Agentic;
@@ -477,7 +476,6 @@ public sealed class HeadlessRecursiveWorkflowExecutionIntegrationTests
             var workflowFactory = new RecordingWorkflowAgentRuntimeFactory(new WorkflowAgentRuntimeFactory(
                 new InMemoryWorkflowDefinitionService(workflows),
                 new PrebuiltWorkflowDefinitionCompiler(workflows),
-                new LegacyWorkflowDefinitionNormalizer(new EmptyAgentTemplateService()),
                 new ReferencedWorkflowParticipantResolver(catalog),
                 new WorkflowParticipantRuntimeFactory(),
                 headlessRunner,

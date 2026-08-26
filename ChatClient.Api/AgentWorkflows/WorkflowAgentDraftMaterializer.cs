@@ -295,7 +295,6 @@ public sealed class WorkflowParticipantResolver(
         }
     }
 
-    [Obsolete]
     private static void ResolveInstructionTemplates(List<ResolvedWorkflowParticipant> participants)
     {
         var agentsById = participants

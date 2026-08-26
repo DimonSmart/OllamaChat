@@ -76,7 +76,7 @@ public sealed class WorkflowSourceCodeSyntaxHighlighterTests
                             .New("Review Moderator", "moderator")
                             .Build()))
                 .Agent("reviewer", agent => agent
-                    .FromSavedAgent("Saved Reviewer"))
+                    .UseAgentById("ab38adc6-74a2-4ccc-924b-eb1bce9d0985"))
                 .UseGroupChat(groupChat => groupChat
                     .Participants("moderator", "reviewer")
                     .UseProgrammableManager(manager => manager
@@ -95,7 +95,7 @@ public sealed class WorkflowSourceCodeSyntaxHighlighterTests
         var html = WorkflowSourceCodeSyntaxHighlighter.ToHighlightedHtml(source);
 
         Assert.Contains("<span class=\"tok-agent-registration\">Agent</span>", html, StringComparison.Ordinal);
-        Assert.Contains("<span class=\"tok-agent-factory\">FromSavedAgent</span>", html, StringComparison.Ordinal);
+        Assert.Contains("<span class=\"tok-agent-factory\">UseAgentById</span>", html, StringComparison.Ordinal);
         Assert.Contains("<span class=\"tok-agent-factory\">UseDraft</span>", html, StringComparison.Ordinal);
         Assert.Contains("<span class=\"tok-agent-factory\">New</span>", html, StringComparison.Ordinal);
         Assert.Contains("<span class=\"tok-agent-reference\">Participants</span>", html, StringComparison.Ordinal);
@@ -107,7 +107,7 @@ public sealed class WorkflowSourceCodeSyntaxHighlighterTests
         Assert.Contains("<span class=\"tok-agent-id\">&quot;moderator&quot;</span>", html, StringComparison.Ordinal);
         Assert.Contains("<span class=\"tok-agent-id\">&quot;reviewer&quot;</span>", html, StringComparison.Ordinal);
         Assert.Contains("<span class=\"tok-agent-display-name\">&quot;Review Moderator&quot;</span>", html, StringComparison.Ordinal);
-        Assert.Contains("<span class=\"tok-agent-display-name\">&quot;Saved Reviewer&quot;</span>", html, StringComparison.Ordinal);
+        Assert.Contains("<span class=\"tok-agent-id\">&quot;ab38adc6-74a2-4ccc-924b-eb1bce9d0985&quot;</span>", html, StringComparison.Ordinal);
     }
 
     [Fact]

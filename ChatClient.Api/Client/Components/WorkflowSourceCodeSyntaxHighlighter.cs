@@ -69,9 +69,9 @@ internal static class WorkflowSourceCodeSyntaxHighlighter
                     AddStringLiteralArgument(invocation, 0, AgentIdClass, tokenClasses);
                     break;
 
-                case "FromSavedAgent":
+                case "UseAgentById":
                     AddTokenClass(tokenClasses, method, AgentFactoryMethodClass);
-                    AddStringLiteralArgument(invocation, 0, AgentDisplayNameClass, tokenClasses);
+                    AddStringLiteralArgument(invocation, 0, AgentIdClass, tokenClasses);
                     break;
 
                 case "New" when IsAgentTemplateBuilderNew(invocation):

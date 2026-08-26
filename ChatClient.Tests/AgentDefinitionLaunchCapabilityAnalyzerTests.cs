@@ -1,5 +1,4 @@
 using ChatClient.Api.AgentWorkflows;
-using ChatClient.Api.AgentWorkflows.Compatibility;
 using ChatClient.Api.Services.AgentRuntime;
 using ChatClient.Application.Services;
 using ChatClient.Application.Services.AgentRuntime;
@@ -64,8 +63,7 @@ public sealed class AgentDefinitionLaunchCapabilityAnalyzerTests
         new(
             agentService,
             new EmptyWorkflowDefinitionService(),
-            new UnsupportedWorkflowDefinitionCompiler(),
-            new LegacyWorkflowDefinitionNormalizer(agentService));
+            new UnsupportedWorkflowDefinitionCompiler());
 
     private static AgentTemplateDefinition Agent(
         string name,

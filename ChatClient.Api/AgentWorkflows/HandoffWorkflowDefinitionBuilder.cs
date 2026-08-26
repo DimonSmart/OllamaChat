@@ -146,19 +146,6 @@ public sealed class HandoffWorkflowDefinitionBuilder
         return this;
     }
 
-    public HandoffWorkflowDefinitionBuilder AgentFromSaved(
-        string savedAgentName,
-        Action<HandoffSavedAgentBuilder> configure)
-    {
-        ArgumentNullException.ThrowIfNull(configure);
-
-        var builder = new HandoffSavedAgentBuilder(savedAgentName);
-        configure(builder);
-
-        UpsertAgent(builder.Build());
-        return this;
-    }
-
     [Obsolete]
     public HandoffWorkflowDefinitionBuilder Handoff(string fromAgentId, string toAgentId, string label)
     {
@@ -278,101 +265,6 @@ public sealed class HandoffWorkflowDefinitionBuilder
         string.IsNullOrWhiteSpace(value) ? null : value.Trim();
 }
 
-public sealed class HandoffSavedAgentBuilder
-{
-    private readonly string _savedAgentName;
-    private string? _id;
-    private string? _role;
-    private string? _displayName;
-    private string? _instructions;
-    private string _summary = string.Empty;
-    private readonly List<AgentWorkflowCapabilityRequirement> _capabilities = [];
-
-    internal HandoffSavedAgentBuilder(string savedAgentName)
-    {
-        _savedAgentName = RequireValue(savedAgentName, nameof(savedAgentName));
-    }
-
-    public HandoffSavedAgentBuilder Id(string id)
-    {
-        _id = RequireValue(id, nameof(id));
-        return this;
-    }
-
-    public HandoffSavedAgentBuilder Role(string role)
-    {
-        _role = RequireValue(role, nameof(role));
-        return this;
-    }
-
-    public HandoffSavedAgentBuilder Name(string displayName)
-    {
-        _displayName = RequireValue(displayName, nameof(displayName));
-        return this;
-    }
-
-    public HandoffSavedAgentBuilder Instructions(string instructions)
-    {
-        _instructions = RequireValue(instructions, nameof(instructions));
-        return this;
-    }
-
-    public HandoffSavedAgentBuilder Summary(string summary)
-    {
-        _summary = summary?.Trim() ?? string.Empty;
-        return this;
-    }
-
-    public HandoffSavedAgentBuilder Capability(
-        string key,
-        string displayName,
-        Action<WorkflowCapabilityRequirementBuilder> configure)
-    {
-        ArgumentNullException.ThrowIfNull(configure);
-
-        var builder = new WorkflowCapabilityRequirementBuilder(key, displayName);
-        configure(builder);
-        _capabilities.Add(builder.Build());
-        return this;
-    }
-
-    internal WorkflowParticipantDefinition Build()
-    {
-        var id = RequireValue(_id, nameof(_id));
-        return new WorkflowParticipantDefinition
-        {
-            Id = id,
-            Role = string.IsNullOrWhiteSpace(_role) ? _savedAgentName : _role.Trim(),
-            Summary = _summary,
-            Source = new SavedAgentNameParticipantSource(_savedAgentName),
-            Overrides = new WorkflowParticipantOverrides
-            {
-                DisplayName = NormalizeOptional(_displayName),
-                Llm = string.IsNullOrWhiteSpace(_instructions)
-                    ? null
-                    : new LlmParticipantOverrides
-                    {
-                        Instructions = _instructions.Trim()
-                    }
-            },
-            CapabilityRequirements = _capabilities.ToList()
-        };
-    }
-
-    private static string RequireValue(string? value, string paramName)
-    {
-        if (string.IsNullOrWhiteSpace(value))
-        {
-            throw new ArgumentException("Value is required.", paramName);
-        }
-
-        return value.Trim();
-    }
-
-    private static string? NormalizeOptional(string? value) =>
-        string.IsNullOrWhiteSpace(value) ? null : value.Trim();
-}
-
 public sealed class WorkflowStartInputBuilder
 {
     private readonly string _key;
@@ -458,7 +350,6 @@ public sealed class WorkflowAgentBuilder
     private string _summary = string.Empty;
     private AgentTemplateDefinition? _agentDraft;
     private AgentDefinitionReference? _savedDefinitionReference;
-    private string? _savedAgentName;
     private string? _overrideAgentName;
     private string? _overrideAvatarText;
     private string? _overrideInstructions;
@@ -489,7 +380,6 @@ public sealed class WorkflowAgentBuilder
         ArgumentNullException.ThrowIfNull(draft);
         _agentDraft = draft;
         _savedDefinitionReference = null;
-        _savedAgentName = null;
         return this;
     }
 
@@ -500,12 +390,9 @@ public sealed class WorkflowAgentBuilder
         _savedDefinitionReference = source is SavedDefinitionParticipantSource saved
             ? ValidateReference(saved.Reference, nameof(source))
             : null;
-        _savedAgentName = source is SavedAgentNameParticipantSource savedByName
-            ? RequireValue(savedByName.SavedAgentName, nameof(source))
-            : null;
-        if (_agentDraft is null && _savedDefinitionReference is null && _savedAgentName is null)
+        if (_agentDraft is null && _savedDefinitionReference is null)
         {
-            throw new ArgumentException("Source must be inline agent, saved definition, or saved-agent name.", nameof(source));
+            throw new ArgumentException("Source must be an inline agent or saved definition.", nameof(source));
         }
 
         return this;
@@ -515,7 +402,6 @@ public sealed class WorkflowAgentBuilder
     {
         _savedDefinitionReference = ValidateReference(reference, nameof(reference));
         _agentDraft = null;
-        _savedAgentName = null;
         return this;
     }
 
@@ -535,23 +421,7 @@ public sealed class WorkflowAgentBuilder
     public WorkflowAgentBuilder UseWorkflow(string workflowId) =>
         UseWorkflow(ParseGuid(workflowId, nameof(workflowId), "Saved workflow id must be a valid GUID."));
 
-    [Obsolete(
-        "Saved-agent names are supported only for legacy workflow migration. Use UseAgent(Guid) for new workflows.")]
-    public WorkflowAgentBuilder FromSavedAgentName(string savedAgentName)
-    {
-        _savedAgentName = RequireValue(savedAgentName, nameof(savedAgentName));
-        _agentDraft = null;
-        _savedDefinitionReference = null;
-        return this;
-    }
-
-    [Obsolete("Use UseAgent(Guid).")]
-    public WorkflowAgentBuilder FromSavedAgent(string savedAgentName)
-    {
-        return FromSavedAgentName(savedAgentName);
-    }
-
-    public WorkflowAgentBuilder FromSavedAgent(AgentDefinitionReference reference)
+    public WorkflowAgentBuilder UseSavedAgent(AgentDefinitionReference reference)
     {
         if (reference.Kind != AgentDefinitionKind.SavedAgent)
         {
@@ -634,10 +504,8 @@ public sealed class WorkflowAgentBuilder
     internal WorkflowParticipantDefinition Build()
     {
         var usesSavedDefinition = _savedDefinitionReference is not null;
-        var usesSavedAgentName = _savedAgentName is not null;
         var sourceCount = (_agentDraft is not null ? 1 : 0) +
-                          (usesSavedDefinition ? 1 : 0) +
-                          (usesSavedAgentName ? 1 : 0);
+                          (usesSavedDefinition ? 1 : 0);
         if (sourceCount > 1)
         {
             throw new InvalidOperationException(
@@ -670,10 +538,6 @@ public sealed class WorkflowAgentBuilder
             if (usesSavedDefinition)
             {
                 _role = _overrideAgentName ?? _savedDefinitionReference!.Kind.ToString();
-            }
-            else if (usesSavedAgentName)
-            {
-                _role = _overrideAgentName ?? AgentDefinitionKind.SavedAgent.ToString();
             }
             else
             {
@@ -715,11 +579,6 @@ public sealed class WorkflowAgentBuilder
         if (_savedDefinitionReference is not null)
         {
             return new SavedDefinitionParticipantSource(_savedDefinitionReference);
-        }
-
-        if (_savedAgentName is not null)
-        {
-            return new SavedAgentNameParticipantSource(_savedAgentName);
         }
 
         throw new InvalidOperationException(

@@ -1,5 +1,4 @@
 using ChatClient.Api.AgentWorkflows;
-using ChatClient.Api.AgentWorkflows.Compatibility;
 using ChatClient.Api.AgentWorkflows.GroupChat;
 using ChatClient.Api.AgentWorkflows.Runtime;
 using ChatClient.Api.Client.Services;
@@ -163,9 +162,8 @@ public static class ServiceCollectionExtensions
             .ValidateOnStart();
         services.AddScoped<IAgentSessionDefinitionResolver, AgentSessionDefinitionResolver>();
         services.AddScoped<IAgentLaunchCapabilityValidator, AgentLaunchCapabilityValidator>();
-        services.AddScoped<ILegacyWorkflowDefinitionNormalizer, LegacyWorkflowDefinitionNormalizer>();
         services.AddScoped<WorkflowParticipantResolver>();
-        services.AddScoped<IWorkflowParticipantResolver, NormalizingWorkflowParticipantResolver>();
+        services.AddScoped<IWorkflowParticipantResolver>(sp => sp.GetRequiredService<WorkflowParticipantResolver>());
         services.AddScoped<IWorkflowParticipantRuntimeFactory, WorkflowParticipantRuntimeFactory>();
         services.AddScoped<IWorkflowAgentDraftMaterializer, WorkflowAgentDraftMaterializer>();
         services.AddScoped<IAgentInputDefinitionProvider, AgentInputDefinitionProvider>();

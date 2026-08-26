@@ -1,5 +1,4 @@
 using ChatClient.Api.AgentWorkflows;
-using ChatClient.Api.AgentWorkflows.Compatibility;
 using ChatClient.Api.Client.Services.Agentic;
 using ChatClient.Application.Helpers;
 using ChatClient.Application.Services;
@@ -13,7 +12,6 @@ namespace ChatClient.Api.Services.AgentRuntime;
 public sealed class WorkflowAgentRuntimeFactory(
     IWorkflowDefinitionService workflowDefinitionService,
     IWorkflowDefinitionCompiler workflowDefinitionCompiler,
-    ILegacyWorkflowDefinitionNormalizer legacyWorkflowDefinitionNormalizer,
     IWorkflowParticipantResolver workflowParticipantResolver,
     IWorkflowParticipantRuntimeFactory participantRuntimeFactory,
     IHeadlessWorkflowRunner headlessWorkflowRunner,
@@ -43,11 +41,8 @@ public sealed class WorkflowAgentRuntimeFactory(
             cancellationToken);
         var compiledWorkflow = compiled.Workflow
             ?? throw new InvalidOperationException("Workflow compilation did not return a workflow definition.");
-        var workflow = await legacyWorkflowDefinitionNormalizer.NormalizeAsync(
-            compiledWorkflow,
-            cancellationToken);
         var resolvedParticipants = await workflowParticipantResolver.ResolveAsync(
-            workflow,
+            compiledWorkflow,
             cancellationToken);
         var runtimeParticipants = new List<WorkflowRuntimeParticipant>();
         foreach (var participant in resolvedParticipants)
@@ -64,7 +59,7 @@ public sealed class WorkflowAgentRuntimeFactory(
                 savedWorkflow.DisplayName,
                 savedWorkflow.Description,
                 AgentRuntimeKind.WorkflowAgent),
-            workflow,
+            compiledWorkflow,
             resolvedParticipants,
             runtimeParticipants,
             context.Configuration,

@@ -261,7 +261,7 @@ public sealed class WorkflowDefinitionCompilerTests
 
     [Fact]
     [Obsolete]
-    public async Task CompileAsync_CompilesWorkflowUsingSavedAgentTemplateSyntax()
+    public async Task CompileAsync_CompilesWorkflowUsingSavedDefinitionSyntax()
     {
         var compiler = new WorkflowDefinitionCompiler();
         var routerId = Guid.NewGuid();
@@ -289,51 +289,6 @@ public sealed class WorkflowDefinitionCompilerTests
         Assert.Equal("Workflow Router", agent.Overrides.DisplayName);
         Assert.Equal("WR", agent.Overrides.Llm!.AvatarText);
         Assert.Equal("Workflow mode only.", agent.Overrides.Llm.AppendedInstructions);
-        Assert.Null(agent.SavedAgentTemplate);
-        Assert.Null(agent.DraftOverrides.AgentName);
-    }
-
-    [Fact]
-    [Obsolete]
-    public async Task CompileAsync_CompilesLegacyHandoffSavedAgentSyntax()
-    {
-        var compiler = new WorkflowDefinitionCompiler();
-        var sourceCode =
-            """
-            var workflow = HandoffWorkflowDefinitionBuilder
-                .New("legacy-handoff", "Legacy Handoff")
-                .StartWith("host")
-                .Agent("host", agent => agent
-                    .Role("Host")
-                    .UseDraft(
-                        AgentDefinitionBuilder
-                            .New("Legacy Host", "host")
-                            .WithInstructions("Host prompt")
-                            .BuildDescription()))
-                .AgentFromSaved("Immanuel Kant", agent => agent
-                    .Id("kant")
-                    .Role("Kantian philosopher")
-                    .Name("Immanuel Kant")
-                    .Instructions("Legacy saved-agent override."))
-                .Handoff("host", "kant", "open")
-                .Build();
-
-            workflow
-            """;
-
-        var result = await compiler.CompileAsync(sourceCode, cancellationToken: TestContext.Current.CancellationToken);
-        var workflow = Assert.IsType<AgentWorkflowDefinition>(result.Workflow);
-
-        Assert.Equal("legacy-handoff", result.WorkflowId);
-        Assert.Equal("host", workflow.StartAgentId);
-
-        var host = Assert.Single(workflow.Agents, static agent => agent.Id == "host");
-        Assert.Equal("Legacy Host", Assert.IsType<InlineAgentParticipantSource>(host.Source).Agent.AgentName);
-
-        var savedAgent = Assert.Single(workflow.Agents, static agent => agent.Id == "kant");
-        Assert.Equal("Immanuel Kant", Assert.IsType<SavedAgentNameParticipantSource>(savedAgent.Source).SavedAgentName);
-        Assert.Equal("Immanuel Kant", savedAgent.Overrides.DisplayName);
-        Assert.Equal("Legacy saved-agent override.", savedAgent.Overrides.Llm?.Instructions);
     }
 
     [Fact]

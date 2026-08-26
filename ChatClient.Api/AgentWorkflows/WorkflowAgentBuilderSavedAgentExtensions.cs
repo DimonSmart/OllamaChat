@@ -29,16 +29,6 @@ public static class WorkflowAgentBuilderSavedAgentExtensions
         return builder.UseAgentById(parsedAgentId);
     }
 
-    public static WorkflowAgentBuilder UseAgentByName(
-        this WorkflowAgentBuilder builder,
-        string agentName)
-    {
-        ArgumentNullException.ThrowIfNull(builder);
-
-        return builder.UseSource(new SavedAgentNameParticipantSource(
-            RequireValue(agentName, nameof(agentName))));
-    }
-
     private static string RequireValue(string? value, string paramName)
     {
         if (string.IsNullOrWhiteSpace(value))

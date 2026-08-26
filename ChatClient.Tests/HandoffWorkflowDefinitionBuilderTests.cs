@@ -82,7 +82,7 @@ public sealed class HandoffWorkflowDefinitionBuilderTests
 
     [Fact]
     [Obsolete]
-    public void Build_CreatesSavedAgentTemplateReferenceWithOverrides()
+    public void Build_CreatesSavedDefinitionReferenceWithOverrides()
     {
         var savedAgentId = Guid.NewGuid();
         var workflow = HandoffWorkflowDefinitionBuilder
@@ -98,20 +98,16 @@ public sealed class HandoffWorkflowDefinitionBuilderTests
         var technical = Assert.Single(workflow.Agents);
         Assert.Equal("technical", technical.Id);
         Assert.Equal("Technical interviewer", technical.Role);
-        Assert.Null(technical.AgentDraft);
-        Assert.Null(technical.SavedAgentTemplate);
         var source = Assert.IsType<SavedDefinitionParticipantSource>(technical.Source);
         Assert.Equal(AgentDefinitionKind.SavedAgent, source.Reference.Kind);
         Assert.Equal(savedAgentId.ToString("D"), source.Reference.Id);
         Assert.Equal("Technical Interviewer", technical.Overrides.DisplayName);
         Assert.Equal("Run a technical interview.", technical.Overrides.Llm!.Instructions);
-        Assert.Null(technical.DraftOverrides.AgentName);
-        Assert.Null(technical.DraftOverrides.Instructions);
     }
 
     [Fact]
     [Obsolete]
-    public void Build_CreatesSavedAgentTemplateReferenceWithAppendedInstructions()
+    public void Build_CreatesSavedDefinitionReferenceWithAppendedInstructions()
     {
         var savedAgentId = Guid.NewGuid();
         var workflow = HandoffWorkflowDefinitionBuilder
@@ -126,8 +122,6 @@ public sealed class HandoffWorkflowDefinitionBuilderTests
         var technical = Assert.Single(workflow.Agents);
         Assert.Equal("Stay focused on the current workflow step.", technical.Overrides.Llm!.AppendedInstructions);
         Assert.Null(technical.Overrides.Llm.Instructions);
-        Assert.Null(technical.DraftOverrides.AppendedInstructions);
-        Assert.Null(technical.DraftOverrides.Instructions);
     }
 
     [Fact]
@@ -162,22 +156,6 @@ public sealed class HandoffWorkflowDefinitionBuilderTests
         var agent = Assert.Single(workflow.Agents);
         Assert.Equal("router", agent.Id);
         Assert.Equal("SavedAgent", agent.Role);
-    }
-
-    [Fact]
-    [Obsolete]
-    public void Build_FromSavedAgentPreservesLegacyNameSemantics()
-    {
-        var workflow = HandoffWorkflowDefinitionBuilder
-            .New("demo", "Demo Workflow")
-            .StartWith("reviewer")
-            .Agent("reviewer", agent => agent
-                .FromSavedAgent("Code Reviewer"))
-            .Build();
-
-        var agent = Assert.Single(workflow.Agents);
-        var source = Assert.IsType<SavedAgentNameParticipantSource>(agent.Source);
-        Assert.Equal("Code Reviewer", source.SavedAgentName);
     }
 
     [Fact]

@@ -1,5 +1,4 @@
 using ChatClient.Api.AgentWorkflows;
-using ChatClient.Api.AgentWorkflows.Compatibility;
 using ChatClient.Api.Services.AgentRuntime;
 using ChatClient.Application.Services;
 using ChatClient.Application.Services.AgentRuntime;
@@ -217,7 +216,6 @@ public sealed class AgentDefinitionDependencyGraphTests
             new StubAgentTemplateService(agents ?? []),
             new StubWorkflowDefinitionService(workflows),
             compiler,
-            new LegacyWorkflowDefinitionNormalizer(new StubAgentTemplateService(agents ?? [])),
             new PassThroughWorkflowParticipantResolver(),
             Options.Create(new AgentRuntimeOptions
             {

@@ -17,7 +17,6 @@ internal static class WorkflowInstructionTemplateResolver
         "avatarText"
     ];
 
-    [Obsolete]
     public static void ValidateAgentReferences(IEnumerable<WorkflowParticipantDefinition> agents)
     {
         ArgumentNullException.ThrowIfNull(agents);
@@ -28,12 +27,9 @@ internal static class WorkflowInstructionTemplateResolver
             ValidateText(agent.Id, "agent draft instructions", ResolveInlineAgent(agent)?.Content, agentsById);
             ValidateText(agent.Id, "override instructions", agent.Overrides.Llm?.Instructions, agentsById);
             ValidateText(agent.Id, "appended instructions", agent.Overrides.Llm?.AppendedInstructions, agentsById);
-            ValidateText(agent.Id, "legacy override instructions", agent.DraftOverrides.Instructions, agentsById);
-            ValidateText(agent.Id, "legacy appended instructions", agent.DraftOverrides.AppendedInstructions, agentsById);
         }
     }
 
-    [Obsolete]
     public static string ResolveAgentReferences(
         string content,
         string ownerAgentId,
@@ -122,7 +118,6 @@ internal static class WorkflowInstructionTemplateResolver
         }
     }
 
-    [Obsolete]
     private static string ResolveDisplayName(WorkflowParticipantDefinition agent)
     {
         var displayName = ResolveInlineAgent(agent)?.AgentName?.Trim();
@@ -136,9 +131,8 @@ internal static class WorkflowInstructionTemplateResolver
             : agent.Id;
     }
 
-    [Obsolete]
     private static AgentTemplateDefinition? ResolveInlineAgent(WorkflowParticipantDefinition agent) =>
         agent.Source is InlineAgentParticipantSource inline
             ? inline.Agent
-            : agent.AgentDraft;
+            : null;
 }

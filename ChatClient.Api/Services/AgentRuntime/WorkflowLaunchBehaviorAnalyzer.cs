@@ -1,5 +1,4 @@
 using ChatClient.Api.AgentWorkflows;
-using ChatClient.Api.AgentWorkflows.Compatibility;
 using ChatClient.Application.Services;
 using ChatClient.Application.Services.Agentic;
 using ChatClient.Application.Services.AgentRuntime;
@@ -8,8 +7,7 @@ namespace ChatClient.Api.Services.AgentRuntime;
 
 public sealed class WorkflowLaunchBehaviorAnalyzer(
     IWorkflowDefinitionService workflowDefinitionService,
-    IWorkflowDefinitionCompiler workflowDefinitionCompiler,
-    ILegacyWorkflowDefinitionNormalizer legacyWorkflowDefinitionNormalizer) : IAgentDefinitionLaunchBehaviorAnalyzer
+    IWorkflowDefinitionCompiler workflowDefinitionCompiler) : IAgentDefinitionLaunchBehaviorAnalyzer
 {
     public async Task<AgentLaunchBehavior> AnalyzeAsync(
         AgentDefinitionReference reference,
@@ -24,9 +22,8 @@ public sealed class WorkflowLaunchBehaviorAnalyzer(
         var savedWorkflow = await workflowDefinitionService.GetByIdAsync(workflowId)
             ?? throw new KeyNotFoundException($"Saved workflow '{reference.Id}' was not found.");
         var compiled = await workflowDefinitionCompiler.CompileAsync(savedWorkflow.SourceCode, cancellationToken);
-        var definition = await legacyWorkflowDefinitionNormalizer.NormalizeAsync(
-            compiled.Workflow ?? throw new InvalidOperationException("Workflow compilation did not return a workflow definition."),
-            cancellationToken);
+        var definition = compiled.Workflow
+            ?? throw new InvalidOperationException("Workflow compilation did not return a workflow definition.");
 
         return definition.Execution.Mode == AgentWorkflowExecutionMode.Autonomous
             ? AgentLaunchBehavior.RunOnStart

@@ -9,7 +9,7 @@ public sealed class WorkflowAgentDraftMaterializerTests
 {
     [Fact]
     [Obsolete]
-    public async Task MaterializeAsync_LoadsSavedAgentTemplateAndAppliesOverrides()
+    public async Task MaterializeAsync_LoadsSavedDefinitionAndAppliesOverrides()
     {
         var savedAgent = new AgentTemplateDefinition
         {

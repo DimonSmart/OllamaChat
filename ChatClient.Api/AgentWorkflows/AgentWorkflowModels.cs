@@ -91,15 +91,6 @@ public class WorkflowParticipantDefinition
 
     public WorkflowParticipantOverrides Overrides { get; init; } = new();
 
-    [Obsolete("Use Source = new InlineAgentParticipantSource(...).")]
-    public AgentTemplateDefinition? AgentDraft { get; init; }
-
-    [Obsolete("Use Source = new SavedDefinitionParticipantSource(...).")]
-    public AgentWorkflowSavedAgentTemplate? SavedAgentTemplate { get; init; }
-
-    [Obsolete("Use Overrides.")]
-    public AgentWorkflowAgentDraftOverrides DraftOverrides { get; init; } = new();
-
     public List<AgentWorkflowCapabilityRequirement> CapabilityRequirements { get; init; } = [];
 
     public int? MaxTurnsPerSession { get; init; }
@@ -110,11 +101,6 @@ public class WorkflowParticipantDefinition
 [Obsolete("Use WorkflowParticipantDefinition.")]
 public sealed class AgentWorkflowAgentDefinition : WorkflowParticipantDefinition;
 
-public sealed class AgentWorkflowSavedAgentTemplate
-{
-    public required string SavedAgentName { get; init; }
-}
-
 public abstract record WorkflowParticipantSource;
 
 public sealed record InlineAgentParticipantSource(
@@ -123,10 +109,6 @@ public sealed record InlineAgentParticipantSource(
 
 public sealed record SavedDefinitionParticipantSource(
     AgentDefinitionReference Reference)
-    : WorkflowParticipantSource;
-
-public sealed record SavedAgentNameParticipantSource(
-    string SavedAgentName)
     : WorkflowParticipantSource;
 
 public sealed class WorkflowParticipantOverrides
@@ -140,17 +122,6 @@ public sealed class WorkflowParticipantOverrides
 
 public sealed class LlmParticipantOverrides
 {
-    public string? AvatarText { get; init; }
-
-    public string? Instructions { get; init; }
-
-    public string? AppendedInstructions { get; init; }
-}
-
-public sealed class AgentWorkflowAgentDraftOverrides
-{
-    public string? AgentName { get; init; }
-
     public string? AvatarText { get; init; }
 
     public string? Instructions { get; init; }

@@ -1,5 +1,4 @@
 using ChatClient.Api.AgentWorkflows;
-using ChatClient.Api.AgentWorkflows.Compatibility;
 using ChatClient.Application.Services;
 using ChatClient.Application.Services.AgentRuntime;
 using ChatClient.Domain.Models;
@@ -8,18 +7,8 @@ namespace ChatClient.Api.Services.AgentRuntime;
 
 public sealed class AgentInputDefinitionProvider(
     IWorkflowDefinitionService workflowDefinitionService,
-    IWorkflowDefinitionCompiler workflowDefinitionCompiler,
-    ILegacyWorkflowDefinitionNormalizer legacyWorkflowDefinitionNormalizer) : IAgentInputDefinitionProvider
+    IWorkflowDefinitionCompiler workflowDefinitionCompiler) : IAgentInputDefinitionProvider
 {
-    public AgentInputDefinitionProvider(
-        IWorkflowDefinitionService workflowDefinitionService,
-        IWorkflowDefinitionCompiler workflowDefinitionCompiler)
-        : this(
-            workflowDefinitionService,
-            workflowDefinitionCompiler,
-            new NoOpLegacyWorkflowDefinitionNormalizer())
-    {
-    }
 
     public async Task<IReadOnlyList<AgentInputDefinition>> GetInputsAsync(
         AgentDefinitionReference reference,
@@ -48,11 +37,7 @@ public sealed class AgentInputDefinitionProvider(
             cancellationToken);
         var compiledDefinition = compiled.Workflow
             ?? throw new InvalidOperationException("Workflow compilation did not return a workflow definition.");
-        var definition = await legacyWorkflowDefinitionNormalizer.NormalizeAsync(
-            compiledDefinition,
-            cancellationToken);
-
-        return definition.StartInputs
+        return compiledDefinition.StartInputs
             .Select(static input => new AgentInputDefinition
             {
                 Key = input.Key,
@@ -78,19 +63,10 @@ public sealed class AgentInputDefinitionProvider(
         };
 }
 
-file sealed class NoOpLegacyWorkflowDefinitionNormalizer : ILegacyWorkflowDefinitionNormalizer
-{
-    public Task<IOrchestrationWorkflowDefinition> NormalizeAsync(
-        IOrchestrationWorkflowDefinition definition,
-        CancellationToken cancellationToken = default) =>
-        Task.FromResult(definition);
-}
-
 public sealed class WorkflowModelRequirementAnalyzer(
     IWorkflowDefinitionService workflowDefinitionService,
     IWorkflowDefinitionCompiler workflowDefinitionCompiler,
-    IAgentTemplateService agentTemplateService,
-    ILegacyWorkflowDefinitionNormalizer legacyWorkflowDefinitionNormalizer) : IAgentDefinitionModelRequirementAnalyzer
+    IAgentTemplateService agentTemplateService) : IAgentDefinitionModelRequirementAnalyzer
 {
     public Task<AgentModelRequirement> AnalyzeAsync(
         AgentDefinitionReference reference,
@@ -125,9 +101,7 @@ public sealed class WorkflowModelRequirementAnalyzer(
         var compiled = await workflowDefinitionCompiler.CompileAsync(workflow.SourceCode, cancellationToken);
         var compiledDefinition = compiled.Workflow
             ?? throw new InvalidOperationException("Workflow compilation did not return a workflow definition.");
-        var definition = await legacyWorkflowDefinitionNormalizer.NormalizeAsync(
-            compiledDefinition,
-            cancellationToken);
+        var definition = compiledDefinition;
         var nextPath = workflowPath.Append(pathKey).ToHashSet(StringComparer.OrdinalIgnoreCase);
         var sawLlmParticipant = false;
         var requiresExternalModel = false;

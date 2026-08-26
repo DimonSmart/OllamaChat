@@ -1,5 +1,4 @@
 using ChatClient.Api.AgentWorkflows;
-using ChatClient.Api.AgentWorkflows.Compatibility;
 using ChatClient.Application.Services;
 using ChatClient.Application.Services.AgentRuntime;
 using Microsoft.Extensions.Options;
@@ -10,7 +9,6 @@ public sealed class AgentDefinitionDependencyGraph(
     IAgentTemplateService agentTemplateService,
     IWorkflowDefinitionService workflowDefinitionService,
     IWorkflowDefinitionCompiler workflowDefinitionCompiler,
-    ILegacyWorkflowDefinitionNormalizer legacyWorkflowDefinitionNormalizer,
     IWorkflowParticipantResolver workflowParticipantResolver,
     IOptions<AgentRuntimeOptions> options) : IAgentDefinitionDependencyGraph
 {
@@ -224,9 +222,7 @@ public sealed class AgentDefinitionDependencyGraph(
                     $"Workflow '{savedWorkflow.DisplayName}' compilation did not return a workflow definition.");
             }
 
-            var workflow = await legacyWorkflowDefinitionNormalizer.NormalizeAsync(
-                compiled.Workflow,
-                cancellationToken);
+            var workflow = compiled.Workflow;
             var participants = await workflowParticipantResolver.ResolveAsync(
                 workflow,
                 cancellationToken);

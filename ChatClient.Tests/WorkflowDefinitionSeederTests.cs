@@ -119,9 +119,9 @@ public sealed class WorkflowDefinitionSeederTests
                                         .WithInstructions("Open the debate.")
                                         .Build()))
                             .Agent("kant", agent => agent
-                                .FromSavedAgent("Immanuel Kant"))
+                                .UseAgentById("ab38adc6-74a2-4ccc-924b-eb1bce9d0985"))
                             .Agent("nietzsche", agent => agent
-                                .FromSavedAgent("Friedrich Nietzsche"))
+                                .UseAgentById("8bb2a12d-d5fd-440b-b622-b46d8897556a"))
                             .UseGroupChat(groupChat => groupChat
                                 .Participants("host", "kant", "nietzsche")
                                 .UseCustomManager("philosopher-debate", maximumIterations: 14))
@@ -206,9 +206,9 @@ public sealed class WorkflowDefinitionSeederTests
                                         .WithInstructions("Open the debate.")
                                         .Build()))
                             .Agent("kant", agent => agent
-                                .FromSavedAgent("Immanuel Kant"))
+                                .UseAgentById("ab38adc6-74a2-4ccc-924b-eb1bce9d0985"))
                             .Agent("nietzsche", agent => agent
-                                .FromSavedAgent("Friedrich Nietzsche"))
+                                .UseAgentById("8bb2a12d-d5fd-440b-b622-b46d8897556a"))
                             .UseGroupChat(groupChat => groupChat
                                 .Participants("host", "kant", "nietzsche")
                                 .UseCustomManager("philosopher-debate", maximumIterations: 14))

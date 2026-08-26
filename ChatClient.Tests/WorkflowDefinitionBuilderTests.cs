@@ -99,14 +99,10 @@ public sealed class WorkflowDefinitionBuilderTests
         Assert.Equal("Workflow Router", participant.Overrides.DisplayName);
         Assert.Equal("WR", participant.Overrides.Llm!.AvatarText);
         Assert.Equal("Workflow mode only.", participant.Overrides.Llm.AppendedInstructions);
-        Assert.Null(participant.AgentDraft);
-        Assert.Null(participant.SavedAgentTemplate);
-        Assert.Null(participant.DraftOverrides.AgentName);
-        Assert.Null(participant.DraftOverrides.AvatarText);
-        Assert.Null(participant.DraftOverrides.AppendedInstructions);
     }
 
     [Fact]
+    [Obsolete]
     public void Build_ThrowsForUndefinedAgentPlaceholder()
     {
         var exception = Assert.Throws<InvalidOperationException>(() =>
@@ -129,6 +125,7 @@ public sealed class WorkflowDefinitionBuilderTests
     }
 
     [Fact]
+    [Obsolete]
     public void Build_GroupChatWorkflow_ValidatesProgrammableManagerProgram()
     {
         var exception = Assert.Throws<InvalidOperationException>(() =>
@@ -153,6 +150,7 @@ public sealed class WorkflowDefinitionBuilderTests
     }
 
     [Fact]
+    [Obsolete]
     public void Build_GroupChatWorkflow_RejectsProgrammableManagerThatReturnsUnknownSpeaker()
     {
         var exception = Assert.Throws<InvalidOperationException>(() =>

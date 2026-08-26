@@ -1,5 +1,4 @@
 using ChatClient.Api.AgentWorkflows;
-using ChatClient.Api.AgentWorkflows.Compatibility;
 using ChatClient.Api.Services.AgentRuntime;
 using ChatClient.Application.Services;
 using ChatClient.Application.Services.Agentic;
@@ -27,8 +26,7 @@ public sealed class WorkflowLaunchBehaviorAnalyzerTests
         };
         var analyzer = new WorkflowLaunchBehaviorAnalyzer(
             new StubWorkflowDefinitionService(id),
-            new StubCompiler(definition),
-            new NoOpNormalizer());
+            new StubCompiler(definition));
 
         var behavior = await analyzer.AnalyzeAsync(
             new AgentDefinitionReference(AgentDefinitionKind.SavedWorkflow, id.ToString("D")),
@@ -71,11 +69,4 @@ public sealed class WorkflowLaunchBehaviorAnalyzerTests
             });
     }
 
-    private sealed class NoOpNormalizer : ILegacyWorkflowDefinitionNormalizer
-    {
-        public Task<IOrchestrationWorkflowDefinition> NormalizeAsync(
-            IOrchestrationWorkflowDefinition definition,
-            CancellationToken cancellationToken = default) =>
-            Task.FromResult(definition);
-    }
 }
