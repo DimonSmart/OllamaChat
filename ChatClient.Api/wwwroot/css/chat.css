@@ -344,6 +344,24 @@
 
 .chat-markdown-content {
     line-height: 1.55;
+    min-width: 0;
+    max-width: 100%;
+}
+
+.chat-markdown-content pre {
+    max-width: 100%;
+    min-width: 0;
+    box-sizing: border-box;
+    overflow-x: auto;
+}
+
+.chat-markdown-content pre code {
+    white-space: pre;
+}
+
+.chat-markdown-content :not(pre) > code {
+    overflow-wrap: anywhere;
+    word-break: break-word;
 }
 
 .chat-markdown-content > :first-child {
