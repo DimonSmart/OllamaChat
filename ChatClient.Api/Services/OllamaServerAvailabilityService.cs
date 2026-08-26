@@ -52,9 +52,12 @@ public class OllamaServerAvailabilityService(
                 };
             }
 
-            var models = await ollamaService.GetModelsAsync(serverToCheck.Value);
+            // Availability checks must bypass the model cache. Otherwise a previously successful
+            // model-list request can make a stopped Ollama instance look healthy indefinitely.
+            using var client = await ollamaService.GetClientAsync(serverToCheck.Value);
+            var models = await client.ListLocalModelsAsync();
             logger.LogInformation("Ollama server '{ServerName}' is available with {ModelCount} models",
-                server.Name, models.Count);
+                server.Name, models.Count());
 
             return new OllamaServerStatus
             {
