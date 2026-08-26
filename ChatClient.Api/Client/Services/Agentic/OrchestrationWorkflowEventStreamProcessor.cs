@@ -257,7 +257,6 @@ public sealed class OrchestrationWorkflowEventStreamProcessor(
             outputText,
             DateTime.Now,
             AppChatRole.Assistant,
-            BuildStatistics(speakerName, context.ModelName),
             agentId: speakerId,
             agentName: speakerName);
         await context.AddMessageAsync(finalMessage);
@@ -405,9 +404,7 @@ public sealed class OrchestrationWorkflowEventStreamProcessor(
     {
         context.ActiveSpeakerIdsByStreamId.TryGetValue(stream.Id, out var speakerId);
 
-        var finalMessage = streamingBridge.Complete(
-            stream,
-            BuildStatistics(stream.AgentName, context.ModelName));
+        var finalMessage = streamingBridge.Complete(stream);
 
         context.ReplaceMessage(stream, finalMessage);
         context.ActiveStreams.Remove(stream.Id);
@@ -502,16 +499,6 @@ public sealed class OrchestrationWorkflowEventStreamProcessor(
         return context.AgentIdsByExecutorId.TryGetValue(authorName, out speakerId)
             ? speakerId
             : null;
-    }
-
-    private static string BuildStatistics(string? agentName, string modelName)
-    {
-        if (string.IsNullOrWhiteSpace(agentName))
-        {
-            return $"workflow orchestration | model {modelName}";
-        }
-
-        return $"workflow orchestration | speaker {agentName} | model {modelName}";
     }
 
     private static void UpdateStreamSpeaker(

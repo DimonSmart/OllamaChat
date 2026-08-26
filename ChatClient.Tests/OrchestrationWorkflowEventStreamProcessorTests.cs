@@ -7,6 +7,38 @@ namespace ChatClient.Tests;
 public sealed class OrchestrationWorkflowEventStreamProcessorTests
 {
     [Fact]
+    public async Task FinalizeActiveStreamsAsync_PreservesEachParticipantsContentWithoutStatistics()
+    {
+        var bridge = new AgenticChatEngineStreamingBridge();
+        var processor = new OrchestrationWorkflowEventStreamProcessor(
+            bridge,
+            new HarnessResponseEventProjector(
+                NullLogger<HarnessResponseEventProjector>.Instance));
+        var first = bridge.Create("writer", "Writer");
+        var second = bridge.Create("reviewer", "Reviewer");
+        bridge.Append(first, "Draft response");
+        bridge.Append(second, "Review response");
+        var messages = new List<IAppChatMessage> { first, second };
+        var context = CreateContext(messages, new Dictionary<Guid, StreamingAppChatMessage>
+        {
+            [first.Id] = first,
+            [second.Id] = second
+        }, new Dictionary<Guid, string?>
+        {
+            [first.Id] = "writer",
+            [second.Id] = "reviewer"
+        });
+        var completedMessages = new List<OrchestrationCompletedAssistantMessage>();
+
+        await processor.FinalizeActiveStreamsAsync(context, completedMessages);
+
+        Assert.Collection(messages,
+            message => AssertFinalMessage(message, "Draft response", "writer", "Writer"),
+            message => AssertFinalMessage(message, "Review response", "reviewer", "Reviewer"));
+        Assert.Equal(2, completedMessages.Count);
+    }
+
+    [Fact]
     public async Task FinalizeActiveStreamsAsync_DoesNotCompleteEmptyStream()
     {
         var bridge = new AgenticChatEngineStreamingBridge();
@@ -27,32 +59,7 @@ public sealed class OrchestrationWorkflowEventStreamProcessorTests
         var completedMessages = new List<OrchestrationCompletedAssistantMessage>();
 
         await processor.FinalizeActiveStreamsAsync(
-            new OrchestrationWorkflowEventStreamContext
-            {
-                ModelName = "test-model",
-                Workflow = null,
-                Messages = messages,
-                SpeakerIdsByMessageId = new Dictionary<Guid, string?>(),
-                ActiveStreams = activeStreams,
-                ActiveSpeakerIdsByStreamId = activeSpeakerIds,
-                AgentIdsByExecutorId = new Dictionary<string, string>(),
-                AgentIdsByName = new Dictionary<string, string>(),
-                AgentNamesById = new Dictionary<string, string>
-                {
-                    ["host"] = "Host"
-                },
-                AddMessageAsync = message =>
-                {
-                    messages.Add(message);
-                    return Task.CompletedTask;
-                },
-                ReplaceMessage = (source, replacement) =>
-                {
-                    var index = messages.IndexOf(source);
-                    messages[index] = replacement;
-                },
-                NotifyMessageUpdatedAsync = (_, _) => Task.CompletedTask
-            },
+            CreateContext(messages, activeStreams, activeSpeakerIds),
             completedMessages);
 
         Assert.Empty(completedMessages);
@@ -61,5 +68,55 @@ public sealed class OrchestrationWorkflowEventStreamProcessorTests
         var finalized = Assert.IsType<AppChatMessage>(Assert.Single(messages));
         Assert.Equal(string.Empty, finalized.Content);
         Assert.False(finalized.IsCanceled);
+    }
+
+    private static OrchestrationWorkflowEventStreamContext CreateContext(
+        List<IAppChatMessage> messages,
+        IDictionary<Guid, StreamingAppChatMessage> activeStreams,
+        IDictionary<Guid, string?> activeSpeakerIds) => new()
+        {
+            ModelName = "test-model",
+            Workflow = null,
+            Messages = messages,
+            SpeakerIdsByMessageId = new Dictionary<Guid, string?>(),
+            ActiveStreams = activeStreams,
+            ActiveSpeakerIdsByStreamId = activeSpeakerIds,
+            AgentIdsByExecutorId = new Dictionary<string, string>(),
+            AgentIdsByName = new Dictionary<string, string>
+            {
+                ["Writer"] = "writer",
+                ["Reviewer"] = "reviewer",
+                ["Host"] = "host"
+            },
+            AgentNamesById = new Dictionary<string, string>
+            {
+                ["writer"] = "Writer",
+                ["reviewer"] = "Reviewer",
+                ["host"] = "Host"
+            },
+            AddMessageAsync = message =>
+            {
+                messages.Add(message);
+                return Task.CompletedTask;
+            },
+            ReplaceMessage = (source, replacement) =>
+            {
+                var index = messages.IndexOf(source);
+                messages[index] = replacement;
+            },
+            NotifyMessageUpdatedAsync = (_, _) => Task.CompletedTask
+        };
+
+    private static void AssertFinalMessage(
+        IAppChatMessage message,
+        string content,
+        string agentId,
+        string agentName)
+    {
+        Assert.Equal(content, message.Content);
+        Assert.True(string.IsNullOrEmpty(message.Statistics));
+        Assert.NotEqual(message.Content, message.Statistics);
+        Assert.Equal(agentId, message.AgentId);
+        Assert.Equal(agentName, message.AgentName);
     }
 }

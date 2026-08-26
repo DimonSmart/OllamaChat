@@ -28,6 +28,39 @@ public sealed class FileSavedChatRepositoryTests
     }
 
     [Fact]
+    public async Task SaveAndGetAsync_RoundTripsWorkflowMessageFieldsWithoutCopyingContentToStatistics()
+    {
+        var root = CreateRoot();
+        try
+        {
+            var repository = new FileSavedChatRepository(NullLogger<FileSavedChatRepository>.Instance);
+            var message = new AppChatMessage(
+                "Workflow response",
+                DateTime.UtcNow,
+                AppChatRole.Assistant,
+                statistics: "technical metadata",
+                agentId: "writer",
+                agentName: "Writer",
+                usage: new ChatRunUsage(10, 20, 30, 2, TimeSpan.FromSeconds(3)));
+            var chat = CreateChat();
+            chat.Messages = [message];
+
+            await repository.SaveAsync(root, chat, TestContext.Current.CancellationToken);
+            var restored = await repository.GetAsync(root, chat.Id, TestContext.Current.CancellationToken);
+
+            Assert.NotNull(restored);
+            var restoredMessage = Assert.Single(restored.Messages);
+            Assert.Equal(message.Content, restoredMessage.Content);
+            Assert.Equal(message.Statistics, restoredMessage.Statistics);
+            Assert.Equal(message.AgentId, restoredMessage.AgentId);
+            Assert.Equal(message.AgentName, restoredMessage.AgentName);
+            Assert.Equal(message.Usage, restoredMessage.Usage);
+            Assert.NotEqual(restoredMessage.Content, restoredMessage.Statistics);
+        }
+        finally { Directory.Delete(root, true); }
+    }
+
+    [Fact]
     public async Task ConcurrentSaves_LeaveOneValidDocumentWithoutSharedTemporaryFiles()
     {
         var root = CreateRoot();
