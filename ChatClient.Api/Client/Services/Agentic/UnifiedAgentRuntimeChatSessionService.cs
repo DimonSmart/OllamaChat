@@ -1311,15 +1311,19 @@ public sealed class UnifiedAgentRuntimeChatSessionService(
         string runtimeMessageId,
         AgentOutputMessage output)
     {
+        var agentId = ResolveOutputAgentId(output);
         if (_activeStreamsByRuntimeMessageId.TryGetValue(runtimeMessageId, out var stream))
         {
+            if (!string.IsNullOrWhiteSpace(agentId))
+            {
+                stream.SetAgentId(agentId);
+            }
             if (!string.IsNullOrWhiteSpace(output.Author))
             {
-                stream.SetAgentId(output.Author);
                 stream.SetAgentName(output.Author);
             }
 
-            var final = streamingBridge.Complete(stream, output.Content, "unified agent runtime");
+            var final = streamingBridge.Complete(stream, output.Content);
             ReplaceMessage(stream, final);
             await (MessageUpdated?.Invoke(final, true) ?? Task.CompletedTask);
             _activeStreamsByRuntimeMessageId.Remove(runtimeMessageId);
@@ -1331,7 +1335,7 @@ public sealed class UnifiedAgentRuntimeChatSessionService(
             output.Content,
             DateTime.Now,
             AppChatRole.Assistant,
-            agentId: output.Author,
+            agentId: agentId,
             agentName: output.Author));
         _completedRuntimeMessageIds.Add(runtimeMessageId);
     }
@@ -1537,9 +1541,16 @@ public sealed class UnifiedAgentRuntimeChatSessionService(
             result.FinalMessage.Content,
             DateTime.Now,
             AppChatRole.Assistant,
-            agentId: result.FinalMessage.Author,
+            agentId: ResolveOutputAgentId(result.FinalMessage),
             agentName: result.FinalMessage.Author));
     }
+
+    private static string? ResolveOutputAgentId(AgentOutputMessage output) =>
+        !string.IsNullOrWhiteSpace(output.AgentId)
+            ? output.AgentId
+            : !string.IsNullOrWhiteSpace(output.Author)
+                ? output.Author
+                : null;
 
     private async Task AddFailureAsync(AgentRunError error)
     {
@@ -1592,7 +1603,7 @@ public sealed class UnifiedAgentRuntimeChatSessionService(
                 continue;
             }
 
-            var final = streamingBridge.Complete(pair.Value, "unified agent runtime");
+            var final = streamingBridge.Complete(pair.Value);
             ReplaceMessage(pair.Value, final);
             await (MessageUpdated?.Invoke(final, true) ?? Task.CompletedTask);
             _completedRuntimeMessageIds.Add(pair.Key);

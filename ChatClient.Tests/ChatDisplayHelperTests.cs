@@ -72,4 +72,29 @@ public class ChatDisplayHelperTests
 
         Assert.Equal("TEC", avatarText);
     }
+
+    [Fact]
+    public void AssistantIdentity_FallsBackToMessageMetadata_WhenRuntimeAgentIsNotInOuterAgentList()
+    {
+        var agents = new[]
+        {
+            new AgentExecutionSpec
+            {
+                AgentName = "Scenario Dispute Group Chat",
+                RuntimeAgentId = "workflow"
+            }
+        };
+
+        var displayName = ChatDisplayHelper.GetAssistantDisplayName(
+            agents,
+            "participant_a",
+            "Participant A Advocate");
+        var avatarText = ChatDisplayHelper.GetAssistantAvatarText(
+            agents,
+            "participant_a",
+            "Participant A Advocate");
+
+        Assert.Equal("Participant A Advocate", displayName);
+        Assert.Equal("PAA", avatarText);
+    }
 }

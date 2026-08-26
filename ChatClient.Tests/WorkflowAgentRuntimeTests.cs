@@ -85,7 +85,11 @@ public sealed class WorkflowAgentRuntimeTests
                 FinalAuthor = "Workflow",
                 FinalContent = "summary",
                 Messages = [new HeadlessWorkflowOutputMessage("m1", "writer", "Writer", "draft")],
-                Metadata = new Dictionary<string, string> { ["workflowKind"] = "handoff" }
+                Metadata = new Dictionary<string, string>
+                {
+                    ["workflowKind"] = "handoff",
+                    ["finalParticipantId"] = "writer"
+                }
             })
         ]));
 
@@ -97,10 +101,11 @@ public sealed class WorkflowAgentRuntimeTests
         Assert.Equal("draft", delta.Text);
         var message = Assert.IsType<AgentMessageCompleted>(events[1]);
         Assert.Equal("m1", message.MessageId);
-        Assert.Equal(new AgentOutputMessage("Writer", "draft"), message.Message);
+        Assert.Equal(new AgentOutputMessage("Writer", "draft", "writer"), message.Message);
         var completed = Assert.IsType<AgentRunCompleted>(events[2]);
         Assert.Equal("final", completed.Result.FinalMessageId);
-        Assert.Equal(new AgentOutputMessage("Workflow", "summary"), completed.Result.FinalMessage);
+        Assert.Equal(new AgentOutputMessage("Workflow", "summary", "writer"), completed.Result.FinalMessage);
+        Assert.Equal(new AgentOutputMessage("Writer", "draft", "writer"), Assert.Single(completed.Result.Messages));
         Assert.Equal("handoff", completed.Result.Metadata["workflowKind"]);
     }
 

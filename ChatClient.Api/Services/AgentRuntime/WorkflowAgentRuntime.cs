@@ -316,21 +316,36 @@ internal sealed class WorkflowAgentRuntime(
                 delta.Text),
             HeadlessWorkflowMessageCompleted completed => new AgentMessageCompleted(
                 completed.MessageId,
-                new AgentOutputMessage(completed.Author, completed.Content)),
+                new AgentOutputMessage(
+                    completed.Author,
+                    completed.Content,
+                    NormalizeAgentId(completed.ParticipantId))),
             HeadlessWorkflowCompleted completed => new AgentRunCompleted(new AgentRunResult
             {
                 FinalMessage = new AgentOutputMessage(
                     completed.Result.FinalAuthor,
-                    completed.Result.FinalContent),
+                    completed.Result.FinalContent,
+                    GetFinalAgentId(completed.Result)),
                 FinalMessageId = completed.Result.FinalMessageId,
                 Messages = completed.Result.Messages
-                    .Select(static message => new AgentOutputMessage(message.Author, message.Content))
+                    .Select(static message => new AgentOutputMessage(
+                        message.Author,
+                        message.Content,
+                        NormalizeAgentId(message.ParticipantId)))
                     .ToList(),
                 Metadata = completed.Result.Metadata
             }),
             _ => throw new InvalidOperationException(
                 $"Unsupported headless workflow event '{headlessEvent.GetType().Name}'.")
         };
+
+    private static string? GetFinalAgentId(HeadlessWorkflowResult result) =>
+        result.Metadata.TryGetValue("finalParticipantId", out var participantId)
+            ? NormalizeAgentId(participantId)
+            : null;
+
+    private static string? NormalizeAgentId(string? agentId) =>
+        string.IsNullOrWhiteSpace(agentId) ? null : agentId;
 
     private static int FindCurrentUserMessageIndex(IReadOnlyList<AgentInputMessage> messages)
     {

@@ -184,7 +184,8 @@ public sealed record AgentRunResult
 
 public sealed record AgentOutputMessage(
     string Author,
-    string Content);
+    string Content,
+    string? AgentId = null);
 
 public sealed record AgentRunError(
     string Code,

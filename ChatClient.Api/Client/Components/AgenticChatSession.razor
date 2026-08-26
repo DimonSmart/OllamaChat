@@ -239,7 +239,7 @@
 
                 @{
                     var avatarText = message.Role == AppChatRole.Assistant
-                        ? GetAssistantAvatarText(message.AgentId)
+                        ? GetAssistantAvatarText(message)
                         : GetAvatarText(UserName);
                     var avatarLabel = message.Role == AppChatRole.Assistant
                         ? GetAssistantLabel(message)
@@ -679,16 +679,28 @@
     private static string GetAvatarText(string? name) =>
         ChatDisplayHelper.GetAvatarText(name);
 
-    private string GetAssistantAvatarText(string? agentId) =>
-        ChatDisplayHelper.GetAssistantAvatarText(Agents, agentId);
+    private string GetAssistantAvatarText(AppChatMessageViewModel message) =>
+        ChatDisplayHelper.GetAssistantAvatarText(Agents, message.AgentId, message.AgentName);
 
     private string? GetAssistantLabel(AppChatMessageViewModel message) =>
-        ChatDisplayHelper.GetAssistantDisplayName(Agents, message.AgentId);
+        ChatDisplayHelper.GetAssistantDisplayName(Agents, message.AgentId, message.AgentName);
 
     private bool ShouldShowSpeakerLabel(AppChatMessageViewModel message) =>
-        IsMultiAgent &&
+        (IsMultiAgent || HasMultipleAssistantSpeakers()) &&
         message.Role == AppChatRole.Assistant &&
         !string.IsNullOrWhiteSpace(GetSpeakerLabel(message));
+
+    private bool HasMultipleAssistantSpeakers() =>
+        Messages
+            .Where(static message => message.Role == AppChatRole.Assistant)
+            .Select(static message =>
+                !string.IsNullOrWhiteSpace(message.AgentName)
+                    ? message.AgentName
+                    : message.AgentId)
+            .Where(static identity => !string.IsNullOrWhiteSpace(identity))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .Take(2)
+            .Count() > 1;
 
     private string? GetSpeakerLabel(AppChatMessageViewModel message) =>
         GetAssistantLabel(message);

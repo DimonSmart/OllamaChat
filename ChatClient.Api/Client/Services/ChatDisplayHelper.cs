@@ -45,20 +45,23 @@ public static class ChatDisplayHelper
 
     public static string? GetAssistantDisplayName(
         IEnumerable<AgentExecutionSpec> agents,
-        string? agentId)
+        string? agentId,
+        string? fallbackName = null)
     {
         var matchingAgent = ResolveAgent(agents, agentId);
-        return matchingAgent?.AgentName;
+        return matchingAgent?.AgentName ??
+               (string.IsNullOrWhiteSpace(fallbackName) ? null : fallbackName.Trim());
     }
 
     public static string GetAssistantAvatarText(
         IEnumerable<AgentExecutionSpec> agents,
-        string? agentId)
+        string? agentId,
+        string? fallbackName = null)
     {
         var matchingAgent = ResolveAgent(agents, agentId);
         if (matchingAgent is null)
         {
-            return string.Empty;
+            return BuildAvatarText(fallbackName, 3);
         }
 
         if (!string.IsNullOrWhiteSpace(matchingAgent.AvatarText))
