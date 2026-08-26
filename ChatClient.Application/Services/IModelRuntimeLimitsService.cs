@@ -8,7 +8,9 @@ public interface IModelRuntimeLimitsService
 
     Task<ModelRuntimeLimits?> GetAsync(Guid serverId, string modelName);
 
-    Task<ModelRuntimeLimitsFillResult> FillKnownAsync(IEnumerable<ServerModel> models);
+    Task<ModelRuntimeLimitsFillResult> FillKnownAsync(
+        IEnumerable<ServerModel> models,
+        int defaultContextWindowTokens = ModelRuntimeLimitsDefaults.DefaultContextWindowTokens);
 
     Task CreateAsync(ModelRuntimeLimits limits);
 

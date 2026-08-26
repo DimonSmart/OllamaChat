@@ -15,7 +15,7 @@ public sealed class CompactionBudgetResolver(IModelRuntimeLimitsService runtimeL
             CompactionBudgetSources.Fixed => new ModelRuntimeLimits
             {
                 ContextWindowTokens = profile.ContextWindowTokens ?? 0,
-                MaxOutputTokens = profile.MaxOutputTokens ?? 0
+                MaxOutputTokens = profile.MaxOutputTokens
             },
             CompactionBudgetSources.SelectedModel => await runtimeLimits.GetAsync(model.ServerId, model.ModelName)
                 ?? throw new InvalidOperationException($"Compaction profile '{profile.Name}' requires runtime limits for model '{model.ModelName}' on server {model.ServerId}. Configure the model limits before starting the agent."),
@@ -23,8 +23,12 @@ public sealed class CompactionBudgetResolver(IModelRuntimeLimitsService runtimeL
         };
 
         if (!ModelRuntimeLimitValidation.HasValidTokenBudget(limits.ContextWindowTokens, limits.MaxOutputTokens))
-            throw new InvalidOperationException($"Compaction profile '{profile.Name}' has invalid limits for model '{model.ModelName}' on server {model.ServerId}. Context window must exceed maximum output.");
+            throw new InvalidOperationException($"Compaction profile '{profile.Name}' has incomplete or invalid limits for model '{model.ModelName}' on server {model.ServerId}. Context window and maximum output must both be configured, and maximum output must be smaller than the context window.");
 
-        return new CompactionBudget(limits.ContextWindowTokens, limits.MaxOutputTokens, limits.ContextWindowTokens - limits.MaxOutputTokens);
+        var maxOutputTokens = limits.MaxOutputTokens!.Value;
+        return new CompactionBudget(
+            limits.ContextWindowTokens,
+            maxOutputTokens,
+            limits.ContextWindowTokens - maxOutputTokens);
     }
 }

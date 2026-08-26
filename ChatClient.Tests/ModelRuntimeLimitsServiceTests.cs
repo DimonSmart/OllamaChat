@@ -39,7 +39,6 @@ public sealed class ModelRuntimeLimitsServiceTests
     [Theory]
     [InlineData(0, 100)]
     [InlineData(100, 0)]
-    [InlineData(100, 100)]
     [InlineData(100, 101)]
     public async Task CreateAsync_RejectsInvalidLimits(int contextWindowTokens, int maxOutputTokens)
     {
@@ -51,6 +50,29 @@ public sealed class ModelRuntimeLimitsServiceTests
             limits.ContextWindowTokens = contextWindowTokens;
             limits.MaxOutputTokens = maxOutputTokens;
             await Assert.ThrowsAsync<ArgumentException>(() => service.CreateAsync(limits));
+        }
+        finally { root.Delete(recursive: true); }
+    }
+
+    [Fact]
+    public async Task CreateAsync_AllowsContextOnlyAndFullWindowOutputMetadata()
+    {
+        var root = CreateRoot();
+        try
+        {
+            var service = CreateService(root.FullName);
+            var serverId = Guid.NewGuid();
+            var contextOnly = CreateLimits("context-only", serverId);
+            contextOnly.MaxOutputTokens = null;
+            await service.CreateAsync(contextOnly);
+
+            var fullWindowOutput = CreateLimits("full-window-output", serverId);
+            fullWindowOutput.ContextWindowTokens = 131_072;
+            fullWindowOutput.MaxOutputTokens = 131_072;
+            await service.CreateAsync(fullWindowOutput);
+
+            Assert.Null((await service.GetAsync(serverId, "context-only"))!.MaxOutputTokens);
+            Assert.Equal(131_072, (await service.GetAsync(serverId, "full-window-output"))!.MaxOutputTokens);
         }
         finally { root.Delete(recursive: true); }
     }
@@ -74,37 +96,47 @@ public sealed class ModelRuntimeLimitsServiceTests
     }
 
     [Fact]
-    public async Task FillKnownAsync_AddsKnownModels_WithoutReplacingExistingLimits()
+    public async Task FillKnownAsync_AddsCatalogAndFallbackModels_WithoutReplacingExistingLimits()
     {
         var root = CreateRoot();
         try
         {
             var service = CreateService(root.FullName);
             var azureServerId = Guid.NewGuid();
-            var openAiServerId = Guid.NewGuid();
+            var ollamaServerId = Guid.NewGuid();
             var existing = CreateLimits("gpt-4o", azureServerId);
             existing.ContextWindowTokens = 64_000;
             existing.MaxOutputTokens = 8_000;
             await service.CreateAsync(existing);
 
             var result = await service.FillKnownAsync([
-                new ServerModel(azureServerId, "gpt-5.4-mini"),
+                new ServerModel(azureServerId, "gpt-5.6-sol"),
                 new ServerModel(azureServerId, "GPT-4O"),
-                new ServerModel(openAiServerId, "gpt-4.1"),
-                new ServerModel(openAiServerId, "custom-model")
-            ]);
+                new ServerModel(ollamaServerId, "qwen3:latest"),
+                new ServerModel(ollamaServerId, "custom-model")
+            ], defaultContextWindowTokens: 96_000);
 
-            Assert.Equal(new ModelRuntimeLimitsFillResult(2, 1, 1), result);
-            Assert.Equal(400_000, (await service.GetAsync(azureServerId, "gpt-5.4-mini"))!.ContextWindowTokens);
-            Assert.Equal(128_000, (await service.GetAsync(azureServerId, "gpt-5.4-mini"))!.MaxOutputTokens);
+            Assert.Equal(new ModelRuntimeLimitsFillResult(3, 1, 1), result);
+
+            var gpt56 = (await service.GetAsync(azureServerId, "gpt-5.6-sol"))!;
+            Assert.Equal(1_050_000, gpt56.ContextWindowTokens);
+            Assert.Equal(128_000, gpt56.MaxOutputTokens);
+
+            var qwen3 = (await service.GetAsync(ollamaServerId, "qwen3:latest"))!;
+            Assert.Equal(40_960, qwen3.ContextWindowTokens);
+            Assert.Null(qwen3.MaxOutputTokens);
+
             Assert.Equal(64_000, (await service.GetAsync(azureServerId, "gpt-4o"))!.ContextWindowTokens);
-            Assert.Null(await service.GetAsync(openAiServerId, "custom-model"));
+
+            var fallback = (await service.GetAsync(ollamaServerId, "custom-model"))!;
+            Assert.Equal(96_000, fallback.ContextWindowTokens);
+            Assert.Null(fallback.MaxOutputTokens);
         }
         finally { root.Delete(recursive: true); }
     }
 
     [Fact]
-    public async Task Resolver_ResolvesSelectedAndFixedBudgets_AndReportsMissingLimits()
+    public async Task Resolver_ResolvesSelectedAndFixedBudgets_AndReportsMissingOrIncompleteLimits()
     {
         var root = CreateRoot();
         try
@@ -131,6 +163,14 @@ public sealed class ModelRuntimeLimitsServiceTests
                 new ServerModel(Guid.NewGuid(), "not-installed")));
             Assert.Contains("Missing", missing.Message);
             Assert.Contains("not-installed", missing.Message);
+
+            var incomplete = CreateLimits("context-only");
+            incomplete.MaxOutputTokens = null;
+            await service.CreateAsync(incomplete);
+            var incompleteError = await Assert.ThrowsAsync<InvalidOperationException>(() => resolver.ResolveAsync(
+                new CompactionProfile { Name = "Incomplete", BudgetSource = CompactionBudgetSources.SelectedModel },
+                new ServerModel(incomplete.ServerId, incomplete.ModelName)));
+            Assert.Contains("maximum output", incompleteError.Message.ToLowerInvariant());
         }
         finally { root.Delete(recursive: true); }
     }

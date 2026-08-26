@@ -20,6 +20,9 @@ public class UserSettings
     [JsonPropertyName("defaultModel")]
     public ServerModelSelection DefaultModel { get; set; } = new(null, null);
 
+    [JsonPropertyName("defaultModelContextWindowTokens")]
+    public int DefaultModelContextWindowTokens { get; set; } = ModelRuntimeLimitsDefaults.DefaultContextWindowTokens;
+
     [JsonPropertyName("mcpSamplingTimeoutSeconds")]
     public int McpSamplingTimeoutSeconds { get; set; } = 30 * 60;
 

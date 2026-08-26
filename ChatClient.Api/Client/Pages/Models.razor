@@ -7,6 +7,7 @@
 @inject IOpenAIClientService OpenAIService
 @inject ILlmServerConfigService LlmServerConfigService
 @inject IModelRuntimeLimitsService ModelRuntimeLimitsService
+@inject IUserSettingsService UserSettingsService
 @inject ISnackbar Snackbar
 
 <AppPage Title="Available Models">
@@ -86,13 +87,20 @@
     }
 
     <AppSection Title="Saved Runtime Limits">
-        <div class="d-flex align-center gap-2 mb-2"><MudText Typo="Typo.body2" Class="mud-text-secondary">Limits remain available for models that are temporarily unavailable from their server.</MudText><MudSpacer /><MudButton Size="Size.Small" Variant="Variant.Outlined" Color="Color.Default" OnClick="FillKnownLimits">Fill known limits</MudButton></div>
+        <div class="d-flex align-center gap-2 mb-2">
+            <MudText Typo="Typo.body2" Class="mud-text-secondary">Limits remain available for models that are temporarily unavailable from their server.</MudText>
+            <MudSpacer />
+            <MudNumericField T="int" @bind-Value="_defaultContextWindowTokens" Label="Fallback context window" Min="1" Adornment="Adornment.End" AdornmentText="tokens" Margin="Margin.Dense" />
+            <MudButton Size="Size.Small" Variant="Variant.Text" Color="Color.Default" OnClick="SaveDefaultContextWindow">Save default</MudButton>
+            <MudButton Size="Size.Small" Variant="Variant.Outlined" Color="Color.Default" OnClick="FillKnownLimits">Fill model limits</MudButton>
+        </div>
+        <MudText Typo="Typo.caption" Class="mud-text-secondary mb-2">Uncatalogued models use the fallback context window. Maximum output remains unset when the catalog does not define a hard output limit.</MudText>
         <MudDataGrid T="ModelRuntimeLimits" Items="runtimeLimits" Dense="true" Hover="true" Bordered="true">
             <Columns>
                 <TemplateColumn Title="Server"><CellTemplate>@ServerName(context.Item.ServerId)</CellTemplate></TemplateColumn>
                 <PropertyColumn Property="x => x.ModelName" Title="Model" />
                 <TemplateColumn Title="Context window"><CellTemplate>@context.Item.ContextWindowTokens.ToString("N0")</CellTemplate></TemplateColumn>
-                <TemplateColumn Title="Maximum output"><CellTemplate>@context.Item.MaxOutputTokens.ToString("N0")</CellTemplate></TemplateColumn>
+                <TemplateColumn Title="Maximum output"><CellTemplate>@(context.Item.MaxOutputTokens?.ToString("N0") ?? "—")</CellTemplate></TemplateColumn>
                 <TemplateColumn Title="Actions"><CellTemplate><div class="app-table-actions"><MudTooltip Text="Edit runtime limits"><MudIconButton Icon="@Icons.Material.Filled.Edit" Size="Size.Small" aria-label="Edit runtime limits" OnClick="@(() => EditLimits(context.Item))" /></MudTooltip><MudTooltip Text="Remove runtime limits"><MudIconButton Icon="@Icons.Material.Filled.Delete" Color="Color.Error" Size="Size.Small" aria-label="Remove runtime limits" OnClick="@(() => ConfirmDeleteLimits(context.Item))" /></MudTooltip></div></CellTemplate></TemplateColumn>
             </Columns>
             <NoRecordsContent><MudText Class="pa-3">No runtime limits saved.</MudText></NoRecordsContent>
@@ -106,8 +114,8 @@
         <MudText Typo="Typo.body2" Class="mb-2">@ServerName(limitsModel.ServerId) / @limitsModel.ModelName</MudText>
         <MudGrid Spacing="2">
             <MudItem xs="12" sm="6"><MudNumericField T="int" @bind-Value="limitsModel.ContextWindowTokens" Label="Context window tokens" Required="true" Margin="Margin.Dense" /></MudItem>
-            <MudItem xs="12" sm="6"><MudNumericField T="int" @bind-Value="limitsModel.MaxOutputTokens" Label="Maximum output tokens" Required="true" Margin="Margin.Dense" /></MudItem>
-            @if (!ValidLimits()) { <MudItem xs="12"><MudText Color="Color.Error" Typo="Typo.caption">Both limits must be positive and maximum output must be lower than the context window.</MudText></MudItem> }
+            <MudItem xs="12" sm="6"><MudNumericField T="int?" @bind-Value="limitsModel.MaxOutputTokens" Label="Maximum output tokens" Margin="Margin.Dense" /></MudItem>
+            @if (!ValidLimits()) { <MudItem xs="12"><MudText Color="Color.Error" Typo="Typo.caption">Context window must be positive. Maximum output is optional; when set, it must be positive and no greater than the context window.</MudText></MudItem> }
         </MudGrid>
     </DialogContent>
     <DialogActions><MudButton Size="Size.Small" OnClick="CloseLimits">Cancel</MudButton><MudButton Variant="Variant.Filled" Color="Color.Primary" Size="Size.Small" OnClick="SaveLimits">Save</MudButton></DialogActions>
@@ -121,6 +129,7 @@
     private List<ModelRuntimeLimits> runtimeLimits = [];
     private ModelRuntimeLimits limitsModel = new();
     private ModelRuntimeLimits? limitsToDelete;
+    private int _defaultContextWindowTokens = ModelRuntimeLimitsDefaults.DefaultContextWindowTokens;
     private bool _loading = true;
     private bool editingLimits;
     private bool deletingLimits;
@@ -132,6 +141,11 @@
         _loading = true;
         try
         {
+            var settings = await UserSettingsService.GetSettingsAsync();
+            _defaultContextWindowTokens = settings.DefaultModelContextWindowTokens > 0
+                ? settings.DefaultModelContextWindowTokens
+                : ModelRuntimeLimitsDefaults.DefaultContextWindowTokens;
+
             var servers = await LlmServerConfigService.GetAllAsync();
             var tasks = servers.Select(async s =>
             {
@@ -187,7 +201,10 @@
     private string LimitsSummary(Guid serverId, string modelName)
     {
         var limits = runtimeLimits.FirstOrDefault(value => value.ServerId == serverId && string.Equals(value.ModelName, modelName, StringComparison.OrdinalIgnoreCase));
-        return limits is null ? "Set limits" : $"{limits.ContextWindowTokens:N0} / {limits.MaxOutputTokens:N0}";
+        if (limits is null)
+            return "Set limits";
+        var maxOutput = limits.MaxOutputTokens?.ToString("N0") ?? "—";
+        return $"{limits.ContextWindowTokens:N0} / {maxOutput}";
     }
 
     private string ServerName(Guid serverId) => _serverModels.FirstOrDefault(value => value.Server.Id == serverId)?.Server.Name ?? $"Unavailable server ({serverId})";
@@ -216,19 +233,39 @@
         catch (Exception ex) { Snackbar.Add($"Could not save runtime limits: {ex.Message}", Severity.Error); }
     }
 
+    private async Task SaveDefaultContextWindow()
+    {
+        if (_defaultContextWindowTokens <= 0)
+        {
+            Snackbar.Add("Fallback context window must be positive.", Severity.Error);
+            return;
+        }
+
+        try
+        {
+            var settings = await UserSettingsService.GetSettingsAsync();
+            settings.DefaultModelContextWindowTokens = _defaultContextWindowTokens;
+            await UserSettingsService.SaveSettingsAsync(settings);
+            Snackbar.Add($"Default context window saved: {_defaultContextWindowTokens:N0} tokens.", Severity.Success);
+        }
+        catch (Exception ex) { Snackbar.Add($"Could not save default context window: {ex.Message}", Severity.Error); }
+    }
+
     private async Task FillKnownLimits()
     {
         try
         {
             var models = _serverModels.SelectMany(server => server.Models.Select(model => new ServerModel(server.Server.Id ?? Guid.Empty, model.Name)));
-            var result = await ModelRuntimeLimitsService.FillKnownAsync(models);
+            var result = await ModelRuntimeLimitsService.FillKnownAsync(models, _defaultContextWindowTokens);
             runtimeLimits = (await ModelRuntimeLimitsService.GetAllAsync()).OrderBy(limit => ServerName(limit.ServerId)).ThenBy(limit => limit.ModelName, StringComparer.OrdinalIgnoreCase).ToList();
-            Snackbar.Add($"Added {result.AddedCount} known limit(s); {result.AlreadyConfiguredCount} already configured, {result.UnknownCount} unknown.", result.UnknownCount == 0 ? Severity.Success : Severity.Info);
+            Snackbar.Add(
+                $"Added {result.AddedCount} limit(s); {result.AlreadyConfiguredCount} already configured, {result.FallbackCount} used the fallback context window.",
+                result.FallbackCount == 0 ? Severity.Success : Severity.Info);
         }
-        catch (Exception ex) { Snackbar.Add($"Could not fill known runtime limits: {ex.Message}", Severity.Error); }
+        catch (Exception ex) { Snackbar.Add($"Could not fill model runtime limits: {ex.Message}", Severity.Error); }
     }
 
-    private bool ValidLimits() => ModelRuntimeLimitValidation.HasValidTokenBudget(limitsModel.ContextWindowTokens, limitsModel.MaxOutputTokens);
+    private bool ValidLimits() => ModelRuntimeLimitValidation.HasValidRuntimeLimits(limitsModel.ContextWindowTokens, limitsModel.MaxOutputTokens);
     private void ConfirmDeleteLimits(ModelRuntimeLimits limits) { limitsToDelete = limits; deletingLimits = true; }
     private async Task DeleteLimits()
     {

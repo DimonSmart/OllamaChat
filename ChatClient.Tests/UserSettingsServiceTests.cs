@@ -75,6 +75,7 @@ public class UserSettingsServiceTests
             var testSettings = new UserSettings
             {
                 DefaultModel = new(serverId, "test-model"),
+                DefaultModelContextWindowTokens = 96_000,
                 UserName = "Test User",
                 WorkspacesRoot = Path.Combine(tempDir, "workspaces"),
                 VoiceInput = new VoiceInputSettings
@@ -91,6 +92,7 @@ public class UserSettingsServiceTests
 
             Assert.Equal(testSettings.DefaultModel.ModelName, loadedSettings.DefaultModel.ModelName);
             Assert.Equal(testSettings.DefaultModel.ServerId, loadedSettings.DefaultModel.ServerId);
+            Assert.Equal(testSettings.DefaultModelContextWindowTokens, loadedSettings.DefaultModelContextWindowTokens);
             Assert.Equal(testSettings.UserName, loadedSettings.UserName);
             Assert.True(loadedSettings.VoiceInput.IsEnabled);
             Assert.Equal(VoiceInputInitializationStatus.Ready, loadedSettings.VoiceInput.Status);
@@ -106,7 +108,7 @@ public class UserSettingsServiceTests
     }
 
     [Fact]
-    public async Task GetSettingsAsync_OldJsonWithoutWorkspacesRoot_UsesDefault()
+    public async Task GetSettingsAsync_OldJsonWithoutWorkspacesRoot_UsesDefaults()
     {
         var tempDir = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString());
         Directory.CreateDirectory(tempDir);
@@ -125,6 +127,7 @@ public class UserSettingsServiceTests
             var settings = await service.GetSettingsAsync(TestContext.Current.CancellationToken);
 
             Assert.Equal(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "OllamaChat", "Workspaces"), settings.WorkspacesRoot);
+            Assert.Equal(ModelRuntimeLimitsDefaults.DefaultContextWindowTokens, settings.DefaultModelContextWindowTokens);
         }
         finally { Directory.Delete(tempDir, true); }
     }
@@ -164,6 +167,7 @@ public class UserSettingsServiceTests
             await service.SaveSettingsAsync(new UserSettings
             {
                 UserName = "Test User",
+                DefaultModelContextWindowTokens = 80_000,
                 VoiceInput = new VoiceInputSettings
                 {
                     IsEnabled = false,
@@ -184,6 +188,7 @@ public class UserSettingsServiceTests
             var loadedSettings = await service.GetSettingsAsync(cancellationToken: TestContext.Current.CancellationToken);
 
             Assert.Equal("Test User", loadedSettings.UserName);
+            Assert.Equal(80_000, loadedSettings.DefaultModelContextWindowTokens);
             Assert.True(loadedSettings.VoiceInput.IsEnabled);
             Assert.Equal(VoiceInputInitializationStatus.Ready, loadedSettings.VoiceInput.Status);
             Assert.Equal("Small", loadedSettings.VoiceInput.ModelType);
