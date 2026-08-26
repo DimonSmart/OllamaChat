@@ -62,8 +62,6 @@ public sealed class SqliteTaskSessionRepository : ITaskSessionRepository
         var documents = await ListDocumentInfoAsync(connection, normalizedSessionId, cancellationToken);
         var parameters = await ListParameterInfoAsync(connection, normalizedSessionId, cancellationToken);
         var summaries = await ListSummaryInfoAsync(connection, normalizedSessionId, cancellationToken);
-        var turnCount = await GetTurnCountAsync(connection, normalizedSessionId, cancellationToken);
-
         return new TaskSessionSnapshot(
             SessionId: reader.GetString(0),
             Title: ReadNullableString(reader, 1),
@@ -72,7 +70,6 @@ public sealed class SqliteTaskSessionRepository : ITaskSessionRepository
             Status: reader.GetString(4),
             CreatedAtUtc: ReadDateTime(reader, 5),
             UpdatedAtUtc: ReadDateTime(reader, 6),
-            TurnCount: turnCount,
             Documents: documents,
             Parameters: parameters,
             Summaries: summaries);
@@ -264,122 +261,6 @@ public sealed class SqliteTaskSessionRepository : ITaskSessionRepository
             UpdatedAtUtc: ReadDateTime(reader, 5));
     }
 
-    public async Task<TaskSessionTurnSnapshot> AppendTurnAsync(
-        string databaseFilePath,
-        string sessionId,
-        string role,
-        string content,
-        string? speakerId,
-        CancellationToken cancellationToken = default)
-    {
-        var normalizedDatabaseFilePath = NormalizeDatabaseFilePath(databaseFilePath);
-        var normalizedSessionId = NormalizeRequired(sessionId, "session_id_required");
-        var normalizedRole = NormalizeRequired(role, "turn_role_required");
-        var normalizedContent = NormalizeRequired(content, "turn_content_required");
-        var now = DateTime.UtcNow;
-
-        await using var connection = await OpenConnectionAsync(normalizedDatabaseFilePath, cancellationToken);
-        await using var beginCommand = connection.CreateCommand();
-        beginCommand.CommandText = "BEGIN IMMEDIATE;";
-        await beginCommand.ExecuteNonQueryAsync(cancellationToken);
-
-        try
-        {
-            await EnsureSessionExistsAsync(connection, normalizedSessionId, cancellationToken);
-            var sequence = await GetNextSequenceAsync(connection, normalizedSessionId, cancellationToken);
-
-            await using var command = connection.CreateCommand();
-            command.CommandText =
-                """
-                INSERT INTO task_session_turns (session_id, sequence, role, speaker_id, content, created_at_utc)
-                VALUES ($sessionId, $sequence, $role, $speakerId, $content, $createdAtUtc);
-
-                UPDATE task_sessions
-                SET updated_at_utc = $updatedAtUtc
-                WHERE session_id = $sessionId;
-                """;
-            command.Parameters.AddWithValue("$sessionId", normalizedSessionId);
-            command.Parameters.AddWithValue("$sequence", sequence);
-            command.Parameters.AddWithValue("$role", normalizedRole);
-            command.Parameters.AddWithValue("$speakerId", (object?)NormalizeOptional(speakerId) ?? DBNull.Value);
-            command.Parameters.AddWithValue("$content", normalizedContent);
-            command.Parameters.AddWithValue("$createdAtUtc", now.ToString("O"));
-            command.Parameters.AddWithValue("$updatedAtUtc", now.ToString("O"));
-            await command.ExecuteNonQueryAsync(cancellationToken);
-
-            await using var commitCommand = connection.CreateCommand();
-            commitCommand.CommandText = "COMMIT;";
-            await commitCommand.ExecuteNonQueryAsync(cancellationToken);
-
-            return new TaskSessionTurnSnapshot(
-                SessionId: normalizedSessionId,
-                Sequence: sequence,
-                Role: normalizedRole,
-                SpeakerId: NormalizeOptional(speakerId),
-                Content: normalizedContent,
-                CreatedAtUtc: now);
-        }
-        catch
-        {
-            try
-            {
-                await using var rollbackCommand = connection.CreateCommand();
-                rollbackCommand.CommandText = "ROLLBACK;";
-                await rollbackCommand.ExecuteNonQueryAsync(CancellationToken.None);
-            }
-            catch
-            {
-            }
-
-            throw;
-        }
-    }
-
-    public async Task<IReadOnlyList<TaskSessionTurnSnapshot>> ListTurnsAsync(
-        string databaseFilePath,
-        string sessionId,
-        long afterSequence,
-        int maxCount,
-        CancellationToken cancellationToken = default)
-    {
-        var normalizedDatabaseFilePath = NormalizeDatabaseFilePath(databaseFilePath);
-        var normalizedSessionId = NormalizeRequired(sessionId, "session_id_required");
-        var effectiveAfterSequence = Math.Max(0, afterSequence);
-        var effectiveMaxCount = Math.Clamp(maxCount, 1, 200);
-
-        await using var connection = await OpenConnectionAsync(normalizedDatabaseFilePath, cancellationToken);
-        await EnsureSessionExistsAsync(connection, normalizedSessionId, cancellationToken);
-
-        await using var command = connection.CreateCommand();
-        command.CommandText =
-            """
-            SELECT session_id, sequence, role, speaker_id, content, created_at_utc
-            FROM task_session_turns
-            WHERE session_id = $sessionId
-              AND sequence > $afterSequence
-            ORDER BY sequence ASC
-            LIMIT $maxCount;
-            """;
-        command.Parameters.AddWithValue("$sessionId", normalizedSessionId);
-        command.Parameters.AddWithValue("$afterSequence", effectiveAfterSequence);
-        command.Parameters.AddWithValue("$maxCount", effectiveMaxCount);
-
-        List<TaskSessionTurnSnapshot> turns = [];
-        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
-        while (await reader.ReadAsync(cancellationToken))
-        {
-            turns.Add(new TaskSessionTurnSnapshot(
-                SessionId: reader.GetString(0),
-                Sequence: reader.GetInt64(1),
-                Role: reader.GetString(2),
-                SpeakerId: ReadNullableString(reader, 3),
-                Content: reader.GetString(4),
-                CreatedAtUtc: ReadDateTime(reader, 5)));
-        }
-
-        return turns;
-    }
-
     public async Task<TaskSessionSummarySnapshot> SaveSummaryAsync(
         string databaseFilePath,
         string sessionId,
@@ -518,16 +399,7 @@ public sealed class SqliteTaskSessionRepository : ITaskSessionRepository
                 FOREIGN KEY (session_id) REFERENCES task_sessions(session_id) ON DELETE CASCADE
             );
 
-            CREATE TABLE IF NOT EXISTS task_session_turns (
-                session_id TEXT NOT NULL,
-                sequence INTEGER NOT NULL,
-                role TEXT NOT NULL,
-                speaker_id TEXT NULL,
-                content TEXT NOT NULL,
-                created_at_utc TEXT NOT NULL,
-                PRIMARY KEY (session_id, sequence),
-                FOREIGN KEY (session_id) REFERENCES task_sessions(session_id) ON DELETE CASCADE
-            );
+            DROP TABLE IF EXISTS task_session_turns;
 
             CREATE TABLE IF NOT EXISTS task_session_parameters (
                 session_id TEXT NOT NULL,
@@ -572,39 +444,6 @@ public sealed class SqliteTaskSessionRepository : ITaskSessionRepository
         {
             throw new InvalidOperationException("session_not_found");
         }
-    }
-
-    private static async Task<long> GetNextSequenceAsync(
-        SqliteConnection connection,
-        string sessionId,
-        CancellationToken cancellationToken)
-    {
-        await using var command = connection.CreateCommand();
-        command.CommandText =
-            """
-            SELECT COALESCE(MAX(sequence), 0)
-            FROM task_session_turns
-            WHERE session_id = $sessionId;
-            """;
-        command.Parameters.AddWithValue("$sessionId", sessionId);
-        var currentMax = Convert.ToInt64(await command.ExecuteScalarAsync(cancellationToken) ?? 0L);
-        return currentMax + 1;
-    }
-
-    private static async Task<int> GetTurnCountAsync(
-        SqliteConnection connection,
-        string sessionId,
-        CancellationToken cancellationToken)
-    {
-        await using var command = connection.CreateCommand();
-        command.CommandText =
-            """
-            SELECT COUNT(1)
-            FROM task_session_turns
-            WHERE session_id = $sessionId;
-            """;
-        command.Parameters.AddWithValue("$sessionId", sessionId);
-        return Convert.ToInt32(await command.ExecuteScalarAsync(cancellationToken) ?? 0);
     }
 
     private static async Task<IReadOnlyList<TaskSessionDocumentInfo>> ListDocumentInfoAsync(

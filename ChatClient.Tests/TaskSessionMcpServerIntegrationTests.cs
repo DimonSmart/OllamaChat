@@ -1,6 +1,7 @@
 using ChatClient.Api.Services;
 using ChatClient.Api.Services.BuiltIn;
 using ChatClient.Domain.Models;
+using ChatClient.Infrastructure.Services.TaskSessions;
 using Microsoft.Extensions.Logging;
 using ModelContextProtocol.Client;
 using ModelContextProtocol.Protocol;
@@ -14,35 +15,23 @@ public sealed class TaskSessionMcpServerIntegrationTests
     public async Task TaskSessionServer_ExposesExpectedTools_AndRoundTripsState()
     {
         await using var fixture = new TaskSessionMcpFixture();
-        var client = await fixture.CreateClientAsync();
+        var sessionId = await fixture.InitializeWorkflowRunAsync();
+        var client = await fixture.CreateClientAsync(sessionId);
         var tools = (await client.ListToolsAsync(cancellationToken: TestContext.Current.CancellationToken)).ToList();
 
-        Assert.Contains(tools, static tool => string.Equals(tool.Name, "session_get_context", StringComparison.Ordinal));
-        Assert.Contains(tools, static tool => string.Equals(tool.Name, "session_create", StringComparison.Ordinal));
+        Assert.DoesNotContain(tools, static tool => string.Equals(tool.Name, "session_get_context", StringComparison.Ordinal));
+        Assert.DoesNotContain(tools, static tool => string.Equals(tool.Name, "session_create", StringComparison.Ordinal));
         Assert.Contains(tools, static tool => string.Equals(tool.Name, "session_get", StringComparison.Ordinal));
         Assert.Contains(tools, static tool => string.Equals(tool.Name, "session_set_phase", StringComparison.Ordinal));
-        Assert.Contains(tools, static tool => string.Equals(tool.Name, "session_attach_document", StringComparison.Ordinal));
+        Assert.DoesNotContain(tools, static tool => string.Equals(tool.Name, "session_attach_document", StringComparison.Ordinal));
         Assert.Contains(tools, static tool => string.Equals(tool.Name, "session_get_document", StringComparison.Ordinal));
-        Assert.Contains(tools, static tool => string.Equals(tool.Name, "session_set_parameter", StringComparison.Ordinal));
+        Assert.DoesNotContain(tools, static tool => string.Equals(tool.Name, "session_set_parameter", StringComparison.Ordinal));
         Assert.Contains(tools, static tool => string.Equals(tool.Name, "session_get_parameter", StringComparison.Ordinal));
-        Assert.Contains(tools, static tool => string.Equals(tool.Name, "session_append_turn", StringComparison.Ordinal));
-        Assert.Contains(tools, static tool => string.Equals(tool.Name, "session_list_turns", StringComparison.Ordinal));
+        Assert.DoesNotContain(tools, static tool => string.Equals(tool.Name, "session_append_turn", StringComparison.Ordinal));
+        Assert.DoesNotContain(tools, static tool => string.Equals(tool.Name, "session_list_turns", StringComparison.Ordinal));
         Assert.Contains(tools, static tool => string.Equals(tool.Name, "session_save_summary", StringComparison.Ordinal));
 
         var toolMap = tools.ToDictionary(static tool => tool.Name, StringComparer.OrdinalIgnoreCase);
-
-        var context = GetStructuredContent(await CallToolAsync(toolMap["session_get_context"], []));
-        Assert.Equal(Path.GetFullPath(fixture.DatabaseFilePath), GetProperty(context, "databaseFile").GetString());
-
-        var created = GetStructuredContent(await CallToolAsync(
-            toolMap["session_create"],
-            new Dictionary<string, object?>
-            {
-                ["title"] = "Interview Prep",
-                ["description"] = "Prepare for backend interview."
-            }));
-        var sessionId = GetProperty(created, "sessionId").GetString();
-        Assert.False(string.IsNullOrWhiteSpace(sessionId));
 
         var phaseUpdated = GetStructuredContent(await CallToolAsync(
             toolMap["session_set_phase"],
@@ -53,18 +42,6 @@ public sealed class TaskSessionMcpServerIntegrationTests
             }));
         Assert.Equal("behavioural", GetProperty(phaseUpdated, "phase").GetString());
 
-        var attached = GetStructuredContent(await CallToolAsync(
-            toolMap["session_attach_document"],
-            new Dictionary<string, object?>
-            {
-                ["sessionId"] = sessionId,
-                ["kind"] = "resume",
-                ["title"] = "Resume",
-                ["markdown"] = "# Resume\nBackend engineer.",
-                ["source"] = "resume.md"
-            }));
-        Assert.Equal("resume", GetProperty(attached, "kind").GetString());
-
         var document = GetStructuredContent(await CallToolAsync(
             toolMap["session_get_document"],
             new Dictionary<string, object?>
@@ -74,17 +51,6 @@ public sealed class TaskSessionMcpServerIntegrationTests
             }));
         Assert.Contains("Backend engineer", GetProperty(document, "markdown").GetString(), StringComparison.Ordinal);
 
-        var parameter = GetStructuredContent(await CallToolAsync(
-            toolMap["session_set_parameter"],
-            new Dictionary<string, object?>
-            {
-                ["sessionId"] = sessionId,
-                ["key"] = "response_language",
-                ["valueKind"] = "text",
-                ["value"] = "English"
-            }));
-        Assert.Equal("response_language", GetProperty(parameter, "key").GetString());
-
         var loadedParameter = GetStructuredContent(await CallToolAsync(
             toolMap["session_get_parameter"],
             new Dictionary<string, object?>
@@ -93,35 +59,6 @@ public sealed class TaskSessionMcpServerIntegrationTests
                 ["key"] = "response_language"
             }));
         Assert.Equal("English", GetProperty(loadedParameter, "value").GetString());
-
-        await CallToolAsync(
-            toolMap["session_append_turn"],
-            new Dictionary<string, object?>
-            {
-                ["sessionId"] = sessionId,
-                ["role"] = "user",
-                ["speakerId"] = "user",
-                ["content"] = "I want to practice."
-            });
-        await CallToolAsync(
-            toolMap["session_append_turn"],
-            new Dictionary<string, object?>
-            {
-                ["sessionId"] = sessionId,
-                ["role"] = "assistant",
-                ["speakerId"] = "behavioural",
-                ["content"] = "Tell me about a time you handled conflict."
-            });
-
-        var turns = GetStructuredContent(await CallToolAsync(
-            toolMap["session_list_turns"],
-            new Dictionary<string, object?>
-            {
-                ["sessionId"] = sessionId,
-                ["afterSequence"] = 0,
-                ["maxCount"] = 10
-            }));
-        Assert.Equal(2, GetProperty(turns, "turns").GetArrayLength());
 
         var summary = GetStructuredContent(await CallToolAsync(
             toolMap["session_save_summary"],
@@ -140,7 +77,7 @@ public sealed class TaskSessionMcpServerIntegrationTests
                 ["sessionId"] = sessionId
             }));
         Assert.Equal("behavioural", GetProperty(snapshot, "phase").GetString());
-        Assert.Equal(2, GetProperty(snapshot, "turnCount").GetInt32());
+        Assert.False(snapshot.TryGetProperty("turnCount", out _));
         Assert.Single(GetProperty(snapshot, "documents").EnumerateArray());
         Assert.Single(GetProperty(snapshot, "parameters").EnumerateArray());
         Assert.Single(GetProperty(snapshot, "summaries").EnumerateArray());
@@ -150,17 +87,7 @@ public sealed class TaskSessionMcpServerIntegrationTests
     public async Task TaskSessionServer_UsesBoundSessionId_WhenToolArgumentIsOmitted()
     {
         await using var fixture = new TaskSessionMcpFixture();
-        var initialClient = await fixture.CreateClientAsync();
-        var initialToolMap = (await initialClient.ListToolsAsync(cancellationToken: TestContext.Current.CancellationToken))
-            .ToDictionary(static tool => tool.Name, StringComparer.OrdinalIgnoreCase);
-
-        var created = GetStructuredContent(await CallToolAsync(
-            initialToolMap["session_create"],
-            new Dictionary<string, object?>
-            {
-                ["title"] = "Bound Session"
-            }));
-        var sessionId = GetProperty(created, "sessionId").GetString();
+        var sessionId = await fixture.InitializeWorkflowRunAsync();
 
         var boundClient = await fixture.CreateClientAsync(sessionId);
         var toolMap = (await boundClient.ListToolsAsync(cancellationToken: TestContext.Current.CancellationToken))
@@ -173,23 +100,6 @@ public sealed class TaskSessionMcpServerIntegrationTests
                 ["phase"] = "technical"
             }));
         Assert.Equal("technical", GetProperty(phaseUpdated, "phase").GetString());
-
-        await CallToolAsync(
-            toolMap["session_attach_document"],
-            new Dictionary<string, object?>
-            {
-                ["kind"] = "job_description",
-                ["markdown"] = "# JD\nBuild distributed systems."
-            });
-
-        await CallToolAsync(
-            toolMap["session_set_parameter"],
-            new Dictionary<string, object?>
-            {
-                ["key"] = "response_language",
-                ["valueKind"] = "text",
-                ["value"] = "English"
-            });
 
         var snapshot = GetStructuredContent(await CallToolAsync(toolMap["session_get"], []));
         Assert.Equal(sessionId, GetProperty(snapshot, "sessionId").GetString());
@@ -255,6 +165,34 @@ public sealed class TaskSessionMcpServerIntegrationTests
         private readonly List<McpClient> _clients = [];
 
         public string DatabaseFilePath => Path.Combine(_root.FullName, "task-sessions.db");
+
+        public async Task<string> InitializeWorkflowRunAsync()
+        {
+            var sessionId = Guid.NewGuid().ToString("N");
+            var repository = new SqliteTaskSessionRepository();
+            await repository.CreateSessionAsync(
+                DatabaseFilePath,
+                sessionId,
+                "Interview Prep",
+                "Prepare for backend interview.",
+                TestContext.Current.CancellationToken);
+            await repository.UpsertDocumentAsync(
+                DatabaseFilePath,
+                sessionId,
+                "resume",
+                "# Resume\nBackend engineer.",
+                "Resume",
+                "resume.md",
+                TestContext.Current.CancellationToken);
+            await repository.UpsertParameterAsync(
+                DatabaseFilePath,
+                sessionId,
+                "response_language",
+                "text",
+                "English",
+                TestContext.Current.CancellationToken);
+            return sessionId;
+        }
 
         public async Task<McpClient> CreateClientAsync(string? sessionId = null)
         {

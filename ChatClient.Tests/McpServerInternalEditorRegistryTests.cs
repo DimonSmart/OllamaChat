@@ -11,11 +11,11 @@ public class McpServerInternalEditorRegistryTests
     {
         var registry = new McpServerInternalEditorRegistry();
 
-        var found = registry.TryGetEditor(BuiltInUserProfilePrefsServerTools.Descriptor, out var registration);
+        var found = registry.TryGetEditor(BuiltInUserMemoryMcpServerTools.Descriptor, out var registration);
 
         Assert.True(found);
         Assert.NotNull(registration);
-        Assert.Equal("User Profile Preferences", registration.Title);
+        Assert.Equal("User Memory Preferences", registration.Title);
         Assert.Equal(typeof(UserProfilePrefsInternalEditor), registration.ComponentType);
     }
 

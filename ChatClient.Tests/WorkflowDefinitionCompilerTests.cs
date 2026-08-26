@@ -22,6 +22,15 @@ public sealed class WorkflowDefinitionCompilerTests
         Assert.Equal("triage", workflow.StartAgentId);
         Assert.Contains(workflow.StartInputs, static input => input.Key == "resume");
         Assert.Contains(workflow.Agents, static agent => agent.Id == "summarizer");
+        Assert.All(workflow.Agents, static agent =>
+        {
+            var draft = Assert.IsType<InlineAgentParticipantSource>(agent.Source).Agent;
+            Assert.All(draft.McpServerBindings, static binding =>
+            {
+                Assert.DoesNotContain("session_append_turn", binding.SelectedTools, StringComparer.OrdinalIgnoreCase);
+                Assert.DoesNotContain("session_list_turns", binding.SelectedTools, StringComparer.OrdinalIgnoreCase);
+            });
+        });
     }
 
     [Fact]
@@ -155,6 +164,13 @@ public sealed class WorkflowDefinitionCompilerTests
         Assert.Contains(workflow.StartInputs, static input => input.Key == "participant_b_position");
         Assert.Contains(workflow.StartInputs, static input => input.Key == "debate_rules");
         Assert.Contains(workflow.ParticipantAgentIds, static agentId => agentId == "judge");
+        Assert.All(workflow.Agents, static agent =>
+        {
+            var draft = Assert.IsType<InlineAgentParticipantSource>(agent.Source).Agent;
+            Assert.Contains(draft.McpServerBindings, static binding =>
+                binding.SelectedTools.Contains("session_get_document", StringComparer.OrdinalIgnoreCase) ||
+                binding.SelectedTools.Contains("session_get_parameter", StringComparer.OrdinalIgnoreCase));
+        });
     }
 
     [Fact]

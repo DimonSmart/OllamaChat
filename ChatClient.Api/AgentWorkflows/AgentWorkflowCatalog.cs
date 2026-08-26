@@ -14,6 +14,7 @@ public sealed class AgentWorkflowCatalog(IMcpServerConfigService mcpServerConfig
     private const string TechnicalAgentId = "technical";
     private const string SummarizerAgentId = "summarizer";
 
+    [Obsolete]
     public async Task<IReadOnlyList<AgentWorkflowTemplate>> ListAsync(CancellationToken cancellationToken = default)
     {
         var servers = await mcpServerConfigService.GetAllAsync();
@@ -57,7 +58,7 @@ public sealed class AgentWorkflowCatalog(IMcpServerConfigService mcpServerConfig
                 .Role("Router / entry point")
                 .Summary("Owns the first turn, reads the shared session state when needed, decides which specialist should take over next, and receives fallback handoffs when the user goes off script.")
                 .UseDraft(triage)
-                .Capability("task-session-store", "Task session store", capability => capability
+                .Capability("workflow-state", "Workflow state", capability => capability
                     .Purpose("Read-only access to current phase and stored inputs so routing stays deterministic across turns.")
                     .Availability(capabilityAvailability.TaskSessionStoreAvailability)
                     .AvailabilityNote(capabilityAvailability.TaskSessionStoreNote)))
@@ -65,32 +66,32 @@ public sealed class AgentWorkflowCatalog(IMcpServerConfigService mcpServerConfig
                 .Role("Start-input validation and session setup")
                 .Summary("Verifies that the required workflow inputs are already attached to the shared session, then marks intake complete and hands over to the behavioural interviewer.")
                 .UseDraft(receptionist)
-                .Capability("task-session-store", "Task session store", capability => capability
-                    .Purpose("Persistent shared state for workflow inputs, transcript turns, phase, and summary.")
+                .Capability("workflow-state", "Workflow state", capability => capability
+                    .Purpose("Persistent shared state for workflow inputs, phase, and named outputs.")
                     .Availability(capabilityAvailability.TaskSessionStoreAvailability)
                     .AvailabilityNote(capabilityAvailability.TaskSessionStoreNote)))
             .Agent(BehaviouralAgentId, agent => agent
                 .Role("Behavioural interviewer")
-                .Summary("Runs the behavioural phase, keeps transcript state, and hands over when the user is ready for technical questions.")
+                .Summary("Runs the behavioural phase using workflow conversation context and hands over when the user is ready for technical questions.")
                 .UseDraft(behavioural)
-                .Capability("task-session-store", "Task session store", capability => capability
-                    .Purpose("Persistent transcript and phase state across turns.")
+                .Capability("workflow-state", "Workflow state", capability => capability
+                    .Purpose("Persistent workflow phase and launch-input state across turns.")
                     .Availability(capabilityAvailability.TaskSessionStoreAvailability)
                     .AvailabilityNote(capabilityAvailability.TaskSessionStoreNote)))
             .Agent(TechnicalAgentId, agent => agent
                 .Role("Technical interviewer")
-                .Summary("Runs role-specific technical questions, appends transcript state, and hands over to the summarizer.")
+                .Summary("Runs role-specific technical questions using workflow conversation context and hands over to the summarizer.")
                 .UseDraft(technical)
-                .Capability("task-session-store", "Task session store", capability => capability
-                    .Purpose("Persistent transcript and phase state across turns.")
+                .Capability("workflow-state", "Workflow state", capability => capability
+                    .Purpose("Persistent workflow phase and launch-input state across turns.")
                     .Availability(capabilityAvailability.TaskSessionStoreAvailability)
                     .AvailabilityNote(capabilityAvailability.TaskSessionStoreNote)))
             .Agent(SummarizerAgentId, agent => agent
                 .Role("Wrap-up and summary")
                 .Summary("Builds the final interview summary, marks the interview complete, and can return control to triage for a new request.")
                 .UseDraft(summarizer)
-                .Capability("task-session-store", "Task session store", capability => capability
-                    .Purpose("Read/write access to the transcript and final summary.")
+                .Capability("workflow-state", "Workflow state", capability => capability
+                    .Purpose("Read/write access to workflow inputs, phase, and final summary.")
                     .Availability(capabilityAvailability.TaskSessionStoreAvailability)
                     .AvailabilityNote(capabilityAvailability.TaskSessionStoreNote)))
             .UseHandoff(handoff => handoff
@@ -155,18 +156,14 @@ public sealed class AgentWorkflowCatalog(IMcpServerConfigService mcpServerConfig
             [
                 "AgentTemplateBuilder and ResolvedChatAgentFactory are already expressive enough for specialized role agents.",
                 "Existing MCP binding model already supports per-agent tool scoping when suitable capabilities exist.",
-                "Built-in MCP host pattern can be reused for workflow-scoped task state and document intake capabilities.",
+                "Built-in MCP host pattern can be reused for narrowly scoped workflow state while document intake remains an application runtime service.",
                 "Existing agent persistence and resolved-model pipeline can be reused for workflow-owned agents."
             ],
             MissingProjectPieces =
             [
-                capabilityAvailability.DocumentIntakeAvailability == AgentWorkflowCapabilityAvailability.Missing
-                    ? "The project does not currently expose a document intake capability."
-                    : capabilityAvailability.DocumentIntakeAvailability == AgentWorkflowCapabilityAvailability.Partial
-                        ? "The project only has partial document intake support via markdown-bound documents, not full resume parsing like MarkItDown."
-                        : "MarkItDown-style non-markdown conversion is still deferred for a later slice.",
+                "Application-level Markdown document intake is available; non-Markdown conversion remains outside this workflow.",
                 capabilityAvailability.TaskSessionStoreAvailability == AgentWorkflowCapabilityAvailability.Missing
-                    ? "The project does not currently expose a generic task session MCP store for shared workflow state."
+                    ? "The project does not currently expose workflow state to participants that require it."
                     : "No critical blocking gaps remain for this workflow. Remaining work is mostly broader starter coverage and authoring UX polish."
             ]
         };
@@ -217,8 +214,7 @@ public sealed class AgentWorkflowCatalog(IMcpServerConfigService mcpServerConfig
                 .OnlyTools(
                     "session_get",
                     "session_set_phase",
-                    "session_get_document",
-                    "session_append_turn"))
+                    "session_get_document"))
             .WithInstructions($$"""
                 You are the receptionist agent for an interview coach workflow.
                 Your job is to prepare the interview context before any questioning begins.
@@ -230,7 +226,6 @@ public sealed class AgentWorkflowCatalog(IMcpServerConfigService mcpServerConfig
                 - The shared task session already exists before chat starts. Read it with session_get before deciding whether intake is complete.
                 - The workflow start form already collected the required inputs before chat began.
                 - Verify that the required documents are present by inspecting session_get and session_get_document.
-                - Use session_append_turn for concise intake notes or decisions when useful, not as a duplicate log of every utterance.
                 - Set the workflow phase with session_set_phase when intake becomes complete.
                 - Handoff to the behavioural interviewer when all required start inputs are present and the user is ready.
                 - If a required start input is missing, tell the user exactly which one is missing and ask them to restart the workflow using the start form. Do not ask for or parse missing documents inside the chat.
@@ -249,8 +244,6 @@ public sealed class AgentWorkflowCatalog(IMcpServerConfigService mcpServerConfig
                 .OnlyTools(
                     "session_get",
                     "session_get_document",
-                    "session_append_turn",
-                    "session_list_turns",
                     "session_set_phase"))
             .WithInstructions("""
                 You are the behavioural interviewer in a staged interview coach workflow.
@@ -261,7 +254,7 @@ public sealed class AgentWorkflowCatalog(IMcpServerConfigService mcpServerConfig
                 - Use the intake context to ask behavioural questions tailored to the user's experience and target role.
                 - Keep the exchange focused on one question at a time.
                 - Give short constructive feedback after each answer when appropriate.
-                - Use session_append_turn for concise observations or coaching notes when they are useful for later phases.
+                - Use the workflow conversation context for earlier questions, answers, and coaching observations.
                 - Decide when the behavioural phase is complete and mark it with session_set_phase.
                 - Handoff to the technical interviewer when the user is ready for the next phase.
                 - Fallback to triage only for unexpected requests that break the phase flow.
@@ -278,8 +271,6 @@ public sealed class AgentWorkflowCatalog(IMcpServerConfigService mcpServerConfig
                 .OnlyTools(
                     "session_get",
                     "session_get_document",
-                    "session_append_turn",
-                    "session_list_turns",
                     "session_set_phase"))
             .WithInstructions("""
                 You are the technical interviewer in a staged interview coach workflow.
@@ -290,7 +281,7 @@ public sealed class AgentWorkflowCatalog(IMcpServerConfigService mcpServerConfig
                 - Use the intake context and earlier interview state to ask role-specific technical questions.
                 - Keep the exchange focused on one question at a time.
                 - Give short corrective feedback when the answer is weak or incomplete.
-                - Use session_append_turn for concise observations or coaching notes when they are useful for the final summary.
+                - Use the workflow conversation context for earlier questions, answers, and coaching observations.
                 - Decide when the technical phase is complete and mark it with session_set_phase.
                 - Handoff to the summarizer when the user wants to wrap up or the phase is complete.
                 - Fallback to triage only for unexpected requests that break the phase flow.
@@ -307,8 +298,6 @@ public sealed class AgentWorkflowCatalog(IMcpServerConfigService mcpServerConfig
                 .OnlyTools(
                     "session_get",
                     "session_get_document",
-                    "session_list_turns",
-                    "session_append_turn",
                     "session_save_summary",
                     "session_set_phase"))
             .WithInstructions("""
@@ -316,11 +305,10 @@ public sealed class AgentWorkflowCatalog(IMcpServerConfigService mcpServerConfig
                 Your job is to close the interview with a useful final summary.
 
                 Responsibilities:
-                - Review the accumulated interview state and transcript using session_get and session_list_turns.
+                - Review the accumulated interview state with session_get and use the workflow conversation context for the interview transcript.
                 - Read any stored documents you need with session_get_document.
                 - Produce a concise final assessment with strengths, weaknesses, and next-step recommendations.
                 - Persist the final summary with session_save_summary and mark the workflow phase with session_set_phase.
-                - Use session_append_turn only for a short closing note or structured follow-up pointer when useful.
                 - Handoff back to triage only if the user asks for a new activity after the wrap-up.
 
                 Do not continue the interview phase yourself and do not restart intake.
@@ -334,36 +322,20 @@ public sealed class AgentWorkflowCatalog(IMcpServerConfigService mcpServerConfig
             .Where(static name => !string.IsNullOrWhiteSpace(name))
             .ToArray();
 
-        var hasDocumentIntake = serverNames.Any(static name =>
-            name.Contains("document intake", StringComparison.OrdinalIgnoreCase));
-        var hasMarkdownDocument = serverNames.Any(static name =>
-            name.Contains("markdown document", StringComparison.OrdinalIgnoreCase));
         var hasTaskSessionStore = serverNames.Any(static name =>
-            name.Contains("task session", StringComparison.OrdinalIgnoreCase));
-
-        var documentIntakeAvailability = hasDocumentIntake
-            ? AgentWorkflowCapabilityAvailability.Available
-            : hasMarkdownDocument
-                ? AgentWorkflowCapabilityAvailability.Partial
-                : AgentWorkflowCapabilityAvailability.Missing;
-
-        var documentIntakeNote = hasDocumentIntake
-            ? "A document intake MCP server is available for receptionist-owned intake. This first slice assumes markdown input and can later be extended with MarkItDown."
-            : hasMarkdownDocument
-                ? "Only a markdown-bound document reader exists today. That helps with structured markdown files, but it is not equivalent to MarkItDown-style parsing of resume files."
-                : "No document parsing or markdown-bound intake capability suitable for receptionist-style resume intake was found.";
+            name.Contains("workflow state", StringComparison.OrdinalIgnoreCase));
 
         var taskSessionAvailability = hasTaskSessionStore
             ? AgentWorkflowCapabilityAvailability.Available
             : AgentWorkflowCapabilityAvailability.Missing;
 
         var taskSessionNote = hasTaskSessionStore
-            ? "A generic task session MCP server is available for shared workflow state."
-            : "No task session MCP server was found. The article's shared session/transcript pattern cannot be reproduced faithfully yet.";
+            ? "A reduced workflow-state MCP server is available for shared launch inputs, phase, and outputs."
+            : "No workflow-state MCP server was found for participants that require shared launch inputs.";
 
         return new WorkflowCapabilityAvailabilitySummary(
-            documentIntakeAvailability,
-            documentIntakeNote,
+            AgentWorkflowCapabilityAvailability.Available,
+            "Markdown document intake is provided directly by the workflow runtime.",
             taskSessionAvailability,
             taskSessionNote);
     }

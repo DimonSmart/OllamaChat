@@ -8,6 +8,7 @@ using ChatClient.Api.Services.AgentRuntime;
 using ChatClient.Application.Services.Agentic;
 using ChatClient.Application.Services.AgentRuntime;
 using ChatClient.Application.Services.Sandbox;
+using ChatClient.Domain.Models;
 #pragma warning disable MAAI001
 using Microsoft.Agents.AI;
 #pragma warning restore MAAI001
@@ -104,16 +105,26 @@ public sealed class OrchestrationWorkflowSessionBootstrapper(
 
             List<OrchestrationWorkflowRuntimeAgentRegistration> runtimeAgents = [];
             List<ResolvedChatAgent> sessionBoundAgents = [];
+            List<WorkflowRuntimeParticipant> sessionBoundParticipants = [];
+            List<ResolvedWorkflowParticipant> sessionBoundResolvedParticipants = [];
             if (request.Participants.Count > 0)
             {
                 var participantInvoker = request.ParticipantInvoker
                     ?? throw new InvalidOperationException(
                         "Runtime workflow participants require a participant invoker.");
 
-                foreach (var participant in request.Participants)
+                stage = "bind-workflow-state";
+                sessionBoundParticipants = request.Participants
+                    .Select(participant => BindWorkflowState(participant, session.SessionId))
+                    .ToList();
+                sessionBoundResolvedParticipants = request.ResolvedParticipants
+                    .Select(participant => BindWorkflowState(participant, session.SessionId))
+                    .ToList();
+
+                foreach (var participant in sessionBoundParticipants)
                 {
                     stage = $"adapt-runtime-participant:{participant.Id}";
-                    var resolvedParticipant = request.ResolvedParticipants.FirstOrDefault(candidate =>
+                    var resolvedParticipant = sessionBoundResolvedParticipants.FirstOrDefault(candidate =>
                         string.Equals(candidate.ParticipantId, participant.Id, StringComparison.OrdinalIgnoreCase));
                     var agent = new AgentRuntimeAIAgentAdapter(
                         participant,
@@ -131,9 +142,9 @@ public sealed class OrchestrationWorkflowSessionBootstrapper(
             }
             else
             {
-                stage = "bind-task-session";
+                stage = "bind-workflow-state";
                 sessionBoundAgents = request.Agents
-                    .Select(agent => BindTaskSession(agent, session.SessionId))
+                    .Select(agent => BindWorkflowState(agent, session.SessionId))
                     .ToList();
 
                 foreach (var sessionBoundAgent in sessionBoundAgents)
@@ -165,8 +176,8 @@ public sealed class OrchestrationWorkflowSessionBootstrapper(
                 new OrchestrationWorkflowSessionStartRequest
                 {
                     Workflow = runtimeWorkflow,
-                    Participants = request.Participants,
-                    ResolvedParticipants = request.ResolvedParticipants,
+                    Participants = sessionBoundParticipants,
+                    ResolvedParticipants = sessionBoundResolvedParticipants,
                     Agents = request.Participants.Count == 0 ? sessionBoundAgents : [],
                     ParticipantInvoker = request.ParticipantInvoker,
                     Configuration = request.Configuration,
@@ -477,11 +488,51 @@ public sealed class OrchestrationWorkflowSessionBootstrapper(
         }
     }
 
-    private static ResolvedChatAgent BindTaskSession(ResolvedChatAgent source, string sessionId)
-    {
-        var runtimeAgent = source.Agent.Clone();
+    private static WorkflowRuntimeParticipant BindWorkflowState(
+        WorkflowRuntimeParticipant source,
+        string sessionId) =>
+        source.Source is MaterializedLlmParticipantSource materialized
+            ? source with
+            {
+                Source = new MaterializedLlmParticipantSource(
+                    BindWorkflowState(materialized.Agent, sessionId))
+            }
+            : source;
 
-        foreach (var binding in runtimeAgent.McpServerBindings)
+    private static ResolvedWorkflowParticipant BindWorkflowState(
+        ResolvedWorkflowParticipant source,
+        string sessionId) =>
+        source.Source is MaterializedLlmParticipantSource materialized
+            ? source with
+            {
+                Source = new MaterializedLlmParticipantSource(
+                    BindWorkflowState(materialized.Agent, sessionId))
+            }
+            : source;
+
+    private static AgentTemplateDefinition BindWorkflowState(
+        AgentTemplateDefinition source,
+        string sessionId)
+    {
+        var runtimeAgent = source.Clone();
+        BindWorkflowState(runtimeAgent.McpServerBindings, sessionId);
+        return runtimeAgent;
+    }
+
+    private static AgentExecutionSpec BindWorkflowState(
+        AgentExecutionSpec source,
+        string sessionId)
+    {
+        var runtimeAgent = source.Clone();
+        BindWorkflowState(runtimeAgent.McpServerBindings, sessionId);
+        return runtimeAgent;
+    }
+
+    private static void BindWorkflowState(
+        IEnumerable<McpServerSessionBinding> bindings,
+        string sessionId)
+    {
+        foreach (var binding in bindings)
         {
             if (!string.Equals(binding.ServerName, BuiltInTaskSessionMcpServerTools.Descriptor.Name, StringComparison.OrdinalIgnoreCase) &&
                 binding.ServerId != BuiltInTaskSessionMcpServerTools.Descriptor.Id)
@@ -491,8 +542,11 @@ public sealed class OrchestrationWorkflowSessionBootstrapper(
 
             binding.Parameters[TaskSessionStore.SessionIdParameter] = sessionId;
         }
+    }
 
-        return new ResolvedChatAgent(runtimeAgent, source.Model);
+    private static ResolvedChatAgent BindWorkflowState(ResolvedChatAgent source, string sessionId)
+    {
+        return new ResolvedChatAgent(BindWorkflowState(source.Agent, sessionId), source.Model);
     }
 }
 

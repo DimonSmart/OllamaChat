@@ -23,13 +23,10 @@ Git history is the source for deleted or previous document versions.
 | IDD-0010 | Spec | Application settings | Shared chat, voice, and retrieval preferences | — |
 | IDD-0011 | Spec | Built-in MCP web | Web search and page retrieval | — |
 | IDD-0012 | Spec | Built-in MCP time | Current-time lookup | — |
-| IDD-0013 | Spec | Built-in MCP formatted time | Formatted time with user elicitation | — |
 | IDD-0014 | Spec | Built-in MCP math | Arithmetic evaluation | — |
-| IDD-0015 | Spec | Built-in MCP user profile | Agent-accessible user preferences | — |
-| IDD-0016 | Spec | Built-in MCP task session | Session turns and summaries | — |
-| IDD-0017 | Spec | Built-in MCP document intake | Markdown-compatible document normalization | — |
-| IDD-0018 | Spec | Built-in MCP knowledge book | Structured knowledge-book operations | — |
-| IDD-0019 | Spec | Built-in MCP markdown document | Structured Markdown reading and editing | — |
+| IDD-0015 | Spec | Built-in MCP user memory | Agent-accessible durable preferences and learned facts | — |
+| IDD-0016 | Spec | Built-in workflow state | Workflow inputs, phase, and named outputs | — |
+| IDD-0019 | Spec | Built-in MCP markdown document | Structured Markdown book reading and editing | — |
 | IDD-0020 | ADR | Architecture | C#/.NET and Microsoft Agent Framework | — |
 | IDD-0021 | Spec | Todo Provider profiles | Reusable Todo Provider configuration | — |
 | IDD-0022 | Spec | Agent Mode Provider profiles | Reusable agent operating-mode configuration | — |

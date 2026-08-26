@@ -53,7 +53,7 @@ internal static class UserProfilePreferencesStore
         }
     }
 
-    public static async Task SetValueAsync(
+    public static async Task<KeyValuePair<string, string>> SetValueAsync(
         string key,
         string value,
         CancellationToken cancellationToken = default)
@@ -77,6 +77,108 @@ internal static class UserProfilePreferencesStore
             }
 
             document.Values[normalizedKey] = normalizedValue;
+            await WriteUnsafeAsync(UserProfilePreferencesRuntime.NormalizeDocument(document, useDefaultWhenMissing: false), cancellationToken);
+            return new KeyValuePair<string, string>(normalizedKey, normalizedValue);
+        }
+        finally
+        {
+            _ioLock.Release();
+        }
+    }
+
+    public static async Task<string> DeleteValueAsync(
+        string key,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(key);
+
+        await _ioLock.WaitAsync(cancellationToken);
+        try
+        {
+            var document = ReadUnsafe(useDefaultWhenMissing: true);
+            var snapshot = UserProfilePreferencesRuntime.CreateSnapshot(document, useDefaultWhenMissing: true);
+            if (!snapshot.TryResolveKey(key, out var normalizedKey))
+            {
+                throw new InvalidOperationException($"Preference key '{key}' is not configured.");
+            }
+
+            document.Values.Remove(normalizedKey);
+            await WriteUnsafeAsync(UserProfilePreferencesRuntime.NormalizeDocument(document, useDefaultWhenMissing: false), cancellationToken);
+            return normalizedKey;
+        }
+        finally
+        {
+            _ioLock.Release();
+        }
+    }
+
+    public static async Task<UserMemoryEntry> RememberAsync(
+        string text,
+        CancellationToken cancellationToken = default)
+    {
+        var normalizedText = text?.Trim();
+        if (string.IsNullOrWhiteSpace(normalizedText))
+        {
+            throw new InvalidOperationException("memory_text_required");
+        }
+
+        await _ioLock.WaitAsync(cancellationToken);
+        try
+        {
+            var document = ReadUnsafe(useDefaultWhenMissing: true);
+            var now = DateTime.UtcNow;
+            var memory = new UserMemoryEntry(Guid.NewGuid().ToString("N"), normalizedText, now, now);
+            document.Memories.Add(memory);
+            await WriteUnsafeAsync(UserProfilePreferencesRuntime.NormalizeDocument(document, useDefaultWhenMissing: false), cancellationToken);
+            return memory;
+        }
+        finally
+        {
+            _ioLock.Release();
+        }
+    }
+
+    public static async Task<IReadOnlyList<UserMemoryEntry>> ListMemoriesAsync(CancellationToken cancellationToken = default)
+    {
+        var document = await GetAsync(cancellationToken);
+        return document.Memories.OrderBy(static memory => memory.CreatedAtUtc).ToArray();
+    }
+
+    public static async Task<IReadOnlyList<UserMemoryEntry>> SearchMemoriesAsync(
+        string query,
+        CancellationToken cancellationToken = default)
+    {
+        var normalizedQuery = query?.Trim();
+        if (string.IsNullOrWhiteSpace(normalizedQuery))
+        {
+            throw new InvalidOperationException("memory_query_required");
+        }
+
+        var memories = await ListMemoriesAsync(cancellationToken);
+        return memories
+            .Where(memory => memory.Text.Contains(normalizedQuery, StringComparison.OrdinalIgnoreCase))
+            .ToArray();
+    }
+
+    public static async Task ForgetAsync(string id, CancellationToken cancellationToken = default)
+    {
+        var normalizedId = id?.Trim();
+        if (string.IsNullOrWhiteSpace(normalizedId))
+        {
+            throw new InvalidOperationException("memory_id_required");
+        }
+
+        await _ioLock.WaitAsync(cancellationToken);
+        try
+        {
+            var document = ReadUnsafe(useDefaultWhenMissing: true);
+            var removed = document.Memories.RemoveAll(memory =>
+                string.Equals(memory.Id, normalizedId, StringComparison.OrdinalIgnoreCase));
+            if (removed == 0)
+            {
+                throw new InvalidOperationException("memory_not_found");
+            }
+
             await WriteUnsafeAsync(UserProfilePreferencesRuntime.NormalizeDocument(document, useDefaultWhenMissing: false), cancellationToken);
         }
         finally
@@ -163,7 +265,8 @@ internal static class UserProfilePreferencesStore
                     Aliases = definition.Aliases.ToList()
                 })
                 .ToList(),
-            Values = new Dictionary<string, string>(document.Values, StringComparer.OrdinalIgnoreCase)
+            Values = new Dictionary<string, string>(document.Values, StringComparer.OrdinalIgnoreCase),
+            Memories = document.Memories.Select(static memory => memory with { }).ToList()
         };
 
     private static string ResolvePath()

@@ -60,8 +60,6 @@ public static class BuiltInMcpServerHost
         builder.Services.AddSingleton(new McpServerSessionContext(binding));
         builder.Services.AddSingleton<ITaskSessionRepository, SqliteTaskSessionRepository>();
         builder.Services.AddSingleton<TaskSessionStore>();
-        builder.Services.AddSingleton<MarkdownDocumentIntakeService>();
-        builder.Services.AddSingleton<KnowledgeBookStore>();
         builder.Services.AddSingleton<MarkdownDocumentRepository>();
         builder.Services.AddSingleton<MarkdownDocumentEditor>();
         builder.Services.AddSingleton<MarkdownDocumentSession>();

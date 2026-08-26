@@ -199,6 +199,72 @@ public class BuiltInMarkdownDocumentMcpServerIntegrationTests
     }
 
     [Fact]
+    public async Task MarkdownDocumentServer_SupportsAllStructuralEdits_AndReloadsCurrentPointers()
+    {
+        await using var fixture = new MarkdownDocumentMcpFixture();
+        await fixture.WriteSourceAsync("# Chapter\n\nAlpha.\n\nBeta.\n\nGamma.");
+        var client = await fixture.CreateClientAsync();
+        var toolMap = (await client.ListToolsAsync(cancellationToken: TestContext.Current.CancellationToken))
+            .ToDictionary(static tool => tool.Name, StringComparer.OrdinalIgnoreCase);
+
+        async Task ApplyAsync(string action, string targetPointer, params string[] markdownItems)
+        {
+            await CallToolAsync(toolMap["doc_apply_operations"], new Dictionary<string, object?>
+            {
+                ["operations"] = new object[]
+                {
+                    new Dictionary<string, object?>
+                    {
+                        ["action"] = action,
+                        ["targetPointer"] = targetPointer,
+                        ["items"] = markdownItems.Select(static markdown =>
+                            (object)new Dictionary<string, object?> { ["markdown"] = markdown }).ToArray()
+                    }
+                }
+            });
+        }
+
+        async Task<JsonElement[]> ReadItemsAsync()
+        {
+            var batch = GetStructuredContent(await CallToolAsync(toolMap["doc_list_items"], new Dictionary<string, object?>
+            {
+                ["outline"] = "1",
+                ["maxItems"] = 50,
+                ["includeHeadings"] = false
+            }));
+            return GetProperty(batch, "items").EnumerateArray().ToArray();
+        }
+
+        await ApplyAsync("insert_before", "1.p2", "Before beta.");
+        var items = await ReadItemsAsync();
+        var betaPointer = GetProperty(items.Single(item => GetProperty(item, "text").GetString() == "Beta."), "pointer").GetString()!;
+
+        await ApplyAsync("insert_after", betaPointer, "After beta.");
+        items = await ReadItemsAsync();
+        var alphaPointer = GetProperty(items.Single(item => GetProperty(item, "text").GetString() == "Alpha."), "pointer").GetString()!;
+
+        await ApplyAsync("split", alphaPointer, "Alpha one.", "Alpha two.");
+        items = await ReadItemsAsync();
+        var alphaOnePointer = GetProperty(items.Single(item => GetProperty(item, "text").GetString() == "Alpha one."), "pointer").GetString()!;
+
+        await ApplyAsync("merge_with_next", alphaOnePointer);
+        items = await ReadItemsAsync();
+        var beforeBetaPointer = GetProperty(items.Single(item => GetProperty(item, "text").GetString() == "Before beta."), "pointer").GetString()!;
+        await ApplyAsync("remove", beforeBetaPointer);
+
+        client = await fixture.RecreateClientAsync();
+        toolMap = (await client.ListToolsAsync(cancellationToken: TestContext.Current.CancellationToken))
+            .ToDictionary(static tool => tool.Name, StringComparer.OrdinalIgnoreCase);
+        items = await ReadItemsAsync();
+
+        Assert.Contains(items, item => GetProperty(item, "text").GetString()!.Contains("Alpha one.", StringComparison.Ordinal));
+        Assert.Contains(items, item => GetProperty(item, "text").GetString() == "After beta.");
+        Assert.DoesNotContain(items, item => GetProperty(item, "text").GetString() == "Before beta.");
+        Assert.Equal(items.Length, items.Select(item => GetProperty(item, "pointer").GetString()).Distinct(StringComparer.Ordinal).Count());
+        Assert.Contains("After beta.", await File.ReadAllTextAsync(fixture.SourceFilePath, TestContext.Current.CancellationToken), StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task MarkdownDocumentListItemsSchema_IsConsumableByPlaygroundHelper()
     {
         await using var fixture = new MarkdownDocumentMcpFixture();
@@ -245,6 +311,22 @@ public class BuiltInMarkdownDocumentMcpServerIntegrationTests
 
         var details = GetStructuredContent(result);
         Assert.Equal("invalid_pointer", GetProperty(details, "code").GetString());
+
+        var staleResult = await CallToolAsync(
+            tool,
+            new Dictionary<string, object?>
+            {
+                ["operations"] = new object[]
+                {
+                    new Dictionary<string, object?>
+                    {
+                        ["action"] = "remove",
+                        ["targetPointer"] = "1.p99"
+                    }
+                }
+            });
+        Assert.True(GetBooleanProperty(staleResult, "isError"));
+        Assert.Equal("pointer_not_found", GetProperty(GetStructuredContent(staleResult), "code").GetString());
     }
 
     [Fact]
@@ -403,6 +485,17 @@ public class BuiltInMarkdownDocumentMcpServerIntegrationTests
                 });
 
             return _client;
+        }
+
+        public async Task<McpClient> RecreateClientAsync()
+        {
+            if (_client is not null)
+            {
+                await _client.DisposeAsync();
+                _client = null;
+            }
+
+            return await CreateClientAsync();
         }
 
         public async ValueTask DisposeAsync()

@@ -12,7 +12,7 @@ public class McpClientRequestContextTests
         var descriptor = new McpServerConfig
         {
             Id = serverId,
-            Name = "Built-in Knowledge Book MCP Server"
+            Name = "Built-in Markdown Document MCP Server"
         };
 
         var context = new McpClientRequestContext(

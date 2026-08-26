@@ -116,38 +116,6 @@ public sealed class TaskSessionStore(
             cancellationToken);
     }
 
-    public Task<TaskSessionTurnSnapshot> AppendTurnAsync(
-        string? sessionId,
-        string role,
-        string content,
-        string? speakerId,
-        CancellationToken cancellationToken)
-    {
-        var storage = ResolveStorage();
-        return repository.AppendTurnAsync(
-            storage.DatabaseFilePath,
-            ResolveExistingSessionId(sessionId),
-            NormalizeRequired(role, "turn_role_required"),
-            NormalizeRequired(content, "turn_content_required"),
-            NormalizeOptional(speakerId),
-            cancellationToken);
-    }
-
-    public Task<IReadOnlyList<TaskSessionTurnSnapshot>> ListTurnsAsync(
-        string? sessionId,
-        long? afterSequence,
-        int maxCount,
-        CancellationToken cancellationToken)
-    {
-        var storage = ResolveStorage();
-        return repository.ListTurnsAsync(
-            storage.DatabaseFilePath,
-            ResolveExistingSessionId(sessionId),
-            Math.Max(0, afterSequence ?? 0),
-            Math.Clamp(maxCount, 1, 200),
-            cancellationToken);
-    }
-
     public Task<TaskSessionSummarySnapshot> SaveSummaryAsync(
         string? sessionId,
         string label,

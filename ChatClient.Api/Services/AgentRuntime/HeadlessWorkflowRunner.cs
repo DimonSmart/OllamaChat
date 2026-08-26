@@ -221,12 +221,6 @@ public sealed class HeadlessWorkflowRunner(
                         AppChatRole.User,
                         files: request.UserFiles);
                     await AddMessageAsync(userChatMessage, _chatMessages);
-                    await taskSessionStore.AppendTurnAsync(
-                        TaskSessionId,
-                        "user",
-                        OrchestrationWorkflowConversationBuilder.BuildUserMessage(request.UserMessage, request.UserFiles),
-                        "user",
-                        cancellationToken);
                 }
 
                 await turnCoordinator.RunAsync(
@@ -282,13 +276,6 @@ public sealed class HeadlessWorkflowRunner(
                             foreach (var completedMessage in messages)
                             {
                                 completedMessages.Add(completedMessage);
-                                await taskSessionStore.AppendTurnAsync(
-                                    TaskSessionId,
-                                    "assistant",
-                                    completedMessage.Message.Content,
-                                    completedMessage.SpeakerId,
-                                    cancellation);
-
                                 _speakerIdsByMessageId[completedMessage.Message.Id] = completedMessage.SpeakerId;
                                 if (!string.IsNullOrWhiteSpace(completedMessage.SpeakerId))
                                 {

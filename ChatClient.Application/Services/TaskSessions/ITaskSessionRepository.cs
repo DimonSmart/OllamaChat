@@ -49,21 +49,6 @@ public interface ITaskSessionRepository
         string key,
         CancellationToken cancellationToken = default);
 
-    Task<TaskSessionTurnSnapshot> AppendTurnAsync(
-        string databaseFilePath,
-        string sessionId,
-        string role,
-        string content,
-        string? speakerId,
-        CancellationToken cancellationToken = default);
-
-    Task<IReadOnlyList<TaskSessionTurnSnapshot>> ListTurnsAsync(
-        string databaseFilePath,
-        string sessionId,
-        long afterSequence,
-        int maxCount,
-        CancellationToken cancellationToken = default);
-
     Task<TaskSessionSummarySnapshot> SaveSummaryAsync(
         string databaseFilePath,
         string sessionId,

@@ -18,8 +18,8 @@ public sealed class McpServerInternalEditorRegistry : IMcpServerInternalEditorRe
     private static readonly IReadOnlyDictionary<string, McpServerInternalEditorRegistration> Registrations =
         new Dictionary<string, McpServerInternalEditorRegistration>(StringComparer.OrdinalIgnoreCase)
         {
-            [BuiltInUserProfilePrefsServerTools.Descriptor.Key] = new(
-                Title: "User Profile Preferences",
+            [BuiltInUserMemoryMcpServerTools.Descriptor.Key] = new(
+                Title: "User Memory Preferences",
                 ComponentType: typeof(UserProfilePrefsInternalEditor))
         };
 

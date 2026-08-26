@@ -24,6 +24,14 @@ public class McpServerConfigServiceBuiltInTests
             Assert.IsAssignableFrom<IBuiltInMcpServerDescriptor>(server);
             Assert.Equal(definition.Name, server.Name);
         }
+
+        var keys = BuiltInMcpServerCatalog.Definitions.Select(static definition => definition.Key).ToArray();
+        Assert.DoesNotContain("built-in-formatted-time", keys);
+        Assert.DoesNotContain("built-in-document-intake", keys);
+        Assert.DoesNotContain("built-in-knowledge-book", keys);
+        Assert.Contains("built-in-time", keys);
+        Assert.Contains("built-in-markdown-document", keys);
+        Assert.Contains("built-in-user-memory", keys);
     }
 
     [Fact]

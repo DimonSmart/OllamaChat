@@ -151,15 +151,15 @@ public class AgentTemplateServiceTests
                     {
                         BindingId = bindingId,
                         ServerId = serverId,
-                        ServerName = "Built-in Knowledge Book MCP Server",
+                        ServerName = "Built-in Markdown Document MCP Server",
                         DisplayName = "Docs",
                         Enabled = true,
                         SelectAllTools = false,
-                        SelectedTools = ["kb_search_sections"],
+                        SelectedTools = ["doc_search_sections"],
                         Roots = ["C:\\workspace"],
                         Parameters = new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase)
                         {
-                            ["knowledgeFile"] = "C:\\kb\\csharp.json"
+                            ["sourceFile"] = "C:\\docs\\csharp.md"
                         }
                     }
                 ]
@@ -177,8 +177,8 @@ public class AgentTemplateServiceTests
             Assert.Equal(serverId, binding.ServerId);
             Assert.Equal("Docs", binding.DisplayName);
             Assert.False(binding.SelectAllTools);
-            Assert.Equal(["kb_search_sections"], binding.SelectedTools);
-            Assert.Equal("C:\\kb\\csharp.json", binding.Parameters["knowledgeFile"]);
+            Assert.Equal(["doc_search_sections"], binding.SelectedTools);
+            Assert.Equal("C:\\docs\\csharp.md", binding.Parameters["sourceFile"]);
         }
         finally
         {
@@ -269,8 +269,8 @@ public class AgentTemplateServiceTests
                 [
                     new McpServerSessionBinding
                     {
-                        ServerId = Guid.Parse("da46c3f1-6bc6-4f0b-bd7b-6176daf6f6d8"),
-                        ServerName = "Built-in Knowledge Book MCP Server",
+                        ServerId = Guid.Parse("6d2ce2af-b2eb-4c52-b4ef-8df1bbcaf7c2"),
+                        ServerName = "Built-in Markdown Document MCP Server",
                         DisplayName = "Notebook",
                         Enabled = true,
                         SelectAllTools = true,
@@ -278,7 +278,7 @@ public class AgentTemplateServiceTests
                         Roots = [],
                         Parameters = new Dictionary<string, string?>
                         {
-                            ["knowledgeFile"] = "CSharp.md"
+                            ["sourceFile"] = "CSharp.md"
                         }
                     },
                     new McpServerSessionBinding
@@ -302,10 +302,10 @@ public class AgentTemplateServiceTests
                 Assert.NotEqual(Guid.Empty, binding.BindingId);
             });
 
-            var knowledgeBinding = Assert.Single(
+            var markdownBinding = Assert.Single(
                 agent.McpServerBindings,
-                binding => string.Equals(binding.ServerName, "Built-in Knowledge Book MCP Server", StringComparison.OrdinalIgnoreCase));
-            Assert.True(knowledgeBinding.SelectAllTools);
+                binding => string.Equals(binding.ServerName, "Built-in Markdown Document MCP Server", StringComparison.OrdinalIgnoreCase));
+            Assert.True(markdownBinding.SelectAllTools);
 
             var nugetBinding = Assert.Single(
                 agent.McpServerBindings,

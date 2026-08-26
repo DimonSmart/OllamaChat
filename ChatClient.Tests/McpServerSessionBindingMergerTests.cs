@@ -49,11 +49,11 @@ public class McpServerSessionBindingMergerTests
         {
             BindingId = firstBindingId,
             ServerId = serverId,
-            ServerName = "Built-in Knowledge Book MCP Server",
+            ServerName = "Built-in Markdown Document MCP Server",
             DisplayName = "Base",
             Parameters = new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase)
             {
-                ["knowledgeFile"] = "C:\\kb\\one.json"
+                ["sourceFile"] = "C:\\docs\\one.md"
             }
         };
 
@@ -61,11 +61,11 @@ public class McpServerSessionBindingMergerTests
         {
             BindingId = secondBindingId,
             ServerId = serverId,
-            ServerName = "Built-in Knowledge Book MCP Server",
+            ServerName = "Built-in Markdown Document MCP Server",
             DisplayName = "Extra",
             Parameters = new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase)
             {
-                ["knowledgeFile"] = "C:\\kb\\two.json"
+                ["sourceFile"] = "C:\\docs\\two.md"
             }
         };
 

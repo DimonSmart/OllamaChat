@@ -127,7 +127,8 @@ internal static class UserProfilePreferencesRuntime
             Definitions = normalizedDefinitions
                 .Select(CloneDefinition)
                 .ToList(),
-            Values = new Dictionary<string, string>(snapshot.Values, StringComparer.OrdinalIgnoreCase)
+            Values = new Dictionary<string, string>(snapshot.Values, StringComparer.OrdinalIgnoreCase),
+            Memories = NormalizeMemories(source.Memories)
         };
     }
 
@@ -167,10 +168,10 @@ internal static class UserProfilePreferencesRuntime
 
         if (string.IsNullOrWhiteSpace(fieldSummary))
         {
-            return $"{baseDescription} {personalizationHint} Gets one configured current-user profile value by key. If the value is missing, asks the user via elicitation, validates it against the configured field definition, saves it, and returns it.";
+            return $"{baseDescription} {personalizationHint} Reads one configured current-user preference by key without asking the user or modifying stored data.";
         }
 
-        return $"{baseDescription} {personalizationHint} Supported fields: {fieldSummary}. Gets one configured current-user profile value by key. If the value is missing, asks the user via elicitation, validates it against the configured field definition, saves it, and returns it.";
+        return $"{baseDescription} {personalizationHint} Supported fields: {fieldSummary}. Reads one configured current-user preference by key without asking the user or modifying stored data.";
     }
 
     public static string BuildPrefsGetAllDescription(UserProfilePreferencesSnapshot snapshot)
@@ -188,7 +189,7 @@ internal static class UserProfilePreferencesRuntime
     }
 
     public static string BuildPrefsResetAllDescription() =>
-        "Clears all stored user profile values but preserves the configured field definitions. If confirm is false, asks the user for confirmation first.";
+        "Clears all stored user preference values but preserves the configured field definitions. The caller must explicitly confirm the reset.";
 
     public static string BuildKeyParameterDescription(UserProfilePreferencesSnapshot snapshot)
     {
@@ -417,6 +418,25 @@ internal static class UserProfilePreferencesRuntime
                 AllowedValues = allowedValues,
                 Aliases = aliases
             });
+        }
+
+        return normalized;
+    }
+
+    private static List<UserMemoryEntry> NormalizeMemories(IEnumerable<UserMemoryEntry>? memories)
+    {
+        List<UserMemoryEntry> normalized = [];
+        HashSet<string> ids = new(StringComparer.OrdinalIgnoreCase);
+        foreach (var memory in memories ?? [])
+        {
+            var id = memory.Id?.Trim() ?? string.Empty;
+            var text = memory.Text?.Trim() ?? string.Empty;
+            if (id.Length == 0 || text.Length == 0 || !ids.Add(id))
+            {
+                continue;
+            }
+
+            normalized.Add(memory with { Id = id, Text = text });
         }
 
         return normalized;

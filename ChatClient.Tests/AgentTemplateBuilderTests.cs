@@ -83,8 +83,8 @@ public class AgentTemplateBuilderTests
             .From(saved)
             .WithInstructions("Read only chapter 1 and return structured notes.")
             .WithBinding("knowledge-book", binding => binding
-                .OnlyTools("kb_search_sections")
-                .WithParameter("knowledgeFile", @"C:\kb\book.json"))
+                .OnlyTools("doc_search_sections")
+                .WithParameter("sourceFile", @"C:\docs\book.md"))
             .Build()
             .ForRun()
             .UsingModel(resolvedModel)
@@ -109,8 +109,8 @@ public class AgentTemplateBuilderTests
         var binding = Assert.Single(request.Agent.McpServerBindings);
         Assert.Equal("knowledge-book", binding.ServerName);
         Assert.False(binding.SelectAllTools);
-        Assert.Equal(["kb_search_sections"], binding.SelectedTools);
-        Assert.Equal(@"C:\kb\book.json", binding.Parameters["knowledgeFile"]);
+        Assert.Equal(["doc_search_sections"], binding.SelectedTools);
+        Assert.Equal(@"C:\docs\book.md", binding.Parameters["sourceFile"]);
     }
 
     [Fact]

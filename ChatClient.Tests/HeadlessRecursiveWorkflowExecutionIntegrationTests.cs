@@ -804,17 +804,6 @@ public sealed class HeadlessRecursiveWorkflowExecutionIntegrationTests
         public Task<TaskSessionParameterSnapshot> GetParameterAsync(string databaseFilePath, string sessionId, string key, CancellationToken cancellationToken = default) =>
             throw new NotSupportedException();
 
-        public Task<TaskSessionTurnSnapshot> AppendTurnAsync(string databaseFilePath, string sessionId, string role, string content, string? speakerId, CancellationToken cancellationToken = default)
-        {
-            var session = _sessions[sessionId];
-            var turn = new TaskSessionTurnSnapshot(sessionId, session.Turns.Count + 1, role, speakerId, content, DateTime.UtcNow);
-            session.Turns.Add(turn);
-            return Task.FromResult(turn);
-        }
-
-        public Task<IReadOnlyList<TaskSessionTurnSnapshot>> ListTurnsAsync(string databaseFilePath, string sessionId, long afterSequence, int maxCount, CancellationToken cancellationToken = default) =>
-            Task.FromResult<IReadOnlyList<TaskSessionTurnSnapshot>>(_sessions[sessionId].Turns.Where(turn => turn.Sequence > afterSequence).Take(maxCount).ToList());
-
         public Task<TaskSessionSummarySnapshot> SaveSummaryAsync(string databaseFilePath, string sessionId, string label, string markdown, CancellationToken cancellationToken = default)
         {
             var session = _sessions[sessionId];
@@ -833,8 +822,6 @@ public sealed class HeadlessRecursiveWorkflowExecutionIntegrationTests
         {
             public string? Phase { get; set; }
 
-            public List<TaskSessionTurnSnapshot> Turns { get; } = [];
-
             public Dictionary<string, TaskSessionSummarySnapshot> Summaries { get; } = [];
 
             public TaskSessionSnapshot ToSnapshot() => new(
@@ -845,7 +832,6 @@ public sealed class HeadlessRecursiveWorkflowExecutionIntegrationTests
                 "active",
                 DateTime.UtcNow,
                 DateTime.UtcNow,
-                Turns.Count,
                 [],
                 [],
                 Summaries.Values.Select(static summary => new TaskSessionSummaryInfo(summary.Label, summary.CreatedAtUtc, summary.UpdatedAtUtc)).ToList());

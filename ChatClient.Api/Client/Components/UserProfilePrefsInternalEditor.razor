@@ -214,6 +214,7 @@ else
 
     private readonly List<PreferenceDefinitionRow> _definitions = [];
     private Dictionary<string, string> _values = new(StringComparer.OrdinalIgnoreCase);
+    private List<UserMemoryEntry> _memories = [];
     private bool _loading = true;
     private bool _saving;
     private string _serverDescription = string.Empty;
@@ -399,6 +400,7 @@ else
                 AliasesText = string.Join(", ", definition.Aliases)
             }));
         _values = new Dictionary<string, string>(document.Values, StringComparer.OrdinalIgnoreCase);
+        _memories = document.Memories.Select(static memory => memory with { }).ToList();
     }
 
     private UserProfilePreferencesDocument BuildDocument()
@@ -441,7 +443,8 @@ else
         {
             ServerDescription = _serverDescription,
             Definitions = definitions,
-            Values = values
+            Values = values,
+            Memories = _memories.Select(static memory => memory with { }).ToList()
         };
     }
 

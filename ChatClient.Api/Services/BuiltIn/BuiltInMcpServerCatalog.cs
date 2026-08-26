@@ -5,12 +5,9 @@ public static class BuiltInMcpServerCatalog
     public static IReadOnlyList<IBuiltInMcpServerDescriptor> Definitions { get; } = [
         BuiltInWebMcpServerTools.Descriptor,
         BuiltInTimeServerTools.Descriptor,
-        BuiltInFormattedTimeServerTools.Descriptor,
         BuiltInMathServerTools.Descriptor,
-        BuiltInUserProfilePrefsServerTools.Descriptor,
+        BuiltInUserMemoryMcpServerTools.Descriptor,
         BuiltInTaskSessionMcpServerTools.Descriptor,
-        BuiltInDocumentIntakeMcpServerTools.Descriptor,
-        BuiltInKnowledgeBookMcpServerTools.Descriptor,
         BuiltInMarkdownDocumentMcpServerTools.Descriptor
     ];
 

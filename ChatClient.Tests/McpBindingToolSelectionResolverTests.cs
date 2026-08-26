@@ -29,7 +29,7 @@ public class McpBindingToolSelectionResolverTests
         var binding = new McpServerSessionBinding
         {
             BindingId = bindingId,
-            ServerName = "Built-in Knowledge Book MCP Server",
+            ServerName = "Built-in Markdown Document MCP Server",
             Enabled = true,
             SelectAllTools = false
         };
@@ -40,7 +40,7 @@ public class McpBindingToolSelectionResolverTests
                 serverName: "Knowledge / Characters",
                 toolName: "kb_get_section",
                 bindingId: bindingId,
-                baseServerName: "Built-in Knowledge Book MCP Server")
+                baseServerName: "Built-in Markdown Document MCP Server")
         };
 
         var filtered = McpBindingToolSelectionResolver.FilterAvailableTools([binding], tools);
@@ -56,7 +56,7 @@ public class McpBindingToolSelectionResolverTests
         var binding = new McpServerSessionBinding
         {
             BindingId = dossierBindingId,
-            ServerName = "Built-in Knowledge Book MCP Server",
+            ServerName = "Built-in Markdown Document MCP Server",
             Enabled = true,
             SelectAllTools = false,
             SelectedTools = ["kb_upsert_note"]
@@ -68,12 +68,12 @@ public class McpBindingToolSelectionResolverTests
                 serverName: "Knowledge / Reader",
                 toolName: "kb_upsert_note",
                 bindingId: readBindingId,
-                baseServerName: "Built-in Knowledge Book MCP Server"),
+                baseServerName: "Built-in Markdown Document MCP Server"),
             CreateTool(
                 serverName: "Knowledge / Dossier",
                 toolName: "kb_upsert_note",
                 bindingId: dossierBindingId,
-                baseServerName: "Built-in Knowledge Book MCP Server")
+                baseServerName: "Built-in Markdown Document MCP Server")
         };
 
         var resolved = McpBindingToolSelectionResolver.ResolveQualifiedToolNames([binding], tools);

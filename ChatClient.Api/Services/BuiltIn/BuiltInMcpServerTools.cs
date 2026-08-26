@@ -1,9 +1,5 @@
-using Microsoft.Extensions.DependencyInjection;
-using ModelContextProtocol.Protocol;
 using ModelContextProtocol.Server;
 using System.ComponentModel;
-using System.Globalization;
-using System.Text.Json;
 
 namespace ChatClient.Api.Services.BuiltIn;
 
@@ -30,91 +26,6 @@ public sealed class BuiltInTimeServerTools
             isoTime = now.ToString("O"),
             unixSeconds = now.ToUnixTimeSeconds()
         };
-    }
-}
-
-[McpServerToolType]
-public sealed class BuiltInFormattedTimeServerTools
-{
-    public static IBuiltInMcpServerDescriptor Descriptor { get; } = new BuiltInMcpServerDescriptor(
-        id: Guid.Parse("1b44ff82-c4fc-4f50-a12f-56429817c078"),
-        key: "built-in-formatted-time",
-        name: "Built-in Formatted Time MCP Server",
-        description: "Returns current time in a custom format and asks user for timezone when needed.",
-        registerTools: static builder => builder.WithTools<BuiltInFormattedTimeServerTools>());
-
-    [McpServerTool(Name = "get_formatted_time"), Description("Returns current time formatted with a .NET format string. If timezone is omitted, asks user via elicitation.")]
-    public static async Task<object> GetFormattedTimeAsync(
-        McpServer server,
-        [Description("Date/time format string, e.g. yyyy-MM-dd HH:mm:ss zzz")] string format = "yyyy-MM-dd HH:mm:ss zzz",
-        [Description("Optional time zone ID. If omitted, the server asks the user.")] string? timeZone = null,
-        CancellationToken cancellationToken = default)
-    {
-        if (string.IsNullOrWhiteSpace(format))
-            throw new InvalidOperationException("Format cannot be empty.");
-
-        var effectiveTimeZone = string.IsNullOrWhiteSpace(timeZone)
-            ? await PromptForTimeZoneAsync(server, cancellationToken)
-            : timeZone.Trim();
-
-        var zone = BuiltInTimeZoneResolver.ResolveOrUtc(effectiveTimeZone);
-        var now = TimeZoneInfo.ConvertTime(DateTimeOffset.UtcNow, zone);
-
-        string formatted;
-        try
-        {
-            formatted = now.ToString(format, CultureInfo.InvariantCulture);
-        }
-        catch (FormatException ex)
-        {
-            throw new InvalidOperationException($"Invalid date/time format: {format}", ex);
-        }
-
-        return new
-        {
-            timeZone = zone.Id,
-            format,
-            formatted,
-            isoTime = now.ToString("O")
-        };
-    }
-
-    private static async Task<string> PromptForTimeZoneAsync(McpServer server, CancellationToken cancellationToken)
-    {
-        var request = new ElicitRequestParams
-        {
-            Mode = "form",
-            Message = "Specify a time zone (for example: UTC, Europe/Berlin, America/New_York, Pacific Standard Time).",
-            RequestedSchema = new ElicitRequestParams.RequestSchema
-            {
-                Properties = new Dictionary<string, ElicitRequestParams.PrimitiveSchemaDefinition>(StringComparer.Ordinal)
-                {
-                    ["timeZone"] = new ElicitRequestParams.StringSchema
-                    {
-                        Type = "string",
-                        Title = "Time zone",
-                        Description = "Time zone ID in IANA or Windows format."
-                    }
-                },
-                Required = ["timeZone"]
-            }
-        };
-
-        var response = await server.ElicitAsync(request, cancellationToken);
-        if (!response.IsAccepted || response.Content is null || !response.Content.TryGetValue("timeZone", out var value))
-            throw new InvalidOperationException("Time zone was not provided by the user.");
-
-        var selected = value.ValueKind switch
-        {
-            JsonValueKind.String => value.GetString(),
-            JsonValueKind.Null or JsonValueKind.Undefined => null,
-            _ => value.GetRawText()
-        };
-
-        if (string.IsNullOrWhiteSpace(selected))
-            throw new InvalidOperationException("Time zone was not provided by the user.");
-
-        return selected.Trim();
     }
 }
 

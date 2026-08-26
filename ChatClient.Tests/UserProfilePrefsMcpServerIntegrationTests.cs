@@ -12,44 +12,75 @@ namespace ChatClient.Tests;
 public sealed class UserProfilePrefsMcpServerIntegrationTests
 {
     [Fact]
-    public async Task UserProfilePrefsServer_MigratesLegacyFlatFile_AndElicitsDisplayName()
+    public async Task UserMemoryServer_ProvidesExplicitDurablePreferenceAndMemoryOperations()
     {
         await using var fixture = new UserProfilePrefsMcpFixture();
-        await fixture.WriteLegacyProfileAsync(
-            """
-            {
-              "timezone": "Europe/Madrid"
-            }
-            """);
-
         var client = await fixture.CreateClientAsync();
         var toolMap = (await client.ListToolsAsync(cancellationToken: TestContext.Current.CancellationToken))
             .ToDictionary(static tool => tool.Name, StringComparer.OrdinalIgnoreCase);
 
-        var firstResult = GetStructuredContent(await CallToolAsync(
+        Assert.Contains("prefs_set", toolMap.Keys);
+        Assert.Contains("prefs_delete", toolMap.Keys);
+        Assert.Contains("memory_remember", toolMap.Keys);
+        Assert.Contains("memory_search", toolMap.Keys);
+        Assert.Contains("memory_list", toolMap.Keys);
+        Assert.Contains("memory_forget", toolMap.Keys);
+
+        var missing = GetStructuredContent(await CallToolAsync(
             toolMap["prefs_get"],
             new Dictionary<string, object?>
             {
                 ["key"] = "displayName"
             }));
+        Assert.False(GetProperty(missing, "exists").GetBoolean());
+        Assert.False(TryGetProperty(missing, "value", out _));
 
-        Assert.Equal("displayName", GetProperty(firstResult, "key").GetString());
-        Assert.Equal("Alice", GetProperty(firstResult, "value").GetString());
-        Assert.Equal("elicited", GetProperty(firstResult, "source").GetString());
+        await CallToolAsync(toolMap["prefs_set"], new Dictionary<string, object?>
+        {
+            ["key"] = "displayName",
+            ["value"] = "Alice"
+        });
+        await CallToolAsync(toolMap["prefs_set"], new Dictionary<string, object?>
+        {
+            ["key"] = "displayName",
+            ["value"] = "Dmitry"
+        });
 
-        var secondResult = GetStructuredContent(await CallToolAsync(
+        var remembered = GetStructuredContent(await CallToolAsync(
+            toolMap["memory_remember"],
+            new Dictionary<string, object?> { ["text"] = "User works primarily with .NET." }));
+        var memoryId = GetProperty(remembered, "id").GetString();
+        Assert.False(string.IsNullOrWhiteSpace(memoryId));
+
+        client = await fixture.RecreateClientAsync();
+        toolMap = (await client.ListToolsAsync(cancellationToken: TestContext.Current.CancellationToken))
+            .ToDictionary(static tool => tool.Name, StringComparer.OrdinalIgnoreCase);
+
+        var stored = GetStructuredContent(await CallToolAsync(
             toolMap["prefs_get"],
-            new Dictionary<string, object?>
-            {
-                ["key"] = "displayName"
-            }));
+            new Dictionary<string, object?> { ["key"] = "displayName" }));
+        Assert.True(GetProperty(stored, "exists").GetBoolean());
+        Assert.Equal("Dmitry", GetProperty(stored, "value").GetString());
 
-        Assert.Equal("Alice", GetProperty(secondResult, "value").GetString());
-        Assert.Equal("stored", GetProperty(secondResult, "source").GetString());
+        var search = GetStructuredContent(await CallToolAsync(
+            toolMap["memory_search"],
+            new Dictionary<string, object?> { ["query"] = ".net" }));
+        Assert.Single(GetProperty(search, "memories").EnumerateArray());
+
+        await CallToolAsync(toolMap["prefs_delete"], new Dictionary<string, object?> { ["key"] = "displayName" });
+        await CallToolAsync(toolMap["memory_forget"], new Dictionary<string, object?> { ["id"] = memoryId });
+
+        var afterDelete = GetStructuredContent(await CallToolAsync(
+            toolMap["prefs_get"],
+            new Dictionary<string, object?> { ["key"] = "displayName" }));
+        Assert.False(GetProperty(afterDelete, "exists").GetBoolean());
+
+        var memories = GetStructuredContent(await CallToolAsync(toolMap["memory_list"], []));
+        Assert.Empty(GetProperty(memories, "memories").EnumerateArray());
 
         var storedDocument = await fixture.ReadStoredProfileAsync();
-        Assert.Equal("Alice", storedDocument.Values["displayName"]);
-        Assert.Equal("Europe/Madrid", storedDocument.Values["timezone"]);
+        Assert.False(storedDocument.Values.ContainsKey("displayName"));
+        Assert.Empty(storedDocument.Memories);
         Assert.Contains(storedDocument.Definitions, static definition =>
             string.Equals(definition.Key, "displayName", StringComparison.OrdinalIgnoreCase));
     }
@@ -118,17 +149,6 @@ public sealed class UserProfilePrefsMcpServerIntegrationTests
             Environment.SetEnvironmentVariable(StorageRootEnvVar, _storageRoot.FullName);
         }
 
-        public async Task WriteLegacyProfileAsync(string json)
-        {
-            var directory = Path.GetDirectoryName(ProfilePath);
-            if (!string.IsNullOrWhiteSpace(directory))
-            {
-                Directory.CreateDirectory(directory);
-            }
-
-            await File.WriteAllTextAsync(ProfilePath, json);
-        }
-
         public async Task<UserProfilePreferencesDocument> ReadStoredProfileAsync()
         {
             var json = await File.ReadAllTextAsync(ProfilePath);
@@ -146,17 +166,17 @@ public sealed class UserProfilePrefsMcpServerIntegrationTests
             var assemblyPath = ResolveServerAssemblyPath();
             var binding = new McpServerSessionBinding
             {
-                ServerId = BuiltInUserProfilePrefsServerTools.Descriptor.Id
+                ServerId = BuiltInUserMemoryMcpServerTools.Descriptor.Id
             };
 
             _client = await McpClient.CreateAsync(
                 clientTransport: new StdioClientTransport(
                     new StdioClientTransportOptions
                     {
-                        Name = BuiltInUserProfilePrefsServerTools.Descriptor.Name,
+                        Name = BuiltInUserMemoryMcpServerTools.Descriptor.Name,
                         Command = "dotnet",
                         Arguments = McpSessionBindingTransport.AppendArguments(
-                            [assemblyPath, "--mcp-builtin", BuiltInUserProfilePrefsServerTools.Descriptor.Key],
+                            [assemblyPath, "--mcp-builtin", BuiltInUserMemoryMcpServerTools.Descriptor.Key],
                             binding),
                         WorkingDirectory = Path.GetDirectoryName(assemblyPath)!
                     },
@@ -168,27 +188,23 @@ public sealed class UserProfilePrefsMcpServerIntegrationTests
                         Name = "UserProfilePrefsMcpServerIntegrationTests",
                         Version = "1.0.0"
                     },
-                    Capabilities = new ClientCapabilities
-                    {
-                        Elicitation = new ElicitationCapability()
-                    },
-                    Handlers = new McpClientHandlers
-                    {
-                        ElicitationHandler = static (request, cancellationToken) =>
-                        {
-                            var result = McpElicitResultFactory.Create(
-                                McpElicitationResponse.Accept(new Dictionary<string, object?>
-                                {
-                                    ["value"] = "Alice"
-                                }));
-                            return ValueTask.FromResult(result);
-                        }
-                    }
+                    Capabilities = new ClientCapabilities()
                 },
                 loggerFactory: _loggerFactory,
                 cancellationToken: CancellationToken.None);
 
             return _client;
+        }
+
+        public async Task<McpClient> RecreateClientAsync()
+        {
+            if (_client is not null)
+            {
+                await _client.DisposeAsync();
+                _client = null;
+            }
+
+            return await CreateClientAsync();
         }
 
         public async ValueTask DisposeAsync()

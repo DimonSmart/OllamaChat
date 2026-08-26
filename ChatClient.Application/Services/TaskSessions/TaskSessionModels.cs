@@ -10,7 +10,6 @@ public sealed record TaskSessionSnapshot(
     string Status,
     DateTime CreatedAtUtc,
     DateTime UpdatedAtUtc,
-    int TurnCount,
     IReadOnlyList<TaskSessionDocumentInfo> Documents,
     IReadOnlyList<TaskSessionParameterInfo> Parameters,
     IReadOnlyList<TaskSessionSummaryInfo> Summaries);
@@ -44,14 +43,6 @@ public sealed record TaskSessionParameterSnapshot(
     string Value,
     DateTime CreatedAtUtc,
     DateTime UpdatedAtUtc);
-
-public sealed record TaskSessionTurnSnapshot(
-    string SessionId,
-    long Sequence,
-    string Role,
-    string? SpeakerId,
-    string Content,
-    DateTime CreatedAtUtc);
 
 public sealed record TaskSessionSummaryInfo(
     string Label,

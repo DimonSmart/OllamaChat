@@ -15,12 +15,7 @@ public sealed class AgentWorkflowCatalogTests
             new McpServerConfig
             {
                 Id = Guid.NewGuid(),
-                Name = "Built-in Task Session MCP Server"
-            },
-            new McpServerConfig
-            {
-                Id = Guid.NewGuid(),
-                Name = "Built-in Document Intake MCP Server"
+                Name = "Built-in Workflow State MCP Server"
             }
         ]));
 
@@ -39,13 +34,13 @@ public sealed class AgentWorkflowCatalogTests
         var triageDraft = GetInlineAgent(triage);
         Assert.Equal("triage", triageDraft.ShortName);
         Assert.Contains("routing", triageDraft.Content, StringComparison.OrdinalIgnoreCase);
-        Assert.Contains(triage.CapabilityRequirements, static capability => capability.Key == "task-session-store");
+        Assert.Contains(triage.CapabilityRequirements, static capability => capability.Key == "workflow-state");
 
         var receptionist = Assert.Single(workflow.Agents, static agent => agent.Id == "receptionist");
         var receptionistDraft = GetInlineAgent(receptionist);
         var taskBinding = Assert.Single(
             receptionistDraft.McpServerBindings,
-            static binding => string.Equals(binding.ServerName, "Built-in Task Session MCP Server", StringComparison.OrdinalIgnoreCase));
+            static binding => string.Equals(binding.ServerName, "Built-in Workflow State MCP Server", StringComparison.OrdinalIgnoreCase));
         Assert.DoesNotContain(taskBinding.SelectedTools, static tool => string.Equals(tool, "session_create", StringComparison.OrdinalIgnoreCase));
         Assert.DoesNotContain(taskBinding.SelectedTools, static tool => string.Equals(tool, "session_attach_document", StringComparison.OrdinalIgnoreCase));
         Assert.Contains("start form", receptionistDraft.Content, StringComparison.OrdinalIgnoreCase);
@@ -69,7 +64,7 @@ public sealed class AgentWorkflowCatalogTests
 
     [Fact]
     [Obsolete]
-    public async Task GetRequiredAsync_MarksDocumentIntakeAsPartialWhenOnlyMarkdownServerExists()
+    public async Task GetRequiredAsync_UsesApplicationDocumentIntakeWhenWorkflowStateIsMissing()
     {
         var catalog = new AgentWorkflowCatalog(new StubMcpServerConfigService(
         [
@@ -81,13 +76,12 @@ public sealed class AgentWorkflowCatalogTests
         ]));
 
         var template = await catalog.GetRequiredAsync("interview-coach-fixed-handoff", cancellationToken: TestContext.Current.CancellationToken);
-        Assert.Contains(
-            template.Assessment.MissingProjectPieces,
-            static note => note.Contains("not full resume parsing like MarkItDown", StringComparison.OrdinalIgnoreCase));
+        Assert.Contains(template.Assessment.MissingProjectPieces, static note =>
+            note.Contains("Application-level Markdown document intake", StringComparison.OrdinalIgnoreCase));
 
         var receptionist = Assert.Single(template.Workflow.Agents, static agent => agent.Id == "receptionist");
         var sessionStore = Assert.Single(receptionist.CapabilityRequirements);
-        Assert.Equal("task-session-store", sessionStore.Key);
+        Assert.Equal("workflow-state", sessionStore.Key);
         Assert.Equal(AgentWorkflowCapabilityAvailability.Missing, sessionStore.Availability);
     }
 
@@ -100,12 +94,7 @@ public sealed class AgentWorkflowCatalogTests
             new McpServerConfig
             {
                 Id = Guid.NewGuid(),
-                Name = "Built-in Document Intake MCP Server"
-            },
-            new McpServerConfig
-            {
-                Id = Guid.NewGuid(),
-                Name = "Built-in Task Session MCP Server"
+                Name = "Built-in Workflow State MCP Server"
             }
         ]));
 

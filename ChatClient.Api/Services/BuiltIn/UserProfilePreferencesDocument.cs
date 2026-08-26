@@ -11,6 +11,8 @@ public sealed class UserProfilePreferencesDocument
 
     public Dictionary<string, string> Values { get; set; } = new(StringComparer.OrdinalIgnoreCase);
 
+    public List<UserMemoryEntry> Memories { get; set; } = [];
+
     internal static UserProfilePreferencesDocument CreateDefault() =>
         new()
         {
@@ -96,6 +98,12 @@ public sealed class UserProfilePreferencesDocument
             ]
         };
 }
+
+public sealed record UserMemoryEntry(
+    string Id,
+    string Text,
+    DateTime CreatedAtUtc,
+    DateTime UpdatedAtUtc);
 
 public sealed class UserProfilePreferenceDefinition
 {
