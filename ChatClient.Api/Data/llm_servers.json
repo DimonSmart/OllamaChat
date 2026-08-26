@@ -22,5 +22,17 @@
     "HttpTimeoutSeconds": 600,
     "CreatedAt": "2025-08-25T22:31:06.4997059Z",
     "UpdatedAt": "2025-08-25T22:31:45.8802055Z"
+  },
+  {
+    "Id": "a8f58f00-a593-41ca-9cd8-44b4ef5bf8cf",
+    "Name": "DOR-MAC",
+    "ServerType": 0,
+    "BaseUrl": "http://192.168.1.121:11434",
+    "ApiKey": "",
+    "Password": "",
+    "IgnoreSslErrors": false,
+    "HttpTimeoutSeconds": 3600,
+    "CreatedAt": "2026-08-26T00:00:00Z",
+    "UpdatedAt": "2026-08-26T00:00:00Z"
   }
 ]
