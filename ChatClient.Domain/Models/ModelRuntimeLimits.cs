@@ -21,3 +21,5 @@ public static class ModelRuntimeLimitValidation
 }
 
 public sealed record CompactionBudget(int ContextWindowTokens, int MaxOutputTokens, int InputBudgetTokens);
+
+public sealed record ModelRuntimeLimitsFillResult(int AddedCount, int AlreadyConfiguredCount, int UnknownCount);

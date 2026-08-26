@@ -86,7 +86,7 @@
     }
 
     <AppSection Title="Saved Runtime Limits">
-        <MudText Typo="Typo.body2" Class="mud-text-secondary">Limits remain available for models that are temporarily unavailable from their server.</MudText>
+        <div class="d-flex align-center gap-2 mb-2"><MudText Typo="Typo.body2" Class="mud-text-secondary">Limits remain available for models that are temporarily unavailable from their server.</MudText><MudSpacer /><MudButton Size="Size.Small" Variant="Variant.Outlined" Color="Color.Default" OnClick="FillKnownLimits">Fill known limits</MudButton></div>
         <MudDataGrid T="ModelRuntimeLimits" Items="runtimeLimits" Dense="true" Hover="true" Bordered="true">
             <Columns>
                 <TemplateColumn Title="Server"><CellTemplate>@ServerName(context.Item.ServerId)</CellTemplate></TemplateColumn>
@@ -214,6 +214,18 @@
             Snackbar.Add("Runtime limits saved.", Severity.Success);
         }
         catch (Exception ex) { Snackbar.Add($"Could not save runtime limits: {ex.Message}", Severity.Error); }
+    }
+
+    private async Task FillKnownLimits()
+    {
+        try
+        {
+            var models = _serverModels.SelectMany(server => server.Models.Select(model => new ServerModel(server.Server.Id ?? Guid.Empty, model.Name)));
+            var result = await ModelRuntimeLimitsService.FillKnownAsync(models);
+            runtimeLimits = (await ModelRuntimeLimitsService.GetAllAsync()).OrderBy(limit => ServerName(limit.ServerId)).ThenBy(limit => limit.ModelName, StringComparer.OrdinalIgnoreCase).ToList();
+            Snackbar.Add($"Added {result.AddedCount} known limit(s); {result.AlreadyConfiguredCount} already configured, {result.UnknownCount} unknown.", result.UnknownCount == 0 ? Severity.Success : Severity.Info);
+        }
+        catch (Exception ex) { Snackbar.Add($"Could not fill known runtime limits: {ex.Message}", Severity.Error); }
     }
 
     private bool ValidLimits() => ModelRuntimeLimitValidation.HasValidTokenBudget(limitsModel.ContextWindowTokens, limitsModel.MaxOutputTokens);

@@ -8,6 +8,8 @@ public interface IModelRuntimeLimitsService
 
     Task<ModelRuntimeLimits?> GetAsync(Guid serverId, string modelName);
 
+    Task<ModelRuntimeLimitsFillResult> FillKnownAsync(IEnumerable<ServerModel> models);
+
     Task CreateAsync(ModelRuntimeLimits limits);
 
     Task UpdateAsync(ModelRuntimeLimits limits);

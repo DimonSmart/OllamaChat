@@ -74,6 +74,36 @@ public sealed class ModelRuntimeLimitsServiceTests
     }
 
     [Fact]
+    public async Task FillKnownAsync_AddsKnownModels_WithoutReplacingExistingLimits()
+    {
+        var root = CreateRoot();
+        try
+        {
+            var service = CreateService(root.FullName);
+            var azureServerId = Guid.NewGuid();
+            var openAiServerId = Guid.NewGuid();
+            var existing = CreateLimits("gpt-4o", azureServerId);
+            existing.ContextWindowTokens = 64_000;
+            existing.MaxOutputTokens = 8_000;
+            await service.CreateAsync(existing);
+
+            var result = await service.FillKnownAsync([
+                new ServerModel(azureServerId, "gpt-5.4-mini"),
+                new ServerModel(azureServerId, "GPT-4O"),
+                new ServerModel(openAiServerId, "gpt-4.1"),
+                new ServerModel(openAiServerId, "custom-model")
+            ]);
+
+            Assert.Equal(new ModelRuntimeLimitsFillResult(2, 1, 1), result);
+            Assert.Equal(400_000, (await service.GetAsync(azureServerId, "gpt-5.4-mini"))!.ContextWindowTokens);
+            Assert.Equal(128_000, (await service.GetAsync(azureServerId, "gpt-5.4-mini"))!.MaxOutputTokens);
+            Assert.Equal(64_000, (await service.GetAsync(azureServerId, "gpt-4o"))!.ContextWindowTokens);
+            Assert.Null(await service.GetAsync(openAiServerId, "custom-model"));
+        }
+        finally { root.Delete(recursive: true); }
+    }
+
+    [Fact]
     public async Task Resolver_ResolvesSelectedAndFixedBudgets_AndReportsMissingLimits()
     {
         var root = CreateRoot();
