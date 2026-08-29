@@ -1,6 +1,6 @@
 using ChatClient.Api.AgentWorkflows;
-using ChatClient.Application.Services.Agentic;
 using ChatClient.Application.Services;
+using ChatClient.Application.Services.Agentic;
 using ChatClient.Application.Services.AgentRuntime;
 using ChatClient.Domain.Models;
 using Moq;
