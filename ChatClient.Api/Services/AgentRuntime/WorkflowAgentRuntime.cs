@@ -15,7 +15,6 @@ public sealed class WorkflowAgentRuntimeFactory(
     IWorkflowParticipantResolver workflowParticipantResolver,
     IWorkflowParticipantRuntimeFactory participantRuntimeFactory,
     IWorkflowExecutionEngine workflowExecutionEngine,
-    IWorkflowParticipantInvoker participantInvoker,
     ILogger<WorkflowAgentRuntimeFactory> logger) : IWorkflowAgentRuntimeFactory
 {
     public async Task<IAgentRuntime> CreateAsync(
@@ -60,12 +59,10 @@ public sealed class WorkflowAgentRuntimeFactory(
                 savedWorkflow.Description,
                 AgentRuntimeKind.WorkflowAgent),
             compiledWorkflow,
-            resolvedParticipants,
             runtimeParticipants,
             context.Configuration,
             context,
             workflowExecutionEngine,
-            participantInvoker,
             logger);
     }
 
@@ -74,12 +71,10 @@ public sealed class WorkflowAgentRuntimeFactory(
 internal sealed class WorkflowAgentRuntime(
     AgentRuntimeDescriptor descriptor,
     IOrchestrationWorkflowDefinition workflow,
-    IReadOnlyList<ResolvedWorkflowParticipant> participants,
     IReadOnlyList<WorkflowRuntimeParticipant> runtimeParticipants,
     AppChatConfiguration configuration,
     AgentRuntimeCreationContext creationContext,
     IWorkflowExecutionEngine workflowExecutionEngine,
-    IWorkflowParticipantInvoker participantInvoker,
     ILogger logger) : IAgentRuntime
 {
     public AgentRuntimeDescriptor Descriptor { get; } = descriptor;
@@ -137,8 +132,6 @@ internal sealed class WorkflowAgentRuntime(
             SessionDescription = Descriptor.Description,
             ParentRunContext = context,
             CreationContext = creationContext,
-            ResolvedParticipants = participants,
-            ParticipantInvoker = participantInvoker
         };
 
         var events = workflowExecutionEngine.ExecuteAsync(workflowRequest with

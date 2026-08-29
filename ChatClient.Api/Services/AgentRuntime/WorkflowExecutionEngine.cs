@@ -22,12 +22,6 @@ public sealed record WorkflowExecutionRequest
 
     public IReadOnlyList<WorkflowRuntimeParticipant> Participants { get; init; } = [];
 
-    public IReadOnlyList<ResolvedWorkflowParticipant> ResolvedParticipants { get; init; } = [];
-
-    public IReadOnlyList<ResolvedChatAgent> Agents { get; init; } = [];
-
-    public IWorkflowParticipantInvoker? ParticipantInvoker { get; init; }
-
     public required AppChatConfiguration Configuration { get; init; }
 
     public AgentRuntimeCreationContext? CreationContext { get; init; }
@@ -47,6 +41,7 @@ public sealed class WorkflowExecutionEngine(
     OrchestrationWorkflowTurnCoordinator turnCoordinator,
     OrchestrationWorkflowPassExecutor passExecutor,
     TaskSessionStore taskSessionStore,
+    IWorkflowResultResolver resultResolver,
     ILogger<WorkflowExecutionEngine> logger) : IWorkflowExecutionEngine
 {
     public async IAsyncEnumerable<AgentRunEvent> ExecuteAsync(
@@ -60,12 +55,9 @@ public sealed class WorkflowExecutionEngine(
             {
                 Workflow = request.Workflow,
                 Participants = request.Participants,
-                ResolvedParticipants = request.ResolvedParticipants,
-                Agents = request.Agents,
                 Configuration = request.Configuration,
                 CreationContext = request.CreationContext,
                 ParentRunContext = request.ParentRunContext,
-                ParticipantInvoker = request.ParticipantInvoker,
                 SessionTitle = request.SessionTitle,
                 SessionDescription = request.SessionDescription,
                 StartInputs = request.StartInputs
@@ -77,6 +69,7 @@ public sealed class WorkflowExecutionEngine(
             turnCoordinator,
             passExecutor,
             taskSessionStore,
+            resultResolver,
             logger);
 
         await foreach (var runEvent in session.ExecuteAsync(request, cancellationToken))
@@ -90,6 +83,7 @@ public sealed class WorkflowExecutionEngine(
         OrchestrationWorkflowTurnCoordinator turnCoordinator,
         OrchestrationWorkflowPassExecutor passExecutor,
         TaskSessionStore taskSessionStore,
+        IWorkflowResultResolver resultResolver,
         ILogger logger)
     {
         private readonly List<IAppChatMessage> _chatMessages = [];
@@ -241,11 +235,11 @@ public sealed class WorkflowExecutionEngine(
                         cancellationToken);
                 }
 
-                var final = await ResolveFinalMessageAsync(
-                    workflowRequest,
-                    TaskSessionId,
-                    completedMessages,
-                    taskSessionStore,
+                var final = await resultResolver.ResolveAsync(
+                    new WorkflowResultResolutionContext(
+                        workflowRequest,
+                        TaskSessionId,
+                        completedMessages),
                     cancellationToken);
                 if (final is null)
                 {
@@ -307,195 +301,6 @@ public sealed class WorkflowExecutionEngine(
 
         return false;
     }
-
-    internal static async Task<AgentRunResult?> ResolveFinalMessageAsync(
-        OrchestrationWorkflowSessionStartRequest request,
-        string taskSessionId,
-        IReadOnlyList<OrchestrationCompletedAssistantMessage> messages,
-        TaskSessionStore taskSessionStore,
-        CancellationToken cancellationToken)
-    {
-        var nonEmptyMessages = messages
-            .Where(static message => !string.IsNullOrWhiteSpace(message.Message.Content))
-            .DistinctBy(static message => message.Message.Content.Trim())
-            .ToList();
-        if (nonEmptyMessages.Count == 0)
-        {
-            return null;
-        }
-
-        var finalMessage = request.Workflow switch
-        {
-            SequentialWorkflowDefinition sequential => ResolveSequentialWorkflowFinal(sequential, nonEmptyMessages),
-            ConcurrentWorkflowDefinition concurrent => ResolveConcurrentFinal(request, concurrent, nonEmptyMessages),
-            GroupChatWorkflowDefinition => await ResolveGroupChatFinalAsync(
-                request,
-                taskSessionId,
-                nonEmptyMessages,
-                taskSessionStore,
-                cancellationToken),
-            AgentWorkflowDefinition => nonEmptyMessages.Last(),
-            _ => nonEmptyMessages.Last()
-        };
-
-        if (finalMessage is null)
-        {
-            return null;
-        }
-
-        var metadata = new Dictionary<string, string>
-        {
-            ["workflowKind"] = request.Workflow.Kind
-        };
-
-        if (!string.IsNullOrWhiteSpace(finalMessage.SpeakerId))
-        {
-            metadata["finalParticipantId"] = finalMessage.SpeakerId;
-        }
-
-        if (!string.IsNullOrWhiteSpace(finalMessage.Message.AgentName))
-        {
-            metadata["finalParticipantName"] = finalMessage.Message.AgentName;
-        }
-
-        metadata["finalMessageKind"] = finalMessage.SpeakerId == request.Workflow.Id
-            ? "synthesized"
-            : "participant";
-
-        return new AgentRunResult
-        {
-            FinalMessageId = finalMessage.Message.Id.ToString("N"),
-            FinalMessage = new AgentOutputMessage(
-                request.SessionTitle ?? request.Workflow.DisplayName,
-                finalMessage.Message.Content,
-                string.IsNullOrWhiteSpace(finalMessage.SpeakerId) ? null : finalMessage.SpeakerId),
-            Messages = nonEmptyMessages
-                .Select(static message => new AgentOutputMessage(
-                    string.IsNullOrWhiteSpace(message.Message.AgentName) ? "assistant" : message.Message.AgentName,
-                    message.Message.Content,
-                    string.IsNullOrWhiteSpace(message.SpeakerId) ? null : message.SpeakerId))
-                .ToList(),
-            Metadata = metadata
-        };
-    }
-
-    private static OrchestrationCompletedAssistantMessage? ResolveSequentialWorkflowFinal(
-        SequentialWorkflowDefinition workflow,
-        IReadOnlyList<OrchestrationCompletedAssistantMessage> messages)
-    {
-        var finalParticipantId = workflow.ParticipantOrder.LastOrDefault();
-        return string.IsNullOrWhiteSpace(finalParticipantId)
-            ? messages.LastOrDefault()
-            : messages.LastOrDefault(message => BelongsTo(message, finalParticipantId)) ?? messages.LastOrDefault();
-    }
-
-    [Obsolete]
-    private static OrchestrationCompletedAssistantMessage? ResolveConcurrentFinal(
-        OrchestrationWorkflowSessionStartRequest request,
-        ConcurrentWorkflowDefinition workflow,
-        IReadOnlyList<OrchestrationCompletedAssistantMessage> messages)
-    {
-        var orderedMessages = OrderConcurrentMessages(workflow, messages);
-        if (workflow.Aggregation.Kind == ConcurrentWorkflowAggregationKind.ConcatenateAllMessages)
-        {
-            return new OrchestrationCompletedAssistantMessage(
-                new AppChatMessage(
-                    string.Join(Environment.NewLine + Environment.NewLine, orderedMessages.Select(static message => message.Message.Content)),
-                    DateTime.Now,
-                    AppChatRole.Assistant,
-                    agentName: request.SessionTitle ?? request.Workflow.DisplayName)
-                {
-                    Id = Guid.Parse(CreateSyntheticMessageId())
-                },
-                request.Workflow.Id);
-        }
-
-        var sections = new List<string>();
-        foreach (var participantId in workflow.ParticipantAgentIds)
-        {
-            var message = messages.LastOrDefault(candidate => BelongsTo(candidate, participantId));
-            if (message is null)
-            {
-                continue;
-            }
-
-            var heading = string.IsNullOrWhiteSpace(message.Message.AgentName)
-                ? participantId
-                : message.Message.AgentName;
-            sections.Add($"## {heading}{Environment.NewLine}{message.Message.Content}");
-        }
-
-        return sections.Count == 0
-            ? null
-            : new OrchestrationCompletedAssistantMessage(
-                new AppChatMessage(
-                    string.Join(Environment.NewLine + Environment.NewLine, sections),
-                    DateTime.Now,
-                    AppChatRole.Assistant,
-                    agentName: request.SessionTitle ?? request.Workflow.DisplayName)
-                {
-                    Id = Guid.Parse(CreateSyntheticMessageId())
-                },
-                request.Workflow.Id);
-    }
-
-    private static async Task<OrchestrationCompletedAssistantMessage?> ResolveGroupChatFinalAsync(
-        OrchestrationWorkflowSessionStartRequest request,
-        string taskSessionId,
-        IReadOnlyList<OrchestrationCompletedAssistantMessage> messages,
-        TaskSessionStore taskSessionStore,
-        CancellationToken cancellationToken)
-    {
-        if (!string.IsNullOrWhiteSpace(request.Workflow.Execution.CompletionSummaryLabel))
-        {
-            var snapshot = await taskSessionStore.TryGetSummaryAsync(
-                taskSessionId,
-                request.Workflow.Execution.CompletionSummaryLabel,
-                cancellationToken);
-            if (!string.IsNullOrWhiteSpace(snapshot?.Markdown))
-            {
-                return new OrchestrationCompletedAssistantMessage(
-                    new AppChatMessage(
-                        snapshot.Markdown,
-                        DateTime.Now,
-                        AppChatRole.Assistant,
-                        agentName: request.SessionTitle ?? request.Workflow.DisplayName)
-                    {
-                        Id = Guid.Parse(CreateSyntheticMessageId())
-                    },
-                    request.Workflow.Id);
-            }
-        }
-
-        return messages.LastOrDefault();
-    }
-
-    [Obsolete]
-    private static IReadOnlyList<OrchestrationCompletedAssistantMessage> OrderConcurrentMessages(
-        ConcurrentWorkflowDefinition workflow,
-        IReadOnlyList<OrchestrationCompletedAssistantMessage> messages)
-    {
-        var ordered = new List<OrchestrationCompletedAssistantMessage>();
-        var included = new HashSet<OrchestrationCompletedAssistantMessage>();
-
-        foreach (var participantId in workflow.ParticipantAgentIds)
-        {
-            foreach (var message in messages.Where(message => BelongsTo(message, participantId)))
-            {
-                ordered.Add(message);
-                included.Add(message);
-            }
-        }
-
-        ordered.AddRange(messages.Where(message => !included.Contains(message)));
-        return ordered;
-    }
-
-    private static bool BelongsTo(
-        OrchestrationCompletedAssistantMessage message,
-        string participantId) =>
-        string.Equals(message.SpeakerId, participantId, StringComparison.OrdinalIgnoreCase) ||
-        string.Equals(message.Message.AgentId, participantId, StringComparison.OrdinalIgnoreCase);
 
     private static async Task NotifyMessageAsync(
         IAppChatMessage message,
@@ -609,8 +414,6 @@ public sealed class WorkflowExecutionEngine(
         agentNamesById[agentId] = agentName;
     }
 
-    private static string CreateSyntheticMessageId() =>
-        Guid.NewGuid().ToString("N");
 }
 
 public sealed class WorkflowAssistantErrorException(string message) : Exception(message);

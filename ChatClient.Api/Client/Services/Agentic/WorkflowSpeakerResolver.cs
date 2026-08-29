@@ -3,7 +3,6 @@ namespace ChatClient.Api.Client.Services.Agentic;
 
 internal static class WorkflowSpeakerResolver
 {
-    [Obsolete]
     public static string? ResolveSpeakerId(
         string? executorId,
         IReadOnlyDictionary<string, string> agentIdsByExecutorId,
@@ -27,7 +26,6 @@ internal static class WorkflowSpeakerResolver
         return null;
     }
 
-    [Obsolete]
     public static string? ResolveFromWorkflow(
         IOrchestrationWorkflowDefinition? workflow,
         int assistantMessageIndex)
@@ -41,17 +39,16 @@ internal static class WorkflowSpeakerResolver
         {
             GroupChatWorkflowDefinition groupChat => ResolveGroupChatSpeakerId(groupChat, assistantMessageIndex),
             SequentialWorkflowDefinition sequential => ResolveSequentialSpeakerId(sequential, assistantMessageIndex),
-            AgentWorkflowDefinition handoff when assistantMessageIndex == 0 => handoff.StartAgentId,
+            AgentWorkflowDefinition handoff when assistantMessageIndex == 0 => handoff.StartParticipantId,
             _ => null
         };
     }
 
-    [Obsolete]
     private static string? ResolveGroupChatSpeakerId(
         GroupChatWorkflowDefinition workflow,
         int assistantMessageIndex)
     {
-        if (workflow.ParticipantAgentIds.Count == 0)
+        if (workflow.ParticipantIds.Count == 0)
         {
             return null;
         }
@@ -61,24 +58,23 @@ internal static class WorkflowSpeakerResolver
             GroupChatWorkflowManagerKind.RoundRobin or GroupChatWorkflowManagerKind.Programmable =>
                 GroupChatManagerProgramResolver.ResolveSpeakerId(
                     workflow.Manager,
-                    workflow.ParticipantAgentIds,
+                    workflow.ParticipantIds,
                     assistantMessageIndex),
             _ => null
         };
     }
 
-    [Obsolete]
     private static string? ResolveSequentialSpeakerId(
         SequentialWorkflowDefinition workflow,
         int assistantMessageIndex)
     {
-        if (workflow.AgentOrder.Count == 0)
+        if (workflow.ParticipantOrder.Count == 0)
         {
             return null;
         }
 
-        return assistantMessageIndex < workflow.AgentOrder.Count
-            ? workflow.AgentOrder[assistantMessageIndex]
-            : workflow.AgentOrder[^1];
+        return assistantMessageIndex < workflow.ParticipantOrder.Count
+            ? workflow.ParticipantOrder[assistantMessageIndex]
+            : workflow.ParticipantOrder[^1];
     }
 }

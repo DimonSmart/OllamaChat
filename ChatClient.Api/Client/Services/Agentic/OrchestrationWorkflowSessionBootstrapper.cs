@@ -7,7 +7,6 @@ using ChatClient.Api.Services.BuiltIn;
 using ChatClient.Api.Services.AgentRuntime;
 using ChatClient.Application.Services.Agentic;
 using ChatClient.Application.Services.AgentRuntime;
-using ChatClient.Application.Services.Sandbox;
 using ChatClient.Domain.Models;
 #pragma warning disable MAAI001
 using Microsoft.Agents.AI;
@@ -17,10 +16,9 @@ namespace ChatClient.Api.Client.Services.Agentic;
 
 public sealed class OrchestrationWorkflowSessionBootstrapper(
     ILogger<OrchestrationWorkflowSessionBootstrapper> logger,
-    IModelCapabilityService modelCapabilityService,
     TaskSessionStore taskSessionStore,
     MarkdownDocumentIntakeService documentIntakeService,
-    AgenticRuntimeAgentFactory runtimeAgentFactory)
+    IWorkflowParticipantInvoker participantInvoker)
 {
     private static readonly Lazy<MethodInfo?> GetDescriptiveIdMethod = new(static () =>
         Type.GetType(
@@ -38,22 +36,17 @@ public sealed class OrchestrationWorkflowSessionBootstrapper(
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(request);
-        if (request.Participants.Count == 0 && request.Agents.Count == 0)
+        if (request.Participants.Count == 0)
         {
             throw new ArgumentException("At least one workflow participant must be provided.", nameof(request));
         }
 
-        var stage = "validate-agents";
+        var stage = "validate-participants";
 
         try
         {
-            if (request.Participants.Count == 0)
-            {
-                await ValidateResolvedAgentsAsync(request.Agents, cancellationToken);
-            }
-
             stage = "validate-workflow";
-            ValidateWorkflowDefinition(request.Workflow, request.Participants, request.Agents);
+            ValidateWorkflowDefinition(request.Workflow, request.Participants);
             var normalizedStartInputs = NormalizeStartInputs(request.Workflow, request.StartInputs);
             var normalizedParameterValues = NormalizeParameterValues(request.Workflow, normalizedStartInputs);
 
@@ -104,71 +97,26 @@ public sealed class OrchestrationWorkflowSessionBootstrapper(
             }
 
             List<OrchestrationWorkflowRuntimeAgentRegistration> runtimeAgents = [];
-            List<ResolvedChatAgent> sessionBoundAgents = [];
             List<WorkflowRuntimeParticipant> sessionBoundParticipants = [];
-            List<ResolvedWorkflowParticipant> sessionBoundResolvedParticipants = [];
-            if (request.Participants.Count > 0)
+            stage = "bind-workflow-state";
+            sessionBoundParticipants = request.Participants
+                .Select(participant => BindWorkflowState(participant, session.SessionId))
+                .ToList();
+
+            foreach (var participant in sessionBoundParticipants)
             {
-                var participantInvoker = request.ParticipantInvoker
-                    ?? throw new InvalidOperationException(
-                        "Runtime workflow participants require a participant invoker.");
+                stage = $"adapt-runtime-participant:{participant.Id}";
+                var agent = new AgentRuntimeAIAgentAdapter(
+                    participant,
+                    request.CreationContext,
+                    request.ParentRunContext,
+                    participantInvoker);
 
-                stage = "bind-workflow-state";
-                sessionBoundParticipants = request.Participants
-                    .Select(participant => BindWorkflowState(participant, session.SessionId))
-                    .ToList();
-                sessionBoundResolvedParticipants = request.ResolvedParticipants
-                    .Select(participant => BindWorkflowState(participant, session.SessionId))
-                    .ToList();
-
-                foreach (var participant in sessionBoundParticipants)
-                {
-                    stage = $"adapt-runtime-participant:{participant.Id}";
-                    var resolvedParticipant = sessionBoundResolvedParticipants.FirstOrDefault(candidate =>
-                        string.Equals(candidate.ParticipantId, participant.Id, StringComparison.OrdinalIgnoreCase));
-                    var agent = new AgentRuntimeAIAgentAdapter(
-                        participant,
-                        resolvedParticipant,
-                        request.CreationContext,
-                        request.ParentRunContext,
-                        participantInvoker);
-
-                    runtimeAgents.Add(new OrchestrationWorkflowRuntimeAgentRegistration(
-                        participant.Id,
-                        participant.DisplayName,
-                        agent,
-                        TryGetAgentExecutorId(agent)));
-                }
-            }
-            else
-            {
-                stage = "bind-workflow-state";
-                sessionBoundAgents = request.Agents
-                    .Select(agent => BindWorkflowState(agent, session.SessionId))
-                    .ToList();
-
-                foreach (var sessionBoundAgent in sessionBoundAgents)
-                {
-                    stage = $"build-runtime-agent:{sessionBoundAgent.Agent.AgentId}";
-                    var runtimeRequest = sessionBoundAgent.Agent
-                        .ForRun()
-                        .UsingModel(sessionBoundAgent.Model)
-                        .WithConfiguration(request.Configuration)
-                        .WithConversation([])
-                        .WithUserMessage(string.Empty)
-                        .WithRuntimeResources(request.CreationContext?.RuntimeResources ?? new AgentSessionRuntimeResources())
-                        .Build();
-                    var builtAgent = await runtimeAgentFactory.CreateAsync(
-                        runtimeRequest,
-                        requireFunctionCalling: true,
-                        cancellationToken: cancellationToken);
-
-                    runtimeAgents.Add(new OrchestrationWorkflowRuntimeAgentRegistration(
-                        sessionBoundAgent.Agent.AgentId,
-                        sessionBoundAgent.Agent.AgentName,
-                        builtAgent.Agent,
-                        TryGetAgentExecutorId(builtAgent.Agent)));
-                }
+                runtimeAgents.Add(new OrchestrationWorkflowRuntimeAgentRegistration(
+                    participant.Id,
+                    participant.DisplayName,
+                    agent,
+                    TryGetAgentExecutorId(agent)));
             }
 
             return new OrchestrationWorkflowSessionBootstrapResult(
@@ -177,9 +125,6 @@ public sealed class OrchestrationWorkflowSessionBootstrapper(
                 {
                     Workflow = runtimeWorkflow,
                     Participants = sessionBoundParticipants,
-                    ResolvedParticipants = sessionBoundResolvedParticipants,
-                    Agents = request.Participants.Count == 0 ? sessionBoundAgents : [],
-                    ParticipantInvoker = request.ParticipantInvoker,
                     Configuration = request.Configuration,
                     CreationContext = request.CreationContext,
                     ParentRunContext = request.ParentRunContext,
@@ -196,7 +141,7 @@ public sealed class OrchestrationWorkflowSessionBootstrapper(
                 "Failed to bootstrap orchestration workflow session at stage {Stage}. WorkflowId={WorkflowId}, AgentCount={AgentCount}",
                 stage,
                 request.Workflow.Id,
-                request.Participants.Count + request.Agents.Count);
+                request.Participants.Count);
             throw;
         }
     }
@@ -221,17 +166,13 @@ public sealed class OrchestrationWorkflowSessionBootstrapper(
 
     private static void ValidateWorkflowDefinition(
         IOrchestrationWorkflowDefinition workflow,
-        IReadOnlyList<WorkflowRuntimeParticipant> participants,
-        IReadOnlyList<ResolvedChatAgent> agents)
+        IReadOnlyList<WorkflowRuntimeParticipant> participants)
     {
         var workflowAgentIds = workflow.Participants
             .Select(static agent => agent.Id)
             .ToHashSet(StringComparer.OrdinalIgnoreCase);
-        var resolvedAgentIds = participants.Count > 0
-            ? participants.Select(static participant => participant.Id)
-            : agents.Select(static agent => agent.Agent.AgentId);
-
-        var resolvedAgentSet = resolvedAgentIds
+        var resolvedAgentSet = participants
+            .Select(static participant => participant.Id)
             .ToHashSet(StringComparer.OrdinalIgnoreCase);
 
         if (!workflowAgentIds.SetEquals(resolvedAgentSet))
@@ -450,57 +391,8 @@ public sealed class OrchestrationWorkflowSessionBootstrapper(
         return property.GetValue(value) as string;
     }
 
-    private async Task ValidateResolvedAgentsAsync(
-        IReadOnlyList<ResolvedChatAgent> resolvedAgents,
-        CancellationToken cancellationToken)
-    {
-        foreach (var resolvedAgent in resolvedAgents)
-        {
-            if (resolvedAgent.Model.ServerId == Guid.Empty)
-            {
-                throw new InvalidOperationException(
-                    $"Server is not resolved for agent '{resolvedAgent.Agent.AgentName}'.");
-            }
-
-            if (string.IsNullOrWhiteSpace(resolvedAgent.Model.ModelName))
-            {
-                throw new InvalidOperationException(
-                    $"Model is not resolved for agent '{resolvedAgent.Agent.AgentName}'.");
-            }
-
-            await modelCapabilityService.EnsureModelSupportedByServerAsync(
-                resolvedAgent.Model,
-                cancellationToken);
-
-            if (resolvedAgent.Agent.McpServerBindings.Count == 0)
-            {
-                continue;
-            }
-
-            var supportsFunctions = await modelCapabilityService.SupportsFunctionCallingAsync(
-                resolvedAgent.Model,
-                cancellationToken);
-            if (!supportsFunctions)
-            {
-                throw new InvalidOperationException(
-                    $"Workflow agent '{resolvedAgent.Agent.AgentName}' requires a model with function calling.");
-            }
-        }
-    }
-
     private static WorkflowRuntimeParticipant BindWorkflowState(
         WorkflowRuntimeParticipant source,
-        string sessionId) =>
-        source.Source is MaterializedLlmParticipantSource materialized
-            ? source with
-            {
-                Source = new MaterializedLlmParticipantSource(
-                    BindWorkflowState(materialized.Agent, sessionId))
-            }
-            : source;
-
-    private static ResolvedWorkflowParticipant BindWorkflowState(
-        ResolvedWorkflowParticipant source,
         string sessionId) =>
         source.Source is MaterializedLlmParticipantSource materialized
             ? source with
@@ -544,10 +436,6 @@ public sealed class OrchestrationWorkflowSessionBootstrapper(
         }
     }
 
-    private static ResolvedChatAgent BindWorkflowState(ResolvedChatAgent source, string sessionId)
-    {
-        return new ResolvedChatAgent(BindWorkflowState(source.Agent, sessionId), source.Model);
-    }
 }
 
 public sealed record OrchestrationWorkflowSessionBootstrapResult(

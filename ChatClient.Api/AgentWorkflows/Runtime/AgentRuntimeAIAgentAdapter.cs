@@ -9,7 +9,6 @@ namespace ChatClient.Api.AgentWorkflows.Runtime;
 
 public sealed class AgentRuntimeAIAgentAdapter(
     WorkflowRuntimeParticipant participant,
-    ResolvedWorkflowParticipant? resolvedParticipant,
     AgentRuntimeCreationContext? creationContext,
     ChatClient.Application.Services.AgentRuntime.AgentRunContext? parentRunContext,
     IWorkflowParticipantInvoker participantInvoker) : AIAgent
@@ -52,7 +51,7 @@ public sealed class AgentRuntimeAIAgentAdapter(
         AgentRunOptions? options,
         [EnumeratorCancellation] CancellationToken cancellationToken)
     {
-        var invocationParticipant = resolvedParticipant ?? CreateResolvedParticipant(participant);
+        var invocationParticipant = CreateResolvedParticipant(participant);
         var parentContext = parentRunContext ?? throw new InvalidOperationException(
             "Workflow participant adapter requires a parent run context.");
         var effectiveCreationContext = creationContext ?? new AgentRuntimeCreationContext

@@ -8,7 +8,6 @@ public sealed class HandoffRuntimeWorkflowBuilder : IOrchestrationRuntimeWorkflo
     public bool CanBuild(IOrchestrationWorkflowDefinition workflow) =>
         workflow is AgentWorkflowDefinition;
 
-    [Obsolete]
     public Workflow Build(
         IOrchestrationWorkflowDefinition workflow,
         IReadOnlyDictionary<string, AIAgent> agentsById,
@@ -71,7 +70,6 @@ public sealed class HandoffRuntimeWorkflowBuilder : IOrchestrationRuntimeWorkflo
         return selectedHandoffsByPair.Values.ToList();
     }
 
-    [Obsolete]
     internal static IReadOnlyList<AgentWorkflowHandoffDefinition> SelectHandoffsForRuntime(
         AgentWorkflowDefinition definition,
         IReadOnlyList<string> assistantSpeakerIds)
@@ -82,7 +80,7 @@ public sealed class HandoffRuntimeWorkflowBuilder : IOrchestrationRuntimeWorkflo
             return handoffs;
         }
 
-        var agentsById = definition.Agents.ToDictionary(
+        var agentsById = definition.Participants.ToDictionary(
             static agent => agent.Id,
             StringComparer.OrdinalIgnoreCase);
         var turnCountsByAgentId = assistantSpeakerIds

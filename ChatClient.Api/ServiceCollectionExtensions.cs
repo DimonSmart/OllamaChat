@@ -154,6 +154,7 @@ public static class ServiceCollectionExtensions
         services.AddScoped<OrchestrationWorkflowTurnCoordinator>();
         services.AddScoped<OrchestrationWorkflowEventStreamProcessor>();
         services.AddScoped<OrchestrationWorkflowPassExecutor>();
+        services.AddScoped<IWorkflowResultResolver, WorkflowResultResolver>();
         services.AddScoped<IWorkflowExecutionEngine, WorkflowExecutionEngine>();
         services.AddScoped<IAgentDefinitionCatalog, AgentDefinitionCatalog>();
         services.AddOptions<AgentRuntimeOptions>()
@@ -165,7 +166,6 @@ public static class ServiceCollectionExtensions
         services.AddScoped<WorkflowParticipantResolver>();
         services.AddScoped<IWorkflowParticipantResolver>(sp => sp.GetRequiredService<WorkflowParticipantResolver>());
         services.AddScoped<IWorkflowParticipantRuntimeFactory, WorkflowParticipantRuntimeFactory>();
-        services.AddScoped<IWorkflowAgentDraftMaterializer, WorkflowAgentDraftMaterializer>();
         services.AddScoped<IAgentInputDefinitionProvider, AgentInputDefinitionProvider>();
         services.AddScoped<IAgentDefinitionModelRequirementAnalyzer, WorkflowModelRequirementAnalyzer>();
         services.AddScoped<IAgentDefinitionLaunchCapabilityAnalyzer, AgentDefinitionLaunchCapabilityAnalyzer>();

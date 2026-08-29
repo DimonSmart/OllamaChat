@@ -130,20 +130,8 @@ public sealed class AgentRuntimeAIAgentAdapterTests
                 "inner-workflow"))
         };
 
-        var resolved = new ResolvedWorkflowParticipant
-        {
-            ParticipantId = "inner",
-            DisplayName = "Inner",
-            Summary = "Nested participant",
-            RuntimeKind = AgentRuntimeKind.WorkflowAgent,
-            Source = new ReferencedParticipantSource(new AgentDefinitionReference(
-                AgentDefinitionKind.SavedWorkflow,
-                "inner-workflow"))
-        };
-
         return new AgentRuntimeAIAgentAdapter(
             participant,
-            resolved,
             new AgentRuntimeCreationContext
             {
                 Configuration = new AppChatConfiguration("model", [])

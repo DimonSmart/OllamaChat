@@ -114,11 +114,9 @@ public sealed class AgentRuntimePolymorphicIntegrationTests
                 new AgentRuntimeDescriptor(workflowId, "Workflow", string.Empty, AgentRuntimeKind.WorkflowAgent),
                 workflow,
                 [],
-                [],
                 context.Configuration,
                 context,
                 new StubWorkflowExecutionEngine(),
-                new ThrowingWorkflowParticipantInvoker(),
                 NullLogger<WorkflowAgentRuntime>.Instance));
         }
     }

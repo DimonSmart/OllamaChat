@@ -48,7 +48,6 @@ public sealed class OrchestrationWorkflowEventStreamProcessor(
         return deliveredMessages;
     }
 
-    [Obsolete]
     internal async Task<bool> DrainAsync(
         IAsyncEnumerable<WorkflowEvent> workflowEvents,
         OrchestrationWorkflowEventStreamContext context,
@@ -98,7 +97,6 @@ public sealed class OrchestrationWorkflowEventStreamProcessor(
         context.ActiveSpeakerIdsByStreamId.Clear();
     }
 
-    [Obsolete]
     private async Task<bool> ProcessWorkflowEventAsync(
         WorkflowEvent workflowEvent,
         OrchestrationWorkflowEventStreamContext context,
@@ -350,7 +348,6 @@ public sealed class OrchestrationWorkflowEventStreamProcessor(
             outputSpeakerName);
     }
 
-    [Obsolete]
     private async Task<StreamingAppChatMessage> GetOrCreateStreamAsync(
         OrchestrationWorkflowEventStreamContext context,
         string? executorId,

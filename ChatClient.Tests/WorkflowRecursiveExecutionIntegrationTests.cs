@@ -473,14 +473,13 @@ public sealed class WorkflowExecutionPipelineIntegrationTests
                 new UnsupportedInlineFactory(),
                 nestingValidator,
                 protocol);
-            var workflowExecutionEngine = CreateWorkflowExecutionEngine();
+            var workflowExecutionEngine = CreateWorkflowExecutionEngine(participantInvoker);
             var workflowFactory = new RecordingWorkflowAgentRuntimeFactory(new WorkflowAgentRuntimeFactory(
                 new InMemoryWorkflowDefinitionService(workflows),
                 new PrebuiltWorkflowDefinitionCompiler(workflows),
                 new ReferencedWorkflowParticipantResolver(catalog),
                 new WorkflowParticipantRuntimeFactory(),
                 workflowExecutionEngine,
-                participantInvoker,
                 NullLogger<WorkflowAgentRuntimeFactory>.Instance));
             runner = new AgentRunner(
                 catalog,
@@ -507,7 +506,8 @@ public sealed class WorkflowExecutionPipelineIntegrationTests
             return events;
         }
 
-        private static WorkflowExecutionEngine CreateWorkflowExecutionEngine()
+        private static WorkflowExecutionEngine CreateWorkflowExecutionEngine(
+            IWorkflowParticipantInvoker participantInvoker)
         {
             var binding = new McpServerSessionBinding();
             binding.Parameters[TaskSessionStore.DatabaseFileParameter] = "headless-recursive-in-memory";
@@ -516,10 +516,9 @@ public sealed class WorkflowExecutionPipelineIntegrationTests
                 new InMemoryTaskSessionRepository());
             var bootstrapper = new OrchestrationWorkflowSessionBootstrapper(
                 NullLogger<OrchestrationWorkflowSessionBootstrapper>.Instance,
-                new AcceptAllModelCapabilityService(),
                 taskSessionStore,
                 new MarkdownDocumentIntakeService(),
-                null!);
+                participantInvoker);
             var eventStreamProcessor = new OrchestrationWorkflowEventStreamProcessor(
                 new AgenticChatEngineStreamingBridge(),
                 new HarnessResponseEventProjector(NullLogger<HarnessResponseEventProjector>.Instance));
@@ -540,6 +539,7 @@ public sealed class WorkflowExecutionPipelineIntegrationTests
                 turnCoordinator,
                 passExecutor,
                 taskSessionStore,
+                new WorkflowResultResolver(taskSessionStore),
                 NullLogger<WorkflowExecutionEngine>.Instance);
         }
     }

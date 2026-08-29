@@ -43,14 +43,6 @@ public sealed class OrchestrationWorkflowSessionBootstrapperTests
             RuntimeKind = AgentRuntimeKind.LlmAgent,
             Source = source
         };
-        var resolvedParticipant = new ResolvedWorkflowParticipant
-        {
-            ParticipantId = "advocate",
-            DisplayName = "Advocate",
-            Summary = "Debate participant",
-            RuntimeKind = AgentRuntimeKind.LlmAgent,
-            Source = source
-        };
         var workflow = new GroupChatWorkflowDefinition
         {
             Id = "workflow",
@@ -68,18 +60,15 @@ public sealed class OrchestrationWorkflowSessionBootstrapperTests
         var store = CreateTaskSessionStore();
         var bootstrapper = new OrchestrationWorkflowSessionBootstrapper(
             NullLogger<OrchestrationWorkflowSessionBootstrapper>.Instance,
-            null!,
             store,
             new MarkdownDocumentIntakeService(),
-            null!);
+            Mock.Of<IWorkflowParticipantInvoker>());
 
         var result = await bootstrapper.BootstrapAsync(
             new OrchestrationWorkflowSessionStartRequest
             {
                 Workflow = workflow,
                 Participants = [runtimeParticipant],
-                ResolvedParticipants = [resolvedParticipant],
-                ParticipantInvoker = Mock.Of<IWorkflowParticipantInvoker>(),
                 Configuration = new AppChatConfiguration("model", []),
                 SessionTitle = "Workflow"
             },
@@ -87,11 +76,7 @@ public sealed class OrchestrationWorkflowSessionBootstrapperTests
 
         var boundRuntimeAgent = Assert.IsType<MaterializedLlmParticipantSource>(
             Assert.Single(result.Request.Participants).Source).Agent;
-        var boundResolvedAgent = Assert.IsType<MaterializedLlmParticipantSource>(
-            Assert.Single(result.Request.ResolvedParticipants).Source).Agent;
-
         Assert.Equal(result.TaskSessionId, GetWorkflowStateBinding(boundRuntimeAgent).Parameters[TaskSessionStore.SessionIdParameter]);
-        Assert.Equal(result.TaskSessionId, GetWorkflowStateBinding(boundResolvedAgent).Parameters[TaskSessionStore.SessionIdParameter]);
         Assert.False(workflowStateBinding.Parameters.ContainsKey(TaskSessionStore.SessionIdParameter));
         Assert.False(unrelatedBinding.Parameters.ContainsKey(TaskSessionStore.SessionIdParameter));
     }
