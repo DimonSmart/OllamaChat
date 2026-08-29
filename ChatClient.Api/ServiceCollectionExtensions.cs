@@ -49,7 +49,6 @@ public static class ServiceCollectionExtensions
 
     private static IServiceCollection AddCoreServices(this IServiceCollection services)
     {
-        services.AddSingleton<IAgentWorkflowCatalog, AgentWorkflowCatalog>();
         services.AddSingleton<IWorkflowDefinitionCompiler, WorkflowDefinitionCompiler>();
         services.AddSingleton<GroupChatManagerRegistry>();
         services.AddSingleton<IOrchestrationRuntimeWorkflowBuilder, HandoffRuntimeWorkflowBuilder>();
@@ -154,6 +153,7 @@ public static class ServiceCollectionExtensions
         services.AddScoped<OrchestrationWorkflowTurnCoordinator>();
         services.AddScoped<OrchestrationWorkflowEventStreamProcessor>();
         services.AddScoped<OrchestrationWorkflowPassExecutor>();
+        services.AddScoped<IWorkflowExecutionState, WorkflowExecutionState>();
         services.AddScoped<IWorkflowResultResolver, WorkflowResultResolver>();
         services.AddScoped<IWorkflowExecutionEngine, WorkflowExecutionEngine>();
         services.AddScoped<IAgentDefinitionCatalog, AgentDefinitionCatalog>();

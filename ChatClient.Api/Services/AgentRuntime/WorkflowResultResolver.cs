@@ -1,6 +1,5 @@
 using ChatClient.Api.AgentWorkflows;
 using ChatClient.Api.Client.Services.Agentic;
-using ChatClient.Api.Services.BuiltIn;
 using ChatClient.Application.Services.AgentRuntime;
 using ChatClient.Domain.Models;
 
@@ -18,7 +17,7 @@ public sealed record WorkflowResultResolutionContext(
     string TaskSessionId,
     IReadOnlyList<OrchestrationCompletedAssistantMessage> Messages);
 
-public sealed class WorkflowResultResolver(TaskSessionStore taskSessionStore) : IWorkflowResultResolver
+public sealed class WorkflowResultResolver(IWorkflowExecutionState executionState) : IWorkflowResultResolver
 {
     public async Task<AgentRunResult?> ResolveAsync(
         WorkflowResultResolutionContext context,
@@ -119,11 +118,11 @@ public sealed class WorkflowResultResolver(TaskSessionStore taskSessionStore) : 
     {
         if (!string.IsNullOrWhiteSpace(request.Workflow.Execution.CompletionSummaryLabel))
         {
-            var summary = await taskSessionStore.TryGetSummaryAsync(
+            var summary = await executionState.TryGetSummaryAsync(
                 taskSessionId, request.Workflow.Execution.CompletionSummaryLabel, cancellationToken);
-            if (!string.IsNullOrWhiteSpace(summary?.Markdown))
+            if (!string.IsNullOrWhiteSpace(summary))
             {
-                return CreateSynthesizedMessage(request, summary.Markdown);
+                return CreateSynthesizedMessage(request, summary);
             }
         }
 

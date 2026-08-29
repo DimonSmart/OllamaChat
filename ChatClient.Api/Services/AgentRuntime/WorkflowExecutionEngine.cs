@@ -1,7 +1,6 @@
 using ChatClient.Api.AgentWorkflows;
 using ChatClient.Api.AgentWorkflows.Runtime;
 using ChatClient.Api.Client.Services.Agentic;
-using ChatClient.Api.Services.BuiltIn;
 using ChatClient.Application.Services.Agentic;
 using ChatClient.Application.Services.AgentRuntime;
 using ChatClient.Domain.Models;
@@ -40,7 +39,7 @@ public sealed class WorkflowExecutionEngine(
     OrchestrationWorkflowSessionBootstrapper sessionBootstrapper,
     OrchestrationWorkflowTurnCoordinator turnCoordinator,
     OrchestrationWorkflowPassExecutor passExecutor,
-    TaskSessionStore taskSessionStore,
+    IWorkflowExecutionState executionState,
     IWorkflowResultResolver resultResolver,
     ILogger<WorkflowExecutionEngine> logger) : IWorkflowExecutionEngine
 {
@@ -68,7 +67,7 @@ public sealed class WorkflowExecutionEngine(
             bootstrap,
             turnCoordinator,
             passExecutor,
-            taskSessionStore,
+            executionState,
             resultResolver,
             logger);
 
@@ -82,7 +81,7 @@ public sealed class WorkflowExecutionEngine(
         OrchestrationWorkflowSessionBootstrapResult bootstrap,
         OrchestrationWorkflowTurnCoordinator turnCoordinator,
         OrchestrationWorkflowPassExecutor passExecutor,
-        TaskSessionStore taskSessionStore,
+        IWorkflowExecutionState executionState,
         IWorkflowResultResolver resultResolver,
         ILogger logger)
     {
@@ -154,10 +153,9 @@ public sealed class WorkflowExecutionEngine(
                     {
                         WorkflowDisplayName = workflowRequest.Workflow.DisplayName,
                         Execution = workflowRequest.Workflow.Execution,
-                        IsExecutionCompleteAsync = cancellation => IsWorkflowExecutionCompleteAsync(
-                            workflowRequest.Workflow.Execution,
+                        IsExecutionCompleteAsync = cancellation => executionState.IsCompletedAsync(
                             TaskSessionId,
-                            taskSessionStore,
+                            workflowRequest.Workflow.Execution,
                             cancellation),
                         ExecutePassAsync = cancellation => passExecutor.ExecuteAsync(
                             new OrchestrationWorkflowPassExecutionRequest
@@ -276,30 +274,6 @@ public sealed class WorkflowExecutionEngine(
                 writer.TryComplete();
             }
         }
-    }
-
-    private static async Task<bool> IsWorkflowExecutionCompleteAsync(
-        AgentWorkflowExecutionDefinition execution,
-        string taskSessionId,
-        TaskSessionStore taskSessionStore,
-        CancellationToken cancellationToken)
-    {
-        var snapshot = await taskSessionStore.GetSessionAsync(taskSessionId, cancellationToken);
-
-        if (!string.IsNullOrWhiteSpace(execution.CompletionPhase) &&
-            string.Equals(snapshot.Phase, execution.CompletionPhase, StringComparison.OrdinalIgnoreCase))
-        {
-            return true;
-        }
-
-        if (!string.IsNullOrWhiteSpace(execution.CompletionSummaryLabel) &&
-            snapshot.Summaries.Any(summary =>
-                string.Equals(summary.Label, execution.CompletionSummaryLabel, StringComparison.OrdinalIgnoreCase)))
-        {
-            return true;
-        }
-
-        return false;
     }
 
     private static async Task NotifyMessageAsync(

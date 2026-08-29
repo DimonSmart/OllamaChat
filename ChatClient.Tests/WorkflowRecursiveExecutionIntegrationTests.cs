@@ -534,12 +534,13 @@ public sealed class WorkflowExecutionPipelineIntegrationTests
             var turnCoordinator = new OrchestrationWorkflowTurnCoordinator(
                 NullLogger<OrchestrationWorkflowTurnCoordinator>.Instance,
                 new WorkflowExecutionPolicy());
+            var executionState = new WorkflowExecutionState(taskSessionStore);
             return new WorkflowExecutionEngine(
                 bootstrapper,
                 turnCoordinator,
                 passExecutor,
-                taskSessionStore,
-                new WorkflowResultResolver(taskSessionStore),
+                executionState,
+                new WorkflowResultResolver(executionState),
                 NullLogger<WorkflowExecutionEngine>.Instance);
         }
     }
