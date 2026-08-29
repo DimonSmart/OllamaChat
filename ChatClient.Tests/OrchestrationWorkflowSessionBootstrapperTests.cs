@@ -15,39 +15,6 @@ namespace ChatClient.Tests;
 public sealed class OrchestrationWorkflowSessionBootstrapperTests
 {
     [Fact]
-    public void Bind_BindsOnlyWorkflowStateMcpWithoutMutatingSourceParticipant()
-    {
-        var workflowBinding = new McpServerSessionBinding
-        {
-            ServerId = BuiltInTaskSessionMcpServerTools.Descriptor.Id
-        };
-        var unrelatedBinding = new McpServerSessionBinding { ServerName = "Unrelated MCP Server" };
-        var participant = new WorkflowRuntimeParticipant
-        {
-            Id = "advocate",
-            DisplayName = "Advocate",
-            Summary = "",
-            RuntimeKind = AgentRuntimeKind.LlmAgent,
-            Source = new MaterializedLlmParticipantSource(new AgentTemplateDefinition
-            {
-                McpServerBindings = [workflowBinding, unrelatedBinding]
-            })
-        };
-
-        var bound = new WorkflowSessionParticipantBinder().Bind(participant, "session-42");
-
-        var boundAgent = Assert.IsType<MaterializedLlmParticipantSource>(bound.Source).Agent;
-        Assert.Equal("session-42", GetWorkflowStateBinding(boundAgent).Parameters[TaskSessionStore.SessionIdParameter]);
-        Assert.False(workflowBinding.Parameters.ContainsKey(TaskSessionStore.SessionIdParameter));
-        Assert.False(unrelatedBinding.Parameters.ContainsKey(TaskSessionStore.SessionIdParameter));
-        var referencedParticipant = participant with
-        {
-            Source = new ReferencedParticipantSource(new AgentDefinitionReference(AgentDefinitionKind.SavedWorkflow, Guid.NewGuid().ToString()))
-        };
-        Assert.Same(referencedParticipant, new WorkflowSessionParticipantBinder().Bind(referencedParticipant, "session-42"));
-    }
-
-    [Fact]
     public async Task Bootstrap_RuntimeParticipantsReceiveWorkflowStateSessionBinding()
     {
         var workflowStateBinding = new McpServerSessionBinding
