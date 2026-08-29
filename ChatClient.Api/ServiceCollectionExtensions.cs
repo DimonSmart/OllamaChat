@@ -154,7 +154,7 @@ public static class ServiceCollectionExtensions
         services.AddScoped<OrchestrationWorkflowTurnCoordinator>();
         services.AddScoped<OrchestrationWorkflowEventStreamProcessor>();
         services.AddScoped<OrchestrationWorkflowPassExecutor>();
-        services.AddScoped<IHeadlessWorkflowRunner, HeadlessWorkflowRunner>();
+        services.AddScoped<IWorkflowExecutionEngine, WorkflowExecutionEngine>();
         services.AddScoped<IAgentDefinitionCatalog, AgentDefinitionCatalog>();
         services.AddOptions<AgentRuntimeOptions>()
             .Validate(static options => options.MaximumWorkflowNestingDepth > 0,

@@ -117,7 +117,7 @@ public sealed class AgentRuntimePolymorphicIntegrationTests
                 [],
                 context.Configuration,
                 context,
-                new StubHeadlessWorkflowRunner(),
+                new StubWorkflowExecutionEngine(),
                 new ThrowingWorkflowParticipantInvoker(),
                 NullLogger<WorkflowAgentRuntime>.Instance));
         }
@@ -159,37 +159,24 @@ public sealed class AgentRuntimePolymorphicIntegrationTests
         }
     }
 
-    private sealed class StubHeadlessWorkflowRunner : IHeadlessWorkflowRunner
+    private sealed class StubWorkflowExecutionEngine : IWorkflowExecutionEngine
     {
-        public Task<IHeadlessWorkflowSession> StartAsync(
-            HeadlessWorkflowSessionStartRequest request,
-            CancellationToken cancellationToken = default) =>
-            Task.FromResult<IHeadlessWorkflowSession>(new StubHeadlessWorkflowSession());
-    }
-
-    private sealed class StubHeadlessWorkflowSession : IHeadlessWorkflowSession
-    {
-        public string TaskSessionId => "session-1";
-
-        public async IAsyncEnumerable<HeadlessWorkflowEvent> RunTurnAsync(
-            HeadlessWorkflowTurnRequest request,
+        public async IAsyncEnumerable<AgentRunEvent> ExecuteAsync(
+            WorkflowExecutionRequest request,
             [EnumeratorCancellation] CancellationToken cancellationToken = default)
         {
             await Task.Yield();
             const string messageId = "m1";
-            yield return new HeadlessWorkflowStarted(TaskSessionId);
-            yield return new HeadlessWorkflowTextDelta(messageId, "Workflow", "workflow answer");
-            yield return new HeadlessWorkflowMessageCompleted(messageId, "agent", "Workflow", "workflow answer");
-            yield return new HeadlessWorkflowCompleted(new HeadlessWorkflowResult
+            var message = new AgentOutputMessage("Workflow", "workflow answer", "agent");
+            yield return new AgentTextDelta(messageId, "Workflow", "workflow answer");
+            yield return new AgentMessageCompleted(messageId, message);
+            yield return new AgentRunCompleted(new AgentRunResult
             {
                 FinalMessageId = messageId,
-                FinalAuthor = "Workflow",
-                FinalContent = "workflow answer",
-                Messages = [new HeadlessWorkflowOutputMessage(messageId, "agent", "Workflow", "workflow answer")]
+                FinalMessage = message,
+                Messages = [message]
             });
         }
-
-        public ValueTask DisposeAsync() => ValueTask.CompletedTask;
     }
 
     private sealed class StubDefinitionCatalog : IAgentDefinitionCatalog

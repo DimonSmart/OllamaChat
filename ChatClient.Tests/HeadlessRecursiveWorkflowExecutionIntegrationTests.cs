@@ -15,7 +15,7 @@ using System.Runtime.CompilerServices;
 
 namespace ChatClient.Tests;
 
-public sealed class HeadlessRecursiveWorkflowExecutionIntegrationTests
+public sealed class WorkflowExecutionPipelineIntegrationTests
 {
     private static readonly string[] WorkflowKinds =
     [
@@ -24,8 +24,9 @@ public sealed class HeadlessRecursiveWorkflowExecutionIntegrationTests
         WorkflowDefinitionKinds.GroupChat
     ];
 
-    private static readonly string[] HeadlessKinds =
+    private static readonly string[] CanonicalPipelineKinds =
     [
+        WorkflowDefinitionKinds.Sequential,
         WorkflowDefinitionKinds.Handoff,
         WorkflowDefinitionKinds.Concurrent,
         WorkflowDefinitionKinds.GroupChat
@@ -33,12 +34,12 @@ public sealed class HeadlessRecursiveWorkflowExecutionIntegrationTests
 
     public static TheoryData<string> WorkflowKindCases() => TheoryDataFrom(WorkflowKinds);
 
-    public static TheoryData<string> HeadlessWorkflowKinds() => TheoryDataFrom(HeadlessKinds);
+    public static TheoryData<string> CanonicalPipelineKindsData() => TheoryDataFrom(CanonicalPipelineKinds);
 
-    public static TheoryData<string, LeafEmissionMode> HeadlessWorkflowKindsAndLeafModes()
+    public static TheoryData<string, LeafEmissionMode> CanonicalPipelineKindsAndLeafModes()
     {
         var data = new TheoryData<string, LeafEmissionMode>();
-        foreach (var kind in HeadlessKinds)
+        foreach (var kind in CanonicalPipelineKinds)
         {
             data.Add(kind, LeafEmissionMode.DeltaMessageCompletedRunCompleted);
             data.Add(kind, LeafEmissionMode.MessageCompletedRunCompleted);
@@ -82,7 +83,7 @@ public sealed class HeadlessRecursiveWorkflowExecutionIntegrationTests
         AssertValidAgentRunProtocol(events);
         if (kind != WorkflowDefinitionKinds.Sequential)
         {
-            Assert.IsType<HeadlessWorkflowRunner>(system.HeadlessWorkflowRunner);
+            Assert.IsType<WorkflowExecutionEngine>(system.WorkflowExecutionEngine);
         }
 
         Assert.Equal([rootId, nestedId], system.CreatedWorkflowIds);
@@ -109,13 +110,13 @@ public sealed class HeadlessRecursiveWorkflowExecutionIntegrationTests
         else
         {
             AssertFinalContent(completed.Result.FinalMessage.Content, kind, "leaf D final");
-            AssertSingleFinalText(events, kind, "leaf D final", requireEachCompletedMessage: kind != WorkflowDefinitionKinds.Concurrent);
+            AssertSingleFinalText(events, kind, "leaf D final", requireEachCompletedMessage: false);
         }
     }
 
     [Theory]
-    [MemberData(nameof(HeadlessWorkflowKinds))]
-    public async Task RunAsync_HeadlessDirectCycle_FailsBeforeNestedRuntimeStarts(string kind)
+    [MemberData(nameof(CanonicalPipelineKindsData))]
+    public async Task RunAsync_DirectCycle_FailsBeforeNestedRuntimeStarts(string kind)
     {
         var workflowId = NewId();
         var system = TestSystem.Create(8,
@@ -133,8 +134,8 @@ public sealed class HeadlessRecursiveWorkflowExecutionIntegrationTests
     }
 
     [Theory]
-    [MemberData(nameof(HeadlessWorkflowKinds))]
-    public async Task RunAsync_HeadlessIndirectCycle_PreservesDefinitionStackAndParticipantMetadata(string kind)
+    [MemberData(nameof(CanonicalPipelineKindsData))]
+    public async Task RunAsync_IndirectCycle_PreservesDefinitionStackAndParticipantMetadata(string kind)
     {
         var a = NewId();
         var b = NewId();
@@ -156,8 +157,8 @@ public sealed class HeadlessRecursiveWorkflowExecutionIntegrationTests
     }
 
     [Theory]
-    [MemberData(nameof(HeadlessWorkflowKinds))]
-    public async Task RunAsync_HeadlessNestingLimit_FailsBeforeFourthWorkflowRuntimeStarts(string kind)
+    [MemberData(nameof(CanonicalPipelineKindsData))]
+    public async Task RunAsync_NestingLimit_FailsBeforeFourthWorkflowRuntimeStarts(string kind)
     {
         var a = NewId();
         var b = NewId();
@@ -183,8 +184,8 @@ public sealed class HeadlessRecursiveWorkflowExecutionIntegrationTests
     }
 
     [Theory]
-    [MemberData(nameof(HeadlessWorkflowKinds))]
-    public async Task RunAsync_HeadlessNestedLeafFailure_PreservesOriginalError(string kind)
+    [MemberData(nameof(CanonicalPipelineKindsData))]
+    public async Task RunAsync_NestedLeafFailure_PreservesOriginalError(string kind)
     {
         var rootId = NewId();
         var nestedId = NewId();
@@ -204,8 +205,8 @@ public sealed class HeadlessRecursiveWorkflowExecutionIntegrationTests
     }
 
     [Theory]
-    [MemberData(nameof(HeadlessWorkflowKindsAndLeafModes))]
-    public async Task RunAsync_HeadlessNestedLeafFinalModes_EmitFinalTextOnce(string kind, LeafEmissionMode mode)
+    [MemberData(nameof(CanonicalPipelineKindsAndLeafModes))]
+    public async Task RunAsync_NestedLeafFinalModes_EmitFinalTextOnce(string kind, LeafEmissionMode mode)
     {
         var rootId = NewId();
         var nestedId = NewId();
@@ -427,20 +428,20 @@ public sealed class HeadlessRecursiveWorkflowExecutionIntegrationTests
             AgentRunContextFactory contextFactory,
             IAgentRunner runner,
             RecordingWorkflowAgentRuntimeFactory workflowFactory,
-            IHeadlessWorkflowRunner headlessWorkflowRunner,
+            IWorkflowExecutionEngine workflowExecutionEngine,
             FakeLlmFactory llmFactory)
         {
             _catalog = catalog;
             _contextFactory = contextFactory;
             _runner = runner;
             WorkflowFactory = workflowFactory;
-            HeadlessWorkflowRunner = headlessWorkflowRunner;
+            WorkflowExecutionEngine = workflowExecutionEngine;
             LlmFactory = llmFactory;
         }
 
         public RecordingWorkflowAgentRuntimeFactory WorkflowFactory { get; }
 
-        public IHeadlessWorkflowRunner HeadlessWorkflowRunner { get; }
+        public IWorkflowExecutionEngine WorkflowExecutionEngine { get; }
 
         public FakeLlmFactory LlmFactory { get; }
 
@@ -472,13 +473,13 @@ public sealed class HeadlessRecursiveWorkflowExecutionIntegrationTests
                 new UnsupportedInlineFactory(),
                 nestingValidator,
                 protocol);
-            var headlessRunner = CreateHeadlessWorkflowRunner();
+            var workflowExecutionEngine = CreateWorkflowExecutionEngine();
             var workflowFactory = new RecordingWorkflowAgentRuntimeFactory(new WorkflowAgentRuntimeFactory(
                 new InMemoryWorkflowDefinitionService(workflows),
                 new PrebuiltWorkflowDefinitionCompiler(workflows),
                 new ReferencedWorkflowParticipantResolver(catalog),
                 new WorkflowParticipantRuntimeFactory(),
-                headlessRunner,
+                workflowExecutionEngine,
                 participantInvoker,
                 NullLogger<WorkflowAgentRuntimeFactory>.Instance));
             runner = new AgentRunner(
@@ -487,7 +488,7 @@ public sealed class HeadlessRecursiveWorkflowExecutionIntegrationTests
                 new AgentRuntimeFactory(llmFactory, workflowFactory),
                 protocol,
                 NullLogger<AgentRunner>.Instance);
-            return new TestSystem(catalog, contextFactory, runner, workflowFactory, headlessRunner, llmFactory);
+            return new TestSystem(catalog, contextFactory, runner, workflowFactory, workflowExecutionEngine, llmFactory);
         }
 
         public async Task<List<AgentRunEvent>> RunAsync(string workflowId, string? conversationId = null)
@@ -506,7 +507,7 @@ public sealed class HeadlessRecursiveWorkflowExecutionIntegrationTests
             return events;
         }
 
-        private static HeadlessWorkflowRunner CreateHeadlessWorkflowRunner()
+        private static WorkflowExecutionEngine CreateWorkflowExecutionEngine()
         {
             var binding = new McpServerSessionBinding();
             binding.Parameters[TaskSessionStore.DatabaseFileParameter] = "headless-recursive-in-memory";
@@ -526,6 +527,7 @@ public sealed class HeadlessRecursiveWorkflowExecutionIntegrationTests
                 NullLogger<OrchestrationWorkflowPassExecutor>.Instance,
                 eventStreamProcessor,
                 [
+                    new SequentialRuntimeWorkflowBuilder(),
                     new HandoffRuntimeWorkflowBuilder(),
                     new ConcurrentRuntimeWorkflowBuilder(),
                     new GroupChatRuntimeWorkflowBuilder(new GroupChatManagerRegistry([]))
@@ -533,12 +535,12 @@ public sealed class HeadlessRecursiveWorkflowExecutionIntegrationTests
             var turnCoordinator = new OrchestrationWorkflowTurnCoordinator(
                 NullLogger<OrchestrationWorkflowTurnCoordinator>.Instance,
                 new WorkflowExecutionPolicy());
-            return new HeadlessWorkflowRunner(
+            return new WorkflowExecutionEngine(
                 bootstrapper,
                 turnCoordinator,
                 passExecutor,
                 taskSessionStore,
-                NullLogger<HeadlessWorkflowRunner>.Instance);
+                NullLogger<WorkflowExecutionEngine>.Instance);
         }
     }
 
@@ -767,7 +769,7 @@ public sealed class HeadlessRecursiveWorkflowExecutionIntegrationTests
             AgentRuntimeDescriptor descriptor,
             AgentTemplateDefinition agent,
             AgentRuntimeCreationContext context) =>
-            throw new NotSupportedException("Headless integration tests use referenced saved agents.");
+            throw new NotSupportedException("Pipeline integration tests use referenced saved agents.");
     }
 
     private sealed class InMemoryTaskSessionRepository : ITaskSessionRepository

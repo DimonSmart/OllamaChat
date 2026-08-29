@@ -14,7 +14,7 @@ public sealed class WorkflowAgentRuntimeFactory(
     IWorkflowDefinitionCompiler workflowDefinitionCompiler,
     IWorkflowParticipantResolver workflowParticipantResolver,
     IWorkflowParticipantRuntimeFactory participantRuntimeFactory,
-    IHeadlessWorkflowRunner headlessWorkflowRunner,
+    IWorkflowExecutionEngine workflowExecutionEngine,
     IWorkflowParticipantInvoker participantInvoker,
     ILogger<WorkflowAgentRuntimeFactory> logger) : IWorkflowAgentRuntimeFactory
 {
@@ -64,7 +64,7 @@ public sealed class WorkflowAgentRuntimeFactory(
             runtimeParticipants,
             context.Configuration,
             context,
-            headlessWorkflowRunner,
+            workflowExecutionEngine,
             participantInvoker,
             logger);
     }
@@ -78,7 +78,7 @@ internal sealed class WorkflowAgentRuntime(
     IReadOnlyList<WorkflowRuntimeParticipant> runtimeParticipants,
     AppChatConfiguration configuration,
     AgentRuntimeCreationContext creationContext,
-    IHeadlessWorkflowRunner headlessWorkflowRunner,
+    IWorkflowExecutionEngine workflowExecutionEngine,
     IWorkflowParticipantInvoker participantInvoker,
     ILogger logger) : IAgentRuntime
 {
@@ -89,20 +89,6 @@ internal sealed class WorkflowAgentRuntime(
         AgentRunContext context,
         [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken = default)
     {
-        if (workflow is SequentialWorkflowDefinition sequentialWorkflow)
-        {
-            await foreach (var runEvent in RunSequentialAsync(
-                               sequentialWorkflow,
-                               request,
-                               context,
-                               cancellationToken))
-            {
-                yield return runEvent;
-            }
-
-            yield break;
-        }
-
         var currentUserMessageIndex = FindCurrentUserMessageIndex(request.Messages);
         var userMessage = currentUserMessageIndex >= 0
             ? request.Messages[currentUserMessageIndex]
@@ -141,7 +127,7 @@ internal sealed class WorkflowAgentRuntime(
             yield break;
         }
 
-        var workflowRequest = new HeadlessWorkflowSessionStartRequest
+        var workflowRequest = new WorkflowExecutionRequest
         {
             Workflow = workflow,
             Participants = runtimeParticipants,
@@ -155,79 +141,47 @@ internal sealed class WorkflowAgentRuntime(
             ParticipantInvoker = participantInvoker
         };
 
-        IHeadlessWorkflowSession? session = null;
-        AgentRunFailed? startFailure = null;
-        try
+        var events = workflowExecutionEngine.ExecuteAsync(workflowRequest with
         {
-            session = await headlessWorkflowRunner.StartAsync(workflowRequest, cancellationToken);
-        }
-        catch (OperationCanceledException)
-        {
-            throw;
-        }
-        catch (Exception ex)
-        {
-            startFailure = MapWorkflowException(context, ex);
-        }
+            UserMessage = userMessage is null
+                ? null
+                : BuildWorkflowUserMessage(
+                    request.Messages.Take(currentUserMessageIndex),
+                    userMessage.Content)
+        }, cancellationToken);
 
-        if (startFailure is not null)
+        await using var enumerator = events.GetAsyncEnumerator(cancellationToken);
+        while (true)
         {
-            yield return startFailure;
-            yield break;
-        }
-
-        var activeSession = session!;
-        await using (activeSession)
-        {
-            var events = activeSession.RunTurnAsync(new HeadlessWorkflowTurnRequest
+            AgentRunEvent? runEvent = null;
+            AgentRunFailed? failure = null;
+            try
             {
-                UserMessage = userMessage is null
-                    ? null
-                    : BuildWorkflowUserMessage(
-                        request.Messages.Take(currentUserMessageIndex),
-                        userMessage.Content)
-            }, cancellationToken);
+                if (!await enumerator.MoveNextAsync())
+                {
+                    break;
+                }
 
-            await using var enumerator = events.GetAsyncEnumerator(cancellationToken);
-            while (true)
+                runEvent = enumerator.Current;
+            }
+            catch (OperationCanceledException)
             {
-                HeadlessWorkflowEvent? headlessEvent = null;
-                AgentRunFailed? failure = null;
-                try
-                {
-                    if (!await enumerator.MoveNextAsync())
-                    {
-                        break;
-                    }
+                throw;
+            }
+            catch (Exception ex)
+            {
+                failure = MapWorkflowException(context, ex);
+            }
 
-                    headlessEvent = enumerator.Current;
-                }
-                catch (OperationCanceledException)
-                {
-                    throw;
-                }
-                catch (Exception ex)
-                {
-                    failure = MapWorkflowException(context, ex);
-                }
+            if (failure is not null)
+            {
+                yield return failure;
+                yield break;
+            }
 
-                if (failure is not null)
-                {
-                    yield return failure;
-                    yield break;
-                }
-
-                if (headlessEvent is null)
-                {
-                    yield break;
-                }
-
-                if (headlessEvent is HeadlessWorkflowStarted)
-                {
-                    continue;
-                }
-
-                yield return MapHeadlessEvent(headlessEvent);
+            if (runEvent is not null)
+            {
+                yield return runEvent;
             }
         }
     }
@@ -301,46 +255,6 @@ internal sealed class WorkflowAgentRuntime(
 
         return null;
     }
-
-    private static AgentRunEvent MapHeadlessEvent(HeadlessWorkflowEvent headlessEvent) =>
-        headlessEvent switch
-        {
-            HeadlessWorkflowTextDelta delta => new AgentTextDelta(
-                delta.MessageId,
-                delta.Author,
-                delta.Text),
-            HeadlessWorkflowMessageCompleted completed => new AgentMessageCompleted(
-                completed.MessageId,
-                new AgentOutputMessage(
-                    completed.Author,
-                    completed.Content,
-                    NormalizeAgentId(completed.ParticipantId))),
-            HeadlessWorkflowCompleted completed => new AgentRunCompleted(new AgentRunResult
-            {
-                FinalMessage = new AgentOutputMessage(
-                    completed.Result.FinalAuthor,
-                    completed.Result.FinalContent,
-                    GetFinalAgentId(completed.Result)),
-                FinalMessageId = completed.Result.FinalMessageId,
-                Messages = completed.Result.Messages
-                    .Select(static message => new AgentOutputMessage(
-                        message.Author,
-                        message.Content,
-                        NormalizeAgentId(message.ParticipantId)))
-                    .ToList(),
-                Metadata = completed.Result.Metadata
-            }),
-            _ => throw new InvalidOperationException(
-                $"Unsupported headless workflow event '{headlessEvent.GetType().Name}'.")
-        };
-
-    private static string? GetFinalAgentId(HeadlessWorkflowResult result) =>
-        result.Metadata.TryGetValue("finalParticipantId", out var participantId)
-            ? NormalizeAgentId(participantId)
-            : null;
-
-    private static string? NormalizeAgentId(string? agentId) =>
-        string.IsNullOrWhiteSpace(agentId) ? null : agentId;
 
     private static int FindCurrentUserMessageIndex(IReadOnlyList<AgentInputMessage> messages)
     {
@@ -462,223 +376,4 @@ internal sealed class WorkflowAgentRuntime(
                attachment.Name.EndsWith(".txt", StringComparison.OrdinalIgnoreCase);
     }
 
-    private async IAsyncEnumerable<AgentRunEvent> RunSequentialAsync(
-        SequentialWorkflowDefinition sequentialWorkflow,
-        AgentRuntimeRunRequest request,
-        AgentRunContext context,
-        [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken)
-    {
-        if (!TryBuildStartInputsWithAttachments(request, out _, out var attachmentError))
-        {
-            yield return new AgentRunFailed(new AgentRunError(
-                "invalid_input",
-                attachmentError ?? "Workflow attachments could not be mapped to start inputs.",
-                false));
-            yield break;
-        }
-
-        var participantsById = participants.ToDictionary(
-            static participant => participant.ParticipantId,
-            StringComparer.OrdinalIgnoreCase);
-        if (sequentialWorkflow.ParticipantOrder.Count == 0)
-        {
-            yield return new AgentRunFailed(new AgentRunError(
-                "invalid_workflow",
-                "Sequential workflow has no participant order.",
-                false));
-            yield break;
-        }
-
-        AgentRunResult? previousResult = null;
-        var outputMessages = new List<AgentOutputMessage>();
-        var messageId = Guid.NewGuid().ToString("N");
-
-        foreach (var participantId in sequentialWorkflow.ParticipantOrder)
-        {
-            if (!participantsById.TryGetValue(participantId, out var participant))
-            {
-                yield return new AgentRunFailed(new AgentRunError(
-                    "invalid_workflow",
-                    $"Sequential workflow participant '{participantId}' was not resolved.",
-                    false));
-                yield break;
-            }
-
-            var participantRequest = SequentialParticipantRequestBuilder.Build(
-                request,
-                participant,
-                previousResult);
-            AgentRunResult? terminalResult = null;
-            AgentRunFailed? terminalFailure = null;
-
-            await foreach (var participantEvent in participantInvoker.InvokeAsync(
-                               participant,
-                               participantRequest,
-                               creationContext,
-                               context,
-                               cancellationToken))
-            {
-                switch (participantEvent)
-                {
-                    case AgentTextDelta delta when IsFinalParticipant(sequentialWorkflow, participant.ParticipantId):
-                        yield return new AgentTextDelta(messageId, Descriptor.Name, delta.Text);
-                        break;
-                    case AgentRunCompleted completed:
-                        terminalResult = completed.Result;
-                        break;
-                    case AgentRunFailed failed:
-                        terminalFailure = failed;
-                        break;
-                }
-            }
-
-            if (terminalFailure is not null)
-            {
-                yield return terminalFailure;
-                yield break;
-            }
-
-            if (terminalResult is null)
-            {
-                yield return new AgentRunFailed(new AgentRunError(
-                    "participant_protocol_violation",
-                    $"Workflow participant '{participant.ParticipantId}' completed without a terminal result.",
-                    false));
-                yield break;
-            }
-
-            previousResult = terminalResult;
-            outputMessages.Add(terminalResult.FinalMessage);
-        }
-
-        if (previousResult is null)
-        {
-            yield return new AgentRunFailed(new AgentRunError(
-                "workflow_produced_no_result",
-                "Workflow produced no final assistant result.",
-                false));
-            yield break;
-        }
-
-        var finalMessage = new AgentOutputMessage(
-            Descriptor.Name,
-            previousResult.FinalMessage.Content);
-        var metadata = BuildSequentialMetadata(
-            sequentialWorkflow,
-            outputMessages,
-            participantsById,
-            previousResult);
-        yield return new AgentMessageCompleted(messageId, finalMessage);
-        yield return new AgentRunCompleted(new AgentRunResult
-        {
-            FinalMessage = finalMessage,
-            FinalMessageId = messageId,
-            Messages = outputMessages.Concat([finalMessage]).ToList(),
-            Metadata = metadata
-        });
-    }
-
-    private IReadOnlyDictionary<string, string> BuildSequentialMetadata(
-        SequentialWorkflowDefinition sequentialWorkflow,
-        IReadOnlyList<AgentOutputMessage> outputMessages,
-        IReadOnlyDictionary<string, ResolvedWorkflowParticipant> participantsById,
-        AgentRunResult finalParticipantResult)
-    {
-        var metadata = new Dictionary<string, string>
-        {
-            ["runtime.kind"] = "workflow",
-            ["workflow.id"] = Descriptor.Id,
-            ["workflow.name"] = Descriptor.Name,
-            ["workflow.kind"] = workflow.Kind,
-            ["workflow.participant.count"] = sequentialWorkflow.ParticipantOrder.Count.ToString()
-        };
-
-        for (var index = 0; index < sequentialWorkflow.ParticipantOrder.Count; index++)
-        {
-            var participantId = sequentialWorkflow.ParticipantOrder[index];
-            if (!participantsById.TryGetValue(participantId, out var participant))
-            {
-                continue;
-            }
-
-            var prefix = $"workflow.participant.{index}";
-            metadata[$"{prefix}.id"] = participant.ParticipantId;
-            metadata[$"{prefix}.name"] = participant.DisplayName;
-            metadata[$"{prefix}.definition.kind"] = participant.Source is ReferencedParticipantSource referenced
-                ? referenced.Reference.Kind.ToString()
-                : AgentDefinitionKind.SavedAgent.ToString();
-            metadata[$"{prefix}.definition.id"] = participant.Source is ReferencedParticipantSource referencedSource
-                ? referencedSource.Reference.Id
-                : participant.ParticipantId;
-
-            if (index < outputMessages.Count)
-            {
-                metadata[$"{prefix}.result.author"] = outputMessages[index].Author;
-            }
-        }
-
-        foreach (var pair in finalParticipantResult.Metadata)
-        {
-            metadata[$"workflow.participant.{sequentialWorkflow.ParticipantOrder.Count - 1}.metadata.{pair.Key}"] =
-                pair.Value;
-        }
-
-        if (!string.IsNullOrWhiteSpace(finalParticipantResult.FinalMessageId))
-        {
-            metadata[$"workflow.participant.{sequentialWorkflow.ParticipantOrder.Count - 1}.result.messageId"] =
-                finalParticipantResult.FinalMessageId;
-        }
-
-        return metadata;
-    }
-
-    private static bool IsFinalParticipant(
-        SequentialWorkflowDefinition workflow,
-        string participantId) =>
-        string.Equals(
-            workflow.ParticipantOrder.LastOrDefault(),
-            participantId,
-            StringComparison.OrdinalIgnoreCase);
-}
-
-internal static class SequentialParticipantRequestBuilder
-{
-    public static AgentRuntimeRunRequest Build(
-        AgentRuntimeRunRequest workflowRequest,
-        ResolvedWorkflowParticipant participant,
-        AgentRunResult? previousResult)
-    {
-        if (previousResult is null)
-        {
-            return workflowRequest with
-            {
-                InvocationKind = AgentRuntimeInvocationKind.WorkflowParticipant
-            };
-        }
-
-        var originalUserMessage = workflowRequest.Messages
-            .LastOrDefault(static message => message.Role == AgentMessageRole.User)
-            ?.Content
-            ?.Trim();
-        var messages = new List<AgentInputMessage>();
-
-        if (!string.IsNullOrWhiteSpace(originalUserMessage))
-        {
-            messages.Add(new AgentInputMessage(
-                AgentMessageRole.User,
-                $"Original request:\n{originalUserMessage}"));
-        }
-
-        messages.Add(new AgentInputMessage(
-            AgentMessageRole.User,
-            $"Previous participant final response:\n{previousResult.FinalMessage.Content}"));
-
-        return new AgentRuntimeRunRequest
-        {
-            InvocationKind = AgentRuntimeInvocationKind.WorkflowParticipant,
-            Messages = messages,
-            Inputs = workflowRequest.Inputs,
-            Attachments = []
-        };
-    }
 }
