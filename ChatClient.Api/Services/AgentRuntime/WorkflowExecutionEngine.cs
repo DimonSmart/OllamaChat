@@ -39,7 +39,7 @@ public sealed class WorkflowExecutionEngine(
     OrchestrationWorkflowSessionBootstrapper sessionBootstrapper,
     OrchestrationWorkflowTurnCoordinator turnCoordinator,
     OrchestrationWorkflowPassExecutor passExecutor,
-    IWorkflowExecutionState executionState,
+    IWorkflowSessionState executionState,
     IWorkflowResultResolver resultResolver,
     ILogger<WorkflowExecutionEngine> logger) : IWorkflowExecutionEngine
 {
@@ -81,12 +81,12 @@ public sealed class WorkflowExecutionEngine(
         OrchestrationWorkflowSessionBootstrapResult bootstrap,
         OrchestrationWorkflowTurnCoordinator turnCoordinator,
         OrchestrationWorkflowPassExecutor passExecutor,
-        IWorkflowExecutionState executionState,
+        IWorkflowSessionState executionState,
         IWorkflowResultResolver resultResolver,
         ILogger logger)
     {
         private readonly WorkflowExecutionContext _context = new();
-        public string TaskSessionId => bootstrap.TaskSessionId;
+        public string SessionId => bootstrap.SessionId;
 
         public async IAsyncEnumerable<AgentRunEvent> ExecuteAsync(
             WorkflowExecutionRequest request,
@@ -141,14 +141,14 @@ public sealed class WorkflowExecutionEngine(
                         WorkflowDisplayName = workflowRequest.Workflow.DisplayName,
                         Execution = workflowRequest.Workflow.Execution,
                         IsExecutionCompleteAsync = cancellation => executionState.IsCompletedAsync(
-                            TaskSessionId,
+                            SessionId,
                             workflowRequest.Workflow.Execution,
                             cancellation),
                         ExecutePassAsync = cancellation => passExecutor.ExecuteAsync(
                             new OrchestrationWorkflowPassExecutionRequest
                             {
                                 Workflow = workflowRequest.Workflow,
-                                SessionId = TaskSessionId,
+                                SessionId = SessionId,
                                 Messages = _context.Messages.ToList(),
                                 AssistantSpeakerIds = _context.AssistantSpeakerIds.ToList(),
                                 RuntimeAgentsById = bootstrap.RuntimeAgents.ToDictionary(
@@ -220,7 +220,7 @@ public sealed class WorkflowExecutionEngine(
                 var final = await resultResolver.ResolveAsync(
                     new WorkflowResultResolutionContext(
                         workflowRequest,
-                        TaskSessionId,
+                        SessionId,
                         completedMessages),
                     cancellationToken);
                 if (final is null)

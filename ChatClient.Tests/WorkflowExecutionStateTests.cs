@@ -39,7 +39,7 @@ public sealed class WorkflowExecutionStateTests
     [Fact]
     public async Task ResultResolver_GroupChatUsesCompletionSummaryFromWorkflowState()
     {
-        var state = new StubWorkflowExecutionState { Summary = "judge conclusion" };
+        var state = new StubWorkflowSessionState { Summary = "judge conclusion" };
         var resolver = new WorkflowResultResolver(state);
         var workflow = new GroupChatWorkflowDefinition
         {
@@ -69,7 +69,7 @@ public sealed class WorkflowExecutionStateTests
     [Fact]
     public async Task ResultResolver_PreservesIdenticalMessagesFromDifferentParticipants()
     {
-        var resolver = new WorkflowResultResolver(new StubWorkflowExecutionState());
+        var resolver = new WorkflowResultResolver(new StubWorkflowSessionState());
         var workflow = new SequentialWorkflowDefinition
         {
             Id = "workflow",
@@ -113,10 +113,10 @@ public sealed class WorkflowExecutionStateTests
             .GetParameters();
 
         Assert.DoesNotContain(constructorParameters, parameter => parameter.ParameterType == typeof(TaskSessionStore));
-        Assert.Contains(constructorParameters, parameter => parameter.ParameterType == typeof(IWorkflowExecutionState));
+        Assert.Contains(constructorParameters, parameter => parameter.ParameterType == typeof(IWorkflowSessionState));
     }
 
-    private static WorkflowExecutionState CreateState(string? phase, string? summaryLabel)
+    private static WorkflowSessionState CreateState(string? phase, string? summaryLabel)
     {
         var repository = new Mock<ITaskSessionRepository>();
         repository.Setup(store => store.GetSessionAsync(
@@ -128,15 +128,19 @@ public sealed class WorkflowExecutionStateTests
                     ? []
                     : [new TaskSessionSummaryInfo(summaryLabel, DateTime.UtcNow, DateTime.UtcNow)]));
 
-        return new WorkflowExecutionState(
+        return new WorkflowSessionState(
             new TaskSessionStore(new McpServerSessionContext(null), repository.Object));
     }
 
-    private sealed class StubWorkflowExecutionState : IWorkflowExecutionState
+    private sealed class StubWorkflowSessionState : IWorkflowSessionState
     {
         public string? Summary { get; init; }
 
         public List<string> SummaryRequests { get; } = [];
+
+        public Task<string> CreateAsync(
+            WorkflowSessionInitialization initialization,
+            CancellationToken cancellationToken = default) => Task.FromResult("session");
 
         public Task<bool> IsCompletedAsync(
             string sessionId,

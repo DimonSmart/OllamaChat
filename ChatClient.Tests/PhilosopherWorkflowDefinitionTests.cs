@@ -18,7 +18,7 @@ public sealed class PhilosopherWorkflowDefinitionTests
             "philosopher-battle-group-chat.workflow.csx");
         var sourceCode = await File.ReadAllTextAsync(sourcePath, cancellationToken: TestContext.Current.CancellationToken);
 
-        var compiled = await new WorkflowDefinitionCompiler().CompileAsync(sourceCode, cancellationToken: TestContext.Current.CancellationToken);
+        var compiled = await new WorkflowDefinitionCompiler(new WorkflowDefinitionValidator()).CompileAsync(sourceCode, cancellationToken: TestContext.Current.CancellationToken);
         var workflow = Assert.IsType<GroupChatWorkflowDefinition>(compiled.Workflow);
 
         AssertSavedAgentReference(workflow, "debater_a", KantAgentId);

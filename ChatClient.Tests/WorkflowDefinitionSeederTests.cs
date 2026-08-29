@@ -51,7 +51,7 @@ public sealed class WorkflowDefinitionSeederTests
 
             var seeder = new WorkflowDefinitionSeeder(
                 repository,
-                new WorkflowDefinitionCompiler(),
+                new WorkflowDefinitionCompiler(new WorkflowDefinitionValidator()),
                 configuration,
                 new StubHostEnvironment(root.FullName),
                 loggerFactory.CreateLogger<WorkflowDefinitionSeeder>());
@@ -136,7 +136,7 @@ public sealed class WorkflowDefinitionSeederTests
 
             var seeder = new WorkflowDefinitionSeeder(
                 repository,
-                new WorkflowDefinitionCompiler(),
+                new WorkflowDefinitionCompiler(new WorkflowDefinitionValidator()),
                 configuration,
                 new StubHostEnvironment(root.FullName),
                 loggerFactory.CreateLogger<WorkflowDefinitionSeeder>());
@@ -223,7 +223,7 @@ public sealed class WorkflowDefinitionSeederTests
 
             var seeder = new WorkflowDefinitionSeeder(
                 repository,
-                new WorkflowDefinitionCompiler(),
+                new WorkflowDefinitionCompiler(new WorkflowDefinitionValidator()),
                 configuration,
                 new StubHostEnvironment(root.FullName),
                 loggerFactory.CreateLogger<WorkflowDefinitionSeeder>());

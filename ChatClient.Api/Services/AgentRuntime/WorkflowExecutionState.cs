@@ -3,8 +3,12 @@ using ChatClient.Application.Services.Agentic;
 
 namespace ChatClient.Api.Services.AgentRuntime;
 
-public interface IWorkflowExecutionState
+public interface IWorkflowSessionState
 {
+    Task<string> CreateAsync(
+        WorkflowSessionInitialization initialization,
+        CancellationToken cancellationToken = default);
+
     Task<bool> IsCompletedAsync(
         string sessionId,
         AgentWorkflowExecutionDefinition execution,
@@ -16,8 +20,40 @@ public interface IWorkflowExecutionState
         CancellationToken cancellationToken = default);
 }
 
-public sealed class WorkflowExecutionState(TaskSessionStore taskSessionStore) : IWorkflowExecutionState
+public sealed class WorkflowSessionState(TaskSessionStore taskSessionStore) : IWorkflowSessionState
 {
+    public async Task<string> CreateAsync(
+        WorkflowSessionInitialization initialization,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(initialization);
+
+        var session = await taskSessionStore.CreateSessionAsync(
+            initialization.Title,
+            initialization.Description,
+            cancellationToken);
+        await taskSessionStore.SetPhaseAsync(session.SessionId, "intake", cancellationToken);
+
+        foreach (var input in initialization.Inputs)
+        {
+            if (input.Document is { } document)
+            {
+                await taskSessionStore.AttachDocumentAsync(
+                    session.SessionId, input.Key, document.Markdown, document.Title,
+                    document.SourceFile, cancellationToken);
+                continue;
+            }
+
+            if (input.Parameter is { } parameter)
+            {
+                await taskSessionStore.SetParameterAsync(
+                    session.SessionId, input.Key, parameter.Kind, parameter.Value, cancellationToken);
+            }
+        }
+
+        return session.SessionId;
+    }
+
     public async Task<bool> IsCompletedAsync(
         string sessionId,
         AgentWorkflowExecutionDefinition execution,
@@ -46,3 +82,20 @@ public sealed class WorkflowExecutionState(TaskSessionStore taskSessionStore) : 
         return (await taskSessionStore.TryGetSummaryAsync(sessionId, label, cancellationToken))?.Markdown;
     }
 }
+
+public sealed record WorkflowSessionInitialization(
+    string? Title,
+    string? Description,
+    IReadOnlyList<WorkflowSessionInput> Inputs);
+
+public sealed record WorkflowSessionInput(
+    string Key,
+    WorkflowSessionParameter? Parameter = null,
+    WorkflowSessionDocument? Document = null);
+
+public sealed record WorkflowSessionParameter(string Kind, string Value);
+
+public sealed record WorkflowSessionDocument(
+    string Markdown,
+    string? Title,
+    string? SourceFile);

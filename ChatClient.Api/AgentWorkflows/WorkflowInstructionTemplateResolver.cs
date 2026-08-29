@@ -33,7 +33,7 @@ internal static class WorkflowInstructionTemplateResolver
     public static string ResolveAgentReferences(
         string content,
         string ownerAgentId,
-        IReadOnlyDictionary<string, WorkflowParticipantDefinition> agentsById)
+        IReadOnlyDictionary<string, WorkflowInstructionTemplateParticipant> agentsById)
     {
         ArgumentNullException.ThrowIfNull(content);
         ArgumentNullException.ThrowIfNull(agentsById);
@@ -53,10 +53,10 @@ internal static class WorkflowInstructionTemplateResolver
 
             return property.ToLowerInvariant() switch
             {
-                "displayname" => ResolveDisplayName(referencedAgent),
-                "role" => referencedAgent.Role,
+                "displayname" => referencedAgent.DisplayName,
+                "role" => referencedAgent.DisplayName,
                 "id" => referencedAgent.Id,
-                "avatartext" => ResolveInlineAgent(referencedAgent)?.AvatarText?.Trim() ?? string.Empty,
+                "avatartext" => referencedAgent.AvatarText?.Trim() ?? string.Empty,
                 _ => throw new InvalidOperationException(
                     $"Workflow agent '{ownerAgentId}' references unsupported property '{property}' in placeholder '{match.Value}'.")
             };
@@ -118,6 +118,60 @@ internal static class WorkflowInstructionTemplateResolver
         }
     }
 
+    private static void ValidateText(
+        string ownerAgentId,
+        string fieldName,
+        string? content,
+        IReadOnlyDictionary<string, WorkflowInstructionTemplateParticipant> agentsById)
+    {
+        if (string.IsNullOrWhiteSpace(content) ||
+            !content.Contains("{{agent:", StringComparison.Ordinal))
+        {
+            return;
+        }
+
+        var searchStart = 0;
+        while (true)
+        {
+            var placeholderStart = content.IndexOf("{{agent:", searchStart, StringComparison.Ordinal);
+            if (placeholderStart < 0)
+            {
+                return;
+            }
+
+            var placeholderEnd = content.IndexOf("}}", placeholderStart, StringComparison.Ordinal);
+            if (placeholderEnd < 0)
+            {
+                throw new InvalidOperationException(
+                    $"Workflow agent '{ownerAgentId}' has malformed {fieldName}. Placeholder starting at '{content[placeholderStart..]}' is missing '}}'.");
+            }
+
+            var rawPlaceholder = content[placeholderStart..(placeholderEnd + 2)];
+            var match = AgentPlaceholderRegex.Match(rawPlaceholder);
+            if (!match.Success || match.Length != rawPlaceholder.Length)
+            {
+                throw new InvalidOperationException(
+                    $"Workflow agent '{ownerAgentId}' has invalid {fieldName} placeholder '{rawPlaceholder}'. Expected '{{{{agent:<agentId>.<property>}}}}'.");
+            }
+
+            var referencedAgentId = match.Groups["agentId"].Value;
+            var property = match.Groups["property"].Value;
+            if (!agentsById.ContainsKey(referencedAgentId))
+            {
+                throw new InvalidOperationException(
+                    $"Workflow agent '{ownerAgentId}' references undefined agent '{referencedAgentId}' in {fieldName} placeholder '{rawPlaceholder}'.");
+            }
+
+            if (!SupportedProperties.Contains(property))
+            {
+                throw new InvalidOperationException(
+                    $"Workflow agent '{ownerAgentId}' references unsupported property '{property}' in {fieldName} placeholder '{rawPlaceholder}'. Supported properties: {string.Join(", ", SupportedProperties)}.");
+            }
+
+            searchStart = placeholderEnd + 2;
+        }
+    }
+
     private static string ResolveDisplayName(WorkflowParticipantDefinition agent)
     {
         var displayName = ResolveInlineAgent(agent)?.AgentName?.Trim();
@@ -136,3 +190,8 @@ internal static class WorkflowInstructionTemplateResolver
             ? inline.Agent
             : null;
 }
+
+internal sealed record WorkflowInstructionTemplateParticipant(
+    string Id,
+    string DisplayName,
+    string? AvatarText);

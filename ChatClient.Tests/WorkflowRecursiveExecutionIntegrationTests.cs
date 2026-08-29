@@ -516,7 +516,9 @@ public sealed class WorkflowExecutionPipelineIntegrationTests
                 new InMemoryTaskSessionRepository());
             var bootstrapper = new OrchestrationWorkflowSessionBootstrapper(
                 NullLogger<OrchestrationWorkflowSessionBootstrapper>.Instance,
-                taskSessionStore,
+                new WorkflowSessionState(taskSessionStore),
+                new WorkflowSessionParticipantBinder(),
+                new WorkflowDefinitionValidator(),
                 new MarkdownDocumentIntakeService(),
                 participantInvoker);
             var eventStreamProcessor = new OrchestrationWorkflowEventStreamProcessor(
@@ -534,7 +536,7 @@ public sealed class WorkflowExecutionPipelineIntegrationTests
             var turnCoordinator = new OrchestrationWorkflowTurnCoordinator(
                 NullLogger<OrchestrationWorkflowTurnCoordinator>.Instance,
                 new WorkflowExecutionPolicy());
-            var executionState = new WorkflowExecutionState(taskSessionStore);
+            var executionState = new WorkflowSessionState(taskSessionStore);
             return new WorkflowExecutionEngine(
                 bootstrapper,
                 turnCoordinator,

@@ -13,7 +13,7 @@ public interface IWorkflowDefinitionCompiler
     Task<CompiledWorkflowDefinition> CompileAsync(string sourceCode, CancellationToken cancellationToken = default);
 }
 
-public sealed class WorkflowDefinitionCompiler : IWorkflowDefinitionCompiler
+public sealed class WorkflowDefinitionCompiler(IWorkflowDefinitionValidator definitionValidator) : IWorkflowDefinitionCompiler
 {
     private static readonly IReadOnlyList<Assembly> ExplicitAssemblies =
     [
@@ -58,6 +58,8 @@ public sealed class WorkflowDefinitionCompiler : IWorkflowDefinitionCompiler
                 throw new WorkflowCompilationException(
                     "Workflow source must return a supported orchestration workflow definition or assign it to a variable named 'workflow'.");
             }
+
+            definitionValidator.Validate(workflow);
 
             return new CompiledWorkflowDefinition
             {

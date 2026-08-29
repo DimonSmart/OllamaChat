@@ -16,7 +16,9 @@ namespace ChatClient.Api.Client.Services.Agentic;
 
 public sealed class OrchestrationWorkflowSessionBootstrapper(
     ILogger<OrchestrationWorkflowSessionBootstrapper> logger,
-    TaskSessionStore taskSessionStore,
+    IWorkflowSessionState workflowSessionState,
+    IWorkflowSessionParticipantBinder participantBinder,
+    IWorkflowDefinitionValidator definitionValidator,
     MarkdownDocumentIntakeService documentIntakeService,
     IWorkflowParticipantInvoker participantInvoker)
 {
@@ -46,61 +48,24 @@ public sealed class OrchestrationWorkflowSessionBootstrapper(
         try
         {
             stage = "validate-workflow";
-            ValidateWorkflowDefinition(request.Workflow, request.Participants);
+            definitionValidator.Validate(request.Workflow);
+            EnsureRuntimeParticipantsMatchDefinition(request.Workflow, request.Participants);
             var normalizedStartInputs = NormalizeStartInputs(request.Workflow, request.StartInputs);
             var normalizedParameterValues = NormalizeParameterValues(request.Workflow, normalizedStartInputs);
 
             stage = "resolve-runtime-configuration";
             var runtimeWorkflow = ResolveRuntimeConfiguration(request.Workflow, normalizedParameterValues);
 
-            stage = "create-task-session";
-            var session = await taskSessionStore.CreateSessionAsync(
-                request.SessionTitle,
-                request.SessionDescription,
-                cancellationToken);
-
-            stage = "set-initial-phase";
-            await taskSessionStore.SetPhaseAsync(session.SessionId, "intake", cancellationToken);
-
-            foreach (var startInput in normalizedStartInputs)
-            {
-                var definition = runtimeWorkflow.StartInputs.First(input =>
-                    string.Equals(input.Key, startInput.Key, StringComparison.OrdinalIgnoreCase));
-
-                if (definition.Kind == WorkflowStartInputKind.MarkdownDocument)
-                {
-                    stage = $"prepare-document:{definition.Key}";
-                    var prepared = await PrepareDocumentAsync(definition, startInput, cancellationToken);
-                    if (prepared is null)
-                    {
-                        continue;
-                    }
-
-                    stage = $"attach-document:{definition.Key}";
-                    await taskSessionStore.AttachDocumentAsync(
-                        session.SessionId,
-                        definition.Key,
-                        prepared.Markdown,
-                        prepared.Title,
-                        prepared.SourceFile,
-                        cancellationToken);
-                    continue;
-                }
-
-                stage = $"attach-parameter:{definition.Key}";
-                await taskSessionStore.SetParameterAsync(
-                    session.SessionId,
-                    definition.Key,
-                    MapParameterValueKind(definition.Kind),
-                    normalizedParameterValues[definition.Key],
-                    cancellationToken);
-            }
+            stage = "create-workflow-session";
+            var sessionId = await CreateSessionAsync(
+                runtimeWorkflow, normalizedStartInputs, normalizedParameterValues,
+                request.SessionTitle, request.SessionDescription, cancellationToken);
 
             List<OrchestrationWorkflowRuntimeAgentRegistration> runtimeAgents = [];
             List<WorkflowRuntimeParticipant> sessionBoundParticipants = [];
             stage = "bind-workflow-state";
             sessionBoundParticipants = request.Participants
-                .Select(participant => BindWorkflowState(participant, session.SessionId))
+                .Select(participant => participantBinder.Bind(participant, sessionId))
                 .ToList();
 
             foreach (var participant in sessionBoundParticipants)
@@ -120,7 +85,7 @@ public sealed class OrchestrationWorkflowSessionBootstrapper(
             }
 
             return new OrchestrationWorkflowSessionBootstrapResult(
-                session.SessionId,
+                sessionId,
                 new OrchestrationWorkflowSessionStartRequest
                 {
                     Workflow = runtimeWorkflow,
@@ -164,7 +129,7 @@ public sealed class OrchestrationWorkflowSessionBootstrapper(
         return null;
     }
 
-    private static void ValidateWorkflowDefinition(
+    private static void EnsureRuntimeParticipantsMatchDefinition(
         IOrchestrationWorkflowDefinition workflow,
         IReadOnlyList<WorkflowRuntimeParticipant> participants)
     {
@@ -180,6 +145,39 @@ public sealed class OrchestrationWorkflowSessionBootstrapper(
             throw new InvalidOperationException(
                 "Resolved workflow agents do not match the workflow definition.");
         }
+    }
+
+    private async Task<string> CreateSessionAsync(
+        IOrchestrationWorkflowDefinition workflow,
+        IReadOnlyList<OrchestrationWorkflowStartInputValue> startInputs,
+        IReadOnlyDictionary<string, string> parameterValues,
+        string? title,
+        string? description,
+        CancellationToken cancellationToken)
+    {
+        List<WorkflowSessionInput> inputs = [];
+        foreach (var startInput in startInputs)
+        {
+            var definition = workflow.StartInputs.First(input =>
+                string.Equals(input.Key, startInput.Key, StringComparison.OrdinalIgnoreCase));
+            if (definition.Kind == WorkflowStartInputKind.MarkdownDocument)
+            {
+                var prepared = await PrepareDocumentAsync(definition, startInput, cancellationToken);
+                if (prepared is not null)
+                {
+                    inputs.Add(new WorkflowSessionInput(definition.Key, Document: new WorkflowSessionDocument(
+                        prepared.Markdown, prepared.Title, prepared.SourceFile)));
+                }
+
+                continue;
+            }
+
+            inputs.Add(new WorkflowSessionInput(definition.Key, Parameter: new WorkflowSessionParameter(
+                MapParameterValueKind(definition.Kind), parameterValues[definition.Key])));
+        }
+
+        return await workflowSessionState.CreateAsync(
+            new WorkflowSessionInitialization(title, description, inputs), cancellationToken);
     }
 
     private static IReadOnlyList<OrchestrationWorkflowStartInputValue> NormalizeStartInputs(
@@ -391,55 +389,10 @@ public sealed class OrchestrationWorkflowSessionBootstrapper(
         return property.GetValue(value) as string;
     }
 
-    private static WorkflowRuntimeParticipant BindWorkflowState(
-        WorkflowRuntimeParticipant source,
-        string sessionId) =>
-        source.Source is MaterializedLlmParticipantSource materialized
-            ? source with
-            {
-                Source = new MaterializedLlmParticipantSource(
-                    BindWorkflowState(materialized.Agent, sessionId))
-            }
-            : source;
-
-    private static AgentTemplateDefinition BindWorkflowState(
-        AgentTemplateDefinition source,
-        string sessionId)
-    {
-        var runtimeAgent = source.Clone();
-        BindWorkflowState(runtimeAgent.McpServerBindings, sessionId);
-        return runtimeAgent;
-    }
-
-    private static AgentExecutionSpec BindWorkflowState(
-        AgentExecutionSpec source,
-        string sessionId)
-    {
-        var runtimeAgent = source.Clone();
-        BindWorkflowState(runtimeAgent.McpServerBindings, sessionId);
-        return runtimeAgent;
-    }
-
-    private static void BindWorkflowState(
-        IEnumerable<McpServerSessionBinding> bindings,
-        string sessionId)
-    {
-        foreach (var binding in bindings)
-        {
-            if (!string.Equals(binding.ServerName, BuiltInTaskSessionMcpServerTools.Descriptor.Name, StringComparison.OrdinalIgnoreCase) &&
-                binding.ServerId != BuiltInTaskSessionMcpServerTools.Descriptor.Id)
-            {
-                continue;
-            }
-
-            binding.Parameters[TaskSessionStore.SessionIdParameter] = sessionId;
-        }
-    }
-
 }
 
 public sealed record OrchestrationWorkflowSessionBootstrapResult(
-    string TaskSessionId,
+    string SessionId,
     OrchestrationWorkflowSessionStartRequest Request,
     IReadOnlyList<OrchestrationWorkflowRuntimeAgentRegistration> RuntimeAgents);
 

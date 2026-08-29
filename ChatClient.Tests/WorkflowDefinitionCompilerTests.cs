@@ -10,7 +10,7 @@ public sealed class WorkflowDefinitionCompilerTests
     [Obsolete]
     public async Task CompileAsync_CompilesStarterTemplate()
     {
-        var compiler = new WorkflowDefinitionCompiler();
+        var compiler = new WorkflowDefinitionCompiler(new WorkflowDefinitionValidator());
         var sourceCode = await ReadSeedWorkflowSourceAsync("interview-coach-fixed-handoff.workflow.csx");
 
         var result = await compiler.CompileAsync(sourceCode, cancellationToken: TestContext.Current.CancellationToken);
@@ -37,7 +37,7 @@ public sealed class WorkflowDefinitionCompilerTests
     [Obsolete]
     public async Task CompileAsync_CompilesAutonomousHandoffWorkflow()
     {
-        var compiler = new WorkflowDefinitionCompiler();
+        var compiler = new WorkflowDefinitionCompiler(new WorkflowDefinitionValidator());
         var analystId = Guid.NewGuid();
         var challengerId = Guid.NewGuid();
         var sourceCode =
@@ -111,7 +111,7 @@ public sealed class WorkflowDefinitionCompilerTests
     [Fact]
     public async Task CompileAsync_CompilesSeededWorkflowsAcrossAllSupportedKinds()
     {
-        var compiler = new WorkflowDefinitionCompiler();
+        var compiler = new WorkflowDefinitionCompiler(new WorkflowDefinitionValidator());
         HashSet<string> kinds = [];
 
         foreach (var template in await LoadSeedWorkflowSourcesAsync())
@@ -131,7 +131,7 @@ public sealed class WorkflowDefinitionCompilerTests
     [Obsolete]
     public async Task CompileAsync_CompilesSeededGroupChatWorkflowWithProgrammableManager()
     {
-        var compiler = new WorkflowDefinitionCompiler();
+        var compiler = new WorkflowDefinitionCompiler(new WorkflowDefinitionValidator());
         var sourceCode = await ReadFirstSeedWorkflowSourceByKindAsync(compiler, WorkflowDefinitionKinds.GroupChat);
 
         var result = await compiler.CompileAsync(sourceCode, cancellationToken: TestContext.Current.CancellationToken);
@@ -149,7 +149,7 @@ public sealed class WorkflowDefinitionCompilerTests
     [Obsolete]
     public async Task CompileAsync_CompilesScenarioDisputeSeededWorkflow()
     {
-        var compiler = new WorkflowDefinitionCompiler();
+        var compiler = new WorkflowDefinitionCompiler(new WorkflowDefinitionValidator());
         var sourceCode = await ReadSeedWorkflowSourceAsync("scenario-dispute-group-chat.workflow.csx");
 
         var result = await compiler.CompileAsync(sourceCode, cancellationToken: TestContext.Current.CancellationToken);
@@ -176,7 +176,7 @@ public sealed class WorkflowDefinitionCompilerTests
     [Fact]
     public async Task CompileAsync_CompilesGroupChatWithInlineProgrammableManager()
     {
-        var compiler = new WorkflowDefinitionCompiler();
+        var compiler = new WorkflowDefinitionCompiler(new WorkflowDefinitionValidator());
         var sourceCode =
             """
             var workflow = WorkflowDefinitionBuilder
@@ -221,7 +221,7 @@ public sealed class WorkflowDefinitionCompilerTests
     [Obsolete]
     public async Task CompileAsync_CompilesNewWorkflowScaffold()
     {
-        var compiler = new WorkflowDefinitionCompiler();
+        var compiler = new WorkflowDefinitionCompiler(new WorkflowDefinitionValidator());
 
         var result = await compiler.CompileAsync(WorkflowCodeTemplates.NewWorkflowScaffold, cancellationToken: TestContext.Current.CancellationToken);
         var workflow = Assert.IsType<AgentWorkflowDefinition>(result.Workflow);
@@ -236,7 +236,7 @@ public sealed class WorkflowDefinitionCompilerTests
     [Fact]
     public async Task CompileAsync_UsesWorkflowVariableWhenScriptDoesNotReturnValue()
     {
-        var compiler = new WorkflowDefinitionCompiler();
+        var compiler = new WorkflowDefinitionCompiler(new WorkflowDefinitionValidator());
         var sourceCode =
             """
             var workflow = WorkflowDefinitionBuilder
@@ -263,7 +263,7 @@ public sealed class WorkflowDefinitionCompilerTests
     [Obsolete]
     public async Task CompileAsync_CompilesWorkflowUsingSavedDefinitionSyntax()
     {
-        var compiler = new WorkflowDefinitionCompiler();
+        var compiler = new WorkflowDefinitionCompiler(new WorkflowDefinitionValidator());
         var routerId = Guid.NewGuid();
         var sourceCode =
             $$"""
@@ -295,7 +295,7 @@ public sealed class WorkflowDefinitionCompilerTests
     [Obsolete]
     public async Task CompileAsync_CompilesGroupChatAvatarTextOverrides()
     {
-        var compiler = new WorkflowDefinitionCompiler();
+        var compiler = new WorkflowDefinitionCompiler(new WorkflowDefinitionValidator());
         var sourceCode =
             """
             var workflow = WorkflowDefinitionBuilder
@@ -362,7 +362,7 @@ public sealed class WorkflowDefinitionCompilerTests
     [Fact]
     public async Task CompileAsync_ThrowsWorkflowCompilationExceptionForInvalidSource()
     {
-        var compiler = new WorkflowDefinitionCompiler();
+        var compiler = new WorkflowDefinitionCompiler(new WorkflowDefinitionValidator());
 
         var exception = await Assert.ThrowsAsync<WorkflowCompilationException>(() =>
             compiler.CompileAsync("var workflow = ;", cancellationToken: TestContext.Current.CancellationToken));

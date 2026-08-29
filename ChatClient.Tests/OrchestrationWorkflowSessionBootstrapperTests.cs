@@ -60,7 +60,9 @@ public sealed class OrchestrationWorkflowSessionBootstrapperTests
         var store = CreateTaskSessionStore();
         var bootstrapper = new OrchestrationWorkflowSessionBootstrapper(
             NullLogger<OrchestrationWorkflowSessionBootstrapper>.Instance,
-            store,
+            new WorkflowSessionState(store),
+            new WorkflowSessionParticipantBinder(),
+            new WorkflowDefinitionValidator(),
             new MarkdownDocumentIntakeService(),
             Mock.Of<IWorkflowParticipantInvoker>());
 
@@ -76,7 +78,7 @@ public sealed class OrchestrationWorkflowSessionBootstrapperTests
 
         var boundRuntimeAgent = Assert.IsType<MaterializedLlmParticipantSource>(
             Assert.Single(result.Request.Participants).Source).Agent;
-        Assert.Equal(result.TaskSessionId, GetWorkflowStateBinding(boundRuntimeAgent).Parameters[TaskSessionStore.SessionIdParameter]);
+        Assert.Equal(result.SessionId, GetWorkflowStateBinding(boundRuntimeAgent).Parameters[TaskSessionStore.SessionIdParameter]);
         Assert.False(workflowStateBinding.Parameters.ContainsKey(TaskSessionStore.SessionIdParameter));
         Assert.False(unrelatedBinding.Parameters.ContainsKey(TaskSessionStore.SessionIdParameter));
     }

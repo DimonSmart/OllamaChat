@@ -14,10 +14,10 @@ public interface IWorkflowResultResolver
 
 public sealed record WorkflowResultResolutionContext(
     OrchestrationWorkflowSessionStartRequest Request,
-    string TaskSessionId,
+    string SessionId,
     IReadOnlyList<OrchestrationCompletedAssistantMessage> Messages);
 
-public sealed class WorkflowResultResolver(IWorkflowExecutionState executionState) : IWorkflowResultResolver
+public sealed class WorkflowResultResolver(IWorkflowSessionState executionState) : IWorkflowResultResolver
 {
     public async Task<AgentRunResult?> ResolveAsync(
         WorkflowResultResolutionContext context,
@@ -38,7 +38,7 @@ public sealed class WorkflowResultResolver(IWorkflowExecutionState executionStat
             SequentialWorkflowDefinition sequential => ResolveSequentialWorkflowFinal(sequential, nonEmptyMessages),
             ConcurrentWorkflowDefinition concurrent => ResolveConcurrentFinal(request, concurrent, nonEmptyMessages),
             GroupChatWorkflowDefinition => await ResolveGroupChatFinalAsync(
-                request, context.TaskSessionId, nonEmptyMessages, cancellationToken),
+                request, context.SessionId, nonEmptyMessages, cancellationToken),
             _ => nonEmptyMessages.Last()
         };
         if (finalMessage is null)
