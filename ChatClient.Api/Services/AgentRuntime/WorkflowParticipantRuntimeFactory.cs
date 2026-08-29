@@ -43,6 +43,7 @@ public sealed class WorkflowParticipantRuntimeFactory : IWorkflowParticipantRunt
         {
             Id = participant.ParticipantId,
             DisplayName = participant.DisplayName,
+            Role = participant.Role,
             Summary = participant.Summary,
             Source = source,
             RuntimeKind = AgentRuntimeKind.LlmAgent
@@ -57,6 +58,7 @@ public sealed class WorkflowParticipantRuntimeFactory : IWorkflowParticipantRunt
         {
             Id = participant.ParticipantId,
             DisplayName = participant.DisplayName,
+            Role = participant.Role,
             Summary = participant.Summary,
             Source = source,
             RuntimeKind = participant.RuntimeKind

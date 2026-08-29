@@ -112,14 +112,14 @@ public sealed class WorkflowResultResolver(IWorkflowSessionState executionState)
 
     private async Task<OrchestrationCompletedAssistantMessage?> ResolveGroupChatFinalAsync(
         OrchestrationWorkflowSessionStartRequest request,
-        string taskSessionId,
+        string sessionId,
         IReadOnlyList<OrchestrationCompletedAssistantMessage> messages,
         CancellationToken cancellationToken)
     {
         if (!string.IsNullOrWhiteSpace(request.Workflow.Execution.CompletionSummaryLabel))
         {
             var summary = await executionState.TryGetSummaryAsync(
-                taskSessionId, request.Workflow.Execution.CompletionSummaryLabel, cancellationToken);
+                sessionId, request.Workflow.Execution.CompletionSummaryLabel, cancellationToken);
             if (!string.IsNullOrWhiteSpace(summary))
             {
                 return CreateSynthesizedMessage(request, summary);

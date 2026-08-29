@@ -14,12 +14,10 @@ public interface IWorkflowParticipantResolver
 
 public sealed class WorkflowParticipantResolver(
     IAgentTemplateService agentDescriptionService,
-    IAgentDefinitionCatalog definitionCatalog,
-    IWorkflowDefinitionValidator definitionValidator) : IWorkflowParticipantResolver
+    IAgentDefinitionCatalog definitionCatalog) : IWorkflowParticipantResolver
 {
     private readonly IAgentTemplateService _agentDescriptionService = agentDescriptionService;
     private readonly IAgentDefinitionCatalog _definitionCatalog = definitionCatalog;
-    private readonly IWorkflowDefinitionValidator _definitionValidator = definitionValidator;
 
     public async Task<IReadOnlyList<ResolvedWorkflowParticipant>> ResolveAsync(
         IOrchestrationWorkflowDefinition workflow,
@@ -27,7 +25,6 @@ public sealed class WorkflowParticipantResolver(
     {
         ArgumentNullException.ThrowIfNull(workflow);
         cancellationToken.ThrowIfCancellationRequested();
-        _definitionValidator.Validate(workflow);
 
         var resolved = new List<ResolvedWorkflowParticipant>();
         foreach (var participant in workflow.Participants)
@@ -78,6 +75,7 @@ public sealed class WorkflowParticipantResolver(
             {
                 ParticipantId = participant.Id,
                 DisplayName = ResolveDisplayName(participant, draft.AgentName),
+                Role = participant.Role,
                 Summary = ResolveSummary(participant, draft.Summary),
                 RuntimeKind = AgentRuntimeKind.LlmAgent,
                 Source = new MaterializedLlmParticipantSource(draft)
@@ -92,6 +90,7 @@ public sealed class WorkflowParticipantResolver(
         {
             ParticipantId = participant.Id,
             DisplayName = ResolveDisplayName(participant, catalogItem.Name),
+            Role = participant.Role,
             Summary = ResolveSummary(participant, catalogItem.Description),
             RuntimeKind = AgentRuntimeKind.WorkflowAgent,
             Source = new ReferencedParticipantSource(reference)
@@ -111,6 +110,7 @@ public sealed class WorkflowParticipantResolver(
         {
             ParticipantId = participant.Id,
             DisplayName = ResolveDisplayName(participant, draft.AgentName),
+            Role = participant.Role,
             Summary = ResolveSummary(participant, draft.Summary),
             RuntimeKind = AgentRuntimeKind.LlmAgent,
             Source = new MaterializedLlmParticipantSource(draft)
@@ -195,6 +195,7 @@ public sealed class WorkflowParticipantResolver(
                 static participant => new WorkflowInstructionTemplateParticipant(
                     participant.ParticipantId,
                     participant.DisplayName,
+                    participant.Role,
                     ((MaterializedLlmParticipantSource)participant.Source).Agent.AvatarText),
                 StringComparer.OrdinalIgnoreCase);
 

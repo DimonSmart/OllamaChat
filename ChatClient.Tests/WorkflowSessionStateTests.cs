@@ -6,12 +6,44 @@ using ChatClient.Api.Services.BuiltIn;
 using ChatClient.Application.Services.Agentic;
 using ChatClient.Application.Services.TaskSessions;
 using ChatClient.Domain.Models;
+using ChatClient.Infrastructure.Services.TaskSessions;
 using Moq;
 
 namespace ChatClient.Tests;
 
-public sealed class WorkflowExecutionStateTests
+public sealed class WorkflowSessionStateTests
 {
+    [Fact]
+    public async Task CreateAsync_PersistsIntakeInputsAndDocumentMetadata()
+    {
+        var store = CreatePersistentTaskSessionStore();
+        var state = new WorkflowSessionState(store);
+
+        var sessionId = await state.CreateAsync(new WorkflowSessionInitialization(
+            "Workflow title", "Workflow source",
+            [
+                new WorkflowSessionInput("text", new WorkflowSessionParameter("text", "hello")),
+                new WorkflowSessionInput("number", new WorkflowSessionParameter("number", "3.14")),
+                new WorkflowSessionInput("boolean", new WorkflowSessionParameter("boolean", "true")),
+                new WorkflowSessionInput("json", new WorkflowSessionParameter("json", "{\"ok\":true}")),
+                new WorkflowSessionInput("brief", Document: new WorkflowSessionDocument("# Brief", "Brief", "brief.md"))
+            ]), TestContext.Current.CancellationToken);
+
+        var snapshot = await store.GetSessionAsync(sessionId, TestContext.Current.CancellationToken);
+        var document = await store.GetDocumentAsync(sessionId, "brief", TestContext.Current.CancellationToken);
+        var parameters = await Task.WhenAll(snapshot.Parameters.Select(parameter =>
+            store.GetParameterAsync(sessionId, parameter.Key, TestContext.Current.CancellationToken)));
+
+        Assert.Equal("intake", snapshot.Phase);
+        Assert.Equal("Workflow title", snapshot.Title);
+        Assert.Equal("Workflow source", snapshot.Description);
+        Assert.Equal(4, parameters.Length);
+        Assert.Contains(parameters, parameter => parameter is { Key: "text", ValueKind: "text", Value: "hello" });
+        Assert.Contains(parameters, parameter => parameter is { Key: "number", ValueKind: "number", Value: "3.14" });
+        Assert.Contains(parameters, parameter => parameter is { Key: "boolean", ValueKind: "boolean", Value: "true" });
+        Assert.Contains(parameters, parameter => parameter is { Key: "json", ValueKind: "json", Value: "{\"ok\":true}" });
+        Assert.Equal(("brief", "Brief", "# Brief", "brief.md"), (document.Kind, document.Title, document.Markdown, document.Source));
+    }
     [Theory]
     [InlineData("complete", null, "complete", null, true)]
     [InlineData("complete", "final", "running", "final", true)]
@@ -130,6 +162,15 @@ public sealed class WorkflowExecutionStateTests
 
         return new WorkflowSessionState(
             new TaskSessionStore(new McpServerSessionContext(null), repository.Object));
+    }
+
+    private static TaskSessionStore CreatePersistentTaskSessionStore()
+    {
+        var databasePath = Path.Combine(Path.GetTempPath(), "OllamaChat.Tests", Guid.NewGuid().ToString("N"), "task-sessions.db");
+        Directory.CreateDirectory(Path.GetDirectoryName(databasePath)!);
+        var binding = new McpServerSessionBinding();
+        binding.Parameters[TaskSessionStore.DatabaseFileParameter] = databasePath;
+        return new TaskSessionStore(new McpServerSessionContext(binding), new SqliteTaskSessionRepository());
     }
 
     private sealed class StubWorkflowSessionState : IWorkflowSessionState

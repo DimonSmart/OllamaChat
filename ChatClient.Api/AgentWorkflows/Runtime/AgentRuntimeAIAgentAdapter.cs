@@ -182,6 +182,7 @@ public sealed class AgentRuntimeAIAgentAdapter(
         {
             ParticipantId = participant.Id,
             DisplayName = participant.DisplayName,
+            Role = participant.Role,
             Summary = participant.Summary,
             RuntimeKind = participant.RuntimeKind,
             Source = participant.Source

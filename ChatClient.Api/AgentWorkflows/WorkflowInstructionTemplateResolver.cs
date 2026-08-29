@@ -21,12 +21,13 @@ internal static class WorkflowInstructionTemplateResolver
     {
         ArgumentNullException.ThrowIfNull(agents);
 
-        var agentsById = agents.ToDictionary(agent => agent.Id, StringComparer.OrdinalIgnoreCase);
+        var agentIds = agents.Select(static agent => agent.Id)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
         foreach (var agent in agents)
         {
-            ValidateText(agent.Id, "agent draft instructions", ResolveInlineAgent(agent)?.Content, agentsById);
-            ValidateText(agent.Id, "override instructions", agent.Overrides.Llm?.Instructions, agentsById);
-            ValidateText(agent.Id, "appended instructions", agent.Overrides.Llm?.AppendedInstructions, agentsById);
+            ValidateText(agent.Id, "agent draft instructions", ResolveInlineAgent(agent)?.Content, agentIds);
+            ValidateText(agent.Id, "override instructions", agent.Overrides.Llm?.Instructions, agentIds);
+            ValidateText(agent.Id, "appended instructions", agent.Overrides.Llm?.AppendedInstructions, agentIds);
         }
     }
 
@@ -38,7 +39,7 @@ internal static class WorkflowInstructionTemplateResolver
         ArgumentNullException.ThrowIfNull(content);
         ArgumentNullException.ThrowIfNull(agentsById);
 
-        ValidateText(ownerAgentId, "materialized instructions", content, agentsById);
+        ValidateText(ownerAgentId, "materialized instructions", content, agentsById.Keys.ToHashSet(StringComparer.OrdinalIgnoreCase));
 
         if (!content.Contains("{{agent:", StringComparison.Ordinal))
         {
@@ -54,7 +55,7 @@ internal static class WorkflowInstructionTemplateResolver
             return property.ToLowerInvariant() switch
             {
                 "displayname" => referencedAgent.DisplayName,
-                "role" => referencedAgent.DisplayName,
+                "role" => referencedAgent.Role,
                 "id" => referencedAgent.Id,
                 "avatartext" => referencedAgent.AvatarText?.Trim() ?? string.Empty,
                 _ => throw new InvalidOperationException(
@@ -67,7 +68,7 @@ internal static class WorkflowInstructionTemplateResolver
         string ownerAgentId,
         string fieldName,
         string? content,
-        IReadOnlyDictionary<string, WorkflowParticipantDefinition> agentsById)
+        IReadOnlySet<string> agentIds)
     {
         if (string.IsNullOrWhiteSpace(content) ||
             !content.Contains("{{agent:", StringComparison.Ordinal))
@@ -101,62 +102,7 @@ internal static class WorkflowInstructionTemplateResolver
 
             var referencedAgentId = match.Groups["agentId"].Value;
             var property = match.Groups["property"].Value;
-
-            if (!agentsById.ContainsKey(referencedAgentId))
-            {
-                throw new InvalidOperationException(
-                    $"Workflow agent '{ownerAgentId}' references undefined agent '{referencedAgentId}' in {fieldName} placeholder '{rawPlaceholder}'.");
-            }
-
-            if (!SupportedProperties.Contains(property))
-            {
-                throw new InvalidOperationException(
-                    $"Workflow agent '{ownerAgentId}' references unsupported property '{property}' in {fieldName} placeholder '{rawPlaceholder}'. Supported properties: {string.Join(", ", SupportedProperties)}.");
-            }
-
-            searchStart = placeholderEnd + 2;
-        }
-    }
-
-    private static void ValidateText(
-        string ownerAgentId,
-        string fieldName,
-        string? content,
-        IReadOnlyDictionary<string, WorkflowInstructionTemplateParticipant> agentsById)
-    {
-        if (string.IsNullOrWhiteSpace(content) ||
-            !content.Contains("{{agent:", StringComparison.Ordinal))
-        {
-            return;
-        }
-
-        var searchStart = 0;
-        while (true)
-        {
-            var placeholderStart = content.IndexOf("{{agent:", searchStart, StringComparison.Ordinal);
-            if (placeholderStart < 0)
-            {
-                return;
-            }
-
-            var placeholderEnd = content.IndexOf("}}", placeholderStart, StringComparison.Ordinal);
-            if (placeholderEnd < 0)
-            {
-                throw new InvalidOperationException(
-                    $"Workflow agent '{ownerAgentId}' has malformed {fieldName}. Placeholder starting at '{content[placeholderStart..]}' is missing '}}'.");
-            }
-
-            var rawPlaceholder = content[placeholderStart..(placeholderEnd + 2)];
-            var match = AgentPlaceholderRegex.Match(rawPlaceholder);
-            if (!match.Success || match.Length != rawPlaceholder.Length)
-            {
-                throw new InvalidOperationException(
-                    $"Workflow agent '{ownerAgentId}' has invalid {fieldName} placeholder '{rawPlaceholder}'. Expected '{{{{agent:<agentId>.<property>}}}}'.");
-            }
-
-            var referencedAgentId = match.Groups["agentId"].Value;
-            var property = match.Groups["property"].Value;
-            if (!agentsById.ContainsKey(referencedAgentId))
+            if (!agentIds.Contains(referencedAgentId))
             {
                 throw new InvalidOperationException(
                     $"Workflow agent '{ownerAgentId}' references undefined agent '{referencedAgentId}' in {fieldName} placeholder '{rawPlaceholder}'.");
@@ -194,4 +140,5 @@ internal static class WorkflowInstructionTemplateResolver
 internal sealed record WorkflowInstructionTemplateParticipant(
     string Id,
     string DisplayName,
+    string Role,
     string? AvatarText);

@@ -435,6 +435,8 @@ public sealed record WorkflowRuntimeParticipant
 
     public required string DisplayName { get; init; }
 
+    public string Role { get; init; } = string.Empty;
+
     public required string Summary { get; init; }
 
     public required ResolvedWorkflowParticipantSource Source { get; init; }
@@ -447,6 +449,8 @@ public sealed record ResolvedWorkflowParticipant
     public required string ParticipantId { get; init; }
 
     public required string DisplayName { get; init; }
+
+    public string Role { get; init; } = string.Empty;
 
     public string Summary { get; init; } = string.Empty;
 

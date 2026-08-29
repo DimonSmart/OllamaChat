@@ -22,7 +22,7 @@ public sealed class WorkflowParticipantResolverTests
         });
         var catalog = new Mock<IAgentDefinitionCatalog>(MockBehavior.Strict);
         var resolver = new WorkflowParticipantResolver(
-            agents.Object, catalog.Object, new WorkflowDefinitionValidator());
+            agents.Object, catalog.Object);
         var workflow = new SequentialWorkflowDefinition
         {
             Id = "saved-agent",
@@ -48,7 +48,7 @@ public sealed class WorkflowParticipantResolverTests
     }
 
     [Fact]
-    public async Task ResolveAsync_ThrowsValidationErrorWhenParticipantSourceIsMissing()
+    public void WorkflowDefinitionValidator_ThrowsWhenParticipantSourceIsMissing()
     {
         var workflow = new SequentialWorkflowDefinition
         {
@@ -63,11 +63,40 @@ public sealed class WorkflowParticipantResolverTests
             ],
             ParticipantOrder = ["reviewer"]
         };
-        var resolver = new WorkflowParticipantResolver(null!, null!, new WorkflowDefinitionValidator());
-
-        var error = await Assert.ThrowsAsync<InvalidOperationException>(() =>
-            resolver.ResolveAsync(workflow, TestContext.Current.CancellationToken));
+        var error = Assert.Throws<InvalidOperationException>(() =>
+            new WorkflowDefinitionValidator().Validate(workflow));
 
         Assert.Equal("Workflow participant 'reviewer' has no executable source.", error.Message);
+    }
+
+    [Fact]
+    public async Task ResolveAsync_ResolvesRoleSeparatelyFromDisplayName()
+    {
+        var resolver = new WorkflowParticipantResolver(Mock.Of<IAgentTemplateService>(), Mock.Of<IAgentDefinitionCatalog>());
+        var workflow = new SequentialWorkflowDefinition
+        {
+            Id = "role-template",
+            DisplayName = "Role template",
+            Participants =
+            [
+                new WorkflowParticipantDefinition
+                {
+                    Id = "x",
+                    Role = "Coordinator",
+                    Overrides = new WorkflowParticipantOverrides { DisplayName = "Review Coordinator" },
+                    Source = new InlineAgentParticipantSource(new AgentTemplateDefinition
+                    {
+                        AgentName = "Coordinator",
+                        Content = "Role: {{agent:x.role}}; name: {{agent:x.displayName}}"
+                    })
+                }
+            ],
+            ParticipantOrder = ["x"]
+        };
+
+        var resolved = await resolver.ResolveAsync(workflow, TestContext.Current.CancellationToken);
+
+        var agent = Assert.IsType<MaterializedLlmParticipantSource>(Assert.Single(resolved).Source).Agent;
+        Assert.Equal("Role: Coordinator; name: Review Coordinator", agent.Content);
     }
 }
