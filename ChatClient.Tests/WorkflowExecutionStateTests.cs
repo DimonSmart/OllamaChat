@@ -67,6 +67,44 @@ public sealed class WorkflowExecutionStateTests
     }
 
     [Fact]
+    public async Task ResultResolver_PreservesIdenticalMessagesFromDifferentParticipants()
+    {
+        var resolver = new WorkflowResultResolver(new StubWorkflowExecutionState());
+        var workflow = new SequentialWorkflowDefinition
+        {
+            Id = "workflow",
+            DisplayName = "Workflow",
+            ParticipantOrder = ["writer", "reviewer"]
+        };
+        var first = new AppChatMessage(
+            "Same response", DateTime.UtcNow, AppChatRole.Assistant,
+            agentId: "writer", agentName: "Writer")
+        { Id = Guid.NewGuid() };
+        var second = new AppChatMessage(
+            "Same response", DateTime.UtcNow, AppChatRole.Assistant,
+            agentId: "reviewer", agentName: "Reviewer")
+        { Id = Guid.NewGuid() };
+
+        var result = await resolver.ResolveAsync(
+            new WorkflowResultResolutionContext(
+                new OrchestrationWorkflowSessionStartRequest
+                {
+                    Workflow = workflow,
+                    Configuration = new AppChatConfiguration("test", [])
+                },
+                "session",
+                [
+                    new OrchestrationCompletedAssistantMessage(first, "writer"),
+                    new OrchestrationCompletedAssistantMessage(second, "reviewer")
+                ]),
+            TestContext.Current.CancellationToken);
+
+        Assert.Equal(2, result!.Messages.Count);
+        Assert.Equal(["writer", "reviewer"], result.Messages.Select(static message => message.AgentId));
+        Assert.Equal("reviewer", result.FinalMessage.AgentId);
+    }
+
+    [Fact]
     public void WorkflowExecutionEngine_DoesNotDependOnTaskSessionStore()
     {
         var constructorParameters = typeof(WorkflowExecutionEngine)

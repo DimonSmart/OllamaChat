@@ -25,7 +25,7 @@ public sealed class WorkflowResultResolver(IWorkflowExecutionState executionStat
     {
         var nonEmptyMessages = context.Messages
             .Where(static message => !string.IsNullOrWhiteSpace(message.Message.Content))
-            .DistinctBy(static message => message.Message.Content.Trim())
+            .DistinctBy(static message => message.Message.Id)
             .ToList();
         if (nonEmptyMessages.Count == 0)
         {

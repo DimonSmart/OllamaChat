@@ -85,17 +85,7 @@ public sealed class WorkflowExecutionEngine(
         IWorkflowResultResolver resultResolver,
         ILogger logger)
     {
-        private readonly List<IAppChatMessage> _chatMessages = [];
-        private readonly Dictionary<Guid, string?> _speakerIdsByMessageId = [];
-        private readonly List<string> _assistantSpeakerIds = [];
-        private readonly Dictionary<Guid, StreamingAppChatMessage> _activeStreams = [];
-        private readonly Dictionary<Guid, string?> _activeSpeakerIdsByStreamId = [];
-        private readonly Dictionary<Guid, int> _streamContentLengths = [];
-        private readonly HashSet<Guid> _emittedCompletedMessageIds = [];
-        private readonly HashSet<string> _emittedCompletedMessageContents = [];
-        private readonly Dictionary<string, string> _agentIdsByExecutorId = new(StringComparer.OrdinalIgnoreCase);
-        private readonly Dictionary<string, string> _agentIdsByName = new(StringComparer.OrdinalIgnoreCase);
-        private readonly Dictionary<string, string> _agentNamesById = new(StringComparer.OrdinalIgnoreCase);
+        private readonly WorkflowExecutionContext _context = new();
         public string TaskSessionId => bootstrap.TaskSessionId;
 
         public async IAsyncEnumerable<AgentRunEvent> ExecuteAsync(
@@ -130,13 +120,10 @@ public sealed class WorkflowExecutionEngine(
             {
                 foreach (var runtimeAgent in bootstrap.RuntimeAgents)
                 {
-                    RegisterAgentIdentity(
+                    _context.RegisterParticipant(
                         runtimeAgent.AgentId,
                         runtimeAgent.AgentName,
-                        runtimeAgent.ExecutorId,
-                        _agentIdsByExecutorId,
-                        _agentIdsByName,
-                        _agentNamesById);
+                        runtimeAgent.ExecutorId);
                 }
 
                 if (!string.IsNullOrWhiteSpace(request.UserMessage))
@@ -145,7 +132,7 @@ public sealed class WorkflowExecutionEngine(
                         request.UserMessage,
                         DateTime.Now,
                         AppChatRole.User);
-                    await AddMessageAsync(userChatMessage, _chatMessages);
+                    await AddMessageAsync(userChatMessage, _context.Messages);
                 }
 
                 await turnCoordinator.RunAsync(
@@ -162,8 +149,8 @@ public sealed class WorkflowExecutionEngine(
                             {
                                 Workflow = workflowRequest.Workflow,
                                 SessionId = TaskSessionId,
-                                Messages = _chatMessages.ToList(),
-                                AssistantSpeakerIds = _assistantSpeakerIds.ToList(),
+                                Messages = _context.Messages.ToList(),
+                                AssistantSpeakerIds = _context.AssistantSpeakerIds.ToList(),
                                 RuntimeAgentsById = bootstrap.RuntimeAgents.ToDictionary(
                                     static agent => agent.AgentId,
                                     static agent => agent.RuntimeAgent,
@@ -172,25 +159,23 @@ public sealed class WorkflowExecutionEngine(
                                 {
                                     ModelName = workflowRequest.Configuration.ModelName,
                                     Workflow = workflowRequest.Workflow,
-                                    Messages = _chatMessages.ToList(),
-                                    SpeakerIdsByMessageId = _speakerIdsByMessageId,
-                                    ActiveStreams = _activeStreams,
-                                    ActiveSpeakerIdsByStreamId = _activeSpeakerIdsByStreamId,
-                                    AgentIdsByExecutorId = _agentIdsByExecutorId,
-                                    AgentIdsByName = _agentIdsByName,
-                                    AgentNamesById = _agentNamesById,
-                                    AddMessageAsync = message => AddMessageAsync(message, _chatMessages),
+                                    Messages = _context.Messages.ToList(),
+                                    SpeakerIdsByMessageId = _context.SpeakerIdsByMessageId,
+                                    ActiveStreams = _context.ActiveStreams,
+                                    ActiveSpeakerIdsByStreamId = _context.ActiveSpeakerIdsByStreamId,
+                                    AgentIdsByExecutorId = _context.ParticipantIdsByEventSource,
+                                    AgentNamesById = _context.ParticipantNamesById,
+                                    AddMessageAsync = message => AddMessageAsync(message, _context.Messages),
                                     ReplaceMessage = (source, replacement) => ReplaceMessage(
                                         source,
                                         replacement,
-                                        _chatMessages),
+                                        _context.Messages),
                                     NotifyMessageUpdatedAsync = (message, isFinal) => NotifyMessageAsync(
                                         message,
                                         isFinal,
                                         writer,
-                                        _streamContentLengths,
-                                        _emittedCompletedMessageIds,
-                                        _emittedCompletedMessageContents,
+                                        _context.StreamContentLengths,
+                                        _context.EmittedCompletedMessageIds,
                                         cancellation)
                                 }
                             },
@@ -200,10 +185,10 @@ public sealed class WorkflowExecutionEngine(
                             foreach (var completedMessage in messages)
                             {
                                 completedMessages.Add(completedMessage);
-                                _speakerIdsByMessageId[completedMessage.Message.Id] = completedMessage.SpeakerId;
+                                _context.SpeakerIdsByMessageId[completedMessage.Message.Id] = completedMessage.SpeakerId;
                                 if (!string.IsNullOrWhiteSpace(completedMessage.SpeakerId))
                                 {
-                                    _assistantSpeakerIds.Add(completedMessage.SpeakerId);
+                                    _context.AssistantSpeakerIds.Add(completedMessage.SpeakerId);
                                 }
                             }
                         },
@@ -211,12 +196,12 @@ public sealed class WorkflowExecutionEngine(
                     },
                     cancellationToken);
 
-                foreach (var message in _chatMessages
+                foreach (var message in _context.Messages
                              .Where(static candidate => candidate.Role == AppChatRole.Assistant)
                              .Where(static candidate => !string.IsNullOrWhiteSpace(candidate.Content))
                              .Where(message => completedMessages.All(completed => completed.Message.Id != message.Id)))
                 {
-                    _speakerIdsByMessageId.TryGetValue(message.Id, out var speakerId);
+                    _context.SpeakerIdsByMessageId.TryGetValue(message.Id, out var speakerId);
                     completedMessages.Add(new OrchestrationCompletedAssistantMessage(
                         (AppChatMessage)message,
                         speakerId ?? message.AgentId));
@@ -228,8 +213,7 @@ public sealed class WorkflowExecutionEngine(
                         completedMessage.Message,
                         completedMessage.SpeakerId,
                         writer,
-                        _emittedCompletedMessageIds,
-                        _emittedCompletedMessageContents,
+                        _context.EmittedCompletedMessageIds,
                         cancellationToken);
                 }
 
@@ -282,7 +266,6 @@ public sealed class WorkflowExecutionEngine(
         ChannelWriter<AgentRunEvent> writer,
         Dictionary<Guid, int> streamContentLengths,
         HashSet<Guid> emittedCompletedMessageIds,
-        HashSet<string> emittedCompletedMessageContents,
         CancellationToken cancellationToken)
     {
         if (message.Role != AppChatRole.Assistant)
@@ -313,7 +296,6 @@ public sealed class WorkflowExecutionEngine(
             message.AgentId,
             writer,
             emittedCompletedMessageIds,
-            emittedCompletedMessageContents,
             cancellationToken);
     }
 
@@ -322,12 +304,10 @@ public sealed class WorkflowExecutionEngine(
         string? participantId,
         ChannelWriter<AgentRunEvent> writer,
         HashSet<Guid> emittedCompletedMessageIds,
-        HashSet<string> emittedCompletedMessageContents,
         CancellationToken cancellationToken)
     {
         if (string.IsNullOrWhiteSpace(message.Content) ||
-            !emittedCompletedMessageIds.Add(message.Id) ||
-            !emittedCompletedMessageContents.Add(message.Content.Trim()))
+            !emittedCompletedMessageIds.Add(message.Id))
         {
             return;
         }
@@ -367,25 +347,6 @@ public sealed class WorkflowExecutionEngine(
         }
 
         messages.Add(replacement);
-    }
-
-    private static void RegisterAgentIdentity(
-        string agentId,
-        string agentName,
-        string? executorId,
-        Dictionary<string, string> agentIdsByExecutorId,
-        Dictionary<string, string> agentIdsByName,
-        Dictionary<string, string> agentNamesById)
-    {
-        agentIdsByExecutorId[agentId] = agentId;
-        if (!string.IsNullOrWhiteSpace(executorId))
-        {
-            agentIdsByExecutorId[executorId] = agentId;
-        }
-
-        agentIdsByExecutorId[agentName] = agentId;
-        agentIdsByName[agentName] = agentId;
-        agentNamesById[agentId] = agentName;
     }
 
 }

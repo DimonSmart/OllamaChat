@@ -411,7 +411,7 @@ public sealed class OrchestrationWorkflowEventStreamProcessor(
         if (string.IsNullOrWhiteSpace(resolvedSpeakerId) &&
             !string.IsNullOrWhiteSpace(finalMessage.AgentName))
         {
-            context.AgentIdsByName.TryGetValue(finalMessage.AgentName, out resolvedSpeakerId);
+            context.AgentIdsByExecutorId.TryGetValue(finalMessage.AgentName, out resolvedSpeakerId);
         }
 
         if (!string.IsNullOrWhiteSpace(resolvedSpeakerId) &&
@@ -488,12 +488,7 @@ public sealed class OrchestrationWorkflowEventStreamProcessor(
             return null;
         }
 
-        if (context.AgentIdsByName.TryGetValue(authorName, out var speakerId))
-        {
-            return speakerId;
-        }
-
-        return context.AgentIdsByExecutorId.TryGetValue(authorName, out speakerId)
+        return context.AgentIdsByExecutorId.TryGetValue(authorName, out var speakerId)
             ? speakerId
             : null;
     }
@@ -575,8 +570,6 @@ internal sealed class OrchestrationWorkflowEventStreamContext
     public required IDictionary<Guid, string?> ActiveSpeakerIdsByStreamId { get; init; }
 
     public required IReadOnlyDictionary<string, string> AgentIdsByExecutorId { get; init; }
-
-    public required IReadOnlyDictionary<string, string> AgentIdsByName { get; init; }
 
     public required IReadOnlyDictionary<string, string> AgentNamesById { get; init; }
 

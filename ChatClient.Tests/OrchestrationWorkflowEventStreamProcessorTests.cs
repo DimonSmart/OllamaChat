@@ -82,12 +82,6 @@ public sealed class OrchestrationWorkflowEventStreamProcessorTests
             ActiveStreams = activeStreams,
             ActiveSpeakerIdsByStreamId = activeSpeakerIds,
             AgentIdsByExecutorId = new Dictionary<string, string>(),
-            AgentIdsByName = new Dictionary<string, string>
-            {
-                ["Writer"] = "writer",
-                ["Reviewer"] = "reviewer",
-                ["Host"] = "host"
-            },
             AgentNamesById = new Dictionary<string, string>
             {
                 ["writer"] = "Writer",
