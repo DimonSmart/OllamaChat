@@ -166,7 +166,7 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IAgentLaunchCapabilityValidator, AgentLaunchCapabilityValidator>();
         services.AddScoped<WorkflowParticipantResolver>();
         services.AddScoped<IWorkflowParticipantResolver>(sp => sp.GetRequiredService<WorkflowParticipantResolver>());
-        services.AddScoped<IWorkflowDefinitionValidator, WorkflowDefinitionValidator>();
+        services.AddSingleton<IWorkflowDefinitionValidator, WorkflowDefinitionValidator>();
         services.AddScoped<IWorkflowParticipantRuntimeFactory, WorkflowParticipantRuntimeFactory>();
         services.AddScoped<IAgentInputDefinitionProvider, AgentInputDefinitionProvider>();
         services.AddScoped<IAgentDefinitionModelRequirementAnalyzer, WorkflowModelRequirementAnalyzer>();
