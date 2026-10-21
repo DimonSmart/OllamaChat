@@ -1,0 +1,513 @@
+@page "/scheduled-tasks"
+@using ChatClient.Domain.Models
+@using ChatClient.Application.Services
+@implements IAsyncDisposable
+@inject IScheduledTaskService Tasks
+@inject ISnackbar Snackbar
+
+<AppPage Title="Scheduled Tasks">
+    <AppCrudToolbar AddText="Add Timer" OnAdd="AddTimer" AddDisabled="@(!string.IsNullOrEmpty(storageError))"
+                    SearchText="@searchText" SearchTextChanged="OnSearch" SearchPlaceholder="Search timers...">
+        <Actions>
+            <MudButton Variant="Variant.Outlined" Color="Color.Default" Size="Size.Small"
+                       OnClick="LoadAsync">Reload</MudButton>
+        </Actions>
+    </AppCrudToolbar>
+
+    @if (!string.IsNullOrWhiteSpace(storageError))
+    {
+        <MudAlert Severity="Severity.Error" Dense="true">
+            Scheduled task storage is unavailable. Changes are blocked until the JSON file is repaired.
+            @storageError
+        </MudAlert>
+    }
+    @if (pendingCleanup.Count > 0)
+    {
+        <MudAlert Severity="Severity.Warning" Dense="true">
+            @pendingCleanup.Count deleted timer(s) still need Quartz cleanup.
+            <MudButton Size="Size.Small" Color="Color.Warning" OnClick="RetryCleanupAsync">Retry synchronization</MudButton>
+        </MudAlert>
+    }
+
+    @if (loading)
+    {
+        <MudStack Justify="Justify.Center" Class="my-4">
+            <MudProgressCircular Color="Color.Primary" Indeterminate="true" />
+        </MudStack>
+    }
+    else
+    {
+        <MudDataGrid T="ScheduledTaskView" Items="@filtered" ReadOnly="true" Bordered="true" Hover="true"
+                     Striped="true" Dense="true" FixedHeader="true">
+            <Columns>
+                <TemplateColumn Title="Name" SortBy="x => x.Definition.Name">
+                    <CellTemplate>
+                        <MudText Typo="Typo.body2">@context.Item.Definition.Name</MudText>
+                        @if (!string.IsNullOrWhiteSpace(context.Item.Definition.Description))
+                        {
+                            <MudText Typo="Typo.caption" Class="mud-text-secondary">@context.Item.Definition.Description</MudText>
+                        }
+                    </CellTemplate>
+                </TemplateColumn>
+                <TemplateColumn Title="Schedule">
+                    <CellTemplate><MudText Typo="Typo.body2">@Summary(context.Item.Definition.Schedule)</MudText></CellTemplate>
+                </TemplateColumn>
+                <TemplateColumn Title="Time Zone">
+                    <CellTemplate><MudText Typo="Typo.body2">@context.Item.Definition.TimeZoneId</MudText></CellTemplate>
+                </TemplateColumn>
+                <TemplateColumn Title="Status" SortBy="x => x.Status">
+                    <CellTemplate>
+                        <MudChip T="string" Variant="Variant.Outlined" Color="@StatusColor(context.Item.Status)" Size="Size.Small">
+                            @context.Item.Status
+                        </MudChip>
+                        @if (context.Item.Error is { } error)
+                        {
+                            <MudTooltip Text="@error"><MudIcon Icon="@Icons.Material.Filled.Info" Size="Size.Small" Color="Color.Error" /></MudTooltip>
+                            <MudText Typo="Typo.caption" Color="Color.Error">@error</MudText>
+                        }
+                    </CellTemplate>
+                </TemplateColumn>
+                <TemplateColumn Title="Last Fired" SortBy="x => x.LastFiredUtc">
+                    <CellTemplate><MudText Typo="Typo.body2">@DisplayTime(context.Item.LastFiredUtc, context.Item.Definition.TimeZoneId)</MudText></CellTemplate>
+                </TemplateColumn>
+                <TemplateColumn Title="Next Fire" SortBy="x => x.NextFireUtc">
+                    <CellTemplate><MudText Typo="Typo.body2">@DisplayTime(context.Item.NextFireUtc, context.Item.Definition.TimeZoneId)</MudText></CellTemplate>
+                </TemplateColumn>
+                <TemplateColumn Title="Enabled">
+                    <CellTemplate>
+                        <MudSwitch T="bool" Value="@context.Item.Definition.Enabled"
+                                   ValueChanged="@(async (bool enabled) => await ChangeEnabledAsync(context.Item, enabled))"
+                                   Disabled="@(busy || storageError is not null)"
+                                   Color="Color.Primary" Size="Size.Small"
+                                   aria-label="@($"Enable {context.Item.Definition.Name}")" />
+                    </CellTemplate>
+                </TemplateColumn>
+                <TemplateColumn Title="Actions">
+                    <CellTemplate>
+                        <div class="app-table-actions">
+                            <MudTooltip Text="Edit timer"><MudIconButton Icon="@Icons.Material.Filled.Edit"
+                                Size="Size.Small" aria-label="Edit timer"
+                                OnClick="@(() => EditTimerAsync(context.Item))" /></MudTooltip>
+                            <MudTooltip Text="Delete timer"><MudIconButton Icon="@Icons.Material.Filled.Delete"
+                                Size="Size.Small" Color="Color.Error" aria-label="Delete timer"
+                                OnClick="@(() => ConfirmDelete(context.Item))" /></MudTooltip>
+                            @if (context.Item.Status == ScheduledTaskStatus.Error)
+                            {
+                                <MudTooltip Text="Retry Quartz synchronization"><MudIconButton Icon="@Icons.Material.Filled.Refresh"
+                                    Size="Size.Small" aria-label="Retry synchronization"
+                                    OnClick="@(() => RetryAsync(context.Item))" /></MudTooltip>
+                            }
+                        </div>
+                    </CellTemplate>
+                </TemplateColumn>
+            </Columns>
+            <PagerContent><MudDataGridPager T="ScheduledTaskView" PageSizeOptions="new[] { 10, 25, 50, 100 }" /></PagerContent>
+            <NoRecordsContent><MudText Class="pa-3">No scheduled tasks yet.</MudText></NoRecordsContent>
+        </MudDataGrid>
+    }
+</AppPage>
+
+<MudDialog @bind-Visible="showEditor" Options="editOptions">
+    <TitleContent><MudText Typo="Typo.h6">@(creating ? "Create Timer" : "Edit Timer")</MudText></TitleContent>
+    <DialogContent>
+        <MudStack Spacing="2">
+            @if (!string.IsNullOrEmpty(editorError))
+            {
+                <MudAlert Severity="Severity.Error" Dense="true">@editorError</MudAlert>
+            }
+            <MudText Typo="Typo.subtitle2">General</MudText>
+            <MudTextField T="string" @bind-Value="editing.Name" Label="Name" Required="true"
+                          Margin="Margin.Dense" Immediate="true" />
+            <MudTextField T="string" @bind-Value="editing.Description" Label="Description"
+                          Margin="Margin.Dense" Lines="2" />
+            <MudCheckBox T="bool" @bind-Value="editing.Enabled" Label="Enabled" Dense="true" />
+
+            <MudText Typo="Typo.subtitle2" Class="mt-2">Schedule</MudText>
+            <MudGrid Spacing="2">
+                <MudItem xs="12" sm="6">
+                    <MudSelect T="ScheduleType" @bind-Value="editing.Schedule.Type" @bind-Value:after="RefreshPreviewAsync"
+                               Label="Type" Margin="Margin.Dense" Dense="true">
+                        @foreach (var type in Enum.GetValues<ScheduleType>())
+                        {
+                            <MudSelectItem T="ScheduleType" Value="@type">@(type == ScheduleType.Cron ? "Advanced Cron" : type.ToString())</MudSelectItem>
+                        }
+                    </MudSelect>
+                </MudItem>
+                @if (editing.Schedule.Type == ScheduleType.Interval)
+                {
+                    <MudItem xs="12" sm="3">
+                        <MudNumericField T="int" @bind-Value="editing.Schedule.IntervalValue" @bind-Value:after="RefreshPreviewAsync"
+                                         Label="Every" Min="1" Margin="Margin.Dense" />
+                    </MudItem>
+                    <MudItem xs="12" sm="3">
+                        <MudSelect T="ScheduleIntervalUnit" @bind-Value="editing.Schedule.IntervalUnit" @bind-Value:after="RefreshPreviewAsync"
+                                   Label="Unit" Margin="Margin.Dense" Dense="true">
+                            <MudSelectItem T="ScheduleIntervalUnit" Value="ScheduleIntervalUnit.Minutes">Minutes</MudSelectItem>
+                            <MudSelectItem T="ScheduleIntervalUnit" Value="ScheduleIntervalUnit.Hours">Hours</MudSelectItem>
+                        </MudSelect>
+                    </MudItem>
+                }
+                else if (editing.Schedule.Type != ScheduleType.Cron)
+                {
+                    <MudItem xs="6" sm="3">
+                        <MudNumericField T="int" @bind-Value="editing.Schedule.Hour" @bind-Value:after="RefreshPreviewAsync"
+                                         Label="Hour" Min="0" Max="23" Margin="Margin.Dense" />
+                    </MudItem>
+                    <MudItem xs="6" sm="3">
+                        <MudNumericField T="int" @bind-Value="editing.Schedule.Minute" @bind-Value:after="RefreshPreviewAsync"
+                                         Label="Minute" Min="0" Max="59" Margin="Margin.Dense" />
+                    </MudItem>
+                }
+                @if (editing.Schedule.Type == ScheduleType.Cron)
+                {
+                    <MudItem xs="12">
+                        <MudTextField T="string" @bind-Value="editing.Schedule.CronExpression" @bind-Value:after="RefreshPreviewAsync"
+                            Label="Quartz Cron Expression" Margin="Margin.Dense"
+                            HelperText="6 or 7 fields, seconds must be 0. Example: 0 0 14 ? * MON-FRI. Quartz day rules differ from Unix Cron." />
+                    </MudItem>
+                }
+                <MudItem xs="12">
+                    <MudAutocomplete T="string" Value="@editing.TimeZoneId" ValueChanged="OnTimeZoneChanged"
+                                     SearchFunc="SearchZones" ToStringFunc="ZoneLabel"
+                                     Label="Time Zone" Margin="Margin.Dense" Dense="true" Clearable="false"
+                                     ResetValueOnEmptyText="false" MaxItems="40">
+                        <ItemTemplate Context="zoneId"><MudText Typo="Typo.body2">@ZoneLabel(zoneId)</MudText></ItemTemplate>
+                    </MudAutocomplete>
+                </MudItem>
+            </MudGrid>
+            @if (editing.Schedule.Type == ScheduleType.Weekly)
+            {
+                <MudText Typo="Typo.caption">Days of week</MudText>
+                <MudGrid Spacing="1">
+                    @foreach (var day in WeekDays)
+                    {
+                        <MudItem xs="6" sm="3">
+                            <MudCheckBox T="bool" Value="@editing.Schedule.DaysOfWeek.Contains(day)"
+                                         ValueChanged="@(async (bool value) => await SetWeekday(day, value))"
+                                         Label="@day.ToString()" Dense="true" />
+                        </MudItem>
+                    }
+                </MudGrid>
+            }
+            @if (editing.Schedule.Type == ScheduleType.Monthly)
+            {
+                <MudText Typo="Typo.caption">Days of month (missing dates are skipped)</MudText>
+                <MudGrid Spacing="0">
+                    @for (var day = 1; day <= 31; day++)
+                    {
+                        var selectedDay = day;
+                        <MudItem xs="3" sm="2" md="1">
+                            <MudCheckBox T="bool" Value="@editing.Schedule.DaysOfMonth.Contains(selectedDay)"
+                                         ValueChanged="@(async (bool value) => await SetMonthDay(selectedDay, value))"
+                                         Label="@selectedDay.ToString()" Dense="true" />
+                        </MudItem>
+                    }
+                </MudGrid>
+            }
+
+            <MudText Typo="Typo.subtitle2" Class="mt-2">Next Occurrences</MudText>
+            @if (previewBusy)
+            {
+                <MudProgressLinear Color="Color.Primary" Indeterminate="true" />
+            }
+            else if (previewError is not null)
+            {
+                <MudAlert Severity="Severity.Warning" Dense="true">@previewError</MudAlert>
+            }
+            else if (preview.Count == 0)
+            {
+                <MudText Typo="Typo.body2">No future occurrences.</MudText>
+            }
+            else
+            {
+                @foreach (var occurrence in preview)
+                {
+                    <MudText Typo="Typo.body2">@DisplayTime(occurrence, editing.TimeZoneId)</MudText>
+                }
+            }
+        </MudStack>
+    </DialogContent>
+    <DialogActions>
+        <MudButton Size="Size.Small" OnClick="CancelEdit">Cancel</MudButton>
+        <MudButton Variant="Variant.Filled" Color="Color.Primary" Size="Size.Small"
+                   Disabled="@(busy || previewBusy || previewError is not null)"
+                   OnClick="SaveAsync">Save</MudButton>
+    </DialogActions>
+</MudDialog>
+
+<AppDeleteDialog @bind-Visible="showDelete" Title="Delete Timer"
+                 Message="@($"Delete timer \"{deleting?.Definition.Name}\"?")"
+                 OnConfirm="DeleteAsync" Options="deleteOptions" />
+
+@code {
+    private readonly DialogOptions editOptions = new() { CloseOnEscapeKey = true, CloseButton = true, MaxWidth = MaxWidth.Large, FullWidth = true };
+    private readonly DialogOptions deleteOptions = new() { CloseOnEscapeKey = true, CloseButton = true, MaxWidth = MaxWidth.ExtraSmall };
+    private static readonly DayOfWeek[] WeekDays = [DayOfWeek.Monday, DayOfWeek.Tuesday, DayOfWeek.Wednesday,
+        DayOfWeek.Thursday, DayOfWeek.Friday, DayOfWeek.Saturday, DayOfWeek.Sunday];
+    private static readonly IReadOnlyList<TimeZoneInfo> Zones = TimeZoneInfo.GetSystemTimeZones().ToList();
+    private CancellationTokenSource? pollCancellation;
+    private Task? pollTask;
+    private List<ScheduledTaskView> timers = [];
+    private List<ScheduledTaskView> filtered = [];
+    private IReadOnlyList<Guid> pendingCleanup = [];
+    private List<DateTimeOffset> preview = [];
+    private ScheduledTaskDefinition editing = new();
+    private ScheduledTaskView? deleting;
+    private string searchText = "";
+    private string? storageError;
+    private string? editorError;
+    private string? previewError;
+    private bool loading = true;
+    private bool busy;
+    private bool creating;
+    private bool showEditor;
+    private bool showDelete;
+    private bool previewBusy;
+    private int previewSequence;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadAsync();
+        pollCancellation = new CancellationTokenSource();
+        pollTask = PollAsync(pollCancellation.Token);
+    }
+
+    private async Task PollAsync(CancellationToken token)
+    {
+        using var timer = new PeriodicTimer(TimeSpan.FromSeconds(5));
+        try
+        {
+            while (await timer.WaitForNextTickAsync(token))
+                await InvokeAsync(LoadAsync);
+        }
+        catch (OperationCanceledException) when (token.IsCancellationRequested) { }
+    }
+
+    private async Task LoadAsync()
+    {
+        try
+        {
+            timers = (await Tasks.GetAllAsync()).ToList();
+            pendingCleanup = await Tasks.GetPendingCleanupAsync();
+            storageError = null;
+            ApplySearch();
+        }
+        catch (Exception ex)
+        {
+            storageError = ex.Message;
+        }
+        finally
+        {
+            loading = false;
+            StateHasChanged();
+        }
+    }
+
+    private void OnSearch(string? query) { searchText = query ?? ""; ApplySearch(); }
+    private void ApplySearch() => filtered = timers.Where(x => x.Definition.Name.Contains(
+        searchText, StringComparison.OrdinalIgnoreCase)).ToList();
+
+    private void AddTimer()
+    {
+        editing = new ScheduledTaskDefinition
+        {
+            Id = Guid.NewGuid(),
+            Name = "",
+            TimeZoneId = TimeZoneInfo.Local.Id,
+            Schedule = new ScheduleDefinition { Type = ScheduleType.Weekly, DaysOfWeek = [DayOfWeek.Monday,
+                DayOfWeek.Tuesday, DayOfWeek.Wednesday, DayOfWeek.Thursday, DayOfWeek.Friday] }
+        };
+        creating = true;
+        editorError = null;
+        showEditor = true;
+        _ = RefreshPreviewAsync();
+    }
+
+    private async Task EditTimerAsync(ScheduledTaskView timer)
+    {
+        editing = JsonSerializer.Deserialize<ScheduledTaskDefinition>(
+            JsonSerializer.Serialize(timer.Definition))!;
+        creating = false;
+        editorError = null;
+        showEditor = true;
+        await RefreshPreviewAsync();
+    }
+
+    private async Task OnTimeZoneChanged(string zone)
+    {
+        editing.TimeZoneId = zone ?? "";
+        await RefreshPreviewAsync();
+    }
+
+    private Task<IEnumerable<string>> SearchZones(string search, CancellationToken token)
+    {
+        token.ThrowIfCancellationRequested();
+        IEnumerable<string> result = Zones
+            .Where(zone => string.IsNullOrWhiteSpace(search) ||
+                zone.Id.Contains(search, StringComparison.OrdinalIgnoreCase) ||
+                zone.DisplayName.Contains(search, StringComparison.OrdinalIgnoreCase))
+            .Take(40).Select(zone => zone.Id);
+        return Task.FromResult(result);
+    }
+
+    private static string ZoneLabel(string? id)
+    {
+        var zone = Zones.FirstOrDefault(x => x.Id == id);
+        return zone is null ? id ?? "" : $"{zone.Id} — {zone.DisplayName}";
+    }
+
+    private async Task SetWeekday(DayOfWeek day, bool enabled)
+    {
+        if (enabled && !editing.Schedule.DaysOfWeek.Contains(day)) editing.Schedule.DaysOfWeek.Add(day);
+        if (!enabled) editing.Schedule.DaysOfWeek.Remove(day);
+        editing.Schedule.DaysOfWeek.Sort();
+        await RefreshPreviewAsync();
+    }
+
+    private async Task SetMonthDay(int day, bool enabled)
+    {
+        if (enabled && !editing.Schedule.DaysOfMonth.Contains(day)) editing.Schedule.DaysOfMonth.Add(day);
+        if (!enabled) editing.Schedule.DaysOfMonth.Remove(day);
+        editing.Schedule.DaysOfMonth.Sort();
+        await RefreshPreviewAsync();
+    }
+
+    private async Task RefreshPreviewAsync()
+    {
+        var sequence = ++previewSequence;
+        previewBusy = true;
+        previewError = null;
+        try
+        {
+            var result = await Tasks.PreviewAsync(editing);
+            if (sequence == previewSequence)
+                preview = result.ToList();
+        }
+        catch (Exception ex)
+        {
+            if (sequence == previewSequence)
+            {
+                preview = [];
+                previewError = ex.Message;
+            }
+        }
+        finally
+        {
+            if (sequence == previewSequence)
+                previewBusy = false;
+            await InvokeAsync(StateHasChanged);
+        }
+    }
+
+    private async Task SaveAsync()
+    {
+        if (busy) return;
+        try
+        {
+            busy = true;
+            editorError = null;
+            if (creating) await Tasks.CreateAsync(editing);
+            else await Tasks.UpdateAsync(editing);
+            showEditor = false;
+            Snackbar.Add("Timer saved.", Severity.Success);
+        }
+        catch (Exception ex)
+        {
+            editorError = ex.Message;
+            if (ex.Message.StartsWith("Configuration saved", StringComparison.Ordinal))
+                showEditor = false;
+        }
+        finally
+        {
+            busy = false;
+            await LoadAsync();
+        }
+    }
+
+    private void CancelEdit() { ++previewSequence; showEditor = false; editorError = null; }
+    private void ConfirmDelete(ScheduledTaskView timer) { deleting = timer; showDelete = true; }
+
+    private async Task DeleteAsync()
+    {
+        if (deleting is null || busy) return;
+        try
+        {
+            busy = true;
+            await Tasks.DeleteAsync(deleting.Definition.Id, deleting.Definition.Revision);
+            showDelete = false;
+            Snackbar.Add("Timer deleted.", Severity.Success);
+        }
+        catch (Exception ex) { Snackbar.Add(ex.Message, Severity.Error); }
+        finally { busy = false; await LoadAsync(); }
+    }
+
+    private async Task ChangeEnabledAsync(ScheduledTaskView timer, bool enabled)
+    {
+        if (busy) return;
+        try
+        {
+            busy = true;
+            await Tasks.SetEnabledAsync(timer.Definition.Id, timer.Definition.Revision, enabled);
+        }
+        catch (Exception ex) { Snackbar.Add(ex.Message, Severity.Error); }
+        finally { busy = false; await LoadAsync(); }
+    }
+
+    private async Task RetryAsync(ScheduledTaskView timer)
+    {
+        try { await Tasks.RetryAsync(timer.Definition.Id); }
+        catch (Exception ex) { Snackbar.Add(ex.Message, Severity.Error); }
+        finally { await LoadAsync(); }
+    }
+
+    private async Task RetryCleanupAsync()
+    {
+        try { await Tasks.RetryCleanupAsync(); }
+        catch (Exception ex) { Snackbar.Add(ex.Message, Severity.Error); }
+        finally { await LoadAsync(); }
+    }
+
+    private static Color StatusColor(ScheduledTaskStatus status) => status switch
+    {
+        ScheduledTaskStatus.Active => Color.Primary,
+        ScheduledTaskStatus.Completed => Color.Warning,
+        ScheduledTaskStatus.Error => Color.Error,
+        _ => Color.Default
+    };
+
+    private static string Summary(ScheduleDefinition s) => s.Type switch
+    {
+        ScheduleType.Interval => $"Every {s.IntervalValue} {s.IntervalUnit.ToString().ToLowerInvariant()}",
+        ScheduleType.Daily => $"Every day at {s.Hour:00}:{s.Minute:00}",
+        ScheduleType.Weekly => $"{string.Join(", ", s.DaysOfWeek.Select(x => x.ToString()[..3]))} at {s.Hour:00}:{s.Minute:00}",
+        ScheduleType.Monthly => $"Days {string.Join(", ", s.DaysOfMonth)} at {s.Hour:00}:{s.Minute:00}",
+        ScheduleType.Cron => s.CronExpression,
+        _ => "Invalid schedule"
+    };
+
+    private static string DisplayTime(DateTimeOffset? utc, string timeZoneId)
+    {
+        if (utc is null) return "—";
+        try
+        {
+            var zone = TimeZoneInfo.FindSystemTimeZoneById(timeZoneId);
+            return TimeZoneInfo.ConvertTime(utc.Value, zone).ToString("ddd yyyy-MM-dd HH:mm zzz");
+        }
+        catch { return "Invalid time zone"; }
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        ++previewSequence;
+        if (pollCancellation is not null)
+        {
+            await pollCancellation.CancelAsync();
+            if (pollTask is not null)
+            {
+                try { await pollTask; }
+                catch (OperationCanceledException) { }
+            }
+            pollCancellation.Dispose();
+        }
+    }
+}
