@@ -16,7 +16,7 @@ public class JsonFileRepository<T>
     private readonly bool _rejectNullRead;
 
     public JsonFileRepository(string filePath, ILogger logger, JsonSerializerOptions? options = null,
-        bool atomicWrites = false, bool rejectNullRead = false)
+        bool atomicWrites = false, bool rejectNullRead = false, bool deferDirectoryCreation = false)
     {
         _filePath = Path.GetFullPath(filePath);
         _lockKey = OperatingSystem.IsWindows() ? _filePath.ToUpperInvariant() : _filePath;
@@ -25,7 +25,7 @@ public class JsonFileRepository<T>
         _atomicWrites = atomicWrites;
         _rejectNullRead = rejectNullRead;
         var directory = Path.GetDirectoryName(_filePath);
-        if (!string.IsNullOrEmpty(directory) && !Directory.Exists(directory))
+        if (!deferDirectoryCreation && !string.IsNullOrEmpty(directory) && !Directory.Exists(directory))
         {
             Directory.CreateDirectory(directory);
         }
@@ -88,6 +88,7 @@ public class JsonFileRepository<T>
             await File.WriteAllTextAsync(_filePath, json, cancellationToken);
             return;
         }
+        Directory.CreateDirectory(Path.GetDirectoryName(_filePath)!);
         // Serialize completely before touching the destination; preserve it on write failure.
         var temporary = Path.Combine(Path.GetDirectoryName(_filePath)!,
             "." + Path.GetFileName(_filePath) + "." + Guid.NewGuid().ToString("N") + ".tmp");

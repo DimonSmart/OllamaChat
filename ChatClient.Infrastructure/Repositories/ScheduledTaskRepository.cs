@@ -23,7 +23,8 @@ public sealed class ScheduledTaskRepository : IScheduledTaskRepository
             Converters = { new JsonStringEnumConverter() }
         };
         _repo = new JsonFileRepository<List<ScheduledTaskDefinition>>(
-            path, logger, json, atomicWrites: true, rejectNullRead: true);
+            path, logger, json, atomicWrites: true, rejectNullRead: true,
+            deferDirectoryCreation: true);
     }
 
     public async Task<IReadOnlyList<ScheduledTaskDefinition>> GetAllAsync(CancellationToken cancellationToken = default)

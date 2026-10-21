@@ -245,6 +245,12 @@
     private static readonly DayOfWeek[] WeekDays = [DayOfWeek.Monday, DayOfWeek.Tuesday, DayOfWeek.Wednesday,
         DayOfWeek.Thursday, DayOfWeek.Friday, DayOfWeek.Saturday, DayOfWeek.Sunday];
     private static readonly IReadOnlyList<TimeZoneInfo> Zones = TimeZoneInfo.GetSystemTimeZones().ToList();
+    // Windows exposes Windows zone IDs, whereas portable saved settings should offer IANA IDs.
+    private static readonly IReadOnlyList<string> ZoneIds = Zones.Select(zone => zone.Id)
+        .Concat(Zones.Select(zone => TimeZoneInfo.TryConvertWindowsIdToIanaId(zone.Id, out var iana) ? iana : null)
+            .OfType<string>())
+        .Concat(["Europe/Madrid", "Europe/Budapest", "UTC"])
+        .Distinct(StringComparer.OrdinalIgnoreCase).OrderBy(x => x, StringComparer.OrdinalIgnoreCase).ToArray();
     private CancellationTokenSource? pollCancellation;
     private Task? pollTask;
     private List<ScheduledTaskView> timers = [];
@@ -327,6 +333,7 @@
     {
         editing = JsonSerializer.Deserialize<ScheduledTaskDefinition>(
             JsonSerializer.Serialize(timer.Definition))!;
+        editing.Schedule ??= new ScheduleDefinition();
         creating = false;
         editorError = null;
         showEditor = true;
@@ -342,18 +349,23 @@
     private Task<IEnumerable<string>> SearchZones(string search, CancellationToken token)
     {
         token.ThrowIfCancellationRequested();
-        IEnumerable<string> result = Zones
-            .Where(zone => string.IsNullOrWhiteSpace(search) ||
-                zone.Id.Contains(search, StringComparison.OrdinalIgnoreCase) ||
-                zone.DisplayName.Contains(search, StringComparison.OrdinalIgnoreCase))
-            .Take(40).Select(zone => zone.Id);
+        IEnumerable<string> result = ZoneIds.Where(id =>
+                string.IsNullOrWhiteSpace(search) ||
+                id.Contains(search, StringComparison.OrdinalIgnoreCase) ||
+                ZoneLabel(id).Contains(search, StringComparison.OrdinalIgnoreCase))
+            .Take(40);
         return Task.FromResult(result);
     }
 
     private static string ZoneLabel(string? id)
     {
-        var zone = Zones.FirstOrDefault(x => x.Id == id);
-        return zone is null ? id ?? "" : $"{zone.Id} — {zone.DisplayName}";
+        if (string.IsNullOrWhiteSpace(id)) return "";
+        try
+        {
+            var zone = TimeZoneInfo.FindSystemTimeZoneById(id);
+            return $"{id} — {zone.DisplayName}";
+        }
+        catch { return id; }
     }
 
     private async Task SetWeekday(DayOfWeek day, bool enabled)
@@ -475,7 +487,7 @@
         _ => Color.Default
     };
 
-    private static string Summary(ScheduleDefinition s) => s.Type switch
+    private static string Summary(ScheduleDefinition? s) => s is null ? "Invalid schedule" : s.Type switch
     {
         ScheduleType.Interval => $"Every {s.IntervalValue} {s.IntervalUnit.ToString().ToLowerInvariant()}",
         ScheduleType.Daily => $"Every day at {s.Hour:00}:{s.Minute:00}",

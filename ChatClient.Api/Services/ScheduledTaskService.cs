@@ -267,25 +267,27 @@ public sealed class ScheduledTaskService(
     public Task<IReadOnlyList<Guid>> GetPendingCleanupAsync(CancellationToken cancellationToken = default) =>
         Task.FromResult(runtime.PendingCleanup());
 
-    public async Task<IReadOnlyList<DateTimeOffset>> PreviewAsync(
+    public Task<IReadOnlyList<DateTimeOffset>> PreviewAsync(
         ScheduledTaskDefinition definition, CancellationToken cancellationToken = default)
     {
-        // Never mutate Quartz during preview. Reuse its existing anchor only for unchanged active schedules.
-        var now = clock.GetUtcNow();
-        var candidate = triggers.Build(definition, now);
-        var existing = (await repository.GetAllAsync(cancellationToken))
-            .FirstOrDefault(x => x.Id == definition.Id);
-        ITrigger trigger = candidate;
-        if (existing is not null && existing.Enabled &&
-            ScheduledTaskTriggerFactory.SameTrigger(existing, definition))
+        // Entire Quartz expression parsing and enumeration executes off the Blazor circuit.
+        // Never mutate Quartz during preview; reuse the current anchor for an unchanged timer.
+        return Task.Run(async () =>
         {
-            var scheduler = await schedulerFactory.GetScheduler(cancellationToken);
-            trigger = await scheduler.GetTrigger(ScheduledTaskTriggerFactory.TriggerKey(definition.Id), cancellationToken)
-                      ?? candidate;
-        }
-        // Limit expensive expressions without tying their evaluation to the Blazor synchronization context.
-        return await Task.Run(() => ScheduledTaskTriggerFactory.Occurrences(trigger, now), cancellationToken)
-            .WaitAsync(TimeSpan.FromSeconds(3), cancellationToken);
+            var now = clock.GetUtcNow();
+            var candidate = triggers.Build(definition, now);
+            var existing = (await repository.GetAllAsync(cancellationToken))
+                .FirstOrDefault(x => x.Id == definition.Id);
+            ITrigger trigger = candidate;
+            if (existing is not null && existing.Enabled &&
+                ScheduledTaskTriggerFactory.SameTrigger(existing, definition))
+            {
+                var scheduler = await schedulerFactory.GetScheduler(cancellationToken);
+                trigger = await scheduler.GetTrigger(ScheduledTaskTriggerFactory.TriggerKey(definition.Id), cancellationToken)
+                          ?? candidate;
+            }
+            return (IReadOnlyList<DateTimeOffset>)ScheduledTaskTriggerFactory.Occurrences(trigger, now);
+        }, cancellationToken).WaitAsync(TimeSpan.FromSeconds(3), cancellationToken);
     }
 
     private void Validate(ScheduledTaskDefinition definition)
