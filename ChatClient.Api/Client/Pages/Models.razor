@@ -90,7 +90,7 @@
         <div class="d-flex align-center gap-2 mb-2">
             <MudText Typo="Typo.body2" Class="mud-text-secondary">Limits remain available for models that are temporarily unavailable from their server.</MudText>
             <MudSpacer />
-            <MudNumericField T="int" @bind-Value="_defaultContextWindowTokens" Label="Fallback context window" Min="1" Adornment="Adornment.End" AdornmentText="tokens" Margin="Margin.Dense" />
+            <MudNumericField Class="app-numeric-field app-numeric-field--wide" T="int" @bind-Value="_defaultContextWindowTokens" Label="Fallback context window" Min="1" Adornment="Adornment.End" AdornmentText="tokens" Margin="Margin.Dense" />
             <MudButton Size="Size.Small" Variant="Variant.Text" Color="Color.Default" OnClick="SaveDefaultContextWindow">Save default</MudButton>
             <MudButton Size="Size.Small" Variant="Variant.Outlined" Color="Color.Default" OnClick="FillKnownLimits">Fill model limits</MudButton>
         </div>
@@ -113,8 +113,8 @@
     <DialogContent>
         <MudText Typo="Typo.body2" Class="mb-2">@ServerName(limitsModel.ServerId) / @limitsModel.ModelName</MudText>
         <MudGrid Spacing="2">
-            <MudItem xs="12" sm="6"><MudNumericField T="int" @bind-Value="limitsModel.ContextWindowTokens" Label="Context window tokens" Required="true" Margin="Margin.Dense" /></MudItem>
-            <MudItem xs="12" sm="6"><MudNumericField T="int?" @bind-Value="limitsModel.MaxOutputTokens" Label="Maximum output tokens" Margin="Margin.Dense" /></MudItem>
+            <MudItem xs="12" sm="6"><MudNumericField Class="app-numeric-field" T="int" @bind-Value="limitsModel.ContextWindowTokens" Label="Context window tokens" Required="true" Margin="Margin.Dense" /></MudItem>
+            <MudItem xs="12" sm="6"><MudNumericField Class="app-numeric-field" T="int?" @bind-Value="limitsModel.MaxOutputTokens" Label="Maximum output tokens" Margin="Margin.Dense" /></MudItem>
             @if (!ValidLimits()) { <MudItem xs="12"><MudText Color="Color.Error" Typo="Typo.caption">Context window must be positive. Maximum output is optional; when set, it must be positive and no greater than the context window.</MudText></MudItem> }
         </MudGrid>
     </DialogContent>

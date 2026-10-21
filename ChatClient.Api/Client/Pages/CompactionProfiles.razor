@@ -41,14 +41,14 @@
                 </MudItem>
             @if (model.BudgetSource == CompactionBudgetSources.Fixed)
             {
-                <MudItem xs="12" sm="6" md="3"><MudNumericField T="int?" @bind-Value="model.ContextWindowTokens" Label="Context window tokens" Required="true" Margin="Margin.Dense" /></MudItem>
-                <MudItem xs="12" sm="6" md="3"><MudNumericField T="int?" @bind-Value="model.MaxOutputTokens" Label="Maximum output tokens" Required="true" Margin="Margin.Dense" /></MudItem>
+                <MudItem xs="12" sm="6" md="3"><MudNumericField Class="app-numeric-field" T="int?" @bind-Value="model.ContextWindowTokens" Label="Context window tokens" Required="true" Margin="Margin.Dense" /></MudItem>
+                <MudItem xs="12" sm="6" md="3"><MudNumericField Class="app-numeric-field" T="int?" @bind-Value="model.MaxOutputTokens" Label="Maximum output tokens" Required="true" Margin="Margin.Dense" /></MudItem>
                 @if (!HasValidFixedBudget()) { <MudItem xs="12"><MudText Color="Color.Error" Typo="Typo.caption">Context window must be greater than maximum output.</MudText></MudItem> }
             }
             @if (model.Kind == CompactionProfileKinds.ContextWindow)
             {
-                <MudItem xs="12" sm="6" md="3"><MudNumericField T="double" Value="@(model.ToolResultThreshold * 100)" ValueChanged="@(value => model.ToolResultThreshold = value / 100)" Label="Tool-result threshold (%)" Min="0.01" Max="100" Margin="Margin.Dense" /></MudItem>
-                <MudItem xs="12" sm="6" md="3"><MudNumericField T="double" Value="@(model.TruncationThreshold * 100)" ValueChanged="@(value => model.TruncationThreshold = value / 100)" Label="History truncation threshold (%)" Min="0.01" Max="100" Margin="Margin.Dense" /></MudItem>
+                <MudItem xs="12" sm="6" md="3"><MudNumericField Class="app-numeric-field app-numeric-field--wide" T="double" Value="@(model.ToolResultThreshold * 100)" ValueChanged="@(value => model.ToolResultThreshold = value / 100)" Label="Tool-result threshold (%)" Min="0.01" Max="100" Margin="Margin.Dense" /></MudItem>
+                <MudItem xs="12" sm="6" md="3"><MudNumericField Class="app-numeric-field app-numeric-field--wide" T="double" Value="@(model.TruncationThreshold * 100)" ValueChanged="@(value => model.TruncationThreshold = value / 100)" Label="History truncation threshold (%)" Min="0.01" Max="100" Margin="Margin.Dense" /></MudItem>
                 @if (!HasValidContextWindowThresholds()) { <MudItem xs="12"><MudText Color="Color.Error" Typo="Typo.caption">Thresholds must be above 0% and at most 100%; history truncation cannot occur before tool-result compaction.</MudText></MudItem> }
             }
             @if (model.Kind == CompactionProfileKinds.CustomPipeline)
@@ -78,21 +78,21 @@
                             </MudSelect></MudItem>
                             @if (stage.Trigger.Kind == CompactionLimitKinds.InputBudgetPercent)
                             {
-                                <MudItem xs="12" sm="6" md="4"><MudNumericField T="double" Value="@(stage.Trigger.Value * 100)" ValueChanged="@(value => stage.Trigger.Value = value / 100)" Label="Trigger (%)" Min="0.01" Max="100" Margin="Margin.Dense" /></MudItem>
-                                <MudItem xs="12" sm="6" md="4"><MudNumericField T="double" Value="@(stage.Target.Value * 100)" ValueChanged="@(value => stage.Target.Value = value / 100)" Label="Target (%)" Min="0.01" Max="100" Margin="Margin.Dense" /></MudItem>
+                                <MudItem xs="12" sm="6" md="4"><MudNumericField Class="app-numeric-field" T="double" Value="@(stage.Trigger.Value * 100)" ValueChanged="@(value => stage.Trigger.Value = value / 100)" Label="Trigger (%)" Min="0.01" Max="100" Margin="Margin.Dense" /></MudItem>
+                                <MudItem xs="12" sm="6" md="4"><MudNumericField Class="app-numeric-field" T="double" Value="@(stage.Target.Value * 100)" ValueChanged="@(value => stage.Target.Value = value / 100)" Label="Target (%)" Min="0.01" Max="100" Margin="Margin.Dense" /></MudItem>
                             }
                             else
                             {
-                                <MudItem xs="12" sm="6" md="4"><MudNumericField T="double" @bind-Value="stage.Trigger.Value" Label="Trigger" Min="@(stage.Trigger.Kind == CompactionLimitKinds.Tokens ? 1 : 0)" Margin="Margin.Dense" /></MudItem>
-                                <MudItem xs="12" sm="6" md="4"><MudNumericField T="double" @bind-Value="stage.Target.Value" Label="Target" Min="@(stage.Target.Kind == CompactionLimitKinds.Tokens ? 1 : 0)" Margin="Margin.Dense" /></MudItem>
+                                <MudItem xs="12" sm="6" md="4"><MudNumericField Class="app-numeric-field" T="double" @bind-Value="stage.Trigger.Value" Label="Trigger" Min="@(stage.Trigger.Kind == CompactionLimitKinds.Tokens ? 1 : 0)" Margin="Margin.Dense" /></MudItem>
+                                <MudItem xs="12" sm="6" md="4"><MudNumericField Class="app-numeric-field" T="double" @bind-Value="stage.Target.Value" Label="Target" Min="@(stage.Target.Kind == CompactionLimitKinds.Tokens ? 1 : 0)" Margin="Margin.Dense" /></MudItem>
                             }
                             @if (stage.Kind == CompactionStageKinds.SlidingWindow)
                             {
-                                <MudItem xs="12" sm="6" md="4"><MudNumericField T="int" @bind-Value="stage.MinimumPreservedTurns" Label="Retain recent turns" Min="0" Margin="Margin.Dense" /></MudItem>
+                                <MudItem xs="12" sm="6" md="4"><MudNumericField Class="app-numeric-field" T="int" @bind-Value="stage.MinimumPreservedTurns" Label="Retain recent turns" Min="0" Margin="Margin.Dense" /></MudItem>
                             }
                             else
                             {
-                                <MudItem xs="12" sm="6" md="4"><MudNumericField T="int" @bind-Value="stage.MinimumPreservedGroups" Label="Retain recent groups" Min="0" Margin="Margin.Dense" /></MudItem>
+                                <MudItem xs="12" sm="6" md="4"><MudNumericField Class="app-numeric-field" T="int" @bind-Value="stage.MinimumPreservedGroups" Label="Retain recent groups" Min="0" Margin="Margin.Dense" /></MudItem>
                             }
                             @if (!HasValidStageLimits(stage)) { <MudItem xs="12"><MudText Color="Color.Error" Typo="Typo.caption">Use supported ordered limits; token limits must be positive.</MudText></MudItem> }
                             @if (!HasValidResolvedFixedStageLimits(stage)) { <MudItem xs="12"><MudText Color="Color.Error" Typo="Typo.caption">These percentages resolve to invalid token thresholds for the fixed input budget.</MudText></MudItem> }

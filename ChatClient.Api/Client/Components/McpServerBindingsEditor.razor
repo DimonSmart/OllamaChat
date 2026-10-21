@@ -167,7 +167,7 @@
                                                     @switch (definition.GetNormalizedKind())
                                                     {
                                                         case "int":
-                                                            <MudNumericField T="int?"
+                                                            <MudNumericField Class="app-numeric-field app-numeric-field--wide" T="int?"
                                                                              Value="@GetIntOverrideValue(binding, definition.Key)"
                                                                              ValueChanged="@(value => OnIntOverrideChangedAsync(binding, definition.Key, value))"
                                                                              Label="@GetOverrideLabel(definition)"

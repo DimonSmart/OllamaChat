@@ -13,7 +13,7 @@
     <MudSelectItem Value="ServerType.Azure">Azure</MudSelectItem>
 </MudSelect></MudItem>
 
-<MudItem xs="12" sm="6"><MudNumericField T="int" @bind-Value="Server.HttpTimeoutSeconds"
+<MudItem xs="12" sm="6"><MudNumericField Class="app-numeric-field app-numeric-field--wide" T="int" @bind-Value="Server.HttpTimeoutSeconds"
                  Label="HTTP Timeout (seconds)"
                  Variant="Variant.Outlined"
                  Min="1" Max="3600"

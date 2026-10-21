@@ -88,7 +88,7 @@
                     <MudText Typo="Typo.body2">Default embedding model for new Knowledge Stores</MudText>
                     <ServerModelPicker Value="_embeddingModel" ValueChanged="OnEmbeddingModelChanged" ShowClearButton="true" />
                     <MudGrid Spacing="2">
-                        <MudItem xs="12" sm="6" md="4"><MudNumericField T="double" @bind-Value="_settings.Embedding.RagMinRelevanceScore" Label="Default RAG minimum relevance score" HelperText="Used when no RAG Provider profile is selected." Min="-1" Max="1" Step="0.01" Variant="Variant.Outlined" Margin="Margin.Dense" /></MudItem>
+                        <MudItem xs="12" sm="6" md="4"><MudNumericField Class="app-numeric-field app-numeric-field--wide" T="double" @bind-Value="_settings.Embedding.RagMinRelevanceScore" Label="Default RAG minimum relevance score" HelperText="Used when no RAG Provider profile is selected." Min="-1" Max="1" Step="0.01" Variant="Variant.Outlined" Margin="Margin.Dense" /></MudItem>
                     </MudGrid>
                 </AppSection>
 

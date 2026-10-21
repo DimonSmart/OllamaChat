@@ -75,14 +75,14 @@
                                    Label="@GetFieldLabel(f)" />
                         break;
                     case "integer":
-                        <MudNumericField T="int?" Value="@(parameters[f.Name] as int?)"
+                        <MudNumericField Class="app-numeric-field app-numeric-field--wide" T="int?" Value="@(parameters[f.Name] as int?)"
                                          ValueChanged="v => parameters[f.Name] = v"
                                          Label="@GetFieldLabel(f)"
                                          Variant="Variant.Outlined"
                                          Margin="Margin.Dense" />
                         break;
                     case "number":
-                        <MudNumericField T="double?" Value="@(parameters[f.Name] as double?)"
+                        <MudNumericField Class="app-numeric-field app-numeric-field--wide" T="double?" Value="@(parameters[f.Name] as double?)"
                                          ValueChanged="v => parameters[f.Name] = v"
                                          Label="@GetFieldLabel(f)"
                                          Variant="Variant.Outlined"

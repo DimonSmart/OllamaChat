@@ -100,13 +100,13 @@
                         <MudItem xs="6" md="3">
                             <MudStack Spacing="0">
                                 <MudText Typo="Typo.caption" Class="mud-text-secondary">Chunk size</MudText>
-                                <MudNumericField @bind-Value="selected.Configuration.MaxTokensPerChunk" Min="1" Variant="Variant.Outlined" Margin="Margin.Dense" />
+                                <MudNumericField Class="app-numeric-field" @bind-Value="selected.Configuration.MaxTokensPerChunk" Min="1" Variant="Variant.Outlined" Margin="Margin.Dense" />
                             </MudStack>
                         </MudItem>
                         <MudItem xs="6" md="2">
                             <MudStack Spacing="0">
                                 <MudText Typo="Typo.caption" Class="mud-text-secondary">Overlap</MudText>
-                                <MudNumericField @bind-Value="selected.Configuration.OverlapTokens" Min="0" Variant="Variant.Outlined" Margin="Margin.Dense" />
+                                <MudNumericField Class="app-numeric-field" @bind-Value="selected.Configuration.OverlapTokens" Min="0" Variant="Variant.Outlined" Margin="Margin.Dense" />
                             </MudStack>
                         </MudItem>
                     </MudGrid>
