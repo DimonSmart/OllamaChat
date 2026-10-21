@@ -15,6 +15,7 @@ public static class FilePathConstants
     public const string DefaultRagProviderProfilesFile = "UserData/rag_provider_profiles.json";
     public const string DefaultModelRuntimeLimitsFile = "UserData/model_runtime_limits.json";
     public const string DefaultWorkflowDefinitionsFile = "UserData/workflow_definitions.json";
+    public const string DefaultScheduledTasksFile = "UserData/scheduled_tasks.json";
     public const string DefaultUserSettingsFile = "UserData/user_settings.json";
     public const string DefaultKnowledgeVectorDatabaseFile = "UserData/knowledge-stores/knowledge.sqlite";
     public const string DefaultWebSearchCacheDirectory = "UserData/web_search_cache";

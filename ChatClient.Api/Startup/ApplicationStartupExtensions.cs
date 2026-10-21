@@ -1,6 +1,7 @@
 using ChatClient.Api.Services;
 using ChatClient.Api.Services.Seed;
 using ChatClient.Application.Repositories;
+using ChatClient.Application.Services;
 using ChatClient.Domain.Models;
 using Microsoft.AspNetCore.Hosting.Server;
 using Microsoft.AspNetCore.Hosting.Server.Features;
@@ -27,6 +28,8 @@ internal static class ApplicationStartupExtensions
         await scope.ServiceProvider.GetRequiredService<WorkflowDefinitionSeeder>().SeedAsync();
         await scope.ServiceProvider.GetRequiredService<LlmServerConfigSeeder>().SeedAsync();
         await scope.ServiceProvider.GetRequiredService<McpServerConfigSeeder>().SeedAsync();
+        // Hosted Quartz starts with the ASP.NET host; restore jobs before it starts firing.
+        await scope.ServiceProvider.GetRequiredService<IScheduledTaskService>().InitializeAsync();
 
         var startupChecker = scope.ServiceProvider.GetRequiredService<OllamaServerAvailabilityService>();
         var ollamaStatus = await startupChecker.CheckOllamaStatusAsync();

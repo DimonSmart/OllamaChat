@@ -9,6 +9,8 @@ using ChatClient.Api.Services.AgentRuntime;
 using ChatClient.Api.Services.BuiltIn;
 using ChatClient.Api.Services.Rag;
 using ChatClient.Api.Services.Sandbox;
+using ChatClient.Api.Services.Scheduling;
+using Quartz;
 using ChatClient.Api.Services.Seed;
 using ChatClient.Api.VoiceInput;
 using ChatClient.Application.Repositories;
@@ -38,6 +40,7 @@ public static class ServiceCollectionExtensions
     {
         services.AddCoreServices();
         services.AddPersistenceServices();
+        services.AddSchedulingServices();
         services.AddRagServices();
         services.AddAgenticServices();
         services.AddSeeders();
@@ -91,6 +94,7 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<IRagProviderProfileRepository, RagProviderProfileRepository>();
         services.AddSingleton<IModelRuntimeLimitsRepository, ModelRuntimeLimitsRepository>();
         services.AddSingleton<IWorkflowDefinitionRepository, WorkflowDefinitionRepository>();
+        services.AddSingleton<IScheduledTaskRepository, ScheduledTaskRepository>();
         services.AddSingleton<ILlmServerConfigRepository, LlmServerConfigRepository>();
         services.AddSingleton<IMcpServerConfigRepository, McpServerConfigRepository>();
         services.AddSingleton<IUserSettingsRepository, UserSettingsRepository>();
@@ -115,6 +119,18 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<IWorkspaceDirectoryService, WorkspaceDirectoryService>();
         services.AddSingleton<IKnowledgeStoreService, KnowledgeStoreService>();
 
+        return services;
+    }
+
+    private static IServiceCollection AddSchedulingServices(this IServiceCollection services)
+    {
+        services.AddSingleton(TimeProvider.System);
+        services.AddSingleton<ScheduledTaskTriggerFactory>();
+        services.AddSingleton<ScheduledTaskRuntimeState>();
+        services.AddSingleton<IScheduledTaskService, ScheduledTaskService>();
+        services.AddTransient<ScheduledTimerFiredJob>();
+        services.AddQuartz();
+        services.AddQuartzHostedService(options => options.WaitForJobsToComplete = true);
         return services;
     }
 
