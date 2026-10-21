@@ -12,13 +12,18 @@ public class JsonFileRepository<T>
     private readonly string _lockKey;
     private readonly ILogger _logger;
     private readonly JsonSerializerOptions _options;
+    private readonly bool _atomicWrites;
+    private readonly bool _rejectNullRead;
 
-    public JsonFileRepository(string filePath, ILogger logger, JsonSerializerOptions? options = null)
+    public JsonFileRepository(string filePath, ILogger logger, JsonSerializerOptions? options = null,
+        bool atomicWrites = false, bool rejectNullRead = false)
     {
         _filePath = Path.GetFullPath(filePath);
         _lockKey = OperatingSystem.IsWindows() ? _filePath.ToUpperInvariant() : _filePath;
         _logger = logger;
         _options = options ?? new JsonSerializerOptions { WriteIndented = true };
+        _atomicWrites = atomicWrites;
+        _rejectNullRead = rejectNullRead;
         var directory = Path.GetDirectoryName(_filePath);
         if (!string.IsNullOrEmpty(directory) && !Directory.Exists(directory))
         {
@@ -69,13 +74,33 @@ public class JsonFileRepository<T>
             return default;
 
         var json = await File.ReadAllTextAsync(_filePath, cancellationToken);
-        return JsonSerializer.Deserialize<T>(json, _options);
+        var data = JsonSerializer.Deserialize<T>(json, _options);
+        if (_rejectNullRead && data is null)
+            throw new InvalidDataException($"JSON in {_filePath} must not be null.");
+        return data;
     }
 
     private async Task WriteInternalAsync(T data, CancellationToken cancellationToken)
     {
         var json = JsonSerializer.Serialize(data, _options);
-        await File.WriteAllTextAsync(_filePath, json, cancellationToken);
+        if (!_atomicWrites)
+        {
+            await File.WriteAllTextAsync(_filePath, json, cancellationToken);
+            return;
+        }
+        // Serialize completely before touching the destination; preserve it on write failure.
+        var temporary = Path.Combine(Path.GetDirectoryName(_filePath)!,
+            "." + Path.GetFileName(_filePath) + "." + Guid.NewGuid().ToString("N") + ".tmp");
+        try
+        {
+            await File.WriteAllTextAsync(temporary, json, cancellationToken);
+            File.Move(temporary, _filePath, overwrite: true);
+        }
+        finally
+        {
+            if (File.Exists(temporary))
+                File.Delete(temporary);
+        }
     }
 
     private async Task<TValue> ExecuteWithFileLockAsync<TValue>(
