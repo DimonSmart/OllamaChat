@@ -133,7 +133,7 @@ The `backend` development launch profile binds to that loopback address, **does 
 1. Start Ollama with a downloaded model, or prepare credentials for a supported cloud endpoint. For a local model, use `ollama pull MODEL_NAME` (substitute an available model name).
 2. Open **LLM Servers** and check the seeded Ollama connection or add and test your own server connection.
 3. Use **Models** to confirm that your model is discoverable and check its capabilities.
-4. Open **Agents** to configure a reusable agent, or select an existing saved agent in **Chat**.
+4. Open **Agent Templates** to configure a reusable agent, or select an existing saved agent in **Chat**.
 5. Select the server/model and agent in **Chat**, provide any required launch settings, and send a message. Try a saved workflow next to see multiple agents collaborate.
 
 For local-model installation and operation, refer to the [Ollama documentation](https://docs.ollama.com/).
