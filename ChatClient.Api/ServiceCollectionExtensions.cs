@@ -127,6 +127,7 @@ public static class ServiceCollectionExtensions
         services.AddSingleton(TimeProvider.System);
         services.AddSingleton<ScheduledTaskTriggerFactory>();
         services.AddSingleton<ScheduledTaskRuntimeState>();
+        services.AddSingleton<ITimerEventPublisher, TimerEventPublisher>();
         services.AddSingleton<IScheduledTaskService, ScheduledTaskService>();
         services.AddTransient<ScheduledTimerFiredJob>();
         services.AddQuartz();

@@ -5,6 +5,7 @@ namespace ChatClient.Api.Services.Scheduling;
 /// <summary>Diagnostics only: never invokes an agent, workflow, MCP tool or user code.</summary>
 public sealed class ScheduledTimerFiredJob(
     ScheduledTaskRuntimeState runtime,
+    ITimerEventPublisher publisher,
     ILogger<ScheduledTimerFiredJob> logger,
     TimeProvider clock) : IJob
 {
@@ -19,6 +20,7 @@ public sealed class ScheduledTimerFiredJob(
             var actual = clock.GetUtcNow();
             var (valid, name) = await runtime.TryRecordAsync(id, generation, actual, cancellationToken);
             if (!valid) return;
+            publisher.Publish(new TimerFiredEvent(id, name!, actual));
             logger.LogInformation("Scheduled timer fired: Id={Id}, Name={Name}, Scheduled={ScheduledUtc}, Actual={ActualUtc}",
                 id, name, context.ScheduledFireTimeUtc, actual);
         }

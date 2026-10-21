@@ -1,9 +1,12 @@
 @page "/scheduled-tasks"
 @using ChatClient.Domain.Models
 @using ChatClient.Application.Services
+@using ChatClient.Api.Services.Scheduling
 @implements IAsyncDisposable
 @inject IScheduledTaskService Tasks
 @inject ISnackbar Snackbar
+@inject ITimerEventPublisher TimerEvents
+@inject ILogger<ScheduledTasks> TimerLogger
 
 <AppPage Title="Scheduled Tasks">
     <AppCrudToolbar AddText="Add Timer" OnAdd="AddTimer" AddDisabled="@(!string.IsNullOrEmpty(storageError))"
@@ -251,8 +254,9 @@
             .OfType<string>())
         .Concat(["Europe/Madrid", "Europe/Budapest", "UTC"])
         .Distinct(StringComparer.OrdinalIgnoreCase).OrderBy(x => x, StringComparer.OrdinalIgnoreCase).ToArray();
-    private CancellationTokenSource? pollCancellation;
-    private Task? pollTask;
+    private Task? _loadTask;
+    private bool _refreshRequested;
+    private volatile bool _disposed;
     private List<ScheduledTaskView> timers = [];
     private List<ScheduledTaskView> filtered = [];
     private IReadOnlyList<Guid> pendingCleanup = [];
@@ -274,38 +278,76 @@
     protected override async Task OnInitializedAsync()
     {
         await LoadAsync();
-        pollCancellation = new CancellationTokenSource();
-        pollTask = PollAsync(pollCancellation.Token);
     }
 
-    private async Task PollAsync(CancellationToken token)
+    protected override async Task OnAfterRenderAsync(bool firstRender)
     {
-        using var timer = new PeriodicTimer(TimeSpan.FromSeconds(5));
-        try
-        {
-            while (await timer.WaitForNextTickAsync(token))
-                await InvokeAsync(LoadAsync);
-        }
-        catch (OperationCanceledException) when (token.IsCancellationRequested) { }
+        if (!firstRender || _disposed) return;
+        TimerEvents.TimerFired += OnTimerFired;
+        // Close the window between prerender/initial read and interactive subscription.
+        await LoadAsync();
     }
 
-    private async Task LoadAsync()
+    private void OnTimerFired(TimerFiredEvent notification)
+    {
+        if (_disposed) return;
+        _ = RefreshOnEventSafeAsync();
+    }
+
+    private async Task RefreshOnEventSafeAsync()
     {
         try
         {
-            timers = (await Tasks.GetAllAsync()).ToList();
-            pendingCleanup = await Tasks.GetPendingCleanupAsync();
-            storageError = null;
-            ApplySearch();
+            await InvokeAsync(LoadAsync);
         }
         catch (Exception ex)
         {
-            storageError = ex.Message;
+            TimerLogger.LogDebug(ex, "Could not refresh scheduled tasks after firing");
         }
-        finally
+    }
+
+    // All requests arrive on the component dispatcher; coalesce overlapping reads
+    // and repeat whenever an event arrives during an outstanding query.
+    private Task LoadAsync()
+    {
+        if (_disposed) return Task.CompletedTask;
+        _refreshRequested = true;
+        if (_loadTask is { IsCompleted: false }) return _loadTask;
+        _loadTask = LoadUntilCurrentAsync();
+        return _loadTask;
+    }
+
+    private async Task LoadUntilCurrentAsync()
+    {
+        while (_refreshRequested && !_disposed)
         {
-            loading = false;
-            StateHasChanged();
+            _refreshRequested = false;
+            loading = true;
+            try
+            {
+                var updatedTimers = (await Tasks.GetAllAsync()).ToList();
+                var updatedCleanup = await Tasks.GetPendingCleanupAsync();
+                if (_disposed) return;
+                if (_refreshRequested) continue;
+
+                timers = updatedTimers;
+                pendingCleanup = updatedCleanup;
+                storageError = null;
+                ApplySearch();
+            }
+            catch (Exception ex)
+            {
+                if (!_disposed && !_refreshRequested)
+                    storageError = ex.Message;
+            }
+            finally
+            {
+                if (!_disposed)
+                {
+                    loading = false;
+                    StateHasChanged();
+                }
+            }
         }
     }
 
@@ -392,12 +434,12 @@
         try
         {
             var result = await Tasks.PreviewAsync(editing);
-            if (sequence == previewSequence)
+            if (!_disposed && sequence == previewSequence)
                 preview = result.ToList();
         }
         catch (Exception ex)
         {
-            if (sequence == previewSequence)
+            if (!_disposed && sequence == previewSequence)
             {
                 preview = [];
                 previewError = ex.Message;
@@ -405,9 +447,13 @@
         }
         finally
         {
-            if (sequence == previewSequence)
+            if (!_disposed && sequence == previewSequence)
                 previewBusy = false;
-            await InvokeAsync(StateHasChanged);
+            if (!_disposed)
+            {
+                try { await InvokeAsync(() => { if (!_disposed) StateHasChanged(); }); }
+                catch (Exception ex) { TimerLogger.LogDebug(ex, "Could not update timer preview"); }
+            }
         }
     }
 
@@ -508,18 +554,11 @@
         catch { return "Invalid time zone"; }
     }
 
-    public async ValueTask DisposeAsync()
+    public ValueTask DisposeAsync()
     {
+        _disposed = true;
+        TimerEvents.TimerFired -= OnTimerFired;
         ++previewSequence;
-        if (pollCancellation is not null)
-        {
-            await pollCancellation.CancelAsync();
-            if (pollTask is not null)
-            {
-                try { await pollTask; }
-                catch (OperationCanceledException) { }
-            }
-            pollCancellation.Dispose();
-        }
+        return ValueTask.CompletedTask;
     }
 }

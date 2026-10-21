@@ -4,11 +4,15 @@
 @inject ChatClient.Application.Services.Agentic.IChatEngineSessionService AgenticChatService
 @inject IUserSettingsService UserSettingsService
 @inject ChatToolbarState ChatToolbar
+@inject ITimerEventPublisher TimerEvents
+@inject ISnackbar Snackbar
+@inject ILogger<MainLayout> TimerLogger
 @using ChatClient.Domain.Models
 @using ChatClient.Api.Client.Pages
 @using ChatClient.Api.Client.Components
 @using ChatClient.Api.Client.Models
 @using ChatClient.Api.Services
+@using ChatClient.Api.Services.Scheduling
 @using ChatClient.Api.Client.Styling
 @using System.Linq
 @using MudX
@@ -99,6 +103,36 @@
     private ServerModelSelection pickerModel = new(null, null);
     private UiModelSelectionContext modelSelectionContext = null!;
     private MudTheme? _theme = null;
+    private volatile bool _disposed;
+
+    protected override void OnAfterRender(bool firstRender)
+    {
+        if (firstRender && !_disposed)
+            TimerEvents.TimerFired += OnTimerFired;
+    }
+
+    private void OnTimerFired(TimerFiredEvent notification)
+    {
+        if (_disposed) return;
+        _ = ShowTimerNotificationSafeAsync(notification);
+    }
+
+    private async Task ShowTimerNotificationSafeAsync(TimerFiredEvent notification)
+    {
+        try
+        {
+            await InvokeAsync(() =>
+            {
+                if (_disposed) return;
+                Snackbar.Add($"Timer fired: {notification.TimerName}", Severity.Info,
+                    options => options.DuplicatesBehavior = SnackbarDuplicatesBehavior.Allow);
+            });
+        }
+        catch (Exception ex)
+        {
+            TimerLogger.LogDebug(ex, "Could not show timer notification");
+        }
+    }
 
     protected override async Task OnInitializedAsync()
     {
@@ -218,6 +252,8 @@
 
     public ValueTask DisposeAsync()
     {
+        _disposed = true;
+        TimerEvents.TimerFired -= OnTimerFired;
         ChatToolbar.Changed -= OnChatToolbarChanged;
         return ValueTask.CompletedTask;
     }
