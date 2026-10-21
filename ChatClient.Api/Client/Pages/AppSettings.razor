@@ -28,7 +28,7 @@
                     <MudText Typo="Typo.body2">Default chat model</MudText>
                     <ServerModelPicker Value="_defaultModel" ValueChanged="OnDefaultModelChanged" ShowClearButton="true" />
                     <MudGrid Spacing="2">
-                        <MudItem xs="12" sm="6" md="4"><MudSelect T="AppChatHistoryMode" Label="History processing" @bind-Value="_settings.ChatHistoryMode" Variant="Variant.Outlined" Dense="true" Margin="Margin.Dense">
+                        <MudItem xs="12" sm="6" md="4"><MudSelect Class="app-bounded-select" T="AppChatHistoryMode" Label="History processing" @bind-Value="_settings.ChatHistoryMode" Variant="Variant.Outlined" Dense="true" Margin="Margin.Dense">
                             <MudSelectItem Value="@AppChatHistoryMode.None">None</MudSelectItem>
                             <MudSelectItem Value="@AppChatHistoryMode.Truncate">Truncate</MudSelectItem>
                             <MudSelectItem Value="@AppChatHistoryMode.Summarize">Summarize</MudSelectItem>

@@ -28,13 +28,13 @@
                     <MudTextField @bind-Value="model.Name" Label="Name" Required="true" Immediate="true" Margin="Margin.Dense" Validation="@(new Func<string, string>(ValidateName))" />
                 </MudItem>
                 <MudItem xs="12" sm="6" md="4">
-                    <MudSelect T="string" Value="model.Kind" ValueChanged="ChangeProfileKind" Label="Policy" Margin="Margin.Dense" Dense="true">
+                    <MudSelect Class="app-bounded-select app-bounded-select--wide" T="string" Value="model.Kind" ValueChanged="ChangeProfileKind" Label="Policy" Margin="Margin.Dense" Dense="true">
                         <MudSelectItem Value="@CompactionProfileKinds.ContextWindow">Recommended context window</MudSelectItem>
                         <MudSelectItem Value="@CompactionProfileKinds.CustomPipeline">Custom pipeline</MudSelectItem>
                     </MudSelect>
                 </MudItem>
                 <MudItem xs="12" sm="6" md="4">
-                    <MudSelect T="string" @bind-Value="model.BudgetSource" Label="Budget source" Margin="Margin.Dense" Dense="true">
+                    <MudSelect Class="app-bounded-select app-bounded-select--wide" T="string" @bind-Value="model.BudgetSource" Label="Budget source" Margin="Margin.Dense" Dense="true">
                         <MudSelectItem Value="@CompactionBudgetSources.SelectedModel">Use selected model limits</MudSelectItem>
                         <MudSelectItem Value="@CompactionBudgetSources.Fixed">Fixed limits</MudSelectItem>
                     </MudSelect>
@@ -67,13 +67,13 @@
                             <MudIconButton Icon="@Icons.Material.Filled.Delete" Color="Color.Error" Size="Size.Small" aria-label="Delete stage" OnClick="@(() => RemoveStage(stage))" />
                         </MudStack>
                         <MudGrid Spacing="2">
-                            <MudItem xs="12" sm="6" md="4"><MudSelect T="string" Value="stage.Kind" ValueChanged="@(kind => ChangeStageKind(stage, kind))" Label="Stage type" Dense="true" Margin="Margin.Dense">
+                            <MudItem xs="12" sm="6" md="4"><MudSelect Class="app-bounded-select app-bounded-select--wide" T="string" Value="stage.Kind" ValueChanged="@(kind => ChangeStageKind(stage, kind))" Label="Stage type" Dense="true" Margin="Margin.Dense">
                                 <MudSelectItem Value="@CompactionStageKinds.ToolResult">Compact tool results</MudSelectItem>
                                 <MudSelectItem Value="@CompactionStageKinds.Truncation">Truncate history</MudSelectItem>
                                 <MudSelectItem Value="@CompactionStageKinds.Summarization">Summarize history</MudSelectItem>
                                 <MudSelectItem Value="@CompactionStageKinds.SlidingWindow">Keep sliding window</MudSelectItem>
                             </MudSelect></MudItem>
-                            <MudItem xs="12" sm="6" md="4"><MudSelect T="string" Value="stage.Trigger.Kind" ValueChanged="@(kind => ChangeLimitKind(stage, kind))" Label="Limit kind" Dense="true" Margin="Margin.Dense">
+                            <MudItem xs="12" sm="6" md="4"><MudSelect Class="app-bounded-select" T="string" Value="stage.Trigger.Kind" ValueChanged="@(kind => ChangeLimitKind(stage, kind))" Label="Limit kind" Dense="true" Margin="Margin.Dense">
                                 @foreach (var limitKind in SupportedLimitKinds(stage.Kind)) { <MudSelectItem Value="@limitKind">@LimitKindLabel(limitKind)</MudSelectItem> }
                             </MudSelect></MudItem>
                             @if (stage.Trigger.Kind == CompactionLimitKinds.InputBudgetPercent)

@@ -24,7 +24,7 @@
         <MudGrid Spacing="2">
             <MudItem xs="12"><MudTextField @bind-Value="model.Name" Label="Name" Required="true" Margin="Margin.Dense" /></MudItem>
             <MudItem xs="12"><MudTextField @bind-Value="model.Instructions" Label="Instructions" Lines="6" Margin="Margin.Dense" HelperText="Leave empty to use Microsoft Agent Framework defaults." /></MudItem>
-            <MudItem xs="12" sm="6" md="4"><MudSelect T="FileAccessMode" @bind-Value="model.AccessMode" Label="Access mode" Margin="Margin.Dense"><MudSelectItem Value="FileAccessMode.ReadOnly">Read-only</MudSelectItem><MudSelectItem Value="FileAccessMode.ReadWrite">Read-write</MudSelectItem></MudSelect></MudItem>
+            <MudItem xs="12" sm="6" md="4"><MudSelect Class="app-bounded-select" T="FileAccessMode" @bind-Value="model.AccessMode" Label="Access mode" Margin="Margin.Dense"><MudSelectItem Value="FileAccessMode.ReadOnly">Read-only</MudSelectItem><MudSelectItem Value="FileAccessMode.ReadWrite">Read-write</MudSelectItem></MudSelect></MudItem>
             <MudItem xs="12" sm="6" md="4"><MudCheckBox @bind-Value="model.RequireReadApproval" Label="Require approval for reads" /></MudItem>
             <MudItem xs="12" sm="6" md="4"><MudCheckBox @bind-Value="model.RequireWriteApproval" Label="Require approval for writes" Disabled="@(model.AccessMode == FileAccessMode.ReadOnly)" /></MudItem>
         </MudGrid>

@@ -196,7 +196,7 @@
                          Immediate="true"
                          Validation="@(new Func<string, string>(ValidateName))" /></MudItem>
 
-            <MudItem xs="12" sm="4"><MudSelect T="string"
+            <MudItem xs="12" sm="4"><MudSelect Class="app-bounded-select" T="string"
                       Label="Server Type"
                       @bind-Value="serverType"
                       Required="true"
