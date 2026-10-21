@@ -186,3 +186,49 @@
 .mud-card-header {
     padding: 12px 16px 6px;
 }
+
+/* Shared widths for fields whose input domain has a predictable display length.
+   Apply to the MudBlazor control, not its input internals or every numeric input. */
+:root {
+    --app-numeric-width: 13rem;
+    --app-numeric-width-short: 9rem;
+    --app-numeric-width-wide: 20rem;
+    --app-select-width: 14rem;
+    --app-select-width-short: 10rem;
+    --app-select-width-wide: 20rem;
+}
+
+.app-numeric-field {
+    width: min(100%, var(--app-numeric-width));
+    max-width: 100%;
+    flex-grow: 0;
+}
+
+.app-numeric-field--short {
+    --app-numeric-width: var(--app-numeric-width-short);
+}
+
+.app-numeric-field--wide {
+    --app-numeric-width: var(--app-numeric-width-wide);
+}
+
+.app-bounded-select {
+    width: min(100%, var(--app-select-width));
+    max-width: 100%;
+    flex-grow: 0;
+}
+
+.app-bounded-select--short {
+    --app-select-width: var(--app-select-width-short);
+}
+
+.app-bounded-select--wide {
+    --app-select-width: var(--app-select-width-wide);
+}
+
+@media (max-width: 600px) {
+    .app-numeric-field,
+    .app-bounded-select {
+        width: 100%;
+    }
+}

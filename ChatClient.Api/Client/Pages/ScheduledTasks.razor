@@ -124,8 +124,8 @@
 
             <MudText Typo="Typo.subtitle2" Class="mt-2">Schedule</MudText>
             <MudGrid Spacing="2">
-                <MudItem xs="12" sm="6">
-                    <MudSelect T="ScheduleType" @bind-Value="editing.Schedule.Type" @bind-Value:after="RefreshPreviewAsync"
+                <MudItem xs="12" sm="3">
+                    <MudSelect Class="app-bounded-select" T="ScheduleType" @bind-Value="editing.Schedule.Type" @bind-Value:after="RefreshPreviewAsync"
                                Label="Type" Margin="Margin.Dense" Dense="true">
                         @foreach (var type in Enum.GetValues<ScheduleType>())
                         {
@@ -135,12 +135,12 @@
                 </MudItem>
                 @if (editing.Schedule.Type == ScheduleType.Interval)
                 {
-                    <MudItem xs="12" sm="3">
-                        <MudNumericField T="int" @bind-Value="editing.Schedule.IntervalValue" @bind-Value:after="RefreshPreviewAsync"
+                    <MudItem xs="6" sm="2">
+                        <MudNumericField Class="app-numeric-field app-numeric-field--short" T="int" @bind-Value="editing.Schedule.IntervalValue" @bind-Value:after="RefreshPreviewAsync"
                                          Label="Every" Min="1" Margin="Margin.Dense" />
                     </MudItem>
-                    <MudItem xs="12" sm="3">
-                        <MudSelect T="ScheduleIntervalUnit" @bind-Value="editing.Schedule.IntervalUnit" @bind-Value:after="RefreshPreviewAsync"
+                    <MudItem xs="6" sm="2">
+                        <MudSelect Class="app-bounded-select app-bounded-select--short" T="ScheduleIntervalUnit" @bind-Value="editing.Schedule.IntervalUnit" @bind-Value:after="RefreshPreviewAsync"
                                    Label="Unit" Margin="Margin.Dense" Dense="true">
                             <MudSelectItem T="ScheduleIntervalUnit" Value="ScheduleIntervalUnit.Minutes">Minutes</MudSelectItem>
                             <MudSelectItem T="ScheduleIntervalUnit" Value="ScheduleIntervalUnit.Hours">Hours</MudSelectItem>
@@ -149,12 +149,12 @@
                 }
                 else if (editing.Schedule.Type != ScheduleType.Cron)
                 {
-                    <MudItem xs="6" sm="3">
-                        <MudNumericField T="int" @bind-Value="editing.Schedule.Hour" @bind-Value:after="RefreshPreviewAsync"
+                    <MudItem xs="6" sm="2">
+                        <MudNumericField Class="app-numeric-field app-numeric-field--short" T="int" @bind-Value="editing.Schedule.Hour" @bind-Value:after="RefreshPreviewAsync"
                                          Label="Hour" Min="0" Max="23" Margin="Margin.Dense" />
                     </MudItem>
-                    <MudItem xs="6" sm="3">
-                        <MudNumericField T="int" @bind-Value="editing.Schedule.Minute" @bind-Value:after="RefreshPreviewAsync"
+                    <MudItem xs="6" sm="2">
+                        <MudNumericField Class="app-numeric-field app-numeric-field--short" T="int" @bind-Value="editing.Schedule.Minute" @bind-Value:after="RefreshPreviewAsync"
                                          Label="Minute" Min="0" Max="59" Margin="Margin.Dense" />
                     </MudItem>
                 }
