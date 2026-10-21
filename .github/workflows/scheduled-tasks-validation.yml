@@ -1,7 +1,9 @@
 name: Scheduled tasks validation
 on:
   push:
-    branches: [scheduled-tasks-quartz-20261021]
+    branches: [main]
+  pull_request:
+    branches: [main]
   workflow_dispatch:
 
 permissions:

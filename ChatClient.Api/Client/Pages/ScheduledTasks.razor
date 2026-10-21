@@ -310,7 +310,7 @@
     }
 
     private void OnSearch(string? query) { searchText = query ?? ""; ApplySearch(); }
-    private void ApplySearch() => filtered = timers.Where(x => x.Definition.Name.Contains(
+    private void ApplySearch() => filtered = timers.Where(x => (x.Definition.Name ?? string.Empty).Contains(
         searchText, StringComparison.OrdinalIgnoreCase)).ToList();
 
     private void AddTimer()

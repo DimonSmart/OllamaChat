@@ -115,7 +115,8 @@ public sealed class ScheduledTaskTriggerFactory
 
     public static bool SameTrigger(ScheduledTaskDefinition before, ScheduledTaskDefinition after)
     {
-        if (before.Enabled != after.Enabled || before.Schedule.Type != after.Schedule.Type)
+        if (before.Schedule is null || after.Schedule is null ||
+            before.Enabled != after.Enabled || before.Schedule.Type != after.Schedule.Type)
             return false;
         if (before.Schedule.Type != ScheduleType.Interval &&
             before.TimeZoneId != after.TimeZoneId)
