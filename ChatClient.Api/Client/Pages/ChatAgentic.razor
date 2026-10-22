@@ -112,7 +112,7 @@
                         {
                             @if (savedWorkspaceId is not null)
                             {
-                                <MudText Typo="Typo.caption" Color="Color.Primary">Saved Workspace — changes require a new chat</MudText>
+                                <MudText Typo="Typo.caption" Color="Color.Primary">Saved Workspace: @savedWorkspaceName — @fileAccessWorkspace</MudText>
                             }
                             <MudStack Row="true" Spacing="1" AlignItems="AlignItems.Center">
                                 <MudTextField T="string" Label="Workspace" Value="fileAccessWorkspace"
@@ -236,6 +236,7 @@
     private List<SandboxProfile> sandboxProfiles = [];
     private string fileAccessWorkspace = string.Empty;
     private Guid? savedWorkspaceId;
+    private string? savedWorkspaceName;
     private Guid? sandboxProfileId;
     private AgentDefinitionLaunchValidation launchValidation = new()
     {
@@ -435,6 +436,7 @@
             .ToList() ?? [];
         fileAccessWorkspace = string.Empty;
         savedWorkspaceId = null;
+        savedWorkspaceName = null;
         sandboxProfileId = sandboxProfiles.FirstOrDefault(profile =>
             string.Equals(profile.Name, ".NET 10 Small", StringComparison.OrdinalIgnoreCase))?.Id;
         foreach (var input in inputDefinitions)
@@ -466,6 +468,7 @@
             .ToList() ?? [];
         fileAccessWorkspace = activeSession.Overrides.WorkspacePath ?? string.Empty;
         savedWorkspaceId = null;
+        savedWorkspaceName = null;
         sandboxProfileId = activeSession.Overrides.SandboxProfileId;
         effectiveModel = activeSession.Model;
     }
@@ -515,6 +518,7 @@
     {
         fileAccessWorkspace = value;
         savedWorkspaceId = null;
+        savedWorkspaceName = null;
         await RefreshLaunchValidationAsync();
     }
 
@@ -537,9 +541,13 @@
         {
             var definition = await WorkspaceService.GetByIdAsync(id);
             fileAccessWorkspace = definition?.Path ?? string.Empty;
+            savedWorkspaceName = definition?.Name;
         }
         else
+        {
+            savedWorkspaceName = null;
             fileAccessWorkspace = selected.DirectPath ?? string.Empty;
+        }
         await RefreshLaunchValidationAsync();
     }
 
@@ -549,6 +557,7 @@
         {
             fileAccessWorkspace = WorkspaceDirectoryService.CreateWorkspace(userSettings.WorkspacesRoot, fileAccessWorkspace);
             savedWorkspaceId = null;
+            savedWorkspaceName = null;
             await RefreshLaunchValidationAsync();
         }
         catch (Exception ex)
