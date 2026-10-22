@@ -8,7 +8,8 @@ namespace ChatClient.Api.Services.AgentRuntime;
 public sealed class AgentDefinitionLaunchCapabilityAnalyzer(
     IAgentTemplateService agentTemplateService,
     IWorkflowDefinitionService workflowDefinitionService,
-    IWorkflowDefinitionCompiler workflowDefinitionCompiler) : IAgentDefinitionLaunchCapabilityAnalyzer
+    IWorkflowDefinitionCompiler workflowDefinitionCompiler,
+    IAgentSkillsProfileService? skillsProfiles = null) : IAgentDefinitionLaunchCapabilityAnalyzer
 {
     public Task<AgentLaunchCapabilities> AnalyzeAsync(
         AgentDefinitionReference reference,
@@ -73,7 +74,7 @@ public sealed class AgentDefinitionLaunchCapabilityAnalyzer(
     {
         return participant.Source switch
         {
-            InlineAgentParticipantSource inline => AnalyzeAgent(inline.Agent),
+            InlineAgentParticipantSource inline => await AnalyzeAgentSkillsAsync(inline.Agent),
             SavedDefinitionParticipantSource saved => await AnalyzeAsync(saved.Reference, visited, cancellationToken),
             _ => new AgentLaunchCapabilities()
         };
@@ -84,7 +85,7 @@ public sealed class AgentDefinitionLaunchCapabilityAnalyzer(
         HashSet<string> visited,
         CancellationToken cancellationToken)
     {
-        var capabilities = AnalyzeAgent(agent);
+        var capabilities = await AnalyzeAgentSkillsAsync(agent);
 
         foreach (var backgroundAgentId in agent.BackgroundAgentIds.Distinct())
         {
@@ -98,6 +99,18 @@ public sealed class AgentDefinitionLaunchCapabilityAnalyzer(
         }
 
         return capabilities;
+    }
+
+    private async Task<AgentLaunchCapabilities> AnalyzeAgentSkillsAsync(AgentTemplateDefinition agent)
+    {
+        var capabilities = AnalyzeAgent(agent);
+        if (agent.SkillsProviderProfileId is not { } profileId || skillsProfiles is null)
+            return capabilities;
+        var profile = await skillsProfiles.GetByIdAsync(profileId);
+        if (profile is null || (!profile.IncludeClaudeSkills &&
+            !profile.FileSources.Any(source => !Path.IsPathFullyQualified(source.Directory))))
+            return capabilities;
+        return Merge(capabilities, new AgentLaunchCapabilities { SupportsWorkspace = true });
     }
 
     private static AgentLaunchCapabilities AnalyzeAgent(AgentTemplateDefinition agent)

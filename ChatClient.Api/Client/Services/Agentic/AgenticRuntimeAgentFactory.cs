@@ -266,6 +266,9 @@ public sealed class AgenticRuntimeAgentFactory(
                 : await AgentSkillsDiscovery.DiscoverAsync(skillsProfile, workspacePath, logger, cancellationToken);
             if (skills.Source is not null)
                 resources.Own(skills.Source);
+            if (skills.Skills.Count > 0 && !supportsFunctions)
+                throw new InvalidOperationException(
+                    $"Model '{request.ResolvedModel.ModelName}' does not support function calling required by native Skills.");
             if (skillsProfile is not null)
                 logger.LogInformation("Agent {AgentName}: skills enabled, profile={ProfileName}, loaded={LoadedCount}, ignored={IgnoredCount}", request.Agent.AgentName, skillsProfile.Name, skills.Skills.Count, skills.Diagnostics.Count);
             var workspaceStore = fileAccessProfile is null
@@ -543,9 +546,9 @@ public sealed class AgenticRuntimeAgentFactory(
             {
                 AutoApprovalRules =
                 [
-                    context => ValueTask.FromResult(approvalPolicy.IsApproved(
-                        context.FunctionCallContent.Name,
-                        request.Agent.AgentId))
+                    context => ValueTask.FromResult(request.RuntimeResources.IsHeadlessExecution
+                        ? skillsSource is not null && (context.FunctionCallContent.Name is "load_skill" or "read_skill_resource")
+                        : approvalPolicy.IsApproved(context.FunctionCallContent.Name, request.Agent.AgentId))
                 ]
             };
         }

@@ -92,6 +92,7 @@ public sealed class HeadlessAgentExecutor(
                     "A saved workspace is required for File Access.");
         }
 
+        var hasDiscoveredSkills = false;
         if (template.SkillsProviderProfileId is { } skillsId)
         {
             var profile = skillProfiles is null ? null : await skillProfiles.GetByIdAsync(skillsId);
@@ -106,7 +107,8 @@ public sealed class HeadlessAgentExecutor(
                 logger ?? NullLogger<HeadlessAgentExecutor>.Instance, cancellationToken);
             try
             {
-                if (discovered.Skills.Count > 0 && modelCapabilities is null)
+                hasDiscoveredSkills = discovered.Skills.Count > 0;
+                if (hasDiscoveredSkills && modelCapabilities is null)
                     return HeadlessAgentRunResult.Fail(descriptor.Name, "headless_capability_unsupported",
                         "Native Skills function-calling validation is unavailable.");
             }
@@ -120,7 +122,7 @@ public sealed class HeadlessAgentExecutor(
             return HeadlessAgentRunResult.Fail(descriptor.Name, "agent_preflight_failed",
                 "Saved Agent is invalid or its configured model is unavailable. Check the agent settings.");
 
-        if (template.SkillsProviderProfileId.HasValue && modelCapabilities is not null &&
+        if (hasDiscoveredSkills && modelCapabilities is not null &&
             resolved.DefaultModel is { } skillsModel &&
             !await modelCapabilities.SupportsFunctionCallingAsync(skillsModel, cancellationToken))
             return HeadlessAgentRunResult.Fail(descriptor.Name, "agent_preflight_failed",
