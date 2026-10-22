@@ -27,3 +27,4 @@ jobs:
           dotnet test ChatClient.Tests/ChatClient.Tests.csproj --no-build --configuration Release --filter-class "ChatClient.Tests.ScheduledTask*"
           dotnet test ChatClient.Tests/ChatClient.Tests.csproj --no-build --configuration Release --filter-class "ChatClient.Tests.HeadlessAgentExecutorTests"
           dotnet test ChatClient.Tests/ChatClient.Tests.csproj --no-build --configuration Release --filter-class "ChatClient.Tests.LlmAgentRuntimeTests"
+          dotnet test ChatClient.Tests/ChatClient.Tests.csproj --no-build --configuration Release --filter-class "ChatClient.Tests.WorkspaceCatalogTests"
