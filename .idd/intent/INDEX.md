@@ -39,3 +39,4 @@ Git history is the source for deleted or previous document versions.
 | IDD-0029 | Spec | Development startup | Backend-only development and executable browser-launch behavior | — |
 | IDD-0030 | Spec | Scheduled tasks | Local Quartz timers and diagnostic firings | — |
 | IDD-0031 | Spec | Headless agent execution | Manual isolated Saved Agent runs from Scheduled Tasks | — |
+| IDD-0032 | Spec | Saved workspaces | Reusable workspace catalog, launch snapshots and safe headless binding | — |
