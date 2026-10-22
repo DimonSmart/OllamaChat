@@ -95,6 +95,7 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<IModelRuntimeLimitsRepository, ModelRuntimeLimitsRepository>();
         services.AddSingleton<IWorkflowDefinitionRepository, WorkflowDefinitionRepository>();
         services.AddSingleton<IScheduledTaskRepository, ScheduledTaskRepository>();
+        services.AddSingleton<IWorkspaceRepository, WorkspaceRepository>();
         services.AddSingleton<ILlmServerConfigRepository, LlmServerConfigRepository>();
         services.AddSingleton<IMcpServerConfigRepository, McpServerConfigRepository>();
         services.AddSingleton<IUserSettingsRepository, UserSettingsRepository>();
@@ -117,6 +118,8 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<ISavedChatService, SavedChatService>();
         services.AddSingleton<IChatTitleGenerator, FirstMessageChatTitleGenerator>();
         services.AddSingleton<IWorkspaceDirectoryService, WorkspaceDirectoryService>();
+        services.AddSingleton<IWorkspaceService, WorkspaceService>();
+        services.AddSingleton<IWorkspaceResolver, WorkspaceResolver>();
         services.AddSingleton<IKnowledgeStoreService, KnowledgeStoreService>();
 
         return services;
