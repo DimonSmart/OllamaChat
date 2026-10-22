@@ -46,6 +46,31 @@ public sealed class HeadlessSavedWorkspaceTests
     }
 
     [Fact]
+    public async Task TextOnlyAgentCanUseSavedWorkspaceWithoutGainingFileTools()
+    {
+        var fixture = new Fixture(withFileAccess: false);
+        AgentRuntimeCreationContext? seen = null;
+        fixture.Runner.Setup(r => r.RunAsync(fixture.Reference, It.IsAny<AgentRuntimeRunRequest>(),
+                It.IsAny<AgentRuntimeCreationContext>(), It.IsAny<AgentRunContext>(),
+                It.IsAny<CancellationToken>()))
+            .Returns((AgentDefinitionReference _, AgentRuntimeRunRequest _, AgentRuntimeCreationContext c,
+                AgentRunContext _, CancellationToken _) =>
+            {
+                seen = c;
+                return Finished();
+            });
+        var outcome = await fixture.Executor.ExecuteAsync(
+            new HeadlessAgentRunRequest(fixture.AgentId, "Hello", fixture.WorkspaceId),
+            TestContext.Current.CancellationToken);
+
+        Assert.True(outcome.Succeeded);
+        Assert.Equal(fixture.WorkspacePath, seen!.RuntimeResources.WorkspacePath);
+        Assert.Null(seen.RuntimeResources.HeadlessFileAccessProfile);
+        Assert.Null(seen.RuntimeResources.HeadlessSkillsProfile);
+        Assert.Null(seen.RuntimeResources.Sandbox);
+    }
+
+    [Fact]
     public async Task HeadlessRejectsWriteOrInteractiveReadApprovalBeforeRunning()
     {
         var fixture = new Fixture();
@@ -97,14 +122,14 @@ public sealed class HeadlessSavedWorkspaceTests
         public Mock<IAgentRunner> Runner { get; } = new();
         public HeadlessAgentExecutor Executor { get; }
 
-        public Fixture(bool missingWorkspace = false)
+        public Fixture(bool missingWorkspace = false, bool withFileAccess = true)
         {
             Reference = new AgentDefinitionReference(AgentDefinitionKind.SavedAgent, AgentId.ToString("D"));
             var model = new ServerModel(Guid.NewGuid(), "local");
             var template = new AgentTemplateDefinition
             {
                 Id = AgentId, AgentName = "Test", LlmId = model.ServerId,
-                ModelName = model.ModelName, FileAccessProviderProfileId = Profile.Id
+                ModelName = model.ModelName, FileAccessProviderProfileId = withFileAccess ? Profile.Id : null
             };
             var descriptor = new AgentDefinitionDescriptor
             {
@@ -112,7 +137,7 @@ public sealed class HeadlessSavedWorkspaceTests
                 ModelRequirement = AgentModelRequirement.Required,
                 LaunchCapabilities = new AgentLaunchCapabilities
                 {
-                    SupportsWorkspace = true, RequiresFunctionCalling = true
+                    SupportsWorkspace = withFileAccess, RequiresFunctionCalling = withFileAccess
                 }
             };
             var resolved = new ResolvedAgentSessionDefinition
