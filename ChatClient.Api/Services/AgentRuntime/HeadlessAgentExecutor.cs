@@ -68,8 +68,11 @@ public sealed class HeadlessAgentExecutor(
             Configuration = new AppChatConfiguration(resolved.DefaultModel.ModelName, []),
             DefaultModel = resolved.DefaultModel,
             Overrides = new AgentSessionOverrides(),
+            PinnedDefinition = descriptor,
+            PinnedSavedAgent = template.Clone(),
             RuntimeResources = new AgentSessionRuntimeResources
             {
+                IsHeadlessExecution = true,
                 ToolApprovalCoordinator = approval,
                 ToolApprovalPolicy = new SessionToolApprovalPolicy()
             }

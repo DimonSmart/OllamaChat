@@ -171,7 +171,9 @@ public sealed class ScheduledTaskManualRunService(
         {
             code = "manual_run_failed";
             message = "Could not execute the Saved Agent. Check the server logs.";
-            logger.LogError(ex, "Manual agent run failed. ManualRunId={ManualRunId}, TimerId={TaskId}", runId, taskId);
+            logger.LogError(
+                "Manual agent run failed. ManualRunId={ManualRunId}, TimerId={TaskId}, ErrorType={ErrorType}",
+                runId, taskId, ex.GetType().Name);
         }
         finally
         {

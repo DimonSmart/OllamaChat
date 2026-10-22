@@ -501,6 +501,11 @@ public sealed record AgentRuntimeCreationContext
 
     public AgentSessionOverrides Overrides { get; init; } = new();
 
+    // Optional immutable snapshots for an isolated headless run. Normal chat
+    // runtime resolution continues to use the live catalog.
+    public AgentDefinitionDescriptor? PinnedDefinition { get; init; }
+    public AgentTemplateDefinition? PinnedSavedAgent { get; init; }
+
     public AgentSessionRuntimeResources RuntimeResources { get; init; } = new();
 }
 

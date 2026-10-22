@@ -35,11 +35,12 @@ public sealed class HttpAgenticExecutionRuntime(
         }
         catch (Exception ex)
         {
-            logger.LogError(
-                ex,
-                "Failed to prepare agent runtime for agent {AgentName} using model {ModelName}",
-                request.Agent.AgentName,
-                request.ResolvedModel.ModelName);
+            if (request.RuntimeResources.IsHeadlessExecution)
+                logger.LogError("Headless agent runtime preparation failed. ErrorType={ErrorType}", ex.GetType().Name);
+            else
+                logger.LogError(ex,
+                    "Failed to prepare agent runtime for agent {AgentName} using model {ModelName}",
+                    request.Agent.AgentName, request.ResolvedModel.ModelName);
             startupError = ex.Message;
         }
 
@@ -49,6 +50,7 @@ public sealed class HttpAgenticExecutionRuntime(
             yield break;
         }
 
+        using var ownedRuntime = buildResult;
         var runOptions = BuildRunOptions(request, buildResult.Server, buildResult.ToolSet);
         var ragTurnId = request.RagTurnId ?? $"runtime-rag-{Guid.NewGuid():N}";
         using var ragTurn = buildResult.RagRetrievalTraceSink?.BeginTurn(ragTurnId);
@@ -88,7 +90,10 @@ public sealed class HttpAgenticExecutionRuntime(
                 }
                 catch (Exception ex)
                 {
-                    logger.LogError(ex, "Agentic session failed for agent {AgentName}", request.Agent.AgentName);
+                    if (request.RuntimeResources.IsHeadlessExecution)
+                        logger.LogError("Headless agent session failed. ErrorType={ErrorType}", ex.GetType().Name);
+                    else
+                        logger.LogError(ex, "Agentic session failed for agent {AgentName}", request.Agent.AgentName);
                     streamError = ex.Message;
                     break;
                 }

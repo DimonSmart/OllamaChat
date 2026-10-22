@@ -130,6 +130,27 @@ public sealed class LlmAgentRuntimeTests
     }
 
     [Fact]
+    public async Task DisposingConsumer_WaitsForProducerCompletion()
+    {
+        var orchestrator = new WaitingOrchestrator();
+        var runtime = CreateRuntime(orchestrator);
+        var enumerator = runtime.RunAsync(CreateRequest(), CreateContext(),
+            TestContext.Current.CancellationToken).GetAsyncEnumerator(TestContext.Current.CancellationToken);
+        try
+        {
+            Assert.True(await enumerator.MoveNextAsync());
+            var disposing = enumerator.DisposeAsync().AsTask();
+            Assert.False(disposing.IsCompleted);
+            orchestrator.Release();
+            await disposing.WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
+        }
+        finally
+        {
+            orchestrator.Release();
+        }
+    }
+
+    [Fact]
     public async Task RunAsync_ForwardsAttachmentsWithoutLosingMetadataOrBytes()
     {
         var textBytes = "hello"u8.ToArray();
@@ -210,6 +231,23 @@ public sealed class LlmAgentRuntimeTests
         }
 
         return result;
+    }
+
+    private sealed class WaitingOrchestrator : IChatEngineOrchestrator
+    {
+        private readonly TaskCompletionSource<bool> _release =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public void Release() => _release.TrySetResult(true);
+
+        public async IAsyncEnumerable<ChatEngineStreamChunk> StreamAsync(
+            ChatEngineOrchestrationRequest request,
+            [EnumeratorCancellation] CancellationToken cancellationToken = default)
+        {
+            yield return new ChatEngineStreamChunk("Agent", "hello");
+            await _release.Task.WaitAsync(cancellationToken);
+            yield return new ChatEngineStreamChunk("Agent", "done", IsFinal: true);
+        }
     }
 
     private sealed class StubOrchestrator(IReadOnlyList<ChatEngineStreamChunk> chunks) : IChatEngineOrchestrator

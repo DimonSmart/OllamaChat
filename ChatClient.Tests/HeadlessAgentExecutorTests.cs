@@ -71,6 +71,9 @@ public sealed class HeadlessAgentExecutorTests
         Assert.Empty(seenRequest.Attachments);
         Assert.NotNull(seenCreation!.RuntimeResources.ToolApprovalCoordinator);
         Assert.NotNull(seenCreation.RuntimeResources.ToolApprovalPolicy);
+        Assert.True(seenCreation.RuntimeResources.IsHeadlessExecution);
+        Assert.Equal(template.Id, seenCreation.PinnedSavedAgent?.Id);
+        Assert.Equal(descriptor, seenCreation.PinnedDefinition);
     }
 
     [Fact]

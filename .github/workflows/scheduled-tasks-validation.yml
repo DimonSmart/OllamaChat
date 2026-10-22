@@ -23,4 +23,7 @@ jobs:
       - name: Build
         run: dotnet build ChatClient.Tests/ChatClient.Tests.csproj --no-restore --configuration Release
       - name: Test
-        run: dotnet test ChatClient.Tests/ChatClient.Tests.csproj --no-build --configuration Release --filter-class "ChatClient.Tests.ScheduledTask*"
+        run: |
+          dotnet test ChatClient.Tests/ChatClient.Tests.csproj --no-build --configuration Release --filter-class "ChatClient.Tests.ScheduledTask*"
+          dotnet test ChatClient.Tests/ChatClient.Tests.csproj --no-build --configuration Release --filter-class "ChatClient.Tests.HeadlessAgentExecutorTests"
+          dotnet test ChatClient.Tests/ChatClient.Tests.csproj --no-build --configuration Release --filter-class "ChatClient.Tests.LlmAgentRuntimeTests"

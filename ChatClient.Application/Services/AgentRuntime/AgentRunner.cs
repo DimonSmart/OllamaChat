@@ -26,7 +26,10 @@ public sealed class AgentRunner(
             AgentRunFailed? creationFailure = null;
             try
             {
-                var descriptor = await definitionCatalog.GetRequiredAsync(reference, cancellationToken);
+                var descriptor = creationContext.PinnedDefinition is { } pinned &&
+                    AgentDefinitionReferenceComparer.Instance.Equals(pinned.Reference, reference)
+                    ? pinned
+                    : await definitionCatalog.GetRequiredAsync(reference, cancellationToken);
                 var nestingValidation = nestingValidator.Validate(descriptor, runContext);
                 if (!nestingValidation.IsValid)
                 {

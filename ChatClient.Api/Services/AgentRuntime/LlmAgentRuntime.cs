@@ -27,7 +27,9 @@ public sealed class LlmAgentRuntimeFactory(
             throw new KeyNotFoundException($"Agent id '{agentId}' is not a valid saved-agent id.");
         }
 
-        var template = await agentTemplateService.GetByIdAsync(templateId);
+        var template = context.PinnedSavedAgent is { } pinned && pinned.Id == templateId
+            ? pinned.Clone()
+            : await agentTemplateService.GetByIdAsync(templateId);
         if (template is null)
         {
             throw new KeyNotFoundException($"Saved agent '{agentId}' was not found.");
@@ -279,12 +281,14 @@ internal sealed class LlmAgentRuntime(
         }
         catch (Exception ex)
         {
-            logger.LogError(
-                ex,
-                "Saved agent runtime failed. RunId={RunId}, AgentId={AgentId}, AgentName={AgentName}",
-                context.RunId,
-                Descriptor.Id,
-                Descriptor.Name);
+            if (runtimeResources.IsHeadlessExecution)
+                logger.LogError(
+                    "Headless agent runtime failed. RunId={RunId}, AgentId={AgentId}, ErrorType={ErrorType}",
+                    context.RunId, Descriptor.Id, ex.GetType().Name);
+            else
+                logger.LogError(ex,
+                    "Saved agent runtime failed. RunId={RunId}, AgentId={AgentId}, AgentName={AgentName}",
+                    context.RunId, Descriptor.Id, Descriptor.Name);
             await writer.WriteAsync(new AgentRunFailed(new AgentRunError(
                 "execution_failed",
                 "Agent execution failed.",

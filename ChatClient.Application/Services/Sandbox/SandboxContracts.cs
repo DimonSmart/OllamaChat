@@ -140,6 +140,8 @@ public sealed class SandboxSessionHandle : IAsyncDisposable
 
 public sealed record AgentSessionRuntimeResources
 {
+    public bool IsHeadlessExecution { get; init; }
+
     public string? WorkspacePath { get; init; }
 
     public ISandbox? Sandbox { get; init; }
