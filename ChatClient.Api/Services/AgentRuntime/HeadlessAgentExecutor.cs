@@ -1,4 +1,6 @@
 using ChatClient.Application.Services;
+using ChatClient.Api.Client.Services.Agentic;
+using Microsoft.Extensions.Logging.Abstractions;
 using ChatClient.Application.Services.Agentic;
 using ChatClient.Application.Services.AgentRuntime;
 using ChatClient.Application.Services.Sandbox;
@@ -6,7 +8,7 @@ using ChatClient.Domain.Models;
 
 namespace ChatClient.Api.Services.AgentRuntime;
 
-public sealed record HeadlessAgentRunRequest(Guid AgentId, string Prompt);
+public sealed record HeadlessAgentRunRequest(Guid AgentId, string Prompt, Guid? WorkspaceId = null);
 
 public sealed record HeadlessAgentRunResult(
     string AgentName,
@@ -35,7 +37,12 @@ public sealed class HeadlessAgentExecutor(
     IAgentDefinitionCatalog catalog,
     IAgentSessionDefinitionResolver resolver,
     IAgentRunContextFactory contextFactory,
-    IAgentRunner runner) : IHeadlessAgentExecutor
+    IAgentRunner runner,
+    IWorkspaceResolver? workspaceResolver = null,
+    IFileAccessProviderProfileService? fileProfiles = null,
+    IAgentSkillsProfileService? skillProfiles = null,
+    IAgentLaunchCapabilityValidator? modelCapabilities = null,
+    ILogger<HeadlessAgentExecutor>? logger = null) : IHeadlessAgentExecutor
 {
     public async Task<HeadlessAgentRunResult> ExecuteAsync(
         HeadlessAgentRunRequest request, CancellationToken cancellationToken)
@@ -49,16 +56,75 @@ public sealed class HeadlessAgentExecutor(
         if (template is null)
             return HeadlessAgentRunResult.Fail(descriptor.Name, "agent_not_found", "Saved Agent was deleted or is unavailable.");
 
-        // First iteration deliberately supports text-only agents. Reject unsafe
-        // capabilities instead of silently dropping tools, UI interaction or memory.
+        // Resolve exactly once before runtime creation, never from a mutable definition mid-run.
+        ResolvedWorkspace? workspace;
+        try
+        {
+            if (request.WorkspaceId.HasValue && workspaceResolver is null)
+                return HeadlessAgentRunResult.Fail(descriptor.Name, "headless_capability_unsupported",
+                    "Saved Workspace resolution is unavailable.");
+            workspace = workspaceResolver is null ? null : await workspaceResolver.ResolveAsync(
+                new WorkspaceSelection(WorkspaceId: request.WorkspaceId), cancellationToken);
+        }
+        catch (WorkspaceException ex)
+        {
+            return HeadlessAgentRunResult.Fail(descriptor.Name, ex.Code, ex.Message);
+        }
+
         if (HasUnsupportedCapabilities(template, descriptor))
             return HeadlessAgentRunResult.Fail(descriptor.Name, "headless_capability_unsupported",
-                "This Saved Agent uses tools, external memory, workspace or runtime profiles that are not supported by headless execution.");
+                "This Saved Agent uses capabilities that are not supported by headless execution.");
 
-        var resolved = await resolver.ResolveAsync(reference, new AgentSessionDefinitionRequest(), cancellationToken);
+        if (template.FileAccessProviderProfileId is { } fileId)
+        {
+            var profile = fileProfiles is null ? null : await fileProfiles.GetByIdAsync(fileId);
+            if (profile is null)
+                return HeadlessAgentRunResult.Fail(descriptor.Name, "headless_capability_unsupported",
+                    "The selected File Access profile is unavailable.");
+            if (profile.AccessMode != FileAccessMode.ReadOnly)
+                return HeadlessAgentRunResult.Fail(descriptor.Name, "headless_capability_unsupported",
+                    "Headless execution supports only read-only File Access.");
+            if (profile.RequireReadApproval)
+                return HeadlessAgentRunResult.Fail(descriptor.Name, "interactive_approval_required",
+                    "Headless File Access cannot request interactive read approval.");
+            if (workspace is null)
+                return HeadlessAgentRunResult.Fail(descriptor.Name, "workspace_selection_invalid",
+                    "A saved workspace is required for File Access.");
+        }
+
+        if (template.SkillsProviderProfileId is { } skillsId)
+        {
+            var profile = skillProfiles is null ? null : await skillProfiles.GetByIdAsync(skillsId);
+            if (profile is null)
+                return HeadlessAgentRunResult.Fail(descriptor.Name, "headless_capability_unsupported",
+                    "The selected Skills profile is unavailable.");
+            if ((profile.IncludeClaudeSkills || profile.FileSources.Any(source =>
+                !Path.IsPathFullyQualified(source.Directory))) && workspace is null)
+                return HeadlessAgentRunResult.Fail(descriptor.Name, "workspace_selection_invalid",
+                    "Workspace-relative Skills require a saved workspace.");
+            var discovered = await AgentSkillsDiscovery.DiscoverAsync(profile, workspace?.Path,
+                logger ?? NullLogger<HeadlessAgentExecutor>.Instance, cancellationToken);
+            try
+            {
+                if (discovered.Skills.Count > 0 && modelCapabilities is null)
+                    return HeadlessAgentRunResult.Fail(descriptor.Name, "headless_capability_unsupported",
+                        "Native Skills function-calling validation is unavailable.");
+            }
+            finally { discovered.Source?.Dispose(); }
+        }
+
+        var overrides = new AgentSessionOverrides { WorkspacePath = workspace?.Path };
+        var resolved = await resolver.ResolveAsync(reference,
+            new AgentSessionDefinitionRequest { Overrides = overrides }, cancellationToken);
         if (!resolved.Validation.CanLaunch || resolved.DefaultModel is null)
             return HeadlessAgentRunResult.Fail(descriptor.Name, "agent_preflight_failed",
                 "Saved Agent is invalid or its configured model is unavailable. Check the agent settings.");
+
+        if (template.SkillsProviderProfileId.HasValue && modelCapabilities is not null &&
+            resolved.DefaultModel is { } skillsModel &&
+            !await modelCapabilities.SupportsFunctionCallingAsync(skillsModel, cancellationToken))
+            return HeadlessAgentRunResult.Fail(descriptor.Name, "agent_preflight_failed",
+                "Selected model does not support function calling required by native Skills.");
 
         cancellationToken.ThrowIfCancellationRequested();
         var context = contextFactory.CreateRoot(descriptor, conversationId: null);
@@ -67,12 +133,13 @@ public sealed class HeadlessAgentExecutor(
         {
             Configuration = new AppChatConfiguration(resolved.DefaultModel.ModelName, []),
             DefaultModel = resolved.DefaultModel,
-            Overrides = new AgentSessionOverrides(),
+            Overrides = overrides,
             PinnedDefinition = descriptor,
             PinnedSavedAgent = template.Clone(),
             RuntimeResources = new AgentSessionRuntimeResources
             {
                 IsHeadlessExecution = true,
+                WorkspacePath = workspace?.Path,
                 ToolApprovalCoordinator = approval,
                 ToolApprovalPolicy = new SessionToolApprovalPolicy()
             }
@@ -123,14 +190,11 @@ public sealed class HeadlessAgentExecutor(
             : new string(code.Where(static c => char.IsAsciiLetterOrDigit(c) || c is '_' or '-').Take(80).ToArray());
 
     public static bool HasUnsupportedCapabilities(AgentTemplateDefinition template, AgentDefinitionDescriptor descriptor) =>
-        descriptor.LaunchCapabilities.SupportsWorkspace ||
         descriptor.LaunchCapabilities.SupportsSandboxProfile ||
         descriptor.DefaultMcpServerBindings.Count != 0 ||
         template.McpServerBindings.Count != 0 ||
         template.EnableShell || template.EnableFileMemory ||
-        template.FileAccessProviderProfileId.HasValue ||
-        template.SkillsProviderProfileId.HasValue ||
-        template.TodoProviderProfileId.HasValue ||
+         template.TodoProviderProfileId.HasValue ||
         template.AgentModeProviderProfileId.HasValue ||
         template.CompactionProfileId.HasValue ||
         template.RagProviderProfileId.HasValue ||
