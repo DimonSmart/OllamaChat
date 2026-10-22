@@ -129,6 +129,14 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<ScheduledTaskRuntimeState>();
         services.AddSingleton<ITimerEventPublisher, TimerEventPublisher>();
         services.AddSingleton<IScheduledTaskService, ScheduledTaskService>();
+        services.AddOptions<ScheduledTaskManualRunOptions>()
+            .BindConfiguration(ScheduledTaskManualRunOptions.SectionName)
+            .Validate(static value => value.Timeout > TimeSpan.Zero,
+                "Manual run timeout must be greater than zero.")
+            .ValidateOnStart();
+        services.AddSingleton<ScheduledTaskManualRunService>();
+        services.AddSingleton<IScheduledTaskManualRunService>(sp => sp.GetRequiredService<ScheduledTaskManualRunService>());
+        services.AddHostedService(sp => sp.GetRequiredService<ScheduledTaskManualRunService>());
         services.AddTransient<ScheduledTimerFiredJob>();
         services.AddQuartz();
         services.AddQuartzHostedService(options => options.WaitForJobsToComplete = true);
@@ -201,6 +209,7 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IAgentRunNestingValidator>(sp => new AgentRunNestingValidator(
             sp.GetRequiredService<IOptions<AgentRuntimeOptions>>().Value));
         services.AddScoped<IAgentRunner, AgentRunner>();
+        services.AddScoped<IHeadlessAgentExecutor, HeadlessAgentExecutor>();
         services.AddScoped<Func<IAgentRunner>>(sp =>
             () => sp.GetRequiredService<IAgentRunner>());
         services.AddScoped<IWorkflowParticipantInvoker, WorkflowParticipantInvoker>();

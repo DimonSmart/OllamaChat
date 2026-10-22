@@ -14,7 +14,8 @@ public sealed class ScheduledTaskService(
     ScheduledTaskTriggerFactory triggers,
     ScheduledTaskRuntimeState runtime,
     TimeProvider clock,
-    ILogger<ScheduledTaskService> logger) : IScheduledTaskService
+    ILogger<ScheduledTaskService> logger,
+    IScheduledTaskManualRunService? manualRuns = null) : IScheduledTaskService
 {
     private long _nextGeneration;
     private bool _initialized;
@@ -207,6 +208,7 @@ public sealed class ScheduledTaskService(
                 return true;
             }, cancellationToken);
             runtime.Remove(id); // From this point a stale Quartz job cannot be accepted.
+            manualRuns?.TimerDeleted(id);
             try
             {
                 var scheduler = await schedulerFactory.GetScheduler(cancellationToken);
@@ -292,6 +294,8 @@ public sealed class ScheduledTaskService(
 
     private void Validate(ScheduledTaskDefinition definition)
     {
+        if (definition.AgentExecution is not null)
+            ScheduledAgentConfigurationValidation.Validate(definition.AgentExecution);
         var now = clock.GetUtcNow();
         var trigger = triggers.Build(definition, now);
         if (definition.Enabled && trigger.GetFireTimeAfter(now) is null)

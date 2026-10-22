@@ -122,12 +122,19 @@ internal sealed class LlmAgentRuntime(
         var channel = Channel.CreateUnbounded<AgentRunEvent>();
         var producer = ProduceAsync(request, context, channel.Writer, cancellationToken);
 
-        await foreach (var runEvent in channel.Reader.ReadAllAsync(cancellationToken))
+        try
         {
-            yield return runEvent;
+            await foreach (var runEvent in channel.Reader.ReadAllAsync(cancellationToken))
+            {
+                yield return runEvent;
+            }
         }
-
-        await producer;
+        finally
+        {
+            // Disposing the consumer is not permission to abandon the producer.
+            // Completion/cancellation of RunAsync includes producer cleanup.
+            await producer;
+        }
     }
 
     private async Task ProduceAsync(

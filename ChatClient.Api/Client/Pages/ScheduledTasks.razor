@@ -2,8 +2,11 @@
 @using ChatClient.Domain.Models
 @using ChatClient.Application.Services
 @using ChatClient.Api.Services.Scheduling
+@using ChatClient.Application.Services.AgentRuntime
 @implements IAsyncDisposable
 @inject IScheduledTaskService Tasks
+@inject IScheduledTaskManualRunService ManualRuns
+@inject IAgentDefinitionCatalog AgentCatalog
 @inject ISnackbar Snackbar
 @inject ITimerEventPublisher TimerEvents
 @inject ILogger<ScheduledTasks> TimerLogger
@@ -32,6 +35,12 @@
         </MudAlert>
     }
 
+    @if (ManualRuns.Current is { } global && !timers.Any(x => x.Definition.Id == global.ScheduledTaskId))
+    {
+        <MudAlert Severity="Severity.Info" Dense="true">
+            Manual execution is busy with timer @global.TimerName.
+        </MudAlert>
+    }
     @if (loading)
     {
         <MudStack Justify="Justify.Center" Class="my-4">
@@ -55,6 +64,11 @@
                 <TemplateColumn Title="Schedule">
                     <CellTemplate><MudText Typo="Typo.body2">@Summary(context.Item.Definition.Schedule)</MudText></CellTemplate>
                 </TemplateColumn>
+                <TemplateColumn Title="Agent">
+                    <CellTemplate>
+                        <MudText Typo="Typo.body2">@AgentLabel(context.Item.Definition.AgentExecution?.AgentId)</MudText>
+                    </CellTemplate>
+                </TemplateColumn>
                 <TemplateColumn Title="Time Zone">
                     <CellTemplate><MudText Typo="Typo.body2">@context.Item.Definition.TimeZoneId</MudText></CellTemplate>
                 </TemplateColumn>
@@ -67,6 +81,25 @@
                         {
                             <MudTooltip Text="@error"><MudIcon Icon="@Icons.Material.Filled.Info" Size="Size.Small" Color="Color.Error" /></MudTooltip>
                             <MudText Typo="Typo.caption" Color="Color.Error">@error</MudText>
+                        }
+                    </CellTemplate>
+                </TemplateColumn>
+                <TemplateColumn Title="Manual Run">
+                    <CellTemplate>
+                        @if (ManualRuns.ForTimer(context.Item.Definition.Id) is { } manual)
+                        {
+                            <MudChip T="string" Size="Size.Small" Variant="Variant.Outlined"
+                                     Color="@(manual.Status == ManualRunStatus.Failed ? Color.Error : Color.Default)">
+                                @manual.Status
+                            </MudChip>
+                            @if (manual.CancellationRequested is not null && manual.Status == ManualRunStatus.Running)
+                            {
+                                <MudText Typo="Typo.caption">@manual.CancellationRequested requested</MudText>
+                            }
+                        }
+                        else
+                        {
+                            <MudText Typo="Typo.body2">—</MudText>
                         }
                     </CellTemplate>
                 </TemplateColumn>
@@ -88,6 +121,13 @@
                 <TemplateColumn Title="Actions">
                     <CellTemplate>
                         <div class="app-table-actions">
+                            <MudButton Size="Size.Small" Variant="Variant.Outlined"
+                                       Disabled="@(busy || storageError is not null || ManualRuns.Current is not null || !CanRun(context.Item.Definition))"
+                                       OnClick="@(() => RunNowAsync(context.Item))">Run Now</MudButton>
+                            @if (ManualRuns.ForTimer(context.Item.Definition.Id) is not null)
+                            {
+                                <MudButton Size="Size.Small" OnClick="@(() => OpenRun(context.Item.Definition.Id))">Result</MudButton>
+                            }
                             <MudTooltip Text="Edit timer"><MudIconButton Icon="@Icons.Material.Filled.Edit"
                                 Size="Size.Small" aria-label="Edit timer"
                                 OnClick="@(() => EditTimerAsync(context.Item))" /></MudTooltip>
@@ -208,6 +248,23 @@
                 </MudGrid>
             }
 
+            <MudText Typo="Typo.subtitle2" Class="mt-2">Agent Execution</MudText>
+            <MudAutocomplete T="Guid?" Value="@selectedAgentId" ValueChanged="OnAgentChanged"
+                             SearchFunc="SearchAgents" ToStringFunc="AgentLabel"
+                             Label="Saved Agent" Margin="Margin.Dense" Clearable="true"
+                             ResetValueOnEmptyText="false" MaxItems="40" />
+            @if (selectedAgentId is { } selected && !agents.Any(x => x.Reference.Id == selected.ToString("D")))
+            {
+                <MudAlert Severity="Severity.Warning" Dense="true">
+                    The selected Saved Agent is missing or unavailable. The binding will be preserved until you change it.
+                </MudAlert>
+            }
+            @if (selectedAgentId is not null)
+            {
+                <MudTextField T="string" @bind-Value="agentPrompt" Label="Prompt"
+                              Margin="Margin.Dense" Lines="4"
+                              HelperText="@($"Maximum {ScheduledAgentConfigurationValidation.MaximumPromptLength} characters.")" />
+            }
             <MudText Typo="Typo.subtitle2" Class="mt-2">Next Occurrences</MudText>
             @if (previewBusy)
             {
@@ -238,11 +295,136 @@
     </DialogActions>
 </MudDialog>
 
+<MudDialog @bind-Visible="showRunDialog" Options="editOptions">
+    <TitleContent><MudText Typo="Typo.h6">Manual Agent Execution</MudText></TitleContent>
+    <DialogContent>
+        @if (activeRunId is { } runId && ManualRuns.Find(runId) is { } run)
+        {
+            <MudStack Spacing="2">
+                <MudText Typo="Typo.subtitle2">@run.TimerName — @run.AgentName</MudText>
+                <MudText Typo="Typo.body2">Status: @run.Status</MudText>
+                <MudText Typo="Typo.body2">Started: @run.StartedUtc.ToLocalTime().ToString("G")</MudText>
+                <MudText Typo="Typo.body2">Elapsed: @((run.FinishedUtc ?? DateTimeOffset.UtcNow) - run.StartedUtc)</MudText>
+                @if (run.Status == ManualRunStatus.Running)
+                {
+                    <MudProgressLinear Indeterminate="true" />
+                    @if (run.CancellationRequested is not null)
+                    {
+                        <MudText Typo="Typo.body2">@run.CancellationRequested requested; finishing cleanup...</MudText>
+                    }
+                    <MudButton Color="Color.Warning" Disabled="@(run.CancellationRequested is not null)"
+                               OnClick="@(() => ManualRuns.Cancel(run.ManualRunId))">Cancel</MudButton>
+                }
+                @if (run.FinalText is not null)
+                {
+                    <MudText Typo="Typo.body2" Style="white-space:pre-wrap;overflow-wrap:anywhere">@run.FinalText</MudText>
+                    @if (run.IsTruncated)
+                    {
+                        <MudAlert Severity="Severity.Warning" Dense="true">Output was truncated.</MudAlert>
+                    }
+                }
+                @if (run.ErrorCode is not null)
+                {
+                    <MudAlert Severity="Severity.Error" Dense="true">@run.ErrorCode: @run.ErrorMessage</MudAlert>
+                }
+            </MudStack>
+        }
+        else
+        {
+            <MudText Typo="Typo.body2">This run is no longer in memory.</MudText>
+        }
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="@(() => showRunDialog = false)">Close</MudButton>
+    </DialogActions>
+</MudDialog>
+
 <AppDeleteDialog @bind-Visible="showDelete" Title="Delete Timer"
                  Message="@($"Delete timer \"{deleting?.Definition.Name}\"?")"
                  OnConfirm="DeleteAsync" Options="deleteOptions" />
 
 @code {
+    private List<AgentDefinitionDescriptor> agents = [];
+    private Guid? selectedAgentId;
+    private string agentPrompt = "";
+    private Guid? activeRunId;
+    private bool showRunDialog;
+
+    private static bool CanRun(ScheduledTaskDefinition definition)
+    {
+        try { ScheduledAgentConfigurationValidation.Validate(definition.AgentExecution); return true; }
+        catch (ArgumentException) { return false; }
+    }
+
+    private string AgentLabel(Guid? id)
+    {
+        if (id is null || id == Guid.Empty) return "—";
+        return agents.FirstOrDefault(a => a.Reference.Id == id.Value.ToString("D"))?.Name
+            ?? $"Missing Agent ({id:D})";
+    }
+
+    private Task<IEnumerable<Guid?>> SearchAgents(string search, CancellationToken token)
+    {
+        token.ThrowIfCancellationRequested();
+        IEnumerable<Guid?> matching = agents
+            .Where(a => string.IsNullOrWhiteSpace(search) ||
+                a.Name.Contains(search, StringComparison.OrdinalIgnoreCase))
+            .Take(40)
+            .Select(a => (Guid?)Guid.Parse(a.Reference.Id));
+        return Task.FromResult(matching);
+    }
+
+    private Task OnAgentChanged(Guid? value)
+    {
+        selectedAgentId = value;
+        if (value is null) agentPrompt = "";
+        return Task.CompletedTask;
+    }
+
+    private async Task LoadAgentsAsync()
+    {
+        try
+        {
+            agents = (await AgentCatalog.GetAllAsync())
+                .Where(a => a.Reference.Kind == AgentDefinitionKind.SavedAgent)
+                .ToList();
+        }
+        catch (Exception ex)
+        {
+            TimerLogger.LogWarning(ex, "Saved Agent catalog unavailable for timer editor");
+            agents = [];
+        }
+    }
+
+    private async Task RunNowAsync(ScheduledTaskView timer)
+    {
+        var started = await ManualRuns.RunNowAsync(timer.Definition.Id);
+        if (!started.Accepted)
+        {
+            Snackbar.Add(started.Message ?? "Could not start the agent.", Severity.Warning);
+            return;
+        }
+        activeRunId = started.Run!.ManualRunId;
+        showRunDialog = true;
+    }
+
+    private void OpenRun(Guid taskId)
+    {
+        activeRunId = ManualRuns.ForTimer(taskId)?.ManualRunId;
+        showRunDialog = activeRunId is not null;
+    }
+
+    private void OnManualStateChanged()
+    {
+        if (!_disposed) _ = RefreshManualStateSafeAsync();
+    }
+
+    private async Task RefreshManualStateSafeAsync()
+    {
+        try { await InvokeAsync(() => { if (!_disposed) StateHasChanged(); }); }
+        catch (Exception ex) { TimerLogger.LogDebug(ex, "Could not refresh manual run state"); }
+    }
+
     private readonly DialogOptions editOptions = new() { CloseOnEscapeKey = true, CloseButton = true, MaxWidth = MaxWidth.Large, FullWidth = true };
     private readonly DialogOptions deleteOptions = new() { CloseOnEscapeKey = true, CloseButton = true, MaxWidth = MaxWidth.ExtraSmall };
     private static readonly DayOfWeek[] WeekDays = [DayOfWeek.Monday, DayOfWeek.Tuesday, DayOfWeek.Wednesday,
@@ -277,6 +459,7 @@
 
     protected override async Task OnInitializedAsync()
     {
+        await LoadAgentsAsync();
         await LoadAsync();
     }
 
@@ -284,6 +467,7 @@
     {
         if (!firstRender || _disposed) return;
         TimerEvents.TimerFired += OnTimerFired;
+        ManualRuns.StateChanged += OnManualStateChanged;
         // Close the window between prerender/initial read and interactive subscription.
         await LoadAsync();
     }
@@ -365,6 +549,8 @@
             Schedule = new ScheduleDefinition { Type = ScheduleType.Weekly, DaysOfWeek = [DayOfWeek.Monday,
                 DayOfWeek.Tuesday, DayOfWeek.Wednesday, DayOfWeek.Thursday, DayOfWeek.Friday] }
         };
+        selectedAgentId = null;
+        agentPrompt = "";
         creating = true;
         editorError = null;
         showEditor = true;
@@ -376,6 +562,9 @@
         editing = JsonSerializer.Deserialize<ScheduledTaskDefinition>(
             JsonSerializer.Serialize(timer.Definition))!;
         editing.Schedule ??= new ScheduleDefinition();
+        await LoadAgentsAsync();
+        selectedAgentId = editing.AgentExecution?.AgentId;
+        agentPrompt = editing.AgentExecution?.Prompt ?? "";
         creating = false;
         editorError = null;
         showEditor = true;
@@ -464,6 +653,11 @@
         {
             busy = true;
             editorError = null;
+            editing.AgentExecution = selectedAgentId is { } agentId
+                ? new ScheduledAgentConfiguration { AgentId = agentId, Prompt = agentPrompt }
+                : null;
+            if (editing.AgentExecution is not null)
+                ScheduledAgentConfigurationValidation.Validate(editing.AgentExecution);
             if (creating) await Tasks.CreateAsync(editing);
             else await Tasks.UpdateAsync(editing);
             showEditor = false;
@@ -558,6 +752,7 @@
     {
         _disposed = true;
         TimerEvents.TimerFired -= OnTimerFired;
+        ManualRuns.StateChanged -= OnManualStateChanged;
         ++previewSequence;
         return ValueTask.CompletedTask;
     }
