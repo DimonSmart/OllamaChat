@@ -148,8 +148,8 @@ public class ScheduledTaskPersistenceTests
             Assert.Equal(workspaceId, restored.AgentExecution!.WorkspaceId);
             Assert.Equal(agentId, restored.AgentExecution.AgentId);
             Assert.Equal("Read README", restored.AgentExecution.Prompt);
-            var legacy = System.Text.Json.JsonSerializer.Deserialize<ScheduledAgentConfiguration>(
-                "{\\"AgentId\\":\\"" + agentId + "\\",\\"Prompt\\":\\"Legacy\\"}")!;
+            var legacyJson = System.Text.Json.JsonSerializer.Serialize(new { AgentId = agentId, Prompt = "Legacy" });
+            var legacy = System.Text.Json.JsonSerializer.Deserialize<ScheduledAgentConfiguration>(legacyJson)!;
             Assert.Null(legacy.WorkspaceId);
             Assert.Throws<ArgumentException>(() => ScheduledAgentConfigurationValidation.Validate(
                 new ScheduledAgentConfiguration { AgentId = agentId, Prompt = "Test", WorkspaceId = Guid.Empty }));
