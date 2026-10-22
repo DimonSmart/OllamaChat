@@ -110,6 +110,10 @@
 
                         @if (selectedDefinition?.LaunchCapabilities.SupportsWorkspace == true)
                         {
+                            @if (savedWorkspaceId is not null)
+                            {
+                                <MudText Typo="Typo.caption" Color="Color.Primary">Saved Workspace — changes require a new chat</MudText>
+                            }
                             <MudStack Row="true" Spacing="1" AlignItems="AlignItems.Center">
                                 <MudTextField T="string" Label="Workspace" Value="fileAccessWorkspace"
                                               ValueChanged="OnFileAccessWorkspaceChanged" Variant="Variant.Outlined"
@@ -231,6 +235,7 @@
     private List<McpServerSessionBinding> mcpServerBindings = [];
     private List<SandboxProfile> sandboxProfiles = [];
     private string fileAccessWorkspace = string.Empty;
+    private Guid? savedWorkspaceId;
     private Guid? sandboxProfileId;
     private AgentDefinitionLaunchValidation launchValidation = new()
     {
@@ -254,6 +259,12 @@
 
     [Inject]
     private IWorkspaceDirectoryService WorkspaceDirectoryService { get; set; } = null!;
+
+    [Inject]
+    private IWorkspaceResolver WorkspaceResolver { get; set; } = null!;
+
+    [Inject]
+    private IWorkspaceService WorkspaceService { get; set; } = null!;
 
     [CascadingParameter(Name = "UiModelSelection")]
     public ServerModelSelection UiModelSelection { get; set; } = new(null, null);
@@ -339,11 +350,12 @@
 
         try
         {
+            var launchOverrides = await BuildResolvedOverridesAsync();
             var resolved = await SessionDefinitionResolver.ResolveAsync(selectedDefinition.Reference, new AgentSessionDefinitionRequest
             {
                 UiModelSelection = UiModelSelection,
                 Inputs = BuildInputs(),
-                Overrides = BuildOverrides()
+                Overrides = launchOverrides
             });
             if (!resolved.Validation.CanLaunch)
             {
@@ -363,7 +375,7 @@
                 RuntimeDefaultModel = resolved.DefaultModel,
                 LaunchBehavior = resolved.Descriptor.LaunchBehavior,
                 RuntimeInputs = resolved.Inputs,
-                Overrides = BuildOverrides()
+                Overrides = launchOverrides
             };
             var progress = new Progress<ChatSessionStartProgress>(value =>
             {
@@ -422,6 +434,7 @@
             .Select(static binding => binding.Clone())
             .ToList() ?? [];
         fileAccessWorkspace = string.Empty;
+        savedWorkspaceId = null;
         sandboxProfileId = sandboxProfiles.FirstOrDefault(profile =>
             string.Equals(profile.Name, ".NET 10 Small", StringComparison.OrdinalIgnoreCase))?.Id;
         foreach (var input in inputDefinitions)
@@ -452,6 +465,7 @@
             .Select(static binding => binding.Clone())
             .ToList() ?? [];
         fileAccessWorkspace = activeSession.Overrides.WorkspacePath ?? string.Empty;
+        savedWorkspaceId = null;
         sandboxProfileId = activeSession.Overrides.SandboxProfileId;
         effectiveModel = activeSession.Model;
     }
@@ -500,6 +514,7 @@
     private async Task OnFileAccessWorkspaceChanged(string value)
     {
         fileAccessWorkspace = value;
+        savedWorkspaceId = null;
         await RefreshLaunchValidationAsync();
     }
 
@@ -514,10 +529,17 @@
             "Select workspace", parameters,
             new DialogOptions { MaxWidth = MaxWidth.Medium, FullWidth = true, CloseButton = true });
         var result = await dialog.Result;
-        if (result?.Canceled != false || result.Data is not string selectedPath)
+        if (result?.Canceled != false || result.Data is not WorkspaceSelection selected)
             return;
 
-        fileAccessWorkspace = selectedPath;
+        savedWorkspaceId = selected.WorkspaceId;
+        if (selected.WorkspaceId is { } id)
+        {
+            var definition = await WorkspaceService.GetByIdAsync(id);
+            fileAccessWorkspace = definition?.Path ?? string.Empty;
+        }
+        else
+            fileAccessWorkspace = selected.DirectPath ?? string.Empty;
         await RefreshLaunchValidationAsync();
     }
 
@@ -526,6 +548,7 @@
         try
         {
             fileAccessWorkspace = WorkspaceDirectoryService.CreateWorkspace(userSettings.WorkspacesRoot, fileAccessWorkspace);
+            savedWorkspaceId = null;
             await RefreshLaunchValidationAsync();
         }
         catch (Exception ex)
@@ -557,19 +580,24 @@
         await RefreshLaunchValidationAsync();
     }
 
-    private AgentSessionOverrides BuildOverrides() => new()
+    private async Task<AgentSessionOverrides> BuildResolvedOverridesAsync()
     {
-        McpServerBindings = selectedDefinition?.LaunchCapabilities.SupportsMcpBindingOverrides == true
-            ? mcpServerBindings
-            : null,
-        WorkspacePath = selectedDefinition?.LaunchCapabilities.SupportsWorkspace == true &&
-                              !string.IsNullOrWhiteSpace(fileAccessWorkspace)
-            ? fileAccessWorkspace
-            : null,
-        SandboxProfileId = selectedDefinition?.LaunchCapabilities.SupportsSandboxProfile == true
-            ? sandboxProfileId
-            : null
-    };
+        var workspace = selectedDefinition?.LaunchCapabilities.SupportsWorkspace == true
+            ? await WorkspaceResolver.ResolveAsync(savedWorkspaceId is { } id
+                ? new WorkspaceSelection(WorkspaceId: id)
+                : new WorkspaceSelection(DirectPath: string.IsNullOrWhiteSpace(fileAccessWorkspace) ? null : fileAccessWorkspace))
+            : null;
+        return new AgentSessionOverrides
+        {
+            McpServerBindings = selectedDefinition?.LaunchCapabilities.SupportsMcpBindingOverrides == true
+                ? mcpServerBindings.Select(static binding => binding.Clone()).ToArray()
+                : null,
+            WorkspacePath = workspace?.Path,
+            SandboxProfileId = selectedDefinition?.LaunchCapabilities.SupportsSandboxProfile == true
+                ? sandboxProfileId
+                : null
+        }.Snapshot();
+    }
 
     private async Task RefreshLaunchValidationAsync()
     {
@@ -589,15 +617,14 @@
         await InvokeAsync(StateHasChanged);
 
         var reference = selectedDefinition.Reference;
-        var request = new AgentSessionDefinitionRequest
-        {
-            UiModelSelection = UiModelSelection,
-            Inputs = BuildInputs(),
-            Overrides = BuildOverrides()
-        };
-
         try
         {
+            var request = new AgentSessionDefinitionRequest
+            {
+                UiModelSelection = UiModelSelection,
+                Inputs = BuildInputs(),
+                Overrides = await BuildResolvedOverridesAsync()
+            };
             var validation = await SessionDefinitionResolver.ValidateAsync(reference, request);
             if (version != System.Threading.Volatile.Read(ref validationVersion))
             {
