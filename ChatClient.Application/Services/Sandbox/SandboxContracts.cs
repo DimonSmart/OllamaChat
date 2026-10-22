@@ -142,6 +142,10 @@ public sealed record AgentSessionRuntimeResources
 {
     public bool IsHeadlessExecution { get; init; }
 
+    // Cloned per-run preflight snapshots; never resolve mutable provider profiles twice.
+    public FileAccessProviderProfile? HeadlessFileAccessProfile { get; init; }
+    public AgentSkillsProfile? HeadlessSkillsProfile { get; init; }
+
     public string? WorkspacePath { get; init; }
 
     public ISandbox? Sandbox { get; init; }

@@ -109,8 +109,20 @@ public sealed class AgenticRuntimeAgentFactory(
 
             var todoProfile = await GetTodoProviderProfileAsync(request.Agent.TodoProviderProfileId);
             var agentModeProfile = await GetAgentModeProviderProfileAsync(request.Agent.AgentModeProviderProfileId);
-            var fileAccessProfile = await GetFileAccessProviderProfileAsync(request.Agent.FileAccessProviderProfileId);
-            var skillsProfile = await GetAgentSkillsProfileAsync(request.Agent.SkillsProviderProfileId);
+            var fileAccessProfile = request.RuntimeResources.IsHeadlessExecution
+                ? request.RuntimeResources.HeadlessFileAccessProfile
+                : await GetFileAccessProviderProfileAsync(request.Agent.FileAccessProviderProfileId);
+            var skillsProfile = request.RuntimeResources.IsHeadlessExecution
+                ? request.RuntimeResources.HeadlessSkillsProfile
+                : await GetAgentSkillsProfileAsync(request.Agent.SkillsProviderProfileId);
+            if (request.RuntimeResources.IsHeadlessExecution)
+            {
+                if (request.Agent.FileAccessProviderProfileId != fileAccessProfile?.Id ||
+                    request.Agent.SkillsProviderProfileId != skillsProfile?.Id ||
+                    (fileAccessProfile is not null && (fileAccessProfile.AccessMode != FileAccessMode.ReadOnly ||
+                        fileAccessProfile.RequireReadApproval)))
+                    throw new InvalidOperationException("Headless provider permissions do not match the approved run snapshot.");
+            }
             if (request.Agent.SkillsProviderProfileId is Guid skillsProfileId && skillsProfileId != Guid.Empty && skillsProfile is null)
                 throw new InvalidOperationException($"Selected Skills Provider profile '{skillsProfileId}' was not found.");
             var ragProfile = await GetRagProviderProfileAsync(request.Agent.RagProviderProfileId);

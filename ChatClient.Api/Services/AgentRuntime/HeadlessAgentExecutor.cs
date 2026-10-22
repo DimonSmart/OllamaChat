@@ -75,6 +75,8 @@ public sealed class HeadlessAgentExecutor(
             return HeadlessAgentRunResult.Fail(descriptor.Name, "headless_capability_unsupported",
                 "This Saved Agent uses capabilities that are not supported by headless execution.");
 
+        FileAccessProviderProfile? pinnedFileProfile = null;
+        AgentSkillsProfile? pinnedSkillsProfile = null;
         if (template.FileAccessProviderProfileId is { } fileId)
         {
             var profile = fileProfiles is null ? null : await fileProfiles.GetByIdAsync(fileId);
@@ -90,6 +92,12 @@ public sealed class HeadlessAgentExecutor(
             if (workspace is null)
                 return HeadlessAgentRunResult.Fail(descriptor.Name, "workspace_selection_invalid",
                     "A saved workspace is required for File Access.");
+            pinnedFileProfile = new FileAccessProviderProfile
+            {
+                Id = profile.Id, Name = profile.Name, Instructions = profile.Instructions,
+                AccessMode = profile.AccessMode, RequireReadApproval = profile.RequireReadApproval,
+                RequireWriteApproval = profile.RequireWriteApproval
+            };
         }
 
         var hasDiscoveredSkills = false;
@@ -103,7 +111,16 @@ public sealed class HeadlessAgentExecutor(
                 !Path.IsPathFullyQualified(source.Directory))) && workspace is null)
                 return HeadlessAgentRunResult.Fail(descriptor.Name, "workspace_selection_invalid",
                     "Workspace-relative Skills require a saved workspace.");
-            var discovered = await AgentSkillsDiscovery.DiscoverAsync(profile, workspace?.Path,
+            pinnedSkillsProfile = new AgentSkillsProfile
+            {
+                Id = profile.Id, Name = profile.Name,
+                IncludeClaudeSkills = profile.IncludeClaudeSkills,
+                FileSources = profile.FileSources.Select(source => new SkillFileSource
+                {
+                    Directory = source.Directory, Patterns = source.Patterns.ToList()
+                }).ToList()
+            };
+            var discovered = await AgentSkillsDiscovery.DiscoverAsync(pinnedSkillsProfile, workspace?.Path,
                 logger ?? NullLogger<HeadlessAgentExecutor>.Instance, cancellationToken);
             try
             {
@@ -142,6 +159,8 @@ public sealed class HeadlessAgentExecutor(
             {
                 IsHeadlessExecution = true,
                 WorkspacePath = workspace?.Path,
+                HeadlessFileAccessProfile = pinnedFileProfile,
+                HeadlessSkillsProfile = pinnedSkillsProfile,
                 ToolApprovalCoordinator = approval,
                 ToolApprovalPolicy = new SessionToolApprovalPolicy()
             }
