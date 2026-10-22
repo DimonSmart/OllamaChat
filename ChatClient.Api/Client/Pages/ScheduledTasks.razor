@@ -35,10 +35,10 @@
         </MudAlert>
     }
 
-    @if (ManualRuns.Current is { } global && !timers.Any(x => x.Definition.Id == global.ScheduledTaskId))
+    @if (ManualRuns.Current is { } global)
     {
         <MudAlert Severity="Severity.Info" Dense="true">
-            Manual execution is busy with timer @global.TimerName.
+            The global manual execution slot is busy with timer @global.TimerName.
         </MudAlert>
     }
     @if (loading)
@@ -539,8 +539,9 @@
     private void ApplySearch() => filtered = timers.Where(x => (x.Definition.Name ?? string.Empty).Contains(
         searchText, StringComparison.OrdinalIgnoreCase)).ToList();
 
-    private void AddTimer()
+    private async Task AddTimer()
     {
+        await LoadAgentsAsync();
         editing = new ScheduledTaskDefinition
         {
             Id = Guid.NewGuid(),
