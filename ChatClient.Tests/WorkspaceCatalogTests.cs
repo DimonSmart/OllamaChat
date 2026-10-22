@@ -110,6 +110,45 @@ public sealed class WorkspaceCatalogTests
         finally { Directory.Delete(root, recursive: true); }
     }
 
+    [Fact]
+    public async Task ConcurrentUpdatesOfSameRevision_RejectStaleWriter()
+    {
+        var root = Root();
+        try
+        {
+            var folder = Path.Combine(root, "source");
+            Directory.CreateDirectory(folder);
+            var (firstService, _) = Create(root);
+            var (secondService, _) = Create(root);
+            var saved = await firstService.CreateAsync(new WorkspaceDefinition
+            {
+                Name = "Original", Path = folder
+            });
+            var first = saved.Clone();
+            var second = saved.Clone();
+            first.Name = "First";
+            second.Name = "Second";
+
+            static async Task<string> AttemptAsync(WorkspaceService service, WorkspaceDefinition update)
+            {
+                try
+                {
+                    await service.UpdateAsync(update);
+                    return "success";
+                }
+                catch (WorkspaceException ex) { return ex.Code; }
+            }
+
+            var outcomes = await Task.WhenAll(
+                AttemptAsync(firstService, first),
+                AttemptAsync(secondService, second));
+            Assert.Contains("success", outcomes);
+            Assert.Contains("workspace_revision_conflict", outcomes);
+            Assert.Equal(2, (await firstService.GetByIdAsync(saved.Id))!.Revision);
+        }
+        finally { Directory.Delete(root, recursive: true); }
+    }
+
     [Theory]
     [InlineData("null")]
     [InlineData("[null]")]
