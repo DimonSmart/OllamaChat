@@ -114,6 +114,50 @@ public class ScheduledTaskPersistenceTests
 
 
     [Fact]
+    public async Task SavedWorkspaceBinding_PersistsAndDoesNotResetTimer()
+    {
+        var dir = Path.Combine(Path.GetTempPath(), "ollamachat-saved-workspace-timer-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(dir);
+        try
+        {
+            await using var schedulerFactory = QuartzSchedulerBuilder.Create(q => q.UseInMemoryStore()).Build();
+            var repository = Repository(Path.Combine(dir, "timers.json"));
+            var service = new ScheduledTaskService(repository, schedulerFactory,
+                new ScheduledTaskTriggerFactory(), new ScheduledTaskRuntimeState(),
+                TimeProvider.System, NullLogger<ScheduledTaskService>.Instance);
+            await service.InitializeAsync();
+            var agentId = Guid.NewGuid();
+            var timer = await service.CreateAsync(new ScheduledTaskDefinition
+            {
+                Id = Guid.NewGuid(), Name = "Workspace task", Enabled = true,
+                TimeZoneId = "Europe/Madrid",
+                Schedule = new ScheduleDefinition { Type = ScheduleType.Interval, IntervalValue = 60 },
+                AgentExecution = new ScheduledAgentConfiguration { AgentId = agentId, Prompt = "Read README" }
+            });
+            var scheduler = await schedulerFactory.GetScheduler();
+            var key = ScheduledTaskTriggerFactory.TriggerKey(timer.Id);
+            var before = (await scheduler.GetTrigger(key))?.NextFireTimeUtc;
+            Assert.NotNull(before);
+
+            var workspaceId = Guid.NewGuid();
+            timer.AgentExecution!.WorkspaceId = workspaceId;
+            timer = await service.UpdateAsync(timer);
+            Assert.Equal(before, (await scheduler.GetTrigger(key))?.NextFireTimeUtc);
+
+            var restored = Assert.Single(await Repository(Path.Combine(dir, "timers.json")).GetAllAsync());
+            Assert.Equal(workspaceId, restored.AgentExecution!.WorkspaceId);
+            Assert.Equal(agentId, restored.AgentExecution.AgentId);
+            Assert.Equal("Read README", restored.AgentExecution.Prompt);
+            var legacy = System.Text.Json.JsonSerializer.Deserialize<ScheduledAgentConfiguration>(
+                "{\\"AgentId\\":\\"" + agentId + "\\",\\"Prompt\\":\\"Legacy\\"}")!;
+            Assert.Null(legacy.WorkspaceId);
+            Assert.Throws<ArgumentException>(() => ScheduledAgentConfigurationValidation.Validate(
+                new ScheduledAgentConfiguration { AgentId = agentId, Prompt = "Test", WorkspaceId = Guid.Empty }));
+        }
+        finally { Directory.Delete(dir, recursive: true); }
+    }
+
+    [Fact]
     public async Task InvalidAgentBinding_DoesNotBlockEnablingQuartzSchedule()
     {
         var dir = Path.Combine(Path.GetTempPath(), "ollamachat-timers-" + Guid.NewGuid().ToString("N"));
