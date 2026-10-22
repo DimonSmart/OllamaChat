@@ -407,6 +407,8 @@ public sealed record AgentLaunchCapabilities
 {
     public bool SupportsMcpBindingOverrides { get; init; }
     public bool SupportsWorkspace { get; init; }
+    // Workspace selection is not a tool permission or a model capability.
+    public bool RequiresFunctionCalling { get; init; }
     public bool SupportsSandboxProfile { get; init; }
 }
 

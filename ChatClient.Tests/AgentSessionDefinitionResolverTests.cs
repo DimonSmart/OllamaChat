@@ -115,7 +115,7 @@ public sealed class AgentSessionDefinitionResolverTests
             Name = "Agent",
             RuntimeKind = AgentRuntimeKind.LlmAgent,
             ModelRequirement = AgentModelRequirement.Required,
-            LaunchCapabilities = new AgentLaunchCapabilities { SupportsWorkspace = true }
+            LaunchCapabilities = new AgentLaunchCapabilities { SupportsWorkspace = true, RequiresFunctionCalling = true }
         }, supportsFunctionCalling: false);
 
         var validation = await resolver.ValidateAsync(Reference, new AgentSessionDefinitionRequest
@@ -147,6 +147,28 @@ public sealed class AgentSessionDefinitionResolverTests
 
         Assert.True(validation.CanLaunch);
         Assert.DoesNotContain(validation.Problems, problem => problem.Message.Contains("File Access", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public async Task ValidateAsync_WorkspaceWithoutTools_DoesNotRequireFunctionCalling()
+    {
+        var model = new ServerModel(Guid.NewGuid(), "text-only");
+        var resolver = CreateResolver(new AgentDefinitionDescriptor
+        {
+            Reference = Reference,
+            Name = "Workspace context",
+            RuntimeKind = AgentRuntimeKind.LlmAgent,
+            ModelRequirement = AgentModelRequirement.Required,
+            LaunchCapabilities = new AgentLaunchCapabilities { SupportsWorkspace = true }
+        }, supportsFunctionCalling: false);
+
+        var validation = await resolver.ValidateAsync(Reference, new AgentSessionDefinitionRequest
+        {
+            UiModelSelection = new ServerModelSelection(model.ServerId, model.ModelName),
+            Overrides = new AgentSessionOverrides { WorkspacePath = AppContext.BaseDirectory }
+        }, cancellationToken: TestContext.Current.CancellationToken);
+
+        Assert.True(validation.CanLaunch);
     }
 
     private static AgentDefinitionDescriptor DescriptorWithInput(AgentInputDefinitionKind kind) =>

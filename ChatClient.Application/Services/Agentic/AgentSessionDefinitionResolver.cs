@@ -243,7 +243,7 @@ public sealed class AgentSessionDefinitionResolver(
             }
         }
 
-        if ((descriptor.LaunchCapabilities.SupportsWorkspace || descriptor.LaunchCapabilities.SupportsSandboxProfile) && model is not null &&
+        if (descriptor.LaunchCapabilities.RequiresFunctionCalling && model is not null &&
             !await launchCapabilityValidator.SupportsFunctionCallingAsync(model, cancellationToken))
         {
             problems.Add(new AgentDefinitionLaunchProblem(

@@ -53,16 +53,19 @@ public sealed class AgentDefinitionLaunchCapabilityAnalyzer(
 
         var supportsWorkspace = false;
         var supportsSandbox = false;
+        var requiresFunctionCalling = false;
         foreach (var participant in definition.Participants)
         {
             var participantCapabilities = await AnalyzeParticipantAsync(participant, visited, cancellationToken);
             supportsWorkspace |= participantCapabilities.SupportsWorkspace;
             supportsSandbox |= participantCapabilities.SupportsSandboxProfile;
+            requiresFunctionCalling |= participantCapabilities.RequiresFunctionCalling;
         }
 
         return new AgentLaunchCapabilities
         {
             SupportsWorkspace = supportsWorkspace,
+            RequiresFunctionCalling = requiresFunctionCalling,
             SupportsSandboxProfile = supportsSandbox
         };
     }
@@ -119,6 +122,7 @@ public sealed class AgentDefinitionLaunchCapabilityAnalyzer(
         return new AgentLaunchCapabilities
         {
             SupportsWorkspace = supportsSandbox || agent.FileAccessProviderProfileId is not null,
+            RequiresFunctionCalling = supportsSandbox || agent.FileAccessProviderProfileId is not null,
             SupportsSandboxProfile = supportsSandbox
         };
     }
@@ -130,6 +134,7 @@ public sealed class AgentDefinitionLaunchCapabilityAnalyzer(
         {
             SupportsMcpBindingOverrides = left.SupportsMcpBindingOverrides || right.SupportsMcpBindingOverrides,
             SupportsWorkspace = left.SupportsWorkspace || right.SupportsWorkspace,
+            RequiresFunctionCalling = left.RequiresFunctionCalling || right.RequiresFunctionCalling,
             SupportsSandboxProfile = left.SupportsSandboxProfile || right.SupportsSandboxProfile
         };
 }
