@@ -3,10 +3,14 @@
 @using ChatClient.Application.Services
 @using ChatClient.Api.Services.Scheduling
 @using ChatClient.Application.Services.AgentRuntime
+@using ChatClient.Api.Client.Components
 @implements IAsyncDisposable
 @inject IScheduledTaskService Tasks
 @inject IScheduledTaskManualRunService ManualRuns
 @inject IWorkspaceService Workspaces
+@inject IWorkspaceDirectoryService WorkspaceDirectories
+@inject IUserSettingsService Settings
+@inject IDialogService DialogService
 @inject IAgentDefinitionCatalog AgentCatalog
 @inject ISnackbar Snackbar
 @inject ITimerEventPublisher TimerEvents
@@ -273,6 +277,7 @@
                         <MudSelectItem T="Guid?" Value="@((Guid?)workspace.Id)">@workspace.Name — @workspace.Path</MudSelectItem>
                     }
                 </MudSelect>
+                <MudButton Size="Size.Small" Variant="Variant.Outlined" OnClick="OpenTaskWorkspacePickerAsync">Browse / manage workspaces...</MudButton>
                 @if (selectedWorkspaceId is { } workspaceId && !savedWorkspaces.Any(x => x.Id == workspaceId))
                 {
                     <MudAlert Severity="Severity.Warning" Dense="true">The saved workspace was deleted. Change this binding to run the agent.</MudAlert>
@@ -398,6 +403,28 @@
         selectedAgentId = value;
         if (value is null) agentPrompt = "";
         return Task.CompletedTask;
+    }
+
+    private async Task OpenTaskWorkspacePickerAsync()
+    {
+        var configuredRoot = (await Settings.GetSettingsAsync()).WorkspacesRoot;
+        var path = Directory.Exists(configuredRoot)
+            ? configuredRoot : WorkspaceDirectories.GetFileSystemRoots().FirstOrDefault() ?? Environment.CurrentDirectory;
+        var parameters = new DialogParameters<WorkspaceDirectoryPickerDialog>
+        {
+            { dialog => dialog.InitialPath, path }
+        };
+        var dialog = await DialogService.ShowAsync<WorkspaceDirectoryPickerDialog>(
+            "Select Saved Workspace", parameters,
+            new DialogOptions { MaxWidth = MaxWidth.Medium, FullWidth = true, CloseButton = true });
+        var result = await dialog.Result;
+        savedWorkspaces = await Workspaces.GetAllAsync();
+        if (result?.Canceled != false || result.Data is not WorkspaceSelection selection)
+            return;
+        if (selection.WorkspaceId is { } id)
+            selectedWorkspaceId = id;
+        else
+            Snackbar.Add("Save the selected directory as a Saved Workspace to attach it to a timer.", Severity.Info);
     }
 
     private async Task LoadAgentsAsync()
