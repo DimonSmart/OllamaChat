@@ -125,6 +125,7 @@ public sealed class ScheduledTaskManualRunTests
         await WaitUntil(() => coordinator.Current is null);
         Assert.Null(coordinator.ForTimer(id));
         Assert.Null(coordinator.Find(started.Run!.ManualRunId));
+        Assert.False((await coordinator.RunNowAsync(id)).Accepted);
     }
 
     [Fact]

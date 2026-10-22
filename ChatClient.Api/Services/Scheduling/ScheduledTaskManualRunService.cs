@@ -36,6 +36,7 @@ public interface IScheduledTaskManualRunService
     Task<ManualRunStartResult> RunNowAsync(Guid taskId);
     bool Cancel(Guid manualRunId);
     void TimerDeleted(Guid taskId);
+    void TimerCreated(Guid taskId);
 }
 
 public sealed class ScheduledTaskManualRunOptions
@@ -58,6 +59,7 @@ public sealed class ScheduledTaskManualRunService(
     private readonly object _gate = new();
     private readonly Dictionary<Guid, ManualRunState> _last = [];
     private readonly HashSet<Guid> _deletedDuringRun = [];
+    private readonly HashSet<Guid> _deletedTimers = [];
     private ManualRunState? _current;
     private CancellationTokenSource? _cancellation;
     private Task? _execution;
@@ -85,6 +87,8 @@ public sealed class ScheduledTaskManualRunService(
         {
             if (_stopping)
                 return Task.FromResult(new ManualRunStartResult(false, null, "Application is stopping."));
+            if (_deletedTimers.Contains(taskId))
+                return Task.FromResult(new ManualRunStartResult(false, null, "Timer has been deleted."));
             if (_current is not null)
                 return Task.FromResult(new ManualRunStartResult(false, null,
                     "Another manual run is still active (including cancellation/cleanup)."));
@@ -233,6 +237,7 @@ public sealed class ScheduledTaskManualRunService(
         Guid? active;
         lock (_gate)
         {
+            _deletedTimers.Add(taskId);
             _last.Remove(taskId);
             active = _current?.ScheduledTaskId == taskId ? _current.ManualRunId : null;
             if (active.HasValue)
@@ -240,6 +245,11 @@ public sealed class ScheduledTaskManualRunService(
         }
         if (active.HasValue) RequestCancellation(active.Value, "TimerDeleted");
         PublishChanged();
+    }
+
+    public void TimerCreated(Guid taskId)
+    {
+        lock (_gate) _deletedTimers.Remove(taskId);
     }
 
     private void UpdateCurrent(Guid runId, Func<ManualRunState, ManualRunState> change)

@@ -113,6 +113,7 @@ public sealed class ScheduledTaskService(
                 items.Add(item);
                 return item;
             }, cancellationToken);
+            manualRuns?.TimerCreated(saved.Id);
             var state = NewState(saved, null, true);
             runtime.Set(saved.Id, state);
             await ReconcileSafeAsync(await schedulerFactory.GetScheduler(cancellationToken),
