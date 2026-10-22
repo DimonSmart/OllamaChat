@@ -6,6 +6,7 @@
 @implements IAsyncDisposable
 @inject IScheduledTaskService Tasks
 @inject IScheduledTaskManualRunService ManualRuns
+@inject IWorkspaceService Workspaces
 @inject IAgentDefinitionCatalog AgentCatalog
 @inject ISnackbar Snackbar
 @inject ITimerEventPublisher TimerEvents
@@ -264,6 +265,22 @@
                 <MudTextField T="string" @bind-Value="agentPrompt" Label="Prompt"
                               Margin="Margin.Dense" Lines="4"
                               HelperText="@($"Maximum {ScheduledAgentConfigurationValidation.MaximumPromptLength} characters.")" />
+                <MudSelect T="Guid?" Label="Saved Workspace (optional)" @bind-Value="selectedWorkspaceId"
+                           Variant="Variant.Outlined" Dense="true" Margin="Margin.Dense">
+                    <MudSelectItem T="Guid?" Value="@((Guid?)null)">No workspace</MudSelectItem>
+                    @foreach (var workspace in savedWorkspaces)
+                    {
+                        <MudSelectItem T="Guid?" Value="@((Guid?)workspace.Id)">@workspace.Name — @workspace.Path</MudSelectItem>
+                    }
+                </MudSelect>
+                @if (selectedWorkspaceId is { } workspaceId && !savedWorkspaces.Any(x => x.Id == workspaceId))
+                {
+                    <MudAlert Severity="Severity.Warning" Dense="true">The saved workspace was deleted. Change this binding to run the agent.</MudAlert>
+                }
+                else if (selectedWorkspaceId is { } validId && savedWorkspaces.Any(x => x.Id == validId && !Directory.Exists(x.Path)))
+                {
+                    <MudAlert Severity="Severity.Warning" Dense="true">The saved workspace directory is unavailable. Repair it in the workspace picker before running.</MudAlert>
+                }
             }
             <MudText Typo="Typo.subtitle2" Class="mt-2">Next Occurrences</MudText>
             @if (previewBusy)
@@ -346,6 +363,8 @@
 @code {
     private List<AgentDefinitionDescriptor> agents = [];
     private Guid? selectedAgentId;
+    private Guid? selectedWorkspaceId;
+    private IReadOnlyList<WorkspaceDefinition> savedWorkspaces = [];
     private string agentPrompt = "";
     private Guid? activeRunId;
     private bool showRunDialog;
@@ -383,6 +402,15 @@
 
     private async Task LoadAgentsAsync()
     {
+        try
+        {
+            savedWorkspaces = await Workspaces.GetAllAsync();
+        }
+        catch (Exception ex)
+        {
+            TimerLogger.LogWarning(ex, "Saved Workspace catalog unavailable for timer editor");
+            savedWorkspaces = [];
+        }
         try
         {
             agents = (await AgentCatalog.GetAllAsync())
@@ -551,6 +579,7 @@
                 DayOfWeek.Tuesday, DayOfWeek.Wednesday, DayOfWeek.Thursday, DayOfWeek.Friday] }
         };
         selectedAgentId = null;
+        selectedWorkspaceId = null;
         agentPrompt = "";
         creating = true;
         editorError = null;
@@ -565,6 +594,7 @@
         editing.Schedule ??= new ScheduleDefinition();
         await LoadAgentsAsync();
         selectedAgentId = editing.AgentExecution?.AgentId;
+        selectedWorkspaceId = editing.AgentExecution?.WorkspaceId;
         agentPrompt = editing.AgentExecution?.Prompt ?? "";
         creating = false;
         editorError = null;
@@ -655,7 +685,7 @@
             busy = true;
             editorError = null;
             editing.AgentExecution = selectedAgentId is { } agentId
-                ? new ScheduledAgentConfiguration { AgentId = agentId, Prompt = agentPrompt }
+                ? new ScheduledAgentConfiguration { AgentId = agentId, Prompt = agentPrompt, WorkspaceId = selectedWorkspaceId }
                 : null;
             if (editing.AgentExecution is not null)
                 ScheduledAgentConfigurationValidation.Validate(editing.AgentExecution);
