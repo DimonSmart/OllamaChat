@@ -19,6 +19,7 @@ public sealed class ScheduledAgentConfiguration
 {
     public Guid AgentId { get; set; }
     public string Prompt { get; set; } = string.Empty;
+    public Guid? WorkspaceId { get; set; }
 }
 
 public static class ScheduledAgentConfigurationValidation
@@ -29,6 +30,8 @@ public static class ScheduledAgentConfigurationValidation
     {
         if (value is null)
             throw new ArgumentException("An Agent and a prompt must be configured.");
+        if (value.WorkspaceId == Guid.Empty)
+            throw new ArgumentException("Saved Workspace ID cannot be empty.");
         if (value.AgentId == Guid.Empty)
             throw new ArgumentException("Choose a Saved Agent.");
         if (string.IsNullOrWhiteSpace(value.Prompt))

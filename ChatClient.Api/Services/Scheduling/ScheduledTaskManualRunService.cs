@@ -133,11 +133,17 @@ public sealed class ScheduledTaskManualRunService(
             }
             finally { schedulerState.Gate.Release(); }
 
-            var snapshot = task.AgentExecution!;
+            var bindingSnapshot = task.AgentExecution!;
+            var snapshot = new ScheduledAgentConfiguration
+            {
+                AgentId = bindingSnapshot.AgentId,
+                Prompt = bindingSnapshot.Prompt,
+                WorkspaceId = bindingSnapshot.WorkspaceId
+            };
             await using var scope = scopes.CreateAsyncScope();
             var executor = scope.ServiceProvider.GetRequiredService<IHeadlessAgentExecutor>();
             var result = await executor.ExecuteAsync(
-                new HeadlessAgentRunRequest(snapshot.AgentId, snapshot.Prompt), token);
+                new HeadlessAgentRunRequest(snapshot.AgentId, snapshot.Prompt, snapshot.WorkspaceId), token);
 
             agentRunId = result.AgentRunId;
             UpdateCurrent(runId, state => state with { AgentName = result.AgentName, AgentRunId = result.AgentRunId });
