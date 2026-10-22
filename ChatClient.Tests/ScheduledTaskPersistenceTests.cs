@@ -112,6 +112,42 @@ public class ScheduledTaskPersistenceTests
         finally { Directory.Delete(dir, recursive: true); }
     }
 
+
+    [Fact]
+    public async Task InvalidAgentBinding_DoesNotBlockEnablingQuartzSchedule()
+    {
+        var dir = Path.Combine(Path.GetTempPath(), "ollamachat-timers-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(dir);
+        try
+        {
+            await using var schedulerFactory = QuartzSchedulerBuilder.Create(q => q.UseInMemoryStore()).Build();
+            var repository = Repository(Path.Combine(dir, "timers.json"));
+            var id = Guid.NewGuid();
+            await repository.UpdateAsync(items =>
+            {
+                items.Add(new ScheduledTaskDefinition
+                {
+                    Id = id, Name = "Repairable", Enabled = false, Revision = 1,
+                    TimeZoneId = "Europe/Madrid",
+                    Schedule = new ScheduleDefinition { Type = ScheduleType.Interval, IntervalValue = 15 },
+                    AgentExecution = new ScheduledAgentConfiguration { AgentId = Guid.Empty, Prompt = "" }
+                });
+                return true;
+            });
+            var service = new ScheduledTaskService(repository, schedulerFactory,
+                new ScheduledTaskTriggerFactory(), new ScheduledTaskRuntimeState(),
+                TimeProvider.System, NullLogger<ScheduledTaskService>.Instance);
+            await service.InitializeAsync();
+            var enabled = await service.SetEnabledAsync(id, expectedRevision: 1, enabled: true);
+            Assert.True(enabled.Enabled);
+            Assert.Equal(ScheduledAgentConfigurationValidation.MaximumPromptLength, 32 * 1024);
+            var view = Assert.Single(await service.GetAllAsync());
+            Assert.Equal(ChatClient.Application.Services.ScheduledTaskStatus.Active, view.Status);
+            Assert.Equal(Guid.Empty, view.Definition.AgentExecution!.AgentId);
+        }
+        finally { Directory.Delete(dir, recursive: true); }
+    }
+
     [Fact]
     public async Task Service_RejectsStaleRevision()
     {

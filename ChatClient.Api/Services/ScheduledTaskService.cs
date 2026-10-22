@@ -176,7 +176,7 @@ public sealed class ScheduledTaskService(
                 CheckRevision(original, expectedRevision);
                 var updated = Copy(original);
                 updated.Enabled = enabled;
-                if (enabled) Validate(updated);
+                if (enabled) Validate(updated, validateAgentExecution: false);
                 updated.UpdatedAtUtc = now;
                 updated.Revision = checked(original.Revision + 1);
                 items[index] = updated;
@@ -293,9 +293,9 @@ public sealed class ScheduledTaskService(
         }, cancellationToken).WaitAsync(TimeSpan.FromSeconds(3), cancellationToken);
     }
 
-    private void Validate(ScheduledTaskDefinition definition)
+    private void Validate(ScheduledTaskDefinition definition, bool validateAgentExecution = true)
     {
-        if (definition.AgentExecution is not null)
+        if (validateAgentExecution && definition.AgentExecution is not null)
             ScheduledAgentConfigurationValidation.Validate(definition.AgentExecution);
         var now = clock.GetUtcNow();
         var trigger = triggers.Build(definition, now);
