@@ -1,14 +1,54 @@
 @using ChatClient.Application.Services
+@using ChatClient.Domain.Models
 @inject IWorkspaceDirectoryService WorkspaceDirectoryService
+@inject IWorkspaceService Workspaces
+@inject ChatClient.Application.Repositories.IScheduledTaskRepository ScheduledTasks
 
 <MudDialog>
     <TitleContent><MudText Typo="Typo.h6">Select workspace</MudText></TitleContent>
     <DialogContent>
-        <MudText Typo="Typo.caption" Class="mud-text-secondary text-break">@currentPath</MudText>
         @if (!string.IsNullOrWhiteSpace(error))
         {
-            <MudAlert Severity="Severity.Error" Dense="true" Class="mt-2">@error</MudAlert>
+            <MudAlert Severity="Severity.Error" Dense="true">@error</MudAlert>
         }
+        <MudText Typo="Typo.subtitle2">Saved Workspaces</MudText>
+        <MudStack Spacing="0" Class="workspace-directory-list">
+            @foreach (var workspace in saved)
+            {
+                <MudButton @key="workspace.Id" FullWidth="true" Variant="@(selectedId == workspace.Id ? Variant.Filled : Variant.Text)"
+                           Class="justify-start" Color="Color.Default" OnClick="@(() => ChooseSavedAsync(workspace))">
+                    @workspace.Name — @workspace.Path
+                    @if (!Directory.Exists(workspace.Path))
+                    {
+                        <MudText Color="Color.Warning" Typo="Typo.caption"> (Missing or unavailable)</MudText>
+                    }
+                </MudButton>
+            }
+        </MudStack>
+        @if (selectedId is not null)
+        {
+            <MudTextField T="string" Label="Name" @bind-Value="editName" Margin="Margin.Dense" />
+            <MudTextField T="string" Label="Path" @bind-Value="editPath" Margin="Margin.Dense" />
+            <MudStack Row="true" Spacing="1" Class="my-1">
+                <MudButton Size="Size.Small" Variant="Variant.Outlined" OnClick="UpdateSavedAsync">Update</MudButton>
+                <MudButton Size="Size.Small" Color="Color.Error" Variant="Variant.Outlined" OnClick="RequestRemoveAsync">Remove</MudButton>
+            </MudStack>
+            @if (confirmRemove)
+            {
+                <MudAlert Severity="Severity.Warning" Dense="true">
+                    Only the saved definition will be removed. Files and directories stay on disk.
+                    @if (dependentTasks.Count > 0)
+                    {
+                        <MudText Typo="Typo.caption">
+                            Dependent timers (@dependentTasks.Count): @string.Join(", ", dependentTasks)
+                        </MudText>
+                    }
+                </MudAlert>
+                <MudButton Color="Color.Error" Size="Size.Small" OnClick="RemoveSavedAsync">Confirm remove</MudButton>
+            }
+        }
+        <MudText Typo="Typo.subtitle2" Class="mt-2">Browse</MudText>
+        <MudText Typo="Typo.caption" Class="mud-text-secondary text-break">@currentPath</MudText>
         <MudStack Spacing="0" Class="mt-2 workspace-directory-list">
             @if (parentPath is not null)
             {
@@ -23,6 +63,10 @@
                 <MudButton @key="directory" FullWidth="true" Variant="Variant.Text" Class="justify-start" OnClick="@(() => NavigateAsync(directory))"><MudIcon Icon="@Icons.Material.Filled.Folder" />@Path.GetFileName(directory)</MudButton>
             }
         </MudStack>
+        <MudStack Row="true" Spacing="1" AlignItems="AlignItems.Center">
+            <MudTextField T="string" Label="Save current as..." @bind-Value="newName" Margin="Margin.Dense" />
+            <MudButton Size="Size.Small" Variant="Variant.Outlined" OnClick="SaveCurrentAsync" Disabled="@string.IsNullOrWhiteSpace(newName)">Save Current</MudButton>
+        </MudStack>
     </DialogContent>
     <DialogActions>
         <MudButton Size="Size.Small" OnClick="Cancel">Cancel</MudButton>
@@ -33,13 +77,37 @@
 @code {
     [CascadingParameter] private IMudDialogInstance? Dialog { get; set; }
     [Parameter, EditorRequired] public string InitialPath { get; set; } = string.Empty;
+
+    private IReadOnlyList<WorkspaceDefinition> saved = [];
     private IReadOnlyList<string> directories = [];
     private IReadOnlyList<string> roots = [];
+    private IReadOnlyList<string> dependentTasks = [];
     private string? parentPath;
     private string currentPath = string.Empty;
     private string? error;
+    private string newName = string.Empty;
+    private string editName = string.Empty;
+    private string editPath = string.Empty;
+    private Guid? selectedId;
+    private bool confirmRemove;
 
-    protected override Task OnInitializedAsync() => NavigateAsync(InitialPath);
+    protected override async Task OnInitializedAsync()
+    {
+        await ReloadAsync();
+        await NavigateAsync(InitialPath);
+    }
+
+    private async Task ReloadAsync() => saved = await Workspaces.GetAllAsync();
+
+    private Task ChooseSavedAsync(WorkspaceDefinition workspace)
+    {
+        selectedId = workspace.Id;
+        editName = workspace.Name;
+        editPath = workspace.Path;
+        confirmRemove = false;
+        error = null;
+        return Task.CompletedTask;
+    }
 
     private Task GoToParentAsync() => parentPath is null ? Task.CompletedTask : NavigateAsync(parentPath);
 
@@ -47,21 +115,100 @@
     {
         try
         {
-            currentPath = WorkspaceDirectoryService.NormalizePath(path);
-            directories = WorkspaceDirectoryService.GetDirectories(currentPath);
+            var candidate = WorkspaceDirectoryService.NormalizePath(path);
+            var entries = WorkspaceDirectoryService.GetDirectories(candidate);
+            currentPath = candidate;
+            directories = entries;
             parentPath = WorkspaceDirectoryService.GetParent(currentPath);
             roots = parentPath is null ? WorkspaceDirectoryService.GetFileSystemRoots() : [];
+            selectedId = null;
+            confirmRemove = false;
             error = null;
         }
         catch (Exception ex)
         {
-            directories = [];
             error = $"Could not open directory: {ex.Message}";
         }
-
         return Task.CompletedTask;
     }
 
-    private void Select() => Dialog?.Close(DialogResult.Ok(currentPath));
+    private async Task SaveCurrentAsync()
+    {
+        try
+        {
+            var duplicate = saved.FirstOrDefault(item => string.Equals(item.Path, currentPath,
+                OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal));
+            if (duplicate is not null)
+            {
+                await ChooseSavedAsync(duplicate);
+                error = "This directory is already saved. Select the existing workspace.";
+                return;
+            }
+            var workspace = await Workspaces.CreateAsync(new WorkspaceDefinition { Name = newName, Path = currentPath });
+            await ReloadAsync();
+            await ChooseSavedAsync(workspace);
+            newName = string.Empty;
+        }
+        catch (Exception ex) { error = ex.Message; }
+    }
+
+    private async Task UpdateSavedAsync()
+    {
+        try
+        {
+            var entry = saved.First(x => x.Id == selectedId);
+            await Workspaces.UpdateAsync(new WorkspaceDefinition
+            {
+                Id = entry.Id, Name = editName, Path = editPath, Revision = entry.Revision
+            });
+            await ReloadAsync();
+            await ChooseSavedAsync(saved.First(x => x.Id == entry.Id));
+        }
+        catch (Exception ex) { error = ex.Message; }
+    }
+
+    private async Task RequestRemoveAsync()
+    {
+        if (selectedId is null) return;
+        try
+        {
+            dependentTasks = (await ScheduledTasks.GetAllAsync())
+                .Where(item => item.AgentExecution?.WorkspaceId == selectedId)
+                .Select(item => item.Name).ToArray();
+        }
+        catch { dependentTasks = ["Dependent timers could not be checked"]; }
+        confirmRemove = true;
+    }
+
+    private async Task RemoveSavedAsync()
+    {
+        try
+        {
+            var entry = saved.First(x => x.Id == selectedId);
+            await Workspaces.DeleteAsync(entry.Id, entry.Revision);
+            selectedId = null;
+            confirmRemove = false;
+            await ReloadAsync();
+        }
+        catch (Exception ex) { error = ex.Message; }
+    }
+
+    private void Select()
+    {
+        if (selectedId is { } id)
+        {
+            if (saved.All(x => x.Id != id || !Directory.Exists(x.Path)))
+            {
+                error = "Saved workspace directory is unavailable.";
+                return;
+            }
+            Dialog?.Close(DialogResult.Ok(new WorkspaceSelection(WorkspaceId: id)));
+        }
+        else if (Directory.Exists(currentPath))
+            Dialog?.Close(DialogResult.Ok(new WorkspaceSelection(DirectPath: currentPath)));
+        else
+            error = "Select an existing directory.";
+    }
+
     private void Cancel() => Dialog?.Cancel();
 }
