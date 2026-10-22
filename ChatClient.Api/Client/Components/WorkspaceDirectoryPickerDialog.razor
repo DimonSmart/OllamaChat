@@ -93,8 +93,9 @@
 
     protected override async Task OnInitializedAsync()
     {
-        await ReloadAsync();
         await NavigateAsync(InitialPath);
+        try { await ReloadAsync(); }
+        catch (Exception ex) { error = $"Could not load saved workspaces: {ex.Message}"; }
     }
 
     private async Task ReloadAsync() => saved = await Workspaces.GetAllAsync();

@@ -115,6 +115,7 @@ public sealed class ScheduledTaskManualRunService(
         try
         {
             ScheduledTaskDefinition task;
+            ScheduledAgentConfiguration snapshot;
             // Serialize snapshot acceptance with JSON deletion and update, but never
             // keep the scheduling gate while executing LLM code.
             await schedulerState.Gate.WaitAsync(token);
@@ -124,6 +125,11 @@ public sealed class ScheduledTaskManualRunService(
                     ?? throw new KeyNotFoundException("Timer has been deleted.");
                 ScheduledAgentConfigurationValidation.Validate(task.AgentExecution);
                 var binding = task.AgentExecution!;
+                snapshot = new ScheduledAgentConfiguration
+                {
+                    AgentId = binding.AgentId, Prompt = binding.Prompt,
+                    WorkspaceId = binding.WorkspaceId
+                };
                 UpdateCurrent(runId, state => state with
                 {
                     TimerName = task.Name,
@@ -133,13 +139,6 @@ public sealed class ScheduledTaskManualRunService(
             }
             finally { schedulerState.Gate.Release(); }
 
-            var bindingSnapshot = task.AgentExecution!;
-            var snapshot = new ScheduledAgentConfiguration
-            {
-                AgentId = bindingSnapshot.AgentId,
-                Prompt = bindingSnapshot.Prompt,
-                WorkspaceId = bindingSnapshot.WorkspaceId
-            };
             await using var scope = scopes.CreateAsyncScope();
             var executor = scope.ServiceProvider.GetRequiredService<IHeadlessAgentExecutor>();
             var result = await executor.ExecuteAsync(
