@@ -159,7 +159,7 @@ public sealed class LlmCassetteTests
     {
         private readonly string _directory = System.IO.Path.Combine(System.IO.Path.GetTempPath(),
             "ollamachat-cassette-" + Guid.NewGuid().ToString("N"));
-        public string Path => System.IO.Path.Combine(_directory, "cassette.json");
+        public string Path { get { Directory.CreateDirectory(_directory); return System.IO.Path.Combine(_directory, "cassette.json"); } }
         public void Dispose() { if (Directory.Exists(_directory)) Directory.Delete(_directory, recursive: true); }
     }
 
