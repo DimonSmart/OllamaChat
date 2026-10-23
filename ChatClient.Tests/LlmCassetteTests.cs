@@ -148,6 +148,85 @@ public sealed class LlmCassetteTests
         Assert.Throws<InvalidOperationException>(() => record.Enter());
     }
 
+
+    [Fact]
+    public async Task ToolDefinitionsAndModelOptionsAreComparedStructurally()
+    {
+        using var files = new Fixture();
+        var input = new ChatMessage(ChatRole.User, "read");
+        var firstTool = AIFunctionFactory.Create((string fileName) => fileName,
+            new AIFunctionFactoryOptions { Name = "read_file" });
+        var recordOptions = new ChatOptions
+        {
+            ModelId = "model", ToolMode = ChatToolMode.Auto, Tools = [firstTool],
+            AdditionalProperties = new AdditionalPropertiesDictionary { ["repeat_penalty"] = 1.2 }
+        };
+        var record = new LlmCassette(files.Path, record: true);
+        record.ClaimClient();
+        using (var client = new RecordingChatClient(new ScriptedClient(
+                   new ChatResponse(new ChatMessage(ChatRole.Assistant, "ok"))), record))
+            await client.GetResponseAsync([input], recordOptions);
+        await record.CompleteAsync();
+
+        var replay = new LlmCassette(files.Path);
+        replay.ClaimClient();
+        using var playback = new ReplayChatClient(replay);
+        var secondTool = AIFunctionFactory.Create((int fileName) => fileName.ToString(),
+            new AIFunctionFactoryOptions { Name = "read_file" });
+        var changedOptions = new ChatOptions
+        {
+            ModelId = "model", ToolMode = ChatToolMode.Auto, Tools = [secondTool],
+            AdditionalProperties = new AdditionalPropertiesDictionary { ["repeat_penalty"] = 1.2 }
+        };
+        var mismatch = await Assert.ThrowsAsync<InvalidOperationException>(
+            () => playback.GetResponseAsync([input], changedOptions));
+        Assert.Contains("request.tools[0].schema", mismatch.Message);
+    }
+
+    [Fact]
+    public async Task MissingAndUnusedExchangesAreErrors()
+    {
+        using var files = new Fixture();
+        Assert.Throws<FileNotFoundException>(() => new LlmCassette(files.Path));
+
+        var record = new LlmCassette(files.Path, record: true);
+        record.ClaimClient();
+        using (var client = new RecordingChatClient(new ScriptedClient(
+                   new ChatResponse(new ChatMessage(ChatRole.Assistant, "one")),
+                   new ChatResponse(new ChatMessage(ChatRole.Assistant, "two"))), record))
+        {
+            await client.GetResponseAsync([new ChatMessage(ChatRole.User, "one")]);
+            await client.GetResponseAsync([new ChatMessage(ChatRole.User, "two")]);
+        }
+        await record.CompleteAsync();
+
+        var replay = new LlmCassette(files.Path);
+        replay.ClaimClient();
+        using var playback = new ReplayChatClient(replay);
+        await playback.GetResponseAsync([new ChatMessage(ChatRole.User, "one")]);
+        var ex = await Assert.ThrowsAsync<InvalidOperationException>(() => replay.CompleteAsync());
+        Assert.Contains("unused exchanges", ex.Message);
+    }
+
+    [Fact]
+    public async Task ParallelCallsAreRejectedDuringStreamEnumeration()
+    {
+        using var files = new Fixture();
+        var record = new LlmCassette(files.Path, record: true);
+        record.ClaimClient();
+        using var client = new RecordingChatClient(new ScriptedClient(), record);
+        var stream = client.GetStreamingResponseAsync([new ChatMessage(ChatRole.User, "hello")]);
+        var enumerator = stream.GetAsyncEnumerator();
+        Assert.True(await enumerator.MoveNextAsync());
+        try
+        {
+            await Assert.ThrowsAsync<InvalidOperationException>(
+                () => client.GetResponseAsync([new ChatMessage(ChatRole.User, "second")]));
+            await Assert.ThrowsAsync<InvalidOperationException>(() => record.CompleteAsync());
+        }
+        finally { await enumerator.DisposeAsync(); }
+    }
+
     private static async Task<List<ChatResponseUpdate>> Collect(IAsyncEnumerable<ChatResponseUpdate> source)
     {
         var result = new List<ChatResponseUpdate>();
