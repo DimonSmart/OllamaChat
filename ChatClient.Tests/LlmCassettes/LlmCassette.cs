@@ -20,7 +20,7 @@ internal sealed class LlmCassette
     private int _active;
     private bool _failed;
     private bool _completed;
-    private bool _created;
+    private int _created;
 
     private sealed record Exchange(string Method, JsonNode Request, JsonNode Response);
     private sealed record CassetteFile(int SchemaVersion, List<Exchange> Exchanges);
@@ -67,9 +67,8 @@ internal sealed class LlmCassette
 
     public void ClaimClient()
     {
-        if (_created)
+        if (Interlocked.Exchange(ref _created, 1) != 0)
             throw new InvalidOperationException("A second IChatClient was requested for the same cassette.");
-        _created = true;
     }
 
     public void Fail() => _failed = true;
@@ -119,7 +118,7 @@ internal sealed class LlmCassette
         if (_completed) throw new InvalidOperationException("LLM cassette has already completed.");
         if (_failed || Volatile.Read(ref _active) != 0)
             throw new InvalidOperationException("LLM cassette failed or has an active request.");
-        if (!_created) throw new InvalidOperationException("No cassette client was created.");
+        if (Volatile.Read(ref _created) == 0) throw new InvalidOperationException("No cassette client was created.");
         if (!_record && _position != _exchanges.Count)
             throw new InvalidOperationException($"LLM cassette has {_exchanges.Count - _position} unused exchanges.");
         _completed = true;
@@ -369,7 +368,7 @@ internal sealed class LlmCassette
         {
             var end = start + root.Length;
             if ((start == 0 || (!char.IsLetterOrDigit(normalized[start - 1]) && normalized[start - 1] != '_')) &&
-                (end == normalized.Length || normalized[end] == '/' || !char.IsAsciiLetterOrDigit(normalized[end])))
+                (end == normalized.Length || normalized[end] == '/' || normalized[end] is ' ' or '\\t' or '\\r' or '\\n' or '\\"' or '\\\'' or ')' or ']' or '}' or ',' or ';'))
             {
                 normalized = normalized[..start] + RootToken + normalized[end..];
                 start += RootToken.Length;
