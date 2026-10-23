@@ -145,7 +145,7 @@ internal sealed class LlmCassette
         ["messages"] = CaptureMessages(response.Messages),
         ["responseId"] = response.ResponseId,
         ["conversationId"] = response.ConversationId,
-        ["continuationToken"] = response.ContinuationToken,
+        ["continuationToken"] = response.ContinuationToken is null ? null : Convert.ToBase64String(response.ContinuationToken.ToBytes().Span),
         ["modelId"] = response.ModelId,
         ["finishReason"] = response.FinishReason?.Value
     };
@@ -157,7 +157,7 @@ internal sealed class LlmCassette
         {
             ResponseId = ReadString(obj, "responseId"),
             ConversationId = ReadString(obj, "conversationId"),
-            ContinuationToken = ReadString(obj, "continuationToken"),
+            ContinuationToken = ReadString(obj, "continuationToken") is { } token ? ResponseContinuationToken.FromBytes(Convert.FromBase64String(token)) : null,
             ModelId = ReadString(obj, "modelId"),
             FinishReason = ReadString(obj, "finishReason") is { } finish ? new ChatFinishReason(finish) : null
         };
@@ -171,7 +171,7 @@ internal sealed class LlmCassette
         ["messageId"] = update.MessageId,
         ["responseId"] = update.ResponseId,
         ["conversationId"] = update.ConversationId,
-        ["continuationToken"] = update.ContinuationToken,
+        ["continuationToken"] = update.ContinuationToken is null ? null : Convert.ToBase64String(update.ContinuationToken.ToBytes().Span),
         ["modelId"] = update.ModelId,
         ["finishReason"] = update.FinishReason?.Value
     };
@@ -187,7 +187,7 @@ internal sealed class LlmCassette
             MessageId = ReadString(obj, "messageId"),
             ResponseId = ReadString(obj, "responseId"),
             ConversationId = ReadString(obj, "conversationId"),
-            ContinuationToken = ReadString(obj, "continuationToken"),
+            ContinuationToken = ReadString(obj, "continuationToken") is { } token ? ResponseContinuationToken.FromBytes(Convert.FromBase64String(token)) : null,
             ModelId = ReadString(obj, "modelId"),
             FinishReason = ReadString(obj, "finishReason") is { } reason ? new ChatFinishReason(reason) : null
         };
@@ -296,7 +296,7 @@ internal sealed class LlmCassette
             ["modelId"] = options.ModelId,
             ["instructions"] = options.Instructions,
             ["conversationId"] = options.ConversationId,
-            ["continuationToken"] = options.ContinuationToken,
+            ["continuationToken"] = options.ContinuationToken is null ? null : Convert.ToBase64String(options.ContinuationToken.ToBytes().Span),
             ["temperature"] = SafeJson(options.Temperature),
             ["topP"] = SafeJson(options.TopP),
             ["topK"] = SafeJson(options.TopK),
@@ -306,9 +306,9 @@ internal sealed class LlmCassette
             ["seed"] = SafeJson(options.Seed),
             ["allowMultipleToolCalls"] = SafeJson(options.AllowMultipleToolCalls),
             ["allowBackgroundResponses"] = SafeJson(options.AllowBackgroundResponses),
-            ["toolMode"] = SafeJson(options.ToolMode),
+            ["toolMode"] = options.ToolMode is null ? null : JsonSerializer.SerializeToNode<ChatToolMode>(options.ToolMode),
             ["reasoning"] = SafeJson(options.Reasoning),
-            ["responseFormat"] = SafeJson(options.ResponseFormat),
+            ["responseFormat"] = options.ResponseFormat is null ? null : JsonSerializer.SerializeToNode<ChatResponseFormat>(options.ResponseFormat),
             ["stopSequences"] = SafeJson(options.StopSequences),
             ["additionalProperties"] = SafeJson(options.AdditionalProperties)
         };
