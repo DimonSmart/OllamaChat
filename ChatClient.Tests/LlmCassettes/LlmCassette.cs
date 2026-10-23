@@ -368,7 +368,7 @@ internal sealed class LlmCassette
         {
             var end = start + root.Length;
             if ((start == 0 || (!char.IsLetterOrDigit(normalized[start - 1]) && normalized[start - 1] != '_')) &&
-                (end == normalized.Length || normalized[end] == '/' || normalized[end] is ' ' or '\\t' or '\\r' or '\\n' or '\\"' or '\\\'' or ')' or ']' or '}' or ',' or ';'))
+                (end == normalized.Length || normalized[end] == '/' || char.IsWhiteSpace(normalized[end]) || normalized[end] == '"' || normalized[end] == (char)39 || normalized[end] is ')' or ']' or '}' or ',' or ';'))
             {
                 normalized = normalized[..start] + RootToken + normalized[end..];
                 start += RootToken.Length;
