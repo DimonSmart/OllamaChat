@@ -34,3 +34,4 @@ jobs:
           dotnet test ChatClient.Tests/ChatClient.Tests.csproj --no-build --configuration Release --filter-class "ChatClient.Tests.AgentSessionDefinitionResolverTests"
           dotnet test ChatClient.Tests/ChatClient.Tests.csproj --no-build --configuration Release --filter-class "ChatClient.Tests.AgentSkillsDiscoveryTests"
           dotnet test ChatClient.Tests/ChatClient.Tests.csproj --no-build --configuration Release --filter-class "ChatClient.Tests.WorkspaceDirectoryServiceTests"
+          dotnet test ChatClient.Tests/ChatClient.Tests.csproj --no-build --configuration Release --filter-class "ChatClient.Tests.LlmCassetteTests"
