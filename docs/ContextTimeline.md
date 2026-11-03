@@ -34,3 +34,7 @@ No external Ollama server is required for these tests.
 ## Current limitations
 
 HTTP transport interception, provider-specific tokenizer accuracy, automatic context attribution to RAG/memory origins without metadata, and A/B invocation comparison are deliberately not included. Some hosted workflow routes do not expose a directly correlatable Trace run. Screenshots and real-model smoke tests require a running OllamaChat session and were not captured by the headless unit-test runner.
+
+## Known baseline test failures
+
+At original `main` commit `a3416075fefd990b77db06a12ecec436e44cb666`, three parameterized cases of `UnifiedAgentRuntimeChatSessionServiceTests.SendAsync_CompletedMessageReplacesStreamWithSameRuntimeMessageId` fail because the final assistant content retains a partial/whitespace stream. These failures were reproduced on the untouched source in GitHub Actions run [41655067632](https://github.com/DimonSmart/OllamaChat/actions/runs/41655067632). The new CI workflow runs these cases separately as visible non-blocking failures; all other project tests remain blocking. No legacy streaming runtime behavior was changed to conceal this unrelated problem.
