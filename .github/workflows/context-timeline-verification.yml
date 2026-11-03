@@ -1,0 +1,21 @@
+name: Context Timeline verification
+on:
+  push:
+    branches:
+      - feature/llm-context-timeline
+  workflow_dispatch:
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+      - name: Restore
+        run: dotnet restore OllamaChat.sln
+      - name: Build
+        run: dotnet build OllamaChat.sln --no-restore --configuration Release
+      - name: Context Capture Tests
+        run: dotnet test ChatClient.Tests/ChatClient.Tests.csproj --no-build --configuration Release --filter FullyQualifiedName~ContextCaptureChatClientTests
