@@ -19,3 +19,5 @@ jobs:
         run: dotnet build OllamaChat.sln --no-restore --configuration Release
       - name: Context Capture Tests
         run: dotnet test ChatClient.Tests/ChatClient.Tests.csproj --no-build --configuration Release --filter FullyQualifiedName~ContextCaptureChatClientTests
+      - name: Full test suite
+        run: dotnet test ChatClient.Tests/ChatClient.Tests.csproj --no-build --configuration Release
