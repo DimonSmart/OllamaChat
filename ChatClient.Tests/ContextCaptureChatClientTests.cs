@@ -37,7 +37,7 @@ public sealed class ContextCaptureChatClientTests
         Assert.Equal(83L, invocation.ProviderInputTokens);
         Assert.Equal(7L, invocation.ProviderOutputTokens);
         Assert.True(invocation.EstimatedTokens > 0);
-        Assert.Equal(4, invocation.CategoryTokens.Count);
+        Assert.Equal(5, invocation.CategoryTokens.Count);
         Assert.Same(options, fake.LastOptions);
         Assert.Equal(messages, fake.LastMessages);
         Assert.All(store.GetSegments(invocation.InvocationId), s =>
