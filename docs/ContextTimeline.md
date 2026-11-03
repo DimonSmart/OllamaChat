@@ -18,7 +18,7 @@ The **Context** tab in the existing Trace drawer shows individual model-client c
 
 The store is scoped to the Blazor circuit. Defaults: 20 runs, 250 calls per run, 2000 segments per call, 64 MiB total retained content, 256 KiB maximum per blob. Duplicate full-content blobs are shared using SHA-256 and reference counts. Hitting a limit marks a truncated snapshot instead of failing the model request.
 
-Background agents and separately instantiated summarizer clients are attributed to the agent that created them. Summarization on the primary model uses a non-owning purpose adapter; no tool-calling or history logic is replaced. Workflows using the same factory are captured; routes without a direct Trace run show their calls under **Unlinked calls**. The tool does not reconstruct old content from saved chats.
+Background agents and separately instantiated summarizer clients are attributed to the agent that created them. Summarization using a separate model client is marked `compaction`. When summarization shares the original primary model client, the boundary alone cannot prove whether an invocation belongs to summarization and it keeps the primary purpose. No tool-calling or history logic is replaced. Workflows using the same factory are captured; routes without a direct Trace run show their calls under **Unlinked calls**. The tool does not reconstruct old content from saved chats.
 
 ## Testing
 
