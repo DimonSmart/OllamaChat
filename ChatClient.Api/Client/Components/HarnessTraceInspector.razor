@@ -36,15 +36,18 @@
             <MudButton Variant="@(activeTab == "Trace" ? Variant.Filled : Variant.Outlined)" OnClick="@(() => SetTab("Trace"))">Trace</MudButton>
             <MudButton Variant="@(activeTab == "Context" ? Variant.Filled : Variant.Outlined)" OnClick="@(() => SetTab("Context"))">Context</MudButton>
         </MudButtonGroup>
-        @if (snapshot.Runs.Count == 0 && CaptureStore.GetInvocations().Count == 0)
+        @if (activeTab == "Trace" && snapshot.Runs.Count == 0)
         { <MudText Typo="Typo.body2" Class="mud-text-secondary">No trace runs yet</MudText> }
         else
         {
+            @if (snapshot.Runs.Count > 0 || CaptureStore.GetInvocations().Count > 0)
+            {
             <MudSelect T="string" Value="selectedRunId" ValueChanged="SelectRun" Dense="true" Label="Run">
                 @foreach (var run in snapshot.Runs) { <MudSelectItem Value="@run.RunId">@RunLabel(run)</MudSelectItem> }
                 @if (CaptureStore.GetInvocations(ContextCaptureStore.UnlinkedRunId).Count > 0)
                 { <MudSelectItem Value="@ContextCaptureStore.UnlinkedRunId">Unlinked calls (no trace run)</MudSelectItem> }
             </MudSelect>
+            }
             @if (activeTab == "Context")
             {
                 <ContextTimeline RunId="@selectedRunId" SelectedInvocationId="@selectedInvocationId"
