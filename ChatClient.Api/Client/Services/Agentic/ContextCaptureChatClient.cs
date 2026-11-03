@@ -73,7 +73,10 @@ public sealed class ContextCaptureChatClient(
                         if (item is UsageContent reported)
                         {
                             usage ??= new UsageDetails();
-                            usage.Add(reported.Details);
+                            usage.InputTokenCount = reported.Details.InputTokenCount ?? usage.InputTokenCount;
+                            usage.OutputTokenCount = reported.Details.OutputTokenCount ?? usage.OutputTokenCount;
+                            usage.CachedInputTokenCount = reported.Details.CachedInputTokenCount ?? usage.CachedInputTokenCount;
+                            usage.ReasoningTokenCount = reported.Details.ReasoningTokenCount ?? usage.ReasoningTokenCount;
                         }
                 }
                 catch { /* Provider metadata is best-effort. */ }
@@ -187,7 +190,7 @@ public sealed class ContextCaptureChatClient(
             {
                 var schema = tool is AIFunctionDeclaration function
                     ? SafeSchema(function) : null;
-                var text = $"Name: {tool.Name}\nDescription: {tool.Description}\nSchema: {schema ?? "(unavailable)"}";
+                var text = ToolDefinitionJson(tool, schema);
                 // The schema here is observed on ChatOptions, not reconstructed from a UI tool list.
                 yield return Draft(ContextCategory.ToolDefinitions, "tools", tool.GetType().Name,
                     null, null, tool.Name, text, true, full, schema is not null);
@@ -201,6 +204,24 @@ public sealed class ContextCaptureChatClient(
         new(category, role, kind, messageId, callId, toolName,
             known && content is not null ? Math.Max(1L, (content.Length + 3L) / 4L) : null,
             full ? content : null, structured);
+
+    private static string ToolDefinitionJson(AITool tool, string? schema)
+    {
+        try
+        {
+            if (schema is not null)
+            {
+                using var json = JsonDocument.Parse(schema);
+                return JsonSerializer.Serialize(new
+                {
+                    tool.Name, tool.Description, JsonSchema = json.RootElement
+                });
+            }
+        }
+        catch { /* Invalid schema remains explicitly unknown. */ }
+
+        return JsonSerializer.Serialize(new { tool.Name, tool.Description, JsonSchema = (object?)null });
+    }
 
     private static string? SafeJson(object? value)
     {
