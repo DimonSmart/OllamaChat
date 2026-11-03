@@ -338,7 +338,7 @@ public sealed class UnifiedAgentRuntimeChatSessionService(
         _savedChat = null;
         _savedChatPersistenceSuppressed = false;
         harnessTraceSession?.Clear();
-        contextCaptureStore?.Clear();
+        contextCaptureStore?.Reset();
         Task? activeRun;
         lock (_lifecycleLock)
         {
@@ -918,7 +918,7 @@ public sealed class UnifiedAgentRuntimeChatSessionService(
         RequiresReset = false;
         _persistenceHealthy = true;
         harnessTraceSession?.Clear();
-        contextCaptureStore?.Clear();
+        contextCaptureStore?.Reset();
 
         try
         { previousRuntime?.Dispose(); }
