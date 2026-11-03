@@ -56,10 +56,17 @@ public sealed class ContextCaptureChatClient(
         UsageDetails? usage = null;
         try
         {
-            await foreach (var update in base.GetStreamingResponseAsync(input, options, cancellationToken)
-                .WithCancellation(cancellationToken).ConfigureAwait(false))
+            await using var enumerator = base.GetStreamingResponseAsync(input, options, cancellationToken)
+                .GetAsyncEnumerator(cancellationToken);
+            while (true)
             {
-                // Only usage updates are examined; yield the identical update in the same order.
+                bool hasNext;
+                try { hasNext = await enumerator.MoveNextAsync().ConfigureAwait(false); }
+                catch (OperationCanceledException) { status = ContextInvocationStatus.Canceled; throw; }
+                catch { status = ContextInvocationStatus.Failed; throw; }
+                if (!hasNext) break;
+
+                var update = enumerator.Current;
                 try
                 {
                     foreach (var item in update.Contents)
@@ -70,16 +77,15 @@ public sealed class ContextCaptureChatClient(
                         }
                 }
                 catch { /* Provider metadata is best-effort. */ }
+
+                // Never buffer, replace or reorder provider updates.
                 yield return update;
             }
             status = ContextInvocationStatus.Completed;
         }
         finally
         {
-            if (status != ContextInvocationStatus.Completed)
-                status = cancellationToken.IsCancellationRequested
-                    ? ContextInvocationStatus.Canceled
-                    : ContextInvocationStatus.Failed;
+            // A consumer disposing a partial stream without error is cancellation, not failure.
             TryComplete(id, status, started.Elapsed, usage);
         }
     }
