@@ -49,6 +49,8 @@
             {
                 <ContextTimeline RunId="@selectedRunId" SelectedInvocationId="@selectedInvocationId"
                                  SelectedInvocationIdChanged="SelectInvocation"
+                                 AgentFilter="@selectedAgent" AgentFilterChanged="SelectAgent"
+                                 PercentageScale="@percentageScale" PercentageScaleChanged="SelectScale"
                                  OnShowTrace="ShowInTrace" />
             }
             else if (SelectedRun is { } run)
@@ -71,6 +73,8 @@
     private string? selectedRunId;
     private bool followLatest = true;
     private string activeTab = "Trace";
+    private string selectedAgent = "*";
+    private bool percentageScale;
     private string? selectedInvocationId;
     private string? focusedSpanId;
     private HarnessTraceRunSnapshot? SelectedRun => snapshot.Runs.FirstOrDefault(run => run.RunId == selectedRunId);
@@ -218,6 +222,8 @@
     private sealed class TraceNode(HarnessTraceSpanSnapshot span) { public HarnessTraceSpanSnapshot Span { get; } = span; public List<TraceNode> Children { get; } = []; }
     private void SetTab(string tab) => activeTab = tab;
     private Task SelectInvocation(string id) { selectedInvocationId = id; return Task.CompletedTask; }
+    private Task SelectAgent(string agent) { selectedAgent = agent; return Task.CompletedTask; }
+    private Task SelectScale(bool value) { percentageScale = value; return Task.CompletedTask; }
     private void OpenLinkedContext(string id) { selectedInvocationId = id; activeTab = "Context"; }
     private void ShowInTrace(ContextInvocationSnapshot invocation)
     {
