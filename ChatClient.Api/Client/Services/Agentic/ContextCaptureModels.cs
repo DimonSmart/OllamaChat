@@ -103,6 +103,6 @@ public static class ContextCaptureScope
         if (activity is null || !string.Equals(
                 activity.GetTagItem("gen_ai.operation.name")?.ToString(), "chat", StringComparison.Ordinal))
             return (ContextLinkState.Unavailable, null, null);
-        return (ContextLinkState.Linked, activity.TraceId.ToString(), activity.SpanId.ToString());
+        return (ContextLinkState.Pending, activity.TraceId.ToString(), activity.SpanId.ToString());
     }
 }
