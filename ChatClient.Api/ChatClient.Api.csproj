@@ -6,21 +6,21 @@
       <UserSecretsId>4a3297bb-431d-45ef-b95d-3d5c01782724</UserSecretsId>
   </PropertyGroup>
             <ItemGroup>
-        <PackageReference Include="HtmlAgilityPack" Version="1.12.4" />
+        <PackageReference Include="HtmlAgilityPack" Version="1.13.1" />
         <PackageReference Include="Microsoft.Agents.AI" Version="1.27.0" />
         <PackageReference Include="Microsoft.Agents.AI.Harness" Version="1.27.0" />
         <PackageReference Include="Microsoft.Agents.AI.Tools.Shell" Version="1.24.0-preview.261006.1" />
         <PackageReference Include="Microsoft.Agents.AI.Workflows" Version="1.27.0" />
-        <PackageReference Include="Microsoft.CodeAnalysis.CSharp.Scripting" Version="5.6.0" />
+        <PackageReference Include="Microsoft.CodeAnalysis.CSharp.Scripting" Version="5.9.0" />
         <PackageReference Include="Microsoft.Extensions.AI" Version="10.11.0" />
         <PackageReference Include="Microsoft.Extensions.AI.OpenAI" Version="10.11.0" />
-        <PackageReference Include="Markdig" Version="1.3.2" />
+        <PackageReference Include="Markdig" Version="1.5.1" />
         <PackageReference Include="Microsoft.Extensions.VectorData.Abstractions" Version="10.11.0" />
-        <PackageReference Include="Microsoft.ML.Tokenizers.Data.Cl100kBase" Version="2.0.0" />
-        <PackageReference Include="CommunityToolkit.VectorData.SqliteVec" Version="1.0.1-preview" />
-        <PackageReference Include="Microsoft.Data.Sqlite" Version="10.0.11" />
-        <PackageReference Include="Microsoft.Bcl.Memory" Version="10.0.11" />
-        <PackageReference Include="ModelContextProtocol" Version="2.2.0" />
+        <PackageReference Include="Microsoft.ML.Tokenizers.Data.Cl100kBase" Version="2.0.1" />
+        <PackageReference Include="CommunityToolkit.VectorData.SqliteVec" Version="1.0.3-preview" />
+        <PackageReference Include="Microsoft.Data.Sqlite" Version="10.0.14" />
+        <PackageReference Include="Microsoft.Bcl.Memory" Version="10.0.14" />
+        <PackageReference Include="ModelContextProtocol" Version="2.3.0" />
         <PackageReference Include="MudBlazor" Version="9.8.0" />
         <PackageReference Include="Quartz" Version="4.1.0" />
         <PackageReference Include="MudX.MudBlazor.Extension" Version="9.5.0" />
