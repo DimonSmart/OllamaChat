@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using Microsoft.Extensions.AI;
 
 namespace ChatClient.Api.Client.Services.Agentic;
@@ -17,6 +18,17 @@ public sealed class ContextCaptureChatClient(
     string purpose,
     string defaultModel) : DelegatingChatClient(inner)
 {
+    private static readonly JsonSerializerOptions SafeJsonOptions = new()
+    {
+        MaxDepth = 16,
+        Converters =
+        {
+            new RejectBytesConverter(),
+            new RejectReadOnlyBytesConverter(),
+            new RejectMemoryBytesConverter()
+        }
+    };
+
     public override async Task<ChatResponse> GetResponseAsync(
         IEnumerable<ChatMessage> messages, ChatOptions? options = null,
         CancellationToken cancellationToken = default)
@@ -225,8 +237,37 @@ public sealed class ContextCaptureChatClient(
 
     private static string? SafeJson(object? value)
     {
-        try { return JsonSerializer.Serialize(value); }
+        try
+        {
+            if (value is Stream) return null;
+            var json = JsonSerializer.Serialize(value, SafeJsonOptions);
+            return json.Length <= 1_048_576 ? json : null;
+        }
         catch { return null; }
+    }
+
+    private sealed class RejectBytesConverter : JsonConverter<byte[]>
+    {
+        public override byte[]? Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options) =>
+            throw new NotSupportedException();
+        public override void Write(Utf8JsonWriter writer, byte[] value, JsonSerializerOptions options) =>
+            throw new NotSupportedException("Binary payloads must not be retained in context diagnostics.");
+    }
+
+    private sealed class RejectReadOnlyBytesConverter : JsonConverter<ReadOnlyMemory<byte>>
+    {
+        public override ReadOnlyMemory<byte> Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options) =>
+            throw new NotSupportedException();
+        public override void Write(Utf8JsonWriter writer, ReadOnlyMemory<byte> value, JsonSerializerOptions options) =>
+            throw new NotSupportedException();
+    }
+
+    private sealed class RejectMemoryBytesConverter : JsonConverter<Memory<byte>>
+    {
+        public override Memory<byte> Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options) =>
+            throw new NotSupportedException();
+        public override void Write(Utf8JsonWriter writer, Memory<byte> value, JsonSerializerOptions options) =>
+            throw new NotSupportedException();
     }
 
     private static string? SafeSchema(AIFunctionDeclaration function)
