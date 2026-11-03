@@ -200,7 +200,7 @@ public sealed class CompactionStrategyResolver(
     private static async Task<IChatClient> ResolveSummarizerClientAsync(CompactionStage stage, IChatClient primaryChatClient, Dictionary<ServerModel, IChatClient> summarizers, Func<ServerModel, CancellationToken, Task<IChatClient>> createOwnedChatClient, CancellationToken cancellationToken)
     {
         if (stage.SummarizerLlmId is null && stage.SummarizerModelName is null)
-            return primaryChatClient;
+            return new CompactionPurposeChatClient(primaryChatClient);
         if (stage.SummarizerLlmId is not Guid serverId || serverId == Guid.Empty || string.IsNullOrWhiteSpace(stage.SummarizerModelName))
             throw new InvalidOperationException("A summarization stage requires both a valid server ID and model name for a separate summarizer.");
         var model = new ServerModel(serverId, stage.SummarizerModelName);
