@@ -138,6 +138,76 @@ public sealed class ContextCaptureChatClientTests
         Assert.Equal(ContextInvocationStatus.Failed, Assert.Single(store.GetInvocations()).Status);
     }
 
+    [Fact]
+    public async Task StreamingProducerFailure_IsPreserved_AndStoppedConsumerIsCanceled()
+    {
+        var store = new ContextCaptureStore();
+        var error = new InvalidOperationException("stream error");
+        var fake = new FakeClient { StreamFailure = error };
+        using var client = Observe(fake, store);
+        var ex = await Assert.ThrowsAsync<InvalidOperationException>(async () =>
+        {
+            await foreach (var unused in client.GetStreamingResponseAsync(
+                [new ChatMessage(ChatRole.User, "hello")], cancellationToken: TestContext.Current.CancellationToken))
+            { }
+        });
+        Assert.Same(error, ex);
+        Assert.Equal(ContextInvocationStatus.Failed, Assert.Single(store.GetInvocations()).Status);
+
+        fake.StreamFailure = null;
+        await foreach (var unused in client.GetStreamingResponseAsync(
+            [new ChatMessage(ChatRole.User, "early exit")], cancellationToken: TestContext.Current.CancellationToken))
+            break;
+
+        Assert.Equal(ContextInvocationStatus.Canceled, store.GetInvocations().Last().Status);
+    }
+
+    [Fact]
+    public async Task BinaryToolResults_AreUnknownAndNeverRetainedAsBase64()
+    {
+        var store = new ContextCaptureStore { Mode = ContextCaptureMode.FullContext };
+        using var client = Observe(new FakeClient(), store);
+        await client.GetResponseAsync(
+            [new ChatMessage(ChatRole.Tool,
+                [new FunctionResultContent("call-1", new { payload = new byte[] { 1, 2, 3, 4 } })])],
+            cancellationToken: TestContext.Current.CancellationToken);
+
+        var invocation = Assert.Single(store.GetInvocations());
+        var segment = Assert.Single(store.GetSegments(invocation.InvocationId));
+        Assert.Equal(ContextCategory.ToolResults, segment.Category);
+        Assert.Null(segment.EstimatedTokens);
+        Assert.Null(segment.BlobId);
+        Assert.Equal(1, invocation.UnknownSegments);
+    }
+
+    [Fact]
+    public async Task ThousandSegments_AreQueryableWithoutLoadingAnyBlobs_AndCircuitsStayIsolated()
+    {
+        var first = new ContextCaptureStore();
+        var second = new ContextCaptureStore();
+        using var client = Observe(new FakeClient(), first);
+        for (int i = 0; i < 100; i++)
+        {
+            var chunks = Enumerable.Range(0, 10)
+                .Select(n => (AIContent)new TextContent($"chunk {n} in call {i}")).ToList();
+            await client.GetResponseAsync([new ChatMessage(ChatRole.User, chunks)],
+                cancellationToken: TestContext.Current.CancellationToken);
+        }
+
+        var calls = first.GetInvocations();
+        Assert.Equal(100, calls.Count);
+        Assert.Equal(1000, calls.Sum(call => first.GetSegments(call.InvocationId).Count));
+        Assert.All(calls, call => Assert.All(first.GetSegments(call.InvocationId),
+            segment => Assert.Null(segment.BlobId)));
+        Assert.Empty(second.GetInvocations());
+
+        first.Mode = ContextCaptureMode.FullContext;
+        first.Reset();
+        Assert.Empty(first.GetInvocations());
+        Assert.Equal(ContextCaptureMode.MetadataOnly, first.Mode);
+        Assert.Empty(second.GetInvocations());
+    }
+
     private static ContextCaptureChatClient Observe(FakeClient fake, ContextCaptureStore store) =>
         new(fake, store, "example", "example-1", "main", "test-model");
 
@@ -153,6 +223,7 @@ public sealed class ContextCaptureChatClientTests
             new(ChatRole.Assistant, [new UsageContent(new UsageDetails { InputTokenCount = 24, OutputTokenCount = 3 })])
         ];
         public Exception? Failure { get; set; }
+        public Exception? StreamFailure { get; set; }
         public int NonStreamingCalls { get; private set; }
         public ChatOptions? LastOptions { get; private set; }
         public IReadOnlyList<ChatMessage>? LastMessages { get; private set; }
@@ -172,7 +243,11 @@ public sealed class ContextCaptureChatClientTests
             [EnumeratorCancellation] CancellationToken cancellationToken = default)
         {
             await Task.Yield();
-            foreach (var update in Updates) yield return update;
+            foreach (var update in Updates)
+            {
+                yield return update;
+                if (StreamFailure is not null) throw StreamFailure;
+            }
         }
         public object? GetService(Type serviceType, object? serviceKey = null) => null;
         public void Dispose() { }
