@@ -30,7 +30,8 @@ public sealed class UnifiedAgentRuntimeChatSessionService(
     IChatTitleGenerator? chatTitleGenerator = null,
     HarnessTraceSession? harnessTraceSession = null,
     IAgentSessionDefinitionResolver? definitionResolver = null,
-    ISnackbar? snackbar = null) : IChatEngineSessionService, IAsyncDisposable
+    ISnackbar? snackbar = null,
+    ContextCaptureStore? contextCaptureStore = null) : IChatEngineSessionService, IAsyncDisposable
 {
     private readonly AppChat _chat = new();
     private readonly Dictionary<string, StreamingAppChatMessage> _activeStreamsByRuntimeMessageId =
@@ -337,6 +338,7 @@ public sealed class UnifiedAgentRuntimeChatSessionService(
         _savedChat = null;
         _savedChatPersistenceSuppressed = false;
         harnessTraceSession?.Clear();
+        contextCaptureStore?.Reset();
         Task? activeRun;
         lock (_lifecycleLock)
         {
@@ -916,6 +918,7 @@ public sealed class UnifiedAgentRuntimeChatSessionService(
         RequiresReset = false;
         _persistenceHealthy = true;
         harnessTraceSession?.Clear();
+        contextCaptureStore?.Reset();
 
         try
         { previousRuntime?.Dispose(); }

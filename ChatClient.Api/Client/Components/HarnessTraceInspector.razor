@@ -5,11 +5,12 @@
 @using Microsoft.AspNetCore.Components.Rendering
 @implements IDisposable
 @inject HarnessTraceSession TraceSession
+@inject ContextCaptureStore CaptureStore
 
 <div class="session-state-drawer-layout">
     <div class="session-state-drawer-header">
         <MudText Typo="Typo.subtitle2">
-            Trace (@snapshot.Runs.Count)
+            Diagnostics (@snapshot.Runs.Count)
         </MudText>
 
         <MudStack Row="true"
@@ -31,14 +32,31 @@
         </MudStack>
     </div>
     <div class="session-state-drawer-content">
-        @if (snapshot.Runs.Count == 0)
+        <MudButtonGroup Size="Size.Small" Variant="Variant.Outlined" Class="mb-1">
+            <MudButton Variant="@(activeTab == "Trace" ? Variant.Filled : Variant.Outlined)" OnClick="@(() => SetTab("Trace"))">Trace</MudButton>
+            <MudButton Variant="@(activeTab == "Context" ? Variant.Filled : Variant.Outlined)" OnClick="@(() => SetTab("Context"))">Context</MudButton>
+        </MudButtonGroup>
+        @if (activeTab == "Trace" && snapshot.Runs.Count == 0)
         { <MudText Typo="Typo.body2" Class="mud-text-secondary">No trace runs yet</MudText> }
         else
         {
+            @if (snapshot.Runs.Count > 0 || CaptureStore.GetInvocations().Count > 0)
+            {
             <MudSelect T="string" Value="selectedRunId" ValueChanged="SelectRun" Dense="true" Label="Run">
                 @foreach (var run in snapshot.Runs) { <MudSelectItem Value="@run.RunId">@RunLabel(run)</MudSelectItem> }
+                @if (CaptureStore.GetInvocations(ContextCaptureStore.UnlinkedRunId).Count > 0)
+                { <MudSelectItem Value="@ContextCaptureStore.UnlinkedRunId">Unlinked calls (no trace run)</MudSelectItem> }
             </MudSelect>
-            @if (SelectedRun is { } run)
+            }
+            @if (activeTab == "Context")
+            {
+                <ContextTimeline RunId="@selectedRunId" SelectedInvocationId="@selectedInvocationId"
+                                 SelectedInvocationIdChanged="SelectInvocation"
+                                 AgentFilter="@selectedAgent" AgentFilterChanged="SelectAgent"
+                                 PercentageScale="@percentageScale" PercentageScaleChanged="SelectScale"
+                                 OnShowTrace="ShowInTrace" />
+            }
+            else if (SelectedRun is { } run)
             {
                 <MudText Typo="Typo.caption" Class="mt-2">@run.Status · @FormatDuration(run.CompletedAt - run.StartedAt) · @run.Spans.Count spans</MudText>
                 <MudText Typo="Typo.caption" Class="mud-text-secondary">Trace: @run.TraceId</MudText>
@@ -57,18 +75,25 @@
     private readonly Dictionary<string, AgentVisualIdentityMap> agentVisualsByRun = new(StringComparer.Ordinal);
     private string? selectedRunId;
     private bool followLatest = true;
+    private string activeTab = "Trace";
+    private string selectedAgent = "*";
+    private bool percentageScale;
+    private string? selectedInvocationId;
+    private string? focusedSpanId;
     private HarnessTraceRunSnapshot? SelectedRun => snapshot.Runs.FirstOrDefault(run => run.RunId == selectedRunId);
-    protected override void OnInitialized() { TraceSession.Changed += Changed; Refresh(); }
+    protected override void OnInitialized() { TraceSession.Changed += Changed; CaptureStore.Changed += Changed; Refresh(); }
     private void Changed() => _ = InvokeAsync(() => { Refresh(); StateHasChanged(); });
     private void Refresh()
     {
         snapshot = TraceSession.GetSnapshot();
+        CaptureStore.ConfirmLinks(snapshot);
         var activeRunIds = snapshot.Runs.Select(run => run.RunId).ToHashSet(StringComparer.Ordinal);
+        foreach (var call in CaptureStore.GetInvocations()) if (call.RunId is { } id) activeRunIds.Add(id);
         foreach (var runId in agentVisualsByRun.Keys.Where(runId => !activeRunIds.Contains(runId)).ToArray()) agentVisualsByRun.Remove(runId);
-        if (followLatest || !snapshot.Runs.Any(run => run.RunId == selectedRunId)) selectedRunId = snapshot.Runs.FirstOrDefault()?.RunId;
+        if (followLatest || selectedRunId is null || !activeRunIds.Contains(selectedRunId)) selectedRunId = snapshot.Runs.FirstOrDefault()?.RunId ?? CaptureStore.GetInvocations().LastOrDefault()?.RunId;
     }
     private Task SelectRun(string runId) { selectedRunId = runId; followLatest = string.Equals(runId, snapshot.Runs.FirstOrDefault()?.RunId, StringComparison.Ordinal); return Task.CompletedTask; }
-    private void Clear() { followLatest = true; agentVisualsByRun.Clear(); TraceSession.Clear(); }
+    private void Clear() { followLatest = true; selectedInvocationId = null; focusedSpanId = null; agentVisualsByRun.Clear(); CaptureStore.Clear(); TraceSession.Clear(); }
     private Task CloseAsync() => OnClose.InvokeAsync();
     private static string RunLabel(HarnessTraceRunSnapshot run) => $"Run {run.StartedAt.LocalDateTime:T} · {run.Status} · {run.Spans.Count} spans";
     private RenderFragment RenderRun(HarnessTraceRunSnapshot run)
@@ -112,7 +137,7 @@
     private RenderFragment RenderNode(TraceNode node, int depth, AgentVisualIdentityMap visuals) => builder =>
     {
         var sequence = 0; builder.OpenElement(sequence++, "div"); builder.AddAttribute(sequence++, "style", $"margin-left:{depth * 16}px");
-        builder.OpenElement(sequence++, "details"); builder.OpenElement(sequence++, "summary");
+        builder.OpenElement(sequence++, "details"); if (node.Span.SpanId == focusedSpanId) builder.AddAttribute(sequence++, "open", true); builder.OpenElement(sequence++, "summary");
         var agentIdentity = AgentIdentity(node);
         if (!string.IsNullOrWhiteSpace(agentIdentity))
         {
@@ -121,7 +146,19 @@
         }
         builder.AddContent(sequence++, SpanDisplayName(node));
         builder.AddContent(sequence++, $" · {FormatDuration(node.Span.Duration)}"); builder.CloseElement();
-        builder.AddContent(sequence++, RenderDetails(node.Span)); foreach (var child in node.Children) builder.AddContent(sequence++, RenderNode(child, depth + 1, visuals)); builder.CloseElement(); builder.CloseElement();
+        builder.AddContent(sequence++, RenderDetails(node.Span));
+        var linked = CaptureStore.GetInvocations(selectedRunId).FirstOrDefault(inv =>
+            inv.LinkState == ContextLinkState.Linked &&
+            inv.TraceId == node.Span.TraceId && inv.SpanId == node.Span.SpanId);
+        if (linked is not null)
+        {
+            builder.OpenElement(sequence++, "button");
+            builder.AddAttribute(sequence++, "type", "button");
+            builder.AddAttribute(sequence++, "onclick", EventCallback.Factory.Create(this, () => OpenLinkedContext(linked.InvocationId)));
+            builder.AddContent(sequence++, "Open in Context");
+            builder.CloseElement();
+        }
+        foreach (var child in node.Children) builder.AddContent(sequence++, RenderNode(child, depth + 1, visuals)); builder.CloseElement(); builder.CloseElement();
     };
     private static string? AgentIdentity(TraceNode node)
     {
@@ -186,5 +223,16 @@
     };
     private static void AddSection(RenderTreeBuilder builder, ref int sequence, string title, IEnumerable<string> entries) { builder.OpenElement(sequence++, "details"); builder.OpenElement(sequence++, "summary"); builder.AddContent(sequence++, title); builder.CloseElement(); foreach (var entry in entries) { builder.OpenElement(sequence++, "div"); builder.AddContent(sequence++, entry); builder.CloseElement(); } builder.CloseElement(); }
     private sealed class TraceNode(HarnessTraceSpanSnapshot span) { public HarnessTraceSpanSnapshot Span { get; } = span; public List<TraceNode> Children { get; } = []; }
-    public void Dispose() => TraceSession.Changed -= Changed;
+    private void SetTab(string tab) => activeTab = tab;
+    private Task SelectInvocation(string id) { selectedInvocationId = id; return Task.CompletedTask; }
+    private Task SelectAgent(string agent) { selectedAgent = agent; return Task.CompletedTask; }
+    private Task SelectScale(bool value) { percentageScale = value; return Task.CompletedTask; }
+    private void OpenLinkedContext(string id) { selectedInvocationId = id; activeTab = "Context"; }
+    private void ShowInTrace(ContextInvocationSnapshot invocation)
+    {
+        if (invocation.LinkState != ContextLinkState.Linked) return;
+        focusedSpanId = invocation.SpanId;
+        activeTab = "Trace";
+    }
+    public void Dispose() { TraceSession.Changed -= Changed; CaptureStore.Changed -= Changed; }
 }

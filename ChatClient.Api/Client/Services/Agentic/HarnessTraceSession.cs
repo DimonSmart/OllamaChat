@@ -75,7 +75,7 @@ public sealed class HarnessTraceSession : IDisposable
             registered = true;
             correlation = hub.Activate(this, run.RunId);
             NotifyLater();
-            return new(this, root, run, correlation);
+            return new(this, root, run, correlation, ContextCaptureScope.Begin(runId));
         }
         catch (Exception ex)
         {
@@ -167,12 +167,12 @@ public sealed class HarnessTraceSession : IDisposable
     {
         private readonly HarnessTraceSession owner;
         private readonly Activity root;
-        private readonly MutableRun run; private readonly IDisposable correlation;
+        private readonly MutableRun run; private readonly IDisposable correlation; private readonly IDisposable contextScope;
         private HarnessTraceRunStatus _status = HarnessTraceRunStatus.Completed; private int _disposed;
-        internal HarnessTraceRunScope(HarnessTraceSession owner, Activity root, MutableRun run, IDisposable correlation) { this.owner = owner; this.root = root; this.run = run; this.correlation = correlation; }
+        internal HarnessTraceRunScope(HarnessTraceSession owner, Activity root, MutableRun run, IDisposable correlation, IDisposable contextScope) { this.owner = owner; this.root = root; this.run = run; this.correlation = correlation; this.contextScope = contextScope; }
         public void Cancel() => _status = HarnessTraceRunStatus.Canceled;
         public void Fail() => _status = HarnessTraceRunStatus.Failed;
-        public void Dispose() { if (Interlocked.Exchange(ref _disposed, 1) == 0) { correlation.Dispose(); owner.Complete(run, _status, root); } }
+        public void Dispose() { if (Interlocked.Exchange(ref _disposed, 1) == 0) { contextScope.Dispose(); correlation.Dispose(); owner.Complete(run, _status, root); } }
     }
     internal sealed class MutableRun(string runId, DateTimeOffset startedAt, string traceId)
     {

@@ -1,0 +1,157 @@
+@using ChatClient.Api.Client.Services.Agentic
+@inject ContextCaptureStore Store
+@inject IJSRuntime JS
+
+<section class="context-details">
+    <div class="context-details-heading">
+        <MudText Typo="Typo.subtitle2">Call #@CallNumber · @Invocation.AgentName</MudText>
+        <MudButton Size="Size.Small" Variant="Variant.Text" Disabled="@(Invocation.LinkState != ContextLinkState.Linked)" OnClick="() => OnShowTrace.InvokeAsync(Invocation)">Show in Trace</MudButton>
+        <MudButton Size="Size.Small" Color="Color.Warning" Variant="Variant.Text" OnClick="Store.ClearContent">Clear captured content</MudButton>
+    </div>
+    <div class="context-details-info">
+        <span>@Invocation.ModelId</span><span>@Invocation.Purpose</span>
+        <span>@Invocation.Status</span>
+        <span>@(Invocation.Duration is null ? "Running" : $"{Invocation.Duration.Value.TotalMilliseconds:0.#} ms")</span>
+        <span>Client boundary (not HTTP wire)</span>
+        <span>Trace: @Invocation.LinkState</span>
+        @if (Invocation.IsTruncated) { <span class="mud-text-warning">Truncated</span> }
+    </div>
+    <div class="context-details-info">
+        <span>Provider in: @FormatUsage(Invocation.ProviderInputTokens)</span>
+        <span>out: @FormatUsage(Invocation.ProviderOutputTokens)</span>
+        <span>cached: @FormatUsage(Invocation.ProviderCachedInputTokens)</span>
+        <span>reasoning: @FormatUsage(Invocation.ProviderReasoningTokens)</span>
+    </div>
+    <div class="context-details-info">
+        <span>Allocated estimate: ≈@Invocation.EstimatedTokens.ToString("N0") (chars/4 heuristic)</span>
+        <span>Unknown segments: @Invocation.UnknownSegments</span>
+        @if (Invocation.ProviderInputTokens is long provider && Invocation.UnknownSegments == 0)
+        { <span>Unattributed difference: @((provider - Invocation.EstimatedTokens).ToString("+0;-0;0"))</span> }
+        else
+        { <span>Coverage: @(Invocation.UnknownSegments > 0 ? "Partial" : "Provider usage unknown")</span> }
+    </div>
+
+    @if (Invocation.CaptureMode == ContextCaptureMode.MetadataOnly)
+    {
+        <MudText Typo="Typo.caption" Class="mud-text-secondary">Content was not captured for this call. Enable Full context for future calls.</MudText>
+    }
+    else if (Invocation.CaptureMode == ContextCaptureMode.FullContext)
+    {
+        <MudText Typo="Typo.caption" Class="mud-text-secondary">Text and structured content are available only where retention limits allow.</MudText>
+    }
+
+    <div class="context-details-filters">
+        <input aria-label="Search segments" placeholder="Search role, kind, tool or captured content" @bind="query" @bind:event="oninput" />
+        <select aria-label="Role" @bind="role">
+            <option value="">All roles</option>
+            @foreach (var r in segments.Select(x => x.Role).Distinct().OrderBy(x => x))
+            { <option value="@r">@r</option> }
+        </select>
+    </div>
+
+    @foreach (var category in Enum.GetValues<ContextCategory>())
+    {
+        var items = VisibleSegments.Where(x => x.Category == category).ToList();
+        if (items.Count == 0) continue;
+        <details class="context-category">
+            <summary>@category (@items.Count) · @Approx(items) @(items.Any(x => x.EstimatedTokens is null) ? "· Partial" : "")</summary>
+            @foreach (var segment in items)
+            {
+                <div class="context-segment" @key="segment.SegmentId">
+                    <button type="button" class="context-segment-toggle" aria-expanded="@(openedSegment == segment.SegmentId)"
+                            @onclick="() => Toggle(segment.SegmentId)">
+                        #@(segment.Order + 1) · @segment.Role · @segment.ContentKind
+                        @if (!string.IsNullOrEmpty(segment.ToolName)) { <span> · @segment.ToolName</span> }
+                        @if (!string.IsNullOrEmpty(segment.CallId)) { <span> · callId @segment.CallId</span> }
+                        <span> · @(segment.EstimatedTokens is long n ? $"≈{n:N0}" : "Unknown")</span>
+                        @if (segment.IsTruncated) { <span> · Truncated</span> }
+                    </button>
+                    @if (openedSegment == segment.SegmentId)
+                    {
+                        var blob = Store.GetContent(segment.BlobId);
+                        @if (blob is null)
+                        {
+                            <MudText Typo="Typo.caption" Class="mud-text-secondary">Content unavailable (metadata-only, cleared, unsupported or retention limit).</MudText>
+                        }
+                        else
+                        {
+                            <div class="context-content-actions">
+                                <MudButton Size="Size.Small" Variant="Variant.Text" OnClick="() => Copy(blob.Content)">Copy</MudButton>
+                                @if (blob.IsStructured)
+                                {
+                                    <MudButton Size="Size.Small" Variant="Variant.Text" OnClick="ToggleFormat">@(formatJson ? "Text" : "Structured")</MudButton>
+                                }
+                            </div>
+                            @if (DisplayContent(blob).Length > 8000)
+                            { <MudButton Size="Size.Small" Variant="Variant.Text" OnClick="ToggleFullText">@(showAll ? "Show preview" : "Show entire retained content")</MudButton> }
+                            <pre class="context-content">@VisibleContent(blob)</pre>
+                        }
+                    }
+                </div>
+            }
+        </details>
+    }
+</section>
+
+@code {
+    [Parameter, EditorRequired] public ContextInvocationSnapshot Invocation { get; set; } = default!;
+    [Parameter] public int CallNumber { get; set; }
+    [Parameter] public EventCallback<ContextInvocationSnapshot> OnShowTrace { get; set; }
+
+    private IReadOnlyList<ContextSegmentSnapshot> segments = [];
+    private string? lastId;
+    private string? openedSegment;
+    private string query = "";
+    private string role = "";
+    private bool formatJson;
+    private bool showAll;
+
+    protected override void OnParametersSet()
+    {
+        if (lastId == Invocation.InvocationId) return;
+        lastId = Invocation.InvocationId;
+        segments = Store.GetSegments(Invocation.InvocationId);
+        openedSegment = null;
+        query = "";
+        role = "";
+        formatJson = false;
+        showAll = false;
+    }
+
+    private IEnumerable<ContextSegmentSnapshot> VisibleSegments => segments.Where(s =>
+        (string.IsNullOrEmpty(role) || s.Role == role) &&
+        (string.IsNullOrEmpty(query) ||
+         s.Role.Contains(query, StringComparison.OrdinalIgnoreCase) ||
+         s.ContentKind.Contains(query, StringComparison.OrdinalIgnoreCase) ||
+         (s.ToolName?.Contains(query, StringComparison.OrdinalIgnoreCase) ?? false) ||
+         (Invocation.CaptureMode == ContextCaptureMode.FullContext &&
+          (Store.GetContent(s.BlobId)?.Content.Contains(query, StringComparison.OrdinalIgnoreCase) ?? false))));
+
+    private static string FormatUsage(long? value) => value?.ToString("N0") ?? "Unknown";
+    private static string Approx(IReadOnlyList<ContextSegmentSnapshot> items) =>
+        "≈" + items.Sum(x => x.EstimatedTokens ?? 0).ToString("N0");
+    private void Toggle(string id)
+    {
+        openedSegment = openedSegment == id ? null : id;
+        formatJson = false;
+        showAll = false;
+    }
+    private void ToggleFormat() => formatJson = !formatJson;
+    private string DisplayContent(ContextBlobSnapshot blob)
+    {
+        if (!formatJson || !blob.IsStructured) return blob.Content;
+        try
+        {
+            using var document = JsonDocument.Parse(blob.Content);
+            return JsonSerializer.Serialize(document.RootElement, new JsonSerializerOptions { WriteIndented = true });
+        }
+        catch { return "Structured representation unavailable.\n" + blob.Content; }
+    }
+    private void ToggleFullText() => showAll = !showAll;
+    private string VisibleContent(ContextBlobSnapshot blob)
+    {
+        var text = DisplayContent(blob);
+        return showAll || text.Length <= 8000 ? text : text[..8000] + "\\n… preview truncated (expand to inspect retained content)";
+    }
+    private async Task Copy(string content) => await JS.InvokeVoidAsync("navigator.clipboard.writeText", content);
+}

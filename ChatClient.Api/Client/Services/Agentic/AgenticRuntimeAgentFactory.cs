@@ -86,7 +86,8 @@ public sealed class AgenticRuntimeAgentFactory(
     ICompactionStrategyResolver? compactionStrategyResolver = null,
     IRagProviderProfileService? ragProviderProfileService = null,
     IAgentTemplateService? agentTemplateService = null,
-    IConfiguration? configuration = null)
+    IConfiguration? configuration = null,
+    ContextCaptureStore? contextCaptureStore = null)
 {
     internal async Task<HarnessAgentRuntimeDefinition> CreateAsync(
         AgentRunRequest request,
@@ -144,7 +145,12 @@ public sealed class AgenticRuntimeAgentFactory(
                 await (compactionStrategyResolver ?? throw new InvalidOperationException("Compaction strategy resolver is not configured."))
                     .PreflightAsync(compactionProfile, cancellationToken);
             }
-            var chatClient = resources.Own(await llmChatClientFactory.CreateAsync(request.ResolvedModel, cancellationToken));
+            var baseChatClient = await llmChatClientFactory.CreateAsync(request.ResolvedModel, cancellationToken);
+            var chatClient = resources.Own(contextCaptureStore is null
+                ? baseChatClient
+                : new ContextCaptureChatClient(baseChatClient, contextCaptureStore,
+                    request.Agent.AgentName, request.Agent.AgentId.ToString(),
+                    includeBackgroundAgents ? "main" : "background", request.ResolvedModel.ModelName));
             var compaction = compactionProfile is null
                 ? null
                 : await (compactionStrategyResolver ?? throw new InvalidOperationException("Compaction strategy resolver is not configured."))
@@ -152,7 +158,15 @@ public sealed class AgenticRuntimeAgentFactory(
                         compactionProfile,
                         request.ResolvedModel,
                         chatClient,
-                        async (model, token) => resources.Own(await llmChatClientFactory.CreateAsync(model, token)),
+                        async (model, token) =>
+                        {
+                            var client = await llmChatClientFactory.CreateAsync(model, token);
+                            return resources.Own(contextCaptureStore is null
+                                ? client
+                                : new ContextCaptureChatClient(client, contextCaptureStore,
+                                    request.Agent.AgentName, request.Agent.AgentId.ToString(),
+                                    "compaction", model.ModelName));
+                        },
                         cancellationToken);
             if (compaction is not null)
             {
