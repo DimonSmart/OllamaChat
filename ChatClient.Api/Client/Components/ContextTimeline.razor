@@ -30,9 +30,9 @@
     </MudText>
 }
 <div class="context-metrics">
-    <span>Calls: @visibleCalls.Count</span>
-    <span>Latest: @Estimated(visibleCalls.LastOrDefault())</span>
-    <span>Peak: @(visibleCalls.Count == 0 ? "—" : "≈" + visibleCalls.Max(x => x.EstimatedTokens).ToString("N0"))</span>
+    <span>Calls: @allCalls.Count @(visibleCalls.Count == allCalls.Count ? "" : $"(shown {visibleCalls.Count})")</span>
+    <span>Latest: @Estimated(allCalls.LastOrDefault())</span>
+    <span>Peak: @(allCalls.Count == 0 ? "—" : "≈" + allCalls.Max(x => x.EstimatedTokens).ToString("N0"))</span>
     <span>Provider total: @ProviderTotal()</span>
 </div>
 
@@ -89,6 +89,10 @@ else
 
 @code {
     [Parameter] public string? RunId { get; set; }
+    [Parameter] public string AgentFilter { get; set; } = "*";
+    [Parameter] public EventCallback<string> AgentFilterChanged { get; set; }
+    [Parameter] public bool PercentageScale { get; set; }
+    [Parameter] public EventCallback<bool> PercentageScaleChanged { get; set; }
     [Parameter] public string? SelectedInvocationId { get; set; }
     [Parameter] public EventCallback<string> SelectedInvocationIdChanged { get; set; }
     [Parameter] public EventCallback<ContextInvocationSnapshot> OnShowTrace { get; set; }
@@ -111,6 +115,8 @@ else
     }
     protected override void OnParametersSet()
     {
+        agentFilter = AgentFilter;
+        percent = PercentageScale;
         if (SelectedInvocationId != selectedId && SelectedInvocationId is not null)
         {
             selectedId = SelectedInvocationId;
@@ -129,8 +135,8 @@ else
         if (followLatest || !allCalls.Any(x => x.InvocationId == selectedId))
             selectedId = visibleCalls.LastOrDefault()?.InvocationId;
     }
-    private Task SetAgent(string value) { agentFilter = value; Refresh(); return Task.CompletedTask; }
-    private void SetScale(bool value) => percent = value;
+    private async Task SetAgent(string value) { agentFilter = value; Refresh(); await AgentFilterChanged.InvokeAsync(value); }
+    private async Task SetScale(bool value) { percent = value; await PercentageScaleChanged.InvokeAsync(value); }
     private Task SetMode(ContextCaptureMode value) { Store.Mode = value; return Task.CompletedTask; }
     private async Task SelectCall(string id)
     {
@@ -147,8 +153,8 @@ else
     }
     private string ProviderTotal()
     {
-        if (visibleCalls.Count == 0 || visibleCalls.Any(x => x.ProviderInputTokens is null)) return "Unknown";
-        return visibleCalls.Sum(x => x.ProviderInputTokens ?? 0).ToString("N0");
+        if (allCalls.Count == 0 || allCalls.Any(x => x.ProviderInputTokens is null)) return "Unknown";
+        return allCalls.Sum(x => x.ProviderInputTokens ?? 0).ToString("N0");
     }
     private static string Estimated(ContextInvocationSnapshot? call) =>
         call is null ? "—" : call.EstimatedTokens == 0 && call.UnknownSegments > 0
