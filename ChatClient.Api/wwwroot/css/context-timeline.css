@@ -1,3 +1,7 @@
+/* Context inspector is loaded as an explicitly versioned static asset.
+   Keeping these essential graph styles out of the generated scoped-CSS bundle
+   prevents an old cached bundle from flattening the Timeline into plain text. */
+
 .context-toolbar, .context-metrics, .context-legend { display:flex; gap:6px; align-items:center; flex-wrap:wrap; }
 .context-toolbar { padding:4px 0; }
 .context-agent-filter { width: 145px; }
@@ -24,3 +28,20 @@
 .context-cat-injectedcontext { background:#ba9783; }
 .context-cat-other { background:#959595; }
 @media (max-width:580px) { .context-call { grid-template-columns:25px minmax(45px,65px) 1fr 54px; } .context-call-status { display:none; } }
+
+
+/* Invocation details */
+.context-details { padding-top:6px; font-size:.78rem; }
+.context-details-heading, .context-details-info, .context-details-filters, .context-content-actions { display:flex; align-items:center; gap:7px; flex-wrap:wrap; margin:4px 0; }
+.context-details-heading { justify-content:space-between; }
+.context-details-info { color:var(--mud-palette-text-secondary); }
+.context-details-info span { padding-right:6px; border-right:1px solid var(--mud-palette-lines-default); }
+.context-details-filters input, .context-details-filters select { background:transparent; color:inherit; border:1px solid var(--mud-palette-lines-default); padding:4px; border-radius:4px; font:inherit; min-width:100px; }
+.context-details-filters input { flex:1; }
+.context-category { border-top:1px solid var(--mud-palette-lines-default); padding:4px 0; }
+.context-category summary { cursor:pointer; font-weight:500; }
+.context-segment { margin:3px 0 3px 10px; border-left:2px solid var(--mud-palette-lines-default); padding-left:6px; }
+.context-segment-toggle { border:0; color:inherit; background:transparent; cursor:pointer; text-align:left; font-size:.75rem; max-width:100%; overflow-wrap:anywhere; }
+.context-segment-toggle:hover, .context-segment-toggle:focus-visible { text-decoration:underline; }
+.context-content { background:var(--mud-palette-background-gray); padding:8px; border-radius:4px; max-height:300px; overflow:auto; white-space:pre-wrap; overflow-wrap:anywhere; font-size:.74rem; }
+
