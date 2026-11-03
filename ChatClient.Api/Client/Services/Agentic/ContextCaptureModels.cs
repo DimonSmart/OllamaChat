@@ -76,8 +76,6 @@ public sealed record ContextCaptureLimits(
 public static class ContextCaptureScope
 {
     private static readonly AsyncLocal<string?> CurrentRun = new();
-    private static readonly AsyncLocal<string?> CurrentPurpose = new();
-    public static string? Purpose => CurrentPurpose.Value;
     public static string? RunId => CurrentRun.Value;
 
     public static IDisposable Begin(string runId)
@@ -85,24 +83,6 @@ public static class ContextCaptureScope
         var previous = CurrentRun.Value;
         CurrentRun.Value = runId;
         return new Restore(previous);
-    }
-
-    public static IDisposable BeginPurpose(string purpose)
-    {
-        var previous = CurrentPurpose.Value;
-        CurrentPurpose.Value = purpose;
-        return new RestorePurpose(previous);
-    }
-
-    private sealed class RestorePurpose(string? previous) : IDisposable
-    {
-        private bool disposed;
-        public void Dispose()
-        {
-            if (disposed) return;
-            disposed = true;
-            CurrentPurpose.Value = previous;
-        }
     }
 
     private sealed class Restore(string? previous) : IDisposable
