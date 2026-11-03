@@ -19,6 +19,12 @@ jobs:
       - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: 10.0.x
+      - name: Verify versioned Context Timeline CSS asset
+        run: |
+          test -s ChatClient.Api/wwwroot/css/context-timeline.css
+          grep -q 'href="css/context-timeline.css" rel="stylesheet" asp-append-version="true"' ChatClient.Api/Pages/Shared/_Layout.cshtml
+          grep -q 'display:grid' ChatClient.Api/wwwroot/css/context-timeline.css
+          grep -q 'context-cat-instructions' ChatClient.Api/wwwroot/css/context-timeline.css
       - name: Restore
         run: dotnet restore OllamaChat.sln
       - name: Build
