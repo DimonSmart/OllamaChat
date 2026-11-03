@@ -163,6 +163,7 @@ public static class ServiceCollectionExtensions
         services.AddScoped<ChatToolbarState>();
         services.AddSingleton<HarnessTelemetryListenerHub>();
         services.AddScoped<HarnessTraceSession>();
+        services.AddScoped<ContextCaptureStore>();
 
         return services;
     }
