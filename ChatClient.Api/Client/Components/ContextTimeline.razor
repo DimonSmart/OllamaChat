@@ -1,0 +1,168 @@
+@using ChatClient.Api.Client.Services.Agentic
+@using Microsoft.AspNetCore.Components.Web.Virtualization
+@implements IDisposable
+@inject ContextCaptureStore Store
+
+<div class="context-toolbar">
+    <MudSelect T="string" Dense="true" Label="Agent" Value="@agentFilter" ValueChanged="SetAgent" Class="context-agent-filter">
+        <MudSelectItem T="string" Value="@("*")">All agents</MudSelectItem>
+        @foreach (var agent in agents)
+        {
+            <MudSelectItem T="string" Value="@agent">@agent</MudSelectItem>
+        }
+    </MudSelect>
+    <MudButtonGroup Size="Size.Small" Variant="Variant.Outlined">
+        <MudButton Variant="@(!percent ? Variant.Filled : Variant.Outlined)" OnClick="@(() => SetScale(false))">Absolute</MudButton>
+        <MudButton Variant="@(percent ? Variant.Filled : Variant.Outlined)" OnClick="@(() => SetScale(true))">100%</MudButton>
+    </MudButtonGroup>
+    <MudSelect T="ContextCaptureMode" Dense="true" Label="Capture" Value="@Store.Mode"
+               ValueChanged="SetMode" Class="context-capture-filter">
+        <MudSelectItem Value="ContextCaptureMode.Off">Off</MudSelectItem>
+        <MudSelectItem Value="ContextCaptureMode.MetadataOnly">Metadata</MudSelectItem>
+        <MudSelectItem Value="ContextCaptureMode.FullContext">Full context</MudSelectItem>
+    </MudSelect>
+</div>
+
+@if (Store.Mode == ContextCaptureMode.FullContext)
+{
+    <MudText Typo="Typo.caption" Color="Color.Warning">
+        Full context records future prompts, tool arguments/results and schemas in memory, possibly including secrets.
+    </MudText>
+}
+<div class="context-metrics">
+    <span>Calls: @visibleCalls.Count</span>
+    <span>Latest: @Estimated(visibleCalls.LastOrDefault())</span>
+    <span>Peak: @(visibleCalls.Count == 0 ? "—" : "≈" + visibleCalls.Max(x => x.EstimatedTokens).ToString("N0"))</span>
+    <span>Provider total: @ProviderTotal()</span>
+</div>
+
+<div class="context-legend">
+    @foreach (var category in categories)
+    {
+        <span><i class="@CategoryClass(category)"></i>@CategoryLabel(category)</span>
+    }
+</div>
+
+@if (visibleCalls.Count == 0)
+{
+    <MudText Typo="Typo.body2" Class="mud-text-secondary pa-2">No captured model calls in this run. Capture changes apply only to future requests.</MudText>
+}
+else
+{
+    <div class="context-call-list">
+        <Virtualize Items="@visibleCalls" Context="call" ItemSize="45">
+            <button type="button" @key="call.InvocationId" class="context-call @(call.InvocationId == selectedId ? "context-call-selected" : "")"
+                    aria-pressed="@(call.InvocationId == selectedId)"
+                    title="@Tooltip(call)" @onclick="() => SelectCall(call.InvocationId)">
+                <span class="context-call-index">#@CallNumber(call)</span>
+                <span class="context-call-agent">@call.AgentName</span>
+                <span class="context-call-bar">
+                    @if (call.EstimatedTokens > 0)
+                    {
+                        <span class="context-bars">
+                            @foreach (var category in categories)
+                            {
+                                var tokens = call.CategoryTokens.GetValueOrDefault(category);
+                                if (tokens > 0)
+                                {
+                                    <span class="@CategoryClass(category)" style="width:@BarWidth(call, tokens)%" title="@($"{CategoryLabel(category)}: ≈{tokens:N0}")"></span>
+                                }
+                            }
+                        </span>
+                    }
+                    else
+                    {
+                        <span class="mud-text-secondary">Unknown size</span>
+                    }
+                </span>
+                <span class="context-call-total">@Estimated(call)</span>
+                <span class="context-call-status" title="@call.Status.ToString()">@(call.IsTruncated ? "Truncated" : call.Status.ToString())@(call.UnknownSegments > 0 ? " · Partial" : "")</span>
+            </button>
+        </Virtualize>
+    </div>
+}
+
+@if (Selected is { } selected)
+{
+    <ContextInvocationDetails Invocation="@selected" OnShowTrace="OnShowTrace" />
+}
+
+@code {
+    [Parameter] public string? RunId { get; set; }
+    [Parameter] public string? SelectedInvocationId { get; set; }
+    [Parameter] public EventCallback<string> SelectedInvocationIdChanged { get; set; }
+    [Parameter] public EventCallback<ContextInvocationSnapshot> OnShowTrace { get; set; }
+
+    private static readonly ContextCategory[] categories = Enum.GetValues<ContextCategory>();
+    private List<ContextInvocationSnapshot> allCalls = [];
+    private List<ContextInvocationSnapshot> visibleCalls = [];
+    private string[] agents = [];
+    private string agentFilter = "*";
+    private bool percent;
+    private string? selectedId;
+    private bool followLatest = true;
+
+    private ContextInvocationSnapshot? Selected => allCalls.FirstOrDefault(x => x.InvocationId == selectedId);
+
+    protected override void OnInitialized()
+    {
+        Store.Changed += OnChanged;
+        Refresh();
+    }
+    protected override void OnParametersSet()
+    {
+        if (SelectedInvocationId != selectedId && SelectedInvocationId is not null)
+        {
+            selectedId = SelectedInvocationId;
+            followLatest = false;
+        }
+        Refresh();
+    }
+    private void OnChanged() => _ = InvokeAsync(() => { Refresh(); StateHasChanged(); });
+
+    private void Refresh()
+    {
+        allCalls = Store.GetInvocations(RunId).ToList();
+        agents = allCalls.Select(x => x.AgentName).Distinct(StringComparer.Ordinal).OrderBy(x => x).ToArray();
+        if (agentFilter != "*" && !agents.Contains(agentFilter, StringComparer.Ordinal)) agentFilter = "*";
+        visibleCalls = allCalls.Where(x => agentFilter == "*" || x.AgentName == agentFilter).ToList();
+        if (followLatest || !allCalls.Any(x => x.InvocationId == selectedId))
+            selectedId = visibleCalls.LastOrDefault()?.InvocationId;
+    }
+    private Task SetAgent(string value) { agentFilter = value; Refresh(); return Task.CompletedTask; }
+    private void SetScale(bool value) => percent = value;
+    private Task SetMode(ContextCaptureMode value) { Store.Mode = value; return Task.CompletedTask; }
+    private async Task SelectCall(string id)
+    {
+        selectedId = id;
+        followLatest = false;
+        await SelectedInvocationIdChanged.InvokeAsync(id);
+    }
+    private int CallNumber(ContextInvocationSnapshot call) => allCalls.IndexOf(call) + 1;
+    private string BarWidth(ContextInvocationSnapshot call, long tokens)
+    {
+        double denominator = percent && call.UnknownSegments == 0
+            ? call.EstimatedTokens : visibleCalls.Max(x => x.EstimatedTokens);
+        return denominator == 0 ? "0" : (tokens * 100.0 / denominator).ToString("0.###", System.Globalization.CultureInfo.InvariantCulture);
+    }
+    private string ProviderTotal()
+    {
+        if (visibleCalls.Count == 0 || visibleCalls.Any(x => x.ProviderInputTokens is null)) return "Unknown";
+        return visibleCalls.Sum(x => x.ProviderInputTokens ?? 0).ToString("N0");
+    }
+    private static string Estimated(ContextInvocationSnapshot? call) =>
+        call is null ? "—" : call.EstimatedTokens == 0 && call.UnknownSegments > 0
+            ? "Unknown" : $"≈{call.EstimatedTokens:N0}";
+    private static string Tooltip(ContextInvocationSnapshot call) =>
+        $"{call.Status} · {call.Duration?.TotalMilliseconds.ToString("0.#") ?? "running"} ms · Provider input: {call.ProviderInputTokens?.ToString("N0") ?? "unknown"} · Client-boundary estimate: {Estimated(call)} · {call.UnknownSegments} unknown segments";
+    private static string CategoryClass(ContextCategory category) => "context-cat-" + category.ToString().ToLowerInvariant();
+    private static string CategoryLabel(ContextCategory category) => category switch
+    {
+        ContextCategory.ToolCalls => "Tool calls",
+        ContextCategory.ToolResults => "Tool results",
+        ContextCategory.ToolDefinitions => "Tool schemas",
+        ContextCategory.InjectedContext => "Injected",
+        _ => category.ToString()
+    };
+    public void Dispose() => Store.Changed -= OnChanged;
+}
