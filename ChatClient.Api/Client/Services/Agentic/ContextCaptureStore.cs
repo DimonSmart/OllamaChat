@@ -201,6 +201,12 @@ public sealed class ContextCaptureStore
         Notify();
     }
 
+    public void Reset()
+    {
+        Clear();
+        Mode = ContextCaptureMode.MetadataOnly;
+    }
+
     public void Clear()
     {
         lock (gate)
