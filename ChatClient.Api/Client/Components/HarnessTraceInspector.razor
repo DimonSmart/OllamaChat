@@ -79,6 +79,7 @@
     private void Refresh()
     {
         snapshot = TraceSession.GetSnapshot();
+        CaptureStore.ConfirmLinks(snapshot);
         var activeRunIds = snapshot.Runs.Select(run => run.RunId).ToHashSet(StringComparer.Ordinal);
         foreach (var call in CaptureStore.GetInvocations()) if (call.RunId is { } id) activeRunIds.Add(id);
         foreach (var runId in agentVisualsByRun.Keys.Where(runId => !activeRunIds.Contains(runId)).ToArray()) agentVisualsByRun.Remove(runId);
