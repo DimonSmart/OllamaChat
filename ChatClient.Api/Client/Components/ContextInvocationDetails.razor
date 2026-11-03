@@ -82,7 +82,9 @@
                                     <MudButton Size="Size.Small" Variant="Variant.Text" OnClick="ToggleFormat">@(formatJson ? "Text" : "Structured")</MudButton>
                                 }
                             </div>
-                            <pre class="context-content">@DisplayContent(blob)</pre>
+                            @if (DisplayContent(blob).Length > 8000)
+                            { <MudButton Size="Size.Small" Variant="Variant.Text" OnClick="ToggleFullText">@(showAll ? "Show preview" : "Show entire retained content")</MudButton> }
+                            <pre class="context-content">@VisibleContent(blob)</pre>
                         }
                     }
                 </div>
@@ -102,6 +104,7 @@
     private string query = "";
     private string role = "";
     private bool formatJson;
+    private bool showAll;
 
     protected override void OnParametersSet()
     {
@@ -112,6 +115,7 @@
         query = "";
         role = "";
         formatJson = false;
+        showAll = false;
     }
 
     private IEnumerable<ContextSegmentSnapshot> VisibleSegments => segments.Where(s =>
@@ -130,6 +134,7 @@
     {
         openedSegment = openedSegment == id ? null : id;
         formatJson = false;
+        showAll = false;
     }
     private void ToggleFormat() => formatJson = !formatJson;
     private string DisplayContent(ContextBlobSnapshot blob)
@@ -141,6 +146,12 @@
             return JsonSerializer.Serialize(document.RootElement, new JsonSerializerOptions { WriteIndented = true });
         }
         catch { return "Structured representation unavailable.\n" + blob.Content; }
+    }
+    private void ToggleFullText() => showAll = !showAll;
+    private string VisibleContent(ContextBlobSnapshot blob)
+    {
+        var text = DisplayContent(blob);
+        return showAll || text.Length <= 8000 ? text : text[..8000] + "\\n… preview truncated (expand to inspect retained content)";
     }
     private async Task Copy(string content) => await JS.InvokeVoidAsync("navigator.clipboard.writeText", content);
 }
