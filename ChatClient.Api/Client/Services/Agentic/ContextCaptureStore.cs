@@ -165,6 +165,29 @@ public sealed class ContextCaptureStore
         Notify();
     }
 
+    /// <summary>
+    /// Confirm a link only after the exact chat span has been recorded in the
+    /// matching Trace run; a current parent activity is not sufficient evidence.
+    /// </summary>
+    public void ConfirmLinks(HarnessTraceSessionSnapshot trace)
+    {
+        bool changed = false;
+        lock (gate)
+        {
+            var known = trace.Runs.SelectMany(run => run.Spans.Select(span =>
+                (run.RunId, span.TraceId, span.SpanId))).ToHashSet();
+            foreach (var item in invocations.Values.Where(item =>
+                         item.LinkState == ContextLinkState.Pending &&
+                         item.RunId is not null && item.TraceId is not null && item.SpanId is not null).ToArray())
+            {
+                if (!known.Contains((item.RunId!, item.TraceId!, item.SpanId!))) continue;
+                invocations[item.InvocationId] = item with { LinkState = ContextLinkState.Linked };
+                changed = true;
+            }
+        }
+        if (changed) Notify();
+    }
+
     public void ClearContent()
     {
         lock (gate)
