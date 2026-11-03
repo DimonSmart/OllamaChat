@@ -35,6 +35,8 @@
     <span>Peak: @(allCalls.Count == 0 ? "—" : "≈" + allCalls.Max(x => x.EstimatedTokens).ToString("N0"))</span>
     <span>Provider total: @ProviderTotal()</span>
 </div>
+@if (percent && visibleCalls.Any(x => x.UnknownSegments > 0))
+{ <MudText Typo="Typo.caption" Class="mud-text-secondary">Partial calls stay on the absolute scale: unknown content cannot be normalized to 100%.</MudText> }
 
 <div class="context-legend">
     @foreach (var category in categories)
