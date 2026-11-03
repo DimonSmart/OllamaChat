@@ -118,7 +118,7 @@ public sealed class ContextCaptureChatClient(
                 RunId = ContextCaptureScope.RunId,
                 AgentName = agentName,
                 AgentInstanceId = agentInstanceId,
-                Purpose = ContextCaptureScope.Purpose ?? purpose,
+                Purpose = purpose,
                 ModelId = options?.ModelId ?? defaultModel,
                 StartedAt = DateTimeOffset.UtcNow,
                 CaptureMode = mode,
