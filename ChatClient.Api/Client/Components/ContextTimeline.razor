@@ -84,7 +84,7 @@ else
 
 @if (Selected is { } selected)
 {
-    <ContextInvocationDetails Invocation="@selected" OnShowTrace="OnShowTrace" />
+    <ContextInvocationDetails Invocation="@selected" CallNumber="@CallNumber(selected)" OnShowTrace="OnShowTrace" />
 }
 
 @code {
