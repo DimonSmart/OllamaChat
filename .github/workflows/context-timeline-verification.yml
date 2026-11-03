@@ -21,3 +21,10 @@ jobs:
         run: dotnet test ChatClient.Tests/ChatClient.Tests.csproj --no-build --configuration Release --filter FullyQualifiedName~ContextCaptureChatClientTests
       - name: Full test suite
         run: dotnet test ChatClient.Tests/ChatClient.Tests.csproj --no-build --configuration Release
+      - name: Verify pre-existing streaming test failures on baseline
+        if: failure()
+        continue-on-error: true
+        run: |
+          git worktree add /tmp/ollamachat-baseline a3416075fefd990b77db06a12ecec436e44cb666
+          dotnet restore /tmp/ollamachat-baseline/OllamaChat.sln
+          dotnet test /tmp/ollamachat-baseline/ChatClient.Tests/ChatClient.Tests.csproj --configuration Release --filter "FullyQualifiedName~SendAsync_CompletedMessageReplacesStreamWithSameRuntimeMessageId"
