@@ -14,7 +14,7 @@ public sealed class HarnessSteeringInjectionGateTests
     public async Task LateMessage_DuringActiveModelCall_TriggersAdditionalModelCallInSameRun()
     {
         using var model = new RecordingClient(blockFirstCall: true);
-        using var agent = CreateHarness(model);
+        var agent = CreateHarness(model);
         AgentSession session = await agent.CreateSessionAsync(TestContext.Current.CancellationToken);
         MessageInjectingChatClient injector = Assert.IsType<MessageInjectingChatClient>(
             agent.GetService<MessageInjectingChatClient>());
@@ -40,7 +40,7 @@ public sealed class HarnessSteeringInjectionGateTests
     public async Task UndeliveredNativeMessage_RemainsInSessionAndLeaksIntoFollowingRun()
     {
         using var model = new RecordingClient(blockFirstCall: false);
-        using var agent = CreateHarness(model);
+        var agent = CreateHarness(model);
         AgentSession session = await agent.CreateSessionAsync(TestContext.Current.CancellationToken);
         MessageInjectingChatClient injector = Assert.IsType<MessageInjectingChatClient>(
             agent.GetService<MessageInjectingChatClient>());
