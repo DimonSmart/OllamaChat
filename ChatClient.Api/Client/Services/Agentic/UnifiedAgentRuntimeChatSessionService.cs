@@ -64,6 +64,12 @@ public sealed class UnifiedAgentRuntimeChatSessionService(
     private readonly SemaphoreSlim _runSetupGate = new(1, 1);
     private readonly SemaphoreSlim _startGate = new(1, 1);
     private long _generation;
+    private readonly SemaphoreSlim _steeringSubmissionGate = new(1, 1);
+    private readonly Dictionary<Guid, AppChatMessage> _pendingSteering = [];
+    private readonly Dictionary<Guid, SteeringSubmissionResult> _steeringSubmissionResults = [];
+    private Guid? _activeSteeringRunId;
+    private long _steeringSequence;
+    private SteeringDeliveryMonitor? _steeringMonitor;
     private bool _resetting;
     private SavedChatHandle? _savedChat;
     private bool _savedChatPersistenceSuppressed;
@@ -86,6 +92,183 @@ public sealed class UnifiedAgentRuntimeChatSessionService(
         : SnapshotActiveSession(_activeSession);
 
     public ToolApprovalRequestViewModel? PendingToolApproval { get; private set; }
+
+    public SteeringAvailability SteeringAvailability
+    {
+        get
+        {
+            lock (_lifecycleLock)
+            {
+                var runId = _activeSteeringRunId;
+                return runId is Guid id && CanAcceptSteeringLocked(id)
+                    ? new SteeringAvailability(true, id)
+                    : SteeringAvailability.Unavailable;
+            }
+        }
+    }
+
+    private bool CanAcceptSteeringLocked(Guid runId) =>
+        _activeSteeringRunId == runId &&
+        !_resetting &&
+        IsAnswering &&
+        !RequiresReset &&
+        _parameters?.RuntimeReference?.Kind == AgentDefinitionKind.SavedAgent &&
+        _directAgent?.GetService<MessageInjectingChatClient>() is not null &&
+        _directSession is not null &&
+        _cancellationTokenSource is { IsCancellationRequested: false } &&
+        _pendingToolApprovalRequest is null &&
+        PendingToolApproval is null &&
+        _toolApprovalCoordinator?.PendingRequest is null;
+
+    public async Task<SteeringSubmissionResult> SubmitSteeringAsync(
+        string text, Guid expectedRunId, Guid submissionId,
+        CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(text))
+            return SteeringSubmissionResult.Rejected("Enter a Steering instruction.");
+        if (text.Length > 4096)
+            return SteeringSubmissionResult.Rejected("Steering is limited to 4,096 characters.");
+        if (submissionId == Guid.Empty)
+            return SteeringSubmissionResult.Rejected("Invalid Steering submission ID.");
+
+        await _steeringSubmissionGate.WaitAsync(cancellationToken);
+        try
+        {
+            AppChatMessage message;
+            AgentSession session;
+            MessageInjectingChatClient injector;
+            lock (_lifecycleLock)
+            {
+                if (_steeringSubmissionResults.TryGetValue(submissionId, out var previous))
+                    return previous;
+
+                if (!CanAcceptSteeringLocked(expectedRunId))
+                    return SteeringSubmissionResult.Rejected("This agent run is no longer accepting Steering.");
+
+                var pendingCount = _pendingSteering.Count;
+                var pendingChars = _pendingSteering.Values.Sum(m => m.Content.Length);
+                if (pendingCount >= 8 || pendingChars + text.Length > 16384)
+                    return SteeringSubmissionResult.Rejected("Steering queue is full (8 messages / 16,384 characters).");
+
+                injector = _directAgent!.GetService<MessageInjectingChatClient>()!;
+                session = _directSession!;
+                var id = Guid.NewGuid();
+                message = new AppChatMessage(text, DateTime.Now, AppChatRole.User)
+                {
+                    Steering = new SteeringMessageMetadata
+                    {
+                        SteeringId = id,
+                        RunId = expectedRunId,
+                        Sequence = ++_steeringSequence,
+                        SubmittedAtUtc = DateTime.UtcNow,
+                        Status = SteeringDeliveryStatus.Pending
+                    }
+                };
+                _pendingSteering.Add(id, message);
+            }
+
+            try
+            {
+                // Known MAF issue: the injector has no public RemovePendingMessages API.
+                // An enqueue after its final empty-queue check can survive the run and
+                // be drained by the next turn. See docs/Steering-Technical-Gate-2026-11-10.md.
+                // This is an explicitly accepted limitation of the experimental UI.
+                await injector.EnqueueMessagesAsync(
+                    session,
+                    [new ChatMessage(ChatRole.User, text)
+                    {
+                        AdditionalProperties = new AdditionalPropertiesDictionary
+                        {
+                            [SteeringDeliveryChatClient.SteeringIdKey] = message.Steering!.SteeringId.ToString("N")
+                        }
+                    }],
+                    cancellationToken);
+            }
+            catch
+            {
+                lock (_lifecycleLock)
+                    _pendingSteering.Remove(message.Steering!.SteeringId);
+                throw;
+            }
+
+            var accepted = SteeringSubmissionResult.Success(message.Steering!.SteeringId);
+            lock (_lifecycleLock)
+                _steeringSubmissionResults[submissionId] = accepted;
+            await AddMessageAsync(message);
+            SessionStateChanged?.Invoke();
+            return accepted;
+        }
+        finally
+        {
+            _steeringSubmissionGate.Release();
+        }
+    }
+
+    private void SetSteeringMonitor(SteeringDeliveryMonitor? monitor)
+    {
+        if (_steeringMonitor is not null)
+            _steeringMonitor.Delivered -= HandleSteeringDelivered;
+        _steeringMonitor = monitor;
+        if (_steeringMonitor is not null)
+            _steeringMonitor.Delivered += HandleSteeringDelivered;
+    }
+
+    private void HandleSteeringDelivered(Guid id)
+    {
+        AppChatMessage? changed;
+        lock (_lifecycleLock)
+        {
+            if (!_pendingSteering.Remove(id, out changed) ||
+                changed.Steering?.Status != SteeringDeliveryStatus.Pending)
+                return;
+            changed.Steering.Status = SteeringDeliveryStatus.Delivered;
+        }
+        _ = PublishSteeringUpdateAsync(changed);
+    }
+
+    private async Task PublishSteeringUpdateAsync(AppChatMessage message)
+    {
+        try
+        {
+            await (MessageUpdated?.Invoke(message, true) ?? Task.CompletedTask);
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "Could not publish Steering status update.");
+        }
+    }
+
+    private async Task FinalizeSteeringRunAsync(Guid runId, string reason)
+    {
+        await _steeringSubmissionGate.WaitAsync();
+        try
+        {
+            List<AppChatMessage> changed = [];
+            lock (_lifecycleLock)
+            {
+                if (_activeSteeringRunId != runId)
+                    return;
+                _activeSteeringRunId = null;
+                foreach (var message in _pendingSteering.Values)
+                {
+                    if (message.Steering?.Status != SteeringDeliveryStatus.Pending)
+                        continue;
+                    message.Steering.Status = SteeringDeliveryStatus.NotDelivered;
+                    message.Steering.Reason = reason;
+                    changed.Add(message);
+                }
+                _pendingSteering.Clear();
+                _steeringSubmissionResults.Clear();
+            }
+            foreach (var message in changed)
+                await PublishSteeringUpdateAsync(message);
+            SessionStateChanged?.Invoke();
+        }
+        finally
+        {
+            _steeringSubmissionGate.Release();
+        }
+    }
 
     public Guid Id => _chat.Id;
 
@@ -370,6 +553,10 @@ public sealed class UnifiedAgentRuntimeChatSessionService(
         lock (_lifecycleLock)
         {
             runtimeDefinition = _directRuntimeDefinition;
+            SetSteeringMonitor(null);
+            _activeSteeringRunId = null;
+            _pendingSteering.Clear();
+            _steeringSubmissionResults.Clear();
             _directRuntimeDefinition = null;
             _directAgent = null;
             _directSession = null;
@@ -887,6 +1074,7 @@ public sealed class UnifiedAgentRuntimeChatSessionService(
         _parameters = prepared.Request.Snapshot();
         _activeSession = CreateActiveSession(_parameters);
         _directRuntimeDefinition = prepared.Runtime;
+        SetSteeringMonitor(prepared.Runtime?.SteeringDeliveryMonitor);
         _directAgent = prepared.Runtime?.Agent;
         _directSession = prepared.Session;
         _directRuntimeAgentId = prepared.RuntimeAgentId;
@@ -952,6 +1140,7 @@ public sealed class UnifiedAgentRuntimeChatSessionService(
         }
 
         _directRuntimeDefinition = build;
+        SetSteeringMonitor(build.SteeringDeliveryMonitor);
         _directAgent = build.Agent;
         _directRuntimeAgentId = (await agentTemplateService.GetByIdAsync(templateId))!.AgentId;
         _directAvailableModes = build.AvailableModes;
@@ -1048,6 +1237,7 @@ public sealed class UnifiedAgentRuntimeChatSessionService(
         await ResetAsync();
         _startGate.Dispose();
         _runSetupGate.Dispose();
+        _steeringSubmissionGate.Dispose();
     }
 
     private async Task EnsureDirectConversationAsync(CancellationToken cancellationToken)
@@ -1081,6 +1271,15 @@ public sealed class UnifiedAgentRuntimeChatSessionService(
 
     private async Task RunDirectAsync(IReadOnlyList<ChatMessage> input, long generation)
     {
+        var steeringRunId = Guid.NewGuid();
+        lock (_lifecycleLock)
+        {
+            _activeSteeringRunId = steeringRunId;
+            _steeringSequence = 0;
+            _pendingSteering.Clear();
+            _steeringSubmissionResults.Clear();
+        }
+        SessionStateChanged?.Invoke();
         var messageId = $"direct-harness-response-{Guid.NewGuid():N}";
         StreamingAppChatMessage? stream = null;
         var projection = responseEventProjector.CreateProjection();
@@ -1198,6 +1397,10 @@ public sealed class UnifiedAgentRuntimeChatSessionService(
         finally
         {
             traceRun?.Dispose();
+            await FinalizeSteeringRunAsync(
+                steeringRunId,
+                _resetting ? "Reset" : _cancellationTokenSource?.IsCancellationRequested == true
+                    ? "Canceled" : RequiresReset ? "Failed" : "RunCompleted");
             if (generation == Interlocked.Read(ref _generation))
             {
                 await CheckpointCurrentAsync();
