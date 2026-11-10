@@ -71,8 +71,7 @@ public sealed class HarnessSteeringInjectionGateTests
         DisableAgentSkillsProvider = true,
         DisableWebSearch = true,
         DisableToolAutoApproval = true,
-        DisableOpenTelemetry = true,
-        DisableCompaction = true
+        DisableOpenTelemetry = true
     });
 
     private static async Task DrainAsync(
