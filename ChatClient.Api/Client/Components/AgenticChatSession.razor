@@ -219,7 +219,7 @@
                         var delivery = steering.Status == SteeringDeliveryStatus.NotDelivered
                             ? "Not delivered" : steering.Status.ToString();
                         <MudText Typo="Typo.caption"
-                                 Class="mud-text-secondary"
+                                 Class="mud-text-secondary ms-2 me-2"
                                  aria-label="@($"Steering: {delivery}")"
                                  title="@steering.Reason">Steering · @delivery</MudText>
                     }
