@@ -51,9 +51,10 @@ public sealed class DockerSandboxProviderTests
 
         Assert.Equal("ollamachat-sandbox-session-123", options.ContainerName);
         Assert.Equal("C:\\workspace", options.HostWorkdir);
-        Assert.Equal("/workspace/.sandbox-home", options.Environment["HOME"]);
-        Assert.Equal("/workspace/.sandbox-home", options.Environment["DOTNET_CLI_HOME"]);
-        Assert.Equal("/workspace/.nuget/packages", options.Environment["NUGET_PACKAGES"]);
+        var environment = options.Environment ?? throw new InvalidOperationException("Docker run environment was not initialized.");
+        Assert.Equal("/workspace/.sandbox-home", environment["HOME"]);
+        Assert.Equal("/workspace/.sandbox-home", environment["DOTNET_CLI_HOME"]);
+        Assert.Equal("/workspace/.nuget/packages", environment["NUGET_PACKAGES"]);
         Assert.Equal(
             [
                 "--cpus",
