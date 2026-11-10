@@ -938,7 +938,9 @@ public sealed class UnifiedAgentRuntimeChatSessionService(
         long restoreStartedAt)
     {
 
-        var reference = new AgentDefinitionReference(kind, chat.Launch.RuntimeReference.Id);
+        var runtimeReference = chat.Launch.RuntimeReference
+            ?? throw new InvalidOperationException("Saved chat runtime reference is missing.");
+        var reference = new AgentDefinitionReference(kind, runtimeReference.Id);
         var resolutionRequest = new AgentSessionDefinitionRequest
         {
             UiModelSelection = chat.Launch.Model is null ? new ServerModelSelection(null, null) : new ServerModelSelection(chat.Launch.Model.ServerId, chat.Launch.Model.ModelName),
@@ -966,7 +968,9 @@ public sealed class UnifiedAgentRuntimeChatSessionService(
         {
             try
             {
-                nativeSnapshot = JsonSerializer.Deserialize<HarnessSessionSnapshot>(chat.NativeSession.SnapshotJson)
+                var savedNativeSession = chat.NativeSession
+                    ?? throw new InvalidOperationException("The saved chat does not contain a resumable Harness session.");
+                nativeSnapshot = JsonSerializer.Deserialize<HarnessSessionSnapshot>(savedNativeSession.SnapshotJson)
                     ?? throw new JsonException("The snapshot is empty.");
             }
             catch (JsonException)
@@ -1288,11 +1292,13 @@ public sealed class UnifiedAgentRuntimeChatSessionService(
 
         try
         {
+            var runCancellationToken = _cancellationTokenSource?.Token
+                ?? throw new InvalidOperationException("No active direct agent run cancellation token.");
             await foreach (var update in _directAgent!.RunStreamingAsync(
                                input,
                                _directSession,
                                BuildDirectRunOptions(),
-                               _cancellationTokenSource.Token))
+                               runCancellationToken))
             {
                 if (generation != Interlocked.Read(ref _generation))
                 {
@@ -1609,7 +1615,7 @@ public sealed class UnifiedAgentRuntimeChatSessionService(
             return new AgentSessionFileMemoryViewModel(true, null, []);
 
         var stateKey = provider.StateKeys.SingleOrDefault();
-        if (string.IsNullOrWhiteSpace(stateKey) || !session.StateBag.TryGetValue(stateKey, out FileMemoryState? state))
+        if (string.IsNullOrWhiteSpace(stateKey) || (!session.StateBag.TryGetValue(stateKey, out FileMemoryState? state) || state is null))
             return new AgentSessionFileMemoryViewModel(true, null, []);
 
         var entries = await _directFileMemoryStore.ListChildrenAsync(state.WorkingFolder, cancellationToken);

@@ -248,7 +248,9 @@ public class McpClientService(
         try
         {
             var tools = await mcpClient.ListToolsAsync(cancellationToken: cancellationToken);
-            var serverName = string.IsNullOrWhiteSpace(mcpClient.ServerInfo.Name) ? "Unknown" : mcpClient.ServerInfo.Name;
+            var serverName = mcpClient.ServerInfo?.Name;
+            if (string.IsNullOrWhiteSpace(serverName))
+                serverName = "Unknown";
             logger.LogDebug("Retrieved {Count} tools from MCP server {ServerName}", tools.Count, serverName);
             return tools.ToList();
         }
@@ -392,6 +394,9 @@ public class McpClientService(
     /// <summary>
     /// Creates client options that declare sampling/elicitation capabilities and register handlers.
     /// </summary>
+    // MCP SDK still exposes legacy sampling, but marks it obsolete under MCP9005.
+    // Keep compatibility with sampling-capable servers until a replacement API is supported.
+#pragma warning disable MCP9005
     private McpClientOptions CreateClientOptions(IMcpServerDescriptor serverDescriptor, McpServerConfig? serverConfig = null)
     {
         var serverName = string.IsNullOrWhiteSpace(serverDescriptor.Name) ? "Unknown" : serverDescriptor.Name;
@@ -481,4 +486,5 @@ public class McpClientService(
             }
         };
     }
+#pragma warning restore MCP9005
 }

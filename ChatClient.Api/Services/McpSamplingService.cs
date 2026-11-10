@@ -12,6 +12,9 @@ namespace ChatClient.Api.Services;
 /// <summary>
 /// Handles MCP sampling requests by calling the configured LLM server directly.
 /// </summary>
+// Sampling is deprecated in the MCP C# SDK (MCP9005 / SEP-2577).
+// Preserve the existing protocol handler for servers using legacy sampling until migration.
+#pragma warning disable MCP9005
 public sealed class McpSamplingService(
     IOllamaClientService ollamaService,
     IOpenAIClientService openAIClientService,
@@ -455,3 +458,4 @@ public sealed class McpSamplingService(
 
     private sealed record ProviderMessage(string Role, string Content);
 }
+#pragma warning restore MCP9005

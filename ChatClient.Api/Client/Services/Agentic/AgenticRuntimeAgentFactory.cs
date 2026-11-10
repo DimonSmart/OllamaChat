@@ -525,11 +525,15 @@ public sealed class AgenticRuntimeAgentFactory(
             ragTraceSink,
             skillsSource,
             backgroundAgents);
+        var chatOptions = agentOptions.ChatOptions
+            ?? throw new InvalidOperationException("Harness chat options were not initialized.");
+        var registeredTools = chatOptions.Tools
+            ?? throw new InvalidOperationException("Harness chat tools were not initialized.");
 
         if (fileAccessProfile is not null)
         {
             var scopeResolver = new ToolApprovalScopeResolver();
-            var conflictingTool = agentOptions.ChatOptions.Tools.FirstOrDefault(tool =>
+            var conflictingTool = registeredTools.FirstOrDefault(tool =>
                 scopeResolver.IsFileAccessTool(tool.Name));
             if (conflictingTool is not null)
             {
@@ -540,7 +544,7 @@ public sealed class AgenticRuntimeAgentFactory(
 
         if (shellExecutor is not null)
         {
-            if (agentOptions.ChatOptions.Tools.Any(tool =>
+            if (registeredTools.Any(tool =>
                     string.Equals(tool.Name, SandboxToolNames.RunShell, StringComparison.Ordinal)))
             {
                 throw new InvalidOperationException(
@@ -560,7 +564,7 @@ public sealed class AgenticRuntimeAgentFactory(
                 : shellExecutor.AsAIFunction(
                     name: SandboxToolNames.RunShell,
                     requireApproval: true);
-            agentOptions.ChatOptions.Tools.Add(shellFunction);
+            registeredTools.Add(shellFunction);
         }
 
         ConfigureTodoCompletionLoop(agentOptions, request.Agent);
@@ -568,11 +572,11 @@ public sealed class AgenticRuntimeAgentFactory(
         if (server.ServerType == ServerType.Ollama &&
             request.Agent.RepeatPenalty is double repeatPenalty)
         {
-            agentOptions.ChatOptions.AdditionalProperties ??= [];
-            agentOptions.ChatOptions.AdditionalProperties["repeat_penalty"] = repeatPenalty;
+            chatOptions.AdditionalProperties ??= [];
+            chatOptions.AdditionalProperties["repeat_penalty"] = repeatPenalty;
         }
 
-        ConfigureToolMode(agentOptions.ChatOptions!, toolSet, hasConfiguredKnowledge, ragConfiguration.SearchBehavior, shellExecutor);
+        ConfigureToolMode(chatOptions, toolSet, hasConfiguredKnowledge, ragConfiguration.SearchBehavior, shellExecutor);
 
         var approvalPolicy = request.RuntimeResources.ToolApprovalPolicy;
         if (approvalPolicy is not null)

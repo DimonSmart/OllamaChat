@@ -209,7 +209,7 @@ public sealed class HarnessTraceSession : IDisposable
             var events = activity.Events.Take(MaxEventsPerSpan + 1).ToArray();
             EventsTruncated = events.Length > MaxEventsPerSpan;
             Events = events.Take(MaxEventsPerSpan).Select(e => new HarnessTraceEventSnapshot(e.Name, e.Timestamp, Attributes(e.Tags))).ToArray();
-            Links = activity.Links.Select(link => new HarnessTraceLinkSnapshot(link.Context.TraceId.ToString(), link.Context.SpanId.ToString(), link.Context.TraceFlags, Attributes(link.Tags))).ToArray();
+            Links = activity.Links.Select(link => new HarnessTraceLinkSnapshot(link.Context.TraceId.ToString(), link.Context.SpanId.ToString(), link.Context.TraceFlags, Attributes(link.Tags ?? []))).ToArray();
         }
         public HarnessTraceSpanSnapshot ToSnapshot() => new(TraceId, SpanId, ParentSpanId, DisplayName, SourceName, Kind, StartedAt, Duration, StatusCode, StatusDescription, Tags.ToArray(), Events.ToArray(), EventsTruncated, Links.ToArray());
         private static IReadOnlyList<HarnessTraceAttribute> Attributes(IEnumerable<KeyValuePair<string, object?>> values) => values.Select(value => new HarnessTraceAttribute(value.Key, Clean(value.Key, value.Value?.ToString() ?? string.Empty))).ToArray();
