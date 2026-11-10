@@ -90,7 +90,8 @@ public static class ContextCaptureScope
         private bool disposed;
         public void Dispose()
         {
-            if (disposed) return;
+            if (disposed)
+                return;
             disposed = true;
             CurrentRun.Value = previous;
         }

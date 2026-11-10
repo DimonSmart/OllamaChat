@@ -29,8 +29,12 @@ public sealed class WorkspaceService(
             CheckUniqueness(items, name, path, Guid.Empty);
             var saved = new WorkspaceDefinition
             {
-                Id = Guid.NewGuid(), Name = name, Path = path,
-                CreatedAtUtc = now, UpdatedAtUtc = now, Revision = 1
+                Id = Guid.NewGuid(),
+                Name = name,
+                Path = path,
+                CreatedAtUtc = now,
+                UpdatedAtUtc = now,
+                Revision = 1
             };
             items.Add(saved);
             return saved.Clone();

@@ -19,7 +19,8 @@ public sealed class ScheduledTimerFiredJob(
                 return;
             var actual = clock.GetUtcNow();
             var (valid, name) = await runtime.TryRecordAsync(id, generation, actual, cancellationToken);
-            if (!valid) return;
+            if (!valid)
+                return;
             publisher.Publish(new TimerFiredEvent(id, name!, actual));
             logger.LogInformation("Scheduled timer fired: Id={Id}, Name={Name}, Scheduled={ScheduledUtc}, Actual={ActualUtc}",
                 id, name, context.ScheduledFireTimeUtc, actual);

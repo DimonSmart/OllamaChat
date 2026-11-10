@@ -8,7 +8,8 @@ public sealed class TimerEventPublisher(ILogger<TimerEventPublisher> logger) : I
     public void Publish(TimerFiredEvent notification)
     {
         var subscribers = TimerFired;
-        if (subscribers is null) return;
+        if (subscribers is null)
+            return;
 
         foreach (Action<TimerFiredEvent> subscriber in subscribers.GetInvocationList())
         {

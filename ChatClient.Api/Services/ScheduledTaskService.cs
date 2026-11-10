@@ -25,9 +25,13 @@ public sealed class ScheduledTaskService(
         await runtime.Gate.WaitAsync(cancellationToken);
         try
         {
-            if (_initialized) return;
+            if (_initialized)
+                return;
             IReadOnlyList<ScheduledTaskDefinition> tasks;
-            try { tasks = await repository.GetAllAsync(cancellationToken); }
+            try
+            {
+                tasks = await repository.GetAllAsync(cancellationToken);
+            }
             catch (Exception e)
             {
                 logger.LogError(e, "Scheduled tasks storage could not be loaded; no timers were registered");
@@ -36,7 +40,8 @@ public sealed class ScheduledTaskService(
             var scheduler = await schedulerFactory.GetScheduler(cancellationToken);
             foreach (var task in tasks)
             {
-                if (task is null) continue;
+                if (task is null)
+                    continue;
                 var state = NewState(task, null, true);
                 runtime.Set(task.Id, state);
                 await ReconcileSafeAsync(scheduler, task, state, cancellationToken);
@@ -136,7 +141,8 @@ public sealed class ScheduledTaskService(
             var saved = await repository.UpdateAsync(items =>
             {
                 var index = items.FindIndex(x => x.Id == definition.Id);
-                if (index < 0) throw new KeyNotFoundException("Timer has been deleted.");
+                if (index < 0)
+                    throw new KeyNotFoundException("Timer has been deleted.");
                 original = items[index];
                 CheckRevision(original, definition.Revision);
                 var value = Copy(definition);
@@ -171,12 +177,14 @@ public sealed class ScheduledTaskService(
             var saved = await repository.UpdateAsync(items =>
             {
                 var index = items.FindIndex(x => x.Id == id);
-                if (index < 0) throw new KeyNotFoundException("Timer has been deleted.");
+                if (index < 0)
+                    throw new KeyNotFoundException("Timer has been deleted.");
                 original = items[index];
                 CheckRevision(original, expectedRevision);
                 var updated = Copy(original);
                 updated.Enabled = enabled;
-                if (enabled) Validate(updated, validateAgentExecution: false);
+                if (enabled)
+                    Validate(updated, validateAgentExecution: false);
                 updated.UpdatedAtUtc = now;
                 updated.Revision = checked(original.Revision + 1);
                 items[index] = updated;
@@ -203,7 +211,8 @@ public sealed class ScheduledTaskService(
             await repository.UpdateAsync(items =>
             {
                 var index = items.FindIndex(x => x.Id == id);
-                if (index < 0) throw new KeyNotFoundException("Timer has been deleted.");
+                if (index < 0)
+                    throw new KeyNotFoundException("Timer has been deleted.");
                 CheckRevision(items[index], expectedRevision);
                 items.RemoveAt(index);
                 return true;
@@ -252,7 +261,8 @@ public sealed class ScheduledTaskService(
             var scheduler = await schedulerFactory.GetScheduler(cancellationToken);
             foreach (var id in runtime.PendingCleanup())
             {
-                if (live.Contains(id)) continue;
+                if (live.Contains(id))
+                    continue;
                 try
                 {
                     await scheduler.DeleteJob(ScheduledTaskTriggerFactory.JobKey(id), cancellationToken);

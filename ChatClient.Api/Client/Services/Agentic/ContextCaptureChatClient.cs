@@ -73,10 +73,22 @@ public sealed class ContextCaptureChatClient(
             while (true)
             {
                 bool hasNext;
-                try { hasNext = await enumerator.MoveNextAsync().ConfigureAwait(false); }
-                catch (OperationCanceledException) { status = ContextInvocationStatus.Canceled; throw; }
-                catch { status = ContextInvocationStatus.Failed; throw; }
-                if (!hasNext) break;
+                try
+                {
+                    hasNext = await enumerator.MoveNextAsync().ConfigureAwait(false);
+                }
+                catch (OperationCanceledException)
+                {
+                    status = ContextInvocationStatus.Canceled;
+                    throw;
+                }
+                catch
+                {
+                    status = ContextInvocationStatus.Failed;
+                    throw;
+                }
+                if (!hasNext)
+                    break;
 
                 var update = enumerator.Current;
                 try
@@ -110,7 +122,8 @@ public sealed class ContextCaptureChatClient(
         try
         {
             var mode = store.Mode;
-            if (mode == ContextCaptureMode.Off) return null;
+            if (mode == ContextCaptureMode.Off)
+                return null;
             var (link, traceId, spanId) = ContextCaptureScope.GetChatSpan();
             var invocation = new ContextInvocationSnapshot
             {
@@ -226,11 +239,16 @@ public sealed class ContextCaptureChatClient(
                 using var json = JsonDocument.Parse(schema);
                 return JsonSerializer.Serialize(new
                 {
-                    tool.Name, tool.Description, JsonSchema = json.RootElement
+                    tool.Name,
+                    tool.Description,
+                    JsonSchema = json.RootElement
                 });
             }
         }
-        catch { /* Invalid schema remains explicitly unknown. */ }
+        catch
+        {
+            // Invalid schema remains explicitly unknown.
+        }
 
         return JsonSerializer.Serialize(new { tool.Name, tool.Description, JsonSchema = (object?)null });
     }
@@ -239,11 +257,15 @@ public sealed class ContextCaptureChatClient(
     {
         try
         {
-            if (value is Stream) return null;
+            if (value is Stream)
+                return null;
             var json = JsonSerializer.Serialize(value, SafeJsonOptions);
             return json.Length <= 1_048_576 ? json : null;
         }
-        catch { return null; }
+        catch
+        {
+            return null;
+        }
     }
 
     private sealed class RejectBytesConverter : JsonConverter<byte[]>
@@ -272,7 +294,13 @@ public sealed class ContextCaptureChatClient(
 
     private static string? SafeSchema(AIFunctionDeclaration function)
     {
-        try { return function.JsonSchema.GetRawText(); }
-        catch { return null; }
+        try
+        {
+            return function.JsonSchema.GetRawText();
+        }
+        catch
+        {
+            return null;
+        }
     }
 }

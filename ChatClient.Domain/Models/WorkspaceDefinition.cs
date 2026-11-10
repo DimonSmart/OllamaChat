@@ -11,7 +11,11 @@ public sealed class WorkspaceDefinition
 
     public WorkspaceDefinition Clone() => new()
     {
-        Id = Id, Name = Name, Path = Path,
-        CreatedAtUtc = CreatedAtUtc, UpdatedAtUtc = UpdatedAtUtc, Revision = Revision
+        Id = Id,
+        Name = Name,
+        Path = Path,
+        CreatedAtUtc = CreatedAtUtc,
+        UpdatedAtUtc = UpdatedAtUtc,
+        Revision = Revision
     };
 }

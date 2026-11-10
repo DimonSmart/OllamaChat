@@ -28,7 +28,8 @@ public sealed class ContextCaptureStore
         get { lock (gate) return mode; }
         set
         {
-            lock (gate) mode = value;
+            lock (gate)
+                mode = value;
             Notify();
         }
     }
@@ -50,7 +51,8 @@ public sealed class ContextCaptureStore
 
     public ContextBlobSnapshot? GetContent(string? blobId)
     {
-        if (blobId is null) return null;
+        if (blobId is null)
+            return null;
         lock (gate)
             return blobs.TryGetValue(blobId, out var blob)
                 ? new ContextBlobSnapshot(blob.Content, blob.Structured, false) : null;
@@ -60,7 +62,8 @@ public sealed class ContextCaptureStore
     {
         lock (gate)
         {
-            if (mode == ContextCaptureMode.Off) return null;
+            if (mode == ContextCaptureMode.Off)
+                return null;
             var runId = invocation.RunId ?? UnlinkedRunId;
             var list = invocations.Values.Where(x => x.RunId == runId).ToArray();
             if (list.Length >= limits.MaxInvocationsPerRun)
@@ -147,10 +150,12 @@ public sealed class ContextCaptureStore
     public void Complete(string? id, ContextInvocationStatus status, TimeSpan elapsed,
         long? input = null, long? output = null, long? cached = null, long? reasoning = null)
     {
-        if (id is null) return;
+        if (id is null)
+            return;
         lock (gate)
         {
-            if (!invocations.TryGetValue(id, out var item)) return;
+            if (!invocations.TryGetValue(id, out var item))
+                return;
             invocations[id] = item with
             {
                 Status = status,
@@ -180,12 +185,14 @@ public sealed class ContextCaptureStore
                          item.LinkState == ContextLinkState.Pending &&
                          item.RunId is not null && item.TraceId is not null && item.SpanId is not null).ToArray())
             {
-                if (!known.Contains((item.RunId!, item.TraceId!, item.SpanId!))) continue;
+                if (!known.Contains((item.RunId!, item.TraceId!, item.SpanId!)))
+                    continue;
                 invocations[item.InvocationId] = item with { LinkState = ContextLinkState.Linked };
                 changed = true;
             }
         }
-        if (changed) Notify();
+        if (changed)
+            Notify();
     }
 
     public void ClearContent()
@@ -239,10 +246,12 @@ public sealed class ContextCaptureStore
     private void RemoveInvocation(string id)
     {
         invocations.Remove(id);
-        if (!segments.Remove(id, out var items)) return;
+        if (!segments.Remove(id, out var items))
+            return;
         foreach (var item in items)
         {
-            if (item.BlobId is null || !blobs.TryGetValue(item.BlobId, out var blob)) continue;
+            if (item.BlobId is null || !blobs.TryGetValue(item.BlobId, out var blob))
+                continue;
             if (--blob.RefCount == 0)
             {
                 contentBytes -= blob.Bytes;
@@ -253,8 +262,14 @@ public sealed class ContextCaptureStore
 
     private void Notify()
     {
-        try { Changed?.Invoke(); }
-        catch { /* Diagnostics must never interrupt the chat runtime. */ }
+        try
+        {
+            Changed?.Invoke();
+        }
+        catch
+        {
+            // Diagnostics must never interrupt the chat runtime.
+        }
     }
 
     private sealed class BlobEntry(string content, bool structured, int bytes)

@@ -13,7 +13,10 @@ public sealed class ScheduledTaskTriggerFactory
     {
         if (string.IsNullOrWhiteSpace(id))
             throw new ArgumentException("Select a time zone.");
-        try { return TimeZoneInfo.FindSystemTimeZoneById(id); }
+        try
+        {
+            return TimeZoneInfo.FindSystemTimeZoneById(id);
+        }
         catch (Exception ex) when (ex is TimeZoneNotFoundException or InvalidTimeZoneException)
         {
             throw new ArgumentException($"Time zone '{id}' is not available on this host.", ex);

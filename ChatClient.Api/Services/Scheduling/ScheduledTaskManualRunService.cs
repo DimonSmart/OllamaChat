@@ -127,7 +127,8 @@ public sealed class ScheduledTaskManualRunService(
                 var binding = task.AgentExecution!;
                 snapshot = new ScheduledAgentConfiguration
                 {
-                    AgentId = binding.AgentId, Prompt = binding.Prompt,
+                    AgentId = binding.AgentId,
+                    Prompt = binding.Prompt,
                     WorkspaceId = binding.WorkspaceId
                 };
                 UpdateCurrent(runId, state => state with
@@ -232,7 +233,13 @@ public sealed class ScheduledTaskManualRunService(
             _current = _current with { CancellationRequested = reason };
             source = _cancellation;
         }
-        try { source?.Cancel(); } catch (ObjectDisposedException) { }
+        try
+        {
+            source?.Cancel();
+        }
+        catch (ObjectDisposedException)
+        {
+        }
         PublishChanged();
         return true;
     }
@@ -248,19 +255,22 @@ public sealed class ScheduledTaskManualRunService(
             if (active.HasValue)
                 _deletedDuringRun.Add(active.Value);
         }
-        if (active.HasValue) RequestCancellation(active.Value, "TimerDeleted");
+        if (active.HasValue)
+            RequestCancellation(active.Value, "TimerDeleted");
         PublishChanged();
     }
 
     public void TimerCreated(Guid taskId)
     {
-        lock (_gate) _deletedTimers.Remove(taskId);
+        lock (_gate)
+            _deletedTimers.Remove(taskId);
     }
 
     private void UpdateCurrent(Guid runId, Func<ManualRunState, ManualRunState> change)
     {
         lock (_gate)
-            if (_current?.ManualRunId == runId) _current = change(_current);
+            if (_current?.ManualRunId == runId)
+                _current = change(_current);
         PublishChanged();
     }
 
@@ -268,8 +278,14 @@ public sealed class ScheduledTaskManualRunService(
     {
         foreach (var handler in StateChanged?.GetInvocationList() ?? [])
         {
-            try { ((Action)handler)(); }
-            catch (Exception ex) { logger.LogDebug(ex, "Manual run state subscriber failed"); }
+            try
+            {
+                ((Action)handler)();
+            }
+            catch (Exception ex)
+            {
+                logger.LogDebug(ex, "Manual run state subscriber failed");
+            }
         }
     }
 
@@ -285,11 +301,17 @@ public sealed class ScheduledTaskManualRunService(
             runId = _current?.ManualRunId;
             task = _execution;
         }
-        if (runId.HasValue) RequestCancellation(runId.Value, "HostShutdown");
+        if (runId.HasValue)
+            RequestCancellation(runId.Value, "HostShutdown");
         if (task is not null)
         {
-            try { await task.WaitAsync(cancellationToken); }
-            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { }
+            try
+            {
+                await task.WaitAsync(cancellationToken);
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+            }
         }
     }
 }

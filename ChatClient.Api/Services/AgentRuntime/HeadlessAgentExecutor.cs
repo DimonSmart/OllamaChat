@@ -94,8 +94,11 @@ public sealed class HeadlessAgentExecutor(
                     "A saved workspace is required for File Access.");
             pinnedFileProfile = new FileAccessProviderProfile
             {
-                Id = profile.Id, Name = profile.Name, Instructions = profile.Instructions,
-                AccessMode = profile.AccessMode, RequireReadApproval = profile.RequireReadApproval,
+                Id = profile.Id,
+                Name = profile.Name,
+                Instructions = profile.Instructions,
+                AccessMode = profile.AccessMode,
+                RequireReadApproval = profile.RequireReadApproval,
                 RequireWriteApproval = profile.RequireWriteApproval
             };
         }
@@ -113,11 +116,13 @@ public sealed class HeadlessAgentExecutor(
                     "Workspace-relative Skills require a saved workspace.");
             pinnedSkillsProfile = new AgentSkillsProfile
             {
-                Id = profile.Id, Name = profile.Name,
+                Id = profile.Id,
+                Name = profile.Name,
                 IncludeClaudeSkills = profile.IncludeClaudeSkills,
                 FileSources = profile.FileSources.Select(source => new SkillFileSource
                 {
-                    Directory = source.Directory, Patterns = source.Patterns.ToList()
+                    Directory = source.Directory,
+                    Patterns = source.Patterns.ToList()
                 }).ToList()
             };
             var discovered = await AgentSkillsDiscovery.DiscoverAsync(pinnedSkillsProfile, workspace?.Path,
