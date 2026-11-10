@@ -99,6 +99,79 @@ public sealed class UnifiedAgentRuntimeChatSessionServiceTests
     }
 
     [Fact]
+    public async Task Steering_DeliversDuringSameRun_AndPreservesHistoryNextTurn()
+    {
+        var fixture = CreateDirectFixture();
+        fixture.ChatClient.BlockFirstCall = true;
+        await fixture.Service.StartAsync(fixture.Request, TestContext.Current.CancellationToken);
+        var run = fixture.Service.SendAsync("research", cancellationToken: TestContext.Current.CancellationToken);
+        await fixture.ChatClient.FirstCallStarted.Task.WaitAsync(TestContext.Current.CancellationToken);
+
+        var availability = fixture.Service.SteeringAvailability;
+        Assert.True(availability.CanSteer);
+        var runId = Assert.IsType<Guid>(availability.RunId);
+        var submissionId = Guid.NewGuid();
+        var result = await fixture.Service.SubmitSteeringAsync(
+            "use SQLite", runId, submissionId, TestContext.Current.CancellationToken);
+        Assert.True(result.Accepted);
+        Assert.Equal(result, await fixture.Service.SubmitSteeringAsync(
+            "use SQLite", runId, submissionId, TestContext.Current.CancellationToken));
+
+        var steering = Assert.Single(fixture.Service.Messages,
+            message => message.Steering is not null);
+        Assert.Equal(SteeringDeliveryStatus.Pending, steering.Steering!.Status);
+        Assert.Equal(runId, steering.Steering.RunId);
+        Assert.Equal(result.SteeringId, steering.Steering.SteeringId);
+        Assert.DoesNotContain(fixture.ChatClient.Requests[0].Messages,
+            message => message.Role == ChatRole.User && message.Text == "use SQLite");
+
+        fixture.ChatClient.ReleaseFirstCall.TrySetResult();
+        await run;
+
+        Assert.Equal(2, fixture.ChatClient.Requests.Count);
+        var second = fixture.ChatClient.Requests[1].Messages;
+        Assert.Single(second, message => message.Role == ChatRole.User && message.Text == "use SQLite");
+        Assert.Equal(SteeringDeliveryStatus.Delivered, steering.Steering.Status);
+        Assert.False(fixture.Service.SteeringAvailability.CanSteer);
+        Assert.False((await fixture.Service.SubmitSteeringAsync(
+            "too late", runId, Guid.NewGuid(), TestContext.Current.CancellationToken)).Accepted);
+
+        await fixture.Service.SendAsync("next", cancellationToken: TestContext.Current.CancellationToken);
+        Assert.Single(fixture.ChatClient.Requests[2].Messages,
+            message => message.Role == ChatRole.User && message.Text == "use SQLite");
+    }
+
+    [Fact]
+    public async Task Steering_LimitsAndCanceledRun_FinalizeUnacknowledgedMessages()
+    {
+        var fixture = CreateDirectFixture();
+        fixture.ChatClient.BlockFirstCall = true;
+        await fixture.Service.StartAsync(fixture.Request, TestContext.Current.CancellationToken);
+        var run = fixture.Service.SendAsync("research", cancellationToken: TestContext.Current.CancellationToken);
+        await fixture.ChatClient.FirstCallStarted.Task.WaitAsync(TestContext.Current.CancellationToken);
+        var runId = Assert.IsType<Guid>(fixture.Service.SteeringAvailability.RunId);
+
+        Assert.False((await fixture.Service.SubmitSteeringAsync(
+            new string('x', 4097), runId, Guid.NewGuid(), TestContext.Current.CancellationToken)).Accepted);
+        for (var i = 0; i < 8; i++)
+        {
+            var result = await fixture.Service.SubmitSteeringAsync(
+                $"hint-{i}", runId, Guid.NewGuid(), TestContext.Current.CancellationToken);
+            Assert.True(result.Accepted);
+        }
+        Assert.False((await fixture.Service.SubmitSteeringAsync(
+            "ninth", runId, Guid.NewGuid(), TestContext.Current.CancellationToken)).Accepted);
+        Assert.Equal(8, fixture.Service.Messages.Count(m => m.Steering is not null));
+
+        await fixture.Service.CancelAsync();
+        await run;
+
+        Assert.False(fixture.Service.SteeringAvailability.CanSteer);
+        Assert.All(fixture.Service.Messages.Where(m => m.Steering is not null),
+            m => Assert.Equal(SteeringDeliveryStatus.NotDelivered, m.Steering!.Status));
+    }
+
+    [Fact]
     public async Task StartAsync_ExposesActiveSessionUntilReset()
     {
         var fixture = CreateDirectFixture();
@@ -1493,6 +1566,11 @@ public sealed class UnifiedAgentRuntimeChatSessionServiceTests
     private sealed class RecordingChatClient : IChatClient
     {
         public List<RecordedChatRequest> Requests { get; } = [];
+        public bool BlockFirstCall { get; set; }
+        public TaskCompletionSource FirstCallStarted { get; } =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public TaskCompletionSource ReleaseFirstCall { get; } =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
 
         public int DisposeCount { get; private set; }
 
@@ -1519,6 +1597,12 @@ public sealed class UnifiedAgentRuntimeChatSessionServiceTests
         {
             cancellationToken.ThrowIfCancellationRequested();
             Requests.Add(new RecordedChatRequest(messages.Select(static message => message.Clone()).ToList(), options));
+            if (Requests.Count == 1)
+            {
+                FirstCallStarted.TrySetResult();
+                if (BlockFirstCall)
+                    await ReleaseFirstCall.Task.WaitAsync(cancellationToken);
+            }
             await Task.Yield();
             yield return new ChatResponseUpdate(ChatRole.Assistant, $"answer-{Requests.Count}");
         }
