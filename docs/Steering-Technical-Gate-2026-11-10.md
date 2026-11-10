@@ -48,7 +48,7 @@ The coordinator's `_lifecycleLock` / `_runSetupGate` cannot close this gap: the 
 
 The second test characterizes the native API behavior and models the proven gap. It does **not** demonstrate that OllamaChat currently accepts Steering: the product feature does not exist yet.
 
-The earlier two-test characterization and existing regression suite passed on [GitHub Actions](https://github.com/DimonSmart/OllamaChat/actions/runs/42815113483). Check the latest CI for the third serialization test.
+All three characterization tests, the solution build, and the existing regression suite passed on [GitHub Actions](https://github.com/DimonSmart/OllamaChat/actions/runs/42815413817). The separate [scheduled tasks validation](https://github.com/DimonSmart/OllamaChat/actions/runs/42815413856) also passed.
 
 ## Alternatives considered
 
