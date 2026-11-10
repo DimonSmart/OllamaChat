@@ -2,6 +2,7 @@
 @using ChatClient.Api.Client.Models
 @using ChatClient.Api.VoiceInput
 @using ChatClient.Application.Services
+@using ChatClient.Application.Services.Agentic
 @using ChatClient.Domain.Models
 @using System.Globalization
 @using Microsoft.AspNetCore.Components.Forms
@@ -60,6 +61,19 @@
 
         <div class="flex-grow-1"></div>
 
+        @if (ShowStopButton && SteeringAvailability.CanSteer)
+        {
+            <MudButton Variant="Variant.Outlined"
+                       Size="Size.Small"
+                       Color="Color.Primary"
+                       Disabled="@(Disabled || IsSending || !IsTextEntered || attachedFiles.Count > 0)"
+                       OnClick="SteerMessage"
+                       aria-label="Steer active agent"
+                       title="Send Steering instruction (Ctrl+Enter)">
+                Steer
+            </MudButton>
+        }
+
         <MudIconButton Icon="@(ShowStopButton ? Icons.Material.Filled.Stop : Icons.Material.Filled.Send)"
                        Color="@(ShowStopButton ? Color.Error : Color.Primary)"
                        Size="Size.Small"
@@ -104,6 +118,11 @@
         }
     </div>
 
+    @if (ShowStopButton && SteeringAvailability.CanSteer && attachedFiles.Count > 0)
+    {
+        <MudText Typo="Typo.caption" Color="Color.Warning">Steering supports text only; remove attachments.</MudText>
+    }
+
     @if (attachedFiles.Count > 0)
     {
         <div class="mt-1">
@@ -129,6 +148,8 @@
     [Parameter] public EventCallback<(string text, IReadOnlyList<AppChatMessageFile> files)> OnSend { get; set; }
     [Parameter] public bool ShowStopButton { get; set; } = false;
     [Parameter] public EventCallback OnStopClick { get; set; }
+    [Parameter] public SteeringAvailability SteeringAvailability { get; set; } = SteeringAvailability.Unavailable;
+    [Parameter] public Func<string, Guid, Task<bool>>? OnSteer { get; set; }
     [Parameter] public bool IsMultiAgent { get; set; } = false;
     [Parameter] public bool AllowFileAttachments { get; set; } = true;
     [Parameter] public string Label { get; set; } = "Type your message";
@@ -174,6 +195,9 @@
             CurrentText = Text;
         }
 
+        if (ShowStopButton)
+            IsSending = false;
+
         return base.OnParametersSetAsync();
     }
 
@@ -217,9 +241,17 @@
 
     private async Task HandleKeyDown(KeyboardEventArgs e)
     {
-        if (e.Key == "Enter" && e.CtrlKey && !IsSendDisabled)
+        if (e.Key == "Enter" && e.CtrlKey)
         {
-            await SendMessage();
+            if (ShowStopButton)
+            {
+                if (SteeringAvailability.CanSteer)
+                    await SteerMessage();
+            }
+            else if (!IsSendDisabled)
+            {
+                await SendMessage();
+            }
         }
     }
 
@@ -254,6 +286,31 @@
 
             attachedFiles.Clear();
             await OnSend.InvokeAsync((textToSend, filesToSend));
+        }
+        finally
+        {
+            IsSending = false;
+        }
+    }
+
+    private async Task SteerMessage()
+    {
+        if (Disabled || IsSending || !IsTextEntered || attachedFiles.Count > 0 ||
+            !SteeringAvailability.CanSteer || SteeringAvailability.RunId is not Guid runId ||
+            OnSteer is null)
+            return;
+
+        IsSending = true;
+        try
+        {
+            var text = CurrentText.Trim();
+            var accepted = await OnSteer(text, runId);
+            if (accepted)
+            {
+                CurrentText = string.Empty;
+                if (TextChanged.HasDelegate)
+                    await TextChanged.InvokeAsync(CurrentText);
+            }
         }
         finally
         {
