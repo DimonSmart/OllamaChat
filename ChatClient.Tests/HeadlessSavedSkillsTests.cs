@@ -33,21 +33,29 @@ public sealed class HeadlessSavedSkillsTests
             var model = new ServerModel(Guid.NewGuid(), "local");
             var agent = new AgentTemplateDefinition
             {
-                Id = agentId, AgentName = "Skills only", LlmId = model.ServerId,
-                ModelName = model.ModelName, SkillsProviderProfileId = profile.Id
+                Id = agentId,
+                AgentName = "Skills only",
+                LlmId = model.ServerId,
+                ModelName = model.ModelName,
+                SkillsProviderProfileId = profile.Id
             };
             var descriptor = new AgentDefinitionDescriptor
             {
-                Reference = reference, Name = "Skills only", RuntimeKind = AgentRuntimeKind.LlmAgent,
+                Reference = reference,
+                Name = "Skills only",
+                RuntimeKind = AgentRuntimeKind.LlmAgent,
                 ModelRequirement = AgentModelRequirement.Required,
                 LaunchCapabilities = new AgentLaunchCapabilities { SupportsWorkspace = true }
             };
             var resolved = new ResolvedAgentSessionDefinition
             {
-                Descriptor = descriptor, RuntimeReference = reference, DefaultModel = model,
+                Descriptor = descriptor,
+                RuntimeReference = reference,
+                DefaultModel = model,
                 PresentationParticipant = new ChatRuntimeParticipantDescriptor
                 {
-                    Id = agentId.ToString("D"), Name = "Skills only",
+                    Id = agentId.ToString("D"),
+                    Name = "Skills only",
                     RuntimeKind = AgentRuntimeKind.LlmAgent
                 },
                 Validation = new AgentDefinitionLaunchValidation { CanLaunch = true }

@@ -39,7 +39,9 @@ public sealed class WorkspaceCatalogTests
             var (service, resolver) = Create(root);
             var created = await service.CreateAsync(new WorkspaceDefinition
             {
-                Id = Guid.NewGuid(), Name = " Project ", Path = folder + Path.DirectorySeparatorChar
+                Id = Guid.NewGuid(),
+                Name = " Project ",
+                Path = folder + Path.DirectorySeparatorChar
             });
             Assert.NotEqual(Guid.Empty, created.Id);
             Assert.Equal("Project", created.Name);
@@ -122,7 +124,8 @@ public sealed class WorkspaceCatalogTests
             var (secondService, _) = Create(root);
             var saved = await firstService.CreateAsync(new WorkspaceDefinition
             {
-                Name = "Original", Path = folder
+                Name = "Original",
+                Path = folder
             });
             var first = saved.Clone();
             var second = saved.Clone();

@@ -33,7 +33,9 @@ public class ScheduledTaskTriggerFactoryTests
     {
         var timer = Task(new ScheduleDefinition
         {
-            Type = ScheduleType.Weekly, Hour = 14, Minute = 0,
+            Type = ScheduleType.Weekly,
+            Hour = 14,
+            Minute = 0,
             DaysOfWeek = [DayOfWeek.Monday, DayOfWeek.Tuesday, DayOfWeek.Wednesday,
                 DayOfWeek.Thursday, DayOfWeek.Friday]
         });
@@ -90,8 +92,11 @@ public class ScheduledTaskTriggerFactoryTests
     [Fact]
     public void DisabledExpiredCron_IsSyntacticallyValidButHasNoFutureDates()
     {
-        var timer = Task(new ScheduleDefinition { Type = ScheduleType.Cron,
-            CronExpression = "0 0 14 ? * MON 2020" });
+        var timer = Task(new ScheduleDefinition
+        {
+            Type = ScheduleType.Cron,
+            CronExpression = "0 0 14 ? * MON 2020"
+        });
         timer.Enabled = false;
         var now = DateTimeOffset.Parse("2027-01-01T00:00:00Z");
         Assert.Empty(ScheduledTaskTriggerFactory.Occurrences(Factory.Build(timer, now), now));

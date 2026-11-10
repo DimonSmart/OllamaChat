@@ -18,16 +18,22 @@ public sealed class HeadlessAgentExecutorTests
         var template = new AgentTemplateDefinition { Id = id, AgentName = "Test", LlmId = Guid.NewGuid(), ModelName = "local" };
         var descriptor = new AgentDefinitionDescriptor
         {
-            Reference = reference, Name = "Test", RuntimeKind = AgentRuntimeKind.LlmAgent,
+            Reference = reference,
+            Name = "Test",
+            RuntimeKind = AgentRuntimeKind.LlmAgent,
             ModelRequirement = AgentModelRequirement.Required
         };
         var model = new ServerModel(template.LlmId!.Value, "local");
         var resolved = new ResolvedAgentSessionDefinition
         {
-            Descriptor = descriptor, RuntimeReference = reference, DefaultModel = model,
+            Descriptor = descriptor,
+            RuntimeReference = reference,
+            DefaultModel = model,
             PresentationParticipant = new ChatRuntimeParticipantDescriptor
             {
-                Id = id.ToString("D"), Name = "Test", RuntimeKind = AgentRuntimeKind.LlmAgent
+                Id = id.ToString("D"),
+                Name = "Test",
+                RuntimeKind = AgentRuntimeKind.LlmAgent
             },
             Validation = new AgentDefinitionLaunchValidation { CanLaunch = true }
         };
@@ -82,7 +88,8 @@ public sealed class HeadlessAgentExecutorTests
         var descriptor = new AgentDefinitionDescriptor
         {
             Reference = new AgentDefinitionReference(AgentDefinitionKind.SavedAgent, Guid.NewGuid().ToString("D")),
-            Name = "agent", RuntimeKind = AgentRuntimeKind.LlmAgent
+            Name = "agent",
+            RuntimeKind = AgentRuntimeKind.LlmAgent
         };
         Assert.True(HeadlessAgentExecutor.HasUnsupportedCapabilities(
             new AgentTemplateDefinition { EnableFileMemory = true }, descriptor));

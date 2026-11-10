@@ -12,7 +12,9 @@ public sealed class ScheduledTaskRuntimeStateTests
         var first = DateTimeOffset.Parse("2027-01-01T00:00:00Z");
         runtime.Set(id, new ScheduledTaskRuntimeState.TimerState
         {
-            Enabled = true, Generation = 1, Name = "First"
+            Enabled = true,
+            Generation = 1,
+            Name = "First"
         });
         var accepted = await runtime.TryRecordAsync(id, 1, first, TestContext.Current.CancellationToken);
         Assert.True(accepted.Valid);
@@ -20,14 +22,18 @@ public sealed class ScheduledTaskRuntimeStateTests
 
         runtime.Set(id, new ScheduledTaskRuntimeState.TimerState
         {
-            Enabled = true, Generation = 2, Name = "Rescheduled"
+            Enabled = true,
+            Generation = 2,
+            Name = "Rescheduled"
         });
         Assert.False((await runtime.TryRecordAsync(id, 1, first.AddMinutes(1),
             TestContext.Current.CancellationToken)).Valid);
 
         runtime.Set(id, new ScheduledTaskRuntimeState.TimerState
         {
-            Enabled = false, Generation = 3, Name = "Disabled"
+            Enabled = false,
+            Generation = 3,
+            Name = "Disabled"
         });
         Assert.False((await runtime.TryRecordAsync(id, 2, first.AddMinutes(2),
             TestContext.Current.CancellationToken)).Valid);

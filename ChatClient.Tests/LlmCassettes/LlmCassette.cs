@@ -87,14 +87,16 @@ internal sealed class LlmCassette
 
     public void Add(string method, JsonNode request, JsonNode response)
     {
-        if (!_record) throw new InvalidOperationException("Cannot record in Replay mode.");
+        if (!_record)
+            throw new InvalidOperationException("Cannot record in Replay mode.");
         Normalize(response);
         _exchanges.Add(new Exchange(method, request.DeepClone(), response.DeepClone()));
     }
 
     public JsonNode Next(string method, JsonNode request)
     {
-        if (_record) throw new InvalidOperationException("Cannot replay in Record mode.");
+        if (_record)
+            throw new InvalidOperationException("Cannot replay in Record mode.");
         var number = _position + 1;
         if (_position == _exchanges.Count)
             throw new InvalidOperationException($"LLM cassette extra call at exchange {number}.");
@@ -115,14 +117,17 @@ internal sealed class LlmCassette
 
     public async Task CompleteAsync(CancellationToken cancellationToken = default)
     {
-        if (_completed) throw new InvalidOperationException("LLM cassette has already completed.");
+        if (_completed)
+            throw new InvalidOperationException("LLM cassette has already completed.");
         if (_failed || Volatile.Read(ref _active) != 0)
             throw new InvalidOperationException("LLM cassette failed or has an active request.");
-        if (Volatile.Read(ref _created) == 0) throw new InvalidOperationException("No cassette client was created.");
+        if (Volatile.Read(ref _created) == 0)
+            throw new InvalidOperationException("No cassette client was created.");
         if (!_record && _position != _exchanges.Count)
             throw new InvalidOperationException($"LLM cassette has {_exchanges.Count - _position} unused exchanges.");
         _completed = true;
-        if (!_record) return;
+        if (!_record)
+            return;
 
         var directory = Path.GetDirectoryName(_file)!;
         Directory.CreateDirectory(directory);
@@ -135,7 +140,8 @@ internal sealed class LlmCassette
         }
         finally
         {
-            if (File.Exists(temporary)) File.Delete(temporary);
+            if (File.Exists(temporary))
+                File.Delete(temporary);
         }
     }
 
@@ -230,13 +236,18 @@ internal sealed class LlmCassette
                 TextContent text => new JsonObject { ["type"] = "text", ["text"] = text.Text },
                 FunctionCallContent call when call.Exception is null => new JsonObject
                 {
-                    ["type"] = "call", ["callId"] = call.CallId, ["name"] = call.Name,
-                    ["arguments"] = SafeJson(call.Arguments), ["informationalOnly"] = call.InformationalOnly
+                    ["type"] = "call",
+                    ["callId"] = call.CallId,
+                    ["name"] = call.Name,
+                    ["arguments"] = SafeJson(call.Arguments),
+                    ["informationalOnly"] = call.InformationalOnly
                 },
                 FunctionResultContent result => new JsonObject
                 {
-                    ["type"] = "result", ["callId"] = result.CallId,
-                    ["result"] = SafeJson(result.Result), ["isError"] = result.Exception is not null
+                    ["type"] = "result",
+                    ["callId"] = result.CallId,
+                    ["result"] = SafeJson(result.Result),
+                    ["isError"] = result.Exception is not null
                 },
                 UsageContent => new JsonObject { ["type"] = "usage" }, // usage statistics are deliberately ignored
                 _ => throw new NotSupportedException($"Unsupported cassette AIContent: {content.GetType().FullName}")
@@ -252,7 +263,8 @@ internal sealed class LlmCassette
         foreach (var item in node?.AsArray() ?? throw new InvalidDataException("Missing contents."))
         {
             var obj = item!.AsObject();
-            if (ReadString(obj, "type") == "usage") continue;
+            if (ReadString(obj, "type") == "usage")
+                continue;
             result.Add(ReadString(obj, "type") switch
             {
                 "text" => new TextContent(ReadString(obj, "text") ?? ""),
@@ -277,8 +289,10 @@ internal sealed class LlmCassette
 
     private static JsonNode? SafeJson(object? value)
     {
-        if (value is null) return null;
-        try { return JsonSerializer.SerializeToNode(value, value.GetType()); }
+        if (value is null)
+            return null;
+        try
+        { return JsonSerializer.SerializeToNode(value, value.GetType()); }
         catch (Exception ex) when (ex is NotSupportedException or JsonException)
         {
             throw new NotSupportedException($"Unsupported cassette JSON value: {value.GetType().FullName}", ex);
@@ -287,7 +301,8 @@ internal sealed class LlmCassette
 
     private static JsonNode? CaptureOptions(ChatOptions? options)
     {
-        if (options is null) return null;
+        if (options is null)
+            return null;
         if (options.RawRepresentationFactory is not null)
             throw new NotSupportedException("Cassette cannot capture RawRepresentationFactory.");
         return new JsonObject
@@ -316,7 +331,8 @@ internal sealed class LlmCassette
     private static JsonArray CaptureTools(IEnumerable<AITool>? tools)
     {
         var array = new JsonArray();
-        if (tools is null) return array;
+        if (tools is null)
+            return array;
         foreach (var tool in tools)
         {
             if (tool is not AIFunctionDeclaration function)
@@ -336,14 +352,16 @@ internal sealed class LlmCassette
 
     private void RewritePaths(JsonNode node, bool restore)
     {
-        if (string.IsNullOrEmpty(_root)) return;
+        if (string.IsNullOrEmpty(_root))
+            return;
         if (node is JsonObject obj)
         {
             foreach (var (key, value) in obj.ToArray())
             {
                 if (value is JsonValue scalar && scalar.TryGetValue<string>(out var text))
                     obj[key] = ChangePath(text, restore);
-                else if (value is not null) RewritePaths(value, restore);
+                else if (value is not null)
+                    RewritePaths(value, restore);
             }
         }
         else if (node is JsonArray array)
@@ -352,17 +370,20 @@ internal sealed class LlmCassette
             {
                 if (array[i] is JsonValue scalar && scalar.TryGetValue<string>(out var text))
                     array[i] = ChangePath(text, restore);
-                else if (array[i] is { } child) RewritePaths(child, restore);
+                else if (array[i] is { } child)
+                    RewritePaths(child, restore);
             }
         }
     }
 
     private string ChangePath(string text, bool restore)
     {
-        if (restore) return text.Replace(RootToken, _root!, StringComparison.Ordinal);
+        if (restore)
+            return text.Replace(RootToken, _root!, StringComparison.Ordinal);
         var normalized = text.Replace('\\', '/');
         var root = _root!;
-        if (!normalized.Contains(root, StringComparison.OrdinalIgnoreCase)) return text;
+        if (!normalized.Contains(root, StringComparison.OrdinalIgnoreCase))
+            return text;
         var start = 0;
         while ((start = normalized.IndexOf(root, start, StringComparison.OrdinalIgnoreCase)) >= 0)
         {
@@ -373,7 +394,8 @@ internal sealed class LlmCassette
                 normalized = normalized[..start] + RootToken + normalized[end..];
                 start += RootToken.Length;
             }
-            else start = end;
+            else
+                start = end;
         }
         return normalized;
     }
@@ -391,17 +413,20 @@ internal sealed class LlmCassette
                         right.ContainsKey(key) ? right[key] : null,
                         left.ContainsKey(key) ? null : "<missing>", right.ContainsKey(key) ? null : "<missing>");
                 var difference = FirstDifference(left[key], right[key], path + "." + key);
-                if (difference is not null) return difference;
+                if (difference is not null)
+                    return difference;
             }
             return null;
         }
         if (expected is JsonArray la && actual is JsonArray ra)
         {
-            if (la.Count != ra.Count) return Diagnostic(path + ".length", JsonValue.Create(la.Count), JsonValue.Create(ra.Count));
+            if (la.Count != ra.Count)
+                return Diagnostic(path + ".length", JsonValue.Create(la.Count), JsonValue.Create(ra.Count));
             for (var i = 0; i < la.Count; i++)
             {
                 var difference = FirstDifference(la[i], ra[i], $"{path}[{i}]");
-                if (difference is not null) return difference;
+                if (difference is not null)
+                    return difference;
             }
             return null;
         }
@@ -422,7 +447,8 @@ internal sealed class CassetteChatClientFactory(ILlmChatClientFactory actual, Ll
     public async Task<IChatClient> CreateAsync(ServerModel model, CancellationToken cancellationToken = default)
     {
         cassette.ClaimClient();
-        if (!cassette.IsRecording) return new ReplayChatClient(cassette);
+        if (!cassette.IsRecording)
+            return new ReplayChatClient(cassette);
         return new RecordingChatClient(await actual.CreateAsync(model, cancellationToken), cassette);
     }
 }

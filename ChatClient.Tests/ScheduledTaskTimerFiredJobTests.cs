@@ -16,7 +16,9 @@ public sealed class ScheduledTaskTimerFiredJobTests
         var id = Guid.NewGuid();
         runtime.Set(id, new ScheduledTaskRuntimeState.TimerState
         {
-            Enabled = true, Generation = 7, Name = "Name at acceptance"
+            Enabled = true,
+            Generation = 7,
+            Name = "Name at acceptance"
         });
         var publisher = new TimerEventPublisher(NullLogger<TimerEventPublisher>.Instance);
         var received = new List<TimerFiredEvent>();

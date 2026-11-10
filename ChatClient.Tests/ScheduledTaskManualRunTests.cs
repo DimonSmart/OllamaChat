@@ -17,11 +17,13 @@ public sealed class ScheduledTaskManualRunTests
         Assert.Throws<ArgumentException>(() => ScheduledAgentConfigurationValidation.Validate(null));
         Assert.Throws<ArgumentException>(() => ScheduledAgentConfigurationValidation.Validate(new()
         {
-            AgentId = Guid.Empty, Prompt = "valid"
+            AgentId = Guid.Empty,
+            Prompt = "valid"
         }));
         Assert.Throws<ArgumentException>(() => ScheduledAgentConfigurationValidation.Validate(new()
         {
-            AgentId = Guid.NewGuid(), Prompt = "   "
+            AgentId = Guid.NewGuid(),
+            Prompt = "   "
         }));
         var binding = new ScheduledAgentConfiguration
         {
