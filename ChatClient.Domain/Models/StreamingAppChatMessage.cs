@@ -18,6 +18,7 @@ public class StreamingAppChatMessage(
     public string? Statistics { get; private set; } = string.Empty;
     public ChatRunUsage? Usage { get; private set; }
     public bool IsCanceled { get; private set; }
+    public SteeringMessageMetadata? Steering => null;
     public IReadOnlyList<AppChatMessageFile> Files { get; private set; } = [];
     private readonly List<ToolInvocationViewState> _toolInvocations = toolInvocations ?? [];
     public IReadOnlyCollection<ToolInvocationViewState> ToolInvocations => _toolInvocations.AsReadOnly();
