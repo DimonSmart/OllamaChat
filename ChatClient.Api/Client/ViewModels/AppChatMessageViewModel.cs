@@ -22,6 +22,7 @@ public class AppChatMessageViewModel
     public ChatRunUsage? Usage { get; set; }
     public bool IsStreaming { get; set; }
     public bool IsCanceled { get; set; }
+    public SteeringMessageMetadata? Steering { get; set; }
     public IReadOnlyList<AppChatMessageFile> Files { get; set; } = [];
     public string? AgentId { get; set; }
     public string? AgentName { get; set; }
@@ -38,6 +39,7 @@ public class AppChatMessageViewModel
         Usage = message.Usage;
         IsStreaming = message.IsStreaming;
         IsCanceled = message.IsCanceled;
+        Steering = message.Steering?.Clone();
         Files = message.Files;
         ToolInvocations = message.ToolInvocations;
         RagRetrievals = message.RagRetrievals;

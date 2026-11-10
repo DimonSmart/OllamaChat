@@ -13,6 +13,7 @@ public class AppChatMessage : IAppChatMessage
     public string? Statistics { get; set; }
     public ChatRunUsage? Usage { get; set; }
     public bool IsCanceled { get; set; }
+    public SteeringMessageMetadata? Steering { get; set; }
     public IReadOnlyList<AppChatMessageFile> Files { get; set; } = [];
     public IReadOnlyCollection<ToolInvocationViewState> ToolInvocations { get; set; } = [];
     public IReadOnlyCollection<RagRetrievalTrace> RagRetrievals { get; set; } = [];
@@ -59,6 +60,7 @@ public class AppChatMessage : IAppChatMessage
         Statistics = message.Statistics;
         Usage = message.Usage;
         IsCanceled = message.IsCanceled;
+        Steering = message.Steering?.Clone();
         Files = message.Files;
         ToolInvocations = message.ToolInvocations.ToList();
         RagRetrievals = message.RagRetrievals.ToList();

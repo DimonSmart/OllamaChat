@@ -13,6 +13,12 @@ public interface IChatEngineSessionService : IChatSessionService
 
     ToolApprovalRequestViewModel? PendingToolApproval { get; }
 
+    SteeringAvailability SteeringAvailability { get; }
+
+    Task<SteeringSubmissionResult> SubmitSteeringAsync(
+        string text, Guid expectedRunId, Guid submissionId,
+        CancellationToken cancellationToken = default);
+
     Task StartAsync(
         ChatEngineSessionStartRequest request,
         CancellationToken cancellationToken = default,

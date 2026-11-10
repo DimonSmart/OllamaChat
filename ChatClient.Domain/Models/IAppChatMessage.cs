@@ -12,6 +12,7 @@ public interface IAppChatMessage : IEquatable<IAppChatMessage>
     ChatRunUsage? Usage { get; }
     bool IsStreaming { get; }
     bool IsCanceled { get; }
+    SteeringMessageMetadata? Steering { get; }
     IReadOnlyList<AppChatMessageFile> Files { get; }
     IReadOnlyCollection<ToolInvocationViewState> ToolInvocations { get; }
     IReadOnlyCollection<RagRetrievalTrace> RagRetrievals { get; }

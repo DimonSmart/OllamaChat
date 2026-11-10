@@ -49,6 +49,7 @@ internal sealed class HarnessAgentRuntimeDefinition(
     IReadOnlyList<string> skillDiagnostics,
     IReadOnlyList<AgentSessionBackgroundAgentViewModel> backgroundAgents,
     IRagRetrievalTraceSink? ragRetrievalTraceSink,
+    SteeringDeliveryMonitor? steeringDeliveryMonitor,
     AgentRuntimeResources ownedResources) : IDisposable
 {
     public AIAgent Agent { get; } = agent;
@@ -64,6 +65,7 @@ internal sealed class HarnessAgentRuntimeDefinition(
     public IReadOnlyList<string> SkillDiagnostics { get; } = skillDiagnostics;
     public IReadOnlyList<AgentSessionBackgroundAgentViewModel> BackgroundAgents { get; } = backgroundAgents;
     public IRagRetrievalTraceSink? RagRetrievalTraceSink { get; } = ragRetrievalTraceSink;
+    public SteeringDeliveryMonitor? SteeringDeliveryMonitor { get; } = steeringDeliveryMonitor;
 
     public void Dispose() => ownedResources.Dispose();
 }
@@ -151,6 +153,12 @@ public sealed class AgenticRuntimeAgentFactory(
                 : new ContextCaptureChatClient(baseChatClient, contextCaptureStore,
                     request.Agent.AgentName, request.Agent.AgentId.ToString(),
                     includeBackgroundAgents ? "main" : "background", request.ResolvedModel.ModelName));
+            var steeringDeliveryMonitor = includeBackgroundAgents && !request.RuntimeResources.IsHeadlessExecution
+                ? new SteeringDeliveryMonitor()
+                : null;
+            IChatClient rootChatClient = steeringDeliveryMonitor is null
+                ? chatClient
+                : new SteeringDeliveryChatClient(chatClient, steeringDeliveryMonitor);
             var compaction = compactionProfile is null
                 ? null
                 : await (compactionStrategyResolver ?? throw new InvalidOperationException("Compaction strategy resolver is not configured."))
@@ -337,7 +345,7 @@ public sealed class AgenticRuntimeAgentFactory(
             }
 
             var runtimeAgent = CreateRuntimeAgent(
-                chatClient, request, server, toolSet, knowledgeSearchService, hasConfiguredKnowledge,
+                rootChatClient, request, server, toolSet, knowledgeSearchService, hasConfiguredKnowledge,
                 supportsFunctions, ragConfiguration, todoProfile, agentModeProfile, fileAccessProfile,
                 workspaceStore, fileMemoryStore, shellExecutor, loggerFactory, compaction, ragTraceSink, skills.Source,
                 backgroundDefinitions.Select(static definition => definition.Agent).ToList(),
@@ -362,6 +370,7 @@ public sealed class AgenticRuntimeAgentFactory(
                     definition.Agent.Description ?? string.Empty,
                     null)).ToList(),
                 ragTraceSink,
+                steeringDeliveryMonitor,
                 resources);
         }
         catch
