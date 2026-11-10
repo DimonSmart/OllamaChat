@@ -63,6 +63,30 @@ public sealed class HarnessSteeringInjectionGateTests
         Assert.Empty(await injector.GetPendingMessagesAsync(session, TestContext.Current.CancellationToken));
     }
 
+    [Fact]
+    public async Task UndeliveredNativeMessage_SurvivesHarnessSessionSerialization()
+    {
+        using var model = new RecordingClient(blockFirstCall: false);
+        var agent = CreateHarness(model);
+        AgentSession session = await agent.CreateSessionAsync(TestContext.Current.CancellationToken);
+        MessageInjectingChatClient injector = Assert.IsType<MessageInjectingChatClient>(
+            agent.GetService<MessageInjectingChatClient>());
+
+        await DrainAsync(agent, session, "first", TestContext.Current.CancellationToken);
+        await injector.EnqueueMessagesAsync(
+            session,
+            [new ChatMessage(ChatRole.User, "undelivered after checkpoint")],
+            TestContext.Current.CancellationToken);
+
+        var serialized = await agent.SerializeSessionAsync(
+            session, cancellationToken: TestContext.Current.CancellationToken);
+        AgentSession restored = await agent.DeserializeSessionAsync(
+            serialized, cancellationToken: TestContext.Current.CancellationToken);
+
+        var pending = await injector.GetPendingMessagesAsync(restored, TestContext.Current.CancellationToken);
+        Assert.Single(pending, m => m.Role == ChatRole.User && m.Text == "undelivered after checkpoint");
+    }
+
     private static HarnessAgent CreateHarness(IChatClient client) => new(client, new HarnessAgentOptions
     {
         DisableTodoProvider = true,
