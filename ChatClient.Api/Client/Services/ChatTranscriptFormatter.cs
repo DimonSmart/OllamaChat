@@ -168,6 +168,13 @@ public static class ChatTranscriptFormatter
         if (message.Role == AppChatRole.Assistant)
             return message.AgentName ?? message.AgentId ?? "Assistant";
 
+        if (message.Steering is { } steering)
+        {
+            var status = steering.Status == SteeringDeliveryStatus.NotDelivered
+                ? "Not delivered" : steering.Status.ToString();
+            return $"User [Steering: {status}{(steering.Reason is null ? "" : $", {steering.Reason}")}]";
+        }
+
         return "User";
     }
 }
