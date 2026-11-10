@@ -14,16 +14,20 @@ public sealed class LlmCassetteTests
         using var files = new Fixture();
         var call = new FunctionCallContent("call-42", "read_file", new Dictionary<string, object?>
         {
-            ["path"] = "README.md", ["limit"] = 10, ["includeMetadata"] = true
+            ["path"] = "README.md",
+            ["limit"] = 10,
+            ["includeMetadata"] = true
         });
         var scripted = new ScriptedClient(
             new ChatResponse(new ChatMessage(ChatRole.Assistant, [call]))
             {
-                ResponseId = "response-one", FinishReason = ChatFinishReason.ToolCalls
+                ResponseId = "response-one",
+                FinishReason = ChatFinishReason.ToolCalls
             },
             new ChatResponse(new ChatMessage(ChatRole.Assistant, "Blue Parrot"))
             {
-                ResponseId = "response-two", FinishReason = ChatFinishReason.Stop
+                ResponseId = "response-two",
+                FinishReason = ChatFinishReason.Stop
             });
         var options = new ChatOptions { ModelId = "test-model", Temperature = 0.25f };
         var user = new ChatMessage(ChatRole.User, "Read README.md");
@@ -158,7 +162,9 @@ public sealed class LlmCassetteTests
             new AIFunctionFactoryOptions { Name = "read_file" });
         var recordOptions = new ChatOptions
         {
-            ModelId = "model", ToolMode = ChatToolMode.Auto, Tools = [firstTool],
+            ModelId = "model",
+            ToolMode = ChatToolMode.Auto,
+            Tools = [firstTool],
             AdditionalProperties = new AdditionalPropertiesDictionary { ["repeat_penalty"] = 1.2 }
         };
         var record = new LlmCassette(files.Path, record: true);
@@ -175,7 +181,9 @@ public sealed class LlmCassetteTests
             new AIFunctionFactoryOptions { Name = "read_file" });
         var changedOptions = new ChatOptions
         {
-            ModelId = "model", ToolMode = ChatToolMode.Auto, Tools = [secondTool],
+            ModelId = "model",
+            ToolMode = ChatToolMode.Auto,
+            Tools = [secondTool],
             AdditionalProperties = new AdditionalPropertiesDictionary { ["repeat_penalty"] = 1.2 }
         };
         var mismatch = await Assert.ThrowsAsync<InvalidOperationException>(
@@ -230,7 +238,8 @@ public sealed class LlmCassetteTests
     private static async Task<List<ChatResponseUpdate>> Collect(IAsyncEnumerable<ChatResponseUpdate> source)
     {
         var result = new List<ChatResponseUpdate>();
-        await foreach (var update in source) result.Add(update);
+        await foreach (var update in source)
+            result.Add(update);
         return result;
     }
 

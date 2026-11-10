@@ -128,24 +128,34 @@ public sealed class HeadlessSavedWorkspaceTests
             var model = new ServerModel(Guid.NewGuid(), "local");
             var template = new AgentTemplateDefinition
             {
-                Id = AgentId, AgentName = "Test", LlmId = model.ServerId,
-                ModelName = model.ModelName, FileAccessProviderProfileId = withFileAccess ? Profile.Id : null
+                Id = AgentId,
+                AgentName = "Test",
+                LlmId = model.ServerId,
+                ModelName = model.ModelName,
+                FileAccessProviderProfileId = withFileAccess ? Profile.Id : null
             };
             var descriptor = new AgentDefinitionDescriptor
             {
-                Reference = Reference, Name = "Test", RuntimeKind = AgentRuntimeKind.LlmAgent,
+                Reference = Reference,
+                Name = "Test",
+                RuntimeKind = AgentRuntimeKind.LlmAgent,
                 ModelRequirement = AgentModelRequirement.Required,
                 LaunchCapabilities = new AgentLaunchCapabilities
                 {
-                    SupportsWorkspace = withFileAccess, RequiresFunctionCalling = withFileAccess
+                    SupportsWorkspace = withFileAccess,
+                    RequiresFunctionCalling = withFileAccess
                 }
             };
             var resolved = new ResolvedAgentSessionDefinition
             {
-                Descriptor = descriptor, RuntimeReference = Reference, DefaultModel = model,
+                Descriptor = descriptor,
+                RuntimeReference = Reference,
+                DefaultModel = model,
                 PresentationParticipant = new ChatRuntimeParticipantDescriptor
                 {
-                    Id = AgentId.ToString("D"), Name = "Test", RuntimeKind = AgentRuntimeKind.LlmAgent
+                    Id = AgentId.ToString("D"),
+                    Name = "Test",
+                    RuntimeKind = AgentRuntimeKind.LlmAgent
                 },
                 Validation = new AgentDefinitionLaunchValidation { CanLaunch = true }
             };

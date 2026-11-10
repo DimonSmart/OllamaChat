@@ -78,7 +78,8 @@ public sealed class ScheduledTaskTimerEventPublisherTests
         public void Log<TState>(LogLevel level, EventId id, TState state, Exception? exception,
             Func<TState, Exception?, string> formatter)
         {
-            if (level == LogLevel.Error) Errors++;
+            if (level == LogLevel.Error)
+                Errors++;
         }
     }
 }

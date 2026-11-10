@@ -54,7 +54,7 @@ public sealed class AgentSkillsDiscoveryTests
 
             var result = await AgentSkillsDiscovery.DiscoverAsync(profile, workspace.FullName, NullLogger.Instance, TestContext.Current.CancellationToken);
             Assert.Equal("code-review", Assert.Single(result.Skills).Name);
-            result.Source.Dispose();
+            (result.Source ?? throw new InvalidOperationException("Skill discovery returned no source.")).Dispose();
         }
         finally { workspace.Delete(recursive: true); }
     }
@@ -72,7 +72,7 @@ public sealed class AgentSkillsDiscoveryTests
             await File.WriteAllTextAsync(Path.Combine(second.FullName, "SKILL.md"), "---\nname: second\ndescription: Second skill\n---\nUse this skill.", TestContext.Current.CancellationToken);
 
             Assert.Equal(["first"], (await result.Source!.GetSkillsAsync(null!, TestContext.Current.CancellationToken)).Select(x => x.Frontmatter.Name));
-            result.Source.Dispose();
+            (result.Source ?? throw new InvalidOperationException("Skill discovery returned no source.")).Dispose();
         }
         finally { workspace.Delete(recursive: true); }
     }

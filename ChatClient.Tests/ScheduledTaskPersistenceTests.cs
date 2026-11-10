@@ -90,7 +90,9 @@ public class ScheduledTaskPersistenceTests
             await service.InitializeAsync();
             var timer = await service.CreateAsync(new ScheduledTaskDefinition
             {
-                Id = Guid.NewGuid(), Name = "First", Enabled = true,
+                Id = Guid.NewGuid(),
+                Name = "First",
+                Enabled = true,
                 TimeZoneId = "Europe/Madrid",
                 Schedule = new ScheduleDefinition { Type = ScheduleType.Interval, IntervalValue = 60 }
             });
@@ -129,7 +131,9 @@ public class ScheduledTaskPersistenceTests
             var agentId = Guid.NewGuid();
             var timer = await service.CreateAsync(new ScheduledTaskDefinition
             {
-                Id = Guid.NewGuid(), Name = "Workspace task", Enabled = true,
+                Id = Guid.NewGuid(),
+                Name = "Workspace task",
+                Enabled = true,
                 TimeZoneId = "Europe/Madrid",
                 Schedule = new ScheduleDefinition { Type = ScheduleType.Interval, IntervalValue = 60 },
                 AgentExecution = new ScheduledAgentConfiguration { AgentId = agentId, Prompt = "Read README" }
@@ -171,7 +175,10 @@ public class ScheduledTaskPersistenceTests
             {
                 items.Add(new ScheduledTaskDefinition
                 {
-                    Id = id, Name = "Repairable", Enabled = false, Revision = 1,
+                    Id = id,
+                    Name = "Repairable",
+                    Enabled = false,
+                    Revision = 1,
                     TimeZoneId = "Europe/Madrid",
                     Schedule = new ScheduleDefinition { Type = ScheduleType.Interval, IntervalValue = 15 },
                     AgentExecution = new ScheduledAgentConfiguration { AgentId = Guid.Empty, Prompt = "" }
@@ -206,7 +213,9 @@ public class ScheduledTaskPersistenceTests
             await service.InitializeAsync();
             var saved = await service.CreateAsync(new ScheduledTaskDefinition
             {
-                Id = Guid.NewGuid(), Name = "Test", Enabled = false,
+                Id = Guid.NewGuid(),
+                Name = "Test",
+                Enabled = false,
                 Schedule = new ScheduleDefinition { Type = ScheduleType.Daily, Hour = 14 },
                 TimeZoneId = "Europe/Madrid"
             });

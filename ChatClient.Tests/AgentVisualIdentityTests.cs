@@ -26,7 +26,8 @@ public sealed class AgentVisualIdentityTests
         var map = new AgentVisualIdentityMap();
         AgentVisualIdentity? visual = null;
 
-        for (var index = 1; index <= agentNumber; index++) visual = map.GetOrAdd($"agent-{index}");
+        for (var index = 1; index <= agentNumber; index++)
+            visual = map.GetOrAdd($"agent-{index}");
 
         Assert.NotNull(visual);
         Assert.Equal(expectedIcon, visual.Icon);

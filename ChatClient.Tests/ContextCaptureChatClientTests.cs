@@ -234,7 +234,8 @@ public sealed class ContextCaptureChatClientTests
             NonStreamingCalls++;
             LastMessages = messages.ToArray();
             LastOptions = options;
-            if (Failure is not null) throw Failure;
+            if (Failure is not null)
+                throw Failure;
             return Task.FromResult(Response);
         }
 
@@ -246,7 +247,8 @@ public sealed class ContextCaptureChatClientTests
             foreach (var update in Updates)
             {
                 yield return update;
-                if (StreamFailure is not null) throw StreamFailure;
+                if (StreamFailure is not null)
+                    throw StreamFailure;
             }
         }
         public object? GetService(Type serviceType, object? serviceKey = null) => null;
