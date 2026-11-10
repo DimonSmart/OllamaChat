@@ -211,6 +211,7 @@
                             HasHarnessTrace="@(ChatService.ActiveSession?.RuntimeReference.Kind == AgentDefinitionKind.SavedAgent)"
                             SessionState="ChatViewModelService.SessionState"
                             PendingToolApproval="ChatService.PendingToolApproval"
+                            SteeringAvailability="ChatService.SteeringAvailability"
                             RequiresReset="ChatService.RequiresReset"
                             UserName="@userSettings.UserName"
                             OnAgentModeChanged="SetAgentModeAsync"
@@ -219,6 +220,7 @@
                             OnClearFileMemory="ClearFileMemoryAsync"
                             OnToolApprovalDecision="RespondToToolApprovalAsync"
                             OnSendMessage="SendChatMessageAsync"
+                            OnSteerMessage="SteerChatMessageAsync"
                             OnStop="Cancel"
                             OnCopyChat="CopyChatAsync" />
     }
