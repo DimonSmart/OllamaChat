@@ -149,6 +149,27 @@ public abstract class AgenticChatPageBase : ComponentBase, IAsyncDisposable
         await ScrollToBottomAsync();
     }
 
+    protected async Task<bool> SteerChatMessageAsync(string text, Guid runId)
+    {
+        try
+        {
+            var result = await ChatService.SubmitSteeringAsync(text, runId, Guid.NewGuid());
+            if (!result.Accepted)
+            {
+                Snackbar.Add(result.Error ?? "Steering was not accepted.", Severity.Warning);
+                return false;
+            }
+
+            await ScrollToBottomAsync();
+            return true;
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Could not send Steering: {ex.Message}", Severity.Error);
+            return false;
+        }
+    }
+
     protected Task ScrollToBottomAsync() =>
         chatSessionView?.ScrollToBottomAsync() ?? Task.CompletedTask;
 
