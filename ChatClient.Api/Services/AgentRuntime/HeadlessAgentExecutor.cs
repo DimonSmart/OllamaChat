@@ -258,6 +258,7 @@ public sealed class HeadlessAgentExecutor(
                     IsHeadlessExecution = true,
                     ExecutionPolicy = policy,
                     RootExecutionId = context.RunId,
+                    RootSavedAgentId = template?.Id,
                     WorkspacePath = workspace?.Path,
                     Sandbox = sandboxHandle?.Instance,
                     HeadlessFileAccessProfile = pinnedFileProfile,
