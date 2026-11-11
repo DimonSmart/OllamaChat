@@ -128,6 +128,41 @@ Open **http://127.0.0.1:5080** in your browser.
 
 The `backend` development launch profile binds to that loopback address, **does not automatically open a browser**, and keeps running independently of browser-tab connections. Check **http://127.0.0.1:5080/healthz** for a lightweight host-readiness response; it does not test model-server availability.
 
+### Command-line agent execution (MVP)
+
+`OllamaChat.Cli` runs an existing Saved Agent once, without starting the browser UI,
+ASP.NET server, Quartz scheduler or background indexer. Configure a Saved Agent
+and its model/provider in the GUI first. Both hosts read the same persisted agents.
+
+```bash
+dotnet build OllamaChat.Cli/OllamaChat.Cli.csproj
+dotnet run --project OllamaChat.Cli -- agents list
+dotnet run --project OllamaChat.Cli -- run --agent "Reviewer" --prompt "Review this code"
+dotnet run --project OllamaChat.Cli -- run --agent "Reader" --workspace . --prompt-file task.md --output report.md
+cat task.md | dotnet run --project OllamaChat.Cli -- run --agent "Reader" --timeout 30s
+```
+
+Published CLI binaries can be invoked as `ollamachat`. Select the agent by
+case-insensitive name or exact GUID. Duplicate names require a GUID. Provide
+exactly one task source: `--prompt`, `--prompt-file` or redirected stdin.
+Timeout defaults to 15 minutes (`30s`, `15m`, `1h` are supported).
+`--output` does not overwrite existing files without `--overwrite`.
+Successful stdout contains only the final answer; diagnostics go to stderr.
+
+Exit codes: 0 success, 1 internal error, 2 invalid arguments, 3 configuration or
+preflight, 4 runtime failure, 5 file I/O, 124 timeout, 130 Ctrl+C.
+
+`OLLAMACHAT_STORAGE_ROOT` or `Storage:RootPath` selects the shared storage.
+Appsettings are loaded from the CLI build/publish directory; relative workspace,
+input and output paths resolve against the caller's current directory.
+A workspace never grants an agent additional permissions.
+
+MVP restrictions: text agents, already-authorized read-only File Access and
+headless-compatible Skills. No workflows, shell, Docker sandbox, writes by the
+agent, interactive approvals, background agents or unsupported MCP/RAG/memory.
+Cancellation is cooperative; an external dependency that ignores cancellation
+may delay process shutdown.
+
 ### Your First Chat
 
 1. Start Ollama with a downloaded model, or prepare credentials for a supported cloud endpoint. For a local model, use `ollama pull MODEL_NAME` (substitute an available model name).

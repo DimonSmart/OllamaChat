@@ -93,6 +93,29 @@ public sealed class HeadlessSavedWorkspaceTests
     }
 
     [Fact]
+    public async Task DirectWorkspacePathIsPassedToExistingHeadlessRuntime()
+    {
+        var fixture = new Fixture();
+        AgentRuntimeCreationContext? creation = null;
+        fixture.Runner.Setup(r => r.RunAsync(fixture.Reference, It.IsAny<AgentRuntimeRunRequest>(),
+                It.IsAny<AgentRuntimeCreationContext>(), It.IsAny<AgentRunContext>(),
+                It.IsAny<CancellationToken>()))
+            .Returns((AgentDefinitionReference _, AgentRuntimeRunRequest _,
+                AgentRuntimeCreationContext c, AgentRunContext _, CancellationToken _) =>
+            {
+                creation = c;
+                return Finished();
+            });
+
+        var result = await fixture.Executor.ExecuteAsync(
+            new HeadlessAgentRunRequest(fixture.AgentId, "Read", DirectPath: fixture.WorkspacePath),
+            TestContext.Current.CancellationToken);
+        Assert.True(result.Succeeded);
+        Assert.Equal(fixture.WorkspacePath, creation!.RuntimeResources.WorkspacePath);
+        Assert.Equal(FileAccessMode.ReadOnly, creation.RuntimeResources.HeadlessFileAccessProfile!.AccessMode);
+    }
+
+    [Fact]
     public async Task UnknownSavedWorkspaceFailsWithoutLaunchingRuntime()
     {
         var fixture = new Fixture(missingWorkspace: true);
