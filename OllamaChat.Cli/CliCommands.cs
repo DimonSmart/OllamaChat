@@ -187,6 +187,14 @@ public static class CliCommands
             return CliExitCodes.Arguments;
         }
 
+        var agent = matching[0];
+        if (agent.LlmId is not Guid serverId || string.IsNullOrWhiteSpace(agent.ModelName) ||
+            await services.GetRequiredService<ILlmServerConfigService>().GetByIdAsync(serverId) is null)
+        {
+            await error.WriteLineAsync("Saved Agent model or LLM server is not configured.");
+            return CliExitCodes.Preflight;
+        }
+
         var executor = services.GetRequiredService<IHeadlessAgentExecutor>();
         var result = await executor.ExecuteAsync(
             new HeadlessAgentRunRequest(matching[0].Id, prompt, DirectPath: workspace), cancellationToken);

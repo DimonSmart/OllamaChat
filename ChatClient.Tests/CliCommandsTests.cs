@@ -188,11 +188,20 @@ public sealed class CliCommandsTests
     private static (ServiceProvider provider, Mock<IHeadlessAgentExecutor> executor) CreateServices(
         IReadOnlyCollection<AgentTemplateDefinition> agents)
     {
+        foreach (var agent in agents)
+        {
+            agent.LlmId ??= Guid.NewGuid();
+            agent.ModelName ??= "test";
+        }
+        var servers = new Mock<ILlmServerConfigService>();
+        servers.Setup(s => s.GetByIdAsync(It.IsAny<Guid>()))
+            .ReturnsAsync((Guid id) => new LlmServerConfig { Id = id });
         var templates = new Mock<IAgentTemplateService>();
         templates.Setup(s => s.GetAllAsync()).ReturnsAsync(agents);
         var executor = new Mock<IHeadlessAgentExecutor>();
         var services = new ServiceCollection();
         services.AddSingleton(templates.Object);
+        services.AddSingleton(servers.Object);
         services.AddSingleton(executor.Object);
         return (services.BuildServiceProvider(), executor);
     }

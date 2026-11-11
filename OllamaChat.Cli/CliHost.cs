@@ -1,4 +1,5 @@
 using ChatClient.Api;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
@@ -52,6 +53,10 @@ public static class CliHost
                 Args = [],
                 ContentRootPath = AppContext.BaseDirectory
             });
+            // The web host loads the Api project's user secrets; reuse the same
+            // identity so cloud providers work without duplicating credentials.
+            builder.Configuration.AddUserSecrets(typeof(ServiceCollectionExtensions).Assembly,
+                optional: true);
             builder.Logging.ClearProviders();
             builder.Logging.AddDebug();
             builder.Services.AddCliAgentServices();
