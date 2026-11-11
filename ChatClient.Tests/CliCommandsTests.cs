@@ -1,4 +1,5 @@
 using ChatClient.Api;
+using ChatClient.Api.Services;
 using ChatClient.Api.Services.AgentRuntime;
 using ChatClient.Application.Services;
 using ChatClient.Domain.Models;
