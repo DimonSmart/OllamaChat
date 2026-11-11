@@ -224,6 +224,12 @@ public sealed class CliProcessTests
         Assert.True(File.Exists(dll), "Build the CLI project before running the process test.");
         var root = Path.Combine(Path.GetTempPath(), "ollamachat-cli-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(root);
+        var userData = Path.Combine(root, "UserData");
+        Directory.CreateDirectory(userData);
+        var agent = new AgentTemplateDefinition { AgentName = "ExistingGuiAgent" };
+        var savedAgents = Path.Combine(userData, "agent_templates.json");
+        var originalJson = System.Text.Json.JsonSerializer.Serialize(new[] { agent });
+        await File.WriteAllTextAsync(savedAgents, originalJson);
         try
         {
             using var process = new Process();
@@ -243,8 +249,11 @@ public sealed class CliProcessTests
             await process.WaitForExitAsync(deadline.Token);
             Assert.Equal(0, process.ExitCode);
             Assert.StartsWith("ID", await stdout);
+            Assert.Contains(agent.Id.ToString("D"), await stdout);
+            Assert.Contains("ExistingGuiAgent", await stdout);
             Assert.Equal("", await stderr);
-            Assert.Empty(Directory.EnumerateFiles(root, "*", SearchOption.AllDirectories));
+            Assert.Equal(originalJson, await File.ReadAllTextAsync(savedAgents));
+            Assert.Single(Directory.EnumerateFiles(root, "*", SearchOption.AllDirectories));
         }
         finally { Directory.Delete(root, recursive: true); }
     }
