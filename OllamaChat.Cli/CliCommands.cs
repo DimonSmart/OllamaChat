@@ -116,7 +116,8 @@ public static class CliCommands
             return false;
 
         var secondsPerUnit = unit switch { 's' => 1L, 'm' => 60L, _ => 3600L };
-        if (quantity > TimeSpan.MaxValue.TotalSeconds / secondsPerUnit)
+        // CancelAfter uses a millisecond timer with a bounded supported range.
+        if (quantity > (uint.MaxValue - 1L) / 1000L / secondsPerUnit)
             return false;
         timeout = TimeSpan.FromSeconds(quantity * secondsPerUnit);
         return true;
