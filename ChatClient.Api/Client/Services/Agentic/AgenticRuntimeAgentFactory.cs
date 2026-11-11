@@ -116,7 +116,7 @@ public sealed class AgenticRuntimeAgentFactory(
             var executionPolicy = request.RuntimeResources.ExecutionPolicy;
             var isCliExecution = executionPolicy?.Mode == AgentExecutionMode.CliNonInteractive;
             var isPinnedRoot = request.RuntimeResources.IsHeadlessExecution &&
-                request.RuntimeResources.RootSavedAgentId == request.Agent.AgentId;
+                request.RuntimeResources.RootSavedAgentId == request.Agent.Id;
             var fileAccessProfile = isPinnedRoot
                 ? request.RuntimeResources.HeadlessFileAccessProfile
                 : await GetFileAccessProviderProfileAsync(request.Agent.FileAccessProviderProfileId);
@@ -352,7 +352,7 @@ public sealed class AgenticRuntimeAgentFactory(
                 ? Path.Combine(memoryRoot, "cli",
                     request.RuntimeResources.RootExecutionId ??
                         throw new InvalidOperationException("CLI File Memory requires a root execution id."),
-                    request.Agent.AgentId.ToString("N"))
+                    request.Agent.Id.ToString("N"))
                 : memoryRoot;
             var fileMemoryStore = memoryPath is null ? null : new FileSystemAgentFileStore(memoryPath);
             SessionSandboxShellExecutor? shellExecutor = null;
