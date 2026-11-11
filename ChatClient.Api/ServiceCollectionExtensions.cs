@@ -57,6 +57,9 @@ public static class ServiceCollectionExtensions
     public static IServiceCollection AddCliAgentServices(this IServiceCollection services)
     {
         services.AddSingleton(TimeProvider.System);
+        // Register the GUI's profile seeders as dependencies without invoking SeedAsync.
+        // CompactionProfileService needs CompactionProfileSeeder even for read-only runs.
+        services.AddSeeders();
         services.AddCoreServices();
         services.AddPersistenceServices();
         services.AddRagServices(startBackgroundIndexer: false);
