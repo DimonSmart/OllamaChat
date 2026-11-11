@@ -18,6 +18,8 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Infos", "Infos", "{02EA681E
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ChatClient.Infrastructure", "ChatClient.Infrastructure\ChatClient.Infrastructure.csproj", "{3F5880DC-A747-49D4-8F31-FB1E85FCA4E9}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "OllamaChat.Cli", "OllamaChat.Cli\OllamaChat.Cli.csproj", "{15F4C88D-4EA2-46E3-8D34-CB55D4142F4B}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -87,6 +89,18 @@ Global
 		{3F5880DC-A747-49D4-8F31-FB1E85FCA4E9}.Release|x64.Build.0 = Release|Any CPU
 		{3F5880DC-A747-49D4-8F31-FB1E85FCA4E9}.Release|x86.ActiveCfg = Release|Any CPU
 		{3F5880DC-A747-49D4-8F31-FB1E85FCA4E9}.Release|x86.Build.0 = Release|Any CPU
+		{15F4C88D-4EA2-46E3-8D34-CB55D4142F4B}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{15F4C88D-4EA2-46E3-8D34-CB55D4142F4B}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{15F4C88D-4EA2-46E3-8D34-CB55D4142F4B}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{15F4C88D-4EA2-46E3-8D34-CB55D4142F4B}.Debug|x64.Build.0 = Debug|Any CPU
+		{15F4C88D-4EA2-46E3-8D34-CB55D4142F4B}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{15F4C88D-4EA2-46E3-8D34-CB55D4142F4B}.Debug|x86.Build.0 = Debug|Any CPU
+		{15F4C88D-4EA2-46E3-8D34-CB55D4142F4B}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{15F4C88D-4EA2-46E3-8D34-CB55D4142F4B}.Release|Any CPU.Build.0 = Release|Any CPU
+		{15F4C88D-4EA2-46E3-8D34-CB55D4142F4B}.Release|x64.ActiveCfg = Release|Any CPU
+		{15F4C88D-4EA2-46E3-8D34-CB55D4142F4B}.Release|x64.Build.0 = Release|Any CPU
+		{15F4C88D-4EA2-46E3-8D34-CB55D4142F4B}.Release|x86.ActiveCfg = Release|Any CPU
+		{15F4C88D-4EA2-46E3-8D34-CB55D4142F4B}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
