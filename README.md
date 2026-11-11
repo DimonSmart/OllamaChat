@@ -128,40 +128,78 @@ Open **http://127.0.0.1:5080** in your browser.
 
 The `backend` development launch profile binds to that loopback address, **does not automatically open a browser**, and keeps running independently of browser-tab connections. Check **http://127.0.0.1:5080/healthz** for a lightweight host-readiness response; it does not test model-server availability.
 
-### Command-line agent execution (MVP)
+### Command-line agent execution
 
-`OllamaChat.Cli` runs an existing Saved Agent once, without starting the browser UI,
-ASP.NET server, Quartz scheduler or background indexer. Configure a Saved Agent
-and its model/provider in the GUI first. Both hosts read the same persisted agents.
+`OllamaChat.Cli` runs an existing Saved Agent or Saved Workflow as a one-shot
+process without launching the browser UI, web server, Quartz scheduler or
+knowledge indexer. It uses the same saved configurations and Microsoft Agent
+Framework runtime as the GUI. Configure agents, workflows and profiles in the
+GUI before using the CLI.
 
 ```bash
 dotnet build OllamaChat.Cli/OllamaChat.Cli.csproj
 dotnet run --project OllamaChat.Cli -- agents list
 dotnet run --project OllamaChat.Cli -- run --agent "Reviewer" --prompt "Review this code"
-dotnet run --project OllamaChat.Cli -- run --agent "Reader" --workspace . --prompt-file task.md --output report.md
-cat task.md | dotnet run --project OllamaChat.Cli -- run --agent "Reader" --timeout 30s
+dotnet run --project OllamaChat.Cli -- run --agent "Developer" --workspace ./Project \
+  --sandbox DevelopmentSandbox --allow-write --allow-shell \
+  --prompt "Fix the build and run tests" --timeout 30m --output result.md
+dotnet run --project OllamaChat.Cli -- run --workflow "ResearchWorkflow" \
+  --input topic=agents --prompt "Research this topic"
+dotnet run --project OllamaChat.Cli -- run --agent "Researcher" \
+  --allow-mcp WebSearch:search --prompt "Find relevant sources"
 ```
 
-Published CLI binaries can be invoked as `ollamachat`. Select the agent by
-case-insensitive name or exact GUID. Duplicate names require a GUID. Provide
-exactly one task source: `--prompt`, `--prompt-file` or redirected stdin.
-Timeout defaults to 15 minutes (`30s`, `15m`, `1h` are supported).
-`--output` does not overwrite existing files without `--overwrite`.
-Successful stdout contains only the final answer; diagnostics go to stderr.
+Published CLI binaries can be invoked as `ollamachat`. Select Saved Agents
+with `--agent NAME_OR_GUID` and Saved Workflows with `--workflow NAME_OR_GUID`.
+Names are case-insensitive; use the GUID if several definitions have the same
+name. The two selectors are mutually exclusive. A prompt can be supplied with
+`--prompt`, `--prompt-file`, or (for agents) redirected stdin. Explicit
+prompt options take precedence over redirected stdin. To read stdin for a
+workflow, pass `--stdin`; autonomous `RunOnStart` workflows can run without a
+prompt when all required `--input KEY=VALUE` options are supplied.
 
-Exit codes: 0 success, 1 internal error, 2 invalid arguments, 3 configuration or
-preflight, 4 runtime failure, 5 file I/O, 124 timeout, 130 Ctrl+C.
+**Explicit, execution-local permissions:**
 
-`OLLAMACHAT_STORAGE_ROOT` or `Storage:RootPath` selects the shared storage.
-Appsettings are loaded from the CLI build/publish directory; relative workspace,
-input and output paths resolve against the caller's current directory.
-A workspace never grants an agent additional permissions.
+- `--allow-read` enables configured File Access reads; `--allow-write`
+  enables configured writes and implies read. Both still require a matching
+  provider profile and a valid `--workspace DIR` or `--workspace-id GUID`.
+- `--allow-shell` and `--allow-write`, together with a valid `--sandbox
+  NAME_OR_GUID`, enable the existing Docker Sandbox for shell-enabled
+  agents. Host-shell fallback is forbidden. Docker must be available.
+- Repeat `--allow-mcp SERVER:TOOL` for individual MCP tools, or use
+  `binding:GUID:TOOL` where several bindings expose the same server/tool.
+  An MCP grant never creates a binding or enables unconfigured tools.
+- `--allow-file-memory` allows configured File Memory in a root-run-scoped
+  namespace; it does not grant access to unrelated root runs. Other
+  configured capabilities (Background Agents, RAG, compaction, Skills,
+  TODO and Agent Modes) retain their saved definitions and are constrained
+  by the root CLI execution policy.
+- `--server NAME_OR_GUID --model MODEL` overrides the default model
+  selection without updating Saved Agents. `--progress` emits minimal
+  lifecycle status to stderr.
 
-MVP restrictions: text agents, already-authorized read-only File Access and
-headless-compatible Skills. No workflows, shell, Docker sandbox, writes by the
-agent, interactive approvals, background agents or unsupported MCP/RAG/memory.
-Cancellation is cooperative; an external dependency that ignores cancellation
-may delay process shutdown.
+Interactive UI approvals cannot be used by CLI runs. Tool access is denied
+by default and grants do not persist between runs. Scheduled Tasks retain
+their original restricted policy and do not inherit CLI permissions.
+
+Timeout defaults to 15 minutes (e.g. `30s`, `15m`, `1h`). `--output`
+does not overwrite existing files without `--overwrite`. Successful stdout
+contains only the terminal answer, diagnostics go to stderr. Unexpected
+runtime exceptions are recorded in a local diagnostic log with a reference
+ID, omitting exception messages that could contain secrets.
+
+Exit codes: 0 success, 1 internal error, 2 invalid arguments, 3 configuration
+or preflight failure, 4 runtime failure, 5 file I/O failure, 124 timeout,
+130 Ctrl+C.
+
+`OLLAMACHAT_STORAGE_ROOT` or `Storage:RootPath` selects shared storage.
+Appsettings are loaded from the CLI build/publish directory; relative
+workspace, input and output paths resolve against the caller's current
+directory. A workspace alone never grants additional permissions.
+Cancellation is cooperative for managed code. Sandbox cleanup closes
+run-owned resources; external dependencies ignoring cancellation can delay
+process exit. Real-model smoke tests require local Ollama, appropriate
+Saved Agents, and Docker where applicable.
 
 ### Your First Chat
 

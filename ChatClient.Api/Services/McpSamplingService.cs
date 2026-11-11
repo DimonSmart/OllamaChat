@@ -32,6 +32,12 @@ public sealed class McpSamplingService(
         McpServerConfig? mcpServerConfig = null,
         Guid serverId = default)
     {
+        // The standalone CLI explicitly disables MCP Sampling; tool permission does
+        // not authorize hidden additional model calls initiated by an MCP server.
+        if (string.Equals(configuration["McpSampling:Disabled"], "true",
+                StringComparison.OrdinalIgnoreCase))
+            throw new InvalidOperationException("MCP Sampling is disabled for this execution.");
+
         ServerModel? selectedModel = null;
         try
         {

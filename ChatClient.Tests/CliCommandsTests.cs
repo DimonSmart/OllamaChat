@@ -8,6 +8,10 @@ using Microsoft.Extensions.Hosting;
 using Moq;
 using OllamaChat.Cli;
 using System.Diagnostics;
+using System.Net;
+using System.Net.Sockets;
+using System.Text;
+using System.Text.Json;
 
 namespace ChatClient.Tests;
 
@@ -38,8 +42,49 @@ public sealed class CliCommandsTests
         ];
         foreach (var args in invalid)
             Assert.Throws<CliUsageException>(() => CliCommands.Parse(args, false));
+        Assert.Equal("ok", CliCommands.Parse(["run", "--agent", "A", "--prompt", "ok"], true).Prompt);
+        Assert.False(CliCommands.Parse(["run", "--agent", "A", "--prompt", "ok"], true).FromStdin);
+        Assert.False(CliCommands.Parse(["run", "--agent", "A", "--prompt-file", "task.md"], true).FromStdin);
+    }
+
+    [Fact]
+    public void ParsesWorkflowOptionsAndDoesNotConsumeImplicitStdin()
+    {
+        var command = CliCommands.Parse([
+            "run", "--workflow", "Review", "--input", "reviewMode=standard",
+            "--allow-read", "--allow-write", "--allow-shell",
+            "--allow-mcp", "WebSearch:search", "--sandbox", "Dev",
+            "--workspace-id", Guid.NewGuid().ToString("D")
+        ], stdinRedirected: true);
+
+        Assert.Equal("Review", command.Workflow);
+        Assert.Null(command.Agent);
+        Assert.False(command.FromStdin);
+        Assert.Equal("standard", command.Inputs["reviewMode"]);
+        Assert.Equal(["WebSearch:search"], command.AllowedMcpTools);
+        Assert.True(command.AllowRead);
+        Assert.True(command.AllowWrite);
+        Assert.True(command.AllowShell);
+
         Assert.Throws<CliUsageException>(() =>
-            CliCommands.Parse(["run", "--agent", "A", "--prompt", "ok"], true));
+            CliCommands.Parse(["run", "--agent", "A", "--workflow", "B", "--prompt", "p"], false));
+        Assert.Throws<CliUsageException>(() =>
+            CliCommands.Parse(["run", "--workflow", "W", "--input", "a=1", "--input", "a=2"], false));
+        Assert.Throws<CliUsageException>(() =>
+            CliCommands.Parse(["run", "--agent", "A", "--prompt", "p", "--allow-shell"], false));
+        Assert.Throws<CliUsageException>(() =>
+            CliCommands.Parse(["run", "--workflow", "W", "--server", "server"], false));
+        Assert.Throws<CliUsageException>(() =>
+            CliCommands.Parse(["run", "--workflow", "W", "--stdin"], false));
+    }
+
+    [Fact]
+    public void WorkflowLookupRejectsAmbiguousNames()
+    {
+        var first = new SavedWorkflowDefinition { Id = Guid.NewGuid(), DisplayName = "Research" };
+        var second = new SavedWorkflowDefinition { Id = Guid.NewGuid(), DisplayName = "research" };
+        Assert.Equal(2, CliCommands.FindWorkflows([first, second], "RESEARCH").Count);
+        Assert.Single(CliCommands.FindWorkflows([first, second], first.Id.ToString("D")));
     }
 
     [Fact]
@@ -203,6 +248,10 @@ public sealed class CliCommandsTests
         var services = new ServiceCollection();
         services.AddSingleton(templates.Object);
         services.AddSingleton(servers.Object);
+        var workflows = new Mock<IWorkflowDefinitionService>();
+        workflows.Setup(w => w.GetAllAsync())
+            .ReturnsAsync(Array.Empty<SavedWorkflowDefinition>());
+        services.AddSingleton(workflows.Object);
         services.AddSingleton(executor.Object);
         return (services.BuildServiceProvider(), executor);
     }
@@ -210,6 +259,118 @@ public sealed class CliCommandsTests
 
 public sealed class CliProcessTests
 {
+    [Fact]
+    public async Task Run_StandaloneProcessUsesRealDIAndMockOpenAiServer()
+    {
+        var directory = new DirectoryInfo(AppContext.BaseDirectory);
+        while (directory is not null && !File.Exists(Path.Combine(directory.FullName, "OllamaChat.sln")))
+            directory = directory.Parent;
+        Assert.NotNull(directory);
+        var bin = Path.Combine(directory.FullName, "OllamaChat.Cli", "bin", "Release", "net10.0");
+        if (!File.Exists(Path.Combine(bin, "ollamachat.dll")))
+            bin = Path.Combine(directory.FullName, "OllamaChat.Cli", "bin", "Debug", "net10.0");
+        var dll = Path.Combine(bin, "ollamachat.dll");
+        Assert.True(File.Exists(dll), "Build the CLI project before running the process test.");
+
+        var root = Path.Combine(Path.GetTempPath(), "ollamachat-cli-process-" + Guid.NewGuid().ToString("N"));
+        var userData = Path.Combine(root, "UserData");
+        Directory.CreateDirectory(userData);
+        using var portReservation = new TcpListener(IPAddress.Loopback, 0);
+        portReservation.Start();
+        var port = ((IPEndPoint)portReservation.LocalEndpoint).Port;
+        portReservation.Stop();
+
+        using var listener = new HttpListener();
+        listener.Prefixes.Add($"http://127.0.0.1:{port}/");
+        listener.Start();
+        var serverTask = Task.Run(async () =>
+        {
+            var context = await listener.GetContextAsync();
+            Assert.Equal("/v1/chat/completions", context.Request.Url?.AbsolutePath);
+            Assert.Equal("POST", context.Request.HttpMethod);
+            context.Response.StatusCode = 200;
+            context.Response.ContentType = "text/event-stream";
+            const string response = """
+                data: {"id":"chatcmpl-test","object":"chat.completion.chunk","created":1730000000,"model":"fixture-model","choices":[{"index":0,"delta":{"role":"assistant","content":"Process fixture answer"},"finish_reason":null}]}
+
+                data: {"id":"chatcmpl-test","object":"chat.completion.chunk","created":1730000000,"model":"fixture-model","choices":[{"index":0,"delta":{},"finish_reason":"stop"}]}
+
+                data: [DONE]
+
+
+                """;
+            var bytes = Encoding.UTF8.GetBytes(response.Replace("\r\n", "\n"));
+            context.Response.ContentLength64 = bytes.Length;
+            await context.Response.OutputStream.WriteAsync(bytes);
+            context.Response.Close();
+        });
+        var serverId = Guid.NewGuid();
+        var savedAgent = new AgentTemplateDefinition
+        {
+            Id = Guid.NewGuid(),
+            AgentName = "ProcessFixture",
+            Content = "Return a short response.",
+            LlmId = serverId,
+            ModelName = "fixture-model"
+        };
+        var server = new LlmServerConfig
+        {
+            Id = serverId,
+            Name = "LocalFixture",
+            ServerType = ServerType.ChatGpt,
+            ApiKey = "test-key",
+            BaseUrl = $"http://127.0.0.1:{port}/v1"
+        };
+        await File.WriteAllTextAsync(
+            Path.Combine(userData, "agent_templates.json"), JsonSerializer.Serialize(new[] { savedAgent }));
+        await File.WriteAllTextAsync(
+            Path.Combine(userData, "llm_servers.json"), JsonSerializer.Serialize(new[] { server }));
+        try
+        {
+            using var process = new Process();
+            process.StartInfo = new ProcessStartInfo("dotnet")
+            {
+                ArgumentList = { dll, "run", "--agent", savedAgent.Id.ToString("D"), "--prompt", "ping" },
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                UseShellExecute = false
+            };
+            process.StartInfo.Environment["OLLAMACHAT_STORAGE_ROOT"] = root;
+            Assert.True(process.Start());
+            using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(60));
+            var stdoutTask = process.StandardOutput.ReadToEndAsync(deadline.Token);
+            var stderrTask = process.StandardError.ReadToEndAsync(deadline.Token);
+            await process.WaitForExitAsync(deadline.Token);
+            var stdout = await stdoutTask;
+            var stderr = await stderrTask;
+            var diagnosticsPath = Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                "OllamaChat", "logs", "cli-errors.log");
+            var diagnosticText = File.Exists(diagnosticsPath)
+                ? await File.ReadAllTextAsync(diagnosticsPath)
+                : "no diagnostic log";
+            var incidentOffset = diagnosticText.LastIndexOf(" incident=", StringComparison.Ordinal);
+            var diagnosticTail = incidentOffset >= 0
+                ? diagnosticText[(diagnosticText.LastIndexOf('\n', incidentOffset) + 1)..]
+                : diagnosticText;
+            diagnosticTail = diagnosticTail.Length > 2500
+                ? diagnosticTail[..500] + diagnosticTail[^2000..]
+                : diagnosticTail;
+            Assert.True(process.ExitCode == 0,
+                $"CLI exited with {process.ExitCode}. stderr: {stderr}. Diagnostics: {diagnosticTail}");
+            Assert.Equal("Process fixture answer", stdout);
+            Assert.Equal(string.Empty, stderr);
+            await serverTask.WaitAsync(TimeSpan.FromSeconds(10));
+            Assert.False(File.Exists(Path.Combine(userData, "saved_chats.json")));
+            Assert.False(File.Exists(Path.Combine(userData, "scheduled_tasks.json")));
+        }
+        finally
+        {
+            listener.Stop();
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
     [Fact]
     public async Task StandaloneProcessListsAgentsAndExitsWithoutModifyingStorage()
     {

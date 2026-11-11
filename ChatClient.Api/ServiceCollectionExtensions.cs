@@ -57,6 +57,9 @@ public static class ServiceCollectionExtensions
     public static IServiceCollection AddCliAgentServices(this IServiceCollection services)
     {
         services.AddSingleton(TimeProvider.System);
+        // Register the GUI's profile seeders as dependencies without invoking SeedAsync.
+        // CompactionProfileService needs CompactionProfileSeeder even for read-only runs.
+        services.AddSeeders();
         services.AddCoreServices();
         services.AddPersistenceServices();
         services.AddRagServices(startBackgroundIndexer: false);
@@ -229,7 +232,9 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IAgentRunNestingValidator>(sp => new AgentRunNestingValidator(
             sp.GetRequiredService<IOptions<AgentRuntimeOptions>>().Value));
         services.AddScoped<IAgentRunner, AgentRunner>();
-        services.AddScoped<IHeadlessAgentExecutor, HeadlessAgentExecutor>();
+        services.AddScoped<HeadlessAgentExecutor>();
+        services.AddScoped<IAgentExecutionService>(sp => sp.GetRequiredService<HeadlessAgentExecutor>());
+        services.AddScoped<IHeadlessAgentExecutor>(sp => sp.GetRequiredService<HeadlessAgentExecutor>());
         services.AddScoped<Func<IAgentRunner>>(sp =>
             () => sp.GetRequiredService<IAgentRunner>());
         services.AddScoped<IWorkflowParticipantInvoker, WorkflowParticipantInvoker>();

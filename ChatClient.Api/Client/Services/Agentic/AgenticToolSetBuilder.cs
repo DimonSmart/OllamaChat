@@ -37,7 +37,8 @@ internal static class AgenticToolSetBuilder
         IReadOnlyCollection<AppToolDescriptor> availableTools,
         AgenticToolInvocationPolicyOptions policy,
         IMcpUserInteractionService mcpUserInteractionService,
-        ILogger logger)
+        ILogger logger,
+        bool isHeadlessExecution = false)
     {
         List<AgenticToolSpec> specs = [];
 
@@ -82,7 +83,7 @@ internal static class AgenticToolSetBuilder
             var spec = specs[i];
             var registeredName = registeredNames[i];
             var description = BuildRegisteredDescription(spec, registeredName);
-            var tool = BuildTool(spec, registeredName, description, policy, mcpUserInteractionService, logger);
+            var tool = BuildTool(spec, registeredName, description, policy, mcpUserInteractionService, logger, isHeadlessExecution);
 
             tools.Add(tool);
             metadataByName[registeredName] = new AgenticRegisteredTool(
@@ -104,7 +105,8 @@ internal static class AgenticToolSetBuilder
         string description,
         AgenticToolInvocationPolicyOptions policy,
         IMcpUserInteractionService mcpUserInteractionService,
-        ILogger logger)
+        ILogger logger,
+        bool isHeadlessExecution)
     {
         var schema = NormalizeInputSchema(spec.InputSchema);
         var innerFunction = AIFunctionFactory.Create(
@@ -131,7 +133,8 @@ internal static class AgenticToolSetBuilder
             spec.MayRequireUserInput,
             policy,
             mcpUserInteractionService,
-            logger);
+            logger,
+            isHeadlessExecution);
     }
 
     private static Dictionary<string, object?> ToDictionary(AIFunctionArguments arguments)
@@ -308,6 +311,7 @@ internal sealed class PolicyAgenticFunction : DelegatingAIFunction
     private readonly AgenticToolInvocationPolicyOptions _policy;
     private readonly IMcpUserInteractionService _mcpUserInteractionService;
     private readonly ILogger _logger;
+    private readonly bool _isHeadlessExecution;
 
     private static readonly JsonSerializerOptions ToolResultJsonOptions = new(JsonSerializerDefaults.Web)
     {
@@ -322,8 +326,10 @@ internal sealed class PolicyAgenticFunction : DelegatingAIFunction
         bool mayRequireUserInput,
         AgenticToolInvocationPolicyOptions policy,
         IMcpUserInteractionService mcpUserInteractionService,
-        ILogger logger) : base(innerFunction)
+        ILogger logger,
+        bool isHeadlessExecution = false) : base(innerFunction)
     {
+        _isHeadlessExecution = isHeadlessExecution;
         _innerFunction = innerFunction;
         _serverName = serverName;
         _toolName = toolName;
@@ -353,7 +359,8 @@ internal sealed class PolicyAgenticFunction : DelegatingAIFunction
             using var linkedSource = CancellationTokenSource.CreateLinkedTokenSource(
                 cancellationToken,
                 timeoutSource.Token);
-            using var interactionScope = _mcpUserInteractionService.BeginInteractionScope(McpInteractionScope.Chat);
+            using var interactionScope = _mcpUserInteractionService.BeginInteractionScope(
+                _isHeadlessExecution ? McpInteractionScope.Headless : McpInteractionScope.Chat);
 
             var startedAt = Stopwatch.GetTimestamp();
             _logger.LogInformation(

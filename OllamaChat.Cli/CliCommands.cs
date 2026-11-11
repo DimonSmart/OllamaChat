@@ -1,6 +1,7 @@
 using ChatClient.Api.Services;
 using ChatClient.Api.Services.AgentRuntime;
 using ChatClient.Application.Services;
+using ChatClient.Application.Services.AgentRuntime;
 using ChatClient.Domain.Models;
 using Microsoft.Extensions.DependencyInjection;
 using System.Globalization;
@@ -31,24 +32,48 @@ public sealed record CliArguments(
     string? Workspace = null,
     string? Output = null,
     bool Overwrite = false,
-    TimeSpan Timeout = default);
+    TimeSpan Timeout = default)
+{
+    public string? Workflow { get; init; }
+    public string? WorkspaceId { get; init; }
+    public string? Sandbox { get; init; }
+    public string? Server { get; init; }
+    public string? Model { get; init; }
+    public bool AllowRead { get; init; }
+    public bool AllowWrite { get; init; }
+    public bool AllowShell { get; init; }
+    public bool AllowFileMemory { get; init; }
+    public bool Progress { get; init; }
+    public IReadOnlyList<string> AllowedMcpTools { get; init; } = [];
+    public IReadOnlyDictionary<string, string> Inputs { get; init; } =
+        new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+}
 
 public sealed class CliUsageException(string message) : Exception(message);
 
 public static class CliCommands
 {
     public const string HelpText = """
-        OllamaChat CLI — run an existing Saved Agent without starting the web UI.
+        OllamaChat CLI — run existing Saved Agents or Workflows without starting the web UI.
 
         Usage:
           ollamachat agents list
-          ollamachat run --agent NAME_OR_GUID (--prompt TEXT | --prompt-file FILE | < stdin)
-                          [--workspace DIRECTORY] [--output FILE] [--overwrite]
-                          [--timeout 30s|15m|1h]
+          ollamachat run (--agent NAME_OR_GUID | --workflow NAME_OR_GUID)
+                          [--prompt TEXT | --prompt-file FILE]
+                          [--workspace DIR | --workspace-id GUID]
+                          [--input KEY=VALUE]... [--stdin]
+                          [--allow-read] [--allow-write] [--allow-file-memory]
+                          [--sandbox NAME_OR_GUID --allow-shell]
+                          [--allow-mcp SERVER:TOOL | --allow-mcp binding:GUID:TOOL]...
+                          [--server NAME_OR_GUID --model MODEL]
+                          [--output FILE] [--overwrite] [--timeout 30s|15m|1h]
+                          [--progress]
           ollamachat --help
 
-        Defaults: 15m timeout. Exactly one task source is required.
-        Saved workflows, interactive approvals, shell and write access are not supported.
+        Agents require a prompt, a prompt-file or redirected stdin.
+        Autonomous workflows can run with named inputs and no prompt.
+        A workflow reads stdin only with --stdin; this prevents blocking in pipelines.
+        Permissions apply only to the current execution.
         """;
 
     public static CliArguments Parse(string[] args, bool stdinRedirected)
@@ -61,47 +86,104 @@ public static class CliCommands
             throw new CliUsageException("Expected 'run' or 'agents list'.");
 
         var options = new Dictionary<string, string>(StringComparer.Ordinal);
-        var overwrite = false;
+        var flags = new HashSet<string>(StringComparer.Ordinal);
+        var mcpTools = new List<string>();
+        var inputs = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         for (var index = 1; index < args.Length; index++)
         {
             var key = args[index];
-            if (key == "--overwrite")
+            if (key is "--overwrite" or "--allow-read" or "--allow-write" or
+                "--allow-shell" or "--allow-file-memory" or "--progress" or "--stdin")
             {
-                if (overwrite)
-                    throw new CliUsageException("Duplicate option: --overwrite.");
-                overwrite = true;
+                if (!flags.Add(key))
+                    throw new CliUsageException("Duplicate option: " + key);
                 continue;
             }
-            if (key is not ("--agent" or "--prompt" or "--prompt-file" or "--workspace" or "--output" or "--timeout"))
+            if (key is not ("--agent" or "--workflow" or "--prompt" or "--prompt-file" or
+                "--workspace" or "--workspace-id" or "--output" or "--timeout" or
+                "--sandbox" or "--server" or "--model" or "--allow-mcp" or "--input"))
                 throw new CliUsageException("Unknown option: " + key);
-            if (options.ContainsKey(key))
-                throw new CliUsageException("Duplicate option: " + key);
             if (++index >= args.Length || string.IsNullOrWhiteSpace(args[index]))
                 throw new CliUsageException("Missing value for " + key + ".");
-            options.Add(key, args[index]);
+            var value = args[index];
+            if (key == "--allow-mcp")
+            {
+                if (!value.Contains(':', StringComparison.Ordinal))
+                    throw new CliUsageException("--allow-mcp requires SERVER:TOOL or binding:GUID:TOOL.");
+                if (mcpTools.Contains(value, StringComparer.OrdinalIgnoreCase))
+                    throw new CliUsageException("Duplicate --allow-mcp tool.");
+                mcpTools.Add(value);
+            }
+            else if (key == "--input")
+            {
+                var separator = value.IndexOf('=');
+                if (separator <= 0)
+                    throw new CliUsageException("--input requires KEY=VALUE.");
+                if (!inputs.TryAdd(value[..separator], value[(separator + 1)..]))
+                    throw new CliUsageException("Duplicate workflow input: " + value[..separator]);
+            }
+            else if (!options.TryAdd(key, value))
+                throw new CliUsageException("Duplicate option: " + key);
         }
 
         options.TryGetValue("--agent", out var agent);
-        if (string.IsNullOrWhiteSpace(agent))
-            throw new CliUsageException("--agent is required.");
+        options.TryGetValue("--workflow", out var workflow);
+        if (string.IsNullOrWhiteSpace(agent) == string.IsNullOrWhiteSpace(workflow))
+            throw new CliUsageException("Specify exactly one of --agent and --workflow.");
         options.TryGetValue("--prompt", out var prompt);
         options.TryGetValue("--prompt-file", out var promptFile);
-        if ((prompt is not null ? 1 : 0) + (promptFile is not null ? 1 : 0) + (stdinRedirected ? 1 : 0) != 1)
-            throw new CliUsageException("Specify exactly one of --prompt, --prompt-file or redirected stdin.");
+        if (prompt is not null && promptFile is not null)
+            throw new CliUsageException("Specify either --prompt or --prompt-file, not both.");
+        if (flags.Contains("--stdin") && (prompt is not null || promptFile is not null))
+            throw new CliUsageException("--stdin cannot be combined with an explicit prompt source.");
+        if (flags.Contains("--stdin") && !stdinRedirected)
+            throw new CliUsageException("--stdin requires redirected stdin.");
+        if (agent is not null && prompt is null && promptFile is null && !stdinRedirected)
+            throw new CliUsageException("An agent requires --prompt, --prompt-file or redirected stdin.");
         if (prompt is not null && string.IsNullOrWhiteSpace(prompt))
             throw new CliUsageException("Prompt must not be empty.");
+        if (agent is not null && inputs.Count != 0)
+            throw new CliUsageException("--input is supported only with --workflow.");
 
         var timeout = TimeSpan.FromMinutes(15);
         if (options.TryGetValue("--timeout", out var duration) && !TryParseTimeout(duration, out timeout))
             throw new CliUsageException("Invalid --timeout. Use a positive duration such as 30s, 15m or 1h.");
 
         options.TryGetValue("--workspace", out var workspace);
+        options.TryGetValue("--workspace-id", out var workspaceId);
+        if (workspace is not null && workspaceId is not null)
+            throw new CliUsageException("--workspace and --workspace-id cannot be combined.");
+        if (workspaceId is not null && (!Guid.TryParse(workspaceId, out var id) || id == Guid.Empty))
+            throw new CliUsageException("--workspace-id must be a nonempty GUID.");
+
+        options.TryGetValue("--server", out var server);
+        options.TryGetValue("--model", out var model);
+        if ((server is null) != (model is null))
+            throw new CliUsageException("--server and --model must be provided together.");
+
         options.TryGetValue("--output", out var output);
-        if (overwrite && output is null)
+        if (flags.Contains("--overwrite") && output is null)
             throw new CliUsageException("--overwrite requires --output.");
+        if (flags.Contains("--allow-shell") && !flags.Contains("--allow-write"))
+            throw new CliUsageException("--allow-shell also requires --allow-write (shell can modify its mounted workspace).");
 
         return new CliArguments(CliCommandKind.Run, agent, prompt, promptFile,
-            stdinRedirected, workspace, output, overwrite, timeout);
+            flags.Contains("--stdin") || (agent is not null && prompt is null && promptFile is null && stdinRedirected),
+            workspace, output, flags.Contains("--overwrite"), timeout)
+        {
+            Workflow = workflow,
+            WorkspaceId = workspaceId,
+            Sandbox = options.GetValueOrDefault("--sandbox"),
+            Server = server,
+            Model = model,
+            AllowRead = flags.Contains("--allow-read"),
+            AllowWrite = flags.Contains("--allow-write"),
+            AllowShell = flags.Contains("--allow-shell"),
+            AllowFileMemory = flags.Contains("--allow-file-memory"),
+            AllowedMcpTools = mcpTools,
+            Inputs = inputs,
+            Progress = flags.Contains("--progress")
+        };
     }
 
     public static bool TryParseTimeout(string? value, out TimeSpan timeout)
@@ -142,16 +224,32 @@ public static class CliCommands
         if (options.Kind != CliCommandKind.Run)
             return CliExitCodes.Success;
 
-        var matching = FindAgents(agents, options.Agent!);
-        if (matching.Count == 0)
+        Guid agentId = Guid.Empty;
+        Guid? workflowId = null;
+        AgentTemplateDefinition? selectedAgent = null;
+        if (options.Workflow is not null)
         {
-            await error.WriteLineAsync("Saved Agent not found: " + options.Agent);
-            return CliExitCodes.Preflight;
+            var workflows = await services.GetRequiredService<IWorkflowDefinitionService>().GetAllAsync();
+            var matching = FindWorkflows(workflows, options.Workflow);
+            if (matching.Count != 1)
+            {
+                await error.WriteLineAsync(matching.Count == 0 ? "Saved Workflow not found." :
+                    "Ambiguous Saved Workflow name. Use its GUID.");
+                return CliExitCodes.Preflight;
+            }
+            workflowId = matching[0].Id;
         }
-        if (matching.Count > 1)
+        else
         {
-            await error.WriteLineAsync("Ambiguous Saved Agent name. Use its GUID (see 'agents list').");
-            return CliExitCodes.Preflight;
+            var matching = FindAgents(agents, options.Agent!);
+            if (matching.Count != 1)
+            {
+                await error.WriteLineAsync(matching.Count == 0 ? "Saved Agent not found: " + options.Agent :
+                    "Ambiguous Saved Agent name. Use its GUID (see 'agents list').");
+                return CliExitCodes.Preflight;
+            }
+            selectedAgent = matching[0];
+            agentId = selectedAgent.Id;
         }
 
         string? workspace = null;
@@ -165,6 +263,10 @@ public static class CliCommands
             }
         }
 
+        Guid? savedWorkspaceId = null;
+        if (options.WorkspaceId is not null)
+            savedWorkspaceId = Guid.Parse(options.WorkspaceId);
+
         if (options.Output is not null && !CanWriteOutput(options.Output, options.Overwrite))
         {
             await error.WriteLineAsync("Output target is unavailable, or already exists (use --overwrite).");
@@ -174,32 +276,72 @@ public static class CliCommands
         string prompt;
         try
         {
-            prompt = options.Prompt ?? (options.PromptFile is not null
-                ? await File.ReadAllTextAsync(options.PromptFile, cancellationToken)
-                : await input.ReadToEndAsync(cancellationToken));
+            prompt = options.Prompt ??
+                (options.PromptFile is not null
+                    ? await File.ReadAllTextAsync(options.PromptFile, cancellationToken)
+                    : options.FromStdin ? await input.ReadToEndAsync(cancellationToken) : string.Empty);
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException or NotSupportedException)
         {
             await error.WriteLineAsync("Cannot read the task input.");
             return CliExitCodes.FileError;
         }
-        if (string.IsNullOrWhiteSpace(prompt))
+        if (options.Workflow is null && string.IsNullOrWhiteSpace(prompt))
         {
             await error.WriteLineAsync("Task input is empty.");
             return CliExitCodes.Arguments;
         }
 
-        var selectedAgent = matching[0];
-        if (selectedAgent.LlmId is not Guid serverId || string.IsNullOrWhiteSpace(selectedAgent.ModelName) ||
-            await services.GetRequiredService<ILlmServerConfigService>().GetByIdAsync(serverId) is null)
+        if (selectedAgent is not null && (selectedAgent.LlmId is not Guid serverId ||
+            string.IsNullOrWhiteSpace(selectedAgent.ModelName) ||
+            await services.GetRequiredService<ILlmServerConfigService>().GetByIdAsync(serverId) is null) &&
+            options.Server is null)
         {
             await error.WriteLineAsync("Saved Agent model or LLM server is not configured.");
             return CliExitCodes.Preflight;
         }
 
-        var executor = services.GetRequiredService<IHeadlessAgentExecutor>();
+        ServerModelSelection? modelOverride = null;
+        if (options.Server is not null)
+        {
+            var servers = await services.GetRequiredService<ILlmServerConfigService>().GetAllAsync();
+            var matches = servers.Where(server =>
+                (Guid.TryParse(options.Server, out var candidateId) && server.Id == candidateId) ||
+                string.Equals(server.Name, options.Server, StringComparison.OrdinalIgnoreCase)).ToList();
+            if (matches.Count != 1 || matches[0].Id is not Guid selectedServerId)
+            {
+                await error.WriteLineAsync("LLM server is missing or ambiguous. Use its GUID.");
+                return CliExitCodes.Preflight;
+            }
+            modelOverride = new ServerModelSelection(selectedServerId, options.Model);
+        }
+
+        Guid? sandboxId = null;
+        if (options.Sandbox is not null)
+        {
+            var profiles = await services.GetRequiredService<ISandboxProfileService>().GetAllAsync();
+            var matches = profiles.Where(profile =>
+                (Guid.TryParse(options.Sandbox, out var id) && profile.Id == id) ||
+                string.Equals(profile.Name, options.Sandbox, StringComparison.OrdinalIgnoreCase)).ToList();
+            if (matches.Count != 1)
+            {
+                await error.WriteLineAsync("Sandbox Profile is missing or ambiguous. Use its GUID.");
+                return CliExitCodes.Preflight;
+            }
+            sandboxId = matches[0].Id;
+        }
+
+        var policy = AgentExecutionPolicy.Cli(
+            options.AllowRead, options.AllowWrite, options.AllowShell, options.AllowFileMemory,
+            options.AllowedMcpTools);
+        if (options.Progress)
+            await error.WriteLineAsync("Starting headless execution...");
+
+        var executor = services.GetService<IAgentExecutionService>() ??
+            services.GetRequiredService<IHeadlessAgentExecutor>();
         var result = await executor.ExecuteAsync(
-            new HeadlessAgentRunRequest(matching[0].Id, prompt, DirectPath: workspace), cancellationToken);
+            new HeadlessAgentRunRequest(agentId, prompt, savedWorkspaceId, workspace,
+                workflowId, policy, sandboxId, options.Inputs, modelOverride), cancellationToken);
         cancellationToken.ThrowIfCancellationRequested();
 
         if (!result.Succeeded)
@@ -209,6 +351,8 @@ public static class CliCommands
                                        " failed (" + SafeCode(result.ErrorCode) + ").");
             return code;
         }
+        if (options.Progress)
+            await error.WriteLineAsync("Execution completed.");
 
         if (options.Output is null)
         {
@@ -229,6 +373,15 @@ public static class CliCommands
         }
     }
 
+    public static IReadOnlyList<SavedWorkflowDefinition> FindWorkflows(
+        IEnumerable<SavedWorkflowDefinition> workflows, string identifier)
+    {
+        if (Guid.TryParse(identifier, out var id))
+            return workflows.Where(workflow => workflow.Id == id).ToArray();
+        return workflows.Where(workflow => string.Equals(workflow.DisplayName, identifier,
+            StringComparison.OrdinalIgnoreCase)).ToArray();
+    }
+
     public static IReadOnlyList<AgentTemplateDefinition> FindAgents(
         IEnumerable<AgentTemplateDefinition> agents, string identifier)
     {
@@ -240,7 +393,9 @@ public static class CliCommands
 
     private static bool IsPreflightError(string? code) =>
         code is "agent_not_found" or "agent_preflight_failed" or "headless_capability_unsupported"
-            or "interactive_approval_required" ||
+            or "interactive_approval_required" or "agent_preflight_failed" or "sandbox_unavailable"
+            or "policy_read_denied" or "policy_write_denied" or "policy_shell_denied"
+            or "policy_memory_denied" or "invalid_input" ||
         (code?.StartsWith("workspace_", StringComparison.Ordinal) ?? false);
 
     private static string SafeCode(string? code)

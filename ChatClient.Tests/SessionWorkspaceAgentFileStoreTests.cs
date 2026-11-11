@@ -5,6 +5,40 @@ namespace ChatClient.Tests;
 public sealed class SessionWorkspaceAgentFileStoreTests
 {
     [Fact]
+    public async Task CliStoreRejectsTraversalAbsolutePathsAndSymlinks()
+    {
+        var root = Path.Combine(Path.GetTempPath(), $"cli-file-boundary-{Guid.NewGuid():N}");
+        var workspace = Path.Combine(root, "workspace");
+        var outside = Path.Combine(root, "outside");
+        Directory.CreateDirectory(workspace);
+        Directory.CreateDirectory(outside);
+        try
+        {
+            var store = new SessionWorkspaceAgentFileStore(workspace, strictWorkspaceBoundary: true);
+            await store.WriteAsync("valid.txt", "ok", TestContext.Current.CancellationToken);
+            Assert.Equal("ok", await store.ReadAsync("valid.txt", TestContext.Current.CancellationToken));
+            await Assert.ThrowsAsync<UnauthorizedAccessException>(() =>
+                store.WriteAsync("../outside/escape.txt", "bad", TestContext.Current.CancellationToken));
+            await Assert.ThrowsAsync<UnauthorizedAccessException>(() =>
+                store.WriteAsync(Path.Combine(outside, "escape.txt"), "bad", TestContext.Current.CancellationToken));
+            Assert.Throws<InvalidOperationException>(() => store.SetWorkspace(outside));
+            var link = Path.Combine(workspace, "linked");
+            try
+            {
+                Directory.CreateSymbolicLink(link, outside);
+                await Assert.ThrowsAsync<UnauthorizedAccessException>(() =>
+                    store.WriteAsync("linked/escape.txt", "bad", TestContext.Current.CancellationToken));
+            }
+            catch (Exception ex) when (ex is UnauthorizedAccessException or PlatformNotSupportedException)
+            {
+                // Some Windows test runners do not allow creating symbolic links.
+            }
+            Assert.False(File.Exists(Path.Combine(outside, "escape.txt")));
+        }
+        finally { Directory.Delete(root, recursive: true); }
+    }
+
+    [Fact]
     public async Task SwitchingWorkspace_UsesNextRootWithoutChangingExistingOperationRoot()
     {
         var root = Path.Combine(Path.GetTempPath(), $"ollama-chat-file-access-{Guid.NewGuid():N}");
