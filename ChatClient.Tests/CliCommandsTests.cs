@@ -44,6 +44,46 @@ public sealed class CliCommandsTests
     }
 
     [Fact]
+    public void ParsesWorkflowOptionsAndDoesNotConsumeImplicitStdin()
+    {
+        var command = CliCommands.Parse([
+            "run", "--workflow", "Review", "--input", "reviewMode=standard",
+            "--allow-read", "--allow-write", "--allow-shell",
+            "--allow-mcp", "WebSearch:search", "--sandbox", "Dev",
+            "--workspace-id", Guid.NewGuid().ToString("D")
+        ], stdinRedirected: true);
+
+        Assert.Equal("Review", command.Workflow);
+        Assert.Null(command.Agent);
+        Assert.False(command.FromStdin);
+        Assert.Equal("standard", command.Inputs["reviewMode"]);
+        Assert.Equal(["WebSearch:search"], command.AllowedMcpTools);
+        Assert.True(command.AllowRead);
+        Assert.True(command.AllowWrite);
+        Assert.True(command.AllowShell);
+
+        Assert.Throws<CliUsageException>(() =>
+            CliCommands.Parse(["run", "--agent", "A", "--workflow", "B", "--prompt", "p"], false));
+        Assert.Throws<CliUsageException>(() =>
+            CliCommands.Parse(["run", "--workflow", "W", "--input", "a=1", "--input", "a=2"], false));
+        Assert.Throws<CliUsageException>(() =>
+            CliCommands.Parse(["run", "--agent", "A", "--prompt", "p", "--allow-shell"], false));
+        Assert.Throws<CliUsageException>(() =>
+            CliCommands.Parse(["run", "--workflow", "W", "--server", "server"], false));
+        Assert.Throws<CliUsageException>(() =>
+            CliCommands.Parse(["run", "--workflow", "W", "--stdin"], false));
+    }
+
+    [Fact]
+    public void WorkflowLookupRejectsAmbiguousNames()
+    {
+        var first = new SavedWorkflowDefinition { DisplayName = "Research" };
+        var second = new SavedWorkflowDefinition { DisplayName = "research" };
+        Assert.Equal(2, CliCommands.FindWorkflows([first, second], "RESEARCH").Count);
+        Assert.Single(CliCommands.FindWorkflows([first, second], first.Id.ToString("D")));
+    }
+
+    [Fact]
     public void LookupIsCaseInsensitiveButGuidIsExact()
     {
         var a = new AgentTemplateDefinition { AgentName = "Reviewer" };
@@ -204,6 +244,10 @@ public sealed class CliCommandsTests
         var services = new ServiceCollection();
         services.AddSingleton(templates.Object);
         services.AddSingleton(servers.Object);
+        var workflows = new Mock<IWorkflowDefinitionService>();
+        workflows.Setup(w => w.GetAllAsync())
+            .ReturnsAsync(Array.Empty<SavedWorkflowDefinition>());
+        services.AddSingleton(workflows.Object);
         services.AddSingleton(executor.Object);
         return (services.BuildServiceProvider(), executor);
     }

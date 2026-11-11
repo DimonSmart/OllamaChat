@@ -306,7 +306,7 @@ public static class CliCommands
         {
             var servers = await services.GetRequiredService<ILlmServerConfigService>().GetAllAsync();
             var matches = servers.Where(server =>
-                (Guid.TryParse(options.Server, out var serverId) && server.Id == serverId) ||
+                (Guid.TryParse(options.Server, out var candidateId) && server.Id == candidateId) ||
                 string.Equals(server.Name, options.Server, StringComparison.OrdinalIgnoreCase)).ToList();
             if (matches.Count != 1 || matches[0].Id is not Guid selectedServerId)
             {

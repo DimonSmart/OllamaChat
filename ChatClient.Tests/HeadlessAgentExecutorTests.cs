@@ -83,6 +83,75 @@ public sealed class HeadlessAgentExecutorTests
     }
 
     [Fact]
+    public async Task AutonomousWorkflowRunsWithoutPromptAndPassesNamedInputs()
+    {
+        var workflowId = Guid.NewGuid();
+        var reference = new AgentDefinitionReference(AgentDefinitionKind.SavedWorkflow, workflowId.ToString("D"));
+        var descriptor = new AgentDefinitionDescriptor
+        {
+            Reference = reference,
+            Name = "Research",
+            RuntimeKind = AgentRuntimeKind.WorkflowAgent,
+            ModelRequirement = AgentModelRequirement.None,
+            LaunchBehavior = AgentLaunchBehavior.RunOnStart,
+            Inputs =
+            [
+                new AgentInputDefinition
+                {
+                    Key = "mode",
+                    DisplayName = "Mode",
+                    Kind = AgentInputDefinitionKind.Text,
+                    IsRequired = true,
+                    DefaultValue = "standard"
+                }
+            ]
+        };
+        var catalog = new Mock<IAgentDefinitionCatalog>();
+        catalog.Setup(c => c.FindAsync(reference, It.IsAny<CancellationToken>())).ReturnsAsync(descriptor);
+        var resolver = new Mock<IAgentSessionDefinitionResolver>();
+        resolver.Setup(r => r.ResolveAsync(reference, It.IsAny<AgentSessionDefinitionRequest>(),
+            It.IsAny<CancellationToken>()))
+            .ReturnsAsync((AgentDefinitionReference _, AgentSessionDefinitionRequest request, CancellationToken _) =>
+                new ResolvedAgentSessionDefinition
+                {
+                    Descriptor = descriptor,
+                    RuntimeReference = reference,
+                    PresentationParticipant = new ChatRuntimeParticipantDescriptor
+                    {
+                        Id = workflowId.ToString("D"),
+                        Name = "Research",
+                        RuntimeKind = AgentRuntimeKind.WorkflowAgent
+                    },
+                    Validation = new AgentDefinitionLaunchValidation { CanLaunch = true },
+                    Inputs = request.Inputs
+                });
+        AgentRuntimeRunRequest? seen = null;
+        var runner = new Mock<IAgentRunner>();
+        runner.Setup(r => r.RunAsync(reference, It.IsAny<AgentRuntimeRunRequest>(),
+                It.IsAny<AgentRuntimeCreationContext>(), It.IsAny<AgentRunContext>(),
+                It.IsAny<CancellationToken>()))
+            .Returns((AgentDefinitionReference _, AgentRuntimeRunRequest request,
+                AgentRuntimeCreationContext _, AgentRunContext _, CancellationToken _) =>
+            {
+                seen = request;
+                return Stream();
+            });
+        var service = new HeadlessAgentExecutor(new Mock<IAgentTemplateService>().Object,
+            catalog.Object, resolver.Object, new AgentRunContextFactory(), runner.Object);
+        var policy = AgentExecutionPolicy.Cli(false, false, false, false, []);
+        var result = await service.ExecuteAsync(
+            new HeadlessAgentRunRequest(Guid.Empty, string.Empty,
+                WorkflowId: workflowId, ExecutionPolicy: policy),
+            TestContext.Current.CancellationToken);
+
+        Assert.True(result.Succeeded);
+        Assert.NotNull(seen);
+        Assert.Equal(AgentRuntimeInvocationKind.RunOnStart, seen.InvocationKind);
+        Assert.Empty(seen.Messages);
+        Assert.Equal("standard", seen.Inputs["mode"]);
+    }
+
+    [Fact]
     public void ProfilesAndMcpBindings_RequireExplicitPreflightRejection()
     {
         var descriptor = new AgentDefinitionDescriptor
