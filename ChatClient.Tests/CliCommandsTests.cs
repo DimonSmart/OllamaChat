@@ -349,7 +349,13 @@ public sealed class CliProcessTests
             var diagnosticText = File.Exists(diagnosticsPath)
                 ? await File.ReadAllTextAsync(diagnosticsPath)
                 : "no diagnostic log";
-            var diagnosticTail = diagnosticText[^Math.Min(2500, diagnosticText.Length)..];
+            var incidentOffset = diagnosticText.LastIndexOf(" incident=", StringComparison.Ordinal);
+            var diagnosticTail = incidentOffset >= 0
+                ? diagnosticText[diagnosticText.LastIndexOf('\n', incidentOffset) + 1..]
+                : diagnosticText;
+            diagnosticTail = diagnosticTail.Length > 2500
+                ? diagnosticTail[..500] + diagnosticTail[^2000..]
+                : diagnosticTail;
             Assert.True(process.ExitCode == 0,
                 $"CLI exited with {process.ExitCode}. stderr: {stderr}. Diagnostics: {diagnosticTail}");
             Assert.Equal("Process fixture answer", stdout);

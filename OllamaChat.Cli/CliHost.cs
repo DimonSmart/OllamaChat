@@ -108,8 +108,17 @@ public static class CliHost
             Directory.CreateDirectory(directory);
             var path = Path.Combine(directory, "cli-errors.log");
             // Exception messages and Data are deliberately excluded: they may contain credentials.
+            var message = error.Message;
+            // These specific DI messages contain service type names, not invocation data.
+            // All other provider exception messages remain excluded from diagnostics.
+            var safeDiMessage = error is InvalidOperationException &&
+                (message.StartsWith("Unable to resolve service for type '", StringComparison.Ordinal) ||
+                 message.StartsWith("A circular dependency was detected for the service of type ", StringComparison.Ordinal) ||
+                 message.StartsWith("No service for type ", StringComparison.Ordinal))
+                ? message
+                : string.Empty;
             var details = $"{DateTimeOffset.UtcNow:O} incident={incident} type={error.GetType().FullName}{Environment.NewLine}" +
-                          $"{error.StackTrace}{Environment.NewLine}";
+                          $"{safeDiMessage}{Environment.NewLine}{error.StackTrace}{Environment.NewLine}";
             await File.AppendAllTextAsync(path, details);
             return path;
         }
