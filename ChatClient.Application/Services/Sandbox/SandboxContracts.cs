@@ -146,6 +146,7 @@ public sealed record AgentSessionRuntimeResources
     // Null preserves the existing interactive runtime contract.
     public AgentExecutionPolicy? ExecutionPolicy { get; init; }
     public string? RootExecutionId { get; init; }
+    public Guid? RootSavedAgentId { get; init; }
 
     // Cloned per-run preflight snapshots; never resolve mutable provider profiles twice.
     public FileAccessProviderProfile? HeadlessFileAccessProfile { get; init; }

@@ -112,19 +112,47 @@ public sealed class AgenticRuntimeAgentFactory(
 
             var todoProfile = await GetTodoProviderProfileAsync(request.Agent.TodoProviderProfileId);
             var agentModeProfile = await GetAgentModeProviderProfileAsync(request.Agent.AgentModeProviderProfileId);
-            var fileAccessProfile = request.RuntimeResources.IsHeadlessExecution
+            var executionPolicy = request.RuntimeResources.ExecutionPolicy;
+            var isCliExecution = executionPolicy?.Mode == AgentExecutionMode.CliNonInteractive;
+            var isPinnedRoot = request.RuntimeResources.IsHeadlessExecution &&
+                request.RuntimeResources.RootSavedAgentId == request.Agent.AgentId;
+            var fileAccessProfile = isPinnedRoot
                 ? request.RuntimeResources.HeadlessFileAccessProfile
                 : await GetFileAccessProviderProfileAsync(request.Agent.FileAccessProviderProfileId);
-            var skillsProfile = request.RuntimeResources.IsHeadlessExecution
+            var skillsProfile = isPinnedRoot
                 ? request.RuntimeResources.HeadlessSkillsProfile
                 : await GetAgentSkillsProfileAsync(request.Agent.SkillsProviderProfileId);
             if (request.RuntimeResources.IsHeadlessExecution)
             {
                 if (request.Agent.FileAccessProviderProfileId != fileAccessProfile?.Id ||
                     request.Agent.SkillsProviderProfileId != skillsProfile?.Id ||
-                    (fileAccessProfile is not null && (fileAccessProfile.AccessMode != FileAccessMode.ReadOnly ||
-                        fileAccessProfile.RequireReadApproval)))
+                    (!isCliExecution && fileAccessProfile is not null &&
+                        (fileAccessProfile.AccessMode != FileAccessMode.ReadOnly ||
+                         fileAccessProfile.RequireReadApproval)))
                     throw new InvalidOperationException("Headless provider permissions do not match the approved run snapshot.");
+            }
+            if (isCliExecution)
+            {
+                if (fileAccessProfile is not null)
+                {
+                    if (!executionPolicy!.AllowRead ||
+                        (fileAccessProfile.AccessMode != FileAccessMode.ReadOnly && !executionPolicy.AllowWrite))
+                        throw new InvalidOperationException("CLI File Access is not authorized by the root execution policy.");
+                    // In headless mode the explicit CLI flags are the noninteractive approval.
+                    fileAccessProfile = new FileAccessProviderProfile
+                    {
+                        Id = fileAccessProfile.Id,
+                        Name = fileAccessProfile.Name,
+                        Instructions = fileAccessProfile.Instructions,
+                        AccessMode = fileAccessProfile.AccessMode,
+                        RequireReadApproval = false,
+                        RequireWriteApproval = false
+                    };
+                }
+                if (request.Agent.EnableShell && (!executionPolicy!.AllowShell || !executionPolicy.AllowWrite))
+                    throw new InvalidOperationException("CLI sandbox shell requires --allow-shell and --allow-write.");
+                if (request.Agent.EnableFileMemory && !executionPolicy!.AllowFileMemory)
+                    throw new InvalidOperationException("CLI File Memory requires --allow-file-memory.");
             }
             if (request.Agent.SkillsProviderProfileId is Guid skillsProfileId && skillsProfileId != Guid.Empty && skillsProfile is null)
                 throw new InvalidOperationException($"Selected Skills Provider profile '{skillsProfileId}' was not found.");
@@ -243,9 +271,11 @@ public sealed class AgenticRuntimeAgentFactory(
                 request.Agent.McpServerBindings,
                 request.Configuration.McpServerBindings);
             var toolRequestContext = BuildToolRequestContext(effectiveMcpBindings);
-            var availableTools = supportsFunctions
+            IReadOnlyList<AppToolDescriptor> availableTools = supportsFunctions
                 ? await appToolCatalog.ListToolsAsync(toolRequestContext, cancellationToken)
                 : [];
+            if (isCliExecution)
+                availableTools = FilterCliMcpTools(availableTools, executionPolicy!);
             var requestedFunctions = ResolveRequestedFunctionNames(
                 request.Configuration,
                 effectiveMcpBindings,
@@ -272,7 +302,8 @@ public sealed class AgenticRuntimeAgentFactory(
                     availableTools,
                     NormalizeToolPolicy(toolPolicyOptions.Value),
                     mcpUserInteractionService,
-                    logger)
+                    logger,
+                    request.RuntimeResources.IsHeadlessExecution)
                 : AgenticToolSet.Empty;
 
             if (toolSet.HasTools)
@@ -307,13 +338,22 @@ public sealed class AgenticRuntimeAgentFactory(
                 logger.LogInformation("Agent {AgentName}: skills enabled, profile={ProfileName}, loaded={LoadedCount}, ignored={IgnoredCount}", request.Agent.AgentName, skillsProfile.Name, skills.Skills.Count, skills.Diagnostics.Count);
             var workspaceStore = fileAccessProfile is null
                 ? null
-                : new SessionWorkspaceAgentFileStore(workspacePath ?? throw new InvalidOperationException("A workspace directory is required for File Access."));
-            var fileMemoryStore = request.Agent.EnableFileMemory
-                ? new FileSystemAgentFileStore(StoragePathResolver.ResolveUserPath(
+                : new SessionWorkspaceAgentFileStore(
+                    workspacePath ?? throw new InvalidOperationException("A workspace directory is required for File Access."),
+                    strictWorkspaceBoundary: isCliExecution);
+            var memoryRoot = request.Agent.EnableFileMemory
+                ? StoragePathResolver.ResolveUserPath(
                     configuration ?? throw new InvalidOperationException("Application configuration is required for File Memory."),
                     configuration?["AgentFileMemory:RootPath"],
-                    FilePathConstants.DefaultAgentFileMemoryDirectory))
+                    FilePathConstants.DefaultAgentFileMemoryDirectory)
                 : null;
+            var memoryPath = memoryRoot is not null && isCliExecution
+                ? Path.Combine(memoryRoot, "cli",
+                    request.RuntimeResources.RootExecutionId ??
+                        throw new InvalidOperationException("CLI File Memory requires a root execution id."),
+                    request.Agent.AgentId.ToString("N"))
+                : memoryRoot;
+            var fileMemoryStore = memoryPath is null ? null : new FileSystemAgentFileStore(memoryPath);
             SessionSandboxShellExecutor? shellExecutor = null;
             if (request.Agent.EnableShell)
             {
@@ -551,7 +591,11 @@ public sealed class AgenticRuntimeAgentFactory(
                     $"Tool name '{SandboxToolNames.RunShell}' is already registered for this agent.");
             }
 
-            var shellFunction = isBackgroundAgent
+            var isApprovedCliShell = request.RuntimeResources.ExecutionPolicy is
+                { Mode: AgentExecutionMode.CliNonInteractive, AllowShell: true, AllowWrite: true };
+            var shellFunction = isApprovedCliShell
+                ? shellExecutor.AsAIFunction(name: SandboxToolNames.RunShell, requireApproval: false)
+                : isBackgroundAgent
                 ? shellExecutor.AsCoordinatedAIFunction(
                     request.RuntimeResources.ToolApprovalCoordinator
                         ?? throw new InvalidOperationException("A tool approval coordinator is required for a shell-enabled Background Agent."),
@@ -587,6 +631,8 @@ public sealed class AgenticRuntimeAgentFactory(
                 [
                     context => ValueTask.FromResult(request.RuntimeResources.IsHeadlessExecution
                         ? skillsSource is not null && (context.FunctionCallContent.Name is "load_skill" or "read_skill_resource")
+                          || (request.RuntimeResources.ExecutionPolicy is { Mode: AgentExecutionMode.CliNonInteractive } cli &&
+                              IsCliApprovedLocalTool(context.FunctionCallContent.Name, cli))
                         : approvalPolicy.IsApproved(context.FunctionCallContent.Name, request.Agent.AgentId))
                 ]
             };
@@ -1085,6 +1131,42 @@ public sealed class AgenticRuntimeAgentFactory(
     {
         var content = agent.Content?.Trim();
         return string.IsNullOrWhiteSpace(content) ? null : content;
+    }
+
+    private static bool IsCliApprovedLocalTool(string functionName, AgentExecutionPolicy policy)
+    {
+        if (string.Equals(functionName, SandboxToolNames.RunShell, StringComparison.Ordinal))
+            return policy.AllowShell && policy.AllowWrite;
+        if (new ToolApprovalScopeResolver().IsFileAccessTool(functionName))
+        {
+            return functionName is "file_access_write" or "file_access_replace" or
+                "file_access_replace_lines" or "file_access_delete"
+                ? policy.AllowWrite
+                : policy.AllowRead;
+        }
+
+        return false;
+    }
+
+    private static IReadOnlyList<AppToolDescriptor> FilterCliMcpTools(
+        IReadOnlyList<AppToolDescriptor> tools, AgentExecutionPolicy policy)
+    {
+        if (policy.AllowedMcpTools.Count == 0)
+            return [];
+
+        // A short SERVER:TOOL permission is valid only when it uniquely resolves
+        // across the current agent's configured bindings. Binding-qualified names
+        // are always unambiguous.
+        var baseNameCounts = tools
+            .Where(static tool => tool.BaseQualifiedName is not null)
+            .GroupBy(static tool => tool.BaseQualifiedName!, StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(static group => group.Key, static group => group.Count(),
+                StringComparer.OrdinalIgnoreCase);
+        return tools.Where(tool =>
+            policy.AllowedMcpTools.Contains(tool.QualifiedName) ||
+            (tool.BaseQualifiedName is { } baseName &&
+                baseNameCounts.GetValueOrDefault(baseName) == 1 &&
+                policy.AllowedMcpTools.Contains(baseName))).ToArray();
     }
 
     internal static IReadOnlyList<string> ResolveRequestedFunctionNames(

@@ -57,6 +57,10 @@ public static class CliHost
             // identity so cloud providers work without duplicating credentials.
             builder.Configuration.AddUserSecrets(typeof(ServiceCollectionExtensions).Assembly,
                 optional: true);
+            builder.Configuration.AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["McpSampling:Disabled"] = "true"
+            });
             builder.Logging.ClearProviders();
             builder.Logging.AddDebug();
             builder.Services.AddCliAgentServices();
