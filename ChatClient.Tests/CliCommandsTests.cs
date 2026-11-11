@@ -346,10 +346,10 @@ public sealed class CliProcessTests
             var diagnosticsPath = Path.Combine(
                 Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
                 "OllamaChat", "logs", "cli-errors.log");
-            var diagnosticTail = File.Exists(diagnosticsPath)
-                ? (await File.ReadAllTextAsync(diagnosticsPath))[^Math.Min(
-                    2500, (int)new FileInfo(diagnosticsPath).Length)..]
+            var diagnosticText = File.Exists(diagnosticsPath)
+                ? await File.ReadAllTextAsync(diagnosticsPath)
                 : "no diagnostic log";
+            var diagnosticTail = diagnosticText[^Math.Min(2500, diagnosticText.Length)..];
             Assert.True(process.ExitCode == 0,
                 $"CLI exited with {process.ExitCode}. stderr: {stderr}. Diagnostics: {diagnosticTail}");
             Assert.Equal("Process fixture answer", stdout);
