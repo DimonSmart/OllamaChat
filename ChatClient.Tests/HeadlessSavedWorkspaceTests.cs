@@ -93,6 +93,50 @@ public sealed class HeadlessSavedWorkspaceTests
     }
 
     [Fact]
+    public async Task CliWritePermissionIsExplicitAndNeverUpgradesReadOnlyProfile()
+    {
+        var fixture = new Fixture();
+        fixture.Profile.AccessMode = FileAccessMode.ReadWrite;
+        fixture.Profile.RequireWriteApproval = true;
+        AgentRuntimeCreationContext? creation = null;
+        fixture.Runner.Setup(r => r.RunAsync(fixture.Reference, It.IsAny<AgentRuntimeRunRequest>(),
+                It.IsAny<AgentRuntimeCreationContext>(), It.IsAny<AgentRunContext>(),
+                It.IsAny<CancellationToken>()))
+            .Returns((AgentDefinitionReference _, AgentRuntimeRunRequest _,
+                AgentRuntimeCreationContext context, AgentRunContext _, CancellationToken _) =>
+            {
+                creation = context;
+                return Finished();
+            });
+
+        var denied = await fixture.Executor.ExecuteAsync(
+            new HeadlessAgentRunRequest(fixture.AgentId, "Write", fixture.WorkspaceId,
+                ExecutionPolicy: AgentExecutionPolicy.Cli(true, false, false, false, [])),
+            TestContext.Current.CancellationToken);
+        Assert.Equal("policy_write_denied", denied.ErrorCode);
+        Assert.Null(creation);
+
+        var allowed = await fixture.Executor.ExecuteAsync(
+            new HeadlessAgentRunRequest(fixture.AgentId, "Write", fixture.WorkspaceId,
+                ExecutionPolicy: AgentExecutionPolicy.Cli(false, true, false, false, [])),
+            TestContext.Current.CancellationToken);
+        Assert.True(allowed.Succeeded);
+        Assert.NotNull(creation);
+        Assert.Equal(FileAccessMode.ReadWrite, creation.RuntimeResources.HeadlessFileAccessProfile!.AccessMode);
+        Assert.False(creation.RuntimeResources.HeadlessFileAccessProfile.RequireWriteApproval);
+        Assert.Equal(AgentExecutionMode.CliNonInteractive, creation.RuntimeResources.ExecutionPolicy!.Mode);
+
+        fixture.Profile.AccessMode = FileAccessMode.ReadOnly;
+        creation = null;
+        var readOnly = await fixture.Executor.ExecuteAsync(
+            new HeadlessAgentRunRequest(fixture.AgentId, "Try write", fixture.WorkspaceId,
+                ExecutionPolicy: AgentExecutionPolicy.Cli(true, true, false, false, [])),
+            TestContext.Current.CancellationToken);
+        Assert.True(readOnly.Succeeded);
+        Assert.Equal(FileAccessMode.ReadOnly, creation!.RuntimeResources.HeadlessFileAccessProfile!.AccessMode);
+    }
+
+    [Fact]
     public async Task DirectWorkspacePathIsPassedToExistingHeadlessRuntime()
     {
         var fixture = new Fixture();
