@@ -2,6 +2,7 @@ using ChatClient.Api.Services;
 using ChatClient.Api.Services.Sandbox;
 using ChatClient.Application.Services;
 using ChatClient.Application.Services.Agentic;
+using ChatClient.Application.Services.AgentRuntime;
 using ChatClient.Application.Services.Sandbox;
 using ChatClient.Domain.Models;
 using Microsoft.Extensions.Options;
